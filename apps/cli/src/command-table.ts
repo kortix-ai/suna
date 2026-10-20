@@ -133,22 +133,12 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'rooms',
             args: '<subcommand>',
-            blurb: 'Durable shared channels for sessions and people (join, send, next)',
-          },
-          {
-            name: 'dm',
-            args: '<who> ["<text>"]',
-            blurb: 'Direct message a session or a person (kortix rooms dm)',
+            blurb: 'Channels where sessions and people talk (join, send, next)',
           },
           {
             name: 'peers',
             args: '',
-            blurb: 'Sessions and people you can message, with session status',
-          },
-          {
-            name: 'peers',
-            args: '',
-            blurb: 'Sessions and people you can message, with session status',
+            blurb: 'Sessions and people you can @-mention in a room, with session status',
           },
           {
             name: 'tui',

@@ -453,7 +453,7 @@ export function UserMessage({
   }
 
   if (roomInfo) {
-    const source = roomInfo.kind === 'direct' ? 'Direct message' : roomInfo.room ?? 'Room';
+    const source = roomInfo.room;
     const sender = roomInfo.senderKind === 'session' ? `Agent ${roomInfo.sender}` : roomInfo.sender;
     return platformMessage(
       <SourcePill

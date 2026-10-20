@@ -13,6 +13,13 @@ describe('mentions', () => {
     expect(mentionsMember(mentionTokens('@7c1d2e3f can I drop it?'), person)).toBe(true);
   });
 
+  test('a person is named by email or display name', () => {
+    const ada = { ids: ['7c1d2e3f-aaaa-4bbb-8ccc-dddddddddddd'], names: ['ada@example.test', 'Ada Lovelace'] };
+    expect(mentionsMember(mentionTokens('@ada@example.test may I drop it?'), ada)).toBe(true);
+    expect(mentionsMember(mentionTokens('thanks @ada-lovelace.'), ada)).toBe(true);
+    expect(mentionsMember(mentionTokens('@bob@example.test'), ada)).toBe(false);
+  });
+
   test('a short id prefix, another agent and an email address do not', () => {
     expect(mentionsMember(mentionTokens('@3f2a who?'), session)).toBe(false);
     expect(mentionsMember(mentionTokens('@reviewer look'), session)).toBe(false);
@@ -31,19 +38,11 @@ describe('agent chain', () => {
 describe('roomMessagePrompt', () => {
   test('a room message names room, seq and sender and gives the reply command', () => {
     const text = roomMessagePrompt({
-      room: { kind: 'room', name: 'platinum/dev', roomId: 'r-1' },
+      room: { name: 'platinum/dev', roomId: 'r-1' },
       seq: 42, senderKind: 'session', senderLabel: '3f2a1b9c (builder)', text: 'who blocked dev?', replyToSeq: 41,
     });
     expect(text.split('\n')[0]).toBe('[room platinum/dev · #42 · from agent session 3f2a1b9c (builder), replying to #41]');
     expect(text).toContain('Reply: kortix rooms send platinum/dev --reply-to 42 "<your reply>"');
   });
 
-  test('a direct message is addressed by its id', () => {
-    const text = roomMessagePrompt({
-      room: { kind: 'direct', name: null, roomId: '1131a78f-eec6-4bd2-bd67-5fcbb365fca1' },
-      seq: 1, senderKind: 'member', senderLabel: 'Ada', text: 'hi', replyToSeq: null,
-    });
-    expect(text.split('\n')[0]).toBe('[direct message · #1 · from Ada]');
-    expect(text).toContain('kortix rooms send 1131a78f-eec6-4bd2-bd67-5fcbb365fca1 --reply-to 1 "<your reply>"');
-  });
 });

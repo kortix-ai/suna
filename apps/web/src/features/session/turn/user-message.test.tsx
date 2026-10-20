@@ -1473,9 +1473,7 @@ describe('UserMessage platform prompts', () => {
   test('a room message is a source pill over its text, without the header or the reply footer', () => {
     const markup = renderText(
       roomPromptText({
-        kind: 'room',
         room: 'dev',
-        roomId: 'room-1',
         seq: 42,
         senderKind: 'session',
         sender: '3f2a1b9c (builder)',
@@ -1492,24 +1490,14 @@ describe('UserMessage platform prompts', () => {
     expect(markup).not.toContain('kortix rooms send');
   });
 
-  test('a direct message names "Direct message" and a person sender', () => {
+  test('a person sender is named as is', () => {
     const markup = renderText(
-      roomPromptText({
-        kind: 'direct',
-        room: null,
-        roomId: 'room-2',
-        seq: 3,
-        senderKind: 'member',
-        sender: 'Ada',
-        replyTo: null,
-        text: 'Can you check the logs?',
-      }),
+      roomPromptText({ room: 'dev', seq: 3, senderKind: 'member', sender: 'Ada', replyTo: null, text: 'Can you check the logs?' }),
     );
     expect(markup).toContain('data-testid="room-turn"');
-    expect(markup).toContain('>Direct message</span>');
     expect(markup).toContain('>Ada</span>');
     expect(markup).toContain('Can you check the logs?');
-    expect(markup).not.toContain('[direct message');
+    expect(markup).not.toContain('[room dev');
   });
 
   test('a trigger fire names the trigger in the pill and the prompt in the bubble', () => {

@@ -1,13 +1,12 @@
-// Conversations (flag `agent_rooms`): named rooms and direct conversations in
-// a project, between agent sessions and people. Logic lives in
+// Rooms (flag `agent_rooms`): named, durable channels of a project where
+// agent sessions and people post. Logic lives in
 // `projects/rooms/service.ts`.
 //
 // The caller is a SESSION when its credential is a session token, else a
 // PERSON (`loaded.userId`). Authorization, per route. Every leaf is asserted
 // for the caller's role AND for an agent's `kortix_permissions` grant:
 //   read  (list, get, messages, people) project.room.read
-//   write (create, post, open a direct) project.room.write
-//   a direct conversation               its two members only; anyone else 404
+//   write (create, post, idle notice)   project.room.write
 //   add / remove a session              project.room.write and, unless a
 //                                       session acts on itself,
 //                                       project.session.start on the session's
@@ -20,7 +19,7 @@
 //   people                              also project.members.read
 //   archive                             the room's creator, or project.write
 //   /sessions/:sid/rooms*               the session's OWN credential, under its
-//                                       own project, on a conversation it is a
+//                                       own project, on a room it is a
 //                                       member of: list, read, post, leave. The
 //                                       only way a session reaches a room in
 //                                       another project (its token is bound to
@@ -32,7 +31,6 @@ import { HTTPException } from 'hono/http-exception';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { accountMemberUserIds } from '../../iam/membership-read';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { callerKortixSessionId } from '../../middleware/caller-session';
@@ -56,7 +54,6 @@ import {
   listRooms,
   markRead,
   memberOf,
-  openDirect,
   participantRoom,
   postRoomMessage,
   readRoomMessages,
@@ -87,18 +84,10 @@ const PageQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
-const PeerSchema = z.object({
-  kind: z.enum(['session', 'person']),
-  session_id: z.string().nullable(),
-  user_id: z.string().nullable(),
-  label: z.string(),
-});
-
 const RoomSchema = z.object({
   room_id: z.string(),
   project_id: z.string(),
-  kind: z.enum(['room', 'direct']),
-  name: z.string().nullable(),
+  name: z.string(),
   topic: z.string().nullable(),
   last_seq: z.number(),
   member_count: z.number().optional(),
@@ -112,7 +101,6 @@ const RoomSchema = z.object({
 const ConversationSchema = RoomSchema.extend({
   notify: Notify,
   unread: z.number().openapi({ description: "A person's unread messages; 0 for a session." }),
-  peer: PeerSchema.nullable().openapi({ description: 'The other member of a direct conversation.' }),
 }).openapi('RoomConversation');
 
 const RoomMessageSchema = z.object({
@@ -163,11 +151,6 @@ const CreateBody = z.object({
   name: z.string().regex(ROOM_NAME, 'name: 1-64 of a-z 0-9 . _ / -, starting with a letter or digit'),
   topic: z.string().max(ROOM_TOPIC_MAX_CHARS).nullable().optional(),
 });
-const DirectBody = z.object({
-  session_id: z.string().min(1).max(128).optional(),
-  user_id: z.string().uuid().optional(),
-  email: z.string().email().max(320).optional(),
-}).openapi({ description: 'Exactly one of session_id, user_id, email.' });
 const PatchBody = z.object({
   topic: z.string().max(ROOM_TOPIC_MAX_CHARS).nullable().optional(),
   archived: z.boolean().optional(),
@@ -177,6 +160,8 @@ const PostBody = z.object({
   reply_to: z.number().int().positive().nullable().optional(),
 });
 const JoinBody = z.object({ notify: Notify.optional() });
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const IdleBody = z.object({ room: z.string().min(1).max(128).openapi({ description: 'The room to post the notice in: its name or room_id.' }) });
 const ReadBody = z.object({ seq: z.number().int().min(0).optional() });
 
 const iso = (value: Date | null) => (value ? value.toISOString() : null);
@@ -185,7 +170,6 @@ function serializeRoom(row: RoomRow, memberCount?: number) {
   return {
     room_id: row.roomId,
     project_id: row.projectId,
-    kind: row.kind as 'room' | 'direct',
     name: row.name,
     topic: row.topic,
     last_seq: row.lastSeq,
@@ -255,16 +239,13 @@ async function authorizeRooms(c: Context, projectId: string, mode: 'read' | 'wri
   return { ok: true as const, loaded };
 }
 
-/** The conversation, when the caller may see it: a named room, or a direct one the caller is in. */
+/** The room, with the caller as a member ref. */
 async function loadRoom(c: Context, projectId: string, roomId: string, mode: 'read' | 'write') {
   const access = await authorizeRooms(c, projectId, mode);
   if (!access.ok) return access;
   const room = await getRoom(projectId, roomId);
   if (!room) return { ok: false as const, response: c.json({ error: 'Conversation not found' }, 404) };
   const me = callerRef(c, access.loaded.userId);
-  if (room.kind === 'direct' && !(await memberOf(roomId, me))) {
-    return { ok: false as const, response: c.json({ error: 'Conversation not found' }, 404) };
-  }
   return { ok: true as const, loaded: access.loaded, userId: access.loaded.userId, room, me };
 }
 
@@ -340,30 +321,12 @@ async function serializeMembers(roomId: string) {
   }));
 }
 
-/** The caller's conversations with unread counts and, for direct ones, who the other side is. */
+/** The rooms `ref` is a member of, with unread counts. */
 async function serializeConversations(ref: MemberRef, projectId: string | null) {
-  const rows = await conversationsOf(ref, projectId);
-  const peerSessions = rows.flatMap((r) => (r.peer?.kind === 'session' ? [r.peer.sessionId] : []));
-  const peerPeople = rows.flatMap((r) => (r.peer?.kind === 'person' ? [r.peer.userId] : []));
-  const [people, homes] = await Promise.all([
-    personLabels(peerPeople),
-    Promise.all(peerSessions.map(async (id) => [id, await sessionHome(id)] as const)),
-  ]);
-  const sessions = new Map(homes);
-  return rows.map(({ room, membership, unread, peer }) => ({
+  return (await conversationsOf(ref, projectId)).map(({ room, membership, unread }) => ({
     ...serializeRoom(room),
     notify: membership.notify as RoomNotify,
     unread,
-    peer: peer
-      ? {
-        kind: peer.kind,
-        session_id: peer.kind === 'session' ? peer.sessionId : null,
-        user_id: peer.kind === 'person' ? peer.userId : null,
-        label: peer.kind === 'session'
-          ? sessionLabel(peer.sessionId, sessions.get(peer.sessionId)?.agentName, sessions.get(peer.sessionId)?.metadata)
-          : people.get(peer.userId) ?? 'a project member',
-      }
-      : null,
   }));
 }
 
@@ -393,15 +356,13 @@ async function mayReadRooms(c: Context, projectId: string): Promise<boolean> {
   }
 }
 
-const DIRECT_ONLY_TWO = 'A direct conversation has exactly its two members';
-
 export function registerRoomsRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'get', path: '/{projectId}/rooms', tags: ['rooms'],
     summary: "List a project's rooms, or your conversations",
     description:
       'Default: the named rooms that are not archived, by name; `name` returns at most that room; `archived=true` includes archived ones. ' +
-      '`mine=true`: every conversation the caller is a member of (rooms and direct conversations), newest activity first, with `unread` for a person.',
+      '`mine=true`: every room the caller is a member of, newest activity first, with `unread` for a person.',
     ...auth,
     request: {
       params: ProjectParams,
@@ -453,63 +414,17 @@ export function registerRoomsRoutes(): void {
         createdByUserId: loaded.userId,
         createdBySessionId: isProjectSessionPrincipal(c) ? callerKortixSessionId(c) : null,
       });
-      return c.json(serializeRoom(row), created ? 201 : 200);
-    } catch (err) {
-      if (err instanceof RoomError) return c.json({ error: err.message, code: err.code }, err.status);
-      throw err;
-    }
-  });
-
-  projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/rooms/direct', tags: ['rooms'],
-    summary: 'Open a direct conversation',
-    description:
-      'The direct conversation between the caller and one session (`session_id`) or one person (`user_id` or `email`) of the project, created when it does not exist. ' +
-      "A person must be an account member who may read the project's rooms. A session needs what sending it a prompt needs.",
-    ...auth,
-    request: { params: ProjectParams, body: { required: true, content: { 'application/json': { schema: DirectBody } } } },
-    responses: {
-      200: json(ConversationSchema, 'The conversation already existed'),
-      201: json(ConversationSchema, 'The conversation was created'),
-      ...errors(400, 403, 404, 409, 429),
-    },
-  }), async (c) => {
-    const { projectId } = c.req.valid('param');
-    const body = c.req.valid('json');
-    if ([body.session_id, body.user_id, body.email].filter(Boolean).length !== 1) {
-      return c.json({ error: 'Pass exactly one of session_id, user_id, email' }, 400);
-    }
-    const access = await authorizeRooms(c, projectId, 'write');
-    if (!access.ok) return access.response;
-    const { loaded } = access;
-    const me = callerRef(c, loaded.userId);
-    const scope = { accountId: loaded.row.accountId, projectId };
-    let target: MemberRef;
-    let targetProject = projectId;
-    if (body.session_id) {
-      const session = await authorizeMemberSession(c, scope, loaded, body.session_id);
-      if (!session.ok) return session.response;
-      target = { kind: 'session', sessionId: body.session_id };
-      targetProject = session.projectId;
-    } else {
-      const userId = body.user_id ?? (await resolveAccountIdentityByEmail(loaded.row.accountId, body.email!)).userId;
-      if (!userId || !(await mayJoinProject(scope, userId))) {
-        return c.json({ error: 'No person with access to this project matches' }, 404);
+      // Like a Slack channel, the creator is in the room it made: a person
+      // sees it in their list, a session gets the replies.
+      if (created) {
+        const sessionId = row.createdBySessionId;
+        await addMember(row.roomId, {
+          ref: sessionId ? { kind: 'session', sessionId } : { kind: 'person', userId: loaded.userId },
+          projectId,
+          addedByUserId: loaded.userId,
+        }, row.lastSeq);
       }
-      target = { kind: 'person', userId };
-    }
-    try {
-      const { row, created } = await openDirect({
-        projectId,
-        accountId: loaded.row.accountId,
-        a: { ref: me, projectId, addedByUserId: loaded.userId },
-        b: { ref: target, projectId: targetProject, addedByUserId: loaded.userId },
-        createdByUserId: loaded.userId,
-        createdBySessionId: me.kind === 'session' ? me.sessionId : null,
-      });
-      const conversation = (await serializeConversations(me, projectId)).find((r) => r.room_id === row.roomId);
-      if (!conversation) return c.json({ error: 'Conversation not found' }, 404);
-      return c.json(conversation, created ? 201 : 200);
+      return c.json(serializeRoom(row), created ? 201 : 200);
     } catch (err) {
       if (err instanceof RoomError) return c.json({ error: err.message, code: err.code }, err.status);
       throw err;
@@ -653,7 +568,6 @@ export function registerRoomsRoutes(): void {
     const body = (c.req.valid('json') ?? {}) as z.infer<typeof JoinBody>;
     const access = await loadRoom(c, projectId, roomId, 'write');
     if (!access.ok) return access.response;
-    if (access.room.kind === 'direct') return c.json({ error: DIRECT_ONLY_TWO }, 409);
     if (access.room.archivedAt) return c.json({ error: 'Room is archived' }, 409);
     const member = await authorizeMemberSession(c, access.room, access.loaded, sessionId);
     if (!member.ok) return member.response;
@@ -673,7 +587,6 @@ export function registerRoomsRoutes(): void {
     const { projectId, roomId, sessionId } = c.req.valid('param');
     const access = await loadRoom(c, projectId, roomId, 'write');
     if (!access.ok) return access.response;
-    if (access.room.kind === 'direct') return c.json({ error: DIRECT_ONLY_TWO }, 409);
     const member = await authorizeMemberSession(c, access.room, access.loaded, sessionId);
     if (!member.ok) return member.response;
     return c.json({ removed: await removeMember(roomId, { kind: 'session', sessionId }) }, 200);
@@ -694,7 +607,6 @@ export function registerRoomsRoutes(): void {
     const self = !isProjectSessionPrincipal(c) && c.get('userId') === userId;
     const access = await loadRoom(c, projectId, roomId, self ? 'read' : 'write');
     if (!access.ok) return access.response;
-    if (access.room.kind === 'direct') return c.json({ error: DIRECT_ONLY_TWO }, 409);
     if (access.room.archivedAt) return c.json({ error: 'Room is archived' }, 409);
     if (!(await mayJoinProject(access.room, userId))) return c.json({ error: 'No person with access to this project matches' }, 404);
     await addMember(roomId, { ref: { kind: 'person', userId }, projectId, addedByUserId: access.userId, notify: body.notify }, access.room.lastSeq);
@@ -715,7 +627,6 @@ export function registerRoomsRoutes(): void {
     const self = !isProjectSessionPrincipal(c) && c.get('userId') === userId;
     const access = await loadRoom(c, projectId, roomId, self ? 'read' : 'write');
     if (!access.ok) return access.response;
-    if (access.room.kind === 'direct') return c.json({ error: DIRECT_ONLY_TWO }, 409);
     return c.json({ removed: await removeMember(roomId, { kind: 'person', userId }) }, 200);
   });
 
@@ -723,7 +634,7 @@ export function registerRoomsRoutes(): void {
     method: 'get', path: '/{projectId}/sessions/{sessionId}/rooms', tags: ['rooms'],
     summary: 'List the conversations a session is in',
     description:
-      'Rooms and direct conversations in any project of the account; each row names its project. A direct conversation is listed to the session itself only. ' +
+      'Rooms in any project of the account; each row names its project. ' +
       "A room in another project is listed to the session itself or to a caller who may read that project's rooms.",
     ...auth,
     request: { params: SessionParams },
@@ -739,7 +650,6 @@ export function registerRoomsRoutes(): void {
     const readable = new Map<string, boolean>([[projectId, true]]);
     const rows = [];
     for (const row of await serializeConversations({ kind: 'session', sessionId }, null)) {
-      if (row.kind === 'direct' && !own) continue;
       if (!own && !readable.has(row.project_id)) readable.set(row.project_id, await mayReadRooms(c, row.project_id));
       if (own || readable.get(row.project_id)) rows.push(row);
     }
@@ -783,7 +693,7 @@ export function registerRoomsRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'delete', path: '/{projectId}/sessions/{sessionId}/rooms/{roomId}', tags: ['rooms'],
     summary: 'Leave a room, as the session',
-    description: "The session's own credential only; the room may be in another project. A direct conversation cannot be left.",
+    description: "The session's own credential only; the room may be in another project.",
     ...auth,
     request: { params: ParticipantParams },
     responses: { 200: json(z.object({ removed: z.boolean() }), 'Whether the session was a member'), ...errors(400, 403, 404, 409) },
@@ -791,7 +701,6 @@ export function registerRoomsRoutes(): void {
     const { projectId, sessionId, roomId } = c.req.valid('param');
     const access = await loadParticipant(c, projectId, sessionId, roomId, 'write');
     if (!access.ok) return access.response;
-    if (access.room.kind === 'direct') return c.json({ error: DIRECT_ONLY_TWO }, 409);
     return c.json({ removed: await removeMember(roomId, { kind: 'session', sessionId }) }, 200);
   });
 
@@ -799,16 +708,17 @@ export function registerRoomsRoutes(): void {
     method: 'post', path: '/{projectId}/sessions/{sessionId}/idle-notice', tags: ['rooms'],
     summary: 'Get one message when a session goes idle',
     description:
-      'When the session\'s current turn ends, the caller (a session or a person) gets one direct message from it with the outcome. ' +
-      'Fires at once when the session holds no live turn. Expires after 24 hours. Needs what sending the session a prompt needs.',
+      'When the session\'s current turn ends, it posts one message in `room` (a name or room id of this project) that @-mentions the caller (a session or a person) with the outcome. ' +
+      'The caller and the session join the room when they are not in it. Fires at once when the session holds no live turn. Expires after 24 hours. Needs what sending the session a prompt needs.',
     ...auth,
-    request: { params: SessionParams },
+    request: { params: SessionParams, body: { required: true, content: { 'application/json': { schema: IdleBody } } } },
     responses: {
       200: json(z.object({ watch_id: z.string().nullable(), fired_now: z.boolean(), expires_at: z.string() }), 'The watch'),
       ...errors(400, 403, 404, 409),
     },
   }), async (c) => {
     const { projectId, sessionId } = c.req.valid('param');
+    const body = c.req.valid('json');
     const access = await authorizeRooms(c, projectId, 'write');
     if (!access.ok) return access.response;
     const { loaded } = access;
@@ -816,10 +726,17 @@ export function registerRoomsRoutes(): void {
     if (me.kind === 'session' && me.sessionId === sessionId) return c.json({ error: 'A session cannot watch itself' }, 400);
     const target = await authorizeMemberSession(c, { accountId: loaded.row.accountId, projectId }, loaded, sessionId);
     if (!target.ok) return target.response;
+    const room = (UUID.test(body.room) ? await getRoom(projectId, body.room) : null)
+      ?? (await listRooms(projectId, { name: body.room }))[0]?.row
+      ?? null;
+    if (!room) return c.json({ error: `No room "${body.room}" in this project` }, 404);
+    if (room.archivedAt) return c.json({ error: 'Room is archived' }, 409);
+    if (!(await memberOf(room.roomId, me))) {
+      await addMember(room.roomId, { ref: me, projectId, addedByUserId: loaded.userId }, room.lastSeq);
+    }
     const watch = await watchSessionIdle({
       targetSessionId: sessionId,
-      projectId: target.projectId,
-      accountId: loaded.row.accountId,
+      room,
       watcher: me,
       addedByUserId: loaded.userId,
     });

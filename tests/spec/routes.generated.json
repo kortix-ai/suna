@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 873,
+  "count": 872,
   "routes": [
     {
       "method": "GET",
@@ -2581,10 +2581,6 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/rooms/:roomId/read"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/rooms/direct"
     },
     {
       "method": "GET",

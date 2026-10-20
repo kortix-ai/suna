@@ -10,7 +10,6 @@ import {
   listRoomPeople,
   listRooms,
   markRoomRead,
-  openDirectConversation,
   postRoomMessage,
   removeRoomPerson,
   removeRoomSession,
@@ -66,13 +65,6 @@ test('createRoom, getRoom and updateRoom hit the room routes', async () => {
   expect(last()).toMatchObject({ method: 'PATCH', url: `${BASE}/r1`, body: { archived: true } });
 });
 
-test('openDirectConversation posts exactly the target it is given', async () => {
-  await openDirectConversation('p1', { email: 'ada@example.test' });
-  expect(last()).toMatchObject({ method: 'POST', url: `${BASE}/direct`, body: { email: 'ada@example.test' } });
-  await openDirectConversation('p1', { session_id: 's1' });
-  expect(last().body).toEqual({ session_id: 's1' });
-});
-
 test('messages: list pages with after/before/limit, post sends text and reply_to, read moves the cursor', async () => {
   nextBody = { messages: [MESSAGE], last_seq: 1 };
   const page = await listRoomMessages('p1', 'r1', { after: 3, limit: 50 });
@@ -109,6 +101,4 @@ test('the facade binds the project: kortix.project(id).rooms', async () => {
   expect(last().url).toBe(`${BASE}/r1/messages`);
   await rooms.post('r1', { text: 'hi' });
   expect(last()).toMatchObject({ method: 'POST', url: `${BASE}/r1/messages` });
-  await rooms.direct({ user_id: 'u2' });
-  expect(last()).toMatchObject({ method: 'POST', url: `${BASE}/direct`, body: { user_id: 'u2' } });
 });

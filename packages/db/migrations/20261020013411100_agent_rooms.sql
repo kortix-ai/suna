@@ -1,4 +1,4 @@
--- Migration: agent_rooms — conversations (rooms and direct), their messages and
+-- Migration: agent_rooms — rooms (named channels), their messages and
 -- members (sessions and people), flag `agent_rooms`. Three new tables; the
 -- notification inbox gains a nullable room_id and the `message` kind.
 --
@@ -56,9 +56,7 @@ CREATE TABLE "kortix"."rooms" (
 	"room_id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"project_id" uuid NOT NULL,
 	"account_id" uuid NOT NULL,
-	"kind" varchar(16) DEFAULT 'room' NOT NULL,
-	"name" varchar(64),
-	"direct_key" text,
+	"name" varchar(64) NOT NULL,
 	"topic" text,
 	"last_seq" bigint DEFAULT 0 NOT NULL,
 	"created_by_user_id" uuid,
@@ -66,7 +64,7 @@ CREATE TABLE "kortix"."rooms" (
 	"archived_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "rooms_kind_check" CHECK (("kortix"."rooms"."kind" = 'room' and "kortix"."rooms"."name" ~ '^[a-z0-9][a-z0-9._/-]{0,63}$' and "kortix"."rooms"."direct_key" is null) or ("kortix"."rooms"."kind" = 'direct' and "kortix"."rooms"."name" is null and "kortix"."rooms"."direct_key" is not null))
+	CONSTRAINT "rooms_name_check" CHECK ("kortix"."rooms"."name" ~ '^[a-z0-9][a-z0-9._/-]{0,63}$')
 );
 --> statement-breakpoint
 -- mixed-version-safe: the new kind check admits every kind the old one admitted; old code never writes `message`, and the nullable room_id column is ignored by old code.
@@ -81,8 +79,7 @@ CREATE UNIQUE INDEX "idx_room_members_room_user" ON "kortix"."room_members" USIN
 CREATE INDEX "idx_room_members_session" ON "kortix"."room_members" USING btree ("session_id");--> statement-breakpoint
 CREATE INDEX "idx_room_members_user" ON "kortix"."room_members" USING btree ("user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_room_messages_room_seq" ON "kortix"."room_messages" USING btree ("room_id","seq");--> statement-breakpoint
-CREATE UNIQUE INDEX "idx_rooms_project_name" ON "kortix"."rooms" USING btree ("project_id","name") WHERE "kortix"."rooms"."name" is not null;--> statement-breakpoint
-CREATE UNIQUE INDEX "idx_rooms_project_direct" ON "kortix"."rooms" USING btree ("project_id","direct_key") WHERE "kortix"."rooms"."direct_key" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_rooms_project_name" ON "kortix"."rooms" USING btree ("project_id","name");--> statement-breakpoint
 ALTER TABLE "kortix"."notifications" ADD CONSTRAINT "notifications_kind" CHECK ("kortix"."notifications"."kind" IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message')) NOT VALID;--> statement-breakpoint
 ALTER TABLE "kortix"."rooms" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "kortix"."room_messages" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint

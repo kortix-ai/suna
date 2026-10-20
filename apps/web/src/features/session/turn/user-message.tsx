@@ -301,7 +301,7 @@ function ReminderMessage({ info, actions }: { info: ReminderPromptInfo; actions?
  */
 function RoomMessage({ info, actions }: { info: RoomPromptInfo; actions?: React.ReactNode }) {
   const t = useTranslations('rooms');
-  const source = info.room ?? t('direct');
+  const source = info.room;
   const sender = info.senderKind === 'session' ? t('agentSender', { name: info.sender }) : info.sender;
   return (
     <PlatformPromptMessage
@@ -317,7 +317,7 @@ function RoomMessage({ info, actions }: { info: RoomPromptInfo; actions?: React.
           card={
             <SourceCard
               mark={<ChatsTeardropIcon className="size-3.5 shrink-0" aria-hidden />}
-              title={info.kind === 'direct' ? t('direct') : t('cardRoom', { name: source })}
+              title={t('cardRoom', { name: source })}
               rows={[
                 { label: t('cardFrom'), value: sender },
                 { label: t('cardMessage'), value: `#${info.seq}` },

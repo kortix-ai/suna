@@ -7987,20 +7987,16 @@ export const triggerWatchers = kortixSchema.table('trigger_watchers', {
 ]);
 
 /**
- * A conversation in a project that agent sessions and people talk in.
- * `kind = 'room'`: a named room (`dev`, `platinum/dev`) anyone with
- * `project.room.read` can find. `kind = 'direct'`: a direct conversation
- * between exactly two members, unnamed, found by `direct_key` (the two member
- * keys, sorted). `last_seq` numbers the messages; a post takes the next value
- * under the row lock, so `seq` is gap-free per conversation.
+ * A room: a named, durable channel of a project (`dev`, `platinum/dev`) that
+ * agent sessions and people post in; anyone with `project.room.read` can find
+ * it. `last_seq` numbers the messages; a post takes the next value under the
+ * row lock, so `seq` is gap-free per room.
  */
 export const rooms = kortixSchema.table('rooms', {
   roomId: uuid('room_id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull(),
   accountId: uuid('account_id').notNull(),
-  kind: varchar('kind', { length: 16 }).default('room').notNull(),
-  name: varchar('name', { length: 64 }),
-  directKey: text('direct_key'),
+  name: varchar('name', { length: 64 }).notNull(),
   topic: text('topic'),
   lastSeq: bigint('last_seq', { mode: 'number' }).default(0).notNull(),
   createdByUserId: uuid('created_by_user_id'),
@@ -8010,12 +8006,8 @@ export const rooms = kortixSchema.table('rooms', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'rooms_project_fk' }).onDelete('cascade'),
-  uniqueIndex('idx_rooms_project_name').on(table.projectId, table.name).where(sql`${table.name} is not null`),
-  uniqueIndex('idx_rooms_project_direct').on(table.projectId, table.directKey).where(sql`${table.directKey} is not null`),
-  check(
-    'rooms_kind_check',
-    sql`(${table.kind} = 'room' and ${table.name} ~ '^[a-z0-9][a-z0-9._/-]{0,63}$' and ${table.directKey} is null) or (${table.kind} = 'direct' and ${table.name} is null and ${table.directKey} is not null)`,
-  ),
+  uniqueIndex('idx_rooms_project_name').on(table.projectId, table.name),
+  check('rooms_name_check', sql`${table.name} ~ '^[a-z0-9][a-z0-9._/-]{0,63}$'`),
 ]);
 
 /** One message. `sender_kind`: `member` (a person) or `session` (an agent). */
@@ -8037,14 +8029,15 @@ export const roomMessages = kortixSchema.table('room_messages', {
 ]);
 
 /**
- * A member of a conversation: an agent session or a person.
- *   session: a message from anyone else reaches the session as a room event at
- *            its next turn boundary (a stopped session wakes), acting as
- *            `added_by_user_id` — the person who added it, never the sender.
- *   person:  a message from anyone else raises their unread count
- *            (`last_read_seq`) and, with the notification center on, notifies
- *            them. A person may be a member only while they may read rooms in
- *            the project; delivery re-checks it.
+ * A member of a room: an agent session or a person.
+ *   session: a message addressed to it steers its turn; other traffic arrives
+ *            as one digest at its turn boundary (a stopped session wakes),
+ *            acting as `added_by_user_id` — the person who added it, never
+ *            the sender.
+ *   person:  every message from anyone else raises their unread count
+ *            (`last_read_seq`); one addressed to them also notifies them, with
+ *            the notification center on. A person may be a member only while
+ *            they may read rooms in the project; delivery re-checks it.
  * `notify`: `all`, `mentions` or `none`.
  */
 export const roomMembers = kortixSchema.table('room_members', {
@@ -8074,13 +8067,14 @@ export const roomMembers = kortixSchema.table('room_members', {
 
 /**
  * A one-shot "tell me when this session goes idle" (flag `agent_rooms`).
- * When the target session's turn ends, the watcher gets one direct message
- * from the target with the outcome, and the row is deleted. A row past
+ * When the target session's turn ends, it posts one message in `room_id`
+ * @-mentioning the watcher with the outcome, and the row is deleted. A row past
  * `expires_at` is dropped unanswered.
  */
 export const sessionIdleWatches = kortixSchema.table('session_idle_watches', {
   watchId: uuid('watch_id').defaultRandom().primaryKey(),
   targetSessionId: text('target_session_id').notNull(),
+  roomId: uuid('room_id').notNull(),
   projectId: uuid('project_id').notNull(),
   accountId: uuid('account_id').notNull(),
   watcherKind: varchar('watcher_kind', { length: 16 }).notNull(),
@@ -8092,6 +8086,7 @@ export const sessionIdleWatches = kortixSchema.table('session_idle_watches', {
 }, (table) => [
   foreignKey({ columns: [table.targetSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_idle_watches_target_fk' }).onDelete('cascade'),
   foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'session_idle_watches_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.roomId], foreignColumns: [rooms.roomId], name: 'session_idle_watches_room_fk' }).onDelete('cascade'),
   index('idx_session_idle_watches_target').on(table.targetSessionId),
   check(
     'session_idle_watches_kind_check',

@@ -26,7 +26,6 @@ export function bindProjectOperationsAdmin(projectId: string) {
       create: (...a: DropFirst<Parameters<typeof P.createRoom>>) => P.createRoom(projectId, ...a),
       get: (...a: DropFirst<Parameters<typeof P.getRoom>>) => P.getRoom(projectId, ...a),
       update: (...a: DropFirst<Parameters<typeof P.updateRoom>>) => P.updateRoom(projectId, ...a),
-      direct: (...a: DropFirst<Parameters<typeof P.openDirectConversation>>) => P.openDirectConversation(projectId, ...a),
       messages: (...a: DropFirst<Parameters<typeof P.listRoomMessages>>) => P.listRoomMessages(projectId, ...a),
       post: (...a: DropFirst<Parameters<typeof P.postRoomMessage>>) => P.postRoomMessage(projectId, ...a),
       markRead: (...a: DropFirst<Parameters<typeof P.markRoomRead>>) => P.markRoomRead(projectId, ...a),

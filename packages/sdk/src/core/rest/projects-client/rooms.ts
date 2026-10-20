@@ -1,27 +1,24 @@
-// Conversations between agent sessions and people (project flag `agent_rooms`).
-//
-// A ROOM is a named conversation in a project (`dev`, `platinum/dev`); a
-// DIRECT conversation is between exactly two members. A member is a session or
-// a person. A message reaches a member session as a room event at its next turn
-// boundary (a stopped session wakes) and a member person as an unread message
-// plus, with the notification center on, a `message` notification. Reading
+// Rooms: named, durable channels of a project (`dev`, `platinum/dev`) where
+// agent sessions and people post (project flag `agent_rooms`). A member is a
+// session or a person. A message addressed to a member session (an @-mention,
+// a reply to it) steers its turn; other traffic reaches it as one digest when
+// its turn ends (a stopped session wakes). A member person gets every message
+// as unread and, with the notification center on, a `message` notification
+// for one addressed to them. Reading
 // needs `project.room.read`, posting and joining `project.room.write`.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
-export type RoomKind = 'room' | 'direct';
 /** Which messages reach a member: every one, only @-mentions (in a room), or none. */
 export type RoomNotify = 'all' | 'mentions' | 'none';
 
 export interface Room {
   room_id: string;
   project_id: string;
-  kind: RoomKind;
-  /** The room's name; null for a direct conversation. */
-  name: string | null;
+  name: string;
   topic: string | null;
-  /** The newest message's seq; 0 for an empty conversation. */
+  /** The newest message's seq; 0 for an empty room. */
   last_seq: number;
   member_count?: number;
   created_by_user_id: string | null;
@@ -31,20 +28,11 @@ export interface Room {
   updated_at: string;
 }
 
-/** The other member of a direct conversation. */
-export interface RoomPeer {
-  kind: 'session' | 'person';
-  session_id: string | null;
-  user_id: string | null;
-  label: string;
-}
-
-/** A conversation the caller is a member of (`listRooms(projectId, { mine: true })`). */
+/** A room the caller is a member of (`listRooms(projectId, { mine: true })`). */
 export interface RoomConversation extends Room {
   notify: RoomNotify;
   /** A person's unread messages; 0 for a session. */
   unread: number;
-  peer: RoomPeer | null;
 }
 
 export interface RoomMember {
@@ -89,9 +77,10 @@ export interface RoomDelivery {
   session_id: string | null;
   user_id: string | null;
   /**
-   * `queued`: addressed to a session (a direct message, an @-mention, a reply
-   * to it), delivered in full between its steps. `batched`: room traffic, part
-   * of one digest notice when its turn ends. `unread` / `notified`: a person.
+   * `queued`: addressed to a session (an @-mention, a reply to it), delivered
+   * in full between its steps. `batched`: room traffic, part of one digest
+   * notice when its turn ends. `unread`: a person; `notified`: a person the
+   * message is addressed to, who also got a notification.
    */
   state: 'queued' | 'batched' | 'notified' | 'unread' | 'skipped';
   reason?: string;
@@ -113,7 +102,7 @@ export interface RoomPerson {
 }
 
 export interface ListRoomsOptions {
-  /** Every conversation the caller is in (rooms and direct), with `unread`. */
+  /** Every room the caller is in, with `unread`. */
   mine?: boolean;
   name?: string;
   archived?: boolean;
@@ -127,9 +116,6 @@ export interface RoomMessagePageQuery {
   /** Default 50, max 200. */
   limit?: number;
 }
-
-/** Exactly one target: a session of the project, or a person by user id or email. */
-export type DirectConversationTarget = { session_id: string } | { user_id: string } | { email: string };
 
 const rooms = (projectId: string) => `/projects/${projectId}/rooms`;
 
@@ -160,11 +146,6 @@ export async function getRoom(projectId: string, roomId: string) {
 
 export async function updateRoom(projectId: string, roomId: string, input: { topic?: string | null; archived?: boolean }) {
   return unwrap(await backendApi.patch<Room>(`${rooms(projectId)}/${roomId}`, input));
-}
-
-/** The direct conversation with one session or person, created when it does not exist. */
-export async function openDirectConversation(projectId: string, target: DirectConversationTarget) {
-  return unwrap(await backendApi.post<RoomConversation>(`${rooms(projectId)}/direct`, target));
 }
 
 export async function listRoomMessages(projectId: string, roomId: string, page: RoomMessagePageQuery = {}) {

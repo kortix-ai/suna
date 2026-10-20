@@ -1,5 +1,5 @@
 {
-  "id": "6ab36647-5d3b-4ea8-aab8-de7eab376876",
+  "id": "990ba340-26c1-4834-b9fd-162a5b040e85",
   "prevId": "237b4845-2462-4290-896b-ae02dafcc0bd",
   "version": "7",
   "dialect": "postgresql",
@@ -21544,24 +21544,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "kind": {
-          "name": "kind",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'room'"
-        },
         "name": {
           "name": "name",
           "type": "varchar(64)",
           "primaryKey": false,
-          "notNull": false
-        },
-        "direct_key": {
-          "name": "direct_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "topic": {
           "name": "topic",
@@ -21627,29 +21614,6 @@
             }
           ],
           "isUnique": true,
-          "where": "\"kortix\".\"rooms\".\"name\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_rooms_project_direct": {
-          "name": "idx_rooms_project_direct",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "direct_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"rooms\".\"direct_key\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -21675,9 +21639,9 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "rooms_kind_check": {
-          "name": "rooms_kind_check",
-          "value": "(\"kortix\".\"rooms\".\"kind\" = 'room' and \"kortix\".\"rooms\".\"name\" ~ '^[a-z0-9][a-z0-9._/-]{0,63}$' and \"kortix\".\"rooms\".\"direct_key\" is null) or (\"kortix\".\"rooms\".\"kind\" = 'direct' and \"kortix\".\"rooms\".\"name\" is null and \"kortix\".\"rooms\".\"direct_key\" is not null)"
+        "rooms_name_check": {
+          "name": "rooms_name_check",
+          "value": "\"kortix\".\"rooms\".\"name\" ~ '^[a-z0-9][a-z0-9._/-]{0,63}$'"
         }
       },
       "isRLSEnabled": false
@@ -22920,6 +22884,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "room_id": {
+          "name": "room_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "project_id": {
           "name": "project_id",
           "type": "uuid",
@@ -23012,6 +22982,20 @@
           ],
           "columnsTo": [
             "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "session_idle_watches_room_fk": {
+          "name": "session_idle_watches_room_fk",
+          "tableFrom": "session_idle_watches",
+          "tableTo": "rooms",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "room_id"
+          ],
+          "columnsTo": [
+            "room_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"

@@ -1,12 +1,11 @@
 /**
- * `kortix rooms` and `kortix dm` — conversations between agent sessions and
- * people (flag `agent_rooms`).
+ * `kortix rooms` — named, durable channels where agent sessions and people
+ * post (flag `agent_rooms`).
  *
- * A room is a named conversation in a project; a direct conversation is
- * between exactly two members. A member is a session or a person. A message
- * reaches a member session as a room event at its next turn boundary (a
- * stopped session wakes) and a member person as an unread message plus a
- * notification. The server owns delivery, authorization and loop limits
+ * A member is a session or a person. A message addressed to a member session
+ * steers its turn; other traffic reaches it as one digest when its turn ends
+ * (a stopped session wakes). A member person gets every message as unread and
+ * a notification for one addressed to them. The server owns delivery, authorization and loop limits
  * (`/projects/:id/rooms`); this file is argument parsing, name resolution and
  * output.
  */
@@ -29,27 +28,28 @@ import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix rooms <subcommand> [options]
 
-Rooms where agent sessions and people message each other, one per goal or
-topic (\`dev\`, \`platinum/dev\`). A direct message (\`kortix dm\`) is a room of
-two. Every message is stored in its room. A member is a session or a person:
-  session   a message addressed to it (a direct message, an @-mention, a reply
-            to its own message) arrives in full between its steps; other room
-            traffic arrives as one batched notice when its turn ends. A stopped
-            session wakes. @-mentioning a session that is not in the room adds
-            it, when you could prompt it.
-  person    each message from someone else is unread for you, and with the
-            notification center on you get a notification.
+Rooms are channels where agent sessions and people message each other, one
+per goal or topic (\`dev\`, \`platinum/dev\`). Every message is stored in its
+room. A member is a session or a person:
+  session   a message addressed to it (an @-mention, a reply to its own
+            message) arrives in full between its steps; other room traffic
+            arrives as one batched notice when its turn ends. A stopped session
+            wakes. @-mentioning a session that is not in the room adds it, when
+            you could prompt it.
+  person    every message from someone else is unread for you; one addressed
+            to you (@<email>, @<name>, a reply) also notifies you, with the
+            notification center on.
 Needs the \`agent_rooms\` feature flag (\`kortix projects features enable agent_rooms\`).
 
 Inside a session, commands act as that session ($KORTIX_SESSION_ID); outside,
 as you.
 
 Subcommands:
-  ls                         The project's rooms. --mine: your conversations
-                             (rooms and direct), with unread counts.
+  ls                         The project's rooms. --mine: the rooms you are in,
+                             with unread counts.
                              --archived adds archived rooms.
   create <room>              Create a room. --topic "<what it is for>".
-  info <room>                The conversation, its topic and its members.
+  info <room>                The room, its topic and its members.
   join <room>                Join a room (default: this session, or you).
                              Creates the room when it does not exist.
                              --session <id> or --person <email|user-id> adds
@@ -68,28 +68,29 @@ Subcommands:
   watch <room>               Stream new messages until Ctrl+C.
   chat <room>                Interactive: messages print as they arrive, each
                              line you type is posted.
-  people [<query>]           People you can message in this project.
-  dm <who> ["<text>"]        Direct message a session (<id or 8+ char prefix>)
-                             or a person (<email|user-id>). Without text, print
-                             the conversation. Same as \`kortix dm\`.
-                             --notify-when-idle (a session): one message from
-                             it when its current turn ends (alone: no text sent).
-  peers                      Who you can message: this project's sessions with
-                             their status, and its people. Same as \`kortix peers\`.
+  people [<query>]           People you can add or @-mention in this project.
+  peers                      Who you can @-mention: this project's sessions
+                             with their status, and its people. Same as
+                             \`kortix peers\`.
+  notify-idle <room> <session>
+                             When <session>'s current turn ends, it posts once
+                             in <room> @-mentioning you (at once when it is
+                             idle). You and it join the room. Expires in 24 h.
   topic <room> "<topic>"     Set the topic ("" clears it).
   archive <room>             Archive: keeps the log, takes no new messages.
                              --undo unarchives. Creator or project.write.
 
-<room> is a room name, or the id of any conversation (a direct one included).
+<room> is a room name or a room id.
 
 Delivery (--notify):
   all        every message from someone else (default)
-  mentions   in a room, only messages that @-mention the member: @<8+ chars
-             of its id>, @<agent name>, @<session name>, or @all
+  mentions   only messages addressed to the member: an @-mention (@<8+ chars
+             of its id>, @<agent name>, @<session name>, @<email>, @<name>,
+             or @all) or a reply to its own message
   none       nothing; read the conversation yourself
 
 Limits: 16,000 characters per message, 30 messages per minute per sender per
-conversation. After 20 consecutive messages from sessions, a session's message
+room. After 20 consecutive messages from sessions, a session's message
 reaches no other session until a person posts.
 
 Permissions: project.room.read to read, project.room.write to post or join.
@@ -97,7 +98,7 @@ Adding another session also needs what prompting it needs; \`people\` needs
 project.members.read.
 
 Options:
-  --project <id>     Project of the conversation (default: linked).
+  --project <id>     Project of the room (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -108,22 +109,20 @@ Examples:
   kortix rooms join dev --topic "who is touching dev"
   kortix rooms send dev "I am re-running deploy-dev; hold merges for 10 min"
   kortix rooms send dev "@3f2a1b9c did you block dev?" --await-reply
-  kortix dm ada@example.com "Can I drop the legacy_events table?"
-  kortix dm 3f2a1b9c "What did migration 0049 change?" --await-reply
+  kortix rooms send dev "@ada@example.com can I drop the legacy_events table?"
+  kortix rooms notify-idle dev 3f2a1b9c
 `;
 
 export interface Room {
   room_id: string;
   project_id: string;
-  kind: 'room' | 'direct';
-  name: string | null;
+  name: string;
   topic: string | null;
   last_seq: number;
   member_count?: number;
   archived_at: string | null;
   notify?: string;
   unread?: number;
-  peer?: { kind: 'session' | 'person'; session_id: string | null; user_id: string | null; label: string } | null;
 }
 
 export interface RoomMessage {
@@ -169,7 +168,6 @@ interface Flags {
   archived: boolean;
   mine: boolean;
   undo: boolean;
-  notifyWhenIdle: boolean;
 }
 
 interface Ctx {
@@ -195,10 +193,9 @@ const POLL_MS = 2_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** How a conversation is named on screen: `dev`, or `dm with Ada`. */
-export function roomTitle(room: Pick<Room, 'kind' | 'name' | 'peer' | 'room_id'>): string {
-  if (room.kind === 'room') return room.name ?? room.room_id;
-  return room.peer ? `dm with ${room.peer.label}` : `dm ${shortId(room.room_id)}`;
+/** How a room is named on screen. */
+export function roomTitle(room: Pick<Room, 'name' | 'room_id'>): string {
+  return room.name || room.room_id;
 }
 
 /** The first `#seq` line of a message, as `read`/`watch` print it. */
@@ -224,7 +221,7 @@ export function pickReply(messages: RoomMessage[], seq: number, self: Self): Roo
   return others.find((message) => message.reply_to_seq === seq) ?? others[0] ?? null;
 }
 
-const KNOWN = ['ls', 'list', 'create', 'info', 'join', 'leave', 'send', 'read', 'next', 'watch', 'chat', 'people', 'peers', 'dm', 'topic', 'archive'];
+const KNOWN = ['ls', 'list', 'create', 'info', 'join', 'leave', 'send', 'read', 'next', 'watch', 'chat', 'people', 'peers', 'notify-idle', 'topic', 'archive'];
 
 export async function runRooms(argv: string[]): Promise<number> {
   const helpCode = splitHelp(argv, HELP);
@@ -249,7 +246,6 @@ export async function runRooms(argv: string[]): Promise<number> {
       archived: takeFlagBool(rest, ['--archived']),
       mine: takeFlagBool(rest, ['--mine']),
       undo: takeFlagBool(rest, ['--undo']),
-      notifyWhenIdle: takeFlagBool(rest, ['--notify-when-idle']),
     };
   } catch (err) {
     return fail((err as Error).message);
@@ -284,12 +280,10 @@ export async function runRooms(argv: string[]): Promise<number> {
         return await listPeople(ctx, rest.join(' '), flags);
       case 'peers':
         return await listPeers(ctx, flags);
-      case 'dm':
-        return await directMessage(ctx, rest[0], rest.slice(1), flags);
       case 'topic':
         return await setTopic(ctx, rest[0], rest[1], flags);
       default: {
-        if (!rest[0]) return missing('a room name or conversation id');
+        if (!rest[0]) return missing('a room name or id');
         const room = await resolveRoom(ctx, rest[0], flags);
         if (!room) return roomNotFound(rest[0], ctx);
         switch (sub) {
@@ -309,6 +303,8 @@ export async function runRooms(argv: string[]): Promise<number> {
             return await chatRoom(ctx, room);
           case 'archive':
             return await archiveRoom(ctx, room, flags);
+          case 'notify-idle':
+            return await notifyWhenIdle(ctx, room, rest[1], flags);
         }
         return 2;
       }
@@ -323,11 +319,6 @@ export function runPeers(argv: string[]): Promise<number> {
   return runRooms(['peers', ...argv]);
 }
 
-/** `kortix dm …` is `kortix rooms dm …`. */
-export function runDm(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv.includes('-h') || argv.includes('--help')) return runRooms(argv.length ? ['dm', ...argv] : ['--help']);
-  return runRooms(['dm', ...argv]);
-}
 
 function roomNotFound(name: string, ctx: Ctx): number {
   process.stderr.write(
@@ -407,7 +398,7 @@ async function listRooms(ctx: Ctx, flags: Flags): Promise<number> {
   if (rooms.length === 0) {
     process.stdout.write(
       flags.mine
-        ? `${C.dim}You are in no conversation yet. Join one: ${C.reset}${C.cyan}kortix rooms join <room>${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix dm <who> "…"${C.reset}\n`
+        ? `${C.dim}You are in no room yet. Join one: ${C.reset}${C.cyan}kortix rooms join <room>${C.reset}\n`
         : `${C.dim}No rooms yet. Start one: ${C.reset}${C.cyan}kortix rooms join <room>${C.reset}\n`,
     );
     return 0;
@@ -514,7 +505,7 @@ async function roomInfo(ctx: Ctx, room: Room, flags: Flags): Promise<number> {
     return 0;
   }
   process.stdout.write(
-    `\n  ${C.bold}${roomTitle({ ...detail, peer: room.peer })}${C.reset}${detail.archived_at ? ` ${C.yellow}(archived)${C.reset}` : ''}  ${C.dim}${detail.room_id} · ${detail.last_seq} messages${C.reset}\n` +
+    `\n  ${C.bold}${roomTitle(detail)}${C.reset}${detail.archived_at ? ` ${C.yellow}(archived)${C.reset}` : ''}  ${C.dim}${detail.room_id} · ${detail.last_seq} messages${C.reset}\n` +
       (detail.topic ? `  ${detail.topic}\n` : ''),
   );
   if (detail.members.length === 0) {
@@ -561,35 +552,20 @@ async function resolveSessionId(ctx: Ctx, ref: string): Promise<string | null> {
   return matches.length === 1 ? matches[0]!.session_id : null;
 }
 
-async function directMessage(ctx: Ctx, who: string | undefined, args: string[], flags: Flags): Promise<number> {
-  if (!who) return missing('who to message: a session id (or 8+ char prefix), an email, or a user id');
+async function notifyWhenIdle(ctx: Ctx, room: Room, who: string | undefined, flags: Flags): Promise<number> {
+  if (!who) return missing('the session to watch: its id or an 8+ char prefix');
   const sessionId = await resolveSessionId(ctx, who);
-  const body: Record<string, string> = {};
-  if (sessionId) body.session_id = sessionId;
-  else if (who.includes('@')) body.email = who;
-  else if (UUID.test(who)) body.user_id = who;
-  else return fail(`"${who}" is not a session id, an email or a user id.`);
-  if (flags.notifyWhenIdle && !sessionId) return fail('--notify-when-idle needs a session, not a person.');
-  const room = await ctx.client.post<Room>(`/projects/${ctx.projectId}/rooms/direct`, body);
-  // Claude Code's notify_when_idle: with a message, send it and subscribe;
-  // alone, only subscribe.
-  if (flags.notifyWhenIdle && args.length === 0) return notifyWhenIdle(ctx, sessionId!, room, flags);
-  if (args.length === 0 && process.stdin.isTTY === true) return readMessages(ctx, room, flags);
-  const code = await sendMessage(ctx, room, args, { ...flags, json: flags.json && !flags.notifyWhenIdle });
-  if (code !== 0 || !flags.notifyWhenIdle) return code;
-  return notifyWhenIdle(ctx, sessionId!, room, flags);
-}
-
-async function notifyWhenIdle(ctx: Ctx, sessionId: string, room: Room, flags: Flags): Promise<number> {
+  if (!sessionId) return fail(`"${who}" is not a session of this project.`);
   const watch = await ctx.client.post<{ watch_id: string | null; fired_now: boolean; expires_at: string }>(
     `/projects/${ctx.projectId}/sessions/${sessionId}/idle-notice`,
+    { room: room.room_id },
   );
   if (flags.json) emitJson({ ...watch, room_id: room.room_id });
   else if (watch.fired_now) {
     process.stdout.write(`${status.ok(`Session ${shortId(sessionId)} is idle now; its notice is in ${C.bold}${roomTitle(room)}${C.reset}`)}\n`);
   } else {
     process.stdout.write(
-      `${status.ok(`You get one message from session ${shortId(sessionId)} when its turn ends`)} ${C.dim}(in ${roomTitle(room)}; expires ${new Date(watch.expires_at).toLocaleString()})${C.reset}\n`,
+      `${status.ok(`Session ${shortId(sessionId)} posts in ${C.bold}${roomTitle(room)}${C.reset} when its turn ends`)} ${C.dim}(expires ${new Date(watch.expires_at).toLocaleString()})${C.reset}\n`,
     );
   }
   return 0;
@@ -627,7 +603,7 @@ async function listPeers(ctx: Ctx, flags: Flags): Promise<number> {
   } else {
     process.stdout.write(`\n  ${C.dim}People: hidden (needs project.members.read).${C.reset}\n`);
   }
-  process.stdout.write(`\n  ${C.dim}Message one: kortix dm <session id or 8+ chars | email> "…"${C.reset}\n\n`);
+  process.stdout.write(`\n  ${C.dim}Mention one in a room: kortix rooms send <room> "@<session id 8+ chars | email> …"${C.reset}\n\n`);
   return 0;
 }
 
@@ -724,7 +700,7 @@ async function readMessages(ctx: Ctx, room: Room, flags: Flags): Promise<number>
   const page = await ctx.client.get<{ messages: RoomMessage[]; last_seq: number }>(`${messagesPath(ctx, room)}?${query}`);
   await markRead(ctx, room, page.messages.at(-1)?.seq ?? 0);
   if (flags.json) {
-    emitJson({ room: { room_id: room.room_id, kind: room.kind, name: room.name, project_id: room.project_id }, ...page });
+    emitJson({ room: { room_id: room.room_id, name: room.name, project_id: room.project_id }, ...page });
     return 0;
   }
   if (page.messages.length === 0) {

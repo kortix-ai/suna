@@ -1,10 +1,7 @@
 /**
- * Conversations between agent sessions and people (flag `agent_rooms`).
- *
- *   room    a named conversation in a project (`dev`, `platinum/dev`); anyone
- *           with project.room.read can find and read it.
- *   direct  a conversation between exactly two members (session or person),
- *           visible to those two only. Found by its `direct_key`.
+ * Rooms: named, durable channels of a project (`dev`, `platinum/dev`) where
+ * agent sessions and people post (flag `agent_rooms`). Anyone with
+ * project.room.read can find and read a room; its members get its messages.
  *
  * A member is an agent session or a person. A message from anyone else
  * reaches each member the way that member can take it:
@@ -12,15 +9,17 @@
  *   session  a durable `continue_session` automation row (no
  *            `clientMessageId`, so never a person's queued prompt), written
  *            in the SAME transaction as the message. A message addressed to
- *            the session — a direct message, or an @-mention — steers a
- *            running turn (read between steps, as Claude Code delivers a
- *            cross-session message); room chatter waits for the turn to end.
- *            An idle session starts a turn; a stopped one wakes. It acts as
- *            the person who added the session (`added_by_user_id`), never as
- *            the sender, and only when the sender could prompt it.
- *   person   an unread count (`last_read_seq`) and, with the project's
- *            notification center on, a `message` notification (bell, push,
- *            email digest). Delivery re-checks `filterRoomRecipients`.
+ *            the session — an @-mention, or a reply to its own message —
+ *            steers a running turn (read between steps, as Claude Code
+ *            delivers a cross-session message); other traffic is batched
+ *            into one digest per room, delivered when the turn ends. An idle
+ *            session starts a turn; a stopped one wakes. It acts as the
+ *            person who added the session (`added_by_user_id`), never as the
+ *            sender, and only when the sender could prompt it.
+ *   person   an unread count (`last_read_seq`) for every message, and — like
+ *            Slack — a `message` notification (bell, push, email digest) only
+ *            when the message is addressed to them, with the project's
+ *            notification center on. Delivery re-checks `filterRoomRecipients`.
  */
 import { projectSessions, projects, roomMembers, roomMessages, rooms, sessionIdleWatches, sessionLifecycleCommands } from '@kortix/db';
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
@@ -34,11 +33,12 @@ import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '.
 import { sessionHoldsLiveTurn } from '../session-lifecycle/inbox-admission';
 import { mintWireMessageId } from '../wire-message-id';
 import { promptModelOverride } from '../lib/prompt-model';
+import { resolveUserIdentities } from '../lib/user-identity';
 import { AGENT_CHAIN_LIMIT, agentChainReached, mentionTokens, mentionsMember, roomMessagePrompt } from './envelope';
 import { ROOM_DIGEST_MAX_LINES, digestLineText, roomDigestText, type RoomDigestLine } from '@kortix/shared';
 
 export const AGENT_ROOMS_FLAG = 'agent_rooms' as const;
-/** How long `--notify-when-idle` waits for the session's turn to end. */
+/** How long `kortix rooms notify-idle` waits for the session's turn to end. */
 export const IDLE_WATCH_TTL_MS = 24 * 60 * 60_000;
 export const ROOM_NAME = /^[a-z0-9][a-z0-9._/-]{0,63}$/;
 export const ROOM_MESSAGE_MAX_CHARS = 16_000;
@@ -96,11 +96,6 @@ export function senderRef(sender: RoomSender): MemberRef {
   return sender.kind === 'session' ? { kind: 'session', sessionId: sender.sessionId } : { kind: 'person', userId: sender.userId };
 }
 
-/** The `direct_key` of a direct conversation: both member keys, sorted, so either side finds it. */
-export function directKey(a: MemberRef, b: MemberRef): string {
-  return [memberKey(a), memberKey(b)].sort().join('|');
-}
-
 export function sessionDisplayName(metadata: unknown): string | null {
   const meta = (metadata ?? {}) as Record<string, unknown>;
   return [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string' && !!v.trim()) ?? null;
@@ -119,9 +114,9 @@ export async function memberOf(roomId: string, ref: MemberRef): Promise<RoomMemb
   return row ?? null;
 }
 
-/** Named rooms of a project, with member counts. Direct conversations are never listed here. */
+/** Rooms of a project, with member counts. */
 export async function listRooms(projectId: string, filter: { name?: string; includeArchived?: boolean } = {}) {
-  const conditions = [eq(rooms.projectId, projectId), eq(rooms.kind, 'room')];
+  const conditions = [eq(rooms.projectId, projectId)];
   if (filter.name) conditions.push(eq(rooms.name, filter.name));
   if (!filter.includeArchived) conditions.push(isNull(rooms.archivedAt));
   const rows = await db.select().from(rooms).where(and(...conditions)).orderBy(asc(rooms.name)).limit(500);
@@ -140,8 +135,7 @@ async function memberCounts(roomIds: string[]): Promise<Map<string, number>> {
 }
 
 /**
- * The conversations `ref` is a member of, rooms and direct ones, newest
- * activity first. `projectId` limits them to one project; a session's own
+ * The rooms `ref` is a member of, newest activity first. `projectId` limits them to one project; a session's own
  * list spans projects (a person may have put it in a room elsewhere).
  */
 export async function conversationsOf(ref: MemberRef, projectId: string | null) {
@@ -154,26 +148,11 @@ export async function conversationsOf(ref: MemberRef, projectId: string | null) 
     .where(and(...conditions))
     .orderBy(desc(rooms.updatedAt))
     .limit(500);
-  const peers = await directPeers(rows.filter((r) => r.room.kind === 'direct').map((r) => r.room.roomId), ref);
   return rows.map(({ room, membership }) => ({
     room,
     membership,
     unread: membership.memberKind === 'person' ? Math.max(0, room.lastSeq - membership.lastReadSeq) : 0,
-    peer: peers.get(room.roomId) ?? null,
   }));
-}
-
-/** For each direct conversation, the member that is not `ref`. */
-async function directPeers(roomIds: string[], ref: MemberRef): Promise<Map<string, MemberRef>> {
-  if (roomIds.length === 0) return new Map();
-  const rows = await db.select().from(roomMembers).where(inArray(roomMembers.roomId, roomIds));
-  const self = memberKey(ref);
-  const out = new Map<string, MemberRef>();
-  for (const row of rows) {
-    const other = refOfRow(row);
-    if (memberKey(other) !== self) out.set(row.roomId, other);
-  }
-  return out;
 }
 
 export async function listRoomMembers(roomId: string) {
@@ -255,7 +234,6 @@ export async function createRoom(input: {
   const [row] = await db.insert(rooms).values({
     projectId: input.projectId,
     accountId: input.accountId,
-    kind: 'room',
     name: input.name,
     topic: input.topic,
     createdByUserId: input.createdByUserId,
@@ -269,42 +247,6 @@ export async function createRoom(input: {
 }
 
 export type NewMember = { ref: MemberRef; projectId: string; addedByUserId: string; notify?: RoomNotify };
-
-/**
- * The direct conversation between `a` and `b` in a project, created with both
- * as members when it does not exist yet. The caller has authorized both.
- */
-export async function openDirect(input: {
-  projectId: string;
-  accountId: string;
-  a: NewMember;
-  b: NewMember;
-  createdByUserId: string;
-  createdBySessionId: string | null;
-}): Promise<{ row: RoomRow; created: boolean }> {
-  if (memberKey(input.a.ref) === memberKey(input.b.ref)) {
-    throw new RoomError(400, 'A direct conversation needs two different members', 'direct_self');
-  }
-  const key = directKey(input.a.ref, input.b.ref);
-  return db.transaction(async (tx) => {
-    const [row] = await tx.insert(rooms).values({
-      projectId: input.projectId,
-      accountId: input.accountId,
-      kind: 'direct',
-      directKey: key,
-      createdByUserId: input.createdByUserId,
-      createdBySessionId: input.createdBySessionId,
-    }).onConflictDoNothing().returning();
-    if (!row) {
-      const [existing] = await tx.select().from(rooms)
-        .where(and(eq(rooms.projectId, input.projectId), eq(rooms.directKey, key))).limit(1);
-      if (!existing) throw new RoomError(409, 'Conversation was created and removed concurrently; retry', 'room_conflict');
-      return { row: existing, created: false };
-    }
-    await tx.insert(roomMembers).values([input.a, input.b].map((m) => memberValues(row.roomId, m)));
-    return { row, created: true };
-  });
-}
 
 function memberValues(roomId: string, member: NewMember) {
   return {
@@ -388,8 +330,8 @@ export async function postRoomMessage(input: {
     db.select({ count: sql<number>`count(*)::int` }).from(roomMessages)
       .where(and(eq(roomMessages.roomId, room.roomId), senderFilter, gte(roomMessages.createdAt, new Date(Date.now() - 60_000)))),
     input.replyToSeq === null
-      ? Promise.resolve([] as { senderSessionId: string | null }[])
-      : db.select({ senderSessionId: roomMessages.senderSessionId }).from(roomMessages)
+      ? Promise.resolve([] as { senderSessionId: string | null; senderUserId: string | null; senderKind: string }[])
+      : db.select({ senderSessionId: roomMessages.senderSessionId, senderUserId: roomMessages.senderUserId, senderKind: roomMessages.senderKind }).from(roomMessages)
         .where(and(eq(roomMessages.roomId, room.roomId), eq(roomMessages.seq, input.replyToSeq))).limit(1),
   ]);
   if ((rate?.count ?? 0) >= SENDER_MESSAGES_PER_MINUTE) {
@@ -410,7 +352,7 @@ export async function postRoomMessage(input: {
     : members.find((m) => m.sessionId === sender.sessionId)?.addedByUserId ?? sender.userId;
   // An @-mention of a session that is not in the room yet adds it, when the
   // voucher could prompt it; in a goal room nobody has to add an agent first.
-  const added = room.kind === 'room' ? await addMentionedSessions(room, members, tokens, voucher) : new Set<string>();
+  const added = await addMentionedSessions(room, members, tokens, voucher);
   if (added.size > 0) members = await listRoomMembers(room.roomId);
 
   // A session's message on top of AGENT_CHAIN_LIMIT session messages reaches
@@ -418,7 +360,6 @@ export async function postRoomMessage(input: {
   // on someone's credits. People still get it. Any person posting resets it.
   const paused = sender.kind === 'session' && agentChainReached(recent.map((row) => row.kind), AGENT_CHAIN_LIMIT);
   const flagOff = await projectsWithFlagOff(room.projectId, members.flatMap((m) => (m.memberKind === 'session' ? [m.projectId] : [])));
-  const direct = room.kind === 'direct';
   const peopleAllowed = new Set(await filterRoomRecipients(
     room.accountId,
     room.projectId,
@@ -429,6 +370,8 @@ export async function postRoomMessage(input: {
     room.accountId,
     members.flatMap((m) => (m.memberKind === 'session' && memberKey(refOfRow(m)) !== self ? [m.sessionId!] : [])),
   );
+  // A person is @-mentioned by email or by display name, a session by agent or session name.
+  const people = await resolveUserIdentities(members.flatMap((m) => (m.memberKind === 'person' ? [m.userId!] : [])));
 
   const deliveries: RoomDelivery[] = [];
   const addressedTargets: typeof members = [];
@@ -445,22 +388,26 @@ export async function postRoomMessage(input: {
         ...(reason ? { reason } : {}),
         ...(member.sessionId && added.has(member.sessionId) ? { added: true } : {}),
       });
-    const name = member.memberKind === 'session' ? sessionDisplayName(member.metadata) : null;
-    // Addressed to this member: a direct message, an @-mention, or a reply to
-    // a message it sent. `mentions` never filters an addressed message.
-    const addressed = direct
-      || mentionsMember(tokens, {
-        ids: [member.sessionId ?? member.userId ?? ''],
-        names: [member.agentName, name].filter((v): v is string => !!v && v !== 'default'),
-      })
-      || (!!member.sessionId && repliedTo?.senderSessionId === member.sessionId);
+    const person = member.userId ? people.get(member.userId) : undefined;
+    const names = member.memberKind === 'session'
+      ? [member.agentName, sessionDisplayName(member.metadata)]
+      : [person?.email, person?.displayName];
+    // Addressed to this member: an @-mention, or a reply to a message it
+    // sent. `mentions` never filters an addressed message.
+    const addressed = mentionsMember(tokens, {
+      ids: [member.sessionId ?? member.userId ?? ''],
+      names: names.filter((v): v is string => !!v && v !== 'default'),
+    })
+      || (!!member.sessionId && repliedTo?.senderSessionId === member.sessionId)
+      || (!!member.userId && repliedTo?.senderKind === 'member' && repliedTo.senderUserId === member.userId);
     if (memberKey(ref) === self) verdict('skipped', 'sender');
     else if (member.notify === 'none') verdict('skipped', 'notify_none');
     else if (member.notify === 'mentions' && !addressed) verdict('skipped', 'not_mentioned');
     else if (member.memberKind === 'person') {
       if (!peopleAllowed.has(member.userId!)) verdict('skipped', 'no_access');
       else {
-        personTargets.push(member.userId!);
+        // Every message counts as unread; only one addressed to them notifies.
+        if (addressed) personTargets.push(member.userId!);
         verdict('unread');
       }
     } else if (typeof (member.metadata as Record<string, unknown> | null)?.deletedAt === 'string') verdict('skipped', 'session_deleted');
@@ -509,7 +456,7 @@ export async function postRoomMessage(input: {
           sessionId: member.sessionId!,
           actorUserId: member.addedByUserId,
           text: roomMessagePrompt({
-            room: { kind: room.kind as 'room' | 'direct', name: room.name, roomId: room.roomId },
+            room: { name: room.name!, roomId: room.roomId },
             seq: row!.seq,
             senderKind: sender.kind,
             senderLabel: sender.label,
@@ -665,7 +612,7 @@ async function notifyPeople(
     accountId: room.accountId,
     projectId: room.projectId,
     roomId: room.roomId,
-    title: room.kind === 'direct' ? `Message from ${sender.label}` : `${room.name} · ${sender.label}`,
+    title: `${room.name} · ${sender.label}`,
     body: message.text,
     actorUserId: sender.kind === 'member' ? sender.userId : null,
     dedupeKey: `room:${message.messageId}`,
@@ -690,13 +637,13 @@ async function projectsWithFlagOff(roomProjectId: string, projectIds: string[]):
 // ── Idle notices ────────────────────────────────────────────────────────────
 
 /**
- * Ask for one direct message from `targetSessionId` when its turn ends. When
- * the session holds no live turn, the notice goes out now.
+ * Ask for one message in `room` from `targetSessionId` when its turn ends,
+ * @-mentioning the watcher so it is addressed to them. When the session holds
+ * no live turn, the notice goes out now.
  */
 export async function watchSessionIdle(input: {
   targetSessionId: string;
-  projectId: string;
-  accountId: string;
+  room: RoomRow;
   watcher: MemberRef;
   addedByUserId: string;
 }): Promise<{ watchId: string | null; firedNow: boolean; expiresAt: string }> {
@@ -704,8 +651,9 @@ export async function watchSessionIdle(input: {
   const watcher = input.watcher;
   const [row] = await db.insert(sessionIdleWatches).values({
     targetSessionId: input.targetSessionId,
-    projectId: input.projectId,
-    accountId: input.accountId,
+    roomId: input.room.roomId,
+    projectId: input.room.projectId,
+    accountId: input.room.accountId,
     watcherKind: watcher.kind,
     watcherSessionId: watcher.kind === 'session' ? watcher.sessionId : null,
     watcherUserId: watcher.kind === 'person' ? watcher.userId : null,
@@ -720,9 +668,10 @@ export async function watchSessionIdle(input: {
 }
 
 /**
- * The target session's turn ended: send each watcher one direct message from
- * the session with the outcome, and drop the watches (expired ones unsent).
- * Never throws: it runs inside the turn-end relay.
+ * The target session's turn ended: post one message per watch into its room,
+ * from the session, @-mentioning the watcher, and drop the watches (expired
+ * ones unsent). The session joins the room to post. Never throws: it runs
+ * inside the turn-end relay.
  */
 export async function fireIdleWatches(targetSessionId: string, outcome: 'idle' | 'error', errorName?: string | null): Promise<number> {
   try {
@@ -737,22 +686,17 @@ export async function fireIdleWatches(targetSessionId: string, outcome: 'idle' |
     const what = outcome === 'error' ? `ended with an error${errorName ? ` (${errorName})` : ''}` : 'finished its turn and is idle';
     let sent = 0;
     for (const watch of live) {
-      const watcher: MemberRef = watch.watcherKind === 'session'
-        ? { kind: 'session', sessionId: watch.watcherSessionId! }
-        : { kind: 'person', userId: watch.watcherUserId! };
-      const watcherProject = watcher.kind === 'session' ? (await sessionHome(watcher.sessionId))?.projectId ?? home.projectId : home.projectId;
-      const { row: room } = await openDirect({
-        projectId: home.projectId,
-        accountId: home.accountId,
-        a: { ref: { kind: 'session', sessionId: targetSessionId }, projectId: home.projectId, addedByUserId: watch.addedByUserId },
-        b: { ref: watcher, projectId: watcherProject, addedByUserId: watch.addedByUserId },
-        createdByUserId: watch.addedByUserId,
-        createdBySessionId: null,
-      });
+      const room = await getRoom(watch.projectId, watch.roomId);
+      if (!room || room.archivedAt) continue;
+      const target: MemberRef = { kind: 'session', sessionId: targetSessionId };
+      if (!(await memberOf(room.roomId, target))) {
+        await addMember(room.roomId, { ref: target, projectId: home.projectId, addedByUserId: watch.addedByUserId }, room.lastSeq);
+      }
+      const mention = (watch.watcherSessionId ?? watch.watcherUserId ?? '').slice(0, 8);
       await postRoomMessage({
         room,
         sender: { kind: 'session', userId: watch.addedByUserId, sessionId: targetSessionId, label },
-        text: `Session ${targetSessionId.slice(0, 8)} ${what}. Read its answer: kortix sessions log ${targetSessionId} --limit 2`,
+        text: `@${mention} Session ${targetSessionId.slice(0, 8)} ${what}. Read its answer: kortix sessions log ${targetSessionId} --limit 2`,
         replyToSeq: null,
       });
       sent += 1;

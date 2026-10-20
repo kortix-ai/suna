@@ -197,8 +197,7 @@ export async function mayReadProjectRooms(
 /**
  * The people among `userIds` who may take part in a project's conversations
  * now: members of the account with `project.room.read` on the project. The
- * one rule for adding a person to a room, opening a direct conversation with
- * them, and delivering a message to them.
+ * one rule for adding a person to a room and delivering a message to them.
  */
 export async function filterRoomRecipients(
   accountId: string,

@@ -6,9 +6,7 @@ import {
   listRoomMessages,
   listRooms,
   markRoomRead,
-  openDirectConversation,
   postRoomMessage,
-  type DirectConversationTarget,
   type Room,
   type RoomConversation,
 } from '../core/rest/projects-client';
@@ -29,13 +27,9 @@ export function useRooms(projectId: string | null | undefined) {
   });
 }
 
-/**
- * The caller's conversations (rooms and direct ones) with unread counts, plus
- * `openDirect` to start a direct conversation with a session or a person.
- */
+/** The rooms the caller is a member of, with unread counts. */
 export function useRoomConversations(projectId: string | null | undefined) {
-  const queryClient = useQueryClient();
-  const query = useQuery({
+  return useQuery({
     queryKey: qk.project.roomConversations(projectId ?? ''),
     queryFn: async () => (await listRooms(projectId as string, { mine: true })).rooms as RoomConversation[],
     enabled: !!projectId,
@@ -43,11 +37,6 @@ export function useRoomConversations(projectId: string | null | undefined) {
     refetchInterval: LIST_POLL_MS,
     refetchIntervalInBackground: false,
   });
-  const openDirect = useMutation({
-    mutationFn: (target: DirectConversationTarget) => openDirectConversation(projectId as string, target),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.rooms(projectId ?? '') }),
-  });
-  return { ...query, openDirect };
 }
 
 /** One conversation and its members. */

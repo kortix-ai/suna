@@ -1,5 +1,5 @@
 /**
- * ROOM-1..7 — Conversations between agent sessions and people (flag `agent_rooms`).
+ * ROOM-1..8 — Rooms: channels where agent sessions and people post (flag `agent_rooms`).
  * Contract: tests/spec/end-to-end.md §35. Pure rules (mentions, the agent-chain
  * pause) are pinned in apps/api/src/projects/rooms/envelope.test.ts; the text a
  * member session receives in packages/shared/src/room-prompt.test.ts.
@@ -13,7 +13,6 @@ import { CliSandbox, type CliResult } from '../fixtures/cli';
 import { bindDatabaseSessionCredential, createDatabaseSession, setDatabaseProjectFeature } from '../fixtures/database-project';
 
 const ROOMS = '/v1/projects/:projectId/rooms';
-const DIRECT = '/v1/projects/:projectId/rooms/direct';
 const PEOPLE = '/v1/projects/:projectId/rooms/people';
 const ROOM = '/v1/projects/:projectId/rooms/:roomId';
 const MESSAGES = '/v1/projects/:projectId/rooms/:roomId/messages';
@@ -27,7 +26,7 @@ const PROMPTS = '/v1/projects/:projectId/sessions/:sessionId/prompts';
 
 type Delivery = { member: string; session_id: string | null; user_id: string | null; state: string; reason?: string };
 type PostResult = { message: { seq: number; sender_kind: string; sender_session_id: string | null }; deliveries: Delivery[]; paused: boolean };
-type Conversation = { room_id: string; kind: string; unread: number; peer: { kind: string; label: string } | null };
+type Conversation = { room_id: string; name: string; unread: number };
 
 function delivery(result: PostResult, id: string): Delivery {
   const found = result.deliveries.find((d) => d.session_id === id || d.user_id === id);
@@ -94,8 +93,8 @@ flow(
       (await owner.post(ROOMS, { name: 'Dev' }, { params: p })).status(400);
       (await owner.post(ROOMS, { name: '-dev' }, { params: p })).status(400);
     });
-    await ctx.step('list and ?name= return the room with member_count 0; a project member reads it too', async () => {
-      (await owner.get(ROOMS, { params: p })).status(200).body().has('$.rooms[0].room_id', roomId).has('$.rooms[0].member_count', 0);
+    await ctx.step('list and ?name= return the room with member_count 1 (the creator); a project member reads it too', async () => {
+      (await owner.get(ROOMS, { params: p })).status(200).body().has('$.rooms[0].room_id', roomId).has('$.rooms[0].member_count', 1);
       (await ctx.client.as(member).get(`${ROOMS}?name=platinum%2Fdev`, { params: p })).status(200).body().has('$.rooms[0].room_id', roomId);
       (await owner.get(`${ROOMS}?name=nope`, { params: p })).status(200).body().has('$.rooms.length', 0);
     });
@@ -158,7 +157,7 @@ flow(
       (await owner.put(SESSION_MEMBER, {}, { params: { ...r, sessionId: crypto.randomUUID() } })).status(404);
     });
     await ctx.step('GET the room lists both members', async () => {
-      (await owner.get(ROOM, { params: r })).status(200).body().has('$.members.length', 2).has('$.member_count', 2);
+      (await owner.get(ROOM, { params: r })).status(200).body().has('$.members.length', 3).has('$.member_count', 3);
     });
 
     await ctx.step('owner posts → #1 batched for Builder as one digest, NOT as a queued prompt; Reviewer skipped not_mentioned', async () => {
@@ -349,7 +348,7 @@ flow(
       await ctx.step('Gamma leaves through its session route → removed:true (flag back on)', async () => {
         await setDatabaseProjectFeature(ctx.env, other.id, 'agent_rooms', true);
         (await asGamma.del(AS_SESSION, { params: g })).status(200).body().has('$.removed', true);
-        (await owner.get(ROOM, { params: r })).status(200).body().has('$.members.length', 0);
+        (await owner.get(ROOM, { params: r })).status(200).body().has('$.members.length', 1);
       });
     } finally {
       await dropToken(ctx, other.id, token.token_id);
@@ -402,13 +401,13 @@ flow(
         const sent = JSON.parse(ok(await run(asAlpha, ['rooms', 'send', 'dev', '--reply-to', '1', '--json'], 'I did, reverting'), 'reply').stdout);
         if (sent.message.sender_session_id !== alpha || sent.message.reply_to_seq !== 1) throw new Error(JSON.stringify(sent));
         const mine = JSON.parse(ok(await run(person, ['rooms', 'ls', '--mine', '--json']), 'ls mine').stdout);
-        if (mine.rooms.find((r: Conversation) => r.kind === 'room')?.unread !== 1) throw new Error(`unread not 1: ${JSON.stringify(mine)}`);
+        if (mine.rooms.find((r: Conversation) => r.name === 'dev')?.unread !== 1) throw new Error(`unread not 1: ${JSON.stringify(mine)}`);
       });
       await ctx.step("the person: `rooms next dev --after 1 --json` prints Alpha's reply and marks it read; nothing newer → exit 4", async () => {
         const next = JSON.parse(ok(await run(person, ['rooms', 'next', 'dev', '--after', '1', '--timeout', '5', '--json']), 'next').stdout);
         if (next.message?.text !== 'I did, reverting') throw new Error(JSON.stringify(next));
         const mine = JSON.parse(ok(await run(person, ['rooms', 'ls', '--mine', '--json']), 'ls mine').stdout);
-        if (mine.rooms.find((r: Conversation) => r.kind === 'room')?.unread !== 0) throw new Error(`unread not 0: ${JSON.stringify(mine)}`);
+        if (mine.rooms.find((r: Conversation) => r.name === 'dev')?.unread !== 0) throw new Error(`unread not 0: ${JSON.stringify(mine)}`);
         ok(await run(person, ['rooms', 'next', 'dev', '--timeout', '2']), 'next timeout', 4);
       });
       await ctx.step('a session of another project, put in by the person, answers with plain `rooms send dev` → its session route', async () => {
@@ -419,27 +418,29 @@ flow(
         const left = JSON.parse(ok(await run(asGamma, ['rooms', 'leave', 'dev', '--json']), 'gamma leave').stdout);
         if (left.removed !== true) throw new Error(JSON.stringify(left));
       });
-      await ctx.step('`kortix dm <alpha prefix> "…"` as the person opens a direct conversation; Alpha `kortix dm <email>` answers it', async () => {
-        const out = JSON.parse(ok(await run(person, ['dm', alpha.slice(0, 8), 'What did migration 0049 change?', '--json']), 'dm alpha').stdout);
-        if (!out.deliveries.some((d: Delivery) => d.session_id === alpha && d.state === 'queued')) throw new Error(JSON.stringify(out));
-        const back = JSON.parse(ok(await run(asAlpha, ['dm', ctx.P.OWNER.email!, 'It added an index, nothing else.', '--json']), 'dm owner').stdout);
-        if (!back.deliveries.some((d: Delivery) => d.user_id === ctx.P.OWNER.userId)) throw new Error(JSON.stringify(back));
-        const mine = JSON.parse(ok(await run(person, ['rooms', 'ls', '--mine', '--json']), 'ls mine').stdout);
-        const direct = mine.rooms.find((r: Conversation) => r.kind === 'direct');
-        if (direct?.unread !== 1 || direct?.peer?.kind !== 'session') throw new Error(`direct conversation: ${JSON.stringify(mine)}`);
+      await ctx.step('`rooms send dev "@<owner email> …"` inside Alpha notifies the person; `rooms notify-idle dev <alpha>` fires at once', async () => {
+        const asked = JSON.parse(ok(await run(asAlpha, ['rooms', 'send', 'dev', `@${ctx.P.OWNER.email} may I revert migration 0049?`, '--json']), 'mention owner').stdout);
+        const owner = asked.deliveries.find((d: Delivery) => d.user_id === ctx.P.OWNER.userId);
+        if (owner?.state !== 'unread' && owner?.state !== 'notified') throw new Error(JSON.stringify(asked));
+        const watch = JSON.parse(ok(await run(person, ['rooms', 'notify-idle', 'dev', alpha.slice(0, 8), '--json']), 'notify-idle').stdout);
+        if (watch.fired_now !== true) throw new Error(JSON.stringify(watch));
+        const read = JSON.parse(ok(await run(person, ['rooms', 'read', 'dev', '--json']), 'read notice').stdout);
+        const notice = read.messages.at(-1);
+        if (notice?.sender_session_id !== alpha || !notice.text.startsWith(`@${ctx.P.OWNER.userId!.slice(0, 8)} `)) throw new Error(JSON.stringify(read));
       });
       await ctx.step('`rooms ls --json` lists dev with 2 members; `rooms info dev` names Alpha and the person', async () => {
         const ls = JSON.parse(ok(await run(person, ['rooms', 'ls', '--json']), 'ls').stdout);
         const dev = ls.rooms.find((room: { name: string }) => room.name === 'dev');
-        if (dev?.member_count !== 2 || dev?.last_seq !== 3) throw new Error(JSON.stringify(ls));
+        if (dev?.member_count !== 2 || dev?.last_seq !== 5) throw new Error(JSON.stringify(ls));
         const info = ok(await run(person, ['rooms', 'info', 'dev']), 'info').stdout;
         if (!info.includes('Alpha') || !info.includes('person')) throw new Error(info);
       });
-      await ctx.step('usage errors exit 2 without a request: unknown subcommand, bad --notify, send with no text, dm with no target', async () => {
+      await ctx.step('usage errors exit 2 without a request: unknown subcommand, bad --notify, send with no text, notify-idle with no session; `dm` is gone', async () => {
         ok(await run(person, ['rooms', 'bogus']), 'bogus', 2);
         ok(await run(person, ['rooms', 'join', 'dev', '--notify', 'loud']), 'notify', 2);
         ok(await run(person, ['rooms', 'send', 'dev'], ''), 'empty send', 2);
-        ok(await run(person, ['dm', 'not-an-id-or-email', 'x']), 'dm target', 2);
+        ok(await run(person, ['rooms', 'notify-idle', 'dev']), 'notify-idle target', 2);
+        ok(await run(person, ['rooms', 'dm', 'x']), 'rooms dm', 2);
       });
     } finally {
       sandbox.dispose();
@@ -494,10 +495,10 @@ flow(
         (await reader.client.post(MESSAGES, { text: 'x' }, { params: r })).status(403);
         (await reader.client.put(SESSION_MEMBER, {}, { params: { ...r, sessionId: reader.sessionId } })).status(403);
       });
-      await ctx.step('an agent with no room permission cannot list or read rooms, or message a person → 403', async () => {
+      await ctx.step('an agent with no room permission cannot list, read or post → 403', async () => {
         (await mute.client.get(ROOMS, { params: p })).status(403);
         (await mute.client.get(MESSAGES, { params: r })).status(403);
-        (await mute.client.post(DIRECT, { email: ctx.P.OWNER.email }, { params: p })).status(403);
+        (await mute.client.post(MESSAGES, { text: 'x' }, { params: r })).status(403);
       });
       await ctx.step('the owner may still put the mute agent in: a post is queued for it, and its answer through its session route → 403', async () => {
         (await owner.put(SESSION_MEMBER, {}, { params: { ...r, sessionId: mute.sessionId } })).status(200);
@@ -518,7 +519,6 @@ flow(
     domain: 'rooms',
     requires: ['database'],
     routes: [
-      'POST /v1/projects/:projectId/rooms/direct',
       'GET /v1/projects/:projectId/rooms/people',
       'POST /v1/projects/:projectId/rooms/:roomId/read',
       'PUT /v1/projects/:projectId/rooms/:roomId/members/people/:userId',
@@ -538,11 +538,6 @@ flow(
     const asAda = ctx.client.as(ada);
     const asBob = ctx.client.as(bob);
     const p = { projectId: project.id };
-    const builder = await createDatabaseSession(ctx.env, {
-      projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId!, visibility: 'project', metadata: { name: 'Builder' },
-    });
-    ctx.track('session', builder, { projectId: project.id });
-
     await ctx.step('people lists the members with project access, not an account member without it', async () => {
       const res = await owner.get(PEOPLE, { params: p });
       res.status(200);
@@ -550,61 +545,51 @@ flow(
       if (!ids.includes(ada.userId!) || !ids.includes(bob.userId!) || ids.includes(outsider.userId!)) throw new Error(JSON.stringify(ids));
     });
 
-    let directId = '';
-    await ctx.step('owner opens a direct conversation with Ada by email → 201 kind direct; again → 200, same id; an outsider → 404', async () => {
-      const res = await owner.post(DIRECT, { email: ada.email }, { params: p });
-      res.status(201).body().has('$.kind', 'direct').has('$.name', null).has('$.peer.kind', 'person');
-      directId = res.json<{ room_id: string }>().room_id;
-      (await owner.post(DIRECT, { user_id: ada.userId }, { params: p })).status(200).body().has('$.room_id', directId);
-      (await owner.post(DIRECT, { user_id: outsider.userId }, { params: p })).status(404);
-      (await owner.post(DIRECT, {}, { params: p })).status(400);
+    let roomId = '';
+    await ctx.step('owner creates ops and adds Ada → a person member; an outsider → 404', async () => {
+      roomId = (await owner.post(ROOMS, { name: 'ops' }, { params: p })).status(201).json<{ room_id: string }>().room_id;
+      (await owner.put(PERSON_MEMBER, {}, { params: { ...p, roomId, userId: ada.userId! } })).status(200).body().has('$.kind', 'person');
+      (await owner.put(PERSON_MEMBER, {}, { params: { ...p, roomId, userId: outsider.userId! } })).status(404);
     });
-    const d = { ...p, roomId: directId };
+    const d = { ...p, roomId };
+    type Note = { kind: string; room_id: string; url: string; read: boolean };
+    const messageNotes = async () => (await asAda.get('/v1/notifications', { query: { limit: 20 } }))
+      .json<{ notifications: Note[] }>().notifications.filter((n) => n.kind === 'message');
 
-    await ctx.step('owner posts → Ada notified; Ada has 1 unread and a `message` notification that opens the conversation', async () => {
-      const res = await owner.post(MESSAGES, { text: 'Can I drop the legacy_events table?' }, { params: d });
+    await ctx.step('room traffic is unread for Ada but sends no notification', async () => {
+      const res = await owner.post(MESSAGES, { text: 'deploy window opens at 18:00' }, { params: d });
+      res.status(201);
+      if (delivery(res.json<PostResult>(), ada.userId!).state !== 'unread') throw new Error(`Ada should only be unread: ${res.text()}`);
+      (await asAda.get(`${ROOMS}?mine=true`, { params: p })).status(200).body().has('$.rooms[0].room_id', roomId).has('$.rooms[0].unread', 1);
+      if ((await messageNotes()).length !== 0) throw new Error('room traffic notified Ada');
+    });
+    await ctx.step('@-mentioning Ada by email notifies her; the notification opens the room', async () => {
+      const res = await owner.post(MESSAGES, { text: `@${ada.email} can I drop the legacy_events table?` }, { params: d });
       res.status(201);
       if (delivery(res.json<PostResult>(), ada.userId!).state !== 'notified') throw new Error(`Ada not notified: ${res.text()}`);
-      (await asAda.get(`${ROOMS}?mine=true`, { params: p })).status(200).body().has('$.rooms[0].room_id', directId).has('$.rooms[0].unread', 1);
-      type Note = { kind: string; room_id: string; url: string; read: boolean };
-      const note = await waitFor(async () => {
-        const r = await asAda.get('/v1/notifications', { query: { limit: 20 } });
-        return r.json<{ notifications: Note[] }>().notifications.find((n) => n.kind === 'message') ?? null;
-      }, { until: (row) => row !== null, timeoutMs: 10_000, intervalMs: 250, description: 'message notification' });
-      if (!note || note.room_id !== directId || !note.url.startsWith(`/projects/${project.id}/rooms/${directId}?notification=`) || note.read) throw new Error(JSON.stringify(note));
+      const note = await waitFor(async () => (await messageNotes())[0] ?? null, { until: (row) => row !== null, timeoutMs: 10_000, intervalMs: 250, description: 'message notification' });
+      if (!note || note.room_id !== roomId || !note.url.startsWith(`/projects/${project.id}/rooms/${roomId}?notification=`) || note.read) throw new Error(JSON.stringify(note));
     });
-    await ctx.step('a direct conversation is private: Bob reads, posts, gets → 404; no one can add a member → 409', async () => {
-      (await asBob.get(MESSAGES, { params: d })).status(404);
-      (await asBob.post(MESSAGES, { text: 'hi' }, { params: d })).status(404);
-      (await asBob.get(ROOM, { params: d })).status(404);
-      (await owner.put(PERSON_MEMBER, {}, { params: { ...d, userId: bob.userId! } })).status(409);
-      (await owner.put(SESSION_MEMBER, {}, { params: { ...d, sessionId: builder } })).status(409);
-    });
-    await ctx.step('Ada marks it read → unread 0 and the notification is read; she answers → the owner has 1 unread', async () => {
-      (await asAda.post(READ, {}, { params: d })).status(200).body().has('$.last_read_seq', 1);
+    await ctx.step('Ada marks the room read → unread 0 and the notification is read; her reply to #2 notifies the owner', async () => {
+      (await asAda.post(READ, {}, { params: d })).status(200).body().has('$.last_read_seq', 2);
       (await asAda.get(`${ROOMS}?mine=true`, { params: p })).status(200).body().has('$.rooms[0].unread', 0);
-      const notes = (await asAda.get('/v1/notifications', { query: { limit: 20 } })).json<{ notifications: { kind: string; read: boolean }[] }>().notifications;
-      if (notes.some((n) => n.kind === 'message' && !n.read)) throw new Error('message notification still unread');
-      (await asAda.post(MESSAGES, { text: 'Yes, nothing reads it since July.', reply_to: 1 }, { params: d })).status(201);
+      if ((await messageNotes()).some((n) => !n.read)) throw new Error('message notification still unread');
+      const res = await asAda.post(MESSAGES, { text: 'Yes, nothing reads it since July.', reply_to: 2 }, { params: d });
+      res.status(201);
+      if (delivery(res.json<PostResult>(), ctx.P.OWNER.userId!).state !== 'notified') throw new Error(`a reply did not notify the owner: ${res.text()}`);
       (await owner.get(`${ROOMS}?mine=true`, { params: p })).status(200).body().has('$.rooms[0].unread', 1);
     });
-    await ctx.step('owner direct-messages the Builder session → a room event for it; the session cannot be given a second direct peer by Bob', async () => {
-      const res = await owner.post(DIRECT, { session_id: builder }, { params: p });
-      res.status(201).body().has('$.peer.kind', 'session');
-      const sessionDirect = res.json<{ room_id: string }>().room_id;
-      (await owner.post(MESSAGES, { text: 'What did migration 0049 change?' }, { params: { ...p, roomId: sessionDirect } })).status(201);
-      const events = await roomEvents(ctx, builder);
-      if (!events.some((t) => t.startsWith('[direct message · #1 · from ') && t.includes(`kortix rooms send ${sessionDirect}`))) throw new Error(JSON.stringify(events));
-      (await asBob.get(MESSAGES, { params: { ...p, roomId: sessionDirect } })).status(404);
+    await ctx.step('there are no direct conversations: POST /rooms/direct → 404', async () => {
+      (await owner.post('/v1/projects/:projectId/rooms/direct', { email: ada.email }, { params: p })).status(404);
     });
     await ctx.step('a person joins a room themselves, gets unread from others, and leaves; adding an outsider → 404', async () => {
-      const roomId = (await owner.post(ROOMS, { name: 'dev' }, { params: p })).status(201).json<{ room_id: string }>().room_id;
-      const r = { ...p, roomId };
+      const devId = (await owner.post(ROOMS, { name: 'dev' }, { params: p })).status(201).json<{ room_id: string }>().room_id;
+      const r = { ...p, roomId: devId };
       (await asBob.put(PERSON_MEMBER, {}, { params: { ...r, userId: bob.userId! } })).status(200).body().has('$.kind', 'person');
       (await owner.put(PERSON_MEMBER, {}, { params: { ...r, userId: outsider.userId! } })).status(404);
       (await owner.post(MESSAGES, { text: 'deploy at 5' }, { params: r })).status(201);
       const mine = (await asBob.get(`${ROOMS}?mine=true`, { params: p })).json<{ rooms: Conversation[] }>().rooms;
-      if (mine.find((x) => x.room_id === roomId)?.unread !== 1) throw new Error(JSON.stringify(mine));
+      if (mine.find((x) => x.room_id === devId)?.unread !== 1) throw new Error(JSON.stringify(mine));
       (await asBob.del(PERSON_MEMBER, { params: { ...r, userId: bob.userId! } })).status(200).body().has('$.removed', true);
       (await ctx.client.as(ada).del(PERSON_MEMBER, { params: { ...r, userId: bob.userId! } })).status(200).body().has('$.removed', false);
     });
@@ -636,7 +621,7 @@ flow(
     ctx.track('session', worker, { projectId: project.id });
 
     await ctx.step('agent_rooms off → idle-notice 403 feature_disabled', async () => {
-      (await owner.post(IDLE_NOTICE, {}, { params: { ...p, sessionId: worker } })).status(403).body().has('$.code', 'feature_disabled');
+      (await owner.post(IDLE_NOTICE, { room: 'dev' }, { params: { ...p, sessionId: worker } })).status(403).body().has('$.code', 'feature_disabled');
     });
     await setDatabaseProjectFeature(ctx.env, project.id, 'agent_rooms', true);
     const helper = await createDatabaseSession(ctx.env, {
@@ -644,11 +629,9 @@ flow(
     });
     ctx.track('session', helper, { projectId: project.id });
 
-    await ctx.step('a direct message and an @-mention steer the running turn; room chatter waits for the turn to end', async () => {
-      const direct = (await owner.post(DIRECT, { session_id: worker }, { params: p })).status(201).json<{ room_id: string }>().room_id;
-      (await owner.post(MESSAGES, { text: 'status?' }, { params: { ...p, roomId: direct } })).status(201);
-      if ((await newestDelivery(ctx, worker)) !== 'steer') throw new Error('direct message is not a steer');
-      const roomId = (await owner.post(ROOMS, { name: 'dev' }, { params: p })).status(201).json<{ room_id: string }>().room_id;
+    let roomId = '';
+    await ctx.step('an @-mention steers the running turn; room chatter waits for the turn to end; mentioning a non-member adds it', async () => {
+      roomId = (await owner.post(ROOMS, { name: 'dev' }, { params: p })).status(201).json<{ room_id: string }>().room_id;
       (await owner.put(SESSION_MEMBER, {}, { params: { ...p, roomId, sessionId: worker } })).status(200);
       (await owner.post(MESSAGES, { text: 'deploy at 5' }, { params: { ...p, roomId } })).status(201);
       if ((await newestDelivery(ctx, worker)) !== null) throw new Error('room chatter should wait for the turn boundary');
@@ -658,21 +641,20 @@ flow(
       res.status(201);
       const d = delivery(res.json<PostResult>(), helper) as Delivery & { added?: boolean };
       if (d.state !== 'queued' || d.added !== true) throw new Error(`mentioned non-member not added: ${res.text()}`);
-      (await owner.get(ROOM, { params: { ...p, roomId } })).status(200).body().has('$.member_count', 2);
+      (await owner.get(ROOM, { params: { ...p, roomId } })).status(200).body().has('$.member_count', 3);
     });
 
-    await ctx.step('idle-notice on a session with no live turn fires now: the owner gets a direct message from it', async () => {
-      (await owner.post(IDLE_NOTICE, {}, { params: { ...p, sessionId: worker } })).status(200).body().has('$.fired_now', true);
-      const mine = (await owner.get(`${ROOMS}?mine=true`, { params: p })).json<{ rooms: Conversation[] }>().rooms;
-      const direct = mine.find((r) => r.kind === 'direct' && r.peer?.kind === 'session');
-      if (!direct) throw new Error(JSON.stringify(mine));
-      const page = (await owner.get(MESSAGES, { params: { ...p, roomId: direct.room_id } })).json<{ messages: { sender_kind: string; text: string }[] }>().messages;
+    await ctx.step('idle-notice on a session with no live turn fires now: it posts in the room, @-mentioning the owner', async () => {
+      (await owner.post(IDLE_NOTICE, { room: 'dev' }, { params: { ...p, sessionId: worker } })).status(200).body().has('$.fired_now', true);
+      const page = (await owner.get(MESSAGES, { params: { ...p, roomId } })).json<{ messages: { sender_kind: string; sender_session_id: string | null; text: string }[] }>().messages;
       const notice = page.at(-1)!;
-      if (notice.sender_kind !== 'session' || !notice.text.includes('finished its turn and is idle')) throw new Error(JSON.stringify(page));
+      if (notice.sender_session_id !== worker || !notice.text.startsWith(`@${ctx.P.OWNER.userId!.slice(0, 8)} `) || !notice.text.includes('finished its turn and is idle')) throw new Error(JSON.stringify(page));
+      (await owner.post(IDLE_NOTICE, { room: 'nope' }, { params: { ...p, sessionId: worker } })).status(404);
+      (await owner.post(IDLE_NOTICE, {}, { params: { ...p, sessionId: worker } })).status(400);
     });
     await ctx.step('NONMEMBER → 403; an unknown session → 404', async () => {
-      (await ctx.client.as(ctx.P.NONMEMBER).post(IDLE_NOTICE, {}, { params: { ...p, sessionId: worker } })).status(403);
-      (await owner.post(IDLE_NOTICE, {}, { params: { ...p, sessionId: crypto.randomUUID() } })).status(404);
+      (await ctx.client.as(ctx.P.NONMEMBER).post(IDLE_NOTICE, { room: 'dev' }, { params: { ...p, sessionId: worker } })).status(403);
+      (await owner.post(IDLE_NOTICE, { room: 'dev' }, { params: { ...p, sessionId: crypto.randomUUID() } })).status(404);
     });
   },
 );

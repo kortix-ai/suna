@@ -24,6 +24,7 @@ set statement_timeout = '30s';
 CREATE TABLE "kortix"."session_idle_watches" (
 	"watch_id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"target_session_id" text NOT NULL,
+	"room_id" uuid NOT NULL,
 	"project_id" uuid NOT NULL,
 	"account_id" uuid NOT NULL,
 	"watcher_kind" varchar(16) NOT NULL,
@@ -36,5 +37,6 @@ CREATE TABLE "kortix"."session_idle_watches" (
 );
 --> statement-breakpoint
 ALTER TABLE "kortix"."session_idle_watches" ADD CONSTRAINT "session_idle_watches_target_fk" FOREIGN KEY ("target_session_id") REFERENCES "kortix"."project_sessions"("session_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "kortix"."session_idle_watches" ADD CONSTRAINT "session_idle_watches_room_fk" FOREIGN KEY ("room_id") REFERENCES "kortix"."rooms"("room_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."session_idle_watches" ADD CONSTRAINT "session_idle_watches_project_fk" FOREIGN KEY ("project_id") REFERENCES "kortix"."projects"("project_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_session_idle_watches_target" ON "kortix"."session_idle_watches" USING btree ("target_session_id");ALTER TABLE "kortix"."session_idle_watches" ENABLE ROW LEVEL SECURITY;

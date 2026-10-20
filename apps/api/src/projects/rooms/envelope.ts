@@ -10,7 +10,8 @@ export const AGENT_CHAIN_LIMIT = 20;
 /** The `@` tokens in a message, lowercased: `@3f2a1b9c`, `@builder`, `@all`. */
 export function mentionTokens(text: string): Set<string> {
   const out = new Set<string>();
-  for (const match of text.matchAll(/(?:^|[^\w@])@([a-z0-9][a-z0-9._-]{1,63})/gi)) out.add(match[1]!.toLowerCase());
+  // `@ada@example.test` is one token: a person is mentioned by email too.
+  for (const match of text.matchAll(/(?:^|[^\w@])@([a-z0-9][a-z0-9._+-]{1,63}(?:@[a-z0-9.-]+[a-z0-9])?)/gi)) out.add(match[1]!.toLowerCase().replace(/[._+-]+$/, ''));
   return out;
 }
 
@@ -26,7 +27,7 @@ export function mentionsMember(tokens: Set<string>, member: { ids: readonly stri
     for (const token of tokens) if (token.length >= 8 && lower.startsWith(token)) return true;
   }
   return member.names.some((name) => {
-    const slug = name.toLowerCase().trim().replace(/[^a-z0-9._-]+/g, '-');
+    const slug = name.toLowerCase().trim().replace(/[^a-z0-9._@+-]+/g, '-');
     return !!slug && tokens.has(slug);
   });
 }
@@ -38,7 +39,7 @@ export function agentChainReached(recentSenderKinds: readonly string[], limit = 
 
 /** The text a member session receives (`@kortix/shared` room-prompt owns the format). */
 export function roomMessagePrompt(input: {
-  room: { kind: 'room' | 'direct'; name: string | null; roomId: string };
+  room: { name: string; roomId: string };
   seq: number;
   senderKind: 'member' | 'session';
   senderLabel: string;
@@ -47,9 +48,7 @@ export function roomMessagePrompt(input: {
   roomProjectId?: string | null;
 }): string {
   return roomPromptText({
-    kind: input.room.kind,
     room: input.room.name,
-    roomId: input.room.roomId,
     seq: input.seq,
     senderKind: input.senderKind,
     sender: input.senderLabel,

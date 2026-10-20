@@ -168,10 +168,9 @@ export function roomMessageHeader(text: string): { header: string; body: string 
   }
   const room = parseRoomPrompt(text);
   if (!room) return null;
-  const where = room.kind === 'direct' ? 'direct message' : `room ${room.room}`;
   const who = room.senderKind === 'session' ? `agent session ${room.sender}` : room.sender;
   const reply = room.replyTo ? ` ↳#${room.replyTo}` : '';
-  return { header: `${where} #${room.seq} · from ${who}${reply}`, body: room.text };
+  return { header: `room ${room.room} #${room.seq} · from ${who}${reply}`, body: room.text };
 }
 
 /** Print one session-log message: a role header, its blocks as text, and its error. */
