@@ -16,7 +16,7 @@ import { useOpenCodeCompactionStore as realCompactionStore } from '../../browser
 function makeFakeQueryClient() {
   const cache = new Map<string, unknown>();
   const cacheKey = (k: readonly unknown[]) => JSON.stringify(k);
-  const refetchCalls: Array<{ predicate: (query: { queryKey: readonly unknown[] }) => boolean }> = [];
+  const refetchCalls: Array<{ queryKey?: readonly unknown[]; predicate?: (query: { queryKey: readonly unknown[] }) => boolean }> = [];
   return {
     setQueryData: (k: readonly unknown[], updater: unknown) => {
       const existing = cache.get(cacheKey(k));
@@ -26,7 +26,7 @@ function makeFakeQueryClient() {
       return value;
     },
     getQueryData: (k: readonly unknown[]) => cache.get(cacheKey(k)),
-    refetchQueries: (opts: { predicate: (query: { queryKey: readonly unknown[] }) => boolean }) => {
+    refetchQueries: (opts: { queryKey?: readonly unknown[]; predicate?: (query: { queryKey: readonly unknown[] }) => boolean }) => {
       refetchCalls.push(opts);
     },
     refetchCalls,
@@ -387,7 +387,7 @@ describe('useForkSession', () => {
     if (!mutationSuccess) throw new Error('Missing mutation onSuccess');
     await mutationSuccess(forked);
     const call = fakeQueryClient.refetchCalls[0];
-    if (!call) throw new Error('Missing inventory refetch');
+    if (!call?.predicate) throw new Error('Missing inventory refetch predicate');
     expect(call.predicate({ queryKey: [...qk.project.sessions('p')] })).toBe(true);
     expect(call.predicate({ queryKey: ['runtime', 'sessions'] })).toBe(false);
   });
