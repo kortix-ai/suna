@@ -912,6 +912,10 @@ const envSchema = z.object({
   // (notifications/expo-push.ts). The access token is optional: Expo accepts
   // unauthenticated sends unless the project enables enhanced push security.
   EXPO_ACCESS_TOKEN: optStr,
+  // Expo push sends (KRTX-2938). Unset: off on a local stack (the launchers
+  // set KORTIX_INSTANCE_ID), on everywhere else. A local stack holds tokens of
+  // real phones, and Expo routes them to the App Store app. `true` opts in.
+  EXPO_PUSH_ENABLED: optBoolUnset,
   // Kill switch for session push notifications. On by default; `0` or `false`
   // stops every send. Device-token registration keeps working.
   PUSH_NOTIFICATIONS_ENABLED: z
@@ -1594,6 +1598,7 @@ export const config = {
   RESEND_API_KEY: env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
   EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN,
+  EXPO_PUSH_ENABLED: env.EXPO_PUSH_ENABLED ?? !env.KORTIX_INSTANCE_ID,
   PUSH_NOTIFICATIONS_ENABLED: env.PUSH_NOTIFICATIONS_ENABLED,
   MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,

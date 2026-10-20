@@ -13,8 +13,9 @@
  * `lib/session/attachment-tile.ts`.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Keyboard, Platform, Pressable, TextInput, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { requireOptionalNativeModule } from 'expo';
 import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
@@ -82,6 +83,16 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { useToast } from '@/components/kortix/toast-provider';
+
+/**
+ * iOS: the long-press menu is the system context menu (SwiftUI `contextMenu`
+ * through `@expo/ui`), as in Messages and the Claude app: the bubble lifts,
+ * the rest of the thread blurs, and iOS 26 draws the menu in Liquid Glass.
+ * Android and a binary without `ExpoUI` keep the RNR menu. Required lazily so
+ * bun tests and Android never load the SwiftUI views.
+ */
+const NATIVE_MESSAGE_MENU = Platform.OS === 'ios' && requireOptionalNativeModule('ExpoUI') != null;
+const swiftUI: typeof import('@expo/ui/swift-ui') | null = NATIVE_MESSAGE_MENU ? require('@expo/ui/swift-ui') : null;
 
 // ─── Values (web → rendered px) ──────────────────────────────────────────────
 
@@ -272,7 +283,7 @@ function SessionSourcePill({
 
 // ─── UserMessage ─────────────────────────────────────────────────────────────
 
-export function UserMessage({
+function UserMessageImpl({
   turn,
   isDark,
   agentNames,
@@ -379,6 +390,9 @@ export function UserMessage({
     Keyboard.dismiss();
     menuRef.current?.open();
   }, [copyText]);
+  // The native menu owns the long press: the bubble's own Pressable must not
+  // also fire it.
+  const longPress = NATIVE_MESSAGE_MENU ? undefined : openMenu;
   const menuProps = {
     menuRef,
     text: copyText,
@@ -428,7 +442,7 @@ export function UserMessage({
         {body ? (
           <MessageMenu {...menuProps}>
             <View className="items-end">
-              <UserMessageBubble isDark={isDark} onLongPress={openMenu} fullText={fullText}>
+              <UserMessageBubble isDark={isDark} onLongPress={longPress} fullText={fullText}>
                 {body}
               </UserMessageBubble>
             </View>
@@ -499,7 +513,7 @@ export function UserMessage({
                 attachments={attachments}
                 status={failed}
                 onOpenPath={onFileMention}
-                onLongPressPaste={selecting ? undefined : openMenu}
+                onLongPressPaste={selecting ? undefined : longPress}
               />
             </MessageMenu>
           )
@@ -509,7 +523,7 @@ export function UserMessage({
         {hasBubble ? (
           <MessageSenderAbove sender={sender}>
             {/* A failed send greys its bubble; "Try again" above stays full strength. */}
-            <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
+            <MessageMenu {...menuProps} selecting={selecting} onSelectText={() => setSelecting(true)}>
               <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
                 <UserMessageBubble
                   isDark={isDark}
@@ -517,7 +531,7 @@ export function UserMessage({
                   quotes={content.quotes}
                   fullText={selecting ? undefined : promptText}
                   // While selecting, a long press belongs to the text selection.
-                  onLongPress={selecting ? undefined : openMenu}>
+                  onLongPress={selecting ? undefined : longPress}>
                   {selecting ? (
                     <SelectableMessageText text={promptText} isDark={isDark} />
                   ) : bodyText || commandInfo ? (
@@ -548,7 +562,8 @@ export function UserMessage({
  * The message menu, anchored under its bubble (`relativeTo="trigger"`, bottom,
  * end-aligned like the bubble): the time it was sent, then Copy · Select text
  * · Edit. The components are the RNR `context-menu`; `ContextMenuContent`
- * portals over the thread and closes on a tap outside or an item.
+ * portals over the thread and closes on a tap outside or an item. On iOS the
+ * same items render in the system menu instead (`NativeMessageMenu`).
  */
 function MessageMenu({
   menuRef,
@@ -556,6 +571,7 @@ function MessageMenu({
   timestamp,
   onEdit,
   onSelectText,
+  selecting = false,
   children,
 }: {
   menuRef: React.RefObject<TriggerRef | null>;
@@ -563,6 +579,8 @@ function MessageMenu({
   timestamp: number | null;
   onEdit?: () => void;
   onSelectText?: () => void;
+  /** Select text is on: a long press belongs to the text selection, not the menu. */
+  selecting?: boolean;
   children: React.ReactNode;
 }) {
   const toast = useToast();
@@ -573,6 +591,15 @@ function MessageMenu({
     haptics.success();
     toast.success('Copied');
   }, [text, toast]);
+
+  if (NATIVE_MESSAGE_MENU) {
+    if (selecting || !text) return <>{children}</>;
+    return (
+      <NativeMessageMenu sentLabel={sentLabel} onCopy={() => void copy()} onSelectText={onSelectText} onEdit={onEdit}>
+        {children}
+      </NativeMessageMenu>
+    );
+  }
 
   return (
     <ContextMenu relativeTo="trigger">
@@ -606,6 +633,53 @@ function MessageMenu({
         ) : null}
       </ContextMenuContent>
     </ContextMenu>
+  );
+}
+
+/**
+ * The iOS system context menu around a message: SwiftUI `contextMenu` on a
+ * `Host` that hosts the React Native bubble (`RNHostView`). A long press lifts
+ * the bubble as the preview and opens the menu (Liquid Glass on iOS 26); the
+ * system plays the haptic and closes the keyboard. Taps inside the bubble
+ * (Show more, mentions) still reach React Native.
+ *
+ * The hosted view lays out in its own root, so it gets the column's width cap
+ * in points: 80% of the thread's width inside its 16pt edges (`px-4`).
+ */
+function NativeMessageMenu({
+  sentLabel,
+  onCopy,
+  onSelectText,
+  onEdit,
+  children,
+}: {
+  sentLabel: string | null;
+  onCopy: () => void;
+  onSelectText?: () => void;
+  onEdit?: () => void;
+  children: React.ReactNode;
+}) {
+  const { colorScheme } = useColorScheme();
+  const { width } = useWindowDimensions();
+  const { Host, ContextMenu: SystemContextMenu, RNHostView, Button: MenuItem, Section } = swiftUI!;
+  const items = [
+    <MenuItem key="copy" label="Copy" systemImage="doc.on.doc" onPress={onCopy} />,
+    onSelectText ? (
+      <MenuItem key="select" label="Select text" systemImage="character.cursor.ibeam" onPress={onSelectText} />
+    ) : null,
+    onEdit ? <MenuItem key="edit" label="Edit" systemImage="pencil" onPress={onEdit} /> : null,
+  ];
+  return (
+    <Host matchContents colorScheme={colorScheme === 'dark' ? 'dark' : 'light'}>
+      <SystemContextMenu>
+        <SystemContextMenu.Items>{sentLabel ? <Section title={sentLabel}>{items}</Section> : items}</SystemContextMenu.Items>
+        <SystemContextMenu.Trigger>
+          <RNHostView matchContents>
+            <View style={{ maxWidth: (width - 32) * 0.8 }}>{children}</View>
+          </RNHostView>
+        </SystemContextMenu.Trigger>
+      </SystemContextMenu>
+    </Host>
   );
 }
 
@@ -1096,3 +1170,19 @@ function MessageAttachmentTile({
   }
   return <AttachmentTile filename={file.filename} mime={file.mime} onPress={open} />;
 }
+
+type UserMessageProps = Parameters<typeof UserMessageImpl>[0];
+
+/**
+ * The prompt reads only `turn.user`. The live turn is a new object on every
+ * streamed frame; comparing the prompt instead keeps the bubble from
+ * re-rendering while the reply streams under it.
+ */
+function sameUserMessageProps(a: UserMessageProps, b: UserMessageProps): boolean {
+  for (const key of Object.keys(b) as (keyof UserMessageProps)[]) {
+    if (key === 'turn' ? a.turn.user !== b.turn.user : a[key] !== b[key]) return false;
+  }
+  return Object.keys(a).length === Object.keys(b).length;
+}
+
+export const UserMessage = memo(UserMessageImpl, sameUserMessageProps);
