@@ -15,10 +15,16 @@
  * sits on the page's 16pt padding edge. When the `···` button is absent, the
  * pill itself must hold that edge — callers pass `edge={false}` on the pill
  * only when `onOpenMore` is also passed.
+ *
+ * On iOS 26+ the `···` button sits on a Liquid Glass circle, like the
+ * hamburger across the row (`MenuButton glass`; Jay, 2026-10-20), and drops the
+ * `-mr-2.5` pull so the visible circle sits on the padding edge. Android and
+ * older iOS keep the plain ghost button.
  */
 import * as React from 'react';
 import { Keyboard, View } from 'react-native';
 
+import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { DotsThreeIcon } from '@/lib/icons';
@@ -38,13 +44,14 @@ export function ProjectHeaderActions({ onOpenMore, children }: ProjectHeaderActi
         <Button
           variant="ghost"
           size="icon"
-          className="-mr-2.5 rounded-full bg-background"
+          className={LIQUID_GLASS_AVAILABLE ? 'rounded-full' : '-mr-2.5 rounded-full bg-background'}
           onPress={() => {
             Keyboard.dismiss();
             onOpenMore();
           }}
           accessibilityLabel="Session actions"
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          {LIQUID_GLASS_AVAILABLE ? <LiquidGlassCapsule /> : null}
           <Icon as={DotsThreeIcon} size={20} className="text-foreground" />
         </Button>
       ) : null}

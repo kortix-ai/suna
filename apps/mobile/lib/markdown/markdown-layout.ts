@@ -21,10 +21,11 @@ export function web(steps: number): number {
 /** Web type ramp (`app/globals.css` `--text-*`), [fontSize, lineHeight]. */
 export const TYPE = {
   /**
-   * Chat prose. Web's `.kortix-markdown` root is `text-[15px]`; mobile reads
-   * one step up at 16px (Jay, 2026-09-22), `leading-relaxed` (1.625) = 26.
+   * Chat prose. Web's `.kortix-markdown` root is `text-[15px]`; mobile matches
+   * it at 15px on a 24pt line (1.6). It was 16/26 (Jay, 2026-09-22) and read
+   * too large (KRTX-2927).
    */
-  body: { fontSize: 16, lineHeight: 26 },
+  body: { fontSize: 15, lineHeight: 24 },
   xs: { fontSize: 13, lineHeight: 16 },
   sm: { fontSize: 14, lineHeight: 20 },
   base: { fontSize: 16, lineHeight: 24 },
@@ -131,7 +132,7 @@ const IOS_ATTACHMENT_DESCENDER = 2.76;
  *   attachment is the whole line fragment, and the font is Helvetica 12.
  *   That bottom sits `Roobert descent + half-leading - 2.76` above the line
  *   baseline, so the shift is the chip baseline offset minus that drop:
- *   0.00px in body text, +2.22px in table cells.
+ *   +0.61px in body text, +2.22px in table cells.
  */
 export function inlineCodeAnchor(
   os: string,
