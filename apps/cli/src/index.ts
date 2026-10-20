@@ -16,6 +16,7 @@ import { runCr } from './commands/cr.ts';
 import { runDoctor } from './commands/doctor.ts';
 import { runEnv } from './commands/env.ts';
 import { runFeedback } from './commands/feedback.ts';
+import { runDrive } from './commands/drive.ts';
 import { runFiles } from './commands/files.ts';
 import { runGateway } from './commands/gateway.ts';
 import { runGitCredential } from './commands/git-credential.ts';
@@ -232,6 +233,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   tui: (rest) => runTui(rest),
   t: (rest) => runTui(rest),
   files: (rest) => runFiles(rest),
+  drive: (rest) => runDrive(rest),
   cr: (rest) => runCr(rest),
   review: (rest) => runReview(rest),
   triggers: (rest) => runTriggers(rest),

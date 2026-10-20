@@ -3,6 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   STREAM_COMMIT_MS,
   STREAM_FADE_MS,
+  STREAM_MAX_LAG_MS,
+
   createStreamPacer,
   revealCut,
   type PacerClock,
@@ -38,6 +40,13 @@ function fakeClock() {
         for (const fn of due) fn();
       }
       now = until;
+    },
+    /** One frame `ms` after the last: a stalled or throttled main thread. */
+    step(ms: number) {
+      now += ms;
+      const due = [...frames.values()];
+      frames.clear();
+      for (const fn of due) fn();
     },
     pending: () => frames.size,
     setHidden: (value: boolean) => {
@@ -204,16 +213,43 @@ describe('createStreamPacer', () => {
     expect(p.pending()).toBe(0);
   });
 
-  test('the stream ending drains the rest within a few hundred ms and drops nothing', () => {
+  test('the stream ending shows the rest in the same frame and drops nothing', () => {
     const p = setup();
     const full = `${words(120)} tail`;
     p.pacer.push(full, true);
     p.advance(48);
+    expect(p.last().length).toBeLessThan(full.length);
     p.pacer.push(full, false);
-    p.advance(400 + STREAM_FADE_MS);
     expect(p.last()).toBe(full);
+    p.advance(STREAM_FADE_MS + 40);
     expect(p.settles.length).toBe(1);
     expect(p.pending()).toBe(0);
+  });
+
+  test('slow frames do not slow the reveal: it stays within STREAM_MAX_LAG_MS of the network', () => {
+    const p = setup();
+    const full = `${words(400)} `;
+    // ~440 chars a second, rendered at 2.5 frames a second (a throttled, busy tab).
+    let received = 0;
+    for (let ms = 0; received < full.length; ms += 400) {
+      received = Math.min(full.length, received + 176);
+      p.pacer.push(full.slice(0, received), true);
+      p.step(400);
+      // What was received one frame plus STREAM_MAX_LAG_MS ago is on screen.
+      const due = received - Math.ceil((440 * (400 + STREAM_MAX_LAG_MS)) / 1000);
+      if (due > 0) expect(p.last().length).toBeGreaterThanOrEqual(due - 12);
+    }
+  });
+
+  test('text left waiting by a stall shows at once instead of typing out late', () => {
+    const p = setup();
+    const full = `${words(200)} `;
+    p.pacer.push(full, true);
+    // One frame, then the main thread stalls for 2 s.
+    p.step(16);
+    expect(p.last()?.length ?? 0).toBeLessThan(full.length / 4);
+    p.step(2000);
+    expect(p.last()).toBe(full);
   });
 
   test('a trailing partial word waits without spinning frames, then lands on the next chunk', () => {

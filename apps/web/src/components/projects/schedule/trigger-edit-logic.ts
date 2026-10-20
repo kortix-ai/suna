@@ -66,6 +66,7 @@ export function draftFromTrigger(
     sessionAccess: trigger.session_access,
     maxRunsPerHour: trigger.max_runs_per_hour ? String(trigger.max_runs_per_hour) : '',
     maxRunsPerDay: trigger.max_runs_per_day ? String(trigger.max_runs_per_day) : '',
+    overlap: trigger.overlap ?? 'default',
   };
 }
 
@@ -152,5 +153,7 @@ export function triggerPatch(
   if (draft.maxRunsPerDay.trim() !== saved.maxRunsPerDay.trim()) {
     out.max_runs_per_day = runCapFromInput(draft.maxRunsPerDay);
   }
+  // Default sends null: skip for a schedule, allow for the others.
+  if (draft.overlap !== saved.overlap) out.overlap = draft.overlap === 'default' ? null : draft.overlap;
   return out;
 }

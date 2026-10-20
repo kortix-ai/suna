@@ -76,7 +76,7 @@ import { ReviewDetailSheet } from '@/components/review/ReviewDetailSheet';
 import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
-import { ComposerBottomFade } from '@/components/session/composer-bottom-fade';
+import { ComposerBottomFade, composerSafeAreaPadding } from '@/components/session/composer-bottom-fade';
 
 import {
   addOptimisticMessage,
@@ -333,11 +333,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // the status bar and that button — inset it below them
   // (FLOATING_MENU_CLEARANCE, where the top fade ends).
   const listTopInset = insets.top + FLOATING_MENU_CLEARANCE;
-  // The bottom area rests above the home indicator (`insets.bottom`). While
-  // the keyboard is up the indicator is covered, so the inset collapses with
-  // the keyboard's progress: the composer then sits its own 12pt (`pb-3`) above
-  // the keyboard, the same gap as the project home composer (design.md §5).
-  const bottomInset = insets.bottom;
+  // The composer card rests on the safe-area line: the bottom area pads the
+  // inset minus the composer's own 12pt (`pb-3`), so the gap is
+  // `max(insets.bottom, 12)`, not `insets.bottom + 12` (KRTX-2930). While the
+  // keyboard is up the indicator is covered, so this padding collapses with the
+  // keyboard's progress: the composer then sits its own 12pt above the
+  // keyboard, the same gap as the project home composer (design.md §5).
+  const bottomInset = composerSafeAreaPadding(insets.bottom);
   const { progress: keyboardProgress, height: providerKeyboardHeight } = useReanimatedKeyboardAnimation();
   const bottomAreaStyle = useAnimatedStyle(() => ({
     paddingBottom: bottomInset * (1 - keyboardProgress.value),

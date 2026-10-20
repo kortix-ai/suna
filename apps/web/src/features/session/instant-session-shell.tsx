@@ -78,16 +78,16 @@ export function InstantSessionShell({
    *  page can mount the real chat and crossfade it in. */
   onSubmit?: () => void;
   /**
-   * The real chat underneath already holds the prompt in its transcript.
+   * The real chat underneath already holds the prompt in its transcript: the
+   * queued rows behind the first prompt step aside for the chat's own.
    *
-   * This shell dissolves over that chat during the crossfade, and for the
-   * length of the fade both are on screen. While the shell still paints its own
-   * copy of the prompt, that is two copies — measured 2026-09-08: both
-   * stand-ins at full opacity, then the shell's fading over the real bubble.
-   * The transcript's copy is the one that stays, so the moment it exists the
-   * shell's steps aside. The shell keeps everything else (header, composer,
-   * the queued rows behind the first prompt); only the bubble it was standing
-   * in for goes.
+   * The first prompt's bubble does NOT. The overlay is opaque until the chat is
+   * ready and then dissolves off it, and the chat draws the same bubble at the
+   * same place, so the shell keeps its copy for its whole life. Dropping it
+   * when the transcript arrived blanked the thread under the opaque overlay,
+   * then faded the bubble back in (KRTX-2931). The 2026-09-08 double bubble
+   * came from the shell turning transparent when its `submitted` un-latched,
+   * which `useFirstPromptSources` now latches.
    */
   hasTranscript?: boolean;
   draftActive?: boolean;
@@ -342,7 +342,7 @@ export function InstantSessionShell({
                 used to claim. It had stopped being true: this column ran
                 `px-3 py-6 sm:px-6` against the chat's `px-7 pt-6`. */}
             <div className={SESSION_TRANSCRIPT_CLASS}>
-              {effectiveSubmission && !hasTranscript && (
+              {effectiveSubmission && (
                 <div
                   className="flex min-w-0 flex-col"
                   data-queue-tone={firstPromptRow?.state === 'failed' ? 'failed' : 'pending'}

@@ -25,6 +25,9 @@ const SESSION_B = '00000000-0000-4000-a000-000000000502';
 const SESSION_C = '00000000-0000-4000-a000-000000000503';
 /** A pi-harness session: its runtime lists no `session.compact` / `session.attach`. */
 const SESSION_PI = '00000000-0000-4000-a000-000000000504';
+/** A new session whose first turn failed before `--wait` returned (KRTX-2913). */
+const SESSION_FAILED_TURN = '00000000-0000-4000-a000-000000000506';
+const FAILED_TURN_ERROR = 'agent turn failed: APIError: "synthetic-model" requires a paid plan.';
 /** A session the caller archived: only `GET .../sessions?archived=only` lists it. */
 const SESSION_ARCHIVED = 'a7c1e2d4-0000-4000-a000-000000000505';
 /** The time the fake API stamps on a pin or an archive. */
@@ -59,6 +62,8 @@ let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let seen: Seen[] = [];
 let compactBusy = false;
+let sessionReadStatus = 200;
+let ambiguousSessions = false;
 
 function sessionRow(sessionId = SESSION) {
   // A running row names its own box, exactly as `/start` does below.
@@ -194,7 +199,9 @@ function startServer(): string {
 
       // ── control plane ────────────────────────────────────────────────────
       if (method === 'GET' && path === `${project}/sessions/${SESSION}`) {
-        return Response.json(sessionRow());
+        return sessionReadStatus === 200
+          ? Response.json(sessionRow())
+          : Response.json({ error: 'Session read unavailable' }, { status: sessionReadStatus });
       }
       if (method === 'GET' && path === `${project}/sessions/${SESSION_B}`) {
         return Response.json(sessionRow(SESSION_B));
@@ -208,11 +215,23 @@ function startServer(): string {
           sandbox_url: 'http://127.0.0.1/v1/p/sbx_parity/8000',
         });
       }
+      if (method === 'POST' && path === '/v1/p/ticket') {
+        return Response.json({ ticket: 'scoped-preview-ticket' });
+      }
       if (method === 'GET' && path === '/v1/p/config') {
         return Response.json(previewConfig);
       }
       if (method === 'GET' && path === `${project}/sessions/${SESSION_PI}`) {
         return Response.json(sessionRow(SESSION_PI));
+      }
+      if (method === 'POST' && path === `${project}/sessions`) {
+        return Response.json({ ...sessionRow(SESSION_FAILED_TURN), status: 'provisioning' }, { status: 201 });
+      }
+      if (method === 'POST' && path === `${project}/sessions/${SESSION_FAILED_TURN}/start`) {
+        return Response.json({ stage: 'ready' });
+      }
+      if (method === 'GET' && path === `${project}/sessions/${SESSION_FAILED_TURN}`) {
+        return Response.json({ ...sessionRow(SESSION_FAILED_TURN), error: FAILED_TURN_ERROR });
       }
       if (method === 'POST' && path === `${project}/sessions/${SESSION_PI}/start`) {
         return Response.json({
@@ -377,7 +396,9 @@ function startServer(): string {
         return Response.json(
           url.searchParams.get('archived') === 'only'
             ? [{ ...sessionRow(SESSION_ARCHIVED), pinned_at: null, archived_at: STAMP }]
-            : [{ ...sessionRow(), pinned_at: null, archived_at: null }],
+            : ambiguousSessions
+              ? [sessionRow(), sessionRow(SESSION_B)]
+              : [{ ...sessionRow(), pinned_at: null, archived_at: null }],
         );
       }
       if (method === 'GET' && path === `${project}/sessions/${SESSION_ARCHIVED}`) {
@@ -536,6 +557,8 @@ beforeEach(() => {
   process.env = { ...ORIGINAL_ENV };
   seen = [];
   compactBusy = false;
+  sessionReadStatus = 200;
+  ambiguousSessions = false;
   auditActions = [
     auditRow({ approval_url: 'https://kortix.example.test/approve/ksl_pending' }),
     auditRow({
@@ -616,6 +639,21 @@ describe('kortix sessions stop / start / warm', () => {
     const r = await runCli(['sessions', 'start', SESSION, '--wait', '--json', ...P], config);
     expect(r.code).toBe(0);
     expect(JSON.parse(r.stdout).stage).toBe('ready');
+  });
+
+  // KRTX-2913: `new --wait` returns once the runtime is ready. When the record
+  // already shows the first turn failed, that is not a success.
+  test('new --wait exits 1 when the session already records a failed turn, and --json still prints it', async () => {
+    const r = await runCli(['sessions', 'new', '--prompt', 'hi', '--wait', '--json', ...P], config);
+    expect(r.code).toBe(1);
+    const printed = JSON.parse(r.stdout) as { session_id: string; error: string | null };
+    expect(printed).toMatchObject({ session_id: SESSION_FAILED_TURN, error: FAILED_TURN_ERROR });
+  });
+
+  test('the new --wait help says it waits for the runtime, and wait-for waits for the turn', async () => {
+    const r = await runCli(['sessions', '--help']);
+    expect(r.stdout).toContain('kortix sessions wait-for');
+    expect(r.stdout).toMatch(/--wait blocks until the runtime is[\s\S]*ready/);
   });
 
   test('start without a session id exits 2', async () => {
@@ -1192,7 +1230,8 @@ describe('kortix sessions preview — the printed URL resolves', () => {
     expect(seen.some((s) => s.method === 'GET' && s.path === '/v1/p/config')).toBe(true);
     const out = JSON.parse(r.stdout);
     expect(out.sandbox).toBe('sbx_parity');
-    expect(out.url).toBe('https://dev-p3000-sbx-parity.p.kortix.com/?token=kortix_pat_parity');
+    expect(out.url).not.toContain('kortix_pat_parity');
+    expect(new URL(out.url).searchParams.get('preview_ticket')).toBe('scoped-preview-ticket');
   });
 
   test('no preview domain on a local api: label-encoded localhost origin with the token', async () => {
@@ -1200,7 +1239,8 @@ describe('kortix sessions preview — the printed URL resolves', () => {
     expect(r.code).toBe(0);
     const out = JSON.parse(r.stdout);
     const port = new URL(apiBase).port;
-    expect(out.url).toBe(`http://p3000-sandbox-parity.localhost:${port}/?token=kortix_pat_parity`);
+    expect(out.url).not.toContain('kortix_pat_parity');
+    expect(new URL(out.url).searchParams.get('preview_ticket')).toBe('scoped-preview-ticket');
   });
 
   test('no preview domain on a remote api: the path proxy, never a token in the url', async () => {
@@ -1218,6 +1258,45 @@ describe('kortix sessions preview — the printed URL resolves', () => {
 });
 
 describe('kortix sessions rm (multiple ids)', () => {
+  test.each([403, 404, 500])('deletes a listed full id in the pinned project without requiring a session read (%i)', async (readStatus) => {
+    sessionReadStatus = readStatus;
+    const listed = await runCli(['sessions', 'ls', '--json', ...P], config);
+    expect(listed.code).toBe(0);
+    expect(listed.stdout).toContain(SESSION);
+
+    const removed = await runCli(['sessions', 'rm', SESSION, '--json', ...P], config);
+    expect(removed.code).toBe(0);
+    expect(JSON.parse(removed.stdout)).toEqual([
+      { session_id: SESSION, project_id: PROJECT, deleted: true, restore_until: '2026-02-01T00:00:00.000Z' },
+    ]);
+    expect(calls('GET', `/v1/projects/${PROJECT}/sessions/${SESSION}`)).toHaveLength(0);
+    expect(calls('DELETE', `/v1/projects/${PROJECT}/sessions/${SESSION}`)).toHaveLength(1);
+  });
+
+  test('a rejected DELETE stays a failure without a read or cross-project retry', async () => {
+    const r = await runCli(['sessions', 'rm', SESSION_B, '--json', ...P], config);
+    expect(r.code).toBe(1);
+    expect(JSON.parse(r.stdout)).toMatchObject([{ session_id: SESSION_B, deleted: false }]);
+    expect(seen.filter((call) => call.method === 'DELETE')).toHaveLength(1);
+    expect(calls('GET', `/v1/projects/${PROJECT}/sessions/${SESSION_B}`)).toHaveLength(0);
+  });
+
+  test('an ambiguous prefix does not delete a session', async () => {
+    ambiguousSessions = true;
+    const r = await runCli(['sessions', 'rm', '00000000', '--json', ...P], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('Several sessions match');
+    expect(seen.filter((call) => call.method === 'DELETE')).toHaveLength(0);
+  });
+
+  test('an archived prefix still resolves to its full id', async () => {
+    const r = await runCli(['sessions', 'rm', SESSION_ARCHIVED.slice(0, 8), '--json', ...P], config);
+    // The fixture refuses unknown DELETE targets, but discovery must preserve
+    // the archived full id rather than sending the user-supplied prefix.
+    expect(r.code).toBe(1);
+    expect(calls('DELETE', `/v1/projects/${PROJECT}/sessions/${SESSION_ARCHIVED}`)).toHaveLength(1);
+  });
+
   test('deletes each id and reports the failures, exiting 1', async () => {
     const r = await runCli(['sessions', 'rm', SESSION, SESSION_B, ...P], config);
     expect(r.code).toBe(1);
