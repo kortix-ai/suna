@@ -886,7 +886,7 @@ app.use(async (req, res, next) => {
 ```
 
 A runnable version of the pattern is `examples/03-server-wrapper.ts`, and the
-full production-shaped reference is `apps/whitelabel-demo` (Lumen): its own
+full production-shaped reference is `apps/white-label/lumen` (Lumen): its own
 users and orgs (Convex + Better Auth), one Kortix project per workspace,
 short-lived project-scoped member tokens minted server-side, and a same-origin
 proxy built on `forwardKortixRequest` — see its README.
@@ -1159,7 +1159,7 @@ const backend = kortixBinding('backend', {
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven
-in React DOM (`apps/web` and the `apps/whitelabel-demo` reference app are the
+in React DOM (`apps/web` and the `apps/white-label/lumen` reference app are the
 `configureKortix`/`@kortix/sdk/react` consumers).
 The framework-free core — turn classification, session URLs and health, the
 REST clients, file operations, transcript formatting — has no React or DOM

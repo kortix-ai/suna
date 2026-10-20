@@ -2081,7 +2081,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // NOTHING: apps/web's producers now deliver the first prompt as a durable
     // inbox row (server-side at create, or `startSessionWithPrompt`), and the
     // stash carries only the model/agent hand-off. A full stash — the
-    // whitelabel-demo producer — still replays here exactly as before.
+    // white-label/lumen producer — still replays here exactly as before.
     if (!stash.prompt.trim()) return;
     send(stash.prompt, {
       model: stash.model,

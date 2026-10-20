@@ -5,10 +5,10 @@ import {
   lineNumber,
   sourceFiles,
   staticFetchTarget,
-} from '../../../scripts/lib/sdk-boundary-scan.mjs';
+} from '../../../../scripts/lib/sdk-boundary-scan.mjs';
 
 const APP_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const REPO_ROOT = join(APP_ROOT, '..', '..');
+const REPO_ROOT = join(APP_ROOT, '..', '..', '..');
 const CLIENT_ROOT = join(APP_ROOT, 'src');
 // Lumen's own backend. Server-side: it holds the operator credential and calls
 // Kortix only through @kortix/sdk/server inside "use node" actions.

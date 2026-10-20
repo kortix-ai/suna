@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="../web/public/kortix-symbol.svg" width="48" alt="" />
+<img src="../../web/public/kortix-symbol.svg" width="48" alt="" />
 
 # Team Console
 
@@ -9,7 +9,7 @@
 Kortix is the identity and the data. Your team opens the App with their Kortix
 login, and every call runs as them.
 
-[Kortix Apps docs](https://kortix.com/docs/apps) · [SDK](../../packages/sdk/README.md) · [@kortix/ui](../../packages/ui/README.md) · [Lumen, the customer-facing example](../whitelabel-demo/README.md)
+[Kortix Apps docs](https://kortix.com/docs/apps) · [SDK](../../../packages/sdk/README.md) · [@kortix/ui](../../../packages/ui/README.md) · [Lumen, the customer-facing example](../lumen/README.md)
 
 </div>
 
@@ -17,8 +17,8 @@ login, and every call runs as them.
 
 | You have | Run |
 |---|---|
-| A Kortix project and the CLI | `pnpm --filter @kortix/internal-app-demo build`, then `kortix apps deploy apps/internal-app-demo/dist --slug team-console --type static --spa --access project` and `kortix apps access team-console --viewer api` |
-| A Kortix API key, local dev | `KORTIX_API_URL=https://api.kortix.com/v1 KORTIX_API_KEY=<key> pnpm --filter @kortix/internal-app-demo dev`, then open `http://localhost:3032` |
+| A Kortix project and the CLI | `pnpm --filter @kortix/white-label-team-console build`, then `kortix apps deploy apps/white-label/team-console/dist --slug team-console --type static --spa --access project` and `kortix apps access team-console --viewer api` |
+| A Kortix API key, local dev | `KORTIX_API_URL=https://api.kortix.com/v1 KORTIX_API_KEY=<key> pnpm --filter @kortix/white-label-team-console dev`, then open `http://localhost:3032` |
 
 <p align="center"><img src="public/screenshots/tour.gif" width="900" alt="Open a project, start a session, the agent runs a shell command, the dashboard lists the session" /></p>
 
@@ -35,7 +35,7 @@ login, and every call runs as them.
 
 ## When to pick this pattern
 
-| | Team Console (this app) | [Lumen](../whitelabel-demo/README.md) |
+| | Team Console (this app) | [Lumen](../lumen/README.md) |
 |---|---|---|
 | Who uses it | Your own team. Everyone already has a Kortix login. | Your customers. They never see Kortix. |
 | Identity | The Kortix login, through the Apps gate | Your own auth |
@@ -90,7 +90,7 @@ preview` gets the same stand-in, so you can test the built `dist/` locally.
 | `src/pages/*.tsx` | Projects, project, session, dashboard |
 | `scripts/sdk-boundary.mjs` | The boundary check |
 
-**Boundary.** `pnpm --filter @kortix/internal-app-demo lint:sdk-boundary`
+**Boundary.** `pnpm --filter @kortix/white-label-team-console lint:sdk-boundary`
 applies Lumen's rules (no OpenCode SDK, no runtime internals, no hand-built
 runtime URLs, controls from `@kortix/ui`, no second UI kit, only one-segment
 `@kortix/ui/<module>` entries, only the public `@kortix/sdk` entries) plus one
@@ -99,11 +99,11 @@ rule of its own: no `fetch` at all.
 **Checks.**
 
 ```bash
-pnpm --filter @kortix/internal-app-demo typecheck   # boundary + tsgo
-pnpm --filter @kortix/internal-app-demo build       # boundary + tsgo + vite build
+pnpm --filter @kortix/white-label-team-console typecheck   # boundary + tsgo
+pnpm --filter @kortix/white-label-team-console build       # boundary + tsgo + vite build
 ```
 
-**Redeploy.** `pnpm --filter @kortix/internal-app-demo build && kortix apps deploy apps/internal-app-demo/dist --app team-console`.
+**Redeploy.** `pnpm --filter @kortix/white-label-team-console build && kortix apps deploy apps/white-label/team-console/dist --app team-console`.
 
 **Limits.**
 

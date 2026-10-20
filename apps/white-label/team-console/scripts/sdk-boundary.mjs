@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { lineNumber, sourceFiles } from '../../../scripts/lib/sdk-boundary-scan.mjs';
-import { scanSource as scanWhiteLabelSource } from '../../whitelabel-demo/scripts/sdk-boundary.mjs';
+import { lineNumber, sourceFiles } from '../../../../scripts/lib/sdk-boundary-scan.mjs';
+import { scanSource as scanWhiteLabelSource } from '../../lumen/scripts/sdk-boundary.mjs';
 
 /**
  * The internal app's boundary: the white-label rules (no OpenCode SDK, no

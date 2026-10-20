@@ -15,7 +15,7 @@
   <a href="#what-it-does">What it does</a> ·
   <a href="#who-owns-what">Architecture</a> ·
   <a href="#setup">Setup</a> ·
-  <a href="../internal-app-demo/README.md">The internal-tool example</a>
+  <a href="../team-console/README.md">The internal-tool example</a>
 </p>
 
 Lumen sells three specialists (Finance analyst, Legal reviewer, Research). A customer signs up,
@@ -35,10 +35,10 @@ server talks to Kortix, and Lumen's proxy decides which Kortix calls a member ma
 
 | I want to… | Do this |
 | --- | --- |
-| **Run it against a Kortix stack** | Follow [Setup](#setup): local Convex, four env values, `pnpm --filter @kortix/whitelabel-demo dev` |
+| **Run it against a Kortix stack** | Follow [Setup](#setup): local Convex, four env values, `pnpm --filter @kortix/white-label-lumen dev` |
 | **Make it my brand** | `src/config/brand.ts` (name, tagline) and `src/config/theme.ts` (colors, radius, spacing, shadows, motion, fonts) |
 | **Change the specialists** | `convex/templates.ts` (`SEED`), then `npx convex run templates:seed` |
-| **Build an internal tool instead** | [`apps/internal-app-demo`](../internal-app-demo/README.md): a static Kortix App, sign-in is Kortix's |
+| **Build an internal tool instead** | [`apps/white-label/team-console`](../team-console/README.md): a static Kortix App, sign-in is Kortix's |
 
 ![A tour of Lumen against a real cloud sandbox: sign up, create an organization, pick the Finance analyst, ask a question, the agent's tool rows and reply stream in, the file it wrote in Files, its commit in Changes, light and dark](public/screenshots/tour.gif)
 
@@ -79,7 +79,7 @@ symbol. Light, dark or system, applied before the first paint.
 
 | You are building | Pick |
 |---|---|
-| An internal tool for people who already have Kortix accounts (your team, your company). Kortix is the identity and the data. | The internal example, `apps/internal-app-demo` (a static Kortix App; sign-in is Kortix's). |
+| An internal tool for people who already have Kortix accounts (your team, your company). Kortix is the identity and the data. | The internal example, `apps/white-label/team-console` (a static Kortix App; sign-in is Kortix's). |
 | A product for your own customers, under your brand, with your own sign-up, orgs, billing and data. Kortix runs the agents behind it. | **This app.** |
 
 ## Who owns what
@@ -258,9 +258,9 @@ responses.
 pnpm install
 
 # 1. Convex, local, no Convex account needed. Keeps running; state is in .convex/.
-pnpm --filter @kortix/whitelabel-demo dev:convex     # writes .env.local
+pnpm --filter @kortix/white-label-lumen dev:convex     # writes .env.local
 
-# 2. Convex env (second terminal, in apps/whitelabel-demo).
+# 2. Convex env (second terminal, in apps/white-label/lumen).
 npx convex env set BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
 npx convex env set SITE_URL http://localhost:3020          # the browser origin
 npx convex env set KORTIX_UPSTREAM https://api.kortix.com/v1
@@ -272,7 +272,7 @@ npx convex run templates:seed                              # the three agent tem
 #    KORTIX_UPSTREAM=<same as Convex>  LUMEN_PROXY_SECRET=<same as Convex>
 
 # 4. Next.js.
-WHITELABEL_PORT=3020 pnpm --filter @kortix/whitelabel-demo dev
+WHITELABEL_PORT=3020 pnpm --filter @kortix/white-label-lumen dev
 ```
 
 A developer with a Convex login can run `npx convex dev` instead of
@@ -343,10 +343,10 @@ patterns above, not every way to write them.
 ## Verify
 
 ```bash
-pnpm --filter @kortix/whitelabel-demo typecheck   # boundary + tsgo (app) + tsgo -p convex
-pnpm --filter @kortix/whitelabel-demo build
-cd apps/whitelabel-demo && bun test tests/unit/proxy-policy.test.ts   # one file
-cd apps/whitelabel-demo && pnpm test:convex                          # the Convex backend, in memory
+pnpm --filter @kortix/white-label-lumen typecheck   # boundary + tsgo (app) + tsgo -p convex
+pnpm --filter @kortix/white-label-lumen build
+cd apps/white-label/lumen && bun test tests/unit/proxy-policy.test.ts   # one file
+cd apps/white-label/lumen && pnpm test:convex                          # the Convex backend, in memory
 ```
 
 - `tests/unit/*.test.ts` (bun): the proxy policy and local answers, session

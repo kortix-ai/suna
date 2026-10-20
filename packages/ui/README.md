@@ -6,10 +6,10 @@ by CSS variables. The whole session UI lives here, one module per
 responsibility (layout below). `apps/web` imports it like any host: the module
 entries, the primitives, and a short list of deep paths (below).
 
-**Built with @kortix/ui:** [Lumen](../../apps/whitelabel-demo), a complete white-label agent
+**Built with @kortix/ui:** [Lumen](../../apps/white-label/lumen), a complete white-label agent
 product in its own brand. Every screen is a module of this package.
 
-<p align="center"><img src="https://github.com/kortix-ai/suna/raw/dev/apps/whitelabel-demo/public/screenshots/session.png" width="720" alt="Lumen: the Kortix session workspace in Lumen's brand" /></p>
+<p align="center"><img src="https://github.com/kortix-ai/suna/raw/dev/apps/white-label/lumen/public/screenshots/session.png" width="720" alt="Lumen: the Kortix session workspace in Lumen's brand" /></p>
 
 Install: not on npm yet. Inside kortix-ai/suna: `"@kortix/ui": "workspace:*"`.
 After the first npm release: `npm i @kortix/ui`.
@@ -295,7 +295,7 @@ const brand: KortixTheme = {
 `THEME_COLOR_VARS` maps each color key to its variable. Plain CSS works too:
 set the same variables in your own `:root` / `.dark` after the import. Never
 fork a component. Roobert (`--font-roobert`) is for Kortix-owned surfaces only.
-`apps/whitelabel-demo/src/config/theme.ts` is the reference.
+`apps/white-label/lumen/src/config/theme.ts` is the reference.
 
 How it stays themable:
 

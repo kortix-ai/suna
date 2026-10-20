@@ -454,7 +454,7 @@ host transport today: `react-native-sse` (XHR) behind that seam.
 | **React Native / Expo** | ✅ with a host transport | `apps/mobile` injects `react-native-sse`. Observed delivering events on an Android emulator (Hermes) on 2026-10-01. Not observed on iOS or on a physical device. The default fetch transport on RN is unproven: Expo 56 installs a streaming `fetch` and `TextDecoderStream` globally, and nobody has run the SDK on it. |
 
 **This SDK ships to three hosts: `apps/web`, `apps/mobile` (RN/Expo), and
-`apps/whitelabel-demo`.** A change that works on web and breaks the others is a
+`apps/white-label/lumen`.** A change that works on web and breaks the others is a
 broken change, not a partial one. `apps/mobile` runs `useSession` from
 `@kortix/sdk/react`: a browser global used unguarded in that import graph
 (`document`, `window.location`, `sessionStorage`, `crypto.randomUUID`) is a
@@ -733,7 +733,7 @@ than asserted. Keep them free of React, DOM, and Node-specific APIs beyond
 ## Where the real logic goes
 
 Per the root `AGENTS.md`: hosts are thin. If `apps/web`, `apps/mobile`, or
-`apps/whitelabel-demo` needs behaviour that isn't here, it is added **here** and
+`apps/white-label/lumen` needs behaviour that isn't here, it is added **here** and
 exposed through the public surface — not hand-rolled in the host, and not reached
 for by importing an internal `src/` path. A host importing
 `@kortix/sdk/src/anything` is a bug in both places.

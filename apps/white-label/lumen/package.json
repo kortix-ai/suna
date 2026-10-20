@@ -1,5 +1,5 @@
 {
-  "name": "@kortix/whitelabel-demo",
+  "name": "@kortix/white-label-lumen",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "build": "pnpm lint:sdk-boundary && next build",
     "lint:sdk-boundary": "node scripts/sdk-boundary.mjs",
     "start": "next start --port ${WHITELABEL_PORT:-3010}",
-    "test": "node ../../scripts/test-guard.mjs \"pnpm lint:sdk-boundary && bun test tests/unit && vitest run\"",
+    "test": "node ../../../scripts/test-guard.mjs \"pnpm lint:sdk-boundary && bun test tests/unit && vitest run\"",
     "test:unit": "pnpm lint:sdk-boundary && bun test tests/unit",
     "test:convex": "vitest run",
     "typecheck": "pnpm lint:sdk-boundary && tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo && tsgo --noEmit -p convex",

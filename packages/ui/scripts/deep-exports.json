@@ -1,5 +1,5 @@
 {
-  "$comment": "Deep keys (./<module>/<path>) that a workspace consumer imports today: apps/web, apps/whitelabel-demo, tests. They carry no semver; a host builds on the module entries. gen-exports.mjs exports exactly these beside the entries and primitives. tests/unit/ui-deep-exports.test.ts fails when a tracked file imports a deep key not listed here, or a listed key has no importer.",
+  "$comment": "Deep keys (./<module>/<path>) that a workspace consumer imports today: apps/web, apps/white-label/lumen, tests. They carry no semver; a host builds on the module entries. gen-exports.mjs exports exactly these beside the entries and primitives. tests/unit/ui-deep-exports.test.ts fails when a tracked file imports a deep key not listed here, or a listed key has no importer.",
   "keys": [
     "./access/access/access-row",
     "./access/access/agent-principals",

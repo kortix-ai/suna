@@ -74,15 +74,19 @@ and the browser-tab title use these values after the account loads.
 | Product name in UI copy | `apps/web/translations/*.json` |
 | Email sender | `EMAIL_FROM` and `SMTP_SENDER_NAME` in the instance env |
 
-**C. Own frontend on `@kortix/sdk`.** Two references:
+**C. Own frontend on `@kortix/sdk`.** Two patterns live under
+`apps/white-label/`. `apps/white-label/README.md` compares them and has the
+id map.
 
-- `apps/whitelabel-demo` (Lumen): a product for the partner's own customers.
-  It has its own sign-up, organizations and database (Convex + Better Auth)
-  and uses Kortix as the agent backend behind a same-origin proxy. Name and
-  tagline: `src/config/brand.ts`. Colors, radius, fonts: `src/config/theme.ts`.
-  Its README has the id mapping and the credential flow.
-- `apps/internal-app-demo`: an internal tool for people who already have Kortix
-  accounts, deployed as a Kortix App. Kortix is the identity and the data.
+- **Wrap Kortix for your own team:** `apps/white-label/team-console`. A Vite
+  static Kortix App. People sign in with their Kortix login (the App viewer
+  identity). Kortix is the identity and the data. No backend.
+- **Wrap Kortix as a SaaS you sell:** `apps/white-label/lumen` (AI for legal
+  teams). Lumen owns customers, accounts, firms, plans, seats and data
+  (Next.js + Convex + Better Auth). Each firm is one Kortix project. Members
+  reach Kortix only through Lumen's same-origin proxy with a server-held,
+  1 h, project-scoped token. Name and tagline: `src/config/brand.ts`. Colors,
+  radius, fonts: `src/config/theme.ts`.
 
 ## 4. Stay compliant
 

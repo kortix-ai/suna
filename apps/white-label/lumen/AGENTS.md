@@ -154,9 +154,9 @@ feature controls (`<button>`, `<input>`, …) and feature-level spinners.
 Run these commands before each commit:
 
 ```bash
-pnpm --filter @kortix/whitelabel-demo typecheck
-pnpm --filter @kortix/whitelabel-demo build
-cd apps/whitelabel-demo && bun test tests/unit/<the files you touched> && pnpm test:convex
+pnpm --filter @kortix/white-label-lumen typecheck
+pnpm --filter @kortix/white-label-lumen build
+cd apps/white-label/lumen && bun test tests/unit/<the files you touched> && pnpm test:convex
 ```
 
 All three commands must exit `0`. The SDK boundary must report `0 violations`.
