@@ -78,7 +78,7 @@ import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import { scheduleRuntimeProjectionRefresh } from '../lib/session-runtime-projection-refresh';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
-import { readSessionLogPage } from '../session-log-read';
+import { readSessionConversationModels, readSessionLogPage } from '../session-log-read';
 
 /** Same ceiling `GET .../audit` uses for the pending-approvals poll. */
 const AUDIT_ACTIONS_LIMIT = 100;
@@ -172,7 +172,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     // paint. Nothing here touches the sandbox, so nothing here can be held up
     // by a box that is asleep.
     const personId = personUserId(c, loaded);
-    const [turn, queue, transcript, models, runtime, audit, log, listState] = await Promise.allSettled([
+    const [turn, queue, transcript, models, runtime, audit, log, listState, conversationModels] = await Promise.allSettled([
       // = GET .../turn, `can_stop` included: one prompter read, only while a
       // turn runs for a caller who is not the owner or a manager.
       readSessionTurnState(sessionId).then(async (state) => ({
@@ -253,6 +253,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
         : Promise.resolve(undefined),
       // The person's pin and archive, as the read by id serves them (KRTX-2418).
       personId ? loadSessionUserStates([sessionId], personId) : Promise.resolve(null),
+      readSessionConversationModels([sessionId]),
     ]);
 
     const prompts =
@@ -282,6 +283,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
       // The session row, byte-identical to `GET .../sessions/:sessionId`.
       session: serializeSession(visible.row, {
         grants: visible.grants,
+        conversationModel: conversationModels.status === 'fulfilled' ? conversationModels.value.get(sessionId) : undefined,
         viewerId: loaded.userId,
         canManageProject: visible.canManageProject,
         ownerIsMachine: visible.ownerIsMachine,

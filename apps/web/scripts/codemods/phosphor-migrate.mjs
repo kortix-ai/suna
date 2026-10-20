@@ -24,7 +24,7 @@ const SKIP_FILES = new Set(
     'lib/utils/icon-utils.ts',
   ]
     .map((p) => join(ROOT, p))
-    .concat(join(UI_ROOT, 'components/ui/kortix-icons.ts')),
+    .concat(join(UI_ROOT, 'primitives/kortix-icons.ts')),
 );
 
 function libOf(spec) {

@@ -25,6 +25,9 @@ const SESSION_B = '00000000-0000-4000-a000-000000000502';
 const SESSION_C = '00000000-0000-4000-a000-000000000503';
 /** A pi-harness session: its runtime lists no `session.compact` / `session.attach`. */
 const SESSION_PI = '00000000-0000-4000-a000-000000000504';
+/** A new session whose first turn failed before `--wait` returned (KRTX-2913). */
+const SESSION_FAILED_TURN = '00000000-0000-4000-a000-000000000506';
+const FAILED_TURN_ERROR = 'agent turn failed: APIError: "synthetic-model" requires a paid plan.';
 /** A session the caller archived: only `GET .../sessions?archived=only` lists it. */
 const SESSION_ARCHIVED = 'a7c1e2d4-0000-4000-a000-000000000505';
 /** The time the fake API stamps on a pin or an archive. */
@@ -58,6 +61,9 @@ interface Seen {
 let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let seen: Seen[] = [];
+let compactStatus = 'running';
+let compactStartFailure = false;
+let compactBusy = false;
 let sessionReadStatus = 200;
 let ambiguousSessions = false;
 
@@ -196,7 +202,7 @@ function startServer(): string {
       // ── control plane ────────────────────────────────────────────────────
       if (method === 'GET' && path === `${project}/sessions/${SESSION}`) {
         return sessionReadStatus === 200
-          ? Response.json(sessionRow())
+          ? Response.json({ ...sessionRow(), status: compactStatus })
           : Response.json({ error: 'Session read unavailable' }, { status: sessionReadStatus });
       }
       if (method === 'GET' && path === `${project}/sessions/${SESSION_B}`) {
@@ -220,6 +226,15 @@ function startServer(): string {
       if (method === 'GET' && path === `${project}/sessions/${SESSION_PI}`) {
         return Response.json(sessionRow(SESSION_PI));
       }
+      if (method === 'POST' && path === `${project}/sessions`) {
+        return Response.json({ ...sessionRow(SESSION_FAILED_TURN), status: 'provisioning' }, { status: 201 });
+      }
+      if (method === 'POST' && path === `${project}/sessions/${SESSION_FAILED_TURN}/start`) {
+        return Response.json({ stage: 'ready' });
+      }
+      if (method === 'GET' && path === `${project}/sessions/${SESSION_FAILED_TURN}`) {
+        return Response.json({ ...sessionRow(SESSION_FAILED_TURN), error: FAILED_TURN_ERROR });
+      }
       if (method === 'POST' && path === `${project}/sessions/${SESSION_PI}/start`) {
         return Response.json({
           stage: 'ready',
@@ -241,7 +256,11 @@ function startServer(): string {
           opencode_session_id: 'ses_oc',
         });
       }
+      if (method === 'POST' && path === `${session}/restart`) {
+        return Response.json({ ok: true });
+      }
       if (method === 'POST' && path === `${session}/start`) {
+        if (compactStartFailure) return Response.json({ stage: 'failed', reason: 'Synthetic boot failure' });
         return Response.json({
           stage: 'ready',
           agent_name: 'kortix',
@@ -441,6 +460,9 @@ function startServer(): string {
           { path: `${parent}/${name}`.replace('//', '/'), size: multipartFileBytes.get(form) ?? 0 },
         ]);
       }
+      if (method === 'GET' && path === `${daemon}/session/status`) {
+        return Response.json({ ses_oc: { type: compactBusy ? 'busy' : 'idle' } });
+      }
       if (method === 'POST' && path === `${daemon}/session/ses_oc/summarize`) {
         return Response.json({});
       }
@@ -540,6 +562,9 @@ beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), 'kortix-sessions-parity-'));
   process.env = { ...ORIGINAL_ENV };
   seen = [];
+  compactStatus = 'running';
+  compactStartFailure = false;
+  compactBusy = false;
   sessionReadStatus = 200;
   ambiguousSessions = false;
   auditActions = [
@@ -622,6 +647,21 @@ describe('kortix sessions stop / start / warm', () => {
     const r = await runCli(['sessions', 'start', SESSION, '--wait', '--json', ...P], config);
     expect(r.code).toBe(0);
     expect(JSON.parse(r.stdout).stage).toBe('ready');
+  });
+
+  // KRTX-2913: `new --wait` returns once the runtime is ready. When the record
+  // already shows the first turn failed, that is not a success.
+  test('new --wait exits 1 when the session already records a failed turn, and --json still prints it', async () => {
+    const r = await runCli(['sessions', 'new', '--prompt', 'hi', '--wait', '--json', ...P], config);
+    expect(r.code).toBe(1);
+    const printed = JSON.parse(r.stdout) as { session_id: string; error: string | null };
+    expect(printed).toMatchObject({ session_id: SESSION_FAILED_TURN, error: FAILED_TURN_ERROR });
+  });
+
+  test('the new --wait help says it waits for the runtime, and wait-for waits for the turn', async () => {
+    const r = await runCli(['sessions', '--help']);
+    expect(r.stdout).toContain('kortix sessions wait-for');
+    expect(r.stdout).toMatch(/--wait blocks until the runtime is[\s\S]*ready/);
   });
 
   test('start without a session id exits 2', async () => {
@@ -917,6 +957,40 @@ describe('kortix sessions model', () => {
 });
 
 describe('kortix sessions compact', () => {
+  test('wakes a stopped session before compacting with its persisted model', async () => {
+    compactStatus = 'stopped';
+    const r = await runCli(['sessions', 'compact', SESSION, '--json', ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain('Waking');
+    expect(JSON.parse(r.stdout).compacted).toBe(true);
+    const restart = seen.findIndex((call) => call.path.endsWith('/restart'));
+    const start = seen.findIndex((call) => call.path.endsWith('/start'));
+    const summarize = seen.findIndex((call) => call.path.endsWith('/summarize'));
+    expect(restart).toBeGreaterThanOrEqual(0);
+    expect(start).toBeGreaterThan(restart);
+    expect(summarize).toBeGreaterThan(start);
+    expect(seen[summarize]?.body).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
+  });
+
+  test('reports a failed wake without attempting compaction', async () => {
+    compactStatus = 'stopped';
+    compactStartFailure = true;
+    const r = await runCli(['sessions', 'compact', SESSION, ...P], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('Synthetic boot failure');
+    expect(seen.filter((call) => call.path.endsWith('/summarize'))).toEqual([]);
+  });
+
+  test('a busy turn exits 1 with an actionable message and never submits compaction', async () => {
+    compactBusy = true;
+    const r = await runCli(['sessions', 'compact', SESSION, ...P], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('This session is busy. Wait for the current turn to finish, then run compact again.');
+    expect(r.stderr).not.toContain('prompt_async');
+    expect(r.stderr).not.toContain('SSE');
+    expect(calls('POST', `/v1/p/${EXTERNAL}/8000/session/ses_oc/summarize`)).toEqual([]);
+  });
+
   test('summarizes through the runtime with the session own persisted model', async () => {
     const r = await runCli(['sessions', 'compact', SESSION, '--json', ...P], config);
     expect(r.code).toBe(0);

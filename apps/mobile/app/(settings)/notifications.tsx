@@ -5,6 +5,7 @@ import { useNotificationPreferences } from '@kortix/sdk/react';
 import {
   ArrowCounterClockwiseIcon,
   BellIcon,
+  ChatCircleIcon,
   CheckCircleIcon,
   QuestionIcon,
   ShareNetworkIcon,
@@ -17,7 +18,7 @@ import {
 } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
+import { Switch } from '@/components/kortix/switch';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { SettingsGroup, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
@@ -49,6 +50,7 @@ const KIND_ICON: Record<InboxNotificationKind, AppIcon> = {
   automation_recovered: ArrowCounterClockwiseIcon,
   capture_device_down: XCircleIcon,
   capture_device_recovered: ArrowCounterClockwiseIcon,
+  message: ChatCircleIcon,
 };
 
 /**

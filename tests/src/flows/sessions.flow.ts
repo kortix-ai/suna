@@ -1218,6 +1218,8 @@ flow(
       'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
       'GET /v1/projects/:projectId/sessions/:sessionId/config',
+      'GET /v1/projects/:projectId/sessions/:sessionId/log',
+      'GET /v1/projects/:projectId/sessions/:sessionId/question',
       'POST /v1/projects/:projectId/sessions/:sessionId/attachments',
       'GET /v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId',
     ],
@@ -1296,6 +1298,49 @@ flow(
       (await owner.request('POST', `${sessionRoute}/attachments`, { params, body })).status(201);
     });
 
+    await ctx.step('the session stores a session log (via the journal route) and an open agent question (via the relay); both read while it is alive', async () => {
+      // The log the box's own route wrote, the question the sandbox relay persisted —
+      // both are session content (KRTX-2744), so their reads share the tombstone
+      // refusal of the sibling reads.
+      const journal = await owner.post('/v1/accounts/tokens', { name: 'SESS-51 journal credential' });
+      journal.status(201);
+      // The sandbox row exists (the seed above); the journal adds only its log.
+      await seedSessionTranscript(ctx.env, {
+        projectId: project.id,
+        accountId: team.id,
+        sessionId,
+        ensureSandbox: false,
+        log: { bearer: journal.json<{ secret_key: string }>().secret_key },
+      });
+      (await owner.post(
+        '/v1/projects/:projectId/turn-question',
+        {
+          session_id: sessionId,
+          request_id: 'sess-51-open-question',
+          questions: [
+            {
+              question: 'Which stored read should refuse a deleted session first?',
+              header: 'Next step',
+              options: [
+                { label: 'The log read', description: 'Refuse the deleted session' },
+                { label: 'The question read', description: 'Refuse too' },
+              ],
+              multiple: false,
+              custom: true,
+            },
+          ],
+        },
+        { params: { projectId: project.id } },
+      )).status(200);
+      for (const who of [owner, ctx.client.as(member)]) {
+        (await who.get(`${sessionRoute}/log`, { params })).status(200).body().has('$.messages.length', 2);
+        (await who.get(`${sessionRoute}/question`, { params }))
+          .status(200)
+          .body()
+          .has('$.question.request_id', 'sess-51-open-question');
+      }
+    });
+
     await ctx.step('a project member who did not start the session cannot delete it → 403, it stays listed', async () => {
       (await ctx.client.as(member).del(sessionRoute, { params }))
         .status(403)
@@ -1358,6 +1403,13 @@ flow(
         { client_message_id: `sess-51-${crypto.randomUUID()}`, parts: [{ type: 'text', text: 'into a deleted session' }] },
         { params },
       )).status(409).body().has('$.error', 'Session is deleted');
+    });
+
+    await ctx.step('the stored log and the open question read nothing → 404 for the owner and a member, as the reads of it (KRTX-2744)', async () => {
+      for (const who of [owner, ctx.client.as(member)]) {
+        (await who.get(`${sessionRoute}/log`, { params })).status(404);
+        (await who.get(`${sessionRoute}/question`, { params })).status(404);
+      }
     });
 
     await ctx.step('a project member who did not start the session cannot restore it → 403, it stays deleted', async () => {
@@ -1434,6 +1486,14 @@ flow(
         .schema(SessionTranscriptSyncEnvelopeSchema);
       const file = (await owner.get(download, { params: { ...params, attachmentId } })).status(200);
       if (file.text() !== contents) throw new Error('the restored file bytes differ');
+    });
+
+    await ctx.step('the restored session reads its stored log and its open question again — the reads refuse the tombstone, never a restored session', async () => {
+      (await owner.get(`${sessionRoute}/log`, { params })).status(200).body().has('$.messages.length', 2);
+      (await owner.get(`${sessionRoute}/question`, { params }))
+        .status(200)
+        .body()
+        .has('$.question.request_id', 'sess-51-open-question');
     });
 
     await ctx.step('a second restore → 409 session_not_deleted; an unknown session → 404; a non-uuid id → 400', async () => {
@@ -1517,6 +1577,28 @@ flow(
       r.status(200).body().has('$.session_id', privateId).has('$.project_id', project.id).schema(ProjectSessionSchema);
       const same = (await owner.get(inProject, { params: { projectId: project.id, sessionId: privateId } })).status(200).json();
       if (JSON.stringify(r.json()) !== JSON.stringify(same)) throw new Error('the two routes answered different bodies');
+    });
+
+    await ctx.step('detail reads report the persisted runtime status, including after a restart', async () => {
+      const { Client } = await import('pg');
+      const database = new Client({ connectionString: ctx.env.databaseUrl });
+      await database.connect();
+      try {
+        await database.query(
+          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+           VALUES ($1::uuid, $1, $2, $3, 'active')`,
+          [sharedId, team.id, project.id],
+        );
+        for (const status of ['active', 'stopped', 'active']) {
+          await database.query('UPDATE kortix.session_sandboxes SET status = $2 WHERE session_id = $1', [sharedId, status]);
+          (await owner.get(byId, { params: { sessionId: sharedId } })).status(200).body().has('$.runtime_status', status);
+          (await owner.get(inProject, { params: { projectId: project.id, sessionId: sharedId } })).status(200).body().has('$.runtime_status', status);
+        }
+        (await owner.get(byId, { params: { sessionId: privateId } })).status(200).body().has('$.runtime_status', null);
+      } finally {
+        await database.query('DELETE FROM kortix.session_sandboxes WHERE session_id = $1', [sharedId]);
+        await database.end();
+      }
     });
 
     await ctx.step('a project member reads a project-visible session by id → 200', async () => {
@@ -1963,6 +2045,7 @@ flow(
     requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: [
+      'PATCH /v1/projects/:projectId/experimental',
       'POST /v1/projects/:projectId/sessions/warm',
       'POST /v1/projects/:projectId/sessions/warm/claim',
       'GET /v1/projects/:projectId/sessions/:sessionId',
@@ -1982,6 +2065,18 @@ flow(
     let warmSessionId = '';
     let replacementId = '';
     let replacementInsertedAt = '';
+
+    await ctx.step('warming is disabled until the project explicitly opts in', async () => {
+      const params = { projectId: p.id };
+      const denied = await owner.post('/v1/projects/:projectId/sessions/warm', {}, { params });
+      denied.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'warm_sessions');
+      const enabled = await owner.patch(
+        '/v1/projects/:projectId/experimental',
+        { feature: 'warm_sessions', enabled: true },
+        { params },
+      );
+      enabled.status(200);
+    });
 
     await ctx.step('warming creates an ordinary session marked unused, in the contract shape', async () => {
       const r = await owner.post(

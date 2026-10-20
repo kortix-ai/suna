@@ -8,13 +8,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type ReactNode, createElement } from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { PROJECT_ACTIONS } from '@kortix/ui/workspace';
 
 function Passthrough({ children }: { children?: ReactNode }) {
   return createElement('div', null, children);
 }
 
-const realToast = await import('@/components/ui/toast');
+const realToast = await import('@kortix/ui/toast');
 
 // Reset transport and toast observations before each mount.
 let calls: { url: string; method: string; body: unknown; status: number }[] = [];
@@ -24,7 +24,7 @@ let canWriteProject = true;
 let failWrite = false;
 let releaseWrite: (() => void) | undefined;
 
-mock.module('@/components/ui/toast', () => ({
+mock.module('@kortix/ui/toast', () => ({
   ...realToast,
   successToast: (message: string) => toastCalls.push({ kind: 'success', message }),
   errorToast: (message: string) => toastCalls.push({ kind: 'error', message }),
@@ -38,14 +38,14 @@ mock.module('next/navigation', () => ({
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({ user: { id: 'user-1' } }),
 }));
-mock.module('@/lib/use-project-can', () => ({
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   useProjectCans: () => ({
     [PROJECT_ACTIONS.PROJECT_WRITE]: { allowed: canWriteProject },
     [PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]: { allowed: canManage },
     [PROJECT_ACTIONS.PROJECT_DELETE]: { allowed: true },
   }),
 }));
-mock.module('@/features/projects/modal/project-icon-field', () => ({
+mock.module('@kortix/ui/workspace/projects/modal/project-icon-field', () => ({
   ProjectIconField: Passthrough,
 }));
 
@@ -63,7 +63,7 @@ function EffortItem(props: Record<string, unknown>) {
 function EffortValue(props: Record<string, unknown>) {
   return createElement('effort-value', props);
 }
-mock.module('@/components/ui/select', () => ({
+mock.module('@kortix/ui/select', () => ({
   Select: EffortSelect,
   SelectContent: Passthrough,
   SelectItem: EffortItem,
@@ -71,7 +71,7 @@ mock.module('@/components/ui/select', () => ({
   SelectValue: EffortValue,
 }));
 
-const { GeneralTab } = await import('./general-tab');
+const { GeneralTab } = await import('@kortix/ui/customize/settings/tabs/general-tab');
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 

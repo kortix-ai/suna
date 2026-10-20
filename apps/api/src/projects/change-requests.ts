@@ -17,6 +17,7 @@ import { type SQL, and, desc, eq, lt, sql } from 'drizzle-orm';
 import type { ChangeRequest } from '@kortix/api-contract';
 import { changeRequests } from '@kortix/db';
 import { db } from '../shared/db';
+import { isUuid } from '../shared/validate';
 
 type ChangeRequestStatus = 'open' | 'merged' | 'closed';
 
@@ -134,15 +135,13 @@ export async function getNextCrNumber(projectId: string): Promise<number> {
  *  malformed id a 404 rather than a 500 (prod, 2026-10-18: a caller passed
  *  the CR number to the merge route and the uuid cast 500-ed).
  */
-const CR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export async function getCrById(crId: string, projectId: string) {
   const ref = crId.replace(/^#/, '');
   // `number` is int4: a digit string above 2^31-1 would bind as 22003
   // (integer out of range) — a 500, not the 404 this lookup promises.
   const num = Number(ref);
   const byNumber = /^\d+$/.test(ref) && num <= 2147483647;
-  if (!CR_UUID_RE.test(ref) && !byNumber) return null;
+  if (!isUuid(ref) && !byNumber) return null;
   const [row] = await db
     .select()
     .from(changeRequests)

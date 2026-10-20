@@ -3,9 +3,9 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo, useRef } from 'react';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { useMarketplaceItem, useMarketplaceItems, useMarketplaces } from '@/hooks/marketplace';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
 import { MarketplaceDetail, useDetailNav } from './marketplace-detail';

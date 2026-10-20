@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
-import { SessionDriveFilesScope } from '@/features/drives/session-drive-files';
+import { SessionDriveFilesScope } from '@kortix/ui/internal/files/session-drive-files';
 import { resolveSessionTabTitle } from '@/features/session/session-tab-title-server';
-import { SessionTabTitleSync } from '@/features/session/session-tab-title-sync';
+import { SessionTabTitleSync } from '@kortix/ui/session/status/session-tab-title-sync';
 
 type SessionRouteProps = {
   children: ReactNode;

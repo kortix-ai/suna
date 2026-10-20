@@ -16,7 +16,7 @@ import {
   PROJECT_LANDING_PATH,
   resolveDefaultLandingPath,
   serializeAuthBounce,
-} from '@/lib/onboarding/landing-destination';
+} from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import {
   cookieIdentityPlan,

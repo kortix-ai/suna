@@ -6,7 +6,8 @@ import {
   buildScopeChecklist,
   buildSecretScopeOptions,
   toggleScopeSelection,
-} from './agent-detail-aside';
+} from '@kortix/ui/customize/agents/agent-detail-aside';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 const secret = (identifier: string, name: string) => ({ identifier, name });
 
@@ -143,7 +144,7 @@ describe('toggleScopeSelection', () => {
  * So the wiring the pure builder cannot cover is asserted against the source.
  */
 describe('AgentScopeCard wiring', () => {
-  const source = readFileSync(join(import.meta.dir, 'agent-detail-aside.tsx'), 'utf8');
+  const source = readFileSync(uiSourcePath('customize/agents/agent-detail-aside.tsx'), 'utf8');
 
   test('the Secrets checklist comes from the identifier-keyed builder', () => {
     expect(source).toContain('buildSecretScopeOptions(secretsQuery.data?.items ?? [])');

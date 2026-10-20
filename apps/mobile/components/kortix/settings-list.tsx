@@ -26,7 +26,6 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowUpRightIcon as ArrowUpRight,
   CheckIcon as Check,
-  CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
   MonitorIcon as Monitor,
   MoonIcon as Moon,
@@ -40,7 +39,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { MenuButton } from '@/components/kortix/menu-button';
-import { PlatformButton } from '@/components/kortix/platform-button';
+import { BackButton } from '@/components/kortix/back-button';
 import { haptics } from '@/lib/haptics';
 import { cn } from '@/lib/utils/index';
 import { SHEET_ROW_SURFACE, SurfaceContext } from '@/components/kortix/surface-context';
@@ -81,13 +80,7 @@ export function SettingsHeader({
       className={cn('flex-row items-center gap-3 pb-3 px-4 bg-background')}
       style={{ paddingTop: topPadding, minHeight: 56 }}>
       {onOpenMenu ? <MenuButton onPress={onOpenMenu} /> : (
-        <PlatformButton
-          systemImage="chevron.left"
-          icon={ChevronLeft}
-          fallbackVariant="secondary"
-          accessibilityLabel="Go back"
-          onPress={handleBack}
-        />
+        <BackButton onPress={handleBack} />
       )}
       <Text
         className="flex-1 text-xl leading-6 font-roobert-medium text-foreground tracking-tight"

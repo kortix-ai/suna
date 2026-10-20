@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 export const Sun = ({ className }: { className?: string }) => {
   return (

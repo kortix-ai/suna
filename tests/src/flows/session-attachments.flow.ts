@@ -7,11 +7,23 @@
  * retryable when staged non-native bytes are absent.
  */
 import { flow } from '../core/flow';
+import type { FlowContext } from '../core/types';
 import {
   bindDatabaseSessionCredential,
   createDatabaseSession,
   readDatabasePromptAttachmentRetention,
 } from '../fixtures/database-project';
+
+/** Warm sessions are opt-in per project (KRTX-1871): the claim route answers 403 until the flag is on. */
+async function enableWarmSessions(ctx: FlowContext, projectId: string): Promise<void> {
+  await ctx.step('the project opts into warm sessions', async () => {
+    (await ctx.client.as(ctx.P.OWNER).patch(
+      '/v1/projects/:projectId/features',
+      { feature: 'warm_sessions', enabled: true },
+      { params: { projectId } },
+    )).status(200);
+  });
+}
 
 flow('SESS-30', {
   domain: 'sessions', requires: ['database', 'funded'], timeoutMs: 180_000,
@@ -22,6 +34,7 @@ flow('SESS-30', {
     'DELETE /v1/projects/:projectId/attachments/:attachmentId',
     'DELETE /v1/projects/:projectId/sessions/:sessionId',
     'POST /v1/projects/:projectId/sessions/warm/claim',
+    'PATCH /v1/projects/:projectId/features',
     'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
     'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
     'GET /v1/projects/:projectId/sessions/:sessionId',
@@ -33,6 +46,7 @@ flow('SESS-30', {
   const project = await ctx.fixtures.project({ seed: true });
   const owner = ctx.client.as(ctx.P.OWNER);
   const base = { projectId: project.id };
+  await enableWarmSessions(ctx, project.id);
   const bytes = new TextEncoder().encode('eager upload before session readiness\n'.repeat(4000));
   let attachmentId = '';
   let upload:
@@ -229,6 +243,7 @@ flow(
     timeoutMs: 300_000,
     routes: [
       'POST /v1/projects/:projectId/sessions/warm/claim',
+    'PATCH /v1/projects/:projectId/features',
       'GET /v1/projects/:projectId/sessions/:sessionId',
       'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
     ],
@@ -236,6 +251,7 @@ flow(
   async (ctx) => {
     const project = await ctx.fixtures.project();
     const owner = ctx.client.as(ctx.P.OWNER);
+    await enableWarmSessions(ctx, project.id);
     const retrySessionId = await createDatabaseSession(ctx.env, {
       projectId: project.id,
       accountId: ctx.P.OWNER.accountId!,

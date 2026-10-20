@@ -52,7 +52,7 @@ mock.module('@/lib/public-env-server', () => ({
 
 const { GET } = await import('./route');
 const { AUTH_BOUNCE_COOKIE, PROJECT_LANDING_PATH, serializeAuthBounce } =
-  await import('@/lib/onboarding/landing-destination');
+  await import('@kortix/ui/internal/lib/onboarding/landing-destination');
 
 /** A magic-link/OAuth callback carrying whatever bounce cookie the browser holds. */
 function callbackRequest(returnUrl: string, bounceCookie?: string) {
