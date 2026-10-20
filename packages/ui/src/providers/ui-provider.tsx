@@ -246,6 +246,10 @@ export interface UiHostConfig {
    * upgrade a WebSocket) sets false, and the Terminal control is hidden. Default: true.
    */
   terminalEnabled: boolean;
+  /** The host opens a command palette on ⌘K / Ctrl+K; the composer hints at it. Default: false. */
+  commandPaletteShortcut: boolean;
+  /** The host opens settings on ⌘, / Ctrl+,; the composer hints at it. Default: false. */
+  settingsShortcut: boolean;
 }
 
 /** What the session browser frames: a port and path inside the session's sandbox, or a URL. */
@@ -271,6 +275,8 @@ export const defaultUiHostConfig: UiHostConfig = {
   connectorsEnabled: true,
   managedModelsEnabled: false,
   terminalEnabled: true,
+  commandPaletteShortcut: false,
+  settingsShortcut: false,
 };
 
 const useNoViewer = (): string | undefined => undefined;

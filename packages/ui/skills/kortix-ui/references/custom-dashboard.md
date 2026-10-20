@@ -181,13 +181,13 @@ pass stable objects (module scope):
 | `link` | a plain `<a>` | its router's link, called with `href` |
 | `navigation` | full page loads; `usePathname` / `useSearchParams` read `window.location` | `{ useRouter, usePathname, useSearchParams, useParams }` of its router |
 | `config` | `{ connectorsEnabled: true, managedModelsEnabled: false }` | `managedModelsEnabled: true` when the deployment serves its model lineup. Billing is the SDK flag `configureKortix({ billingEnabled })`, which every billing gate reads. It is for Kortix's own app: its upgrade actions open the Kortix plan dialog that apps/web mounts. A custom host leaves it off, so no upgrade control renders. |
-| `resolvePreviewUrl` | the SDK preview URL, with the SDK token | a function that returns the framed URL with the host's own scoped token (a host whose origin is not the Kortix backend). `config.terminalEnabled: false` hides the Terminal when the host's proxy cannot upgrade a WebSocket |
+| `resolvePreviewUrl` | the SDK preview URL, with the SDK token | a function that returns the framed URL with the host's own scoped token (a host whose origin is not the Kortix backend). `config.terminalEnabled: false` hides the Terminal when the host's proxy cannot upgrade a WebSocket. `config.commandPaletteShortcut` / `config.settingsShortcut` (default false): true when the host opens a command palette on ⌘K or settings on ⌘,; only then does the composer hint at them |
 | `components` | no slots: each control that opens one is hidden | `ShareSessionModal` (`@kortix/ui/workspace` exports Kortix's), `HomeAnnouncement`, `Wallpaper`, `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal` |
 | `useBrand` | the Kortix marks | a hook that returns `{ app_name, logo_url, icon_url }` |
 | `image` | a plain `<img>` | its image component |
 | `i18n` | the bundled English catalog | `{ useTranslations, useLocale }` (next-intl signatures) or `{ locale, messages }` |
 | `strings` | English copy of the primitives | the keys it translates |
-| `useViewerId` | no viewer | a hook that returns the signed-in user's id |
+| `useViewerId` | no viewer: a one-person session names nobody, and a stopped turn never says "Stopped by" | a hook that returns the signed-in Kortix user's id (the owner of the token the SDK sends). A session several people write in needs it to name the other senders |
 
 A Next.js host passes `next/link` and `{ useRouter, usePathname, useSearchParams, useParams }` from
 `next/navigation` unchanged.

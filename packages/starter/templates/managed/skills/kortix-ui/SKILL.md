@@ -19,8 +19,8 @@ Outside it: tell the user, style with plain CSS over the section 6 variables, ne
    A host without Tailwind imports `@kortix/ui/styles.css` once: every class the package uses, none of yours.
 2. Fonts. `@kortix/ui/fonts.css` (Roobert) is for Kortix-owned surfaces only. A white-label host never imports it.
 3. Mount once at the root: `QueryClientProvider`, `UiProvider` (`link`, `navigation`: your router; `components`:
-   host slots, a missing slot hides its control; `config`: `managedModelsEnabled`, `connectorsEnabled`, `terminalEnabled`; `resolvePreviewUrl`; `useBrand`: your
-   marks; `i18n`, `strings`, `image`, `useViewerId`), `IconProvider` (`@kortix/ui/icon-provider`), one `<Toaster />`
+   host slots, a missing slot hides its control; `config`: `managedModelsEnabled`, `connectorsEnabled`, `terminalEnabled`, `commandPaletteShortcut`, `settingsShortcut`; `resolvePreviewUrl`; `useBrand`: your
+   marks; `i18n`, `strings`, `image`, `useViewerId`: without it no sender name or "Stopped by" shows), `IconProvider` (`@kortix/ui/icon-provider`), one `<Toaster />`
    (`@kortix/ui/toast`). `setUiTelemetry` (`@kortix/ui`) once at module load. Dark mode is `dark` on `<html>`. SDK `billingEnabled` stays off (Kortix's app only).
 4. Ids, never route params. `SessionThread`, `SessionWorkspace` and `ProjectHome` mount `SessionIdsProvider` and the
    SDK project scope themselves. A block outside them: `KortixProjectProvider` (`@kortix/sdk/react`) and

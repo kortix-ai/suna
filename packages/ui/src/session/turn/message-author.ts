@@ -68,7 +68,8 @@ export function authorForTurn(
 /**
  * Whether a bubble names its author. A one-person session draws no name. A
  * group chat names every author, and so does a session you read that someone
- * else wrote in.
+ * else wrote in. With no viewer id (the host passes no `useViewerId`, or auth
+ * is still loading) a one-person session draws no name either.
  */
 export function showAuthorName(
   author: SessionMessageAuthor | undefined,
@@ -77,13 +78,14 @@ export function showAuthorName(
 ): boolean {
   if (!author) return false;
   if (multiAuthor) return true;
-  return author.kind === 'session' || author.user_id !== viewerId;
+  return author.kind === 'session' || (viewerId !== undefined && author.user_id !== viewerId);
 }
 
 /**
  * Who to name under a turn someone ELSE stopped: "Stopped by <name>". Null
  * when nobody is recorded, when the stop came from an agent session, and when
- * the viewer stopped it: a stop you asked for is not news.
+ * the viewer stopped it: a stop you asked for is not news. Null too with no
+ * viewer id: the stopper may be the viewer.
  */
 export function stoppedByName(
   data: SessionMessageAuthors | undefined,
@@ -91,7 +93,7 @@ export function stoppedByName(
   viewerId: string | undefined,
 ): string | null {
   const stopper = data?.stops?.[messageId];
-  if (stopper?.kind !== 'member' || stopper.user_id === viewerId) return null;
+  if (stopper?.kind !== 'member' || viewerId === undefined || stopper.user_id === viewerId) return null;
   return stopper.name || stopper.email || null;
 }
 

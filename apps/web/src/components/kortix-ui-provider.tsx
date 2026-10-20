@@ -159,6 +159,9 @@ export function KortixUiProvider({ children }: { children: ReactNode }) {
       connectorsEnabled: isConnectorsEnabled(),
       managedModelsEnabled: isManagedProviderEnabled(),
       deploymentVersion: getEnv().VERSION,
+      // apps/web mounts the command palette (⌘K) and the settings shortcut (⌘,).
+      commandPaletteShortcut: true,
+      settingsShortcut: true,
     }),
     [],
   );
