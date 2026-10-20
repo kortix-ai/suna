@@ -239,7 +239,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tSecrets = useI18nTranslations('secrets');
+  const tSecrets = useTranslations('secrets');
   const queryClient = useQueryClient();
   const { navigate } = useSettingsNav();
   const queryKey = useMemo(() => qk.project.secrets(projectId), [projectId]);
@@ -818,7 +818,7 @@ function SecretTableRow({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tSharing = useI18nTranslations('accessSharing');
-  const tSecrets = useI18nTranslations('secrets');
+  const tSecrets = useTranslations('secrets');
   const canManageShared = canManage && !row.system;
   const distinctKey = row.identifier !== row.key;
   const delivery = secretDeliveryPresentation(row.strategy, row.consumer, { llmGatewayEnabled });
@@ -1033,7 +1033,7 @@ function SecretDialog({
   const viewerId = useUiViewerId() ?? null;
   const accountId = useProjectAccountId(projectId);
   const tSharing = useI18nTranslations('accessSharing');
-  const tSecrets = useI18nTranslations('secrets');
+  const tSecrets = useTranslations('secrets');
   const projectName =
     useQuery({ queryKey: qk.project.detail(projectId), queryFn: () => getProjectDetail(projectId), ...contract('config') })
       .data?.project?.name ?? '';
