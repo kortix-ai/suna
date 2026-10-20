@@ -33,6 +33,7 @@
  */
 import {
   toV1,
+  ModelRefSchema,
   type SessionLog,
   type SessionLogBlock,
   type SessionLogMessage,
@@ -41,7 +42,7 @@ import {
 } from '@kortix/api-contract/session-log';
 import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript';
 import { projectSessions, projects, sessionLogMessages, sessionLogs, sessionLogThreads } from '@kortix/db';
-import { and, asc, desc, eq, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
@@ -345,4 +346,21 @@ async function anchorOf(tx: Tx, scope: SQL, before: string, toRows: (records: J[
     if (summary) return { seq: c.seq, inclusive: true, key: keyOf(summary) };
   }
   throw new UnknownTranscriptCursorError(before);
+}
+
+/** Bounded inventory read: no sandbox wake and no per-session log requests. */
+export async function readSessionConversationModels(sessionIds: string[]): Promise<Map<string, string>> {
+  if (sessionIds.length === 0) return new Map();
+  const rows = await db.select({
+    sessionId: sessionLogs.sessionId,
+    model: sql<unknown>`${sessionLogs.record}->'selection'->'model'`,
+  }).from(sessionLogs).where(inArray(sessionLogs.sessionId, sessionIds));
+  const models = new Map<string, string>();
+  for (const row of rows) {
+    const parsed = ModelRefSchema.safeParse(row.model);
+    if (parsed.success && parsed.data.provider.trim() && parsed.data.model.trim()) {
+      models.set(row.sessionId, `${parsed.data.provider}/${parsed.data.model}`);
+    }
+  }
+  return models;
 }

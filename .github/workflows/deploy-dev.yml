@@ -840,6 +840,13 @@ jobs:
     env:
       AWS_REGION: us-east-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      # Gateway → API inside the VPC (Cloud Map name from the dev-us-east-2
+      # Terraform root). The gateway falls back to KORTIX_API_URL for a minute
+      # whenever this URL does not answer, so a roll before the Terraform apply
+      # is safe. Roll back by setting the value to "", not by deleting the key:
+      # ecs-deploy.sh keeps every variable of the running task that this blob
+      # does not name.
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_API_INTERNAL_URL":"http://api.kortix-dev-use2.internal:8008"}'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
