@@ -304,6 +304,20 @@ describe('walletSeverity — the ONLY place a balance becomes an alert', () => {
     ).toBe('low');
   });
 
+  // KRTX-2910: the free-tier grant is 500 credits ($5.00). A flat $5 line
+  // flagged every new free account as "Low balance" after its first $0.01.
+  test('the line scales to what the account was given: a fifth of it, at most $5', () => {
+    const grantOnly = (total: number) =>
+      walletSeverity(accountState({ billing_state: 'active', credits: { total, lifetime_granted: 5, lifetime_purchased: 0 } }));
+    expect(grantOnly(4.988)).toBe(null);
+    expect(grantOnly(1)).toBe(null);
+    expect(grantOnly(0.99)).toBe('low');
+    const paid = (total: number) =>
+      walletSeverity(accountState({ billing_state: 'active', credits: { total, lifetime_granted: 5, lifetime_purchased: 100 } }));
+    expect(paid(5)).toBe(null);
+    expect(paid(4.99)).toBe('low');
+  });
+
   test('THE REGRESSION: a $0 wallet on an account the server calls `active` is NOT an alarm', () => {
     // The whole bug in one assertion. The sidebar read `balance <= 0` and
     // rendered a red "Out of credits" row on an account that was starting

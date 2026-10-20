@@ -63,6 +63,7 @@ import {
 } from '../lib/session-metadata-keys';
 import { loadSessionUserStates } from '../lib/session-user-state';
 import { personUserId } from './session-watch';
+import { sessionCreateSurface } from '../lib/session-surface';
 
 const NO_USER_STATE = { pinnedAt: null, archivedAt: null };
 
@@ -275,7 +276,8 @@ export function registerProjectSessionsRoutes(): void {
       );
     }
     const result = await createSession({
-      source: 'ui',
+      // The surface it came through: ui, cli or mobile (KRTX-2914).
+      source: sessionCreateSurface(c.req.header('x-kortix-client-version')),
       project: loaded.row,
       userId: loaded.userId,
       requestingPrincipalType:
