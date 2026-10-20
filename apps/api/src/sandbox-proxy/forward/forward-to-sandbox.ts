@@ -1,4 +1,3 @@
-import { registerRuntimeFork } from '../../projects/surface';
 import { clientAbortTarget } from '../client-abort';
 import { NOT_TURN_PROMPTER, NOT_TURN_PROMPTER_MESSAGE } from '../../shared/turn-stop-refusal';
 import { extractTurnIdentity, markTurnStopRequested } from '../../projects/session-turn-ledger';
@@ -332,6 +331,7 @@ export async function forwardToSandbox(
     ? /^\/?session\/([^/]+)\/fork$/.exec(remainingPath)?.[1]
     : undefined;
   if (forkSource && response.ok) {
+    const { registerRuntimeFork } = await import('../../projects/surface');
     await registerRuntimeFork({
       sessionId: record.sessionId, projectId: record.projectId, accountId: record.accountId,
       sourceId: forkSource, fork: await response.clone().json(),
