@@ -4,23 +4,45 @@ This package supplies the bundled provider catalog and the Kortix managed model 
 
 ## Managed models
 
+Kimi K3 (`kimi-k3`) left the lineup on 2026-10-19. A session or default that names it runs on DeepSeek V4.1 Flash (`LEGACY_MANAGED_IDS`).
+
 The picker groups every managed model under **Kortix**, and the provider is always Kortix. Requests use Kortix credits. Project BYOK providers remain separate.
 
 | Picker name | Gateway model ID | OpenRouter model ID | Input | Displayed USD per 1M input / cached input / output tokens |
 | --- | --- | --- | --- | --- |
-| DeepSeek V4.1 Flash (default) | `deepseek-v4.1-flash` | `deepseek/deepseek-v4.1-flash` | Text, image | $0.20 / $0.03 / $0.65 |
+| DeepSeek V4.1 Flash (default) | `deepseek-v4.1-flash` | `deepseek/deepseek-v4.1-flash-1017` | Text, image | $0.20 / $0.03 / $0.65 |
 | GLM-5.3-Flash | `glm-5.3-flash` | `z-ai/glm-5.3-flash` | Text, image | $0.15 / $0.05 / $0.50 |
-| Kimi K3 2.8T | `kimi-k3` | `moonshotai/kimi-k3` | Text, image | $3.30 / $0.33 / $16.50 |
 
 The displayed prices are the OpenRouter pool prices, or the pool cap for GLM. OpenRouter requests bill its reported `usage.cost`. Direct Morph requests use the separate Morph prices in `MANAGED_MODELS`. All rates exclude Kortix credit markup.
 
 The OpenCode reference is `kortix/<gateway model ID>`. The bundled sandbox fallback (`MINIMAL_FALLBACK_MODELS`) uses the same IDs, prices, and capabilities.
 
-### Routing: per-model Morph selection
+### Routing: Morph direct, then Zen, then the OpenRouter pool
 
-1. `MORPH_MANAGED_MODELS` is a comma-separated list of managed model IDs. Its default is `deepseek-v4.1-flash,kimi-k3`. GLM uses OpenRouter only. An empty value disables Morph for every managed model. Add `glm-5.3-flash` to explicitly enable Morph for GLM. The change takes effect after an API restart or deployment. A selected model uses Morph direct first when `MORPH_API_KEY` exists, then OpenRouter on a retryable error.
-2. OpenRouter routes inside the model's endpoint pool: `only` lists the pool, `allow_fallbacks: true` lets OpenRouter move to the next pool member on an endpoint error, `zdr: true` and `data_collection: deny` are forced by the gateway, and `max_price` (USD per 1M tokens) excludes premium tiers. The gateway intersects operator-defined pools with the verified US endpoint list. Morph is excluded from every OpenRouter pool.
-3. The OpenRouter model ID names the model author, not the inference host. The allowlist names the permitted hosts.
+DeepSeek V4.1 Flash and GLM-5.3-Flash try their upstreams in this order (`managedCandidates`). OpenRouter is last. Any failed attempt (an HTTP error, a network error, the 90 s header timeout, or an error frame in the first 10 s of a stream) moves the request to the next one. After the last one fails, the platform fallback policy moves the request to the other managed model: `deepseek-v4.1-flash` falls back to `glm-5.3-flash` and back (`LLM_GATEWAY_FALLBACK_POLICIES`, `policy-config.ts`). `codex/gpt-5.6-sol` falls back to both, in that order.
+
+| Order | Upstream | Selected by | Default |
+| --- | --- | --- | --- |
+| 1 | Morph direct (signed ZDR terms) | `MORPH_MANAGED_MODELS` + `MORPH_API_KEY` | `deepseek-v4.1-flash,glm-5.3-flash` |
+| 2 | OpenCode Zen | `OPENCODE_ZEN_MANAGED_MODELS` + `OPENCODE_ZEN_API_KEY` | `glm-5.3-flash,deepseek-v4.1-flash` |
+| 3 | OpenRouter endpoint pool | the model's `openrouterProvider.only` + `OPENROUTER_API_KEY` | every managed model |
+
+Why: from 2026-10-16 22:00 to 2026-10-19 04:00 UTC, DeepSeek had one upstream, the OpenRouter pool pinned to `coreweave/fp8`. That endpoint answered 60 to 80% of requests with HTTP 429 (`limit_source: upstream_provider_shared_pool`). OpenRouter's uptime page showed it at 100% the whole time: its uptime does not count shared-pool 429s.
+
+Measured on 2026-10-19 with the prod keys, ~150k-token prompts, streaming, one tool call (first token p50 / max, all requests answered with a tool call):
+
+| Route | DeepSeek V4.1 Flash, 8 parallel | DeepSeek, 40 parallel | GLM-5.3-Flash, 8 parallel | GLM, 40 parallel | Kimi K3, 8 parallel |
+| --- | --- | --- | --- | --- | --- |
+| Morph direct | 2.9 s / 3.2 s (1017 snapshot) | 8.0 s / 10.8 s, 40/40 | 7.9 s / 8.2 s | 11.3 s / 12.6 s, 40/40 | 34.5 s / 34.7 s |
+| OpenRouter `morph/fp8` | 5.4 s / 5.9 s (1017 snapshot) | not measured | not measured | not measured | — |
+| OpenRouter `fireworks/us` | — | — | — | — | 10.0 s / 12.2 s |
+| OpenCode Zen | 12.9 s / 16.6 s | 10.5 s / 18.7 s, 40/40 | 9.8 s / 12.0 s | not measured | 11.3 s / 28.7 s |
+
+1. An empty `MORPH_MANAGED_MODELS` or `OPENCODE_ZEN_MANAGED_MODELS` removes that upstream for every managed model (the kill switch). The change takes effect after an API restart or deployment.
+2. The gateway fails over on an error and on the 90 s header timeout, never on a slow first token. Direct Morph was off from 2026-09-27 to 2026-10-19 for that reason (p90 67 s then).
+3. A Free account may use only the platform default. It may also use the platform policy's fallback model, as that fallback only (`isPlatformDefaultFallback` in `resolve-candidates.ts`). On 2026-10-17 and 10-18, 119 Free accounts got DeepSeek's 429 on 8,469 requests with no fallback.
+4. OpenRouter routes inside the model's endpoint pool: `only` lists the pool, `allow_fallbacks: true` lets OpenRouter move to the next pool member on an endpoint error, `zdr: true` and `data_collection: deny` are forced by the gateway, and `max_price` (USD per 1M tokens) excludes premium tiers. The gateway intersects operator-defined pools with the verified US endpoint list.
+5. The OpenRouter model ID names the model author, not the inference host. The allowlist names the permitted hosts.
 
 A failure after output has started is not retried. The client receives the stream error.
 
@@ -28,15 +50,15 @@ Billing uses OpenRouter's reported `usage.cost` for the endpoint that served the
 
 The project model picker lists each eligible managed route's estimated customer price for input, cached input, and output tokens. The API refreshes allowed OpenRouter endpoint rates from its endpoint API at most once every five minutes. A feed failure keeps the verified public rate table. The API applies `KORTIX_LLM_MARKUP` (default `1.2`) before returning prices. OpenRouter may select any allowed endpoint; its reported `usage.cost` determines the settled charge. Direct Morph rates use the public table until updated in the catalog. The fallback tables were checked against [OpenRouter's model endpoint pages](https://openrouter.ai/docs/api/api-reference/endpoints/list-all-endpoints-for-a-model) and [Morph's current pricing](https://www.morphllm.com/pricing) on 2026-09-26.
 
-For a quick route change, set `MORPH_MANAGED_MODELS` in the deployment environment and restart the API. For example, `MORPH_MANAGED_MODELS=deepseek-v4.1-flash,kimi-k3,glm-5.3-flash` enables all three. Set `MORPH_MANAGED_MODELS=` to disable Morph globally. Direct Morph does not inherit OpenRouter's ZDR and US location controls; verify its contract before selecting models with restricted data.
+For a quick route change, set `MORPH_MANAGED_MODELS` in the deployment environment and restart the API. For example, `MORPH_MANAGED_MODELS=deepseek-v4.1-flash` limits Morph to DeepSeek. Set `MORPH_MANAGED_MODELS=` to disable Morph globally. Direct Morph does not inherit OpenRouter's ZDR controls: Kortix has signed ZDR terms with Morph directly (2026-10-19).
 
 Without `OPENROUTER_API_KEY`, GLM is unavailable by default. Other selected models require `MORPH_API_KEY` or `OPENROUTER_API_KEY`.
 
-### OpenCode Zen first
+### OpenCode Zen
 
-`OPENCODE_ZEN_MANAGED_MODELS` lists the managed model IDs that [OpenCode Zen](https://opencode.ai/docs/zen) serves first. The OpenRouter pool is their fallback: a 429, 5xx, or network error on Zen moves the request to the pool, and the reverse. Its default is `glm-5.3-flash`. The candidate exists only when `OPENCODE_ZEN_API_KEY` is set. An empty list is the kill switch. `OPENCODE_ZEN_API_URL` defaults to `https://opencode.ai/zen/v1`.
+`OPENCODE_ZEN_MANAGED_MODELS` lists the managed model IDs that [OpenCode Zen](https://opencode.ai/docs/zen) serves after Morph direct and before the OpenRouter pool. Its default is `glm-5.3-flash,deepseek-v4.1-flash`. The candidate exists only when `OPENCODE_ZEN_API_KEY` is set. An empty list is the kill switch. `OPENCODE_ZEN_API_URL` defaults to `https://opencode.ai/zen/v1`.
 
-1. Zen states that it hosts every model in the US and that its providers keep zero data retention. The exceptions are OpenAI, Anthropic, and free models. No managed model is one of them.
+1. Zen states that its providers keep zero data retention. The exceptions are OpenAI, Anthropic, and free models. No managed model is one of them.
 2. Zen serves the managed IDs unchanged (`glm-5.3-flash`, `kimi-k3`, `deepseek-v4.1-flash`) on `/chat/completions`.
 3. The gateway sends `x-opencode-session` (the Kortix session) and `User-Agent: Kortix (https://kortix.com)`. Zen refuses a request without the session header.
 4. Zen sends no `usage.cost`. The gateway bills the model's managed `pricing`, the same rate the picker shows.
@@ -56,27 +78,34 @@ Prod GLM peaked at 262 requests/min and 37M input tokens/min on 2026-09-29.
 
 ### OpenRouter endpoint pools
 
-Every pool member has a **confirmed US datacenter**. OpenRouter lists the provider's headquarters AND datacenters as US (`/api/v1/providers`), or the endpoint tag names the US region (`/us`). US headquarters alone does not qualify. Every member was also in OpenRouter's ZDR endpoint feed (`/api/v1/endpoints/zdr`), rechecked on 2026-09-26. The `zdr: true` request flag fails closed when an endpoint loses ZDR status. The global OpenRouter API URL does not itself guarantee that OpenRouter's gateway processing stays in the US.
+The rule is ZDR, not location. Every pool member is in OpenRouter's ZDR feed (`/api/v1/endpoints/zdr`), and every request also sends `zdr: true` and `data_collection: 'deny'`, so a member that loses ZDR status is skipped. Kortix makes no US-datacenter claim for managed inference.
 
-| Model | Pool (`only`) | `max_price` prompt / completion |
+A member must also have passed, on 2026-10-19 through OpenRouter pinned to that one endpoint: 12 of 12 requests (6 `read_file` tool calls with a ~30k-token context, 6 exact arithmetic answers), 3 of 3 image reads, a first-token p50 under 6 s, and input, cached-input and output prices at or below the model's `pricing`.
+
+The gateway sends a request to a member only when its host is a subprocessor in effect (`inferenceHostCleared` in `@kortix/shared/subprocessors`, by the row's `inferenceHosts`). A host joins on its notice date without a code change.
+
+| Model | Member | Host may serve |
 | --- | --- | --- |
-| DeepSeek V4.1 Flash | `coreweave/fp8` | $0.30 / $1.20 |
-| GLM-5.3-Flash | `decart/fp4`, `coreweave/nvfp4` | $0.15 / $0.50 |
-| Kimi K3 2.8T | `fireworks/us` | $3.30 / $16.50 |
+| DeepSeek V4.1 Flash (1017) | `deepinfra/fp8`, `deepinfra/fp8/priority` | from 2026-11-24 |
+| | `inference-net/fp8`, `wafer/mxfp4` | after a subprocessor row + 37 days |
+| | `cloudflare` | after its subprocessor row lists inference |
+| GLM-5.3-Flash | `fireworks` | now |
+| | `deepinfra/fp4`, `together`, `parasail/fp4`, `modal/nvfp4` | from 2026-11-24 |
+| | `crusoe/fp4`, `inference-net/fp4`, `makora`, `near-ai/fp8`, `open-inference/fp4`, `primeintellect`, `siliconflow/fp8`, `venice` | after a subprocessor row + 37 days |
 
-The 2026-09-24 probe included Morph. The reduced OpenRouter pools were probed with text and image inputs on 2026-09-26.
+Until 2026-11-24, DeepSeek has no OpenRouter member a request may reach: Zen and Morph direct serve it, and GLM is its fallback model. `morph/fp8` is not a member: Morph is already the direct route.
+
+Excluded on 2026-10-19:
+- **429 from a shared pool on most requests:** `coreweave/nvfp4` (GLM, 3 of 12), `decart/fp4` (DeepSeek, 0 of 12; no longer in the GLM ZDR feed), `baseten`, `baseten/fp8`, `baseten/fp8/us`, `parasail/fast`.
+- **Wrong output:** `relace` (GLM: garbled text, 1 of 12; DeepSeek: 1 of 3 images).
+- **Image input refused:** `digitalocean` (HTTP 400), `sail-research/us` and `sail-research/fp4` (HTTP 404).
+- **Above the model's price:** for DeepSeek, `fireworks`, `together`, `crusoe/fp8`, `primeintellect`, `parasail/fp8`, `baseten` ($0.30 / $1.20); for GLM, `wafer/nvfp4` (cached), `inceptron/fp8` and `reka` (output), `fireworks/us`, `morph/fp8`.
+- **Slow (first-token p50 over 6 s):** `deepinfra/fp8/flex` (DeepSeek), `z-ai/fp8`, `novita/fp8`, `phala/nvfp4`, `nextbit/fp4` (GLM).
+- **Not in the ZDR feed:** `deepseek`, `alibaba`, `atlas-cloud/fp8`, `streamlake/fp8`, `gmicloud/fp8`, `friendli`.
 
 Known limits:
-- `sail-research/us` serves GLM text only. OpenRouter skips it for image requests.
-- `coreweave/fp8` twice answered a DeepSeek image request as if no image was sent. It is now the only permitted DeepSeek endpoint, so image behavior needs a fresh probe before release.
-- `coreweave/nvfp4` returns HTTP 429 from a shared pool most of the time; see below.
-- `decart/fp4` is fp4 quantization.
-
-Excluded on 2026-09-24:
-- **US headquarters without a confirmed US datacenter:** `wafer`, `together`, `parasail/*`, `io-net/fp8`, `novita/fp8`, `phala*`, `baseten/fp8`, `fireworks`, `deepinfra/*`, `modal*`, `inference-net/fp4`, `open-inference/fp4`, `crusoe/fp4`, `krea/fp8`, `sail-research/fp4`.
-- **Non-US or unknown location:** `z-ai/fp8` (SG), `siliconflow/fp8` (US datacenters, SG headquarters), `inceptron/fp8` (FI), `nextbit/fp8` (ES), `moonshotai/mxfp4` (SG), `dekallm` (ID), `relace`, `near-ai/fp8`, `digitalocean`, `reka`, `makora`.
-- **Image input rejected (HTTP 400):** `venice` (GLM) and `venice/fp8` (DeepSeek).
-- **Above `max_price`:** `morph/fast` for Kimi ($6.00 / $22.50).
+- A prompt such as "Reply with exactly: X" makes DeepSeek V4.1 Flash break mid-word on several hosts (Morph, DeepInfra, Together), from 11 to 17 of 20 exact. Tool calls and ordinary answers were 60 of 60 on each route tested.
+- `fp4`, `nvfp4` and `mxfp4` members run 4-bit weights; `fp8` members run 8-bit. All passed the same probes.
 
 ### Why GLM-5.3-Flash failed before 2026-09-24
 
@@ -95,7 +124,7 @@ Measured on 2026-09-30 with synthetic prompts at the edge of each window:
 | GLM-5.3-Flash | OpenRouter `coreweave/nvfp4` | prompt + `max_tokens` 1,048,576 | combined | HTTP 400 "combined input and output tokens" |
 | GLM-5.3-Flash | Morph | prompt 1,036,630 with `max_tokens` 16 | combined | HTTP 400 "Invalid request" |
 | DeepSeek V4.1 Flash | Morph | prompt 1,047,041 with `max_tokens` 16 | combined | HTTP 400 "Invalid request" |
-| DeepSeek V4.1 Flash | OpenRouter `coreweave/fp8` | prompt + `max_tokens` 1,048,576 | combined | HTTP 400 "combined input and output tokens" |
+| DeepSeek V4.1 Flash 1017 | OpenRouter `morph/fp8` | prompt 1,032,008 + `max_tokens` 16,384 (2026-10-18) | combined | HTTP 400 "Invalid request" |
 | Kimi K3 | OpenRouter `fireworks/us` | prompt 1,048,575 | prompt only | HTTP 400 "prompt is too long" |
 | Kimi K3 | Morph | not measured: HTTP 429 `service_overloaded` on every probe | | |
 

@@ -16,28 +16,27 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { forgetPushedEntry, hubTarget } from '@/stores/account-panel-store';
 
-import { HubLink } from './account-hub-location';
-import { AccountPane } from './account-pane';
+import { accountCreated } from '@/features/accounts/account-created';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
-import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { useTranslations } from '@/i18n/use-translations';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { isAccountCreationRestricted } from '@/lib/config';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { type KortixAccount } from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
+import type { KortixAccount } from '@kortix/sdk';
 import {
   CaretRightIcon as ChevronRight,
   PlusIcon as Plus,
   UsersIcon as Users,
 } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
+import { HubLink } from './account-hub-location';
+import { AccountPane } from './account-pane';
 
 export function AccountListContent() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -69,7 +68,7 @@ export function AccountListContent() {
   }, [accountsQuery.data]);
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+    return <ConnectingScreen overrideStage="auth" hideWorkspacePicker />;
   }
 
   return (
@@ -145,36 +144,10 @@ export function AccountListContent() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={(account) => {
-          // The reader's OWN key, not a hand-built one: writer and reader
-          // on different keys is silent — the create appears to succeed and
-          // the list never changes.
-          queryClient.setQueryData<KortixAccount[]>(accountsQueryKey, (accounts) => {
-            const current = accounts ?? [];
-            return current.some((item) => item.account_id === account.account_id)
-              ? current.map((item) => (item.account_id === account.account_id ? account : item))
-              : [account, ...current];
+          accountCreated(account, queryClient, accountsQueryKey, setSelectedAccountId, (path) => {
+            forgetPushedEntry();
+            router.replace(path);
           });
-          // `scope()`, not `list(userId)`: this is the "the account list
-          // changed" prefix, and it provably reaches the only slot that can
-          // be live without a callback having to re-derive whose slot it is.
-          void queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
-          setSelectedAccountId(account.account_id);
-          // qk.projects.scope(): reaches every account's list (and the
-          // accountless slot), the same reach the old bare projects-literal
-          // prefix match had. Account creation is rare — over-invalidating
-          // costs nothing measurable.
-          void queryClient.invalidateQueries({
-            queryKey: qk.projects.scope(),
-          });
-          // `/new` scoped to the account just created — NOT the landing door.
-          // The door opens the remembered project in ANY account
-          // (`decideDoor`), so a brand-new empty account falls through to
-          // some other account's project, and
-          // `projects/start/page.tsx` then heals the persisted selection to
-          // THAT account — undoing the switch above. Same destination the
-          // sidebar's create row uses, so both paths land in one place.
-          forgetPushedEntry();
-          router.replace(newWorkspacePathForAccount(account.account_id));
         }}
       />
     </>

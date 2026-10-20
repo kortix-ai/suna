@@ -1,20 +1,21 @@
 /**
  * Where the v2 session log comes from, and when a client reads it.
  *
- * NEGOTIATION. A session reads `kortix.session/2` only when all three hold:
- *  - the runtime's `/kortix/health` lists `session.log.v2` (a daemon that serves the
- *    `log.*` frames). An absent or empty list is not support: `runtimeSupports` reads
- *    such a list as "every feature" (an old OpenCode daemon), negotiation does not;
+ * NEGOTIATION. A session reads `kortix.session/2` only when both hold:
  *  - the project flag `session_log` is exactly `true`. An API that predates the session
  *    log does not serve the flag, so an SDK newer than its API keeps v1;
  *  - this SDK has a page loader. An SDK published before the API route keeps v1.
- * Otherwise the session reads v1, exactly as before the session log existed.
+ * Otherwise the session reads v1, exactly as before the session log existed. The runtime
+ * is not asked: the stored log is the API's (a stopped box reads it too), and the session
+ * stream serves `schema=v2` for every daemon (it converts the v1 frames of a daemon that
+ * does not list `session.log.v2`).
  *
  * THE PAGE LOADER reads `GET /v1/projects/:p/sessions/:s/log?thread=&before_seq=&limit=`
  * (`@kortix/api-contract/session-log` `SessionLogPageSchema`). `SessionLogPage` is that
  * schema's type, written out because this package has no zod; `contract-drift.test.ts` holds
- * the two equal at typecheck. Internal: not exported from the package. A 404 (the session
- * has no stored log, or no such thread) reads as no page, and the session stays on v1.
+ * the two equal at typecheck. `SessionLogPage` and `SessionLogPageQuery` are public (the types of
+ * `getSessionLogPage`); the loader is internal. A 404 (the session has no stored log, or no such
+ * thread) reads as no page, and the session stays on v1.
  */
 import { backendApi } from '../http/api-client';
 import { isSessionLogPage } from './guard';
@@ -68,28 +69,37 @@ export const loadSessionLogPage: LoadSessionLogPage | null = async (projectId, s
 /** The first window, the same size as the v1 mirror's (`MIRROR_HYDRATE_LIMIT`). */
 export const SESSION_LOG_FIRST_PAGE_LIMIT = 40;
 
+/** An older page: the reader scrolls on purpose, so fewer round trips win (the v1 older page is 100 too). */
+export const SESSION_LOG_OLDER_PAGE_LIMIT = 100;
+
 export type SessionLogDialect = 'v1' | 'v2';
 
-export function negotiateSessionLog(input: {
-  capabilities: readonly string[] | null | undefined;
-  flag: boolean | undefined;
-  loader: LoadSessionLogPage | null;
-}): SessionLogDialect {
-  const served = Array.isArray(input.capabilities) && input.capabilities.includes('session.log.v2');
-  return served && input.flag === true && input.loader !== null ? 'v2' : 'v1';
+export function negotiateSessionLog(input: { flag: boolean | undefined; loader: LoadSessionLogPage | null }): SessionLogDialect {
+  return input.flag === true && input.loader !== null ? 'v2' : 'v1';
+}
+
+/** One page, validated. Null on any failure; never throws. */
+export async function fetchSessionLogPage(
+  load: LoadSessionLogPage,
+  projectId: string,
+  sessionId: string,
+  query: SessionLogPageQuery,
+  signal?: AbortSignal,
+): Promise<SessionLogPage | null> {
+  try {
+    const page = await load(projectId, sessionId, query, signal);
+    return isSessionLogPage(page) ? page : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The newest page of the root thread, validated. Null on any failure; never throws. */
-export async function fetchFirstSessionLogPage(
+export function fetchFirstSessionLogPage(
   load: LoadSessionLogPage,
   projectId: string,
   sessionId: string,
   signal?: AbortSignal,
 ): Promise<SessionLogPage | null> {
-  try {
-    const page = await load(projectId, sessionId, { limit: SESSION_LOG_FIRST_PAGE_LIMIT }, signal);
-    return isSessionLogPage(page) ? page : null;
-  } catch {
-    return null;
-  }
+  return fetchSessionLogPage(load, projectId, sessionId, { limit: SESSION_LOG_FIRST_PAGE_LIMIT }, signal);
 }

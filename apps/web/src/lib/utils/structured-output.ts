@@ -17,9 +17,41 @@ export type OutputSection =
  * Inserts newlines before well-known markers so the parser can work line-by-line.
  * Also strips leftover ANSI caret artifacts (^[[...m sequences rendered as ^).
  */
+/**
+ * Drop caret-rendered ANSI escapes: one or more `^`, then `[`, digits or `;`,
+ * and a letter (`^[[0m`, `^^[1;31m`). A linear scan: the regex form
+ * `/\^+\[[\d;]*[A-Za-z]/` backtracked quadratically on a long caret run that
+ * no `[` follows (CodeQL js/polynomial-redos).
+ */
+export function stripCaretAnsi(text: string): string {
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] !== '^') {
+      out += text[i];
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j < text.length && text[j] === '^') j += 1;
+    if (text[j] === '[') {
+      let k = j + 1;
+      while (k < text.length && (text[k] === ';' || (text[k] >= '0' && text[k] <= '9'))) k += 1;
+      const c = text[k];
+      if (c !== undefined && ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))) {
+        i = k + 1;
+        continue;
+      }
+    }
+    out += text.slice(i, j);
+    i = j;
+  }
+  return out;
+}
+
 export function normalizeToolOutput(raw: string): string {
   // Strip leftover caret-style ANSI artifacts like ^[[0m, ^[[1;31m, etc.
-  let text = raw.replace(/\^+\[[\d;]*[A-Za-z]/g, '');
+  let text = stripCaretAnsi(raw);
   // Also strip sequences of consecutive carets that are clearly artifacts
   text = text.replace(/\^{3,}/g, ' ');
 

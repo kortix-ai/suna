@@ -34,7 +34,7 @@ import { createProjectTrigger, upsertProjectSecret } from '@kortix/sdk';
 import { modelKeyToWire, useProjectTriggerEventApps, useVisibleAgents } from '@kortix/sdk/react';
 import { LightningIcon, TimerIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { type PatchDraft, InlineError } from './composer-parts';
 import {
@@ -42,13 +42,16 @@ import {
   appConnectors,
   describeEventStatus,
   draftToConfig,
+  eventAppTarget,
   parseConfigErrors,
   schemaFields,
 } from './event-trigger-copy';
 import { type TriggerKind, describeCadence, describeOneOff } from './schedule-copy';
+import { triggerToastEntity } from './trigger-toast';
 import { rowsToConditions } from './schedule-fields';
 import { ThenFields } from './then-fields';
 import {
+  runCapFromInput,
   type ComposerBlock,
   type ComposerDraft,
   findDraftApp,
@@ -79,7 +82,7 @@ export interface TriggerComposerProps {
   /** Opens on this kind, e.g. the empty state's "App event" button. */
   initialKind?: TriggerKind | null;
   /** Opens on App event with this app chosen and its events listed. Sends no request. */
-  initialApp?: { app: string } | null;
+  initialApp?: { app: string; source?: string; provider?: string } | null;
   /** Opens on App event with this connector of the project chosen, e.g. from its own page. */
   initialConnector?: { slug: string; name: string } | null;
 }
@@ -111,6 +114,11 @@ export function TriggerComposer(props: TriggerComposerProps) {
   );
 }
 
+/** A group's heading: one size above the field labels inside it. */
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <h3 className="text-foreground text-sm font-medium">{children}</h3>;
+}
+
 const BLOCK_LABELS = {
   cron: TimerIcon,
   event: LightningIcon,
@@ -128,6 +136,7 @@ function ComposerForm({
   onBusyChange,
 }: TriggerComposerProps & { onBusyChange: (busy: boolean) => void }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tComposer = useI18nTranslations('triggerComposer');
   // App events are a beta feature behind the project flag `event_triggers`. Off: no App event tab,
   // no catalog request, and an entry point that asks for an app event opens on Schedule.
   const eventsOn = useProjectFeatureFlags(projectId).flags.event_triggers === true;
@@ -140,6 +149,7 @@ function ComposerForm({
           : initialKind,
       agent: initialAgent,
       appSlug: initialApp?.app ?? null,
+      appSource: initialApp?.source ?? initialApp?.provider ?? null,
       profile: initialConnector?.slug ?? null,
     }),
   );
@@ -234,12 +244,7 @@ function ComposerForm({
           needsConnector && app
             ? async () => {
                 if (addedConnector.current?.app === app.app) return addedConnector.current.slug;
-                const added = await add({
-                  app: app.app,
-                  name: app.name,
-                  connector: null,
-                  newConnectorSlug: app.new_connector_slug,
-                });
+                const added = await add(eventAppTarget(app));
                 addedConnector.current = { app: app.app, slug: added };
                 return added;
               }
@@ -254,6 +259,8 @@ function ComposerForm({
             ...(draft.agent ? { agent: draft.agent } : {}),
             ...(draft.model ? { model: modelKeyToWire(draft.model) } : {}),
             session_access: draft.sessionAccess,
+            ...(runCapFromInput(draft.maxRunsPerHour) ? { max_runs_per_hour: runCapFromInput(draft.maxRunsPerHour)! } : {}),
+            ...(runCapFromInput(draft.maxRunsPerDay) ? { max_runs_per_day: runCapFromInput(draft.maxRunsPerDay)! } : {}),
             ...(draft.mode !== 'fresh' ? { session_mode: draft.mode } : {}),
             ...(draft.mode === 'pinned' && draft.pinnedSessionId
               ? { session_id: draft.pinnedSessionId }
@@ -280,6 +287,11 @@ function ComposerForm({
       const created = listing.triggers
         .filter((t) => t.type === draft.kind && t.name === name.trim())
         .slice(-1)[0];
+      const cadence = isCron
+        ? draft.runAt
+          ? describeOneOff(draft.runAt)
+          : describeCadence(draft.cron.trim())
+        : undefined;
       successToast(
         isEvent
           ? tI18nComplete.raw('text840993da3129')
@@ -287,6 +299,7 @@ function ComposerForm({
             ? tI18nComplete.raw('text84e98b45ad8b')
             : tI18nComplete.raw('text20bf63f7b46f'),
         {
+          entity: triggerToastEntity({ name: name.trim(), type: draft.kind }, cadence),
           description: isEvent
             ? created?.event
               ? created.event.status === 'needs_connection'
@@ -295,9 +308,7 @@ function ComposerForm({
                   tI18nComplete.raw('text80273a6c8918'))
               : undefined
             : isCron
-              ? draft.runAt
-                ? describeOneOff(draft.runAt)
-                : describeCadence(draft.cron.trim())
+              ? undefined
               : tI18nComplete.raw('text4aded5c6750d'),
         },
       );
@@ -351,9 +362,13 @@ function ComposerForm({
       </ModalHeader>
 
       <ModalBody className="min-h-0 flex-1 overflow-y-auto px-5 py-4 lg:max-h-[min(calc(100dvh-13rem),44rem)] lg:flex-none">
-        <div ref={bodyRef} className="space-y-6">
+        {/* Three groups, read top to bottom as one sentence: when it starts,
+            what the agent does, and what the trigger is called. The space
+            between groups is twice the space inside one, so no rules are
+            needed to tell them apart. */}
+        <div ref={bodyRef} className="space-y-8">
           <section data-block="when" className="space-y-3">
-            <Label>{tI18nComplete.raw('textcf9c7aa24a26')}</Label>
+            <SectionTitle>{tI18nComplete.raw('textcf9c7aa24a26')}</SectionTitle>
             <Tabs
               value={draft.kind}
               onValueChange={(kind) => setDraft((d) => withKind(d, kind as TriggerKind))}
@@ -374,32 +389,32 @@ function ComposerForm({
                   {tI18nComplete.raw('text4814f62c108d')}
                 </TabsTrigger>
               </TabsList>
-              <TabsContent value="cron" className="pt-2">
+              <TabsContent value="cron" className="pt-3">
                 <WhenSchedule draft={draft} patch={patch} error={blockError('when')} />
               </TabsContent>
               {eventsOn ? (
-              <TabsContent value="event" className="pt-2">
-                <WhenEvent
-                  projectId={projectId}
-                  apps={apps}
-                  draft={draft}
-                  patch={patch}
-                  setDraft={setDraft}
-                  configFields={configFields}
-                  configErrors={configErrors}
-                  canConnect={canConnect}
-                  error={blockError('when')}
-                />
-              </TabsContent>
+                <TabsContent value="event" className="pt-3">
+                  <WhenEvent
+                    projectId={projectId}
+                    apps={apps}
+                    draft={draft}
+                    patch={patch}
+                    setDraft={setDraft}
+                    configFields={configFields}
+                    configErrors={configErrors}
+                    canConnect={canConnect}
+                    error={blockError('when')}
+                  />
+                </TabsContent>
               ) : null}
-              <TabsContent value="webhook" className="pt-2">
+              <TabsContent value="webhook" className="pt-3">
                 <WhenWebhook draft={draft} patch={patch} error={blockError('when')} />
               </TabsContent>
             </Tabs>
           </section>
 
           <section data-block="then" className="space-y-3">
-            <Label>{tI18nComplete.raw('text0597f441dcca')}</Label>
+            <SectionTitle>{tI18nComplete.raw('text0597f441dcca')}</SectionTitle>
             <ThenFields
               agents={agents}
               draft={draft}
@@ -409,29 +424,33 @@ function ComposerForm({
             />
           </section>
 
-          <section data-block="name" className="space-y-3">
-            <Label htmlFor="trigger-name">{tI18nComplete.raw('textdcd1d5223f73')}</Label>
-            <Input
-              id="trigger-name"
-              value={name}
-              onChange={(e) => patch({ nameOverride: e.target.value })}
-              placeholder={tI18nComplete.raw('textc8cf587a3b6c')}
-              maxLength={64}
-              aria-invalid={blockError('name') || nameError ? true : undefined}
-            />
-            <InlineError message={blockError('name') ?? nameError} />
-          </section>
-
-          <section data-block="options">
-            <TriggerOptions
-              projectId={projectId}
-              draft={draft}
-              patch={patch}
-              name={name}
-              open={optionsOpen}
-              onOpenChange={setOptionsOpen}
-              error={blockError('options')}
-            />
+          <section className="space-y-3">
+            <SectionTitle>{tComposer('details')}</SectionTitle>
+            <div data-block="name" className="space-y-1.5">
+              <Label htmlFor="trigger-name" className="text-xs">
+                {tI18nComplete.raw('textdcd1d5223f73')}
+              </Label>
+              <Input
+                id="trigger-name"
+                value={name}
+                onChange={(e) => patch({ nameOverride: e.target.value })}
+                placeholder={tI18nComplete.raw('textc8cf587a3b6c')}
+                maxLength={64}
+                aria-invalid={blockError('name') || nameError ? true : undefined}
+              />
+              <InlineError message={blockError('name') ?? nameError} />
+            </div>
+            <div data-block="options">
+              <TriggerOptions
+                projectId={projectId}
+                draft={draft}
+                patch={patch}
+                name={name}
+                open={optionsOpen}
+                onOpenChange={setOptionsOpen}
+                error={blockError('options')}
+              />
+            </div>
           </section>
 
           {error ? (
@@ -446,7 +465,7 @@ function ComposerForm({
 
       <ModalFooter className="mt-0 shrink-0 flex-row gap-2 border-t px-5 py-3 sm:space-x-0">
         <Button
-          variant="outline-ghost"
+          variant="ghost"
           size="sm"
           disabled={create.isPending}
           onClick={() => onOpenChange(false)}

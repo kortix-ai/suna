@@ -15,6 +15,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { toolAllowed, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay';
 import { config } from '../config';
 import { refreshMirror, runGitCapture } from '../projects/git/mirror';
 import {
@@ -35,7 +36,9 @@ import {
   listConfigFiles,
   MAX_CONFIG_ARCHIVE_BYTES,
   readComposedRelease,
+  readFileTree,
   resolveReleaseTreeSource,
+  toolModuleFiles,
 } from './release-tree';
 
 export {
@@ -139,6 +142,8 @@ export interface ConfigReleaseDescriptor {
 export type ConfigRelease = Omit<ConfigReleaseDescriptor, 'format' | 'mode' | 'agent_repoint' | 'snapshot'> & {
   /** Why a tree release has no archive (over the cap). A v2 descriptor turns it into "no release". */
   archive_reason?: string;
+  /** The tree holds only project tool modules (`toolsRelease`): a session without repository access may receive it. */
+  tools_only?: true;
 };
 
 class ConfigReleaseCommitNotFoundError extends Error {
@@ -255,7 +260,8 @@ async function build(
   store: ConfigArchiveStore,
   archiveLimit?: number,
 ): Promise<ConfigRelease> {
-  let mirror = await refreshMirror(project);
+  // A commit the mirror holds needs no fetch (`freshRef`).
+  let mirror = await refreshMirror(project, false, { freshRef: commit });
   // A commit the warm mirror has not fetched yet: fetch once, then give up.
   if ((await runGitCapture(['cat-file', '-e', `${commit}^{commit}`], mirror)).exitCode !== 0) {
     mirror = await refreshMirror(project, true);
@@ -294,6 +300,7 @@ async function build(
   // project checkout.
   const governanceOnly = configReleaseId(null, etag);
   if (variant === 'meta') return { ...withGovernance, release_id: governanceOnly };
+  if (variant !== 'project') return toolsRelease(project, mirror, commit, variant, withGovernance, store, archiveLimit);
   let resolved: Awaited<ReturnType<typeof resolveReleaseTreeSource>>;
   try {
     resolved = await resolveReleaseTreeSource(mirror, project, commit, variant);
@@ -364,6 +371,57 @@ async function build(
 }
 
 /**
+ * The release of a session without repository access (`agent:<name>`, `none`):
+ * the modules of the project tools its agent may call and the files they
+ * import by a relative path, nothing else. A session whose agent calls no
+ * project tool gets governance only.
+ */
+async function toolsRelease(
+  project: GitBackedProject,
+  mirror: string,
+  commit: string,
+  variant: ConfigReleaseVariant,
+  withGovernance: ConfigRelease,
+  store: ConfigArchiveStore,
+  archiveLimit?: number,
+): Promise<ConfigRelease> {
+  const etag = withGovernance.compiled_governance_etag;
+  const compiled = JSON.parse(withGovernance.compiled_governance ?? '{}') as Partial<CompiledAgentSet>;
+  const agent = variant.startsWith('agent:') ? compiled.agent?.[variant.slice('agent:'.length)] : undefined;
+  const modules = agent
+    ? Object.entries(compiled.project_tools ?? {}).filter(([name]) => toolAllowed(agent.tools, name)).map(([, path]) => path)
+    : [];
+  const rootTree = (await runGitCapture(['rev-parse', `${commit}^{tree}`], mirror)).stdout.trim();
+  const files = modules.length > 0 ? await toolModuleFiles(mirror, rootTree, modules) : [];
+  if (files.length === 0) {
+    return { ...withGovernance, release_id: configReleaseId(null, etag), reason: REPOSITORY_ACCESS_WITHHELD };
+  }
+  let read: { treeId: string; archive: Buffer | null };
+  try {
+    read = await readFileTree(mirror, files, {
+      limit: archiveLimit,
+      archive: (treeId) => !archiveBytes.has(configArchiveKey(project.projectId, treeId)),
+    });
+  } catch (error) {
+    if (error instanceof ConfigArchiveTooLargeError) return { ...withGovernance, reason: `the project tool modules exceed the ${archiveLimit ?? MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit` };
+    throw error;
+  }
+  const key = configArchiveKey(project.projectId, read.treeId);
+  if (read.archive) {
+    await storeConfigArchive(store, project.projectId, key, read.archive);
+    bumpBounded(archiveBytes, key, read.archive.length, MAX_CACHED_ARCHIVE_SIZES);
+  }
+  return {
+    ...withGovernance,
+    tools_only: true,
+    release_id: configReleaseId(read.treeId, etag),
+    config_tree_id: read.treeId,
+    files,
+    archive: { url: configArchiveRoute(project.projectId, read.treeId, commit, variant), bytes: archiveBytes.get(key)! },
+  };
+}
+
+/**
  * Build (or read from the in-memory cache) the release for one commit and one
  * variant. `commit` must be a full commit SHA the mirror already holds. The
  * caller resolves the base tip after `invalidateProjectMirror`.
@@ -403,11 +461,12 @@ const COMPILED_GOVERNANCE_FAILED = 'compiled governance failed';
 /**
  * The wire descriptor for a release. The mode is always `follow-base`.
  *
- * A session without repository access never receives an archive: it gets no
- * repository URL and no clone (`allowsFullRepository`), and the archive would
- * disclose files that mode withholds. It keeps the compiled governance, and
- * its release ID covers the governance alone so a governance change still
- * converges.
+ * A session without repository access receives only a tools-only release
+ * (`toolsRelease`): the modules of the project tools its agent may call. It
+ * gets no repository URL and no clone (`allowsFullRepository`), and any other
+ * archive would disclose files that mode withholds. Without project tools it
+ * keeps the compiled governance alone, and its release ID covers the
+ * governance alone so a governance change still converges.
  *
  * A v2 descriptor of a tree over the archive cap is "no release" with the
  * reason: a v2 daemon reads `archive: null` as governance only and would run
@@ -426,8 +485,8 @@ export function toDescriptor(
   const mode: ConfigMode = 'follow-base';
   const format = options.format ?? CONFIG_RELEASE_FORMAT_V3;
   const agent_repoint = options.agentRepoint ?? null;
-  const { archive_reason, ...wire } = release;
-  if (!options.repositoryAccess) {
+  const { archive_reason, tools_only, ...wire } = release;
+  if (!options.repositoryAccess && !tools_only) {
     return {
       ...wire,
       format,

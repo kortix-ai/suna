@@ -112,7 +112,13 @@ export type SettingsTab =
   // Upgrades MOVED here outright on 2026-09-02 (Jay: "move this upgrade
   // section over the settings panel") — it is no longer a section of
   // `/projects/<id>/config`. `UpgradesView` has one mount now, this one.
-  | 'upgrades';
+  | 'upgrades'
+  // The two connect pages, at the foot of the rail (KRTX-1997). Each was a
+  // dialog reachable only from a dismissible sidebar promo; a dismissed promo
+  // left no way back. `computer` is singular on purpose: `computers` is a
+  // `GRADUATED` redirect to the Connectors page and must stay one.
+  | 'mcp'
+  | 'computer';
 // Organization (General, Billing, Usage, Groups, Roles, Identity, Audit log)
 // and API keys are gone: every one of them configured the ACCOUNT, not the
 // project, and the account already owns a full page for them at
@@ -143,6 +149,8 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'sessions',
   'preferences',
   'tokens',
+  'mcp',
+  'computer',
   // `connected` is still in the type but NOT here: it listed the ACCOUNT's
   // GitHub App installations — the account page's Git tab — under a
   // person's own settings (Marko, 2026-09-03). It redirects there.
@@ -167,7 +175,7 @@ export function parseSettingsTab(raw: string | null | undefined): SettingsTab | 
  * Deep links and bookmarks into `/customize/<section>` or `/settings/<section>`
  * land on the new page instead of opening the overlay.
  */
-const GRADUATED: Record<string, (projectId: string) => string> = {
+export const GRADUATED: Record<string, (projectId: string) => string> = {
   files: (p) => `/projects/${p}/files`,
   changes: (p) => `/projects/${p}/files?panel=proposed-changes`,
   // The overlay section was `agents`; the route segment is `agent`. Both
@@ -318,7 +326,7 @@ export const ACCOUNT_GRADUATED: Record<string, string> = {
  * Checked BEFORE `ACCOUNT_GRADUATED` so the answer does not depend on whether
  * the caller happened to have resolved an account id yet.
  */
-const RENAMED: Record<string, SettingsTab> = {
+export const RENAMED: Record<string, SettingsTab> = {
   'api-keys': 'tokens',
   // Every project-configuration spelling (`general`, `git`, `snapshots`,
   // `experimental`, `upgrade`, …) is in `GRADUATED` above: they name the
@@ -378,9 +386,8 @@ export function legacySectionRedirect(
   // a live tab id does — and before the account map, so the answer never
   // depends on whether the caller has an account id in hand yet. `Object.hasOwn`
   // for the same prototype-pollution reason as the two maps below.
-  if (Object.hasOwn(RENAMED, rawSection)) {
-    return `/projects/${projectId}/settings/${RENAMED[rawSection]}`;
-  }
+  const tab = resolveOverlayTab(rawSection);
+  if (tab) return `/projects/${projectId}/settings/${tab}`;
 
   // `isAccountGraduatedSection`, not a bare `ACCOUNT_GRADUATED[rawSection]`:
   // a plain object literal inherits `Object.prototype`, so the bare lookup
@@ -416,8 +423,6 @@ export function legacySectionRedirect(
   // answer with the `Object` constructor and `/settings/constructor` redirected
   // to `Object('p1')`, i.e. the string "p1", as a URL.
   if (Object.hasOwn(GRADUATED, rawSection)) return GRADUATED[rawSection](projectId);
-
-  if (parseSettingsTab(rawSection)) return `/projects/${projectId}/settings/${rawSection}`;
 
   return null;
 }

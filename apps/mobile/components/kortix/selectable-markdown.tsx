@@ -15,6 +15,8 @@
  * (`lib/markdown/math-plugin.ts`), which pair dollars the way web's remark-math
  * does. Mermaid fences, and unlabelled fences that start with a diagram type,
  * render as diagrams (`components/markdown/mermaid/MermaidBlock.tsx`).
+ * ```openui fences (`openui-lang`, `openui-vN`) render as generative UI
+ * (`components/genui/genui-message-block.tsx`).
  *
  * Selection is native on both platforms: long press selects a range, and the
  * handles extend it within one block (a paragraph, heading, list item, or
@@ -55,6 +57,7 @@ import { MOTION } from '@/lib/utils/theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
 import { Text } from '@/components/ui/text';
 import { isMathFenceLanguage, isMermaidCode, prepareMarkdownForMath } from '@kortix/shared';
+import { genuiVersionOf, separateGenuiClosers } from '@kortix/sdk/genui/fence';
 import { CodeBlock, fenceCode, fenceLanguage } from '@/components/markdown/code-block';
 import { InlineCode } from '@/components/markdown/inline-code';
 import { BlockMath, InlineMath } from '@/components/markdown/math';
@@ -74,17 +77,15 @@ import {
   type BlockKind,
   type StackContext,
 } from '@/lib/markdown/markdown-layout';
-import {
-  MarkdownText,
-  openExternalLink,
-  IOS_TEXT_VIEW,
-} from '@/components/markdown/markdown-text';
+import { MarkdownText, IOS_TEXT_VIEW } from '@/components/markdown/markdown-text';
+import { openExternalLink } from '@/lib/utils/open-link';
 import {
   MarkdownTable,
   MarkdownSurfaceContext,
   type AstNode,
 } from '@/components/markdown/markdown-table';
 import { IOSSelectableMarkdown } from '@/components/markdown/ios-selection-fallback';
+import { GenuiMessageBlock } from '@/components/genui/genui-message-block';
 
 
 // Suppress known warning from react-native-markdown-display library
@@ -179,9 +180,48 @@ function hasParent(parents: AstNode[], type: string): boolean {
   return parents.some((parent) => parent.type === type);
 }
 
-/** Web's `MarkdownCode` routing: Mermaid first, then math fences, then code. */
+/**
+ * false inside a generative-UI fallback: an ```openui fence there renders as
+ * code, so a fallback can never re-enter `GenuiBlock`, and the fallback adds
+ * no second iOS selection Pressable inside the message's own.
+ */
+const GenuiRoutingContext = createContext(true);
+
+/**
+ * A generative-UI block's markdown fallback, under the message's remote-image
+ * policy. `GenuiBlock` needs a stable renderer, so there is one per theme.
+ */
+function GenuiFallback({ markdown, isDark }: { markdown: string; isDark: boolean }) {
+  const remoteImages = useContext(MarkdownImagesContext);
+  return (
+    <GenuiRoutingContext.Provider value={false}>
+      <SelectableMarkdownText isDark={isDark} remoteImages={remoteImages}>
+        {markdown}
+      </SelectableMarkdownText>
+    </GenuiRoutingContext.Provider>
+  );
+}
+const genuiFallback = (isDark: boolean) => (markdown: string) =>
+  markdown ? <GenuiFallback markdown={markdown} isDark={isDark} /> : null;
+const GENUI_FALLBACK_LIGHT = genuiFallback(false);
+const GENUI_FALLBACK_DARK = genuiFallback(true);
+
+/** Web's `MarkdownCode` routing: generative UI, then Mermaid, then math fences, then code. */
 function FencedCode({ node, isDark }: { node: AstNode; isDark: boolean }) {
   const isStreaming = useContext(OpenFenceContext);
+  const routeGenui = useContext(GenuiRoutingContext);
+  // The raw first word of the info string: `fenceLanguage` may normalize `openui-lang` away.
+  const genuiVersion = routeGenui ? genuiVersionOf((node.sourceInfo ?? '').trim().split(/\s+/)[0] ?? '') : null;
+  if (genuiVersion !== null) {
+    return (
+      <GenuiMessageBlock
+        code={fenceCode(node.content)}
+        version={genuiVersion}
+        isStreaming={isStreaming}
+        renderMarkdown={isDark ? GENUI_FALLBACK_DARK : GENUI_FALLBACK_LIGHT}
+      />
+    );
+  }
   const code = fenceCode(node.content);
   const language = fenceLanguage(node.sourceInfo);
   if (isMermaidCode(language, code)) {
@@ -194,6 +234,30 @@ function FencedCode({ node, isDark }: { node: AstNode; isDark: boolean }) {
 }
 
 /** Render rules for react-native-markdown-display, one set per theme. */
+/** The six heading levels differ only in the styles key the token picks. */
+const headingRule =
+  (level: number) =>
+  (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
+    <View key={node.key} accessibilityRole="header" style={styles[`_VIEW_SAFE_heading${level}`]}>
+      {children}
+    </View>
+  );
+
+/** The list bodies are byte-identical apart from the token (`space-y-1` between items). */
+const listRule =
+  () =>
+  (node: AstNode, children: React.ReactNode[]) => (
+    <View key={node.key}>
+      {children.map((child, index) =>
+        index === 0 ? child : (
+          <View key={`item-${node.children[index]?.key ?? index}`} style={{ marginTop: web(1) }}>
+            {child}
+          </View>
+        ),
+      )}
+    </View>
+  );
+
 const createMarkdownRules = (isDark: boolean) => {
   const palette = markdownPalette(isDark);
   return {
@@ -255,59 +319,15 @@ const createMarkdownRules = (isDark: boolean) => {
         isDark={isDark}
       />
     ),
-    heading1: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading1}>
-        {children}
-      </View>
-    ),
-    heading2: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading2}>
-        {children}
-      </View>
-    ),
-    heading3: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading3}>
-        {children}
-      </View>
-    ),
-    heading4: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading4}>
-        {children}
-      </View>
-    ),
-    heading5: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading5}>
-        {children}
-      </View>
-    ),
-    heading6: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading6}>
-        {children}
-      </View>
-    ),
+    heading1: headingRule(1),
+    heading2: headingRule(2),
+    heading3: headingRule(3),
+    heading4: headingRule(4),
+    heading5: headingRule(5),
+    heading6: headingRule(6),
     // Lists: `space-y-1` between items.
-    bullet_list: (node: AstNode, children: React.ReactNode[]) => (
-      <View key={node.key}>
-        {children.map((child, index) =>
-          index === 0 ? child : (
-            <View key={`item-${node.children[index]?.key ?? index}`} style={{ marginTop: web(1) }}>
-              {child}
-            </View>
-          ),
-        )}
-      </View>
-    ),
-    ordered_list: (node: AstNode, children: React.ReactNode[]) => (
-      <View key={node.key}>
-        {children.map((child, index) =>
-          index === 0 ? child : (
-            <View key={`item-${node.children[index]?.key ?? index}`} style={{ marginTop: web(1) }}>
-              {child}
-            </View>
-          ),
-        )}
-      </View>
-    ),
+    bullet_list: listRule(),
+    ordered_list: listRule(),
     // `list-outside`: the marker hangs in the list's inline-start padding,
     // end-aligned against the item text.
     list_item: (node: AstNode, children: React.ReactNode[], parent: AstNode[], styles: any) => {
@@ -633,15 +653,18 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = mem
   function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming, remoteImages = 'placeholder', surface }: SelectableMarkdownTextProps) {
     const { colorScheme } = useColorScheme();
     const isDark = isDarkProp ?? colorScheme === 'dark';
+    // A generative-UI fallback sits inside its message: the message's double tap covers it.
+    const isOutermost = useContext(GenuiRoutingContext);
 
-    // Trailing whitespace would add empty space below the last block.
-    const text = typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd();
+    // Trailing whitespace would add empty space below the last block. A closer the model glued to the
+    // last statement of a generative-UI block moves to its own line, so the block ends where it should.
+    const text = separateGenuiClosers(typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd());
 
     return (
       <MarkdownImagesContext.Provider value={remoteImages}>
         <MarkdownSurfaceContext.Provider value={surface}>
-          {Platform.OS === 'ios' && !IOS_TEXT_VIEW ? (
-            <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming}>
+          {Platform.OS === 'ios' && !IOS_TEXT_VIEW && isOutermost ? (
+            <IOSSelectableMarkdown text={text} isDark={isDark}>
               <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
             </IOSSelectableMarkdown>
           ) : (

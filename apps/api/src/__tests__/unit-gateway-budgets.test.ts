@@ -10,15 +10,14 @@ import { PgDialect } from 'drizzle-orm/pg-core';
  * hard-filtered to `action = 'block'` — a 'warn' budget (a real, persisted,
  * API-creatable option) was fetched nowhere and did nothing at all. This file
  * covers: block vs warn (warn never blocks but IS reported), project vs
- * member scope, and the multi-budget mix. Period rollover (date_trunc at the
- * SQL level) is deliberately NOT covered here — spend is a mocked constant per
- * test, not a live time-bucketed query, so day/week/month boundary behavior
- * needs a real Postgres integration test; noted as a follow-up rather than
- * faked here.
+ * member scope, and the multi-budget mix. Period rollover is NOT covered here
+ * — spend is a mocked constant per test, not a live time-bucketed query. The
+ * day/week/month boundaries run against real Postgres in
+ * integration-gateway-budget-meters-http.test.ts.
  */
 
 // One FIFO queue per (projectId, subjectUserId, period) key, in the exact
-// call order spendForPeriod issues them in checkBudget's budget loop — avoids
+// call order budgetSpends issues them in checkBudget's budget loop — avoids
 // needing to introspect drizzle's `where` condition object, since the mock
 // below never inspects it.
 let spendQueue: number[] = [];
@@ -27,6 +26,7 @@ let spendQueue: number[] = [];
 // that it issued a query. See the total-spend test at the bottom.
 let spendExpressions: string[] = [];
 let budgetRows: Array<{
+  budgetId?: string;
   scope: 'project' | 'member';
   subjectUserId: string | null;
   limitUsd: string;
@@ -41,11 +41,13 @@ mock.module('../shared/db', () => ({
         where: async () => {
           if (table === gatewayBudgets) return budgetRows;
           if (table === gatewayRequestLogs) {
-            if (fields?.cost) {
-              spendExpressions.push(new PgDialect().sqlToQuery(fields.cost as SQL).sql);
+            // The gate measures one budget per statement: one selected field.
+            const [key, expression] = Object.entries(fields ?? {})[0] ?? ['cost', undefined];
+            if (expression) {
+              spendExpressions.push(new PgDialect().sqlToQuery(expression as SQL).sql);
             }
             const cost = spendQueue.length ? spendQueue.shift()! : 0;
-            return [{ cost }];
+            return [{ [key]: cost }];
           }
           throw new Error('unexpected table in mocked db.select().from()');
         },
@@ -104,7 +106,7 @@ describe('checkBudget', () => {
       spendQueue = [50];
       const result = await checkBudget(principal());
       expect(result.exceeded).toBe(true);
-      expect(result.message).toContain('$50/day');
+      expect(result.message).toContain('5,000 credits/day');
       expect(result.message).toContain("project's");
     });
 
@@ -148,11 +150,11 @@ describe('checkBudget', () => {
         { scope: 'project', subjectUserId: null, limitUsd: '50', period: 'day', action: 'warn' },
       ];
       spendQueue = [75];
-      const result = await checkBudget(principal());
+      const result = await checkBudget(principal(), 'warn');
       expect(result.exceeded).toBe(false);
       expect(result.warnings).toBeDefined();
       expect(result.warnings).toHaveLength(1);
-      expect(result.warnings![0]).toContain('$50/day');
+      expect(result.warnings![0]).toContain('5,000 credits/day');
     });
 
     test('a warn budget under its limit produces no warning', async () => {
@@ -160,7 +162,7 @@ describe('checkBudget', () => {
         { scope: 'project', subjectUserId: null, limitUsd: '50', period: 'day', action: 'warn' },
       ];
       spendQueue = [10];
-      const result = await checkBudget(principal());
+      const result = await checkBudget(principal(), 'warn');
       expect(result.exceeded).toBe(false);
       expect(result.warnings).toBeUndefined();
     });
@@ -176,36 +178,50 @@ describe('checkBudget', () => {
         },
       ];
       spendQueue = [9];
-      const mine = await checkBudget(principal({ userId: 'user-1' }));
+      const mine = await checkBudget(principal({ userId: 'user-1' }), 'warn');
       expect(mine.warnings).toHaveLength(1);
 
       spendQueue = [];
-      const someoneElse = await checkBudget(principal({ userId: 'user-2' }));
+      const someoneElse = await checkBudget(principal({ userId: 'user-2' }), 'warn');
       expect(someoneElse.warnings).toBeUndefined();
     });
   });
 
   describe('mixed block + warn budgets on the same project', () => {
-    test('an exceeded warn budget evaluated before an exceeded block budget is carried on the block response', async () => {
+    test('admission evaluates only block budgets: a warn budget costs no spend query', async () => {
       budgetRows = [
         { scope: 'project', subjectUserId: null, limitUsd: '10', period: 'day', action: 'warn' },
         { scope: 'project', subjectUserId: null, limitUsd: '20', period: 'month', action: 'block' },
       ];
-      spendQueue = [15, 25];
-      const result = await checkBudget(principal());
-      expect(result.exceeded).toBe(true);
-      expect(result.warnings).toHaveLength(1);
-    });
-
-    test('a warn budget that is NOT exceeded alongside a block budget that IS exceeded reports only the block', async () => {
-      budgetRows = [
-        { scope: 'project', subjectUserId: null, limitUsd: '100', period: 'day', action: 'warn' },
-        { scope: 'project', subjectUserId: null, limitUsd: '20', period: 'month', action: 'block' },
-      ];
-      spendQueue = [5, 25];
+      spendQueue = [25];
       const result = await checkBudget(principal());
       expect(result.exceeded).toBe(true);
       expect(result.warnings).toBeUndefined();
+      expect(spendExpressions).toHaveLength(1);
+    });
+
+    test('a warn-only project issues no spend query at admission', async () => {
+      budgetRows = [
+        { scope: 'project', subjectUserId: null, limitUsd: '10', period: 'day', action: 'warn' },
+      ];
+      spendQueue = [15];
+      expect(await checkBudget(principal())).toEqual({ exceeded: false });
+      expect(spendExpressions).toHaveLength(0);
+    });
+
+    test('settlement evaluates only warn budgets: never blocks, never reserves', async () => {
+      budgetRows = [
+        { scope: 'project', subjectUserId: null, limitUsd: '10', period: 'day', action: 'warn' },
+        { scope: 'project', subjectUserId: null, limitUsd: '20', period: 'month', action: 'block' },
+      ];
+      budgetRows[0]!.budgetId = 'warn-1';
+      budgetRows[1]!.budgetId = 'block-1';
+      spendQueue = [15, 25];
+      const result = await checkBudget(principal(), 'warn');
+      expect(result.exceeded).toBe(false);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.crossings?.map((c) => c.action)).toEqual(['warn']);
+      expect(spendExpressions).toHaveLength(1);
     });
 
     test('two separate warn budgets both exceeded are both reported', async () => {
@@ -214,7 +230,7 @@ describe('checkBudget', () => {
         { scope: 'project', subjectUserId: null, limitUsd: '50', period: 'month', action: 'warn' },
       ];
       spendQueue = [15, 60];
-      const result = await checkBudget(principal());
+      const result = await checkBudget(principal(), 'warn');
       expect(result.exceeded).toBe(false);
       expect(result.warnings).toHaveLength(2);
     });
@@ -223,7 +239,7 @@ describe('checkBudget', () => {
   describe('in-flight admission reservation (BILLING-CORRECTNESS: concurrent check-then-act race)', () => {
     // Every concurrent checkBudget call under test reads the SAME `spent`
     // value from gatewayRequestLogs (nothing has settled yet — that's the
-    // whole bug) but each call still gets its own spendForPeriod query, so we
+    // whole bug) but each call still gets its own budgetSpends query, so we
     // queue that constant value once per call.
     test('N concurrent admissions against a nearly-full block budget are bounded, not all admitted', async () => {
       budgetRows = [
@@ -298,9 +314,9 @@ describe('checkBudget', () => {
       ];
       spendQueue = [10, 10, 10];
       const results = await Promise.all([
-        checkBudget(principal()),
-        checkBudget(principal()),
-        checkBudget(principal()),
+        checkBudget(principal(), 'warn'),
+        checkBudget(principal(), 'warn'),
+        checkBudget(principal(), 'warn'),
       ]);
       expect(results.every((r) => !r.exceeded)).toBe(true);
       expect(results.every((r) => (r.warnings?.length ?? 0) === 1)).toBe(true);
@@ -363,6 +379,6 @@ describe('checkBudget spend measurement', () => {
     const result = await checkBudget(principal());
 
     expect(result.exceeded).toBe(true);
-    expect(result.message).toContain('$12.60 used this month');
+    expect(result.message).toContain('1,260 credits used this month');
   });
 });

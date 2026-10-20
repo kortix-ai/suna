@@ -4,7 +4,6 @@ import { useTranslations } from '@/i18n/use-translations';
 import { ArrowLeftIcon as ArrowLeft } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m, useReducedMotion, type Variants } from 'motion/react';
-import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 
 import { DesktopCloseButton } from '@/components/desktop/desktop-close-button';
@@ -14,10 +13,11 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
-import { isConnectorsEnabled } from '@/lib/config';
+import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
+import { isBillingEnabled, isConnectorsEnabled } from '@/lib/config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
-import { firstChatHref, useFirstChatStore } from '@/stores/first-chat-store';
+import { useFirstChatStore } from '@/stores/first-chat-store';
 import { listConnectors, type OnboardingUseCase } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
@@ -99,8 +99,8 @@ export function ProjectOnboardingWizard({
    * project shell passes it (an empty callback): a fresh account's first
    * project reaches the shell unstamped (the create flow stamps only later
    * projects — KRTX-2092), and in the browser this control is the wizard's
-   * only exit. The wizard's `skip` itself opens the first chat, so the shell
-   * needs no navigation of its own — which is what the empty callback says.
+   * only exit. Skipping closes the wizard in place, like finishing, and leaves
+   * the first chat waiting in the sidebar.
    */
   onSkip?: () => void;
 }) {
@@ -109,25 +109,11 @@ export function ProjectOnboardingWizard({
 
   const onboarding = useProjectOnboarding(projectId);
   const queryClient = useQueryClient();
-  const router = useRouter();
-
-  // A host that navigates on exit (`/new`) always lands on the project page.
-  // Fetching that route while the questions are answered means the last click
-  // swaps pages at once instead of loading one.
-  const navigatesOnExit = Boolean(onCompleted || onSkip);
-  useEffect(() => {
-    if (navigatesOnExit) router.prefetch(firstChatHref(projectId));
-  }, [navigatesOnExit, projectId, router]);
 
   const reduced = useReducedMotion() ?? false;
   const stepVariants = useMemo(() => slideVariants(reduced), [reduced]);
 
   const [index, setIndex] = useState(0);
-  // Set when an exit navigates away (`/new`). The stamp is optimistic, so
-  // `isPending` flips false in the same tick as the click; without this the
-  // wizard would unmount and uncover `/new`'s "Creating …" loader until the
-  // project page paints. The route change unmounts the wizard instead.
-  const [leaving, setLeaving] = useState(false);
 
   const { save } = useOnboardingAnswers(projectId);
   const [useCase, setUseCase] = useState<OnboardingUseCase | null>(null);
@@ -293,17 +279,19 @@ export function ProjectOnboardingWizard({
   // `closeOnOutsideClick={false}` and Escape intercepted. Skipping was strictly
   // worse than not skipping. Stamping is what makes "Skip for now" mean what it
   // says.
+  //
+  // No `setLeaving` here: no host navigates on skip, so `leaving` kept the
+  // wizard on screen after the click until a reload (KRTX-2378). The
+  // optimistic stamp closes it in place, as finishing does in the shell.
   const skip = useCallback(() => {
     startFirstChat();
-    if (onSkip) setLeaving(true);
     return completeThenNotify(() => onboarding.complete(), onSkip);
   }, [startFirstChat, onboarding, onSkip]);
 
   const openProject = useCallback(() => {
     startFirstChat();
-    if (onCompleted) setLeaving(true);
     void complete();
-  }, [startFirstChat, onCompleted, complete]);
+  }, [startFirstChat, complete]);
 
   const saveWork = useCallback(() => {
     if (!useCase) return;
@@ -316,7 +304,7 @@ export function ProjectOnboardingWizard({
     next();
   }, [useCase, note, save, next]);
 
-  if (!isPending && !leaving) return null;
+  if (!isPending) return null;
 
   return (
     <>
@@ -335,6 +323,10 @@ export function ProjectOnboardingWizard({
             if (index > 0) back();
           }}
         >
+          {/* "See plans" on the plan step opens the billing dialog. The app-level
+              host sits one dialog lower and would render it behind this
+              fullscreen dialog; a host mounted here is deeper, so it wins. */}
+          {isBillingEnabled() && <GlobalUpgradeModal />}
           <div className="flex h-full flex-col overflow-hidden">
             {/* The entire chrome: a back control on the left, progress centred,
               the skip escape hatch on the right. No mark, no title. Nothing here

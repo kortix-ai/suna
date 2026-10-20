@@ -52,10 +52,11 @@ function ComposerEditorFallback() {
 export interface ComposerCardDerived {
   tHardcodedUi: ReturnType<typeof useTranslations>;
   isDragOver: boolean;
-  handleDragEnter: DragEventHandler<HTMLElement>;
-  handleDragOver: DragEventHandler<HTMLElement>;
-  handleDragLeave: DragEventHandler<HTMLElement>;
-  handleDropFiles: DragEventHandler<HTMLElement>;
+  /** Unset inside a `ComposerDropZone`: the zone owns every file drag. */
+  handleDragEnter?: DragEventHandler<HTMLElement>;
+  handleDragOver?: DragEventHandler<HTMLElement>;
+  handleDragLeave?: DragEventHandler<HTMLElement>;
+  handleDropFiles?: DragEventHandler<HTMLElement>;
   attachedFiles: AttachedFile[];
   promptAttachmentItems: UsePromptAttachmentsResult['attachments'];
   removeAttachedFile: (index: number) => void;
@@ -167,6 +168,7 @@ export function ComposerCard({
   isSending = false,
   onStop,
   stopDisabled = false,
+  canStop = true,
   modelsLoading = false,
   modelRequired = false,
   onModelChange,
@@ -177,8 +179,6 @@ export function ComposerCard({
   onVariantChange,
   projectId,
   toolbarSlot,
-  servedModel,
-  computerAwake,
   rewind,
   selectedAgent = null,
   onAgentChange,
@@ -215,9 +215,8 @@ export function ComposerCard({
         cardClassName,
         isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
         // A layer above (`ComposerAboveCard`) owns the top corners: a notice,
-        // the sandbox-on strip or the served bar (known here), or a visible
-        // strip (known only to CSS, through `data-composer-stack`).
-        (notice || computerAwake || (onModelChange && servedModel) || questionActive) &&
+        // or a visible strip (known only to CSS, through `data-composer-stack`).
+        (notice || questionActive) &&
           'rounded-t-none',
         '[[data-composer-stack]:has(>[data-composer-strip]:not(:empty))+&]:rounded-t-none',
         // The bottom half of the ring the docked question starts (see
@@ -398,6 +397,7 @@ export function ComposerCard({
             isBusy={isBusy}
             onStop={onStop}
             stopDisabled={stopDisabled}
+            canStop={canStop}
             escCount={escCount}
             lockForQuestion={lockForQuestion}
             questionButtonLabel={questionButtonLabel}

@@ -53,6 +53,8 @@ let secretItems: Array<{
     expires_at: null;
   }>;
   usable?: boolean;
+  status?: 'ok' | 'undecryptable';
+  mine?: { active: boolean; updated_at: string; status?: 'ok' | 'undecryptable' } | null;
 }>;
 let manifestRequired: string[];
 let manifestOptional: string[];
@@ -90,6 +92,8 @@ function secret(
       expires_at: null;
     }>;
     usable?: boolean;
+    status?: 'ok' | 'undecryptable';
+    mine?: { active: boolean; updated_at: string; status?: 'ok' | 'undecryptable' } | null;
   } = {},
 ) {
   const configured = state.configured ?? true;
@@ -112,6 +116,8 @@ function secret(
     requires_rotation: state.requires_rotation ?? false,
     ...(state.shared_with ? { shared_with: state.shared_with } : {}),
     ...(state.usable === undefined ? {} : { usable: state.usable }),
+    ...(state.status === undefined ? {} : { status: state.status }),
+    ...(state.mine === undefined ? {} : { mine: state.mine }),
   };
 }
 
@@ -554,6 +560,7 @@ describe('kortix secrets ls — identifier-first', () => {
       configured: true,
       available: true,
       effective_source: 'shared',
+      status: null,
       strategy: 'runtime',
       consumer: 'sandbox',
       delivery_status: 'available',
@@ -574,6 +581,7 @@ describe('kortix secrets ls — identifier-first', () => {
       configured: false,
       available: false,
       effective_source: 'none',
+      status: null,
       strategy: 'runtime',
       consumer: 'sandbox',
       delivery_status: 'available',
@@ -727,6 +735,65 @@ describe('kortix secrets ls — identifier-first', () => {
   });
 });
 
+describe('kortix secrets ls — a value the server cannot decrypt (KRTX-1719)', () => {
+  test('reads undecryptable, not set, and warns with the fix', async () => {
+    manifestRequired = ['OPENAI_API_KEY'];
+    secretItems = [
+      { identifier: 'OPENAI_API_KEY', name: 'OPENAI_API_KEY', status: 'undecryptable' },
+      { identifier: 'STRIPE_KEY', name: 'STRIPE_KEY', status: 'ok' },
+    ];
+    const code = await runSecrets(['ls']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    const row = out.split('\n').find((line) => line.includes('OPENAI_API_KEY ')) ?? '';
+    expect(row).toContain('undecryptable');
+    expect(row).not.toContain(' set ');
+    expect(out).toContain("1 secret cannot be decrypted with this server's encryption key (OPENAI_API_KEY)");
+    expect(out).toContain('kortix secrets set KEY=VALUE');
+    // Stored, not missing: the missing warning would send someone to a value that exists.
+    expect(out).not.toContain('required secret missing');
+    expect(out).toContain('1 available');
+  });
+
+  test('--json reports status and marks the value unavailable', async () => {
+    secretItems = [{ identifier: 'OPENAI_API_KEY', name: 'OPENAI_API_KEY', status: 'undecryptable' }];
+    const code = await runSecrets(['ls', '--json']);
+    expect(code).toBe(0);
+    const [row] = JSON.parse(stdout).secrets;
+    expect(row).toMatchObject({
+      configured: true,
+      effective_source: 'shared',
+      status: 'undecryptable',
+      available: false,
+      has_value: false,
+    });
+  });
+
+  test("a broken active override decides, even when the shared value decrypts", async () => {
+    secretItems = [
+      {
+        identifier: 'OPENAI_API_KEY',
+        name: 'OPENAI_API_KEY',
+        status: 'ok',
+        effective_source: 'mine',
+        mine: { active: true, updated_at: '2026-10-13T00:00:00.000Z', status: 'undecryptable' },
+      },
+    ];
+    const code = await runSecrets(['ls', '--json']);
+    expect(code).toBe(0);
+    const [row] = JSON.parse(stdout).secrets;
+    expect(row).toMatchObject({ effective_source: 'mine', status: 'undecryptable', available: false });
+  });
+
+  test('a decryptable value stays available with status ok', async () => {
+    secretItems = [{ identifier: 'STRIPE_KEY', name: 'STRIPE_KEY', status: 'ok' }];
+    const code = await runSecrets(['ls', '--json']);
+    expect(code).toBe(0);
+    const [row] = JSON.parse(stdout).secrets;
+    expect(row).toMatchObject({ status: 'ok', available: true, has_value: true });
+  });
+});
+
 describe('kortix secrets ls — inside an agent session', () => {
   test('a declared key outside the agent grant reads "not granted", never "missing"', async () => {
     agentScope = { agent: 'analyst', secrets: ['OTHER_KEY'] };
@@ -775,6 +842,23 @@ describe('kortix secrets ls — inside an agent session', () => {
 });
 
 describe('kortix secrets request', () => {
+  test.each(['connector', 'runtime'])('discloses the resolved %s delivery', async (scope) => {
+    mintExtra = { scope };
+    expect(await runSecrets(['request', 'TEST_KEY'])).toBe(0);
+    expect(stripAnsi(stdout)).toContain(`Delivery: ${scope}`);
+    expect(stripAnsi(stdout)).toContain(scope === 'connector'
+      ? 'server-side only; never in the sandbox environment'
+      : 'real value in the sandbox environment');
+  });
+
+  test('an API without the resolved scope asks the human to confirm delivery', async () => {
+    mintExtra = { scope: undefined };
+    expect(await runSecrets(['request', 'TEST_KEY'])).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('Delivery scope is unavailable');
+    expect(out).not.toContain('Delivery: undefined');
+  });
+
   test('warns, with the fix, when this agent will not receive a requested name', async () => {
     mintExtra = {
       agent: 'analyst',

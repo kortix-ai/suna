@@ -7,6 +7,7 @@
 import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { toolCallBlock, type ToolPart } from '@kortix/sdk';
 
 type HostProps = React.PropsWithChildren<Record<string, unknown>>;
 const host = (name: string) => ({ children, ...props }: HostProps) => React.createElement(name, props, children);
@@ -154,11 +155,11 @@ function bash(props: { command: string; running: boolean; status: string }) {
 }
 
 function read(running: boolean) {
-  const part = { id: 'p', callID: 'c', tool: 'read', state: { status: 'pending', input: {} } };
+  const call = toolCallBlock({ type: 'tool', id: 'p', callID: 'c', tool: 'read', state: { status: 'pending', input: {} } } as unknown as ToolPart);
   const element = React.createElement(
     infrastructure.ToolRunningContext.Provider,
     { value: running },
-    React.createElement(ReadTool as unknown as React.ComponentType<Record<string, unknown>>, { part }),
+    React.createElement(ReadTool as unknown as React.ComponentType<Record<string, unknown>>, { call }),
   );
   act(() => {
     tree = create(element);
@@ -193,12 +194,8 @@ describe('read row body', () => {
 });
 
 describe('empty-output bodies (project-get, triggers)', () => {
-  const part = (tool: string, input: Record<string, unknown> = {}, output = '', status = 'running') => ({
-    id: 'p',
-    callID: 'c',
-    tool,
-    state: { status, input, output },
-  });
+  const call = (tool: string, input: Record<string, unknown> = {}, output = '', status = 'running') =>
+    toolCallBlock({ type: 'tool', id: 'p', callID: 'c', tool, state: { status, input, output } } as unknown as ToolPart);
   function body(
     Tool: React.ComponentType<Record<string, unknown>>,
     running: boolean,
@@ -213,7 +210,7 @@ describe('empty-output bodies (project-get, triggers)', () => {
       React.createElement(
         ToolMotionContext.Provider,
         { value: motion },
-        React.createElement(Tool, { part: part('x', input, output, status) }),
+        React.createElement(Tool, { call: call('x', input, output, status) }),
       ),
     );
     act(() => {

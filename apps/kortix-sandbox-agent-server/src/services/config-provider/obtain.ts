@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { runGit } from '@/lib/git/git'
+import type { Config } from '@/lib/config/config'
+import { execGit, gitWithAuth, resolveCloneCredential } from '@/lib/git/git'
 import { logger } from '@/lib/log/logger'
 import { downloadAndExtractProjectSnapshot } from '@/lib/project-snapshot/archive'
 import { downloadConfigArchive, type ConfigReleaseApi } from './api-client'
@@ -13,27 +14,16 @@ import {
   writeReleaseManifest,
   type ReleaseManifest,
 } from './boot-config'
-import type { ConfigReleaseDescriptor, ConfigReleaseSnapshot } from './descriptor'
+import type { ConfigReleaseSnapshot } from './descriptor'
 
 /** Where a release on this box came from. */
-export type ReleaseTransport = 'disk' | 'workspace' | 'snapshot' | 'archive'
+export type ReleaseTransport = 'disk' | 'snapshot' | 'archive' | 'git'
 
 /** Download, verify and extract budget for one snapshot. Stalls fail sooner (the transfer's inactivity watchdog). */
 const SNAPSHOT_TIMEOUT_MS = 5 * 60_000
 
-/**
- * May a fresh box's checkout hold the release, so the boot waits for it?
- * With a base pin, only when the pin is the release commit. Without one
- * (`KORTIX_BASE_SHA` unset), only when the release has no archive: then
- * nothing else may hold it yet, and HEAD decides in `obtainRelease`. A
- * release with an archive downloads while the checkout lands instead.
- */
-export function checkoutMayHold(
-  baseSha: string | undefined,
-  descriptor: Pick<ConfigReleaseDescriptor, 'source_commit' | 'archive'>,
-): boolean {
-  return baseSha ? baseSha === descriptor.source_commit : descriptor.archive === null
-}
+/** Budget for the one-commit Git fetch. `http.lowSpeed*` aborts a stalled transfer sooner. */
+const GIT_FETCH_TIMEOUT_MS = 60_000
 
 export interface ObtainReleaseInput {
   root: string
@@ -42,8 +32,10 @@ export interface ObtainReleaseInput {
   snapshot: ConfigReleaseSnapshot | null
   /** Downloads the API-built archive, when the release has one. */
   api: ConfigReleaseApi | null
-  /** The session's checkout, or null when it is not ready or not to be read. */
-  workspace: string | null
+  /** The archive from the published release's signed store URL (`published.ts`), tried before the API. */
+  signedArchive?: Promise<Buffer>
+  /** The project remote (`KORTIX_REPO_URL`, the Kortix Git proxy): the last source. */
+  git: Pick<Config, 'repoUrl' | 'apiUrl' | 'projectId' | 'sandboxToken'> | null
   prepare?: (stagedDir: string) => Promise<void>
   managedSkillsDir?: string
   /** Test seam for the snapshot transfer. */
@@ -53,12 +45,17 @@ export interface ObtainReleaseInput {
 /**
  * Put one release on this box, from the first source that holds it:
  *
- *   1. disk      — the copy already in the store, intact.
- *   2. workspace — the session's checkout, when its HEAD is the release's
- *                  commit. A fresh box checked that commit out moments ago,
- *                  so the release costs no second download.
- *   3. snapshot  — the project snapshot of the commit, streamed to disk.
- *   4. archive   — the API-built archive, capped at `MAX_CONFIG_ARCHIVE_BYTES`.
+ *   1. disk     — the copy already in the store, intact.
+ *   2. snapshot — the project snapshot of the commit, streamed from S3.
+ *   3. archive  — the API-built archive, capped at `MAX_CONFIG_ARCHIVE_BYTES`:
+ *                 first from the published release's signed store URL, then
+ *                 through the API.
+ *   4. git      — the commit alone (`--depth 1`) from the project remote: a
+ *                 tree over the archive cap whose snapshot is not built yet.
+ *
+ * The session's `/workspace` checkout is never a source. The config provider
+ * and the workspace provider download the same commit in parallel, each into
+ * its own directory, and neither waits for the other.
  *
  * Every source is verified file by file against the release's blob IDs, so
  * one that does not hold the release is skipped, never served. Throws, with
@@ -76,21 +73,6 @@ export async function obtainRelease(input: ObtainReleaseInput): Promise<{ dir: s
     return done('disk')
   }
 
-  if (input.workspace) {
-    const head = await runGit(['rev-parse', '--verify', 'HEAD'], { cwd: input.workspace }).catch(() => null)
-    const at = head?.code === 0 ? head.stdout.trim() : null
-    if (at === manifest.source_commit) {
-      try {
-        await materializeReleaseFromTree({ ...shared, source: input.workspace, take: 'copy' })
-        return done('workspace')
-      } catch (err) {
-        reasons.push(`the checkout does not hold it: ${(err as Error).message}`)
-      }
-    } else {
-      reasons.push(`the checkout is at ${at ? at.slice(0, 12) : 'no commit'}, not the release commit ${manifest.source_commit.slice(0, 12)}`)
-    }
-  }
-
   if (input.snapshot) {
     const stage = `${dir}.${randomUUID()}.snapshot`
     try {
@@ -99,12 +81,25 @@ export async function obtainRelease(input: ObtainReleaseInput): Promise<{ dir: s
         stage,
         { timeoutMs: SNAPSHOT_TIMEOUT_MS, fetchImpl: input.fetchImpl },
       )
-      await materializeReleaseFromTree({ ...shared, source: stage, take: 'move' })
+      await materializeReleaseFromTree({ ...shared, source: stage, transport: 'snapshot' })
       return done('snapshot')
     } catch (err) {
       reasons.push(`the project snapshot did not deliver it: ${(err as Error).message}`)
     } finally {
       await rm(stage, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+
+  if (manifest.archive_url && input.signedArchive) {
+    try {
+      const archive = await input.signedArchive
+      if (manifest.archive_bytes && archive.length !== manifest.archive_bytes) {
+        throw new Error(`it is ${archive.length} bytes; the release says ${manifest.archive_bytes}`)
+      }
+      await materializeRelease({ ...shared, archive })
+      return done('archive')
+    } catch (err) {
+      reasons.push(`the published archive did not deliver it: ${(err as Error).message}`)
     }
   }
 
@@ -114,9 +109,45 @@ export async function obtainRelease(input: ObtainReleaseInput): Promise<{ dir: s
     await materializeRelease({ ...shared, archive })
     return done('archive')
   }
-
   if (!input.snapshot) reasons.push('the API has no project snapshot of this commit yet')
   if (!manifest.archive_url) reasons.push('the repository is over the config archive limit, so there is no archive')
+
+  if (input.git?.repoUrl) {
+    const stage = `${dir}.${randomUUID()}.git`
+    try {
+      await fetchCommit(input.git, manifest.source_commit, stage)
+      await materializeReleaseFromTree({ ...shared, source: stage, transport: 'git' })
+      return done('git')
+    } catch (err) {
+      reasons.push(`the project remote did not deliver it: ${(err as Error).message}`)
+    } finally {
+      await rm(stage, { recursive: true, force: true }).catch(() => undefined)
+    }
+  } else {
+    reasons.push('this box has no project remote')
+  }
+
   logger.warn('[boot-config] no source holds the release', { releaseId: manifest.release_id, reasons })
   throw new Error(reasons.join('; '))
+}
+
+/** Check out `commit` alone into a new repository at `dir`. Throws with git's own words. */
+async function fetchCommit(cfg: NonNullable<ObtainReleaseInput['git']>, commit: string, dir: string): Promise<void> {
+  const credential = await resolveCloneCredential(cfg as Config)
+  await mkdir(dir, { recursive: true })
+  const local = (args: string[]) => execGit(['-C', dir, '-c', 'core.hooksPath=/dev/null', ...args])
+  const step = async (what: string, result: Promise<{ code: number; stderr: string }>) => {
+    const { code, stderr } = await result
+    if (code !== 0) throw new Error(`git ${what}: ${stderr.trim().slice(0, 300)}`)
+  }
+  await step('init', local(['init', '-q']))
+  await step(
+    'fetch',
+    gitWithAuth(credential, cfg.repoUrl, [
+      '-C', dir,
+      '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
+      'fetch', '-q', '--depth', '1', '--no-tags', cfg.repoUrl!, commit,
+    ], { timeoutMs: GIT_FETCH_TIMEOUT_MS }),
+  )
+  await step('checkout', local(['checkout', '-q', '--detach', commit]))
 }

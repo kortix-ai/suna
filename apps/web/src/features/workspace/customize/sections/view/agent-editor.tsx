@@ -4,7 +4,7 @@ import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The agent editor — every field of one `agents.<name>` block in a
- * kortix_version 2 manifest (agent-first spec §2.2), as three reusable parts
+ * kortix_version 2 or 3 manifest (agent-first spec §2.2), as three reusable parts
  * and no shell of its own.
  *
  * The shell is `/projects/[id]/agent/[name]`
@@ -45,7 +45,8 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  */
 
 import { Badge } from '@/components/ui/badge';
-import type { SandboxTemplate } from '@kortix/sdk';
+import { parseManifestText } from '@kortix/manifest-schema';
+import type { ProjectConfigSummary, SandboxTemplate } from '@kortix/sdk';
 import {
   type AgentConfigBlock,
   listConnectors,
@@ -59,6 +60,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ConnectorsSection,
   ProjectActionsSection,
+  RegistryGrantSection,
   SecretsSection,
   SkillsSection,
   WorkspaceSection,
@@ -311,9 +313,8 @@ export type AgentConfigSectionGroup = (typeof AGENT_CONFIG_SECTION_GROUPS)[numbe
  * UX/UI for each"). Runtime is what a session runs on: model, tools,
  * workspace.
  *
- * `apps` is listed here unconditionally — this module is pure data — and the
- * PAGE drops it when the project's `apps` feature flag is off, so a project
- * without Kortix Apps never sees a grant page for them.
+ * `apps` is listed here unconditionally: Apps is generally available, so every
+ * project gets the grant page.
  */
 export const AGENT_CONFIG_SECTIONS = [
   { key: 'overview', label: 'Overview', group: 'General' },
@@ -321,9 +322,13 @@ export const AGENT_CONFIG_SECTIONS = [
   { key: 'people', label: 'People', group: 'General' },
   { key: 'triggers', label: 'Triggers', group: 'General' },
   { key: 'skills', label: 'Skills', group: 'Access' },
+  { key: 'subagents', label: 'Subagents', group: 'Access' },
+  { key: 'commands', label: 'Commands', group: 'Access' },
+  { key: 'extensions', label: 'Extensions', group: 'Access' },
   { key: 'connectors', label: 'Connectors', group: 'Access' },
   { key: 'secrets', label: 'Secrets', group: 'Access' },
   { key: 'apps', label: 'Apps', group: 'Access' },
+  { key: 'drives', label: 'Drives', group: 'Access' },
   { key: 'actions', label: 'Kortix permissions', group: 'Access' },
   { key: 'model', label: 'Model', group: 'Runtime' },
   { key: 'tools', label: 'Tools', group: 'Runtime' },
@@ -338,6 +343,60 @@ export function useLocalizedAgentConfigCatalog() {
 }
 
 export type AgentConfigSectionKey = (typeof AGENT_CONFIG_SECTIONS)[number]['key'];
+
+/** The grants only a kortix_version 3 manifest has: each names registered entries. */
+export const REGISTRY_GRANT_SECTIONS = ['subagents', 'commands', 'extensions'] as const;
+export type RegistryGrant = (typeof REGISTRY_GRANT_SECTIONS)[number];
+
+/** The editor's topics for a manifest version. The registry grants exist from v3 on. */
+export function agentConfigSectionKeys(schemaVersion: number): AgentConfigSectionKey[] {
+  return AGENT_CONFIG_SECTIONS.map((s) => s.key).filter(
+    (key) => schemaVersion >= 3 || !(REGISTRY_GRANT_SECTIONS as readonly string[]).includes(key),
+  );
+}
+
+/** The names of one manifest registry (`commands:` or `extensions:`), with descriptions. */
+function registryEntries(manifest: Record<string, unknown>, key: 'commands' | 'extensions'): GrantOption[] {
+  const registry = manifest[key];
+  if (!registry || typeof registry !== 'object' || Array.isArray(registry)) return [];
+  return Object.entries(registry as Record<string, unknown>)
+    .map(([name, entry]) => {
+      const description = (entry as { description?: unknown } | null)?.description;
+      return { id: name, label: name, description: typeof description === 'string' ? description : undefined };
+    })
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * The pick lists behind the v3 grant pages. Subagents are the declared,
+ * enabled agents with `mode` `subagent` or `all`, never the agent itself.
+ * Commands and extensions are the root manifest's registries.
+ * ponytail: names registered in an `imports:` file are not listed; a picked
+ * one still shows as its own row. Read the merged registries from the API when
+ * project detail serves them.
+ */
+export function registryGrantOptions(
+  config: Pick<ProjectConfigSummary, 'manifest_raw'> & {
+    agents: Pick<ProjectConfigSummary['agents'][number], 'name' | 'mode' | 'description' | 'enabled'>[];
+  },
+  agentName: string,
+): Record<RegistryGrant, GrantOption[]> {
+  let manifest: Record<string, unknown> = {};
+  try {
+    manifest = config.manifest_raw ? parseManifestText(config.manifest_raw, 'yaml') : {};
+  } catch {
+    // A manifest that does not parse lists nothing; the save path reports the error.
+  }
+  const subagents = config.agents
+    .filter((a) => a.name !== agentName && a.enabled !== false && (a.mode === 'subagent' || a.mode === 'all'))
+    .map((a) => ({ id: a.name, label: a.name, description: a.description ?? undefined }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  return {
+    subagents,
+    commands: registryEntries(manifest, 'commands'),
+    extensions: registryEntries(manifest, 'extensions'),
+  };
+}
 
 /** The tab the pane opens on, and the one an unknown `?section=` falls back to. */
 export const DEFAULT_AGENT_CONFIG_SECTION: AgentConfigSectionKey = 'overview';
@@ -360,6 +419,7 @@ export function AgentConfigSections({
   editor,
   options,
   skillsOptions,
+  registryOptions,
   overview,
   triggers,
   people,
@@ -367,12 +427,15 @@ export function AgentConfigSections({
   connectors,
   secrets,
   apps,
+  drives,
   authority,
 }: {
   section: AgentConfigSectionKey;
   editor: AgentDraft;
   options: AgentEditorOptions;
   skillsOptions: GrantOption[];
+  /** The v3 grant pick lists (`registryGrantOptions`). */
+  registryOptions?: Record<RegistryGrant, GrantOption[]>;
   /** Description + instructions — a page-owned section, the Overview tab. */
   overview?: React.ReactNode;
   /** The agent's triggers — a page-owned section, the Triggers tab. */
@@ -388,6 +451,8 @@ export function AgentConfigSections({
   /** Which Kortix Apps the agent may open. Page-owned only: the picker needs
    *  the project's App list, which no checklist fallback has. */
   apps?: React.ReactNode;
+  /** Which shared drives the agent mounts. Page-owned, and only with Volumes on. */
+  drives?: React.ReactNode;
   /** What the agent can do once its Kortix permissions meet its IAM ceiling —
    *  a page-owned card under the Kortix permissions checklist. */
   authority?: React.ReactNode;
@@ -403,6 +468,17 @@ export function AgentConfigSections({
         return <>{people}</>;
       case 'skills':
         return skills ?? <SkillsSection draft={draft} set={set} options={skillsOptions} />;
+      case 'subagents':
+      case 'commands':
+      case 'extensions':
+        return (
+          <RegistryGrantSection
+            grant={section}
+            draft={draft}
+            set={set}
+            options={registryOptions?.[section] ?? []}
+          />
+        );
       case 'connectors':
         return (
           connectors ?? (
@@ -415,6 +491,8 @@ export function AgentConfigSections({
         );
       case 'apps':
         return <>{apps}</>;
+      case 'drives':
+        return <>{drives}</>;
       case 'actions':
         return (
           <>

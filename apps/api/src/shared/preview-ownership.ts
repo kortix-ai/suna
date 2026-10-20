@@ -137,7 +137,12 @@ async function readSandboxSessionAccess(
       isTriggerRunSession(row)
         ? authorize(
             actorForUser(input.userId, input.accountId),
-            'project.members.manage',
+            // `project.trigger.update`, not `project.members.manage` — the same
+            // action and ruling as the canonical engine
+            // (sessionManagerStanding, projects/lib/session-visibility.ts):
+            // whoever may change what a trigger does may read what it
+            // produced; administering people must not unlock session content.
+            'project.trigger.update',
             { type: 'project', id: input.projectId },
           )
         : Promise.resolve({ allowed: false as const, reason: 'not_trigger_session' }),

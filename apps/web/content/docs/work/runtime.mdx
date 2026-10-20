@@ -49,7 +49,7 @@ When the agent starts a dev server on port 3000, run `kortix sessions forward <s
 
 - The session branch is named after the `session_id`. Commits push to that branch through the Kortix git proxy. By default, work reaches the base branch through a [change request](/docs/git#change-requests).
 - The agents, skills and tools a session runs come from a read-only copy of the base branch, not from `/workspace`. An edit in `/workspace` takes effect after it reaches the base branch. See [Config comes from the base branch](/docs/git#config-comes-from-the-base-branch).
-- An agent with `repository_access: false` gets no clone and no git variables.
+- An agent with `workspace: { project_repository: false }` gets no clone and no git variables. In `kortix_version: 3` that is the default: an agent opts in with `project_repository: true`. See [Workspace](/docs/project/manifest#agent-workspace).
 - The sandbox has its own id at the provider, the external id. It is not the `session_id`. Previews and the API proxy use the external id. `kortix sessions info <session_id> --json` shows it in `sandbox_url`, after `/v1/p/`.
 
 ## Ports and previews
@@ -93,7 +93,7 @@ Every person has a private folder, and any folder can be shared with people, gro
 - the folders the agent or the whole project has a grant on, at `/drives/<folder name>`;
 - in a private session that the person started, also that person's own folder at `/drives/me` and every folder shared with them or their groups.
 
-Shared folders need the Files feature. It needs Platinum, and it follows the account's **Volumes** switch, which a platform admin sets in the [admin console](/docs/host#the-platform-admin-console). It is not a project toggle. With Files on, a session on another provider does not start. A platform admin can turn on drive sync: the sandbox then copies each folder into the same `/drives` path and keeps it in sync through Kortix.
+Shared folders need the Files feature. It needs Platinum and the project's **Volumes** flag (**Customize** → **Settings** → **Feature flags**). With Files on, a session on another provider does not start. A platform admin can turn on drive sync: the sandbox then copies each folder into the same `/drives` path and keeps it in sync through Kortix.
 
 ## The image and templates
 
@@ -166,7 +166,7 @@ Install Docker in your Dockerfile, for example `RUN curl -fsSL https://get.docke
 
 The runtime layer adds the `kortix` user to the `docker` group and starts `dockerd` at boot. Its log is `/var/log/dockerd.log`. If `dockerd` stops, start it again with `sudo sh -c 'nohup dockerd >/var/log/dockerd.log 2>&1 &'`.
 
-On Platinum, `container_runtime` also adds the kernel modules Docker needs for its networks and storage. E2B fails the build with `container_runtime is not supported on E2B`.
+On Platinum, `container_runtime` also adds the kernel modules Docker needs for its networks and storage.
 
 ## Environment variables
 
@@ -201,13 +201,16 @@ Kortix sets these variables in every session sandbox.
 
 ## Sandbox providers
 
-Kortix runs sandboxes on three providers. The operator of the Kortix instance decides which ones are on.
+Platinum is the reference sandbox provider. New sessions run on Platinum by default. The operator of the Kortix instance decides which providers are on.
 
 | Provider | Id | Docker in the sandbox | Persistent machines and shared folders | US region |
 | --- | --- | --- | --- | --- |
-| Daytona | `daytona` | Yes | No | No |
 | Platinum | `platinum` | Yes | Yes | Yes, with the **US Region** flag |
-| E2B | `e2b` | No. A template with `container_runtime: true` fails to build. | No | No |
+| Daytona (legacy) | `daytona` | Yes | No | No |
+
+<Callout type="warning">
+**Legacy: Daytona.** Daytona is a legacy fallback provider. Its removal is scheduled. Existing Daytona sessions keep working for now, but Daytona gets no new features and no support guarantee. Use Platinum. E2B support is discontinued.
+</Callout>
 
 A new session gets its provider in this order:
 
@@ -224,25 +227,7 @@ From a terminal, run `kortix sandboxes provider <name>`. `kortix sandboxes provi
 
 - A pin needs the `project.settings.write` permission. Only a person can set it. A session token gets `403` with code `agent_session_forbidden`. A session that needs another provider passes `provider` on create instead.
 - A switch to a different provider prepares the project's images on the target, verifies them, then activates the pin. New sessions use the old provider until the switch completes. The CLI follows the switch for up to 600 seconds (`--timeout <sec>`).
-- The **US Region** flag (**Customize** → **Settings** → **Feature flags**) places the project's new Platinum sandboxes in the US region. It changes where compute runs, not where the API, database or archives live. Existing sandboxes keep their region. The flag shows only when the operator configured a US region.
-
-## Persistent and ephemeral machines
-
-A session sandbox runs in one of three modes. Ephemeral sandboxes and persistent machines need Platinum and the account's **Volumes** switch, which a platform admin sets in the [admin console](/docs/host#the-platform-admin-console).
-
-| Mode | What survives a stop | What does not |
-| --- | --- | --- |
-| Normal | The sandbox stops in place with its disk. | Running processes. |
-| Ephemeral | Session files and the conversation, on a volume. A wake starts a new sandbox from the newest image. | Running processes and everything outside the saved state. |
-| Persistent machine | The whole root disk: installed packages, config and files. | Running processes. The machine stays on the image it was created from. |
-
-The operator's boot-mode policy decides which sessions are ephemeral. A persistent machine is a per-session choice:
-
-1. Create the session with `"persistent_machine": true` on `POST /v1/projects/{projectId}/sessions`. It runs on Platinum. A request or project pin for another provider returns `400` with code `PERSISTENT_MACHINE_UNSUPPORTED`. With **Volumes** off, Kortix ignores the field.
-2. To move it to the current image, send `{"reset_machine": true}` to `POST /v1/projects/{projectId}/sessions/{sessionId}/restart`. Kortix keeps the conversation and restores the session branch. Everything else on the old disk is gone. Shared folders are not touched.
-3. If Kortix cannot save the conversation first, the reset returns `409` with code `reset_state_not_preserved` and deletes nothing. Add `"discard_state": true` to reset and lose the conversation.
-
-A reset on a session that is not a persistent machine returns `400` with code `NOT_A_PERSISTENT_MACHINE`.
+- The **US Region** flag (**Customize** → **Settings** → **Feature flags**) places the project's new Platinum sandboxes in the US region. It changes where compute runs, not where the API, database or archives live. Existing sandboxes keep their region. After a new sandbox image, the first session can wait while Platinum copies the image to the region. If the copy fails, the session starts in the home region instead. That sandbox keeps the home region on restart. A replacement sandbox asks for the US region again. The flag shows only when the operator configured a US region.
 
 ## Troubleshooting
 

@@ -195,6 +195,8 @@ export function resolveApprovalMutationOptions(
     onError: () => {},
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: sessionAuditKey(projectId, sessionId) });
+      // The session lists count a pending connector call from GET needs-input (KRTX-1739).
+      if (projectId) queryClient.invalidateQueries({ queryKey: qk.project.needsInput(projectId) });
     },
   };
 }

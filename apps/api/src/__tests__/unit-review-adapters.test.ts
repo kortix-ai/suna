@@ -69,11 +69,12 @@ const baseCall: ConnectorCallRow = {
 };
 
 describe('connectorCallToReviewItem', () => {
-  test('a pending connector call maps to a needs_you approval item', () => {
-    const item = connectorCallToReviewItem(baseCall);
+  test('a pending connector call the caller may resolve maps to a needs_you approval item', () => {
+    const item = connectorCallToReviewItem(baseCall, { canResolve: true });
     expect(item.review_item_id).toBe(`${CALL_ID_PREFIX}ex-1`);
     expect(item.kind).toBe('approval');
     expect(item.status).toBe('needs_you');
+    expect(item.can_resolve).toBe(true);
     expect(item.title).toBe('Approve: gmail.messages.send');
     expect(item.detail).toMatchObject({
       execution_id: 'ex-1',
@@ -103,7 +104,7 @@ describe('connectorCallToReviewItem', () => {
           args_preview_complete: true,
         },
       },
-      { includeArgsPreview: true },
+      { canResolve: true },
     );
 
     expect(item.detail).toMatchObject({
@@ -127,6 +128,19 @@ describe('connectorCallToReviewItem', () => {
       args_preview_complete: false,
       args_preview_authorized: false,
     });
+  });
+
+  test('a caller who may not resolve the call reads it as waiting, not needs_you (KRTX-1724)', () => {
+    const item = connectorCallToReviewItem(baseCall);
+    expect(item.status).toBe('waiting');
+    expect(item.can_resolve).toBe(false);
+    expect(item.resolvers).toBeNull();
+  });
+
+  test('the item names who decides the call', () => {
+    expect(
+      connectorCallToReviewItem(baseCall, { canResolve: false, resolvers: 'managers' }).resolvers,
+    ).toBe('managers');
   });
 });
 

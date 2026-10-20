@@ -7,7 +7,7 @@
  * **Why it exists** (Jay, 2026-09-03): "it's difficult to get to know how many
  * credits we still have pending". The balance was reachable only through
  * Account -> Plan, where it is the first card of a pane whose other four
- * blocks are all mutations — subscribe, claim seats, buy credits, open the
+ * blocks are all mutations — change plan, buy credits, open the
  * Stripe portal. Someone who wants a number had to open a checkout surface to
  * read it.
  *
@@ -23,18 +23,16 @@
  * **What is new here, versus the balance card the Plan tab already shows**
  * (`features/billing/account-overview.tsx`):
  *
- * 1. **The composition.** `AccountState.credits` carries four numbers and the
+ * 1. **The composition.** `AccountState.credits` carries several numbers and the
  *    product renders one. `monthly` is the plan's grant, remaining, and it
- *    expires at period end; `daily` is the refreshing bucket; `extra` is
+ *    expires at period end; `extra` is
  *    purchased and never expires. Which bucket a balance sits in decides
  *    whether it survives Friday, so a single total answers the wrong question.
  * 2. **The grant meter.** `tier.monthly_credits` is the recurring grant and
  *    `credits.monthly` is what is left of it, so the difference is what this
  *    period consumed. One bar for one headline fraction — not one bar per row,
  *    which is the shape `account-overview.tsx` deliberately removed.
- * 3. **The refresh countdown.** `credits.daily_refresh.seconds_until_refresh`
- *    is, exactly, "credits still pending". Nothing in the product renders it.
- * 4. **The period is named.** The Plan card shows three spend figures over an
+ * 3. **The period is named.** The Plan card shows three spend figures over an
  *    unnamed span; `usage_this_period` carries the dates, so they are printed.
  *
  * **Buying credits happens here** (Jay, 2026-09-03: "the add credit component
@@ -46,7 +44,7 @@
  * `BillingAccountProvider`, which is what scopes their reads and mutations to
  * THIS account rather than the caller's primary one.
  *
- * Everything else on the pane stays read-only. The subscription, seats, and
+ * Everything else on the pane stays read-only. The subscription and
  * the Stripe portal are the Plan pane's subject and are not duplicated here.
  */
 
@@ -60,13 +58,12 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatUsd } from '@/features/billing/account-overview';
-import { AutoTopupCard } from '@/features/billing/auto-topup-card';
-import { CreditTopupSection } from '@/features/billing/credit-topup-section';
+import { TopupControls } from '@/features/billing/topup-controls';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
-import type { AccountState } from '@kortix/sdk';
-import { dollarsToCredits, formatCredits } from '@kortix/shared';
+import { type AccountState, canOfferTopup } from '@kortix/sdk';
+import { dollarsToCredits, formatCredits, formatUsdAsCredits } from '@kortix/shared';
 import { ReceiptIcon } from '@phosphor-icons/react';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
@@ -77,12 +74,11 @@ import { SettingsTabHeader } from '../settings-tab-header';
 // is exported so it can be tested against a fixed `AccountState` with no API,
 // no auth, and no billing flag — the same container/view split
 // `account-overview.tsx` and `profile-tab.tsx` use, and for the same reason:
-// the shapes worth reviewing (out of credits, negative balance, no grant, no
-// daily refresh) cannot be produced locally without provisioning accounts and
+// the shapes worth reviewing (out of credits, negative balance, no grant) cannot be produced locally without provisioning accounts and
 // a Stripe subscription.
 
 export interface CreditBucket {
-  id: 'monthly' | 'daily' | 'extra';
+  id: 'monthly' | 'extra';
   label: string;
   /** What happens to this bucket over time. One short clause, not a sentence. */
   hint: string;
@@ -91,22 +87,19 @@ export interface CreditBucket {
 
 export interface CreditBucketCopy {
   monthly: Pick<CreditBucket, 'label' | 'hint'>;
-  daily: Pick<CreditBucket, 'label' | 'hint'>;
   extra: Pick<CreditBucket, 'label' | 'hint'>;
 }
 
 const DEFAULT_BUCKET_COPY: CreditBucketCopy = {
   monthly: { label: 'Plan credits', hint: 'Expire at period end' },
-  daily: { label: 'Daily credits', hint: 'Refill on a timer' },
   extra: { label: 'Purchased', hint: 'Never expire' },
 };
 
 /**
- * The three buckets that sum to `credits.total`, in the order they are spent
- * down and in the order they matter: the grant, the refill, then the money you
- * paid.
+ * The two buckets that sum to `credits.total`, in the order they are spent
+ * down: the grant, then the money you paid.
  *
- * All three always render, including at zero. A strip whose column count
+ * Both always render, including at zero. A strip whose column count
  * depends on the data reflows between accounts and between refreshes, and a
  * zero is itself the answer to "do I have any purchased credits left".
  */
@@ -120,11 +113,6 @@ export function creditBuckets(
       id: 'monthly',
       ...copy.monthly,
       credits: dollarsToCredits(credits?.monthly ?? 0),
-    },
-    {
-      id: 'daily',
-      ...copy.daily,
-      credits: dollarsToCredits(credits?.daily ?? 0),
     },
     {
       id: 'extra',
@@ -147,12 +135,12 @@ export interface GrantMeter {
  * How much of this period's plan grant is gone.
  *
  * `tier.monthly_credits` is the STORED recurring grant (the API's own comment:
- * Stripe owns it, and a trial overlays entitlements without granting credits),
+ * Stripe owns it),
  * and `credits.monthly` is what is left of it. Anything the account bought or
  * earned daily sits in a different bucket, so the subtraction stays honest.
  *
- * `null` when the plan grants nothing — Free and per-seat Team accounts, where
- * a "0 of 0 used" bar is a bar that can never move.
+ * `null` when the plan grants nothing, where a "0 of 0 used" bar is a bar that
+ * can never move.
  */
 export function planGrantMeter(state: AccountState): GrantMeter | null {
   const grantedCredits = dollarsToCredits(state.tier?.monthly_credits ?? 0);
@@ -170,86 +158,6 @@ export function planGrantMeter(state: AccountState): GrantMeter | null {
     percent,
     tone: usedCredits >= grantedCredits ? 'spent' : percent >= 90 ? 'low' : 'ok',
   };
-}
-
-export interface DailyRefresh {
-  /** `+400 credits every 24h` */
-  amountLine: string;
-  /** `in ~4h 12m`, or `Any moment now` once the timer has elapsed. */
-  countdown: string;
-}
-
-export interface DailyRefreshCopy {
-  amount: (credits: string, hours: number | null) => string;
-  countdown: (seconds: number | null | undefined) => string;
-}
-
-const DEFAULT_DAILY_REFRESH_COPY: DailyRefreshCopy = {
-  amount: (credits, hours) => `+${credits} credits${hours ? ` every ${hours}h` : ''}`,
-  countdown: formatCountdown,
-};
-
-/**
- * The daily-credit refill, as two strings.
- *
- * This is the literal answer to "credits still pending": the API computes
- * `seconds_until_refresh` server-side from `last_refresh` plus the interval,
- * and nothing in the product has ever rendered it.
- *
- * The countdown is written from the number the query returned, not from a
- * ticking clock. `useAccountState` holds its data for two minutes, so a live
- * per-second timer would count down from a figure already up to two minutes
- * stale — precision the data does not have. Hence `~`, and hence no interval.
- */
-export function describeDailyRefresh(
-  state: AccountState,
-  copy: DailyRefreshCopy = DEFAULT_DAILY_REFRESH_COPY,
-): DailyRefresh | null {
-  const refresh = state.credits?.daily_refresh;
-  if (!refresh?.enabled) return null;
-
-  const amount = dollarsToCredits(refresh.daily_amount ?? 0);
-  if (amount <= 0) return null;
-
-  const hours =
-    typeof refresh.refresh_interval_hours === 'number' && refresh.refresh_interval_hours > 0
-      ? refresh.refresh_interval_hours
-      : null;
-
-  return {
-    amountLine: copy.amount(formatCredits(amount), hours),
-    countdown: copy.countdown(refresh.seconds_until_refresh),
-  };
-}
-
-export interface CountdownCopy {
-  anyMoment: string;
-  minutes: (minutes: number) => string;
-  hours: (hours: number) => string;
-  hoursMinutes: (hours: number, minutes: number) => string;
-}
-
-const DEFAULT_COUNTDOWN_COPY: CountdownCopy = {
-  anyMoment: 'Any moment now',
-  minutes: (minutes) => `in ~${minutes}m`,
-  hours: (hours) => `in ~${hours}h`,
-  hoursMinutes: (hours, minutes) => `in ~${hours}h ${minutes}m`,
-};
-
-/** `in ~4h 12m` · `in ~12m` · `Any moment now`. Never prints `0m`. */
-export function formatCountdown(
-  seconds: number | null | undefined,
-  copy: CountdownCopy = DEFAULT_COUNTDOWN_COPY,
-): string {
-  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 60) {
-    return copy.anyMoment;
-  }
-  const totalMinutes = Math.floor(seconds / 60);
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  if (h <= 0) return copy.minutes(m);
-  if (m === 0) return copy.hours(h);
-  return copy.hoursMinutes(h, m);
 }
 
 /**
@@ -278,25 +186,6 @@ function formatDay(iso: string | null | undefined, locale?: string): string | nu
 }
 
 // ─── Container ──────────────────────────────────────────────────────────────
-
-/**
- * Whether to offer the top-up control at all.
- *
- * Two independent gates, and both have to pass. `can_purchase_credits` is a
- * TIER entitlement — whether this plan may buy credits. `can_manage_billing`
- * is a PERMISSION — whether this person may (billing.write, owners only by
- * default). The API's own comment on the field says absent means allowed, so
- * an older response does not lock an owner out; the billing API enforces the
- * same gate server-side either way, so this is a UI hint, not the control.
- *
- * A member without the permission still reads the whole pane. Knowing the
- * balance is not the same as being able to change it, and hiding the number
- * from the people who spend it is what made this pane necessary.
- */
-export function canOfferTopup(state: AccountState): boolean {
-  if (!state.subscription?.can_purchase_credits) return false;
-  return state.can_manage_billing !== false;
-}
 
 export function CreditsTab({ accountId }: { accountId: string | undefined }) {
   const t = useTranslations('settings.credits');
@@ -338,31 +227,15 @@ export function CreditsTab({ accountId }: { accountId: string | undefined }) {
           // Passed in as a slot rather than rendered inside `CreditsView`:
           // both children are hook-driven, and the view has to stay renderable
           // against a fixed `AccountState` with no query client. Same reason
-          // the model above is pure.
-          topup={canOfferTopup(state) ? <TopupPanel /> : null}
+          // the model above is pure. `canOfferTopup` (the plan may buy credits
+          // AND this person may change billing) also decides whether the pane
+          // draws the "Add credits" section around the slot at all. A member
+          // still reads the whole pane: knowing the balance is not the same as
+          // being able to change it.
+          topup={canOfferTopup(state) ? <TopupControls state={state} /> : null}
         />
       </div>
     </BillingAccountProvider>
-  );
-}
-
-/**
- * Add credits and Auto top-up in one card, the shape
- * `/accounts/[id]?tab=billing` uses. `CreditTopupSection` renders no chrome of
- * its own by contract (no border, no padding, no heading) and `AutoTopupCard`
- * carries its own heading, which is why the seam is a plain `border-t` and
- * only the first half gets a label from outside.
- */
-function TopupPanel() {
-  return (
-    <div className="bg-popover rounded-md border">
-      <div className="px-4 py-4">
-        <CreditTopupSection />
-      </div>
-      <div className="border-t px-4 py-4">
-        <AutoTopupCard fetchSettings showSaveButton />
-      </div>
-    </div>
   );
 }
 
@@ -386,24 +259,11 @@ export function CreditsView({
   const isNegative = balance < 0;
   const buckets = creditBuckets(state, {
     monthly: { label: t('buckets.monthly.label'), hint: t('buckets.monthly.hint') },
-    daily: { label: t('buckets.daily.label'), hint: t('buckets.daily.hint') },
     extra: { label: t('buckets.extra.label'), hint: t('buckets.extra.hint') },
   });
   const meter = planGrantMeter(state);
-  const countdownCopy: CountdownCopy = {
-    anyMoment: t('countdown.anyMoment'),
-    minutes: (minutes) => t('countdown.minutes', { minutes }),
-    hours: (hours) => t('countdown.hours', { hours }),
-    hoursMinutes: (hours, minutes) => t('countdown.hoursMinutes', { hours, minutes }),
-  };
-  const refresh = describeDailyRefresh(state, {
-    amount: (credits, hours) =>
-      hours ? t('dailyAmountEvery', { credits, hours }) : t('dailyAmount', { credits }),
-    countdown: (seconds) => formatCountdown(seconds, countdownCopy),
-  });
   const usage = state.usage_this_period;
   const period = usage ? formatPeriod(usage.period_start, usage.period_end, locale) : null;
-  const formattedBalanceCredits = formatCredits(dollarsToCredits(Math.abs(balance)), { locale });
 
   return (
     <div className="space-y-8">
@@ -417,27 +277,28 @@ export function CreditsView({
           <div className="min-w-0">
             <p className="text-muted-foreground text-xs">{t('availableBalance')}</p>
             {/* `tabular-nums`, not `font-mono` — the call `account-overview.tsx`
-                documents: a monospace face gives '.' and ',' a digit's advance
-                and opens visible gaps mid-number. */}
+                documents: a monospace face gives ',' a digit's advance and
+                opens visible gaps mid-number. Credits are the headline; the
+                dollar equivalent is the quiet line under it. */}
             <p
               className={cn(
                 'mt-1.5 truncate text-2xl leading-none font-semibold tracking-tight tabular-nums',
                 isNegative ? 'text-kortix-red' : 'text-foreground',
               )}
             >
-              {formatUsd(balance, locale)}
+              {formatUsdAsCredits(balance, { locale })}
+              <span className="text-muted-foreground ml-1.5 text-sm font-normal tracking-normal">
+                {t('unit', { count: Math.abs(balance) * 100 })}
+              </span>
             </p>
             <p className="text-muted-foreground mt-1.5 text-xs tabular-nums">
-              {t('creditCount', {
-                count: dollarsToCredits(Math.abs(balance)),
-                formatted: formattedBalanceCredits,
-              })}
+              ≈ {formatUsd(Math.abs(balance), locale)}
               {isNegative ? ` ${t('owed')}` : ''}
             </p>
           </div>
         </div>
 
-        <div className="divide-border grid grid-cols-3 divide-x border-t">
+        <div className="divide-border grid grid-cols-2 divide-x border-t">
           {buckets.map((bucket) => (
             <div key={bucket.id} className="min-w-0 px-4 py-3">
               <p className="text-muted-foreground truncate text-xs">{bucket.label}</p>
@@ -450,7 +311,7 @@ export function CreditsView({
         </div>
       </div>
 
-      {meter || refresh ? (
+      {meter ? (
         <section className="space-y-4">
           <Label>{t('includedInPlan')}</Label>
           {/* One bar, for one headline fraction. `account-overview.tsx` removed
@@ -499,20 +360,6 @@ export function CreditsView({
               </p>
             </div>
           ) : null}
-
-          {refresh ? (
-            <div className="bg-popover flex items-center justify-between gap-4 rounded-md border px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-foreground text-sm font-medium">{t('dailyCredits')}</p>
-                <p className="text-muted-foreground truncate text-xs tabular-nums">
-                  {refresh.amountLine}
-                </p>
-              </div>
-              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                {refresh.countdown}
-              </span>
-            </div>
-          ) : null}
         </section>
       ) : null}
 
@@ -526,8 +373,8 @@ export function CreditsView({
       {usage ? (
         <section className="space-y-4">
           {/* The period is named. The same three figures appear on the Plan
-              tab over an unnamed span, which makes "$11.30" unreadable — since
-              when? `usage_this_period` carries the dates; print them. */}
+              tab over an unnamed span, which makes "1,130 credits" unreadable
+              — since when? `usage_this_period` carries the dates; print them. */}
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <Label>{t('spentThisPeriod')}</Label>
             {period ? (
@@ -575,6 +422,7 @@ function SpendStat({
   strong?: boolean;
   locale?: string;
 }) {
+  const t = useTranslations('settings.credits');
   return (
     <div className="min-w-0 px-4 py-3">
       <p className="text-muted-foreground truncate text-xs">{label}</p>
@@ -584,7 +432,10 @@ function SpendStat({
           strong ? 'text-foreground font-semibold' : 'text-foreground font-medium',
         )}
       >
-        {formatUsd(value, locale)}
+        {formatUsdAsCredits(value, { locale })}
+        <span className="text-muted-foreground ml-1 text-xs font-normal">
+          {t('unit', { count: Math.abs(value) * 100 })}
+        </span>
       </p>
     </div>
   );

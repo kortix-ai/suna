@@ -37,7 +37,7 @@
  * member's keys from another's at all.
  */
 
-import { useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 
 import {
   NEVER_EXPIRES,
@@ -45,13 +45,10 @@ import {
   expiresAtIso,
   expiryOptions,
 } from '@/components/iam/api-key-expiry';
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
 import { type ApiKeyRow, type ApiKeyStatus, buildApiKeyRows } from '@/components/iam/api-key-rows';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -76,13 +73,17 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { MFA_REQUIRED_EVENT } from '@/features/auth/mfa-step-up';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { AccessList, AccessRow, CopyRow, type KebabItem } from '@/features/workspace/shared/access';
+import { CopyRow, type KebabItem } from '@/features/workspace/shared/access';
+import { RowKebab } from '@/features/workspace/shared/access/access-row';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { getPatPolicy } from '@/lib/iam-client';
 import { relativeTime } from '@/lib/relative-time';
 import { usePermission } from '@/lib/use-permission';
+import { hubTarget } from '@/stores/account-panel-store';
 import {
   createAccountToken,
   listAccountTokens,
@@ -90,10 +91,8 @@ import {
   revokeAccountToken,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { KeyIcon, PlusIcon, ProhibitIcon } from '@phosphor-icons/react';
+import { KeyIcon, PlusIcon, ProhibitIcon, TrashIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocale, useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
 
 import { SettingsTabHeader } from '../settings-tab-header';
 import { ConnectedApps } from './connected-apps';
@@ -168,28 +167,34 @@ export function apiKeyMetaParts(
   return parts;
 }
 
-function localizedRelativeTime(input: string | number, locale: string, now = Date.now()): string {
-  const then = typeof input === 'string' ? new Date(input).getTime() : input;
-  if (!Number.isFinite(then)) return '';
-  const elapsedMinutes = Math.max(0, Math.floor((now - then) / 60_000));
-  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'narrow' });
-  if (elapsedMinutes < 1) return formatter.format(0, 'minute');
-  if (elapsedMinutes < 60) return formatter.format(-elapsedMinutes, 'minute');
-  const hours = Math.floor(elapsedMinutes / 60);
-  if (hours < 24) return formatter.format(-hours, 'hour');
-  const days = Math.floor(hours / 24);
-  if (days < 30) return formatter.format(-days, 'day');
-  return new Date(then).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+export function localizedRelativeTime(
+  input: string | number,
+  locale: string,
+  now = Date.now(),
+): string {
+  return relativeTime(input, locale, now, { zero: 'minute' });
 }
 
 export function TokensTab({ accountId }: { accountId: string | undefined }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.tokens');
   const locale = useLocale();
-  const [renderedAt] = useState(() => Date.now());
+  const [mountAt] = useState(() => Date.now());
   const [createOpen, setCreateOpen] = useState(false);
-  const [revokeTarget, setRevokeTarget] = useState<ApiKeyRow | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<{
+    row: ApiKeyRow;
+    action: 'revoke' | 'delete';
+  } | null>(null);
+  const [detailRow, setDetailRow] = useState<ApiKeyRow | null>(null);
   const queryClient = useQueryClient();
+  const metaCopy: ApiKeyMetaCopy = {
+    neverUsed: t('neverUsed'),
+    neverExpires: t('neverExpires'),
+    lastUsed: (time) => t('lastUsed', { time }),
+    expired: (time) => t('expiredAt', { time }),
+    expires: (time) => t('expiresAt', { time }),
+    relativeTime: (input) => localizedRelativeTime(input, locale, renderedAt),
+  };
 
   // Every row here is the caller's OWN hand-minted key (`mine: true`), so the
   // gates are the personal leaves every system account role holds — a plain
@@ -206,6 +211,15 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
     staleTime: 30_000,
   });
 
+  // A stamp that lands after the pane mounted — a key used while this dialog
+  // is open — must not be aged against the mount-time clock: the past/future
+  // direction would flip and "Last used just now" would become a countdown
+  // for something that already happened. So the clock is the query's own
+  // fetch time once data has landed (it advances with every refetch), and the
+  // mount capture only covers the first paint, keeping SSR and hydration
+  // agreeing exactly as the plain `useState(() => Date.now())` did.
+  const renderedAt = tokensQuery.dataUpdatedAt || mountAt;
+
   // Names only — a project-scoped key shows the project it is limited to
   // rather than a raw uuid.
   const projectsQuery = useQuery({
@@ -220,9 +234,26 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
     onSuccess: () => {
       successToast(t('keyRevoked'));
       queryClient.invalidateQueries({ queryKey: MY_TOKENS_KEY(accountId ?? '') });
-      setRevokeTarget(null);
+      setConfirmTarget(null);
     },
     onError: (err: Error) => errorToast(err.message || t('revokeFailed')),
+  });
+
+  // A revoked key cannot be revoked again — the API answers 404. The same
+  // route with `?delete_revoked=true` removes the dead row instead, and the
+  // API only ever honors it for the caller's OWN personal key
+  // (`deleteRevokedPersonalAccountToken`), so the audit rows of other
+  // members' keys, service accounts and session tokens stay untouchable.
+  const deleteMutation = useMutation({
+    mutationFn: (row: ApiKeyRow) =>
+      revokeAccountToken(row.id, accountId, { deleteRevoked: true }),
+    onSuccess: () => {
+      successToast(t('keyDeleted'));
+      queryClient.invalidateQueries({ queryKey: MY_TOKENS_KEY(accountId ?? '') });
+      setDetailRow(null);
+      setConfirmTarget(null);
+    },
+    onError: (err: Error) => errorToast(err.message || t('deleteFailed')),
   });
 
   const rows = buildApiKeyRows({
@@ -232,25 +263,10 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
 
   return (
     // `max-w-2xl` — the form tier every person-scoped pane in this dialog
-    // uses (`tab-content-width.test.ts`). The rows are `AccessRow`s, not a
+    // uses (`tab-content-width.test.ts`). The list is one card of flat rows, not a
     // table, so nothing here needs the wide tier.
     <div className="mx-auto w-full max-w-2xl space-y-5">
-      <SettingsTabHeader
-        tab="tokens"
-        action={
-          canCreate && rows.length > 0 ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="gap-1.5"
-              onClick={() => setCreateOpen(true)}
-            >
-              <PlusIcon className="size-4 shrink-0" />
-              {t('newKey')}
-            </Button>
-          ) : undefined
-        }
-      />
+      <SettingsTabHeader tab="tokens" hideDescription />
 
       {!accountId ? (
         <div className="space-y-2">
@@ -312,46 +328,99 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
           }
         />
       ) : (
-        <AccessList>
-          {rows.map((row) => {
-            // A revoked or expired key has nothing left to revoke — it is a
-            // record now. There is no delete: the row is the audit trail.
-            const kebab: KebabItem[] =
-              canRevoke && row.status === 'active'
-                ? [
-                    {
-                      label: t('revokeKey'),
-                      icon: <ProhibitIcon className="size-3.5 shrink-0" />,
-                      variant: 'destructive',
-                      onSelect: () => setRevokeTarget(row),
-                    },
-                  ]
-                : [];
-            return (
-              <AccessRow
-                key={row.id}
-                leading={<EntityAvatar icon={KeyIcon} label={row.name} size="sm" />}
-                title={row.name}
-                badges={
-                  <Badge variant={STATUS_BADGE[row.status].variant} size="sm">
-                    {t(`status.${row.status}`)}
-                  </Badge>
-                }
-                metaParts={apiKeyMetaParts(row, renderedAt, {
-                  neverUsed: t('neverUsed'),
-                  neverExpires: t('neverExpires'),
-                  lastUsed: (time) => t('lastUsed', { time }),
-                  expired: (time) => t('expiredAt', { time }),
-                  expires: (time) => t('expiresAt', { time }),
-                  relativeTime: (input) => localizedRelativeTime(input, locale, renderedAt),
-                })}
-                kebab={kebab}
-                kebabLabel={t('actionsFor', { name: row.name })}
-                pending={revokeMutation.isPending && revokeTarget?.id === row.id}
-              />
-            );
-          })}
-        </AccessList>
+        // Linear's API key list: one card, a header row with the count and
+        // the create action, then flat rows separated by hairlines. A row
+        // opens the key's details; its ⋯ keeps Revoke one click away.
+        <div className="bg-surface overflow-hidden rounded-lg border">
+          <div className="flex h-12 items-center justify-between gap-3 border-b pr-2 pl-4">
+            <span className="text-foreground text-sm font-medium">
+              {t('keyCount', { count: rows.length })}
+            </span>
+            {canCreate ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="gap-1.5"
+                onClick={() => setCreateOpen(true)}
+              >
+                <PlusIcon className="size-3.5 shrink-0" />
+                {t('newKey')}
+              </Button>
+            ) : null}
+          </div>
+          <ul className="divide-y">
+            {rows.map((row) => {
+              // An active key's ⋯ revokes it. A revoked key has nothing left
+              // to revoke — its ⋯ deletes it: the API keeps revoked rows as
+              // history, but a person cleaning up after themselves (or the
+              // account-cleanup journey) needs the row gone, and the delete
+              // only ever reaches their OWN dead key (KRTX-2656). An expired
+              // key stays a record: nothing chose to revoke it, and the API
+              // deletes revoked rows only.
+              const kebab: KebabItem[] =
+                canRevoke && row.status === 'active'
+                  ? [
+                      {
+                        label: t('revokeKey'),
+                        icon: <ProhibitIcon className="size-3.5 shrink-0" />,
+                        variant: 'destructive',
+                        onSelect: () => setConfirmTarget({ row, action: 'revoke' }),
+                      },
+                    ]
+                  : canRevoke && row.status === 'revoked'
+                    ? [
+                        {
+                          label: t('deleteKey'),
+                          icon: <TrashIcon className="size-3.5 shrink-0" />,
+                          variant: 'destructive',
+                          onSelect: () => setConfirmTarget({ row, action: 'delete' }),
+                        },
+                      ]
+                    : [];
+              const meta = [
+                t('createdOn', { date: formatShortDate(row.createdAt, locale) }),
+                ...apiKeyMetaParts(row, renderedAt, metaCopy).slice(1),
+              ];
+              return (
+                <li
+                  key={row.id}
+                  className="hover:bg-hover relative flex items-center gap-3 px-4 py-3"
+                >
+                  {/* The whole row opens the details; the ⋯ sits above it. */}
+                  <button
+                    type="button"
+                    aria-label={row.name}
+                    className="focus-visible:ring-ring absolute inset-0 outline-none focus-visible:ring-1 focus-visible:ring-inset"
+                    onClick={() => setDetailRow(row)}
+                  />
+                  <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
+                    <KeyIcon className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="text-foreground truncate text-sm font-medium">
+                        {row.name}
+                      </span>
+                      {row.status !== 'active' ? (
+                        <Badge variant={STATUS_BADGE[row.status].variant} size="sm">
+                          {t(`status.${row.status}`)}
+                        </Badge>
+                      ) : null}
+                    </span>
+                    <span className="text-muted-foreground block truncate text-xs">
+                      {meta.join(' · ')}
+                    </span>
+                  </span>
+                  {kebab.length > 0 ? (
+                    <span className="relative z-10 shrink-0">
+                      <RowKebab items={kebab} label={t('actionsFor', { name: row.name })} />
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       {/* Where the OTHER kind of key lives. One line, because a person who
@@ -384,21 +453,157 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
         />
       ) : null}
 
-      <ConfirmDialog
-        open={!!revokeTarget}
+      <ApiKeyDetailModal
+        row={detailRow}
+        locale={locale}
+        metaCopy={metaCopy}
+        canRevoke={canRevoke}
         onOpenChange={(open) => {
-          if (!open) setRevokeTarget(null);
+          if (!open) setDetailRow(null);
         }}
-        title={t('revokeTitle')}
-        description={revokeTarget ? t('revokeDescription', { name: revokeTarget.name }) : ''}
-        confirmLabel={t('revoke')}
+        onConfirm={(row, action) => {
+          setDetailRow(null);
+          setConfirmTarget({ row, action });
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!confirmTarget}
+        onOpenChange={(open) => {
+          if (!open) setConfirmTarget(null);
+        }}
+        title={
+          confirmTarget?.action === 'delete' ? t('deleteTitle') : t('revokeTitle')
+        }
+        description={
+          confirmTarget
+            ? confirmTarget.action === 'delete'
+              ? t('deleteDescription', { name: confirmTarget.row.name })
+              : t('revokeDescription', { name: confirmTarget.row.name })
+            : ''
+        }
+        confirmLabel={confirmTarget?.action === 'delete' ? t('deleteKey') : t('revoke')}
         confirmVariant="destructive"
-        isPending={revokeMutation.isPending}
+        isPending={revokeMutation.isPending || deleteMutation.isPending}
         onConfirm={() => {
-          if (revokeTarget) revokeMutation.mutate(revokeTarget);
+          if (!confirmTarget) return;
+          if (confirmTarget.action === 'delete') deleteMutation.mutate(confirmTarget.row);
+          else revokeMutation.mutate(confirmTarget.row);
         }}
       />
     </div>
+  );
+}
+
+export function formatShortDate(iso: string, locale: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return '';
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+}
+
+function formatLongDate(iso: string, locale: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return '';
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/**
+ * One key's details, Linear's layout in a modal: the name as the title, the
+ * creation date under it, the ⋯ on the right, then one card of labelled rows.
+ * Read-only: a key's name, scope and expiry are fixed at creation.
+ */
+function ApiKeyDetailModal({
+  row,
+  locale,
+  metaCopy,
+  canRevoke,
+  onOpenChange,
+  onConfirm,
+}: {
+  row: ApiKeyRow | null;
+  locale: string;
+  metaCopy: ApiKeyMetaCopy;
+  canRevoke: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (row: ApiKeyRow, action: 'revoke' | 'delete') => void;
+}) {
+  const t = useTranslations('settings.tokens');
+  const fields: Array<{ label: string; value: ReactNode }> = row
+    ? [
+        { label: t('keyName'), value: row.name },
+        { label: t('keyPrefix'), value: <span className="font-mono">{row.hint}</span> },
+        { label: t('scope'), value: row.scopeLabel ?? t('wholeWorkspace') },
+        {
+          label: t('statusLabel'),
+          value: (
+            <Badge variant={STATUS_BADGE[row.status].variant} size="sm">
+              {t(`status.${row.status}`)}
+            </Badge>
+          ),
+        },
+        {
+          label: t('lastUsedLabel'),
+          value: row.lastUsedAt ? metaCopy.relativeTime(row.lastUsedAt) : metaCopy.neverUsed,
+        },
+        {
+          label: t('expires'),
+          value: row.expiresAt ? formatLongDate(row.expiresAt, locale) : metaCopy.neverExpires,
+        },
+      ]
+    : [];
+  return (
+    <Modal open={!!row} onOpenChange={onOpenChange}>
+      <ModalContent className="sm:max-w-lg">
+        {row ? (
+          <>
+            <ModalHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <ModalTitle className="truncate">{row.name}</ModalTitle>
+                  <ModalDescription>
+                    {t('createdOn', { date: formatLongDate(row.createdAt, locale) })}
+                  </ModalDescription>
+                </div>
+                {canRevoke && (row.status === 'active' || row.status === 'revoked') ? (
+                  <RowKebab
+                    label={t('actionsFor', { name: row.name })}
+                    items={
+                      row.status === 'active'
+                        ? [
+                            {
+                              label: t('revokeKey'),
+                              icon: <ProhibitIcon className="size-3.5 shrink-0" />,
+                              variant: 'destructive',
+                              onSelect: () => onConfirm(row, 'revoke'),
+                            },
+                          ]
+                        : [
+                            {
+                              label: t('deleteKey'),
+                              icon: <TrashIcon className="size-3.5 shrink-0" />,
+                              variant: 'destructive',
+                              onSelect: () => onConfirm(row, 'delete'),
+                            },
+                          ]
+                    }
+                  />
+                ) : null}
+              </div>
+            </ModalHeader>
+            <ModalBody>
+              <dl className="divide-y rounded-lg border">
+                {fields.map((field) => (
+                  <div key={field.label} className="space-y-1 px-4 py-3">
+                    <dt className="text-foreground text-sm font-medium">{field.label}</dt>
+                    <dd className="text-muted-foreground text-sm">{field.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </ModalBody>
+          </>
+        ) : null}
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -409,7 +614,7 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
  * person opened this, and a dialog that closes and reopens somewhere else is
  * how a one-time secret gets lost.
  */
-function CreateApiKeyDialog({
+export function CreateApiKeyDialog({
   accountId,
   open,
   onOpenChange,
@@ -480,7 +685,16 @@ function CreateApiKeyDialog({
       setCreated(result);
     },
     onError: (err: Error) => errorToast(err.message || t('createFailed')),
+    // The synchronous half of the double-submit guard: the observer's
+    // `isPending` is scheduled with setTimeout(0), so two submit events in
+    // one tick both saw a fresh mutation and minted two keys (KRTX-2639).
+    // A ref flips before the first request leaves and resets only when the
+    // mutation settles, so a retry after a real failure still works.
+    onSettled: () => {
+      submitInFlight.current = false;
+    },
   });
+  const submitInFlight = useRef(false);
 
   function close() {
     onOpenChange(false);
@@ -533,7 +747,8 @@ function CreateApiKeyDialog({
             <form
               onSubmit={(event) => {
                 event.preventDefault();
-                if (!name.trim() || mutation.isPending) return;
+                if (!name.trim() || mutation.isPending || submitInFlight.current) return;
+                submitInFlight.current = true;
                 mutation.mutate();
               }}
             >
@@ -556,7 +771,7 @@ function CreateApiKeyDialog({
                 <div className="space-y-1.5">
                   <Label htmlFor="personal-api-key-scope">{t('scope')}</Label>
                   <Select value={scope} onValueChange={setScope} disabled={mutation.isPending}>
-                    <SelectTrigger id="personal-api-key-scope" className="w-full">
+                    <SelectTrigger id="personal-api-key-scope" size="md" className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -583,7 +798,7 @@ function CreateApiKeyDialog({
                     onValueChange={setExpiry}
                     disabled={mutation.isPending}
                   >
-                    <SelectTrigger id="personal-api-key-expiry" className="w-full">
+                    <SelectTrigger id="personal-api-key-expiry" size="md" className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

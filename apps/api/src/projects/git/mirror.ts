@@ -592,7 +592,7 @@ export async function runGitCapture(
 /** Re-export so callers that spawn directly (archive streaming) share one import surface. */
 export { spawn };
 
-function refreshIntervalMs() {
+export function refreshIntervalMs() {
   const value = Number(process.env.KORTIX_GIT_REFRESH_INTERVAL_MS || 60_000);
   return Number.isFinite(value) && value >= 0 ? value : 60_000;
 }
@@ -836,12 +836,17 @@ export async function refreshMirror(
   project: GitBackedProject,
   force: MirrorRefresh = false,
   opts?: {
-    /** Freshness is only needed for THIS branch: prove it with one `ls-remote`
-     *  and skip the whole-mirror fetch when it has not moved. Ignored unless
-     *  `force` is set. */
+    /** Freshness is only needed for THIS ref. Forced: prove a branch with one
+     *  `ls-remote` and skip the whole-mirror fetch when it has not moved.
+     *  Unforced, a full commit SHA the mirror already holds skips the fetch:
+     *  nothing at a commit can change. */
     freshRef?: string;
   },
 ) {
+  if (!force && opts?.freshRef && /^[0-9a-f]{40}$/.test(opts.freshRef)) {
+    const held = await mirrorHoldingCommit(project, opts.freshRef);
+    if (held) return held;
+  }
   if (!force && staleMirrorReadsAllowed()) {
     const warm = viewableWarmMirror(project);
     if (warm) {
@@ -857,6 +862,17 @@ export async function refreshMirror(
     }
   }
   return lockedRefreshMirror(project, force, opts);
+}
+
+/** The mirror path when it already holds `commit`, else null. */
+async function mirrorHoldingCommit(project: GitBackedProject, commit: string): Promise<string | null> {
+  const repoPath = repoCachePath(project);
+  if (!existsSync(repoPath) || !looksLikeBareMirror(repoPath)) return null;
+  const held = await runGitCapture(['cat-file', '-e', `${commit}^{commit}`], repoPath).catch(() => null);
+  if (held?.exitCode !== 0) return null;
+  const now = new Date();
+  void utimes(repoPath, now, now).catch(() => {});
+  return repoPath;
 }
 
 async function lockedRefreshMirror(

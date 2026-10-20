@@ -15,14 +15,18 @@
  *   `metadata.warm === true`  ⇒  created speculatively, never used.
  *
  * `POST /projects/:id/sessions/warm` writes it (projects/routes/warm-sessions.ts). The
- * `visible` list scope hides marked rows whose session is not actively
- * provisioning or running (projects/lib/session-inventory.ts): a live box
- * bills compute from creation (warmPoolGrantMs), and a billed session must
- * stay listed so its owner can see and stop it. The manager `project` scope
- * keeps a live warm row for lifecycle inspection too, and drops a soft-deleted
- * warm draft in every scope: never prompted, nothing to audit, and listing the
+ * `visible` list scope hides marked rows (projects/lib/session-inventory.ts) — the
+ * sidebar must never show an unprompted warm session, however live its box is
+ * (product call 2026-10-12: a billed warm row listed as an untitled "New
+ * session" that spins for the whole grant read as a broken session). A live
+ * box still bills compute from creation (warmPoolGrantMs); the money stays
+ * visible where lifecycle work happens — the manager `project` scope keeps a
+ * live warm row for inspection, and open/stop/delete by id never consulted
+ * the marker. The manager `project` scope
+ * drops a soft-deleted warm draft in every scope: never prompted, nothing to
+ * audit, and listing the
  * tombstone left the Sessions page's empty state unreachable. `recordSessionActivity`
- * DELETES it in the same statement that stamps the first accepted turn
+ * DELETES the marker in the same statement that stamps the first accepted turn
  * (projects/session-activity.ts), so "used" and "last active" are one fact
  * written once and cannot drift apart. From that moment the row lists like
  * any other session.

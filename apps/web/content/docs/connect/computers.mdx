@@ -146,7 +146,8 @@ What Kortix shows comes from the computer: the access mode, an approval and its 
 - Only the owner shares a computer. Sharing needs permission to manage the project's connections.
 - A computer shared with everyone also serves unattended runs: triggers, schedules, and email messages. Unattended runs reach only shared computers.
 - Your access setting still applies to a shared computer. In **Ask each time**, every new approval is yours to give.
-- When the owner leaves the Kortix account, calls to the computer fail with `computer_owner_left`.
+- When the owner leaves the Kortix account, is removed from it, or is deactivated through SCIM, every computer account in that account that reaches the owner's computers becomes `revoked`, with `metadata.revokedReason: owner_left`. This covers a computer shared with a project and a computer the owner paired for themselves. Calls to the computer fail with `computer_owner_left`. The computer keeps serving the owner's other Kortix accounts. See [When a person leaves](/docs/accounts#when-a-person-leaves).
+- A revoked computer account becomes `active` again when its owner pairs the same computer again, or through `PUT /v1/projects/:projectId/connections/:connectionId/activate`. An active account has no `metadata.revokedReason`.
 
 To hold risky calls for a person, set a policy on the **Tools** tab of the **Computers** connector, for example **Ask** for `shell.exec` and **Block** for `fs.delete`. A held call appears in the project's approvals. See [Policies and approvals](/docs/connect/connectors#policies-and-approvals).
 

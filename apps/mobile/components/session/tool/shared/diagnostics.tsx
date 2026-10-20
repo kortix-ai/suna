@@ -10,7 +10,7 @@
  */
 
 import { Pressable, View } from 'react-native';
-import { toToolView, type Diagnostic, type ToolPart } from '@kortix/sdk';
+import { toToolView, type Diagnostic, type ToolCallBlock } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { WarningCircleIcon, WarningIcon } from '@/lib/icons';
 import { partOutput } from '@/lib/session/tool-part-accessors';
@@ -19,9 +19,9 @@ import { webSpace } from '@/lib/session/user-message';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from './styles';
 import { useToolNavigation } from './navigation';
 
-export function getToolDiagnostics(part: ToolPart, filePath: string | undefined): Diagnostic[] {
+export function getToolDiagnostics(call: ToolCallBlock, filePath: string | undefined): Diagnostic[] {
   if (!filePath) return [];
-  return getToolDiagnosticsFrom(partOutput(part), toToolView(part).diagnostics, filePath);
+  return getToolDiagnosticsFrom(partOutput(call), toToolView(call).diagnostics, filePath);
 }
 
 export function DiagnosticsDisplay({ diagnostics, filePath }: { diagnostics: Diagnostic[]; filePath?: string }) {

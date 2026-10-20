@@ -12,7 +12,7 @@ const host = (tag: string) =>
   function Collaborator({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) {
     return React.createElement(tag, props, children);
   };
-mock.module('@/components/ui/modal', () =>
+const uiModalMock = () =>
   Object.fromEntries(
     [
       'Modal',
@@ -23,11 +23,15 @@ mock.module('@/components/ui/modal', () =>
       'ModalHeader',
       'ModalTitle',
     ].map((name) => [name, host('div')]),
-  ),
-);
+  );
+mock.module('@/components/ui/modal', uiModalMock);
+mock.module('@kortix/ui/modal', uiModalMock);
 mock.module('motion/react', () => ({ m: { div: host('div') } }));
-mock.module('@/components/ui/toast', () => ({ successToast: () => {} }));
+const uiToastMock = () => ({ successToast: () => {} });
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('./component/manifest-copy-block', () => ({ ManifestCopyBlock: host('pre') }));
+mock.module('@/components/markdown/copy-button', () => ({ CopyButton: host('span') }));
 const mutation = {
   isPending: false,
   mutate: (_value: unknown, options: { onSuccess: () => void }) => options.onSuccess(),
@@ -40,14 +44,15 @@ mock.module('@/hooks/channels/use-teams-installations', () => ({
   useConnectTeams: () => mutation,
   useTeamsManifest: () => ({ data: '{}' }),
 }));
-mock.module('@/components/ui/select', () =>
+const uiSelectMock = () =>
   Object.fromEntries(
     ['Select', 'SelectContent', 'SelectItem', 'SelectTrigger', 'SelectValue'].map((name) => [
       name,
       host(name === 'SelectItem' ? 'option' : 'div'),
     ]),
-  ),
-);
+  );
+mock.module('@/components/ui/select', uiSelectMock);
+mock.module('@kortix/ui/select', uiSelectMock);
 const { SlackByoWizard } = await import('./component/slack-byo-wizard');
 const { TeamsByoWizard } = await import('./component/teams-byo-wizard');
 const { OAuth2CredentialFields } = await import('./connector-oauth2-fields');

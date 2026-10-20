@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
 
 import { resolveExpiry } from '../commands/tokens.ts';
 import {
@@ -16,6 +17,46 @@ const ACCOUNT = 'account_1';
 const SA = '55555555-5555-4555-8555-555555555555';
 const IAM = `/v1/accounts/${ACCOUNT}/iam`;
 
+const laptop = {
+  token_id: 'tok_a',
+  name: 'laptop',
+  project_id: null,
+  public_key: 'kx_pub_a',
+  status: 'active',
+  expires_at: null,
+  last_used_at: null,
+  created_at: '2026-01-01T00:00:00.000Z',
+  revoked_at: null,
+};
+const ci = {
+  token_id: 'tok_b',
+  name: 'ci',
+  project_id: 'p1',
+  public_key: 'kx_pub_b',
+  status: 'revoked',
+  expires_at: '2026-12-01T00:00:00.000Z',
+  last_used_at: null,
+  created_at: '2026-01-01T00:00:00.000Z',
+  revoked_at: '2026-02-01T00:00:00.000Z',
+};
+// `status` and `revoked_at` are not tied by any DB constraint: a direct
+// `UPDATE … SET revoked_at` (the release-gate sweep) can leave a row reading
+// active with revoked_at stamped (apps/api/src/repositories/account-tokens.ts,
+// `isRevokedRow`). It cannot authenticate either, so it must hide as well.
+const ghost = {
+  token_id: 'tok_c',
+  name: 'ghost',
+  project_id: null,
+  public_key: 'kx_pub_c',
+  status: 'active',
+  expires_at: null,
+  last_used_at: null,
+  created_at: '2026-01-01T00:00:00.000Z',
+  revoked_at: '2026-02-02T00:00:00.000Z',
+};
+/** Overridden by the all-dead test; null falls back to the standard fixture. */
+let mineFixture: unknown[] | null = null;
+
 let tmp: string;
 let runner: string;
 let api: FakeApi | null = null;
@@ -24,43 +65,8 @@ const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   const p = url.pathname;
   if (p === '/v1/accounts/tokens' && req.method === 'GET') {
     const mine = url.searchParams.get('mine') === 'true';
-    return Response.json(
-      mine
-        ? [
-            {
-              token_id: 'tok_a',
-              name: 'laptop',
-              project_id: null,
-              public_key: 'kx_pub_a',
-              status: 'active',
-              expires_at: null,
-              last_used_at: null,
-              created_at: '2026-01-01T00:00:00.000Z',
-            },
-          ]
-        : [
-            {
-              token_id: 'tok_a',
-              name: 'laptop',
-              project_id: null,
-              public_key: 'kx_pub_a',
-              status: 'active',
-              expires_at: null,
-              last_used_at: null,
-              created_at: '2026-01-01T00:00:00.000Z',
-            },
-            {
-              token_id: 'tok_b',
-              name: 'ci',
-              project_id: 'p1',
-              public_key: 'kx_pub_b',
-              status: 'revoked',
-              expires_at: '2026-12-01T00:00:00.000Z',
-              last_used_at: null,
-              created_at: '2026-01-01T00:00:00.000Z',
-            },
-          ],
-    );
+    if (mine) return Response.json(mineFixture ?? [laptop, ci, ghost]);
+    return Response.json([laptop, ci]);
   }
   if (p === '/v1/accounts/tokens' && req.method === 'POST') {
     const b = body as { name: string };
@@ -81,6 +87,9 @@ const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   }
   if (p === '/v1/accounts/tokens/tok_a' && req.method === 'DELETE') {
     return Response.json({ ok: true });
+  }
+  if (p === '/v1/accounts/tokens/tok_b' && req.method === 'DELETE') {
+    return Response.json({ ok: true, deleted: true });
   }
   if (p === '/v1/accounts/tokens/tok_missing' && req.method === 'DELETE') {
     return Response.json({ error: 'token not found or already revoked' }, { status: 404 });
@@ -187,6 +196,7 @@ describe('kortix tokens', () => {
   afterEach(() => {
     api?.stop();
     api = null;
+    mineFixture = null;
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -195,7 +205,7 @@ describe('kortix tokens', () => {
     expect(h.code).toBe(0);
     for (const fragment of [
       'Usage: kortix tokens',
-      'ls [--mine] [--json]',
+      'ls [--mine] [--all] [--json]',
       'new <name>',
       'service-accounts ls',
       'token.personal.create',
@@ -229,6 +239,67 @@ describe('kortix tokens', () => {
     expect(mine.code).toBe(0);
     expect(api!.requests.at(-1)!.query).toContain('mine=true');
     expect(JSON.parse(mine.stdout).map((t: { name: string }) => t.name)).toEqual(['laptop']);
+  });
+
+  test('--mine hides keys that cannot authenticate; --all lists them again', async () => {
+    const config = boot();
+    // After a revoke the settings page drops the row and the key 401s — the
+    // CLI's default list must agree instead of showing dead history.
+    const mine = await runCommand(runner, ['ls', '--mine', '--json'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(mine.code).toBe(0);
+    expect(JSON.parse(mine.stdout).map((t: { token_id: string }) => t.token_id)).toEqual(['tok_a']);
+
+    const everything = await runCommand(runner, ['ls', '--mine', '--all', '--json'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(everything.code).toBe(0);
+    expect(JSON.parse(everything.stdout).map((t: { token_id: string }) => t.token_id)).toEqual([
+      'tok_a',
+      'tok_b',
+      'tok_c',
+    ]);
+  });
+
+  test('--mine hides dead rows from the table and says what it hid', async () => {
+    const config = boot();
+    const table = await runCommand(runner, ['ls', '--mine'], { cwd: tmp, configFile: config });
+    expect(table.code).toBe(0);
+    expect(table.stdout).toContain('laptop');
+    expect(table.stdout).not.toContain('ci');
+    expect(table.stdout).not.toContain('ghost');
+    expect(table.stdout).toContain('1 key');
+    expect(table.stdout).toContain('2 revoked hidden');
+    expect(table.stdout).toContain('--all');
+
+    const full = await runCommand(runner, ['ls', '--mine', '--all'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(full.code).toBe(0);
+    for (const name of ['laptop', 'ci', 'ghost']) expect(full.stdout).toContain(name);
+    expect(full.stdout).toContain('revoked');
+    expect(full.stdout).toContain('3 keys');
+  });
+
+  test('when every key is dead --mine says so and points at --all', async () => {
+    mineFixture = [ci, ghost];
+    const config = boot();
+    const json = await runCommand(runner, ['ls', '--mine', '--json'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toEqual([]);
+
+    const table = await runCommand(runner, ['ls', '--mine'], { cwd: tmp, configFile: config });
+    expect(table.code).toBe(0);
+    expect(table.stdout).toContain('No API keys minted by you');
+    expect(table.stdout).toContain('2 revoked');
+    expect(table.stdout).toContain('--all');
   });
 
   test('new POSTs account_id IN THE BODY and prints the secret once', async () => {
@@ -268,15 +339,64 @@ describe('kortix tokens', () => {
     expect(api!.requests).toHaveLength(0);
   });
 
+  test.each(['active', 'revoked'])('rm preserves %s operation across lost responses', async (initial) => {
+    let revoked = initial === 'revoked';
+    let deleted = false;
+    let attempts = 0;
+    const deletions: string[] = [];
+    const server = createServer((req, res) => {
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      res.setHeader('Content-Type', 'application/json');
+      if (req.method === 'GET') {
+        res.end(JSON.stringify(deleted ? [] : [{ token_id: 'retry_key', status: revoked ? 'revoked' : 'active' }]));
+        return;
+      }
+      attempts++;
+      deletions.push(url.search);
+      if (url.searchParams.get('delete_revoked') === 'true' && revoked && !deleted) {
+        deleted = true;
+        req.socket.destroy();
+      } else if (!revoked) {
+        revoked = true;
+        req.socket.destroy();
+      } else {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ error: 'token not found or already revoked' }));
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('missing TCP address');
+      const config = writeConfig(tmp, `http://127.0.0.1:${address.port}`, ACCOUNT);
+      const result = await runCommand(runner, ['rm', 'retry_key', '-y'], { cwd: tmp, configFile: config });
+      expect(attempts).toBe(2);
+      expect(revoked).toBe(true);
+      expect(deletions.every((query) => query.includes('delete_revoked=true') === (initial === 'revoked'))).toBe(true);
+      expect(deleted).toBe(initial === 'revoked');
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain(initial === 'revoked' ? 'Deleted' : 'Revoked');
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
   test('rm -y DELETEs with account_id; a 404 surfaces and exits 1', async () => {
     const config = boot();
     const ok = await runCommand(runner, ['rm', 'tok_a', '-y'], { cwd: tmp, configFile: config });
     expect(ok.code).toBe(0);
-    expect(api!.requests[0]).toMatchObject({
+    expect(api!.requests[1]).toMatchObject({
       method: 'DELETE',
       path: '/v1/accounts/tokens/tok_a',
     });
     expect(api!.requests[0]!.query).toContain(`account_id=${ACCOUNT}`);
+    expect(api!.requests[1]!.query).not.toContain('delete_revoked=true');
+
+    expect(ok.stdout).toContain('Revoked');
+    const deleted = await runCommand(runner, ['rm', 'tok_b', '-y'], { cwd: tmp, configFile: config });
+    expect(deleted.code).toBe(0);
+    expect(deleted.stdout).toContain('Deleted');
 
     const miss = await runCommand(runner, ['rm', 'tok_missing', '-y'], {
       cwd: tmp,

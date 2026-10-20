@@ -1,10 +1,13 @@
 import { flow } from '../core/flow';
+import { createDatabaseSession } from '../fixtures/database-project';
+import { withDb } from '../fixtures/chat';
+import { waitFor } from '../core/poll';
 
 flow(
   'COST-1',
   {
     domain: 'billing',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 300_000,
     routes: ['GET /v1/usage/session-costs', 'GET /v1/usage/session-costs/:sessionId'],
   },
@@ -80,7 +83,7 @@ flow(
   'COST-2',
   {
     domain: 'billing',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 300_000,
     routes: ['GET /v1/usage/cost-by-project', 'GET /v1/usage/cost-summary'],
   },
@@ -210,7 +213,7 @@ flow(
   'COST-3',
   {
     domain: 'billing',
-    requires: ['funded', 'daytona', 'database'],
+    requires: ['funded', 'sandbox', 'database'],
     timeoutMs: 300_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
   },
@@ -295,6 +298,7 @@ flow(
       'GET /v1/usage/cost-summary',
       'GET /v1/usage/cost-by-project',
       'GET /v1/usage/session-costs',
+      'GET /v1/usage/session-costs/:sessionId',
       'GET /v1/usage',
       'POST /v1/accounts/tokens',
       'POST /v1/accounts/:accountId/iam/service-accounts',
@@ -326,6 +330,74 @@ flow(
       for (const path of reads) (await c.get(path)).status(200);
       (await c.get('/v1/usage/session-costs', { query: { project_id: otherProject.id } })).status([403, 404]);
     });
+    await ctx.step(
+      "session costs name each owner: a plain member lists only their own sessions, another owner's costs → 403 and their session → 404; the owner sees both (MEM-8)",
+      async () => {
+        const project = await team.project();
+        await team.grantProjectRole(project.id, member.userId!, 'member');
+        const mine = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: member.userId! });
+        const theirs = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
+        const asMember = ctx.client.as(member);
+        type Rows = { sessions: Array<{ session_id: string; owner_id: string | null }> };
+        for (const scope of [{ account_id: team.id }, { project_id: project.id }]) {
+          const rows = (await asMember.get('/v1/usage/session-costs', { query: { ...scope, limit: '100' } }))
+            .status(200)
+            .json<Rows>().sessions;
+          const ids = rows.map((r) => r.session_id);
+          if (!ids.includes(mine) || ids.includes(theirs) || rows.some((r) => r.owner_id !== member.userId)) {
+            throw new Error(`a plain member's session costs must hold only their own sessions: ${JSON.stringify(rows)}`);
+          }
+        }
+        (await asMember.get('/v1/usage/session-costs', { query: { account_id: team.id, owner_id: ctx.P.OWNER.userId! } })).status(403);
+        const detail = '/v1/usage/session-costs/:sessionId';
+        (await asMember.get(detail, { params: { sessionId: theirs }, query: { project_id: project.id } })).status(404);
+        (await asMember.get(detail, { params: { sessionId: mine }, query: { project_id: project.id } })).status(200);
+        const all = (await ctx.client.as(ctx.P.OWNER).get('/v1/usage/session-costs', { query: { project_id: project.id, limit: '100' } }))
+          .status(200)
+          .json<Rows>()
+          .sessions.map((r) => r.session_id);
+        if (!all.includes(mine) || !all.includes(theirs)) throw new Error(`the owner must list both sessions: ${JSON.stringify(all)}`);
+      },
+    );
+    await ctx.step(
+      'cost-by-project lists only the projects the caller can read: a plain member sees their project and not one they are not in; the owner sees both',
+      async () => {
+        const theirs = await team.project();
+        const notTheirs = await team.project();
+        await team.grantProjectRole(theirs.id, member.userId!, 'member');
+        // One zero-cost gateway row per project: a project with no spend row is never listed.
+        await withDb(ctx, (db) =>
+          db.query(
+            `INSERT INTO kortix.gateway_request_logs
+               (request_id, account_id, project_id, requested_model, resolved_model, provider, status, ok)
+             SELECT 'cost4-' || p, $1::uuid, p, 'ke2e', 'ke2e', 'ke2e', 200, true FROM unnest($2::uuid[]) AS p`,
+            [team.id, [theirs.id, notTheirs.id]],
+          ),
+        );
+        type Page = { projects: Array<{ project_id: string }>; total: number };
+        const ids = async (as: ReturnType<typeof ctx.client.as>) => {
+          const page = (await as.get('/v1/usage/cost-by-project', { query: { account_id: team.id, limit: '100' } }))
+            .status(200)
+            .json<Page>();
+          if (page.total !== page.projects.length) throw new Error(`total ${page.total} must count only listed rows`);
+          return page.projects.map((r) => r.project_id);
+        };
+        // IAM verdicts are cached for up to 15 s: the fresh project grant can read the old answer first.
+        const memberIds = await waitFor(() => ids(ctx.client.as(member)), {
+          until: (list) => list.includes(theirs.id),
+          timeoutMs: 20_000,
+          intervalMs: 1_000,
+          description: "the member's own project in cost-by-project",
+        });
+        if (memberIds.includes(notTheirs.id)) {
+          throw new Error(`a plain member must not see a project they cannot read: ${JSON.stringify(memberIds)}`);
+        }
+        const ownerIds = await ids(ctx.client.as(ctx.P.OWNER));
+        if (!ownerIds.includes(theirs.id) || !ownerIds.includes(notTheirs.id)) {
+          throw new Error(`the owner must see every project: ${JSON.stringify(ownerIds)}`);
+        }
+      },
+    );
     await ctx.step('OWNER JWT still reads account usage → 200', async () => {
       const owner = ctx.client.as(ctx.P.OWNER);
       (await owner.get('/v1/usage/cost-summary', { query: { account_id: team.id } })).status(200);

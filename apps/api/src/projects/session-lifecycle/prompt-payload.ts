@@ -61,6 +61,14 @@ export interface PromptPartWire {
   filename?: string;
   name?: string;
   source?: unknown;
+  /**
+   * Harness-authored context, not the customer's words (KRTX-2597): the
+   * transcript renders a synthetic text part as a notice, never as a user
+   * bubble, and the SDK's turn model reads a prompt made only of these as an
+   * internal continuation turn. Only Kortix's own continuation paths set it
+   * (`interruptedTurnContinuationParts`, the agent-server's auto-resume).
+   */
+  synthetic?: boolean;
 }
 
 /** The per-prompt picks the producer captured at submit time. Applied verbatim
@@ -150,6 +158,13 @@ export interface QueuedContinueSessionPayload {
   /** How many times a PROVEN-abandoned delivery has been requeued. Capped by
    *  `MAX_PROMPT_REDELIVERIES`. */
   redeliveries?: number;
+  /** The last requeue proved a runtime loss nobody asked for, so the drain
+   *  continues a turn it cut short (`findInterruptedTurn`). Written by every
+   *  `requeueAbandonedPrompt`. */
+  resumeIfInterrupted?: boolean;
+  /** The turn token this prompt continues. Its delivery marks that turn
+   *  resumed in the ledger (`markTurnResumed`). */
+  resumesTurn?: string;
   /** How many times this row has already been POSTed to OpenCode. Suffixes the
    *  delivery's idempotency key — see `withNextDeliveryAttempt`. */
   deliveryAttempt?: number;
@@ -190,6 +205,11 @@ export interface QueuedContinueSessionPayload {
   /** The Kortix session whose agent sent this prompt. Absent when a person
    *  sent it. Set by the server from the caller's credential, never the body. */
   authorSessionId?: string;
+  /** The sender was the session owner or a project manager when they sent
+   *  this, so as a Quick Queue row it may end ANY running turn. Without it the
+   *  row ends only a turn its own sender prompted (`turn-stop-authority.ts`).
+   *  Absent on rows from before the rule. */
+  mayStopAnyTurn?: boolean;
   /** Deliver as OpenCode `noReply`: the message joins the transcript and no
    *  turn starts. The first message of a conversation with people. */
   noReply?: boolean;

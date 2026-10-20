@@ -14,6 +14,7 @@ import type { SessionPromptOverrides } from '@kortix/sdk';
 import type { AttachmentSubmission } from './composer/attachment-submission';
 import type { ComposerSendReset } from './composer-reset';
 import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
+import { appendMentionRefs } from '@/lib/project-preamble';
 import { resolveComposerAgent } from './composer/composer-agent-access';
 import type { DraftScope } from './composer/draft/composer-draft';
 
@@ -58,6 +59,7 @@ export function ComposerChatInput({
   cardClassName,
   parentClassName,
   boundAgentName,
+  projectSession,
   clearOnSend,
   onAgentSelectionChange,
   sandboxSlot,
@@ -116,6 +118,8 @@ export function ComposerChatInput({
   parentClassName?: string;
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
+  /** The project session row. Its model pin is the model this composer opens on. */
+  projectSession?: { metadata?: Record<string, unknown> | null } | null;
   /** Reports the effective agent to parent controls such as the sandbox picker. */
   onAgentSelectionChange?: (agentName: string | null) => void;
   /** Pre-create sandbox-template chooser, rendered inside the overrides panel. */
@@ -132,7 +136,6 @@ export function ComposerChatInput({
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
-  const { data: commands } = useRuntimeCommands();
   const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
   const local = useSessionModelSelection({
@@ -142,17 +145,30 @@ export function ComposerChatInput({
     sessionId,
     boundAgentName,
     defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    projectSession,
   });
-  const restoredOptions = prefill?.options;
   const setAgent = local.agent.set;
   const setModel = local.model.set;
   const setVariant = local.model.variant.set;
+  // A prefill that names an agent, model and effort (desktop Quick Entry) is
+  // held back until they are this composer's selection, one per commit: the
+  // model is stored per agent and the effort per model, so each write must see
+  // the one before it. Then the composer gets the prefill and, with `submit`,
+  // sends under that selection. Applying all three in one tick put the model in
+  // the old agent's slot, and a same-tick submit sent the old selection.
+  const optionsPrefill = prefill?.options ? prefill : null;
+  const [optionsStep, setOptionsStep] = useState<{ id: number; step: number } | null>(null);
+  const optionsStepFor = optionsPrefill && optionsStep?.id === optionsPrefill.id ? optionsStep.step : 0;
+  const rosterLoaded = agents !== undefined && !providersLoading;
   useEffect(() => {
-    if (!restoredOptions) return;
-    if (restoredOptions.agent) setAgent(restoredOptions.agent);
-    if (restoredOptions.model) setModel(restoredOptions.model);
-    setVariant(restoredOptions.variant ?? undefined);
-  }, [restoredOptions, setAgent, setModel, setVariant]);
+    if (!optionsPrefill?.options || !rosterLoaded || optionsStepFor >= 3) return;
+    const wanted = optionsPrefill.options;
+    if (optionsStepFor === 0 && wanted.agent) setAgent(wanted.agent);
+    if (optionsStepFor === 1 && wanted.model) setModel(wanted.model);
+    if (optionsStepFor === 2) setVariant(wanted.variant ?? undefined);
+    setOptionsStep({ id: optionsPrefill.id, step: optionsStepFor + 1 });
+  }, [optionsPrefill, optionsStepFor, rosterLoaded, setAgent, setModel, setVariant]);
+  const deliveredPrefill = optionsPrefill && optionsStepFor < 3 ? null : prefill;
 
   /**
    * What will ACTUALLY run — see `composer-agent-access.ts`.
@@ -176,6 +192,8 @@ export function ComposerChatInput({
   // An empty project roster refuses an unbound composer; the resolver answers
   // `disabled` for exactly that case.
   const noAccessibleAgents = agentResolution.disabled;
+  // The slash menu lists only the commands the selected agent may run.
+  const { data: commands } = useRuntimeCommands({ agent: selectedAgentName ?? undefined });
 
   useEffect(() => {
     onAgentSelectionChange?.(selectedAgentName);
@@ -243,8 +261,10 @@ export function ComposerChatInput({
 
   return (
     <SessionChatInput
-      onSend={(text, files, _mentions, attachments, placement) =>
-        onSend(text, files, { ...options(), placement }, attachments)
+      // A first message has no session send to write the `@` mention blocks
+      // (`session-chat.tsx` `handleSend`), so they go into the text here.
+      onSend={(text, files, mentions, attachments, placement) =>
+        onSend(appendMentionRefs(text, mentions), files, { ...options(), placement }, attachments)
       }
       promptAttachments={promptAttachments}
       onCommand={onCommand ? (cmd, args) => onCommand(cmd, args, options()) : undefined}
@@ -257,7 +277,7 @@ export function ComposerChatInput({
       disabled={disabled}
       autoFocus={autoFocus}
       placeholder={placeholder}
-      prefill={prefill}
+      prefill={deliveredPrefill}
       onPrefillApplied={onPrefillApplied}
       aboveSlot={aboveSlot}
       inputSlot={inputSlot}
@@ -282,6 +302,7 @@ export function ComposerChatInput({
       selectedVariant={local.model.variant.current ?? null}
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
       commands={commands || []}
+      commandsResolved={commands !== undefined}
       draftScope={draftScope}
       draftActive={draftActive}
       submitLabel={submitLabel}

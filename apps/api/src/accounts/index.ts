@@ -15,8 +15,11 @@ import { registerDeviceRoutes } from './core/devices';
 import { registerAccountRoutes } from './core/accounts';
 import { registerMemberRoutes } from './core/members';
 import { registerTopUpRequestRoutes } from './core/top-up-requests';
+import { registerAutomationRoutes } from './core/automations';
 import { registerBrandingRoutes } from './branding';
 import { registerSecretResourceRoutes } from './secret-resources';
+import { registerCaptureRoutes } from '../capture/account-routes';
+import { registerCaptureEnrollmentRoutes } from '../capture/enrollment-routes';
 import { resolveAccountId } from '../shared/resolve-account';
 
 accountsRouter.use('/*', supabaseAuth);
@@ -56,8 +59,13 @@ registerAccountRoutes();
 registerMemberRoutes();
 // A member out of credits asks the owners: /:accountId/top-up-requests.
 registerTopUpRequestRoutes();
+registerAutomationRoutes();
 // Organization branding (Enterprise): /:accountId/branding + /assets/:kind.
 registerBrandingRoutes();
 registerSecretResourceRoutes();
+// Kortix Capture, account-scoped (the account is Capture's tenant).
+registerCaptureRoutes();
+// Kortix Capture IT rollout: enrollment tokens and the computers waiting on them.
+registerCaptureEnrollmentRoutes();
 
 export { accountsRouter };

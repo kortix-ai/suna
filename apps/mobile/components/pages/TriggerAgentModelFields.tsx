@@ -56,6 +56,7 @@ export function AgentPickerField({
   value,
   onChange,
   flush = false,
+  disabled = false,
 }: {
   projectId: string;
   /** Selected agent name, or null to leave unset (the server runs the default agent). */
@@ -63,6 +64,8 @@ export function AgentPickerField({
   onChange: (name: string) => void;
   /** No top margin: the parent's gap spaces the field. */
   flush?: boolean;
+  /** Shows the value without opening: a viewer who may not update the trigger. */
+  disabled?: boolean;
   /** @deprecated The field reads the theme itself. Ignored. */
   isDark?: boolean;
 }) {
@@ -80,7 +83,7 @@ export function AgentPickerField({
           haptics.selection();
           onChange(option.value);
         }}>
-        <SelectTrigger aria-labelledby="trigger-agent" className={TRIGGER_CLASS} disabled={isLoading}>
+        <SelectTrigger aria-labelledby="trigger-agent" className={TRIGGER_CLASS} disabled={disabled || isLoading}>
           <SelectValue placeholder={isLoading ? 'Loading agents…' : 'Default agent'} className="text-base" />
         </SelectTrigger>
         <SelectContent portalHost={OVERLAY_PORTAL_HOST} insets={contentInsets} className="w-64">
@@ -106,6 +109,7 @@ export function ModelPickerField({
   value,
   onChange,
   flush = false,
+  disabled = false,
 }: {
   projectId: string;
   /** Selected wire model id, or null to resolve the agent/account/platform default at fire time. */
@@ -113,6 +117,8 @@ export function ModelPickerField({
   onChange: (modelID: string | null) => void;
   /** No top margin: the parent's gap spaces the field. */
   flush?: boolean;
+  /** Shows the value without opening: a viewer who may not update the trigger. */
+  disabled?: boolean;
   /** @deprecated The field reads the theme itself. Ignored. */
   isDark?: boolean;
 }) {
@@ -143,7 +149,7 @@ export function ModelPickerField({
           haptics.selection();
           onChange(option.value === DEFAULT_MODEL_VALUE ? null : option.value);
         }}>
-        <SelectTrigger aria-labelledby="trigger-model" className={TRIGGER_CLASS} disabled={isLoading}>
+        <SelectTrigger aria-labelledby="trigger-model" className={TRIGGER_CLASS} disabled={disabled || isLoading}>
           <SelectValue placeholder={isLoading ? 'Loading models…' : 'Default model'} className="text-base" />
         </SelectTrigger>
         <SelectContent portalHost={OVERLAY_PORTAL_HOST} insets={contentInsets} className="w-72">

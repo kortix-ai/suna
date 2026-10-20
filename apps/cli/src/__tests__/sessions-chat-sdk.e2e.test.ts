@@ -266,10 +266,29 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
 
     expect(logCode).toBe(0);
     expect(runtimeAuthorization).toBe(`Bearer ${TOKEN}`);
+    // No stored session log (this API answers GET …/log with 404): the live v1
+    // read, converted to kortix.session/2 records.
+    const log = JSON.parse(stdout) as {
+      schema: string;
+      source: string;
+      threads: Array<{ thread_id: string; messages: Array<{ role: string; blocks: Array<{ type: string; text?: string }> }> }>;
+    };
+    expect(log).toMatchObject({ schema: 'kortix.session/2', source: 'v1' });
+    expect(log.threads.map((t) => t.thread_id)).toEqual([OPENCODE_SESSION_ID]);
+    expect(log.threads[0]!.messages.map((m) => [m.role, m.blocks.find((b) => b.type === 'text')?.text])).toEqual([
+      ['user', 'hello from the CLI'],
+      ['assistant', 'OpenCode REST reply'],
+    ]);
+
+    // The old v1 JSON, deprecated, for one release.
+    stdout = '';
+    expect(await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--limit', '5', '--json', '--schema', 'v1'])).toBe(0);
     expect(JSON.parse(stdout)).toEqual([
       expect.objectContaining({ role: 'user', text: 'hello from the CLI' }),
       expect.objectContaining({ role: 'assistant', text: 'OpenCode REST reply' }),
     ]);
+    expect(stderr).toContain('--schema v1 is deprecated');
+    stderr = '';
 
     stdout = '';
     const code = await runSessions([
@@ -315,8 +334,17 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
 
     stdout = '';
     expect(await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--json'])).toBe(0);
-    const logged = JSON.parse(stdout) as Array<{ role: string; error?: unknown }>;
-    expect(logged.at(-1)).toMatchObject({
+    const logged = JSON.parse(stdout) as { threads: Array<{ messages: Array<{ role: string; error?: unknown }> }> };
+    expect(logged.threads[0]!.messages.at(-1)).toMatchObject({
+      role: 'assistant',
+      status: 'error',
+      error: { code: 'APIError', message: 'Synthetic model requires a paid plan.' },
+    });
+
+    stdout = '';
+    expect(await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--json', '--schema', 'v1'])).toBe(0);
+    const old = JSON.parse(stdout) as Array<{ role: string; error?: unknown }>;
+    expect(old.at(-1)).toMatchObject({
       role: 'assistant',
       error: { name: 'APIError', data: { message: 'Synthetic model requires a paid plan.' } },
     });

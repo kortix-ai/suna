@@ -14,16 +14,15 @@ import { useQuery } from '@tanstack/react-query';
 
 import { useAuth } from '@/features/providers/auth-provider';
 
-export function useAccountMembers(accountId: string | undefined, canReadMembers: boolean) {
+export function useAccountMembers(accountId: string | undefined) {
   const { user } = useAuth();
-  // `GET .../iam/members` asserts `member.read`, so hold the request until the
-  // probe stops saying no. `!== false` (not `=== true`) keeps it optimistic:
-  // the list still starts loading the moment the probe answers, and an
-  // in-flight probe never delays it for someone who does have the leaf.
+  // `GET .../members` answers every account member: the whole directory with
+  // `member.read`, else only the caller. No probe to
+  // wait for.
   return useQuery({
     queryKey: ['account-members', accountId],
     queryFn: () => listAccountMembers(accountId!),
-    enabled: !!user && !!accountId && canReadMembers !== false,
+    enabled: !!user && !!accountId,
     ...contract('directory'),
   });
 }

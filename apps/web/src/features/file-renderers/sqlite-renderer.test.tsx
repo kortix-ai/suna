@@ -6,18 +6,30 @@ const host = (tag: string) =>
   function Collaborator({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) {
     return React.createElement(tag, props, children);
   };
+const Grid = host('grid');
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => Object.assign((key: string) => key, { raw: (key: string) => key }),
 }));
-mock.module('@/components/ui/button', () => ({ Button: host('button') }));
-mock.module('@/components/ui/input', () => ({ Input: host('input') }));
-mock.module('@/components/ui/loading', () => ({ default: host('loading') }));
-mock.module('@/components/ui/toast', () => ({ errorToast: () => {}, successToast: () => {} }));
-mock.module('@/lib/utils', () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') }));
+const uiButtonMock = () => ({ Button: host('button') });
+mock.module('@/components/ui/button', uiButtonMock);
+mock.module('@kortix/ui/button', uiButtonMock);
+const uiInputMock = () => ({ Input: host('input') });
+mock.module('@/components/ui/input', uiInputMock);
+mock.module('@kortix/ui/input', uiInputMock);
+const uiLoadingMock = () => ({ default: host('loading') });
+mock.module('@/components/ui/loading', uiLoadingMock);
+mock.module('@kortix/ui/loading', uiLoadingMock);
+const uiToastMock = () => ({ errorToast: () => {}, successToast: () => {} });
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
+const uiLibUtilsMock = () => ({ cn: (...values: unknown[]) => values.filter(Boolean).join(' ') });
+mock.module('@/lib/utils', uiLibUtilsMock);
+mock.module('@kortix/ui/lib/utils', uiLibUtilsMock);
 mock.module('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }));
-mock.module('ag-grid-react', () => ({ AgGridReact: host('grid') }));
+mock.module('@kortix/ui/hooks/use-is-dark', () => ({ useIsDark: () => false }));
+mock.module('ag-grid-react', () => ({ AgGridReact: Grid }));
 mock.module('@/features/files/api/runtime-files', () => ({
-  readFileAsBlob: async () => new Blob([createDatabaseBytes()]),
+  readFileAsBlob: async () => new Blob([new Uint8Array(createDatabaseBytes())]),
 }));
 mock.module('@/features/files/api/runtime-file-read', () => ({
   readRuntimeFileWithRetry: (_path: string, read: () => Promise<Blob>) => read(),
@@ -66,12 +78,12 @@ function createDatabaseBytes() {
   fixture.close();
   return bytes;
 }
-async function mount() {
+async function mount(readOnly = false) {
   queries.length = 0;
   Object.defineProperty(globalThis, 'document', { configurable: true, value: {
     addEventListener() {}, removeEventListener() {},
   } });
-  await act(async () => { renderer = create(<SqliteRenderer filePath="/synthetic.db" fileName="synthetic.db" />); });
+  await act(async () => { renderer = create(<SqliteRenderer filePath="/synthetic.db" fileName="synthetic.db" readOnly={readOnly} />); });
   if (!renderer) throw new Error('Missing renderer');
   return renderer;
 }
@@ -91,7 +103,7 @@ test('mounted initialization reads quoted tables/views, counts, schema defaults 
   expect(sidebar(view).map((node) => node.findAllByType('span').map((span) => span.children.join(''))))
     .toEqual([['a"table', '2'], ['b"table', '0'], ['v"view', '0']]);
   expect(sidebar(view)[0].props.className).toContain('bg-accent');
-  expect(view.root.findByType('grid').props.columnDefs.map((col: { headerClass: string }) => col.headerClass))
+  expect(view.root.findByType(Grid).props.columnDefs.map((col: { headerClass: string }) => col.headerClass))
     .toEqual(['font-semibold', '']);
   for (const name of ['a""table', 'b""table', 'v""view']) {
     expect(queries).toContain(`SELECT COUNT(*) FROM "${name}"`);
@@ -122,6 +134,49 @@ test('mounted mutation refresh preserves selection and ignores outer metadata fa
   expect(sidebar(view)[1].props.className).toContain('bg-accent');
   expect(sidebar(view)).toHaveLength(3);
   masterFails = false;
+});
+
+test('read-only query view refuses mutations without executing them', async () => {
+  masterFails = false; empty = false;
+  for (const sql of [
+    'INSERT INTO "a""table" (id) VALUES (3)',
+    'UPDATE "a""table" SET label = NULL',
+    'DELETE FROM "a""table" WHERE id = 1',
+  ]) {
+    const view = await mount(true);
+    await click(view, 'Query');
+    await act(() => view.root.findByType('textarea').props.onChange({ target: { value: sql } }));
+    await click(view, 'i18nComplete.text00d60e31a4e6');
+    expect(view.root.findAllByType('div').some((node) => node.children.includes('Database is open read-only'))).toBe(true);
+    expect(queries).not.toContain(sql);
+    // A refused mutation must not mark the database dirty: the unsaved-changes dot stays hidden.
+    expect(view.root.findAllByType('span').some((span) =>
+      span.props.title === 'componentsFileRenderersSqliteRenderer.line795JsxAttrTitleUnsavedChanges')).toBe(false);
+    await click(view, 'Data');
+    await act(() => sidebar(view)[1].props.onClick());
+    await act(() => sidebar(view)[0].props.onClick());
+    expect(view.root.findByType(Grid).props.rowData).toEqual([
+      { id: 1, label: null },
+      { id: 2, label: 'second' },
+    ]);
+    await act(async () => { await renderer?.unmount(); });
+    renderer = undefined;
+  }
+});
+
+test('read-only query view still runs SELECT', async () => {
+  masterFails = false; empty = false;
+  const view = await mount(true);
+  await click(view, 'Query');
+  await act(() => view.root.findByType('textarea').props.onChange({ target: { value: 'SELECT id FROM "a""table" ORDER BY id' } }));
+  await click(view, 'i18nComplete.text00d60e31a4e6');
+  expect(queries).toContain('SELECT id FROM "a""table" ORDER BY id');
+  expect(view.root.findAllByType('div').some((node) => node.children.includes('Database is open read-only'))).toBe(false);
+  // The query-results grid loads lazily: wait for it (a few ticks), not exactly one flush.
+  for (let i = 0; i < 50 && view.root.findAllByType(Grid).length === 0; i++) {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+  }
+  expect(view.root.findByType(Grid).props.rowData).toEqual([{ id: 1 }, { id: 2 }]);
 });
 
 test('mounted initialization surfaces master failure and handles empty master results', async () => {

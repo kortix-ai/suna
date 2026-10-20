@@ -4,7 +4,6 @@ import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from 'drizzle
 import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAppComputeAllowed } from './limits';
 import { AppHostingProvider, instanceMachine } from './hosting';
 import { appWakeSupersededResponse } from './public-proxy-status';
@@ -13,11 +12,11 @@ import { releaseConfigOf, servingGroups } from './release-config';
 const WAKE_LEASE_MS = 2 * 60_000;
 
 /**
- * One query for the App, its project's `apps` flag and its active deployment.
- * A static deployment needs nothing more, so a static asset costs one query
- * (the manifest and blobs are cached per replica). Only a server App reads its
- * runtime. The App row is never cached: an access change, a rollback and a
- * delete take effect on the next request on every replica.
+ * One query for the App and its active deployment. A static deployment needs
+ * nothing more, so a static asset costs one query (the manifest and blobs are
+ * cached per replica). Only a server App reads its runtime. The App row is
+ * never cached: an access change, a rollback and a delete take effect on the
+ * next request on every replica.
  */
 /**
  * The App behind a host and the machine that serves it. `service`: the host's
@@ -26,14 +25,14 @@ const WAKE_LEASE_MS = 2 * 60_000;
  */
 export async function loadPublicAppState(routeKey: string, serviceName = 'http') {
   const [loaded] = await db
-    .select({ app: apps, projectMetadata: projects.metadata, active: appDeployments })
+    .select({ app: apps, active: appDeployments })
     .from(apps)
     .innerJoin(projects, eq(projects.projectId, apps.projectId))
     .leftJoin(appDeployments, eq(appDeployments.deploymentId, apps.activeDeploymentId))
     // An App of a deleted workspace is not served (KRTX-1714).
     .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt), eq(projects.status, 'active')))
     .limit(1);
-  if (!loaded || !resolveFeatureFlag(loaded.projectMetadata, 'apps')) return null;
+  if (!loaded) return null;
   const app = loaded.app;
   let deployment = loaded.active ?? undefined;
   if (!deployment) {
@@ -192,7 +191,7 @@ async function publishWake(app: App, loaded: LoadedApp, leased: Runtime, owner: 
   if (!running) throw new Error('App wake lease was lost after provider start');
   await startComputeSession({
     sandboxId: running.runtimeId, accountId: running.accountId, provider,
-    spec: { ...hosting.effectiveMachine(provider, instanceMachine(running, app)), gpuCount: 0 },
+    spec: { ...instanceMachine(running, app), gpuCount: 0 },
     workloadType: 'app', appRuntimeId: running.runtimeId,
     metadata: { appId: app.appId, deploymentId: loaded.deployment.deploymentId },
   });

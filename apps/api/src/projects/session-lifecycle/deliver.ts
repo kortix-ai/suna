@@ -6,7 +6,7 @@ import { db } from '../../shared/db';
 import { openSession } from '../session-open';
 import { type SandboxRecord, resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
-import type { ProviderName } from '../../platform/providers';
+import { isProviderName, type ProviderName } from '../../platform/providers';
 import { healSupersededSessionToken } from '../lib/heal-session-token';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
 import { recordSessionActivity } from '../session-activity';
@@ -138,11 +138,15 @@ interface WakeDeliveryContext {
   awakeEarly: Promise<DeliveryTarget | null>;
   sendPrompt: (externalId: string, opencodeSessionId: string, record?: SandboxRecord) => Promise<SendOutcome>;
   beforeSend?: () => Promise<void>;
+  /** This turn's identity bind (continue-session.ts). The env sync waits for it:
+   *  it reads the person the token acts for. A failed bind still fails the
+   *  delivery where `sendPrompt` awaits it. */
+  identityBound?: Promise<unknown>;
   tl?: ProvisionTimeline;
 }
 
 export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<SessionDeliveryOutcome> {
-  const { command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, tl } = ctx;
+  const { command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, identityBound, tl } = ctx;
   // Loaded LAZILY: only `openSession` (the slow path that wakes a box) reads
   // the project row, and the session's foreign key already proves it exists.
   // On the fast path this saved a full round trip per delivery.
@@ -254,7 +258,7 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
       } | null;
       const externalId = sandbox?.external_id ?? null;
       const providerName = sandbox?.provider ?? null;
-      if (!externalId || !isProviderName(providerName)) {
+      if (!externalId || !isLiveProvider(providerName)) {
         console.warn('[session-lifecycle] runtime env sync target is incomplete', {
           sessionId,
           hasExternalId: !!externalId,
@@ -268,6 +272,8 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
           resolveSandboxIngress(externalId, { port: DAEMON_PORT, transport: 'http' }),
         ]);
         if (!serviceKey) throw new Error('sandbox service key is unavailable');
+        // After the bind: the sync resolves the person's personal secrets.
+        await identityBound?.catch(() => undefined);
         await syncSandboxEnvForPrompt({
           projectId: session.projectId,
           sessionId,
@@ -411,6 +417,6 @@ function sandboxExternalId(
   return (result.sandbox as { external_id?: string } | null)?.external_id ?? null;
 }
 
-function isProviderName(value: string | null): value is ProviderName {
-  return value === 'daytona' || value === 'platinum' || value === 'e2b';
+function isLiveProvider(value: string | null): value is ProviderName {
+  return value !== null && isProviderName(value);
 }

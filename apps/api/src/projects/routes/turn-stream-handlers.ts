@@ -9,6 +9,7 @@
 import type { TurnStreamRelayBody } from '@kortix/api-contract/runtime-relay';
 import { isTurnErrorCode } from '@kortix/api-contract/transcript';
 import { projectSessions } from '@kortix/db';
+import { genuiToMarkdown } from '@kortix/sdk/genui';
 import { and, eq } from 'drizzle-orm';
 import { type TeamsFormSpec, buildFormCard } from '../../channels/teams/cards';
 import {
@@ -17,9 +18,12 @@ import {
   relayTurnStepDetailed,
 } from '../../channels/turn-relay';
 import { notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { turnEndNotificationContext } from '../lib/notification-recipients';
+import { clearOpenQuestions } from '../lib/pending-questions';
 import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
+import { notifyTurnEnded } from '../lib/config-convergence-triggers';
 import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
 import { recordTriggerRunEnd } from '../lib/trigger-run-outcome';
 import { childIdleGraceMs } from '../sandbox-deadline';
@@ -41,6 +45,25 @@ import {
 
 /** The relay request body, shape only — the route parses JSON into this. */
 export type TurnStreamBody = Partial<TurnStreamRelayBody>;
+
+/** Text relayed to Slack/Teams. Generative UI blocks become markdown first. */
+export function relayAnswerText(raw: string | undefined): string {
+  return genuiToMarkdown((raw ?? '').trim());
+}
+
+/**
+ * The 400 body for text that cannot be relayed, or null. A non-empty answer whose generative UI
+ * renders to nothing is refused: the raw OpenUI source must never reach Slack or Teams.
+ */
+export function relayTextRejection(
+  raw: string | undefined,
+  text: string,
+): { error: 'text is required'; reason?: 'genui_block_unrenderable' } | null {
+  if (text) return null;
+  return raw?.trim()
+    ? { error: 'text is required', reason: 'genui_block_unrenderable' }
+    : { error: 'text is required' };
+}
 
 /** The only surface these handlers use from the Hono context. */
 export interface RelayResponder {
@@ -111,10 +134,17 @@ export function claimInitialTurn(
   if (typeof messageId !== 'string' || !messageId.trim()) {
     return c.json({ ok: true, initial_turn: null, ...pin });
   }
+  // Harness context stored beside the prompt at create (e.g. the CLI's worker
+  // contract); an older daemon ignores the field and keeps its old shape.
+  const context =
+    typeof turnStreamMetadata.initial_context === 'string'
+      ? turnStreamMetadata.initial_context
+      : undefined;
   return c.json({
     ok: true,
     initial_turn: {
       prompt,
+      ...(context ? { context } : {}),
       turn_token: turnToken,
       message_id: messageId,
     },
@@ -345,6 +375,11 @@ async function promoteAfterTurnEnd(
             error: error instanceof Error ? error.message : String(error),
           }),
         );
+      } else {
+        // Nothing was promoted, so the box is idle: converge its config now,
+        // while nobody waits, and the next turn runs it. A promoted prompt
+        // starts a turn right away; the queue's last turn end converges instead.
+        notifyTurnEnded(sessionId);
       }
     }
     console.info('[turn-stream] terminal turn settlement', {
@@ -491,6 +526,19 @@ export async function settleTurnEnd(
   ctx: TurnEndContext,
 ): Promise<Response> {
   const settled = await settleTurnLedger(ctx.sessionId, body, ctx.childSession);
+  // THE TURN ENDED, SO NOTHING WAITS ON ITS QUESTION. Only an end that closed
+  // the turn in this call: a retrying error has not ended it, and the reaper's
+  // `TurnAwaitingInput` end (and the late frame of that turn, `already_closed`)
+  // parks a question that still waits for its answer. Before the promotion, so
+  // a question the next turn asks is never the one closed.
+  if (settled.turnCompletion.outcome === 'closed') {
+    await clearOpenQuestions(ctx.sessionId).catch((err) =>
+      logger.warn('[turn-stream] open questions not closed at turn end', {
+        sessionId: ctx.sessionId,
+        err: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
   // Started beside the promotion, awaited before the acknowledgement.
   const sessionList = refreshSessionListAtTurnEnd(ctx);
   const promotedPromptId = await promoteAfterTurnEnd(ctx, body, settled);
@@ -567,12 +615,13 @@ export async function relayContent(
   body: TurnStreamBody,
   sessionId: string,
 ): Promise<Response> {
-  const text = (body.text ?? '').trim();
-  if (!text) {
-    return c.json({ error: 'text is required' }, 400);
+  const text = relayAnswerText(body.text);
+  const rejection = relayTextRejection(body.text, text);
+  if (rejection) {
+    return c.json(rejection, 400);
   }
 
-  const detail = body.detail?.trim() || undefined;
+  const detail = relayAnswerText(body.detail) || undefined;
   const outputForPrev = body.output?.trim() || undefined;
   const sourcesForPrev = Array.isArray(body.sources)
     ? body.sources

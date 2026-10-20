@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { hasReferenceDefinitionOutsideFences } from '@kortix/shared/markdown-math';
 
 // Renders the real `MarkdownTable` from the library's real AST on the iOS path
 // (`UITextView`). Every native module is a host stub. Run with `bun test --isolate`.
@@ -51,6 +52,7 @@ mock.module('@/components/ui/button', () => ({ Button: none }));
 mock.module('@/components/ui/icon', () => ({ Icon: none }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@kortix/shared', () => ({
+  hasReferenceDefinitionOutsideFences,
   isMathFenceLanguage: () => false,
   isMermaidCode: () => false,
   prepareMarkdownForMath: (s: string) => s,
@@ -59,13 +61,14 @@ mock.module('@/components/markdown/code-block', () => ({ CodeBlock: none, fenceC
 mock.module('@/components/markdown/inline-code', () => ({ InlineCode: host('inline-code') }));
 mock.module('@/components/markdown/math', () => ({ BlockMath: none, InlineMath: host('inline-math') }));
 mock.module('@/components/markdown/mermaid/MermaidBlock', () => ({ MermaidBlock: none }));
+mock.module('@/components/genui/genui-message-block', () => ({ GenuiMessageBlock: none }));
 mock.module('@/components/markdown/markdown-image', () => ({
   MarkdownImage: none,
   MarkdownImageGallery: none,
   MarkdownImagesContext: React.createContext(null),
 }));
 mock.module('@/lib/markdown/markdown-image', () => ({ groupImageBlocks: (blocks: string[]) => blocks.map((text, index) => ({ kind: 'markdown', index, text })), imageSourceKey: String }));
-mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {} }));
+mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {}, openExternalLink: () => {} }));
 
 const appRequire = createRequire(import.meta.url);
 const libraryRoot = realpathSync(join(appRequire.resolve('react-native-markdown-display/package.json'), '..'));

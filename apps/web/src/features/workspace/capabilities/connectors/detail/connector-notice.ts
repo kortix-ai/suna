@@ -56,7 +56,9 @@ export function connectorNotice(input: {
     input.provider === 'mcp' &&
     !input.credentialSet &&
     isAuthChallenge(input.lastError ?? '') &&
-    input.accountCount > 0
+    // With no account yet, an auth scheme is what makes it a sign-in: the
+    // button opens Add account ("Only you").
+    (input.accountCount > 0 || input.hasAuth)
   )
     return { kind: 'sign_in' };
 
@@ -73,6 +75,54 @@ export function connectorNotice(input: {
   if (input.connected) return { kind: 'none' };
   if (input.accountCount === 0) return { kind: 'no_account', action: 'add_account' };
   return { kind: 'needs_credential', action: fixAccount };
+}
+
+/**
+ * The account the banner's Sign in / Set credential button fixes: one of the
+ * caller's OWN accounts (any owner but the project), the first one not signed
+ * in, else the only one. With no account of their own it is `'add'`: the
+ * button opens "Add account" with "Only you" preselected, so a personal
+ * sign-in never lands on the project's shared account. A shared account is
+ * still signed in from its own row.
+ */
+export function noticeTarget<
+  T extends { owner_type: string; status: string; authorized?: boolean },
+>(accounts: readonly T[]): T | 'add' | null {
+  const own = accounts.filter((account) => account.owner_type !== 'project');
+  if (own.length === 0) return 'add';
+  return (
+    own.find((account) => account.authorized === false || account.status !== 'active') ??
+    (own.length === 1 ? own[0]! : null)
+  );
+}
+
+/**
+ * The banner's fix button: what it says and what it runs. `add` opens
+ * "Add account"; `sign_in` finishes `account`'s sign-in; `reconnect` opens
+ * `account`'s credential entry, or its provider window when managed. `null`
+ * means no fix button (Retry, when the notice offers it, is separate).
+ */
+export function noticeButton<T>(
+  notice: ConnectorNotice,
+  target: T | 'add' | null,
+  managed: boolean,
+): {
+  /** Which button: its words. `add_account` is the page's Add account control. */
+  kind: 'add_account' | 'sign_in' | 'set_credential' | 'connect' | 'reconnect';
+  run: 'add' | 'sign_in' | 'reconnect';
+  account: T | null;
+} | null {
+  if (notice.kind === 'none') return null;
+  if (notice.kind === 'sign_in') {
+    if (target === 'add') return { kind: 'sign_in', run: 'add', account: null };
+    return target ? { kind: 'sign_in', run: 'sign_in', account: target } : null;
+  }
+  if (notice.action === 'add_account') return { kind: 'add_account', run: 'add', account: null };
+  if (notice.action === 'retry' || !target) return null;
+  if (target === 'add') {
+    return { kind: managed ? 'connect' : 'set_credential', run: 'add', account: null };
+  }
+  return { kind: managed ? 'reconnect' : 'set_credential', run: 'reconnect', account: target };
 }
 
 /** A failure line split for the log row: `MCP tools/list failed: HTTP 401` → `401` + `MCP tools/list failed`. */

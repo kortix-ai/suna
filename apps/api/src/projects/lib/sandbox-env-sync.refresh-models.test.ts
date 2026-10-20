@@ -74,9 +74,11 @@ mock.module('./secret-grant', () => ({
   resolveSessionSecretGrant: async () => 'all' as const,
 }));
 
+/** Resolves the snapshot read; a test replaces it to hold the read open. */
+let snapshotGate: Promise<void> = Promise.resolve();
 mock.module('../secrets', () => ({
   ...realSecrets,
-  listProjectSecretsSnapshotForUser: async () => ({
+  listProjectSecretsSnapshotForUser: async () => (await snapshotGate, {
     env: snapshotEnv,
     names: snapshotNames,
     revision: snapshotRevision,
@@ -115,11 +117,10 @@ const ORIGINAL_FETCH = globalThis.fetch;
   });
 };
 
-const { syncSandboxEnvForPrompt, __resetPromptModelSignatureCacheForTests } = await import(
-  './sandbox-env-sync'
-);
+const { syncSandboxEnvForPrompt, __resetPromptModelSignatureCacheForTests, __pendingEnvChecksForTests } =
+  await import('./sandbox-env-sync');
 
-function prompt(externalId = 'ext-1') {
+function prompt(externalId = 'ext-1', requestedAgent?: string) {
   return syncSandboxEnvForPrompt({
     projectId: 'proj-1',
     sessionId: 'sess-1',
@@ -128,7 +129,21 @@ function prompt(externalId = 'ext-1') {
     previewUrl: 'https://sandbox.test',
     providerHeaders: {},
     providerName: 'daytona',
+    requestedAgent,
   });
+}
+
+/**
+ * A change lands one prompt late. The prompt after a confirmed sync is trusted:
+ * it is forwarded at once, its background check finds the change and pushes
+ * nothing, and the NEXT prompt pushes synchronously.
+ */
+async function promptAfterChange() {
+  const before = posted.length;
+  await prompt();
+  await Promise.all(__pendingEnvChecksForTests());
+  expect(posted.length).toBe(before);
+  await prompt();
 }
 
 afterAll(() => {
@@ -138,6 +153,7 @@ afterAll(() => {
 beforeEach(() => {
   __resetPromptModelSignatureCacheForTests();
   posted = [];
+  snapshotGate = Promise.resolve();
   snapshotEnv = { EXAMPLE: 'v1' };
   snapshotNames = ['EXAMPLE'];
   snapshotRevision = 'rev-1';
@@ -174,7 +190,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     await prompt();
     snapshotEnv = { EXAMPLE: 'v2' };
     snapshotRevision = 'rev-2';
-    await prompt();
+    await promptAfterChange();
 
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
   });
@@ -184,7 +200,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     snapshotEnv = { EXAMPLE: 'v1', STRIPE_KEY: 'sk_live_new' };
     snapshotNames = ['EXAMPLE', 'STRIPE_KEY'];
     snapshotRevision = 'rev-2';
-    await prompt();
+    await promptAfterChange();
 
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
   });
@@ -195,7 +211,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     await prompt();
     snapshotCapabilitiesJson =
       '{"version":1,"capabilities":[{"identifier":"WEATHER_API","delivery":"https_broker"}]}';
-    await prompt();
+    await promptAfterChange();
 
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
   });
@@ -206,7 +222,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     // named directly in the task.
     await prompt();
     llmGatewayEnabled = true;
-    await prompt();
+    await promptAfterChange();
 
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
   });
@@ -262,5 +278,30 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
 
     expect(posted).toHaveLength(1);
     expect(posted[0]!.refreshModels).toBe(true);
+  });
+});
+
+describe('syncSandboxEnvForPrompt — trusted fast path', () => {
+  test('a prompt after a confirmed sync does not wait for the env resolve', async () => {
+    await prompt();
+    let release!: () => void;
+    snapshotGate = new Promise((resolve) => {
+      release = resolve;
+    });
+    // Would hang here if the prompt still awaited the snapshot read.
+    await prompt();
+    expect(__pendingEnvChecksForTests()).toHaveLength(1);
+    release();
+    await Promise.all(__pendingEnvChecksForTests());
+    expect(posted).toHaveLength(1);
+  });
+
+  test('a different agent is never trusted: its env resolves before the prompt', async () => {
+    await prompt();
+    await prompt('ext-1', 'reviewer');
+    expect(__pendingEnvChecksForTests()).toHaveLength(0);
+    // Trusted again for that agent from now on.
+    await prompt('ext-1', 'reviewer');
+    expect(__pendingEnvChecksForTests()).toHaveLength(1);
   });
 });

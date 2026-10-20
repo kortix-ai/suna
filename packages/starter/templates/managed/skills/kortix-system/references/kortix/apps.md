@@ -9,11 +9,8 @@ every release. The `kortix-apps` system skill covers releases, machines,
 volumes, services, templates (`convex`), sign-in tokens and bindings
 (`references/apps-model.md` there).
 
-Apps is off by default and enabled per project by Kortix (it is not listed in
-Project Settings → Feature flags; the user contacts Kortix). The API returns `403`, the
-public URL does not resolve, and App operations remain unavailable while the
-feature is disabled. The CLI and web inventory stay visible and label Apps as
-experimental.
+Apps are generally available in every project. Use Apps directly; no feature
+flag or enablement request is required.
 
 ## Select a workload
 
@@ -118,7 +115,7 @@ minutes, without a redeploy. A machine size change applies to the next
 release: a new release with a new `vm` resizes without an image rebuild.
 
 **Provider.** On Platinum (Kortix Cloud), an always-on App's VM is persistent.
-On Daytona and E2B (self-host), the VM keeps the provider's idle backstop and
+On the legacy Daytona fallback (self-host), the VM keeps the provider's idle backstop and
 keep-alive renews it. When the provider stops the VM anyway, keep-alive
 restarts it within 5 minutes, so the App can be unreachable for up to 5
 minutes.

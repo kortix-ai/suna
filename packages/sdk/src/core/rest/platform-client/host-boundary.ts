@@ -298,6 +298,8 @@ export function finalizeConnectorSetupLink(
 }
 
 export interface SecretSetupLinkInfo {
+  /** Signed delivery scope. Absent on older servers. */
+  scope?: 'runtime' | 'connector';
   project_name: string;
   fields: Array<{
     name: string;

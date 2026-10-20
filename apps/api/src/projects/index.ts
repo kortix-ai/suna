@@ -14,7 +14,7 @@
  * this file re-exports it.
  */
 
-import { projectWebhooksApp, projectsApp } from './lib/app';
+import { projectWebhooksApp, projectsApp, sessionsApp } from './lib/app';
 import { registerProjectsRoutes } from './routes/projects';
 import { registerTriggerWebhooksRoutes } from './routes/trigger-webhooks';
 import { registerEventIngressRoutes } from './trigger-events/routes';
@@ -39,6 +39,7 @@ import { registerConnectionActionsRoutes } from './routes/connection-actions';
 import { registerComputersRoutes } from './routes/computers';
 import { registerTriggersRoutes } from './routes/triggers';
 import { registerChannelSlackRoutes } from './routes/channel-slack';
+import { registerChannelTelegramRoutes } from './routes/channel-telegram';
 import { registerChannelTeamsRoutes } from './routes/channel-teams';
 import { registerChannelEmailRoutes } from './routes/channel-email';
 import { registerTurnStreamRoutes } from './routes/turn-stream';
@@ -46,6 +47,7 @@ import { registerModelsRoutes } from './routes/models';
 import { registerTurnQuestionsRoutes } from './routes/turn-questions';
 import { registerTurnPermissionsRoutes } from './routes/turn-permissions';
 import { registerOauth2ConnectorsRoutes } from './routes/oauth2-connectors';
+import { registerConnectorMoveRoutes } from './routes/connector-moves';
 import { registerProjectDetailRoutes } from './routes/project-detail';
 import { registerProjectFilesRoutes } from './routes/project-files';
 import { registerProjectSettingsRoutes } from './routes/project-settings';
@@ -55,7 +57,7 @@ import { registerProjectInvitesRoutes } from './routes/project-invites';
 import { registerGroupGrantsRoutes } from './routes/group-grants';
 import { registerWarmSessionsRoutes } from './routes/warm-sessions';
 import { registerProviderSecretPoolsRoutes } from './routes/provider-secret-pools';
-import { registerProjectSessionsRoutes } from './routes/project-sessions';
+import { registerProjectSessionsRoutes, registerSessionLookupRoutes } from './routes/project-sessions';
 import { registerSessionTranscriptsRoutes } from './routes/session-transcripts';
 import { registerSessionAttachmentsRoutes } from './routes/session-attachments';
 import { registerSessionOpenBundleRoutes } from './routes/session-open-bundle';
@@ -73,6 +75,7 @@ import { registerSessionLogRoutes } from './routes/session-log';
 import { registerSessionRuntimeRoutes } from './routes/session-runtime';
 import { registerSessionPresenceRoutes } from './routes/session-presence';
 import { registerSessionWatchRoutes } from './routes/session-watch';
+import { registerSessionListStateRoutes } from './routes/session-list-state';
 import { registerSessionParticipantsRoutes } from './routes/session-participants';
 import { registerSessionPromptsRoutes } from './routes/session-prompts';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
@@ -123,6 +126,7 @@ export function registerAllProjectRoutes(): void {
   registerComputersRoutes();
   registerTriggersRoutes();
   registerChannelSlackRoutes();
+  registerChannelTelegramRoutes();
   registerChannelTeamsRoutes();
   registerChannelEmailRoutes();
   registerTurnStreamRoutes();
@@ -130,6 +134,7 @@ export function registerAllProjectRoutes(): void {
   registerTurnQuestionsRoutes();
   registerTurnPermissionsRoutes();
   registerOauth2ConnectorsRoutes();
+  registerConnectorMoveRoutes();
   registerProjectDetailRoutes();
   registerProjectFilesRoutes();
   registerProjectSettingsRoutes();
@@ -157,6 +162,7 @@ export function registerAllProjectRoutes(): void {
   registerSessionRuntimeRoutes();
   registerSessionPresenceRoutes();
   registerSessionWatchRoutes();
+  registerSessionListStateRoutes();
   registerSessionParticipantsRoutes();
   registerSessionPromptsRoutes();
   registerSessionRemindersRoutes();
@@ -175,7 +181,9 @@ export function registerAllProjectRoutes(): void {
 }
 
 // The Hono app instances. app.ts registers their routes and mounts them.
-export { projectsApp, projectWebhooksApp };
+export { projectsApp, projectWebhooksApp, sessionsApp };
+// `/v1/sessions` (one session by id). app.ts calls it right before mounting sessionsApp.
+export { registerSessionLookupRoutes };
 
 // The service surface (git-proxy, session, trigger and manifest helpers).
 export * from './surface';

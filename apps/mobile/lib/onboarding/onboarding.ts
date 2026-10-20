@@ -22,7 +22,7 @@
 import type { PlanFamily } from '@/lib/billing/plan-action';
 import { canShowExternalPurchase } from '@/lib/billing/store-policy';
 import { getUpgradeSheetIncludedItems } from '@/lib/billing/upgrade-sheet-included';
-import { creatableAccounts, type LandingResolution } from '@/lib/projects/landing';
+import { creatableAccounts, type CreateVerdicts, type LandingResolution } from '@/lib/projects/landing';
 import type { KortixAccount } from '@/lib/projects/projects-client';
 
 export type StartDestination =
@@ -51,14 +51,15 @@ export function startDestination(
 
 /**
  * The account the upgrade screen and `/new` start on: the selected account
- * when a project can be created in it, else the first account the user owns
- * or administers, else the selected account, else the first account.
+ * when a project can be created in it (`project.create` verdict), else the
+ * first account where one can, else the selected account, else the first account.
  */
 export function onboardingAccountId(
   accounts: KortixAccount[],
-  selectedAccountId: string | null
+  selectedAccountId: string | null,
+  verdicts: CreateVerdicts
 ): string | null {
-  const creatable = creatableAccounts(accounts);
+  const creatable = creatableAccounts(accounts, verdicts);
   if (creatable.some((account) => account.account_id === selectedAccountId)) return selectedAccountId;
   if (creatable[0]) return creatable[0].account_id;
   if (accounts.some((account) => account.account_id === selectedAccountId)) return selectedAccountId;
@@ -88,13 +89,9 @@ export function welcomeOffer(input: {
   os: string;
   family: PlanFamily;
   canManageBilling: boolean;
-  pricePerSeat: number;
 }): WelcomeOffer {
   const canPurchase = canShowExternalPurchase(input.os);
-  const benefits = getUpgradeSheetIncludedItems(input.pricePerSeat, canPurchase).slice(
-    0,
-    WELCOME_BENEFIT_COUNT
-  );
+  const benefits = getUpgradeSheetIncludedItems().slice(0, WELCOME_BENEFIT_COUNT);
   const action: WelcomeAction = !canPurchase ? 'none' : input.canManageBilling ? 'upgrade' : 'ask-owner';
   return { show: input.family === 'free', action, benefits };
 }

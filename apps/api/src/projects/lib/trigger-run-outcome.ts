@@ -1,5 +1,5 @@
-import { projectSessions, projectTriggerRuntime } from '@kortix/db';
-import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { projectSessions, projectTriggerExecutions, projectTriggerRuntime } from '@kortix/db';
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { classifyTurnError } from '../../channels/slack/errors';
 import { projectNotificationsEnabled } from '../../notifications/enabled';
 import { notifySessionPushLegacy } from '../../notifications/session-push-legacy';
@@ -61,16 +61,59 @@ export function triggerRunFailureText(error: { name?: string; message?: string }
   return `${title}: ${reason}`.slice(0, 1000);
 }
 
+/**
+ * KRTX-1743 ruling 3: a closed turn ends the OLDEST open run in its session,
+ * of any trigger. Queued prompts run one turn each, in order, so first in,
+ * first out gives each fire its own turn's outcome. The match is by session
+ * only: a pinned trigger's or a reminder's session carries no trigger
+ * metadata, and its runs must close too.
+ */
+async function closeTriggerRun(
+  end: TriggerRunEnd,
+  now: Date,
+  outcome: { runStatus: 'succeeded' | 'failed'; runError: string | null },
+): Promise<void> {
+  const oldestOpen = db
+    .select({ executionId: projectTriggerExecutions.executionId })
+    .from(projectTriggerExecutions)
+    .where(
+      and(
+        eq(projectTriggerExecutions.projectId, end.projectId),
+        eq(projectTriggerExecutions.sessionId, end.sessionId),
+        eq(projectTriggerExecutions.runStatus, 'running'),
+        isNull(projectTriggerExecutions.runEndedAt),
+      ),
+    )
+    .orderBy(asc(projectTriggerExecutions.createdAt))
+    .limit(1);
+  await db
+    .update(projectTriggerExecutions)
+    .set({ ...outcome, runEndedAt: now, updatedAt: now })
+    .where(inArray(projectTriggerExecutions.executionId, oldestOpen));
+}
+
 export async function recordTriggerRunEnd(
   end: TriggerRunEnd,
   legacyPush: typeof notifySessionPushLegacy = notifySessionPushLegacy,
 ): Promise<TriggerRunEndResult> {
-  const slug = triggerSlugOf(end.metadata);
   // Only a turn this call genuinely closed is a run outcome. A replay, a
-  // retry, a subagent, or a user's stop says nothing about the trigger.
-  if (!slug || end.childSession || end.outcome !== 'closed') return 'not_a_trigger_run';
-  if (end.status === 'error' && ABORT_END_ERROR_NAMES.includes(end.error?.name ?? '')) return 'not_a_trigger_run';
+  // retry or a subagent says nothing about any run.
+  if (end.childSession || end.outcome !== 'closed') return 'not_a_trigger_run';
   const now = end.now ?? new Date();
+  const aborted = end.status === 'error' && ABORT_END_ERROR_NAMES.includes(end.error?.name ?? '');
+  // The run closes before the slug check: pinned and reminder sessions have no trigger metadata.
+  await closeTriggerRun(
+    end,
+    now,
+    aborted
+      ? { runStatus: 'failed', runError: 'stopped' }
+      : end.status === 'error'
+        ? { runStatus: 'failed', runError: triggerRunFailureText(end.error) }
+        : { runStatus: 'succeeded', runError: null },
+  );
+  const slug = triggerSlugOf(end.metadata);
+  // A stopped turn ends its run, but says nothing about the trigger.
+  if (!slug || aborted) return 'not_a_trigger_run';
   const row = and(eq(projectTriggerRuntime.projectId, end.projectId), eq(projectTriggerRuntime.slug, slug));
 
   if (end.status === 'idle') {

@@ -261,7 +261,7 @@ mock.module("../snapshots/builder", () => ({
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
-  templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
+  templateBuildProviders: () => ['platinum', 'daytona'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => undefined,
@@ -410,7 +410,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => ({
     accountId: ACCOUNT_ID,
     balance: walletBalance,
-    billingModel: 'credits',
+    tier: 'credits',
     stripeSubscriptionId: 'sub_test',
     stripeSubscriptionStatus: 'active',
   }),
@@ -452,10 +452,14 @@ mock.module('../projects/secrets', () => ({
   },
 }));
 
+/** `resolveSessionHarness` reads the project LEFT JOIN its session (KRTX-2419): the join resolves through the same chain. */
+const withLeftJoin = <T extends object>(chain: T): T & { leftJoin: () => T } =>
+  Object.assign(chain, { leftJoin: () => chain });
+
 const triggerDbMock: any = {
     execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
-      from: (table: unknown) => ({
+      from: (table: unknown) => withLeftJoin({
         where: () => {
           const result: any[] & { orderBy?: () => any; limit?: () => Promise<any[]> } = [];
           (result as any).for = () => result;

@@ -32,6 +32,15 @@ const chrome = require_(join(repoRoot, 'apps/desktop-electron/src/window-chrome.
     contentLeft: number;
   };
   macTrafficLightPosition: () => { x: number; y: number };
+  winBandMetrics: () => {
+    band: number;
+    controlsWidth: number;
+    controlTop: number;
+    menuLeft: number;
+    menuEnd: number;
+    controlLeft: number;
+    contentLeft: number;
+  };
 };
 
 const css = readFileSync(join(repoRoot, 'apps/web/src/app/globals.css'), 'utf8');
@@ -254,7 +263,10 @@ describe('the shell zoom does not drag the band off the OS controls', () => {
     expect(control).not.toContain('h-[28px]');
   });
 
-  test('Win/Linux use the native frame and reserve no web-drawn control area', () => {
+  // Linux, and a Windows shell older than the overlay title bar, keep the
+  // native frame: the baseline reserves nothing. The overlay block below is
+  // keyed on the shell's own `data-desktop-titlebar` marker.
+  test('native-frame shells reserve no web-drawn control area', () => {
     const desktopChrome = readFileSync(
       join(repoRoot, 'apps/web/src/components/desktop/desktop-chrome.tsx'),
       'utf8',
@@ -320,7 +332,7 @@ describe('nothing re-hard-codes the band', () => {
       "html[data-desktop-platform='macos'] .kx-project-shell-drag-region {",
     );
     expect(css).toMatch(
-      /\[data-kx-titlebar-owner\]:has\(\.kx-titlebar-row\)\s*>\s*\.kx-project-shell-drag-region\s*\{[^}]*display:\s*none/s,
+      /\[data-kx-titlebar-owner\]:has\(\.kx-titlebar-row\)\s*>\s*\.kx-project-shell-drag-region\s*\{[^}]*display:\s*none/,
     );
   });
 
@@ -330,14 +342,14 @@ describe('nothing re-hard-codes the band', () => {
     // not subtract from it. Blink maps `none` to no-drag, so only `initial`
     // resets the shell's injected rule.
     const reset = css.match(
-      /:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\)\s*\{([^}]*)\}/s,
+      /:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\)\s*\{([^}]*)\}/,
     );
     expect(reset?.[1]).toContain('-webkit-app-region: initial');
     expect(reset?.[1]).toContain('app-region: initial');
     expect(reset?.[1]).not.toMatch(/app-region:\s*none/);
 
     const scoped = css.match(
-      /:is\(\s*\.kx-titlebar-row,([^)]*)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\),\s*html\[data-desktop-platform='macos'\] \[class\*='app-region:no-drag'\]\s*\{\s*-webkit-app-region: no-drag;/s,
+      /:is\(\s*\.kx-titlebar-row,([^)]*)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\),\s*html\[data-desktop-platform='macos'\] \[class\*='app-region:no-drag'\]\s*\{\s*-webkit-app-region: no-drag;/,
     );
     expect(scoped).not.toBeNull();
     for (const owner of [
@@ -529,7 +541,7 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
       repoRoot,
       'apps/web/src/features/project-files/components/drive-header.tsx',
     ),
-    // Apps, Review and Reminders draw their opener through this shared header.
+    // Apps draws its opener through this shared header.
     'project-page-header.tsx': join(import.meta.dir, 'project-page-header.tsx'),
     // The route that had NO opener on any of its headerless surfaces, which is
     // why the component exists. See HeaderlessSessionSurface.
@@ -561,5 +573,58 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
   test('only the desktop shell draws an opener in the band', () => {
     const shell = readFileSync(join(import.meta.dir, 'project-shell.tsx'), 'utf8');
     expect(shell).toContain('desktopShell && !isExpanded');
+  });
+});
+
+/**
+ * Windows: `titleBarOverlay` draws the caption buttons over the page's top
+ * row, top-right. The CSS block keyed on the shell's marker must agree with
+ * WIN_TITLEBAR, and every macOS band rule must also apply to it.
+ */
+describe('Windows overlay band: CSS mirrors the Electron geometry', () => {
+  const metrics = chrome.winBandMetrics();
+  const match = css.match(/html\[data-desktop-titlebar='overlay'\]\s*\{([^}]*)\}/);
+  const block = match?.[1] ?? '';
+
+  test('the block exists', () => {
+    expect(match).not.toBeNull();
+  });
+
+  test('band, menu slot, shell control, content and caption buttons', () => {
+    expect(cssVarPx(block, '--kx-titlebar-inset')).toBe(metrics.band);
+    expect(cssVarPx(block, '--kx-titlebar-menu-left')).toBe(metrics.menuLeft);
+    expect(cssVarPx(block, '--kx-titlebar-lights-end')).toBe(metrics.menuEnd);
+    expect(cssVarPx(block, '--kx-titlebar-control-top')).toBe(metrics.controlTop);
+    expect(cssVarPx(block, '--kx-titlebar-control-left')).toBe(metrics.controlLeft);
+    expect(cssVarPx(block, '--kx-titlebar-content-left')).toBe(metrics.contentLeft);
+    expect(cssVarPx(block, '--kx-titlebar-controls-width')).toBe(metrics.controlsWidth);
+  });
+
+  test('every offset cancels the shell zoom', () => {
+    for (const n of ['inset', 'menu-left', 'control-top', 'control-left', 'content-left', 'controls-width']) {
+      expect(block).toMatch(new RegExp(`--kx-titlebar-${n}:\\s*calc\\([^;]*var\\(--kx-desktop-zoom\\)`));
+    }
+  });
+
+  test('every macOS band rule also applies to the overlay band', () => {
+    const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').split('}');
+    const missing = rules
+      .map((rule) => rule.slice(0, rule.indexOf('{')).trim())
+      .filter((sel) => sel.includes("html[data-desktop-platform='macos'] ") || sel.includes("html[data-desktop-platform='macos']\n"))
+      // The traffic-light gutter on the 6px drag strip is macOS only.
+      .filter((sel) => sel !== "html[data-desktop-platform='macos'] .kx-desktop-drag")
+      .filter((sel) => !sel.includes("html[data-desktop-titlebar='overlay']"));
+    expect(missing).toEqual([]);
+  });
+
+  test('the app-menu button shows only in the overlay band', () => {
+    expect(css).toMatch(/\.kx-desktop-app-menu\s*\{\s*display:\s*none;/);
+    expect(css).toMatch(/html\[data-desktop-titlebar='overlay'\] \.kx-desktop-app-menu\s*\{\s*display:\s*flex;/);
+    const desktopChrome = readFileSync(
+      join(repoRoot, 'apps/web/src/components/desktop/desktop-chrome.tsx'),
+      'utf8',
+    );
+    expect(desktopChrome).toContain('kx-desktop-app-menu');
+    expect(desktopChrome).toContain('showDesktopAppMenu(');
   });
 });

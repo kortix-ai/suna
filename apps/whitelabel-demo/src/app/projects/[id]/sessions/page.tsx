@@ -1,8 +1,9 @@
 'use client';
 
+import { useWrapperMode } from '@/app/providers';
 import { ProjectShell } from '@/components/project-shell';
 import { ProjectAccessPanel } from '@/components/project-access-panel';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { relativeTime } from '@/lib/utils';
@@ -21,6 +22,7 @@ export default function ProjectAccessPage() {
 function ProjectAccess() {
   const params = useParams();
   const projectId = String(params.id);
+  const wrapperMode = useWrapperMode();
 
   const sessions = useQuery({
     queryKey: qk.sessions(projectId),
@@ -32,12 +34,21 @@ function ProjectAccess() {
     <div className="min-h-0 flex-1 overflow-y-auto p-6">
       <div className="mx-auto max-w-xl">
         <h1 className="text-sm font-medium">Project access</h1>
-        <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
-          The wrapper uses its local application identity to enforce project
-          ownership.
-        </p>
-
-        <ProjectAccessPanel projectId={projectId} />
+        {/* Local ownership exists only in backend (wrapper) mode; direct mode
+            calls Kortix with the operator's own key. */}
+        {wrapperMode ? (
+          <>
+            <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+              The wrapper uses its local application identity to enforce project
+              ownership.
+            </p>
+            <ProjectAccessPanel projectId={projectId} />
+          </>
+        ) : (
+          <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+            Direct mode: your API key's Kortix permissions decide access to this project.
+          </p>
+        )}
 
         <h2 className="mt-6 text-sm font-medium">Sessions in this project</h2>
         <p className="mb-3 mt-0.5 text-xs text-muted-foreground">

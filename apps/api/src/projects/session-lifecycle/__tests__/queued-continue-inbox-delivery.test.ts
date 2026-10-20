@@ -17,10 +17,17 @@
 // Same mocking caveat as the sibling session-lifecycle test files: `mock.module` is
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import type { SessionLifecycleCommandRow } from '../store';
 import { isWireIdAheadOf, mintWireMessageId, wireIdTime } from '../../wire-message-id';
+
+// The delivery waits are real `Bun.sleep` calls (deliver.ts' 1.5 s retry, the
+// 700 ms landing proof). These tests assert what is sent and in which order,
+// never how long a wait lasts, so each wait is cut to at most 10 ms.
+const realSleep = Bun.sleep;
+const shortSleep = spyOn(Bun, 'sleep').mockImplementation(((ms: number) => realSleep(Math.min(Number(ms), 10))) as typeof Bun.sleep);
+afterAll(() => shortSleep.mockRestore());
 
 const SESSION_ID = 'sess-inbox-delivery-1';
 const ACCOUNT_ID = 'acct-1';
@@ -135,6 +142,7 @@ let pauseAfterPosts: number | null = null;
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
   SANDBOX_VERSION: 'test',
+  KNOWN_PROVIDERS: ['platinum', 'daytona'],
 }));
 
 mock.module('../../../shared/db', () => ({
@@ -694,6 +702,8 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies).toHaveLength(1);
   });
 
+  // Every Quick Queue row below is an owner's send (`mayStopAnyTurn`): only a
+  // sender who may stop the running turn arms its interrupt (inbox-admission.test.ts).
   test('Quick Queue arms the active turn boundary after its head is durably queued', async () => {
     boxRow = {
       status: 'active',
@@ -702,7 +712,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
           messageId: 'msg_other', startedAtMs: NOW_MS - 30_000 },
       } },
     };
-    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript', mayStopAnyTurn: true } });
     expect(await executeQueuedContinue(row)).toBe('queued');
     expect(requeues).toHaveLength(1);
     expect(quickQueueControlRequests).toEqual([{
@@ -724,7 +734,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       } },
     };
     quickQueueArmFails = true;
-    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript', mayStopAnyTurn: true } });
     expect(await executeQueuedContinue(row)).toBe('queued');
     expect(quickQueueControlRequests).toHaveLength(1);
     expect(parkedCalls).toEqual([{ commandId: 'cmd-1', reason: "the session's machine could not be reached" }]);
@@ -743,7 +753,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     };
     quickQueueArmFails = true;
     parkBudgetLeft = false;
-    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript' } });
+    const row = baseRow({ payload: { ...baseRow().payload, placement: 'transcript', mayStopAnyTurn: true } });
     expect(await executeQueuedContinue(row)).toBe('failed');
     expect(parkedCalls).toHaveLength(1);
     expect(failedCalls.at(-1)).toMatchObject({

@@ -3,6 +3,8 @@ import {
   type Icon as IconType,
   type Icon as LucideIcon,
 } from '@phosphor-icons/react';
+import type { ComponentType } from 'react';
+
 import type { SettingsTab } from './settings-tabs';
 
 export interface RailItem {
@@ -35,7 +37,8 @@ export interface RailItem {
    * `SettingsTabHeader` owns that decision, not the caller.
    */
   docsHref?: string;
-  icon?: LucideIcon | IconMynauiType | IconType;
+  /** A Phosphor icon, or a brand mark (`Mcp`) that takes the same `className`. */
+  icon?: LucideIcon | IconMynauiType | IconType | ComponentType<{ className?: string }>;
 }
 
 export interface RailGroup {

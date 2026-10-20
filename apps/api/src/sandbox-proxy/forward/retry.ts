@@ -305,7 +305,8 @@ async function handleUpstreamFailureStatus(
       // hop, not a hardcoded `daemon`: a user app on an ordinary port that
       // mimics the daemon's not-ready shape (the match is header/body text)
       // must not borrow the daemon's identity — as `upstream_port` its GET
-      // 503 stays logged (request-log-level.ts suppresses only `daemon`) and
+      // 503 stays logged (request-log-suppression.ts suppresses only the
+      // daemon-attributed shapes) and
       // the probe counts it, while the real boot-window answer on the
       // session-data ports (8000/4096/4097 — /lsp/diagnostics, /permission,
       // /vcs/diff, …) is suppressed instead of paging a route 5xx rise.
@@ -330,8 +331,12 @@ async function handleUpstreamFailureStatus(
     // 502 can mean the sandbox already accepted the body (the gateway just
     // dropped the response), so re-POSTing would enqueue the message twice or
     // write the file twice. Pass the upstream response straight through to the
-    // passthrough below. GET/idempotent requests retry as before.
-    if (!nonReplayableWrite && attempt < MAX_RETRIES) {
+    // passthrough below. GET/idempotent requests retry as before. The one
+    // exception: the Platinum edge marks every answer it gives itself with
+    // `x-pt-edge-verdict` — it did not proxy the request, so the box never
+    // saw the body and a replay cannot deliver it twice (CFG-12).
+    const edgeRefused = upstream.headers.has('x-pt-edge-verdict');
+    if ((!nonReplayableWrite || edgeRefused) && attempt < MAX_RETRIES) {
       // Port not ready yet — sandbox is booting (container running, port down).
       console.warn(
         `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,

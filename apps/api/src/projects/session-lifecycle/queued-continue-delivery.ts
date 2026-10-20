@@ -3,12 +3,14 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { clearOpenQuestions } from '../lib/pending-questions';
 import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { continueSession } from './continue-session';
 import { PromptDeliveryRefused } from './prompt-delivery-refusal';
 import { assertInboxDeliveryActive, InboxDeliveryPaused, returnClaimToQueue } from './inbox-delivery-hold';
 import { SteerNotTaken, postPrompt, readInboxTranscriptState, retractStrandedMessage } from './runtime-client';
 import { awakeDeliveryTarget } from './deliver';
+import { sessionHoldsLiveTurn } from './inbox-admission';
 import { recordSteerFallback } from './command-transitions';
 import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, recordRepairedForward, remintForRepair, remintWireMessageId, verifyLivePlacement } from './inbox-placement';
 import { MAX_RUNTIME_UNREACHABLE_RETRIES, markCommandFailed, parkPromptForUnreachableRuntime, markCommandForwarded, requeueForAdmission, requeueUnlandedPrompt, markCommandSucceeded, type SessionLifecycleCommandRow, type QueuedContinueSessionPayload } from './store';
@@ -43,10 +45,21 @@ async function settleDelivery(row: SessionLifecycleCommandRow, delivery: Exclude
   return retryable ? 'queued' : 'failed';
 }
 
-async function markDelivered(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload, wireMessageId: string | undefined, tl: ProvisionTimeline, noReply: boolean): Promise<void> {
+async function markDelivered(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload, wireMessageId: string | undefined, tl: ProvisionTimeline, noReply: boolean, joinedLiveTurn: boolean): Promise<void> {
   if (wireMessageId) await markCommandForwarded(row, row.sessionId!, wireMessageId, noReply ? { noReply } : undefined);
   else await markCommandSucceeded(row, { status: 'delivered' }, row.sessionId);
   tl.mark('marked');
+  // The session moved on: a question asked before this prompt was sent waits
+  // on nobody (KRTX-1739). One asked after it belongs to the turn this starts.
+  // A prompt that joined a live turn started none: the runtime queues it
+  // behind that turn's question, which still waits. The turn end closes it.
+  if (!joinedLiveTurn) {
+    await clearOpenQuestions(row.sessionId!, { askedBefore: row.createdAt }).catch((err) =>
+      logger.warn('[session-lifecycle] open questions not closed after a delivered prompt', {
+        session_id: row.sessionId, command_id: row.commandId, error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
   if (typeof payload.triggerSlug === 'string') {
     await markTriggerRuntimeDelivered({ projectId: row.projectId, slug: payload.triggerSlug, when: new Date() }).catch(() => {});
   }
@@ -123,6 +136,12 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
   const isPendingFirstPrompt = row.idempotencyKey === `prompt:${row.sessionId}:pending-first`;
   try {
     const overrides = await continuationOverrides(row.sessionId!, payload.overrides ?? undefined);
+    // Admission holds every other row until no turn is live. A direct
+    // follow-up skips it, so read before the POST whether it joins one. A
+    // failed read counts as joined: the open question then waits for the turn
+    // end, which closes it either way.
+    const joinedLiveTurn = payload.directFollowUp === true &&
+      await sessionHoldsLiveTurn(row.sessionId!).catch(() => true);
     let attempt = Number(payload.deliveryAttempt ?? 0);
     let delivery: SessionDeliveryOutcome;
     for (let round = 0; ; round += 1) {
@@ -143,7 +162,7 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
       // A repair round re-sends after round 0's forward closed the claim.
-      if (round === 0) await markDelivered(row, payload, wireMessageId, tl, noReply);
+      if (round === 0) await markDelivered(row, payload, wireMessageId, tl, noReply, joinedLiveTurn);
       else await recordRepairedForward(row.commandId, wireMessageId!);
       if (!placedIntoLiveTurn || !wireMessageId) break;
       const replaced = await repairPlacement(row, wireMessageId, postedAt, round, underPlaced, tl);

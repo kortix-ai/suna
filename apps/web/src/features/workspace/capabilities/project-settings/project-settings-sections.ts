@@ -3,7 +3,6 @@ import {
   ShippingContainerIcon as Container,
   FlaskIcon as Flask,
   GitBranchIcon as GitBranch,
-  TrayIcon as Inbox,
   GearSixIcon as Settings,
   type Icon,
 } from '@phosphor-icons/react';
@@ -32,14 +31,12 @@ import type { CustomizeSection } from '@/lib/project-actions';
  * should not be one level deep in a settings sub-nav. Channels made the same
  * exit and then kept going: it is a scope of the Connectors page
  * (`channelsHref`), not a tab of its own. Repositories is NOT here either — its content merged into
- * General under a "Git repo" section (`git-view.tsx`, rendered by
- * `general-tab.tsx`'s `gitRepoSlot`); it was never its own top-level concept,
- * just a workspace detail. Marketplace was removed from this surface outright
+ * General under a "Git repo" section (`general-tab.tsx`'s `generalFieldsSlot`
+ * slot); it was never its own top-level concept, just a workspace detail.
+ * Marketplace was removed from this surface outright
  * (not relocated) at the product owner's explicit request. Voice was removed
- * later, and Review became a capability tab with no flag; nothing else pointed
- * at Marketplace, but the sidebar's change-requests nav still links to Review
- * (`project-sidebar/footer/project-change-requests-nav.tsx`), so dropping it
- * too would have broken a live row, not just tidied a list. Sandbox templates
+ * later, and Review became a capability tab with no flag; Review is the
+ * Customize Review tab (`reviewHref`). Sandbox templates
  * and Snapshots were merged into one `sandbox` section — a snapshot IS the
  * build history of a sandbox template, not a separate concept.
  *
@@ -136,19 +133,10 @@ const UPGRADES_SECTION: ProjectSettingsSection = {
   gate: 'upgrade',
 };
 
-export const REVIEW_SECTION: ProjectSettingsSection = {
-  key: 'review',
-  label: 'Review',
-  icon: Inbox,
-  description: 'Work waiting on a person before it can continue.',
-  gate: 'review',
-};
-
 const PROJECT_SETTINGS_SOURCE = {
   staticSections: STATIC_SECTIONS,
   featureFlagsSection: FEATURE_FLAGS_SECTION,
   upgradesSection: UPGRADES_SECTION,
-  reviewSection: REVIEW_SECTION,
 };
 
 /**
@@ -166,8 +154,6 @@ export function projectSettingsSections(
   // Review is NOT a section here any more: it is a capability tab of its own
   // (`capability-tab-routes.ts`, 2026-09-02). Listing it twice — as a tab and
   // as a Settings section — was the leftover of restoring this page.
-  // `REVIEW_SECTION` stays exported for the legacy `?section=review` redirect
-  // target and the pane switch.
   sections.push(source.featureFlagsSection, source.upgradesSection);
   return sections;
 }

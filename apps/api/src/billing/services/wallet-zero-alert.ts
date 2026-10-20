@@ -13,8 +13,9 @@ import { db } from '../../shared/db';
 import { escapeHtml } from '../../shared/html';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { resolveAccountBilling } from './billing-cache';
-import { billingPaneUrl, emailAccountOwners } from './owner-alerts';
+import { billingPaneUrl, emailBillingManagers } from './owner-alerts';
 import { isPaidTier } from './tiers';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 // replica-local: accounts this process already handled today, so a drained
 // wallet that keeps settling does not repeat the checks on every debit. The
@@ -46,12 +47,12 @@ export async function alertWalletAtZero(accountId: string, balance: number): Pro
     .returning({ eventId: chatEventDedup.eventId });
   if (claimed.length === 0) return 0;
 
-  const amount = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(balance);
+  const amount = `${formatUsdAsCredits(balance)} credits`;
   const url = billingPaneUrl(accountId);
   const title = 'Out of credits';
   const stopped = 'Agents pause, and triggers stop starting sessions, until credits are added.';
   const note = 'Buy credits, or turn on auto top-up so the balance refills itself.';
-  return emailAccountOwners(accountId, (accountName) => ({
+  return emailBillingManagers(accountId, (accountName) => ({
     subject: `${accountName} is out of credits`,
     category: 'billing-wallet-zero',
     html: renderEmail({

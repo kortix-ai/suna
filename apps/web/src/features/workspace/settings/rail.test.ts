@@ -34,10 +34,11 @@ describe('railGroups', () => {
   // Settings", but that row names its default TAB, not the rail's order — so
   // leading with the workspace's own identity costs the personal tabs nothing
   // and is what makes renaming findable again.
-  test('renders one group: Personal', () => {
+  test('renders one group: Personal, with MCP and My computer in it', () => {
     // Workspace (project configuration) is the Customize bar's Settings tab
     // and Account (Credits, Plan) is the account page — Marko, 2026-09-03:
-    // the overlay is the person's own settings and nothing else.
+    // the overlay is the person's own settings and nothing else. MCP and the
+    // computer joined Personal on 2026-10-19.
     expect(railGroups().map((g) => g.label)).toEqual(['Personal']);
   });
 
@@ -52,6 +53,8 @@ describe('railGroups', () => {
       'sessions',
       'preferences',
       'tokens',
+      'mcp',
+      'computer',
     ]);
   });
 

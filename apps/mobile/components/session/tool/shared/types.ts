@@ -1,11 +1,12 @@
 import type { ComponentType } from 'react';
-import type { ToolPart } from '@kortix/sdk';
+import type { ToolCallBlock } from '@kortix/sdk';
 
 import type { PermissionReply } from '../tool-part-renderer';
 
 /** Props every registered tool renderer receives. Mirrors web `tool/shared/types.ts` `ToolProps`. */
 export interface ToolProps {
-  part: ToolPart;
+  /** The call to draw: a session-log tool call block. */
+  call: ToolCallBlock;
   sessionId?: string;
   defaultOpen?: boolean;
   forceOpen?: boolean;

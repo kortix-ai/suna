@@ -31,31 +31,42 @@ Every App lists what it supports in `capabilities`, for example `machines` or
 `volumes`. A call that needs a missing capability answers
 `409 app_capability_unsupported`.
 
-## Turn Apps on
+## Show an App hosted elsewhere
 
-Apps are off until a platform admin turns them on for a project. A project
-member cannot turn them on: the write answers `403` `feature_operator_only`.
+An external App is a site that runs somewhere else: a dashboard, a vendor tool,
+another team's service. Kortix lists it in the Apps page beside the Apps it runs
+and opens it in place, in a frame. Kortix never deploys, wakes or bills it, and
+it takes no App slot.
 
-- **Kortix Cloud:** email [support@kortix.com](mailto:support@kortix.com) with
-  the project id.
-- **Self-hosted:** a platform admin (an email in `KORTIX_PLATFORM_ADMIN_EMAILS`)
-  who is a project member runs `kortix projects features enable apps`. For any
-  other project, the admin sends `PUT /v1/admin/api/projects/<project_id>/features`
-  with `{"feature": "apps", "enabled": true}` and their sign-in JWT. The
-  instance also needs `KORTIX_APPS_BASE_DOMAIN` and a wildcard DNS record: see
-  [Self-hosting](/docs/host#configure).
+Add one from the Apps page with **Add app**, or from the CLI:
 
-While Apps is off:
+```bash
+kortix apps create grafana --name "Grafana" --url https://grafana.example.com
+```
 
-- Every Apps route answers `403` with `code: "feature_disabled"`,
-  `feature: "apps"` and the message `Apps is not enabled for this project. Contact Kortix to enable it.`
-- `kortix apps <subcommand>` exits `1` before it calls the API.
-- The project sidebar has no **Apps** entry. `/projects/<id>/apps` shows a gate
-  screen.
+- The URL must be `https`. A URL with a user name or password is refused.
+- The App's `url` and `external_url` are the site. `capabilities` is
+  `["preview"]`.
+- The site decides whether it may be framed. Kortix reads its
+  `X-Frame-Options` and CSP `frame-ancestors` headers when you add it. A site
+  that refuses a frame gets `capabilities: []` and the warning
+  `app_external_not_frameable`. Kortix then shows it with an **Open in a new
+  tab** control instead of a frame.
+- A site that keeps its sign-in in a cookie can ask you to sign in again
+  inside the frame, because browsers limit cookies in frames from another
+  site. Open it in a new tab when that happens.
+- The access policy decides who in the project sees the App. The site's own
+  sign-in decides who can use it.
+- Move it to another URL with `kortix apps set grafana --url <https-url>`.
+  Deploy, rollback, start, stop and sign-in tokens answer
+  `409 app_capability_unsupported`.
 
-Check the state with `kortix projects features`, or in **Customize → Settings →
-Feature flags**. Both show `apps` only while it is on, as a locked row: origin
-`kortix` in the CLI, **Managed by Kortix** in the web app.
+## Self-hosting prerequisites
+
+Apps is generally available: every project can create and deploy Apps, and
+there is nothing to turn on. On a self-host instance the operator still needs
+`KORTIX_APPS_BASE_DOMAIN` and a wildcard DNS record so App hostnames resolve:
+see [Self-hosting](/docs/host#configure).
 
 ## Deploy your first App
 
@@ -324,7 +335,7 @@ Machine size:
 
 A value out of range answers `400 app_machine_out_of_range`. Kortix never
 clamps it. The App's size is the default for every process group. On Platinum,
-a `vm` entry in the release sizes one group. On Daytona and E2B, every machine
+a `vm` entry in the release sizes one group. On legacy Daytona, every machine
 uses the App's size. A size change applies with the next release.
 
 ```bash
@@ -336,8 +347,13 @@ kortix apps exec api -- node scripts/report.js    # run one command in a machine
 ```
 
 - A group runs 1 machine by default. `scale count` sets 0–20 per group and
-  applies in the background. A new machine of a group with a mount gets its own
-  new, empty volume.
+  applies in the background.
+- A group with a mount runs one machine. `scale count` above 1 answers
+  `409 volume_single_machine`, because a second machine would get its own,
+  empty volume and serve different data behind the same URL. Scale a database
+  up instead: `kortix apps set <app> --cpu <n> --memory-gb <n>`, then deploy
+  (seconds of downtime, no data lost). `--new-volumes` accepts separate volumes,
+  for software that replicates its own data.
 - Destroying a machine keeps its volume. The group runs one machine fewer.
 - `kortix apps stop` suspends a server App now. The next authorized request
   wakes it. `kortix apps start` wakes it before traffic arrives. A static App
@@ -360,10 +376,12 @@ A self-hosted instance without billing has none of these limits.
 
 ## Volumes and snapshots
 
-Volumes need the Platinum sandbox provider. Deploy with `--provider platinum`
-when Platinum is not your instance's default provider. A `kortix.yaml` block
-has no provider key. A release with `mounts` on another provider answers
-`400 app_volumes_unsupported`.
+Volumes need the Platinum sandbox provider. A release that names no provider
+deploys on Platinum when the instance has it configured, even when Platinum is
+not the default provider, with or without `mounts`. Only an instance without
+Platinum keeps the provider of the App's latest release. A `kortix.yaml` block
+has no provider key. A release with `mounts` and an explicit other provider
+answers `400 app_volumes_unsupported`.
 
 ```yaml
 mounts:
@@ -374,17 +392,22 @@ mounts:
 - `destination` is an absolute path. It cannot be `/`, end in `/`, or sit
   under `/bin`, `/boot`, `/dev`, `/etc`, `/lib`, `/lib64`, `/proc`, `/root`,
   `/run`, `/sbin`, `/sys`, `/usr`, `/var` or `/kortix`. Use `/data`.
-- Size is 1–100 GB, default 1. A volume grows and never shrinks
-  (`400 volume_shrink_refused`).
+- `initial_size_gb` (1–100) is what the App needs. Platinum allots every
+  volume the same fixed size, 100 GB today, and a volume cannot grow
+  (`400 volume_fixed_size`). Keep files that can outgrow it, such as uploads
+  and documents, in object storage.
+- `kortix apps volumes` shows each volume's use and size, read live from
+  Platinum. Plan a move to object storage before use reaches the size: a full
+  volume fails every write.
 - One machine writes a volume at a time, and a machine mounts at most one
   volume. Kortix enforces a single-writer lock.
 - A volume outlives every release. A rollback changes code and config, never
   the data.
 
 ```bash
-kortix apps volumes backend                             # name, group, size, attached machine, retention
+kortix apps volumes backend                             # name, group, used, size, attached machine, retention
 kortix apps volumes create backend data --size 10 --process app
-kortix apps volumes extend backend data --size 20
+kortix apps volumes set backend data --retention 30     # keep daily snapshots 30 days
 kortix apps volumes snapshots backend data              # daily, manual and final snapshots
 kortix apps volumes snapshot backend data               # a manual snapshot now
 kortix apps volumes restore backend data <snapshot>     # project.app.admin
@@ -395,7 +418,7 @@ kortix apps volumes destroy backend data --yes          # project.app.admin
 | Operation | What it does |
 |---|---|
 | Daily snapshot | Kortix takes one per volume per day. `daily` and `manual` snapshots are kept `snapshot_retention_days` (1–60, default 5). |
-| `snapshot` | A `manual` snapshot. On a mounted volume, the last ~1 s of writes can be missing. |
+| `snapshot` | A `manual` snapshot. Kortix commits the mounted volume first (a frozen point in time), then pins that commit. Daily snapshots work the same way. |
 | `restore` | The machine stops, the volume returns to the snapshot, and the machine starts on it. The replaced contents stay in the volume's history. |
 | `fork` | A new, unattached volume in the same App, made at once from the current contents or a snapshot |
 | `create` | A volume made ahead of time. The next machine of its group with a mount of that name takes it. |
@@ -523,17 +546,24 @@ unknown slug, or one you cannot see, answers `400 app_not_found` with `slugs`.
 that lives 15 minutes. Its `aud` is the id of the App it is for. It carries
 `sub`, `email`, `name`, `picture`, `groups`, `group_ids`, `role`, `account_id`
 and `project_id`. An agent's token carries `kind: "agent"` and no groups or
-role.
+role. A token a person got in one App for an App it uses also carries
+`via_app_id`: the id of the App they signed in to.
 
 | Who | How they get a token |
 |---|---|
 | A person in an App | `GET /_kortix/token?audience=<slug or id>` on the App's origin: the App itself (default) or an App it uses. `kortixToken({ audience })` in `@kortix/sdk`. |
 | A member, a script, an agent session | `kortix apps token <app>` (`--json` adds `expires_at`), or `POST /v1/projects/<project_id>/apps/<app_id>/token`. An agent session gets a token that names its agent. |
 
-Any other audience answers `403 app_not_linked`. A token proves who the person
-is, not what they may do: check `groups` or `role` in every function whose data
-is not for everyone the App admits. A person you remove loses access within one
-token lifetime.
+Any other audience answers `403 app_not_linked`. Everyone an App admits gets a
+token for every App it uses, even when they cannot open the used App
+themselves. Keep a backend App `private`: it stays off their App list and its
+own URL refuses them, and the Apps that use it still work for their readers.
+
+A token proves who the person is, not what they may do: check `groups`,
+`role` or `via_app_id` in every function whose data is not for everyone the
+Apps that use it admit. A backend that serves two Apps can serve each App's
+readers only that App's data with `via_app_id`. A person you remove loses
+access within one token lifetime.
 
 **Bindings.** `/_kortix/apps/<slug>/*` on an App's origin forwards HTTP and
 WebSocket requests to the `http` service of an App it uses.
@@ -545,6 +575,10 @@ import { kortixBinding } from '@kortix/sdk';
 
 const backend = kortixBinding('backend'); // { url: <origin>/_kortix/apps/backend, token: a token fetcher }
 ```
+
+To start the first token request before your bundle loads (an inline `<script>`),
+pass `fetch` to `kortixBinding`. Return the early response on its first call and
+the real `fetch` after. The binding then does not request the token twice.
 
 | The used App or service | Answer |
 |---|---|
@@ -733,8 +767,8 @@ kortix apps launch --template convex   # --provider platinum, --no-deploy
 
 Run it in the directory that holds your `kortix.yaml`. A slug that is already in
 the file is refused: pick another `--name`. The backend mounts a volume, so it
-needs Platinum: pass `--provider platinum` when Platinum is not your default
-provider. `--no-deploy` writes `kortix.yaml` only.
+needs Platinum: the server deploys it there when Platinum is configured, like
+every App release that names no provider. `--no-deploy` writes `kortix.yaml` only.
 
 `launch` writes two blocks into `kortix.yaml` and the dashboard's two files,
 `apps/backend/dashboard/Dockerfile` and `apps/backend/dashboard/start.js` (a file that
@@ -895,6 +929,21 @@ kortix apps access crm --mode project
 Never use `public` for internal data. A `public` App has no signed-in member, so
 every function that requires one refuses the call.
 
+[Kortix UI](/docs/sdk/ui) (`@kortix/ui`) is the component library for App UIs,
+but it is not on npm yet: today it installs only inside the
+[kortix-ai/suna](https://github.com/kortix-ai/suna) repository
+(`"@kortix/ui": "workspace:*"`). An App in a project repository cannot install
+it until the first npm release. Until then, style the App with plain CSS that
+reads the same variable names (`--background`, `--foreground`, `--border`,
+`--radius`), and never copy component source into the App.
+
+Inside kortix-ai/suna, a Vite App without Tailwind imports
+`@kortix/ui/styles.css` once in `src/main.tsx`. A Tailwind v4 App imports
+`@import 'tailwindcss'; @import '@kortix/ui/tailwind.css';` in its main CSS.
+Compose `Card`, `Table`, `Modal`, `Badge` and `InfoBanner` before you write a
+component, and re-theme by CSS variables, never by a copied component. A chat
+view of a session is `SessionThread` from `@kortix/ui/chat`.
+
 | What broke | Undo |
 |---|---|
 | The UI | `kortix apps rollback crm <vN>` |
@@ -957,8 +1006,9 @@ for (;;) {
 | Access | `access.get`, `access.update` (`mode`, `member_ids`, `group_ids`, `password`, `viewer_token_scope`), `access.session` (a 5-minute link), `access.agents` |
 | Sign-in | `token(appId)`, `authEnv(appId)` |
 
-`isFeatureDisabledError(error)` is `true` for the `403 feature_disabled` that a
-project without Apps answers. React hooks in `@kortix/sdk/react`:
+`isFeatureDisabledError(error)` is `true` for the `403 feature_disabled` a
+feature-flagged route answers (another feature than Apps; Apps routes no
+longer carry a flag). React hooks in `@kortix/sdk/react`:
 `useProjectApps`, `useAppDeployments`, `useAppDeployment`, `useAppAccess`,
 `useAppMachines`, `useAppVolumes` and `useAppVolumeSnapshots`. Signatures and
 types: [SDK reference](/docs/sdk/reference#the-project-handle) and
@@ -982,10 +1032,10 @@ Every route also needs the project's Apps switch on. See
 | Command | What it does |
 |---|---|
 | `kortix apps list` (`ls`) | The Apps you may open: slug, state, URL |
-| `kortix apps create <slug>` (`new`) | Create an App without a deploy. `--name`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses` |
+| `kortix apps create <slug>` (`new`) | Create an App without a deploy. `--name`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses`. `--url <https-url>` creates an external App |
 | `kortix apps launch --template convex` | Write a template's blocks to `kortix.yaml` in the current directory and deploy them. `--name <slug>`, `--provider <name>`, `--no-deploy` |
-| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz` or `--image`. Flags: `--app`, `--slug`, `--name`, `--manifest-app`, `--type static\|bundle\|dockerfile`, `--command`, `--port`, `--dockerfile`, `--root`, `--output-dir`, `--install-command`, `--build-command`, `--readiness-path`, `--spa` or `--no-spa`, `--include-node-modules`, `--provider daytona\|platinum\|e2b`, `--access`, `--password`, `--members`, `--groups`, `--always-on` or `--on-demand`, `--no-wait`, `--wait-seconds` |
-| `kortix apps set <app>` (`update`) | Change `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses` |
+| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz` or `--image`. Flags: `--app`, `--slug`, `--name`, `--manifest-app`, `--type static\|bundle\|dockerfile`, `--command`, `--port`, `--dockerfile`, `--root`, `--output-dir`, `--install-command`, `--build-command`, `--readiness-path`, `--spa` or `--no-spa`, `--include-node-modules`, `--provider platinum\|daytona` (`daytona` is a legacy fallback), `--access`, `--password`, `--members`, `--groups`, `--always-on` or `--on-demand`, `--no-wait`, `--wait-seconds` |
+| `kortix apps set <app>` (`update`) | Change `--name`, `--url` (an external App), `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses` |
 | `kortix apps link <app> --uses <slugs>` | Add used Apps. `unlink` removes them. |
 | `kortix apps show <app>` (`get`) | Capabilities, links, run mode and releases |
 | `kortix apps releases <app>` | Releases, marking the live one |

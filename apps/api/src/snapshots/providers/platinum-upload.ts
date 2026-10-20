@@ -52,6 +52,8 @@ export async function uploadWithRetry(
   presignFn: () => Promise<{ upload_url: string; context_s3_key: string }>,
   tarPath: string,
   guardOpts: { allowLocal: boolean; allowedHosts: string[] } = uploadUrlGuardOptsFromEnv(),
+  /** The pause before attempt N+1 is `retryBaseMs * N`. A test lowers it. */
+  retryBaseMs = 2_000,
 ): Promise<string> {
   const sizeBytes = Bun.file(tarPath).size;
   const timeoutMs = Math.max(UPLOAD_MIN_TIMEOUT_MS, Math.ceil((sizeBytes / 1024 ** 3) * UPLOAD_TIMEOUT_MS_PER_GIB));
@@ -88,7 +90,7 @@ export async function uploadWithRetry(
         throw new Error(`build-context upload failed after ${attempt}/${UPLOAD_ATTEMPTS} attempt(s): ${msg}`);
       }
       console.warn(`[snapshots] platinum build-context upload attempt ${attempt}/${UPLOAD_ATTEMPTS} failed — re-presigning + retrying: ${msg.slice(0, 160)}`);
-      await new Promise((r) => setTimeout(r, 2_000 * attempt));
+      await new Promise((r) => setTimeout(r, retryBaseMs * attempt));
     }
   }
   // Unreachable: the loop above always returns or throws by UPLOAD_ATTEMPTS.

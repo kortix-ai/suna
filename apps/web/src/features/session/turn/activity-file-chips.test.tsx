@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ActivityFileChipStep, isFileChipPart } from './activity-file-chips';
+import { toolCallBlock } from '@kortix/sdk';
+import { ActivityFileChipStep, isFileChipCall } from './activity-file-chips';
 
 function tool(id: string, name: string, state: Record<string, unknown>): ToolPart {
   return {
@@ -30,8 +31,7 @@ const render = (parts: Part[], { open = true, running = false, bare = false } = 
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
         <ChainOfThoughtStep open={open}>
           <ActivityFileChipStep
-            parts={parts}
-            running={running}
+            calls={parts.map((p) => toolCallBlock(p as ToolPart))}
             bare={bare}
             sessionId="session-1"
             disableNavigation
@@ -41,28 +41,25 @@ const render = (parts: Part[], { open = true, running = false, bare = false } = 
     </QueryClientProvider>,
   );
 
-describe('isFileChipPart', () => {
+describe('isFileChipCall', () => {
   test('whole-file reads and writes are chips', () => {
-    expect(isFileChipPart(tool('1', 'read', { status: 'completed' }))).toBe(true);
-    expect(isFileChipPart(tool('2', 'write', { status: 'completed' }))).toBe(true);
+    expect(isFileChipCall(toolCallBlock(tool('1', 'read', { status: 'completed' })))).toBe(true);
+    expect(isFileChipCall(toolCallBlock(tool('2', 'write', { status: 'completed' })))).toBe(true);
   });
 
   test('edits are not — their renderer shows a diff, which is the right output', () => {
-    expect(isFileChipPart(tool('1', 'edit', { status: 'completed' }))).toBe(false);
-    expect(isFileChipPart(tool('2', 'apply_patch', { status: 'completed' }))).toBe(false);
+    expect(isFileChipCall(toolCallBlock(tool('1', 'edit', { status: 'completed' })))).toBe(false);
+    expect(isFileChipCall(toolCallBlock(tool('2', 'apply_patch', { status: 'completed' })))).toBe(false);
   });
 
-  test('a shell command and a thought are not files', () => {
-    expect(isFileChipPart(tool('1', 'bash', { status: 'completed' }))).toBe(false);
-    expect(
-      isFileChipPart({ id: 'r', type: 'reasoning', text: 'thinking' } as unknown as Part),
-    ).toBe(false);
+  test('a shell command is not a file', () => {
+    expect(isFileChipCall(toolCallBlock(tool('1', 'bash', { status: 'completed' })))).toBe(false);
   });
 
   test('an `oc-` alias resolves to the same family', () => {
     // Normalization is the one door every turn module uses; a chip row that
     // matched raw names would silently drop the aliased half of the traffic.
-    expect(isFileChipPart(tool('1', 'oc-read', { status: 'completed' }))).toBe(true);
+    expect(isFileChipCall(toolCallBlock(tool('1', 'oc-read', { status: 'completed' })))).toBe(true);
   });
 });
 

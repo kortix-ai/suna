@@ -54,7 +54,7 @@ mock.module('./account-memberships', () => ({
   useAccountMemberships: () => ({ accounts: [], isLoading: false }),
   AccountMembershipsSection: () => null,
 }));
-mock.module('@/components/ui/modal', () => ({
+const uiModalMock = () => ({
   Modal: ({ open, children }: { open: boolean; children: ReactNode }) =>
     open ? <div>{children}</div> : null,
   ModalBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -62,11 +62,15 @@ mock.module('@/components/ui/modal', () => ({
   ModalFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ModalHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ModalTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-}));
-mock.module('@/components/ui/radio-group', () => ({
+});
+mock.module('@/components/ui/modal', uiModalMock);
+mock.module('@kortix/ui/modal', uiModalMock);
+const uiRadioGroupMock = () => ({
   RadioGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   RadioGroupItem: () => <div />,
-}));
+});
+mock.module('@/components/ui/radio-group', uiRadioGroupMock);
+mock.module('@kortix/ui/radio-group', uiRadioGroupMock);
 
 // The container reads `t('key')` and `t.raw('key')`. Returning the key's last
 // segment keeps the trigger findable by its label without loading the

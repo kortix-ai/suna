@@ -1,27 +1,5 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
-/**
- * The add-a-custom-provider form, as rows on the API-keys list's own axis.
- *
- * It used to be a `bg-popover` card of six fields in two `sm:grid-cols-2`
- * pairs, so the inputs sat at four different x-positions and the screen read
- * as a different product from the provider list one tab over. Here every field
- * is one row — label left, input right — on the same
- * `minmax(0,13rem)_minmax(0,1fr)` grid `provider-connect.tsx` uses, so the
- * whole tab is scanned by running the eye down one column.
- *
- * The submit, the validation, the secret write and the generated snippet are
- * unchanged; this is the same mutation with different markup. Two real fixes
- * came along with it:
- *
- *  - The API key field was `type="text"` — a pasted key sat legible on screen
- *    and in every screenshot. It is now masked with a reveal button and the
- *    three password-manager opt-outs, exactly like a provider key field.
- *  - `onBack` was destructured and never rendered anywhere, so the prop was a
- *    promise of a control that did not exist. Removed.
- */
-
 import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -33,12 +11,13 @@ import {
   InputGroupInput,
 } from '@/components/ui/input-group';
 import Loading from '@/components/ui/loading';
+import { Copy } from '@/features/icon/icons/copy';
 import { useCopy } from '@/hooks/use-copy';
+import { useTranslations } from '@/i18n/use-translations';
 import { upsertProjectSecret } from '@kortix/sdk';
 import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
-  CopyIcon as Copy,
   EyeIcon as Eye,
   EyeSlashIcon as EyeSlash,
   InfoIcon as Info,
@@ -51,8 +30,8 @@ import { type FormEvent, type ReactNode, useState } from 'react';
 import type { CustomFormState } from './types';
 import { buildCustomProviderSnippet } from './utils';
 
-/** One field, on the provider list's two-column axis. */
-function FormRow({
+/** One stacked field: label (and optional hint) above the control. */
+function FormField({
   htmlFor,
   label,
   hint,
@@ -64,16 +43,19 @@ function FormRow({
   children: ReactNode;
 }) {
   return (
-    <div className="grid gap-1.5 py-1.5 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] sm:items-center sm:gap-4">
-      <div className="min-w-0">
-        <FieldLabel htmlFor={htmlFor} className="text-foreground text-sm font-normal">
-          {label}
-        </FieldLabel>
-        {hint ? <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{hint}</p> : null}
-      </div>
-      <Field className="min-w-0">{children}</Field>
-    </div>
+    <Field className="min-w-0 flex-1 gap-1.5">
+      <FieldLabel htmlFor={htmlFor} className="text-foreground text-sm font-medium">
+        {label}
+      </FieldLabel>
+      {children}
+      {hint ? <FieldDescription className="text-xs text-pretty">{hint}</FieldDescription> : null}
+    </Field>
   );
+}
+
+/** The secret name the form writes for a provider id — shown under the key field. */
+export function customProviderSecretName(providerId: string): string {
+  return `CUSTOM_${providerId.trim().toUpperCase().replace(/-/g, '_')}_API_KEY`;
 }
 
 export function CustomProviderForm({
@@ -84,6 +66,7 @@ export function CustomProviderForm({
   onDone: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('customProvider');
   const queryClient = useQueryClient();
   const [form, setForm] = useState<CustomFormState>({
     providerId: '',
@@ -124,9 +107,7 @@ export function CustomProviderForm({
         throw new Error('At least one model (ID + name) is required');
       }
 
-      const secretName = trimmed.apiKey
-        ? `CUSTOM_${trimmed.providerId.toUpperCase().replace(/-/g, '_')}_API_KEY`
-        : null;
+      const secretName = trimmed.apiKey ? customProviderSecretName(trimmed.providerId) : null;
       if (secretName) {
         // LLM provider credentials are always project-wide (see
         // api-key-connect-form.tsx) — a per-user key is invisible to the
@@ -180,151 +161,159 @@ export function CustomProviderForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="border-border/60 border-t pt-4">
-        <p className="text-foreground px-0.5 text-sm">{tI18nComplete.raw('text3880a3aae4e6')}</p>
-      </div>
-
-      <div className="flex flex-col">
-        <FormRow
-          htmlFor="custom-provider-id"
-          label={tI18nComplete.raw('text7511080b05b9')}
-          hint={tI18nComplete.raw('text740493750bb7')}
+    <div className="@container/custom-provider">
+      <div className="flex flex-col gap-11 @4xl/custom-provider:flex-row @4xl/custom-provider:items-start">
+        <form
+          onSubmit={handleSubmit}
+          className="flex w-full flex-col gap-5 @4xl/custom-provider:w-141 @4xl/custom-provider:shrink-0"
         >
-          <Input
-            id="custom-provider-id"
-            type="text"
-            value={form.providerId}
-            onChange={(e) =>
-              setField('providerId', e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))
-            }
-            placeholder={tI18nComplete.raw('texta39b6c664e82')}
-            className="font-mono text-xs"
-            autoFocus
-          />
-        </FormRow>
+          <div className="flex flex-col gap-1">
+            <h2 className="text-foreground text-base font-semibold">
+              {tI18nComplete.raw('text3880a3aae4e6')}
+            </h2>
+            <p className="text-muted-foreground text-sm text-pretty">{t('formIntro')}</p>
+          </div>
 
-        <FormRow htmlFor="custom-display-name" label={tI18nComplete.raw('text2b7f6a84de91')}>
-          <Input
-            id="custom-display-name"
-            type="text"
-            value={form.name}
-            onChange={(e) => setField('name', e.target.value)}
-            placeholder={tI18nComplete.raw('text0d41acb2175b')}
-          />
-        </FormRow>
+          <div className="flex gap-3">
+            <FormField htmlFor="custom-display-name" label={tI18nComplete.raw('text2b7f6a84de91')}>
+              <Input
+                id="custom-display-name"
+                type="text"
+                value={form.name}
+                onChange={(e) => setField('name', e.target.value)}
+                placeholder={tI18nComplete.raw('text0d41acb2175b')}
+                className="font-normal"
+                autoFocus
+              />
+            </FormField>
+            <FormField htmlFor="custom-provider-id" label={tI18nComplete.raw('text7511080b05b9')}>
+              <Input
+                id="custom-provider-id"
+                type="text"
+                value={form.providerId}
+                onChange={(e) =>
+                  setField('providerId', e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))
+                }
+                placeholder={tI18nComplete.raw('texta39b6c664e82')}
+                className="font-mono font-normal"
+              />
+            </FormField>
+          </div>
 
-        <FormRow
-          htmlFor="custom-base-url"
-          label={tI18nComplete.raw('text70589413a3c9')}
-          hint={tI18nComplete.raw('texte4273a188eb5')}
-        >
-          <Input
-            id="custom-base-url"
-            type="text"
-            value={form.baseURL}
-            onChange={(e) => setField('baseURL', e.target.value)}
-            placeholder="https://api.example.com/v1"
-            className="font-mono text-xs"
-          />
-        </FormRow>
-
-        <FormRow
-          htmlFor="custom-api-key"
-          label={
-            <>
-              {tI18nComplete.raw('text16f0ee47f993')}{' '}
-              <span className="text-muted-foreground">{tI18nComplete.raw('text0059798b7f70')}</span>
-            </>
-          }
-        >
-          <InputGroup>
-            <InputGroupInput
-              id="custom-api-key"
-              // Masked by default, like every other credential field in this
-              // app — a pasted key used to sit in plaintext on screen.
-              type={revealKey ? 'text' : 'password'}
-              autoComplete="off"
-              spellCheck={false}
-              data-1p-ignore=""
-              data-lpignore="true"
-              data-form-type="other"
-              value={form.apiKey}
-              onChange={(e) => setField('apiKey', e.target.value)}
-              placeholder={tI18nComplete.raw('textb009c6c5299f')}
-              className="font-mono text-xs"
+          <FormField
+            htmlFor="custom-base-url"
+            label={tI18nComplete.raw('text70589413a3c9')}
+            hint={t('baseUrlHint')}
+          >
+            <Input
+              id="custom-base-url"
+              type="text"
+              value={form.baseURL}
+              onChange={(e) => setField('baseURL', e.target.value)}
+              placeholder="https://api.example.com/v1"
+              className="font-mono font-normal"
             />
-            {form.apiKey ? (
-              <InputGroupAddon align="inline-end">
-                <InputGroupButton
-                  size="icon-xs"
-                  onClick={() => setRevealKey((current) => !current)}
-                  title={revealKey ? 'Hide' : 'Show'}
-                  aria-label={
-                    revealKey
-                      ? tI18nComplete.raw('text3d0d8c59beb7')
-                      : tI18nComplete.raw('textcb0b50a0d111')
-                  }
-                  aria-pressed={revealKey}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  {revealKey ? <EyeSlash className="size-3.5" /> : <Eye className="size-3.5" />}
-                </InputGroupButton>
-              </InputGroupAddon>
+          </FormField>
+
+          <FormField
+            htmlFor="custom-api-key"
+            label={
+              <span className="flex items-baseline gap-1.5">
+                {tI18nComplete.raw('text16f0ee47f993')}
+                <span className="text-muted-foreground text-xs font-normal">{t('optional')}</span>
+              </span>
+            }
+          >
+            <InputGroup>
+              <InputGroupInput
+                id="custom-api-key"
+                // Masked by default, like every other credential field in this
+                // app — a pasted key used to sit in plaintext on screen.
+                type={revealKey ? 'text' : 'password'}
+                autoComplete="off"
+                spellCheck={false}
+                data-1p-ignore=""
+                data-lpignore="true"
+                data-form-type="other"
+                value={form.apiKey}
+                onChange={(e) => setField('apiKey', e.target.value)}
+                placeholder={tI18nComplete.raw('textb009c6c5299f')}
+                className="font-mono font-normal"
+              />
+              {form.apiKey ? (
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton
+                    size="icon-xs"
+                    onClick={() => setRevealKey((current) => !current)}
+                    title={revealKey ? 'Hide' : 'Show'}
+                    aria-label={
+                      revealKey
+                        ? tI18nComplete.raw('text3d0d8c59beb7')
+                        : tI18nComplete.raw('textcb0b50a0d111')
+                    }
+                    aria-pressed={revealKey}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    {revealKey ? <EyeSlash className="size-3.5" /> : <Eye className="size-3.5" />}
+                  </InputGroupButton>
+                </InputGroupAddon>
+              ) : null}
+            </InputGroup>
+            {form.providerId.trim() ? (
+              <code className="text-muted-foreground font-mono text-xs break-all">
+                {customProviderSecretName(form.providerId)}
+              </code>
             ) : null}
-          </InputGroup>
-          {form.apiKey.trim() ? (
-            <FieldDescription className="text-xs">
-              {tI18nComplete.raw('text6bf9ada8447c')}
-            </FieldDescription>
+          </FormField>
+
+          <div className="flex gap-3">
+            <FormField htmlFor="custom-model-id" label={tI18nComplete.raw('text089ef2b6dbb3')}>
+              <Input
+                id="custom-model-id"
+                type="text"
+                value={form.modelId}
+                onChange={(e) => setField('modelId', e.target.value)}
+                placeholder={tI18nComplete.raw('text34d316295094')}
+                className="font-mono font-normal"
+              />
+            </FormField>
+            <FormField htmlFor="custom-model-name" label={tI18nComplete.raw('texta3c3370cc732')}>
+              <Input
+                id="custom-model-name"
+                type="text"
+                value={form.modelName}
+                onChange={(e) => setField('modelName', e.target.value)}
+                placeholder={tI18nComplete.raw('textb70354a1faae')}
+                className="font-normal"
+              />
+            </FormField>
+          </div>
+
+          {error ? (
+            <InfoBanner
+              tone="destructive"
+              icon={TriangleAlert}
+              title={tI18nComplete.raw('text464de08899db')}
+            >
+              {error}
+            </InfoBanner>
           ) : null}
-        </FormRow>
 
-        <FormRow htmlFor="custom-model-id" label={tI18nComplete.raw('text089ef2b6dbb3')}>
-          <Input
-            id="custom-model-id"
-            type="text"
-            value={form.modelId}
-            onChange={(e) => setField('modelId', e.target.value)}
-            placeholder={tI18nComplete.raw('text34d316295094')}
-            className="font-mono text-xs"
-          />
-        </FormRow>
-
-        <FormRow htmlFor="custom-model-name" label={tI18nComplete.raw('texta3c3370cc732')}>
-          <Input
-            id="custom-model-name"
-            type="text"
-            value={form.modelName}
-            onChange={(e) => setField('modelName', e.target.value)}
-            placeholder={tI18nComplete.raw('textb70354a1faae')}
-          />
-        </FormRow>
+          <div className="flex gap-2 pt-1">
+            <Button type="submit" size="sm" disabled={save.isPending} className="gap-1.5">
+              {save.isPending ? (
+                <>
+                  <Loading className="size-3.5 shrink-0" />
+                  {tI18nComplete.raw('textd20a4476a0a8')}
+                </>
+              ) : (
+                t('saveAndGenerate')
+              )}
+            </Button>
+          </div>
+        </form>
       </div>
-
-      {error ? (
-        <InfoBanner
-          tone="destructive"
-          icon={TriangleAlert}
-          title={tI18nComplete.raw('text464de08899db')}
-        >
-          {error}
-        </InfoBanner>
-      ) : null}
-
-      <div className="flex justify-end">
-        <Button type="submit" size="sm" disabled={save.isPending}>
-          {save.isPending ? (
-            <>
-              <Loading className="size-3.5 shrink-0" />
-              {tI18nComplete.raw('textd20a4476a0a8')}
-            </>
-          ) : (
-            tI18nComplete.raw('text3dc8d68addcd')
-          )}
-        </Button>
-      </div>
-    </form>
+    </div>
   );
 }
 
@@ -345,7 +334,7 @@ function CustomProviderSnippetView({
   });
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex max-w-2xl flex-col gap-4">
       <InfoBanner
         tone="success"
         icon={Check}
@@ -356,7 +345,7 @@ function CustomProviderSnippetView({
         {secretName ? (
           <>
             {tI18nComplete.raw('text58ec60140867')}{' '}
-            <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">{secretName}</code>{' '}
+            <code className="bg-muted rounded-sm px-1 py-0.5 font-mono text-xs">{secretName}</code>{' '}
             {tI18nComplete.raw('textdf1db3412b9d')}
           </>
         ) : (
@@ -372,13 +361,13 @@ function CustomProviderSnippetView({
         <div className="border-border/60 flex items-center justify-between gap-3 border-b px-4 py-2.5">
           <span className="text-muted-foreground text-xs">
             {tI18nComplete.raw('text82b9ffd3cec8')}{' '}
-            <code className="font-mono">.opencode/opencode.jsonc</code>
+            <code className="font-mono">provider configuration</code>
           </span>
           <button
             type="button"
             onClick={() => copy(snippet)}
             aria-label={copied ? 'Copied' : tI18nComplete.raw('text968d0a9d24a6')}
-            className="text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors active:scale-[0.97]"
+            className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[background-color,color,scale] duration-(--duration-normal) active:scale-[0.96]"
           >
             <span className="relative inline-flex size-3.5 items-center justify-center">
               <AnimatePresence initial={false} mode="popLayout">
@@ -407,13 +396,13 @@ function CustomProviderSnippetView({
 
       <p className="text-muted-foreground px-0.5 text-xs text-pretty">
         {tI18nComplete.raw('textb81bc1d32189')}{' '}
-        <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
-          .opencode/opencode.jsonc
+        <code className="bg-muted rounded-sm px-1 py-0.5 font-mono text-xs">
+          provider configuration
         </code>{' '}
         {tI18nComplete.raw('textd833da5b9497')}
       </p>
 
-      <div className="flex justify-end">
+      <div className="flex justify-start">
         <Button size="sm" onClick={onDone}>
           {tI18nComplete.raw('text11a6767d5674')}
         </Button>

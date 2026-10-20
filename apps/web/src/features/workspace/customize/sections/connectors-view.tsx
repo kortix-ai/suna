@@ -75,6 +75,7 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { ComputerConnectModal, ComputerStateDot } from '@/features/tunnel/computer-connect';
+import { mcpServerIdentity } from '@/features/workspace/capabilities/connectors/add-mcp/add-mcp-server';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
@@ -93,7 +94,7 @@ import {
   useSlackMode,
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
-import { useAddAccount } from '@/hooks/connectors/use-add-account';
+import { emptyProjectSlot, useAddAccount } from '@/hooks/connectors/use-add-account';
 import { useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
 import { isConnectorsEnabled } from '@/lib/config';
@@ -107,7 +108,6 @@ import {
   type ConnectorDraftInput,
   type ConnectorRequestAuthType,
   createConnector,
-  deleteConnector,
   discoverConnectionOAuth2,
   discoverConnectionOAuth2Resource,
   discoverConnectorAuth,
@@ -147,7 +147,6 @@ import { credentialWriteTarget, oauth2DiscoveryConnectionKey } from './connector
 import {
   buildOAuth2ApplicationInput,
   buildOAuth2CredentialInput,
-  createConnectorWithOptionalOAuth2,
   EMPTY_OAUTH2_APPLICATION_FORM,
   EMPTY_OAUTH2_CREDENTIAL_FORM,
   mergeOAuth2DiscoveryMetadata,
@@ -161,8 +160,11 @@ import { autoConnectPlan, mergeResourceDiscoveryIntoForm } from './connector-oau
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
 import { startOAuth2SignIn } from './connector-oauth2-start';
 import { DiscoverCatalogue } from './discover-catalogue';
+import { useAddRequest } from './use-add-request';
+import { useCreateCustomConnector } from './use-create-custom-connector';
 import { AudienceText } from './view/audience-badge';
 import {
+  accountNeedsSignIn,
   accountVisibility,
   connectorConnectionRows,
   type NewAccountDraft,
@@ -251,6 +253,7 @@ function ConnectionRow({
   onSetCredential,
   onShare,
   onConnect,
+  needsSignIn,
   pending,
   disabled = false,
 }: {
@@ -273,6 +276,8 @@ function ConnectionRow({
   onShare?: () => void;
   /** Sign this account in. Shown only while it is not signed in. */
   onConnect?: () => void;
+  /** Not signed in, on a connector that has a sign-in (`accountNeedsSignIn`). */
+  needsSignIn: boolean;
   pending: boolean;
   disabled?: boolean;
 }) {
@@ -322,8 +327,13 @@ function ConnectionRow({
           {connection.usable === false ? tSharing('notSharedWithYou') : null}
           {/* An account nobody has signed in yet, such as the shared one a new
               connector starts with: say so beside its Connect button. */}
-          {active && connection.authorized === false ? (
+          {active && needsSignIn ? (
             <span>{tConnectorPages('notSignedIn')}</span>
+          ) : null}
+          {/* The upstream answered 401 to the stored credential (gateway mark;
+              a new credential or an ok call clears it). */}
+          {active && connection.metadata?.credential_rejected_at ? (
+            <span className="text-destructive">{tConnectorPages('credentialRejected')}</span>
           ) : null}
           {active ? null : (
             <span className="text-destructive">
@@ -350,7 +360,7 @@ function ConnectionRow({
           set of actions for this account. */}
       {/* An account that never finished signing in (an abandoned OAuth flow)
           gets its next step on the row, not behind the menu. */}
-      {onConnect && mayMutate && connection.authorized === false ? (
+      {onConnect && mayMutate && needsSignIn ? (
         <Button size="sm" className="shrink-0" onClick={onConnect} disabled={pending || disabled}>
           {tConnectorPages('connectAccount')}
         </Button>
@@ -548,7 +558,12 @@ export function ConnectionsList({
     onChanged();
   };
 
-  const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
+  const allRows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
+  // The server's empty shared slot is a placeholder, not an account anyone
+  // added: listing it reads as "everyone already shares this". Add account
+  // still reuses it when the person picks Everyone.
+  const slot = emptyProjectSlot(connector, allRows);
+  const rows = slot ? allRows.filter((row) => row !== slot) : allRows;
 
   const openCredential = onSetCredential ?? setCredentialTarget;
   // "Add account" asks the account's name and who may use it: only you,
@@ -583,18 +598,7 @@ export function ConnectionsList({
   };
   const proposedLabel = addAccount.proposedLabel();
   if (addOpen && !labelEdited && draft.label !== proposedLabel) setDraft({ ...draft, label: proposedLabel });
-  // Adjusted during render, not in an effect: each new request opens the
-  // dialog once, including one made before this list mounted (right after
-  // Install). The caller resets it (`onAddRequestHandled`), so a remount on a
-  // tab switch does not open it again.
-  const [seenAddRequest, setSeenAddRequest] = useState(0);
-  if (addRequest !== seenAddRequest) {
-    setSeenAddRequest(addRequest);
-    if (addRequest > 0) {
-      openAdd();
-      onAddRequestHandled?.();
-    }
-  }
+  useAddRequest(addRequest, openAdd, onAddRequestHandled);
   const labelTaken = newAccountLabelTaken(draft, rows);
   const canSubmitAdd =
     !disabled && !adding && newAccountReady(draft, rows, { canManageConnections, accountId });
@@ -685,6 +689,7 @@ export function ConnectionsList({
       onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
       onSetCredential={setCredential ? () => setCredential(connection) : undefined}
       onConnect={onConnect ? () => onConnect(connection) : undefined}
+      needsSignIn={accountNeedsSignIn(connection, connector)}
       onShare={
         accountId
           ? () => {
@@ -2581,7 +2586,7 @@ function AppCatalogue({
                         </div>
                       )}
                     </div>
-                    <Plus className="text-muted-foreground/40 group-hover:text-primary size-4 shrink-0 transition-colors" />
+                    <Plus className="text-muted-foreground group-hover:text-primary size-4 shrink-0 transition-colors" />
                   </div>
                   <p className="text-muted-foreground mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed">
                     {app.description ?? ' '}
@@ -2797,12 +2802,16 @@ function ConnectorConfigFields({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   // Once the slug is typed in by hand, never overwrite it from the source again.
   const slugTouched = useRef(false);
-  const suggestedSlug = slugFromTitle(detectedTitle);
+  // An MCP server answers 401 before it names itself: fall back to the
+  // URL's domain (`https://api.acme.ai/mcp` → `acme`).
+  const sourceUrl = draft.url ?? draft.endpoint ?? draft.baseUrl ?? draft.spec ?? '';
+  const suggestedSlug =
+    slugFromTitle(detectedTitle) || (sourceUrl ? (mcpServerIdentity(sourceUrl, [])?.slug ?? '') : '');
   useEffect(() => {
-    // Only ever fills a blank slug, and only before the user types one. Editing
-    // an existing connector (slugEditable false) is never touched.
+    // Follows the source until the user types a slug. Editing an existing
+    // connector (slugEditable false) is never touched.
     if (!slugEditable || readOnly || slugTouched.current) return;
-    if (!suggestedSlug || draft.slug) return;
+    if (!suggestedSlug || draft.slug === suggestedSlug) return;
     onChange({ ...draft, slug: suggestedSlug });
   }, [suggestedSlug, slugEditable, readOnly, draft, onChange]);
   const set = (patch: Partial<ConnectorDraftInput>) => onChange({ ...draft, ...patch });
@@ -3115,7 +3124,7 @@ function ConnectorConfigFields({
                     <>
                       {' '}
                       {tI18nHardcoded.raw('i18nComplete.text4d327af41f96')}{' '}
-                      <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
+                      <code className="bg-muted rounded-sm px-1 py-0.5 font-mono text-xs">
                         {detectedAuth.parameterName}
                       </code>
                     </>
@@ -3230,7 +3239,8 @@ export function CustomConnectorForm({
 }: {
   projectId: string;
   emailChannelEnabled: boolean;
-  onAdded: (slug?: string) => void;
+  /** The connector exists: open its page. `addAccount` opens "Add account" there. */
+  onAdded: (slug: string, options: { addAccount: boolean }) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [draft, setDraft] = useState<ConnectorDraftInput>({
@@ -3256,34 +3266,7 @@ export function CustomConnectorForm({
     }
   }, [draft.provider, oauth2Selected]);
 
-  const save = useMutation({
-    mutationFn: () =>
-      createConnectorWithOptionalOAuth2(projectId, draft, oauth2Selected ? oauth2 : null, {
-        createConnector,
-        deleteConnector,
-        setConnectorCredential,
-      }),
-    onSuccess: (result) => {
-      if (result.syncError) {
-        warningToast(
-          tI18nHardcoded('i18nComplete.textd6a135de3872', {
-            value0: draft.slug,
-            value1: result.syncError,
-          }),
-        );
-        onAdded();
-        return;
-      }
-      successToast(
-        result.credentialStored
-          ? tI18nHardcoded('i18nComplete.text5120ee26cbf5', { value0: draft.slug })
-          : tI18nHardcoded('i18nComplete.text29f396e2d238', { value0: draft.slug }),
-      );
-      onAdded(draft.slug);
-    },
-    onError: (err: Error) =>
-      errorToast(err.message || tI18nHardcoded.raw('i18nComplete.textbdc7d54433e6')),
-  });
+  const save = useCreateCustomConnector(projectId, onAdded);
   const discovery = useQuery<ConnectorAuthDiscovery>({
     queryKey: ['connector-auth-discovery', projectId, discoveryDraft],
     queryFn: () => discoverConnectorAuth(projectId, discoveryDraft),
@@ -3303,7 +3286,7 @@ export function CustomConnectorForm({
         onSubmit={(e) => {
           e.preventDefault();
           if (oauth2Selected && !oauth2CredentialFormValid(oauth2)) return;
-          save.mutate();
+          save.mutate({ draft, oauth2: oauth2Selected ? oauth2 : null });
         }}
       >
         <div className="space-y-5">

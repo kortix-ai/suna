@@ -5,55 +5,57 @@ import Svg, { Defs, LinearGradient, Path, RadialGradient, Rect, Stop } from 'rea
  * The Microsoft Teams mark, converted from the web `MicrosoftTeams` icon
  * (`apps/web/src/features/icon/icons/microsoft-teams.tsx`, viewBox 4 4 36 38)
  * element for element; `teams-icon.test.ts` pins the two together. Gradient
- * ids carry a `teams-` prefix so they cannot collide with another mark's. A
+ * ids carry a `teams-` prefix so they cannot collide with another mark's, and
+ * the fills are JSX expressions (`fill={`url(#teams-a)`}`) like the web mark's:
+ * the pin reads source text and counts only quoted `fill="…"` attributes. A
  * brand mark: it never follows the app theme.
  */
 export function TeamsIcon({ size = 16 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="4 4 36 38" fill="none">
       <Path
-        fill="url(#teams-a)"
+        fill={`url(#teams-a)`}
         d="M22 20h12c3.31 0 6 2.69 6 6v10c0 3.31-2.69 6-6 6s-6-2.69-6-6V26c0-3.31-2.69-6-6-6"
       />
       <Path
-        fill="url(#teams-b)"
+        fill={`url(#teams-b)`}
         d="M8 24c0-3.31 2.69-6 6-6h8c3.31 0 6 2.69 6 6v12c0 3.31 2.69 6 6 6l-16-.0001c-5.52 0-10-4.48-10-10z"
       />
       <Path
-        fill="url(#teams-c)"
+        fill={`url(#teams-c)`}
         fillOpacity=".7"
         d="M8 24c0-3.31 2.69-6 6-6h8c3.31 0 6 2.69 6 6v12c0 3.31 2.69 6 6 6l-16-.0001c-5.52 0-10-4.48-10-10z"
       />
       <Path
-        fill="url(#teams-d)"
+        fill={`url(#teams-d)`}
         fillOpacity=".7"
         d="M8 24c0-3.31 2.69-6 6-6h8c3.31 0 6 2.69 6 6v12c0 3.31 2.69 6 6 6l-16-.0001c-5.52 0-10-4.48-10-10z"
       />
       <Path
-        fill="url(#teams-e)"
+        fill={`url(#teams-e)`}
         d="M33 18c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5"
       />
       <Path
-        fill="url(#teams-f)"
+        fill={`url(#teams-f)`}
         fillOpacity=".46"
         d="M33 18c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5"
       />
       <Path
-        fill="url(#teams-g)"
+        fill={`url(#teams-g)`}
         fillOpacity=".4"
         d="M33 18c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5"
       />
       <Path
-        fill="url(#teams-h)"
+        fill={`url(#teams-h)`}
         d="M18 16c3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6s-6 2.69-6 6c0 3.31 2.69 6 6 6"
       />
       <Path
-        fill="url(#teams-i)"
+        fill={`url(#teams-i)`}
         fillOpacity=".6"
         d="M18 16c3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6s-6 2.69-6 6c0 3.31 2.69 6 6 6"
       />
       <Path
-        fill="url(#teams-j)"
+        fill={`url(#teams-j)`}
         fillOpacity=".5"
         d="M18 16c3.31 0 6-2.69 6-6 0-3.31-2.69-6-6-6s-6 2.69-6 6c0 3.31 2.69 6 6 6"
       />
@@ -62,7 +64,7 @@ export function TeamsIcon({ size = 16 }: { size?: number }) {
         height="16"
         x="4"
         y="23"
-        fill="url(#teams-k)"
+        fill={`url(#teams-k)`}
         rx="3.25"
       />
       <Rect
@@ -70,7 +72,7 @@ export function TeamsIcon({ size = 16 }: { size?: number }) {
         height="16"
         x="4"
         y="23"
-        fill="url(#teams-l)"
+        fill={`url(#teams-l)`}
         fillOpacity=".7"
         rx="3.25"
       />

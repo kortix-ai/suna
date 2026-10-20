@@ -16,6 +16,8 @@ let turnState: unknown = { turns: [], last_ended: null };
 let inboxRows: unknown[] = [];
 let sandboxRow: Record<string, unknown> | null = null;
 let mirrorRow: Record<string, unknown> | null = null;
+let mirrorReads = 0;
+let projectMetadata: Record<string, unknown> = {};
 let turnReads = 0;
 let inboxReads = 0;
 // The audit watermark reads `connector_calls` twice: a pending COUNT, then the
@@ -78,6 +80,7 @@ mock.module('../../shared/db', () => ({
         // name: drizzle's `table._.name` is undefined in this version, so the
         // name-based branch was dead. The projection is unambiguous per read.
         const rows = () => {
+          if ('projectMetadata' in projection) return [{ projectMetadata }];
           if ('projectId' in projection) return sessionProjectId ? [{ projectId: sessionProjectId }] : [];
           if ('sessionMetadata' in projection)
             return [{ sessionMetadata: sessionTitleMetadata, sessionProjectId: sessionProjectId }];
@@ -86,7 +89,10 @@ mock.module('../../shared/db', () => ({
           if ('pending' in projection) return [{ pending: auditPending }];
           if ('latest' in projection)
             return [{ latest: auditLatestAt, latestResolved: auditLatestResolvedAt }];
-          if ('capturedAt' in projection) return mirrorRow ? [mirrorRow] : [];
+          if ('capturedAt' in projection) {
+            mirrorReads += 1;
+            return mirrorRow ? [mirrorRow] : [];
+          }
           if ('messages' in projection) return [{ messages: 0, newest: null }];
           return sandboxRow ? [sandboxRow] : [];
         };
@@ -97,6 +103,7 @@ mock.module('../../shared/db', () => ({
             }
             return stage;
           },
+          innerJoin: () => stage,
           limit: () => stage,
           then: (resolve: (value: unknown) => unknown) => Promise.resolve(rows()).then(resolve),
         };
@@ -122,13 +129,20 @@ mock.module('../session-lifecycle/inbox-rows', () => ({
 mock.module('./session-prompt-view', () => ({
   serializePrompt: (row: Record<string, unknown>) => row,
 }));
+const prompterReads: Array<{ sessionId: string; messageId: string | null | undefined }> = [];
+mock.module('../session-lifecycle/turn-stop-authority', () => ({
+  turnPrompterOf: async (sessionId: string, messageId: string | null | undefined) => {
+    prompterReads.push({ sessionId, messageId });
+    return messageId === 'msg-a' ? 'user-a' : null;
+  },
+}));
 mock.module('../session-lifecycle/runtime-wake-fence', () => ({
   runtimeWakeInProgress: (metadata: Record<string, unknown> | null | undefined) =>
     Boolean(metadata?.runtimeWakeId),
 }));
 
 import type { ControlEvent } from './session-control-events';
-const { __resetControlEventsForTests, subscribeControlEvents, controlChannelState } =
+const { __resetControlEventsForTests, subscribeControlEvents, controlChannelState, TURN_FRAME_STOP_PROMPTER } =
   await import('./session-control-events');
 const {
   acquireControlReconciler,
@@ -147,8 +161,10 @@ beforeEach(() => {
   inboxReads = 0;
   turnState = { turns: [], last_ended: null };
   inboxRows = [];
-  sandboxRow = { status: 'active', externalId: 'box-1', provider: 'e2b', metadata: {}, deadlineAt: new Date(0) };
+  sandboxRow = { status: 'active', externalId: 'box-1', provider: 'platinum', metadata: {}, deadlineAt: new Date(0) };
   mirrorRow = null;
+  mirrorReads = 0;
+  projectMetadata = {};
   auditPending = 0;
   auditLatestAt = null;
   auditLatestResolvedAt = null;
@@ -363,6 +379,18 @@ describe('the runtime control snapshot', () => {
       known: true, present: true, captured_at: '2026-08-27T00:00:00.000Z', head_complete: true,
       opencode_session_id: 'synthetic-session', message_count: 0, newest_message_at: null,
     });
+    handle.release();
+  });
+
+  test('with the project flag session_log on, the mirror is not read and no mirror frame is sent', async () => {
+    projectMetadata = { experimental: { session_log: true } };
+    mirrorRow = { capturedAt: new Date('2026-08-27T00:00:00Z'), headComplete: true, opencodeSessionId: 'synthetic-session' };
+    const handle = acquireControlReconciler(`${SESSION}-log`);
+    await handle.ready();
+    const types = handle.snapshot().map((event) => event.type);
+    expect(types).not.toContain('kortix.control.mirror');
+    expect(types).toContain('kortix.control.session');
+    expect(mirrorReads).toBe(0);
     handle.release();
   });
 
@@ -692,6 +720,20 @@ describe('R5.2: the server owns session state', () => {
       turn_token: 't1',
       pending_delivery: false,
     });
+    handle.release();
+  });
+
+  // The stream turns this into each viewer's own `can_stop`; read once per turn.
+  test('the turn frame carries the running turn\'s prompter, read once per turn', async () => {
+    prompterReads.length = 0;
+    turnState = { turns: [{ ...liveTurn, message_id: 'msg-a' }] };
+    const handle = acquireControlReconciler(SESSION, 'project-owner');
+    await handle.ready();
+    pokeControlReconciler(SESSION);
+    await Bun.sleep(20);
+    const frame = handle.snapshot().find((event) => event.type === 'kortix.control.turn');
+    expect((frame!.payload as Record<string, unknown>)[TURN_FRAME_STOP_PROMPTER]).toBe('user-a');
+    expect(prompterReads).toEqual([{ sessionId: SESSION, messageId: 'msg-a' }]);
     handle.release();
   });
 

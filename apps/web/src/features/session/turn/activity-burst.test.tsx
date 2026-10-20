@@ -3,6 +3,15 @@ import { ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
 import { ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import type { Part, ToolPart } from '@/ui';
 import {
+  sessionLogBurstRunning,
+  sessionLogBurstSteps,
+  sessionLogBurstSummary,
+  sessionLogOfV1Rows,
+  toolCallBlock,
+  type SessionLogBlock,
+  type SessionLogBurstStep,
+} from '@kortix/sdk';
+import {
   FilesIcon,
   PencilSimpleIcon,
   ReadCvLogoIcon,
@@ -13,17 +22,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
-import {
-  ActivityBurst,
-  ActivityGroupStep,
-  burstFailureCount,
-  burstIsRunning,
-  sameActivityGroupStepProps,
-} from './activity-burst';
+import { ActivityBurst, ActivityGroupStep, sameActivityGroupStepProps } from './activity-burst';
 import { ActivityStep, iconFor } from './activity-step';
-import { isAnsweredQuestionPart } from './answered-question-step';
-import { mergeBurstSteps } from './merge-steps';
-import { stepLabel } from './step-label';
+import { isAnsweredQuestionCall } from './answered-question-step';
 import { WorkFoldContext } from './turn-work-accordion';
 
 function tool(id: string, name: string, state: Record<string, unknown>): ToolPart {
@@ -34,6 +35,31 @@ function tool(id: string, name: string, state: Record<string, unknown>): ToolPar
     callID: `call_${id}`,
     state,
   } as unknown as ToolPart;
+}
+
+/**
+ * The burst's blocks as the transcript reads them: one assistant message, one block per part,
+ * same order, block id == part id (`sessionLogOfV1Rows`). `live` leaves the message without
+ * `time.completed`, so it converts as `streaming`: a native thought runs only while its message
+ * streams. A message with an open call streams either way.
+ */
+function blocksOf(parts: Part[], { live = false } = {}): SessionLogBlock[] {
+  const info = { id: 'msg_x', sessionID: 'ses', role: 'assistant', time: live ? { created: 1 } : { created: 1, completed: 2 } };
+  const rows = [{ info, parts }] as unknown as Parameters<typeof sessionLogOfV1Rows>[2];
+  return sessionLogOfV1Rows('kses', 'ses', rows).threads[0]!.messages[0]!.blocks;
+}
+
+/** The group row of a burst: the first row `sessionLogBurstSteps` gives, which must be a group. */
+function groupRow(parts: Part[]): Extract<SessionLogBurstStep, { kind: 'group' }> {
+  const first = sessionLogBurstSteps(blocksOf(parts))[0];
+  if (!first || first.kind !== 'group') throw new Error('expected a group row');
+  return first;
+}
+
+/** A group row as `ActivityGroupStep` takes it, built the way `StepBody` builds it. */
+function groupStepOf(row: Extract<SessionLogBurstStep, { kind: 'group' }>) {
+  const { blocks, family, label, status, durationMs } = row;
+  return { id: blocks[0]!.call_id, family, label, parts: blocks, status, durationMs };
 }
 
 const triggerRow = (markup: string, label: string) => {
@@ -50,11 +76,11 @@ const rowNodes = (row: string) =>
     (svg) => `<svg class="${svg.match(/class="([^"]+)"/)?.[1]}"/>`,
   );
 
-describe('burstIsRunning', () => {
+describe('sessionLogBurstRunning', () => {
   test('a completed non-trailing burst is not running even while the turn works', () => {
     // Burst already closed by later text/standalone — collapse it.
     const parts: Part[] = [tool('1', 'read', { status: 'completed', time: { start: 1, end: 2 } })];
-    expect(burstIsRunning(parts, true, false)).toBe(false);
+    expect(sessionLogBurstRunning(blocksOf(parts, { live: true }), { working: true, trailing: false })).toBe(false);
   });
 
   test('a completed trailing burst stays running while the turn works', () => {
@@ -64,41 +90,41 @@ describe('burstIsRunning', () => {
       tool('1', 'read', { status: 'completed', time: { start: 1, end: 2 } }),
       tool('2', 'bash', { status: 'completed', time: { start: 3, end: 4 } }),
     ];
-    expect(burstIsRunning(parts, true, true)).toBe(true);
+    expect(sessionLogBurstRunning(blocksOf(parts, { live: true }), { working: true, trailing: true })).toBe(true);
   });
 
   test('a trailing burst collapses once the turn stops working', () => {
     const parts: Part[] = [tool('1', 'read', { status: 'completed', time: { start: 1, end: 2 } })];
-    expect(burstIsRunning(parts, false, true)).toBe(false);
+    expect(sessionLogBurstRunning(blocksOf(parts, { live: false }), { working: false, trailing: true })).toBe(false);
   });
 
   test('a pending part while the turn works is running', () => {
     const parts: Part[] = [tool('1', 'bash', { status: 'pending' })];
-    expect(burstIsRunning(parts, true)).toBe(true);
+    expect(sessionLogBurstRunning(blocksOf(parts, { live: true }), { working: true })).toBe(true);
   });
 
   test('a running part while the turn works is running', () => {
     const parts: Part[] = [tool('1', 'bash', { status: 'running' })];
-    expect(burstIsRunning(parts, true)).toBe(true);
+    expect(sessionLogBurstRunning(blocksOf(parts, { live: true }), { working: true })).toBe(true);
   });
 
   test('nothing is running once the turn has stopped working', () => {
     const parts: Part[] = [tool('1', 'bash', { status: 'running' })];
-    expect(burstIsRunning(parts, false)).toBe(false);
+    expect(sessionLogBurstRunning(blocksOf(parts, { live: false }), { working: false })).toBe(false);
   });
 
   test('a reasoning part with no end time counts as running', () => {
     const parts: Part[] = [
       { id: 'r', type: 'reasoning', text: 'thinking', time: { start: 1 } } as unknown as Part,
     ];
-    expect(burstIsRunning(parts, true)).toBe(true);
+    expect(sessionLogBurstRunning(blocksOf(parts, { live: true }), { working: true })).toBe(true);
   });
 
   test('a reasoning part with an end time does not when the burst is not trailing', () => {
     const parts: Part[] = [
       { id: 'r', type: 'reasoning', text: 'done', time: { start: 1, end: 2 } } as unknown as Part,
     ];
-    expect(burstIsRunning(parts, true, false)).toBe(false);
+    expect(sessionLogBurstRunning(blocksOf(parts, { live: true }), { working: true, trailing: false })).toBe(false);
   });
 });
 
@@ -110,11 +136,7 @@ describe('ActivityGroupStep', () => {
 
   /** The group as the burst builds it — no hand-made Step, so the render is
    *  asserted against the same grouping the component actually receives. */
-  const groupOf = (input: Part[]) => {
-    const steps = mergeBurstSteps(input, (p) => stepLabel(p).tier);
-    if (steps[0].kind !== 'group') throw new Error('expected a group row');
-    return steps[0].step;
-  };
+  const groupOf = (input: Part[]) => groupStepOf(groupRow(input));
 
   const render = (open: boolean, input: Part[] = parts) =>
     renderToStaticMarkup(
@@ -124,7 +146,6 @@ describe('ActivityGroupStep', () => {
             <ActivityGroupStep
               step={groupOf(input)}
               sessionId="session-1"
-              running={false}
               disableNavigation
             />
           </ChainOfThoughtStep>
@@ -257,34 +278,30 @@ describe('ActivityGroupStep', () => {
 });
 
 describe('sameActivityGroupStepProps', () => {
-  // ONE shared `parts` array/elements — re-running `mergeBurstSteps` on it is
-  // exactly what a re-render does while an UNRELATED part streams elsewhere
-  // in the burst: `parts` (the burst's own prop) keeps its element identities,
-  // `mergeBurstSteps`'s `useMemo` still re-runs because the ARRAY reference
-  // changed (see `same-parts.ts`), and `finalize` mints a new `Step` + a new
-  // `parts` array around these same two elements every time.
+  // ONE shared `parts` array/elements — re-converting it and re-running
+  // `sessionLogBurstSteps` is exactly what a re-render does while an UNRELATED
+  // part streams elsewhere in the burst: each part keeps its block (the
+  // conversion caches a block per part object), the steps `useMemo` still
+  // re-runs because the `blocks` ARRAY reference changed (see `same-parts.ts`),
+  // and every run mints a new group row + a new `blocks` array around the same
+  // two blocks.
   const sharedParts: Part[] = [
     tool('1', 'read', { status: 'completed', input: { filePath: '/workspace/alpha.ts' } }),
     tool('2', 'read', { status: 'completed', input: { filePath: '/workspace/beta.ts' } }),
   ];
 
-  const freshGroup = (parts: Part[] = sharedParts) => {
-    const steps = mergeBurstSteps(parts, (p) => stepLabel(p).tier);
-    if (steps[0].kind !== 'group') throw new Error('expected a group row');
-    return steps[0].step;
-  };
+  const freshGroup = (parts: Part[] = sharedParts) => groupStepOf(groupRow(parts));
 
   const props = (step: ReturnType<typeof freshGroup>) => ({
     step,
     sessionId: 'session-1',
-    running: false,
     disableNavigation: true,
   });
 
   test('two independently-built Step objects for the same content compare equal', () => {
-    // The regression: `mergeBurstSteps` -> `groupSteps` -> `finalize` mints a
-    // NEW `step` object (and a NEW `parts` array around the SAME `ToolPart`
-    // elements) on every call, so object identity always fails here — that is
+    // The regression: `sessionLogBurstSteps` (`mergeBurstSteps` -> `groupSteps`
+    // -> `finalize`) mints a NEW row (and a NEW `blocks` array around the SAME
+    // tool call blocks) on every call, so object identity always fails here — that is
     // exactly why a shallow-compare `memo` never held for this row.
     const a = freshGroup();
     const b = freshGroup();
@@ -299,9 +316,7 @@ describe('sameActivityGroupStepProps', () => {
       tool('1', 'read', { status: 'completed', input: { filePath: '/workspace/alpha.ts' } }),
       tool('2', 'read', { status: 'running', input: { filePath: '/workspace/beta.ts' } }),
     ];
-    const steps = mergeBurstSteps(running, (p) => stepLabel(p).tier);
-    if (steps[0].kind !== 'group') throw new Error('expected a group row');
-    expect(sameActivityGroupStepProps(props(a), props(steps[0].step))).toBe(false);
+    expect(sameActivityGroupStepProps(props(a), props(freshGroup(running)))).toBe(false);
   });
 
   test('a member swapped for a different file is caught even though status/label hold', () => {
@@ -310,22 +325,19 @@ describe('sameActivityGroupStepProps', () => {
       tool('1', 'read', { status: 'completed', input: { filePath: '/workspace/alpha.ts' } }),
       tool('3', 'read', { status: 'completed', input: { filePath: '/workspace/gamma.ts' } }),
     ];
-    const steps = mergeBurstSteps(swapped, (p) => stepLabel(p).tier);
-    if (steps[0].kind !== 'group') throw new Error('expected a group row');
-    const b = steps[0].step;
+    const b = freshGroup(swapped);
     // Same status and label ("Read 2 files"), different membership.
     expect(b.status).toBe(a.status);
     expect(b.label).toBe(a.label);
     expect(sameActivityGroupStepProps(props(a), props(b))).toBe(false);
   });
 
-  test('sessionId, running, and disableNavigation are each load-bearing', () => {
+  test('sessionId and disableNavigation are each load-bearing', () => {
     const a = freshGroup();
     const b = freshGroup();
     expect(sameActivityGroupStepProps({ ...props(a), sessionId: 'session-2' }, props(b))).toBe(
       false,
     );
-    expect(sameActivityGroupStepProps({ ...props(a), running: true }, props(b))).toBe(false);
     expect(sameActivityGroupStepProps({ ...props(a), disableNavigation: false }, props(b))).toBe(
       false,
     );
@@ -347,16 +359,15 @@ describe('group labels are plain language', () => {
 
   /** The label the burst puts on a group row for a run of two calls to `name`. */
   function groupLabelFor(name: string): string {
-    const steps = mergeBurstSteps(
-      [
+    const steps = sessionLogBurstSteps(
+      blocksOf([
         tool('1', name, { status: 'completed', input: {} }),
         tool('2', name, { status: 'completed', input: {} }),
-      ],
-      (p) => stepLabel(p).tier,
+      ]),
     );
     const first = steps[0];
     if (!first || first.kind !== 'group') throw new Error(`expected a group row for ${name}`);
-    return first.step.label;
+    return first.label;
   }
 
   /** One tool per narration family, plus the two catch-alls that cannot be
@@ -395,22 +406,17 @@ describe('group labels are plain language', () => {
   }
 
   test('a failed group of an unknown tool still says nothing raw', () => {
-    const steps = mergeBurstSteps(
-      [
-        tool('1', 'some_future_tool', { status: 'completed', input: {} }),
-        tool('2', 'some_future_tool', { status: 'error', error: 'boom', input: {} }),
-      ],
-      (p) => stepLabel(p).tier,
-    );
-    const first = steps[0];
-    if (!first || first.kind !== 'group') throw new Error('expected a group row');
-    expect(first.step.status).toBe('error');
-    expect(first.step.label).toBe("Couldn't finish using Some Future Tool");
-    expect(first.step.label).not.toContain('some_future_tool');
+    const first = groupRow([
+      tool('1', 'some_future_tool', { status: 'completed', input: {} }),
+      tool('2', 'some_future_tool', { status: 'error', error: 'boom', input: {} }),
+    ]);
+    expect(first.status).toBe('error');
+    expect(first.label).toBe("Couldn't finish using Some Future Tool");
+    expect(first.label).not.toContain('some_future_tool');
   });
 });
 
-describe('burstFailureCount', () => {
+describe('sessionLogBurstSummary failed', () => {
   const SCRAPE_PARTIAL = JSON.stringify({
     total: 3,
     successful: 2,
@@ -430,12 +436,12 @@ describe('burstFailureCount', () => {
         time: { start: 1, end: 2 },
       }),
     ];
-    expect(burstFailureCount(parts)).toBe(0);
+    expect(sessionLogBurstSummary(blocksOf(parts)).failed).toBe(0);
   });
 
   test('counts a thrown call', () => {
     const parts: Part[] = [tool('1', 'bash', { status: 'error', error: 'Error: boom' })];
-    expect(burstFailureCount(parts)).toBe(1);
+    expect(sessionLogBurstSummary(blocksOf(parts)).failed).toBe(1);
   });
 
   test('counts a call that RETURNED its error — the case the cap used to call Done', () => {
@@ -446,7 +452,7 @@ describe('burstFailureCount', () => {
         time: { start: 1, end: 2 },
       }),
     ];
-    expect(burstFailureCount(parts)).toBe(1);
+    expect(sessionLogBurstSummary(blocksOf(parts)).failed).toBe(1);
   });
 
   test('counts a batch where one of three URLs died', () => {
@@ -457,7 +463,7 @@ describe('burstFailureCount', () => {
         time: { start: 1, end: 2 },
       }),
     ];
-    expect(burstFailureCount(parts)).toBe(1);
+    expect(sessionLogBurstSummary(blocksOf(parts)).failed).toBe(1);
   });
 
   test('a reasoning part has no verdict and is never counted', () => {
@@ -469,12 +475,12 @@ describe('burstFailureCount', () => {
         time: { start: 1, end: 2 },
       } as unknown as Part,
     ];
-    expect(burstFailureCount(parts)).toBe(0);
+    expect(sessionLogBurstSummary(blocksOf(parts)).failed).toBe(0);
   });
 
   test('an in-flight call is not a failure yet', () => {
     const parts: Part[] = [tool('1', 'bash', { status: 'running' })];
-    expect(burstFailureCount(parts)).toBe(0);
+    expect(sessionLogBurstSummary(blocksOf(parts)).failed).toBe(0);
   });
 
   // Every reader of a burst must agree on what is IN it. `burstSummary` skips
@@ -489,13 +495,13 @@ describe('burstFailureCount', () => {
       tool('2', 'read', { status: 'completed', output: 'ok', time: { start: 2, end: 3 } }),
       tool('3', 'prune', { status: 'error', error: 'Error: boom' }),
     ];
-    expect(burstFailureCount(parts)).toBe(0);
-    expect(mergeBurstSteps(parts, (p) => stepLabel(p).tier)).toHaveLength(1);
+    expect(sessionLogBurstSummary(blocksOf(parts)).failed).toBe(0);
+    expect(sessionLogBurstSteps(blocksOf(parts))).toHaveLength(1);
   });
 
   test('memory plumbing is not counted either', () => {
     const parts: Part[] = [tool('1', 'memory_search', { status: 'error', error: 'Error: boom' })];
-    expect(burstFailureCount(parts)).toBe(0);
+    expect(sessionLogBurstSummary(blocksOf(parts)).failed).toBe(0);
   });
 
   test('a primary failure alongside failed plumbing still counts exactly once', () => {
@@ -503,7 +509,7 @@ describe('burstFailureCount', () => {
       tool('1', 'bash', { status: 'error', error: 'Error: boom' }),
       tool('2', 'compress', { status: 'error', error: 'Error: boom' }),
     ];
-    expect(burstFailureCount(parts)).toBe(1);
+    expect(sessionLogBurstSummary(blocksOf(parts)).failed).toBe(1);
   });
 });
 
@@ -521,7 +527,7 @@ describe('ActivityBurst', () => {
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
           <ActivityBurst
-            parts={parts}
+            blocks={blocksOf(parts, { live: working })}
             sessionId="session-1"
             working={working}
             isTrailing={isTrailing}
@@ -654,21 +660,32 @@ describe('ActivityBurst', () => {
     expect(renderBurst([done('1', 'bash'), done('2', 'bash')])).toContain('Completed 2 steps');
   });
 
-  test('inside an opened "Worked for" fold, a burst drops its own summary and shows its steps', () => {
-    // The fold row already summarises the turn. A second "Completed 2 steps"
-    // row under it is a door in front of a door.
+  test('inside a "Worked for" fold, a burst is one closed line that names its work', () => {
+    // The fold reads like Codex: narration, one line of work, narration. The
+    // per-call rows and thoughts are one click down, not spread between sentences.
     const markup = renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
           <WorkFoldContext.Provider value>
-            <ActivityBurst parts={[done('1', 'bash'), done('2', 'read')]} sessionId="session-1" working={false} disableNavigation />
+            <ActivityBurst
+              blocks={blocksOf([
+                { id: 'r1', type: 'reasoning', text: 'checking', time: { start: 1, end: 2 } } as unknown as Part,
+                done('1', 'bash'),
+                done('2', 'read'),
+                tool('3', 'bash', { status: 'error', error: 'exit 1', input: {}, time: { start: 1, end: 2 } }),
+              ])}
+              sessionId="session-1"
+              working={false}
+              disableNavigation
+            />
           </WorkFoldContext.Provider>
         </NextIntlClientProvider>
       </QueryClientProvider>,
     );
-    expect(markup).not.toContain('Completed 2 steps');
-    expect(markup).toContain('data-state="open"');
-    expect(markup).toContain('data-status="done"');
+    expect(markup).toContain('Ran 2 commands, read 1 file · 1 failed');
+    expect(markup).not.toContain('Completed');
+    expect(markup).not.toContain('data-state="open"');
+    expect(markup).not.toContain('data-status="done"');
   });
 
   test('one ROW over three calls keeps the summary line', () => {
@@ -1118,14 +1135,14 @@ describe('chain rail', () => {
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
           <ChainOfThoughtStep>
             <ToolPartRenderer
-              part={
+              call={toolCallBlock(
                 tool('1', 'bash', {
                   status: 'completed',
                   output: 'total 28',
                   input: { command: 'ls -la' },
                   time: { start: 1, end: 2 },
-                }) as never
-              }
+                }),
+              )}
               sessionId="session-1"
               defaultOpen={defaultOpen}
               disableNavigation
@@ -1158,24 +1175,24 @@ describe('step family glyphs', () => {
   test('a read row leads with the read mark, not a generic page', () => {
     // The row says WHICH kind of work it was; the chip inside it still says
     // which kind of file (see attachment-icon.test.ts).
-    expect(iconFor(tool('1', 'read', { status: 'completed' }))).toBe(ReadCvLogoIcon);
+    expect(iconFor(toolCallBlock(tool('1', 'read', { status: 'completed' })))).toBe(ReadCvLogoIcon);
   });
 
   test('a skills row leads with the stacked-pages mark', () => {
     // It had no entry at all, so it fell through to the generic `StackIcon`
     // fallback — the mark every unrecognised tool gets.
-    expect(iconFor(tool('1', 'skill', { status: 'completed' }))).toBe(FilesIcon);
+    expect(iconFor(toolCallBlock(tool('1', 'skill', { status: 'completed' })))).toBe(FilesIcon);
   });
 
   test('the other families are untouched', () => {
-    expect(iconFor(tool('1', 'write', { status: 'completed' }))).toBe(PencilSimpleIcon);
-    expect(iconFor(tool('2', 'bash', { status: 'completed' }))).toBe(TerminalWindowIcon);
+    expect(iconFor(toolCallBlock(tool('1', 'write', { status: 'completed' })))).toBe(PencilSimpleIcon);
+    expect(iconFor(toolCallBlock(tool('2', 'bash', { status: 'completed' })))).toBe(TerminalWindowIcon);
   });
 
   test('an unrecognised tool still gets the generic fallback', () => {
     // The fallback must stay reachable — that is what makes the named entries
     // above meaningful rather than decorative.
-    expect(iconFor(tool('1', 'some_unknown_mcp_tool', { status: 'completed' }))).toBe(StackIcon);
+    expect(iconFor(toolCallBlock(tool('1', 'some_unknown_mcp_tool', { status: 'completed' })))).toBe(StackIcon);
   });
 });
 
@@ -1190,7 +1207,7 @@ describe('bare row alignment', () => {
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-          <ActivityBurst parts={parts} sessionId="session-1" working={false} disableNavigation />
+          <ActivityBurst blocks={blocksOf(parts)} sessionId="session-1" working={false} disableNavigation />
         </NextIntlClientProvider>
       </QueryClientProvider>,
     );
@@ -1273,7 +1290,7 @@ describe('chain alignment', () => {
     // 1.75rem = size-4 icon (16px) + the overridden gap-3 (12px) = pl-7.
     const markup = wrap(
       <ChainOfThoughtStep>
-        <ActivityStep part={bashPart} sessionId="session-1" running={false} disableNavigation />
+        <ActivityStep call={toolCallBlock(bashPart as ToolPart)} sessionId="session-1" disableNavigation />
       </ChainOfThoughtStep>,
     );
     // Classes arrive HTML-escaped in static markup.
@@ -1287,9 +1304,8 @@ describe('chain alignment', () => {
     const markup = wrap(
       <ChainOfThoughtStep>
         <ActivityStep
-          part={bashPart}
+          call={toolCallBlock(bashPart as ToolPart)}
           sessionId="session-1"
-          running={false}
           bare
           disableNavigation
         />
@@ -1304,7 +1320,7 @@ describe('chain alignment', () => {
     const markup = wrap(
       <ChainOfThoughtStep>
         <ToolPartRenderer
-          part={bashPart as never}
+          call={toolCallBlock(bashPart as ToolPart)}
           sessionId="session-1"
           defaultOpen
           disableNavigation
@@ -1341,7 +1357,7 @@ describe('answered question step', () => {
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
           <ActivityBurst
-            parts={parts}
+            blocks={blocksOf(parts, { live: working })}
             sessionId="session-1"
             working={working}
             isTrailing={isTrailing}
@@ -1382,10 +1398,10 @@ describe('answered question step', () => {
 
   test('a question without answers stays off the answered-question row', () => {
     expect(
-      isAnsweredQuestionPart(
-        tool('q', 'question', { status: 'running', input: { questions: [{ question: 'x' }] } }),
+      isAnsweredQuestionCall(
+        toolCallBlock(tool('q', 'question', { status: 'running', input: { questions: [{ question: 'x' }] } })),
       ),
     ).toBe(false);
-    expect(isAnsweredQuestionPart(answered('q'))).toBe(true);
+    expect(isAnsweredQuestionCall(toolCallBlock(answered('q')))).toBe(true);
   });
 });

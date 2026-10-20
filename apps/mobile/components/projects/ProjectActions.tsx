@@ -1,8 +1,12 @@
 /**
  * ProjectActions — the ⋯ menu on a Projects page row (`/projects`).
  *
- * A bottom sheet lists the actions: Open project, and Archive project for
- * managers. Archive is destructive, so it confirms in an AlertDialog. The
+ * A bottom sheet lists the actions: Open project, and Archive project for a
+ * viewer who holds `project.write` and `project.delete` (KRTX-1720): Archive
+ * calls `DELETE /projects/:id`, which loads the project for write and then
+ * asserts `project.delete` (not implied by `project.write`). One `useCans`
+ * probe answers; the row stays hidden until it does.
+ * Archive is destructive, so it confirms in an AlertDialog. The
  * dialog opens after the sheet has finished closing, so two overlays never
  * stack. It stays open while the archive request runs and shows a failure in
  * place, the same pattern as Sign out.
@@ -10,19 +14,24 @@
 
 import * as React from 'react';
 import { View } from 'react-native';
+import { PROJECT_ACTIONS } from '@kortix/sdk';
+import { useCans } from '@kortix/sdk/react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArchiveIcon as Archive, FolderOpenIcon as FolderOpen } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { Avatar } from '@/components/kortix/avatar';
-import { Sheet, type SheetRef } from '@/components/kortix/sheet';
+import { Sheet, useCloseThen, type SheetRef } from '@/components/kortix/sheet';
 import { PendingConfirmDialog } from '@/components/kortix/pending-confirm-dialog';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { useToast } from '@/components/kortix/toast-provider';
 import { haptics } from '@/lib/haptics';
 import { useArchiveProject } from '@/lib/projects/hooks';
 import type { KortixProject } from '@/lib/projects/projects-client';
+
+/** The leaves `DELETE /projects/:id` (Archive) asserts. */
+const ARCHIVE_ACTIONS = [PROJECT_ACTIONS.PROJECT_WRITE, PROJECT_ACTIONS.PROJECT_DELETE] as const;
 
 export function ProjectActions({
   project,
@@ -40,8 +49,8 @@ export function ProjectActions({
   const toast = useToast();
   const archive = useArchiveProject();
 
-  // Set before closing the sheet; read when the close animation ends.
-  const archiveAfterClose = React.useRef(false);
+  // Set before closing the sheet; taken once when the close animation ends.
+  const { deferAfterClose, takeAfterClose } = useCloseThen<boolean>();
   const [confirmProject, setConfirmProject] = React.useState<KortixProject | null>(null);
   const [archiveFailed, setArchiveFailed] = React.useState(false);
 
@@ -51,8 +60,7 @@ export function ProjectActions({
 
   const handleSheetDismiss = React.useCallback(() => {
     const current = project;
-    const archiveNext = archiveAfterClose.current;
-    archiveAfterClose.current = false;
+    const archiveNext = takeAfterClose();
     onClose();
     if (current && archiveNext) {
       setArchiveFailed(false);
@@ -70,7 +78,7 @@ export function ProjectActions({
 
   const handleArchive = React.useCallback(() => {
     haptics.warning();
-    archiveAfterClose.current = true;
+    deferAfterClose(true);
     sheetRef.current?.close();
   }, []);
 
@@ -89,7 +97,9 @@ export function ProjectActions({
     }
   }, [archive, confirmProject, toast]);
 
-  const canManage = !project?.effective_project_role || project.effective_project_role === 'manager';
+  // `account_id` lets the probe run on the first render, without a project read.
+  const cans = useCans({ projectId: project?.project_id, accountId: project?.account_id }, ARCHIVE_ACTIONS);
+  const canArchive = ARCHIVE_ACTIONS.every((action) => cans[action]?.allowed === true);
 
   return (
     <>
@@ -106,7 +116,7 @@ export function ProjectActions({
             </View>
             <SettingsGroup>
               <SettingsRow icon={FolderOpen} label="Open project" onPress={handleOpen} />
-              {canManage ? (
+              {canArchive ? (
                 <SettingsRow
                   icon={Archive}
                   label="Archive project"

@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { logger } from '../../lib/logger';
 import * as realSandboxProxyBackend from '../../sandbox-proxy/backend';
-import * as realEphemeralSandbox from '../../platform/services/ephemeral-sandbox';
+import { PlatinumHttpError, PlatinumSandboxNotRunningError } from '../../shared/platinum';
 
 // T11: close the live opencode turn on a box BEFORE `provider.stop()`
 // powers it off, via `abortLiveTurnBeforeStop` (exported alongside
@@ -24,6 +24,12 @@ let abortServiceKey: string | null = 'daemon-service-key';
 let abortFetchCalls: Array<{ url: string; init: Record<string, unknown> }> = [];
 let abortFetchImpl: (url: string, init: Record<string, unknown>) => Promise<Response> = async () =>
   new Response(JSON.stringify({ ok: true }), { status: 200 });
+let resolveIngressImpl: () => Promise<unknown> = async () => ({
+  url: 'https://daemon.example.test',
+  headers: {},
+  effectivePort: 8000,
+  websocket: false,
+});
 const originalFetch = globalThis.fetch;
 
 mock.module('./box-queries', () => ({
@@ -60,22 +66,10 @@ mock.module('./sandbox-state-sync', () => ({
 mock.module('../../sandbox-proxy/backend', () => ({
   ...realSandboxProxyBackend,
   resolveServiceKey: async (_externalId: string) => abortServiceKey,
-  resolveSandboxIngress: async (_ref: string, _req: unknown) => ({
-    url: 'https://daemon.example.test',
-    headers: {},
-    effectivePort: 8000,
-    websocket: false,
-  }),
+  resolveSandboxIngress: async (_ref: string, _req: unknown) => resolveIngressImpl(),
 }));
 
-// None of these boxes is ephemeral: no retire plan, so the stop takes the
-// normal path without a database read.
-mock.module('../../platform/services/ephemeral-sandbox', () => ({
-  ...realEphemeralSandbox,
-  retireOnStopPlan: async () => null,
-}));
-
-const { stopExpiredBox } = await import('./stop-box');
+const { stopExpiredBox, __resetAbortMissSamplerForTests } = await import('./stop-box');
 
 const row = {
   sandboxId: 'sb-1',
@@ -86,6 +80,30 @@ const row = {
 
 const NOW = new Date('2026-08-15T00:05:00.000Z');
 
+/** Fresh spy for one log channel (bun:test mock with call counts). */
+const makeLogSpy = () => mock(() => {});
+
+/** Swap spies into the two channels an abort miss ships on; restore on exit. */
+async function withLogSpies(
+  run: (spies: {
+    info: ReturnType<typeof makeLogSpy>;
+    warn: ReturnType<typeof makeLogSpy>;
+  }) => Promise<void> | void,
+): Promise<void> {
+  const info = makeLogSpy();
+  const warn = makeLogSpy();
+  const origInfo = logger.info;
+  const origWarn = console.warn;
+  logger.info = info as unknown as typeof logger.info;
+  console.warn = warn as unknown as typeof console.warn;
+  try {
+    await run({ info, warn });
+  } finally {
+    logger.info = origInfo;
+    console.warn = origWarn;
+  }
+}
+
 beforeEach(() => {
   stopClaimGranted = true;
   stopClaimCalls = [];
@@ -94,10 +112,17 @@ beforeEach(() => {
   providerStopError = null;
   applyStoppedCalls = [];
   callOrder = [];
+  __resetAbortMissSamplerForTests();
 
   abortServiceKey = 'daemon-service-key';
   abortFetchCalls = [];
   abortFetchImpl = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
+  resolveIngressImpl = async () => ({
+    url: 'https://daemon.example.test',
+    headers: {},
+    effectivePort: 8000,
+    websocket: false,
+  });
   globalThis.fetch = (async (url: unknown, init: unknown) => {
     callOrder.push('abort');
     const record = { url: String(url), init: (init ?? {}) as Record<string, unknown> };
@@ -181,44 +206,127 @@ describe('stopExpiredBox — pre-stop abort', () => {
     abortFetchImpl = async () => {
       throw new DOMException('The operation timed out.', 'TimeoutError');
     };
-    const infoSpy = mock(() => {});
-    const warnSpy = mock(() => {});
-    const origInfo = logger.info;
-    const origWarn = console.warn;
-    logger.info = infoSpy as unknown as typeof logger.info;
-    console.warn = warnSpy as unknown as typeof console.warn;
-    try {
+    await withLogSpies(async ({ info, warn }) => {
       const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
 
       expect(outcome).toBe('stopped');
-      expect(infoSpy).toHaveBeenCalledTimes(1);
-      expect(warnSpy).not.toHaveBeenCalled();
-    } finally {
-      logger.info = origInfo;
-      console.warn = origWarn;
-    }
+      expect(info).toHaveBeenCalledTimes(1);
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
+  // KRTX-2126: a daemon or platform edge that ANSWERS the abort with a
+  // non-2xx (the storm was 502, plus 401/409/503/404) is the same expected
+  // miss as the timeout above — every observed decline rode a stop that
+  // completed 200. The abort never gates the stop, so a refusal ships at
+  // info, never warn.
+  test('a declined abort (non-2xx) is an expected miss: info, never warn', async () => {
+    abortFetchImpl = async () => new Response('{"ok":false}', { status: 502 });
+    await withLogSpies(async ({ info, warn }) => {
+      const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
+
+      expect(outcome).toBe('stopped');
+      expect(info).toHaveBeenCalledTimes(1);
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
+  // KRTX-2297: Platinum's org write budget (20/s sustained) throttles the
+  // POST /v1/sandboxes/:id/expose the abort's ingress resolve needs; under a
+  // stop burst that 429 is the provider working as designed — the reaper's
+  // own classifier already treats the same provider message as transient. A
+  // best-effort call the provider throttles is a miss, not a fault.
+  test('a throttled ingress resolve (Platinum 429 expose) is an expected miss: info, never warn', async () => {
+    resolveIngressImpl = async () => {
+      throw new PlatinumHttpError(
+        'platinum POST /v1/sandboxes/sbx_1/expose -> 429 {"error":"too many write requests for this org (20/s sustained) — retry shortly","code":"rate_limited","bucket":"org_mutation"} retry-after=1',
+        429,
+        '{"code":"rate_limited"}',
+      );
+    };
+    await withLogSpies(async ({ info, warn }) => {
+      const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
+
+      expect(outcome).toBe('stopped');
+      expect(info).toHaveBeenCalledTimes(1);
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
+  // A Platinum box auto-stopped before the abort reaches it answers expose
+  // with the typed 409 sandbox_not_running — the designed idle-stop state,
+  // not a fault.
+  test('an already-stopped Platinum box (typed 409) is an expected miss: info, never warn', async () => {
+    resolveIngressImpl = async () => {
+      throw new PlatinumSandboxNotRunningError();
+    };
+    await withLogSpies(async ({ info, warn }) => {
+      const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
+
+      expect(outcome).toBe('stopped');
+      expect(info).toHaveBeenCalledTimes(1);
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
+  // A dial that cannot reach the daemon at all — edge up, daemon gone —
+  // surfaces as a network-level fetch failure, not a timeout. Same
+  // unreachable class: the box is being powered off either way.
+  test('a dial the daemon refuses (fetch failed) is an expected miss: info, never warn', async () => {
+    abortFetchImpl = async () => {
+      throw new TypeError('fetch failed');
+    };
+    await withLogSpies(async ({ info, warn }) => {
+      const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
+
+      expect(outcome).toBe('stopped');
+      expect(info).toHaveBeenCalledTimes(1);
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
+  // The miss line is SAMPLED (the KRTX-614 rate-limit learning): the first
+  // miss reports, then at most one line per interval — a burst of misses on
+  // one best-effort call must not become the next log spike.
+  test('misses are sampled: one line per interval, never one per box', async () => {
+    abortFetchImpl = async () => new Response('{"ok":false}', { status: 502 });
+    await withLogSpies(async ({ info, warn }) => {
+      await stopExpiredBox(row, NOW, 'deadline_expired');
+      await stopExpiredBox(row, NOW, 'deadline_expired');
+      await stopExpiredBox(row, NOW, 'deadline_expired');
+
+      expect(info).toHaveBeenCalledTimes(1);
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
+  // Sampling covers the EXPECTED misses only. An unexpected failure stays a
+  // per-occurrence warn even while a sampled-miss window is open.
+  test('an unexpected failure still warns per occurrence, past a sampled miss', async () => {
+    abortFetchImpl = async () => new Response('{"ok":false}', { status: 502 });
+    await withLogSpies(async ({ info, warn }) => {
+      await stopExpiredBox(row, NOW, 'deadline_expired'); // sampled miss consumed
+      abortFetchImpl = async () => {
+        throw new Error('ingress resolution exploded');
+      };
+      await stopExpiredBox(row, NOW, 'deadline_expired');
+
+      expect(info).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+    });
   });
 
   test('a non-timeout abort failure stays a warning', async () => {
     abortFetchImpl = async () => {
       throw new Error('ingress resolution exploded');
     };
-    const infoSpy = mock(() => {});
-    const warnSpy = mock(() => {});
-    const origInfo = logger.info;
-    const origWarn = console.warn;
-    logger.info = infoSpy as unknown as typeof logger.info;
-    console.warn = warnSpy as unknown as typeof console.warn;
-    try {
+    await withLogSpies(async ({ info, warn }) => {
       const outcome = await stopExpiredBox(row, NOW, 'deadline_expired');
 
       expect(outcome).toBe('stopped');
-      expect(warnSpy).toHaveBeenCalledTimes(1);
-      expect(infoSpy).not.toHaveBeenCalled();
-    } finally {
-      logger.info = origInfo;
-      console.warn = origWarn;
-    }
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(info).not.toHaveBeenCalled();
+    });
   });
 
   test('a genuine provider.stop failure still reports errors, independent of the abort outcome', async () => {

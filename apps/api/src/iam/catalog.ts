@@ -71,9 +71,9 @@ const loadCatalogMemo = ttlMemo({
         implies: permissions.implies,
       })
       .from(permissions);
-    // A catalog row the code no longer knows is a retired action (e.g. the
-    // split `project.customize.*`): its row stays until a later contract
-    // migration deletes it, but it is never offered or reported again.
+    // A catalog row the code no longer knows is a retired action: it is never
+    // offered or reported again. A contract migration then deletes the row
+    // (20261017134834494_retire_customize_permissions for `project.customize.*`).
     const all = rows.filter((r) => VALID_ACTIONS.has(r.action)).map((r) => ({
       action: r.action,
       scopeType: r.scopeType as ScopeType,
@@ -99,7 +99,7 @@ export async function loadPermissionCatalog(): Promise<Catalog> {
  * The scope an action is granted at.
  *
  * The catalog column is the ONE classifier — it replaces both
- * `scopeForActionV2` (account|project) and `resourceTypeForAction` (7 buckets),
+ * `scopeForActionV2` (account|project) and `resourceTypeForAction` (account|project, from the prefix),
  * which disagreed in shape and were reported by different surfaces
  * (`/effective` returned the second while the engine decided on the first).
  *
@@ -121,7 +121,8 @@ export function scopeForUncatalogedAction(action: string): ScopeType {
     action.startsWith('group.') ||
     action.startsWith('role.') ||
     action.startsWith('policy.') ||
-    action.startsWith('token.')
+    action.startsWith('token.') ||
+    action.startsWith('capture.')
   ) {
     return 'account';
   }

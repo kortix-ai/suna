@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+// Which verdicts a viewer may give is `reviewVerdictAllowed` in `@kortix/sdk`,
+// tested in `packages/sdk/src/core/rest/projects-client/iam-actions.test.ts`.
 import { planReviewVerdict, reviewVerdictsFor } from './review-verdict';
 
 describe('planReviewVerdict', () => {

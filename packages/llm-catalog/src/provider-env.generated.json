@@ -1,208 +1,14 @@
 [
   {
-    "id": "deepinfra",
-    "env": [
-      "DEEPINFRA_API_KEY"
-    ]
-  },
-  {
-    "id": "perplexity-agent",
-    "env": [
-      "PERPLEXITY_API_KEY"
-    ]
-  },
-  {
-    "id": "bailing",
-    "env": [
-      "BAILING_API_TOKEN"
-    ]
-  },
-  {
-    "id": "poe",
-    "env": [
-      "POE_API_KEY"
-    ]
-  },
-  {
-    "id": "cerebras",
-    "env": [
-      "CEREBRAS_API_KEY"
-    ]
-  },
-  {
-    "id": "groq",
-    "env": [
-      "GROQ_API_KEY"
-    ]
-  },
-  {
-    "id": "blueclaw",
-    "env": [
-      "BLUECLAW_API_KEY"
-    ]
-  },
-  {
-    "id": "zai",
-    "env": [
-      "ZHIPU_API_KEY"
-    ]
-  },
-  {
-    "id": "empiriolabs",
-    "env": [
-      "EMPIRIOLABS_API_KEY"
-    ]
-  },
-  {
-    "id": "sensenova",
-    "env": [
-      "SENSENOVA_API_KEY"
-    ]
-  },
-  {
-    "id": "alibaba-token-plan",
-    "env": [
-      "ALIBABA_TOKEN_PLAN_API_KEY"
-    ]
-  },
-  {
-    "id": "cloudflare-workers-ai",
-    "env": [
-      "CLOUDFLARE_ACCOUNT_ID",
-      "CLOUDFLARE_API_KEY"
-    ]
-  },
-  {
-    "id": "engy",
-    "env": [
-      "ENGY_API_KEY"
-    ]
-  },
-  {
-    "id": "poolside",
-    "env": [
-      "POOLSIDE_API_KEY"
-    ]
-  },
-  {
-    "id": "nano-gpt",
-    "env": [
-      "NANO_GPT_API_KEY"
-    ]
-  },
-  {
-    "id": "abliteration-ai",
-    "env": [
-      "ABLIT_KEY"
-    ]
-  },
-  {
-    "id": "crof",
-    "env": [
-      "CROF_API_KEY"
-    ]
-  },
-  {
-    "id": "standardcompute",
-    "env": [
-      "STANDARDCOMPUTE_API_KEY"
-    ]
-  },
-  {
-    "id": "cloudferro-sherlock",
-    "env": [
-      "CLOUDFERRO_SHERLOCK_API_KEY"
-    ]
-  },
-  {
-    "id": "anthropic",
-    "env": [
-      "ANTHROPIC_API_KEY"
-    ]
-  },
-  {
     "id": "tinfoil",
     "env": [
       "TINFOIL_API_KEY"
     ]
   },
   {
-    "id": "llama",
+    "id": "arcee",
     "env": [
-      "LLAMA_API_KEY"
-    ]
-  },
-  {
-    "id": "cohere",
-    "env": [
-      "COHERE_API_KEY"
-    ]
-  },
-  {
-    "id": "deepseek",
-    "env": [
-      "DEEPSEEK_API_KEY"
-    ]
-  },
-  {
-    "id": "baseten",
-    "env": [
-      "BASETEN_API_KEY"
-    ]
-  },
-  {
-    "id": "nan",
-    "env": [
-      "NAN_API_KEY"
-    ]
-  },
-  {
-    "id": "stepfun-ai-step-plan",
-    "env": [
-      "STEPFUN_API_KEY"
-    ]
-  },
-  {
-    "id": "nearai",
-    "env": [
-      "NEARAI_API_KEY"
-    ]
-  },
-  {
-    "id": "wandb",
-    "env": [
-      "WANDB_API_KEY"
-    ]
-  },
-  {
-    "id": "subconscious",
-    "env": [
-      "SUBCONSCIOUS_API_KEY"
-    ]
-  },
-  {
-    "id": "zeldoc",
-    "env": [
-      "ZELDOC_API_KEY"
-    ]
-  },
-  {
-    "id": "databricks",
-    "env": [
-      "DATABRICKS_HOST",
-      "DATABRICKS_TOKEN"
-    ]
-  },
-  {
-    "id": "umans-ai-coding-plan",
-    "env": [
-      "UMANS_AI_CODING_PLAN_API_KEY"
-    ]
-  },
-  {
-    "id": "kuae-cloud-coding-plan",
-    "env": [
-      "KUAE_API_KEY"
+      "ARCEE_API_KEY"
     ]
   },
   {
@@ -212,215 +18,33 @@
     ]
   },
   {
-    "id": "siliconflow",
-    "env": [
-      "SILICONFLOW_API_KEY"
-    ]
-  },
-  {
-    "id": "minimax-coding-plan",
-    "env": [
-      "MINIMAX_API_KEY"
-    ]
-  },
-  {
-    "id": "alibaba-coding-plan",
-    "env": [
-      "ALIBABA_CODING_PLAN_API_KEY"
-    ]
-  },
-  {
-    "id": "lilac",
-    "env": [
-      "LILAC_API_KEY"
-    ]
-  },
-  {
-    "id": "moonshotai-cn",
-    "env": [
-      "MOONSHOT_API_KEY"
-    ]
-  },
-  {
-    "id": "bothub",
-    "env": [
-      "BOTHUB_API_KEY"
-    ]
-  },
-  {
-    "id": "xiaomi-token-plan-cn",
-    "env": [
-      "XIAOMI_API_KEY"
-    ]
-  },
-  {
-    "id": "privatemode-ai",
-    "env": [
-      "PRIVATEMODE_API_KEY",
-      "PRIVATEMODE_ENDPOINT"
-    ]
-  },
-  {
-    "id": "llmgateway-providers",
-    "env": [
-      "LLMGATEWAY_API_KEY"
-    ]
-  },
-  {
-    "id": "above",
-    "env": [
-      "ABOVE_API_KEY"
-    ]
-  },
-  {
-    "id": "kilo",
-    "env": [
-      "KILO_API_KEY"
-    ]
-  },
-  {
-    "id": "venice",
-    "env": [
-      "VENICE_API_KEY"
-    ]
-  },
-  {
-    "id": "alibaba-token-plan-cn",
-    "env": [
-      "ALIBABA_TOKEN_PLAN_API_KEY"
-    ]
-  },
-  {
-    "id": "ai21",
-    "env": [
-      "AI21_API_KEY"
-    ]
-  },
-  {
-    "id": "lowrouter",
-    "env": [
-      "LOWROUTER_API_KEY"
-    ]
-  },
-  {
-    "id": "inference",
-    "env": [
-      "INFERENCE_API_KEY"
-    ]
-  },
-  {
-    "id": "iflowcn",
-    "env": [
-      "IFLOW_API_KEY"
-    ]
-  },
-  {
-    "id": "minimax-cn-coding-plan",
-    "env": [
-      "MINIMAX_API_KEY"
-    ]
-  },
-  {
-    "id": "thinkingmachines",
-    "env": [
-      "TINKER_API_KEY"
-    ]
-  },
-  {
-    "id": "stepfun-step-plan",
-    "env": [
-      "STEPFUN_API_KEY"
-    ]
-  },
-  {
-    "id": "melious",
-    "env": [
-      "MELIOUS_API_KEY"
-    ]
-  },
-  {
-    "id": "berget",
-    "env": [
-      "BERGET_API_KEY"
-    ]
-  },
-  {
-    "id": "snowflake-cortex",
-    "env": [
-      "SNOWFLAKE_ACCOUNT",
-      "SNOWFLAKE_CORTEX_PAT"
-    ]
-  },
-  {
-    "id": "sarvam",
-    "env": [
-      "SARVAM_API_KEY"
-    ]
-  },
-  {
-    "id": "nova",
-    "env": [
-      "NOVA_API_KEY"
-    ]
-  },
-  {
-    "id": "abacus",
-    "env": [
-      "ABACUS_API_KEY"
-    ]
-  },
-  {
-    "id": "novita-ai",
-    "env": [
-      "NOVITA_API_KEY"
-    ]
-  },
-  {
-    "id": "302ai",
-    "env": [
-      "302AI_API_KEY"
-    ]
-  },
-  {
-    "id": "openrouter",
-    "env": [
-      "OPENROUTER_API_KEY"
-    ]
-  },
-  {
-    "id": "perplexity",
-    "env": [
-      "PERPLEXITY_API_KEY"
-    ]
-  },
-  {
-    "id": "iteracompute",
-    "env": [
-      "ITERACOMPUTE_API_KEY"
-    ]
-  },
-  {
-    "id": "the-grid-ai",
-    "env": [
-      "THEGRID_API_KEY"
-    ]
-  },
-  {
-    "id": "meta",
-    "env": [
-      "META_MODEL_API_KEY"
-    ]
-  },
-  {
     "id": "cline-pass",
     "env": [
       "CLINE_API_KEY"
     ]
   },
   {
-    "id": "modal",
+    "id": "daoxe",
     "env": [
-      "MODAL_PROXY_TOKEN"
+      "DAOXE_API_KEY"
+    ]
+  },
+  {
+    "id": "inco",
+    "env": [
+      "INCO_API_KEY"
+    ]
+  },
+  {
+    "id": "clarifai",
+    "env": [
+      "CLARIFAI_PAT"
+    ]
+  },
+  {
+    "id": "aimlapi",
+    "env": [
+      "AIMLAPI_API_KEY"
     ]
   },
   {
@@ -430,33 +54,83 @@
     ]
   },
   {
-    "id": "routing-run",
+    "id": "modal",
     "env": [
-      "ROUTING_RUN_API_KEY"
+      "MODAL_PROXY_TOKEN"
     ]
   },
   {
-    "id": "echo",
+    "id": "wandb",
     "env": [
-      "ECHO_API_KEY"
+      "WANDB_API_KEY"
     ]
   },
   {
-    "id": "neuralwatt",
+    "id": "xpersona",
     "env": [
-      "NEURALWATT_API_KEY"
+      "XPERSONA_API_KEY"
     ]
   },
   {
-    "id": "gitlab",
+    "id": "opencode-go",
     "env": [
-      "GITLAB_TOKEN"
+      "OPENCODE_API_KEY"
     ]
   },
   {
-    "id": "infer",
+    "id": "perplexity-agent",
     "env": [
-      "INFER_API_KEY"
+      "PERPLEXITY_API_KEY"
+    ]
+  },
+  {
+    "id": "google-vertex",
+    "env": [
+      "GOOGLE_VERTEX_PROJECT",
+      "GOOGLE_VERTEX_LOCATION",
+      "GOOGLE_APPLICATION_CREDENTIALS"
+    ]
+  },
+  {
+    "id": "vultr",
+    "env": [
+      "VULTR_API_KEY"
+    ]
+  },
+  {
+    "id": "standardcompute",
+    "env": [
+      "STANDARDCOMPUTE_API_KEY"
+    ]
+  },
+  {
+    "id": "tempr",
+    "env": [
+      "TEMPR_API_KEY"
+    ]
+  },
+  {
+    "id": "blueclaw",
+    "env": [
+      "BLUECLAW_API_KEY"
+    ]
+  },
+  {
+    "id": "cohere",
+    "env": [
+      "COHERE_API_KEY"
+    ]
+  },
+  {
+    "id": "tencent-coding-plan",
+    "env": [
+      "TENCENT_CODING_PLAN_API_KEY"
+    ]
+  },
+  {
+    "id": "engy",
+    "env": [
+      "ENGY_API_KEY"
     ]
   },
   {
@@ -467,34 +141,15 @@
     ]
   },
   {
-    "id": "freemodel",
+    "id": "vercel",
     "env": [
-      "FREEMODEL_API_KEY"
+      "AI_GATEWAY_API_KEY"
     ]
   },
   {
-    "id": "azure-cognitive-services",
+    "id": "xiaomi-token-plan-cn",
     "env": [
-      "AZURE_COGNITIVE_SERVICES_RESOURCE_NAME",
-      "AZURE_COGNITIVE_SERVICES_API_KEY"
-    ]
-  },
-  {
-    "id": "pendra",
-    "env": [
-      "PENDRA_API_KEY"
-    ]
-  },
-  {
-    "id": "moark",
-    "env": [
-      "MOARK_API_KEY"
-    ]
-  },
-  {
-    "id": "atomic-chat",
-    "env": [
-      "ATOMIC_CHAT_API_KEY"
+      "XIAOMI_API_KEY"
     ]
   },
   {
@@ -504,39 +159,9 @@
     ]
   },
   {
-    "id": "ai-router",
+    "id": "302ai",
     "env": [
-      "AI_ROUTER_API_KEY"
-    ]
-  },
-  {
-    "id": "llmtr",
-    "env": [
-      "LLMTR_API_KEY"
-    ]
-  },
-  {
-    "id": "alibaba",
-    "env": [
-      "DASHSCOPE_API_KEY"
-    ]
-  },
-  {
-    "id": "auriko",
-    "env": [
-      "AURIKO_API_KEY"
-    ]
-  },
-  {
-    "id": "zenmux",
-    "env": [
-      "ZENMUX_API_KEY"
-    ]
-  },
-  {
-    "id": "unorouter",
-    "env": [
-      "UNOROUTER_API_KEY"
+      "302AI_API_KEY"
     ]
   },
   {
@@ -546,51 +171,27 @@
     ]
   },
   {
-    "id": "vispark",
+    "id": "alibaba",
     "env": [
-      "VISPARK_LAB_API_KEY"
+      "DASHSCOPE_API_KEY"
     ]
   },
   {
-    "id": "siliconflow-cn",
+    "id": "synthetic",
     "env": [
-      "SILICONFLOW_CN_API_KEY"
+      "SYNTHETIC_API_KEY"
     ]
   },
   {
-    "id": "regolo-ai",
+    "id": "subconscious",
     "env": [
-      "REGOLO_API_KEY"
+      "SUBCONSCIOUS_API_KEY"
     ]
   },
   {
-    "id": "xiaomi-token-plan-ams",
+    "id": "jiekou",
     "env": [
-      "XIAOMI_API_KEY"
-    ]
-  },
-  {
-    "id": "inceptron",
-    "env": [
-      "INCEPTRON_API_KEY"
-    ]
-  },
-  {
-    "id": "aimlapi",
-    "env": [
-      "AIMLAPI_API_KEY"
-    ]
-  },
-  {
-    "id": "upstage",
-    "env": [
-      "UPSTAGE_API_KEY"
-    ]
-  },
-  {
-    "id": "vultr",
-    "env": [
-      "VULTR_API_KEY"
+      "JIEKOU_API_KEY"
     ]
   },
   {
@@ -600,71 +201,193 @@
     ]
   },
   {
-    "id": "volcengine",
+    "id": "tencent-token-plan",
     "env": [
-      "ARK_API_KEY"
+      "TENCENT_TOKEN_PLAN_API_KEY"
     ]
   },
   {
-    "id": "impossibl",
+    "id": "merge-gateway",
     "env": [
-      "IMPOSSIBL_API_KEY"
+      "MERGE_GATEWAY_API_KEY"
     ]
   },
   {
-    "id": "xpersona",
+    "id": "kilo",
     "env": [
-      "XPERSONA_API_KEY"
+      "KILO_API_KEY"
     ]
   },
   {
-    "id": "qiniu-ai",
+    "id": "databricks",
     "env": [
-      "QINIU_API_KEY"
+      "DATABRICKS_HOST",
+      "DATABRICKS_TOKEN"
     ]
   },
   {
-    "id": "modelscope",
+    "id": "ai21",
     "env": [
-      "MODELSCOPE_API_KEY"
+      "AI21_API_KEY"
     ]
   },
   {
-    "id": "google",
+    "id": "orcarouter",
     "env": [
-      "GOOGLE_API_KEY",
-      "GOOGLE_GENERATIVE_AI_API_KEY",
-      "GEMINI_API_KEY"
+      "ORCAROUTER_API_KEY"
     ]
   },
   {
-    "id": "vancine",
+    "id": "tokenrouter",
     "env": [
-      "VANCINE_API_KEY"
+      "TOKENROUTER_API_KEY"
     ]
   },
   {
-    "id": "zhipuai-coding-plan",
+    "id": "neon",
     "env": [
-      "ZHIPU_API_KEY"
+      "NEON_AI_GATEWAY_BASE_URL",
+      "NEON_AI_GATEWAY_TOKEN"
     ]
   },
   {
-    "id": "lucidquery",
+    "id": "watsonx",
     "env": [
-      "LUCIDQUERY_API_KEY"
+      "WATSONX_AI_APIKEY",
+      "WATSONX_AI_PROJECT_ID"
     ]
   },
   {
-    "id": "gmicloud",
+    "id": "umans-ai-coding-plan",
     "env": [
-      "GMICLOUD_API_KEY"
+      "UMANS_AI_CODING_PLAN_API_KEY"
     ]
   },
   {
-    "id": "oci",
+    "id": "above",
     "env": [
-      "OCI_GENAI_API_KEY"
+      "ABOVE_API_KEY"
+    ]
+  },
+  {
+    "id": "ollama-cloud",
+    "env": [
+      "OLLAMA_API_KEY"
+    ]
+  },
+  {
+    "id": "tokengo",
+    "env": [
+      "TOKENGO_API_KEY"
+    ]
+  },
+  {
+    "id": "infomaniak",
+    "env": [
+      "INFOMANIAK_API_KEY",
+      "INFOMANIAK_PRODUCT_ID"
+    ]
+  },
+  {
+    "id": "meta",
+    "env": [
+      "META_MODEL_API_KEY"
+    ]
+  },
+  {
+    "id": "stepfun-ai-step-plan",
+    "env": [
+      "STEPFUN_API_KEY"
+    ]
+  },
+  {
+    "id": "evroc",
+    "env": [
+      "EVROC_API_KEY"
+    ]
+  },
+  {
+    "id": "moonshotai-cn",
+    "env": [
+      "MOONSHOT_API_KEY"
+    ]
+  },
+  {
+    "id": "greenpt",
+    "env": [
+      "GREENPT_API_KEY"
+    ]
+  },
+  {
+    "id": "stepfun-ai",
+    "env": [
+      "STEPFUN_API_KEY"
+    ]
+  },
+  {
+    "id": "bee",
+    "env": [
+      "BEE_API_KEY"
+    ]
+  },
+  {
+    "id": "frogbot",
+    "env": [
+      "FROGBOT_API_KEY"
+    ]
+  },
+  {
+    "id": "opencode",
+    "env": [
+      "OPENCODE_API_KEY"
+    ]
+  },
+  {
+    "id": "aixy",
+    "env": [
+      "AIXY_API_KEY"
+    ]
+  },
+  {
+    "id": "atomic-chat",
+    "env": [
+      "ATOMIC_CHAT_API_KEY"
+    ]
+  },
+  {
+    "id": "novita-ai",
+    "env": [
+      "NOVITA_API_KEY"
+    ]
+  },
+  {
+    "id": "nvidia",
+    "env": [
+      "NVIDIA_API_KEY"
+    ]
+  },
+  {
+    "id": "opper",
+    "env": [
+      "OPPER_API_KEY"
+    ]
+  },
+  {
+    "id": "unorouter",
+    "env": [
+      "UNOROUTER_API_KEY"
+    ]
+  },
+  {
+    "id": "lynkr",
+    "env": [
+      "LYNKR_API_KEY"
+    ]
+  },
+  {
+    "id": "mistral",
+    "env": [
+      "MISTRAL_API_KEY"
     ]
   },
   {
@@ -676,9 +399,21 @@
     ]
   },
   {
-    "id": "clarifai",
+    "id": "aihubmix",
     "env": [
-      "CLARIFAI_PAT"
+      "AIHUBMIX_API_KEY"
+    ]
+  },
+  {
+    "id": "longcat",
+    "env": [
+      "LONGCAT_API_KEY"
+    ]
+  },
+  {
+    "id": "zhipuai-coding-plan",
+    "env": [
+      "ZHIPU_API_KEY"
     ]
   },
   {
@@ -688,184 +423,45 @@
     ]
   },
   {
-    "id": "frogbot",
+    "id": "nano-gpt",
     "env": [
-      "FROGBOT_API_KEY"
+      "NANO_GPT_API_KEY"
     ]
   },
   {
-    "id": "stackit",
+    "id": "lowrouter",
     "env": [
-      "STACKIT_API_KEY"
+      "LOWROUTER_API_KEY"
     ]
   },
   {
-    "id": "anyapi",
+    "id": "nearai",
     "env": [
-      "ANYAPI_API_KEY"
+      "NEARAI_API_KEY"
     ]
   },
   {
-    "id": "crusoe",
+    "id": "siliconflow",
     "env": [
-      "CRUSOE_API_KEY"
+      "SILICONFLOW_API_KEY"
     ]
   },
   {
-    "id": "volcengine-coding-plan",
+    "id": "vancine",
     "env": [
-      "ARK_CODING_PLAN_API_KEY"
+      "VANCINE_API_KEY"
     ]
   },
   {
-    "id": "jiekou",
+    "id": "neuralwatt",
     "env": [
-      "JIEKOU_API_KEY"
+      "NEURALWATT_API_KEY"
     ]
   },
   {
-    "id": "ollama-cloud",
+    "id": "ai-router",
     "env": [
-      "OLLAMA_API_KEY"
-    ]
-  },
-  {
-    "id": "agentrouter",
-    "env": [
-      "AGENTROUTER_API_KEY"
-    ]
-  },
-  {
-    "id": "tencent-tokenhub",
-    "env": [
-      "TENCENT_TOKENHUB_API_KEY"
-    ]
-  },
-  {
-    "id": "watsonx",
-    "env": [
-      "WATSONX_AI_APIKEY",
-      "WATSONX_AI_PROJECT_ID"
-    ]
-  },
-  {
-    "id": "ambient",
-    "env": [
-      "AMBIENT_API_KEY"
-    ]
-  },
-  {
-    "id": "model-oracle-ai",
-    "env": [
-      "MODEL_ORACLE_API_KEY"
-    ]
-  },
-  {
-    "id": "xai",
-    "env": [
-      "XAI_API_KEY"
-    ]
-  },
-  {
-    "id": "nebius",
-    "env": [
-      "NEBIUS_API_KEY"
-    ]
-  },
-  {
-    "id": "minimax-cn",
-    "env": [
-      "MINIMAX_API_KEY"
-    ]
-  },
-  {
-    "id": "scaleway",
-    "env": [
-      "SCALEWAY_API_KEY"
-    ]
-  },
-  {
-    "id": "vercel",
-    "env": [
-      "AI_GATEWAY_API_KEY"
-    ]
-  },
-  {
-    "id": "zai-coding-plan",
-    "env": [
-      "ZHIPU_API_KEY"
-    ]
-  },
-  {
-    "id": "ebcloud",
-    "env": [
-      "EBCLOUD_API_KEY"
-    ]
-  },
-  {
-    "id": "greenpt",
-    "env": [
-      "GREENPT_API_KEY"
-    ]
-  },
-  {
-    "id": "mixlayer",
-    "env": [
-      "MIXLAYER_API_KEY"
-    ]
-  },
-  {
-    "id": "hyper",
-    "env": [
-      "HYPER_API_KEY"
-    ]
-  },
-  {
-    "id": "jalapeno",
-    "env": [
-      "JALAPENO_API_KEY"
-    ]
-  },
-  {
-    "id": "dinference",
-    "env": [
-      "DINFERENCE_API_KEY"
-    ]
-  },
-  {
-    "id": "neosmith",
-    "env": [
-      "NEOSMITH_API_KEY"
-    ]
-  },
-  {
-    "id": "fireworks-ai",
-    "env": [
-      "FIREWORKS_API_KEY"
-    ]
-  },
-  {
-    "id": "stepfun-ai",
-    "env": [
-      "STEPFUN_API_KEY"
-    ]
-  },
-  {
-    "id": "fastrouter",
-    "env": [
-      "FASTROUTER_API_KEY"
-    ]
-  },
-  {
-    "id": "orcarouter",
-    "env": [
-      "ORCAROUTER_API_KEY"
-    ]
-  },
-  {
-    "id": "friendli",
-    "env": [
-      "FRIENDLI_TOKEN"
+      "AI_ROUTER_API_KEY"
     ]
   },
   {
@@ -875,9 +471,27 @@
     ]
   },
   {
-    "id": "inco",
+    "id": "zenifra",
     "env": [
-      "INCO_API_KEY"
+      "ZENIFRA_AI_KEY"
+    ]
+  },
+  {
+    "id": "requesty",
+    "env": [
+      "REQUESTY_API_KEY"
+    ]
+  },
+  {
+    "id": "xiaomi",
+    "env": [
+      "XIAOMI_API_KEY"
+    ]
+  },
+  {
+    "id": "cloudferro-sherlock",
+    "env": [
+      "CLOUDFERRO_SHERLOCK_API_KEY"
     ]
   },
   {
@@ -887,21 +501,470 @@
     ]
   },
   {
+    "id": "kosmik",
+    "env": [
+      "KOSMIK_API_KEY"
+    ]
+  },
+  {
+    "id": "infer",
+    "env": [
+      "INFER_API_KEY"
+    ]
+  },
+  {
+    "id": "model-oracle-ai",
+    "env": [
+      "MODEL_ORACLE_API_KEY"
+    ]
+  },
+  {
+    "id": "cortecs",
+    "env": [
+      "CORTECS_API_KEY"
+    ]
+  },
+  {
+    "id": "xiaomi-token-plan-ams",
+    "env": [
+      "XIAOMI_API_KEY"
+    ]
+  },
+  {
+    "id": "boundless",
+    "env": [
+      "BOUNDLESS_API_KEY"
+    ]
+  },
+  {
+    "id": "sambanova",
+    "env": [
+      "SAMBANOVA_API_KEY"
+    ]
+  },
+  {
+    "id": "digitalocean",
+    "env": [
+      "DIGITALOCEAN_ACCESS_TOKEN"
+    ]
+  },
+  {
+    "id": "ofox",
+    "env": [
+      "OFOX_API_KEY"
+    ]
+  },
+  {
+    "id": "hetzner",
+    "env": [
+      "HETZNER_API_KEY"
+    ]
+  },
+  {
+    "id": "iteracompute",
+    "env": [
+      "ITERACOMPUTE_API_KEY"
+    ]
+  },
+  {
+    "id": "cerebras",
+    "env": [
+      "CEREBRAS_API_KEY"
+    ]
+  },
+  {
+    "id": "moonshotai",
+    "env": [
+      "MOONSHOT_API_KEY"
+    ]
+  },
+  {
+    "id": "abacus",
+    "env": [
+      "ABACUS_API_KEY"
+    ]
+  },
+  {
+    "id": "moark",
+    "env": [
+      "MOARK_API_KEY"
+    ]
+  },
+  {
+    "id": "crossmodel",
+    "env": [
+      "CROSSMODEL_API_KEY"
+    ]
+  },
+  {
+    "id": "azure-cognitive-services",
+    "env": [
+      "AZURE_COGNITIVE_SERVICES_RESOURCE_NAME",
+      "AZURE_COGNITIVE_SERVICES_API_KEY"
+    ]
+  },
+  {
+    "id": "deepinfra",
+    "env": [
+      "DEEPINFRA_API_KEY"
+    ]
+  },
+  {
+    "id": "openrouter",
+    "env": [
+      "OPENROUTER_API_KEY"
+    ]
+  },
+  {
+    "id": "lilac",
+    "env": [
+      "LILAC_API_KEY"
+    ]
+  },
+  {
+    "id": "fireworks-ai",
+    "env": [
+      "FIREWORKS_API_KEY"
+    ]
+  },
+  {
+    "id": "venice",
+    "env": [
+      "VENICE_API_KEY"
+    ]
+  },
+  {
+    "id": "helicone",
+    "env": [
+      "HELICONE_API_KEY"
+    ]
+  },
+  {
+    "id": "echo",
+    "env": [
+      "ECHO_API_KEY"
+    ]
+  },
+  {
+    "id": "xiaomi-token-plan-sgp",
+    "env": [
+      "XIAOMI_API_KEY"
+    ]
+  },
+  {
+    "id": "lucidquery",
+    "env": [
+      "LUCIDQUERY_API_KEY"
+    ]
+  },
+  {
+    "id": "dinference",
+    "env": [
+      "DINFERENCE_API_KEY"
+    ]
+  },
+  {
+    "id": "ainetcafe",
+    "env": [
+      "AINETCAFE_API_KEY"
+    ]
+  },
+  {
+    "id": "scaleway",
+    "env": [
+      "SCALEWAY_API_KEY"
+    ]
+  },
+  {
+    "id": "zenmux",
+    "env": [
+      "ZENMUX_API_KEY"
+    ]
+  },
+  {
+    "id": "inception",
+    "env": [
+      "INCEPTION_API_KEY"
+    ]
+  },
+  {
+    "id": "meganova",
+    "env": [
+      "MEGANOVA_API_KEY"
+    ]
+  },
+  {
+    "id": "freemodel",
+    "env": [
+      "FREEMODEL_API_KEY"
+    ]
+  },
+  {
+    "id": "friendli",
+    "env": [
+      "FRIENDLI_TOKEN"
+    ]
+  },
+  {
+    "id": "alibaba-token-plan",
+    "env": [
+      "ALIBABA_TOKEN_PLAN_API_KEY"
+    ]
+  },
+  {
+    "id": "baseten",
+    "env": [
+      "BASETEN_API_KEY"
+    ]
+  },
+  {
+    "id": "minimax-coding-plan",
+    "env": [
+      "MINIMAX_API_KEY"
+    ]
+  },
+  {
+    "id": "drun",
+    "env": [
+      "DRUN_API_KEY"
+    ]
+  },
+  {
+    "id": "vispark",
+    "env": [
+      "VISPARK_LAB_API_KEY"
+    ]
+  },
+  {
+    "id": "kuae-cloud-coding-plan",
+    "env": [
+      "KUAE_API_KEY"
+    ]
+  },
+  {
+    "id": "nova",
+    "env": [
+      "NOVA_API_KEY"
+    ]
+  },
+  {
+    "id": "poe",
+    "env": [
+      "POE_API_KEY"
+    ]
+  },
+  {
+    "id": "pendra",
+    "env": [
+      "PENDRA_API_KEY"
+    ]
+  },
+  {
+    "id": "upstage",
+    "env": [
+      "UPSTAGE_API_KEY"
+    ]
+  },
+  {
+    "id": "openai",
+    "env": [
+      "OPENAI_API_KEY"
+    ]
+  },
+  {
+    "id": "gmicloud",
+    "env": [
+      "GMICLOUD_API_KEY"
+    ]
+  },
+  {
+    "id": "klokintegration",
+    "env": [
+      "KLOKINTEGRATION_API_KEY"
+    ]
+  },
+  {
+    "id": "volcengine-coding-plan",
+    "env": [
+      "ARK_CODING_PLAN_API_KEY"
+    ]
+  },
+  {
+    "id": "inceptron",
+    "env": [
+      "INCEPTRON_API_KEY"
+    ]
+  },
+  {
+    "id": "neosmith",
+    "env": [
+      "NEOSMITH_API_KEY"
+    ]
+  },
+  {
+    "id": "cloudflare-workers-ai",
+    "env": [
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CLOUDFLARE_API_KEY"
+    ]
+  },
+  {
+    "id": "llmgateway-providers",
+    "env": [
+      "LLMGATEWAY_API_KEY"
+    ]
+  },
+  {
+    "id": "runinfra",
+    "env": [
+      "RUNINFRA_GATEWAY_KEY"
+    ]
+  },
+  {
     "id": "scx-ai",
     "env": [
       "SCX_API_KEY"
     ]
   },
   {
-    "id": "zenifra",
+    "id": "llmgateway",
     "env": [
-      "ZENIFRA_AI_KEY"
+      "LLMGATEWAY_API_KEY"
     ]
   },
   {
-    "id": "tokenrouter",
+    "id": "modelscope",
     "env": [
-      "TOKENROUTER_API_KEY"
+      "MODELSCOPE_API_KEY"
+    ]
+  },
+  {
+    "id": "deepseek",
+    "env": [
+      "DEEPSEEK_API_KEY"
+    ]
+  },
+  {
+    "id": "siliconflow-cn",
+    "env": [
+      "SILICONFLOW_CN_API_KEY"
+    ]
+  },
+  {
+    "id": "ebcloud",
+    "env": [
+      "EBCLOUD_API_KEY"
+    ]
+  },
+  {
+    "id": "routing-run",
+    "env": [
+      "ROUTING_RUN_API_KEY"
+    ]
+  },
+  {
+    "id": "wallaby",
+    "env": [
+      "WALLABY_API_KEY"
+    ]
+  },
+  {
+    "id": "iflowcn",
+    "env": [
+      "IFLOW_API_KEY"
+    ]
+  },
+  {
+    "id": "zeldoc",
+    "env": [
+      "ZELDOC_API_KEY"
+    ]
+  },
+  {
+    "id": "poolside",
+    "env": [
+      "POOLSIDE_API_KEY"
+    ]
+  },
+  {
+    "id": "llama",
+    "env": [
+      "LLAMA_API_KEY"
+    ]
+  },
+  {
+    "id": "claudinio",
+    "env": [
+      "CLAUDINIO_API_KEY"
+    ]
+  },
+  {
+    "id": "google",
+    "env": [
+      "GOOGLE_API_KEY",
+      "GOOGLE_GENERATIVE_AI_API_KEY",
+      "GEMINI_API_KEY"
+    ]
+  },
+  {
+    "id": "snowflake-cortex",
+    "env": [
+      "SNOWFLAKE_ACCOUNT",
+      "SNOWFLAKE_CORTEX_PAT"
+    ]
+  },
+  {
+    "id": "tencent-tokenhub",
+    "env": [
+      "TENCENT_TOKENHUB_API_KEY"
+    ]
+  },
+  {
+    "id": "edenai",
+    "env": [
+      "EDENAI_API_KEY"
+    ]
+  },
+  {
+    "id": "alibaba-token-plan-cn",
+    "env": [
+      "ALIBABA_TOKEN_PLAN_API_KEY"
+    ]
+  },
+  {
+    "id": "prime",
+    "env": [
+      "PRIME_API_KEY"
+    ]
+  },
+  {
+    "id": "morph",
+    "env": [
+      "MORPH_API_KEY"
+    ]
+  },
+  {
+    "id": "melious",
+    "env": [
+      "MELIOUS_API_KEY"
+    ]
+  },
+  {
+    "id": "inferx",
+    "env": [
+      "INFERX_API_KEY"
+    ]
+  },
+  {
+    "id": "regolo-ai",
+    "env": [
+      "REGOLO_API_KEY"
+    ]
+  },
+  {
+    "id": "reflection",
+    "env": [
+      "REFLECTION_API_KEY"
     ]
   },
   {
@@ -913,124 +976,39 @@
     ]
   },
   {
-    "id": "moonshotai",
+    "id": "sarvam",
     "env": [
-      "MOONSHOT_API_KEY"
+      "SARVAM_API_KEY"
     ]
   },
   {
-    "id": "ainetcafe",
+    "id": "alibaba-coding-plan",
     "env": [
-      "AINETCAFE_API_KEY"
+      "ALIBABA_CODING_PLAN_API_KEY"
     ]
   },
   {
-    "id": "wallaby",
+    "id": "oci",
     "env": [
-      "WALLABY_API_KEY"
+      "OCI_GENAI_API_KEY"
     ]
   },
   {
-    "id": "bee",
+    "id": "mixlayer",
     "env": [
-      "BEE_API_KEY"
+      "MIXLAYER_API_KEY"
     ]
   },
   {
-    "id": "scnet-token-plan",
+    "id": "ambient",
     "env": [
-      "SCNET_API_KEY"
+      "AMBIENT_API_KEY"
     ]
   },
   {
-    "id": "ofox",
+    "id": "stackit",
     "env": [
-      "OFOX_API_KEY"
-    ]
-  },
-  {
-    "id": "neon",
-    "env": [
-      "NEON_AI_GATEWAY_BASE_URL",
-      "NEON_AI_GATEWAY_TOKEN"
-    ]
-  },
-  {
-    "id": "aihubmix",
-    "env": [
-      "AIHUBMIX_API_KEY"
-    ]
-  },
-  {
-    "id": "merge-gateway",
-    "env": [
-      "MERGE_GATEWAY_API_KEY"
-    ]
-  },
-  {
-    "id": "opper",
-    "env": [
-      "OPPER_API_KEY"
-    ]
-  },
-  {
-    "id": "nvidia",
-    "env": [
-      "NVIDIA_API_KEY"
-    ]
-  },
-  {
-    "id": "pioneer",
-    "env": [
-      "PIONEER_API_KEY"
-    ]
-  },
-  {
-    "id": "xiaomi",
-    "env": [
-      "XIAOMI_API_KEY"
-    ]
-  },
-  {
-    "id": "xiaomi-token-plan-sgp",
-    "env": [
-      "XIAOMI_API_KEY"
-    ]
-  },
-  {
-    "id": "minimax",
-    "env": [
-      "MINIMAX_API_KEY"
-    ]
-  },
-  {
-    "id": "github-copilot",
-    "env": [
-      "GITHUB_TOKEN"
-    ]
-  },
-  {
-    "id": "inferx",
-    "env": [
-      "INFERX_API_KEY"
-    ]
-  },
-  {
-    "id": "opencode-go",
-    "env": [
-      "OPENCODE_API_KEY"
-    ]
-  },
-  {
-    "id": "openreason",
-    "env": [
-      "OPENREASON_API_KEY"
-    ]
-  },
-  {
-    "id": "lmstudio",
-    "env": [
-      "LMSTUDIO_API_KEY"
+      "STACKIT_API_KEY"
     ]
   },
   {
@@ -1040,75 +1018,57 @@
     ]
   },
   {
-    "id": "tensorx",
+    "id": "jalapeno",
     "env": [
-      "TENSORX_API_KEY"
+      "JALAPENO_API_KEY"
     ]
   },
   {
-    "id": "longcat",
+    "id": "scnet-token-plan",
     "env": [
-      "LONGCAT_API_KEY"
+      "SCNET_API_KEY"
     ]
   },
   {
-    "id": "pareto",
+    "id": "crusoe",
     "env": [
-      "PARETO_API_KEY"
+      "CRUSOE_API_KEY"
     ]
   },
   {
-    "id": "chutes",
+    "id": "amd",
     "env": [
-      "CHUTES_API_KEY"
+      "AMD_API_KEY"
     ]
   },
   {
-    "id": "edenai",
+    "id": "perplexity",
     "env": [
-      "EDENAI_API_KEY"
+      "PERPLEXITY_API_KEY"
     ]
   },
   {
-    "id": "stepfun",
+    "id": "alibaba-cn",
     "env": [
-      "STEPFUN_API_KEY"
+      "DASHSCOPE_API_KEY"
     ]
   },
   {
-    "id": "hpc-ai",
+    "id": "thinkingmachines",
     "env": [
-      "HPC_AI_API_KEY"
+      "TINKER_API_KEY"
     ]
   },
   {
-    "id": "tencent-coding-plan",
+    "id": "volcengine",
     "env": [
-      "TENCENT_CODING_PLAN_API_KEY"
+      "ARK_API_KEY"
     ]
   },
   {
-    "id": "tempr",
+    "id": "anyapi",
     "env": [
-      "TEMPR_API_KEY"
-    ]
-  },
-  {
-    "id": "inception",
-    "env": [
-      "INCEPTION_API_KEY"
-    ]
-  },
-  {
-    "id": "modelis",
-    "env": [
-      "MODELIS_API_KEY"
-    ]
-  },
-  {
-    "id": "opencode",
-    "env": [
-      "OPENCODE_API_KEY"
+      "ANYAPI_API_KEY"
     ]
   },
   {
@@ -1118,15 +1078,93 @@
     ]
   },
   {
-    "id": "kimi-code-plan-global",
+    "id": "io-net",
     "env": [
-      "KIMI_API_KEY"
+      "IOINTELLIGENCE_API_KEY"
     ]
   },
   {
-    "id": "trustedrouter",
+    "id": "minimax-cn",
     "env": [
-      "TRUSTEDROUTER_API_KEY"
+      "MINIMAX_API_KEY"
+    ]
+  },
+  {
+    "id": "the-grid-ai",
+    "env": [
+      "THEGRID_API_KEY"
+    ]
+  },
+  {
+    "id": "modelis",
+    "env": [
+      "MODELIS_API_KEY"
+    ]
+  },
+  {
+    "id": "inference",
+    "env": [
+      "INFERENCE_API_KEY"
+    ]
+  },
+  {
+    "id": "chutes",
+    "env": [
+      "CHUTES_API_KEY"
+    ]
+  },
+  {
+    "id": "submodel",
+    "env": [
+      "SUBMODEL_INSTAGEN_ACCESS_KEY"
+    ]
+  },
+  {
+    "id": "pareto",
+    "env": [
+      "PARETO_API_KEY"
+    ]
+  },
+  {
+    "id": "minimax-cn-coding-plan",
+    "env": [
+      "MINIMAX_API_KEY"
+    ]
+  },
+  {
+    "id": "qvac",
+    "env": [
+      "QVAC_API_KEY"
+    ]
+  },
+  {
+    "id": "llmtr",
+    "env": [
+      "LLMTR_API_KEY"
+    ]
+  },
+  {
+    "id": "github-copilot",
+    "env": [
+      "GITHUB_TOKEN"
+    ]
+  },
+  {
+    "id": "bailing",
+    "env": [
+      "BAILING_API_TOKEN"
+    ]
+  },
+  {
+    "id": "llmtech",
+    "env": [
+      "LLMTECH_API_KEY"
+    ]
+  },
+  {
+    "id": "alibaba-coding-plan-cn",
+    "env": [
+      "ALIBABA_CODING_PLAN_API_KEY"
     ]
   },
   {
@@ -1136,21 +1174,87 @@
     ]
   },
   {
-    "id": "zhipuai",
+    "id": "auriko",
     "env": [
-      "ZHIPU_API_KEY"
+      "AURIKO_API_KEY"
     ]
   },
   {
-    "id": "lynkr",
+    "id": "agentrouter",
     "env": [
-      "LYNKR_API_KEY"
+      "AGENTROUTER_API_KEY"
     ]
   },
   {
-    "id": "meganova",
+    "id": "stepfun",
     "env": [
-      "MEGANOVA_API_KEY"
+      "STEPFUN_API_KEY"
+    ]
+  },
+  {
+    "id": "pioneer",
+    "env": [
+      "PIONEER_API_KEY"
+    ]
+  },
+  {
+    "id": "tensorx",
+    "env": [
+      "TENSORX_API_KEY"
+    ]
+  },
+  {
+    "id": "nan",
+    "env": [
+      "NAN_API_KEY"
+    ]
+  },
+  {
+    "id": "gitlab",
+    "env": [
+      "GITLAB_TOKEN"
+    ]
+  },
+  {
+    "id": "togetherai",
+    "env": [
+      "TOGETHER_API_KEY"
+    ]
+  },
+  {
+    "id": "kimi-code-plan-global",
+    "env": [
+      "KIMI_API_KEY"
+    ]
+  },
+  {
+    "id": "fastrouter",
+    "env": [
+      "FASTROUTER_API_KEY"
+    ]
+  },
+  {
+    "id": "vivgrid",
+    "env": [
+      "VIVGRID_API_KEY"
+    ]
+  },
+  {
+    "id": "agnes",
+    "env": [
+      "AGNES_API_KEY"
+    ]
+  },
+  {
+    "id": "lmstudio",
+    "env": [
+      "LMSTUDIO_API_KEY"
+    ]
+  },
+  {
+    "id": "empiriolabs",
+    "env": [
+      "EMPIRIOLABS_API_KEY"
     ]
   },
   {
@@ -1160,15 +1264,9 @@
     ]
   },
   {
-    "id": "requesty",
+    "id": "nebius",
     "env": [
-      "REQUESTY_API_KEY"
-    ]
-  },
-  {
-    "id": "mistral",
-    "env": [
-      "MISTRAL_API_KEY"
+      "NEBIUS_API_KEY"
     ]
   },
   {
@@ -1181,15 +1279,16 @@
     ]
   },
   {
-    "id": "synthetic",
+    "id": "hpc-ai",
     "env": [
-      "SYNTHETIC_API_KEY"
+      "HPC_AI_API_KEY"
     ]
   },
   {
-    "id": "llmgateway",
+    "id": "privatemode-ai",
     "env": [
-      "LLMGATEWAY_API_KEY"
+      "PRIVATEMODE_API_KEY",
+      "PRIVATEMODE_ENDPOINT"
     ]
   },
   {
@@ -1199,192 +1298,111 @@
     ]
   },
   {
-    "id": "vivgrid",
+    "id": "qiniu-ai",
     "env": [
-      "VIVGRID_API_KEY"
+      "QINIU_API_KEY"
     ]
   },
   {
-    "id": "prime",
+    "id": "berget",
     "env": [
-      "PRIME_API_KEY"
+      "BERGET_API_KEY"
     ]
   },
   {
-    "id": "klokintegration",
+    "id": "bothub",
     "env": [
-      "KLOKINTEGRATION_API_KEY"
+      "BOTHUB_API_KEY"
     ]
   },
   {
-    "id": "google-vertex",
+    "id": "groq",
     "env": [
-      "GOOGLE_VERTEX_PROJECT",
-      "GOOGLE_VERTEX_LOCATION",
-      "GOOGLE_APPLICATION_CREDENTIALS"
+      "GROQ_API_KEY"
     ]
   },
   {
-    "id": "evroc",
+    "id": "anthropic",
     "env": [
-      "EVROC_API_KEY"
+      "ANTHROPIC_API_KEY"
     ]
   },
   {
-    "id": "tokengo",
+    "id": "hyper",
     "env": [
-      "TOKENGO_API_KEY"
+      "HYPER_API_KEY"
     ]
   },
   {
-    "id": "submodel",
+    "id": "zai",
     "env": [
-      "SUBMODEL_INSTAGEN_ACCESS_KEY"
+      "ZHIPU_API_KEY"
     ]
   },
   {
-    "id": "kosmik",
+    "id": "trustedrouter",
     "env": [
-      "KOSMIK_API_KEY"
+      "TRUSTEDROUTER_API_KEY"
     ]
   },
   {
-    "id": "tencent-token-plan",
+    "id": "zai-coding-plan",
     "env": [
-      "TENCENT_TOKEN_PLAN_API_KEY"
+      "ZHIPU_API_KEY"
     ]
   },
   {
-    "id": "togetherai",
+    "id": "openreason",
     "env": [
-      "TOGETHER_API_KEY"
+      "OPENREASON_API_KEY"
     ]
   },
   {
-    "id": "helicone",
+    "id": "commandcode",
     "env": [
-      "HELICONE_API_KEY"
+      "CMD_API_KEY"
     ]
   },
   {
-    "id": "cortecs",
+    "id": "impossibl",
     "env": [
-      "CORTECS_API_KEY"
+      "IMPOSSIBL_API_KEY"
     ]
   },
   {
-    "id": "agnes",
+    "id": "abliteration-ai",
     "env": [
-      "AGNES_API_KEY"
+      "ABLIT_KEY"
     ]
   },
   {
-    "id": "daoxe",
+    "id": "xai",
     "env": [
-      "DAOXE_API_KEY"
+      "XAI_API_KEY"
     ]
   },
   {
-    "id": "morph",
+    "id": "zhipuai",
     "env": [
-      "MORPH_API_KEY"
+      "ZHIPU_API_KEY"
     ]
   },
   {
-    "id": "openai",
+    "id": "sensenova",
     "env": [
-      "OPENAI_API_KEY"
+      "SENSENOVA_API_KEY"
     ]
   },
   {
-    "id": "alibaba-coding-plan-cn",
+    "id": "stepfun-step-plan",
     "env": [
-      "ALIBABA_CODING_PLAN_API_KEY"
+      "STEPFUN_API_KEY"
     ]
   },
   {
-    "id": "io-net",
+    "id": "minimax",
     "env": [
-      "IOINTELLIGENCE_API_KEY"
-    ]
-  },
-  {
-    "id": "infomaniak",
-    "env": [
-      "INFOMANIAK_API_KEY",
-      "INFOMANIAK_PRODUCT_ID"
-    ]
-  },
-  {
-    "id": "llmtech",
-    "env": [
-      "LLMTECH_API_KEY"
-    ]
-  },
-  {
-    "id": "crossmodel",
-    "env": [
-      "CROSSMODEL_API_KEY"
-    ]
-  },
-  {
-    "id": "arcee",
-    "env": [
-      "ARCEE_API_KEY"
-    ]
-  },
-  {
-    "id": "drun",
-    "env": [
-      "DRUN_API_KEY"
-    ]
-  },
-  {
-    "id": "amd",
-    "env": [
-      "AMD_API_KEY"
-    ]
-  },
-  {
-    "id": "qvac",
-    "env": [
-      "QVAC_API_KEY"
-    ]
-  },
-  {
-    "id": "claudinio",
-    "env": [
-      "CLAUDINIO_API_KEY"
-    ]
-  },
-  {
-    "id": "runinfra",
-    "env": [
-      "RUNINFRA_GATEWAY_KEY"
-    ]
-  },
-  {
-    "id": "hetzner",
-    "env": [
-      "HETZNER_API_KEY"
-    ]
-  },
-  {
-    "id": "digitalocean",
-    "env": [
-      "DIGITALOCEAN_ACCESS_TOKEN"
-    ]
-  },
-  {
-    "id": "aixy",
-    "env": [
-      "AIXY_API_KEY"
-    ]
-  },
-  {
-    "id": "alibaba-cn",
-    "env": [
-      "DASHSCOPE_API_KEY"
+      "MINIMAX_API_KEY"
     ]
   }
 ]

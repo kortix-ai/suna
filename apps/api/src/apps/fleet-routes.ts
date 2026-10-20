@@ -43,8 +43,10 @@ import {
   listAppVolumes,
   listVolumeSnapshots,
   updateAppVolume,
+  volumeInfo,
   type AppVolumeRow,
 } from './volumes';
+import type { AppVolumeInfo } from './volume-store';
 import { AppLimitError, AppAccountUnfundedError } from './limits';
 
 const AppParams = z.object({ projectId: z.string().uuid(), appId: z.string().uuid() });
@@ -54,13 +56,16 @@ const Open = z.object({}).passthrough();
 /** A handler's context, for the shared helpers below (each route keeps its own typed context). */
 type RouteContext = Context<AppEnv, string, any>;
 
-function volumeJson(volume: AppVolumeRow) {
+function volumeJson(volume: AppVolumeRow, live: AppVolumeInfo | null = null) {
   return {
     volume_id: volume.volumeId,
     name: volume.name,
     process_group: volume.processGroup,
     machine_id: volume.machineId,
-    size_gb: volume.sizeGb,
+    size_gb: live?.size_gb ?? volume.sizeGb,
+    /** Bytes in use and the last commit, read live from the provider; null when unknown. */
+    used_bytes: live?.used_bytes ?? null,
+    last_commit_at: live?.last_commit_at ?? null,
     status: volume.status,
     attached: Boolean(volume.attachedRuntimeId),
     snapshot_retention_days: volume.snapshotRetentionDays,
@@ -107,7 +112,7 @@ export function registerAppFleetRoutes(): void {
       responses: { 200: json(Open, 'Machines'), ...errors(403, 404) },
     }),
     async (c) => {
-      const gated = await gate(c, 'read');
+      const gated = await gate(c, 'deploy');
       if (gated instanceof Response) return gated as never;
       return c.json({ machines: await listAppMachines(gated.app) }, 200) as never;
     },
@@ -157,16 +162,21 @@ export function registerAppFleetRoutes(): void {
       method: 'put', path: '/{projectId}/apps/{appId}/scale', tags: ['apps'], summary: 'Scale an App', ...auth,
       description:
         `Machines per process group (0 to ${MAX_GROUP_SCALE}). Applied in the background: answers 202 with the new ` +
-        'scale. A group that mounts a volume gets one new, empty volume per new machine; a scaled-down machine ' +
+        'scale. A group that mounts a volume runs one machine (409 `volume_single_machine`) unless `new_volumes` ' +
+        'is true: each new machine then gets its own, empty volume and serves different data. A scaled-down machine ' +
         'keeps its volume for the next one.',
-      request: { params: AppParams, body: { content: { 'application/json': { schema: z.object({ count: z.record(z.string().max(32), z.number().int()) }) } } } },
+      request: { params: AppParams, body: { content: { 'application/json': { schema: z.object({
+        count: z.record(z.string().max(32), z.number().int()),
+        new_volumes: z.boolean().optional(),
+      }) } } } },
       responses: { 202: json(Open, 'Scale'), ...errors(400, 403, 404, 409) },
     }),
     async (c) => {
       const gated = await gate(c, 'deploy');
       if (gated instanceof Response) return gated as never;
       return answer(c, async () => {
-        const scale = await setAppScale(gated.app, c.req.valid('json').count);
+        const body = c.req.valid('json');
+        const scale = await setAppScale(gated.app, body.count, { newVolumes: body.new_volumes });
         return c.json({ scale, machines: await listAppMachines(gated.app) }, 202);
       });
     },
@@ -208,9 +218,11 @@ export function registerAppFleetRoutes(): void {
       responses: { 200: json(Open, 'Volumes'), ...errors(403, 404) },
     }),
     async (c) => {
-      const gated = await gate(c, 'read');
+      const gated = await gate(c, 'deploy');
       if (gated instanceof Response) return gated as never;
-      return c.json({ volumes: (await listAppVolumes(gated.app.appId)).map(volumeJson) }, 200) as never;
+      const volumes = await listAppVolumes(gated.app.appId);
+      const live = await Promise.all(volumes.map(volumeInfo));
+      return c.json({ volumes: volumes.map((volume, index) => volumeJson(volume, live[index])) }, 200) as never;
     },
   );
 
@@ -246,8 +258,10 @@ export function registerAppFleetRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'patch', path: '/{projectId}/apps/{appId}/volumes/{volumeId}', tags: ['apps'], summary: 'Extend an App volume', ...auth,
-      description: '`size_gb` only grows; `snapshot_retention_days` is 1 to 60.',
+      method: 'patch', path: '/{projectId}/apps/{appId}/volumes/{volumeId}', tags: ['apps'], summary: 'Update an App volume', ...auth,
+      description:
+        '`snapshot_retention_days` is 1 to 60. A volume has the fixed size the provider allots at create (100 GB on ' +
+        'Platinum today): a `size_gb` above it is refused with 400 `volume_fixed_size`.',
       request: {
         params: VolumeParams,
         body: { content: { 'application/json': { schema: z.object({
@@ -300,7 +314,7 @@ export function registerAppFleetRoutes(): void {
       responses: { 200: json(Open, 'Snapshots'), ...errors(403, 404) },
     }),
     async (c) => {
-      const gated = await gate(c, 'read');
+      const gated = await gate(c, 'deploy');
       if (gated instanceof Response) return gated as never;
       return answer(c, async () => c.json({ snapshots: await listVolumeSnapshots(gated.app.appId, c.req.valid('param').volumeId) }, 200));
     },

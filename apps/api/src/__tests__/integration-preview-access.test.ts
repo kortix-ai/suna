@@ -11,9 +11,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accountMembers,
   accounts,
+  iamRoleActions,
+  iamRoles,
   platformUserRoles,
   projectSessions,
   projects,
+  serviceAccounts,
   sessionSandboxes,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
@@ -48,6 +51,21 @@ const UNSTARTED_SESSION = crypto.randomUUID();
 /** A session a backend wrapper created for one of its end-users. */
 const BACKEND_SESSION = crypto.randomUUID();
 
+/**
+ * The trigger-run fixture: the session a trigger created, attributed to the
+ * agent's standing service account — no human ever owns it — and the two
+ * custom roles whose divergence KRTX-1619 pinned shut. `project:manager`
+ * (the seeded role) carries BOTH actions, so the divergence only bites a
+ * custom role: a people-manager variant that holds `project.members.manage`
+ * but not `project.trigger.update`.
+ */
+const TRIGGER_SA = crypto.randomUUID();
+const TRIGGER_SESSION = crypto.randomUUID();
+const PEOPLE_MANAGER = crypto.randomUUID();
+const TRIGGER_MANAGER = crypto.randomUUID();
+const PEOPLE_MANAGER_ROLE = crypto.randomUUID();
+const TRIGGER_MANAGER_ROLE = crypto.randomUUID();
+
 beforeAll(async () => {
   await db.insert(accounts).values([
     { accountId: OWNER_ACCOUNT, name: 'preview-access-owner' },
@@ -57,6 +75,8 @@ beforeAll(async () => {
   await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: OWNER_ACCOUNT, accountRole: 'member' },
     { userId: SECOND_MEMBER, accountId: OWNER_ACCOUNT, accountRole: 'member' },
+    { userId: PEOPLE_MANAGER, accountId: OWNER_ACCOUNT, accountRole: 'member' },
+    { userId: TRIGGER_MANAGER, accountId: OWNER_ACCOUNT, accountRole: 'member' },
     { userId: OUTSIDER, accountId: OTHER_ACCOUNT, accountRole: 'owner' },
     { userId: PLATFORM_ADMIN, accountId: ADMIN_ACCOUNT, accountRole: 'owner' },
   ]);
@@ -109,6 +129,67 @@ beforeAll(async () => {
     projectId: PROJECT,
     externalId: EXTERNAL_ID,
     status: 'active',
+  });
+  // The trigger-run session the proxy gate must judge by `project.trigger.update`.
+  // Attributed to the agent's standing service account, as every trigger run is.
+  await db.insert(serviceAccounts).values({
+    serviceAccountId: TRIGGER_SA,
+    accountId: OWNER_ACCOUNT,
+    name: 'preview-access-agent',
+    agentName: 'default',
+    projectId: PROJECT,
+    secretHash: crypto.randomUUID().replaceAll('-', ''),
+    publicPrefix: 'kpa_test',
+  });
+  await db.insert(projectSessions).values({
+    sessionId: TRIGGER_SESSION,
+    accountId: OWNER_ACCOUNT,
+    projectId: PROJECT,
+    branchName: `session/${TRIGGER_SESSION}`,
+    createdBy: TRIGGER_SA,
+    visibility: 'private',
+    status: 'running',
+    initiatorType: 'trigger',
+  });
+  // Two custom roles that differ in exactly one action. Both also carry
+  // project.read + project.session.read so the only thing separating
+  // allowed from refused is the action the manager override asks for.
+  await db.insert(iamRoles).values([
+    {
+      roleId: PEOPLE_MANAGER_ROLE,
+      accountId: OWNER_ACCOUNT,
+      key: 'people_manager',
+      name: 'People manager',
+      scopeType: 'project',
+    },
+    {
+      roleId: TRIGGER_MANAGER_ROLE,
+      accountId: OWNER_ACCOUNT,
+      key: 'trigger_manager',
+      name: 'Trigger manager',
+      scopeType: 'project',
+    },
+  ]);
+  await db.insert(iamRoleActions).values([
+    ...['project.read', 'project.session.read', 'project.members.manage'].map((action) => ({
+      roleId: PEOPLE_MANAGER_ROLE,
+      action,
+    })),
+    ...['project.read', 'project.session.read', 'project.trigger.update'].map((action) => ({
+      roleId: TRIGGER_MANAGER_ROLE,
+      action,
+    })),
+  ]);
+  // SYSTEM_ACTOR: this suite seeds the world, nobody grants it live.
+  await assignRole(SYSTEM_ACTOR, OWNER_ACCOUNT, {
+    principal: { type: 'user', id: PEOPLE_MANAGER },
+    roleId: PEOPLE_MANAGER_ROLE,
+    scope: { type: 'project', id: PROJECT },
+  });
+  await assignRole(SYSTEM_ACTOR, OWNER_ACCOUNT, {
+    principal: { type: 'user', id: TRIGGER_MANAGER },
+    roleId: TRIGGER_MANAGER_ROLE,
+    scope: { type: 'project', id: PROJECT },
   });
   clearPreviewOwnershipCache();
 });
@@ -215,6 +296,33 @@ describe('canAccessSandboxSession', () => {
   test('a token bound to a backend session reaches it; a token bound to another does not', async () => {
     expect(await access(BACKEND_SESSION, MEMBER, BACKEND_SESSION)).toBe(true);
     expect(await access(BACKEND_SESSION, MEMBER, crypto.randomUUID())).toBe(false);
+  });
+
+  // KRTX-1619: the trigger-session manager override must ask the SAME action
+  // the canonical engine asks (`project.trigger.update`), not
+  // `project.members.manage`. These rows go through the REAL IAM engine —
+  // real role rows, real actions, no stubbed `authorize` — so a role that
+  // manages people but not triggers is refused, and the session that a
+  // trigger wrote stays locked to whoever may administer its triggers.
+  describe('a trigger-run private session — the override asks the canonical action', () => {
+    const triggerAccess = (userId: string) => access(TRIGGER_SESSION, userId, null);
+
+    test('a members.manage-only custom role is refused', async () => {
+      expect(await triggerAccess(PEOPLE_MANAGER)).toBe(false);
+    });
+
+    test('a trigger.update custom role passes', async () => {
+      expect(await triggerAccess(TRIGGER_MANAGER)).toBe(true);
+    });
+
+    test('the same custom roles both pass a private session a human created', async () => {
+      // SESSION was created by MEMBER: it follows the ordinary visibility
+      // rules, and neither custom role holds project.sessions.manage —
+      // so a trigger.update holder must NOT smuggle into it. The override is
+      // scoped to trigger-run sessions, never a general reader.
+      expect(await access(SESSION, PEOPLE_MANAGER, null)).toBe(false);
+      expect(await access(SESSION, TRIGGER_MANAGER, null)).toBe(false);
+    });
   });
 });
 

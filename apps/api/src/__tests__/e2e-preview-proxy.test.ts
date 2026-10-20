@@ -344,8 +344,8 @@ mock.module('../platform/providers', () => ({
                   'X-Daytona-Disable-CORS': 'true',
                   ...(mockPreviewToken ? { 'X-Daytona-Preview-Token': mockPreviewToken } : {}),
                 }
-              : name === 'e2b' && mockPreviewToken
-                ? { 'e2b-traffic-access-token': mockPreviewToken }
+              : name === 'platinum' && mockPreviewToken
+                ? { 'x-provider-traffic-token': mockPreviewToken }
                 : {},
           effectivePort: route.effectivePort,
           websocket: route.websocket,
@@ -435,8 +435,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
   // Let non-proxy URLs through (e.g. internal Hono test requests)
   if (
     !urlStr.startsWith('https://preview.') &&
-    !urlStr.startsWith('http://preview.') &&
-    !urlStr.includes('.e2b.test')
+    !urlStr.startsWith('http://preview.')
   ) {
     return originalFetch(url, init);
   }
@@ -935,6 +934,50 @@ describe('Preview proxy: forwarding', () => {
     );
   });
 
+  // The Platinum edge marks every answer it gives itself with
+  // `x-pt-edge-verdict`: it did not proxy the request, so the box never saw
+  // the prompt and a replay cannot post it twice (CFG-12, revocation-unavailable).
+  const sendPrompt = async () => {
+    const origSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: any) => fn()) as any;
+    try {
+      return await createProxyTestApp().request(
+        `/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async?directory=%2Fworkspace`,
+        {
+          method: 'POST',
+          headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
+        },
+      );
+    } finally {
+      globalThis.setTimeout = origSetTimeout;
+    }
+  };
+
+  test('a prompt the provider edge refused itself (x-pt-edge-verdict) is sent again', async () => {
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":false,"revision":"rev"}' },
+      { status: 503, body: 'Preview access denied', headers: { 'x-pt-edge-verdict': 'revocation-unavailable' } },
+      { status: 204, body: '' },
+    ];
+    const res = await sendPrompt();
+    expect(res.status).toBe(204);
+    const prompts = mockFetchCalls.filter((c) => c.url.endsWith('/session/ses_123/prompt_async?directory=%2Fworkspace'));
+    expect(prompts).toHaveLength(2);
+  });
+
+  test('a prompt answered 502 by the box itself is never sent twice', async () => {
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":false,"revision":"rev"}' },
+      { status: 502, body: '{"error":"upstream unreachable"}', headers: { 'x-pt-edge-served': '1' } },
+      { status: 204, body: '' },
+    ];
+    const res = await sendPrompt();
+    expect(res.status).toBe(502);
+    const prompts = mockFetchCalls.filter((c) => c.url.endsWith('/session/ses_123/prompt_async?directory=%2Fworkspace'));
+    expect(prompts).toHaveLength(1);
+  });
+
   test('titles from a REST prompt_async body, with the model the user picked for the turn', async () => {
     mockFetchResponses = [
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
@@ -1197,13 +1240,13 @@ describe('Preview proxy: forwarding', () => {
         'x-daytona-disable-cors': 'true',
         'x-daytona-preview-token': 'daytona-preview-token-123',
       },
-      absent: ['e2b-traffic-access-token'],
+      absent: ['x-provider-traffic-token'],
     },
     {
-      provider: 'e2b',
-      previewUrl: 'https://8080-e2b-sandbox.e2b.test',
-      token: 'e2b-traffic-token',
-      present: { 'e2b-traffic-access-token': 'e2b-traffic-token' },
+      provider: 'platinum',
+      previewUrl: 'https://preview.platinum.test/proxy-url',
+      token: 'platinum-traffic-token',
+      present: { 'x-provider-traffic-token': 'platinum-traffic-token' },
       absent: ['x-daytona-preview-token'],
     },
   ])('$provider ingress headers are forwarded as the provider resolved them', async (row) => {
@@ -1868,10 +1911,11 @@ describe('Preview proxy: hop attribution when the provider never resolves', () =
 // the static-file listener (3211), which reads that session's workspace.
 // Ownership alone cannot separate end-users when every session of a wrapper
 // shares one created_by.
-describe('Preview proxy: per-session gate on session-data ports', () => {
+describe('Preview proxy: per-session gate on every port', () => {
   const FOREIGN_SESSION = '99999999-9999-4999-8999-999999999999';
 
-  test.each([8000, 4096, 4097, 3211])(
+  // Pentest M-2: an app port serves that session's workspace too.
+  test.each([8000, 4096, 4097, 3211, TEST_PORT])(
     'another session\'s caller is refused on port %p',
     async (port) => {
       const res = await createProxyTestApp().request(`/v1/p/session-gate-${port}/${port}/`, {
@@ -1882,7 +1926,7 @@ describe('Preview proxy: per-session gate on session-data ports', () => {
     },
   );
 
-  test('the session\'s own caller, and any caller on an ordinary app port, are forwarded', async () => {
+  test('the session\'s own caller is forwarded on the daemon port and an app port', async () => {
     const app = createProxyTestApp();
     const own = await app.request(`/v1/p/session-gate-own/8000/kortix/health`, {
       headers: { Authorization: 'Bearer test', 'X-Test-Caller-Session': mockDbSandbox.sessionId },
@@ -1890,7 +1934,7 @@ describe('Preview proxy: per-session gate on session-data ports', () => {
     expect(own.status).toBe(200);
 
     const appPort = await app.request(`/v1/p/session-gate-app/${TEST_PORT}/`, {
-      headers: { Authorization: 'Bearer test', 'X-Test-Caller-Session': FOREIGN_SESSION },
+      headers: { Authorization: 'Bearer test', 'X-Test-Caller-Session': mockDbSandbox.sessionId },
     });
     expect(appPort.status).toBe(200);
   });

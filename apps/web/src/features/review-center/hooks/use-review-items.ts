@@ -3,36 +3,50 @@
 import { useProjectContext } from '@/features/project-files/context';
 import {
   type ApiReviewItem,
+  type ReviewSegment,
   type ReviewVerdict,
   actReviewItem,
   bulkActReviewItems,
-  listReviewItems,
   resolveApproval,
 } from '@kortix/sdk';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { qk, useReviewItemPages } from '@kortix/sdk/react';
+import { type QueryClient, useMutation, useQueryClient } from '@tanstack/react-query';
 
-export const reviewKeys = {
-  all: ['review-center'] as const,
-  list: (projectId: string) => ['review-center', projectId, 'list'] as const,
-};
-
-/** All review items for the active project (the inbox segments + counts are
- *  derived client-side, so we fetch the whole list and poll). */
-export function useReviewItems(options?: { enabled?: boolean; refetchInterval?: number }) {
+/**
+ * One segment of the active project's inbox, a page at a time (KRTX-2316):
+ * the server filters the segment and returns 50 items per page, so a project
+ * with thousands of finished items costs the same as one with five. Kind,
+ * session and search filter the loaded pages. Polls every 8 s.
+ */
+export function useReviewItems(
+  segment: ReviewSegment,
+  options?: { enabled?: boolean; refetchInterval?: number },
+) {
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
-  return useQuery<{ review_items: ApiReviewItem[] }>({
-    queryKey: reviewKeys.list(projectId),
-    queryFn: () => listReviewItems(projectId),
-    enabled: Boolean(projectId) && options?.enabled !== false,
-    staleTime: 5_000,
-    refetchInterval: options?.refetchInterval ?? 8_000,
-  });
+  return useReviewItemPages(
+    projectId,
+    { segment },
+    { enabled: options?.enabled, refetchInterval: options?.refetchInterval ?? 8_000 },
+  );
+}
+
+/**
+ * Refetch the inbox after a verdict: every loaded page, the needs-you counts,
+ * and GET needs-input with them, because the session lists count a pending
+ * connector call from both (KRTX-1739).
+ */
+export async function invalidateReviewInbox(qc: QueryClient, projectId: string): Promise<void> {
+  await Promise.all([
+    qc.invalidateQueries({ queryKey: qk.project.reviewItemsScope(projectId) }),
+    qc.invalidateQueries({ queryKey: qk.project.reviewSummary(projectId) }),
+    qc.invalidateQueries({ queryKey: qk.project.needsInput(projectId) }),
+  ]);
 }
 
 function useInvalidate(projectId: string) {
   const qc = useQueryClient();
-  return () => qc.invalidateQueries({ queryKey: ['review-center', projectId] });
+  return () => invalidateReviewInbox(qc, projectId);
 }
 
 export function useActReviewItem() {

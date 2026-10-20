@@ -29,13 +29,13 @@ export const REMOVED_CONNECTOR_TOOL_NAMES = [
   'integration-exec',
 ] as const;
 
-export function RemovedConnectorTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function RemovedConnectorTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const output = partOutput(part);
+  const output = partOutput(call);
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={PlugIcon}
       trigger={
         <>
@@ -62,7 +62,7 @@ export function RemovedConnectorTool({ part, defaultOpen, forceOpen, locked }: T
           </Text>
         </ToolResultCard>
         {output ? (
-          <ToolOutputFallback output={output} isStreaming={partStatus(part) === 'running'} toolName="legacy-integration" />
+          <ToolOutputFallback output={output} isStreaming={partStatus(call) === 'running'} toolName="legacy-integration" />
         ) : null}
       </View>
     </BasicTool>

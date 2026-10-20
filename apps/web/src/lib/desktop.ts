@@ -231,7 +231,11 @@ export const zoomOut = () => setDesktopZoom(getDesktopZoom() / ZOOM_STEP);
 /** Back to the shell's own scale, not the browser's 100%. */
 export const zoomReset = () => setDesktopZoom(DESKTOP_BASE_ZOOM);
 
-export async function setDesktopNativeTheme(theme: string | undefined): Promise<void> {
+/** `palettes` picks the launch background (the chosen light and dark theme's canvas). */
+export async function setDesktopNativeTheme(
+  theme: string | undefined,
+  palettes?: { light: string; dark: string },
+): Promise<void> {
   if (typeof window === 'undefined' || !theme) return;
   const selected = theme === 'light' || theme === 'dark' ? theme : 'system';
   const t = (
@@ -241,7 +245,7 @@ export async function setDesktopNativeTheme(theme: string | undefined): Promise<
   ).__TAURI__;
   if (!t?.core?.invoke) return;
   try {
-    await t.core.invoke('set_native_theme', { theme: selected });
+    await t.core.invoke('set_native_theme', { theme: selected, palettes });
   } catch {
     /* older desktop shell */
   }
@@ -330,6 +334,23 @@ async function desktopCommand<T>(cmd: string, args?: Record<string, unknown>): P
 }
 
 /**
+ * The Dock / taskbar badge: how many sessions have a finished turn the user has
+ * not seen. A browser, and a desktop shell that predates the command, ignore it.
+ */
+export async function setDesktopBadgeCount(count: number): Promise<void> {
+  await desktopCommand('set_badge_count', { count });
+}
+
+/**
+ * Open the desktop shell's application menu (About, Settings, Check for
+ * Updates, Change Kortix Instance, File, Edit, View, Go, Window) below the
+ * point (x, y) in page CSS px. Windows only: its window has no menu bar.
+ */
+export async function showDesktopAppMenu(x: number, y: number): Promise<void> {
+  await desktopCommand('show_app_menu', { x, y });
+}
+
+/**
  * Like `desktopCommand`, but a failure the desktop app reports rejects with its
  * message instead of reading as "not the desktop app". `null` = not desktop.
  */
@@ -346,9 +367,14 @@ async function desktopAction<T>(cmd: string, args?: Record<string, unknown>): Pr
 
 /** Pause/resume answer `{ ok, error?, status }` (X5). */
 async function desktopServiceVerb(cmd: string): Promise<DesktopComputerStatus | null> {
-  const result = await desktopAction<{ ok: boolean; error?: string; status: DesktopComputerStatus }>(cmd);
+  const result = await desktopAction<{
+    ok: boolean;
+    error?: string;
+    status: DesktopComputerStatus;
+  }>(cmd);
   if (!result) return null;
-  if (!result.ok) throw new Error(result.error || 'The desktop app could not change computer access.');
+  if (!result.ok)
+    throw new Error(result.error || 'The desktop app could not change computer access.');
   return result.status;
 }
 
@@ -400,10 +426,67 @@ export const desktopComputerGrants = () => desktopCommand<DesktopComputerGrants>
 export const desktopComputerRequestGrants = (input: { restartAgent?: boolean } = {}) =>
   desktopAction<DesktopComputerGrants>('computer_grants_request', input);
 
+/* ─── Quick Entry (desktop app) ───────────────────────────────────────────
+   The desktop app's global shortcut opens a prompt bar over any app. Enter
+   hands the text to this page, which starts a session with it
+   (`components/desktop/desktop-quick-entry.tsx`). Both return null in a
+   browser and on a desktop build that predates Quick Entry. */
+
+/**
+ * The prompt typed in the Quick Entry bar, once. Null when there is none.
+ * `sessionId` (with its `projectId`) is set when the person picked one of the
+ * recent sessions in the bar; without it the prompt starts a new session.
+ */
+export const takeDesktopQuickEntryPrompt = () =>
+  desktopCommand<{
+    text: string;
+    /** Screenshots and files from the bar. */
+    files?: { name: string; type: string; bytes: Uint8Array }[];
+    projectId?: string;
+    sessionId?: string;
+  }>('quick_entry_take');
+
+/**
+ * The project a new Quick Entry session starts in, and the person's recent
+ * sessions there (newest first, at most 5), for the bar's picker. `status` is
+ * the sidebar's `SessionDisplayStatus`; `lastActiveAt` is an ISO time.
+ */
+export const setDesktopQuickEntryTarget = (
+  target: {
+    projectId: string;
+    name: string | null;
+    sessions: { id: string; title: string; status: string; lastActiveAt: string }[];
+    /** A new session's agent, as project home resolves it. */
+    composer: { agents: { id: string; label: string }[]; agent: string | null } | null;
+  } | null,
+) => desktopCommand<null>('quick_entry_set_target', { target });
+
+/**
+ * The Quick Entry shortcut, for Settings ▸ Preferences. `shortcut` is an
+ * Electron accelerator from `choices`, or null when Quick Entry is off.
+ * `inUse`: another app holds it, so it does not open the bar.
+ */
+export interface DesktopQuickEntryShortcut {
+  shortcut: string | null;
+  inUse: boolean;
+  choices: { value: string; label: string }[];
+}
+
+export const getDesktopQuickEntryShortcut = () =>
+  desktopCommand<DesktopQuickEntryShortcut>('quick_entry_shortcut');
+
+/** Save and register a shortcut (null = off), as File ▸ Quick Entry Shortcut does. */
+export const setDesktopQuickEntryShortcut = (shortcut: string | null) =>
+  desktopCommand<DesktopQuickEntryShortcut>('quick_entry_set_shortcut', { shortcut });
+
 /**
  * Inline script run in <head> before hydration. Sets `data-desktop` and
  * `data-desktop-platform` on <html> so CSS can react before first paint —
  * eliminates the layout shift you'd get from a useEffect-driven flag.
+ * `data-desktop-titlebar="overlay"` comes from the shell itself
+ * (apps/desktop-electron/src/preload.js): the Windows window draws only its
+ * caption buttons over the page, and an older shell with the native title bar
+ * never sets it.
  */
 export const DESKTOP_INIT_SCRIPT = `
 (function() {
@@ -417,6 +500,8 @@ export const DESKTOP_INIT_SCRIPT = `
     if (p.indexOf('Mac') === 0) platform = 'macos';
     else if (p.indexOf('Win') === 0) platform = 'windows';
     html.setAttribute('data-desktop-platform', platform);
+    var shell = window.kortixDesktop;
+    if (shell && shell.titlebar === 'overlay') html.setAttribute('data-desktop-titlebar', 'overlay');
   } catch (e) {}
 })();
 `.trim();

@@ -116,10 +116,12 @@ export function sourcesOf(input: {
 
 // A de-minified first-party source frame: Sentry's sourcemap resolution
 // rewrote the raw `_next/static/chunks/…` filename back to the original
-// `apps/web/src/…` source path (with or without an `app:///` origin prefix).
-// A throw from such a frame originates in our own code, so it is actionable.
+// `apps/web/src/…` or `packages/ui/src/…` (@kortix/ui) source path (with or
+// without an `app:///` origin prefix). A throw from such a frame originates in
+// our own code, so it is actionable.
 export function isFirstPartyResolvedSource(filename: unknown): boolean {
-  return normalizeString(filename).includes('apps/web/src/');
+  const source = normalizeString(filename);
+  return source.includes('apps/web/src/') || source.includes('packages/ui/src/');
 }
 
 export function containsKnownPattern(message: string, patterns: readonly string[]): boolean {
@@ -147,12 +149,16 @@ function extractMessage(value: unknown): string {
   return '';
 }
 
-// Strip the canonical `SyntaxError: ` / `Error: ` / `Unhandled promise
-// rejection: ` (and stacked) wrappers a browser/Sentry prefixes a throw with,
-// so the underlying message can be matched by an anchored pattern regardless
-// of which capture path delivered it.
+// Strip every wrapper a browser/Sentry prefixes a throw with —
+// `Unhandled promise rejection: `, a typed `<Name>Error: ` (e.g. `TypeError: `)
+// or a bare `Error: `, `API error <N>: ` or `HTTP <N>: ` — repeatedly from the
+// start of the message (the `+` quantifier is the fixpoint loop), so the
+// underlying text can be matched by an anchored pattern regardless of which
+// capture path delivered it and how many wrappers stack. A wrapper may start
+// the message or sit behind another wrapper; an interior wrapper after other
+// text (e.g. `Failed to fetch: Error: …`) is not stripped.
 export function stripErrorWrappers(message: string): string {
-  return message.trim().replace(/^(?:Unhandled promise rejection: )?(?:[A-Za-z]+Error: )?/, '');
+  return message.trim().replace(/^(?:Unhandled promise rejection: |API error \d+: |HTTP \d+: |(?:[A-Za-z]+)?Error: )+/, '');
 }
 
 // A frame/filename that points at a REAL source location: non-empty AND not the

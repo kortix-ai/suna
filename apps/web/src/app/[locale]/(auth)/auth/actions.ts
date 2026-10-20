@@ -217,6 +217,9 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
     mobileState,
   });
 
+  // Resolve presentation before the irreversible send; it must not turn a
+  // delivered email into a failed submit.
+  const successMessage = tI18nComplete.raw('textd7eb7cdcff7d');
   const { error } = await settleWithin(
     supabase.auth.signInWithOtp({
       email: normalizedEmail,
@@ -235,7 +238,10 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   );
 
   if (error) {
-    return authFailure(error, 'Could not send the link', tI18nComplete);
+    return {
+      ...authFailure(error, 'Could not send the link', tI18nComplete),
+      status: authRateLimitCopy(error, tI18nComplete) ? 429 : error.status === 503 ? 503 : 400,
+    };
   }
 
   // Hand the PKCE verifier to the browser in the RESULT, not only as a
@@ -248,14 +254,25 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   // non-httpOnly by design. The value is the ssr-encoded `base64-` payload
   // under the fixed unchunked `-code-verifier` cookie; the page writes it
   // back byte-identical.
-  const codeVerifier =
-    (await cookies()).get(`${KORTIX_SUPABASE_AUTH_COOKIE}-code-verifier`)?.value ?? null;
+  let codeVerifier: string | null = null;
+  try {
+    codeVerifier =
+      (await cookies()).get(`${KORTIX_SUPABASE_AUTH_COOKIE}-code-verifier`)?.value ?? null;
+  } catch {
+    // The cookie is a fallback for PKCE, not evidence of email delivery.
+    console.warn('[auth] could not read email code verifier after successful send');
+  }
 
   return {
     success: true,
-    message: tI18nComplete.raw('textd7eb7cdcff7d'),
+    message: successMessage,
     email: normalizedEmail,
+    redirectTo: returnUrl,
     codeVerifier,
+    // Which email GoTrue just minted: a new address got the signup
+    // confirmation ("Confirm your email"), an existing one the sign-in link.
+    // The link step names the email the mailbox actually receives (KRTX-2195).
+    mode: flowMode,
   };
 }
 
@@ -288,7 +305,7 @@ export async function requestAccess(prevState: any, formData: FormData) {
   }
 }
 
-export async function forgotPassword(prevState: any, formData: FormData) {
+export async function forgotPassword(_prevState: unknown, formData: FormData) {
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = formData.get('email') as string;
   const origin = formData.get('origin') as string;
@@ -299,12 +316,22 @@ export async function forgotPassword(prevState: any, formData: FormData) {
 
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${trustedWebOrigin(origin)}/auth/reset-password`,
-  });
+  const { error } = await settleWithin(
+    supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${trustedWebOrigin(origin)}/auth/reset-password`,
+    }),
+    AUTH_UPSTREAM_TIMEOUT_MS,
+    () => ({ error: AUTH_TIMEOUT_AUTH_ERROR }),
+  );
 
   if (error) {
-    return authFailure(error, 'Could not send password reset email', tI18nComplete);
+    // Same contract as sendEmailCode: the route turns a rate-limited refusal
+    // into a 429 (with Retry-After) the browser can tell apart from success —
+    // a 200 body the page cannot distinguish is how KRTX-2049 went unnoticed.
+    return {
+      ...authFailure(error, 'Could not send password reset email', tI18nComplete),
+      status: authRateLimitCopy(error, tI18nComplete) ? 429 : error.status === 503 ? 503 : 400,
+    };
   }
 
   return {

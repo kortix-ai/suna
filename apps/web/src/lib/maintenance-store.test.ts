@@ -286,7 +286,7 @@ describe('admin write path', () => {
     );
 
     expect(saved.updatedAt).toBe('database-saved');
-    expect(edgeWrites).toEqual([{ key: 'maintenance_config_prod', value: saved }]);
+    expect<unknown>(edgeWrites).toEqual([{ key: 'maintenance_config_prod', value: saved }]);
     expect(edgeItems.get('maintenance_config_staging')).toEqual(STAGING_BLOCKING);
     expect(events).toEqual(['database-write', 'edge-write', 'edge-read-consistent']);
   });

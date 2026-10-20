@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,7 +21,8 @@ mock.module('../core/rest/projects-client', () => ({
 
 const { useSyncStore } = await import('../browser/stores/sync-store');
 const { setRuntimeCapabilities } = await import('../browser/stores/sandbox-connection-store');
-const { useSessionLog, useSessionLogSync, useSessionLogThread } = await import('./use-session-log');
+const { setSessionLogThreadLoader, useSessionLog, useSessionLogOlder, useSessionLogRecord, useSessionLogSync, useSessionLogThread } = await import('./use-session-log');
+const { notifyHostSignal } = await import('../core/session/host-signals');
 const { createSavedCopyStore, setSavedCopyStore } = await import('../core/session-sync/saved-copy-store');
 const { savedSessionLogCopies } = await import('../core/session-log/saved-log');
 const v1Convert = await import('../core/session-log/v1');
@@ -76,6 +77,68 @@ describe('useSessionLog / useSessionLogThread', () => {
   });
 });
 
+describe('useSessionLogThread on v2: throttleMs paces the thread', () => {
+  const put = (i: number) => ({ ...log.threads[0]!.messages.at(-1)!, message_id: `msg_zzzpaced${String(i).padStart(2, '0')}`, seq: 1000 + i });
+  const apply = (i: number) => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: i, message: put(i) } });
+
+  test('N log events inside one window render at most twice (leading and trailing edge), and the last one lands', async () => {
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    let renders = 0;
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      renders++;
+      seen.push(useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }, undefined, { throttleMs: 200 }));
+      return null;
+    });
+    expect(seen.at(-1)!.messages).toEqual(log.threads[0]!.messages);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+    const before = renders;
+    for (let i = 1; i <= 20; i++) act(() => apply(i));
+    // The leading edge shows the first event at once; the other 19 wait for the window.
+    expect(renders - before).toBe(1);
+    expect(seen.at(-1)!.messages.at(-1)!.message_id).toBe(put(1).message_id);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 300));
+    });
+    expect(renders - before).toBe(2);
+    expect(seen.at(-1)!.messages.at(-1)).toEqual(put(20));
+  });
+
+  test('identity: a re-render between ticks, with no store change, returns the same thread', () => {
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    let bump: () => void = () => {};
+    render(() => {
+      const [, set] = useState(0);
+      bump = () => set((n) => n + 1);
+      seen.push(useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }, undefined, { throttleMs: 200 }));
+      return null;
+    });
+    act(() => bump());
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen[0]).not.toBeNull();
+    expect(seen.at(-1)).toBe(seen[0]);
+  });
+
+  test('the v2 log arriving after mount shows at once, and dropping it returns to the v1 thread', async () => {
+    let shown: ReturnType<typeof useSessionLogThread> | undefined;
+    render(() => {
+      shown = useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }, undefined, { throttleMs: 200 });
+      return null;
+    });
+    expect(shown).toBeNull();
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    expect(shown!.messages).toEqual(log.threads[0]!.messages);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+    act(() => useSyncStore.getState().dropSessionLog(SESSION));
+    expect(shown).toBeNull();
+  });
+});
+
 describe('useSessionLog / useSessionLogThread without v2: the fromV1 view of the v1 rows', () => {
   const { fromV1, toV1 } = v1Convert;
   const v1Log = structuredClone(log);
@@ -101,6 +164,32 @@ describe('useSessionLog / useSessionLogThread without v2: the fromV1 view of the
     expect(last.byId).toBe(last.log!.threads[0]!);
   });
 
+  test('throttleMs paces the v1 rows the thread reads, as useSessionMessages paces them', async () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    const seen: Array<string | undefined> = [];
+    render(() => {
+      seen.push(useSessionLogThread(session, undefined, { throttleMs: 200 })?.messages.at(-1)?.message_id);
+      return null;
+    });
+    expect(seen.at(-1)).toBe(rows.at(-1)!.info.id);
+    const send = (id: string) => {
+      const info = { id, sessionID: RS, role: 'user', time: { created: Date.now() }, agent: 'build', model: { providerID: 'p', modelID: 'm' } };
+      useSyncStore.getState().optimisticAdd(RS, info as never, [{ id: `prt_${id}`, sessionID: RS, messageID: id, type: 'text', text: id } as never]);
+    };
+    // The first change after a quiet interval shows at once; the next one waits for the window.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+      send('msg_zzzpaced1');
+    });
+    expect(seen.at(-1)).toBe('msg_zzzpaced1');
+    act(() => send('msg_zzzpaced2'));
+    expect(seen.at(-1)).toBe('msg_zzzpaced1');
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 300));
+    });
+    expect(seen.at(-1)).toBe('msg_zzzpaced2');
+  });
+
   test('identity: a re-render with no store change returns the same log, thread and messages', () => {
     act(() => useSyncStore.getState().hydrate(RS, rows as never));
     const seen: Array<ReturnType<typeof useSessionLog>> = [];
@@ -115,6 +204,24 @@ describe('useSessionLog / useSessionLogThread without v2: the fromV1 view of the
     expect(seen.length).toBeGreaterThan(1);
     expect(seen[0]).not.toBeNull();
     expect(seen.at(-1)).toBe(seen[0]);
+  });
+
+  test('with a v2 log a v1 row change re-renders no consumer (the v1 fallback is not computed)', () => {
+    act(() => useSyncStore.getState().hydrate(RS, rows as never));
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    let renders = 0;
+    const seen: Array<{ log: ReturnType<typeof useSessionLog>; root: unknown }> = [];
+    render(() => {
+      renders++;
+      seen.push({ log: useSessionLog(session), root: useSessionLogThread(session) });
+      return null;
+    });
+    expect(seen.at(-1)!.log!.source).toBe('v2');
+    const before = renders;
+    // The v1 store gets a new row set for the same runtime session (a v1 frame while v2 is read).
+    act(() => useSyncStore.getState().hydrate(RS, rows.slice(0, -1) as never));
+    expect(renders).toBe(before);
+    expect(seen.at(-1)!.log!.source).toBe('v2');
   });
 
   test('an optimistic send shows as the thread\'s last message on v1 and on v2, until the log holds it', () => {
@@ -225,15 +332,15 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(calls).toBe(2);
   });
 
-  test('a thread without the kortix.transcript.v1 ext (pi): v1, no session log, no schema v2', async () => {
+  test('a native thread (pi: no kortix.transcript.v1 ext): v2, the page goes in the store, the stream switches to schema v2', async () => {
     const state = mount({ loader: async () => page() });
     await flush();
-    expect(state.dialect).toBe('v1');
-    expect(useSyncStore.getState().sessionLogs).toEqual({});
-    expect(joined).toEqual([]);
+    expect(state.dialect).toBe('v2');
+    expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(log.threads[0]!.messages.length);
+    expect(joined.map((j) => j.options.schema)).toEqual(['v2']);
   });
 
-  test('a pi page touches no device copy: no v2 copy is written and the v1 copy stays', async () => {
+  test('a native page replaces the v1 device copy with the v2 copy, and the saved native copy paints first', async () => {
     const data = new Map<string, string>();
     const store = createSavedCopyStore({ storage: { getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v), removeItem: (k) => void data.delete(k) }, userId: 'u1' });
     setSavedCopyStore(store);
@@ -241,8 +348,13 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     await store.write(PROJECT, SESSION, v1Copy as never);
     mount({ loader: async () => page() });
     await flush();
-    expect(await savedSessionLogCopies(store)!.read(PROJECT, SESSION)).toBeNull();
-    expect(store.read(PROJECT, SESSION)).not.toBeNull();
+    expect((await savedSessionLogCopies(store)!.read(PROJECT, SESSION))!.messages).toHaveLength(log.threads[0]!.messages.length);
+    expect(store.read(PROJECT, SESSION)).toBeNull();
+    act(() => renderer?.unmount());
+    renderer = null;
+    mount({ loader: () => new Promise(() => {}) });
+    await flush();
+    expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(log.threads[0]!.messages.length);
   });
 
   test('a 404 (a new session whose journal has not posted yet) is retried at the next turn end and on a stream reconnect', async () => {
@@ -369,11 +481,36 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(joined).toHaveLength(1);
   });
 
+  // The stored log needs no runtime: a stopped box (no health yet) and a daemon that does not
+  // list session.log.v2 (the stream converts its frames) read v2 too.
+  for (const [name, setup] of [
+    ['the runtime does not list session.log.v2', () => setRuntimeCapabilities(['session.rewind'])],
+    ['no runtime health answered yet', () => setRuntimeCapabilities(null)],
+  ] as const) {
+    test(`v2 when ${name}: the page is read and the stream switches to schema v2`, async () => {
+      setup();
+      const calls: unknown[] = [];
+      const state = mount({ loader: async (...a: unknown[]) => { calls.push(a.slice(0, 3)); return v1Page(); } });
+      await flush();
+      expect(state.dialect).toBe('v2');
+      expect(calls).toEqual([[PROJECT, SESSION, { limit: 40 }]]);
+      expect(joined.map((j) => j.options.schema)).toEqual(['v2']);
+    });
+  }
+
+  test('a tab that becomes visible again re-reads the first page', async () => {
+    let calls = 0;
+    mount({ loader: async () => { calls++; return v1Page(); } });
+    await flush();
+    expect(calls).toBe(1);
+    act(() => notifyHostSignal('visible'));
+    await flush();
+    expect(calls).toBe(2);
+  });
+
   for (const [name, setup] of [
     ['the flag is off', () => { flag = false; }],
     ['the API serves no flag', () => { flag = undefined; }],
-    ['the runtime does not list session.log.v2', () => setRuntimeCapabilities(['session.rewind'])],
-    ['no runtime health answered yet', () => setRuntimeCapabilities(null)],
   ] as const) {
     test(`v1 when ${name}: no page request, no session log`, async () => {
       setup();
@@ -401,5 +538,175 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(state.dialect).toBe('v1');
     expect(calls).toEqual([]);
     expect(detailCalls).toEqual([]);
+  });
+});
+
+describe('useSessionLogOlder: older pages of a thread from GET …/log?before_seq=', () => {
+  const ROOT = log.threads[0]!.thread_id;
+  const CHILD = log.threads[1]!.thread_id;
+  const all = () => structuredClone(log.threads[0]!.messages);
+  const newest = () => ({ ...page(), messages: all().slice(4), has_more: true });
+  const ids = (thread = ROOT) => (useSyncStore.getState().sessionLogs[SESSION]?.messages[thread] ?? []).map((m) => m.message_id);
+  function mountOlder(loader: (...a: unknown[]) => Promise<unknown>, threadId?: string) {
+    const state = { value: null as unknown as ReturnType<typeof useSessionLogOlder> };
+    render(() => {
+      state.value = useSessionLogOlder({ projectId: PROJECT, sessionId: SESSION }, threadId, { loader: loader as never });
+      return null;
+    });
+    return state;
+  }
+
+  test('nothing older without a page; the newest page says has_more; loadOlder reads before the first seq and fills the thread', async () => {
+    const calls: unknown[] = [];
+    const state = mountOlder(async (...a) => { calls.push(a.slice(0, 3)); return { ...page(), messages: all().slice(0, 4), has_more: false }; });
+    expect(state.value.hasOlder).toBe(false);
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, newest()));
+    expect(state.value.hasOlder).toBe(true);
+    await act(async () => { await state.value.loadOlder(); });
+    expect(calls).toEqual([[PROJECT, SESSION, { thread: ROOT, before_seq: all()[4]!.seq, limit: 100 }]]);
+    expect(ids()).toEqual(all().map((m) => m.message_id));
+    expect(state.value.hasOlder).toBe(false);
+    expect(state.value.isLoadingOlder).toBe(false);
+  });
+
+  test('two callers at once (the scroll sentinel and the print drain) start one request', async () => {
+    let calls = 0;
+    let release: (value: unknown) => void = () => {};
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, newest()));
+    const state = mountOlder(() => { calls++; return new Promise((resolve) => { release = resolve; }); });
+    let first: Promise<void> | undefined;
+    act(() => { first = state.value.loadOlder(); void state.value.loadOlder(); });
+    expect(state.value.isLoadingOlder).toBe(true);
+    await act(async () => { release({ ...page(), messages: all().slice(0, 4), has_more: false }); await first; });
+    expect(calls).toBe(1);
+    expect(state.value.isLoadingOlder).toBe(false);
+  });
+
+  test('a failed read stops offering older messages, so a drain loop ends', async () => {
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, newest()));
+    const state = mountOlder(async () => { throw new Error('500'); });
+    await act(async () => { await state.value.loadOlder(); });
+    expect(state.value.hasOlder).toBe(false);
+    expect(ids()).toEqual(all().slice(4).map((m) => m.message_id));
+  });
+
+  test('a child thread pages by its own thread id', async () => {
+    const childMessages = structuredClone(log.threads[1]!.messages);
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, newest()));
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, { ...page(), thread_id: CHILD, messages: childMessages.slice(1), has_more: true }));
+    const calls: unknown[] = [];
+    const state = mountOlder(async (...a) => { calls.push(a[2]); return { ...page(), thread_id: CHILD, messages: childMessages.slice(0, 1), has_more: false }; }, CHILD);
+    expect(state.value.hasOlder).toBe(true);
+    await act(async () => { await state.value.loadOlder(); });
+    expect(calls).toEqual([{ thread: CHILD, before_seq: childMessages[1]!.seq, limit: 100 }]);
+    expect(ids(CHILD)).toEqual(childMessages.map((m) => m.message_id));
+  });
+});
+
+describe('useSessionLogThread on v2: a sub-agent thread loads its first page', () => {
+  const CHILD = log.threads[1]!.thread_id;
+  const childPage = () => ({ ...page(), thread_id: CHILD, messages: structuredClone(log.threads[1]!.messages), has_more: false });
+  let calls: unknown[] = [];
+  beforeEach(() => {
+    calls = [];
+    setSessionLogThreadLoader(async (...a: unknown[]) => { calls.push(a.slice(0, 3)); return childPage(); });
+  });
+  afterEach(() => setSessionLogThreadLoader(undefined));
+
+  test('a child thread the log names but has not read: one request, then its messages', async () => {
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      const session = { projectId: PROJECT, sessionId: SESSION };
+      seen.push(useSessionLogThread(session, CHILD));
+      useSessionLogThread(session, CHILD);
+      return null;
+    });
+    await flush();
+    expect(calls).toEqual([[PROJECT, SESSION, { thread: CHILD, limit: 40 }]]);
+    expect(seen.at(-1)!.messages.map((m) => m.message_id)).toEqual(log.threads[1]!.messages.map((m) => m.message_id));
+  });
+
+  test('a failed read (the journal has not posted the thread yet) retries when the thread\'s next message arrives, at most every 5 s', async () => {
+    let fail = true;
+    setSessionLogThreadLoader(async (...a: unknown[]) => { calls.push(a.slice(0, 3)); if (fail) throw new Error('404'); return childPage(); });
+    const t0 = Date.parse('2026-10-19T12:00:00Z');
+    setSystemTime(t0);
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    const put = (i: number) => act(() => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.message', properties: { rev: i, message: { ...log.threads[1]!.messages[0]!, message_id: `msg_zlive${i}`, seq: 900 + i } } }));
+    let seen: ReturnType<typeof useSessionLogThread> = null;
+    render(() => {
+      seen = useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }, CHILD);
+      return null;
+    });
+    await flush();
+    expect(calls).toHaveLength(1);
+    put(1);
+    await flush();
+    expect(calls).toHaveLength(1); // inside 5 s of the failed read
+    fail = false;
+    setSystemTime(t0 + 6_000);
+    put(2);
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(seen!.messages.map((m) => m.message_id)).toEqual([...log.threads[1]!.messages.map((m) => m.message_id), 'msg_zlive1', 'msg_zlive2']);
+    setSystemTime();
+  });
+
+  test('no request on v1 (no log), for the root thread, or for a thread already read', async () => {
+    render(() => {
+      useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }, CHILD);
+      return null;
+    });
+    await flush();
+    expect(calls).toEqual([]);
+    act(() => renderer?.unmount());
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, childPage()));
+    render(() => {
+      const session = { projectId: PROJECT, sessionId: SESSION };
+      useSessionLogThread(session);
+      useSessionLogThread(session, log.threads[0]!.thread_id);
+      useSessionLogThread(session, CHILD);
+      return null;
+    });
+    await flush();
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('useSessionLogRecord', () => {
+  const source = { projectId: PROJECT, sessionId: SESSION, runtimeSessionId: null };
+  const put = (n: number) => {
+    const m = structuredClone(log.threads[0]!.messages.at(-1)!);
+    return { type: 'log.message', properties: { rev: 1_000 + n, message: { ...m, message_id: `msg_put_${n}`, seq: 900 + n } } };
+  };
+
+  test('null without a v2 log; the session record (grade, harness, ext) with one', () => {
+    const seen: Array<ReturnType<typeof useSessionLogRecord>> = [];
+    render(() => {
+      seen.push(useSessionLogRecord(source));
+      return null;
+    });
+    expect(seen.at(-1)).toBeNull();
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    expect(seen.at(-1)).toMatchObject({ restore_grade: log.restore_grade, harness: log.harness });
+  });
+
+  test('message puts and deltas re-render no consumer; a session patch does', () => {
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    let renders = 0;
+    render(() => {
+      renders++;
+      useSessionLogRecord(source);
+      return null;
+    });
+    const before = renders;
+    act(() => {
+      for (let n = 0; n < 20; n++) useSyncStore.getState().applySessionLogEvent(SESSION, put(n));
+    });
+    expect(renders).toBe(before);
+    act(() => useSyncStore.getState().applySessionLogEvent(SESSION, { type: 'log.state', properties: { generation: 2, session: { restore_grade: 'partial' } } }));
+    expect(renders).toBe(before + 1);
   });
 });

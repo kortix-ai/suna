@@ -45,13 +45,30 @@ export function registerSessionPresenceRoutes(): void {
     if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
     let awake: { deadlineAt: Date; capAt: Date } | null = null;
     if (active) {
-      await upsertSessionPresence(loaded.userId, sessionId, tabId, alerts === true);
-      // KRTX-1742: a person looking at the session has seen what it notified.
-      // Only with the `notification_center` flag on.
-      if (notificationsEnabled(loaded.row.metadata)) await markSessionNotificationsRead(loaded.userId, sessionId);
+      // KRTX-2727 (measured 2026-10-20): the lease upsert, the notification
+      // read-mark and the START-capability verdict touch disjoint tables and
+      // none of them reads another's result — serialized, every heartbeat drew
+      // three sequential turns on a 6-connection per-task pool, and the route's
+      // p95 tail was pool-wait, not query time. Start them together; the
+      // extension alone waits, because it alone needs the verdict.
+      const mayStart = projectCapabilityAllowed(
+        c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_START,
+      );
+      // When the upsert below rejects first, this verdict is never awaited —
+      // mark the orphan handled so the 500 the route already returns is not
+      // doubled by an unhandled-rejection report.
+      mayStart.catch(() => undefined);
+      await Promise.all([
+        upsertSessionPresence(loaded.userId, sessionId, tabId, alerts === true),
+        // KRTX-1742: a person looking at the session has seen what it notified.
+        // Only with the `notification_center` flag on.
+        notificationsEnabled(loaded.row.metadata)
+          ? markSessionNotificationsRead(loaded.userId, sessionId)
+          : Promise.resolve(),
+      ]);
       // KRTX-1729: a person who may start the session keeps its computer awake,
       // by the idle grace. A read-only viewer's lease only routes pushes.
-      if (await projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_START)) {
+      if (await mayStart) {
         awake = await extendSandboxDeadlineForPresence({ sessionId });
       }
     } else {

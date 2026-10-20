@@ -141,6 +141,41 @@ function v1Turn(turn: TurnLike<V1MessageRow>, opts: Opts, working: { id: string 
   };
 }
 
+/**
+ * The rows with the continue prompt OpenCode once sent after a compaction inside a turn: a reply
+ * after the marker that names an earlier prompt (or none, the marker being the latest) answers `<marker id>:continued`, a
+ * user row with no parts right after the marker. The block layer infers that continuation turn
+ * (`group.test.ts`); the v1 helpers file the reply under the prompt, above the marker.
+ */
+function withContinuePrompts(rows: Rows): Rows {
+  const order = new Map<string, number>();
+  let marker: { info: Message; at: number; continued: boolean } | null = null;
+  const out: Rows = [];
+  for (const row of [...rows].sort(compareMessagesForDisplay)) {
+    const info = row.info as Message & { parentID?: string; summary?: boolean };
+    if (info.role === 'user') {
+      order.set(info.id, order.size);
+      if (row.parts.some((p) => p.type === 'compaction')) marker = { info, at: order.size - 1, continued: false };
+      out.push(row);
+      continue;
+    }
+    // A reply with no loaded prompt joins the latest one: the marker's continuation only when that is the marker.
+    const named = (info.parentID === undefined ? undefined : order.get(info.parentID)) ?? order.size - 1;
+    if (!marker || info.summary || named > marker.at) {
+      out.push(row);
+      continue;
+    }
+    const id = `${marker.info.id}:continued`;
+    if (!marker.continued) {
+      marker.continued = true;
+      const created = ((marker.info as { time?: { created?: number } }).time?.created ?? 0) + 2;
+      out.push({ info: { ...marker.info, id, time: { created } } as Message, parts: [] });
+    }
+    out.push({ ...row, info: { ...info, parentID: id } as Message });
+  }
+  return out;
+}
+
 function v1Side(rows: Rows, opts: Opts, children: Record<string, Rows>) {
   const held = new Set(opts.held);
   const turns = groupMessagesIntoTurns(rows, { pendingMessageIds: held });
@@ -255,8 +290,10 @@ const costDiffers = (d: Difference) => {
 const ACCEPTED: Array<{ fields: string[]; cases?: RegExp; when?: (d: Difference) => boolean; reason: string }> = [
   {
     fields: ['cost', 'tokens'],
+    // A v1-derived message prices its v1 parts exactly as `getTurnCost` does (the v1 view, a `fromV1` record).
+    cases: / native /,
     when: costDiffers,
-    reason: "the reply's `usage` is the record's own field (`cost` as reported, else the lookup); v1 sums step-finish parts, which a native record's `toV1` writes with zero totals and OpenCode's `info.tokens` (the last step's) does not add up to on a multi-step reply, and without a step part it prices usage only through the lookup",
+    reason: "a native record's reply `usage` is the record's own field (`cost` as reported, else the lookup); v1 sums step-finish parts, which a native record's `toV1` writes with zero totals and OpenCode's `info.tokens` (the last step's) does not add up to on a multi-step reply, and without a step part it prices usage only through the lookup",
   },
   {
     fields: ['plan'],
@@ -268,6 +305,11 @@ const ACCEPTED: Array<{ fields: string[]; cases?: RegExp; when?: (d: Difference)
     when: (d) => d.turn?.compaction != null,
     reason: 'a compaction turn holds its summary in its compaction block, and the block layer draws it as a compaction row; v1 drew the summary as a reply (its text, its reasoning burst, its cost)',
   },
+  {
+    fields: ['partial'],
+    when: (d) => String(d.turn?.user).endsWith(':continued'),
+    reason: "the work after a compaction inside a turn is a continuation turn whose prompt is a stand-in with no blocks (`partial`, no bubble); the v1 side reads the same rows with a real continue prompt (`withContinuePrompts`), as OpenCode once sent",
+  },
 ];
 
 const fired = new Set<number>();
@@ -278,7 +320,7 @@ const accepted = (d: Difference) => {
 };
 
 function check(name: string, rows: Rows, thread: SessionLogThread, opts: Opts, children: { v1: Record<string, Rows>; log: Record<string, SessionLogThread> }, heads: SessionLogThread[] = []) {
-  const found = differences(name, v1Side(rows, opts, children.v1), logSide(thread, opts, children.log, heads));
+  const found = differences(name, v1Side(withContinuePrompts(rows), opts, children.v1), logSide(thread, opts, children.log, heads));
   expect(found.filter((d) => !accepted(d))).toEqual([]);
   return found;
 }

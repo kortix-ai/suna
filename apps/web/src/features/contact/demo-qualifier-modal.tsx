@@ -218,7 +218,7 @@ export function DemoQualifierModal({
 
     setSubmitting(true);
     try {
-      await fetch('/api/demo-request', {
+      const response = await fetch('/api/demo-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -231,15 +231,13 @@ export function DemoQualifierModal({
           source,
         }),
       });
+      if (!response.ok) throw new Error(`Demo request failed: ${response.status}`);
+      setStep(qualified ? 'cal' : 'received');
     } catch {
-      errorToast(tI18nHardcoded.raw('i18nComplete.text5859e6efd762'), {
-        description: tI18nHardcoded.raw('i18nComplete.text1a3ba76c2b52'),
-      });
+      errorToast(tI18nHardcoded.raw('i18nComplete.text5859e6efd762'));
     } finally {
       setSubmitting(false);
     }
-
-    setStep(qualified ? 'cal' : 'received');
   }, [email, company, size, name, goal, source, tI18nHardcoded]);
 
   const calConfig: Record<string, string> = { layout: 'month_view' };

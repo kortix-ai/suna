@@ -1,0 +1,100 @@
+name: Capture
+
+# Kortix Capture DEV build, kept out of Deploy Dev on purpose: it needs slow,
+# expensive macOS (10x) and Windows (2x) runners. It runs only when dispatched:
+#
+#   gh workflow run capture.yml --repo kortix-ai/suna --ref dev
+#
+# On any ref it builds, signs and verifies every installer. Only the `dev` ref
+# publishes: the mutable `capture-dev-latest` prerelease, with the installers,
+# CAPTURE-SHA256SUMS and capture-update.json (the file dev builds poll).
+# Production installers come from deploy-prod.yml, which calls the same
+# reusable workflow (capture-build.yml) and attaches them to the vX.Y.Z release.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: capture-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Resolve the dev version
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: VERSION
+          persist-credentials: false
+      # vX.Y.Z-dev.N: X.Y.Z is the VERSION of this commit, N the run number.
+      - id: v
+        run: |
+          V="$(tr -d '[:space:]' < VERSION)"
+          echo "tag=v$V-dev.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build and verify
+    needs: version
+    permissions:
+      contents: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
+    uses: ./.github/workflows/capture-build.yml
+    with:
+      tag: ${{ needs.version.outputs.tag }}
+      channel: dev
+      issuer_url: https://dev-api.kortix.com
+      release_tag: capture-dev-latest
+
+  publish:
+    name: Publish capture-dev-latest
+    needs: [version, build]
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: capture-installers
+          path: capture-installers/
+      - name: Move the capture-dev-latest tag to this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # GITHUB_TOKEN may not move a ref onto a commit that changes .github/workflows
+          # (403 "Resource not accessible by integration"). Devices read the installers and
+          # the signed manifest, not the tag, so the publish goes on and only warns.
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/capture-dev-latest" > /dev/null 2>&1; then
+            moved=$(gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/capture-dev-latest" -f sha="$GITHUB_SHA" -F force=true > /dev/null 2>&1 && echo yes || echo no)
+          else
+            moved=$(gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/tags/capture-dev-latest -f sha="$GITHUB_SHA" > /dev/null 2>&1 && echo yes || echo no)
+          fi
+          [ "$moved" = yes ] || echo "::warning::capture-dev-latest tag not moved to $GITHUB_SHA (this commit changes workflows). Move it by hand: gh api -X PATCH repos/$GITHUB_REPOSITORY/git/refs/tags/capture-dev-latest -f sha=$GITHUB_SHA -F force=true"
+      - name: Publish the prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          notes="Mutable DEV build of Kortix Capture ${TAG} for ${GITHUB_SHA}. It enrolls against https://dev-api.kortix.com by default. Every installer was installed and checked on its OS runner (run ${GITHUB_RUN_ID})."
+          if gh release view capture-dev-latest --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # Versioned names change per run: drop the old assets first.
+            for a in $(gh release view capture-dev-latest --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name'); do
+              gh release delete-asset capture-dev-latest "$a" --yes --repo "$GITHUB_REPOSITORY"
+            done
+            gh release edit capture-dev-latest --repo "$GITHUB_REPOSITORY" --prerelease --latest=false --notes "$notes"
+          else
+            gh release create capture-dev-latest --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false \
+              --title capture-dev-latest --notes "$notes"
+          fi
+          gh release upload capture-dev-latest capture-installers/* --clobber --repo "$GITHUB_REPOSITORY"
+          gh release view capture-dev-latest --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name'

@@ -20,7 +20,6 @@ import { db } from '../../shared/db';
 import { projectSessions, serviceAccounts } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { ttlMemo } from '../../shared/ttl-memo';
-import { roleAllows, type ProjectRole } from '../access';
 import type { ProjectRow, ProjectSessionRow } from './serializers';
 
 async function loadProjectSessionRow(
@@ -37,6 +36,20 @@ async function loadProjectSessionRow(
     ))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * The project that holds `sessionId`, or null. One primary-key read; it decides
+ * nothing about access: the caller still runs the project gate and
+ * `loadVisibleSession` on the project it returns.
+ */
+export async function sessionProjectId(sessionId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ projectId: projectSessions.projectId })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  return row?.projectId ?? null;
 }
 
 // Memoized like the membership/role loaders above, and for the same reason:
@@ -112,19 +125,23 @@ export async function sessionOwnerIsMachine(
  * it `canManageLifecycle` — producing a 403 on stop, restart, delete and
  * change-model for every manager who is not the owner.
  *
- * Pure and exported for unit tests, like shouldApplyAdminBypass above.
+ * Standing is the engine's `project.members.manage` verdict, so a custom role
+ * that holds the leaf has it and the role label plays no part.
  */
-export function callerHasManagerStanding(
-  effectiveRole: ProjectRole,
+export async function callerHasManagerStanding(
+  loaded: { actor?: Actor | null; row: { projectId: string } },
   boundCredentialSessionId: string | null,
-): boolean {
-  return boundCredentialSessionId === null && roleAllows(effectiveRole, 'manage');
+): Promise<boolean> {
+  if (boundCredentialSessionId !== null || !loaded.actor) return false;
+  return (
+    await authorize(loaded.actor, 'project.members.manage', { type: 'project', id: loaded.row.projectId })
+  ).allowed;
 }
 
 /**
- * Manager standing for the session LIST/serialization path: role standing, or a
- * `project.members.manage` capability probe — both behind the same binding gate
- * as `callerHasManagerStanding`.
+ * Manager standing for the session LIST/serialization path: the
+ * `project.members.manage` capability probe, behind the same binding gate as
+ * `callerHasManagerStanding`.
  *
  * The list route used to compute this from the role alone, so a session-bound
  * agent credential launched by a manager saw `can_manage_lifecycle: true` on
@@ -139,12 +156,10 @@ export function callerHasManagerStanding(
  * invoked for a bound credential — standing there is false before any I/O.
  */
 export async function viewerManagerStanding(
-  effectiveRole: ProjectRole,
   boundCredentialSessionId: string | null,
   probeManageCapability: () => Promise<boolean>,
 ): Promise<boolean> {
   if (boundCredentialSessionId !== null) return false;
-  if (roleAllows(effectiveRole, 'manage')) return true;
   return probeManageCapability();
 }
 
@@ -203,8 +218,6 @@ async function recordOversightSessionRead(input: {
 type VisibleSessionRequest = {
   row: ProjectRow;
   userId: string;
-  effectiveRole: ProjectRole;
-  adminBypass?: boolean;
   actor?: Actor | null;
 };
 
@@ -233,7 +246,7 @@ async function sessionManagerStanding(
   row: ProjectSessionRow,
   boundCredentialSessionId: string | null,
 ): Promise<boolean> {
-  let canManageProject = callerHasManagerStanding(loaded.effectiveRole, boundCredentialSessionId);
+  let canManageProject = await callerHasManagerStanding(loaded, boundCredentialSessionId);
   if (
     !canManageProject &&
     boundCredentialSessionId === null &&
@@ -316,21 +329,7 @@ async function sessionReadAccess(
   ) {
     visible = true;
   }
-  if (!visible) {
-    // A platform-admin bypass already verified for the parent project (see
-    // loadProjectForUser) also covers a session that would otherwise be
-    // invisible (private / not-my-grant). Audit every use — this is a real
-    // support/investigation escape hatch, not a standing grant.
-    if (!loaded.adminBypass) return null;
-    await recordAuditEvent({
-      accountId: loaded.row.accountId,
-      actorUserId: loaded.userId,
-      action: 'project.admin_bypass_session_read',
-      resourceType: 'project_session',
-      resourceId: sessionId,
-      metadata: { via: 'admin_bypass_header', sessionVisibility: row.visibility },
-    });
-  }
+  if (!visible) return null;
   let isOwner = row.createdBy === loaded.userId;
   if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
     // Spec §2: never the launcher's standing. Checked after the ordinary
@@ -381,8 +380,6 @@ export async function loadVisibleSession(
   loaded: {
     row: ProjectRow;
     userId: string;
-    effectiveRole: ProjectRole;
-    adminBypass?: boolean;
     /** The request's canonical principal. Absent only in tests that build a
      *  `loaded` shape by hand; the members.manage probe below then declines
      *  rather than widening. */
@@ -432,7 +429,7 @@ export async function loadVisibleSession(
  * for every row), and the grants in one batched read. The per-row verdicts then
  * run through the SAME `sessionReadAccess` rules as the single path — one copy
  * of the security decision, shared — and the rare per-row escape hatches
- * (trigger authorization, oversight, admin-bypass audit) stay exactly where
+ * (trigger authorization, oversight) stay exactly where
  * they were: per row, only when a verdict was refused without them.
  *
  * The owner probe (`service_accounts` lookup) stays memoized per creator, so a
@@ -504,7 +501,7 @@ export async function loadVisibleSessionsForList(
  *    gate denied them — the same escalation the member-sharing rule closes.
  */
 export async function loadSessionForSharing(
-  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; actor?: Actor | null },
+  loaded: { row: ProjectRow; userId: string; actor?: Actor | null },
   sessionId: string,
   /**
    * The caller's AGENT/SANDBOX token binding — always `callerKortixSessionId(c)`,
@@ -549,7 +546,7 @@ export async function loadSessionForSharing(
   }
   // Same standing rule as loadVisibleSession: a session-bound credential acts
   // for one session and does not carry the launching user's manage role.
-  const canManageProject = callerHasManagerStanding(loaded.effectiveRole, boundCredentialSessionId);
+  const canManageProject = await callerHasManagerStanding(loaded, boundCredentialSessionId);
   const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
     ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
     : false;

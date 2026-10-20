@@ -121,7 +121,7 @@ interface SandboxHealthPayload {
    */
   status: ReturnType<typeof serializeSandboxStatus> | null;
   provider_mode: 'automatic' | 'pinned';
-  selected_provider: 'daytona' | 'platinum' | 'e2b' | null;
+  selected_provider: 'platinum' | 'daytona' | null;
 }
 
 // Safe degraded payload: same shape as the happy path, surfaced when any
@@ -188,7 +188,7 @@ async function buildSandboxHealth(
  * How long one project's sandbox-health answer is reused.
  *
  * `buildSandboxHealth` is not a database read: `listSandboxTemplates` calls
- * `provider.getSnapshotState()` — a LIVE round trip to Daytona / E2B / Platinum
+ * `provider.getSnapshotState()` — a LIVE round trip to Platinum / Daytona
  * — once per template, plus a git read to hash the template directory. On the
  * SampleCo corpus (2026-08-26) that made this "cheap polling endpoint" the
  * slowest non-proxy read on the box: 559 ms mean server-side over 169 calls,
@@ -403,7 +403,7 @@ export function registerSandboxesRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
     // project.sandbox.write so a custom role can withhold it (humans) AND the
@@ -502,7 +502,7 @@ export function registerSandboxesRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
     // project.sandbox.write so a custom role can withhold it (humans) AND the

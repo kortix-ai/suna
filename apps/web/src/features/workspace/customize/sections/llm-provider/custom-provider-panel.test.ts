@@ -40,18 +40,29 @@ describe('custom provider list', () => {
     ).toEqual(['acme', 'zed']);
   });
 
-  // The list is the reason this tab is a list and not a lone form. If the row
-  // stops rendering, the tab silently goes back to "a form floating in an empty
-  // pane" with nothing on screen proving a custom provider was ever added.
-  test('the panel renders added providers above the form, on the provider-list grid', () => {
-    expect(panelSource).toContain('<AddedCustomProviders');
+  // The form stays on the tab; no separate configuration example.
+  // The saved list (board CP02) sits above it only when there is something
+  // to show, and never replaces it.
+  test('the form is the tab; saved providers list above it only when they exist', () => {
     expect(panelSource).toContain('<CustomProviderForm');
-    expect(panelSource.indexOf('<AddedCustomProviders')).toBeLessThan(
+    expect(panelSource).toContain('ids.length > 0 ? (');
+    expect(panelSource.indexOf('<CustomProviderRow')).toBeLessThan(
       panelSource.indexOf('<CustomProviderForm'),
     );
-    // Same two-column axis `provider-connect.tsx` uses for a provider row.
-    expect(panelSource).toContain('sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]');
-    expect(formSource).toContain('sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]');
+    expect(panelSource).not.toContain('EmptyState');
+  });
+
+  test('a saved provider opens in the page sheet, with no Remove control', () => {
+    expect(panelSource).toContain('useModelsPageSheet(');
+    expect(panelSource).not.toMatch(/<SplitSheet[\s>]/);
+    expect(panelSource).not.toContain('<SplitSheetContent');
+    expect(panelSource).toContain('<CustomProviderDetail');
+    expect(panelSource).not.toMatch(/deleteProjectSecret/);
+  });
+
+  test('the secret name shown in the form is the one the save writes', () => {
+    expect(formSource).toContain('customProviderSecretName(trimmed.providerId)');
+    expect(formSource).toContain('customProviderSecretName(form.providerId)');
   });
 
   // The field was `type="text"`, so a pasted key sat legible on screen and in

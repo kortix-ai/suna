@@ -28,18 +28,22 @@ export interface ServedModelNotice {
 }
 
 /**
- * The newest answer came from a fallback model in place of the model the
- * composer selects. Null once the composer selects another model: the next
- * request does not use the model that failed.
+ * The newest request was being served by a fallback model in place of the one
+ * the session asked for — what the session modal reports. Null before any
+ * answer, when the session's own model answered directly, or when the newest
+ * request ended without an answer: a cancel is not a fallback to report
+ * (KRTX-2572).
  */
 export function servedModelNotice(
   usage: SessionModelUsage | undefined,
-  selected: ModelKey | null | undefined,
   models: readonly NamedModel[] | undefined,
 ): ServedModelNotice | null {
   const latest = usage?.latest;
+  // A request the user canceled did not fail: the selected model "not
+  // answering" is the cancel's effect, not a fallback to report (KRTX-2572).
+  // The notice returns with the next answered request, as before.
+  if (latest?.outcome === 'client_aborted' || latest?.outcome === 'error') return null;
   if (!latest?.fallback_from) return null;
-  if (selected && modelKeyToWire(selected) !== latest.fallback_from) return null;
   return {
     served: modelNameOfWire(models, latest.served_model),
     fallbackFrom: modelNameOfWire(models, latest.fallback_from),
@@ -49,7 +53,10 @@ export function servedModelNotice(
 export interface TurnServedModel {
   /** Display names of the models that answered the turn, most requests first. */
   models: string[];
+  /** Legacy aggregate metadata; never use this to infer individual request switches. */
   fallbackFrom: string | null;
+  /** One switch per failed request, independent of the turn's aggregate model counts. */
+  fallbacks?: { requested: string; served: string; reason: string }[];
   /** What Kortix billed for the turn's model calls, in USD. */
   billedCost: number;
 }
@@ -65,6 +72,11 @@ export function turnServedModel(
   return {
     models: turn.served_models.map((wire) => modelNameOfWire(models, wire)),
     fallbackFrom: turn.fallback_from ? modelNameOfWire(models, turn.fallback_from) : null,
+    fallbacks: (turn.fallbacks ?? []).map((event) => ({
+      requested: modelNameOfWire(models, event.requested_model),
+      served: modelNameOfWire(models, event.served_model),
+      reason: event.error_code,
+    })),
     billedCost: turn.billed_cost,
   };
 }
@@ -73,25 +85,39 @@ export function turnServedModel(
  * `turnServedModel` with one result per ledger entry. A refetch keeps the
  * identity of each turn that did not change, and the memoized turn row needs
  * the same from what it is given.
+ *
+ * A turn whose first switches repeat the previous turn's last switch drops
+ * them: the session is still on the same fallback, and a thread showed the
+ * same "failed — switched" row on every turn (2026-10-19).
  */
 export function turnServedModelResolver(models: readonly NamedModel[] | undefined) {
-  const resolved = new WeakMap<object, TurnServedModel>();
-  return (usage: SessionModelUsage | undefined, messageId: string): TurnServedModel | undefined => {
+  const resolved = new WeakMap<object, { previous: object | undefined; value: TurnServedModel }>();
+  return (
+    usage: SessionModelUsage | undefined,
+    messageId: string,
+    previousMessageId?: string,
+  ): TurnServedModel | undefined => {
     const turn = usage?.turns[messageId];
     if (!turn) return undefined;
-    let value = resolved.get(turn);
-    if (!value) {
-      value = turnServedModel(usage, messageId, models)!;
-      resolved.set(turn, value);
-    }
+    const previous = previousMessageId ? usage.turns[previousMessageId] : undefined;
+    const cached = resolved.get(turn);
+    if (cached && cached.previous === previous) return cached.value;
+    const value = turnServedModel(usage, messageId, models)!;
+    const last = previous?.fallbacks?.at(-1);
+    // `value.fallbacks` maps the ledger's `turn.fallbacks` one to one.
+    const fresh = last ? (turn.fallbacks ?? []).findIndex((event) => event.requested_model !== last.requested_model ||
+      event.served_model !== last.served_model || event.error_code !== last.error_code) : 0;
+    if (fresh !== 0) value.fallbacks = fresh < 0 ? [] : value.fallbacks?.slice(fresh);
+    resolved.set(turn, { previous, value });
     return value;
   };
 }
 
 /**
- * What Kortix billed the session, when a fallback model answered any of its
- * turns. The transcript's own estimate prices every turn at the model that was
- * asked for, so it is wrong for exactly these sessions. Null keeps the estimate.
+ * What Kortix billed the session, when any of its requests was rerouted to a
+ * fallback model. The transcript's own estimate prices every turn at the model
+ * that was asked for, so it is wrong for exactly these sessions. Null keeps
+ * the estimate.
  */
 export function sessionBilledCost(usage: SessionModelUsage | undefined): number | null {
   if (!usage) return null;

@@ -49,6 +49,7 @@ Each session also has an `origin`, the class of caller that started it.
 You need the `project.session.start` permission. The agent you pick, or the project's default agent, must be one you may launch.
 
 - **Web, desktop, or mobile app:** write a prompt in the composer and send it. See [Web, desktop & mobile](/docs/clients).
+- **Desktop app, from any other app:** press **Command+Shift+Space** (**Ctrl+Shift+Space** on Windows and Linux), type the prompt, and press Enter. See [Quick Entry](/docs/clients#quick-entry).
 - **CLI:** run `kortix sessions new` from a linked project directory.
 - **API and SDK:** `POST /v1/projects/<project_id>/sessions` answers `201` with the session, or `202` when the create continues in the background. See [Sessions from code](/docs/sdk/sessions).
 - **Slack, Microsoft Teams, and email:** a message to the bot starts a session. See [Slack, Teams & email](/docs/connect/channels).
@@ -116,10 +117,20 @@ kortix sessions queue <session_id> now <prompt_id> # run this one next
 
 `kortix sessions chat -p` without `--steer` or `--queue` hands the message to the running sandbox directly and prints the reply. Without `-p` it opens a REPL. `kortix sessions queue <id> rm` is refused with `409` after a model step reads the message.
 
+### Mention files, agents and sessions
+
+In the composer, type `@` to mention a file, an agent or another session, and `/` to run a command.
+
+- Kortix sends each mention to the agent as a reference: a file's path, an agent's name, a session's id. The agent can open the file, hand off to the agent, or read the session.
+- References work on a chat's first message, on every later message, and in a command's arguments.
+- On a new chat, the `@` list shows agents only. Files show once the session's sandbox runs.
+
 ### Stop a turn or stop the session
 
 - **The Stop button** ends the running turn and holds the queue. The sandbox keeps running. Send any new message to release the hold. From the CLI: `kortix sessions queue <id> hold` and `kortix sessions queue <id> release`.
 - **`kortix sessions stop <id>`** ends the running turn and stops the sandbox. See [Stop, resume and delete](#stop-resume-and-delete).
+
+In a shared session, only the member who started a run, the session owner or a project manager can stop it. Everyone else sees no Stop button, and their messages queue. Under a run that another member stopped, the transcript shows **Stopped by** and that member's name. Any other stop request answers `403` with `code: not_turn_prompter`.
 
 ### Change a running session
 
@@ -144,7 +155,20 @@ kortix sessions approve <session_id> [<request_id>] --always # or --reject, --me
 kortix sessions answer <session_id> [<request_id>] --option "<value>" --text "<answer>"
 ```
 
-A turn that waits does no work. It keeps its sandbox for at most 2 hours. A session with origin `trigger`, `schedule`, or `system` has no one to ask, and its limit is 30 minutes. Then the turn ends and the sandbox stops. Kortix stores an open question outside the sandbox, so the session still shows it. Send a message to continue.
+A turn that waits does no work. It keeps its sandbox for at most 2 hours. A session with origin `trigger`, `schedule`, or `system` has no one to ask, and its limit is 30 minutes. Then the turn ends and the sandbox stops. Kortix stores an open question outside the sandbox, so the session still reads **Needs you**. The session page then shows no answer card, and `kortix sessions answer` finds no question: send a message to continue. That message answers the question and closes it.
+
+### Needs you in the session lists
+
+A session reads **Needs you** in the sidebar, on the Sessions page, and in the mobile app while something waits on you: an open agent question, a connector call under an **Ask** policy, or a review item. `GET /v1/projects/<project_id>/approvals/needs-input` lists the sessions with an open question or a pending connector call. The lists read it every 30 seconds, and again when a question opens or closes in an open session or you decide a connector call. A project manager sees every session. Any other member sees the sessions they started.
+
+An open question closes when:
+
+- you answer or dismiss it,
+- a new message starts a turn in the session,
+- the turn ends, or
+- a Slack or Teams thread takes the question. Your reply in the thread starts a new turn.
+
+A message that joins a running turn does not close that turn's question: the turn still waits for the answer. A question stays open while its sandbox is stopped after the wait limit. A permission request shows on the session page only.
 
 A connector call under an **Ask** policy is a different thing: a durable approval that waits until a person decides.
 
@@ -160,13 +184,13 @@ See [Connectors](/docs/connect/connectors#policies-and-approvals).
 
 | Read | CLI | API |
 | --- | --- | --- |
-| Recent messages | `kortix sessions log [<id>] [--limit N]` | `GET .../sessions/<session_id>/transcript` |
+| Recent messages | `kortix sessions log [<id>] [--limit N] [--json]` | `GET .../sessions/<session_id>/log` |
 | One session's fields | `kortix sessions info <id>` | `GET .../sessions/<session_id>` |
 | What every agent does now | `kortix sessions status [--all]` | — |
 | Stored files: uploads and what the agent showed | `kortix sessions attachments <id> [--download <id> \| --all]` | — |
 | Live events | — | `GET .../sessions/<session_id>/events` |
 
-The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the saved transcript of a stopped session. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
+The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the session log the server stores at the end of every turn; a running session adds the turn it runs now. A session with no stored log yet is read from its v1 transcript. `--json` prints the session log (`"schema": "kortix.session/2"`): the session record, `source` (`log`, or `v1` for a converted transcript) and `threads`, the root thread and each sub-agent's, with their newest messages and `has_more`. A running turn's messages the log does not hold yet carry `ext.kortix.data.provisional: true`. Read that key: the top-level `"provisional": true` they also carry is deprecated and goes in the next release. Without `--json`, the header names the sandbox status (`sandbox running`) and, for a running session, whether the agent is `working` or `idle`. `--schema v1` prints the old message array for one more release. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
 
 ## Stop, resume and delete
 
@@ -175,9 +199,31 @@ The transcript, `log`, `info`, `attachments`, and the events stream never wake a
 | Stop | `kortix sessions stop <id>` | The sandbox disk, the branch, the conversation | Running processes and memory. It ends the running turn. |
 | Start | `kortix sessions start <id> [--wait]` | Everything a stop keeps | Nothing. It resumes a stopped sandbox, or boots a missing one. |
 | Restart | `kortix sessions restart <id>` | Everything a stop keeps | Running processes and memory. It stops and starts the sandbox in place, or boots a new one when the sandbox is gone. |
-| Delete | `kortix sessions rm <id>...` | The pushed branch | The sandbox, the session's stored attachments, and its public links. The session leaves the list. |
+| Delete | `kortix sessions rm <id>...` | The pushed branch. For 30 days also the conversation and the stored files. | The sandbox and its public links. The session leaves the list. |
+| Restore | `kortix sessions restore <id>` | Everything a delete keeps | Nothing. The session returns to the list, stopped. |
+| Recover | `kortix sessions recover <id>` | The branch and the conversation of a lost session | Nothing more: the lost sandbox is already gone. The next start boots a new one. |
 
-The session branch persists after a stop and after a delete. Only work the agent committed and pushed survives a delete.
+The session branch persists after a stop and after a delete. Only work the agent committed and pushed survives a delete: the sandbox and its uncommitted files are gone.
+
+### Restore a deleted session
+
+A deleted session stays restorable for 30 days. The delete answers `restore_until`, the last moment a restore works. To restore it:
+
+- In the web app, select **Undo** in the toast that confirms the delete. While the old sandbox is still being removed, Undo tries again for about 30 seconds, then offers **Try again**.
+- Later, open **Recently deleted**: the tab on the Sessions page, also in the sidebar's session menu. It lists the deleted sessions you can restore, with the date each one stays restorable. Select **Restore session** on a row. A delete of several sessions from the Sessions page lands here too.
+- From the CLI, `kortix sessions ls --deleted` lists the same sessions with their full IDs. Run `kortix sessions restore <session_id>` with the full session ID. `kortix sessions rm` prints the exact command, with the date, `--project` and, for a session on another host, `--host`.
+- From code, call `s.restore()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/restore`. `GET /v1/projects/<project_id>/sessions?deleted=only` lists what you can restore, each row with `deleted_at`, `deleted_by` and `restore_until` (`listProjectSessionsPage(projectId, { view: 'deleted' })` in the SDK).
+
+A restore needs the same permission as the delete: the session owner or a person who manages the project. Recently deleted follows the same rule: you see the sessions you deleted, and a person who manages the project sees every deleted session they can open. The conversation, the stored files and the branch come back. The session's next start boots a new sandbox from the branch, and the new sandbox loads the saved conversation back into the agent: the agent keeps the context of the earlier turns, as when you [continue a lost session](#continue-a-lost-session). The same restore limit applies. Public links the delete revoked stay revoked: create new ones.
+
+| Restore answer | Meaning |
+| --- | --- |
+| `200` | The session is back. |
+| `409` `session_not_deleted` | The session is not deleted. |
+| `409` `session_sandbox_removal_pending` | The provider has not confirmed that the old sandbox is gone, or the session was deleted while its first sandbox was starting and that sandbox can still arrive (up to 10 minutes). Try again in a minute. |
+| `410` `session_purged` | More than 30 days passed. Its conversation and files are deleted; only the branch remains. |
+
+Kortix deletes a deleted session's conversation 30 days after the delete, and its stored files 7 days after that.
 
 A stopped session wakes when it gets:
 
@@ -186,7 +232,50 @@ A stopped session wakes when it gets:
 - a request to one of its preview ports;
 - a `kortix sessions files` or `kortix sessions cp` call.
 
-On Platinum with the account's **Volumes** switch on, an ephemeral session keeps its files and conversation on a volume when it stops, and a wake boots a new sandbox. See [Sandboxes & previews](/docs/work/runtime#persistent-and-ephemeral-machines).
+### Continue a lost session
+
+A session is lost when the provider removed its sandbox and Kortix could not bring it back in place. The session page then shows **This session's computer was lost**, and `kortix sessions start` exits 1 with `runtime_identity_unavailable`. The branch and the saved conversation remain. The sandbox disk is gone, and with it every change that was not committed and pushed.
+
+To continue a lost session on a new sandbox:
+
+- In the web app, select **Continue session** in the banner. The page boots the new sandbox.
+- From the CLI, run `kortix sessions recover <session_id>`, then `kortix sessions start <session_id> --wait`.
+- From code, call `s.recover()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/recover`.
+
+The next start boots a new sandbox from the session branch. The new sandbox loads the saved conversation back into the agent, so the agent keeps the context of the earlier turns. The transcript does not change. A saved conversation over the restore limit (24 MB by default; attachments and long tool outputs count at two fifths of their size) is not loaded: the agent starts with only a note that the earlier conversation was not restored, and the session page shows **Some earlier content could not be restored**. A continue needs the same permission as a delete: the session owner or a person who manages the project.
+
+| Continue answer | Meaning |
+| --- | --- |
+| `200` | The next start boots a new sandbox with the saved conversation. |
+| `409` `session_not_lost` | The session is not lost. Open it to resume it. |
+| `409` `session_transcript_missing` | The session has no saved conversation, so it cannot continue. Nothing changed. Delete it, or start a new session. |
+| `409` `session_sandbox_removal_pending` | The provider has not confirmed that the lost sandbox is gone. Nothing changed. Try again in a minute. |
+| `503` `session_log_restore_off` | This deployment turned off the session log. |
+
+### When the sandbox stops during a turn
+
+The provider can stop a sandbox while a turn runs, and a runtime restart (for example, to apply a config change) ends the running turn. Nobody asked for either. After a provider stop the turn ends with the reason "The sandbox stopped unexpectedly while this turn was running." Kortix then gives the work back once:
+
+| What the turn did before the stop | What Kortix sends |
+| --- | --- |
+| The agent did not answer the message | The same message again. |
+| The agent started an answer and did not finish it | One continuation message: `[auto-recovery] The previous turn was interrupted at <time> UTC. <reason> Continue from where you left off. Do not repeat steps that already completed.` The original message is not sent again. |
+| The agent finished its answer | Nothing. |
+
+When it goes out:
+
+- **A session people use.** The message waits in the queue, held, so the stopped sandbox stays stopped. When the sandbox wakes, for example when someone opens the session, the message goes out. To send it before that, select **Resume** above the composer (web) or **Send now** on the message (mobile), or send any message. From the CLI: `kortix sessions queue <session_id> release`. A session's first turn has no queued message, so Kortix puts a held continuation in the queue of the person who created the session.
+- **A `trigger`, `schedule` or `system` session, or a worker session another session started.** At once. Each sandbox recovers at most 2 times per rolling hour. After that the message waits, held, until the sandbox wakes, and a session's first turn gets no continuation.
+- **A runtime restart on a sandbox that runs again.** At once.
+
+When the continuation reaches the sandbox, the turn's reason changes to "The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn." After a runtime restart it changes to "The runtime restarted during this turn. Kortix resumed it."
+
+Kortix never continues a turn that someone ended: the Stop button (also when the sandbox stopped before the Stop reached it), `kortix sessions stop`, a model change (`kortix sessions model` restarts the runtime and ends the turn in flight), or an idle stop. A message comes back at most 3 times. The 4th time it fails, and the queue shows it with a retry. A continuation counts as a message: when the sandbox stops during the continuation, Kortix continues it again.
+
+Limits:
+
+- A session on the pi harness keeps the running turn in memory until the turn ends. After a provider stop the cut-off answer is gone, so Kortix sends the original message again.
+- A sandbox that stops between two steps of a turn leaves a finished answer, so Kortix sends nothing. Send a message to continue.
 
 ## When a session sleeps
 
@@ -226,6 +315,31 @@ kortix sessions ls --label needs-review
 ```
 
 `kortix sessions update` also takes `--clear-labels` and `--unmeta <key>`. Kortix refuses a metadata key it manages itself with `400`.
+
+### Pin and archive
+
+Pin a session to keep it at the top of your session list. Archive a session to take it out of your session list. A pin and an archive are yours alone: they change only your list, and other people see the session as before.
+
+- Archiving a pinned session unpins it. Pinning an archived session unarchives it.
+- Neither stops the session or changes its `updated_at`.
+- Only a person can pin or archive. A personal access token acts as you. An agent's session token, an API key and a service account get `403`.
+
+- **Web:** open the `⋯` menu of a session in the sidebar, on the Sessions page or in the session header, then choose **Pin session** or **Archive session**. Pinned sessions sit in the **Pinned** section at the top of the sidebar. The **Archived** tab of the Sessions page lists your archived sessions; **Archived sessions** in the sidebar's session menu opens it. On the Sessions page, **Select** archives several sessions at once. An archive toast offers **Undo**.
+- **Mobile:** the session actions sheet has **Pin** and **Archive**. Pinned sessions sit in the **Pinned** section of the project drawer. The Sessions page's filter sheet opens the **Archived** view.
+- **CLI:**
+
+```bash
+kortix sessions pin <session_id>...
+kortix sessions unpin <session_id>...
+kortix sessions archive <session_id>...
+kortix sessions unarchive <session_id>...
+kortix sessions ls --pinned      # only your pinned sessions
+kortix sessions ls --archived    # only your archived sessions
+```
+
+`kortix sessions ls` leaves out the sessions you archived and marks a pinned session `(pinned)`. A short ID from `ls --archived` resolves like any other short ID.
+
+- **API:** `PUT /v1/projects/<project_id>/sessions/<session_id>/pin` with `{"pinned": true}` or `false`, and `PUT …/archive` with `{"archived": true}` or `false`. Both answer `200` with `pinned_at` and `archived_at`, `null` when not set. `GET /v1/projects/<project_id>/sessions` leaves out your archived sessions; `?pinned=only` or `?archived=only` lists only those. Every row carries your `pinned_at` and `archived_at`.
 
 ## Who can open a session
 
@@ -326,6 +440,12 @@ kortix sessions warm --exclude <session_id> # never hand back this session
 ## Notifications
 
 A notification tells you that a session or a trigger needs you. Kortix writes each one to the bell, then sends it to your phone, your browser, or your email, as your settings allow.
+
+### In the app
+
+These need no flag and no browser permission. A turn that ends while you are elsewhere in the web or desktop app shows a **Task complete** toast with **Open session**. A failed turn shows **Session error**. Elsewhere means another page, another session, another tab or another app. The browser tab's icon gets a dot until you open the session.
+
+This covers the sessions you open in that window, also one you leave while its turn runs. The session on your screen shows no toast: its transcript shows the end. For turns that start elsewhere, such as a trigger or another device, turn on the notification center below.
 
 ### Turn notifications on
 

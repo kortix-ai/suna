@@ -40,9 +40,14 @@ import {
   type DiffLayout,
 } from '@/features/changes';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import {
+  manifestFilename,
+  useProjectManifestVersion,
+} from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import { useProjectCans } from '@/lib/use-project-can';
+import { REVIEW_CONTROL_ACTIONS, changeRequestControlsFrom } from '@kortix/sdk';
 import {
   ArrowCounterClockwiseIcon,
   CheckIcon,
@@ -92,8 +97,13 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   const projectId = projectContext?.projectId ?? '';
   const defaultBranch = projectContext?.defaultBranch ?? 'main';
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
-  const manifestFilename = manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml';
+  const manifestFile = manifestFilename(manifestVersion);
 
+  // Each decision shows only for a viewer who holds the leaves its route
+  // asserts (KRTX-1720), the same mapping as the Review Center: Apply changes
+  // merges (project.write + project.gitops.merge), Dismiss and Reopen close
+  // and reopen (project.write). An unresolved probe offers none of them.
+  const controls = changeRequestControlsFrom(useProjectCans(projectId, REVIEW_CONTROL_ACTIONS));
   const mergeMutation = useMergeChangeRequest();
   const closeMutation = useCloseChangeRequest();
   const reopenMutation = useReopenChangeRequest();
@@ -141,7 +151,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
 
   const recoveryBlocker: ChangeRequestRecoveryBlocker | null =
     manifestIssues !== null
-      ? { kind: 'manifest_invalid', issues: manifestIssues, manifestFilename }
+      ? { kind: 'manifest_invalid', issues: manifestIssues, manifestFilename: manifestFile }
       : conflictPaths !== null
         ? {
             kind: 'merge_conflict',
@@ -196,6 +206,9 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   };
 
   const blocked = recoveryBlocker !== null;
+  // An open change offers Dismiss and the apply; a closed one offers Reopen.
+  const hasDecision =
+    cr?.status === 'open' ? controls.canClose || controls.canMerge : controls.canClose;
 
   return (
     <Modal open={open} onOpenChange={(v) => !v && onClose()}>
@@ -237,7 +250,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
               </div>
               <p className="text-muted-foreground mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs">
                 <span className="tabular-nums">#{cr.number}</span>
-                <span className="text-muted-foreground/40" aria-hidden>
+                <span className="text-muted-foreground" aria-hidden>
                   {tI18nComplete.raw('text3b9453dad42b')}
                 </span>
                 <span>{proposedChangeTimeline(cr, relative, tI18nComplete)}</span>
@@ -246,7 +259,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                     words on every change, telling the reader nothing. */}
                 {cr.base_ref !== defaultBranch && (
                   <>
-                    <span className="text-muted-foreground/40" aria-hidden>
+                    <span className="text-muted-foreground" aria-hidden>
                       {tI18nComplete.raw('text3b9453dad42b')}
                     </span>
                     <span className="truncate">
@@ -270,7 +283,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
               <InfoBanner
                 tone="destructive"
                 icon={WarningIcon}
-                title={tI18nComplete('text8e5d6f03865c', { value0: manifestFilename })}
+                title={tI18nComplete('text8e5d6f03865c', { value0: manifestFile })}
               >
                 {manifestIssues.length > 0 ? (
                   <ul className="mt-1 space-y-1">
@@ -280,7 +293,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                             find in the file; the message is prose and was set
                             in mono alongside it, which read as machine output
                             rather than a sentence. */}
-                        <code className="text-foreground/80 font-mono text-xs break-all">
+                        <code className="text-foreground font-mono text-xs break-all">
                           {issue.path}
                         </code>{' '}
                         {issue.message}
@@ -324,7 +337,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                 reading size — it used to sit inside a card headed "Review
                 changes", a label for the screen the reader was already on. */}
             {cr?.description && (
-              <div className="text-foreground/90 text-sm wrap-break-word [&_pre]:overflow-x-auto">
+              <div className="text-foreground text-sm wrap-break-word [&_pre]:overflow-x-auto">
                 <UnifiedMarkdown content={cr.description} trust="agent" />
               </div>
             )}
@@ -378,24 +391,32 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             dialog put these in the header on desktop and in a sticky bar on
             mobile, so the same two buttons lived in two different places.
         --------------------------------------------------------------- */}
-        {cr && cr.status !== 'merged' && (
-          <div className="border-border bg-sidebar/95 flex shrink-0 items-center gap-2 border-t px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-sm sm:pb-3">
+        {cr && cr.status !== 'merged' && hasDecision && (
+          <div
+            className="border-border bg-sidebar/95 flex shrink-0 items-center gap-2 border-t px-5 py-3 backdrop-blur-sm"
+            // The bottom pad is the py-3 step plus the device's home-indicator
+            // inset, which is 0 everywhere but a phone or tablet sheet.
+            style={{ paddingBottom: 'calc(var(--spacing) * 3 + env(safe-area-inset-bottom))' }}
+          >
             {cr.status === 'open' ? (
               <>
-                <Button
-                  variant="outline-ghost"
-                  onClick={handleDismiss}
-                  disabled={closeMutation.isPending}
-                  className="active:scale-[0.96]"
-                >
-                  {closeMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                  {tI18nComplete.raw('text48845bff334a')}
-                </Button>
+                {controls.canClose ? (
+                  <Button
+                    variant="outline-ghost"
+                    onClick={handleDismiss}
+                    disabled={closeMutation.isPending}
+                    className="active:scale-[0.96]"
+                  >
+                    {closeMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                    {tI18nComplete.raw('text48845bff334a')}
+                  </Button>
+                ) : null}
                 {/* When something blocks the apply, the primary button IS the
                     way out of it. A disabled "Apply changes" beside a banner
                     carrying its own button gave the reader a dead control and a
-                    live one for the same problem. */}
-                {blocked ? (
+                    live one for the same problem. The way out stands in for
+                    the apply, so it follows the merge leaves too. */}
+                {!controls.canMerge ? null : blocked ? (
                   <Button
                     onClick={handleFixWithAgent}
                     disabled={isStartingRecovery}

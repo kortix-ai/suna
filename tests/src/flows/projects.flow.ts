@@ -8,7 +8,7 @@ import { waitFor } from "../core/poll";
 import { createDatabaseSession, fundDatabaseAccount } from "../fixtures/database-project";
 import { seedSessionTranscript } from "../fixtures/session-transcript";
 
-flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects"] }, async (ctx) => {
+flow("PROJ-1", { domain: "projects", tags: ["deployed", "smoke"], routes: ["GET /v1/projects"] }, async (ctx) => {
   await ctx.step("OWNER lists projects; every row matches the contract Project", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects");
     r.status(200).body().schema(ProjectSchema.array());
@@ -160,12 +160,14 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
       const r = await admin.get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
       r.status(403);
     });
-    await ctx.step("platform admin WITH x-kortix-admin-bypass → 200 (read-only escape hatch)", async () => {
+    // The header is retired (#10246): an admin opens a project by acting as
+    // its account (IMP-2), so the header must grant nothing here either.
+    await ctx.step("platform admin WITH the retired x-kortix-admin-bypass header → still 403", async () => {
       const r = await admin.get("/v1/projects/:projectId/detail", {
         params: { projectId: p.id },
         headers: { "x-kortix-admin-bypass": "1" },
       });
-      r.status(200).body().has("$.project.project_id", p.id);
+      r.status(403);
     });
   }
 });
@@ -251,12 +253,21 @@ flow(
   },
 );
 
-flow("PROJ-8", { domain: "projects", routes: ["DELETE /v1/projects/:projectId"] }, async (ctx) => {
+flow("PROJ-8", {
+  domain: "projects",
+  routes: [
+    "DELETE /v1/projects/:projectId",
+    "POST /v1/connectors/projects/:projectId/connectors",
+    "GET /v1/connectors/projects/:projectId/connectors",
+  ],
+}, async (ctx) => {
   // Local uses a database fixture so deletion remains hermetic. Remote targets
   // provision a managed repository and then archive it through the same route.
   let id = "";
   if (ctx.env.target === "local") {
-    id = (await ctx.fixtures.project({ name: ctx.fixtures.name("del") })).id;
+    // managedGit: the connector-create step commits kortix.yaml, which a
+    // database-only fixture's ke2e.invalid remote cannot take.
+    id = (await ctx.fixtures.project({ name: ctx.fixtures.name("del"), managedGit: true })).id;
   } else {
     await ctx.step("OWNER provisions a project to archive", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("del") });
@@ -264,6 +275,28 @@ flow("PROJ-8", { domain: "projects", routes: ["DELETE /v1/projects/:projectId"] 
       id = r.json<any>().project_id;
     });
   }
+  await ctx.step("OWNER adds an HTTP connector to the project", async () => {
+    const r = await ctx.client
+      .as(ctx.P.OWNER)
+      .post(
+        "/v1/connectors/projects/:projectId/connectors",
+        {
+          slug: `ke2e-proj8-${Date.now().toString(36)}`,
+          provider: "http",
+          baseUrl: "https://fixture.example.test",
+          auth: { type: "none" },
+        },
+        { params: { projectId: id } },
+      );
+    r.status(200).body().has("$.ok", true);
+  });
+  await ctx.step("the project lists exactly its one connector", async () => {
+    const r = await ctx.client
+      .as(ctx.P.OWNER)
+      .get("/v1/connectors/projects/:projectId/connectors", { params: { projectId: id } });
+    const rows = r.status(200).json<{ connectors: unknown[] }>().connectors;
+    if (rows.length !== 1) throw new Error(`expected the project to list 1 connector, listed ${rows.length}`);
+  });
   await ctx.step("OWNER archives project", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:projectId", { params: { projectId: id } });
     r.status(200).body().has("$.ok", true);
@@ -271,6 +304,15 @@ flow("PROJ-8", { domain: "projects", routes: ["DELETE /v1/projects/:projectId"] 
   await ctx.step("archived project reads 404", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params: { projectId: id } });
     r.status(404);
+  });
+  await ctx.step("the purged project lists no connectors (its connector rows were purged)", async () => {
+    const r = await ctx.client
+      .as(ctx.P.OWNER)
+      .get("/v1/connectors/projects/:projectId/connectors", { params: { projectId: id } });
+    const rows = r.status(200).json<{ connectors: unknown[] }>().connectors;
+    if (rows.length !== 0) {
+      throw new Error(`expected the purged project to list 0 connectors, listed ${rows.length}`);
+    }
   });
 });
 

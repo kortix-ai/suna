@@ -4,38 +4,39 @@
  * The Automations tab: pause/resume, the add form, and the trigger list.
  */
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+  ModalTrigger,
+} from '@kortix/ui/modal';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Textarea } from '@kortix/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import type { ProjectTrigger } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Play, Trash2, Zap } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { LightningIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
 
 type TriggerType = 'cron' | 'webhook';
 
@@ -60,9 +61,9 @@ export function AddTriggerForm({ projectId }: { projectId: string }) {
       setName('');
       setPrompt('');
       refresh();
-      toast.success('Trigger created');
+      successToast('Trigger created');
     },
-    onError: () => toast.error('Could not create trigger'),
+    onError: () => errorToast('Could not create trigger'),
   });
 
   return (
@@ -190,7 +191,7 @@ export function TriggerRow({
           onClick={onFire}
           aria-label={`Run ${slug}`}
         >
-          <Play className="size-4" />
+          <PlayIcon className="size-4" />
         </Button>
         <EditTriggerDialog projectId={projectId} slug={slug} trigger={trigger} onSaved={refresh} />
         <Button
@@ -201,7 +202,7 @@ export function TriggerRow({
           onClick={onRemove}
           aria-label={`Delete ${slug}`}
         >
-          <Trash2 className="size-4" />
+          <TrashIcon className="size-4" />
         </Button>
       </div>
     </div>
@@ -235,14 +236,14 @@ function EditTriggerDialog({
     onSuccess: () => {
       onSaved();
       setOpen(false);
-      toast.success('Trigger updated');
+      successToast('Trigger updated');
     },
-    onError: () => toast.error('Could not update trigger'),
+    onError: () => errorToast('Could not update trigger'),
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <Modal open={open} onOpenChange={setOpen}>
+      <ModalTrigger asChild>
         <Button
           variant="ghost"
           size="sm"
@@ -251,36 +252,38 @@ function EditTriggerDialog({
         >
           Edit
         </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="font-mono text-base">{slug}</DialogTitle>
-          <DialogDescription>Update this trigger.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor={`e-name-${slug}`}>Name</Label>
-            <Input id={`e-name-${slug}`} value={name} onChange={(e) => setName(e.target.value)} />
+      </ModalTrigger>
+      <ModalContent>
+        <ModalHeader>
+          <ModalTitle className="font-mono text-base">{slug}</ModalTitle>
+          <ModalDescription>Update this trigger.</ModalDescription>
+        </ModalHeader>
+        <ModalBody>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor={`e-name-${slug}`}>Name</Label>
+              <Input id={`e-name-${slug}`} value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`e-prompt-${slug}`}>Prompt</Label>
+              <Textarea
+                id={`e-prompt-${slug}`}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                rows={3}
+              />
+            </div>
+            <TriggerEnabledSelect value={enabled} onValueChange={setEnabled} />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor={`e-prompt-${slug}`}>Prompt</Label>
-            <Textarea
-              id={`e-prompt-${slug}`}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={3}
-            />
-          </div>
-          <TriggerEnabledSelect value={enabled} onValueChange={setEnabled} />
-        </div>
-        <DialogFooter>
+        </ModalBody>
+        <ModalFooter>
           <Button disabled={update.isPending} onClick={() => update.mutate()}>
             {update.isPending && <Loading className="size-4" />}
             Save
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -323,26 +326,26 @@ export function TriggersTab({ projectId }: { projectId: string }) {
     mutationFn: (next: boolean) => kortix.project(projectId).triggers.setActivation(next),
     onSuccess: (_res, next) => {
       refresh();
-      toast.success(next ? 'All triggers paused' : 'All triggers resumed');
+      successToast(next ? 'All triggers paused' : 'All triggers resumed');
     },
-    onError: () => toast.error('Could not change activation'),
+    onError: () => errorToast('Could not change activation'),
   });
 
   const fire = useMutation({
     mutationFn: (slug: string) => kortix.project(projectId).triggers.fire(slug),
     onSuccess: (res) => {
-      toast.success(`Trigger ${res.status}`);
+      successToast(`Trigger ${res.status}`);
     },
-    onError: () => toast.error('Could not fire trigger'),
+    onError: () => errorToast('Could not fire trigger'),
   });
 
   const remove = useMutation({
     mutationFn: (slug: string) => kortix.project(projectId).triggers.remove(slug),
     onSuccess: () => {
       refresh();
-      toast.success('Trigger deleted');
+      successToast('Trigger deleted');
     },
-    onError: () => toast.error('Could not delete trigger'),
+    onError: () => errorToast('Could not delete trigger'),
   });
 
   return (
@@ -393,7 +396,7 @@ function TriggersPauseCard({
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-sm font-medium">
-            <Zap className="size-4 text-muted-foreground" /> Automations
+            <LightningIcon className="size-4 text-muted-foreground" /> Automations
           </div>
           <p className="text-xs text-muted-foreground">
             {paused

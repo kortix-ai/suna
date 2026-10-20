@@ -55,6 +55,7 @@ describe('MessageSenderAbove', () => {
         <p>hello</p>
       </MessageSenderAbove>,
     );
+    // A person is a `rounded-sm` tile, never a circle (Jay, 2026-10-14).
     expect(markup).toContain('rounded-sm');
     expect(markup).not.toContain('rounded-full');
     // Above: the avatar comes first, then the message, in a right-aligned column.

@@ -1,12 +1,17 @@
 import type {
   ConnectionCredentialInput,
   ConnectorDraftInput,
+  ConnectorSyncResult,
   OAuth2ApplicationInput,
   OAuth2ClientCredentials,
   OAuth2TokenEndpointAuthMethod,
 } from '@kortix/sdk';
 
-import { connectorSyncErrorForSlug, createOnlyConnectorDraft } from './connector-connection-form';
+import {
+  connectorSyncErrorForSlug,
+  createOnlyConnectorDraft,
+  isAuthChallenge,
+} from './connector-connection-form';
 
 export interface OAuth2CredentialForm {
   tokenUrl: string;
@@ -166,20 +171,48 @@ export async function createConnectorWithOptionalOAuth2(
       draft: ConnectorDraftInput,
     ) => Promise<Awaited<ReturnType<typeof import('@kortix/sdk').createConnector>>>;
     deleteConnector: (projectId: string, slug: string) => Promise<unknown>;
+    /** Resolves to the re-sync that storing the credential ran (MCP only). */
     setConnectorCredential: (
       projectId: string,
       slug: string,
       credential: ConnectionCredentialInput,
-    ) => Promise<unknown>;
+    ) => Promise<{ ok: boolean; sync?: ConnectorSyncResult } | void>;
   },
-): Promise<{ syncError: string | null; credentialStored: boolean }> {
+): Promise<{
+  syncError: string | null;
+  credentialStored: boolean;
+  /** An MCP connector with an auth scheme got 401/403, and no credential was given. */
+  signInPending: boolean;
+}> {
   const created = await deps.createConnector(projectId, createOnlyConnectorDraft(draft));
-  const syncError = connectorSyncErrorForSlug(created, draft.slug);
-  if (syncError) return { syncError, credentialStored: false };
-  if (!oauth2) return { syncError: null, credentialStored: false };
+  const firstError = connectorSyncErrorForSlug(created, draft.slug);
+  if (!oauth2) {
+    // An MCP server answers its first tools/list with 401 or 403 until someone
+    // signs in: the sign-in still to do, not a failure. Only a connector with
+    // an auth scheme (picked in the form, or discovered from the server's
+    // challenge) sends a sign-in. Without one the 401 stays the error.
+    const auth = draft.auth ?? created.authDiscovery?.recommended;
+    const signInPending =
+      firstError !== null &&
+      draft.provider === 'mcp' &&
+      Boolean(auth?.type && auth.type !== 'none') &&
+      isAuthChallenge(firstError);
+    return {
+      syncError: signInPending ? null : firstError,
+      credentialStored: false,
+      signInPending,
+    };
+  }
 
+  // The connector exists even when its first sync failed, and its page opens
+  // next: store the app credential either way, so Retry runs with it.
+  let stored: { ok: boolean; sync?: ConnectorSyncResult } | void;
   try {
-    await deps.setConnectorCredential(projectId, draft.slug, buildOAuth2CredentialInput(oauth2));
+    stored = await deps.setConnectorCredential(
+      projectId,
+      draft.slug,
+      buildOAuth2CredentialInput(oauth2),
+    );
   } catch (credentialError) {
     try {
       await deps.deleteConnector(projectId, draft.slug);
@@ -194,5 +227,8 @@ export async function createConnectorWithOptionalOAuth2(
     }
     throw credentialError;
   }
-  return { syncError: null, credentialStored: true };
+  // Storing it re-syncs an MCP connector: that sync is the current state. A
+  // connector of any other provider keeps its first result.
+  const syncError = stored?.sync ? connectorSyncErrorForSlug(stored, draft.slug) : firstError;
+  return { syncError, credentialStored: true, signInPending: false };
 }

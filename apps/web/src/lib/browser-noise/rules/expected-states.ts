@@ -4,7 +4,7 @@ import type { NoiseRule } from '../evidence';
 import { normalizeString } from '../evidence';
 
 // Transient "the session runtime / sandbox URL hasn't pinned yet" throws. The
-// SDK throws `RuntimeNotReadyError` (`[opencode-sdk] Server URL not ready —
+// SDK throws `RuntimeNotReadyError` (`[kortix-runtime] Server URL not ready —
 // sandbox is still loading`) from `getClient()` for the ~1s window before a
 // new/switched session's runtime URL resolves; sibling guards reuse the same
 // wording for the pty/env paths (`[kortix-pty] Server URL not ready …`). It is
@@ -43,11 +43,13 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
   'Out of credits. Top up to continue.',
   // `no_account` — no credit account found.
   'No credit account found. Complete account setup first.',
-  // `subscription_required` — per-seat account with no active subscription.
-  // Must match apps/api/src/billing/services/billing-gate.ts VERBATIM. The seat
-  // price moved to $40 there and this copy was left at $20, so the filter
-  // stopped matching and an expected billing state has been paging as an error.
-  'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
+  // `out_of_credits` and `no_subscription` — the wallet is empty. Must match
+  // apps/api/src/billing/services/billing-gate.ts VERBATIM, or an expected
+  // billing state pages as an error.
+  'Out of credits. Top up or raise your plan to keep your agents running.',
+  'Out of credits. Pick a plan or top up to continue.',
+  // `payment_failed` — the last payment failed and the wallet is empty.
+  "Your last payment didn't go through and your wallet is empty. Update your payment method or top up to keep running.",
 ] as const;
 
 // Expected "no compaction model configured" configuration state. The SDK's
@@ -250,7 +252,7 @@ export function isGitMirrorUnavailableNoiseMessage(message: unknown): boolean {
 
 /**
  * Whether a message is the transient, self-healing "session runtime not ready
- * yet" state — `[opencode-sdk] Server URL not ready — sandbox is still loading`
+ * yet" state — `[kortix-runtime] Server URL not ready — sandbox is still loading`
  * and its sibling variants. Such a message must NEVER page Better Stack: it
  * resolves on its own within ~1s (every session switch/provisioning window).
  */

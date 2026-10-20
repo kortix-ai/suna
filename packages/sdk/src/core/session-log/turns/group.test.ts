@@ -7,7 +7,8 @@ import { describe, expect, test } from 'bun:test';
 import type { SessionPrompt } from '../../rest/projects-client/sessions';
 import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type SessionLogBlock, type SessionLogMessage, type SessionLogThread, type ToolCallBlock } from '../types';
 import { COST_MARKUP } from '../../turns';
-import { sessionLogTurns, sessionLogCallStatus, sessionLogPromptMessage } from './index';
+import { sessionLogOfV1Rows } from '../v1-view';
+import { sessionLogTurns, sessionLogCallStatus, sessionLogPromptMessage, sessionLogRetrying } from './index';
 
 const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
 const PRODUCER = { harness: 'pi', harness_version: '1', adapter_version: '1' };
@@ -150,6 +151,39 @@ describe('derived fields', () => {
     expect(turns[3]!.error).toMatchObject({ code: 'context_overflow', message: 'too long' });
   });
 
+  test('a compaction inside a turn: the replies after it continue below the marker, not above it', () => {
+    // pi compacts mid-turn and keeps naming the prompt (`reply_to: u1`); OpenCode would send a
+    // synthetic continue prompt. The work after the marker is a continuation turn: a stand-in
+    // prompt with no blocks (no bubble), and the live turn when the working turn names u1.
+    const block = { type: 'compaction' as const, id: 'c1', summary: 'SUMMARY', first_kept_message_id: 'a1', trigger: 'auto' as const };
+    const messages = [
+      user('u1'),
+      reply('a1', 'u1'),
+      msg('cmp', 'user', [block], { kind: 'compaction', status: 'complete' }),
+      reply('a2', 'u1'),
+      reply('a3', null),
+      msg('cmp2', 'user', [{ ...block, id: 'c2' }], { kind: 'compaction', status: 'complete' }),
+      reply('a4', 'u1', undefined, { status: 'streaming' }),
+    ];
+    const turns = sessionLogTurns(thread(messages), { busy: true, liveMessageId: 'u1' });
+    expect(turns.map((t) => [t.id, t.partial, t.compaction !== null, t.assistant.map((m) => m.message_id), t.live])).toEqual([
+      ['u1', false, false, ['a1'], false],
+      ['cmp', false, true, [], false],
+      ['cmp:continued', true, false, ['a2', 'a3'], false],
+      ['cmp2', false, true, [], false],
+      ['cmp2:continued', true, false, ['a4'], true],
+    ]);
+    expect(turns[2]!.user).toMatchObject({ message_id: 'cmp:continued', role: 'user', kind: 'turn', blocks: [], created_at: messages[2]!.created_at });
+    expect(turns.map((t) => t.continues)).toEqual([null, null, { marker: 'cmp', prompt: 'u1' }, null, { marker: 'cmp2', prompt: 'u1' }]);
+    // The working turn named by the marker is its continuation too; the identity holds across reads.
+    const again = sessionLogTurns(thread(messages), { busy: true, liveMessageId: 'cmp2' });
+    expect(again.find((t) => t.live)?.id).toBe('cmp2:continued');
+    expect(again[2]!.user).toBe(turns[2]!.user);
+    // A compaction between turns (a `/summarize`) keeps its own turn: the next prompt's replies follow it.
+    expect(sessionLogTurns(thread([user('u1'), reply('a1', 'u1'), msg('cmp3', 'user', [block], { kind: 'compaction' }), user('u2'), reply('b1', 'u2')])).map((t) => t.id))
+      .toEqual(['u1', 'cmp3', 'u2']);
+  });
+
   test('threads: a sub-thread the turn spawned, by its head or by the call that names it', () => {
     const spawn = call('k1', 'task', { kind: 'task' });
     const t = thread([user('u1'), reply('a1', 'u1', [spawn]), user('u2'), reply('a2', 'u2', [call('k2', 'task', { kind: 'task' })])]);
@@ -210,5 +244,26 @@ describe('liveness', () => {
     const retry = { status: 'error' as const, completed_at: null, error: { code: 'rate_limit', message: 'slow down' } };
     // A native record carries no isRetryable flag: its last open errored reply is not a retry.
     expect(sessionLogTurns(thread([user('u1'), reply('a1', 'u1', undefined, retry)])).map((t) => t.retrying)).toEqual([false]);
+  });
+});
+
+describe('sessionLogRetrying', () => {
+  const rows = (completed: boolean) => [
+    { info: { id: 'msg_u', sessionID: 'ses', role: 'user', time: { created: 1 } }, parts: [{ id: 'prt_q', sessionID: 'ses', messageID: 'msg_u', type: 'text', text: 'go' }] },
+    {
+      info: {
+        id: 'msg_a', sessionID: 'ses', role: 'assistant', parentID: 'msg_u', time: completed ? { created: 2, completed: 3 } : { created: 2 },
+        error: { name: 'APIError', data: { message: 'Too Many Requests', statusCode: 429, isRetryable: true } },
+      },
+      parts: [{ id: 'prt_x', sessionID: 'ses', messageID: 'msg_a', type: 'text', text: 'x' }],
+    },
+  ];
+  test('the thread\'s last reply is open with a retryable error: the same answer the turn layer gives, without turns', () => {
+    const open = sessionLogOfV1Rows('kses', 'ses', rows(false) as never).threads[0]!;
+    expect(sessionLogRetrying(open)).toBe(true);
+    expect(sessionLogTurns(open).map((t) => t.retrying)).toEqual([true]);
+    const done = sessionLogOfV1Rows('kses', 'ses', rows(true) as never).threads[0]!;
+    expect(sessionLogRetrying(done)).toBe(false);
+    expect(sessionLogRetrying(thread([user('u1')]))).toBe(false);
   });
 });

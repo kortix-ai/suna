@@ -2,9 +2,9 @@
  * The session actions sheet's rules (COR-148) — pure, so every rule has a test.
  *
  * `SessionActionsSheet` puts four rows above Rename · Share · …:
- *   1. Open change request — `OpenCRSheet` prefilled with the session's
- *      branch (`branch_name` → `base_ref`). A project API call, so it works
- *      for any session that carries its own branch.
+ *   1. Open change request — `OpenCRSheet` on the session's change request
+ *      (its diff base falls back to the project's default branch). A project
+ *      API call, so it works for any session that carries its own branch.
  *   2. View changes — the session's diff, read from the runtime's
  *      `/vcs/diff?mode=branch` (web `useSessionChanges`: the working tree plus
  *      every commit this branch carries over its base). Needs the live
@@ -17,8 +17,13 @@
  *      live runtime, one that serves `session.compact` (not pi), and never
  *      runs while the session works.
  *
+ * Below them, beside Rename and Share: Pin and Archive (KRTX-2418), which
+ * change only the viewer's own list (`sessionListActions`).
+ *
  * No React / React Native import.
  */
+
+import type { SessionListChange } from './session-cache-write';
 
 // ─── Changes ─────────────────────────────────────────────────────────────────
 
@@ -166,6 +171,8 @@ export interface SessionActionRowsInput {
   hasRuntime: boolean;
   /** The viewer may manage the session (`can_manage_lifecycle !== false`). */
   canManageLifecycle: boolean;
+  /** The viewer may open a change request: project.write + project.gitops.push (`changeRequestControlsFrom`). */
+  canOpenChangeRequest: boolean;
   /** The runtime serves `session.compact` (`useRuntimeSupports`); pi does not. */
   canCompact: boolean;
   changes: { pending: boolean; error: boolean; count: number };
@@ -191,7 +198,7 @@ export function sessionActionRows(input: SessionActionRowsInput): SessionActionR
   // this row. It needs the changes read, so only for the thread on screen.
   const { pending: changesPending, error: changesError, count: changesCount } = input.changes;
   const openChangeRequest: ActionRowState =
-    live && !changesPending && !changesError && changesCount > 0 ? { visible: true, enabled: true } : HIDDEN;
+    live && input.canOpenChangeRequest && !changesPending && !changesError && changesCount > 0 ? { visible: true, enabled: true } : HIDDEN;
 
   let viewChanges: ActionRowState = HIDDEN;
   if (live) {
@@ -214,4 +221,30 @@ export function sessionActionRows(input: SessionActionRowsInput): SessionActionR
   }
 
   return { openChangeRequest, viewChanges, files, compact };
+}
+
+// ─── Pin and archive (KRTX-2418) ─────────────────────────────────────────────
+
+/** A Pin or Archive row's action. Its strings: `sessions.<action>`, `sessions.<action>Done`, `sessions.<action>Failed`. */
+export type SessionListAction = 'pin' | 'unpin' | 'archive' | 'unarchive';
+
+/**
+ * The Pin and Archive rows, by the viewer's own state of the session: Unpin
+ * while pinned, Unarchive while archived. Every viewer who can open the
+ * session gets both: they change only the viewer's own list. `null` when the
+ * row carries no `pinned_at` at all: the server keeps no list state for this
+ * caller (web's rule), or it predates the feature.
+ */
+export function sessionListActions(session: {
+  pinned_at?: string | null;
+  archived_at?: string | null;
+}): { pin: 'pin' | 'unpin'; archive: 'archive' | 'unarchive' } | null {
+  if (session.pinned_at === undefined) return null;
+  return { pin: session.pinned_at ? 'unpin' : 'pin', archive: session.archived_at ? 'unarchive' : 'archive' };
+}
+
+/** The change an action sends: `PUT …/pin {pinned}` or `PUT …/archive {archived}`. */
+export function sessionListChange(action: SessionListAction): SessionListChange {
+  if (action === 'pin' || action === 'unpin') return { pinned: action === 'pin' };
+  return { archived: action === 'archive' };
 }

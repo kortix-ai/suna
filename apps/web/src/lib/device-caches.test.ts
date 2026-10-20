@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, mock, test } from 'bun:test';
 
-import { registerQueryClient } from '@/lib/query-client-singleton';
+import { getSharedQueryClient, registerQueryClient } from '@/lib/query-client-singleton';
 import { safeSetItem } from '@/lib/storage/managed-storage';
 import {
   type SessionTranscriptSyncEnvelope,
@@ -134,6 +134,56 @@ function sessionRow(n: number) {
   };
 }
 
+// Runs FIRST, while `getSharedQueryClient()` is still null: the app shell
+// mounts one auth round trip sooner (#10344), so `adoptDeviceCaches` can run
+// before `ReactQueryProvider` registers the client. Dropping adopt on that
+// null client left the saved-copy store unset, so the reloaded session painted
+// the skeleton instead of its kept conversation (journey 34, release 0.14.3).
+describe('adopt runs before the query client registers (#10344)', () => {
+  const user = 'user-early';
+  const gate = ['project-access-boundary', 'project-early', user];
+  const opensOn = (pathname: string) => Object.assign(pageWindow, { location: { pathname } });
+
+  test('registers the saved-copy store and prefetches the opened session with no client yet', async () => {
+    // This test's premise: no client registered yet. A prior test that
+    // registered one would make the assertion below a false pass.
+    expect(getSharedQueryClient()).toBeNull();
+
+    // The device kept this session's conversation, and the previous load left a
+    // persisted query cache, both for this user.
+    await createSavedCopyStore({ storage: indexedStorage, userId: user }).write(
+      'project-early',
+      'session-early',
+      envelope(),
+    );
+    const previous = new QueryClient();
+    previous.setQueryData(gate, { project_id: 'project-early' });
+    const writer = createPersistedQueryCache({ storage: local, userId: user, shouldPersist: () => true });
+    writer.persist(previous);
+    await writer.flush();
+
+    opensOn('/projects/project-early/sessions/session-early');
+    adoptDeviceCaches(user);
+    await settle();
+
+    // The fix: the saved-copy store does not wait on the client, so the opened
+    // session's copy is in memory for the first frame.
+    expect(currentSavedCopyStore()).not.toBeNull();
+    const first = currentSavedCopyStore()!.read('project-early', 'session-early');
+    expect(first).not.toBeInstanceOf(Promise);
+    expect((first as SessionTranscriptSyncEnvelope).messages).toHaveLength(1);
+
+    // The query cache waits for the client, then restores when it registers —
+    // not dropped on the early return.
+    const client = new QueryClient();
+    expect<unknown>(client.getQueryData(gate)).toBeUndefined();
+    registerQueryClient(client);
+    expect<unknown>(client.getQueryData(gate)).toEqual({ project_id: 'project-early' });
+
+    await clearDeviceCaches();
+  });
+});
+
 describe('device caches', () => {
   const client = new QueryClient();
 
@@ -153,8 +203,8 @@ describe('device caches', () => {
     registerQueryClient(client);
     adoptDeviceCaches(USER);
 
-    expect(client.getQueryData(gateKey)).toEqual({ project_id: 'project-1' });
-    expect(client.getQueryData(listKey)).toEqual({
+    expect<unknown>(client.getQueryData(gateKey)).toEqual({ project_id: 'project-1' });
+    expect<unknown>(client.getQueryData(listKey)).toEqual({
       pages: [{ items: [], next_cursor: null }],
       pageParams: [null],
     });

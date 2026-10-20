@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
@@ -11,7 +11,7 @@ import { parse } from 'yaml';
 // entrypoint so they catch wiring mistakes a unit test on an unexported
 // function would miss.
 //
-// None of these tests configure DAYTONA_API_KEY (the sandbox key `init` asks
+// None of these tests configure PLATINUM_API_KEY (the sandbox key `init` asks
 // about — managed git and the LLM key are configured in the dashboard after
 // `start`, not by this CLI). `init`/`start` never hard-fail on a missing
 // secret — they warn and proceed; see secrets.test.ts for coverage of that
@@ -142,8 +142,10 @@ esac
     expect(env.SUPABASE_ANON_KEY).toBeTruthy();
     expect(env.SUPABASE_PUBLIC_URL).toBeTruthy();
     expect((readCompose().services['kortix-api'] as { env_file: string[] }).env_file).toContain('.env');
-    expect(env.ALLOWED_SANDBOX_PROVIDERS).toBe('daytona');
-    expect(env.DAYTONA_SERVER_URL).toBe('https://app.daytona.io/api');
+    // Platinum is the reference provider; E2B support is discontinued.
+    expect(env.ALLOWED_SANDBOX_PROVIDERS).toBe('platinum');
+    expect(env).not.toHaveProperty('E2B_API_KEY');
+    expect(env).not.toHaveProperty('E2B_DOMAIN');
 
     // Default channel is "stable" — a plain moving Docker tag, no signing/TUF.
     expect(env.KORTIX_CHANNEL).toBe('stable');
@@ -497,6 +499,12 @@ esac
       expect(apiEnv.KORTIX_BILLING_INTERNAL_ENABLED).toBeUndefined();
       expect(apiEnv.ENTERPRISE_LICENSE_AVAILABLE).toBeUndefined();
       expect(apiEnv.KORTIX_RESTRICT_ACCOUNT_CREATION).toBeUndefined();
+      // The API reads the same ENABLE_EMAIL_AUTOCONFIRM GoTrue does: while it
+      // is on, a password email proves nothing (KRTX-1715). A pinned entry here
+      // would let the two disagree after `env set EMAIL_URL=…` flips it.
+      expect(apiEnv.ENABLE_EMAIL_AUTOCONFIRM).toBeUndefined();
+      expect((compose.services['supabase-auth'] as any).environment.GOTRUE_MAILER_AUTOCONFIRM)
+        .toBe('${ENABLE_EMAIL_AUTOCONFIRM}');
       expect((compose.services['kortix-api'] as any).env_file).toContain('.env');
     });
   });
@@ -707,6 +715,92 @@ esac
 
     const { check } = await signUpCheck();
     expect(check).toEqual({ name: 'open-sign-up', ok: true, detail: 'self sign-up is off (DISABLE_SIGNUP=true)' });
+  }, 60_000);
+
+  // `init` says the same thing `doctor` fails on, at the moment the operator
+  // creates the instance, and `--disable-signup` closes it from the first boot.
+  const SIGN_UP_RISK = 'anyone who reaches this instance can create a confirmed account for any email address';
+
+  test('init on a domain instance prints the open sign-up risk and both ways to close it', async () => {
+    const { code, stdout } = await run(['init', '--yes', '--domain', 'kortix.example.com']);
+    expect(code).toBe(0);
+    expect(stdout).toContain(SIGN_UP_RISK);
+    expect(stdout).toContain('kortix self-host env set DISABLE_SIGNUP=true');
+    expect(stdout).toContain('kortix self-host env set EMAIL_URL=');
+    expect(readEnv().DISABLE_SIGNUP).toBe('false');
+  }, 60_000);
+
+  test('init --disable-signup turns self sign-up off, prints no risk, and a later plain init keeps it off', async () => {
+    const first = await run(['init', '--yes', '--domain', 'kortix.example.com', '--disable-signup']);
+    expect(first.code).toBe(0);
+    expect(first.stdout).not.toContain(SIGN_UP_RISK);
+    expect(readEnv().DISABLE_SIGNUP).toBe('true');
+    expect((await signUpCheck()).check).toEqual({
+      name: 'open-sign-up',
+      ok: true,
+      detail: 'self sign-up is off (DISABLE_SIGNUP=true)',
+    });
+
+    // Not passing the flag never resets the operator's choice.
+    expect((await run(['init', '--yes'])).code).toBe(0);
+    expect(readEnv().DISABLE_SIGNUP).toBe('true');
+  }, 60_000);
+
+  test('init on a laptop instance prints no sign-up risk', async () => {
+    const { code, stdout } = await run(['init', '--yes']);
+    expect(code).toBe(0);
+    expect(stdout).not.toContain(SIGN_UP_RISK);
+  });
+
+  // GoTrue reads DISABLE_SIGNUP and ENABLE_EMAIL_AUTOCONFIRM only through
+  // Compose interpolation into supabase-auth, so a new value reaches it only
+  // when that container is recreated. The API reads ENABLE_EMAIL_AUTOCONFIRM
+  // too (KRTX-1715), so the two must restart together. Docker is stubbed as a
+  // running stack that records every call.
+  function runningStackDocker() {
+    const bin = join(tmp, 'bin');
+    mkdirSync(bin, { recursive: true });
+    const log = join(tmp, 'docker-calls.log');
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh
+echo "$*" >> '${log}'
+case " $* " in
+  *" ps --quiet "*) echo fixture-container ;;
+esac
+exit 0
+`, { mode: 0o755 });
+    return {
+      env: { PATH: `${bin}:${process.env.PATH}` },
+      // The services each `up --force-recreate --no-deps` call recreated.
+      recreated: () => (existsSync(log) ? readFileSync(log, 'utf8') : '').split('\n')
+        .filter((line) => line.includes(' up -d --force-recreate --no-deps '))
+        .map((line) => line.split(' --no-deps ')[1]),
+    };
+  }
+
+  test('env set DISABLE_SIGNUP recreates supabase-auth, and ENABLE_EMAIL_AUTOCONFIRM recreates supabase-auth with kortix-api', async () => {
+    const docker = runningStackDocker();
+    expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
+
+    const signUp = await run(['env', 'set', 'DISABLE_SIGNUP=true'], docker.env);
+    expect(signUp.code).toBe(0);
+    expect(signUp.stdout).toContain('restarted: supabase-auth');
+    const autoconfirm = await run(['env', 'set', 'ENABLE_EMAIL_AUTOCONFIRM=false'], docker.env);
+    expect(autoconfirm.code).toBe(0);
+    expect(docker.recreated()).toEqual(['supabase-auth', 'kortix-api supabase-auth']);
+  }, 60_000);
+
+  test('update --disable-signup recreates supabase-auth after the rollout', async () => {
+    const docker = runningStackDocker();
+    expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
+
+    const { code } = await run(['update', '--disable-signup'], docker.env);
+    expect(code).toBe(0);
+    expect(readEnv().DISABLE_SIGNUP).toBe('true');
+    expect(docker.recreated()).toEqual(['supabase-auth']);
+
+    // A flag that changes nothing recreates nothing.
+    expect((await run(['update', '--disable-signup'], docker.env)).code).toBe(0);
+    expect(docker.recreated()).toEqual(['supabase-auth']);
   }, 60_000);
 
   test('doctor checks open sign-up on a tunnel instance, and not on a laptop instance', async () => {

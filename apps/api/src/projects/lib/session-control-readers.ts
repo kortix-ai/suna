@@ -3,6 +3,7 @@ import { and, count, eq, isNull, max } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { wakeLadderBudgetOf } from '../session-lifecycle/attended-wake-ladder';
+import { sessionLogEnabled } from '../session-log-read';
 
 export interface RuntimeControlState {
   known: true;
@@ -97,9 +98,12 @@ export interface MirrorWatermark {
  * Two aggregate reads on the mirror's own index — never the message BODIES.
  * The watermark is what a client needs to decide whether to ask for an older
  * page; shipping the rows here would re-create the 7-19 MB transcript payloads
- * the mirror exists to prevent.
+ * the mirror exists to prevent. Null with the project flag `session_log` on: the
+ * mirror is not read and the frame is not sent.
  */
-export async function readMirrorWatermark(sessionId: string): Promise<MirrorWatermark> {
+export async function readMirrorWatermark(sessionId: string): Promise<MirrorWatermark | null> {
+  // P8: with the project flag `session_log` on the session log is the transcript, and no client reads this frame.
+  if (await sessionLogEnabled(sessionId)) return null;
   const [mirror] = await db
     .select({
       capturedAt: sessionTranscriptMirrors.capturedAt,

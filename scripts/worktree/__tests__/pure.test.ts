@@ -8,7 +8,7 @@ import {
   computePorts,
   dbModeOf,
   gatewayLaunchEnv,
-  lowestFreeSlot,
+  pickSlot,
   primaryCredsFromStatus,
   rewriteConfigToml,
   sanitizeName,
@@ -17,6 +17,7 @@ import {
   webLaunchEnv,
   type Ports,
   type Registry,
+  branchDbName, withDatabase,
 } from '../lib';
 
 describe('computePorts', () => {
@@ -61,19 +62,43 @@ describe('sanitizeName', () => {
   });
 });
 
-describe('lowestFreeSlot', () => {
+describe('pickSlot', () => {
   const reg = (slots: number[]): Registry => ({
     version: 1,
-    slots: Object.fromEntries(slots.map((s) => [`w${s}`, { slot: s } as Registry['slots'][string]])),
+    slots: Object.fromEntries(slots.map((s, i) => [`w${i}`, { slot: s } as Registry['slots'][string]])),
   });
+  const nothingListens = () => false;
+  // A foreign listener on one port (Supabase Studio) of each given slot.
+  const busySlots = (slots: number[]) => {
+    const ports = new Set(slots.map((s) => computePorts(s).sbStudio));
+    return (p: number) => ports.has(p);
+  };
 
   test('returns 0 for an empty registry', () => {
-    expect(lowestFreeSlot(reg([]))).toBe(0);
+    expect(pickSlot(reg([]), nothingListens)).toEqual({ slot: 0, clashes: [] });
   });
 
   test('fills the lowest gap, not the next-highest', () => {
-    expect(lowestFreeSlot(reg([0, 1, 3]))).toBe(2);
-    expect(lowestFreeSlot(reg([0, 1, 2]))).toBe(3);
+    expect(pickSlot(reg([0, 1, 3]), nothingListens).slot).toBe(2);
+    expect(pickSlot(reg([0, 1, 2]), nothingListens).slot).toBe(3);
+  });
+
+  test('searches past 10 consecutive clashing slots to the first free block', () => {
+    const r = pickSlot(reg([0, 1, 2]), busySlots([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]));
+    expect(r.slot).toBe(13);
+    expect(r.clashes.map((c) => c.slot)).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(r.clashes[0]).toEqual({ slot: 3, service: 'sbStudio', port: computePorts(3).sbStudio });
+  });
+
+  test('never hands out a registered slot, even when its ports are free', () => {
+    // Slot 5 belongs to a stopped worktree: nothing listens on it, but it is taken.
+    expect(pickSlot(reg([0, 1, 2, 5]), busySlots([3, 4])).slot).toBe(6);
+  });
+
+  test('gives up after `limit` unregistered clashing slots, skipping registered ones', () => {
+    const r = pickSlot(reg([1, 3]), () => true, 4);
+    expect(r.slot).toBeNull();
+    expect(r.clashes.map((c) => c.slot)).toEqual([0, 2, 4, 5]);
   });
 });
 
@@ -212,5 +237,16 @@ describe('launch envs', () => {
       expect(typeof computePorts(slot).gateway).toBe('number');
       expect(gatewayLaunchEnv(computePorts(slot)).PORT).toMatch(/^\d+$/);
     }
+  });
+});
+
+describe('branch database names', () => {
+  test('kortix_wt_ prefix, dashes become underscores, fits a Postgres identifier', () => {
+    expect(branchDbName('session-log-p6')).toBe('kortix_wt_session_log_p6');
+    expect(branchDbName(sanitizeName('x'.repeat(80))).length).toBeLessThanOrEqual(63);
+  });
+  test('withDatabase swaps only the database of an admin URL', () => {
+    expect(withDatabase('postgresql://postgres:postgres@127.0.0.1:54322/postgres', 'kortix_wt_a'))
+      .toBe('postgresql://postgres:postgres@127.0.0.1:54322/kortix_wt_a');
   });
 });

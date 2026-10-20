@@ -19,14 +19,17 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import Hint from '@/components/ui/hint';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
+import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
+import { isPlanWriteTool } from '@/features/session/turn/plan-anchor';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import type { ToolPart } from '@/ui';
+import type { ToolCallBlock } from '@kortix/sdk';
 import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
@@ -49,15 +52,21 @@ import {
 } from 'react';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
 import { PanelWidthButton } from './viewer-actions';
-import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
-import { isPlanWriteTool } from '@/features/session/turn/plan-anchor';
 
 /** Closes the detail. Exported so a body with its own toolbar can host it. */
-export function CloseButton({ onClose }: { onClose: () => void }) {
+export function CloseButton({
+  onClose,
+  variant = 'secondary',
+}: {
+  onClose: () => void;
+  /** `secondary` inside a toolbar `ButtonGroup` (every call site but a lone
+   *  drawer close, which stays `ghost`). */
+  variant?: 'secondary' | 'ghost';
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Button
-      variant="ghost"
+      variant={variant}
       size="icon"
       onClick={onClose}
       aria-label={tI18nComplete.raw('text7d9eb7acb13e')}
@@ -568,12 +577,14 @@ export function DetailLayer({
                       <span className="flex min-w-0 items-center gap-2.5">
                         {detail?.icon}
                         <span className="truncate">{detail?.title}</span>
-                        {detail?.meta && <span className="shrink-0 font-normal">{detail.meta}</span>}
+                        {detail?.meta && (
+                          <span className="shrink-0 font-normal">{detail.meta}</span>
+                        )}
                       </span>
-                      <span className="flex shrink-0 items-center gap-1">
+                      <ButtonGroup className="shrink-0">
                         {detail?.actions}
                         <CloseButton onClose={onBack} />
-                      </span>
+                      </ButtonGroup>
                     </DrawerTitle>
                   </DrawerHeader>
                 )}
@@ -690,10 +701,10 @@ export function DetailLayer({
                       </span>
                       {detail.meta && <span className="shrink-0">{detail.meta}</span>}
                     </span>
-                    <span className="flex shrink-0 items-center gap-1">
+                    <ButtonGroup className="shrink-0">
                       {detail.actions}
                       <CloseButton onClose={onBack} />
-                    </span>
+                    </ButtonGroup>
                   </div>
                 )}
                 <div
@@ -738,10 +749,10 @@ export function DetailLayer({
                 {persistentLayer.title}
               </span>
             </span>
-            <span className="flex shrink-0 items-center gap-0.5">
+            <ButtonGroup className="shrink-0">
               <PanelWidthButton isMobile={isMobile} />
               <CloseButton onClose={persistentLayer.onClose} />
-            </span>
+            </ButtonGroup>
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">{persistentLayer.body}</div>
         </m.div>
@@ -765,48 +776,46 @@ function isSnapshotTool(tool: string): boolean {
  * Keep the final snapshot; drop the ones it superseded. Any non-snapshot call in
  * the step is a real distinct event and survives untouched.
  */
-export function collapseSnapshots(parts: ToolPart[]): ToolPart[] {
+export function collapseSnapshots(calls: ToolCallBlock[]): ToolCallBlock[] {
   let lastSnapshot = -1;
-  parts.forEach((part, i) => {
-    if (isSnapshotTool(part.tool)) lastSnapshot = i;
+  calls.forEach((call, i) => {
+    if (isSnapshotTool(call.name)) lastSnapshot = i;
   });
-  if (lastSnapshot < 0) return parts;
-  return parts.filter((part, i) => !isSnapshotTool(part.tool) || i === lastSnapshot);
+  if (lastSnapshot < 0) return calls;
+  return calls.filter((call, i) => !isSnapshotTool(call.name) || i === lastSnapshot);
 }
 
 /** The real tool views for a set of calls — the escape hatch's payload. */
 export function ToolParts({
-  parts,
+  calls,
   sessionId,
   summary,
 }: {
-  parts: ToolPart[];
+  calls: ToolCallBlock[];
   sessionId: string;
   /**
    * A plain-language sentence to show above the raw tool views (W3) — e.g.
    * "Read 3 files". Opt-in: only the Context card's tool-group rows
    * (`context-card.tsx`) pass one, built by reusing `narrateStep`/
-   * `narrateFailedStep` over the group's own `parts`. `StepDetailBody` leaves
+   * `narrateFailedStep` over the group's own `calls`. `StepDetailBody` leaves
    * this unset — a Progress step's narration already sits in the detail's
    * own header, and repeating it here would just say the same line twice.
    */
   summary?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const visible = collapseSnapshots(parts);
+  const visible = collapseSnapshots(calls);
   // A step's own icon already went red for this (StepIcon, ContextCard) — but
   // that glance lives on the panel's home, one screen back. Once the user has
   // actually opened the failed step, the detail must say so too, not just show
   // a tool view that looks the same as a success (failed-call aggregation).
-  const failed = visible.some(
-    (part) => (part.state as { status?: string } | undefined)?.status === 'error',
-  );
+  const failed = visible.some((call) => call.status === 'error');
 
   // A lone `show` call IS the preview: `ToolPartRenderer` sizes it `h-full`
   // (`fillsPanel`), and that height only resolves if this column has one too.
   // Without it the preview's iframe fell back to the browser's 150px default.
   const fillsPanel =
-    visible.length === 1 && (visible[0].tool === 'show' || visible[0].tool === 'show-user');
+    visible.length === 1 && (visible[0].name === 'show' || visible[0].name === 'show-user');
 
   return (
     <ToolSurfaceContext.Provider value="panel">
@@ -834,13 +843,13 @@ export function ToolParts({
         {/* One rendered call → open it; several → every row starts closed and
             the detail reads as a list of what happened, which is the only way
             a three-call step is skimmable at all. Counted on `visible`, not
-            `parts`: `collapseSnapshots` can fold three `todo_write` calls into
+            `calls`: `collapseSnapshots` can fold three `todo_write` calls into
             the single row that is actually drawn, and that lone row is a
             single-part detail by every measure the reader has. */}
-        {visible.map((part) => (
+        {visible.map((call) => (
           <ToolPartRenderer
-            key={part.callID}
-            part={part}
+            key={call.call_id}
+            call={call}
             sessionId={sessionId}
             defaultOpen={visible.length === 1}
           />

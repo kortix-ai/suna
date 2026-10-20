@@ -65,7 +65,7 @@ services:
       DAYTONA_API_KEY: ${DAYTONA_API_KEY}
       DAYTONA_SERVER_URL: ${DAYTONA_SERVER_URL}
       DAYTONA_TARGET: ${DAYTONA_TARGET}
-      # The PUBLIC origin cloud (Daytona) sandboxes call back to — never the
+      # The PUBLIC origin cloud sandboxes call back to — never the
       # internal Docker hostname, which a remote cloud VM can never resolve or
       # reach. Set per reachability mode by the CLI (see reachabilityMode() in
       # self-host/tunnel.ts): the https://api.<domain> origin in domain mode,
@@ -100,6 +100,29 @@ services:
       KORTIX_CONFIG_ARCHIVE_S3_FORCE_PATH_STYLE: "true"
       KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: ${S3_PROTOCOL_ACCESS_KEY_ID}
       KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: ${S3_PROTOCOL_ACCESS_KEY_SECRET}
+      # Kortix Capture. Devices upload to the bundled S3-compatible store
+      # (`capture-store` below) with short-lived credentials this API issues
+      # through the store's STS (POST /v1/capture/credentials), each scoped to
+      # one device's folder. The role ARN is a label: the store enforces the
+      # session policy the API sends, not an IAM role. PUBLIC_ENDPOINT is the
+      # origin a device reaches the store on: the same origin as the API
+      # (Caddy, or the API's own passthrough, serves /kortix-capture/*), so no
+      # extra DNS record or port is needed. The bucket is created by the API.
+      # PROXY_TARGET is set for every mode but domain mode — see
+      # renderFullDockerCompose() in compose-assets.ts.
+      KORTIX_CAPTURE_S3_BUCKET: kortix-capture
+      KORTIX_CAPTURE_S3_REGION: us-east-1
+      KORTIX_CAPTURE_S3_ENDPOINT: http://capture-store:9000
+      KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT: ${KORTIX_URL}
+      KORTIX_CAPTURE_S3_PROXY_TARGET: http://capture-store:9000
+      KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: "true"
+      KORTIX_CAPTURE_S3_CREATE_BUCKET: "true"
+      KORTIX_CAPTURE_S3_ACCESS_KEY_ID: ${CAPTURE_STORE_ROOT_USER}
+      KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: ${CAPTURE_STORE_ROOT_PASSWORD}
+      KORTIX_CAPTURE_STS_ROLE_ARN: arn:aws:iam::000000000000:role/kortix-capture-device
+      KORTIX_CAPTURE_STS_ENDPOINT: http://capture-store:9000
+      # No bucket events without SQS: the index reader finds new items by polling.
+      KORTIX_CAPTURE_INDEX_POLL_SECONDS: "30"
       LLM_GATEWAY_ENABLED: "true"
       LLM_GATEWAY_PROXY_TARGET: http://llm-gateway:8090
       # KORTIX_LLM_BASE_URL must use the public Caddy route. The proxy target
@@ -116,12 +139,43 @@ services:
         condition: service_healthy
       kortix-migrate:
         condition: service_completed_successfully
+      capture-store:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "bun -e \"fetch('http://localhost:8008/v1/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 20s
+    restart: unless-stopped
+
+  # Kortix Capture's object store: MinIO, because it implements STS AssumeRole
+  # with a session policy, which the API uses to hand each device credentials
+  # that reach only that device's folder. No port is published: the API and
+  # Caddy reach it over the Compose network, and devices reach it through them
+  # on the API origin (see the Capture block of kortix-api above).
+  #
+  # Pinned by digest of the multi-arch index. Chainguard publishes only
+  # `latest` for free, and the old minio/minio Docker Hub image is gone, so the
+  # digest is the pin; bump it in a reviewed change. MinIO is AGPL-3.0, run
+  # unmodified. The data lives in the kortix-capture-data volume: it grows with
+  # every enrolled device, so put Docker's data root on a disk sized for it.
+  capture-store:
+    image: cgr.dev/chainguard/minio@sha256:2136d593beacf4461187035eca949fe49abd589d5079735025c711ca58fee0c8
+    command: ["server", "/data", "--address", ":9000"]
+    environment:
+      MINIO_ROOT_USER: ${CAPTURE_STORE_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${CAPTURE_STORE_ROOT_PASSWORD}
+      MINIO_BROWSER: "off"
+    volumes:
+      - kortix-capture-data:/data
+    healthcheck:
+      # The image has bash and no curl or grep: probe the readiness endpoint over /dev/tcp.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /minio/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && read -r status <&3 && [[ $$status == *' 200 '* ]]"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     restart: unless-stopped
 
   llm-gateway:
@@ -340,3 +394,4 @@ services:
 volumes:
   kortix-updater-state:
   kortix-caddy-data:
+  kortix-capture-data:

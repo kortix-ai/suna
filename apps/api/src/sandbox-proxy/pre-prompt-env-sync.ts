@@ -310,7 +310,7 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
  * DI rather than `mock.module`, deliberately: bun's `mock.module` is PROCESS-wide
  * and does not unwind at file boundaries, so a proxy test that stubbed `../backend`
  * silently blanked the real module for every sibling suite that ran after it in
- * the same process (4 unrelated `backend.test.ts` / `wake-deadline-guard.test.ts`
+ * the same process (4 unrelated proxy test
  * cases went red with `Received: 0` — their spies never fired). Passing the
  * collaborators in keeps the seam local to one call.
  *
@@ -410,32 +410,32 @@ export async function runPrePromptEnvSync(
     // latency win; the invariant test caught it (`remintGrant` fired even
     // though `syncEnv` threw) and it was reverted. Sequential is correct
     // here, not merely unoptimized.
-    // The turn-identity bind is one DB statement with no dependency on the env
-    // push, so it runs alongside it instead of after it. A failed bind refuses
-    // the turn like a failed grant re-mint: no turn runs as the previous prompter.
-    await Promise.all([
-      deps.syncEnv({
-        projectId: record.projectId,
-        sessionId: record.sessionId,
-        externalId: record.externalId,
-        serviceKey: input.serviceKey,
-        previewUrl: input.previewUrl,
-        providerHeaders: input.providerHeaders,
-        providerName: record.provider as ProviderName,
-        // The secret grant is resolved from the agent this prompt actually runs,
-        // not the session's create-time column — see projects/lib/secret-grant.ts.
-        requestedAgent,
-      }),
-      input.bindTurnIdentity && userId
-        ? deps
-            .bindTurnIdentity({ accountId: record.accountId, sessionId: record.sessionId, prompterUserId: userId })
-            .catch((err) => {
-              // The cause stays in the log; the client gets no SQL text.
-              console.warn(`[PREVIEW] Turn identity bind failed for ${sandboxId}: ${errorMessage(err, 'bind failed')}`);
-              throw new Error('could not bind the session to the person starting this turn');
-            })
-        : null,
-    ]);
+    // The turn-identity bind lands BEFORE the env push: the push reads the
+    // person the session token acts for, and a change of person must never
+    // ride its trusted fast path with the previous person's personal secrets
+    // (sandbox-env-push.ts). A failed bind refuses the turn like a failed grant
+    // re-mint: no turn runs as the previous prompter.
+    if (input.bindTurnIdentity && userId) {
+      await deps
+        .bindTurnIdentity({ accountId: record.accountId, sessionId: record.sessionId, prompterUserId: userId })
+        .catch((err) => {
+          // The cause stays in the log; the client gets no SQL text.
+          console.warn(`[PREVIEW] Turn identity bind failed for ${sandboxId}: ${errorMessage(err, 'bind failed')}`);
+          throw new Error('could not bind the session to the person starting this turn');
+        });
+    }
+    await deps.syncEnv({
+      projectId: record.projectId,
+      sessionId: record.sessionId,
+      externalId: record.externalId,
+      serviceKey: input.serviceKey,
+      previewUrl: input.previewUrl,
+      providerHeaders: input.providerHeaders,
+      providerName: record.provider as ProviderName,
+      // The secret grant is resolved from the agent this prompt actually runs,
+      // not the session's create-time column — see projects/lib/secret-grant.ts.
+      requestedAgent,
+    });
     // The env sync above applied the running agent's secret grant, or refused it
     // when the optional strict lock is enabled. Re-point the token's
     // connector/CLI grant at the agent that will actually run — it was frozen at

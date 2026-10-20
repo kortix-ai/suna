@@ -14,19 +14,22 @@ import {
 import { Close } from '@/features/icon/icons/close';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
-import type { MessageWithParts } from '@/ui/types';
+import { type Session, type SessionLogBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
+import { formatUsdAsCredits } from '@kortix/shared';
 import {
-  formatCost,
-  isAgentPart,
-  isFilePart,
-  isReasoningPart,
-  isTextPart,
-  isToolPart,
-  type Session,
-} from '@kortix/sdk';
-import type { ProviderListResponse } from '@kortix/sdk/react';
+  useSessionLog,
+  useSessionLogThread,
+  useSessionMessages,
+  type ProviderListResponse,
+  type SessionMessagesSource,
+} from '@kortix/sdk/react';
 import { useMemo } from 'react';
-import { CopyAllButton, SessionContextMessageExplorer } from './session-context-message-explorer';
+import {
+  CopyAllButton,
+  rawExplorerData,
+  SessionContextMessageExplorer,
+  type RawV1Row,
+} from './session-context-message-explorer';
 import { getSessionContextMetrics } from './session-context-metrics';
 import type { ServedModelNotice } from './turn/served-model';
 import { SubSessionSection } from './session-context-sub-sessions';
@@ -66,9 +69,34 @@ function estimateTokens(chars: number) {
   return Math.ceil(chars / 4);
 }
 
+/** The length of a text the model saw: the whole text, even when the record keeps a preview (F3). */
+const textChars = (b: { text: string; bytes?: number }) => b.bytes ?? b.text.length;
+
+/**
+ * What a user sent: its text, and the text of an `@file` or `@agent` mention.
+ * A mention converts from the v1 store as a harness block whose `data` is the
+ * v1 part (`source.text.value` for a file, `source.value` for an agent).
+ */
+function userBlockChars(b: SessionLogBlock): number {
+  if (b.type === 'text') return textChars(b);
+  if (b.type !== 'harness') return 0;
+  const source = (b.data as { source?: { text?: { value?: string }; value?: string } } | null)?.source;
+  return source?.text?.value?.length ?? source?.value?.length ?? 0;
+}
+
+/** A call's share: its arguments (16 chars a key, or the text still streaming in) and what came back. */
+function toolCallChars(call: ToolCallBlock): number {
+  const input = call.input;
+  let chars = typeof input === 'string' ? input.length : Object.keys(input ?? {}).length * 16;
+  if (call.status === 'complete') {
+    for (const item of call.result?.content ?? []) if (item.type === 'text') chars += item.text.length;
+  } else if (call.status === 'error') chars += call.result?.error?.message.length ?? 0;
+  return chars;
+}
+
 /** Pure context-breakdown estimation — exported for characterization tests. */
 export function estimateBreakdown(
-  messages: MessageWithParts[],
+  messages: SessionLogMessage[],
   input: number,
   systemPrompt?: string,
 ): BreakdownSegment[] {
@@ -76,29 +104,17 @@ export function estimateBreakdown(
 
   const counts = messages.reduce(
     (acc, msg) => {
-      if (msg.info.role === 'user') {
-        const user = msg.parts.reduce((sum, part) => {
-          if (isTextPart(part)) return sum + part.text.length;
-          if (isFilePart(part)) return sum + (part.source?.text?.value?.length ?? 0);
-          if (isAgentPart(part)) return sum + (part.source?.value?.length ?? 0);
-          return sum;
-        }, 0);
-        return { ...acc, user: acc.user + user };
+      if (msg.role === 'user') {
+        const user = msg.blocks.reduce((sum, b) => sum + userBlockChars(b), 0);
+        // A compaction's summary is a reply the model reads back.
+        const summary = msg.blocks.reduce((sum, b) => sum + (b.type === 'compaction' ? (b.summary?.length ?? 0) : 0), 0);
+        return { ...acc, user: acc.user + user, assistant: acc.assistant + summary };
       }
-      if (msg.info.role !== 'assistant') return acc;
-      const result = msg.parts.reduce(
-        (sum, part) => {
-          if (isTextPart(part) || isReasoningPart(part))
-            return { assistant: sum.assistant + part.text.length, tool: sum.tool };
-          if (isToolPart(part)) {
-            const state = part.state;
-            const inputLen = Object.keys(state?.input ?? {}).length * 16;
-            let toolLen = inputLen;
-            if (state?.status === 'pending') toolLen += state.raw?.length ?? 0;
-            else if (state?.status === 'completed') toolLen += state.output?.length ?? 0;
-            else if (state?.status === 'error') toolLen += state.error?.length ?? 0;
-            return { assistant: sum.assistant, tool: sum.tool + toolLen };
-          }
+      if (msg.role !== 'assistant') return acc;
+      const result = msg.blocks.reduce(
+        (sum, b) => {
+          if (b.type === 'text' || b.type === 'reasoning') return { assistant: sum.assistant + textChars(b), tool: sum.tool };
+          if (b.type === 'tool_call') return { assistant: sum.assistant, tool: sum.tool + toolCallChars(b) };
           return sum;
         },
         { assistant: 0, tool: 0 },
@@ -206,8 +222,11 @@ function OverviewStat({
 // subscriptions and metric computations cost nothing during streaming.
 // ============================================================================
 
+const NO_MESSAGES: SessionLogMessage[] = [];
+
 function SessionContextModalBody({
-  messages,
+  detachedRows,
+  source,
   session,
   providers,
   allSessions,
@@ -216,26 +235,35 @@ function SessionContextModalBody({
 }: Omit<SessionContextModalProps, 'open' | 'onOpenChange'>) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('hardcodedUi.componentsSessionSessionContextModal');
+  const tCredits = useTranslations('settings.credits');
   const pricingLookup = useModelPricingLookup(providers);
+  // The numbers read the session log's root thread: the `fromV1` view of the
+  // v1 rows while v2 is off, the API's record on v2. The raw explorer and Copy
+  // JSON read the active source: the records on v2, else the v1 rows.
+  const thread = useSessionLogThread(source);
+  const log = thread?.messages ?? NO_MESSAGES;
+  const logSource = useSessionLog(source)?.source;
+  // Only the v1 explorer reads the v1 rows: on v2 (or with detached rows) a
+  // null runtime id reads none, so a streamed v1 row re-renders nothing here.
+  const readsV1Rows = logSource === 'v1' && !detachedRows;
+  const v1Rows = useSessionMessages(
+    readsV1Rows ? source : { ...source, runtimeSessionId: null, opencodeSessionId: null },
+  );
+  const raw = useMemo(
+    () => rawExplorerData(logSource, thread?.messages, detachedRows ?? v1Rows),
+    [logSource, thread, detachedRows, v1Rows],
+  );
   const metrics = useMemo(
-    () => getSessionContextMetrics(messages ?? [], providers, pricingLookup),
-    [messages, providers, pricingLookup],
+    () => getSessionContextMetrics(thread, providers, pricingLookup),
+    [thread, providers, pricingLookup],
   );
 
   const ctx = metrics.context;
   const fmt = useMemo(() => createFormatter(), []);
 
-  const counts = useMemo(() => {
-    const all = (messages ?? []).map((m) => m.info);
-    const user = all.filter((m) => m.role === 'user').length;
-    const assistant = all.filter((m) => m.role === 'assistant').length;
-    return { all: all.length, user, assistant };
-  }, [messages]);
+  const counts = metrics.messages;
 
-  const breakdown = useMemo(() => {
-    if (!ctx?.input || !messages) return [];
-    return estimateBreakdown(messages, ctx.input);
-  }, [ctx, messages]);
+  const breakdown = useMemo(() => (ctx?.input ? estimateBreakdown(log, ctx.input) : []), [ctx, log]);
 
   const usageFraction = ctx?.limit ? Math.min(1, ctx.total / ctx.limit) : null;
 
@@ -275,7 +303,7 @@ function SessionContextModalBody({
           <ModalTitle>{t.raw('title')}</ModalTitle>
           <div className="flex shrink-0 items-center gap-2">
             <CopyAllButton
-              messages={messages}
+              value={raw.copy}
               copyLabel={t.raw('copyJson')}
               copiedLabel={t.raw('copied')}
             />
@@ -305,7 +333,13 @@ function SessionContextModalBody({
                 : ctx?.providerLabel
             }
           />
-          <OverviewStat label={t.raw('statCost')} value={formatCost(billedCost ?? metrics.totalCost)} />
+          <OverviewStat
+            label={t.raw('statCost')}
+            value={tCredits('creditCount', {
+              count: (billedCost ?? metrics.totalCost) * 100,
+              formatted: formatUsdAsCredits(billedCost ?? metrics.totalCost),
+            })}
+          />
           <OverviewStat label={t.raw('statMessages')} value={counts.all.toLocaleString()} />
         </div>
 
@@ -389,7 +423,7 @@ function SessionContextModalBody({
                   value: counts.assistant.toLocaleString(),
                 },
                 { label: t.raw('detailStarted'), value: fmt.time(session?.time?.created) },
-                { label: t.raw('detailLastReply'), value: fmt.time(ctx?.message?.time?.created) },
+                { label: t.raw('detailLastReply'), value: fmt.time(ctx ? Date.parse(ctx.message.created_at) : undefined) },
               ].map((row) => (
                 <div
                   key={row.label}
@@ -404,6 +438,7 @@ function SessionContextModalBody({
         </div>
 
         <SubSessionSection
+          source={source}
           session={session}
           allSessions={allSessions}
           pricingLookup={pricingLookup}
@@ -411,7 +446,7 @@ function SessionContextModalBody({
         />
 
         <SessionContextMessageExplorer
-          messages={messages}
+          rows={raw.rows}
           formatTime={fmt.time}
           count={counts.all}
         />
@@ -427,7 +462,14 @@ function SessionContextModalBody({
 interface SessionContextModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  messages: MessageWithParts[] | undefined;
+  /**
+   * The v1 rows of a chat with no `useSession` source (`useSessionSync`). The
+   * raw explorer and Copy JSON read them instead of `useSessionMessages(source)`
+   * while the session log is not v2.
+   */
+  detachedRows?: readonly RawV1Row[];
+  /** The session whose log the metrics read (`useSessionLogThread`). */
+  source: SessionMessagesSource;
   session: Session | undefined;
   providers: ProviderListResponse | undefined;
   allSessions?: Session[];
@@ -440,7 +482,8 @@ interface SessionContextModalProps {
 export function SessionContextModal({
   open,
   onOpenChange,
-  messages,
+  detachedRows,
+  source,
   session,
   providers,
   allSessions,
@@ -451,7 +494,8 @@ export function SessionContextModal({
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="max-h-[85vh] lg:max-w-3xl" showCloseButton={false}>
         <SessionContextModalBody
-          messages={messages}
+          detachedRows={detachedRows}
+          source={source}
           session={session}
           providers={providers}
           allSessions={allSessions}

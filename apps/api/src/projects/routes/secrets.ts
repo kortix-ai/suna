@@ -16,8 +16,8 @@ import {
 } from '@kortix/api-contract';
 import { inferAuditSource, runAuditedTransaction } from '../../shared/audit';
 import { db } from '../../shared/db';
-import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
+import { allowStaleMirrorReads } from '../git/mirror';
 import { requestPersonalOwner } from '../lib/personal-resources';
 import {
   encryptProjectSecret,
@@ -38,6 +38,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import {
   loadProjectForUser,
   assertProjectCapability,
+  projectCapabilityAllowed,
 } from '../lib/access';
 import { SecretSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
@@ -154,7 +155,7 @@ export function registerSecretsRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
 
     stages.capability = Math.round(performance.now() - started);
-    const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
+    const canManageShared = await projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
 
     // Manifest is optional — a project without kortix.yaml just gets empty
     // required/optional lists. We surface loaded/missing/error explicitly so the
@@ -173,6 +174,9 @@ export function registerSecretsRoutes(): void {
     // manifest read instead of adding to it (measured prod: git 383ms/14 ops
     // dominates this route's server time).
     const personalOwnerPromise = requestPersonalOwner(c, loaded);
+    // A page view (the model picker and Customize → Secrets wait on it): read
+    // the manifest from the warm git mirror and refresh it behind the response.
+    allowStaleMirrorReads();
     try {
       const gitRow = await withProjectGitAuth(loaded.row);
       stages.git_auth = Math.round(performance.now() - started);
@@ -322,7 +326,7 @@ export function registerSecretsRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
 
@@ -564,7 +568,7 @@ export function registerSecretsRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const identifier = c.req.param('name')?.trim();
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
     if (!identifier || !isValidIdentifier(identifier)) {

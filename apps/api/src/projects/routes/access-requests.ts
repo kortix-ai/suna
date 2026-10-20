@@ -215,12 +215,10 @@ export function registerAccessRequestsRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const requestId = c.req.param('requestId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Approving an access request grants a project role to the requester —
-    // membership management, NOT plain write. loadProjectForUser('manage') only
-    // maps to project.write, so without this a non-manager could approve
-    // requests and even hand out the 'manager' role. Gate on members.manage.
+    // Approving an access request grants a project role to the requester:
+    // membership management. The load above only proves membership.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
     const body = await readJsonObject(c);
@@ -300,10 +298,9 @@ export function registerAccessRequestsRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const requestId = c.req.param('requestId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Reviewing an access request is membership management — gate on
-    // members.manage (loadProjectForUser('manage') only enforces project.write).
+    // Reviewing an access request is membership management.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
     const [request] = await db

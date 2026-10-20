@@ -5,47 +5,39 @@ import { useTranslations } from '@/i18n/use-translations';
  * The Slack connect hero — what `channels-view.tsx` shows when Slack is not
  * connected yet, in place of a table row whose every cell was empty.
  *
- * **The problem it solves.** The old view never told you what connecting
- * bought you. "Invite the bot to any channel and @mention it" rendered inside
- * an `InfoBanner` that only mounted once `install` was truthy — i.e. the
- * explanation arrived strictly after you had already committed. A first-time
- * admin was asked to authorise an OAuth app on the strength of the word
- * "Install" in a table cell.
- *
- * So the payoff moves in front of the decision: the `Slack × Kortix` cover
- * (`slack-connect-cover.tsx`, which delegates to the blog's own `BlogCover`),
- * three lines in plain language about what happens once it is on, and exactly
- * one primary button.
- *
- * **Two paths, one shape.** The managed Kortix Slack app (server has
- * `SLACK_CLIENT_ID`/`SECRET`/`SIGNING_SECRET`, surfaced as
- * `mode.oauth_available`) is a single click. Self-hosted installs without
- * those env vars have to create their own app. That used to be an
- * `EmptyState` — the component for "there is nothing here" — which framed a
- * fully supported path as a dead end. It now gets this same hero with the
- * wizard behind the primary button, so the self-hosted route reads as a
- * deliberate choice rather than a missing feature.
+ * The old view never told you what connecting bought you: the explanation
+ * arrived only after you had installed. So the payoff moves in front of the
+ * decision: `ChannelConnectHero` with a mock of a Slack channel where a
+ * teammate @mentions the agent and it answers.
  */
 
-import { Button } from '@/components/ui/button';
+import { Kortix } from '@/features/icon/icons/kortix';
 import { Slack } from '@/features/icon/icons/slack';
-import { ChannelHintBadge } from '@/features/workspace/customize/sections/component/channel-row';
+import { ChannelConnectHero } from '@/features/workspace/customize/sections/component/channel-connect-hero';
 import { SlackByoWizard } from '@/features/workspace/customize/sections/component/slack-byo-wizard';
-import { SlackConnectCover } from '@/features/workspace/customize/sections/component/slack-connect-cover';
-import { CheckIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import type { CSSProperties } from 'react';
 import { useState } from 'react';
 
 /**
- * What a non-technical admin gets, in their words. No "sandbox", no "session",
- * no "bot token" — those are our nouns, not theirs. The third line is the one
- * that closes it: nobody else on the team has to do anything.
+ * Slack's own colours, so the mock reads as Slack at a glance: the aubergine
+ * sidebar, the active-channel blue, the mention pill (Slack's light and dark
+ * blues, picked by `light-dark()`), a default avatar, and the white of the
+ * sidebar text, which stays white in both themes.
  */
-const SLACK_BENEFITS = [
-  'Works in any channel you invite it to, public or private',
-  'Replies in the thread as it works, so the team can follow along',
-  'Nothing for your teammates to install',
-];
+const SLACK_SIDEBAR = '#3f0e40';
+const SLACK_ACTIVE = '#1164a3';
+const SLACK_MENTION = 'light-dark(#1264a3, #1d9bd1)';
+const SLACK_MENTION_FILL = '#1d9bd11a';
+const SLACK_AVATAR = '#e8912d';
+const SLACK_ON_SIDEBAR = '#ffffff';
+const SLACK_UI = {
+  '--slack-sidebar': SLACK_SIDEBAR,
+  '--slack-active': SLACK_ACTIVE,
+  '--slack-mention': SLACK_MENTION,
+  '--slack-mention-fill': SLACK_MENTION_FILL,
+  '--slack-avatar': SLACK_AVATAR,
+  '--slack-on-sidebar': SLACK_ON_SIDEBAR,
+} as CSSProperties;
 
 export function SlackConnectCard({
   projectId,
@@ -58,86 +50,94 @@ export function SlackConnectCard({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [wizardOpen, setWizardOpen] = useState(false);
-  // Narrow once so the JSX below never needs a non-null assertion on the URL.
-  const oneClickUrl = oauthInstallUrl ?? null;
-  const oneClick = oneClickUrl !== null;
 
   return (
     <>
-      <div className="bg-popover overflow-hidden rounded-md border">
-        {/* Flush to the panel edge, no tinted band and no inset. The cover used
-            to be a hand-drawn thread mock that needed a band to separate it
-            from the panel; `BlogCover` brings its own gradient and grain, so a
-            band behind it would just be a second background fighting the first.
-            The panel's own `overflow-hidden rounded-md` clips the top corners —
-            the same full-bleed treatment the blog's post cards gave it. */}
-        <div className="overflow-hidden border-b">
-          <SlackConnectCover />
-        </div>
+      <ChannelConnectHero
+        logo={<Slack className="size-5 shrink-0" />}
+        title={tI18nComplete.raw('text89e9e20668f3')}
+        lede={
+          oauthInstallUrl
+            ? tI18nComplete.raw('textadb4acada861')
+            : tI18nComplete.raw('text4a79cdb7ab5e')
+        }
+        preview={<SlackChannelMock />}
+        canWrite={canWrite}
+        oneClickUrl={oauthInstallUrl}
+        oneClickLabel={tI18nComplete.raw('text3357cd3d0cee')}
+        ownAppLabel={tI18nComplete.raw('text260f0001800b')}
+        setupLabel={tI18nComplete.raw('text68382ef84e6c')}
+        readOnlyNote={tI18nComplete.raw('text581144514350')}
+        onOwnApp={() => setWizardOpen(true)}
+      />
+      <SlackByoWizard projectId={projectId} open={wizardOpen} onOpenChange={setWizardOpen} />
+    </>
+  );
+}
 
-        <div className="space-y-4 px-4 py-5">
-          <div className="flex items-start gap-3">
-            <span className="bg-muted/60 flex size-12 shrink-0 items-center justify-center rounded-md border">
-              <Slack className="size-7 shrink-0" />
+/**
+ * A Slack channel at a glance: the aubergine sidebar as a skeleton, then
+ * `#launch` with Slack's message anatomy — a rounded-square avatar, a bold
+ * name, a small timestamp, the blue mention pill, and the `APP` tag on the
+ * agent's reply. The composer at the bottom is a skeleton too.
+ */
+function SlackChannelMock() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <div className="flex flex-1" style={SLACK_UI}>
+      <div className="flex w-28 shrink-0 flex-col gap-2.5 bg-(--slack-sidebar) px-3 py-4">
+        <span className="mb-1.5 h-2.5 w-16 rounded-full bg-(--slack-on-sidebar)/50" />
+        <span className="h-2 w-14 rounded-full bg-(--slack-on-sidebar)/20" />
+        <span className="h-2 w-18 rounded-full bg-(--slack-on-sidebar)/20" />
+        <span className="-mx-1.5 flex h-6 items-center rounded-md bg-(--slack-active) px-1.5">
+          <span className="h-2 w-12 rounded-full bg-(--slack-on-sidebar)/80" />
+        </span>
+        <span className="h-2 w-16 rounded-full bg-(--slack-on-sidebar)/20" />
+        <span className="h-2 w-10 rounded-full bg-(--slack-on-sidebar)/20" />
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <p className="text-foreground border-b px-5 py-3 text-sm font-semibold">{tI18nComplete.raw('textd3d6fcf27034')}</p>
+        <div className="flex flex-1 flex-col gap-4 px-5 py-4">
+          <div className="flex gap-2.5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-(--slack-avatar) text-sm font-semibold text-(--slack-on-sidebar)">
+              M
             </span>
-            <div className="min-w-0 space-y-1">
-              <div className="flex items-center gap-1.5">
-                <h3 className="text-foreground text-sm font-medium">
-                  {tI18nComplete.raw('textb27fb38ba323')}
-                </h3>
-                {oneClick ? null : (
-                  <ChannelHintBadge>{tI18nComplete.raw('texte28492370987')}</ChannelHintBadge>
-                )}
-              </div>
-              {/* text-pretty so a two-line lede never leaves one orphan word */}
-              <p className="text-muted-foreground text-sm leading-relaxed text-pretty">
-                {oneClick
-                  ? tI18nComplete.raw('textadb4acada861')
-                  : tI18nComplete.raw('text4a79cdb7ab5e')}
+            <div className="min-w-0 text-sm">
+              <p className="flex items-baseline gap-2">
+                <span className="text-foreground font-semibold">{tI18nComplete.raw('textc6c8dad55129')}</span>
+                <span className="text-muted-foreground text-xs tabular-nums">{tI18nComplete.raw('text9a059d44c8e5')}</span>
+              </p>
+              <p className="text-foreground">
+                <span className="rounded-xs bg-(--slack-mention-fill) px-0.5 text-(--slack-mention)">
+                  {tI18nComplete.raw('text9bfa706b0569')}
+                </span>{' '}
+                {tI18nComplete.raw('text675d4a4174ba')}
               </p>
             </div>
           </div>
-
-          <ul className="space-y-1.5">
-            {SLACK_BENEFITS.map((benefit) => (
-              <li key={benefit} className="flex items-center gap-2">
-                <CheckIcon className="text-muted-foreground size-3.5 shrink-0" />
-                <span className="text-muted-foreground text-xs leading-relaxed">{benefit}</span>
-              </li>
-            ))}
-          </ul>
-
-          {canWrite ? (
-            <div className="flex flex-wrap items-center gap-2">
-              {oneClickUrl ? (
-                <>
-                  <Button className="gap-1.5 transition-transform active:scale-[0.97]" asChild>
-                    <Link href={oneClickUrl} target="_blank" rel="noopener noreferrer">
-                      <Slack className="size-3.5 shrink-0" />
-                      {tI18nComplete.raw('text3357cd3d0cee')}
-                    </Link>
-                  </Button>
-                  <Button variant="ghost" onClick={() => setWizardOpen(true)}>
-                    {tI18nComplete.raw('text260f0001800b')}
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  className="gap-1.5 transition-transform active:scale-[0.97]"
-                  onClick={() => setWizardOpen(true)}
-                >
-                  <Slack className="size-3.5 shrink-0" />
-                  {tI18nComplete.raw('text68382ef84e6c')}
-                </Button>
-              )}
+          <div className="flex gap-2.5">
+            <span className="bg-background flex size-9 shrink-0 items-center justify-center rounded-lg border">
+              <Kortix className="size-4" />
+            </span>
+            <div className="min-w-0 text-sm">
+              <p className="flex items-baseline gap-2">
+                <span className="text-foreground font-semibold">Kortix</span>
+                <span className="bg-muted text-muted-foreground rounded-xs px-1 text-xs font-semibold">
+                  APP
+                </span>
+                <span className="text-muted-foreground text-xs tabular-nums">{tI18nComplete.raw('text9a059d44c8e5')}</span>
+              </p>
+              <p className="text-foreground text-pretty">
+                {tI18nComplete.raw('textbd52d3eb5ed1')}
+              </p>
             </div>
-          ) : (
-            <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text581144514350')}</p>
-          )}
+          </div>
+        </div>
+        <div className="mx-5 mb-4 flex h-9 items-center rounded-lg border px-3">
+          <span className="bg-muted h-2 w-28 rounded-full" />
         </div>
       </div>
-
-      <SlackByoWizard projectId={projectId} open={wizardOpen} onOpenChange={setWizardOpen} />
-    </>
+    </div>
   );
 }

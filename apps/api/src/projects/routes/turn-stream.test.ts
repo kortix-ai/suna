@@ -30,6 +30,7 @@ let ownedRow: Record<string, unknown> | null = null;
 let sessionRow: Record<string, unknown> | null = null;
 let updateRows: Array<{ sessionId: string }> = [];
 const updateSets: Array<Record<string, unknown>> = [];
+let sessionVisible = true;
 let loadedProject: { row: { accountId: string; projectId: string }; userId: string } | null = {
   row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
   userId: USER_ID,
@@ -98,6 +99,7 @@ mock.module('../lib/access', () => ({
     loadProjectCalls.push({ projectId, action });
     return loadedProject;
   },
+  loadVisibleSession: async () => (sessionVisible ? {} : null),
   assertProjectCapability: async (
     _c: unknown,
     _userId: string,
@@ -159,6 +161,13 @@ mock.module('../session-turn-ledger', () => ({
 }));
 
 mock.module('../session-lifecycle', () => ({
+  retireWarmProjectSessions: async () => { throw new Error('retireWarmProjectSessions: not used by the turn-stream routes'); },
+  continueSession: async () => { throw new Error('continueSession: not used by the turn-stream routes'); },
+  startSession: async () => { throw new Error('startSession: not used by the turn-stream routes'); },
+  buildContinueSessionCommandValues: async () => { throw new Error('buildContinueSessionCommandValues: not used by the turn-stream routes'); },
+  resolveProjectAutomationActor: async () => { throw new Error('resolveProjectAutomationActor: not used by the turn-stream routes'); },
+  enqueueContinueSessionCommand: async () => { throw new Error('enqueueContinueSessionCommand: not used by the turn-stream routes'); },
+  createSession: async () => { throw new Error('createSession: not used by the turn-stream routes'); },
   drainSessionLifecycleQueue: async () => {
     order.push('drain');
   },
@@ -202,6 +211,11 @@ mock.module('../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {
     order.push('title');
   },
+  // Other modules in this graph (sandbox-proxy/pre-prompt-env-sync, lib/session-create)
+  // import these; no prompt here carries text or a model.
+  extractPromptInfo: () => ({ text: null, model: null }),
+  TITLE_SOURCE_MAX_CHARS: 4000,
+  titleSourceForCreate: () => null,
 }));
 
 const triggerRunEnds: unknown[] = [];
@@ -277,6 +291,7 @@ beforeEach(() => {
   updateRows = [{ sessionId: SESSION_ID }];
   updateSets.length = 0;
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
+  sessionVisible = true;
   loadProjectCalls.length = 0;
   capabilityCalls.length = 0;
   completionResult = { outcome: 'closed', activeTurnCount: 0, closedTurnCount: 1 };
@@ -335,6 +350,15 @@ describe('POST /v1/projects/:projectId/turn-stream — sleeve gates', () => {
     await post({ session_id: SESSION_ID, kind: 'step', text: 'hi' });
     expect(loadProjectCalls).toEqual([{ projectId: PROJECT_ID, action: 'read' }]);
     expect(capabilityCalls).toEqual([{ action: 'project.connector.write' }]);
+  });
+
+  // Pentest M-4: `end` settles the turn and promotes queued prompts, so a
+  // member who cannot see a (private) session must not be able to send it.
+  test.each(['end', 'turn_end', 'step'])('404s %s for a member who cannot see the session', async (kind) => {
+    sessionVisible = false;
+    const response = await post({ session_id: SESSION_ID, kind, text: 'hi' });
+    expect(response.status).toBe(404);
+    expect(order).toEqual([]);
   });
 
   test('does NOT gate the lifecycle kinds on connector.write', async () => {
@@ -473,6 +497,35 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
     expect(await response.json()).toEqual({
       ok: true,
       initial_turn: null,
+      runtime_session_id: null,
+      opencode_session_id: null,
+    });
+  });
+
+  test('the claim carries the session contract as context beside the prompt', async () => {
+    sessionRow = session({
+      initial_prompt: 'build it',
+      initial_context: '--- session contract ---',
+    });
+    sandboxRow = { sandboxId: SANDBOX_ID, sessionId: SESSION_ID };
+    ownedRow = {
+      sessionId: SESSION_ID,
+      metadata: {
+        activeTurns: {
+          'turn-token-1': { state: 'delivering', messageId: 'msg_1' },
+        },
+      },
+    };
+    const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      initial_turn: {
+        prompt: 'build it',
+        context: '--- session contract ---',
+        turn_token: 'turn-token-1',
+        message_id: 'msg_1',
+      },
       runtime_session_id: null,
       opencode_session_id: null,
     });

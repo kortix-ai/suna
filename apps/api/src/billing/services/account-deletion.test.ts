@@ -373,7 +373,7 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
     sandboxRows = [
       { sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' },
       { sandboxId: 'sb-2', provider: 'daytona', externalId: 'ext-2' },
-      { sandboxId: 'sb-3', provider: 'e2b', externalId: 'ext-3' },
+      { sandboxId: 'sb-3', provider: 'platinum', externalId: 'ext-3' },
       { sandboxId: 'sb-4', provider: 'platinum', externalId: 'ext-4' },
     ];
 

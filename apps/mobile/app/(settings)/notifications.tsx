@@ -47,6 +47,8 @@ const KIND_ICON: Record<InboxNotificationKind, AppIcon> = {
   shared: ShareNetworkIcon,
   automation_failed: XCircleIcon,
   automation_recovered: ArrowCounterClockwiseIcon,
+  capture_device_down: XCircleIcon,
+  capture_device_recovered: ArrowCounterClockwiseIcon,
 };
 
 /**
@@ -85,33 +87,13 @@ function DeviceNotificationsPage() {
     [setPreference]
   );
 
-  const openDeviceSettings = React.useCallback(() => {
-    haptics.tap();
-    void Linking.openSettings();
-  }, []);
-
   return (
     <SettingsPage>
-      <SettingsGroup title="General">
-        <SettingsRow
-          icon={BellIcon}
-          label="Notifications"
-          right={<Switch checked={preferences.enabled} onCheckedChange={handleToggleEnabled} />}
-        />
-        {/* Sound rides under the master switch: the only per-device behavior. */}
-        {preferences.enabled && (
-          <SettingsRow
-            icon={SpeakerHighIcon}
-            label="Play sound"
-            right={
-              <Switch
-                checked={preferences.playSound}
-                onCheckedChange={(v) => handleToggle('playSound', v)}
-              />
-            }
-          />
-        )}
-      </SettingsGroup>
+      <GeneralRows
+        preferences={preferences}
+        onToggleEnabled={handleToggleEnabled}
+        onTogglePlaySound={(v) => handleToggle('playSound', v)}
+      />
 
       {preferences.enabled && (
         <SettingsGroup title="Notification types">
@@ -189,29 +171,15 @@ function NotificationCenterPage() {
     [setPreference, update, toast]
   );
 
-  const openDeviceSettings = React.useCallback(() => {
-    haptics.tap();
-    void Linking.openSettings();
-  }, []);
-
   const kinds = record.data?.kinds;
 
   return (
     <SettingsPage>
-      <SettingsGroup title="General">
-        <SettingsRow
-          icon={BellIcon}
-          label="Notifications"
-          right={<Switch checked={preferences.enabled} onCheckedChange={handleToggleEnabled} />}
-        />
-        {preferences.enabled && (
-          <SettingsRow
-            icon={SpeakerHighIcon}
-            label="Play sound"
-            right={<Switch checked={preferences.playSound} onCheckedChange={handleToggleSound} />}
-          />
-        )}
-      </SettingsGroup>
+      <GeneralRows
+        preferences={preferences}
+        onToggleEnabled={handleToggleEnabled}
+        onTogglePlaySound={handleToggleSound}
+      />
 
       {preferences.enabled &&
         (kinds ? (
@@ -258,3 +226,39 @@ function NotificationCenterPage() {
     </SettingsPage>
   );
 }
+
+/** Both notifications pages' General group: this phone's off switch and its
+ * sound (the sound rides under the master switch: the only per-device
+ * behavior). The write goes through the page's own store handle. */
+function GeneralRows({
+  preferences,
+  onToggleEnabled,
+  onTogglePlaySound,
+}: {
+  preferences: NotificationPreferences;
+  onToggleEnabled: () => void;
+  onTogglePlaySound: (playSound: boolean) => void;
+}) {
+  return (
+    <SettingsGroup title="General">
+      <SettingsRow
+        icon={BellIcon}
+        label="Notifications"
+        right={<Switch checked={preferences.enabled} onCheckedChange={onToggleEnabled} />}
+      />
+      {preferences.enabled && (
+        <SettingsRow
+          icon={SpeakerHighIcon}
+          label="Play sound"
+          right={<Switch checked={preferences.playSound} onCheckedChange={onTogglePlaySound} />}
+        />
+      )}
+    </SettingsGroup>
+  );
+}
+
+/** Both pages' "This device" row: the OS notification settings, outside the app. */
+const openDeviceSettings = () => {
+  haptics.tap();
+  void Linking.openSettings();
+};

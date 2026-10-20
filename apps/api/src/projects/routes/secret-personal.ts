@@ -10,8 +10,8 @@ import { and, eq } from 'drizzle-orm';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { readJsonObject } from '../../shared/http-body';
-import { roleAllows } from '../access';
-import { loadProjectForUser } from '../lib/access';
+import { PROJECT_ACTIONS } from '../../iam';
+import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { requestPersonalOwner } from '../lib/personal-resources';
 import {
@@ -139,7 +139,7 @@ export function registerSecretPersonalRoutes(): void {
     const views = await loadSecretViewsForUser({
       projectId,
       userId: loaded.userId,
-      canManageShared: roleAllows(loaded.effectiveRole, 'manage'),
+      canManageShared: await projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE),
     });
     return c.json(views.find((v) => v.name === name) ?? { name }, 200);
   },

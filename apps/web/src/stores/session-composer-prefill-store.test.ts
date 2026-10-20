@@ -106,3 +106,42 @@ describe('session composer attach request (Task 5)', () => {
     expect(useSessionComposerPrefillStore.getState().attachRequestBySession['a3']).toBeDefined();
   });
 });
+
+describe('desktop Quick Entry into a picked session', () => {
+  test('a submit prefill replaces the draft and asks the composer to send', () => {
+    useSessionComposerPrefillStore.getState().setPrefill('qe1', 'Also update the changelog', undefined, 'replace', {
+      submit: true,
+    });
+    expect(useSessionComposerPrefillStore.getState().prefillBySession['qe1']).toMatchObject({
+      text: 'Also update the changelog',
+      mode: 'replace',
+      submit: true,
+    });
+  });
+
+  test('every other prefill only fills the box', () => {
+    useSessionComposerPrefillStore.getState().setPrefill('qe2', 'In report.pdf, ');
+    expect(useSessionComposerPrefillStore.getState().prefillBySession['qe2']?.submit).toBeUndefined();
+  });
+});
+
+describe('movePrefill', () => {
+  test('re-keys a route-id prefill onto the chat id, keeping text, id and submit', () => {
+    const store = useSessionComposerPrefillStore.getState();
+    store.setPrefill('kortix-route-id', 'Ship it', undefined, 'replace', { submit: true });
+    const before = useSessionComposerPrefillStore.getState().prefillBySession['kortix-route-id'];
+    useSessionComposerPrefillStore.getState().movePrefill('kortix-route-id', 'ses_runtime');
+    const state = useSessionComposerPrefillStore.getState().prefillBySession;
+    expect(state['kortix-route-id']).toBeUndefined();
+    expect(state['ses_runtime']).toEqual(before);
+  });
+
+  test('is a no-op with nothing to move, or when both ids are the same', () => {
+    const store = useSessionComposerPrefillStore.getState();
+    store.movePrefill('nothing-here', 'ses_x');
+    expect(useSessionComposerPrefillStore.getState().prefillBySession['ses_x']).toBeUndefined();
+    store.setPrefill('same', 'Keep me');
+    useSessionComposerPrefillStore.getState().movePrefill('same', 'same');
+    expect(useSessionComposerPrefillStore.getState().prefillBySession['same']?.text).toBe('Keep me');
+  });
+});

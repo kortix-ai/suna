@@ -45,8 +45,10 @@ interface FilesStoreState {
   historyFilePath: string | null;
   /** Currently selected commit hash in the history panel */
   selectedCommitHash: string | null;
-  /** Clipboard item for copy/cut operations */
+  /** Clipboard item for copy/cut operations (the first, when several are on it) */
   clipboard: ClipboardItem | null;
+  /** Every item on the clipboard: a multi-selection copies or cuts many. */
+  clipboardItems: ClipboardItem[];
   /** Target line number to scroll to after opening a file (1-indexed, null = none) */
   targetLine: number | null;
   /** Whether to show hidden (dot) files and directories */
@@ -114,6 +116,8 @@ interface FilesStoreActions {
   copyToClipboard: (path: string, name: string, type: 'file' | 'directory') => void;
   /** Cut a file/directory to clipboard */
   cutToClipboard: (path: string, name: string, type: 'file' | 'directory') => void;
+  /** Put several items on the clipboard at once */
+  setClipboardItems: (items: Omit<ClipboardItem, 'operation'>[], operation: ClipboardOperation) => void;
   /** Clear clipboard */
   clearClipboard: () => void;
   /** Reset all state */
@@ -172,6 +176,7 @@ const initialState: FilesStoreState = {
   historyFilePath: null,
   selectedCommitHash: null,
   clipboard: null,
+  clipboardItems: [],
   targetLine: null,
   showHidden: false,
   rootPath: null,
@@ -358,15 +363,22 @@ export function createFilesStore(): FilesStoreApi {
     },
 
     copyToClipboard: (path, name, type) => {
-      set({ clipboard: { path, name, type, operation: 'copy' } });
+      const item: ClipboardItem = { path, name, type, operation: 'copy' };
+      set({ clipboard: item, clipboardItems: [item] });
     },
 
     cutToClipboard: (path, name, type) => {
-      set({ clipboard: { path, name, type, operation: 'cut' } });
+      const item: ClipboardItem = { path, name, type, operation: 'cut' };
+      set({ clipboard: item, clipboardItems: [item] });
+    },
+
+    setClipboardItems: (items, operation) => {
+      const all = items.map((i) => ({ ...i, operation }));
+      set({ clipboard: all[0] ?? null, clipboardItems: all });
     },
 
     clearClipboard: () => {
-      set({ clipboard: null });
+      set({ clipboard: null, clipboardItems: [] });
     },
 
     reset: () => {

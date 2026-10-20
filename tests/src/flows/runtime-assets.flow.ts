@@ -558,7 +558,7 @@ flow(
     domain: 'runtime-assets',
     // NOT `funded`. Nothing here runs a model turn, so this half is the one that
     // can run in every preview — which is the only place a real box exists.
-    requires: ['database', 'daytona'],
+    requires: ['database', 'sandbox'],
     timeoutMs: 900_000,
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
@@ -617,7 +617,7 @@ flow(
   {
     domain: 'runtime-assets',
     // `funded`: every step below runs a real model turn. Operator-run.
-    requires: ['database', 'funded', 'daytona'],
+    requires: ['database', 'funded', 'sandbox'],
     timeoutMs: 1_200_000,
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
@@ -676,7 +676,7 @@ flow(
     // THE SECRETS-GATE PARITY HALF, on a real box.
     //
     // `/p/<ext>/4096/...` is the same turn as `/p/<ext>/8000/...`: Platinum
-    // rewrites 4096 → 8000 upstream and Daytona passes it through. Before this
+    // rewrites 4096 → 8000 upstream and the legacy Daytona provider passes it through. Before this
     // lane the two call sites in `sandbox-proxy/routes/preview.ts` read
     // DIFFERENT port variables for that one request, so the prompt got the
     // config convergence and the undeclared-agent drop but no secret refresh and
@@ -815,7 +815,7 @@ flow(
     // reasoning that ~90 MB of each is the same embedded Bun runtime. That is
     // true of two binaries compiled by the SAME Bun and false of what we ship:
     // `apps/api/Dockerfile` builds the daemon on `SANDBOX_AGENT_BUN_VERSION`
-    // (1.3.11, a deliberate pin) and the CLI on `BUN_VERSION` (1.2), so they
+    // (1.3.11, a deliberate pin) and the CLI on `BUN_VERSION` (1.4.3), so they
     // embed different runtimes. Measured on a deployed preview: 0 of 111 chunks
     // shared, first MiB already different. Requiring overlap would have pinned a
     // build coincidence rather than a contract — and would go red on a green

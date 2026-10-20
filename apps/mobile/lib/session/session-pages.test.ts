@@ -58,6 +58,25 @@ describe('sessionListState (COR-146: a failure must never look like an empty lis
   });
 });
 
+describe('sessionListState (KRTX-1727: zero rows with a cursor is not an empty list)', () => {
+  test('no row loaded and a next page: more, never empty', () => {
+    expect(sessionListState({ isPending: false, isError: false, hasSessions: false, hasMore: true })).toBe('more');
+  });
+
+  test('a failed next page keeps more: the Show more button is the retry', () => {
+    expect(sessionListState({ isPending: false, isError: true, hasSessions: false, hasMore: true })).toBe('more');
+  });
+
+  test('rows and the first load win over more', () => {
+    expect(sessionListState({ isPending: false, isError: false, hasSessions: true, hasMore: true })).toBe('rows');
+    expect(sessionListState({ isPending: true, isError: false, hasSessions: false, hasMore: true })).toBe('loading');
+  });
+
+  test('no next page: empty as before', () => {
+    expect(sessionListState({ isPending: false, isError: false, hasSessions: false, hasMore: false })).toBe('empty');
+  });
+});
+
 describe('a list that has not loaded is never empty', () => {
   // The flags react-query really reports for the drawer's and the Sessions
   // page's query when the app is offline at its first load.

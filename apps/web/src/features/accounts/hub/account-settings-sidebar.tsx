@@ -4,10 +4,12 @@ import { useTranslations } from '@/i18n/use-translations';
 /**
  * The settings sidebar — the 300px left column of the account hub modal.
  *
- * Top to bottom: `Back to app` with the search and collapse controls, the
- * **Accounts** group — every account the caller belongs to, the current one
- * highlighted with its sections nested under a hairline indent — and a footer
- * of two full-width rows, Docs and Help, in the same row dialect as the nav.
+ * Top to bottom: a round back button, the account switcher (a pill with the
+ * current account's name; it opens a menu of every account the caller
+ * belongs to) and the collapse control; then the current
+ * account's sections under their group labels (General, Access, Billing);
+ * then a footer of two full-width rows, Docs and Help, in the same row
+ * dialect as the nav.
  * A person's own settings are not listed here; they live at
  * `/settings/<tab>`, outside this shell.
  *
@@ -18,14 +20,24 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import {
   BookOpenIcon,
-  MagnifyingGlassIcon,
+  CaretLeftIcon,
+  CaretUpDownIcon,
+  CheckIcon,
+  LifebuoyIcon,
   QuestionIcon,
   type Icon,
 } from '@phosphor-icons/react';
-import { Fragment, Suspense, useMemo, type ReactNode } from 'react';
+import { Suspense, useMemo, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { BackPillBody, backPillClass } from '@/components/ui/back-pill';
+import { backPillClass } from '@/components/ui/back-pill';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import {
   Sidebar,
@@ -41,7 +53,6 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { ACCOUNT_HUB_TRANSLATION_KEYS } from '@/i18n/account-hub-translation-keys.generated';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
@@ -113,14 +124,30 @@ function GroupLabel({ children }: { children: ReactNode }) {
 }
 
 function NavSkeleton() {
+  // The loaded nav's shape: three labelled groups of icon + label rows.
   return (
-    <div className="space-y-1 px-2">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <Skeleton key={i} className="h-8 w-full rounded-md" />
+    <div className="space-y-4 px-2" aria-hidden>
+      {NAV_SKELETON_GROUPS.map((rows, g) => (
+        <div key={g} className="space-y-1">
+          <Skeleton className="mx-2.5 my-2 h-3 w-14 rounded-sm" />
+          {rows.map((width, i) => (
+            <div key={i} className="flex h-8 items-center gap-2 px-2.5">
+              <Skeleton className="size-4 shrink-0 rounded-sm" />
+              <Skeleton className={`h-3.5 rounded-sm ${width}`} />
+            </div>
+          ))}
+        </div>
       ))}
     </div>
   );
 }
+
+/** General, Access and Billing, with label widths that vary like real names. */
+const NAV_SKELETON_GROUPS = [
+  ['w-16', 'w-20', 'w-8', 'w-16'],
+  ['w-20', 'w-16', 'w-16', 'w-12', 'w-16', 'w-20'],
+  ['w-10', 'w-12'],
+];
 
 /**
  * The nav body. Reads `?tab=` through `useSearchParams`, so it renders under a
@@ -132,29 +159,26 @@ function SettingsNav() {
   // From `?accountId=`, the only place it lives. `useParams()` would be
   // meaningless: this sidebar renders over some other route.
   const accountId = useAccountPanelId();
-  const accountsQuery = useAccountsList();
-  const { sectionVisible, activeSection, canReadMembers } = useAccountHubSection(accountId);
-  const membersQuery = useAccountMembers(accountId, canReadMembers);
+  const { sectionVisible, activeSection } = useAccountHubSection(accountId);
+  const membersQuery = useAccountMembers(accountId);
 
-  const accounts = useMemo(() => {
-    const list = accountsQuery.data ?? [];
-    return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  }, [accountsQuery.data]);
+  // The count of the people this caller sees: the whole directory with
+  // `member.read`, else only the caller. Hidden while loading.
+  const memberCount = membersQuery.isLoading ? null : (membersQuery.data ?? []).length;
 
-  // `members` is `[]` for a caller without `member.read` — the query never
-  // runs — and "0" beside Members on an account they are demonstrably a
-  // member of is a lie, not a placeholder.
-  const memberCount =
-    sectionVisible.members && !membersQuery.isLoading ? (membersQuery.data ?? []).length : null;
+  // The account list (no account picked) has no sections: the switcher above
+  // and the list in the body are the whole page.
+  if (!accountId) return null;
 
-  const sectionGroups = accountId
-    ? navGroups
-        .map((group) => ({
-          label: group.label,
-          items: group.items.filter((item) => sectionVisible[item.id]),
-        }))
-        .filter((group) => group.items.length > 0)
-    : [];
+  const sectionGroups = navGroups
+    .map((group) => ({
+      // The plumbing group has no name in `NAV_GROUPS`; in the sidebar it
+      // reads as "General" so every group carries a label.
+      label: group.label ?? tI18nComplete.raw('textc910d474dcd7'),
+      // Help sits in the footer beside Docs and Support: reference, not a setting.
+      items: group.items.filter((item) => sectionVisible[item.id]).filter((item) => item.id !== 'help'),
+    }))
+    .filter((group) => group.items.length > 0);
 
   const sectionEntry = (item: AccountNavItem): NavEntry => ({
     key: `section:${item.id}`,
@@ -168,58 +192,79 @@ function SettingsNav() {
       ) : undefined,
   });
 
-  const accountEntry = (account: { account_id: string; name?: string | null }): NavEntry => ({
-    key: `account:${account.account_id}`,
-    label: account.name || 'Account',
-    to: hubTarget(account.account_id),
-    active: account.account_id === accountId,
-  });
-
   return (
     <>
-      <SidebarGroup className="px-2 py-0">
-        <GroupLabel>{tI18nComplete.raw('text8a7c8b67fe8b')}</GroupLabel>
-        {accountsQuery.isLoading ? (
-          <div className="space-y-1">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-full rounded-md" />
+      {sectionGroups.map((group) => (
+        <SidebarGroup key={group.label} className="px-2 py-0 pb-3">
+          <GroupLabel>{group.label}</GroupLabel>
+          <SidebarMenu aria-label={group.label}>
+            {group.items.map((item) => (
+              <NavRow key={item.id} entry={sectionEntry(item)} />
             ))}
-          </div>
-        ) : accountsQuery.isError ? (
-          <p className="text-muted-foreground px-2.5 py-2 text-xs">
+          </SidebarMenu>
+        </SidebarGroup>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The account switcher, top-left after the back button. A ghost pill with
+ * the current account's name, the back pill's shape without its chevron. The
+ * menu lists every account the caller belongs to, a check on the current one;
+ * a pick opens that account's hub at its default section.
+ */
+function AccountSwitcher() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const accountId = useAccountPanelId();
+  const accountsQuery = useAccountsList();
+
+  const accounts = useMemo(() => {
+    const list = accountsQuery.data ?? [];
+    return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [accountsQuery.data]);
+
+  const accountsLabel = tI18nComplete.raw('text8a7c8b67fe8b');
+  const current = accounts.find((account) => account.account_id === accountId);
+  const label = current ? current.name || 'Account' : accountsLabel;
+
+  if (accountsQuery.isLoading) return <Skeleton className="h-7 w-28 rounded-full" />;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="secondary"
+          size="xs"
+          className={backPillClass('max-w-48 min-w-0 has-[>svg]:pr-2 has-[>svg]:pl-3 max-sm:size-auto max-sm:has-[>svg]:px-2.5')}
+        >
+          <span className="min-w-0 truncate">{label}</span>
+          <CaretUpDownIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-80">
+        <DropdownMenuLabel className="text-muted-foreground mb-1 text-xs font-medium">
+          {accountsLabel}
+        </DropdownMenuLabel>
+        {accountsQuery.isError ? (
+          <p className="text-muted-foreground px-2 py-1.5 text-xs">
             {tI18nComplete.raw('textb170e6a477b8')}
           </p>
         ) : (
-          <SidebarMenu>
-            {accounts.map((account) => {
-              const current = account.account_id === accountId;
-              return (
-                <Fragment key={account.account_id}>
-                  <NavRow entry={accountEntry(account)} />
-                  {current && sectionGroups.length > 0 ? (
-                    <li className="mt-1 mb-2.5 ml-2.5 border-l pl-1">
-                      <ul
-                        className="flex min-w-0 flex-col gap-px"
-                        aria-label={`${account.name || 'Account'} settings`}
-                      >
-                        {sectionGroups.map((group, gi) => (
-                          <Fragment key={group.label ?? gi}>
-                            {gi > 0 ? <li aria-hidden className="h-3" /> : null}
-                            {group.items.map((item) => (
-                              <NavRow key={item.id} entry={sectionEntry(item)} />
-                            ))}
-                          </Fragment>
-                        ))}
-                      </ul>
-                    </li>
-                  ) : null}
-                </Fragment>
-              );
-            })}
-          </SidebarMenu>
+          accounts.map((account) => {
+            const selected = account.account_id === accountId;
+            return (
+              <DropdownMenuItem key={account.account_id} asChild>
+                <HubLink to={hubTarget(account.account_id)} aria-current={selected ? 'page' : undefined}>
+                  <span className="min-w-0 flex-1 truncate">{account.name || 'Account'}</span>
+                  {selected ? <CheckIcon aria-hidden className="size-4 shrink-0" /> : null}
+                </HubLink>
+              </DropdownMenuItem>
+            );
+          })
         )}
-      </SidebarGroup>
-    </>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -233,14 +278,35 @@ function SettingsNav() {
  */
 function BackToApp({ label }: { label: string }) {
   return (
-    <Button
-      variant="ghost"
-      size="xs"
-      className={backPillClass()}
-      onClick={() => closeAccountPanel()}
-    >
-      <BackPillBody label={label} />
-    </Button>
+    <Hint label={label} side="bottom">
+      <Button
+        variant="secondary"
+        size="icon"
+        aria-label={label}
+        className="shrink-0 rounded-full"
+        onClick={() => closeAccountPanel()}
+      >
+        <CaretLeftIcon aria-hidden className="size-3.5" />
+      </Button>
+    </Hint>
+  );
+}
+
+/** The account's Help pane, listed in the footer above Docs and Support. */
+function HelpRow({ label }: { label: string }) {
+  const accountId = useAccountPanelId();
+  const { activeSection } = useAccountHubSection(accountId);
+  if (!accountId) return null;
+  return (
+    <NavRow
+      entry={{
+        key: 'section:help',
+        label,
+        to: hubTarget(accountId, { tab: 'help' }),
+        icon: LifebuoyIcon,
+        active: activeSection === 'help',
+      }}
+    />
   );
 }
 
@@ -258,19 +324,13 @@ export function AccountSettingsSidebar() {
     >
       <SidebarHeader className="gap-0 px-2 pt-0 pb-0">
         <div className="kx-titlebar-row kx-titlebar-band-height kx-overlay-sidebar-titlebar flex h-11 items-center justify-between gap-1 py-2 pr-0.5">
-          <BackToApp label={tI18nComplete.raw('texta6989680b352')} />
-          <div className="flex items-center gap-px">
-            <Hint label={tI18nComplete.raw('text49c266baaaa7')} side="bottom">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label={tI18nComplete.raw('text49c266baaaa7')}
-                onClick={() => openCommandPalette()}
-              >
-                <MagnifyingGlassIcon className="text-muted-foreground size-4" />
-              </Button>
-            </Hint>
+          <div className="flex min-w-0 items-center gap-0.5">
+            <BackToApp label={tI18nComplete.raw('texta6989680b352')} />
+            <Suspense fallback={<Skeleton className="h-7 w-28 rounded-full" />}>
+              <AccountSwitcher />
+            </Suspense>
+          </div>
+          <div className="flex shrink-0 items-center gap-px">
             <Hint label={tI18nComplete.raw('textd1db29ebc76d')} side="bottom">
               <SidebarTrigger className="text-muted-foreground" />
             </Hint>
@@ -286,6 +346,9 @@ export function AccountSettingsSidebar() {
 
       <SidebarFooter className="p-2">
         <SidebarMenu>
+          <Suspense fallback={null}>
+            <HelpRow label={tI18nComplete.raw('textb79cac926e0b')} />
+          </Suspense>
           {footerLinks.map((link) => (
             <SidebarMenuItem key={link.href}>
               <SidebarMenuButton asChild className={ROW_CLASS}>

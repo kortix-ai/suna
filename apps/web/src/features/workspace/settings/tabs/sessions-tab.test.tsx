@@ -1,8 +1,8 @@
-import { describe, expect, test } from 'bun:test';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import type { ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SessionsTabView, type SessionsTabCopy } from './sessions-tab';
+import { SessionsTabView } from './sessions-tab';
 
 const headings = (html: string): string[] =>
   [...html.matchAll(/<(h[23])[^>]*>([^<]*)<\/\1>/g)].map((m) => `${m[1]}:${m[2]}`);
@@ -33,7 +33,7 @@ function switchState(out: string, label: string): string | null {
 
 const switchCount = (out: string) => [...out.matchAll(/role="switch"/g)].length;
 
-const SERBIAN_COPY: SessionsTabCopy = {
+const SERBIAN_COPY: NonNullable<ComponentProps<typeof SessionsTabView>['copy']> = {
   notifications: 'Обавештења',
   notificationsDescription: 'Обавештења прегледача.',
   unsupported: 'Прегледач не подржава обавештења.',
@@ -62,6 +62,8 @@ const SERBIAN_COPY: SessionsTabCopy = {
     shared: { label: 'Подељено са вама', description: 'Неко дели сесију.' },
     automation_failed: { label: 'Упозорење о грешци', description: 'Окидач не успева.' },
     automation_recovered: { label: 'Обавештење о опоравку', description: 'Окидач ради.' },
+    capture_device_down: { label: 'Рачунар је стао', description: 'Рачунар не снима.' },
+    capture_device_recovered: { label: 'Рачунар поново снима', description: 'Рачунар снима.' },
   },
   push: 'Push',
   email: 'Имејл',
@@ -125,7 +127,9 @@ describe('SessionsTabView', () => {
   });
 
   test('enabling notifications reveals the type and behaviour toggles', () => {
-    const out = renderToStaticMarkup(<SessionsTabView notificationPreferences={ENABLED_PREFERENCES} />);
+    const out = renderToStaticMarkup(
+      <SessionsTabView notificationPreferences={ENABLED_PREFERENCES} />,
+    );
     expect(out).toContain('Notification types');
     expect(out).toContain('Behavior');
     expect(out).toContain('Send test notification');
@@ -227,7 +231,7 @@ describe('SessionsTabView with the notification center', () => {
 
   test('notification types: one Push switch per kind, and Email for every kind but permission', () => {
     const out = center();
-    expect(switchCount(out)).toBe(1 + 7 + 6);
+    expect(switchCount(out)).toBe(1 + 9 + 8);
     expect(out).toContain('>Push<');
     expect(out).toContain('>Email<');
     expect(switchState(out, 'Turn finished: Push')).toBe('true');
@@ -253,7 +257,7 @@ describe('SessionsTabView with the notification center', () => {
     const out = center({ emailAvailable: false });
     expect(out).not.toContain('>Email<');
     expect(out).not.toContain(': Email"');
-    expect(switchCount(out)).toBe(1 + 7);
+    expect(switchCount(out)).toBe(1 + 9);
   });
 
   test('while the record loads the rows show, without switches', () => {

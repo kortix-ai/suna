@@ -99,8 +99,15 @@ mounts:
 - Snapshots: Kortix takes one every day. Daily and manual snapshots are kept
   `snapshot_retention_days` (default 5, at most 60). `volumes snapshot` takes one now; `volumes restore`
   makes a snapshot the volume's contents again (a new version; nothing is
-  lost); `volumes fork` makes an instant, unattached copy; `volumes extend`
-  grows the allotment (it never shrinks; at most 100 GB).
+  lost); `volumes fork` makes an instant, unattached copy; `volumes set
+  --retention <days>` keeps daily snapshots longer. A snapshot commits the
+  mounted volume first, then pins that commit.
+- Size: Platinum allots every volume a fixed 100 GB; a volume cannot grow.
+  `kortix apps volumes` shows use and size. Keep uploads and documents that
+  can outgrow it in object storage.
+- Scale: a group with a mount runs one machine (`409 volume_single_machine`).
+  Scale it up with `kortix apps set --cpu/--memory-gb`. `scale count
+  --new-volumes` gives each new machine its own, empty volume.
 - Destroying a volume (or the App) keeps a final snapshot for 7 days, then
   Kortix purges it.
 - A mount's `destination` cannot sit under a system directory (`/etc`, `/usr`,

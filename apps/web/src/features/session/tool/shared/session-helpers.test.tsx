@@ -5,6 +5,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { InlineSessionMessagesList, parseSessionMessagesOutput } from './session-helpers';
 
 const MESSAGES = {
+  settings: {
+    credits: {
+      creditCount: '{count, plural, one {{formatted} credit} other {{formatted} credits}}',
+    },
+  },
   hardcodedUi: {
     componentsSessionToolRenderers: {
       line2350JsxTextTruncated: '(truncated)',
@@ -25,7 +30,9 @@ describe('InlineSessionMessagesList cost display', () => {
       </NextIntlClientProvider>,
     );
 
-    expect(html).toContain('$0.0100');
-    expect(html).not.toContain('$0.0120');
+    // $0.01 is 1 credit; the old 1.2x fudge would read 1.2 credits.
+    expect(html).toContain('>1 credit<');
+    expect(html).not.toContain('1.2');
+    expect(html).not.toContain('$');
   });
 });

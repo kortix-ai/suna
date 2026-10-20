@@ -12,11 +12,12 @@ import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-import { useProjectDrive } from '@/hooks/drives/use-drives';
+import { useCapabilityAccess } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
+import { cn } from '@/lib/utils';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 import { receivedDenial } from './capability-access-gate';
@@ -80,20 +81,9 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
 
   return (
     <HubLink
-      /* `from=customize` is what earns the project panel a "Back to Customize"
-         breadcrumb instead of the hub's own "All projects". This link is the
-         ONLY way that marker gets set, so the panel can rely on there being a
-         Customize entry in history to go back to.
-
-         The hub opens as a modal over this very page now, which is most of
-         what that marker was compensating for. The history entry it relies on
-         is still exactly one — the one the modal pushes — so
-         `BackToCustomizeOverlay`'s `router.back()` lands on the Customize tab
-         the person left, same as before. */
       to={hubTarget(accountId, {
         tab: 'access-projects',
         project: projectId,
-        from: 'customize',
       })}
       className={MEMBERS_LINK_CLASS}
     >
@@ -121,12 +111,12 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  * `shrink-0` keeps the bar pinned at full height inside the layout's `h-svh`
  * column; the page body below is the flex-1 scroller.
  *
- * **Static on purpose.** Every tab paints on the first frame, from
- * `CAPABILITY_TABS`, with no permission probe. The bar used to filter on the
- * probe, and a pending probe reads `allowed: false`, so it painted empty and
- * the tabs flew in when `/effective` answered. Access is now decided in the
- * content area (`CapabilityAccessGate`): a tab the caller may not read still
- * shows, and opening it shows a no-access state instead of the page.
+ * **Only the tabs the caller may open** (`capabilityAccess()`, the rule the
+ * sidebar row and `CapabilityAccessGate` read). Until that answer arrives the
+ * bar paints every tab with `invisible`: the row holds its height and nothing
+ * flies in, and no tab the caller cannot open is ever clickable. It used to
+ * paint every tab unconditionally, so a limited member saw five tabs that
+ * opened onto "You don't have access" (KRTX-2144).
  */
 /**
  * The hairline between Agents and everything an agent draws on (Skills
@@ -144,6 +134,9 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  */
 const TRAILING_TABS: readonly CapabilityTab['key'][] = ['config'];
 
+/** Tabs that need a project flag: left out of the bar until access settles. */
+const FLAG_GATED_TABS: readonly CapabilityTab['key'][] = ['files', 'reminders'];
+
 function GroupSeam() {
   return <span aria-hidden className="bg-border mx-1 h-4 w-px shrink-0 self-center" />;
 }
@@ -157,13 +150,13 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
   const allTabs = useLocalizedUiCatalog(CAPABILITY_TABS);
-  // Files is the one flag-gated tab: the project's shared folders exist only
-  // once the project turns `drives` on. Loading counts as off.
-  const drivesGate = useFeatureFlag(projectId, 'drives');
-  const drive = useProjectDrive(projectId, drivesGate.enabled);
-  const conflicts = drive.data?.openConflicts ?? 0;
-  const tDrives = useTranslations('drives');
-  const tabs = drivesGate.enabled ? allTabs : allTabs.filter((tab) => tab.key !== 'files');
+  // Repo (key `files`) and Reminders are the flag-gated tabs: each exists only
+  // once the project turns its flag on. `capabilityAccess()` applies the flags
+  // and the leaves; before it settles the bar is invisible and both are left out.
+  const access = useCapabilityAccess(projectId);
+  const tabs = allTabs.filter((tab) =>
+    access.settled ? access.tabs.includes(tab.key) : !FLAG_GATED_TABS.includes(tab.key),
+  );
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
   const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));
@@ -173,14 +166,6 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
     <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
       <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
         {tab.label}
-        {tab.key === 'files' && conflicts > 0 ? (
-          <span
-            className="text-kortix-orange ml-1 text-xs font-medium tabular-nums"
-            aria-label={tDrives('conflictCount', { count: conflicts })}
-          >
-            {conflicts}
-          </span>
-        ) : null}
       </Link>
     </TabsTrigger>
   );
@@ -201,10 +186,14 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
             type="underline"
             underlineSize="md"
             size="lg"
-            className="kx-titlebar-tabs h-auto w-full justify-start gap-5 border-b-0 px-2"
+            className={cn(
+              'kx-titlebar-tabs h-auto w-full justify-start gap-5 border-b-0 px-2',
+              !access.settled && 'invisible',
+            )}
+            aria-busy={!access.settled || undefined}
           >
             {primary.map(renderTab)}
-            <GroupSeam />
+            {primary.length > 0 && library.length > 0 ? <GroupSeam /> : null}
             {library.map(renderTab)}
             <MembersLaunchLink projectId={projectId} />
             {trailing.map(renderTab)}

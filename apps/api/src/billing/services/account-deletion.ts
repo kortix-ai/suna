@@ -46,7 +46,7 @@ import { ownedAccountRows } from '../../iam/membership-read';
 import { BillingError } from '../../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
-import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
+import { markKortixRemovalIntent } from '../../projects/runtime-identity';
 import { deleteUserNotificationData } from '../../notifications/cleanup';
 import {
   isAlreadyNotRunning,
@@ -65,7 +65,7 @@ import {
   claimDeletionRequest,
   releaseDeletionRequest,
 } from '../repositories/account-deletion';
-import { releaseProjectEventSubscriptions } from '../../projects/surface';
+import { deleteUserSessionStates, releaseProjectEventSubscriptions } from '../../projects/surface';
 import { deleteAccountExternalStores } from './account-erasure-stores';
 
 const GRACE_PERIOD_DAYS = 14;
@@ -170,6 +170,8 @@ async function runAccountDeletion(accountId: string, userId?: string, requestId?
     // So are their notifications, watcher rows, preferences and browser push
     // subscriptions, in every account (KRTX-1742).
     await deleteUserNotificationData(requester);
+    // Their session pins and archive, in every account (KRTX-2418).
+    await deleteUserSessionStates(requester);
     const { error } = await getSupabase().auth.admin.deleteUser(requester);
     // A user the auth schema no longer has (an admin-side delete, or a retry
     // after step 3 already ran) is the state this step produces.
@@ -194,8 +196,8 @@ const LEGACY_ROWS_DELETED_WITH_USER = new Set(['basejump.invitations', 'public.g
  *
  *   1. refuse (throw) while the user owns a NON-personal basejump account:
  *      that is team data, never deleted here;
- *   2. delete the user's personal basejump accounts and the rows that
- *      reference them without cascade (`agent_versions`);
+ *   2. clear nullable attribution to personal basejump accounts, refuse unknown
+ *      NOT NULL references, then delete the personal accounts;
  *   3. nullable references from other rows are set NULL; invitations and
  *      Google OAuth tokens of the user are deleted;
  *   4. any other NOT NULL reference (an admin audit actor) refuses: an audit
@@ -234,9 +236,16 @@ async function clearLegacyAuthUserReferences(userId: string): Promise<void> {
         const ids = sql.join(personal.map((id) => sql`${id}::uuid`), sql`, `);
         const dependents = (await tx.execute(refsInto('basejump.accounts'))) as unknown as Ref[];
         for (const ref of dependents) {
-          await tx.execute(
-            sql`DELETE FROM ${sql.raw(ref.tbl)} WHERE ${sql.raw(ref.col)} IN (${ids})`,
-          );
+          if (!ref.notnull) {
+            await tx.execute(
+              sql`UPDATE ${sql.raw(ref.tbl)} SET ${sql.raw(ref.col)} = NULL WHERE ${sql.raw(ref.col)} IN (${ids})`,
+            );
+          } else {
+            const rows = await tx.execute(sql`SELECT 1 FROM ${sql.raw(ref.tbl)} WHERE ${sql.raw(ref.col)} IN (${ids}) LIMIT 1`);
+            if (rows.length > 0) {
+              throw new Error(`personal account is still referenced by ${ref.tbl}.${ref.col} (NOT NULL); not rewritten or deleted`);
+            }
+          }
         }
         await tx.execute(sql`DELETE FROM basejump.accounts WHERE id IN (${ids})`);
       }
@@ -411,17 +420,6 @@ export async function reclaimableAccountIds(
  * Best-effort per box: one provider failure must never block deletion, abort
  * the remaining boxes, or leave the row claiming to be alive.
  */
-async function markRemovalIntent(sandboxId: string): Promise<void> {
-  await db
-    .update(sessionSandboxes)
-    .set({
-      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
-        [KORTIX_REMOVAL_INTENT_KEY]: new Date().toISOString(),
-      })}::jsonb`,
-    })
-    .where(eq(sessionSandboxes.sandboxId, sandboxId));
-}
-
 async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxReclaimSummary> {
   const summary: SandboxReclaimSummary = {
     accounts: accountIds.length,
@@ -470,7 +468,7 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
           // Stamp the intent BEFORE the provider call: its `removed` webhook can
           // arrive before this request settles the row, and must not read as a
           // lost runtime.
-          await markRemovalIntent(row.sandboxId).catch((err) =>
+          await markKortixRemovalIntent(row.sandboxId).catch((err) =>
             logger.warn(
               `[AccountDeletion] failed to stamp removal intent for sandbox ${row.sandboxId}:`, { error: err instanceof Error ? err.message : err },
             ),

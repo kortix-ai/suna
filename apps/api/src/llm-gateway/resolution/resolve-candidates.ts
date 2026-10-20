@@ -21,13 +21,13 @@ import {
 import { CodexRefreshError, resolveCodexAccountCredential, resolveCodexCredential } from '../credentials/codex';
 import { opencodeInferenceBaseUrl, parseOpencodeLogin, resolveOpencodeLogin } from '../credentials/opencode-console';
 import { capabilitiesForModel } from '../models/catalog-models';
+import { isRefusedCodexModelId } from '../models/codex-models';
 import {
   canonicalManagedModelId,
   getRuntimeManagedModel,
   isKnownManagedModelId,
   isRetiredManagedModelId,
 } from '../models/managed-models';
-import { isPlatformDefaultModelId } from '../models/served-managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
 import {
   bedrockByokBaseUrl,
@@ -140,6 +140,7 @@ async function codexAccountCandidates(context: Context, secrets: Array<{ secretI
         projectId: principal.projectId!, accountId: principal.accountId,
         sessionId: principal.sessionId ?? null, userId: principal.userId,
         secretId: secret.secretId, value: secret.value, updatedAt: secret.updatedAt,
+        probe: context.options?.probe,
       });
       if (!credential) { failed.push(secret.label); continue; }
       // `poolSecretId`: a 429 on one account records its cooldown and moves
@@ -241,6 +242,7 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
           projectId: principal.projectId, accountId: principal.accountId,
           sessionId: principal.sessionId ?? null, userId: principal.userId,
           secretId: personal.secretId, value: personal.value, updatedAt: personal.updatedAt,
+          probe: context.options?.probe,
         });
         if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId, refreshableCredential: true }];
       } catch (err) {
@@ -268,6 +270,18 @@ function opencodeHeaders(baseUrl: string, principal: AuthedPrincipal): Record<st
   // forward the caller's own x-opencode-session if that ever costs cache hits.
   const session = principal.sessionId ?? principal.keyId ?? principal.userId;
   return { 'x-opencode-session': session, 'User-Agent': 'Kortix (https://kortix.com)' };
+}
+
+/**
+ * The ChatGPT backend keeps a conversation's prompt prefix cached only when its
+ * requests name the conversation in `session_id`, as the Codex CLI does.
+ * Without it, prod Sol requests read 24.8% of their input from cache (7 days
+ * to 2026-10-19). With it, 8 of 8 probe follow-ups read 99% (24,192 of 24,405
+ * tokens). A gateway API key call has no session, as in `opencodeHeaders`.
+ */
+export function codexConversationHeaders(principal: AuthedPrincipal): Record<string, string> {
+  const conversation = principal.sessionId ?? principal.keyId ?? principal.userId;
+  return { session_id: conversation, conversation_id: conversation };
 }
 
 /**
@@ -374,17 +388,14 @@ async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveMod
   if (access.disabledProviders.includes('kortix')) throw new GatewayResolutionError('provider_disabled',
     'Kortix Managed Models are disabled for this project.',
     'Choose a model from an enabled provider, or enable Kortix Managed Models in Models.');
-  // The platform default is the ONE managed model every tier may use — a fresh
-  // free account's only working model (KRTX-1067). The rest of the lineup
-  // keeps its plan gates.
-  const platformDefault = isPlatformDefaultModelId(effectiveModel);
-  if (!platformDefault) {
-    if (principal.freeModelsOnly) throw new GatewayResolutionError('plan_upgrade_required',
-      `"${effectiveModel}" requires a paid plan.`, PLAN_UPGRADE_SUGGESTION);
-    if (config.KORTIX_BILLING_INTERNAL_ENABLED && !(await accountMayUseManagedModels(principal.accountId))) {
-      const tier = await getCachedAccountTier(principal.accountId);
-      throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
-    }
+  // THE managed-model gate. No model, default or fallback is exempt: an
+  // account without the entitlement (the Free plan) never reaches a managed
+  // model on Kortix credits.
+  if (principal.freeModelsOnly) throw new GatewayResolutionError('plan_upgrade_required',
+    `"${effectiveModel}" requires a paid plan.`, PLAN_UPGRADE_SUGGESTION);
+  if (config.KORTIX_BILLING_INTERNAL_ENABLED && !(await accountMayUseManagedModels(principal.accountId))) {
+    const tier = await getCachedAccountTier(principal.accountId);
+    throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
   }
   return managedCandidates(managed).map((candidate) => {
     const headers = opencodeHeaders(candidate.baseUrl, principal);
@@ -439,7 +450,18 @@ export async function resolveCandidates(
   }
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
   const context = { principal, effectiveModel, personalUserId, pooledEnabled, options };
-  if (provider === 'codex') return resolveCodexCandidates(context);
+  if (provider === 'codex') {
+    if (isRefusedCodexModelId(effectiveModel.slice('codex/'.length))) {
+      throw new GatewayResolutionError(
+        'model_retired',
+        `The "${effectiveModel}" model is no longer available with a ChatGPT account.`,
+        'Choose another model from the current ChatGPT lineup.',
+      );
+    }
+    const conversation = codexConversationHeaders(principal);
+    return (await resolveCodexCandidates(context)).map((candidate) =>
+      ({ ...candidate, headers: { ...candidate.headers, ...conversation } }));
+  }
 
   const byok = resolveCatalogUpstream(provider, provider ? effectiveModel.slice(provider.length + 1) : undefined);
   if (byok && principal.projectId) {

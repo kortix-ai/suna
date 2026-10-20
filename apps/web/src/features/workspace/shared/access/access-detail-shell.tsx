@@ -26,8 +26,10 @@ export interface AccessDetailTab {
 }
 
 export interface AccessDetailShellProps {
-  /** "‹ {label}" breadcrumb. Give it an `href` or an `onClick`, not both. */
-  back: { label: string; href?: string; onClick?: () => void };
+  /** "‹ {label}" breadcrumb. Give it an `href` or an `onClick`, not both.
+   *  Omit it where the surrounding chrome already names the way back (the
+   *  account hub's breadcrumb bar). */
+  back?: { label: string; href?: string; onClick?: () => void };
   /** `UserAvatar size="lg"` / `EntityAvatar size="lg"`. */
   avatar?: ReactNode;
   title: ReactNode;
@@ -60,19 +62,19 @@ export function AccessDetailShell({
   children,
   className,
 }: AccessDetailShellProps) {
-  const backContent = (
+  const backContent = back ? (
     <>
       <CaretLeftIcon className="size-4" />
       {back.label}
     </>
-  );
+  ) : null;
   const backClass =
     'text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-sm transition-colors';
 
   return (
     <div className={cn('mx-auto w-full max-w-6xl space-y-5 pb-10', className)}>
       <div className="space-y-5">
-        {back.href ? (
+        {!back ? null : back.href ? (
           <Link href={back.href} className={backClass}>
             {backContent}
           </Link>

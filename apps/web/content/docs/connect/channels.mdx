@@ -3,7 +3,7 @@ title: "Slack, Teams & email"
 description: "Start and continue sessions from Slack, Microsoft Teams and email. In Slack and Teams, each person acts as their own linked Kortix account."
 ---
 
-A channel lets people start and continue [sessions](/docs/work/sessions) from outside Kortix. There are 3 channels: Slack, Microsoft Teams and email. This page is for the person who connects a channel and for everyone who works with the agent from one.
+A channel lets people start and continue [sessions](/docs/work/sessions) from outside Kortix. There are 4 channels: Slack, Microsoft Teams, email and Telegram (experimental). This page is for the person who connects a channel and for everyone who works with the agent from one.
 
 <Steps>
 <Step title="Connect the platform">
@@ -57,7 +57,7 @@ Every action runs as the linked account of the person who takes it, with that ac
 | Action | Who may do it |
 | --- | --- |
 | Mention the bot, or message it in a DM | A linked project member (`project.session.start`), within the join policy |
-| Stop a run | The sender of the message being answered, or anyone approved into the session. Both need `project.session.stop`. |
+| Stop a run | The sender of the message being answered, the session owner, or a project manager. Each needs `project.session.stop`. |
 | Change a channel's project, agent, model or join policy | A project manager (`project.connector.write`). In a DM or Teams personal chat, any project member. |
 | Move a bound channel to another project | A project manager in both projects |
 | Act on a review card | A project manager (`project.review.act`) |
@@ -111,7 +111,7 @@ Every card also has **View in Kortix**. The request-changes button is **Ask for 
 
 **Connector approval cards.** A [connector call that needs approval](/docs/connect/connectors#policies-and-approvals) posts a card with the action, the parameters the connector will receive, and the agent's description of the effect, marked as not verified. Select **Approve** or **Deny**. In Slack, **Reply…** sends a message to the agent with your decision.
 
-**Stop.** While the agent works, its live message has a **Stop** button. In Teams, `/stop` does the same after the card scrolls away. Stop ends the run at the runtime, not only on the message. Anyone else gets a private refusal.
+**Stop.** While the agent works, its live message has a **Stop** button. In Teams, `/stop` does the same after the card scrolls away. Stop ends the run at the runtime, not only on the message. The same rule holds in the web and mobile apps. Anyone else gets a private refusal, and everyone else in the session sees who stopped the run.
 
 ## What the agent can read and post
 
@@ -319,6 +319,39 @@ Sender policy flags, on `connect` and `policy`:
 - `--allow-all` (on `policy`) clears the list and accepts every sender.
 
 `--connector <slug>` picks one inbox when the project has several. The default is `kortix_email`.
+
+## Telegram
+
+Telegram is experimental and off by default. Turn on the **Connectors v2** project flag (`connectors_v2`) first. See [Feature flags](/docs/project#feature-flags).
+
+<Steps>
+<Step title="Create a bot">
+In Telegram, message **@BotFather**, send `/newbot`, and copy the token it gives you.
+</Step>
+<Step title="Connect it">
+Open **Customize → Connectors**, select the **Channels** scope, and select **Connect** on the Telegram row. Paste the token and list the Telegram user ids that may talk to the bot. Kortix registers the bot's webhook and keeps the token on the server.
+</Step>
+<Step title="Message the bot">
+A message from an allowed user starts a session. Anyone else gets a reply that shows their user id; a project manager adds it under **Allowed users**.
+</Step>
+</Steps>
+
+- **One chat is one session.** The next message in the chat continues it. In a forum group, each topic is its own session. `/new` starts a fresh session.
+- **The agent replies through the `kortix_telegram` connector:** `send_message`, `edit_message_text`, `delete_message`, `send_chat_action`, `get_chat` and `get_me`. The bot token never enters the sandbox.
+- **Telegram has no identity link yet.** A Telegram session runs as the account owner. The allowed-user list decides who may start one.
+- **Groups run in Telegram's privacy mode by default:** the bot receives only commands, replies to it and mentions. Send `/setprivacy` to @BotFather, or make the bot a group admin, to let it read every message.
+- **Each message is stored before work starts.** A Telegram retry of the same update never starts a second session.
+- **A failed start is answered in the chat.** When a session cannot start, the bot replies with the reason and what to do. When the chat's first session is still starting, the bot says so and asks you to send the message again.
+- Connecting needs `project.connector.write`.
+
+| API | What it does |
+| --- | --- |
+| `GET /v1/projects/{id}/channels/telegram/installation` | The bot (`bot_id`, `username`, `allowed_user_ids`), or `null` |
+| `POST /v1/projects/{id}/channels/telegram/connect` | Connect a bot: `bot_token`, optional `allowed_user_ids` |
+| `PUT /v1/projects/{id}/channels/telegram/allowed-users` | Replace the allowed list: `user_ids` |
+| `DELETE /v1/projects/{id}/channels/telegram` | Remove the webhook, the token and the install |
+
+The SDK functions are `getTelegramInstallation`, `connectTelegram`, `setTelegramAllowedUsers` and `disconnectTelegram`.
 
 ## Manage bindings
 

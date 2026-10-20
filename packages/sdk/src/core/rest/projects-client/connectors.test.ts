@@ -2,6 +2,9 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   activateConnection,
+  checkMcpServerSignIn,
+  listConnectorMoves,
+  moveConnector,
   addComputerToProject,
   createConnector,
   deleteConnector,
@@ -254,6 +257,29 @@ test('MCP authorization discovery and dynamic client registration', async () => 
   expect(last()).toMatchObject({ method: 'POST', body: registration });
   expect(last().url).toContain('/projects/P1/connections/connection-1/oauth2/register');
   expect(registered.application.client_id).toBe('issued-client');
+});
+
+test('a catalogue app on a Kortix OAuth client: discovery says kortix_client, registration sends no endpoint', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      discovery: {
+        resource_url: 'https://gmailmcp.googleapis.com/mcp/v1',
+        requires_authorization: true,
+        authorization_server: 'https://accounts.google.com',
+        kortix_client: true,
+        scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+        warnings: [],
+      },
+    },
+  };
+  const { discovery } = await discoverConnectionOAuth2Resource('P1', 'connection-2');
+  expect(discovery.kortix_client).toBe(true);
+
+  nextResponse = { status: 200, body: { application: { client_id: 'kortix-google', token_endpoint_auth_method: 'client_secret_post', has_client_secret: true, has_private_key: false } } };
+  const registration = { issuer: 'https://accounts.google.com', token_url: 'https://oauth2.googleapis.com/token' };
+  await registerConnectionOAuth2Client('P1', 'connection-2', registration);
+  expect(last().body).toEqual(registration);
 });
 
 test('connection methods use the canonical connection route contract', async () => {
@@ -1046,6 +1072,15 @@ test('setConnectorCredential PUTs a native OAuth2 client-credentials configurati
   expect(last().body).toEqual({ oauth2 });
 });
 
+// Storing a credential re-syncs an MCP connector. The response carries that
+// sync, so a caller can tell "stored" from "stored, and the tools load".
+test('setConnectorCredential returns the re-sync the credential ran', async () => {
+  const errors = [{ slug: 'linear', error: 'MCP tools/list failed: HTTP 401' }];
+  nextResponse = { status: 200, body: { ok: true, sync: { synced: 1, errors } } };
+  const result = await setConnectorCredential('P1', 'linear', 'sekret');
+  expect(result.sync?.errors).toEqual(errors);
+});
+
 test('pipedreamFinalize POSTs an empty body to the connect/finalize endpoint', async () => {
   nextResponse = { status: 200, body: { connected: true, accountId: 'acc_1' } };
   const result = await pipedreamFinalize('P1', 'github');
@@ -1264,11 +1299,21 @@ test('listConnectorAccounts reads the accounts a call may run as', async () => {
       connector: 'gmail',
       accounts: [
         { connection_id: 'c-1', label: 'Work', owner_type: 'project', is_default: true },
-        { connection_id: 'c-2', label: 'Personal', owner_type: 'member', is_default: false },
+        {
+          connection_id: 'c-2',
+          label: 'Personal',
+          owner_type: 'member',
+          is_default: false,
+          credential_rejected_at: '2026-10-19T00:00:00Z',
+        },
       ],
     },
   };
   const accounts = await listConnectorAccounts('P1', 'gmail');
+  // The upstream answered 401 to the stored credential: a person must replace it.
+  const rejectedAt: string | null | undefined = accounts[1].credential_rejected_at;
+  expect(rejectedAt).toBe('2026-10-19T00:00:00Z');
+  expect(accounts[0].credential_rejected_at).toBeUndefined();
   expect(calls[0].url).toBe('http://test.local/connectors/projects/P1/connectors/gmail/accounts');
   expect(calls[0].method).toBe('GET');
   expect(accounts.map((account) => account.label)).toEqual(['Work', 'Personal']);
@@ -1537,4 +1582,55 @@ test('connectorConnect forwards the redirect URIs the hosted flow returns to', a
 
   await connectorConnect('P1', 'gmail', { owner: 'project', successRedirectUri: 'kortix://ok' });
   expect(last().body).toEqual({ owner: 'project', success_redirect_uri: 'kortix://ok' });
+});
+
+test('checkMcpServerSignIn POSTs the server URL and returns whether sign-in is one click', async () => {
+  nextResponse = { status: 200, body: { requires_sign_in: true, one_click: true } };
+  const check: import('./connectors').McpServerSignInCheck = await checkMcpServerSignIn(
+    'p1',
+    'https://mcp.example.test/mcp',
+  );
+  expect(check).toEqual({ requires_sign_in: true, one_click: true });
+  expect(last()).toEqual({
+    url: 'http://test.local/connectors/projects/p1/connectors/mcp-sign-in-check',
+    method: 'POST',
+    body: { url: 'https://mcp.example.test/mcp' },
+  });
+});
+
+test('listConnectorMoves GETs the Pipedream connectors and the Kortix app each moves to', async () => {
+  const move = {
+    slug: 'gmail',
+    name: 'Gmail',
+    provider: 'composio' as const,
+    app: 'gmail',
+    to: { slug: 'gmail', name: 'Gmail', icon: '/connector-icons/gmail.svg' },
+    connection_id: null,
+    signed_in: false,
+    accounts: 1,
+  };
+  nextResponse = { status: 200, body: { moves: [move] } };
+  const moves: import('./connectors').ConnectorMove[] = await listConnectorMoves('p1');
+  expect(moves).toEqual([move]);
+  const provider: 'pipedream' | 'composio' = moves[0]!.provider;
+  expect(provider).toBe('composio');
+  expect(last()).toEqual({ url: 'http://test.local/projects/p1/connector-moves', method: 'GET', body: undefined });
+});
+
+test('moveConnector POSTs the account to sign in on and returns the next step', async () => {
+  nextResponse = {
+    status: 200,
+    body: { status: 'sign_in', connection_id: 'c1', to: { slug: 'gmail', name: 'Gmail', url: 'https://gmailmcp.googleapis.com/mcp/v1' } },
+  };
+  const result: import('./connectors').ConnectorMoveResult = await moveConnector('p1', 'gmail work', { connectionId: 'c1' });
+  expect(result.status).toBe('sign_in');
+  expect(result.connection_id).toBe('c1');
+  expect(last()).toEqual({
+    url: 'http://test.local/projects/p1/connectors/gmail%20work/move',
+    method: 'POST',
+    body: { connection_id: 'c1' },
+  });
+  nextResponse = { status: 200, body: { status: 'moved' } };
+  await moveConnector('p1', 'gmail');
+  expect(last().body).toEqual({});
 });

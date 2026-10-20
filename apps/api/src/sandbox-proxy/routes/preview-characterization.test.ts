@@ -27,6 +27,7 @@ import { HTTPException } from 'hono/http-exception';
 import * as realRequestContext from '../../lib/request-context';
 import * as realPreviewOwnership from '../../shared/preview-ownership';
 import * as realPublicShares from '../../shared/session-public-shares';
+import * as realRetryBudget from '../preview-retry-budget';
 
 const ACTIVE_RECORD = {
   sandboxId: 'sbx-uuid-1',
@@ -57,6 +58,9 @@ const counts = {
   resumeStopped: 0,
 };
 
+// The retry sleeps (250 ms / 1 s / 3 s) shrink to 1 ms: these cases assert the
+// attempts and their outcome, not the backoff's wall time.
+mock.module('../preview-retry-budget', () => ({ ...realRetryBudget, PROXY_RETRY_DELAYS_MS: [1, 1, 1] }));
 mock.module('../../config', () => ({
   config: { FRONTEND_URL: 'http://localhost:3000' },
 }));
@@ -89,7 +93,7 @@ mock.module('../../projects/lib/session-token-grant', () => ({
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
 mock.module('../../projects/lib/turn-start-convergence', () => ({
-  convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+  convergeConfigIfBehind: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
   scheduleAssetConvergence: () => {},
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
@@ -324,25 +328,24 @@ describe('forwardToSandbox refusal branches', () => {
     expect(fetchCalls).toBe(1);
   });
 
-  test('a member without session visibility is refused on the daemon port, not on an app port', async () => {
-    sessionAccessAllowed = false;
-    let thrown: unknown = null;
-    try {
-      await forward({ port: 8000, path: '/session' });
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).toBeInstanceOf(HTTPException);
-    expect((thrown as HTTPException).status).toBe(403);
-    expect((thrown as HTTPException).message).toBe('Not authorized to access this session');
-    expect(fetchCalls).toBe(0);
-
-    // An ordinary app port carries no conversation, so the visibility gate does not apply.
-    queueFetch(new Response('app', { status: 200 }));
-    const appPort = await forward({ port: 3000, path: '/' });
-    expect(appPort.status).toBe(200);
-    expect(fetchCalls).toBe(1);
-  });
+  // Pentest M-2: an app port serves the session's workspace too, so a member
+  // whose session access was revoked must not replay ids into its dev server.
+  test.each([[8000, '/session'], [3000, '/'], [3211, '/file.txt']])(
+    'a member without session visibility is refused on port %d',
+    async (port, path) => {
+      sessionAccessAllowed = false;
+      let thrown: unknown = null;
+      try {
+        await forward({ port, path });
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(HTTPException);
+      expect((thrown as HTTPException).status).toBe(403);
+      expect((thrown as HTTPException).message).toBe('Not authorized to access this session');
+      expect(fetchCalls).toBe(0);
+    },
+  );
 
   test('a share-token caller cannot switch agents — refused with no principal to authorize', async () => {
     queueFetch(new Response('should never be fetched'));
@@ -448,10 +451,7 @@ describe('forwardToSandbox on a stopped sandbox', () => {
 // ── the retry / wake machinery ───────────────────────────────────────────────
 
 describe('forwardToSandbox retry and wake', () => {
-  // The retry sleeps (250 ms / 1 s / 3 s) are real, so the four-attempt cases
-  // need ~4.5 s — above Bun's 5 s default per-test timeout on a direct run.
-  // The explicit 8 s keeps them honest and fast instead of loosening the
-  // batch runner's 15 s floor.
+  // The retry sleeps are 1 ms here (the PROXY_RETRY_DELAYS_MS mock above).
   test('a GET 502 invalidates the ingress link and retries to a 200, never waking the box', async () => {
     queueFetch(new Response('bad gateway', { status: 502 }), new Response('ok', { status: 200 }));
     const res = await forward({ port: 3000, path: '/' });
@@ -472,7 +472,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(browser.headers.get('x-kortix-upstream-status')).toBe('502');
     expect(fetchCalls).toBe(4);
     expect(counts.wakeSandbox).toBe(0);
-  }, 8_000);
+  });
 
   test('retries exhausted: a machine client gets the bare upstream 5xx', async () => {
     const fiftyTwo = () => new Response('bad gateway', { status: 502 });
@@ -482,7 +482,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(await machine.text()).toBe('bad gateway');
     expect(fetchCalls).toBe(4);
     expect(counts.wakeSandbox).toBe(0);
-  }, 8_000);
+  });
 
   test('a connection-refused GET wakes the sandbox once, then gives up with a 502 on the daemon hop', async () => {
     queueFetch(refused(), refused(), refused(), refused());
@@ -525,7 +525,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(timeline?.[0]).toContain('total=');
     expect(timeline?.[0]).toContain('ingress=');
     expect(timeline?.[1]).toEqual({ path: '/session', port: 8000, hop: 'daemon' });
-  }, 8_000);
+  });
 
   test('a Daytona stopped-box 400 wakes once and retries; the last attempt passes the 400 through', async () => {
     const down = () => new Response('failed to get runner info: no IP address found', { status: 400 });
@@ -538,7 +538,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(counts.invalidatePreviewLink).toBe(3);
     // The 400 was returned before the give-up path, so the row was never errored.
     expect(counts.markSandboxErrored).toBe(0);
-  }, 8_000);
+  });
 
   test('a dead signal followed by an unreachable network errors the row before the 502', async () => {
     queueFetch(
@@ -552,7 +552,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(fetchCalls).toBe(4);
     expect(counts.wakeSandbox).toBe(1);
     expect(counts.markSandboxErrored).toBe(1);
-  }, 8_000);
+  });
 });
 
 // ── provider-edge and signed-context auth failures ───────────────────────────
@@ -589,7 +589,7 @@ describe('forwardToSandbox authentication failures', () => {
   });
 
   test('an upstream 401 that the provider did not sign is a 502 signed-context rejection', async () => {
-    currentRecord = { ...ACTIVE_RECORD, provider: 'e2b' };
+    currentRecord = { ...ACTIVE_RECORD, provider: 'platinum' };
     queueFetch(new Response('unauthorized', { status: 401 }));
     const res = await forward({ port: 3000, path: '/' });
     expect(res.status).toBe(502);
@@ -825,13 +825,13 @@ describe('resolvePreviewWsUpstream', () => {
     expect(result).toEqual({ ok: false, status: 403, message: 'not authorized' });
   });
 
-  test('session visibility gates the conversation ports, not an app port', async () => {
+  test('session visibility gates every port, an app port included', async () => {
     sessionAccessAllowed = false;
     const daemon = await resolvePreviewWsUpstream(wsArgs());
     expect(daemon).toEqual({ ok: false, status: 403, message: 'not authorized for this session' });
 
     const appPort = await resolvePreviewWsUpstream(wsArgs({ upstreamPort: 3000, remainingPath: '/ws' }));
-    expect(appPort.ok).toBe(true);
+    expect(appPort).toEqual({ ok: false, status: 403, message: 'not authorized for this session' });
   });
 
   test('a stopped box stays 503 unless the attach was marked user-initiated on a PTY path', async () => {

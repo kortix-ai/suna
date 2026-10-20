@@ -5,6 +5,8 @@ import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { Disclosure } from '@/components/ui/disclosure';
+import { toolCallBlock } from '@kortix/sdk';
+import type { ToolPart } from '@/ui';
 import { ActivityFileChipStep } from './activity-file-chips';
 
 /** The first path segment of Phosphor's `PencilSimple`, the write family glyph. */
@@ -30,7 +32,7 @@ const render = (parts: Part[], bare: boolean) =>
     <QueryClientProvider client={new QueryClient()}>
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
         <Disclosure open={false} onOpenChange={() => {}}>
-          <ActivityFileChipStep parts={parts} running={false} sessionId="s1" bare={bare} />
+          <ActivityFileChipStep calls={parts.map((p) => toolCallBlock(p as ToolPart))} sessionId="s1" bare={bare} />
         </Disclosure>
       </NextIntlClientProvider>
     </QueryClientProvider>,

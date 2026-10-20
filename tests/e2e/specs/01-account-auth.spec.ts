@@ -1,4 +1,4 @@
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, type Request, expect, test } from "@playwright/test";
 
 import {
   pollDatabaseRows,
@@ -27,11 +27,7 @@ interface AccountRow {
   account_id: string;
 }
 
-async function requestEmailAuthentication(
-  page: Page,
-  email: string,
-  { existingAccount = false }: { existingAccount?: boolean } = {},
-) {
+async function requestEmailAuthentication(page: Page, email: string) {
   await page.goto("/auth", { waitUntil: "domcontentloaded" });
   await expect(
     page.getByRole("heading", { name: "Welcome to Kortix" }),
@@ -42,7 +38,7 @@ async function requestEmailAuthentication(
     ),
   );
   await page.getByLabel("Email").fill(email);
-  let sentAt = new Date();
+  const sentAt = new Date();
   const continueButton = page.getByRole("button", {
     name: "Continue",
     exact: true,
@@ -52,8 +48,11 @@ async function requestEmailAuthentication(
   for (let attempt = 1; attempt <= 3 && !submitted; attempt += 1) {
     const formRequest = page
       .waitForRequest(
+        // The email-link default posts to the send-code route (#9773); the
+        // password-only path posts the auth server action.
         (request) =>
-          request.method() === "POST" && new URL(request.url()).pathname === "/auth",
+          request.method() === "POST" &&
+          ["/auth", "/api/auth/send-code"].includes(new URL(request.url()).pathname),
         { timeout: 2_000 },
       )
       .then(() => true)
@@ -64,16 +63,7 @@ async function requestEmailAuthentication(
       await expect(continueButton).toBeEnabled();
     }
   }
-  expect(submitted, "the hydrated auth form sends POST /auth").toBe(true);
-  if (existingAccount) {
-    // #9103: Continue for an existing account opens the password form and
-    // sends no email; the link is one explicit choice away.
-    await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
-    const linkChoice = page.getByRole("button", { name: "Email me a link instead" });
-    await expect(linkChoice).toBeEnabled();
-    sentAt = new Date();
-    await linkChoice.click();
-  }
+  expect(submitted, "the hydrated auth form submits the email").toBe(true);
   await expect(
     page.getByRole("heading", { name: "Check your email" }),
   ).toBeVisible();
@@ -153,7 +143,7 @@ test.describe("01 - Account authentication", () => {
       });
 
       await test.step("The existing user receives a second email and logs in again", async () => {
-        const sentAt = await requestEmailAuthentication(page, email, { existingAccount: true });
+        const sentAt = await requestEmailAuthentication(page, email);
         const action = await inbox.waitForAuthAction(sentAt);
         await completeEmailAuthentication(page, action);
       });
@@ -184,6 +174,103 @@ test.describe("01 - Account authentication", () => {
         await deleteAuthUser(userId, authOptions);
       }
       await inbox.dispose();
+    }
+  });
+
+  // The dogfood run's signature: open /auth on a cold browser, type the
+  // address, press Enter once — and no request fires, while a click after the
+  // wait submits. The entry form's SSR HTML is typeable before React hydrates
+  // it, and in that window an Enter either performs a native GET navigation
+  // to /auth?email=… (discarding the typed address) or React 19's hydration
+  // resets the field to its server-rendered value so the later Enter submits
+  // nothing. Holding every JS chunk makes the window deterministic; whatever
+  // the network does, the one Enter must reach the app's submit path (a
+  // POST) carrying the address that was typed.
+  const deleteEntryUser = async (email: string) => {
+    const rows = await queryDatabaseRows<UserRow>(
+      'select id::text from auth.users where lower(email) = lower($1) limit 1',
+      [email],
+    ).catch(() => []);
+    const userId = rows[0]?.id ?? null;
+    if (userId) await deleteAuthUser(userId, authOptions);
+  };
+
+  // Armed BEFORE the Enter: the post-hydration variant's POST fires the
+  // instant the key lands, and a listener registered afterwards never sees it.
+  const watchEntrySubmit = (page: Page) =>
+    page.waitForRequest(
+      (candidate) =>
+        candidate.method() === 'POST' &&
+        ['/auth', '/api/auth/send-code'].includes(new URL(candidate.url()).pathname),
+      { timeout: 25_000 },
+    );
+
+  const expectEntryGapSubmit = async (page: Page, email: string, request: Request) => {
+    expect(
+      request.postData(),
+      'the submit that finally fired carries the address typed before hydration',
+    ).toContain(email.split('@')[0]);
+    // No native GET navigation: the URL must not carry the address, and the
+    // flow must land on the link step, not a reloaded entry form.
+    expect(page.url(), 'no native form GET may leak into the URL').not.toContain('email=');
+    await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  };
+
+  const holdChunks = async (page: Page) => {
+    let release = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route('**/*.js', async (route) => {
+      await released;
+      await route.continue();
+    });
+    await page.addInitScript(() => {
+      window.addEventListener('kortix:auth-hydrated', () => {
+        document.documentElement.dataset.authHydrated = 'true';
+      });
+    });
+    return release;
+  };
+
+  test('an Enter pressed inside the hydration gap submits the typed address', async ({ page }) => {
+    const email = `e2e-enter-gap-${Date.now()}@kortix.test`;
+    const releaseChunks = await holdChunks(page);
+    const submitted = watchEntrySubmit(page);
+    try {
+      await page.goto('/auth', { waitUntil: 'commit' });
+      await expect(page.getByLabel('Email')).toBeVisible();
+      await expect(page.locator('html')).not.toHaveAttribute('data-auth-hydrated', 'true');
+      await page.getByLabel('Email').fill(email);
+      await page.keyboard.press('Enter');
+      releaseChunks();
+      await expectEntryGapSubmit(page, email, await submitted);
+    } finally {
+      releaseChunks();
+      await deleteEntryUser(email);
+    }
+  });
+
+  test('typing that survives the gap submits on the post-hydration Enter', async ({ page }) => {
+    const email = `e2e-enter-late-${Date.now()}@kortix.test`;
+    const releaseChunks = await holdChunks(page);
+    try {
+      await page.goto('/auth', { waitUntil: 'commit' });
+      await expect(page.getByLabel('Email')).toBeVisible();
+      await expect(page.locator('html')).not.toHaveAttribute('data-auth-hydrated', 'true');
+      await page.getByLabel('Email').fill(email);
+      releaseChunks();
+      await page.waitForFunction(
+        () => document.documentElement.dataset.authHydrated === 'true',
+        undefined,
+        { timeout: 15_000 },
+      );
+      const submitted = watchEntrySubmit(page);
+      await page.keyboard.press('Enter');
+      await expectEntryGapSubmit(page, email, await submitted);
+    } finally {
+      releaseChunks();
+      await deleteEntryUser(email);
     }
   });
 });

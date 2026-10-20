@@ -73,7 +73,7 @@ interface CommandResult {
 /** The one place a supervisor command runs. Replaced in tests. */
 export const supervisor = {
   run(command: string, args: string[]): CommandResult {
-    const result = spawnSync(command, args, { encoding: 'utf8' });
+    const result = spawnSync(command, args, { encoding: 'utf8', windowsHide: true });
     return {
       ok: result.status === 0,
       detail: [result.stdout, result.stderr].filter(Boolean).join('\n').trim(),
@@ -174,7 +174,10 @@ export function renderWindowsPowerShellScript(runner: RunnerParts): string {
   const env = Object.entries(runner.env ?? {})
     .map(([key, value]) => `$env:${key} = ${powershellQuote(value)}\n`)
     .join('');
-  return `$ErrorActionPreference = 'Continue'
+  // The first line also marks a unit from before the headless task: it no
+  // longer matches, so status reports upToDate false and repair reinstalls it.
+  return `# Run by the Kortix task under conhost --headless: no console window.
+$ErrorActionPreference = 'Continue'
 ${env}while ($true) {
   # The pipe makes PowerShell wait for a GUI-subsystem binary (the desktop
   # app's Kortix.exe) and set $LASTEXITCODE; a bare call returns at once.
@@ -252,7 +255,8 @@ const launchd: ServiceDriver = {
 
   status(paths, installed) {
     const disabled = run('launchctl', ['print-disabled', launchdTarget()]);
-    const enabled = !new RegExp(`"${paths.label.replace(/\./g, '\\.')}" => (disabled|true)`).test(disabled.detail);
+    // Plain substring match: the label is data, never a regex.
+    const enabled = ![`"${paths.label}" => disabled`, `"${paths.label}" => true`].some((line) => disabled.detail.includes(line));
     const status = run('launchctl', ['print', `${launchdTarget()}/${paths.label}`]);
     return {
       active: status.ok,
@@ -338,8 +342,10 @@ function ensureLinger(): CommandResult {
 /**
  * Task Scheduler definition. schtasks' own defaults stop the task on battery,
  * refuse to start it on battery, and kill it after 72 h, and a visible console
- * window ends the loop when the user closes it. Written as UTF-16, the
- * encoding schtasks /XML expects.
+ * window ends the loop when the user closes it. `-WindowStyle Hidden` alone
+ * still opens a window where Windows Terminal is the default terminal
+ * (Windows 11), so `conhost --headless` hosts PowerShell with no window at
+ * all. Written as UTF-16, the encoding schtasks /XML expects.
  */
 export function renderWindowsTaskXml(paths: ServicePaths, user: string): string {
   return `<?xml version="1.0" encoding="UTF-16"?>
@@ -355,7 +361,7 @@ export function renderWindowsTaskXml(paths: ServicePaths, user: string): string 
     <StartWhenAvailable>true</StartWhenAvailable>
     <Enabled>true</Enabled>
   </Settings>
-  <Actions Context="Author"><Exec><Command>powershell.exe</Command><Arguments>${xmlEscape(`-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${paths.windowsScript}"`)}</Arguments></Exec></Actions>
+  <Actions Context="Author"><Exec><Command>conhost.exe</Command><Arguments>${xmlEscape(`--headless powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${paths.windowsScript}"`)}</Arguments></Exec></Actions>
 </Task>
 `;
 }

@@ -205,11 +205,12 @@ export function AppGridColumnsControl({
           <Hint key={key} side="bottom" label={option.label}>
             <Button
               type="button"
-              variant={active ? 'secondary' : 'outline'}
+              variant="secondary"
               size="icon-sm"
               aria-pressed={active}
               aria-label={option.label}
               onClick={() => onChange(key)}
+              className={active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}
             >
               <Glyph className="size-4" />
             </Button>

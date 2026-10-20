@@ -69,7 +69,11 @@ fi
 #   `@@MSG <label>` … `@@ENDMSG` → every line inside is checked
 #   `@@REF <name>` → the ref name itself is checked
 scan() {
-  awk -v terms="$terms" '
+  # LC_ALL=C: byte semantics. In a UTF-8 locale awk aborts on an invalid byte
+  # sequence (a binary-ish fixture line), and an aborted scan reads as a match,
+  # so one such line blocked every merge of dev. Terms are ASCII names, so a
+  # byte scan matches exactly what a character scan would.
+  LC_ALL=C awk -v terms="$terms" '
     function esc(s) { gsub(/[][\\.^$*+?(){}|\/]/, "\\\\&", s); return s }
     BEGIN {
       n = split(tolower(terms), raw, ",")

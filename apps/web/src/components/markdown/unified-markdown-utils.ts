@@ -2,14 +2,15 @@ import { holdPendingSetupLink } from '@/components/setup-links/util';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
 import { autoLinkUrls } from '@kortix/shared';
-import { prepareMarkdownForKatex } from '@kortix/shared/markdown-math';
+import { hasReferenceDefinitionOutsideFences, prepareMarkdownForMath } from '@kortix/shared/markdown-math';
 
 // Pure, deterministic helpers used by the unified markdown renderer. Extracted
 // so they can be unit-tested without pulling in React / Shiki / Streamdown.
 
 /**
  * The text Streamdown parses: KaTeX delimiters normalised, system tags removed,
- * bare URLs linked.
+ * bare URLs linked. Currency escaping skips code, so a fence (a generative UI
+ * block's `"$10"`, a shell `$1`) reaches its renderer as written.
  *
  * While the message streams, a setup link whose URL is still arriving is held
  * as a pending card first (`holdPendingSetupLink`), so the reader never sees
@@ -17,7 +18,7 @@ import { prepareMarkdownForKatex } from '@kortix/shared/markdown-math';
  * never held.
  */
 export function prepareMarkdownSource(content: string, isStreaming: boolean): string {
-  const prepared = stripKortixSystemTags(prepareMarkdownForKatex(content));
+  const prepared = stripKortixSystemTags(prepareMarkdownForMath(content));
   return autoLinkUrls(isStreaming ? holdPendingSetupLink(prepared) : prepared);
 }
 
@@ -30,10 +31,12 @@ const LINK_REFERENCE_DEFINITION = /^ {0,3}\[[^\]\n]{1,999}\]:[ \t]*\S/m;
  * Streamdown parses a streaming message block by block, and a definition in
  * one block cannot resolve a `[text][1]` in another: the reference renders as
  * raw brackets. A message with a definition is therefore parsed whole, which is
- * what Streamdown already does for footnotes.
+ * what Streamdown already does for footnotes. A definition inside a fence or
+ * display math is code the message shows, not a target, so it does not keep
+ * the text whole (`hasReferenceDefinitionOutsideFences`).
  */
 export function hasLinkReferenceDefinition(markdown: string): boolean {
-  return LINK_REFERENCE_DEFINITION.test(markdown);
+  return hasReferenceDefinitionOutsideFences(markdown, LINK_REFERENCE_DEFINITION);
 }
 
 /**

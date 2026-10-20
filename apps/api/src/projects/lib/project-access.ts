@@ -15,14 +15,11 @@ import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../ia
 // that.
 import { buildDenialError, denialReasonMessage } from '../../iam/denial-message';
 import { projectRoleForUser } from '../../iam/read-models';
-import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { IMPERSONATION_INVALID_CODE, impersonatedAccountFor } from '../../shared/impersonation';
-import { isPlatformAdmin } from '../../shared/platform-roles';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { isUuid } from '../../shared/validate';
 import { logger } from '../../lib/logger';
-import { withAccountSeatLock } from '../../accounts/seat-lock';
 import { setContextField } from '../../lib/request-context';
 import { effectiveProjectRole, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
 import { getAccountMembership } from './user-identity';
@@ -127,29 +124,12 @@ export async function ensureOrgMembership(
 ): Promise<AccountRole> {
   const existing = await getAccountMembership(userId, accountId);
   if (existing) return existing.accountRole as AccountRole;
-  // Joining the account through a project route is still a seat: it takes the
-  // same trial seat gate and seat sync as `POST /accounts/:id/members`.
-  const { trialSeatLimitBlocksNewMember, onMemberAdded } = await import(
-    '../../billing/services/seat-management'
-  );
-  const seatBlock = await withAccountSeatLock(accountId, async () => {
-    const block = await trialSeatLimitBlocksNewMember(accountId);
-    if (block) return block;
-    // Membership is two facts in two stores now. IDENTITY (the row that says this
-    // user belongs to this account, and carries is_super_admin / scim_external_id)
-    // is `kortix.account_memberships`; the ROLE is an account-scope assignment.
-    // Writing the identity row first is what lets `assignRole`'s principal check
-    // resolve without falling back to auth.users.
-    await db.insert(accountMemberships).values({ userId, accountId }).onConflictDoNothing();
-    return null;
-  });
-  if (seatBlock) {
-    const message = `This team's trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Ask the owner to contact the Kortix team.`;
-    throw new HTTPException(403, {
-      message,
-      res: Response.json({ error: message, code: 'trial_seat_limit_reached', limit: seatBlock.limit, members: seatBlock.members }, { status: 403 }),
-    });
-  }
+  // Membership is two facts in two stores now. IDENTITY (the row that says this
+  // user belongs to this account, and carries is_super_admin / scim_external_id)
+  // is `kortix.account_memberships`; the ROLE is an account-scope assignment.
+  // Writing the identity row first is what lets `assignRole`'s principal check
+  // resolve without falling back to auth.users.
+  await db.insert(accountMemberships).values({ userId, accountId }).onConflictDoNothing();
   // The grant, through the ONE write path, so joining an account emits
   // `iam.assignment.granted` like every other grant. `SYSTEM_ACTOR`: the two
   // callers (accepting a project invite, approving an access request) were
@@ -163,9 +143,6 @@ export async function ensureOrgMembership(
     exclusive: true,
   });
   invalidateIamCacheForUser(userId);
-  void onMemberAdded(accountId, userId).catch((err) =>
-    logger.error('[billing] seat sync FAILED after member added', { accountId, userId, error: err instanceof Error ? err.message : String(err) }),
-  );
   return 'member';
 }
 
@@ -237,17 +214,12 @@ export async function resolveRequestedProjectAccount(userId: string, requested: 
  *   read        -> project.read
  *   session     -> project.session.start
  *   write       -> project.write
- *   manage      -> project.write            (legacy admin-tier write)
  *   members     -> project.members.manage   (member administration)
  *   credentials -> project.credentials.issue (mint/revoke a project credential)
  *
- * `manage` KEEPS mapping to project.write on purpose: all 31 remaining `manage`
- * call sites stack their own explicit leaf assert immediately after
- * (project.settings.write, project.connector.write, project.secret.write, …),
- * so the coarse gate is the membership-tier question and the leaf gate is the
- * capability question. The two sites where that stack was MISSING are the ones
- * routes.md §5.2 named — `POST|DELETE /projects/:id/cli-token` — and they now
- * pass `credentials`.
+ * A route whose real gate is a specific leaf loads with `read` and asserts the
+ * leaf itself. A coarse `write` floor in front of it would refuse a custom
+ * role that holds only that leaf.
  */
 export function iamActionForProjectAccess(action: ProjectAccessAction): string {
   switch (action) {
@@ -259,8 +231,6 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
       // Kortix, while project customization stays behind project.write.
       return 'project.session.start';
     case 'write':
-      return 'project.write';
-    case 'manage':
       return 'project.write';
     case 'members':
       return 'project.members.manage';
@@ -274,45 +244,13 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
 
 
 /**
- * The full platform-admin-bypass decision — pure (the DB/header lookups are
- * already resolved into `isPlatformAdmin`/`bypassHeaderPresent` by the
- * caller) so this security gate is exhaustively unit-tested independent of
- * the DB, mirroring the decideReap pattern in sandbox-reaper.ts. A bypass is
- * never eligible for anything but a read, and never for a service account
- * (those already carry their own iam_policies and shouldn't get a second,
- * broader door) — checked BEFORE `isPlatformAdmin` is even consulted by the
- * caller, so a non-admin's header never triggers a DB round-trip.
- */
-export function shouldApplyAdminBypass(input: {
-  action: ProjectAccessAction;
-  isServiceAccount: boolean;
-  bypassHeaderPresent: boolean;
-  isPlatformAdmin: boolean;
-}): boolean {
-  return (
-    isAdminBypassEligible(input) && input.isPlatformAdmin
-  );
-}
-
-/** Whether a bypass request should even be CONSIDERED — i.e. whether it's
- *  worth spending a DB round-trip on `isPlatformAdmin` at all. */
-export function isAdminBypassEligible(input: {
-  action: ProjectAccessAction;
-  isServiceAccount: boolean;
-  bypassHeaderPresent: boolean;
-}): boolean {
-  return input.action === 'read' && !input.isServiceAccount && input.bypassHeaderPresent;
-}
-
-/**
- * The `effectiveRole` label manage-tier branches read (`roleAllows(…,
- * 'manage')`: share management, `can_manage`, the serialized
- * `effective_project_role`).
+ * The `effectiveRole` label: the serialized `effective_project_role`. A display
+ * label only; no gate reads it.
  *
  * Legacy callers keep the caller's own role. An agent-principal session
  * never inherits its launcher's role: it is `manager` only when the AGENT's effective permissions
  * hold `project.write` (the IAM action behind the `manage` tier,
- * `iamActionForProjectAccess('manage')`), else `member`. Pure; exported for
+ * `iamActionForProjectAccess('write')`), else `member`. Pure; exported for
  * unit tests.
  */
 export function deriveEffectiveRole(input: {
@@ -331,7 +269,7 @@ export function deriveEffectiveRole(input: {
  * account-membership 403.
  */
 async function resolveProjectGate(
-  request: { isServiceAccount: boolean; bypassHeaderPresent: boolean },
+  request: { isServiceAccount: boolean },
   userId: string,
   projectId: string,
   accountId: string,
@@ -342,7 +280,6 @@ async function resolveProjectGate(
   membership: { accountId: string; accountRole: string } | null;
   projectRole: ProjectRole | null;
   verdict: Verdict;
-  adminBypass: boolean;
   accountRole: AccountRole | undefined;
 }> {
   // Membership, project role and the IAM verdict are independent lookups —
@@ -366,41 +303,12 @@ async function resolveProjectGate(
   // standing role is ever consulted); fall through to the verdict check.
   const { isServiceAccount } = request;
 
-  // Platform-admin READ-ONLY bypass: an explicit `x-kortix-admin-bypass`
-  // header from a real `platform_user_roles` admin/super_admin lets support
-  // staff VIEW a project they have no account/project grant on — e.g. to
-  // confirm a customer's session actually loads. Deliberately scoped to
-  // action === 'read' only (never write/session/manage) so a bypass can
-  // never be used to act as the account. Every use is audit-logged against
-  // the PROJECT'S OWN account so the customer's own audit trail (and any
-  // configured audit webhook) sees the access, not just ours.
-  let adminBypass = false;
-  const { bypassHeaderPresent } = request;
-  if (isAdminBypassEligible({ action, isServiceAccount, bypassHeaderPresent })) {
-    adminBypass = shouldApplyAdminBypass({
-      action,
-      isServiceAccount,
-      bypassHeaderPresent,
-      isPlatformAdmin: await isPlatformAdmin(userId),
-    });
-    if (adminBypass) {
-      await recordAuditEvent({
-        accountId,
-        actorUserId: userId,
-        action: 'project.admin_bypass_read',
-        resourceType: 'project',
-        resourceId: projectId,
-        metadata: { via: 'admin_bypass_header' },
-      });
-    }
-  }
-
-  if (!membership && !isServiceAccount && !adminBypass) {
+  if (!membership && !isServiceAccount) {
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }
 
   const accountRole = membership?.accountRole as AccountRole | undefined;
-  return { membership, projectRole, verdict, adminBypass, accountRole };
+  return { membership, projectRole, verdict, accountRole };
 }
 
 
@@ -447,11 +355,10 @@ async function denyProjectAccess(input: {
       if (action === 'members' || action === 'credentials') {
         throw buildDenialError(iamAction, verdict.reason);
       }
-      const verb = action === 'manage' ? 'manage this project' : 'change this project';
       throw buildDenialError(
         iamAction,
         verdict.reason,
-        `Your role on this project doesn't let you ${verb}. Ask an account owner or admin to grant you a higher role.`,
+        "Your role on this project doesn't let you change this project. Ask an account owner or admin to grant you a higher role.",
       );
     }
   }
@@ -492,8 +399,6 @@ export async function authorizeProjectAccess(input: {
   actor: Actor;
   /** The request authenticated with a direct service-account bearer. */
   isServiceAccount: boolean;
-  /** The request carried `x-kortix-admin-bypass: 1`. */
-  bypassHeaderPresent: boolean;
 }) {
   const { userId, projectId, row, action, actor } = input;
   const iamAction = iamActionForProjectAccess(action);
@@ -501,8 +406,8 @@ export async function authorizeProjectAccess(input: {
   const gate = await resolveProjectGate(
     input, userId, projectId, row.accountId, action, iamAction, actor,
   );
-  const { accountRole, projectRole, adminBypass } = gate;
-  if (!gate.verdict.allowed && !adminBypass) {
+  const { accountRole, projectRole } = gate;
+  if (!gate.verdict.allowed) {
     await denyProjectAccess({ action, iamAction, actor, projectId, verdict: gate.verdict });
   }
   // effectiveRole label for the UI / downstream helpers. The engine
@@ -523,7 +428,7 @@ export async function authorizeProjectAccess(input: {
       ? // `authorize` directly, not `agentEffectiveAllows`: for an agent-principal
         // actor they are the same verdict, and a new name imported from
         // iam/authorize is one more export every hand-written mock must list.
-        (await authorize(actor, iamActionForProjectAccess('manage'), { type: 'project', id: projectId })).allowed
+        (await authorize(actor, iamActionForProjectAccess('write'), { type: 'project', id: projectId })).allowed
       : false,
     callerRole: callerRole as ProjectRole,
   });
@@ -534,7 +439,6 @@ export async function authorizeProjectAccess(input: {
     accountRole: accountRole ?? null,
     projectRole,
     effectiveRole: effectiveRole as ProjectRole,
-    adminBypass,
     /** The request's canonical principal, so a handler that needs a second
      *  verdict or an assignment write does not rebuild it. */
     actor,

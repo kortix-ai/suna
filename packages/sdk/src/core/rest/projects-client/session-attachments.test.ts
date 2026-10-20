@@ -304,3 +304,29 @@ test("a <file> tag inside another file's body is not a second reference", () => 
   ]);
   expect(found.map((a) => a.url)).toEqual([ref]);
 });
+
+const refD = `kortix-attachment://${projectId}/${sessionId}/66666666-6666-4666-8666-666666666666`;
+
+test("reads session-log records (kortix.session/2) the same way: attachment blocks, file tags, show calls", () => {
+  const record = (message_id: string, role: string, blocks: unknown[]) => ({ schema: "kortix.session/2", v: 1, message_id, role, blocks });
+  const found = findSessionAttachments([
+    record("msg_user", "user", [
+      { id: "b1", type: "attachment", mime: "image/png", name: "photo.png", ref },
+      { id: "b2", type: "text", text: `Read this. <file path="/workspace/R.txt" mime="text/plain" attachment="${refB}">Uploaded</file>` },
+      // A converted attachment whose object was not resolved keeps its v1 url.
+      { id: "b3", type: "attachment", mime: "application/pdf", name: "r.pdf", url: refC },
+      { id: "b4", type: "attachment", mime: "image/png", name: "inline.png", url: "data:image/png;base64,AAAA" },
+      // OpenCode keeps a text file as its own part: a harness block holding the v1 part.
+      { id: "b6", type: "harness", harness: "opencode", kind: "file", model_visible: false, data: { id: "b6", type: "file", mime: "text/csv", filename: "t.csv", url: refD } },
+    ]),
+    record("msg_agent", "assistant", [
+      { id: "b5", type: "tool_call", call_id: "c", name: "show", kind: "other", status: "complete", input: { type: "image", path: "/workspace/a.png", attachment: ref } },
+    ]),
+  ]);
+  expect(found.map((a) => [a.message_id, a.role, a.filename, a.mime, a.url])).toEqual([
+    ["msg_user", "user", "photo.png", "image/png", ref],
+    ["msg_user", "user", "R.txt", "text/plain", refB],
+    ["msg_user", "user", "r.pdf", "application/pdf", refC],
+    ["msg_user", "user", "t.csv", "text/csv", refD],
+  ]);
+});

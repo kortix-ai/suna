@@ -32,21 +32,21 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
   const llmGateway = useFeatureFlag(projectId, 'llm_gateway');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
-  const apps = useFeatureFlag(projectId, 'apps');
   const monitors = useFeatureFlag(projectId, 'monitors');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
   const piHarness = useFeatureFlag(projectId, 'pi_harness');
+  const genui = useFeatureFlag(projectId, 'genui');
   const usRegion = useFeatureFlag(projectId, 'us_region');
   const eventTriggers = useFeatureFlag(projectId, 'event_triggers');
   const notificationCenter = useFeatureFlag(projectId, 'notification_center');
   const volumes = useFeatureFlag(projectId, 'volumes');
-  const statelessSessions = useFeatureFlag(projectId, 'stateless_sessions');
   const drives = useFeatureFlag(projectId, 'drives');
-  const ephemeralSandboxes = useFeatureFlag(projectId, 'ephemeral_sandboxes');
   const sessionLog = useFeatureFlag(projectId, 'session_log');
+  const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
+  const connectorsV2 = useFeatureFlag(projectId, 'connectors_v2');
 
   return {
     flags: {
@@ -55,23 +55,23 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       agentmail_email: agentmailEmail.enabled,
       llm_gateway: llmGateway.enabled,
       meta_agent: metaAgent.enabled,
-      apps: apps.enabled,
       monitors: monitors.enabled,
       reminders: reminders.enabled,
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
       pooled_provider_secrets: pooledProviderSecrets.enabled,
       pi_harness: piHarness.enabled,
+      genui: genui.enabled,
       us_region: usRegion.enabled,
       event_triggers: eventTriggers.enabled,
       notification_center: notificationCenter.enabled,
       volumes: volumes.enabled,
-      stateless_sessions: statelessSessions.enabled,
       drives: drives.enabled,
-      ephemeral_sandboxes: ephemeralSandboxes.enabled,
       session_log: sessionLog.enabled,
+      session_log_restore: sessionLogRestore.enabled,
+      connectors_v2: connectorsV2.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: sessionLog.isLoading,
+    isLoading: connectorsV2.isLoading,
   };
 }

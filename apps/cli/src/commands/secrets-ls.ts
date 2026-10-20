@@ -16,6 +16,9 @@ type SecretRow = {
   configured: boolean;
   available: boolean;
   effectiveSource: 'mine' | 'shared' | 'none';
+  /** Can the server decrypt the value this caller's sessions read? Null when
+   *  no value reaches them, or the server did not say. */
+  status: 'ok' | 'undecryptable' | null;
   strategy: 'runtime' | 'egress' | 'broker' | 'denied';
   consumer: ProjectSecret['consumer'];
   deliveryStatus: 'available' | 'unavailable' | 'disabled';
@@ -112,10 +115,16 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   const itemState = (secret: ProjectSecret) => {
     const configured = secret.configured ?? true;
     const effectiveSource = secret.effective_source ?? (configured ? 'shared' : 'none');
+    // The value sessions read: my active override, else the shared one. One the
+    // server cannot decrypt is stored but never arrives (KRTX-1719).
+    const status =
+      (effectiveSource === 'mine' ? secret.mine?.status : effectiveSource === 'shared' ? secret.status : null) ??
+      null;
     return {
       configured,
       effectiveSource,
-      available: effectiveSource !== 'none',
+      status,
+      available: effectiveSource !== 'none' && status !== 'undecryptable',
       strategy: secret.strategy ?? 'runtime',
       consumer: secret.consumer ?? (secret.strategy === 'denied' ? null : 'sandbox'),
       deliveryStatus:
@@ -138,10 +147,12 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
       : null;
   const isGranted = (identifier: string) =>
     !scopedGrant || scopedGrant.has(identifier.toUpperCase());
-  const availableKeys = new Set(
-    resp.items.filter((secret) => itemState(secret).available).map((secret) => secret.name),
+  // A value the server cannot decrypt is stored, not missing: it gets its own
+  // warning below, and `available: false`.
+  const storedKeys = new Set(
+    resp.items.filter((secret) => itemState(secret).effectiveSource !== 'none').map((secret) => secret.name),
   );
-  const requiredMissing = required.filter((key) => !availableKeys.has(key) && isGranted(key));
+  const requiredMissing = required.filter((key) => !storedKeys.has(key) && isGranted(key));
 
   const declaredOrder: string[] = [];
   const seenDeclared = new Set<string>();
@@ -164,6 +175,7 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
         configured: false,
         available: false,
         effectiveSource: 'none',
+        status: null,
         strategy: 'runtime',
         consumer: 'sandbox',
         deliveryStatus: 'available',
@@ -200,6 +212,7 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
         configured: r.configured,
         available: r.available,
         effective_source: r.effectiveSource,
+        status: r.status,
         strategy: r.strategy,
         consumer: r.consumer,
         delivery_status: r.deliveryStatus,
@@ -251,7 +264,9 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   const statusOf = (r: SecretRow) =>
     !r.granted
       ? 'not granted'
-      : r.available
+      : r.status === 'undecryptable'
+        ? 'undecryptable'
+        : r.available
         ? r.effectiveSource === 'mine'
           ? 'personal'
           : 'set'
@@ -272,12 +287,17 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
     // A stored value is not a delivered one. Green-for-configured alone let a
     // secret whose delivery path this deployment cannot run print as healthy,
     // so the dot answers "will this arrive?", not just "is a value set?".
-    const marker = !r.available
-      ? `${C.yellow}○ ${C.reset}`
-      : r.deliveryStatus === 'unavailable'
-        ? `${C.red}● ${C.reset}`
-        : `${C.green}● ${C.reset}`;
-    const statusTxt = pad(statusOf(r), statusW);
+    const undecryptable = r.status === 'undecryptable';
+    const marker = undecryptable
+      ? `${C.red}● ${C.reset}`
+      : !r.available
+        ? `${C.yellow}○ ${C.reset}`
+        : r.deliveryStatus === 'unavailable'
+          ? `${C.red}● ${C.reset}`
+          : `${C.green}● ${C.reset}`;
+    const statusTxt = undecryptable
+      ? `${C.red}${pad(statusOf(r), statusW)}${C.reset}`
+      : pad(statusOf(r), statusW);
     const specColor =
       r.spec === 'required' && !r.available ? C.yellow : r.spec === 'undeclared' ? C.faded : C.dim;
     // Show the injected env key only when it differs from the identifier —
@@ -306,6 +326,19 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
           undeliverable.length === 1 ? '' : 's'
         } cannot be delivered — the chosen path is not available on this project.`,
       )}\n`,
+    );
+  }
+  const undecryptableRows = allRows.filter((row) => row.status === 'undecryptable');
+  if (undecryptableRows.length > 0) {
+    const names = undecryptableRows.map((row) => row.identifier).join(', ');
+    process.stdout.write(
+      `  ${status.warn(
+        `${undecryptableRows.length} secret${undecryptableRows.length === 1 ? '' : 's'} cannot be decrypted ` +
+          `with this server's encryption key (${names}) — a session start or connector call that needs ` +
+          `${undecryptableRows.length === 1 ? 'it' : 'one'} fails.`,
+      )}\n` +
+        `  ${C.dim}Fix: enter the value again with \`kortix secrets set KEY=VALUE\`, or Re-enter value on the ` +
+        `Secrets page. Your own value: Delete my value on the Secrets page.${C.reset}\n`,
     );
   }
   const notGranted = allRows.filter((row) => !row.granted);

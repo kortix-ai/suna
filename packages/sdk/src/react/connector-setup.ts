@@ -30,7 +30,7 @@ export type ConnectorSetupPhase = 'loading' | 'error' | 'ready' | 'starting' | '
 export type ConnectorPopupOpener = (url: string) => void;
 
 /** What reading a link's info needs: the cache's adapters. */
-export interface ConnectorLinkInfoOptions {
+interface ConnectorLinkInfoOptions {
   /** Kortix API base (with or without the `/v1` suffix), as for `HostRequestOptions`. */
   backendUrl: string;
   /** The slice of `Storage` the link-info cache persists through. Null drops persistence. */

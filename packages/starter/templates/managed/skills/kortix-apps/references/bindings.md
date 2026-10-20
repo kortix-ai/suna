@@ -29,7 +29,7 @@ In `kortix.yaml`, `uses` in the App's block replaces its list on every
 apps:
   backend:               # the Convex template (convex.md), abridged: launch writes the full block
     type: oci_image
-    image: ghcr.io/get-convex/convex-backend@sha256:…
+    image: ghcr.io/convex/convex-backend@sha256:…
     command: ["sh", "-c", "cd /convex && exec ./run_backend.sh"]
     http_service: { internal_port: 3210, access: public }
   crm:
@@ -60,8 +60,9 @@ To read the signed-in member in React, use a `members:me` query
 browser: send the token".
 
 The request passes the using App's own access gate first, so only people the
-App admits reach the bound App through it. The bound App still checks every
-call itself (`requireMember`, sign-in.md): its own URL is public.
+App admits reach the bound App through it. They need no access to the bound
+App itself. The bound App still checks every call itself (`requireMember`,
+sign-in.md): its own URL is public.
 
 | Answer on `/_kortix/apps/<slug>/…` | Cause | Fix |
 | --- | --- | --- |

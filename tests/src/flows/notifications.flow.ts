@@ -44,7 +44,11 @@ flow(
   {
     domain: 'notifications',
     tags: ['smoke'],
-    routes: ['POST /v1/notifications/device-token', 'DELETE /v1/notifications/device-token/:token'],
+    routes: [
+      'POST /v1/notifications/device-token',
+      'DELETE /v1/notifications/device-token/:token',
+      'POST /v1/notifications/device-token/release',
+    ],
   },
   async (ctx) => {
     // Brackets and a slash: the mobile client URL-encodes the token in the path.
@@ -121,6 +125,21 @@ flow(
       await ctx.step('ANON cannot delete a device token → 401', async () => {
         const r = await del(ctx.P.ANON);
         r.status(401);
+      });
+
+      // KRTX-2242: a signed-out app removes its row from a backend it can no
+      // longer authenticate to.
+      await ctx.step('ANON releases OWNER\'s registered token → 200 ok; OWNER\'s delete then finds nothing', async () => {
+        (await ctx.client.as(ctx.P.OWNER).post('/v1/notifications/device-token', register)).status(200);
+        const r = await ctx.client.as(ctx.P.ANON).post('/v1/notifications/device-token/release', { device_token: token });
+        r.status(200).body().has('$.ok', true);
+        (await del(ctx.P.OWNER)).status(200).body().has('$.deleted', false);
+      });
+
+      await ctx.step('releasing an unknown token gets the same answer → 200 ok; an empty token → 400', async () => {
+        const r = await ctx.client.as(ctx.P.ANON).post('/v1/notifications/device-token/release', { device_token: token });
+        r.status(200).body().has('$.ok', true);
+        (await ctx.client.as(ctx.P.ANON).post('/v1/notifications/device-token/release', { device_token: '' })).status(400);
       });
     } finally {
       // Cleanup: whichever principal still owns the token removes it.
@@ -455,6 +474,8 @@ flow(
           shared: { push: true, email: true },
           automation_failed: { push: true, email: true },
           automation_recovered: { push: true, email: false },
+          capture_device_down: { push: true, email: true },
+          capture_device_recovered: { push: true, email: false },
         };
         if (JSON.stringify(prefs.kinds) !== JSON.stringify(defaults)) throw new Error(`defaults ${JSON.stringify(prefs.kinds)}`);
         if (typeof prefs.email_available !== 'boolean') throw new Error(`email_available ${prefs.email_available}`);
@@ -623,6 +644,7 @@ flow(
   'NOTIF-4',
   {
     domain: 'notifications',
+    tags: ['deployed'],
     routes: [
       'GET /v1/notifications/web-push/key',
       'POST /v1/notifications/web-push/subscriptions',

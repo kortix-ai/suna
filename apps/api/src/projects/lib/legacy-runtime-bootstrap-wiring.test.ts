@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { LegacyBootstrapDeps, LegacyBootstrapResult } from './legacy-runtime-bootstrap';
+import { classifyDaemonHealth, updatesItself } from './legacy-runtime-bootstrap';
 import {
   MAX_IN_FLIGHT,
+  expectedRunningAssetsFrom,
   __resetLegacyBootstrapInFlightForTests,
   guaranteeCurrentRuntimeOnOpen,
   scheduleLegacyRuntimeBootstrap,
@@ -73,6 +75,7 @@ function fakeDeps(over: Partial<LegacyBootstrapDeps> & { health?: unknown; statu
     fetchOpencodeStatus: async () => (over.status === undefined ? {} : over.status),
     exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
     patchMetadata: async () => {},
+    claimRun: async () => true,
     audit: async () => {},
     log: () => {},
     ...over,
@@ -226,6 +229,191 @@ describe('guaranteeCurrentRuntimeOnOpen — the session-open guarantee', () => {
     );
     expect(outcome.action).toBe('repairing');
     expect(outcome.retry?.status).toBe('cooldown');
+    expect(scheduled).toBe(0);
+  });
+
+  // Dev 2026-10-14: three deploys, three idle boxes answered `starting` for
+  // 122-390 s. Each box held a `current` check from before the deploy, so the
+  // repair the guarantee scheduled returned `skipped-recent-check` and never
+  // ran; the stall ended only when the daemon swapped itself.
+  test('a box with a recent current check: proceed — the repair would skip it, so never report repairing', async () => {
+    let scheduled = 0;
+    const metadata = { legacyRuntimeCheck: { at: '2026-09-26T23:00:00.000Z', klass: 'current', staleReasons: [], manifestBuild: 1790538288, externalId: 'ext_sb-recent-current' } };
+    const outcome = await guaranteeCurrentRuntimeOnOpen(
+      { ...row('sb-recent-current'), metadata },
+      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
+      () => {
+        scheduled += 1;
+        return true;
+      },
+    );
+    expect(outcome.action).toBe('proceed');
+    expect(outcome.classification?.klass).toBe('stale');
+    expect(scheduled).toBe(0);
+  });
+
+  // A `current` check proves only what was true for one manifest build on one
+  // box. Each case below would otherwise proceed on a box that needs the repair.
+  const repairsDespiteCheck = (name: string, check: Record<string, unknown>, health: unknown) =>
+    test(name, async () => {
+      let scheduled = 0;
+      const sandboxId = `sb-${name.length}`;
+      const outcome = await guaranteeCurrentRuntimeOnOpen(
+        { ...row(sandboxId), metadata: { legacyRuntimeCheck: { at: '2026-09-26T23:00:00.000Z', klass: 'current', staleReasons: [], externalId: `ext_${sandboxId}`, ...check } } },
+        fakeDeps({ health, status: {} }),
+        () => {
+          scheduled += 1;
+          return true;
+        },
+      );
+      expect(outcome.action).toBe('repairing');
+      expect(scheduled).toBe(1);
+    });
+  const { capabilities: _dropped, ...MISSING_CAPABILITY_HEALTH } = CURRENT_HEALTH;
+  repairsDespiteCheck('a deploy added a required capability: a check from the previous build repairs', { manifestBuild: 1790538287 }, MISSING_CAPABILITY_HEALTH);
+  repairsDespiteCheck('the row got a new box: a check from another box repairs', { manifestBuild: 1790538288, externalId: 'ext_an-older-box' }, REAL_STALE_HEALTH);
+  repairsDespiteCheck('a check written before checks carried a build repairs (one extra probe per box)', { manifestBuild: undefined }, REAL_STALE_HEALTH);
+
+  test('a current check older than the 6 h TTL still repairs', async () => {
+    let scheduled = 0;
+    const metadata = { legacyRuntimeCheck: { at: '2026-09-26T17:00:00.000Z', klass: 'current', staleReasons: [] } };
+    const outcome = await guaranteeCurrentRuntimeOnOpen(
+      { ...row('sb-old-current'), metadata },
+      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
+      () => {
+        scheduled += 1;
+        return true;
+      },
+    );
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+
+  test('a box already staged on this build (Daytona): proceed — it converges at its next start', async () => {
+    let scheduled = 0;
+    const metadata = {
+      legacyRuntimeBootstrap: { state: 'staged', attempts: 1, manifestBuild: 1790538288, lastAttemptAt: '2026-09-26T23:00:00.000Z' },
+    };
+    const outcome = await guaranteeCurrentRuntimeOnOpen(
+      { ...row('sb-staged'), provider: 'daytona', metadata },
+      fakeDeps({ health: REAL_STALE_HEALTH, status: {} }),
+      () => {
+        scheduled += 1;
+        return true;
+      },
+    );
+    expect(outcome.action).toBe('proceed');
+    expect(outcome.retry?.status).toBe('staged');
+    expect(scheduled).toBe(0);
+  });
+
+  // A box whose only staleness is its own pending update, on a daemon with the
+  // runtime-truth tick (`runtime_truth`, since 2026-09-27; the supervisor loop
+  // shipped 2026-08-20), installs the update itself within minutes. A legacy
+  // relaunch there costs ~2 min of `starting` after every daemon deploy.
+  const SELF_UPDATING_HEALTH = {
+    ...CURRENT_HEALTH,
+    runtime: { ...CURRENT_HEALTH.runtime, components: { ...CURRENT_HEALTH.runtime.components, agent: 'staged' }, agentSwapPending: true },
+    runtime_truth: { components: { daemon: { state: 'converging', attempted_at: null, attempts: 1, cause: null } } },
+  };
+  const openOn = async (sandboxId: string, health: unknown) => {
+    let scheduled = 0;
+    const outcome = await guaranteeCurrentRuntimeOnOpen(row(sandboxId), fakeDeps({ health, status: {} }), () => {
+      scheduled += 1;
+      return true;
+    });
+    return { outcome, scheduled };
+  };
+  test('a self-updating box whose only staleness is its pending swap: proceed, nothing scheduled', async () => {
+    const { outcome, scheduled } = await openOn('sb-self-updating', SELF_UPDATING_HEALTH);
+    expect(outcome.classification?.staleReasons).toEqual(['agent_swap_pending']);
+    expect(outcome.action).toBe('proceed');
+    expect(scheduled).toBe(0);
+  });
+  test('the same pending swap on a daemon without the runtime-truth tick: repair', async () => {
+    const { runtime_truth: _none, ...noTick } = SELF_UPDATING_HEALTH;
+    const { outcome, scheduled } = await openOn('sb-no-tick', noTick);
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+  test('a self-updating box whose own update is blocked: repair', async () => {
+    const blocked = { ...SELF_UPDATING_HEALTH, runtime_truth: { components: { daemon: { state: 'blocked', attempted_at: null, attempts: 3, cause: 'x' } } } };
+    const { outcome, scheduled } = await openOn('sb-update-blocked', blocked);
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+  test('a self-updating box that also misses a required capability: repair', async () => {
+    const { capabilities: _gone, ...missing } = SELF_UPDATING_HEALTH;
+    const { outcome, scheduled } = await openOn('sb-self-updating-missing-cap', missing);
+    expect(outcome.classification?.staleReasons).toContain('missing_capability');
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+
+  // The kill switch (`policy.agent_self_update: false`): the box never stages,
+  // its runtime_truth daemon reads `unknown`. It must read current (no agent
+  // compare, as `runningAssetsVerdict` does) or repair; never skip forever.
+  test('agent self-update off: the agent digest is not expected, so the box reads current', () => {
+    const manifest = {
+      cli_sha256: 'x',
+      managed_skills_hash: 'y',
+      components: { agent: { sha256: 'manifest-agent' } },
+      policy: { agent_self_update: false },
+    };
+    const expected = expectedRunningAssetsFrom(manifest as never);
+    expect(expected.agent_sha256).toBeNull();
+    expect(classifyDaemonHealth(CURRENT_HEALTH, expected).klass).toBe('current');
+    expect(expectedRunningAssetsFrom({ ...manifest, policy: { agent_self_update: true } } as never).agent_sha256).toBe('manifest-agent');
+  });
+  test('a daemon whose runtime_truth reads unknown is not trusted to update itself: repair', async () => {
+    const unknown = { ...SELF_UPDATING_HEALTH, runtime_truth: { components: { daemon: { state: 'unknown', attempted_at: null, attempts: 0, cause: null } } } };
+    const { outcome, scheduled } = await openOn('sb-truth-unknown', unknown);
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+  // A fresh fallback boot is opened before its first tick records the staged
+  // agent: runtime_truth still reads `unknown`, the asset pass says `staged`.
+  test('a fresh box: truth unknown, agent staged, swap pending: proceed', async () => {
+    const fresh = {
+      ...SELF_UPDATING_HEALTH,
+      uptime_s: 30,
+      runtime_truth: { components: { daemon: { state: 'unknown', attempted_at: null, attempts: 0, cause: null } } },
+    };
+    const { outcome, scheduled } = await openOn('sb-fresh-staged', fresh);
+    expect(outcome.action).toBe('proceed');
+    expect(scheduled).toBe(0);
+  });
+  test('the same box past 10 min of uptime: repair', async () => {
+    const old = {
+      ...SELF_UPDATING_HEALTH,
+      uptime_s: 601,
+      runtime_truth: { components: { daemon: { state: 'unknown', attempted_at: null, attempts: 0, cause: null } } },
+    };
+    const { outcome, scheduled } = await openOn('sb-old-unknown', old);
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+  test('agent self-update off: truth unknown, agent skipped: never skipped as self-updating', async () => {
+    const off = {
+      ...SELF_UPDATING_HEALTH,
+      uptime_s: 30,
+      runtime: { ...SELF_UPDATING_HEALTH.runtime, components: { ...SELF_UPDATING_HEALTH.runtime.components, agent: 'skipped' }, agentSwapPending: false, running: { ...CURRENT_HEALTH.runtime.running, agent_sha256: 'old' } },
+      runtime_truth: { components: { daemon: { state: 'unknown', attempted_at: null, attempts: 0, cause: null } } },
+    };
+    const expected = { cli_sha256: 'x', managed_skills_hash: 'y', agent_sha256: 'new' };
+    expect(updatesItself(off, classifyDaemonHealth(off, expected))).toBe(false);
+  });
+
+  test('converging for 360 ticks (~6 h) is not self-update any more: repair', async () => {
+    const stuck = { ...SELF_UPDATING_HEALTH, runtime_truth: { components: { daemon: { state: 'converging', attempted_at: null, attempts: 360, cause: null } } } };
+    const { outcome, scheduled } = await openOn('sb-converging-stuck', stuck);
+    expect(outcome.action).toBe('repairing');
+    expect(scheduled).toBe(1);
+  });
+  test('converging for 359 ticks with a pending swap: proceed', async () => {
+    const young = { ...SELF_UPDATING_HEALTH, runtime_truth: { components: { daemon: { state: 'converging', attempted_at: null, attempts: 359, cause: null } } } };
+    const { outcome, scheduled } = await openOn('sb-converging-young', young);
+    expect(outcome.action).toBe('proceed');
     expect(scheduled).toBe(0);
   });
 

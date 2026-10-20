@@ -50,7 +50,7 @@ if (SENTRY_DSN) {
       // Ad-blocker blocked requests
       'ERR_BLOCKED_BY_CLIENT',
       // Transient "session runtime not ready" — `RuntimeNotReadyError`
-      // (`[opencode-sdk] Server URL not ready — sandbox is still loading`) from
+      // (`[kortix-runtime] Server URL not ready — sandbox is still loading`) from
       // `getClient()` for the ~1s window before a session's runtime URL pins.
       // Expected + self-healing on every session switch/provisioning; never an
       // error. `app/error.tsx` already suppresses the render-path case, but the

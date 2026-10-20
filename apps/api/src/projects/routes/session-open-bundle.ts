@@ -62,13 +62,18 @@ import {
 import { projectsApp, SessionSnapshotSchema } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { serializeSession } from '../lib/serializers';
+import { loadSessionUserStates } from '../lib/session-user-state';
+import { personUserId } from './session-watch';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import type { AppEnv } from '../../types';
 import { readSessionAuditActions } from '../lib/session-audit-read';
+import { sessionApprovalVerdict } from '../lib/http-approval-caller';
 import { serializePrompt } from '../lib/session-prompt-view';
 import { buildSessionTranscriptSyncEnvelope } from '../lib/session-transcript';
 import { readSessionTurnState } from '../lib/session-turn-read';
+import { canStopTurns } from '../session-lifecycle/turn-stop-authority';
+import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import { scheduleRuntimeProjectionRefresh } from '../lib/session-runtime-projection-refresh';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
@@ -152,7 +157,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
     const gatewayEnabled = projectLlmGatewayEnabled(loaded.row.metadata);
-    const logEnabled = resolveFeatureFlag(loaded.row.metadata, 'session_log', loaded.row.accountId);
+    const logEnabled = resolveFeatureFlag(loaded.row.metadata, 'session_log');
     const userId = c.get('userId') as string;
 
     // Captured BEFORE the fan-out: every leg is a snapshot no fresher than the
@@ -165,8 +170,18 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     // it arrives together, and one leg failing must degrade that leg, not the
     // paint. Nothing here touches the sandbox, so nothing here can be held up
     // by a box that is asleep.
-    const [turn, queue, transcript, models, runtime, audit, log] = await Promise.allSettled([
-      readSessionTurnState(sessionId),
+    const personId = personUserId(c, loaded);
+    const [turn, queue, transcript, models, runtime, audit, log, listState] = await Promise.allSettled([
+      // = GET .../turn, `can_stop` included: one prompter read, only while a
+      // turn runs for a caller who is not the owner or a manager.
+      readSessionTurnState(sessionId).then(async (state) => ({
+        ...state,
+        can_stop: await canStopTurns(state, {
+          sessionId,
+          callerUserId: isProjectSessionPrincipal(c) ? null : loaded.userId,
+          canManageLifecycle: visible.canManageLifecycle,
+        }),
+      })),
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       transcriptLimit.value === 0
         ? Promise.resolve(null)
@@ -193,14 +208,13 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
               freeModelsOnly: freeTier,
             });
             return {
-              platformDefault: platformDefaultModelId(),
+              platformDefault: freeTier ? null : platformDefaultModelId(),
               accountDefault: defaults.account,
               agentDefaults: defaults.agents,
               projectDefault: defaults.projects[projectId] ?? null,
-              // Same answer as GET /model-defaults (KRTX-1067): the platform
-              // default is servable for every tier, so the fallback is the
-              // same for free and paid callers.
-              resolvedForCaller: resolved.model ?? platformDefaultModelId(),
+              // Same answer as GET /model-defaults: an account without
+              // managed models has no platform default.
+              resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
               resolvedSource: resolved.source,
               freeTier,
             };
@@ -226,6 +240,8 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           agentName: (visible.row.agentName as string | null) ?? null,
           audited,
           limit: AUDIT_ACTIONS_LIMIT,
+          // `can_resolve` + `resolvers`: the resolve route's verdict (KRTX-1724).
+          ...sessionApprovalVerdict(c, loaded, projectId, visible.row),
         });
       })(),
       // = `GET .../log`, the first page of the root thread, only with the
@@ -234,6 +250,8 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
       logEnabled
         ? readSessionLogPage({ sessionId, threadId: null, beforeSeq: null, limit: transcriptLimit.value })
         : Promise.resolve(undefined),
+      // The person's pin and archive, as the read by id serves them (KRTX-2418).
+      personId ? loadSessionUserStates([sessionId], personId) : Promise.resolve(null),
     ]);
 
     const prompts =
@@ -269,6 +287,11 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
         // Owner email is a second lookup for a display string the composer does
         // not need to paint. The session route still serves it.
         ownerEmail: null,
+        // A failed read omits the fields rather than claiming "not pinned".
+        userState:
+          listState.status === 'fulfilled' && listState.value
+            ? (listState.value.get(sessionId) ?? { pinnedAt: null, archivedAt: null })
+            : undefined,
       }),
 
       // = GET .../turn. `known: false` means the read failed — render UNKNOWN,
@@ -293,7 +316,9 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           : failed(queue.reason),
 
       // = GET .../transcript?shape=sync — the durable mirror, attachment bytes
-      // already stripped by the capture. `null` when `?transcript=0` asked for
+      // already stripped by the capture; with `session_log` on, `toV1` of the
+      // session log, never the mirror (an SDK that does not know the flag yet
+      // still asks `transcript=40` and paints this window). `null` when `?transcript=0` asked for
       // the pointer only; the session projection above still names the OpenCode
       // root, which is the identity a client needs to trust its own store.
       transcript:

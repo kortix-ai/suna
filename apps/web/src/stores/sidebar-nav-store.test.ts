@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   SIDEBAR_NAV_DEFAULTS,
+  type SidebarNavEntry,
   moveSidebarNavItem,
   normalizeSidebarNav,
   resolveSidebarNav,
@@ -17,11 +18,9 @@ describe('normalizeSidebarNav', () => {
   });
 
   test('keeps a saved order and visibility', () => {
-    const saved = [
+    const saved: SidebarNavEntry[] = [
       { id: 'files', visibility: 'never' },
-      { id: 'review', visibility: 'active' },
       { id: 'customize', visibility: 'always' },
-      { id: 'reminders', visibility: 'always' },
       { id: 'apps', visibility: 'always' },
     ];
     expect(normalizeSidebarNav(saved)).toEqual(saved);
@@ -33,11 +32,24 @@ describe('normalizeSidebarNav', () => {
       { id: 'settings', visibility: 'always' },
       { id: 'files', visibility: 'never' },
     ]);
-    expect(ids(out)).toEqual(['customize', 'apps', 'review', 'reminders', 'files']);
+    expect(ids(out)).toEqual(['customize', 'files', 'apps']);
     expect(out.find((e) => e.id === 'files')?.visibility).toBe('always');
   });
 
-  test('a row without an activity signal cannot be "active"', () => {
+  test('a layout saved while Review and Reminders were sidebar rows drops both', () => {
+    const out = normalizeSidebarNav([
+      { id: 'review', visibility: 'always' },
+      { id: 'reminders', visibility: 'active' },
+      { id: 'apps', visibility: 'never' },
+    ]);
+    expect(out).toEqual([
+      { id: 'customize', visibility: 'always' },
+      { id: 'files', visibility: 'always' },
+      { id: 'apps', visibility: 'never' },
+    ]);
+  });
+
+  test('the retired "active" visibility falls back to the default', () => {
     const out = normalizeSidebarNav([{ id: 'files', visibility: 'active' }]);
     expect(out.find((e) => e.id === 'files')?.visibility).toBe('always');
   });
@@ -46,9 +58,9 @@ describe('normalizeSidebarNav', () => {
 describe('moveSidebarNavItem', () => {
   test('moves a row one step and stops at the edges', () => {
     const items = normalizeSidebarNav(null);
-    expect(ids(moveSidebarNavItem(items, 'apps', -1)).slice(0, 2)).toEqual(['apps', 'customize']);
+    expect(ids(moveSidebarNavItem(items, 'files', -1)).slice(0, 2)).toEqual(['files', 'customize']);
     expect(ids(moveSidebarNavItem(items, 'customize', -1))).toEqual(ids(items));
-    expect(ids(moveSidebarNavItem(items, 'files', 1))).toEqual(ids(items));
+    expect(ids(moveSidebarNavItem(items, 'apps', 1))).toEqual(ids(items));
   });
 });
 
@@ -56,23 +68,17 @@ describe('useSidebarNavStore', () => {
   test('setItems, setVisibility and reset', () => {
     const store = useSidebarNavStore.getState();
     store.setItems(
-      (['files', 'reminders', 'review', 'apps', 'customize'] as const).map((id) => ({
+      (['files', 'apps', 'customize'] as const).map((id) => ({
         id,
         visibility: 'always' as const,
       })),
     );
-    expect(ids(useSidebarNavStore.getState().items)).toEqual([
-      'files',
-      'reminders',
-      'review',
-      'apps',
-      'customize',
-    ]);
-    store.setVisibility('review', 'active');
-    store.setVisibility('apps', 'active'); // ignored: Apps has no activity signal
+    expect(ids(useSidebarNavStore.getState().items)).toEqual(['files', 'apps', 'customize']);
+    store.setVisibility('apps', 'never');
+    store.setVisibility('files', 'active' as never); // ignored: not a visibility
     const items = useSidebarNavStore.getState().items;
-    expect(items.find((e) => e.id === 'review')?.visibility).toBe('active');
-    expect(items.find((e) => e.id === 'apps')?.visibility).toBe('always');
+    expect(items.find((e) => e.id === 'apps')?.visibility).toBe('never');
+    expect(items.find((e) => e.id === 'files')?.visibility).toBe('always');
     store.reset();
     expect(useSidebarNavStore.getState().items).toEqual([...SIDEBAR_NAV_DEFAULTS]);
   });
@@ -85,7 +91,7 @@ describe('resolveSidebarNav', () => {
   ]);
 
   test('the account layout wins over the local one and is not pushed back', () => {
-    const remote = [{ id: 'review', visibility: 'never' }];
+    const remote = [{ id: 'files', visibility: 'never' }];
     expect(resolveSidebarNav(remote, custom)).toEqual({
       items: normalizeSidebarNav(remote),
       push: false,

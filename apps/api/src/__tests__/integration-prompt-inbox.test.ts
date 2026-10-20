@@ -82,6 +82,8 @@ async function enqueue(
     placement?: 'transcript' | 'composer';
     delivery?: 'steer' | 'queue' | 'interrupt';
     actorUserId?: string;
+    /** Sent by the session owner or a manager: may end any running turn. */
+    mayStopAnyTurn?: boolean;
   } = {},
 ): Promise<SessionLifecycleCommandRow> {
   const { row } = await enqueueContinueSessionCommand({
@@ -97,6 +99,7 @@ async function enqueue(
     clientSentAtMs: overrides.clientSentAtMs,
     ...(overrides.placement ? { placement: overrides.placement } : {}),
     ...(overrides.delivery ? { delivery: overrides.delivery } : {}),
+    ...(overrides.mayStopAnyTurn ? { mayStopAnyTurn: true } : {}),
     parts: [{ type: 'text', text: 'say hi' }],
     overrides: { agent: 'build', model: null, variant: null, directory: '/workspace' },
   });
@@ -250,9 +253,64 @@ describe('the inbox row', () => {
     await db.execute(sql`
       UPDATE kortix.session_lifecycle_commands
          SET available_at = now() + interval '5 minutes',
-             result = '{"admission_reason":"turn_active"}'::jsonb
+             result = '{"admission_reason":"turn_active","admission_refusals":500}'::jsonb
        WHERE command_id IN (${first.commandId}::uuid, ${second.commandId}::uuid)`);
     expect(await promoteNextInboxRow(SESSION_ID)).toBe(first.idempotencyKey);
+    // The kick resets the refusal count: the woken row is back on the 300ms
+    // curve, not on the stale-wait minute.
+    expect((await readRow(first.commandId)).result).toEqual({ admission_reason: 'turn_active' });
+    expect((await readRow(second.commandId)).result).toMatchObject({ admission_refusals: 500 });
+  });
+});
+
+describe('a head that leaves without a turn wakes the next row', () => {
+  // The follower sits on the stale-wait minute (64 refusals, due in 60 s).
+  // Only a kick makes it due before that.
+  async function staleFollower() {
+    const head = await enqueue('q_head', { clientSentAtMs: Date.now() });
+    const next = await enqueue('q_next', {
+      wireMessageId: 'msg_000000000002SecondPromptWir',
+      clientSentAtMs: Date.now() + 1,
+    });
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET available_at = now() + interval '60 seconds',
+             result = '{"admission_reason":"older_prompt_pending","admission_refusals":64}'::jsonb
+       WHERE command_id = ${next.commandId}::uuid`);
+    return { head, next };
+  }
+  async function isDue(commandId: string): Promise<boolean> {
+    const result = await db.execute(sql`
+      SELECT available_at <= now() AS due FROM kortix.session_lifecycle_commands
+       WHERE command_id = ${commandId}::uuid`);
+    return (((result as { rows?: Array<{ due: boolean }> }).rows ?? result) as Array<{ due: boolean }>)[0].due;
+  }
+
+  test('removing the head makes the follower due now', async () => {
+    const { head, next } = await staleFollower();
+    expect(await isDue(next.commandId)).toBe(false);
+    expect((await deleteInboxPrompt(SESSION_ID, head.commandId, AS_AUTHOR)).outcome).toBe('deleted');
+    expect(await isDue(next.commandId)).toBe(true);
+    expect((await readRow(next.commandId)).result).toEqual({ admission_reason: 'older_prompt_pending' });
+  });
+
+  test('a dead-lettered head makes the follower due now', async () => {
+    const { head, next } = await staleFollower();
+    await markCommandFailed(await hold(head), 'delivery outcome: failed', {
+      retryable: false,
+      attempts: 5,
+      sessionId: SESSION_ID,
+    });
+    expect((await readRow(head.commandId)).status).toBe('dead_lettered');
+    expect(await isDue(next.commandId)).toBe(true);
+  });
+
+  test('a retried head does not wake the follower or cut its own backoff', async () => {
+    const { head, next } = await staleFollower();
+    await markCommandFailed(await hold(head), 'transient', { retryable: true, attempts: 1, sessionId: SESSION_ID });
+    expect((await readRow(head.commandId)).status).toBe('queued');
+    expect(await isDue(head.commandId)).toBe(false);
+    expect(await isDue(next.commandId)).toBe(false);
   });
 });
 
@@ -405,10 +463,13 @@ describe('admitInboxPrompt against real rows', () => {
       placement: 'composer',
       wireMessageId: 'msg_000000000001QueueListEntryW',
     });
+    // An owner's send: only a sender who may stop the running turn arms its
+    // interrupt (`inbox-admission.test.ts` covers the prompter and the refusal).
     const quickQueue = await enqueue('q_quick', {
       clientSentAtMs: sentAt + 1_000,
       placement: 'transcript',
       wireMessageId: 'msg_000000000002QuickQueueEntry',
+      mayStopAnyTurn: true,
     });
     await setBox('active', turn);
 
@@ -433,6 +494,7 @@ describe('admitInboxPrompt against real rows', () => {
       clientSentAtMs: sentAt + 2_000,
       placement: 'transcript',
       wireMessageId: 'msg_000000000003QuickQueueLater',
+      mayStopAnyTurn: true,
     });
     expect(await admitInboxPrompt(quickQueueBehind)).not.toHaveProperty('interruptAtBoundary');
     await db.execute(sql`
@@ -452,7 +514,7 @@ describe('admitInboxPrompt against real rows', () => {
     // behind WHICH turn. The marker rides `requeueForAdmission`'s result
     // merge, so the refusal counter it shares that column with must keep
     // growing, and a later refusal without a patch must keep the window.
-    const row = await enqueue('q_boundary', { placement: 'transcript' });
+    const row = await enqueue('q_boundary', { placement: 'transcript', mayStopAnyTurn: true });
     const lease = await hold(row);
     await setBox('active', turn);
     expect(await admitInboxPrompt(row)).toEqual({

@@ -293,12 +293,14 @@ function VariantCell({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const inputRef = useRef<HTMLInputElement>(null);
   const kind = slot.kinds[scheme];
-  const label = `${slot.title.toLowerCase()} (${scheme})`;
+  const schemeName = tI18nComplete.raw(scheme === 'light' ? 'text99a7026172d4' : 'texte6bb5689beec');
+  const label = `${slot.title.toLowerCase()} (${schemeName})`;
+  const removeLabel = tI18nComplete('text3028bf7d2dec', { value0: label });
 
   const upload = useMutation({
     mutationFn: (file: File) => uploadAccountBrandingAsset(accountId, kind, file, file.name),
     onSuccess: (state) => {
-      successToast(tI18nComplete('text3c9fe204b484', { value0: slot.title, value1: scheme }));
+      successToast(tI18nComplete('text3c9fe204b484', { value0: slot.title, value1: schemeName }));
       onSettled(state);
     },
     onError: (err: Error) =>
@@ -307,7 +309,7 @@ function VariantCell({
   const remove = useMutation({
     mutationFn: () => removeAccountBrandingAsset(accountId, kind),
     onSuccess: (state) => {
-      successToast(tI18nComplete('text5f07277a31fa', { value0: slot.title, value1: scheme }));
+      successToast(tI18nComplete('text5f07277a31fa', { value0: slot.title, value1: schemeName }));
       onSettled(state);
     },
     onError: (err: Error) =>
@@ -332,14 +334,15 @@ function VariantCell({
       <Preview
         slot={slot}
         scheme={scheme}
+        alt={`${slot.title} ${schemeName}`}
         url={url ?? fallbackUrl}
         inherited={!url && !!fallbackUrl}
       />
       <div className="min-w-0 flex-1">
-        <p className="text-foreground text-xs font-medium capitalize">{scheme}</p>
+        <p className="text-foreground text-xs font-medium capitalize">{schemeName}</p>
         <p className="text-muted-foreground text-xs">
           {url
-            ? 'Uploaded'
+            ? tI18nComplete.raw('text3cc3767e7032')
             : fallbackUrl
               ? tI18nComplete.raw('textb64e5a98df62')
               : tI18nComplete.raw('text3cbe01436470')}
@@ -352,7 +355,7 @@ function VariantCell({
           accept={ACCEPT}
           className="sr-only"
           onChange={pick}
-          aria-label={`Upload ${label}`}
+          aria-label={tI18nComplete('textd0166fa53db8', { value0: label })}
           disabled={!canManage || pending}
         />
         <Button
@@ -367,15 +370,15 @@ function VariantCell({
           ) : (
             <UploadSimpleIcon className="size-3.5 shrink-0" />
           )}
-          {url ? 'Replace' : 'Upload'}
+          {url ? tI18nComplete.raw('text95e154398a4b') : tI18nComplete.raw('text865e89de78d9')}
         </Button>
         {url ? (
-          <Hint label={`Remove ${label}`}>
+          <Hint label={removeLabel}>
             <Button
               type="button"
               size="icon"
               variant="ghost"
-              aria-label={`Remove ${label}`}
+              aria-label={removeLabel}
               disabled={!canManage || pending}
               onClick={() => remove.mutate()}
             >
@@ -401,11 +404,14 @@ function VariantCell({
 function Preview({
   slot,
   scheme,
+  alt,
   url,
   inherited,
 }: {
   slot: MarkSlot;
   scheme: Scheme;
+  /** The image's alt text, in the viewer's language. */
+  alt: string;
   url: string | null;
   inherited: boolean;
 }) {
@@ -425,7 +431,7 @@ function Preview({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={url}
-          alt={`${slot.title} ${scheme}`}
+          alt={alt}
           draggable={false}
           className={cn(
             'object-contain select-none',

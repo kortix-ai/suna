@@ -136,17 +136,33 @@ export async function destroyMachine(app: AppRow, machineId: string, hosting = n
 
 /**
  * Set the machine count of process groups and reconcile in the background.
- * A group the active release does not have is refused.
+ * A group the active release does not have is refused. A group with a volume
+ * runs one machine unless `newVolumes` accepts that every further machine
+ * gets its own, empty volume: the machines then serve different data behind
+ * one URL, which splits a database (Convex, Postgres, SQLite) in two.
  */
-export async function setAppScale(app: AppRow, counts: Record<string, number>): Promise<Record<string, number>> {
+export async function setAppScale(
+  app: AppRow,
+  counts: Record<string, number>,
+  options: { newVolumes?: boolean } = {},
+): Promise<Record<string, number>> {
   const release = await activeRelease(app);
-  const groups = Object.keys(releaseConfigOf(release, app).processes);
+  const releaseConfig = releaseConfigOf(release, app);
+  const groups = Object.keys(releaseConfig.processes);
   for (const [group, count] of Object.entries(counts)) {
     if (!groups.includes(group)) {
       throw new AppFleetError(400, 'process_group_unknown', `The active release has no process group "${group}" (it has ${groups.join(', ')}).`);
     }
     if (!Number.isInteger(count) || count < 0 || count > MAX_GROUP_SCALE) {
       throw new AppFleetError(400, 'scale_out_of_range', `A group runs 0 to ${MAX_GROUP_SCALE} machines.`);
+    }
+    if (count > 1 && !options.newVolumes && appMountFor(releaseConfig, group)) {
+      throw new AppFleetError(
+        409,
+        'volume_single_machine',
+        `Process group "${group}" mounts a volume, so it runs one machine. A second machine would get its own empty ` +
+          'volume and serve different data. Scale up the machine size instead, or pass new_volumes to accept separate volumes.',
+      );
     }
   }
   const scale = { ...(app.scale as Record<string, number>), ...counts };

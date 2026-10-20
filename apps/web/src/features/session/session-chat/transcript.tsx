@@ -14,14 +14,39 @@ import { isQuestionTool } from '../session-activity-groups';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
+import { GenuiTelemetryContext } from '@/features/genui/block-telemetry';
+import { copyGenuiText } from '@/features/genui/to-markdown';
 import { useTranslations } from '@/i18n/use-translations';
-import { type SessionMessageAuthor, type SessionPrompt, type SessionPromptViewer, groupShowSegments, isCompactionPart, isPatchPart, isSnapshotPart, isStepPart, sessionPromptActions, splitTurnWork, toolKind } from '@kortix/sdk';
+import {
+  type SessionLogBlock,
+  type SessionLogCompaction,
+  type SessionLogMessage,
+  type SessionLogSegment,
+  type SessionLogTurn,
+  type SessionMessageAuthor,
+  type SessionPrompt,
+  type SessionPromptViewer,
+  type TextBlock,
+  type ToolCallBlock,
+  isSessionLogRestoreNote,
+  type SessionLogReferencedText,
+  sessionLogActivityText,
+  sessionLogAnsweredQuestionCall,
+  sessionLogBurstSteps,
+  sessionLogOpenCall,
+  sessionLogTurnSegments,
+  sessionPromptActions,
+  splitSessionLogTurnWork,
+  toolCallMetadata,
+  toolKind,
+} from '@kortix/sdk';
 import {
   WarningIcon as AlertTriangle,
   CheckCircleIcon as CheckCircle,
   CheckIcon,
   CaretDownIcon as ChevronDown,
   ArrowSquareOutIcon as ExternalLink,
+  StopCircleIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -30,12 +55,12 @@ import {
   parseSystemNotifications,
   stripSystemPtyText,
 } from '../message-parsing';
-import { ActivityBurst, burstSteps } from '../turn/activity-burst';
+import { ActivityBurst } from '../turn/activity-burst';
 import { TurnWorkAccordion } from '../turn/turn-work-accordion';
 import { CompactionFailedRow, CompactionMarker } from '../turn/compaction-card';
-import { compactionTurnInfo, type CompactionTurnInfo } from '../turn/compaction-state';
 import { ExpandableOutput } from '../turn/expandable-output';
 import { isPlanWriteTool } from '../turn/plan-anchor';
+import { TurnFallbackRows } from '../turn/fallback-row';
 import {
   QUEUED_BUBBLE_OPACITY_CLASS,
   queuedBubbleTone,
@@ -45,13 +70,10 @@ import {
   type QueuedPromptStatusState,
 } from '../turn/queued-prompt-bubbles';
 import { ShowGroupRenderer } from '../tool/show-group-renderer';
-import { segmentTurn } from '../turn/segment-turn';
-import { stabilizeTurns } from '../turn/stable-turns';
 import { statusElapsedFrame } from '../turn/status-elapsed';
 import { ThrottledMarkdown } from '../turn/throttled-markdown';
 import { TurnViewport } from '../turn/turn-viewport';
 import { UserMessage } from '../turn/user-message';
-import { resolveWorkingTurn } from '../turn/working-turn';
 import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import { Composer as SessionChatInput } from '@/features/session/composer/composer';
 import { ConnectProviderDialog } from '@/features/session/model-selector';
@@ -77,7 +99,6 @@ import { useUserPreferencesStore, type ConversationDensity } from '@/stores/user
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import { ToolPartRenderer, TurnLiveContext } from '@/features/session/tool/tool-renderers';
 import { type SentAttachment } from '@/features/session/sent-attachment-previews';
-import { useModelPricingLookup } from '@/lib/model-pricing';
 import { cn } from '@/lib/utils';
 import {
   type KortixSystemMessage,
@@ -90,32 +111,14 @@ import {
 import { Copy } from '@/features/icon/icons/copy';
 import {
   type Command,
-  type MessageWithParts,
-  type Part,
   type PermissionRequest,
   type QuestionRequest,
-  type TextPart,
-  type ToolPart,
-  type Turn,
-  collectTurnParts,
-  findLastTextPart,
+  extractGatewayErrorDetails,
   formatDuration,
   getPermissionForTool,
   getRetryInfo,
   getRetryMessage,
-  getShellModePart,
-  getTurnCost,
-  getTurnError,
-  getTurnErrorDetails,
-  getTurnErrorRawText,
-  getTurnStatus,
-  isAgentPart,
-  isAttachment,
-  isReasoningPart,
-  isTextPart,
-  isToolPart,
   shouldShowToolPart,
-  unwrapError,
 } from '@/ui';
 import {
   isAbortError,
@@ -127,6 +130,7 @@ import type { ProviderListResponse } from '@kortix/sdk/react';
 import { isOptimisticSessionPrompt, useSessionWorking } from '@kortix/sdk/react';
 import { CodeBlockEndpoints, SandboxUrlDetector } from '../sandbox-url-detector';
 import { resolveLastTurnWorking } from '../session-composer-readiness';
+import { HarnessSwitchMarker, RestoreNoteMarker, TurnFullText, type FullTextState } from '../session-history';
 
 // ============================================================================
 // Optimistic answers cache
@@ -209,11 +213,11 @@ function SystemMessageIndicator({ messages }: { messages: KortixSystemMessage[] 
 // Answered question card — collapsible summary of completed Q&A
 // ============================================================================
 
-function AnsweredQuestionCard({ part }: { part: ToolPart }) {
+function AnsweredQuestionCard({ call }: { call: ToolCallBlock }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [expanded, setExpanded] = useState(false);
-  const input = (part.state as any)?.input ?? {};
-  const metadata = (part.state as any)?.metadata ?? {};
+  const input = (call.input ?? {}) as { questions?: unknown };
+  const metadata = toolCallMetadata(call) as { answers?: unknown };
   const questions: Array<{ question: string; options?: { label: string }[] }> = Array.isArray(
     input.questions,
   )
@@ -275,83 +279,54 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
 const STATUS_STALL_AFTER_MS = 20_000;
 
 // ============================================================================
-// Notification-only turn detection
-// ============================================================================
-
-/** True when a turn's user message contains only system notification XML
- *  with no real user-authored text. */
-function isNotificationOnlyMessage(parts: Part[]): boolean {
-  if (parts.length === 0) return false;
-  const textParts = parts.filter(
-    (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
-  ) as TextPart[];
-  if (textParts.length === 0) return false;
-  const raw = textParts.map((p) => p.text || '').join('\n');
-  const { cleanText, notifications } = parseSystemNotifications(stripKortixSystemTags(raw));
-  return notifications.length > 0 && !cleanText.trim();
-}
-
-// ============================================================================
-// NotificationTurn — lightweight turn for system notification messages
-// ============================================================================
-
-/** Renders notification-only turns (PTY exits, agent completions, etc.)
- *  inline with the conversation flow, styled like tool-call cards. */
-function NotificationTurn({ turn }: { turn: Turn }) {
-  const rawText = useMemo(() => {
-    const texts: string[] = [];
-    for (const p of turn.userMessage.parts) {
-      if (isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored) {
-        texts.push((p as TextPart).text || '');
-      }
-    }
-    return texts.join('\n');
-  }, [turn.userMessage.parts]);
-
-  const { notifications } = useMemo(
-    () => parseSystemNotifications(stripKortixSystemTags(rawText)),
-    [rawText],
-  );
-
-  if (notifications.length === 0) return null;
-
-  return (
-    <div className="flex w-full flex-col gap-1.5">
-      {notifications.map((n) => (
-        <SystemNotificationCard key={`${n.tag}-${n.body}`} notification={n} />
-      ))}
-    </div>
-  );
-}
-
-// ============================================================================
 // Session Turn — core turn component
 // ============================================================================
 
 /**
- * Pure derivation of "was this turn's error an abort" from a turn's assistant
- * messages — the exact logic `turnErrorIsAbort` below runs per render.
- * Extracted (T17) so it can be exercised by real behavior tests
- * (`interrupted-label.test.ts`) instead of a source-text pattern match.
+ * Pure derivation of "was this turn's error an abort" from a turn's replies —
+ * the exact logic `turnErrorIsAbort` below runs per render. Extracted (T17) so
+ * it can be exercised by real behavior tests (`interrupted-label.test.ts`)
+ * instead of a source-text pattern match.
  *
- * Scans for the FIRST assistant message carrying an object error (matching
- * `getTurnError`'s own "first wins" rule) and classifies THAT message once —
- * see the `useMemo` below for why identity must come from the SDK's single
- * `isAbortError` classifier.
+ * Reads the FIRST errored reply (matching the turn error's own "first wins"
+ * rule; a compaction's marker first, which carries its summary's error) and
+ * classifies THAT message once: `status: 'aborted'` (a wire
+ * `MessageAbortedError`), else the SDK's single `isAbortError` classifier on
+ * the error's code and text (the client's synthesized `AbortError` on Stop).
  *
  * The abort's `AbortReason` is deliberately NOT read: every abort — a user
  * Stop, an untagged wire `MessageAbortedError`, a `'runtime-disposed'`
  * respawn — renders nothing, so the reason changes no outcome.
  */
-export function deriveTurnErrorAbortState(turn: {
-  assistantMessages: ReadonlyArray<{ info: unknown }>;
-}): { isAbort: boolean } {
-  for (const msg of turn.assistantMessages) {
-    const err = (msg.info as { error?: unknown }).error;
-    if (!err || typeof err !== 'object') continue;
-    return { isAbort: isAbortError(err) };
-  }
-  return { isAbort: false };
+export function deriveTurnErrorAbortState(
+  turn: Pick<SessionLogTurn, 'user' | 'assistant'>,
+): { isAbort: boolean } {
+  const sources = turn.user.kind === 'compaction' ? [turn.user, ...turn.assistant] : turn.assistant;
+  const msg = sources.find((m) => m.error);
+  return { isAbort: !!msg && messageAborted(msg) };
+}
+
+/** A message an abort ended: `status: 'aborted'` (a wire `MessageAbortedError`),
+ *  else its error read by the SDK's `isAbortError` (the client's `AbortError`). */
+export function messageAborted(message: SessionLogMessage): boolean {
+  if (message.status === 'aborted') return true;
+  return !!message.error && isAbortError({ name: message.error.code, data: { message: message.error.message } });
+}
+
+/**
+ * The prompts a Stop stranded: the newest turn that got a reply ended by abort, and these
+ * prompts came after it with no reply. The runtime holds them; nothing runs them until the
+ * next send. A reply counts when `messages` (the whole thread) holds it, so a turn whose only
+ * reply the transcript hides (a failed attempt out of context) ran, and is not stranded.
+ */
+export function strandedPromptIds(turns: readonly SessionLogTurn[], messages: readonly SessionLogMessage[] | undefined): Set<string> {
+  const answered = new Set<string>();
+  for (const m of messages ?? []) if (m.role === 'assistant' && m.reply_to) answered.add(m.reply_to);
+  const newest = turns.findLastIndex((t) => t.assistant.length > 0 || answered.has(t.id));
+  if (newest < 0 || newest === turns.length - 1) return new Set();
+  const last = turns[newest].assistant.at(-1);
+  if (!last || !messageAborted(last)) return new Set();
+  return new Set(turns.slice(newest + 1).map((t) => t.id));
 }
 
 /**
@@ -379,8 +354,12 @@ export function deriveTurnErrorPresentation(input: {
           'then ask the agent to continue with a smaller workload.' +
           (notice.detail ? ` Details: ${notice.detail}.` : ''),
       };
-    case 'cause':
-      return { isAbort: false, text: notice.message, suggestion: undefined };
+    case 'cause': {
+      // The ledger keeps the provider body as recorded (`400: {"message": …}`): show the
+      // gateway's sentence and next step, as a transcript error does.
+      const gateway = extractGatewayErrorDetails(notice.message);
+      return { isAbort: false, text: gateway?.message || notice.message, suggestion: gateway?.message ? gateway.suggestion : undefined };
+    }
     case 'unexplained':
       return {
         isAbort: false,
@@ -391,10 +370,14 @@ export function deriveTurnErrorPresentation(input: {
 }
 
 interface SessionTurnProps {
-  turn: Turn;
+  /** The turn (`sessionLogTurns`): it keeps its identity while its messages do. */
+  turn: SessionLogTurn;
   /** Who wrote this turn's user message, and whether the bubble names them. */
   author?: SessionMessageAuthor;
   showAuthor?: boolean;
+  /** The member who stopped this turn, when it was not the viewer
+   *  (`stoppedByName`). Null or absent: nothing to say. */
+  stoppedBy?: string | null;
   /** The models that answered this turn and what Kortix billed for it, from
    *  the gateway's request record. Keep its identity stable: the row is memoized. */
   servedModel?: TurnServedModel;
@@ -495,6 +478,10 @@ interface SessionTurnProps {
   onOpenPastedContent?: (id: string, text: string) => void;
   /** Providers data for the Connect Provider dialog */
   providers?: ProviderListResponse;
+  /** How many models the account can pick (`local.model.list`, enablement
+   *  applied) — lets a provider-failure row drop its "choose another model"
+   *  hint when no other model exists (KRTX-2598). */
+  modelOptions?: number;
   /** Map of user message IDs to command info for rendering command pills */
   commandMessages?: Map<string, { name: string; args?: string }>;
   /** Available commands for template prefix matching (page refresh detection) */
@@ -587,22 +574,27 @@ export function SessionReportCard({
 
 /**
  * The error a turn renders, which also hides its own Thinking row: the first
- * assistant message error, or a dismissed question tool error. `SessionChat`
- * reads the same answer to decide whether the fallback row must draw instead.
+ * reply error, or a dismissed question tool error. `SessionChat` reads the
+ * same answer to decide whether the fallback row must draw instead. A
+ * question the closure rule closed is open (`sessionLogOpenCall`), not
+ * dismissed.
  */
-export function resolveTurnError(turn: Turn): string | undefined {
-  const msgError = getTurnError(turn);
-  if (msgError) return msgError;
-  for (const msg of turn.assistantMessages) {
-    for (const part of msg.parts) {
-      if (!isToolPart(part)) continue;
-      const tool = part as ToolPart;
-      if (isQuestionTool(tool.tool) && tool.state.status === 'error' && 'error' in tool.state) {
-        return (tool.state as { error: string }).error.replace(/^Error:\s*/, '');
-      }
+export function resolveTurnError(turn: SessionLogTurn): string | undefined {
+  if (turn.error) return turn.error.message;
+  for (const block of turn.blocks) {
+    if (block.type !== 'tool_call') continue;
+    const call = sessionLogOpenCall(block);
+    if (isQuestionTool(call.name) && call.status === 'error' && call.result) {
+      const text = call.result.error?.message ?? resultText(call);
+      return text.replace(/^Error:\s*/, '');
     }
   }
   return undefined;
+}
+
+/** The text a call's result carries (a v1 part's `output` or `error`). */
+function resultText(call: ToolCallBlock): string {
+  return (call.result?.content ?? []).flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('');
 }
 
 // ============================================================================
@@ -644,68 +636,57 @@ const working = isWorkingTurn && sessionWorking;
  * claim about the reader — see `showTurnBusyIndicator`.
  */
 const agentWorking = working && !awaitingUser;
-const allParts = useMemo(() => collectTurnParts(turn), [turn]);
+// Every reply block, with a call the closure rule closed read open
+// (`sessionLogOpenCall`): the v1 live view and the v2 page at rest hand the
+// sections below one shape, and `TurnLiveContext` says whether it is live.
+const blocks = useMemo(() => turnBlocks(turn), [turn]);
 // Check if there are visible steps that actually render inside the
-// collapsible steps section. Tool parts that are rendered elsewhere
+// collapsible steps section. Tool calls that are rendered elsewhere
 // (todowrite, task, question) don't count as "steps".
-const hasSteps = useMemo(() => {
-  return allParts.some(({ part }) => {
-    if (isCompactionPart(part) || isSnapshotPart(part) || isPatchPart(part)) return true;
-    if (isToolPart(part)) {
-      // `isPlanWriteTool` — NOT a bare `=== 'todowrite'`. The runtime emits
-      // both spellings, and the plan card owns both (see plan-anchor.ts).
-      if (isPlanWriteTool(part.tool) || toolKind(part.tool) === 'task' || isQuestionTool(part.tool))
-        return false;
-      return shouldShowToolPart(part);
-    }
-    return false;
-  });
-}, [allParts]);
+const hasSteps = useMemo(() => blocks.some(isStepBlock), [blocks]);
 const hasReasoning = useMemo(
-  () => allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim()),
-  [allParts],
+  () => blocks.some((b) => b.type === 'reasoning' && !!b.text.trim()),
+  [blocks],
 );
+// The reply still being written: the last one without a completion stamp,
+// else the last.
 const activeAssistantMessage = useMemo(() => {
-  if (turn.assistantMessages.length === 0) return undefined;
-  for (let i = turn.assistantMessages.length - 1; i >= 0; i--) {
-    const msg = turn.assistantMessages[i];
-    if (!(msg.info as any)?.time?.completed) return msg;
+  if (turn.assistant.length === 0) return undefined;
+  for (let i = turn.assistant.length - 1; i >= 0; i--) {
+    if (turn.assistant[i].completed_at === null) return turn.assistant[i];
   }
-  return turn.assistantMessages[turn.assistantMessages.length - 1];
-}, [turn.assistantMessages]);
+  return turn.assistant[turn.assistant.length - 1];
+}, [turn.assistant]);
 const streamingResponseRaw = useMemo(() => {
   if (!activeAssistantMessage) return '';
   let text = '';
-  for (const p of activeAssistantMessage.parts) {
-    if (isTextPart(p)) text += p.text ?? '';
+  for (const b of activeAssistantMessage.blocks) {
+    if (b.type === 'text') text += b.text;
   }
   return text;
 }, [activeAssistantMessage]);
-const lastTextPart = useMemo(() => findLastTextPart(allParts), [allParts]);
-const responseRaw = lastTextPart?.text ?? '';
-// Fallback: when aborted, collect ALL non-empty text parts if the
-// primary response is empty.  The last text part may have been lost
-// (timing between text-start and first text-delta) but earlier parts
+const responseRaw = turn.response?.text ?? '';
+// Fallback: when aborted, collect ALL non-empty text blocks if the
+// primary response is empty.  The last text block may have been lost
+// (timing between text-start and first text-delta) but earlier blocks
 // might still have content.
 const abortedTextFallback = useMemo(() => {
   if (responseRaw) return ''; // primary response exists — no fallback needed
   // Only activate for aborted/errored turns
-  const hasError = turn.assistantMessages.some((m) => (m.info as any).error);
+  const hasError = turn.assistant.some((m) => m.error);
   if (!hasError) return '';
   const texts: string[] = [];
-  for (const { part } of allParts) {
-    if (isTextPart(part) && part.text?.trim()) {
-      texts.push(part.text);
-    }
+  for (const b of blocks) {
+    if (b.type === 'text' && b.text.trim()) texts.push(b.text);
   }
   return texts.join('\n\n').trim();
-}, [responseRaw, allParts, turn.assistantMessages]);
+}, [responseRaw, blocks, turn.assistant]);
 const completedTextParts = useMemo(
   () =>
-    allParts
-      .map(({ part }) => (isTextPart(part) ? part.text?.trim() : ''))
+    blocks
+      .map((b) => (b.type === 'text' ? b.text.trim() : ''))
       .filter((text): text is string => Boolean(text)),
-  [allParts],
+  [blocks],
 );
 const response = working
   ? streamingResponseRaw || responseRaw
@@ -715,11 +696,35 @@ const response = working
   return {
     working,
     agentWorking,
-    allParts,
+    blocks,
     hasSteps,
     hasReasoning,
     response,
   };
+}
+
+/** The turn's reply blocks, each call in its open shape (`sessionLogOpenCall`). One array per turn object. */
+const openBlocks = new WeakMap<SessionLogTurn, SessionLogBlock[]>();
+function turnBlocks(turn: SessionLogTurn): SessionLogBlock[] {
+  let list = openBlocks.get(turn);
+  if (!list) {
+    list = turn.blocks.map((b) => (b.type === 'tool_call' ? sessionLogOpenCall(b) : b));
+    openBlocks.set(turn, list);
+  }
+  return list;
+}
+
+/** A block that renders inside the steps section: a snapshot, a patch or a
+ *  compaction, or a visible call other than the plan write, a sub-agent and a
+ *  question (each rendered elsewhere). */
+function isStepBlock(block: SessionLogBlock): boolean {
+  if (block.type === 'compaction') return true;
+  if (block.type === 'harness') return block.kind === 'compaction' || block.kind === 'snapshot' || block.kind === 'patch';
+  if (block.type !== 'tool_call') return false;
+  // `isPlanWriteTool` — NOT a bare `=== 'todowrite'`. The runtime emits
+  // both spellings, and the plan card owns both (see plan-anchor.ts).
+  if (isPlanWriteTool(block.name) || toolKind(block.name) === 'task' || isQuestionTool(block.name)) return false;
+  return shouldShowToolPart(block);
 }
 
 /** The queue tone of the turn's user bubble: interrupted, queued, held or
@@ -772,25 +777,22 @@ const turnErrorRow = useMemo(
     deriveTurnErrorPresentation({
       turnError,
       isAbort: turnErrorIsAbort,
-      notice: turnEndNotice(turnOutcome, turn.userMessage.info.id, {
+      notice: turnEndNotice(turnOutcome, turn.id, {
         hasError: Boolean(turnError),
         isAbort: turnErrorIsAbort,
       }),
     }),
-  [turnError, turnErrorIsAbort, turnOutcome, turn.userMessage.info.id],
+  [turnError, turnErrorIsAbort, turnOutcome, turn.id],
 );
 
 // The gateway's structured fields (provider/suggestion/request_id) for
 // `turnError`, when recoverable — lets TurnErrorDisplay render WHICH
 // provider failed and WHAT to do about it instead of only the raw message.
-const turnErrorDetails = useMemo(() => getTurnErrorDetails(turn), [turn]);
+const turnErrorDetails = turn.error?.details;
 // The provider's own text behind the sentence, folded under it. Only for the
 // transcript error itself: a named end cause replaced that text, so the raw
 // text no longer describes what the row says.
-const turnErrorRaw = useMemo(
-  () => (turnErrorRow.text === turnError ? getTurnErrorRawText(turn) : undefined),
-  [turn, turnError, turnErrorRow.text],
-);
+const turnErrorRaw = turnErrorRow.text === turnError ? turn.error?.raw : undefined;
 // A named end cause brings its own next step; the gateway's details describe
 // the transcript error it replaced, so they do not apply to it.
 const turnErrorRowDetails = useMemo(
@@ -807,217 +809,148 @@ const turnErrorRowDetails = useMemo(
   };
 }
 
-/** A question tool part rebuilt as answered: `status: 'completed'` with the
- *  given answers merged into its metadata (and `input` when the caller has
- *  it). The server has not confirmed these answers yet — optimistic cache,
- *  parsed output, or a placeholder — so the card reads this copy, not the
- *  raw store part. */
-function syntheticAnsweredPart(
-  tool: ToolPart,
-  answers: string[][],
-  input?: Record<string, unknown>,
-): ToolPart {
-  return {
-    ...tool,
-    state: {
-      ...(tool.state as any),
-      status: 'completed',
-      ...(input !== undefined ? { input } : {}),
-      metadata: {
-        ...((tool.state as any)?.metadata ?? {}),
-        answers,
-      },
-    },
-  } as unknown as ToolPart;
-}
-
-/** Which question tool parts of this turn count as answered, and with which
- *  answers. The body is the `answeredQuestionParts` memo SessionTurnImpl ran
- *  inline before the move, unchanged; it reads and cleans the optimistic
- *  answers cache, so it stays keyed on the same inputs. */
+/** Which question calls of this turn count as answered, and with which
+ *  answers. It reads and cleans the optimistic answers cache, so it stays
+ *  keyed on the same inputs. A call answered without server-confirmed
+ *  answers (optimistic cache, parsed output, or a placeholder) is rebuilt by
+ *  `sessionLogAnsweredQuestionCall`, so the card reads that copy, not the
+ *  raw store call. Calls are read in their open shape (`sessionLogOpenCall`). */
 function collectAnsweredQuestions(
-  assistantMessages: Turn['assistantMessages'],
+  replies: readonly SessionLogMessage[],
   questions: QuestionRequest[],
   sessionId: string,
-): { part: ToolPart; messageId: string }[] {
+): { call: ToolCallBlock; messageId: string }[] {
   const pendingCallIds = new Set(
     questions.flatMap((q) =>
       q.sessionID === sessionId && q.tool?.callID ? [q.tool.callID] : [],
     ),
   );
 
-  // Collect ALL question tool parts first so we can determine which ones
+  // Collect ALL question calls first so we can determine which ones
   // were implicitly answered (i.e. the assistant continued past them).
   const questionInfos: {
-    tool: ToolPart;
+    call: ToolCallBlock;
     msgId: string;
     msgIndex: number;
-    partIndex: number;
+    blockIndex: number;
   }[] = [];
-  for (let mi = 0; mi < assistantMessages.length; mi++) {
-    const msg = assistantMessages[mi];
-    for (let pi = 0; pi < msg.parts.length; pi++) {
-      const part = msg.parts[pi];
-      if (!isToolPart(part)) continue;
-      const tool = part as ToolPart;
-      if (!isQuestionTool(tool.tool)) continue;
-      questionInfos.push({
-        tool,
-        msgId: msg.info.id,
-        msgIndex: mi,
-        partIndex: pi,
-      });
+  for (let mi = 0; mi < replies.length; mi++) {
+    const msg = replies[mi];
+    for (let bi = 0; bi < msg.blocks.length; bi++) {
+      const block = msg.blocks[bi];
+      if (block.type !== 'tool_call' || !isQuestionTool(block.name)) continue;
+      questionInfos.push({ call: sessionLogOpenCall(block), msgId: msg.message_id, msgIndex: mi, blockIndex: bi });
     }
   }
 
-  const result: { part: ToolPart; messageId: string }[] = [];
-  for (const qInfo of questionInfos) {
-    const { tool, msgId, msgIndex, partIndex } = qInfo;
-
-    // Check if there are subsequent parts/messages AFTER this question
+  const result: { call: ToolCallBlock; messageId: string }[] = [];
+  for (const { call, msgId, msgIndex, blockIndex } of questionInfos) {
+    // Check if there are subsequent blocks/messages AFTER this question
     // in the turn. If the assistant continued, this question was answered.
     const hasSubsequentContent = (() => {
-      // Check for later parts in the same message
-      const msg = assistantMessages[msgIndex];
-      for (let pi = partIndex + 1; pi < msg.parts.length; pi++) {
-        const p = msg.parts[pi];
-        if (isStepPart(p)) continue;
+      // Check for later blocks in the same message
+      const msg = replies[msgIndex];
+      for (let bi = blockIndex + 1; bi < msg.blocks.length; bi++) {
+        if (msg.blocks[bi].type === 'step') continue;
         return true;
       }
       // Check for later messages in the turn
-      return msgIndex < assistantMessages.length - 1;
+      return msgIndex < replies.length - 1;
     })();
 
-    const isPending = pendingCallIds.has(tool.callID);
+    const isPending = pendingCallIds.has(call.call_id);
 
     // Skip only if it IS the currently-pending question AND there's no
     // evidence it was already answered (no subsequent content).
     if (isPending && !hasSubsequentContent) continue;
 
-    const serverAnswers = (tool.state as any)?.metadata?.answers;
-    const cached = optimisticAnswersCache.get(tool.id);
-    const toolOutput = (tool.state as any)?.output as string | undefined;
+    const serverAnswers = toolCallMetadata(call).answers as unknown[] | undefined;
+    const cached = optimisticAnswersCache.get(call.id);
+    const toolOutput = call.status === 'complete' ? resultText(call) : undefined;
+    const input = call.input as { questions?: Array<{ question: string }> } | null;
 
     if (serverAnswers && serverAnswers.length > 0) {
       // Server has real answers — clean up cache if present
-      if (cached) optimisticAnswersCache.delete(tool.id);
-      result.push({ part: tool, messageId: msgId });
+      if (cached) optimisticAnswersCache.delete(call.id);
+      result.push({ call, messageId: msgId });
     } else if (cached) {
-      // Server hasn't confirmed yet — use cached answers.
-      // Build a synthetic tool part with the cached data so
+      // Server hasn't confirmed yet — use cached answers, so
       // AnsweredQuestionCard can render.
-      const syntheticPart = {
-        ...tool,
-        state: {
-          ...(tool.state as any),
-          status: 'completed',
-          input: cached.input,
-          metadata: {
-            ...((tool.state as any)?.metadata ?? {}),
-            answers: cached.answers,
-          },
-        },
-      } as unknown as ToolPart;
-      result.push({ part: syntheticPart, messageId: msgId });
+      result.push({ call: sessionLogAnsweredQuestionCall(call, cached.answers, cached.input), messageId: msgId });
     } else if (toolOutput && hasSubsequentContent) {
       // Question was answered (output exists and assistant continued)
       // but metadata.answers was never set (e.g. after page reload).
       // Parse answers from the output string as a fallback.
-      const parsed = parseAnswersFromOutput(toolOutput, (tool.state as any)?.input);
-      if (parsed) {
-        const syntheticPart = {
-          ...tool,
-          state: {
-            ...(tool.state as any),
-            status: 'completed',
-            metadata: {
-              ...((tool.state as any)?.metadata ?? {}),
-              answers: parsed,
-            },
-          },
-        } as unknown as ToolPart;
-        result.push({ part: syntheticPart, messageId: msgId });
-      }
+      const parsed = parseAnswersFromOutput(toolOutput, input ?? undefined);
+      if (parsed) result.push({ call: sessionLogAnsweredQuestionCall(call, parsed), messageId: msgId });
     } else if (!toolOutput && hasSubsequentContent) {
       // Question was implicitly answered (assistant continued past it)
       // but neither metadata.answers nor output is available.
       // Show a minimal answered card using the input questions
-      // with placeholder answers extracted from context.
-      const input = (tool.state as any)?.input;
+      // with placeholder answers.
       const questionsList: { question: string }[] = Array.isArray(input?.questions)
         ? input.questions
         : [];
       if (questionsList.length > 0) {
         const placeholderAnswers = questionsList.map(() => ['Answered']);
-        const syntheticPart = {
-          ...tool,
-          state: {
-            ...(tool.state as any),
-            status: 'completed',
-            metadata: {
-              ...((tool.state as any)?.metadata ?? {}),
-              answers: placeholderAnswers,
-            },
-          },
-        } as unknown as ToolPart;
-        result.push({ part: syntheticPart, messageId: msgId });
+        result.push({ call: sessionLogAnsweredQuestionCall(call, placeholderAnswers), messageId: msgId });
       }
     }
   }
   return result;
 }
 
-/** The turn's answered questions: which parts render as answered cards, the
- *  id → part map, and whether text and questions render inline in natural
+/** The turn's answered questions: which calls render as answered cards, the
+ *  id → call map, and whether text and questions render inline in natural
  *  order instead of the settled response block. */
 function useAnsweredQuestionState({
   turn,
   questions,
   sessionId,
-  allParts,
+  blocks,
   hasSteps,
 }: {
-  turn: Turn;
+  turn: SessionLogTurn;
   questions: QuestionRequest[];
   sessionId: string;
-  allParts: TurnModelState['allParts'];
+  blocks: TurnModelState['blocks'];
   hasSteps: boolean;
 }) {
-  const answeredQuestionParts = useMemo(
-    () => collectAnsweredQuestions(turn.assistantMessages, questions, sessionId),
-    [turn.assistantMessages, questions, sessionId],
+  const answeredQuestionCalls = useMemo(
+    () => collectAnsweredQuestions(turn.assistant, questions, sessionId),
+    [turn.assistant, questions, sessionId],
   );
-  // Inline content parts — interleaves text and answered question parts in natural order.
+  // Inline content — interleaves text and answered question calls in natural order.
   // When a turn contains answered questions, we need to render text and questions
   // in their original order rather than extracting the last text as a separate "response".
   // This works both during streaming and after completion so that answered questions
   // stay in the correct position while the AI continues responding.
-  // Important: for question parts we use the (possibly synthetic) part from
-  // answeredQuestionParts — NOT the raw store part — so that optimistic
+  // Important: for question calls we use the (possibly synthetic) call from
+  // answeredQuestionCalls — NOT the raw store call — so that optimistic
   // answers from the cache are included even if the server hasn't confirmed yet.
-const answeredQuestionPartsById = useMemo(
-  () => new Map(answeredQuestionParts.map(({ part }) => [part.id, part])),
-  [answeredQuestionParts],
+const answeredQuestionCallsById = useMemo(
+  () => new Map(answeredQuestionCalls.map(({ call }) => [call.id, call])),
+  [answeredQuestionCalls],
 );
 const inlineContentParts = useMemo(() => {
-  if (answeredQuestionParts.length === 0) return null;
+  if (answeredQuestionCalls.length === 0) return null;
   const items: Array<
-    | { type: 'text'; part: TextPart; id: string }
-    | { type: 'question'; part: ToolPart; id: string }
+    | { type: 'text'; block: TextBlock; id: string }
+    | { type: 'question'; call: ToolCallBlock; id: string }
   > = [];
-  for (const { part } of allParts) {
-    if (isTextPart(part) && part.text?.trim()) {
-      items.push({ type: 'text', part, id: part.id });
+  for (const block of blocks) {
+    if (block.type === 'text' && block.text.trim()) {
+      items.push({ type: 'text', block, id: block.id });
     } else if (
-      isToolPart(part) &&
-      isQuestionTool(part.tool) &&
-      answeredQuestionPartsById.has(part.id)
+      block.type === 'tool_call' &&
+      isQuestionTool(block.name) &&
+      answeredQuestionCallsById.has(block.id)
     ) {
-      // Use the answered part (may be synthetic with cached answers)
+      // Use the answered call (may be synthetic with cached answers)
       items.push({
         type: 'question',
-        part: answeredQuestionPartsById.get(part.id)!,
-        id: part.id,
+        call: answeredQuestionCallsById.get(block.id)!,
+        id: block.id,
       });
     }
   }
@@ -1026,9 +959,24 @@ const inlineContentParts = useMemo(() => {
   const hasQuestion = items.some((i) => i.type === 'question');
   if (!hasText || !hasQuestion) return null;
   return items;
-}, [allParts, answeredQuestionPartsById, answeredQuestionParts.length]);
+}, [blocks, answeredQuestionCallsById, answeredQuestionCalls.length]);
   const shouldUseInlineContent = !hasSteps && !!inlineContentParts;
-  return { answeredQuestionParts, answeredQuestionPartsById, inlineContentParts, shouldUseInlineContent };
+  return { answeredQuestionCalls, answeredQuestionCallsById, inlineContentParts, shouldUseInlineContent };
+}
+
+type PromptText = { text: string; synthetic: boolean; ignored: boolean };
+
+/**
+ * A user message's text as its v1 text parts held it: a text block, or an
+ * `ignored` text (a model-invisible `harness` block whose data is the part).
+ */
+export function promptTexts(message: SessionLogMessage): PromptText[] {
+  return message.blocks.flatMap((b): PromptText[] => {
+    if (b.type === 'text') return [{ text: b.text, synthetic: b.synthetic === true, ignored: false }];
+    if (b.type !== 'harness' || b.kind !== 'text') return [];
+    const data = b.data as { text?: unknown; synthetic?: unknown } | null;
+    return typeof data?.text === 'string' ? [{ text: data.text, synthetic: data.synthetic === true, ignored: true }] : [];
+  });
 }
 
 /** The user side of the turn: the worker-run report, the system pills, the
@@ -1039,92 +987,89 @@ function useTurnUserContent({
   commands,
 }: Pick<SessionTurnProps, 'turn' | 'commandMessages' | 'commands'>) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+const texts = useMemo(() => promptTexts(turn.user), [turn.user]);
 // Whether the user message has any visible content (non-synthetic, non-ignored
 // text, or attachments). Background task notifications inject synthetic-only
 // user messages that should not render a user bubble.
 // Extract session report from user message (if present)
 const sessionReport = useMemo<SessionReport | null>(() => {
-  for (const p of turn.userMessage.parts) {
-    if (isTextPart(p)) {
-      const report = extractSessionReport((p as TextPart).text || '');
-      if (report) return report;
-    }
+  for (const t of texts) {
+    const report = extractSessionReport(t.text || '');
+    if (report) return report;
   }
   return null;
-}, [turn.userMessage.parts]);
+}, [texts]);
 // Extract kortix_system messages for inline rendering (goal continuations, etc.)
 const systemMessages = useMemo<KortixSystemMessage[]>(() => {
   const msgs: KortixSystemMessage[] = [];
-  for (const p of turn.userMessage.parts) {
-    if (isTextPart(p) && (p as TextPart).text) {
-      msgs.push(...extractKortixSystemMessages((p as TextPart).text!, tI18nComplete));
-    }
+  for (const t of texts) {
+    if (t.text) msgs.push(...extractKortixSystemMessages(t.text, tI18nComplete));
   }
   return msgs;
-}, [tI18nComplete, turn.userMessage.parts]);
+}, [tI18nComplete, texts]);
 
 const hasVisibleUserContent = useMemo(() => {
   // Session reports render as their own card — don't show as user bubble
   if (sessionReport) return false;
-  // The prompt is not loaded (a long run's tail): its stand-in has no parts
+  // The prompt is not loaded (a long run's tail): its stand-in has no blocks
   // and must not render as the empty bubble a loading prompt would.
   if (turn.partial) return false;
-  const parts = turn.userMessage.parts;
-  // Parts not loaded yet (bridging / transient state) — assume visible
+  // Blocks not loaded yet (bridging / transient state) — assume visible
   // to prevent a flash where the bubble disappears momentarily.
-  if (parts.length === 0) return true;
+  if (turn.user.blocks.length === 0) return true;
   // Has any non-synthetic, non-ignored text (including notification XML)?
-  const hasVisibleText = parts.some(
-    (p) =>
-      isTextPart(p) &&
-      !(p as TextPart).synthetic &&
-      !(p as any).ignored &&
-      !!stripKortixSystemTags((p as TextPart).text || '').trim(),
+  const hasVisibleText = texts.some(
+    (t) => !t.synthetic && !t.ignored && !!stripKortixSystemTags(t.text || '').trim(),
   );
   if (hasVisibleText) return true;
   // Has any attachment (image/PDF)?
-  if (parts.some(isAttachment)) return true;
-  // Has any agent part?
-  if (parts.some(isAgentPart)) return true;
+  if (turn.attachments.length > 0) return true;
+  // Has any agent mention?
+  if (turn.user.blocks.some((b) => b.type === 'harness' && b.kind === 'agent')) return true;
   return false;
-}, [turn.partial, turn.userMessage.parts, sessionReport]);
+}, [turn.partial, turn.user.blocks, turn.attachments, texts, sessionReport]);
 
 // User message text — for copy action
 const userMessageText = useMemo(() => {
-  const texts: string[] = [];
-  for (const p of turn.userMessage.parts) {
-    if (!isTextPart(p) || (p as TextPart).synthetic || (p as any).ignored) continue;
-    const text = stripSystemPtyText((p as TextPart).text);
-    if (text.trim()) texts.push(text);
+  const out: string[] = [];
+  for (const t of texts) {
+    if (t.synthetic || t.ignored) continue;
+    const text = stripSystemPtyText(t.text);
+    if (text.trim()) out.push(text);
   }
-  return texts.join('\n').trim();
-}, [turn.userMessage.parts]);
+  return out.join('\n').trim();
+}, [texts]);
 
 const commandForTurn = useMemo(() => {
-  const mapped = commandMessages?.get(turn.userMessage.info.id);
+  const mapped = commandMessages?.get(turn.id);
   if (mapped) return mapped;
   if (!userMessageText) return undefined;
   return detectCommandFromText(userMessageText, commands);
-}, [commandMessages, turn.userMessage.info.id, userMessageText, commands]);
-  return { sessionReport, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn };
+}, [commandMessages, turn.id, userMessageText, commands]);
+// A skill run as `/name` answers like any chat turn; only a real command's output sits in the command card.
+const commandOutput = useMemo(() => {
+  if (!commandForTurn) return undefined;
+  const source = Array.isArray(commands) ? commands.find((c) => c.name === commandForTurn.name)?.source : undefined;
+  return source === 'skill' ? undefined : commandForTurn;
+}, [commandForTurn, commands]);
+  return { sessionReport, systemMessages, hasVisibleUserContent, userMessageText, commandForTurn, commandOutput };
 }
 
 /** The throttled working status of the working turn: one status change per
  *  2.5 s, keyed on the turn's parts. */
 function useThrottledTurnStatus({
   turn,
-  allParts,
+  blocks,
 }: {
-  turn: Turn;
-  allParts: TurnModelState['allParts'];
+  turn: SessionLogTurn;
+  blocks: TurnModelState['blocks'];
 }) {
 // ---- Status throttling (2.5s) ----
 const [statusThrottleStart] = useState(() => Date.now());
 const lastStatusChangeRef = useRef(statusThrottleStart);
 const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-const childMessages = undefined as MessageWithParts[] | undefined; // placeholder for child session delegation
 // A turn the agent has not started has no status to report, and
-// `getTurnStatus` says so with its fallback phrase — "Figuring out what's
+// `sessionLogActivityText` says so with its fallback phrase — "Figuring out what's
 // next…", which is a claim about a turn already under way. On a turn with no
 // assistant message at all it is simply untrue, and the 2.5s throttle below
 // then swaps the waiting row's honest "Thinking" for it while the prompt is
@@ -1134,10 +1079,10 @@ const childMessages = undefined as MessageWithParts[] | undefined; // placeholde
 // (`if (!newStatus) return`), so `throttledStatus` stays '' — the row keeps
 // the default word AND grows no elapsed clock — until real content arrives,
 // and the first real status then applies immediately.
-const hasAssistantContent = turn.assistantMessages.length > 0;
+const hasAssistantContent = turn.assistant.length > 0;
 const rawStatus = useMemo(
-  () => (hasAssistantContent ? getTurnStatus(allParts, childMessages) : ''),
-  [allParts, childMessages, hasAssistantContent],
+  () => (hasAssistantContent ? sessionLogActivityText({ blocks }) : ''),
+  [blocks, hasAssistantContent],
 );
 const [throttledStatus, setThrottledStatus] = useState('');
 useEffect(() => {
@@ -1150,13 +1095,12 @@ useEffect(() => {
   } else {
     clearTimeout(statusTimeoutRef.current);
     statusTimeoutRef.current = setTimeout(() => {
-      setThrottledStatus(getTurnStatus(allParts, childMessages));
+      setThrottledStatus(sessionLogActivityText({ blocks }));
       lastStatusChangeRef.current = Date.now();
     }, 2500 - elapsed);
   }
   return () => clearTimeout(statusTimeoutRef.current);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [allParts, rawStatus, throttledStatus]);
+}, [blocks, rawStatus, throttledStatus]);
   return throttledStatus;
 }
 
@@ -1208,8 +1152,14 @@ const statusPhrase =
   throttledStatus && agentWorking && statusElapsedMs >= STATUS_STALL_AFTER_MS
     ? throttledStatus.replace(/(\.\.\.|…)$/, '')
     : throttledStatus;
+// The clock also covers the silent start of a turn (KRTX-1872). The status
+// phrase stays empty until the turn's first assistant message, and the label
+// used to be gated on it — so the provisioning/queue phase of a fresh
+// account's first turn, which can hold ~5 minutes, kept a bare "Thinking"
+// with no clock and read as frozen. The phrase stays empty (it must not
+// claim content exists); the elapsed label runs on `agentWorking` alone.
 const statusElapsedLabel =
-  throttledStatus && agentWorking && statusElapsedMs >= STATUS_STALL_AFTER_MS
+  agentWorking && statusElapsedMs >= STATUS_STALL_AFTER_MS
     ? formatDuration(statusElapsedMs)
     : undefined;
   return { statusPhrase, statusElapsedLabel };
@@ -1219,14 +1169,14 @@ const statusElapsedLabel =
  *  and the clock. */
 function useTurnLiveStatus({
   turn,
-  allParts,
+  blocks,
   agentWorking,
 }: {
-  turn: Turn;
-  allParts: TurnModelState['allParts'];
+  turn: SessionLogTurn;
+  blocks: TurnModelState['blocks'];
   agentWorking: boolean;
 }) {
-  const throttledStatus = useThrottledTurnStatus({ turn, allParts });
+  const throttledStatus = useThrottledTurnStatus({ turn, blocks });
   const { statusPhrase, statusElapsedLabel } = useTurnStatusElapsed({ throttledStatus, agentWorking });
   return { statusPhrase, statusElapsedLabel };
 }
@@ -1270,13 +1220,9 @@ useEffect(() => {
 function useTurnSettledMeta({
   working,
   turn,
-  allParts,
-  pricingLookup,
 }: {
   working: boolean;
-  turn: Turn;
-  allParts: TurnModelState['allParts'];
-  pricingLookup: ReturnType<typeof useModelPricingLookup>;
+  turn: SessionLogTurn;
 }) {
 // ---- Duration ticking ----
 // Only a LIVE turn needs a clock. The old effect also ran for settled turns,
@@ -1296,25 +1242,23 @@ useEffect(() => {
   const timer = setInterval(update, 1000);
   return () => clearInterval(timer);
 }, [working, turn]);
-// Cost info (only when not working)
-const costInfo = useMemo(
-  () => (!working ? getTurnCost(allParts, pricingLookup) : undefined),
-  [allParts, working, pricingLookup],
-);
+// Cost info (only when not working): the turn's cost, priced by the
+// transcript's `sessionLogTurns` call with the model pricing lookup.
+const costInfo = !working ? (turn.cost ?? undefined) : undefined;
   return { turnEndedAt, turnDurationMs, costInfo };
 }
 
-/** The turn's parts, segmented into bursts / standalone tools / text for the
+/** The turn's blocks, segmented into bursts / standalone tools / text for the
  *  steps section. */
 function useTurnSegments({
-  allParts,
-  answeredQuestionPartsById,
+  blocks,
+  answeredQuestionCallsById,
   shouldUseInlineContent,
   permissions,
   sessionId,
 }: {
-  allParts: TurnModelState['allParts'];
-  answeredQuestionPartsById: TurnAnsweredState['answeredQuestionPartsById'];
+  blocks: TurnModelState['blocks'];
+  answeredQuestionCallsById: TurnAnsweredState['answeredQuestionCallsById'];
   shouldUseInlineContent: boolean;
   permissions: PermissionRequest[];
   sessionId: string;
@@ -1343,41 +1287,41 @@ const standaloneCallIds = useMemo(() => {
   return ids;
 }, [permissions, sessionId]);
 /**
- * The turn's parts, cut into bursts / standalone tools / text.
+ * The turn's blocks, cut into bursts / standalone tools / text.
  *
  * This ran INLINE in the JSX below, which meant a `map`, a `filter` and the
- * whole of `segmentTurn` on every render of this turn — and, worse, a brand
- * new `segment.parts` array for every burst every time. `ActivityBurst` keys
- * its `useMemo`s on `parts`, so a fresh array identity per render made every
- * one of them a guaranteed miss: `mergeBurstSteps`, `burstSummary` and
- * `stepLabel` recomputed for every burst in the turn on every frame, and no
+ * whole segmentation on every render of this turn — and, worse, a brand
+ * new `segment.blocks` array for every burst every time. `ActivityBurst` keys
+ * its `useMemo`s on `blocks`, so a fresh array identity per render made every
+ * one of them a guaranteed miss: the burst steps, the summary and the step
+ * labels recomputed for every burst in the turn on every frame, and no
  * `React.memo` below could ever hold. A turn re-renders for reasons that have
- * nothing to do with its parts — a hover, a permission arriving, the parent's
+ * nothing to do with its blocks — a hover, a permission arriving, the parent's
  * state — and each of those paid the full price.
  *
- * Memoised, the arrays keep their identity until the parts actually change,
+ * Memoised, the arrays keep their identity until the blocks actually change,
  * which is what makes the memo boundaries downstream able to bite.
  */
 const segments = useMemo(() => {
-  const parts: (typeof allParts)[number]['part'][] = [];
-  for (const { part } of allParts) {
-    if (isToolPart(part) && isPlanWriteTool(part.tool)) continue;
-    if (isToolPart(part) && isQuestionTool(part.tool)) {
+  const list: SessionLogBlock[] = [];
+  for (const block of blocks) {
+    if (block.type === 'tool_call' && isPlanWriteTool(block.name)) continue;
+    if (block.type === 'tool_call' && isQuestionTool(block.name)) {
       // Keep only answered questions, and only if not rendering inline.
-      if (!answeredQuestionPartsById.has(part.id) || shouldUseInlineContent) continue;
-      // A kept question rides into its burst as the ANSWERED part — the
-      // one from answeredQuestionParts, possibly synthetic with
-      // optimistically-cached or output-parsed answers the raw store part
+      if (!answeredQuestionCallsById.has(block.id) || shouldUseInlineContent) continue;
+      // A kept question rides into its burst as the ANSWERED call — the
+      // one from answeredQuestionCalls, possibly synthetic with
+      // optimistically-cached or output-parsed answers the raw store call
       // does not carry yet. Without this substitution the burst row would
       // show "0 answered" until the server confirms.
-      parts.push(answeredQuestionPartsById.get(part.id) ?? part);
+      list.push(answeredQuestionCallsById.get(block.id) ?? block);
       continue;
     }
-    parts.push(part);
+    list.push(block);
   }
   // Consecutive `show` calls render as one carousel card (`show-group`).
-  return groupShowSegments(segmentTurn(parts, { standaloneCallIds }), { standaloneCallIds });
-}, [allParts, answeredQuestionPartsById, shouldUseInlineContent, standaloneCallIds]);
+  return sessionLogTurnSegments(list, { standaloneCallIds });
+}, [blocks, answeredQuestionCallsById, shouldUseInlineContent, standaloneCallIds]);
   return segments;
 }
 
@@ -1409,7 +1353,7 @@ const segments = useMemo(() => {
 /** Shell mode — a live shell tool replaces the whole turn scaffold. */
 function TurnShellMode(
   props: Pick<SessionTurnProps, 'sessionId' | 'disableToolNavigation' | 'onPermissionReply' | 'providers' | 'permissions'> & {
-    part: ToolPart;
+    call: ToolCallBlock;
     working: boolean;
     errors: TurnErrorState;
     connectProviderOpen: boolean;
@@ -1417,7 +1361,7 @@ function TurnShellMode(
   },
 ) {
   const {
-    part, working, providers, errors, connectProviderOpen, onConnectProviderOpenChange,
+    call, working, providers, errors, connectProviderOpen, onConnectProviderOpenChange,
     permissions, sessionId, disableToolNavigation, onPermissionReply,
   } = props;
   // Permission matching for this session (used for tool-level permission overlays)
@@ -1430,7 +1374,7 @@ function TurnShellMode(
     <TurnLiveContext.Provider value={working}>
       <div className="space-y-1">
         <ToolPartRenderer
-          part={part}
+          call={call}
           sessionId={sessionId}
           disableNavigation={disableToolNavigation}
           permission={nextPermission?.tool ? nextPermission : undefined}
@@ -1460,7 +1404,7 @@ function TurnShellMode(
  *  scaffold. */
 function TurnCompactionOutcome(
   props: Pick<SessionTurnProps, 'turn' | 'onOpenCompactionSummary'> & {
-    compactionInfo: CompactionTurnInfo;
+    compactionInfo: SessionLogCompaction;
     working: boolean;
     response: string;
     turnError: string | undefined;
@@ -1475,8 +1419,8 @@ function TurnCompactionOutcome(
 // messages, so a per-turn context read would defeat this component's memo
 // for the whole transcript). Absent prop → the marker's inline fallback.
 const openCompactionSummary = useCallback(() => {
-  onOpenCompactionSummary?.(turn.userMessage.info.id, response);
-}, [onOpenCompactionSummary, turn.userMessage.info.id, response]);
+  onOpenCompactionSummary?.(turn.id, response);
+}, [onOpenCompactionSummary, turn.id, response]);
   const compactionRunning = working || compactionInfo.inFlight;
   if (compactionRunning || response || compactionInfo.hasContent) {
     return (
@@ -1492,23 +1436,12 @@ const openCompactionSummary = useCallback(() => {
   // An attempt that produced nothing (errored, or stopped before the first
   // token) collapses to one slim row. Falling through to the normal turn
   // renderer drew a full-height turn scaffold per attempt — a retry loop
-  // left a stack of near-empty screens with one error line each.
-  //
-  // `getTurnError`/`deriveTurnErrorAbortState` read only assistantMessages,
-  // which a SYNTHETIC compaction turn (summary message as `userMessage`,
-  // empty assistantMessages) has none of — the helper's own `error` is the
-  // fallback that keeps the row's error text for those.
-  const compactionRawError = compactionInfo.error;
-  const compactionErrorText =
-    turnError ?? (compactionRawError != null ? unwrapError(compactionRawError) : undefined);
-  const compactionIsAbort =
-    turnErrorIsAbort ||
-    (typeof compactionRawError === 'object' &&
-      compactionRawError !== null &&
-      isAbortError(compactionRawError));
+  // left a stack of near-empty screens with one error line each. The turn
+  // error and its abort verdict read the compaction marker first: it carries
+  // its summary's error.
   return (
     <div className="group/turn">
-      <CompactionFailedRow error={compactionErrorText} isAbort={compactionIsAbort} />
+      <CompactionFailedRow error={turnError} isAbort={turnErrorIsAbort} />
     </div>
   );
 }
@@ -1544,6 +1477,8 @@ function TurnUserBlock(
 ) {
   const { userContent } = props;
   const { sessionReport, systemMessages, hasVisibleUserContent } = userContent;
+  // P5.6: the note a partial restore left for the agent is a notice, not a person's prompt.
+  if (isSessionLogRestoreNote(props.turn.user)) return <RestoreNoteMarker />;
   return (
     <>
       {sessionReport && <TurnSessionReport report={sessionReport} />}
@@ -1590,14 +1525,14 @@ function TurnUserBubble(
         className={cn((pending || interruptedBeforeRun) && QUEUED_BUBBLE_OPACITY_CLASS)}
       >
         <UserMessage
-          message={turn.userMessage}
+          message={turn.user}
           author={author}
           showAuthor={showAuthor}
           pendingAttachments={pendingAttachments}
           uploadStatus={uploadStatus}
           pendingText={pendingText}
           agentNames={agentNames}
-          commandInfo={commandMessages?.get(turn.userMessage.info.id)}
+          commandInfo={commandMessages?.get(turn.id)}
           commands={commands}
           sessionId={sessionId}
           ownsPlan={ownsPlan}
@@ -1657,9 +1592,9 @@ function TurnToolBlocks(
   // so they can neither be the only "work" nor stand between the final text
   // and the end of the turn.
   // Settled turns only: while working the split is null anyway, and the
-  // filter re-runs `burstSteps` on every SSE frame.
+  // filter re-runs the burst steps on every SSE frame.
   const split = useMemo(
-    () => (fold && !working ? splitTurnWork(segments.filter(segmentRendersSomething), { working }) : null),
+    () => (fold && !working ? splitSessionLogTurnWork(segments.filter(segmentRendersSomething), { working }) : null),
     [fold, segments, working],
   );
   const renderSegment = (segment: TurnSegments[number]) => {
@@ -1700,7 +1635,7 @@ function TurnToolBlocks(
 			      questions are dropped entirely. Additionally, answered
 			      questions are dropped when rendering inline content (below),
 			      since that mode shows them already, in natural order. */}
-    {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
+    {(working || hasSteps || hasReasoning) && turn.assistant.length > 0 && (
       // Every tool row below — the bursts' rows and the standalone ones —
       // reads this to tell a call that has not spoken YET from one that never
       // will. Provided here rather than per-row because `working` is a fact
@@ -1730,23 +1665,23 @@ function TurnToolBlocks(
   );
 }
 
-/** One segmented part of the turn's steps section: a burst, a show group,
- *  a standalone deliverable, or prose between bursts. Keyed by the same ids
- *  the inline map used before the move (`turnSegmentKey`). */
-function turnSegmentKey(segment: TurnSegments[number]): string | null {
-  if (segment.kind === 'burst') return `burst-${segment.parts[0]?.id ?? 'empty'}`;
+/** One segment of the turn's steps section: a burst, a show group, a
+ *  standalone deliverable, or prose between bursts. Keyed by the first
+ *  block's id (`turnSegmentKey`). */
+function turnSegmentKey(segment: SessionLogSegment): string | null {
+  if (segment.kind === 'burst') return `burst-${segment.blocks[0]?.id ?? 'empty'}`;
   if (segment.kind === 'standalone') {
-    return shouldShowToolPart(segment.part) ? segment.part.id : null;
+    return shouldShowToolPart(segment.block) ? segment.block.id : null;
   }
   if (segment.kind === 'show-group') {
-    const visible = segment.parts.filter(shouldShowToolPart);
+    const visible = segment.blocks.filter(shouldShowToolPart);
     return visible.length > 0 ? visible[0].id : null;
   }
-  return segment.part.id;
+  return segment.block.id;
 }
 
-function segmentRendersSomething(segment: TurnSegments[number]): boolean {
-  if (segment.kind === 'burst') return burstSteps(segment.parts).length > 0;
+function segmentRendersSomething(segment: SessionLogSegment): boolean {
+  if (segment.kind === 'burst') return sessionLogBurstSteps(segment.blocks).length > 0;
   return turnSegmentKey(segment) !== null;
 }
 
@@ -1761,7 +1696,7 @@ function TurnSegment({
   disableNavigation,
   conversationDensity,
 }: {
-  segment: TurnSegments[number];
+  segment: SessionLogSegment;
   isTrailing: boolean;
   working: boolean;
   hasSteps: boolean;
@@ -1774,7 +1709,7 @@ function TurnSegment({
   if (segment.kind === 'burst') {
     return (
       <ActivityBurst
-        parts={segment.parts}
+        blocks={segment.blocks}
         sessionId={sessionId}
         working={working}
         isTrailing={isTrailing}
@@ -1784,28 +1719,28 @@ function TurnSegment({
     );
   }
   if (segment.kind === 'show-group') {
-    const visible = segment.parts.filter(shouldShowToolPart);
+    const visible = segment.blocks.filter(shouldShowToolPart);
     if (visible.length === 1) {
       return (
-        <ToolPartRenderer part={visible[0]} sessionId={sessionId} disableNavigation={disableNavigation} />
+        <ToolPartRenderer call={visible[0]} sessionId={sessionId} disableNavigation={disableNavigation} />
       );
     }
-    return <ShowGroupRenderer parts={visible} sessionId={sessionId} disableNavigation={disableNavigation} />;
+    return <ShowGroupRenderer calls={visible} sessionId={sessionId} disableNavigation={disableNavigation} />;
   }
   if (segment.kind === 'standalone') {
-    if (!shouldShowToolPart(segment.part)) return null;
+    if (!shouldShowToolPart(segment.block)) return null;
     return (
       <ToolPartRenderer
-        part={segment.part}
+        call={segment.block}
         sessionId={sessionId}
         disableNavigation={disableNavigation}
-        permission={getPermissionForTool(permissions, segment.part.callID)}
+        permission={getPermissionForTool(permissions, segment.block.call_id)}
         onPermissionReply={onPermissionReply}
       />
     );
   }
   if (!hasSteps) return null;
-  const text = segment.part.text?.trim();
+  const text = segment.block.text.trim();
   if (!text) return null;
   return (
     <div className="min-w-0 text-sm">
@@ -1815,8 +1750,8 @@ function TurnSegment({
 }
 
 /** What the turn says: the completion announce, the streaming text, and
- *  either the inline text-and-questions flow or the settled response. */
-function TurnAssistantBlock(
+ *  either the inline text-and-questions flow or the settled response. Exported for its test. */
+export function TurnAssistantBlock(
   props: Pick<SessionTurnProps, 'turn'> & {
     model: TurnModelState;
     answered: TurnAnsweredState;
@@ -1838,11 +1773,6 @@ function TurnAssistantBlock(
     </div>
     {/* Inline content: text and answered questions rendered in natural order.
 			    Works both during streaming and after completion. */}
-    {working && !hasSteps && !shouldUseInlineContent && response && (
-      <div className="min-w-0 text-sm">
-        <ThrottledMarkdown content={response} isStreaming />
-      </div>
-    )}
       {shouldUseInlineContent ? (
         <TurnInlineContent working={working} parts={inlineContentParts!} />
       ) : (
@@ -1851,8 +1781,8 @@ function TurnAssistantBlock(
           hasSteps={hasSteps}
           hasReasoning={hasReasoning}
           response={response}
-          commandForTurn={userContent.commandForTurn}
-          answeredQuestionParts={answered.answeredQuestionParts}
+          commandForTurn={userContent.commandOutput}
+          answeredQuestionCalls={answered.answeredQuestionCalls}
         />
       )}
     </>
@@ -1884,18 +1814,15 @@ function TurnInlineContent({
           return parts.map((item, idx) => {
             if (item.type === 'text') {
               const isStreaming = idx === lastTextIdx;
-              const text = isStreaming ? item.part.text! : item.part.text!.trim();
+              const text = isStreaming ? item.block.text : item.block.text.trim();
+              // One component across the turn's end, so the generative UI blocks in the text keep their state.
               return (
                 <div key={item.id} className="min-w-0 text-sm">
-                  {isStreaming ? (
-                    <ThrottledMarkdown content={text} isStreaming />
-                  ) : (
-                    <SandboxUrlDetector content={text} isStreaming={false} />
-                  )}
+                  <ThrottledMarkdown content={text} isStreaming={isStreaming} response />
                 </div>
               );
             }
-            return <AnsweredQuestionCard key={item.id} part={item.part} />;
+            return <AnsweredQuestionCard key={item.id} call={item.call} />;
           });
         })()}
       </div>
@@ -1910,18 +1837,25 @@ function TurnSettledResponse({
   hasReasoning,
   response,
   commandForTurn,
-  answeredQuestionParts,
+  answeredQuestionCalls,
 }: {
   working: boolean;
   hasSteps: boolean;
   hasReasoning: boolean;
   response: string;
   commandForTurn: TurnUserContentState['commandForTurn'];
-  answeredQuestionParts: TurnAnsweredState['answeredQuestionParts'];
+  answeredQuestionCalls: TurnAnsweredState['answeredQuestionCalls'];
 }) {
   return (
       <>
-        {/* Response section for text-only turns (no tools/steps content) */}
+        {/* Response text for text-only turns (no tools/steps content). One element from the first streamed
+            word to the settled turn, so the generative UI blocks in it do not remount when the turn ends. */}
+        {!hasSteps && response && (working || !commandForTurn) ? (
+          <div className={working ? 'min-w-0 text-sm' : 'text-sm'}>
+            <ThrottledMarkdown content={response} isStreaming={working} response />
+          </div>
+        ) : null}
+        {/* A command's output settles into its card. */}
         {!working &&
           !hasSteps &&
           response &&
@@ -1945,16 +1879,12 @@ function TurnSettledResponse({
                   fadeClassName="from-secondary"
                   contentClassName="px-4 py-3 text-sm"
                 >
-                  <SandboxUrlDetector content={response} isStreaming={false} />
+                  <SandboxUrlDetector content={response} isStreaming={false} genui />
                 </ExpandableOutput>
               </div>
               <CodeBlockEndpoints content={response} />
             </div>
-          ) : (
-            <div className="text-sm">
-              <SandboxUrlDetector content={response} isStreaming={false} />
-            </div>
-          ))}
+          ) : null)}
 
         {/* Answered question parts — shown after the response text only when
 				    NONE of the upstream renderers fire. The steps section above is
@@ -1966,10 +1896,10 @@ function TurnSettledResponse({
 				    steps (e.g. "Planning a process for questions" → user answers
 				    → interrupt; hasSteps=false, working=false, hasReasoning=true,
 				    and without the !hasReasoning check the card rendered twice). */}
-        {!hasSteps && !working && !hasReasoning && answeredQuestionParts.length > 0 && (
+        {!hasSteps && !working && !hasReasoning && answeredQuestionCalls.length > 0 && (
           <div className="mt-3 space-y-2">
-            {answeredQuestionParts.map(({ part }) => (
-              <AnsweredQuestionCard key={part.id} part={part as ToolPart} />
+            {answeredQuestionCalls.map(({ call }) => (
+              <AnsweredQuestionCard key={call.id} call={call} />
             ))}
           </div>
         )}
@@ -1977,10 +1907,33 @@ function TurnSettledResponse({
   );
 }
 
+/** A turn someone else stopped names them, quietly, in the activity lane. */
+function TurnStoppedBy({ name }: { name: string }) {
+  const t = useTranslations('threads');
+  return (
+    <div role="note" className="flex w-full items-center gap-3 text-left text-sm">
+      <StopCircleIcon className="text-muted-foreground size-4 flex-none" />
+      <span className="text-muted-foreground min-w-0 wrap-anywhere">{t('stoppedBy', { name })}</span>
+    </div>
+  );
+}
+
+/** The automatic retries an ended failure chain ran, under its terminal row
+ *  (KRTX-2597): the transcript renders one failure row, not one per retry,
+ *  and this quiet line records what the harness already spent on it. */
+function TurnAutoRetryNote({ count }: { count: number }) {
+  const t = useTranslations('sessionUi.turn');
+  return (
+    <p className="text-muted-foreground mt-1 text-xs" data-auto-retry-note>
+      {t('autoRetried', { count })}
+    </p>
+  );
+}
+
 /** The turn's footer: the working row, the error banner, the outcomes, the
- *  action bar, and the connect-provider dialog. */
+ *  action bar, the connect-provider dialog, and who stopped the turn. */
 function TurnFooter(
-  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel' | 'stoppedBy' | 'modelOptions'> & {
     model: TurnModelState;
     errors: TurnErrorState;
     answered: TurnAnsweredState;
@@ -1994,7 +1947,7 @@ function TurnFooter(
 ) {
   const {
     turn, providers, model, errors, answered, status, retry, meta, tHardcodedUi,
-    connectProviderOpen, onConnectProviderOpenChange, servedModel,
+    connectProviderOpen, onConnectProviderOpenChange, servedModel, stoppedBy, modelOptions,
   } = props;
   const { working, response } = model;
   const { turnError, turnErrorRow, turnErrorRowDetails, turnErrorRaw } = errors;
@@ -2009,15 +1962,26 @@ function TurnFooter(
         turnError={turnError}
         tHardcodedUi={tHardcodedUi}
       />
-    {/* ── Error (abort / failure banner) ── */}
-    {turnErrorRow.text && (
+    {/* ── Error (abort / failure banner) ──
+        An automatic provider-error recovery chain (KRTX-2597) renders ONE
+        terminal row: a turn whose failure the harness already continued
+        (`turn.autoRetry?.continued`) yields its row to the continuation's
+        outcome, and the chain's end annotates how many automatic retries
+        already ran. */}
+    {turnErrorRow.text && !turn.autoRetry?.continued && (
       <TurnErrorDisplay
         errorText={turnErrorRow.text}
         errorDetails={turnErrorRowDetails}
         errorRaw={turnErrorRaw}
         isAbort={turnErrorRow.isAbort}
+        modelOptions={modelOptions}
       />
     )}
+    {turnErrorRow.text && !turnErrorRow.isAbort && !turn.autoRetry?.continued && !!turn.autoRetry?.retries && (
+      <TurnAutoRetryNote count={turn.autoRetry.retries} />
+    )}
+    {/* ── Who stopped it, when it was someone else: an own stop is not news ── */}
+    {!working && stoppedBy && <TurnStoppedBy name={stoppedBy} />}
     {/* ── Outcomes — what this turn left behind ──
         Always visible, unlike the hover-revealed action bar below. A hidden
         record of a change request is a trust bug: the point of
@@ -2026,7 +1990,7 @@ function TurnFooter(
         Gated on `!working` for the same reason the action bar is — an
         outcome is a settled fact, and a card that appears mid-stream would
         claim a change request exists before the server has one. */}
-      {!working && <TurnOutcomes turnKey={turn.userMessage.info.id} />}
+      {!working && <TurnOutcomes turnKey={turn.id} />}
 
       {/* ── Action bar (copy + turn meta) ──
           Gated on `!working` only. A turn that ends in tool calls has no closing
@@ -2134,15 +2098,19 @@ const handleCopy = async () => {
     ? inlineContentParts
         .flatMap((item) => {
           if (item.type !== 'text') return [];
-          const text = (item.part as TextPart).text?.trim();
+          const text = item.block.text.trim();
           return text ? [text] : [];
         })
         .join('\n\n')
     : response;
   if (!textToCopy) return;
-  await navigator.clipboard.writeText(textToCopy);
-  setCopied(true);
-  setTimeout(() => setCopied(false), 2000);
+  try {
+    await copyGenuiText(textToCopy);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  } catch {
+    // The browser refused the write; `copied` stays false.
+  }
 };
   return (
     <div className="duration-normal flex items-center gap-0.5 opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 max-md:opacity-100">
@@ -2194,7 +2162,6 @@ function SessionTurnImpl(props: SessionTurnProps) {
   } = props;
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
-  const pricingLookup = useModelPricingLookup(providers);
   // `?? 'normal'` — legacy persisted preferences predate this key (same rule
   // as every `panelMode` read site).
   const conversationDensity = useUserPreferencesStore(
@@ -2204,34 +2171,38 @@ function SessionTurnImpl(props: SessionTurnProps) {
   const model = useTurnModelState({ turn, isWorkingTurn, sessionWorking, awaitingUser });
   const queueTone = useTurnQueueTone({ pending, pendingPrompt, interruptedBeforeRun });
   const errors = useTurnErrorState({ turn, turnOutcome });
-  const answered = useAnsweredQuestionState({ turn, questions, sessionId, allParts: model.allParts, hasSteps: model.hasSteps });
+  const answered = useAnsweredQuestionState({ turn, questions, sessionId, blocks: model.blocks, hasSteps: model.hasSteps });
   const userContent = useTurnUserContent({ turn, commandMessages, commands });
-  const status = useTurnLiveStatus({ turn, allParts: model.allParts, agentWorking: model.agentWorking });
+  const status = useTurnLiveStatus({ turn, blocks: model.blocks, agentWorking: model.agentWorking });
   const retry = useTurnRetryState({ sessionStatus, isWorkingTurn });
-  const meta = useTurnSettledMeta({ working: model.working, turn, allParts: model.allParts, pricingLookup });
+  const meta = useTurnSettledMeta({ working: model.working, turn });
   const segments = useTurnSegments({
-    allParts: model.allParts,
-    answeredQuestionPartsById: answered.answeredQuestionPartsById,
+    blocks: model.blocks,
+    answeredQuestionCallsById: answered.answeredQuestionCallsById,
     shouldUseInlineContent: answered.shouldUseInlineContent,
     permissions,
     sessionId,
   });
-  // Shell mode detection
-  const shellModePart = useMemo(() => getShellModePart(turn), [turn]);
-  // A compaction turn's message-state — `inFlight` (summary open: not
-  // completed, not errored) is the half of "is this compaction running" the
+  // A compaction turn's message-state — `inFlight` (the marker still
+  // streams its summary) is the half of "is this compaction running" the
   // working projection cannot see, because it deliberately knows nothing
   // about compaction.
-  const compactionInfo = useMemo(
-    () => (isCompaction ? compactionTurnInfo(turn) : null),
-    [isCompaction, turn],
+  const compactionInfo = isCompaction ? turn.compaction : null;
+  // genui_block telemetry: one scope per turn, shared by the streaming and the settled render.
+  // Keyed on strings, not on `turn`, so a streaming frame does not re-render every block of the turn.
+  const genuiModel = turn.assistant.at(-1)?.model?.model;
+  const genuiScope = turn.id;
+  const genuiTelemetry = useMemo(
+    () => ({ scope: genuiScope, ...(genuiModel ? { model: genuiModel } : {}) }),
+    [genuiScope, genuiModel],
   );
 
-  if (shellModePart) {
+  // Shell mode: a synthetic prompt answered by one bare `bash` call.
+  if (turn.shell) {
     return (
       <TurnShellMode
         {...props}
-        part={shellModePart}
+        call={sessionLogOpenCall(turn.shell)}
         working={model.working}
         errors={errors}
         connectProviderOpen={connectProviderOpen}
@@ -2245,7 +2216,9 @@ function SessionTurnImpl(props: SessionTurnProps) {
         {...props}
         compactionInfo={compactionInfo}
         working={model.working}
-        response={model.response}
+        // The summary is the compaction block's: as it streams while the
+        // turn works, trimmed once it landed.
+        response={model.working ? (compactionInfo.block?.summary ?? '') : (compactionInfo.block?.summary ?? '').trim()}
         turnError={errors.turnError}
         turnErrorIsAbort={errors.turnErrorIsAbort}
       />
@@ -2254,15 +2227,20 @@ function SessionTurnImpl(props: SessionTurnProps) {
   return (
     <div className="group/turn text-factor-[2] space-y-2.5">
       <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
-      <TurnToolBlocks
-        {...props}
-        model={model}
-        segments={segments}
-        conversationDensity={conversationDensity}
-        fold={!answered.shouldUseInlineContent}
-        durationMs={meta.turnDurationMs}
-      />
-      <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
+      {/* Model switches happened while the turn worked, so they sit above
+          its work and its answer, not under the answer. */}
+      <TurnFallbackRows working={model.working} events={props.servedModel?.fallbacks} />
+      <GenuiTelemetryContext.Provider value={genuiTelemetry}>
+        <TurnToolBlocks
+          {...props}
+          model={model}
+          segments={segments}
+          conversationDensity={conversationDensity}
+          fold={!answered.shouldUseInlineContent}
+          durationMs={meta.turnDurationMs}
+        />
+        <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
+      </GenuiTelemetryContext.Provider>
       <TurnFooter {...props} model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
     </div>
   );
@@ -2273,14 +2251,14 @@ function SessionTurnImpl(props: SessionTurnProps) {
  *
  * `messages` is rebuilt on every SSE frame, so this component used to re-render
  * for every turn in the session ~60 times a second — and each of those renders
- * re-ran ~28 `useMemo`s (all keyed on `turn`), a `planAnchorMessageId` scan of
- * the whole transcript, `segmentTurn`, and every tool renderer beneath it.
+ * re-ran ~28 `useMemo`s (all keyed on `turn`), a plan-anchor scan of the
+ * whole transcript, the segmentation, and every tool renderer beneath it.
  * `content-visibility: auto` on the wrapper hid the layout cost of that, not the
  * JavaScript.
  *
  * The default shallow compare is correct here ONLY because three things were
  * fixed first, and each is load-bearing: `turn` keeps its identity when its
- * messages have not changed (`stabilizeTurns`), the `allMessages` array prop is
+ * messages have not changed (`sessionLogTurns`), the `allMessages` array prop is
  * gone (replaced by the `isLast` / `ownsPlan` booleans derived once above), and
  * `onRewind` is a `useCallback` rather than an inline arrow. Any one of the
  * three reverting silently turns this memo back into a no-op — it would still
@@ -2296,6 +2274,11 @@ interface TranscriptTurnRowProps extends SessionTurnProps {
   suppressed: boolean;
   /** The fallback waiting row belongs under this turn. */
   showBusyRow: boolean;
+  /** P5.6: the harness the session continued with from this turn on (`harness.history`). */
+  continuedWith?: string;
+  /** P5.6: this turn's full-text load, for the texts it shows as a preview. */
+  fullTextState: FullTextState;
+  onLoadFullText: (turnId: string, refs: readonly SessionLogReferencedText[]) => void;
 }
 
 /**
@@ -2312,14 +2295,27 @@ export const TranscriptTurnRow = memo(function TranscriptTurnRow({
   viewportClassName,
   suppressed,
   showBusyRow,
+  continuedWith,
+  fullTextState,
+  onLoadFullText,
   ...turnProps
 }: TranscriptTurnRowProps) {
   return (
-    <TurnViewport turnId={turnId} className={viewportClassName}>
+    <TurnViewport
+      turnId={turnId}
+      className={viewportClassName}
+      continues={turnProps.turn.compaction !== null || turnProps.turn.continues !== null}
+    >
+      {continuedWith && (
+        <div className="mb-6">
+          <HarnessSwitchMarker harness={continuedWith} />
+        </div>
+      )}
       {/* No separate divider for compaction turns — the
       CompactionMarker rendered by SessionTurn IS the
       divider (rule–pill–rule), through every phase. */}
       {suppressed ? null : <SessionTurn {...turnProps} />}
+      {!suppressed && <TurnFullText turn={turnProps.turn} state={fullTextState} onLoad={onLoadFullText} />}
       {/* Queued bubbles follow this turn. The waiting
           row stays above them, where the working turn
           draws its own, so it never jumps. */}

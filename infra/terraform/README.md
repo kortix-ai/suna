@@ -18,7 +18,7 @@ table is the source of truth for which root it drives.
 | `environments/staging-web-eu-west-2` | `deploy-staging.yml` -> `terraform-staging-web` | every staging deploy | `eu-west-2` | `kortix-gha-tf-apply-staging` |
 | `environments/prod` | `deploy-prod.yml` -> `terraform-prod-api` | every production release | `eu-west-2` | `kortix-gha-tf-apply-prod` |
 | `environments/prod-web` | `deploy-prod.yml` -> `terraform-prod` | every production release, after `environments/prod` | `eu-west-2` | `kortix-gha-tf-apply-prod` |
-| `compliance-monitoring` | `terraform-apply-global.yml` | push to `dev` touching the root | `eu-west-2`, `us-east-2`, one us-west-2 forwarder (alert hub `eu-west-2` since 2026-10-12) | `kortix-gha-tf-apply-global` |
+| `compliance-monitoring` | `terraform-apply-global.yml` | push to `dev` touching the root | `eu-west-2`, `us-east-2` (alert hub `eu-west-2` since 2026-10-12) | `kortix-gha-tf-apply-global` |
 | `security-baseline` | `terraform-apply-global.yml` | push to `dev` touching the root | all 17 regions (alert hub `eu-west-2` since 2026-10-12) | `kortix-gha-tf-apply-global` |
 
 Every root above, applied or not, is planned nightly by the `drift detection`
@@ -31,32 +31,21 @@ in the same region (`backend.tf`, same key as before the move):
 | --- | --- | --- |
 | `kortix-terraform-state-eu-west-2-935064898258` | `environments/prod`, `environments/prod-web`, `environments/staging-eu-west-2`, `environments/staging-web-eu-west-2`, `security-baseline`, `compliance-monitoring` | `security-baseline/terraform-state-euw2.tf` |
 | `kortix-terraform-state-us-east-2-935064898258` | `environments/dev-us-east-2`, `environments/dev-web-us-east-2` | `security-baseline/terraform-state-use2.tf` |
+| `kortix-terraform-state-us-east-1-935064898258` | external: `kortix-ai/kortix-vps-demo-infra` (key `vps-demo/terraform.tfstate`) | `security-baseline/terraform-state-use1.tf` |
 
-Both buckets are versioned, keep noncurrent versions for 365 days and encrypt
+All three buckets are versioned, keep noncurrent versions for 365 days and encrypt
 state with their own CMK. Locking is S3 native (`use_lockfile`): Terraform
 writes `<key>.tflock` next to the state, so there is no lock table. The drift
-role `kortix-gha-tf-plan` may decrypt with the two state keys through S3 only.
+role `kortix-gha-tf-plan` may decrypt with the eu-west-2 and us-east-2 state keys
+through S3 only. No drift job plans the us-east-1 root.
 
-Before every backend `terraform init`, CI runs
-`.github/actions/state-copy-guard` (in `terraform-apply.yml`, and in the
-`terraform-ci.yml` drift job as a warning). A root on a regional bucket may
-init only when its old key in `kortix-terraform-state` is gone, or when that
-key's current version carries the tag `statemove=copied`, which the cutover
-copy writes on the exact version it copied and verified by SHA-256. A write to
-the old key after the copy leaves an untagged version, so the apply fails
-instead of planning against a stale state. The guard is the backstop, not the
-procedure: before a root group's first run on its regional bucket, copy its
-state and freeze the old key with `scripts/statemove/copy-states.mjs <group>`
-and `scripts/statemove/deny-old-keys.mjs <group>` (groups `dev`, `global`,
-`staging`, `prod`). `dev` and `global` moved on 2026-10-13. `staging` moves
-right before the first staging promotion that carries #9693 merges, `prod`
-right before the release that carries it merges (the **kortix-release**
-skill, Steps 3 and 9).
-
-The old us-west-2 bucket `kortix-terraform-state` and table
-`kortix-terraform-locks` held every state until 2026-10. No root in this
-repository uses them. The external `kortix-ai/kortix-vps-demo-infra` root still
-does, until it moves its backend.
+Until 2026-10 every root kept its state in the us-west-2 bucket
+`kortix-terraform-state` with the lock table `kortix-terraform-locks`. Each
+root's state was copied to its regional bucket and verified by SHA-256: `dev`
+and the two global roots on 2026-10-13, `staging` and `prod` on 2026-10-14 with
+the promotion and release that carried #9693, and the external vps-demo root
+on 2026-10-13. The old bucket, its lock table and the us-west-2 AWS Backup vaults
+that protected the table were deleted afterwards. No root reads us-west-2 state.
 
 The us-west-2 roots `dev`, `dev-web`, `staging` and `staging-web`
 were destroyed on 2026-10-12 (dev 58, dev-web 2, staging 74, staging-web 19

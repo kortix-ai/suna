@@ -1,0 +1,1019 @@
+/* @kortix/ui component layer. Tailwind v4 input, not plain CSS.
+ *
+ * A Tailwind host imports the bundle once, after `@import 'tailwindcss'`:
+ *   @import '@kortix/ui/tailwind.css';
+ * It loads tw-animate-css, tokens.css, this file and the tailwind-scrollbar /
+ * tailwind-scrollbar-hide plugins. A host that imports tokens.css and theme.css
+ * directly must add `@import 'tw-animate-css'` and both `@plugin` lines itself,
+ * or overlays lose their enter/exit animations and `scrollbar-hide` is undefined.
+ * A host without Tailwind loads the prebuilt '@kortix/ui/styles.css' instead.
+ *
+ * It holds what @kortix/ui components need from the stylesheet: the `dark`
+ * variant, the host-neutral base rules (body colors, borders, color-scheme,
+ * selection, pointer cursor), the @theme keys their classes resolve against, the @utility
+ * definitions, keyframes and spinner classes. Values come from CSS variables
+ * (tokens.css), so a white-label host re-themes by overriding those variables
+ * in :root / .dark. Never fork a component to change a color.
+ *
+ * Fonts: --font-roobert is set only on Kortix-owned surfaces (brand D8a);
+ * every other host gets the system stack from tokens.css (--font-sans-system,
+ * --font-mono-system). A host that skips tokens.css and leaves those unset falls
+ * back to the generic ui-sans-serif / ui-monospace stacks. */
+
+/* Tailwind scans the package source for class names. */
+@source "../";
+
+@import './dotmatrix-loader.css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Host-neutral base rules. Every host gets them, so the page itself follows the
+   tokens: the body paints --background and --foreground (a white-label
+   override of either reaches the page), borders and outlines default to
+   --border / --ring, native controls follow the theme (color-scheme), the
+   selection follows --selection (default: the inverted --primary), and every
+   interactive element shows the pointer cursor (Tailwind v4 sets
+   `cursor: default` on <button>). */
+@layer base {
+  ::selection {
+    background: var(--selection, color-mix(in oklch, var(--primary) 72%, transparent));
+    color: var(--selection-foreground, var(--primary-foreground));
+  }
+
+  ::-moz-selection {
+    background: var(--selection, color-mix(in oklch, var(--primary) 72%, transparent));
+    color: var(--selection-foreground, var(--primary-foreground));
+  }
+
+  * {
+    /* stylelint-disable-next-line at-rule-no-unknown */
+    @apply border-border outline-ring/50;
+  }
+
+  /* Disabled elements keep the default cursor: :disabled, aria-disabled, data-disabled. */
+  :is(
+      a[href],
+      button,
+      input[type='checkbox'],
+      input[type='file'],
+      input[type='radio'],
+      label[for],
+      select,
+      summary,
+      [role='button'],
+      [role='checkbox'],
+      [role='link'],
+      [role='menuitem'],
+      [role='menuitemcheckbox'],
+      [role='menuitemradio'],
+      [role='option'],
+      [role='radio'],
+      [role='switch'],
+      [role='tab'],
+      [role='treeitem']
+    ):not(:disabled):not([aria-disabled='true']):not([data-disabled]) {
+    cursor: pointer;
+  }
+
+  :root {
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
+
+  body {
+    /* stylelint-disable-next-line at-rule-no-unknown */
+    @apply bg-background text-foreground;
+    min-height: 100dvh;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-pane: var(--pane);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-foreground-strong: var(--foreground-strong);
+  --color-foreground-weak: var(--foreground-weak);
+  --font-sans: var(--font-roobert, var(--font-sans-system, ui-sans-serif, system-ui, sans-serif));
+  --font-mono: var(--font-roobert-mono, var(--font-mono-system, ui-monospace, monospace));
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-row: var(--sidebar-row);
+  --color-sidebar-row-control: var(--sidebar-row-control);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  /* Interaction overlays — translucent ink, not solid surfaces, so a hover or
+     selection tint blends over whatever substrate is behind it (canvas,
+     surface-1, an image). Used by Card's proximity highlight + selected fill. */
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-kortix-base: var(--kortix-base);
+  --color-kortix-blue: var(--kortix-blue);
+  --color-kortix-yellow: var(--kortix-yellow);
+  --color-kortix-orange: var(--kortix-orange);
+  --color-kortix-green: var(--kortix-green);
+  --color-kortix-purple: var(--kortix-purple);
+  --color-kortix-red: var(--kortix-red);
+  --color-liquid-glass: var(--liquid-glass-bg);
+  --color-liquid-glass-hover: var(--liquid-glass-bg-hover);
+  --shadow-liquid-glass: var(--liquid-glass-shadow);
+  /* Terminal surface. Only the PTY pane itself is always dark, in every app
+     theme, because it mirrors a real shell — so these are literals, not
+     light/dark pairs. Chrome around it (the connect bar, the panel shell, the
+     connection status) is app UI and paints Kortix tokens. `terminalTheme` in
+     features/session/pty-terminal.tsx must keep `background` equal to
+     --terminal-surface and `foreground` equal to --terminal-fg: xterm's ITheme
+     needs concrete colors, not CSS vars. */
+  --color-terminal-surface: var(--terminal-surface);
+  --color-terminal-fg: var(--terminal-fg);
+  --color-terminal-border: var(--terminal-border);
+  /* @generated kortix-brand:start theme — edit .agents/skills/kortix-brand/references/visual/visual-system.json, then run generate-tokens.ts */
+  /* Type scale. Roles and surfaces are in references/visual/typography.md. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: calc(1 / 0.8125);
+  --text-sm: 0.875rem;
+  --text-sm--line-height: calc(1.25 / 0.875);
+  --text-md: 0.9rem;
+  --text-md--line-height: calc(1.375 / 0.9375);
+  --text-base: 1rem;
+  --text-base--line-height: calc(1.5 / 1);
+  --text-lg: 1.125rem;
+  --text-lg--line-height: calc(1.75 / 1.125);
+  --text-xl: 1.25rem;
+  --text-xl--line-height: calc(1.75 / 1.25);
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: calc(2 / 1.5);
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: calc(2.25 / 1.875);
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: calc(2.5 / 2.25);
+  --text-5xl: 3rem;
+  --text-5xl--line-height: 1;
+  --text-6xl: 3.75rem;
+  --text-6xl--line-height: 1;
+  --text-7xl: 4.5rem;
+  --text-7xl--line-height: 1;
+  --text-8xl: 6rem;
+  --text-8xl--line-height: 1;
+  /* Emoji-picker active cell. Hues are DERIVED from the glyph (emoji-tint.ts) and must stay stable. Fill stays pale; the 1px inset ring carries WCAG 1.4.11 3:1 against --popover (measured 3.03-3.19:1). Emitted as light-dark() in @theme. */
+  --color-emoji-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
+  --color-emoji-fill-amber: light-dark(hsl(32 52% 87%), hsl(32 30% 25%));
+  --color-emoji-fill-green: light-dark(hsl(96 34% 87%), hsl(96 22% 24%));
+  --color-emoji-fill-teal: light-dark(hsl(178 36% 86%), hsl(178 26% 24%));
+  --color-emoji-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
+  --color-emoji-fill-violet: light-dark(hsl(280 32% 88%), hsl(280 22% 27%));
+  --color-emoji-ring-red: light-dark(hsl(4 46% 63%), hsl(4 46% 45%));
+  --color-emoji-ring-amber: light-dark(hsl(32 52% 51%), hsl(32 52% 35%));
+  --color-emoji-ring-green: light-dark(hsl(96 34% 46%), hsl(96 34% 32%));
+  --color-emoji-ring-teal: light-dark(hsl(178 36% 46%), hsl(178 36% 32%));
+  --color-emoji-ring-blue: light-dark(hsl(212 46% 60%), hsl(212 46% 42%));
+  --color-emoji-ring-violet: light-dark(hsl(280 32% 63%), hsl(280 32% 46%));
+  /* Project glyph icon palette, CHOSEN by the user. Separate from emoji on purpose. The ring token paints both the inset ring and the glyph, tuned (L only) to clear 3:1 against the fill and --popover/--card in both themes. */
+  --color-glyph-fill-grey: light-dark(hsl(220 8% 88%), hsl(220 6% 26%));
+  --color-glyph-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
+  --color-glyph-fill-orange: light-dark(hsl(24 60% 88%), hsl(24 32% 26%));
+  --color-glyph-fill-yellow: light-dark(hsl(46 62% 87%), hsl(46 34% 25%));
+  --color-glyph-fill-lime: light-dark(hsl(84 42% 87%), hsl(84 26% 24%));
+  --color-glyph-fill-blue: light-dark(hsl(212 46% 88%), hsl(212 30% 27%));
+  --color-glyph-fill-purple: light-dark(hsl(275 34% 88%), hsl(275 24% 27%));
+  --color-glyph-fill-magenta: light-dark(hsl(318 40% 88%), hsl(318 26% 27%));
+  --color-glyph-ring-grey: light-dark(hsl(220 8% 50%), hsl(220 8% 58%));
+  --color-glyph-ring-red: light-dark(hsl(4 46% 53%), hsl(4 46% 60%));
+  --color-glyph-ring-orange: light-dark(hsl(24 60% 46%), hsl(24 60% 55%));
+  --color-glyph-ring-yellow: light-dark(hsl(46 62% 37%), hsl(46 55% 47%));
+  --color-glyph-ring-lime: light-dark(hsl(84 42% 37%), hsl(84 40% 46%));
+  --color-glyph-ring-blue: light-dark(hsl(212 46% 50%), hsl(212 46% 59%));
+  --color-glyph-ring-purple: light-dark(hsl(275 34% 56%), hsl(275 34% 61%));
+  --color-glyph-ring-magenta: light-dark(hsl(318 40% 52%), hsl(318 40% 61%));
+  /* Motion. Tailwind 4 reads duration utilities from --transition-duration-*. */
+  --transition-duration-fast: 100ms;
+  --transition-duration-normal: 150ms;
+  --transition-duration-moderate: 200ms;
+  --transition-duration-slow: 300ms;
+  --transition-duration-slower: 500ms;
+  --ease-default: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  /* @generated kortix-brand:end */
+  /* App typography scale. Keep html at 100% so browser and OS zoom
+  /* Standard border radius values */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  /* Standard radius for all main form elements and UI components */
+  --radius-2xl: 1rem;
+  --border-width: 1.5px;
+  --spacing-sidebar: 1.5rem;
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-collapsible-down: collapsible-down 0.2s ease-out;
+  --animate-collapsible-up: collapsible-up 0.15s ease-out;
+  --animate-marquee: marquee var(--duration) infinite linear;
+  --animate-marquee-reverse: marquee-reverse var(--duration) infinite linear;
+  --animate-marquee-vertical: marquee-vertical var(--duration) linear infinite;
+  --animate-orbit: orbit calc(var(--duration) * 1s) linear infinite;
+  --animate-slide-down: slide-down 300ms cubic-bezier(0.87, 0, 0.13, 1);
+  --animate-slide-up: slide-up 300ms cubic-bezier(0.87, 0, 0.13, 1);
+  --scaleIn: scaleIn 200ms ease;
+  --scaleOut: scaleOut 200ms ease;
+  --fadeIn: fadeIn 200ms ease;
+  --fadeOut: fadeOut 200ms ease;
+  --enterFromLeft: enterFromLeft 250ms ease;
+  --enterFromRight: enterFromRight 250ms ease;
+  --exitToLeft: exitToLeft 250ms ease;
+  --exitToRight: exitToRight 250ms ease;
+  --animate-elliptical-orbit: elliptical-orbit 20s linear infinite;
+  --animate-shiny-text: shiny-text 5s infinite;
+  --animate-kortix-bullet-flow: kortix-bullet-flow 4s ease-in-out infinite;
+  /* Error feedback — damped horizontal shake (decaying amplitude, transform-only) */
+  --animate-shake: shake 400ms var(--ease-in-out) both;
+
+  /* Marketing chips: ±6px vertical float */
+  --animate-chip-drift: chip-drift 6s ease-in-out infinite;
+
+  @keyframes chip-drift {
+    0%,
+    100% {
+      transform: translateY(-6px);
+    }
+    50% {
+      transform: translateY(6px);
+    }
+  }
+
+  @keyframes shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    10% {
+      transform: translateX(-6px);
+    }
+    30% {
+      transform: translateX(5px);
+    }
+    50% {
+      transform: translateX(-3px);
+    }
+    70% {
+      transform: translateX(2px);
+    }
+    90% {
+      transform: translateX(-1px);
+    }
+  }
+
+  @keyframes kortix-bullet-flow {
+    0%,
+    100% {
+      background-position: 0% 0%;
+    }
+    50% {
+      background-position: 0% 100%;
+    }
+  }
+
+  @keyframes orbit {
+    0% {
+      transform: rotate(calc(var(--angle) * 1deg)) translateY(calc(var(--radius) * 1px))
+        rotate(calc(var(--angle) * -1deg));
+    }
+    100% {
+      transform: rotate(calc(var(--angle) * 1deg + 360deg)) translateY(calc(var(--radius) * 1px))
+        rotate(calc((var(--angle) * -1deg) - 360deg));
+    }
+  }
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+
+  @keyframes collapsible-down {
+    from {
+      height: 0;
+      opacity: 0;
+    }
+    to {
+      height: var(--radix-collapsible-content-height);
+      opacity: 1;
+    }
+  }
+
+  @keyframes collapsible-up {
+    from {
+      height: var(--radix-collapsible-content-height);
+      opacity: 1;
+    }
+    to {
+      height: 0;
+      opacity: 0;
+    }
+  }
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(calc(-100% - var(--gap)));
+    }
+  }
+
+  @keyframes marquee-reverse {
+    from {
+      transform: translateX(calc(-100% - var(--gap)));
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes marquee-vertical {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(calc(-100% - var(--gap)));
+    }
+  }
+  @keyframes slide-down {
+    from {
+      height: 0px;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+
+  @keyframes slide-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0px;
+    }
+  }
+
+  /* Add this to your globals.css */
+  @keyframes enterFromRight {
+    from {
+      opacity: 0;
+      transform: translateX(200px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes enterFromLeft {
+    from {
+      opacity: 0;
+      transform: translateX(-200px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes exitToRight {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(200px);
+    }
+  }
+
+  @keyframes exitToLeft {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(-200px);
+    }
+  }
+
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: rotateX(-30deg) scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: rotateX(0deg) scale(1);
+    }
+  }
+
+  @keyframes scaleOut {
+    from {
+      opacity: 1;
+      transform: rotateX(0deg) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: rotateX(-10deg) scale(0.95);
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes fadeOut {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes elliptical-orbit {
+    from {
+      transform: rotate(var(--angle, 0) deg) translate(var(--h-radius, 160px), 0)
+        rotate(calc(var(--angle, 0) deg * -1));
+    }
+    to {
+      transform: rotate(calc(var(--angle, 0) deg + 360deg)) translate(var(--h-radius, 160px), 0)
+        rotate(calc((var(--angle, 0) deg + 360deg) * -1));
+    }
+  }
+
+  @keyframes shiny-text {
+    0%,
+    90%,
+    100% {
+      background-position: calc(-100% - var(--shiny-width)) 0;
+    }
+    30%,
+    60% {
+      background-position: calc(100% + var(--shiny-width)) 0;
+    }
+  }
+
+  @keyframes meteor {
+    0% {
+      transform: rotate(var(--angle)) translateX(0);
+      opacity: 1;
+    }
+    70% {
+      opacity: 1;
+    }
+    100% {
+      transform: rotate(var(--angle)) translateX(-500px);
+      opacity: 0;
+    }
+  }
+
+  --animate-blink-cursor: blink-cursor 1.2s step-end infinite;
+  @keyframes blink-cursor {
+    0%,
+    49% {
+      opacity: 1;
+    }
+    50%,
+    100% {
+      opacity: 0;
+    }
+  }
+}
+
+/* Shake is pure positional motion; the error state is already conveyed by
+   color/message, so drop it entirely under reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-shake {
+    animation: none;
+  }
+}
+
+/* Limited-iteration pulse — e.g. animate-pulse-3 runs the default pulse 3 times */
+@utility animate-pulse-* {
+  animation-name: pulse;
+  animation-duration: 2s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  animation-iteration-count: --value(integer);
+  animation-iteration-count: --value([integer]);
+}
+
+@keyframes kortix-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── Smooth shadow ring — five soft layers plus a 1px ring in the border token.
+   Use on a floating card instead of border + shadow-*: className="smooth-shadow-ring" */
+@utility smooth-shadow-ring {
+  box-shadow:
+    0 17.54px 23.39px oklch(0 0 0 / 0.04),
+    0 9.4px 12.5px oklch(0 0 0 / 0.03),
+    0 5.25px 7px oklch(0 0 0 / 0.02),
+    0 2.79px 3.72px -2px oklch(0 0 0 / 0.01),
+    0 1.16px 1.5px oklch(0 0 0 / 0.01),
+    0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent);
+}
+
+/* The lighter `ring-sm` preset of the same plugin (shadow.floriankiem.com):
+   wider, fainter layers. Toasts use it. */
+@utility smooth-shadow-ring-sm {
+  box-shadow:
+    0 18px 47px oklch(0 0 0 / 0.03),
+    0 7.5px 19px oklch(0 0 0 / 0.02),
+    0 4px 10.5px oklch(0 0 0 / 0.02),
+    0 2.3px 5.8px oklch(0 0 0 / 0.01),
+    0 1.2px 3.1px oklch(0 0 0 / 0.01),
+    0 0.5px 1.3px oklch(0 0 0 / 0.01),
+    0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent);
+}
+
+/* ─── Liquid glass — frosted tinted surface (tokens: --liquid-glass-*) ─────
+   Theme-aware: light drop-shadow, dark inset rim. Specular lives on
+   background-image so this does not steal ::before from hit-area.
+   Use: className="liquid-glass rounded-full" */
+@utility liquid-glass {
+  border: 1px solid var(--border);
+  background-color: var(--liquid-glass-bg);
+  background-image: var(--liquid-glass-highlight);
+  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) saturate(var(--liquid-glass-saturate));
+  backdrop-filter: blur(var(--liquid-glass-blur)) saturate(var(--liquid-glass-saturate));
+  box-shadow: var(--liquid-glass-shadow);
+
+  &:hover {
+    background-color: var(--liquid-glass-bg-hover);
+  }
+}
+
+/* ─── Hit area — expand interactive targets without layout shift ───────────
+   https://bazza.dev/craft/2026/hit-area */
+@utility hit-area-debug {
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    top: var(--hit-area-t, 0px);
+    right: var(--hit-area-r, 0px);
+    bottom: var(--hit-area-b, 0px);
+    left: var(--hit-area-l, 0px);
+    pointer-events: inherit;
+    @apply border border-dashed border-blue-500 bg-blue-500/10;
+  }
+  &:hover::before {
+    @apply border border-dashed border-green-500 bg-green-500/10;
+  }
+}
+
+@utility hit-area {
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    top: var(--hit-area-t, 0px);
+    right: var(--hit-area-r, 0px);
+    bottom: var(--hit-area-b, 0px);
+    left: var(--hit-area-l, 0px);
+    pointer-events: inherit;
+  }
+}
+
+@utility hit-area-* {
+  position: relative;
+  --hit-area-t: --spacing(--value(number) * -1);
+  --hit-area-t: calc(--value([*]) * -1);
+  --hit-area-b: --spacing(--value(number) * -1);
+  --hit-area-b: calc(--value([*]) * -1);
+  --hit-area-l: --spacing(--value(number) * -1);
+  --hit-area-l: calc(--value([*]) * -1);
+  --hit-area-r: --spacing(--value(number) * -1);
+  --hit-area-r: calc(--value([*]) * -1);
+  &::before {
+    content: '';
+    position: absolute;
+    top: var(--hit-area-t, 0px);
+    right: var(--hit-area-r, 0px);
+    bottom: var(--hit-area-b, 0px);
+    left: var(--hit-area-l, 0px);
+    pointer-events: inherit;
+  }
+}
+
+@utility hit-area-x-* {
+  position: relative;
+  --hit-area-l: --spacing(--value(number) * -1);
+  --hit-area-l: calc(--value([*]) * -1);
+  --hit-area-r: --spacing(--value(number) * -1);
+  --hit-area-r: calc(--value([*]) * -1);
+  &::before {
+    content: '';
+    position: absolute;
+    top: var(--hit-area-t, 0px);
+    right: var(--hit-area-r, 0px);
+    bottom: var(--hit-area-b, 0px);
+    left: var(--hit-area-l, 0px);
+    pointer-events: inherit;
+  }
+}
+
+@utility hit-area-y-* {
+  position: relative;
+  --hit-area-t: --spacing(--value(number) * -1);
+  --hit-area-t: calc(--value([*]) * -1);
+  --hit-area-b: --spacing(--value(number) * -1);
+  --hit-area-b: calc(--value([*]) * -1);
+  &::before {
+    content: '';
+    position: absolute;
+    top: var(--hit-area-t, 0px);
+    right: var(--hit-area-r, 0px);
+    bottom: var(--hit-area-b, 0px);
+    left: var(--hit-area-l, 0px);
+    pointer-events: inherit;
+  }
+}
+
+@utility hit-area-t-* {
+  position: relative;
+  --hit-area-t: --spacing(--value(number) * -1);
+  --hit-area-t: calc(--value([*]) * -1);
+  &::before {
+    content: '';
+    position: absolute;
+    top: var(--hit-area-t, 0px);
+    right: var(--hit-area-r, 0px);
+    bottom: var(--hit-area-b, 0px);
+    left: var(--hit-area-l, 0px);
+    pointer-events: inherit;
+  }
+}
+
+@utility hit-area-r-* {
+  position: relative;
+  --hit-area-r: --spacing(--value(number) * -1);
+  --hit-area-r: calc(--value([*]) * -1);
+  &::before {
+    content: '';
+    position: absolute;
+    top: var(--hit-area-t, 0px);
+    right: var(--hit-area-r, 0px);
+    bottom: var(--hit-area-b, 0px);
+    left: var(--hit-area-l, 0px);
+    pointer-events: inherit;
+  }
+}
+
+@utility hit-area-b-* {
+  position: relative;
+  --hit-area-b: --spacing(--value(number) * -1);
+  --hit-area-b: calc(--value([*]) * -1);
+  &::before {
+    content: '';
+    position: absolute;
+    top: var(--hit-area-t, 0px);
+    right: var(--hit-area-r, 0px);
+    bottom: var(--hit-area-b, 0px);
+    left: var(--hit-area-l, 0px);
+    pointer-events: inherit;
+  }
+}
+
+@utility hit-area-l-* {
+  position: relative;
+  --hit-area-l: --spacing(--value(number) * -1);
+  --hit-area-l: calc(--value([*]) * -1);
+  &::before {
+    content: '';
+    position: absolute;
+    top: var(--hit-area-t, 0px);
+    right: var(--hit-area-r, 0px);
+    bottom: var(--hit-area-b, 0px);
+    left: var(--hit-area-l, 0px);
+    pointer-events: inherit;
+  }
+}
+
+@utility font-kerning-none {
+  font-kerning: none;
+}
+
+@utility font-kerning-normal {
+  font-kerning: normal;
+}
+
+@utility font-kerning-auto {
+  font-kerning: auto;
+}
+
+@keyframes typing {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
+}
+
+@keyframes loading-dots {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes wave {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.6);
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes text-blink {
+  0%,
+  100% {
+    color: var(--primary);
+  }
+  50% {
+    color: var(--muted-foreground);
+  }
+}
+
+@keyframes bounce-dots {
+  0%,
+  100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+@keyframes thin-pulse {
+  0%,
+  100% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.4;
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer-text {
+  0% {
+    background-position: 150% center;
+  }
+  100% {
+    background-position: -150% center;
+  }
+}
+
+@keyframes wave-bars {
+  0%,
+  100% {
+    transform: scaleY(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scaleY(0.6);
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 50%;
+  }
+  100% {
+    background-position: -200% 50%;
+  }
+}
+
+@keyframes spinner-fade {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Google/Material circular spinner. Two INDEPENDENTLY-SEAMLESS animations
+   compose into the signature "arc sweeps forward, growing then shrinking":
+     • the <svg> rotates the whole thing at a CONSTANT rate (linear) — base spin.
+     • the arc <circle> rotates a further 360° per cycle (ease-in-out, so it
+       speeds up then slows down) while its length grows then shrinks via
+       stroke-dashoffset.
+   Both loops return to their EXACT start state at 100% (offset 58→58, rotate
+   360°≡0°) AND meet at matching velocity (ease-in-out is ~0 at both ends, linear
+   is constant), so the loop boundary is invisible — no stop/restart glitch.
+   The old version jumped: its dash ended long (dasharray 37) and restarted as a
+   dot (dasharray 1) at a different offset, collapsing visibly every cycle. */
+@keyframes spinner-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* r=10 → circumference ≈ 62.83. Visible arc = 62.83 − dashoffset, so it breathes
+   between ~28° (offset 58) and ~280° (offset 14). Rotate advances monotonically,
+   so the arc's head and tail only ever move forward — they never rewind. */
+@keyframes spinner-dash {
+  0% {
+    stroke-dashoffset: 58;
+    transform: rotate(0deg);
+  }
+  50% {
+    stroke-dashoffset: 14;
+    transform: rotate(180deg);
+  }
+  100% {
+    stroke-dashoffset: 58;
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spinner-orbit {
+  transform-origin: center;
+  animation: spinner-orbit 1.4s linear infinite;
+}
+
+/* Refresh icon etc. — constant rotation, so linear. (ease-in-out on an infinite
+   full turn visibly stutters at every seam: ends fast, restarts slow.) */
+.animate-spinner-spin {
+  transform-origin: center;
+  animation: spinner-spin 1s linear infinite;
+}
+
+.animate-spinner-dash {
+  transform-origin: center;
+  transform-box: fill-box;
+  stroke-dasharray: 62.83;
+  animation: spinner-dash 1.4s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+}
+
+@keyframes spinner-spokes {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The spoke spinner TICKS rather than sweeps: steps(8) over a full turn lands
+   each frame exactly one spoke on (45°), so the opacity ramp appears to chase
+   itself around the wheel while the geometry never sits between positions. A
+   smooth rotation here would just look like a spinning asterisk. 0.8s/8 = 100ms
+   a tick — near the classic platform cadence, fast enough to read as busy. */
+.animate-spinner-spokes {
+  transform-origin: center;
+  animation: spinner-spokes 0.8s steps(8) infinite;
+}
+
+/* Reduced motion: keep a calm, constant-speed spin (a loader still needs to
+   signal activity) but drop the arc's grow/shrink and speed modulation. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spinner-orbit,
+  .animate-spinner-spin {
+    animation: spinner-orbit 1.4s linear infinite;
+  }
+
+  .animate-spinner-dash {
+    animation: none;
+    stroke-dashoffset: 34;
+    transform: none;
+  }
+
+  /* Same bargain as above: a loader still has to signal activity, so keep the
+     rotation but drop the stepping — the 100ms strobe is the part that grates. */
+  .animate-spinner-spokes {
+    animation: spinner-spokes 1.4s linear infinite;
+  }
+}
+
+@keyframes sweep-out {
+  0% {
+    width: 0;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  60% {
+    width: 100%;
+    opacity: 1;
+  }
+  100% {
+    width: 100%;
+    opacity: 0;
+  }
+}
+
+.horizontal-sweep {
+  width: 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--kortix-blue),
+    var(--kortix-blue),
+    transparent
+  );
+  animation: sweep-out 2.5s ease-out infinite;
+  /* delay so it starts ~when the vertical mask reaches bottom */
+  animation-delay: 1.25s;
+}
+
+@utility px-mobile {
+  @apply px-6 xl:px-0;
+}

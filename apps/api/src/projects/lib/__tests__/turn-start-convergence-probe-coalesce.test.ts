@@ -1,7 +1,7 @@
 /**
  * R4 (the turn-latency spec (PR #7840) §3) — "a health probe made once by the
  * config gate then again by the catalog gate" is named explicitly as the
- * shape R4 forbids. Parallelising `convergeBeforeTurnStart` and
+ * shape R4 forbids. Parallelising `convergeConfigIfBehind` and
  * `convergeModelCatalogForTurnStart` (R2) makes that race REAL: both gates
  * call the module-private `probeRunningRelease`, and with no coalescing two
  * concurrent callers for the same session would each issue their own
@@ -19,7 +19,12 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let readCalls = 0;
 let readDelayMs = 20;
 
+const realSessionReload = await import('../session-reload');
+// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
+// export it omits, and the missing name surfaces as a SyntaxError in whatever
+// file imports it next (here this file's own subject). Spread the real module.
 mock.module('../session-reload', () => ({
+  ...realSessionReload,
   readSandboxConfigState: async (_input: { sessionId: string }) => {
     readCalls += 1;
     await new Promise((resolve) => setTimeout(resolve, readDelayMs));

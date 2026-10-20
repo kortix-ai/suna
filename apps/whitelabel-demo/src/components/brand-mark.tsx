@@ -1,5 +1,5 @@
 import { BRAND } from '@/config/brand';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui/lib/utils';
 
 export function BrandMark({
   className,

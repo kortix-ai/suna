@@ -4,7 +4,7 @@
 
 import { kortix } from '@/lib/kortix';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { errorToast, successToast } from '@kortix/ui/toast';
 
 /** Ref archived/read by default — the repo tip. */
 const DEFAULT_ARCHIVE_REF = 'HEAD';
@@ -21,8 +21,8 @@ export function useProjectArchive(projectId: string) {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast.success('Archive downloaded');
+      successToast('Archive downloaded');
     },
-    onError: () => toast.error('Could not download archive'),
+    onError: () => errorToast('Could not download archive'),
   });
 }

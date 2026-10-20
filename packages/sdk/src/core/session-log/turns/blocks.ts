@@ -5,20 +5,22 @@
  * to the blocks, so the two layers agree (`oracle.test.ts`). `segments.test.ts` holds the
  * block-native cases.
  */
-import type { Part } from '../../runtime/runtime-types';
-import { toToolView } from '../../turns/classify';
-import { isToolPart } from '../../turns/parts';
-import { mergeBurstSteps, type BurstStep } from '../../turns/segments/merge-steps';
+import type { Part, ToolPart } from '../../runtime/runtime-types';
+import { classifyTurn, toToolView, type ClassifiedTurn } from '../../turns/classify';
+import { isReasoningPart, isToolPart, shouldShowToolPart } from '../../turns/parts';
+import { burstSummary, burstWorkLabel, type BurstSummary } from '../../turns/segments/burst-summary';
+import { mergeBurstSteps, reasoningIsRunning, type BurstStep } from '../../turns/segments/merge-steps';
 import type { StepFamily } from '../../turns/segments/narration';
 import { segmentTurn, type SegmentTurnOptions } from '../../turns/segments/segment-turn';
 import { isQuestionTool } from '../../turns/segments/session-activity-groups';
-import { groupShowSegments, type ShowGroupedSegment } from '../../turns/segments/show-group';
+import { groupShowSegments, showGroupItems, type ShowGroupItem, type ShowGroupedSegment } from '../../turns/segments/show-group';
 import { stepLabel } from '../../turns/segments/step-label';
 import { splitTurnWork } from '../../turns/segments/work-split';
 import { getTurnStatus } from '../../turns/state';
 import { parseQuestionAnswersFromOutput } from '../../turns/tools/question-helpers';
-import type { SessionLogBlock, SessionLogMessage, TextBlock, ToolCallBlock } from '../types';
-import type { SessionLogTurn } from './turn';
+import { toolCallBlock, toolPartOf } from '../tool-call';
+import type { SessionLogBlock, SessionLogMessage, SessionLogThread, TextBlock, ToolCallBlock } from '../types';
+import { isClosedByRule, type SessionLogTurn } from './turn';
 import { blockOf, messageOfBlock, partOf, partsOf, v1RowsOf } from './v1-parts';
 
 export type SessionLogSegment =
@@ -97,4 +99,114 @@ export function sessionLogBurstSteps(blocks: ReadonlyArray<SessionLogBlock>): Se
 /** The activity line of a live turn ("Reading files..."); a running task reads its sub-thread's `childMessages`. */
 export function sessionLogActivityText(turn: Pick<SessionLogTurn, 'blocks'>, childMessages?: readonly SessionLogMessage[]): string {
   return getTurnStatus(partsOf(turn.blocks).map((part) => ({ part })), childMessages?.flatMap(v1RowsOf));
+}
+
+/** How much work a burst holds (`burstSummary`): what its summary line says ("Completed 3 of 4 steps"). */
+export function sessionLogBurstSummary(blocks: ReadonlyArray<SessionLogBlock>): BurstSummary {
+  return burstSummary(partsOf(blocks));
+}
+
+/** What a settled burst did (`burstWorkLabel`): "Ran 3 commands, read 2 files · 1 failed". */
+export function sessionLogBurstWorkLabel(blocks: ReadonlyArray<SessionLogBlock>): string {
+  return burstWorkLabel(partsOf(blocks));
+}
+
+/**
+ * The burst is in progress: never once the turn stops working; the trailing burst for the whole
+ * working turn (so a gap between two calls does not close it); another burst while a call is open
+ * or a thought is still written (a v1 thought until its end time, a native one while its message streams).
+ */
+export function sessionLogBurstRunning(blocks: ReadonlyArray<SessionLogBlock>, options: { working: boolean; trailing?: boolean }): boolean {
+  if (!options.working) return false;
+  if (options.trailing) return true;
+  return blocks.some((block) => {
+    if (block.type === 'tool_call') return block.status === 'pending' || block.status === 'running';
+    if (block.type !== 'reasoning') return false;
+    const part = partOf(block);
+    const message = messageOfBlock.get(block);
+    return !!part && isReasoningPart(part) && reasoningIsRunning(part) && (!message || message.status === 'streaming');
+  });
+}
+
+const reopened = new WeakMap<ToolCallBlock, ToolCallBlock>();
+
+/**
+ * The call with the status {@link sessionLogCallStatus} gives it on a live turn: a call the
+ * closure rule closed at rest (C2/F11: `error`, `result.synthetic` or `result.error.code:
+ * 'interrupted'`) reads open again, `running` once started, else `pending`, with no result,
+ * as the v1 live view holds it; every other call is itself. One object per call, so a
+ * renderer's memos hold. `sessionLogCallStatus(call, turn.live)` says whether it is interrupted.
+ */
+export function sessionLogOpenCall(call: ToolCallBlock): ToolCallBlock {
+  if (!isClosedByRule(call)) return call;
+  let open = reopened.get(call);
+  if (!open) {
+    const { result: _result, ...rest } = call;
+    open = { ...rest, status: call.started_at ? 'running' : 'pending' };
+    reopened.set(call, open);
+  }
+  return open;
+}
+
+/** A failed call keeps its slot as an `error` item whose `content` is the message. */
+function carouselItem(item: ShowGroupItem): Omit<ShowGroupItem, 'callID' | 'error'> {
+  const { callID: _callID, error, ...rest } = item;
+  return item.status === 'error' ? { ...rest, type: 'error', content: error || 'This output failed to load.' } : rest;
+}
+
+/**
+ * A run of adjacent `show` calls (a `show-group` segment) as ONE `show` call: the first call's
+ * id and call id, `input.items` the carousel of every call's items, `running` while any call
+ * is open, else `complete`. N single calls and one N-item call render the same card.
+ */
+export function sessionLogShowGroupCall(calls: ReadonlyArray<ToolCallBlock>): ToolCallBlock {
+  const parts = calls.map(toolPartOf);
+  const first = parts[0]!;
+  const running = parts.some((p) => p.state.status === 'running' || p.state.status === 'pending');
+  const items = showGroupItems(parts).map(carouselItem);
+  return toolCallBlock({ ...first, state: { ...first.state, status: running ? 'running' : 'completed', input: { items } } } as ToolPart);
+}
+
+/**
+ * A `question` call as answered with `answers` (one list per question) the harness has not
+ * confirmed yet (an answer just sent, or answers read back from the tool's output): `complete`,
+ * the answers in its metadata (`toToolView(call).answers`), `input` replaced when given.
+ */
+export function sessionLogAnsweredQuestionCall(call: ToolCallBlock, answers: string[][], input?: Record<string, unknown>): ToolCallBlock {
+  const part = toolPartOf(call);
+  const state = part.state as ToolPart['state'] & { metadata?: Record<string, unknown> };
+  return toolCallBlock({
+    ...part,
+    state: { ...state, status: 'completed', ...(input !== undefined && { input }), metadata: { ...(state.metadata ?? {}), answers } },
+  } as ToolPart);
+}
+
+/**
+ * `classifyTurn` of one session-log message: its blocks as `ClassifiedPart`s, through the v1 rows
+ * `toV1` gives the message (exact for a converted record, the builder's rows for a native one),
+ * and its error normalized with the gateway's own sentence. A compaction is one message: the
+ * marker's parts, then the summary's. Transitional, as `toolCallBlock`: it goes with
+ * `ClassifiedPart` (P8.4).
+ */
+export function classifySessionLogMessage(message: SessionLogMessage): ClassifiedTurn {
+  const rows = v1RowsOf(message).map((row) => classifyTurn(row));
+  const error = rows.find((row) => row.error)?.error;
+  return { parts: rows.flatMap((row) => row.parts), error, isEmpty: rows.every((row) => row.isEmpty) && !error };
+}
+
+const NO_CALLS: readonly ToolCallBlock[] = Object.freeze([]);
+const threadCalls = new WeakMap<Pick<SessionLogThread, 'messages'>, readonly ToolCallBlock[]>();
+
+/** A sub-agent thread's tool calls a row lists: every shown call of its replies, in order. One array per thread object. */
+export function subAgentCalls(thread: Pick<SessionLogThread, 'messages'> | null | undefined): readonly ToolCallBlock[] {
+  if (!thread) return NO_CALLS;
+  let calls = threadCalls.get(thread);
+  if (!calls) {
+    const found = thread.messages.flatMap((m) =>
+      m.role === 'assistant' ? m.blocks.filter((b): b is ToolCallBlock => b.type === 'tool_call' && shouldShowToolPart(b)) : [],
+    );
+    calls = found.length ? found : NO_CALLS;
+    threadCalls.set(thread, calls);
+  }
+  return calls;
 }

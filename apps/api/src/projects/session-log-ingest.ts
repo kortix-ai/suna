@@ -7,7 +7,8 @@
  * One transaction per batch, under a per-session advisory lock:
  * - Generation fence. `session_logs.generation` is the session's generation. A
  *   batch with an older one answers 409 and writes nothing. An equal one is
- *   accepted. A newer one is accepted and becomes the session's (P6 mints them).
+ *   accepted. A newer one is accepted and becomes the session's (the restore
+ *   claim mints them: `session-log-restore.ts`).
  * - Revisions. A put or a tombstone applies only when its (generation, rev) is
  *   above the stored message's. Every pair of the batch is acknowledged, applied
  *   or not, after commit. A higher put revives a tombstoned message.
@@ -15,12 +16,24 @@
  *   that collides rolls the whole batch back and answers 422 with its pair.
  * - Durable turns. The first acknowledged assistant message of a turn that is not
  *   streaming sets `session_turns.log_durable_at`: the turn whose `message_id` (the
- *   client-minted user message id) is the assistant message's `reply_to`. A later
- *   acknowledgement (a restarted daemon re-sends everything) keeps the first time.
+ *   client-minted user message id) is the assistant message's `reply_to`. No
+ *   assistant message answers a compaction: both harnesses fold the summary into
+ *   the compaction message. So a compaction that is not streaming marks its
+ *   `/summarize` turn itself, also when it failed or was aborted (`error` set),
+ *   like an errored assistant reply: the turn whose `message_id` is the
+ *   compaction's id. Both daemons relay `turn_begin` with that id when the
+ *   compaction starts (pi: its marker), and apps/api binds it to the open
+ *   `/summarize` turn (`adoptRuntimeSandboxTurn`). A turn whose bind failed (two
+ *   open id-less turns, a lost relay) stays unmarked: guessing it by time marked
+ *   the wrong turn (P2.11). An auto compaction inside a prompt turn marks nothing:
+ *   the turn's reply marks it. A later acknowledgement (a restarted daemon
+ *   re-sends everything) keeps the first time.
  *
- * Records are stored as the daemon sent them, not as zod parsed them: the parse
- * drops fields this API does not know, and the record would lose them (the same
- * rule as `upcast`). One exception, F3: a text over 256 kB is stored as a
+ * Records keep the values the daemon sent, not the zod parse: the parse drops
+ * fields this API does not know, and the record would lose them (the same rule
+ * as `upcast`). They do not keep its object key order: the column is jsonb.
+ * Key order is not semantic in this schema (`same` in the contract's `v1.ts`),
+ * and `canonicalizeView` sorts tool-input keys. One exception, F3: a text over 256 kB is stored as a
  * preview plus a reference to its object (`session-log-blobs.ts`). The objects
  * are written before the transaction. `content_hash` hashes the sanitized full
  * message before offload, not the stored preview/reference record. The daemon
@@ -45,6 +58,19 @@
  *   moves the row to seq `-rev`, so the seqs `fromV1` gives the messages after a
  *   rewind stay free. The capture never sets `log_durable_at`: that column means
  *   "acknowledged by the daemon's journal".
+ * - The upgrade (P3.3). A converted log (capture or backfill rows, grade `converted` or
+ *   `partial`) becomes native at the journal's first write: `restore_grade` goes to
+ *   `native`, and `grade_counts` goes from the column and the record. A capture row gives
+ *   way only where the journal claims it: the same message id (the put replaces it), the
+ *   same `(thread_id, seq)` (a tombstone at seq `-rev`), or a thread where a pi reply has a
+ *   `pi:` id (a dump from before P2.5: every capture row of that thread is tombstoned, at
+ *   generation 0 only). These rules apply in every batch. At generation 0, the first
+ *   journal write also takes every other live capture row out of context (`in_context:
+ *   false`, column and record): it stays visible, and the model view is the native
+ *   store's. Capture rows are never deleted.
+ * - Re-puts. A put whose content hash equals the stored row's (a restarted daemon re-sends
+ *   every message) is acknowledged and changes nothing, unless the row is a tombstone, a
+ *   capture row, or of another generation.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -57,12 +83,13 @@ import {
   type SessionLogPut,
 } from '@kortix/api-contract/session-log';
 import { projectSessions, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTurns } from '@kortix/db';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { uniqueViolationConstraint } from '../shared/postgres-errors';
 import { logger } from '../lib/logger';
 import { jsonbSafeValue } from './lib/jsonb-safe';
 import { offloadLargeTexts } from './session-log-blobs';
+import { toolInputOrderOf } from './session-log-input-order';
 
 export interface SessionLogScope {
   sessionId: string;
@@ -74,6 +101,7 @@ export type SessionLogJournalOutcome =
   | { status: 200; body: SessionLogJournalResponse }
   | { status: 404; body: { error: string } }
   | { status: 409; body: SessionLogJournalConflict }
+  | { status: 429; body: { error: string } }
   | { status: 422; body: SessionLogJournalSeqConflict };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -90,6 +118,13 @@ export const SESSION_LOG_CAPTURE_REV_LIMIT = 2 ** 31;
 /** A capture write: `current` runs under the lock and answers false when a newer mirror capture ran. */
 type CaptureWrite = { current: (tx: Tx) => Promise<boolean> };
 const NO_SESSION = { status: 404, body: { error: 'Session not found' } } as const;
+/**
+ * Another batch of the session holds its lock. Waiting for it queued every retry of the
+ * daemon behind a batch the daemon had already abandoned (its post times out at 15 s, the
+ * transaction runs on), until the 25 s statement timeout cancelled the wait: 57014 in a loop,
+ * hundreds per session (KRTX-2344). The daemon backs off on 429 and keeps its dirty set.
+ */
+const BUSY = { status: 429, body: { error: 'Session log busy' } } as const;
 
 class SeqConflict extends Error {
   constructor(readonly body: SessionLogJournalSeqConflict) {
@@ -98,7 +133,7 @@ class SeqConflict extends Error {
 }
 
 /** The session row, only when it belongs to this project and account. */
-async function sessionExists(scope: SessionLogScope): Promise<boolean> {
+export async function sessionExists(scope: SessionLogScope): Promise<boolean> {
   const [row] = await db
     .select({ sessionId: projectSessions.sessionId })
     .from(projectSessions)
@@ -163,7 +198,10 @@ async function applyBatch(
   for (const put of batch.puts) records.push(await offloadLargeTexts(scope, put.message));
   try {
     return await db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${scope.sessionId}`}))`);
+      const [lock] = await tx.execute<{ locked: boolean }>(
+        sql`SELECT pg_try_advisory_xact_lock(hashtext(${`session-log:${scope.sessionId}`})) AS locked`,
+      );
+      if (!lock?.locked) return capture ? ('skipped' as const) : BUSY;
       if (capture && !(await capture.current(tx))) return 'skipped' as const;
       const current = await upsertSession(tx, scope, batch, capture !== null);
       if (current === 'journal') return 'skipped' as const;
@@ -188,6 +226,8 @@ async function applyBatch(
             ),
           );
       }
+      // Generation 0 only: a restore (P6.2) writes `pi:` replies itself, into a store built from this log.
+      if (!capture && batch.generation === 0) await hideConvertedPiThreads(tx, scope.sessionId, batch.puts);
       await dropProvisionalRows(tx, scope.sessionId, batch.puts);
       for (const [i, put] of batch.puts.entries()) await applyPut(tx, scope.sessionId, batch.generation, put, records[i]!);
       if (!capture) await markDurableTurns(tx, scope.sessionId, batch.puts);
@@ -243,20 +283,31 @@ async function upsertSession(
     return null;
   }
   const firstJournal = !capture && writes && !row.journalSeenAt;
-  if (!patch && batch.generation === row.generation && !firstJournal) return null;
+  // The journal exports the native store: its first write makes the log native (P3.3).
+  const update = firstJournal ? { restore_grade: 'native' as const, ...patch } : patch;
+  if (!update && batch.generation === row.generation) return null;
+  // A grade without `grade_counts` has none: a converted log's counts must not outlive it.
+  const record = update?.restore_grade !== undefined ? sql`(${sessionLogs.record} - 'grade_counts')` : sql`${sessionLogs.record}`;
   await tx
     .update(sessionLogs)
     .set({
       generation: batch.generation,
       ...(firstJournal && { journalSeenAt: sql`now()` }),
-      ...(patch && { record: capture ? (patch as Record<string, unknown>) : sql`${sessionLogs.record} || ${JSON.stringify(patch)}::jsonb` }),
-      ...(patch?.v !== undefined && { v: patch.v }),
-      ...(patch?.harness?.current !== undefined && { harnessCurrent: patch.harness.current }),
-      ...(patch?.restore_grade !== undefined && { restoreGrade: patch.restore_grade }),
-      ...(patch?.grade_counts !== undefined && { gradeCounts: patch.grade_counts }),
+      ...(update && { record: capture ? (update as Record<string, unknown>) : sql`${record} || ${JSON.stringify(update)}::jsonb` }),
+      ...(update?.v !== undefined && { v: update.v }),
+      ...(update?.harness?.current !== undefined && { harnessCurrent: update.harness.current }),
+      ...(update?.restore_grade !== undefined && { restoreGrade: update.restore_grade, gradeCounts: update.grade_counts ?? null }),
       updatedAt: sql`now()`,
     })
     .where(eq(sessionLogs.sessionId, scope.sessionId));
+  // P3.3: a capture row the journal does not claim stays visible, out of context: the native
+  // store is what the model sees. A restored box (generation > 0) holds this log: rows stay as they are.
+  if (firstJournal && batch.generation === 0) {
+    await tx
+      .update(sessionLogMessages)
+      .set({ inContext: false, record: sql`jsonb_set(${sessionLogMessages.record}, '{in_context}', 'false')`, updatedAt: sql`now()` })
+      .where(and(eq(sessionLogMessages.sessionId, scope.sessionId), lt(sessionLogMessages.rev, SESSION_LOG_CAPTURE_REV_LIMIT), isNull(sessionLogMessages.deletedAt)));
+  }
   return null;
 }
 
@@ -288,22 +339,49 @@ async function upsertThreads(tx: Tx, sessionId: string, batch: SessionLogJournal
 
 /**
  * A capture row (rev below the limit) that holds the `(thread_id, seq)` a put
- * of this batch claims for another message is provisional: it goes. For a
- * journal put that is the journal taking over a capture's seq. For a capture
- * put it is a shifted message, whose own put in this batch writes it again.
+ * of this batch claims for another message is provisional: it gives way as a
+ * tombstone at seq `-rev`, the capture tombstone's place (capture revs are
+ * unique per session, so that seq is free). Never deleted. For a journal put
+ * that is the journal taking over a capture's seq. For a capture put it is a
+ * shifted message, whose own put in this batch revives it at its new seq.
  */
 async function dropProvisionalRows(tx: Tx, sessionId: string, puts: readonly SessionLogPut[]): Promise<void> {
   if (puts.length === 0) return;
   const claims = JSON.stringify(puts.map(({ message: m }) => ({ message_id: m.message_id, thread_id: m.thread_id, seq: m.seq })));
   const dropped = await tx.execute<{ message_id: string; thread_id: string; seq: number }>(sql`
-    DELETE FROM kortix.session_log_messages m
-     USING jsonb_to_recordset(${claims}::jsonb) AS p(message_id text, thread_id text, seq int)
+    UPDATE kortix.session_log_messages m
+       SET deleted_at = coalesce(m.deleted_at, now()), seq = -m.rev, updated_at = now()
+      FROM jsonb_to_recordset(${claims}::jsonb) AS p(message_id text, thread_id text, seq int)
      WHERE m.session_id = ${sessionId} AND m.thread_id = p.thread_id AND m.seq = p.seq
        AND m.message_id <> p.message_id AND m.rev < ${SESSION_LOG_CAPTURE_REV_LIMIT}
-    RETURNING m.message_id, m.thread_id, m.seq`);
+    RETURNING m.message_id, m.thread_id, p.seq`);
   if (dropped.length > 0) {
     logger.info('[session-log] provisional capture rows gave up their seq', { sessionId, rows: dropped.slice(0, 20) });
   }
+}
+
+/**
+ * A pi dump written before P2.5 has no Kortix ids: pi exports its replies as `pi:<entry id>`
+ * (`harness/pi/session-log.ts` in kortixd). Its capture rows carry the v1 ids, so they would
+ * stay next to the native ones. A journal reply with a `pi:` id tombstones every live capture
+ * row of its thread at seq `-rev`. A P2.5+ dump gives every reply a Kortix id; only its
+ * system and custom messages have `pi:` ids, so they do not count. Generation 0 only: a
+ * restored store (P6.2) holds this log and writes `pi:` replies of its own (a layout compaction).
+ */
+async function hideConvertedPiThreads(tx: Tx, sessionId: string, puts: readonly SessionLogPut[]): Promise<void> {
+  const threads = [...new Set(puts.flatMap(({ message: m }) => (m.role === 'assistant' && m.message_id.startsWith('pi:') ? [m.thread_id] : [])))];
+  if (threads.length === 0) return;
+  await tx
+    .update(sessionLogMessages)
+    .set({ deletedAt: sql`now()`, seq: sql`-${sessionLogMessages.rev}`, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(sessionLogMessages.sessionId, sessionId),
+        inArray(sessionLogMessages.threadId, threads),
+        lt(sessionLogMessages.rev, SESSION_LOG_CAPTURE_REV_LIMIT),
+        isNull(sessionLogMessages.deletedAt),
+      ),
+    );
 }
 
 // ponytail: one INSERT per put, so a seq collision names its own pair without
@@ -333,6 +411,7 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
         contentHash: sessionLogContentHash(m),
         deletedAt: null,
         record: record as unknown as Record<string, unknown>,
+        toolInputOrder: toolInputOrderOf(record),
       })
       .onConflictDoUpdate({
         target: [sessionLogMessages.sessionId, sessionLogMessages.messageId],
@@ -350,9 +429,14 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
           contentHash: sql`excluded.content_hash`,
           deletedAt: null,
           record: sql`excluded.record`,
+          toolInputOrder: sql`excluded.tool_input_order`,
           updatedAt: sql`now()`,
         },
-        setWhere: sql`(excluded.generation, excluded.rev) > (${sessionLogMessages.generation}, ${sessionLogMessages.rev})`,
+        // An unchanged re-put (a restarted daemon re-sends every message) leaves the row; it is still acknowledged.
+        // A capture row and a row of another generation are always replaced.
+        setWhere: sql`(excluded.generation, excluded.rev) > (${sessionLogMessages.generation}, ${sessionLogMessages.rev})
+          AND (${sessionLogMessages.contentHash} IS DISTINCT FROM excluded.content_hash OR ${sessionLogMessages.deletedAt} IS NOT NULL
+               OR ${sessionLogMessages.rev} < ${SESSION_LOG_CAPTURE_REV_LIMIT} OR ${sessionLogMessages.generation} <> excluded.generation)`,
       });
   } catch (err) {
     if (uniqueViolationConstraint(err) !== SEQ_KEY) throw err;
@@ -361,19 +445,20 @@ async function applyPut(tx: Tx, sessionId: string, generation: number, put: Sess
 }
 
 async function markDurableTurns(tx: Tx, sessionId: string, puts: readonly SessionLogPut[]): Promise<void> {
-  const userMessageIds = [
+  // An assistant reply marks the turn of the message it answers; a compaction marks its own turn.
+  const turnMessageIds = [
     ...new Set(
       puts.flatMap(({ message: m }) =>
-        m.role === 'assistant' && m.status !== 'streaming' && m.reply_to ? [m.reply_to] : [],
+        m.status === 'streaming' ? [] : m.kind === 'compaction' ? [m.message_id] : m.role === 'assistant' && m.reply_to ? [m.reply_to] : [],
       ),
     ),
   ];
-  if (userMessageIds.length === 0) return;
+  if (turnMessageIds.length === 0) return;
   await tx
     .update(sessionTurns)
     // The first acknowledgement: a daemon that restarts re-sends every message, and a replay is not new durability.
     .set({ logDurableAt: sql`coalesce(${sessionTurns.logDurableAt}, now())` })
-    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, userMessageIds)));
+    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, turnMessageIds)));
 }
 
 /** The boot-reconcile manifest, or null when the session is not this project's. */

@@ -1,7 +1,7 @@
 import type { DefaultProjectRef } from '@kortix/shared/host-config';
 import { type Auth, loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
-import { activeHostName, defaultProject, listHosts } from '../api/config.ts';
+import { activeHostEntry, defaultProject, getHost, listHosts } from '../api/config.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { emitJson, takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
@@ -32,6 +32,37 @@ export async function runWhoami(argv: string[]): Promise<number> {
   return performWhoami(flags);
 }
 
+/**
+ * `kortix token` (KRTX-1802): the whoami command's token-only view under its
+ * own name, with its own --help. Bare `kortix token` prints exactly what
+ * `kortix whoami --token-only` prints.
+ */
+const TOKEN_HELP = help`Usage: kortix token [options]
+
+Print only the active token context on the selected host: the kind of
+credential in use and its project/session/agent grants — never the
+secret value itself. Same as \`kortix whoami --token-only\`.
+
+Options:
+  --host <name>     Read the token context of a specific host (default: active).
+  --json            Print the full identity JSON instead (same as \`kortix whoami --json\`).
+  --token-only      Accepted for symmetry with \`kortix whoami --token-only\` (this
+                    command is the token-only view).
+  -h, --help        Show this help.
+`;
+
+export async function runToken(argv: string[]): Promise<number> {
+  const flags = takeFlags(argv, TOKEN_HELP, (rest) => ({
+    host: takeFlagValue(rest, ['--host']),
+    json: takeFlagBool(rest, ['--json']),
+    // Symmetry with `kortix whoami --token-only`; this command IS the
+    // token-only view, so the flag changes nothing.
+    tokenOnly: takeFlagBool(rest, ['--token-only']),
+  }));
+  if (typeof flags === 'number') return flags;
+  return performWhoami({ ...flags, tokenOnly: !flags.json });
+}
+
 interface PerformWhoamiOptions {
   /** Probe a specific host (default: active). */
   host?: string;
@@ -53,7 +84,7 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
     if (opts.host) {
       process.stderr.write(
         `${status.err(`Host "${opts.host}" is not logged in.`)} Run ` +
-          `${C.cyan}kortix hosts login ${opts.host}${C.reset}.\n`,
+          `${C.cyan}kortix hosts login ${opts.host}${auth ? ` --api '${auth.api_base.replaceAll("'", "'\\''")}'` : ''}${C.reset}.\n`,
       );
     } else {
       process.stderr.write(`${status.err('Not logged in. Run `kortix login`.')}\n`);
@@ -73,11 +104,10 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
     return 1;
   }
 
-  const resolvedHost = opts.host ?? activeHostName();
+  const resolvedHost = opts.host ?? activeHostEntry().name;
   const active = me.accounts.find((a) => a.account_id === auth.account_id) ?? me.accounts[0];
-  // Default project is read from the active host only (a --host probe shows
-  // the other host's identity, not this machine's active default).
-  const def = opts.host ? null : defaultProject();
+  // A named-host probe reports that host's own default, never another host's.
+  const def = opts.host ? (getHost(opts.host)?.default_project ?? null) : defaultProject();
 
   if (opts.json) {
     whoamiJson(me, auth, resolvedHost, active, def);

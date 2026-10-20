@@ -19,7 +19,8 @@ describe('Custom connector OAuth2 onboarding', () => {
     // creation offer is plain `oauth2Selected` state.
     expect(connectorsSource).toContain('oauth2Selected={oauth2Selected}');
     expect(connectorsSource).toContain('idPrefix="new-connector-oauth2"');
-    expect(connectorsSource).toContain('createConnectorWithOptionalOAuth2(');
+    // The save (`useCreateCustomConnector`) runs `createConnectorWithOptionalOAuth2`.
+    expect(connectorsSource).toContain('oauth2: oauth2Selected ? oauth2 : null');
   });
 
   test('covers every supported token endpoint authentication strategy', () => {

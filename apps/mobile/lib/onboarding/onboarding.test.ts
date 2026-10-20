@@ -57,30 +57,35 @@ describe('startDestination', () => {
 });
 
 describe('onboardingAccountId', () => {
+  const can = { 'acc-owned': true, 'acc-admin': true };
   test('keeps the selected account when a project can be created in it', () => {
-    expect(onboardingAccountId([owned, admin], 'acc-admin')).toBe('acc-admin');
+    expect(onboardingAccountId([owned, admin], 'acc-admin', can)).toBe('acc-admin');
   });
 
   test('a member-only selection moves to the first owned or admin account', () => {
-    expect(onboardingAccountId([member, admin, owned], 'acc-member')).toBe('acc-admin');
+    expect(onboardingAccountId([member, admin, owned], 'acc-member', can)).toBe('acc-admin');
   });
 
   test('no selection: the first owned or admin account', () => {
-    expect(onboardingAccountId([member, owned], null)).toBe('acc-owned');
+    expect(onboardingAccountId([member, owned], null, can)).toBe('acc-owned');
   });
 
   test('member-only accounts: the selected one, else the first', () => {
-    expect(onboardingAccountId([member, account('acc-m2', 'member')], 'acc-m2')).toBe('acc-m2');
-    expect(onboardingAccountId([member], 'gone')).toBe('acc-member');
+    expect(onboardingAccountId([member, account('acc-m2', 'member')], 'acc-m2', {})).toBe('acc-m2');
+    expect(onboardingAccountId([member], 'gone', {})).toBe('acc-member');
+  });
+
+  test('no verdict yet: no account counts as creatable', () => {
+    expect(onboardingAccountId([owned, admin], 'gone', {})).toBe('acc-owned');
   });
 
   test('no account: null', () => {
-    expect(onboardingAccountId([], 'gone')).toBeNull();
+    expect(onboardingAccountId([], 'gone', {})).toBeNull();
   });
 });
 
 describe('welcomeOffer', () => {
-  const base = { family: 'free' as const, canManageBilling: true, pricePerSeat: 40 };
+  const base = { family: 'free' as const, canManageBilling: true };
 
   test('iOS: benefits and Continue with Free only — no purchase action, no price', () => {
     const offer = welcomeOffer({ ...base, os: 'ios' });
@@ -92,10 +97,10 @@ describe('welcomeOffer', () => {
     expect(welcomeOffer({ ...base, os: 'ios', canManageBilling: false }).action).toBe('none');
   });
 
-  test('Android: Upgrade opens web billing, and the first benefit names the per-seat credit', () => {
+  test('Android: Upgrade opens web billing, and the first benefit names the shared credit pool', () => {
     const offer = welcomeOffer({ ...base, os: 'android' });
     expect(offer.action).toBe('upgrade');
-    expect(offer.benefits[0]).toBe('$40 of usage credit per teammate, every month');
+    expect(offer.benefits[0]).toBe('Unlimited members, one shared credit pool');
   });
 
   test('Android: a user who cannot manage billing is asked to go to an owner', () => {
@@ -108,7 +113,7 @@ describe('welcomeOffer', () => {
 
   test('shown only on the Free plan', () => {
     expect(welcomeOffer({ ...base, os: 'android' }).show).toBe(true);
-    expect(welcomeOffer({ ...base, os: 'android', family: 'team' }).show).toBe(false);
+    expect(welcomeOffer({ ...base, os: 'android', family: 'credits' }).show).toBe(false);
     expect(welcomeOffer({ ...base, os: 'ios', family: 'enterprise' }).show).toBe(false);
   });
 });

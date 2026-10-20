@@ -18,10 +18,10 @@ import { familyForTool } from '@/features/session/action-panel/shared/narration'
 import { partOutcome } from '@/features/session/tool/shared/tool-outcome';
 import { ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import { cn } from '@/lib/utils';
-import { isToolPart, type Part } from '@/ui';
+import type { ToolCallBlock } from '@kortix/sdk';
 import { memo } from 'react';
 import { normalizeActivityToolName } from '../session-activity-groups';
-import { stepLabel } from './step-label';
+import type { StepLabel } from './step-label';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   read: ReadCvLogoIcon,
@@ -47,21 +47,52 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 /** Exported so a group row can lead with the same glyph its members carry. */
-export function iconFor(part: Part) {
-  if (!isToolPart(part)) return StackIcon;
-  return ICONS[normalizeActivityToolName(part.tool)] ?? StackIcon;
+export function iconFor(call: ToolCallBlock) {
+  return ICONS[normalizeActivityToolName(call.name)] ?? StackIcon;
+}
+
+/**
+ * The label row of a step that is not a tool call: its glyph, verb and object.
+ * The turn modules share a "never silently drop a part" policy, so a part that
+ * is neither tool nor reasoning still gets this row (`StepBody`).
+ */
+export function StepLabelRow({
+  label,
+  running,
+  bare,
+}: {
+  label: StepLabel;
+  running: boolean;
+  bare?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="flex min-w-0 items-center gap-3">
+        {!bare && <StackIcon className="text-muted-foreground size-4 flex-none" />}
+        <span className="text-foreground/80 flex-none text-sm leading-[1.5]">
+          {running ? label.running : label.verb}
+        </span>
+        {label.object && (
+          <span
+            className="text-muted-foreground/70 min-w-0 truncate font-mono text-sm leading-[1.5]"
+            title={label.object}
+          >
+            {label.object}
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ActivityStepImpl({
-  part,
+  call,
   sessionId,
-  running,
   disableNavigation,
   bare,
 }: {
-  part: Part;
+  call: ToolCallBlock;
   sessionId: string;
-  running: boolean;
   disableNavigation?: boolean;
   /**
    * This row is the WHOLE burst — no summary line above it, no siblings, no
@@ -69,10 +100,6 @@ function ActivityStepImpl({
    */
   bare?: boolean;
 }) {
-  const label = stepLabel(part);
-  const Icon = iconFor(part);
-  const verb = running ? label.running : label.verb;
-
   /**
    * A bare row drops its leading glyph.
    *
@@ -100,32 +127,7 @@ function ActivityStepImpl({
    * new delegation alias cannot land on one side of this and not the other.
    */
   const hideIcon =
-    Boolean(bare) &&
-    (!isToolPart(part) || partOutcome(part) === 'ok') &&
-    !(isToolPart(part) && familyForTool(part.tool) === 'delegate');
-
-  const header = (
-    <div className="flex min-w-0 items-center gap-3">
-      {!hideIcon && <Icon className="text-muted-foreground size-4 flex-none" />}
-      <span className="text-foreground/80 flex-none text-sm leading-[1.5]">{verb}</span>
-      {label.object && (
-        <span
-          className="text-muted-foreground/70 min-w-0 truncate font-mono text-sm leading-[1.5]"
-          title={label.object}
-        >
-          {label.object}
-        </span>
-      )}
-    </div>
-  );
-
-  if (!isToolPart(part)) {
-    // Genuinely unknown part types are neither tool nor reasoning, but the
-    // turn modules share a "never silently drop a part" policy (stepLabel
-    // falls back to a generic 'Used'/'Using' label rather than omitting it).
-    // There is no tool state to render, so this is the label row only.
-    return <div className="min-w-0">{header}</div>;
-  }
+    Boolean(bare) && partOutcome(call) === 'ok' && familyForTool(call.name) !== 'delegate';
 
   // The tool's own renderer is the row: it draws its own icon, title, subtitle,
   // and duration, and is itself expandable for the full output. A label row on
@@ -173,13 +175,13 @@ function ActivityStepImpl({
         '[--tool-indent:1.75rem]',
       )}
     >
-      <ToolPartRenderer part={part} sessionId={sessionId} disableNavigation={disableNavigation} />
+      <ToolPartRenderer call={call} sessionId={sessionId} disableNavigation={disableNavigation} />
     </div>
   );
 }
 
 /**
- * Every prop here is a scalar or the part itself, and a part keeps its identity
+ * Every prop here is a scalar or the call itself, and a call keeps its identity
  * until it changes — so the default shallow compare is exactly right, and this
  * is the boundary that stops a settled tool row (and its shiki-highlighted
  * card) from re-rendering on every frame of the turn it sits in.

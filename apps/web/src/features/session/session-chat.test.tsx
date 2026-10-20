@@ -36,6 +36,12 @@ let inboxPrompts: SessionPrompt[] = [];
 let busy = false;
 let persistedOutcome: SessionTurnOutcome = {};
 let auditPending = false;
+/** The `useRuntimeCommands` query's `data`: `undefined` while it loads, the list once it has answered. */
+let runtimeCommandsData: { name: string }[] | undefined = [];
+/** The `data` the agent-scoped call (`useRuntimeCommands({ agent })`) sees — same cache today, its own hook instance. */
+let agentCommandsData: { name: string }[] | undefined = [];
+/** The props the last render handed the composer — the host-wire observables. */
+let composerProps: { commandsResolved?: boolean } | undefined;
 mock.module('@kortix/sdk/react', () => ({
   ...realSdk,
   useSessionTurnOutcome: () => persistedOutcome,
@@ -51,7 +57,9 @@ mock.module('@kortix/sdk/react', () => ({
   useRuntimeReady: () => true,
   useRuntimeSession: () => ({ data: { id: 'session-fixture' }, isFetched: true }),
   useRuntimeAgents: () => ({ data: [{ name: 'build' }] }),
-  useRuntimeCommands: () => ({ data: [] }),
+  useRuntimeCommands: (opts?: { agent?: string }) => ({
+    data: opts !== undefined ? agentCommandsData : runtimeCommandsData,
+  }),
   useRuntimeProviders: () => ({ data: [], isLoading: false }),
   useRuntimeSessions: () => ({ data: [] }),
   useRuntimeConfig: () => ({ data: {} }),
@@ -86,32 +94,44 @@ mock.module('@/features/session/session-permission-prompt', () => ({
 }));
 mock.module('@/features/session/composer/composer', () => ({
   COMPOSER_SHELL_CLASS: '',
-  Composer: ({
-    aboveSlot,
-    inputSlot,
-    lockForApproval,
-  }: {
+  Composer: (props: {
     aboveSlot?: React.ReactNode;
     inputSlot?: React.ReactNode;
     lockForApproval?: boolean;
-  }) => (
-    <div>
-      {aboveSlot}
-      {inputSlot}
-      <textarea aria-label="Message" disabled={lockForApproval} />
-      <button type="button" disabled={lockForApproval}>
-        Send
-      </button>
-    </div>
-  ),
+    commandsResolved?: boolean;
+  }) => {
+    composerProps = props;
+    return (
+      <div>
+        {props.aboveSlot}
+        {props.inputSlot}
+        <textarea aria-label="Message" disabled={props.lockForApproval} />
+        <button type="button" disabled={props.lockForApproval}>
+          Send
+        </button>
+      </div>
+    );
+  },
 }));
 const { SessionChat, deriveTurnErrorAbortState, deriveTurnErrorPresentation } =
   await import('./session-chat');
+const sdk = await import('@kortix/sdk');
 const { changeRequestKeys } = await import(
   '@/features/project-files/hooks/use-change-requests'
 );
 
-const errorTurn = (error?: unknown) => ({ assistantMessages: [{ info: { error } }] });
+/** A turn whose one reply carries `error`, as the transcript reads it (the `fromV1` view, grouped). */
+const errorTurn = (error?: unknown) => {
+  const { sessionLogOfV1Rows, sessionLogTurns } = sdk;
+  const rows = [
+    { info: { id: 'msg_u', sessionID: 'ses', role: 'user', time: { created: 1 } }, parts: [] },
+    {
+      info: { id: 'msg_a', sessionID: 'ses', role: 'assistant', parentID: 'msg_u', time: { created: 2, completed: 3 }, ...(error ? { error } : {}) },
+      parts: [{ id: 'prt_a', sessionID: 'ses', messageID: 'msg_a', type: 'text', text: 'x' }],
+    },
+  ];
+  return sessionLogTurns(sessionLogOfV1Rows('kses', 'ses', rows as never).threads[0]!)[0]!;
+};
 
 const changeRequestFixture = (): ChangeRequest => ({
   cr_id: 'cr-fixture',
@@ -718,5 +738,58 @@ describe('SessionChat moved turn sections', () => {
         busy = false;
       }
     });
+  });
+});
+
+// The unresolved-chip refusal (KRTX-1903) consumes `commandsResolved` — the bit
+// that says the live command list has answered at least once. The composer
+// cannot derive it from the `commands` array (that is `[]` both while the list
+// loads and when it resolved empty), so this host wire must forward the RAW
+// query state, from the same hook instance whose (filtered) list the composer
+// consumes. A normalized `agentCommands || []` reads as resolved forever, and
+// the refusal could never fire on this host.
+describe('SessionChat command-list resolution wire', () => {
+  const renderChat = () =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+          <SidebarProvider>
+            <SessionChat
+              sessionId="session-fixture"
+              projectId="project-fixture"
+              projectSessionId="project-session-fixture"
+            />
+          </SidebarProvider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  test('a never-resolved list reaches the composer as unresolved; a resolved one does not', () => {
+    agentCommandsData = undefined; // loading: a fresh mount, or a reset the composer cannot see
+    try {
+      renderChat();
+      expect(composerProps?.commandsResolved).toBe(false);
+      agentCommandsData = []; // resolved, and the agent has no commands
+      renderChat();
+      expect(composerProps?.commandsResolved).toBe(true);
+    } finally {
+      agentCommandsData = [];
+    }
+  });
+
+  test('the wire follows the agent-scoped instance, not the agent-less one beside it', () => {
+    // Two `useRuntimeCommands` instances live in this component: the agent-less
+    // one (another consumer's list) and the agent-scoped one the composer eats.
+    // They share one cache entry today, so only a test that pulls them apart
+    // can pin that the resolution bit rides the instance that feeds `commands`.
+    agentCommandsData = undefined;
+    runtimeCommandsData = [{ name: 'resolved-elsewhere' }];
+    try {
+      renderChat();
+      expect(composerProps?.commandsResolved).toBe(false);
+    } finally {
+      agentCommandsData = [];
+      runtimeCommandsData = [];
+    }
   });
 });

@@ -139,6 +139,8 @@ export interface FileContentRendererProps {
    * "file does not exist" state. No effect on the default viewer chrome.
    */
   onStatusChange?: (status: 'loading' | 'ready' | 'error') => void;
+  /** The image shelf (zoom, rotate). `'none'` for a thumbnail. Default `'hover'`. */
+  imageControls?: 'hover' | 'always' | 'none';
   /** PDF only: start the zoom plugin at fit-to-page instead of the numeric
    *  default. No effect on any other file category. */
   fitOnOpen?: boolean;
@@ -163,6 +165,7 @@ export function FileContentRenderer({
   markdownPreview,
   onMarkdownPreviewChange,
   onStatusChange,
+  imageControls,
   fitOnOpen = false,
   codeEditorEditorClassName,
   reloadKey = 0,
@@ -311,7 +314,12 @@ export function FileContentRenderer({
           {/* Image content (non-HEIC) */}
           {!isLoading && !error && imageDataUrl && (
             <Suspense fallback={<RendererFallback />}>
-              <ImageRenderer url={imageDataUrl} className="h-full" fileName={fileName} />
+              <ImageRenderer
+                url={imageDataUrl}
+                className="h-full"
+                fileName={fileName}
+                controls={imageControls}
+              />
             </Suspense>
           )}
 
@@ -319,7 +327,12 @@ export function FileContentRenderer({
           {isHeicImage && (blobLoading || heicConverting) && <RendererFallback />}
           {isHeicImage && !blobLoading && !blobError && heicImageUrl && !heicConverting && (
             <Suspense fallback={<RendererFallback />}>
-              <ImageRenderer url={heicImageUrl} className="h-full" fileName={fileName} />
+              <ImageRenderer
+                url={heicImageUrl}
+                className="h-full"
+                fileName={fileName}
+                controls={imageControls}
+              />
             </Suspense>
           )}
 
@@ -504,7 +517,9 @@ export function FileContentRenderer({
             fileContent.type === 'text' &&
             !imageDataUrl &&
             !csvAsTable &&
-            fileCategory !== 'html' && (
+            // HTML has its own preview/source branches above, except from a
+            // bytes-only source: there it is plain text in the editor.
+            !isHtmlFile && (
               <div
                 className={cn(
                   'relative flex flex-col',
@@ -557,6 +572,7 @@ export function FileContentRenderer({
                     <div className="mx-auto w-full max-w-2xl">
                       <MarkdownWithFrontmatter
                         content={hasUnsavedChanges ? latestContentRef.current : displayContent}
+                        documentPath={filePath}
                       />
                     </div>
                   </div>

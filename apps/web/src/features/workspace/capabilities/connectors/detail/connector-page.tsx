@@ -1,4 +1,13 @@
 'use client';
+import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
+import { invalidateConnections } from '../invalidate-connections';
+import {
+  ConnectorNoticeRow,
+  NOTICE_BODY,
+  NOTICE_TITLE,
+  NoticeLogLine,
+} from './connector-notice-view';
+import { DetailPageShell, DETAIL_PAGE_COLUMN as PAGE_COLUMN } from './detail-page-shell';
 
 import { getProjectDetail, listConnectors, syncConnectors, type AdminConnector } from '@kortix/sdk';
 import { contract, FRESHNESS, qk, useProjectAccountId } from '@kortix/sdk/react';
@@ -14,7 +23,7 @@ import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix'
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SplitSheet, SplitSheetMain } from '@/components/ui/split-sheet';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -25,7 +34,6 @@ import {
   appRefFromLocation,
   connectorsHref,
 } from '@/features/workspace/capabilities/connectors/connector-routes';
-import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
 import { startDiscoveredSignIn } from '@/features/workspace/customize/sections/connector-oauth2-start';
 import { SetCredentialModal } from '@/features/workspace/customize/sections/connectors-view';
 import { useOauth2Return } from '@/hooks/connectors/use-oauth2-return';
@@ -34,20 +42,18 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 
 import { isManagedConnectorProvider } from '../provider-label';
-import { ConnectorAccounts } from './connector-accounts';
-import { connectorNotice, splitNoticeReason } from './connector-notice';
+import { ConnectorDetailTabs } from './connector-detail-tabs';
+import { ConnectorMoveRow, useConnectorMove } from './connector-move-row';
+import { connectorNotice, noticeButton, noticeTarget } from './connector-notice';
 import { connectHandoff, connectorPageState } from './connector-page-state';
-import { ConnectorSettings } from './connector-settings';
 import { connectorRunsOver, connectorStatusTone } from './connector-status';
 import { CONNECTOR_TAB_LABEL_KEY, connectorTabs, type ConnectorTab } from './connector-tabs';
-import { ConnectorTools } from './connector-tools';
-import { ConnectorTriggers, useConnectorEventTriggers } from './connector-triggers';
+import { useConnectorEventTriggers } from './connector-triggers';
 import { ProviderInfo, providerName } from './provider-info';
 import { ConnectorStatusBadge } from './status-badge';
 import { useConnectorDetail } from './use-connector-detail';
 
 /** The column `CapabilityPageShell` gives the list page beside this one. */
-const PAGE_COLUMN = 'mx-auto w-full max-w-5xl space-y-6 px-4 py-10 pb-20 lg:py-14';
 
 /**
  * `/projects/<id>/customize/connectors/<app>/<connector>` — one connector, as
@@ -84,10 +90,19 @@ export function ConnectorPage({
     connectorsQuery.data?.connectors.find((candidate) => candidate.slug === connectorSlug) ?? null;
 
   const invalidate = useCallback(() => {
-    for (const key of connectorConnectionQueryKeys(projectId)) {
-      void queryClient.invalidateQueries({ queryKey: key });
-    }
+    void invalidateConnections(queryClient, projectId);
   }, [projectId, queryClient]);
+  // After a remove, the deleted slug's own queries (its config) stay out of
+  // the refetch: they would 404 and toast "connector not found".
+  const invalidateAfterRemove = useCallback(() => {
+    const removed = qk.project.connectorConfig(projectId, connectorSlug);
+    for (const key of connectorConnectionQueryKeys(projectId)) {
+      void queryClient.invalidateQueries({
+        queryKey: key,
+        predicate: (query) => !removed.every((part, index) => query.queryKey[index] === part),
+      });
+    }
+  }, [connectorSlug, projectId, queryClient]);
   useOauth2Return(invalidate);
 
   const app = appRefFromLocation(appSegment, search);
@@ -102,61 +117,55 @@ export function ConnectorPage({
 
   if (state === 'loading') {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto" aria-busy>
-        <div className={PAGE_COLUMN}>
-          <Skeleton className="h-4 w-24 rounded-sm py-0" />
-          <div className="flex items-center gap-3">
-            <Skeleton className="size-10 py-0" />
-            <Skeleton className="h-6 w-48 rounded-sm py-0" />
-          </div>
-          <Skeleton className="h-8 w-64 py-0" />
-          <Skeleton className="h-20 w-full py-0" />
-          <Skeleton className="h-20 w-full py-0" />
+      <DetailPageShell busy>
+        <Skeleton className="h-4 w-24 rounded-sm py-0" />
+        <div className="flex items-center gap-3">
+          <Skeleton className="size-10 py-0" />
+          <Skeleton className="h-6 w-48 rounded-sm py-0" />
         </div>
-      </div>
+        <Skeleton className="h-8 w-64 py-0" />
+        <Skeleton className="h-20 w-full py-0" />
+        <Skeleton className="h-20 w-full py-0" />
+      </DetailPageShell>
     );
   }
 
   if (state === 'error') {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={PAGE_COLUMN}>
-          <ErrorState
-            size="sm"
-            title={tI18nComplete.raw('textbda9de7688c0')}
-            description={
-              connectorsQuery.error instanceof Error
-                ? connectorsQuery.error.message
-                : tI18nComplete.raw('textd8eda34a089a')
-            }
-            action={
-              <Button variant="outline" size="sm" onClick={() => void connectorsQuery.refetch()}>
-                {tI18nComplete.raw('text942087cc2d41')}
-              </Button>
-            }
-          />
-        </div>
-      </div>
+      <DetailPageShell>
+        <ErrorState
+          size="sm"
+          title={tI18nComplete.raw('textbda9de7688c0')}
+          description={
+            connectorsQuery.error instanceof Error
+              ? connectorsQuery.error.message
+              : tI18nComplete.raw('textd8eda34a089a')
+          }
+          action={
+            <Button variant="outline" size="sm" onClick={() => void connectorsQuery.refetch()}>
+              {tI18nComplete.raw('text942087cc2d41')}
+            </Button>
+          }
+        />
+      </DetailPageShell>
     );
   }
 
   if (!connector) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={PAGE_COLUMN}>
-          <EmptyState
-            icon={PlugIcon}
-            size="sm"
-            title={t('notFoundTitle')}
-            description={t('notFoundDescription')}
-            action={
-              <Button asChild size="sm" variant="secondary">
-                <Link href={connectorsHref(projectId, 'connected')}>{t('backToConnectors')}</Link>
-              </Button>
-            }
-          />
-        </div>
-      </div>
+      <DetailPageShell>
+        <EmptyState
+          icon={PlugIcon}
+          size="sm"
+          title={t('notFoundTitle')}
+          description={t('notFoundDescription')}
+          action={
+            <Button asChild size="sm" variant="secondary">
+              <Link href={connectorsHref(projectId, 'connected')}>{t('backToConnectors')}</Link>
+            </Button>
+          }
+        />
+      </DetailPageShell>
     );
   }
 
@@ -168,6 +177,7 @@ export function ConnectorPage({
       canWrite={canWrite}
       backHref={backHref}
       onChanged={invalidate}
+      onRemoved={invalidateAfterRemove}
     />
   );
 }
@@ -178,12 +188,15 @@ function ConnectorPageBody({
   canWrite,
   backHref,
   onChanged,
+  onRemoved,
 }: {
   projectId: string;
   connector: AdminConnector;
   canWrite: boolean;
   backHref: string;
   onChanged: () => void;
+  /** The connector was deleted: refresh everything but its own queries. */
+  onRemoved: () => void;
 }) {
   const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -204,7 +217,6 @@ function ConnectorPageBody({
     headerCta,
     connectPending,
     refreshAccounts,
-    replaceSoleAccount,
     startPrivateSession,
     reconnectAccount,
     credentialTarget,
@@ -365,20 +377,18 @@ function ConnectorPageBody({
     },
     onError: (error: Error) => errorToast(error.message),
   });
-  // The one account the banner's button can act on. A shared account is
-  // changed only by someone who manages the project's connections.
-  const soleAccount = accounts.length === 1 ? accounts[0]! : null;
-  const canFixSoleAccount =
-    soleAccount !== null && (soleAccount.owner_type !== 'project' || canManageConnections);
-  const mayChange = (account: { owner_type: string }) =>
-    account.owner_type !== 'project' || canManageConnections;
-  // The account the sign-in button finishes: the first one not signed in that
-  // the caller may change, else the only account.
-  const signInAccount =
-    accounts.find(
-      (account) =>
-        (account.authorized === false || account.status !== 'active') && mayChange(account),
-    ) ?? (canFixSoleAccount ? soleAccount : null);
+  // The banner's button fixes one of the caller's own accounts. With none it
+  // opens "Add account" ("Only you" preselected), never the project's shared
+  // account: a shared account is signed in from its own row.
+  // A Pipedream connector that can move: the move is the fix. A new Pipedream
+  // account would only have to sign in again after the move.
+  const move = useConnectorMove(projectId, connector);
+  const fix = move?.to ? null : noticeButton(notice, noticeTarget(accounts), isManagedProvider);
+  const runFix = () => {
+    if (fix?.run === 'add') requestAdd();
+    else if (fix?.run === 'sign_in' && fix.account) signIn.mutate(fix.account);
+    else if (fix?.account) reconnectAccount(fix.account);
+  };
   // Connect on an account row: the same sign-in the notice runs. A managed
   // account reconnects through its provider window.
   const needsSignIn = isManagedProvider || Boolean(connector.authSecret);
@@ -488,31 +498,19 @@ function ConnectorPageBody({
             </dl>
 
             {notice.kind !== 'none' ? (
-              <NoticeRow
-                title={t(
-                  notice.kind === 'error'
-                    ? 'noticeErrorTitle'
-                    : notice.kind === 'sign_in'
-                      ? 'noticeSignInTitle'
-                      : notice.kind === 'no_account'
-                        ? 'noticeNoAccountTitle'
-                        : 'noticeCredentialTitle',
-                  { name: displayName },
-                )}
+              <ConnectorNoticeRow
+                title={t(NOTICE_TITLE[notice.kind], { name: displayName })}
                 detail={
                   notice.kind === 'error' && notice.reason ? (
                     <NoticeLogLine reason={notice.reason} />
                   ) : (
                     <p className="text-muted-foreground text-xs text-pretty">
-                      {notice.kind === 'error'
-                        ? t('noticeErrorBody')
-                        : notice.kind === 'sign_in'
-                          ? t('noticeSignInBody', { name: displayName })
-                          : notice.kind === 'no_account'
-                            ? t('noticeNoAccountBody', { name: displayName })
-                            : isManagedProvider
-                              ? t('noticeReconnectBody')
-                              : t('noticeCredentialBody', { name: displayName })}
+                      {t(
+                        notice.kind === 'needs_credential' && isManagedProvider
+                          ? 'noticeReconnectBody'
+                          : NOTICE_BODY[notice.kind],
+                        { name: displayName },
+                      )}
                     </p>
                   )
                 }
@@ -529,40 +527,40 @@ function ConnectorPageBody({
                     {tI18nComplete.raw('text942087cc2d41')}
                   </Button>
                 ) : null}
-                {notice.kind === 'sign_in' ? (
-                  signInAccount ? (
-                    <Button
-                      size="sm"
-                      className="gap-1.5"
-                      onClick={() => signIn.mutate(signInAccount)}
-                      disabled={signIn.isPending}
-                    >
-                      {signIn.isPending ? (
-                        <SessionDotMatrix size={14} className="shrink-0" />
-                      ) : null}
-                      {t('noticeSignInAction')}
-                    </Button>
-                  ) : null
-                ) : notice.action === 'add_account' ? (
+                {fix?.kind === 'add_account' ? (
                   addAccountControl
-                ) : notice.action !== 'retry' && canFixSoleAccount ? (
-                  // One account: fix it here. `replaceSoleAccount` opens
-                  // credential entry for a direct account and the provider
-                  // window for a managed one.
+                ) : fix?.kind === 'sign_in' ? (
                   <Button
                     size="sm"
                     className="gap-1.5"
-                    onClick={replaceSoleAccount}
-                    disabled={connectPending}
+                    onClick={runFix}
+                    disabled={signIn.isPending}
                   >
+                    {signIn.isPending ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+                    {t('noticeSignInAction')}
+                  </Button>
+                ) : fix ? (
+                  // Fix it here: credential entry for a direct account, the
+                  // provider window for a managed one, or "Add account" for
+                  // a caller with no account of their own.
+                  <Button size="sm" className="gap-1.5" onClick={runFix} disabled={connectPending}>
                     {connectPending ? <Loading className="size-4 shrink-0" /> : null}
-                    {isManagedProvider
-                      ? tI18nComplete.raw('textbf8a9eab9e7e')
-                      : tI18nComplete.raw('text3d6627454174')}
+                    {fix.kind === 'connect'
+                      ? t('connectAccount')
+                      : fix.kind === 'reconnect'
+                        ? tI18nComplete.raw('textbf8a9eab9e7e')
+                        : tI18nComplete.raw('text3d6627454174')}
                   </Button>
                 ) : null}
-              </NoticeRow>
+              </ConnectorNoticeRow>
             ) : null}
+            <ConnectorMoveRow
+              projectId={projectId}
+              connector={connector}
+              displayName={displayName}
+              canWrite={canWrite}
+              onMoved={onChanged}
+            />
           </div>
 
           <Tabs
@@ -583,76 +581,34 @@ function ConnectorPageBody({
               ))}
             </TabsList>
 
-            <TabsContent value="accounts">
-              {connectionsQuery.isError ? (
-                <ErrorState
-                  size="sm"
-                  title={tI18nComplete.raw('textbda9de7688c0')}
-                  description={
-                    connectionsQuery.error instanceof Error
-                      ? connectionsQuery.error.message
-                      : tI18nComplete.raw('textd8eda34a089a')
-                  }
-                  action={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void connectionsQuery.refetch()}
-                    >
-                      {tI18nComplete.raw('text942087cc2d41')}
-                    </Button>
-                  }
-                />
-              ) : (
-                <ConnectorAccounts
-                  projectId={projectId}
-                  connector={connector}
-                  displayName={displayName}
-                  canWrite={canWrite}
-                  canManageConnections={canManageConnections}
-                  onChanged={onChanged}
-                  onRemoved={() => router.push(connectorsHref(projectId, 'connected'))}
-                  onStartSession={startPrivateSession}
-                  onSetCredential={setCredentialTarget}
-                  onConnect={needsSignIn ? connectAccount : undefined}
-                  addRequest={addRequest}
-                  onAddRequestHandled={() => setAddRequest(0)}
-                  showAccountInfo
-                />
-              )}
-            </TabsContent>
-
-            <TabsContent value="tools">
-              <ConnectorTools
-                projectId={projectId}
-                connector={connector}
-                displayName={displayName}
-                canWrite={canWrite}
-                disabled={false}
-                onChanged={onChanged}
-              />
-            </TabsContent>
-
-            <TabsContent value="triggers">
-              <ConnectorTriggers
-                projectId={projectId}
-                connector={connector}
-                displayName={displayName}
-              />
-            </TabsContent>
-
-            <TabsContent value="settings">
-              <ConnectorSettings
-                projectId={projectId}
-                connector={connector}
-                displayName={displayName}
-                onChanged={onChanged}
-                onRemoved={() => {
-                  onChanged();
+            <ConnectorDetailTabs
+              connectionsQuery={connectionsQuery}
+              accounts={{
+                projectId,
+                connector,
+                displayName,
+                canWrite,
+                canManageConnections,
+                onChanged,
+                onStartSession: startPrivateSession,
+                addRequest,
+                onAddRequestHandled: () => setAddRequest(0),
+                onRemoved: () => router.push(connectorsHref(projectId, 'connected')),
+                onSetCredential: setCredentialTarget,
+                onConnect: needsSignIn ? connectAccount : undefined,
+                showAccountInfo: true,
+              }}
+              settings={{
+                projectId: projectId,
+                connector: connector,
+                displayName: displayName,
+                onChanged: onChanged,
+                onRemoved: () => {
                   router.push(connectorsHref(projectId, 'connected'));
-                }}
-              />
-            </TabsContent>
+                  onRemoved();
+                },
+              }}
+            />
           </Tabs>
         </div>
       </SplitSheetMain>
@@ -692,35 +648,3 @@ function ConnectorPageBody({
  * failure as a quiet log line, and the buttons that fix it. No icon tile; the
  * Status badge above already carries the color.
  */
-function NoticeRow({
-  title,
-  detail,
-  children,
-}: {
-  title: string;
-  detail: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div role="alert" className="flex items-center gap-4 px-4 py-3">
-      <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-foreground text-sm font-medium">{title}</p>
-        {detail}
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5">{children}</div>
-    </div>
-  );
-}
-
-/** `401  MCP tools/list failed`: the status code in red, the rest muted mono. */
-function NoticeLogLine({ reason }: { reason: string }) {
-  const { code, detail } = splitNoticeReason(reason);
-  return (
-    <p className="text-muted-foreground flex min-w-0 items-center gap-3 font-mono text-xs">
-      {code ? <span className="text-destructive shrink-0">{code}</span> : null}
-      <span className="truncate" title={reason}>
-        {detail}
-      </span>
-    </p>
-  );
-}

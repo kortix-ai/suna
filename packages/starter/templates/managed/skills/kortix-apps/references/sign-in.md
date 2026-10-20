@@ -43,8 +43,12 @@ that link's sign-in cookie, so the App gets tokens for the user the link was
 minted for. That is how you test an App as a member.
 
 The token proves who the member is, not what they may do. Every person any
-App admits can get a token for every App that App uses. Check `groups` or
-`roles` in every function whose data is not meant for all of them.
+App admits can get a token for every App that App uses, even when they cannot
+open the used App themselves. Keep a backend App `private`: it stays off their
+App list and its own URL refuses them. Such a token carries `via_app_id`, the
+id of the App they signed in to. Check `groups`, `roles` or `via_app_id` in
+every function whose data is not meant for all of them; `via_app_id` lets one
+backend serve each App's readers only that App's data.
 
 ## SDK version
 

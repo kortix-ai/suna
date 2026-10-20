@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { MessageWithParts, Turn } from '@/lib/session/types';
+import type { SessionLogMessage } from '@kortix/sdk';
+import { threadOf } from '@/lib/testing/session-log';
 import {
   TURN_META_LABELS,
   formatDistanceStrictAgo,
@@ -9,19 +10,17 @@ import {
   turnMetaRows,
 } from './turn-meta';
 
+/** A v1 row's times as the session-log message the turn reads (`created_at`, `completed_at`). */
 function message(
   id: string,
   role: 'user' | 'assistant',
   time: { created?: number; completed?: number } | undefined,
-): MessageWithParts {
-  return {
-    info: { id, role, sessionID: 's1', time } as unknown as MessageWithParts['info'],
-    parts: [],
-  };
+): SessionLogMessage {
+  return threadOf([{ info: { id, role, sessionID: 's1', time }, parts: [{ type: 'text', id: `${id}-p`, text: 'x' }] }]).messages[0]!;
 }
 
-function turn(user: MessageWithParts, ...assistants: MessageWithParts[]): Turn {
-  return { userMessage: user, assistantMessages: assistants };
+function turn(user: SessionLogMessage, ...assistant: SessionLogMessage[]) {
+  return { user, assistant };
 }
 
 const cost = (value: number, input: number, output: number) => ({
@@ -109,7 +108,7 @@ describe('turnMetaRows — labelled rows in display order', () => {
     ).toEqual([
       { label: 'Finished', value: '2 minutes ago' },
       { label: 'Duration', value: '1m 5s' },
-      { label: 'Cost', value: '$0.03' },
+      { label: 'Cost', value: '3.21 credits' },
       { label: 'Tokens', value: '2.0k' },
     ]);
   });
@@ -118,7 +117,7 @@ describe('turnMetaRows — labelled rows in display order', () => {
     expect(turnMetaRows({ endedAt: null, now, durationMs: 400, cost: undefined })).toEqual([]);
   });
 
-  test('zero cost and zero tokens are omitted, not rendered as $0.00 / 0', () => {
+  test('zero cost and zero tokens are omitted, not rendered as 0 credits / 0', () => {
     expect(turnMetaRows({ endedAt: now, now, durationMs: null, cost: cost(0, 0, 0) })).toEqual([
       { label: 'Finished', value: '0 seconds ago' },
     ]);

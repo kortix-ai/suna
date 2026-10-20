@@ -1,12 +1,12 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@kortix/ui/dropdown-menu';
 import { classifyModelChange } from '@/lib/mid-session-change';
 import { qk } from '@/lib/query-keys';
 import { authHeaders } from '@/lib/session';
@@ -14,8 +14,8 @@ import { getSessionToken } from '@/lib/session';
 import { sessionModelKey, useSessionModel } from '@/lib/session-model';
 import { useProjectModels } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, Cpu } from 'lucide-react';
-import { toast } from 'sonner';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { CheckIcon, CpuIcon } from '@phosphor-icons/react';
 
 /**
  * Change the model mid-session.
@@ -72,12 +72,12 @@ export function ModelSwitcher({ projectId, sessionId }: { projectId: string; ses
       // comment above. See classifyModelChange.
       const outcome = classifyModelChange(result);
       if (outcome.kind === 'half_applied') {
-        toast.error(outcome.message, { description: outcome.detail });
+        errorToast(outcome.message, { description: outcome.detail });
         return;
       }
-      toast.success(outcome.message);
+      successToast(outcome.message);
     },
-    onError: (err: Error) => toast.error(err.message || 'Could not change the model'),
+    onError: (err: Error) => errorToast(err.message || 'Could not change the model'),
   });
 
   const options = models;
@@ -87,7 +87,7 @@ export function ModelSwitcher({ projectId, sessionId }: { projectId: string; ses
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-1.5" disabled={change.isPending}>
-          <Cpu className="size-3.5 shrink-0" />
+          <CpuIcon className="size-3.5 shrink-0" />
           <span className="max-w-40 truncate text-xs">{currentModel ?? 'Model'}</span>
         </Button>
       </DropdownMenuTrigger>
@@ -103,7 +103,7 @@ export function ModelSwitcher({ projectId, sessionId }: { projectId: string; ses
               className="gap-2"
             >
               {id === currentModel ? (
-                <Check className="size-3.5 shrink-0" />
+                <CheckIcon className="size-3.5 shrink-0" />
               ) : (
                 <span className="size-3.5 shrink-0" />
               )}

@@ -82,14 +82,16 @@ describe('the waiting row has a fallback when no turn owns it', () => {
   test('with a queue on screen it renders inside the turn before the queue, never under it', () => {
     // The map hands the decision to the memoized row as `showBusyRow`…
     expect(chat).toMatch(
-      /showBusyRow=\{\s*showFallbackBusyRow &&\s*fallbackBusyRowTurnId === turn\.userMessage\.info\.id\s*\}/,
+      /showBusyRow=\{\s*showFallbackBusyRow &&\s*fallbackBusyRowTurnId === turn\.id\s*\}/,
     );
-    // …and the row draws it INSIDE the turn's viewport, after the turn.
+    // …and the row draws it INSIDE the turn's viewport (the slice ends at its
+    // close tag), after the turn. The viewport's own props are not pinned.
     const row = between(turn, 'const TranscriptTurnRow = memo(', '</TurnViewport>');
-    expect(row).toContain('<TurnViewport turnId={turnId} className={viewportClassName}>');
-    expect(row).toContain(
-      '{showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}',
-    );
+    const indicator =
+      '{showBusyRow && <SessionBusyIndicator sessionId={turnProps.sessionId} className="mt-2.5" />}';
+    expect(row).toMatch(/<TurnViewport\s+turnId=\{turnId\}\s+className=\{viewportClassName\}/);
+    expect(row.indexOf(indicator)).toBeGreaterThan(row.indexOf('<SessionTurn {...turnProps} />'));
+    expect(row.indexOf('<SessionTurn {...turnProps} />')).toBeGreaterThan(row.indexOf('<TurnViewport'));
     expect(chat).toContain('fallbackBusyRowAfterTurnId({');
   });
 });
@@ -104,9 +106,9 @@ describe('the waiting row has a fallback when no turn owns it', () => {
  */
 describe('the status phrase is gated at its source', () => {
   test('a turn with no assistant content produces no status at all', () => {
-    expect(turn).toContain('const hasAssistantContent = turn.assistantMessages.length > 0;');
+    expect(turn).toContain('const hasAssistantContent = turn.assistant.length > 0;');
     expect(turn).toContain(
-      '() => (hasAssistantContent ? getTurnStatus(allParts, childMessages) : \'\'),',
+      '() => (hasAssistantContent ? sessionLogActivityText({ blocks }) : \'\'),',
     );
   });
 
@@ -151,7 +153,7 @@ describe("the first prompt's text outlives the store's copy, locally", () => {
 
   test('settled means answered, or the session is finished with it — and that clears the local copy', () => {
     expect(chat).toContain(
-      'const firstPromptSettled =\n    turns.length > 0 &&\n    (turns[0].assistantMessages.length > 0 || (!isBusy && promptInbox.prompts.length === 0));',
+      'const firstPromptSettled =\n    turns.length > 0 &&\n    (turns[0].assistant.length > 0 || (!isBusy && promptInbox.prompts.length === 0));',
     );
     expect(chat).toContain('if (firstPromptSettled) {\n    if (firstPromptKeep) setFirstPromptKeep(null);');
   });
@@ -173,9 +175,9 @@ test('a bubble reads as queued only while it waits behind a turn', () => {
   // that the transcript feeds it the working-turn resolution, not the inbox alone. The
   // inbox row still reaches the bubble (`data-pending-prompt-id`).
   expect(chat).toContain('const confirmedActive = turnIsConfirmedActive({');
-  expect(chat).toContain('!confirmedActive && turn.assistantMessages.length === 0');
+  expect(chat).toContain('!confirmedActive && turn.assistant.length === 0');
   const pending = between(chat, 'pending={turnRendersQueued({', 'pendingPrompt={pendingPrompt}');
-  expect(pending).toContain('turnId: turn.userMessage.info.id,');
+  expect(pending).toContain('turnId: turn.id,');
   expect(pending).toContain('resolution: workingTurn,');
   expect(pending).toContain('sessionWorking: lastTurnWorking,');
   expect(pending).toContain('confirmedActive,');
@@ -234,10 +236,19 @@ describe('waiting on the user is not the agent working', () => {
     expect(turn).toContain('if (!agentWorking) return;');
   });
 
+  test('the clock also covers a silent turn (KRTX-1872): it never gates on the status phrase', () => {
+    // The status phrase stays empty until the turn's first assistant message,
+    // and the label used to be gated on it — a fresh account's first turn sat
+    // ~5 minutes on a bare "Thinking" with no clock and read as frozen. The
+    // phrase must stay a content claim; the clock runs on the agent alone.
+    const label = between(turn, 'const statusElapsedLabel =', 'formatDuration(statusElapsedMs)');
+    expect(label).not.toContain('throttledStatus');
+  });
+
   test('`working` itself is untouched — the turn IS still open', () => {
     // Every structural decision below still reads it: which steps render, and
     // where answered questions go.
     expect(turn).toContain('const working = isWorkingTurn && sessionWorking;');
-    expect(turn).toContain('{!hasSteps && !working && !hasReasoning && answeredQuestionParts.length > 0 && (');
+    expect(turn).toContain('{!hasSteps && !working && !hasReasoning && answeredQuestionCalls.length > 0 && (');
   });
 });

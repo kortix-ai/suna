@@ -1,7 +1,10 @@
 'use client';
 
+import { resolveSectionLabels } from './session-section-labels';
+
 import { useTranslations } from '@/i18n/use-translations';
 import type { ComponentType } from 'react';
+import Link from 'next/link';
 
 import {
   matchesSourceFilters,
@@ -24,8 +27,6 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { resolveLabelFacetOptions } from '@/features/workspace/project-sidebar/session-label-facet';
-import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 import {
   matchesAccessFilters,
   matchesOwnerFilters,
@@ -35,29 +36,27 @@ import {
   UNKNOWN_OWNER_KEY,
   type SessionAccessFilter,
 } from '@/features/workspace/project-sessions/session-owner-filters';
+import { resolveLabelFacetOptions } from '@/features/workspace/project-sidebar/session-label-facet';
+import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
 import {
   selectAccessFilters,
-  selectLabelFilters,
   selectGroupMode,
   selectHiddenSections,
-  selectOwnerFilters,
+  selectLabelFilters,
   selectOrderMode,
+  selectOwnerFilters,
   selectSourceFilters,
   selectStatusFilters,
   useSessionFilterStore,
   type SessionViewSurface,
 } from '@/stores/session-filter-store';
 import type { ProjectSession } from '@kortix/sdk';
-import {
-  GlobeIcon,
-  LockSimpleIcon,
-  TagIcon,
-  UsersIcon as UsersSolid,
-} from '@phosphor-icons/react';
+import { GlobeIcon, LockSimpleIcon, TagIcon, UsersIcon as UsersSolid } from '@phosphor-icons/react';
 
+import { CountBadge } from '@/components/ui/count-badge';
 import {
   groupSessions,
   localizedSessionGroupModes,
@@ -65,7 +64,6 @@ import {
   type SessionGroupMode,
   type SessionOrderMode,
 } from './session-grouping';
-import { CountBadge } from '@/components/ui/count-badge';
 
 /**
  * The Cursor-style nested `⋯` menu behind the sidebar's Sessions header and
@@ -226,6 +224,18 @@ export const SESSION_ACCESS_ICONS: Record<
   project: GlobeIcon,
 };
 
+/**
+ * Localized labels for the Show submenu's section rows, keyed by the section
+ * ids `groupSessions` can emit for the declared grouping modes. A missing
+ * entry is silent: the row falls back to `option.label`, and a section whose
+ * catalog label has no product-catalog translation key (Teams) stays the raw
+ * English string in every locale. The unit test pins every id.
+ *
+ * Owner mode's `owner:<key>` ids are per-owner data keys and intentionally
+ * have no entry: their `option.label` is localized at the source
+ * (`ownerSections` labels the viewer's and the unknown owner's rows from the
+ * translated `ownerLabels`, and every other owner by name or email).
+ */
 /** `size-1.5` filled dot — marks a facet's trigger row when that facet's own
  *  array is non-empty, so the collapsed submenu still signals "filtered". */
 function FacetActiveDot() {
@@ -262,6 +272,8 @@ export function SessionFilterMenu({
   reviewCountBySession = {},
 }: SessionFilterMenuProps) {
   const t = useTranslations('sidebar.filter');
+  const tPinArchive = useTranslations('sidebar.pinArchive');
+  const tDeleted = useTranslations('sidebar.recentlyDeleted');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const localizedGroupModes = localizedSessionGroupModes(tI18nComplete);
   const localizedOrderModes = localizedSessionOrderModes(tI18nComplete);
@@ -301,24 +313,7 @@ export function SessionFilterMenu({
     created: t('order.created'),
     name: t('order.name'),
   };
-  const sectionLabels: Record<string, string> = {
-    'needs-you': t('section.needsYou'),
-    running: t('section.running'),
-    recent: t('section.recent'),
-    today: t('section.today'),
-    yesterday: t('section.yesterday'),
-    week: t('section.week'),
-    older: t('section.older'),
-    chat: t('section.chat'),
-    slack: t('section.slack'),
-    telegram: t('section.telegram'),
-    email: t('section.email'),
-    schedule: t('section.scheduled'),
-    webhook: t('section.webhook'),
-    event: t('section.event'),
-    manual: t('section.manual'),
-    all: t('section.all'),
-  };
+  const sectionLabels = resolveSectionLabels(t);
   const statusLabels: Record<SessionStatusFilter, string> = {
     running: t('statusValue.running'),
     done: t('statusValue.done'),
@@ -328,14 +323,14 @@ export function SessionFilterMenu({
   };
   const sourceLabels: Record<SessionSourceFilter, string> = {
     shared: t('sourceValue.shared'),
-    slack: t('section.slack'),
-    telegram: t('section.telegram'),
-    teams: t('section.teams'),
-    email: t('section.email'),
-    schedule: t('section.scheduled'),
-    webhook: t('section.webhook'),
-    event: t('section.event'),
-    manual: t('section.manual'),
+    slack: sectionLabels.slack,
+    telegram: sectionLabels.telegram,
+    teams: sectionLabels.teams,
+    email: sectionLabels.email,
+    schedule: sectionLabels.schedule,
+    webhook: sectionLabels.webhook,
+    event: sectionLabels.event,
+    manual: sectionLabels.manual,
   };
   const groupLabel = groupLabels[groupMode];
   const orderLabel = orderLabels[orderMode];
@@ -421,70 +416,67 @@ export function SessionFilterMenu({
 
   return (
     <DropdownMenuContent align={align} side={side} className="w-56 p-1">
-      <DropdownMenuSub>
-        <DropdownMenuSubTrigger>
-          <span className="min-w-0 flex-1 truncate">{t('grouping')}</span>
-          <span className="text-muted-foreground truncate text-xs">{groupLabel}</span>
-        </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent className="w-40 p-1">
-          <DropdownMenuRadioGroup
-            value={groupMode}
-            onValueChange={(value) => setGroupMode(projectId, value as SessionGroupMode, surface)}
-          >
-            {localizedGroupModes.map((mode) => (
-              <DropdownMenuRadioItem
-                key={mode.value}
-                value={mode.value}
-                onSelect={(event) => event.preventDefault()}
-              >
-                {groupLabels[mode.value]}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuSubContent>
-      </DropdownMenuSub>
+      <FilterSubmenu
+        trigger={
+          <>
+            <span className="min-w-0 flex-1 truncate">{t('grouping')}</span>
+            <span className="text-muted-foreground truncate text-xs">{groupLabel}</span>
+          </>
+        }
+        className="w-40 p-1"
+      >
+        <DropdownMenuRadioGroup
+          value={groupMode}
+          onValueChange={(value) => setGroupMode(projectId, value as SessionGroupMode, surface)}
+        >
+          {localizedGroupModes.map((mode) => (
+            <FilterRadioItem key={mode.value} value={mode.value}>
+              {groupLabels[mode.value]}
+            </FilterRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </FilterSubmenu>
 
-      <DropdownMenuSub>
-        <DropdownMenuSubTrigger>
-          <span className="min-w-0 flex-1 truncate">{t('ordering')}</span>
-          <span className="text-muted-foreground truncate text-xs">{orderLabel}</span>
-        </DropdownMenuSubTrigger>
-        <DropdownMenuSubContent className="w-40 p-1">
-          <DropdownMenuRadioGroup
-            value={orderMode}
-            onValueChange={(value) => setOrderMode(projectId, value as SessionOrderMode, surface)}
-          >
-            {localizedOrderModes.map((mode) => (
-              <DropdownMenuRadioItem
-                key={mode.value}
-                value={mode.value}
-                onSelect={(event) => event.preventDefault()}
-              >
-                {orderLabels[mode.value]}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuSubContent>
-      </DropdownMenuSub>
+      <FilterSubmenu
+        trigger={
+          <>
+            <span className="min-w-0 flex-1 truncate">{t('ordering')}</span>
+            <span className="text-muted-foreground truncate text-xs">{orderLabel}</span>
+          </>
+        }
+        className="w-40 p-1"
+      >
+        <DropdownMenuRadioGroup
+          value={orderMode}
+          onValueChange={(value) => setOrderMode(projectId, value as SessionOrderMode, surface)}
+        >
+          {localizedOrderModes.map((mode) => (
+            <FilterRadioItem key={mode.value} value={mode.value}>
+              {orderLabels[mode.value]}
+            </FilterRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </FilterSubmenu>
 
       {showOptions.length > 0 && (
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <span className="min-w-0 flex-1 truncate">{t('show')}</span>
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="w-48 p-1">
-            {showOptions.map((option) => (
-              <DropdownMenuCheckboxItem
-                key={option.id}
-                checked={!hiddenSectionSet.has(option.id)}
-                onCheckedChange={() => toggleSectionHidden(projectId, option.id, surface)}
-                onSelect={(event) => event.preventDefault()}
-              >
-                {sectionLabels[option.id] ?? option.label}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+        <FilterSubmenu
+          trigger={
+            <>
+              <span className="min-w-0 flex-1 truncate">{t('show')}</span>
+            </>
+          }
+          className="w-48 p-1"
+        >
+          {showOptions.map((option) => (
+            <FilterCheckboxItem
+              key={option.id}
+              checked={!hiddenSectionSet.has(option.id)}
+              onCheckedChange={() => toggleSectionHidden(projectId, option.id, surface)}
+            >
+              {sectionLabels[option.id] ?? option.label}
+            </FilterCheckboxItem>
+          ))}
+        </FilterSubmenu>
       )}
 
       {showFiltersSection && (
@@ -506,137 +498,138 @@ export function SessionFilterMenu({
               {t('reset')}
             </DropdownMenuItem>
           </div>
-
           {statusOptions.length > 0 && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <span className="min-w-0 flex-1 truncate">{t('status')}</span>
-                {statusFilters.length > 0 && <FacetActiveDot />}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-48 p-1">
-                {statusOptions.map((option) => (
-                  <DropdownMenuCheckboxItem
-                    key={option.value}
-                    checked={statusFilterSet.has(option.value)}
-                    onCheckedChange={() => toggleStatusFilter(projectId, option.value, surface)}
-                    onSelect={(event) => event.preventDefault()}
-                  >
-                    <span className="min-w-0 flex-1 truncate">{statusLabels[option.value]}</span>
-                    <CountBadge count={option.count} className="ml-auto" />
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
+            <FilterSubmenu
+              trigger={
+                <>
+                  <span className="min-w-0 flex-1 truncate">{t('status')}</span>
+                  {statusFilters.length > 0 && <FacetActiveDot />}
+                </>
+              }
+              className="w-48 p-1"
+            >
+              {statusOptions.map((option) => (
+                <FilterCheckboxItem
+                  key={option.value}
+                  checked={statusFilterSet.has(option.value)}
+                  onCheckedChange={() => toggleStatusFilter(projectId, option.value, surface)}
+                >
+                  <span className="min-w-0 flex-1 truncate">{statusLabels[option.value]}</span>
+                  <CountBadge count={option.count} className="ml-auto" />
+                </FilterCheckboxItem>
+              ))}
+            </FilterSubmenu>
           )}
-
           {sourceOptions.length > 0 && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <span className="min-w-0 flex-1 truncate">{t('source')}</span>
-                {sourceFilters.length > 0 && <FacetActiveDot />}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-48 p-1">
-                {sourceOptions.map((option) => {
-                  const OptionIcon = SOURCE_FILTER_ICONS[option.value];
-                  return (
-                    <DropdownMenuCheckboxItem
-                      key={option.value}
-                      checked={sourceFilterSet.has(option.value)}
-                      onCheckedChange={() => toggleSourceFilter(projectId, option.value, surface)}
-                      onSelect={(event) => event.preventDefault()}
-                    >
-                      <OptionIcon className="size-4" />
-                      <span className="min-w-0 flex-1 truncate">{sourceLabels[option.value]}</span>
-                      <CountBadge count={option.count} className="ml-auto" />
-                    </DropdownMenuCheckboxItem>
-                  );
-                })}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          )}
-
-          {labelOptions.length > 0 && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <span className="min-w-0 flex-1 truncate">{t('labels')}</span>
-                {labelFilters.length > 0 && <FacetActiveDot />}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto p-1">
-                {labelOptions.map((option) => (
-                  <DropdownMenuCheckboxItem
+            <FilterSubmenu
+              trigger={
+                <>
+                  <span className="min-w-0 flex-1 truncate">{t('source')}</span>
+                  {sourceFilters.length > 0 && <FacetActiveDot />}
+                </>
+              }
+              className="w-48 p-1"
+            >
+              {sourceOptions.map((option) => {
+                const OptionIcon = SOURCE_FILTER_ICONS[option.value];
+                return (
+                  <FilterCheckboxItem
                     key={option.value}
-                    checked={labelFilterSet.has(option.value)}
-                    onCheckedChange={() => toggleLabelFilter(projectId, option.value, surface)}
-                    onSelect={(event) => event.preventDefault()}
+                    checked={sourceFilterSet.has(option.value)}
+                    onCheckedChange={() => toggleSourceFilter(projectId, option.value, surface)}
                   >
-                    <TagIcon className="size-4" />
-                    <span className="min-w-0 flex-1 truncate">{option.value}</span>
+                    <OptionIcon className="size-4" />
+                    <span className="min-w-0 flex-1 truncate">{sourceLabels[option.value]}</span>
                     <CountBadge count={option.count} className="ml-auto" />
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
+                  </FilterCheckboxItem>
+                );
+              })}
+            </FilterSubmenu>
           )}
-
+          {labelOptions.length > 0 && (
+            <FilterSubmenu
+              trigger={
+                <>
+                  <span className="min-w-0 flex-1 truncate">{t('labels')}</span>
+                  {labelFilters.length > 0 && <FacetActiveDot />}
+                </>
+              }
+              className="max-h-80 w-56 overflow-y-auto p-1"
+            >
+              {labelOptions.map((option) => (
+                <FilterCheckboxItem
+                  key={option.value}
+                  checked={labelFilterSet.has(option.value)}
+                  onCheckedChange={() => toggleLabelFilter(projectId, option.value, surface)}
+                >
+                  <TagIcon className="size-4" />
+                  <span className="min-w-0 flex-1 truncate">{option.value}</span>
+                  <CountBadge count={option.count} className="ml-auto" />
+                </FilterCheckboxItem>
+              ))}
+            </FilterSubmenu>
+          )}
           {showOwnerFacet && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <span className="min-w-0 flex-1 truncate">{t('owner')}</span>
-                {activeOwners.length > 0 && <FacetActiveDot />}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto p-1">
-                {ownerOptions.map((option) => {
-                  const label = option.isViewer
-                    ? t('ownerValue.you')
-                    : option.value === UNKNOWN_OWNER_KEY
-                      ? t('ownerValue.unknown')
-                      : (option.name ?? option.email ?? option.value);
-                  return (
-                    <DropdownMenuCheckboxItem
-                      key={option.value}
-                      checked={ownerFilterSet.has(option.value)}
-                      onCheckedChange={() => toggleOwnerFilter(projectId, option.value, surface)}
-                      onSelect={(event) => event.preventDefault()}
-                    >
-                      <UserAvatar
-                        size="xs"
-                        name={option.name ?? undefined}
-                        email={option.email ?? ''}
-                      />
-                      <span className="min-w-0 flex-1 truncate">{label}</span>
-                      <CountBadge count={option.count} className="ml-auto" />
-                    </DropdownMenuCheckboxItem>
-                  );
-                })}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
+            <FilterSubmenu
+              trigger={
+                <>
+                  <span className="min-w-0 flex-1 truncate">{t('owner')}</span>
+                  {activeOwners.length > 0 && <FacetActiveDot />}
+                </>
+              }
+              className="max-h-80 w-56 overflow-y-auto p-1"
+            >
+              {ownerOptions.map((option) => {
+                const label = option.isViewer
+                  ? t('ownerValue.you')
+                  : option.value === UNKNOWN_OWNER_KEY
+                    ? t('ownerValue.unknown')
+                    : (option.name ?? option.email ?? option.value);
+                return (
+                  <FilterCheckboxItem
+                    key={option.value}
+                    checked={ownerFilterSet.has(option.value)}
+                    onCheckedChange={() => toggleOwnerFilter(projectId, option.value, surface)}
+                  >
+                    <UserAvatar
+                      size="xs"
+                      name={option.name ?? undefined}
+                      email={option.email ?? ''}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{label}</span>
+                    <CountBadge count={option.count} className="ml-auto" />
+                  </FilterCheckboxItem>
+                );
+              })}
+            </FilterSubmenu>
           )}
-
           {showAccessFacet && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <span className="min-w-0 flex-1 truncate">{t('access')}</span>
-                {activeAccess.length > 0 && <FacetActiveDot />}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-52 p-1">
-                {accessOptions.map((option) => {
-                  const OptionIcon = SESSION_ACCESS_ICONS[option.value];
-                  return (
-                    <DropdownMenuCheckboxItem
-                      key={option.value}
-                      checked={accessFilterSet.has(option.value)}
-                      onCheckedChange={() => toggleAccessFilter(projectId, option.value, surface)}
-                      onSelect={(event) => event.preventDefault()}
-                    >
-                      <OptionIcon className="size-4" />
-                      <span className="min-w-0 flex-1 truncate">{accessLabels[option.value]}</span>
-                      <CountBadge count={option.count} className="ml-auto" />
-                    </DropdownMenuCheckboxItem>
-                  );
-                })}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          )}        </>
+            <FilterSubmenu
+              trigger={
+                <>
+                  <span className="min-w-0 flex-1 truncate">{t('access')}</span>
+                  {activeAccess.length > 0 && <FacetActiveDot />}
+                </>
+              }
+              className="w-52 p-1"
+            >
+              {accessOptions.map((option) => {
+                const OptionIcon = SESSION_ACCESS_ICONS[option.value];
+                return (
+                  <FilterCheckboxItem
+                    key={option.value}
+                    checked={accessFilterSet.has(option.value)}
+                    onCheckedChange={() => toggleAccessFilter(projectId, option.value, surface)}
+                  >
+                    <OptionIcon className="size-4" />
+                    <span className="min-w-0 flex-1 truncate">{accessLabels[option.value]}</span>
+                    <CountBadge count={option.count} className="ml-auto" />
+                  </FilterCheckboxItem>
+                );
+              })}
+            </FilterSubmenu>
+          )}{' '}
+        </>
       )}
 
       <DropdownMenuSeparator />
@@ -661,6 +654,41 @@ export function SessionFilterMenu({
       >
         {t('collapseAll')}
       </DropdownMenuItem>
+      {/* The sidebar hides archived and deleted sessions; the sessions page lists them. */}
+      {!pageFacets && (
+        <>
+          <DropdownMenuItem asChild className="cursor-pointer">
+            <Link href={`/projects/${projectId}/sessions?view=archived`}>{tPinArchive('showArchived')}</Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild className="cursor-pointer">
+            <Link href={`/projects/${projectId}/sessions?view=deleted`}>{tDeleted('view')}</Link>
+          </DropdownMenuItem>
+        </>
+      )}
     </DropdownMenuContent>
   );
+}
+
+function FilterSubmenu({
+  trigger,
+  className,
+  children,
+}: {
+  trigger: React.ReactNode;
+  className: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>{trigger}</DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className={className}>{children}</DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
+
+function FilterRadioItem(props: React.ComponentProps<typeof DropdownMenuRadioItem>) {
+  return <DropdownMenuRadioItem {...props} onSelect={(event) => event.preventDefault()} />;
+}
+function FilterCheckboxItem(props: React.ComponentProps<typeof DropdownMenuCheckboxItem>) {
+  return <DropdownMenuCheckboxItem {...props} onSelect={(event) => event.preventDefault()} />;
 }

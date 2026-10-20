@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import type { ToolPart } from '@/ui';
+import { toolCallBlock } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -22,9 +23,9 @@ const tools: ContextItem[] = [
     callID: 't1',
     label: 'Terminal',
     kind: 'tool',
-    parts: [
+    calls: ([
       { type: 'tool', tool: 'bash', callID: 't1', state: { status: 'completed' } },
-    ] as unknown as ToolPart[],
+    ] as unknown as ToolPart[]).map(toolCallBlock),
   },
 ];
 
@@ -32,16 +33,16 @@ const tools: ContextItem[] = [
  *  aggregation case:
  *  `deriveContext` only DROPS a fully-errored call, so a tool that succeeded
  *  nine times and failed once still reaches this row with `state.status ===
- *  'error'` sitting among its `parts`. */
+ *  'error'` sitting among its `calls`. */
 const toolsWithAFailedCall: ContextItem[] = [
   {
     callID: 't1',
     label: 'Terminal',
     kind: 'tool',
-    parts: [
+    calls: ([
       { type: 'tool', tool: 'bash', callID: 't1a', state: { status: 'completed' } },
       { type: 'tool', tool: 'bash', callID: 't1b', state: { status: 'error' } },
-    ] as unknown as ToolPart[],
+    ] as unknown as ToolPart[]).map(toolCallBlock),
   },
 ];
 

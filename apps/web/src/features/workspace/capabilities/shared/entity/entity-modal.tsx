@@ -263,40 +263,11 @@ function EntityModalBody({
   // click in the alert as an outside-click and dismiss the modal underneath
   // (see components/ui/alert-dialog.tsx).
   const editButton = canWrite ? (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full justify-start border"
-          disabled={configure.pending}
-        >
-          {configure.pending ? (
-            <Loading className="text-foreground size-3.5 shrink-0" />
-          ) : (
-            <PencilSimpleIcon className="size-3.5 shrink-0" />
-          )}
-          {tI18nComplete.raw('text4314a9413ab7')}
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{tI18nComplete.raw('textdc0a04e35f6e')}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {tI18nComplete.raw('text60c72685917f')} {entity.name}
-            {tI18nComplete.raw('text412cc9a16edd')}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{tI18nComplete.raw('text19766ed6ccb2')}</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => configure.start(editConfigPrompt(kind, entity.name, entity.path))}
-          >
-            {tI18nComplete.raw('textf6f4688ff23d')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <EntityEditButton
+      name={entity.name}
+      pending={configure.pending}
+      onEdit={() => configure.start(editConfigPrompt(kind, entity.name, entity.path))}
+    />
   ) : null;
 
   // The aside earns its column when it holds something: the caller's settings,
@@ -407,13 +378,15 @@ function EntityModalBody({
   );
 }
 
-function EntityFilePane({
+export function EntityFilePane({
   path,
   content,
   isLoading,
   isError,
   error,
   onRetry,
+  errorTitle,
+  skeletonRows = 5,
 }: {
   path: string;
   content: string | undefined;
@@ -421,6 +394,8 @@ function EntityFilePane({
   isError: boolean;
   error: unknown;
   onRetry: () => void;
+  errorTitle?: string;
+  skeletonRows?: 4 | 5;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
@@ -431,13 +406,13 @@ function EntityFilePane({
           <Skeleton className="h-4 w-11/12" />
           <Skeleton className="h-4 w-10/12" />
           <Skeleton className="h-4 w-9/12" />
-          <Skeleton className="h-4 w-full" />
+          {skeletonRows === 5 ? <Skeleton className="h-4 w-full" /> : null}
         </div>
       ) : isError ? (
         <div className="p-4">
           <ErrorState
             size="sm"
-            title={tI18nComplete.raw('textf27a58a42762')}
+            title={errorTitle ?? tI18nComplete.raw('textf27a58a42762')}
             description={
               error instanceof Error ? error.message : tI18nComplete.raw('text553d1ec7c9e6')
             }
@@ -450,7 +425,7 @@ function EntityFilePane({
         </div>
       ) : isMarkdownPath(path) ? (
         <div className="p-4">
-          <MarkdownWithFrontmatter content={content ?? ''} />
+          <MarkdownWithFrontmatter content={content ?? ''} documentPath={path} />
         </div>
       ) : (
         <pre
@@ -465,5 +440,51 @@ function EntityFilePane({
         </pre>
       )}
     </>
+  );
+}
+
+function EntityEditButton({
+  name,
+  pending,
+  onEdit,
+}: {
+  name: string;
+  pending: boolean;
+  onEdit: () => void;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full justify-start border"
+          disabled={pending}
+        >
+          {pending ? (
+            <Loading className="text-foreground size-3.5 shrink-0" />
+          ) : (
+            <PencilSimpleIcon className="size-3.5 shrink-0" />
+          )}
+          {tI18nComplete.raw('text4314a9413ab7')}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{tI18nComplete.raw('textdc0a04e35f6e')}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {tI18nComplete.raw('text60c72685917f')} {name}
+            {tI18nComplete.raw('text412cc9a16edd')}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{tI18nComplete.raw('text19766ed6ccb2')}</AlertDialogCancel>
+          <AlertDialogAction onClick={() => onEdit()}>
+            {tI18nComplete.raw('textf6f4688ff23d')}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

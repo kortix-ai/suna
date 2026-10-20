@@ -85,6 +85,11 @@ jobs:
           next="${ma}.${mi}.$((pa + 1))"
           echo "version=${next}-staging.${SOURCE_SHA::8}" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # Anonymous Docker Hub reads share the runner IP's limit: 429 on 2026-10-17.
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
       - name: Assert staging images exist
         env:
           SHA8: ${{ steps.ref.outputs.sha8 }}
@@ -244,7 +249,8 @@ jobs:
               KORTIX_URL: $api,
               CORS_ALLOWED_ORIGINS: $frontend,
               LLM_GATEWAY_BASE_URL: $gateway,
-              ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum",
+              # Platinum is the reference provider; Daytona is the legacy fallback.
+              ALLOWED_SANDBOX_PROVIDERS: "platinum,daytona",
               # Pinned, not inherited: the base above can be kortix-dev-env,
               # which still carries the RETIRED `code-storage` value. The API
               # refuses that value for new repos anyway
@@ -369,7 +375,7 @@ jobs:
       # infra/terraform/modules/project-snapshots-bucket): that role has NO
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-euw2-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"eu-west-2","AUDIT_ARCHIVE_BUCKET":"kortix-staging-euw2-audit-archive","AUDIT_ARCHIVE_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-staging-euw2-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-euw2-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"eu-west-2","KORTIX_CAPTURE_S3_BUCKET":"kortix-staging-euw2-capture-store","KORTIX_CAPTURE_S3_REGION":"eu-west-2","KORTIX_CAPTURE_SQS_QUEUE_URL":"https://sqs.eu-west-2.amazonaws.com/935064898258/kortix-staging-euw2-capture-store-manifests","KORTIX_CAPTURE_STS_ROLE_ARN":"arn:aws:iam::935064898258:role/kortix-staging-euw2-capture-store-device","AUDIT_ARCHIVE_BUCKET":"kortix-staging-euw2-audit-archive","AUDIT_ARCHIVE_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-staging-euw2-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)

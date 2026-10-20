@@ -173,8 +173,8 @@ export function useSandboxReachability(sandboxUrl: string | undefined): SandboxR
 
 /**
  * Human-readable elapsed seconds/minutes since `since` (ms epoch), updated
- * every second. Returns null when `since` is null. Matches web's
- * `useElapsedTime` output format so the pill reads identically.
+ * every second. Returns null when `since` is null. Same seconds/minutes
+ * format web's health pill uses, so both read identically.
  */
 export function useElapsedSince(since: number | null): string | null {
   const [now, setNow] = useState(() => Date.now());

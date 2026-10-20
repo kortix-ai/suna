@@ -1,4 +1,7 @@
 'use client';
+import { EntityFilePane } from '../shared/entity/entity-modal';
+import { agentStatus } from './agent-status';
+import { useDefaultAgent } from './use-default-agent';
 
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
@@ -48,7 +51,6 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * remounts every draft rather than carrying one agent's edits onto another.
  */
 
-import { HighlightedCode } from '@/components/markdown/code';
 import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -72,12 +74,13 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { configEntitySourcePath } from '@/features/workspace/customize/sections/component/config-entity-source-path';
 import {
-  AGENT_CONFIG_SECTIONS,
   type AgentConfigSectionKey,
   AgentConfigSections,
+  agentConfigSectionKeys,
   agentEditorOptionQueries,
   DEFAULT_AGENT_CONFIG_SECTION,
   isAgentConfigSectionKey,
+  registryGrantOptions,
   useAgentDraft,
   useAgentEditorOptions,
   useLocalizedAgentConfigCatalog,
@@ -87,7 +90,11 @@ import {
   editConfigPrompt,
   useConfigureThread,
 } from '@/features/workspace/customize/use-configure-thread';
-import { useAgentConfig, useUpdateAgentConfig } from '@/hooks/projects/use-agent-config';
+import {
+  agentConfigNeedsUpgrade,
+  useAgentConfig,
+  useUpdateAgentConfig,
+} from '@/hooks/projects/use-agent-config';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -97,31 +104,34 @@ import {
   getProjectDetail,
   type ProjectConfigSummary,
   readProjectFile,
-  updateProjectDefaultAgent,
 } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import {
   BookOpenTextIcon,
   CaretRightIcon,
+  CommandIcon,
   CpuIcon,
   CubeIcon,
   DotsThreeIcon,
   FileTextIcon,
   GlobeIcon,
+  HardDriveIcon,
   type Icon,
   KeyIcon,
   PlayIcon,
   PlugsConnectedIcon,
+  PuzzlePieceIcon,
   RobotIcon,
   SlidersHorizontalIcon,
   StarIcon,
   TerminalWindowIcon,
   TimerIcon,
+  TreeStructureIcon,
   UsersIcon,
   WrenchIcon,
 } from '@phosphor-icons/react';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, m } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -130,14 +140,13 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import {
-  isMarkdownPath,
-  languageForPath,
-} from '@/features/workspace/capabilities/shared/entity/entity-files';
 import { useIsMobile } from '@/hooks/utils';
 
 import { EditorSectionStyleProvider } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
 
+import { AgentDrivesSection } from '@/features/drives/agent-drives-section';
+
+import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentModel, AgentScope } from './agent-detail-aside';
 import {
   AppsGrantPage,
@@ -145,7 +154,6 @@ import {
   SecretsGrantPage,
   SkillsGrantPage,
 } from './agent-grant-pages';
-import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
 import { AgentTriggersSection } from './agent-triggers-section';
@@ -160,9 +168,13 @@ const SECTION_ICON: Record<AgentConfigSectionKey, Icon> = {
   basics: SlidersHorizontalIcon,
   triggers: TimerIcon,
   skills: BookOpenTextIcon,
+  subagents: TreeStructureIcon,
+  commands: CommandIcon,
+  extensions: PuzzlePieceIcon,
   connectors: PlugsConnectedIcon,
   secrets: KeyIcon,
   apps: GlobeIcon,
+  drives: HardDriveIcon,
   actions: TerminalWindowIcon,
   model: CpuIcon,
   tools: WrenchIcon,
@@ -243,7 +255,7 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
   }
 
   const editable = !isPlatform && canWrite && configQuery.data?.editable === true;
-  const isV1 = !isPlatform && configQuery.data !== undefined && configQuery.data.editable !== true;
+  const isV1 = !isPlatform && agentConfigNeedsUpgrade(configQuery.data);
 
   return editable ? (
     <EditableAgentPage
@@ -251,6 +263,7 @@ export function AgentPage({ projectId, agentName }: { projectId: string; agentNa
       agent={agent}
       config={config}
       initial={configQuery.data?.block ?? {}}
+      schemaVersion={configQuery.data?.schema_version ?? 2}
     />
   ) : (
     <ReadOnlyAgentPage
@@ -475,16 +488,7 @@ function AgentActions({
         ? 'Subagents are called by other agents, not started directly.'
         : null;
 
-  const makeDefault = useMutation({
-    mutationFn: () => updateProjectDefaultAgent(projectId, agent.name),
-    onSuccess: async (result) => {
-      successToast(
-        tI18nComplete('text0bb557895b32', { value0: capitalizeWords(result.default_agent) }),
-      );
-      await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
-    },
-    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text7f724c2ad694')),
-  });
+  const makeDefault = useDefaultAgent(projectId);
 
   const pathname = usePathname();
   return (
@@ -524,7 +528,7 @@ function AgentActions({
           <DropdownMenuContent align="end">
             <DropdownMenuItem
               disabled={isDefault || agent.enabled === false || makeDefault.isPending}
-              onSelect={() => makeDefault.mutate()}
+              onSelect={() => makeDefault.mutate(agent.name)}
             >
               <StarIcon className="size-4" />
               {isDefault
@@ -571,11 +575,10 @@ function AgentChips({
   size: 'sm' | 'xs';
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const mode = agent.mode?.toLowerCase();
-  const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
+  const { showMode, isDefault, disabled } = agentStatus(agent, config);
   return (
     <span className="flex items-center gap-1.5">
-      {mode && mode !== 'primary' ? (
+      {showMode ? (
         <Badge variant="outline" size={size} className="text-muted-foreground font-medium">
           {formatMode(agent.mode ?? '')}
         </Badge>
@@ -586,7 +589,7 @@ function AgentChips({
           {tI18nComplete.raw('text21b111cbfe6e')}
         </Badge>
       ) : null}
-      {agent.enabled === false ? (
+      {disabled ? (
         <Badge variant="muted" size={size}>
           {tI18nComplete.raw('text75081b593d15')}
         </Badge>
@@ -646,19 +649,6 @@ function AgentHeader({
 
 // ─── Editable body ─────────────────────────────────────────────────────────
 
-const EDITABLE_SECTIONS: readonly AgentConfigSectionKey[] = AGENT_CONFIG_SECTIONS.map((s) => s.key);
-
-/**
- * The rail's topics for one project. Apps is a flagged product: a project
- * without the `apps` flag has no Apps page, no Apps in the sidebar, and no way
- * to create one — so a grant page for them would be a dead tab. Dropping the
- * key here also drops it from `useAgentSection`'s allow-list, so a stale
- * `?section=apps` link falls back to Overview instead of rendering an empty
- * pane.
- */
-export function editableAgentSections(appsEnabled: boolean): readonly AgentConfigSectionKey[] {
-  return appsEnabled ? EDITABLE_SECTIONS : EDITABLE_SECTIONS.filter((key) => key !== 'apps');
-}
 /** What a v1 project, or a reader without write, can still see. */
 const READ_ONLY_SECTIONS: readonly AgentConfigSectionKey[] = [
   'overview',
@@ -677,11 +667,14 @@ function EditableAgentPage({
   agent,
   config,
   initial,
+  schemaVersion,
 }: {
   projectId: string;
   agent: Agent;
   config: ProjectConfigSummary;
   initial: AgentConfigBlock;
+  /** The manifest version: v3 adds the subagent, command and extension grants. */
+  schemaVersion: number;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const editor = useAgentDraft(initial);
@@ -694,8 +687,16 @@ function EditableAgentPage({
     description: skill.description ?? undefined,
   }));
   const pathname = usePathname();
-  const appsEnabled = useFeatureFlag(projectId, 'apps').enabled;
-  const sections = useMemo(() => editableAgentSections(appsEnabled), [appsEnabled]);
+  // Drives exists only with Volumes on (the project's derived `drives` flag).
+  const drivesOn = useFeatureFlag(projectId, 'drives').enabled;
+  const sections = useMemo(
+    () => agentConfigSectionKeys(schemaVersion).filter((k) => drivesOn || k !== 'drives'),
+    [schemaVersion, drivesOn],
+  );
+  const registryOptions = useMemo(
+    () => registryGrantOptions({ manifest_raw: config.manifest_raw, agents: toArray(config.agents) }, agent.name),
+    [config.manifest_raw, config.agents, agent.name],
+  );
   const section = useAgentSection(sections);
 
   const onSave = useCallback(async () => {
@@ -727,10 +728,12 @@ function EditableAgentPage({
           editor={editor}
           options={options}
           skillsOptions={skillsOptions}
+          registryOptions={registryOptions}
           skills={<SkillsGrantPage projectId={projectId} config={config} editor={editor} />}
           connectors={<ConnectorsGrantPage projectId={projectId} editor={editor} />}
           secrets={<SecretsGrantPage projectId={projectId} editor={editor} />}
           apps={<AppsGrantPage projectId={projectId} editor={editor} />}
+          drives={<AgentDrivesSection projectId={projectId} agentName={agent.name} />}
           overview={
             <OverviewPane
               description={editor.oc.description ?? ''}
@@ -1055,6 +1058,7 @@ function ReadOnlyAgentPage({
   isPlatform: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tUpgrades = useI18nTranslations('settings.upgrades');
   // The real repo path, with any manifest anchor stripped. Agents declared in
   // the manifest rather than as their own file carry one
   // (`kortix.yaml#agents.<name>`), and reading that verbatim is a 404.
@@ -1079,49 +1083,18 @@ function ReadOnlyAgentPage({
           <span className="font-mono">{sourcePath}</span>
         </p>
       </div>
-      {fileQuery.isLoading ? (
-        <div className="space-y-2.5 p-4">
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-11/12" />
-          <Skeleton className="h-4 w-10/12" />
-          <Skeleton className="h-4 w-9/12" />
-        </div>
-      ) : fileQuery.isError ? (
-        <div className="p-4">
-          <ErrorState
-            size="sm"
-            title={tI18nComplete.raw('text2f2f540650bf')}
-            description={
-              fileQuery.error instanceof Error
-                ? fileQuery.error.message
-                : tI18nComplete.raw('text553d1ec7c9e6')
-            }
-            action={
-              <Button variant="outline" size="sm" onClick={() => fileQuery.refetch()}>
-                {tI18nComplete.raw('text942087cc2d41')}
-              </Button>
-            }
-          />
-        </div>
-      ) : isMarkdownPath(sourcePath) ? (
-        <div className="p-4">
-          <MarkdownWithFrontmatter content={fileQuery.data?.content ?? ''} />
-        </div>
-      ) : (
-        <pre
-          className={cn(
-            'overflow-x-auto p-4',
-            'text-foreground font-mono text-sm leading-[1.65]',
-            '[&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit',
-            '[&_.shiki]:!bg-transparent [&_span]:border-none [&_span]:!bg-transparent [&_span]:outline-none',
-          )}
-        >
-          <HighlightedCode
-            code={fileQuery.data?.content ?? ''}
-            language={languageForPath(sourcePath)}
-          />
-        </pre>
-      )}
+      <EntityFilePane
+        path={sourcePath}
+        content={fileQuery.data?.content}
+        isLoading={fileQuery.isLoading}
+        isError={fileQuery.isError}
+        error={fileQuery.error}
+        onRetry={() => {
+          void fileQuery.refetch();
+        }}
+        skeletonRows={4}
+        errorTitle={tI18nComplete.raw('text2f2f540650bf')}
+      />
     </section>
   );
 
@@ -1153,9 +1126,9 @@ function ReadOnlyAgentPage({
               </InfoBanner>
             ) : showUpgradeHint ? (
               <InfoBanner tone="info" title={tI18nComplete.raw('textdc7ab144ca89')}>
-                {tI18nComplete.raw('textf74efe18842d')}{' '}
-                <span className="font-mono">{tI18nComplete.raw('text1965f383021e')}</span>{' '}
-                {tI18nComplete.raw('text479d92cbfaa1')}
+                {tUpgrades.rich('agentEditorHint', {
+                  code: (chunks) => <span className="font-mono">{chunks}</span>,
+                })}
               </InfoBanner>
             ) : null}
             {isPlatform ? null : section === 'overview' ? (

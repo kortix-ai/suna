@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import { STATUS_TEXT } from '@/components/ui/status';
-import type { FlatModel, MessageWithParts } from '@kortix/sdk/react';
+import { sessionLogOfV1Rows } from '@kortix/sdk';
+import type { FlatModel } from '@kortix/sdk/react';
 import {
   CONTEXT_DANGER_RATIO,
   CONTEXT_WARNING_RATIO,
@@ -14,16 +15,71 @@ import {
   getSelectedModelName,
 } from './token-progress';
 
-function assistantMessage(tokens: Record<string, unknown> | undefined): MessageWithParts {
-  return {
-    info: { role: 'assistant', tokens } as any,
-    parts: [],
-  } as unknown as MessageWithParts;
+// v1 store rows, read as the composer reads them: the session-log records of
+// `sessionLogOfV1Rows`. Ids and times ascend, so the log keeps the row order.
+type V1Row = { info: Record<string, unknown> & { id: string; role: string }; parts: object[] };
+let seq = 0;
+function row(info: Record<string, unknown> & { role: string }, parts: object[] = []): V1Row {
+  seq++;
+  return { info: { id: `msg_${String(seq).padStart(4, '0')}`, time: { created: 1_700_000_000_000 + seq }, ...info }, parts };
+}
+const records = (...rows: V1Row[]) => sessionLogOfV1Rows('s', 'ses_root', rows as never).threads[0]?.messages ?? [];
+
+const assistantMessage = (tokens: Record<string, unknown> | undefined) => row({ role: 'assistant', tokens });
+const userMessage = () => row({ role: 'user' });
+
+/** The v1 rule this replaced, run on the v1 rows: the reference the records must match. */
+function v1Breakdown(rows: V1Row[]) {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const info = rows[i]!.info as { role: string; tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } } };
+    if (info.role !== 'assistant') continue;
+    const t = info.tokens;
+    if (!t) continue;
+    const input = t.input ?? 0;
+    const output = t.output ?? 0;
+    const reasoning = t.reasoning ?? 0;
+    const cache = (t.cache?.read ?? 0) + (t.cache?.write ?? 0);
+    const total = input + output + reasoning + cache;
+    if (total > 0) return { input, output, reasoning, cache, total };
+  }
+  return { input: 0, output: 0, reasoning: 0, cache: 0, total: 0 };
 }
 
-function userMessage(): MessageWithParts {
-  return { info: { role: 'user' } as any, parts: [] } as unknown as MessageWithParts;
+function compaction(tokens: Record<string, unknown>): V1Row[] {
+  const marker = row({ role: 'user' }, [{ id: `prt_c${seq}`, type: 'compaction', auto: true }]);
+  const summary = row({ role: 'assistant', summary: true, parentID: marker.info.id, tokens, time: { created: 1_700_000_000_000 + seq + 1, completed: 1_700_000_000_000 + seq + 2 } }, [
+    { id: `prt_s${seq}`, type: 'text', text: 'Summary' },
+  ]);
+  return [marker, summary];
 }
+
+describe('records give the breakdown the v1 rows gave', () => {
+  const full = { input: 100, output: 50, reasoning: 10, cache: { read: 5, write: 2 } };
+  const cases: Array<[string, () => V1Row[]]> = [
+    ['plain assistant', () => [assistantMessage(full)]],
+    ['multi-row thread', () => [userMessage(), assistantMessage({ input: 10, output: 1 }), userMessage(), assistantMessage(full), userMessage()]],
+    ['compaction marker + summary is the last reply', () => [userMessage(), assistantMessage(full), ...compaction({ input: 3000, output: 400, cache: { read: 7, write: 0 } })]],
+    ['reply after a compaction', () => [...compaction({ input: 3000, output: 400 }), userMessage(), assistantMessage({ input: 3500, output: 20 })]],
+    ['zero-token summary falls back to the reply before it', () => [assistantMessage(full), ...compaction({ input: 0, output: 0 })]],
+    ['zero-token reply after one with tokens', () => [assistantMessage(full), userMessage(), assistantMessage({ input: 0, output: 0, cache: { read: 0, write: 0 } })]],
+    ['reply with no tokens at all', () => [assistantMessage(full), userMessage(), assistantMessage(undefined)]],
+    ['marker with no summary yet', () => [assistantMessage(full), row({ role: 'user' }, [{ id: 'prt_open', type: 'compaction' }])]],
+    ['user rows only', () => [userMessage(), userMessage()]],
+  ];
+  for (const [name, build] of cases) {
+    test(name, () => {
+      const rows = build();
+      expect(getLastAssistantTokenBreakdown(records(...rows))).toEqual(v1Breakdown(rows));
+    });
+  }
+
+  test('the compaction is one record whose usage is the summary reply', () => {
+    const rows = compaction({ input: 3000, output: 400 });
+    const [message] = records(...rows);
+    expect(message).toMatchObject({ role: 'user', kind: 'compaction' });
+    expect(getLastAssistantTokenBreakdown(records(...rows)).total).toBe(3400);
+  });
+});
 
 function flatModel(overrides: Partial<FlatModel> = {}): FlatModel {
   return {
@@ -46,7 +102,7 @@ describe('getLastAssistantTokenTotal', () => {
       userMessage(),
       assistantMessage({ input: 100, output: 50, reasoning: 10, cache: { read: 5, write: 2 } }),
     ];
-    expect(getLastAssistantTokenTotal(messages)).toBe(167);
+    expect(getLastAssistantTokenTotal(records(...messages))).toBe(167);
   });
 
   test('skips trailing assistant messages with no token total and finds the last real one', () => {
@@ -55,12 +111,12 @@ describe('getLastAssistantTokenTotal', () => {
       userMessage(),
       assistantMessage(undefined),
     ];
-    expect(getLastAssistantTokenTotal(messages)).toBe(150);
+    expect(getLastAssistantTokenTotal(records(...messages))).toBe(150);
   });
 
   test('ignores user messages entirely, even if they carry a tokens-shaped field', () => {
     const messages = [assistantMessage({ input: 10, output: 10 }), userMessage()];
-    expect(getLastAssistantTokenTotal(messages)).toBe(20);
+    expect(getLastAssistantTokenTotal(records(...messages))).toBe(20);
   });
 });
 
@@ -87,7 +143,7 @@ describe('getLastAssistantTokenBreakdown', () => {
       userMessage(),
       assistantMessage({ input: 100, output: 50, reasoning: 10, cache: { read: 5, write: 2 } }),
     ];
-    expect(getLastAssistantTokenBreakdown(messages)).toEqual({
+    expect(getLastAssistantTokenBreakdown(records(...messages))).toEqual({
       input: 100,
       output: 50,
       reasoning: 10,
@@ -99,7 +155,7 @@ describe('getLastAssistantTokenBreakdown', () => {
   test('every field defaults to 0 when the model omits it', () => {
     // The card only renders rows above zero; a missing `reasoning` must read as
     // 0 rather than NaN, which would render as "0" but poison `total`.
-    const breakdown = getLastAssistantTokenBreakdown([assistantMessage({ input: 40 })]);
+    const breakdown = getLastAssistantTokenBreakdown(records(assistantMessage({ input: 40 })));
     expect(breakdown).toEqual({ input: 40, output: 0, reasoning: 0, cache: 0, total: 40 });
     expect(Number.isNaN(breakdown.total)).toBe(false);
   });
@@ -107,9 +163,9 @@ describe('getLastAssistantTokenBreakdown', () => {
   test('the parts always sum to the total it reports', () => {
     // The bar is a fraction of `total` and the rows below it are the parts —
     // if these drift the card contradicts itself on screen.
-    const b = getLastAssistantTokenBreakdown([
-      assistantMessage({ input: 1234, output: 99, reasoning: 7, cache: { read: 500, write: 21 } }),
-    ]);
+    const b = getLastAssistantTokenBreakdown(
+      records(assistantMessage({ input: 1234, output: 99, reasoning: 7, cache: { read: 500, write: 21 } })),
+    );
     expect(b.input + b.output + b.reasoning + b.cache).toBe(b.total);
   });
 
@@ -119,16 +175,16 @@ describe('getLastAssistantTokenBreakdown', () => {
       userMessage(),
       assistantMessage(undefined),
     ];
-    expect(getLastAssistantTokenBreakdown(messages).total).toBe(150);
-    expect(getLastAssistantTokenBreakdown(messages).input).toBe(100);
+    expect(getLastAssistantTokenBreakdown(records(...messages)).total).toBe(150);
+    expect(getLastAssistantTokenBreakdown(records(...messages)).input).toBe(100);
   });
 
   test('getLastAssistantTokenTotal stays exactly the breakdown total', () => {
     const messages = [
       assistantMessage({ input: 100, output: 50, reasoning: 10, cache: { read: 5, write: 2 } }),
     ];
-    expect(getLastAssistantTokenTotal(messages)).toBe(
-      getLastAssistantTokenBreakdown(messages).total,
+    expect(getLastAssistantTokenTotal(records(...messages))).toBe(
+      getLastAssistantTokenBreakdown(records(...messages)).total,
     );
   });
 });

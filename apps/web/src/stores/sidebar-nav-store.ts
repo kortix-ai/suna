@@ -14,44 +14,35 @@ import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-
  * keeps its place here and simply does not render.
  */
 
-export const SIDEBAR_NAV_ITEM_IDS = ['customize', 'apps', 'review', 'reminders', 'files'] as const;
+// Review (2026-10-17) and Reminders (2026-10-19) left the sidebar for Customize
+// tabs. A saved layout that still names one drops the id in `normalizeSidebarNav`.
+export const SIDEBAR_NAV_ITEM_IDS = ['customize', 'apps', 'files'] as const;
 export type SidebarNavItemId = (typeof SIDEBAR_NAV_ITEM_IDS)[number];
 
 /**
  * `never` moves the row into the More menu (`project-nav-items.tsx`), so its
- * page stays one click away. `active` shows the row only while it has
- * something to say: a Review count that needs you, or a reminder that can
- * still fire. Only the rows in `SIDEBAR_NAV_ACTIVITY_ITEMS` have such a signal.
+ * page stays one click away.
  */
-export type SidebarNavVisibility = 'always' | 'active' | 'never';
+export type SidebarNavVisibility = 'always' | 'never';
 
 export interface SidebarNavEntry {
   id: SidebarNavItemId;
   visibility: SidebarNavVisibility;
 }
 
-export const SIDEBAR_NAV_ACTIVITY_ITEMS: ReadonlySet<SidebarNavItemId> = new Set([
-  'review',
-  'reminders',
-]);
-
-/** The layout before anyone customizes it. Reminders keeps its old rule: it
- *  shows while a reminder can still fire. */
+/** The layout before anyone customizes it. */
 export const SIDEBAR_NAV_DEFAULTS: readonly SidebarNavEntry[] = [
   { id: 'customize', visibility: 'always' },
-  { id: 'apps', visibility: 'always' },
-  { id: 'review', visibility: 'always' },
-  { id: 'reminders', visibility: 'active' },
   { id: 'files', visibility: 'always' },
+  { id: 'apps', visibility: 'always' },
 ];
 
 function isItemId(value: unknown): value is SidebarNavItemId {
   return (SIDEBAR_NAV_ITEM_IDS as readonly unknown[]).includes(value);
 }
 
-function isVisibilityFor(id: SidebarNavItemId, value: unknown): value is SidebarNavVisibility {
-  if (value === 'always' || value === 'never') return true;
-  return value === 'active' && SIDEBAR_NAV_ACTIVITY_ITEMS.has(id);
+function isVisibility(value: unknown): value is SidebarNavVisibility {
+  return value === 'always' || value === 'never';
 }
 
 /**
@@ -67,7 +58,7 @@ export function normalizeSidebarNav(saved: unknown): SidebarNavEntry[] {
       if (!isItemId(id) || out.some((e) => e.id === id)) continue;
       const fallback = SIDEBAR_NAV_DEFAULTS.find((d) => d.id === id)!.visibility;
       const visibility = (entry as Partial<SidebarNavEntry>).visibility;
-      out.push({ id, visibility: isVisibilityFor(id, visibility) ? visibility : fallback });
+      out.push({ id, visibility: isVisibility(visibility) ? visibility : fallback });
     }
   }
   SIDEBAR_NAV_DEFAULTS.forEach((entry, index) => {
@@ -138,7 +129,7 @@ export const useSidebarNavStore = create<SidebarNavState>()(
       setVisibility: (id, visibility) =>
         set((state) => ({
           items: state.items.map((e) =>
-            e.id === id && isVisibilityFor(id, visibility) ? { id, visibility } : e,
+            e.id === id && isVisibility(visibility) ? { id, visibility } : e,
           ),
         })),
       reset: () => set({ items: normalizeSidebarNav(null) }),

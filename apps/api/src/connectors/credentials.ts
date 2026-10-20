@@ -16,7 +16,7 @@ import type { OAuth2ClientCredentials } from '@kortix/api-contract';
  * server-side only.
  */
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
-import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
+import { decryptNamedProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import {
@@ -39,10 +39,30 @@ interface CredentialRow {
   kind: string;
   valueEnc: string;
   projectId: string;
+  /** The connector's slug: names it when its credential cannot be decrypted. */
+  slug: string;
 }
 
 interface OAuth2CredentialRuntime {
   acquire?: (config: OAuth2ClientCredentials) => Promise<OAuth2AccessToken>;
+}
+
+/**
+ * A stored credential this server cannot decrypt is not a missing one: the
+ * caller gets `SecretUndecryptableError` naming the connector, never `null`
+ * (which reads as "not connected").
+ */
+function decryptCredential(row: CredentialRow, valueEnc: string): string {
+  return decryptNamedProjectSecret(
+    row.projectId,
+    valueEnc,
+    `The credential of connector ${row.slug}`,
+    // A delegated login is redone through the OAuth application, which the
+    // same key encrypted: it has to be saved again before the sign-in starts.
+    row.kind === 'oauth2_delegated'
+      ? 'Save its OAuth application again, then reconnect the account.'
+      : 'Reconnect the account or enter the credential again.',
+  );
 }
 
 async function resolveCredentialRow(
@@ -50,11 +70,7 @@ async function resolveCredentialRow(
   runtime: OAuth2CredentialRuntime = {},
 ): Promise<string | null> {
   if (row.kind !== 'oauth2_client_credentials' && row.kind !== 'oauth2_delegated') {
-    try {
-      return decryptProjectSecret(row.projectId, row.valueEnc);
-    } catch {
-      return null;
-    }
+    return decryptCredential(row, row.valueEnc);
   }
   return db.transaction(async (tx) => {
     await tx.execute(
@@ -69,12 +85,7 @@ async function resolveCredentialRow(
       .where(eq(connectionCredentials.credentialId, row.credentialId))
       .limit(1);
     if (!current) return null;
-    let value: string;
-    try {
-      value = decryptProjectSecret(row.projectId, current.valueEnc);
-    } catch {
-      return null;
-    }
+    const value = decryptCredential(row, current.valueEnc);
     if (current.kind !== 'oauth2_client_credentials' && current.kind !== 'oauth2_delegated') {
       return value;
     }
@@ -95,7 +106,8 @@ async function resolveCredentialRow(
   });
 }
 
-/** Resolve a credential value/binding (decrypted) for (connector, user|shared). */
+/** Resolve a credential value/binding (decrypted) for (connector, user|shared).
+ *  Throws `SecretUndecryptableError` when the stored value cannot be decrypted. */
 export async function resolveCredentialValue(
   connectorId: string,
   userId: string | null,
@@ -108,6 +120,7 @@ export async function resolveCredentialValue(
       kind: connectionCredentials.kind,
       valueEnc: connectionCredentials.valueEnc,
       projectId: connectors.projectId,
+      slug: connectors.slug,
     })
     .from(connectionCredentials)
     .innerJoin(connectors, eq(connectors.connectorId, connectionCredentials.connectorId))
@@ -141,6 +154,7 @@ export async function resolveFirstMemberCredential(connectorId: string): Promise
       kind: connectionCredentials.kind,
       valueEnc: connectionCredentials.valueEnc,
       projectId: connectors.projectId,
+      slug: connectors.slug,
     })
     .from(connectionCredentials)
     .innerJoin(connectors, eq(connectors.connectorId, connectionCredentials.connectorId))
@@ -445,6 +459,7 @@ export async function resolveConnectionCredentialValue(
       kind: connectionCredentials.kind,
       valueEnc: connectionCredentials.valueEnc,
       projectId: connectors.projectId,
+      slug: connectors.slug,
     })
     .from(connectionCredentials)
     .innerJoin(connectors, eq(connectors.connectorId, connectionCredentials.connectorId))
@@ -512,7 +527,12 @@ export async function upsertConnectionCredential(input: {
   });
   await db
     .update(connectorConnections)
-    .set({ status: 'active', updatedAt: new Date() })
+    .set({
+      status: 'active',
+      // A new credential is no longer the one the upstream rejected.
+      metadata: sql`${connectorConnections.metadata} - 'credential_rejected_at'`,
+      updatedAt: new Date(),
+    })
     .where(eq(connectorConnections.connectionId, input.connectionId));
 }
 
@@ -767,6 +787,11 @@ export async function upsertCredential(opts: {
       createdBy: opts.createdBy ?? null,
     });
   }
+  // A new credential is no longer the one the upstream rejected.
+  await db
+    .update(connectorConnections)
+    .set({ metadata: sql`${connectorConnections.metadata} - 'credential_rejected_at'` })
+    .where(eq(connectorConnections.connectionId, connectionId));
   // Reflect "connected" in the connector status.
   await db
     .update(connectors)

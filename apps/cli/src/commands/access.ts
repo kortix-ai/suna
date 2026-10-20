@@ -105,7 +105,7 @@ Options:
   --principal <id>   Filter assignments by principal. Also
                      user:<id> | group:<id> | service_account:<id> | pending:<email>.
   --expires <iso>    Auto-revoke timestamp.
-  --account-id <id>  Operate on this account (default: the active account).
+  --account-id <id>  Operate on this account (default: the linked project's account, else the active account).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -146,7 +146,8 @@ async function resolveScope(
 
   // No --host given: the credential is the stored active host, so the
   // ambient project chain must not pair with it under a selection (KRTX-1705).
-  const projectId = f.project ?? resolveProjectId(undefined, { hostScoped: !f.host });
+  const projectId =
+    f.project ?? resolveProjectId(undefined, { hostScoped: !f.host, hostArg: f.host });
   if (!projectId) {
     process.stderr.write(
       `${status.err('No project linked.')} Pass ${C.cyan}--project <id>${C.reset} for one project, ` +

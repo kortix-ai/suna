@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants, existsSync } from 'node:fs'
-import { chmod, copyFile, mkdir, open, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, open, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import * as tar from 'tar'
@@ -347,30 +347,28 @@ export async function materializeRelease(input: {
 }
 
 /**
- * Build `<root>/<release_id>` from a directory that holds the release's files
- * at their repository paths: the session's own checkout (`copy`), or an
- * extracted project snapshot (`move`). Only the listed files are taken, and
- * each is verified against its blob ID where it lands, so a dirty checkout or
- * a snapshot with extra entries (`.git`, paths the release leaves out) never
- * becomes the release. Neither source has a size cap of its own.
+ * Build `<root>/<release_id>` from a directory that holds the release's
+ * commit at its repository paths: an extracted project snapshot, or a fetch
+ * of the commit. Only the listed files are taken, and each is verified
+ * against its blob ID where it lands, so extra entries (`.git`, paths the
+ * release leaves out) never become the release. Neither source has a size cap
+ * of its own.
  */
 export async function materializeReleaseFromTree(input: {
   root?: string
   manifest: ReleaseManifest
   source: string
-  take: 'copy' | 'move'
+  transport: 'snapshot' | 'git'
   prepare?: (stagedDir: string) => Promise<void>
   managedSkillsDir?: string
 }): Promise<{ dir: string }> {
-  return install(input, input.take === 'copy' ? 'workspace' : 'snapshot', (staged) =>
-    stageFromTree(input.source, input.manifest.files, staged, input.take),
-  )
+  return install(input, input.transport, (staged) => stageFromTree(input.source, input.manifest.files, staged))
 }
 
 /** Stage, prepare, seal, rename into place, write the manifest. */
 async function install(
   input: { root?: string; manifest: ReleaseManifest; prepare?: (stagedDir: string) => Promise<void>; managedSkillsDir?: string },
-  transport: 'archive' | 'workspace' | 'snapshot',
+  transport: 'archive' | 'snapshot' | 'git',
   stage: (staged: string) => Promise<void>,
 ): Promise<{ dir: string }> {
   const root = input.root ?? bootConfigRoot()
@@ -435,16 +433,11 @@ async function fileBlobId(path: string, idLength: number): Promise<string | null
 }
 
 /**
- * Take every listed file from `source` into `staged` and verify it there.
- * Hashing the staged copy, not the source, leaves no gap between the check
+ * Move every listed file from `source` into `staged` and verify it there.
+ * Hashing the staged file, not the source, leaves no gap between the check
  * and the use: nothing else writes into a staging directory.
  */
-async function stageFromTree(
-  source: string,
-  files: readonly ConfigReleaseFile[],
-  staged: string,
-  take: 'copy' | 'move',
-): Promise<void> {
+async function stageFromTree(source: string, files: readonly ConfigReleaseFile[], staged: string): Promise<void> {
   assertFileList(files)
   await mkdir(staged, { recursive: true })
   const symlinks: Array<[string, string]> = []
@@ -461,8 +454,7 @@ async function stageFromTree(
       continue
     }
     try {
-      if (take === 'move') await rename(from, target)
-      else await copyFile(from, target, constants.COPYFILE_FICLONE)
+      await rename(from, target)
     } catch (err) {
       throw new Error(`boot config: ${path} is not in ${source}: ${(err as Error).message}`)
     }
@@ -698,10 +690,28 @@ export async function readBootLinkTarget(root: string = bootConfigRoot()): Promi
   }
 }
 
+/**
+ * `<root>/boot-release`: the release the boot link's config dir comes from,
+ * where project tools load from. Absent when no release is served. A release
+ * with no OpenCode config dir serves the image default, so the boot link
+ * alone cannot name it.
+ */
+export function bootReleaseLinkPath(root: string = bootConfigRoot()): string {
+  return join(root, 'boot-release')
+}
+
+/** The release root the boot link serves from, or null. */
+export async function readBootReleaseRoot(root: string = bootConfigRoot()): Promise<string | null> {
+  try {
+    return resolve(await readlink(bootReleaseLinkPath(root)))
+  } catch {
+    return null
+  }
+}
+
 /** Point the boot link at `target` with one atomic rename. Returns the link path. */
-export async function pointBootLink(target: string, root: string = bootConfigRoot()): Promise<string> {
+export async function pointBootLink(target: string, root: string = bootConfigRoot(), link: string = bootLinkPath(root)): Promise<string> {
   await mkdir(root, { recursive: true })
-  const link = bootLinkPath(root)
   const staged = `${link}.${randomUUID()}.tmp`
   await symlink(resolve(target), staged)
   try {

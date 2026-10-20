@@ -16,7 +16,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { InlineCode } from '@/components/markdown/inline-code';
 import { InlineMath } from '@/components/markdown/math';
-import { MarkdownText, openExternalLink } from '@/components/markdown/markdown-text';
+import { MarkdownText } from '@/components/markdown/markdown-text';
+import { openExternalLink } from '@/lib/utils/open-link';
 import type { MarkdownPalette } from '@/components/markdown/markdown-theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
 import { withAlpha } from '@/lib/utils/theme';

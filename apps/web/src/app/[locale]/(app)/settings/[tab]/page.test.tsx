@@ -38,10 +38,12 @@ mock.module('@/features/layout/section/error-state', () => ({
   ErrorState: ({ title, action }: { title: string; action: React.ReactNode }) =>
     createElement('section', null, title, action),
 }));
-mock.module('@/components/ui/button', () => ({
+const uiButtonMock = () => ({
   Button: ({ onClick, children }: { onClick: () => void; children: React.ReactNode }) =>
     createElement('button', { onClick }, children),
-}));
+});
+mock.module('@/components/ui/button', uiButtonMock);
+mock.module('@kortix/ui/button', uiButtonMock);
 mock.module('@/components/common/route-loading', () => ({
   RouteLoadingFallback: () => createElement('p', null, 'Loading'),
 }));
@@ -99,15 +101,17 @@ test('failed or empty account lookup shows a retryable error, never Profile', as
   expect(retries).toBe(2);
 });
 
-test('live, unknown and project-only segments keep existing standalone behavior', async () => {
+test('live, renamed, unknown and project-only segments open their standalone tab', async () => {
   accounts = [];
   pending = false;
   failed = false;
   for (const [raw, expected] of [
     ['security', 'security'],
+    // KRTX-2291: the old personal API keys tab is `tokens` now (`RENAMED`).
+    ['api-keys', 'tokens'],
+    ['tokens', 'tokens'],
     ['unknown', 'profile'],
     ['secrets', 'profile'],
-    ['api-keys', 'profile'],
   ]) {
     segment = raw;
     replacements.length = 0;

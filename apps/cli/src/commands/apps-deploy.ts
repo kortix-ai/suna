@@ -129,15 +129,6 @@ export async function context(options: ContextOptions): Promise<{
   const project = await withKortixScope(resolved.auth, () =>
     kortix.project(resolved.projectId).get(),
   );
-  // Client-side pre-check: saves a wasted round trip when the flag is off. The
-  // wording matches the server's gate verbatim (feature-flags/gate.ts), so the
-  // user reads the same sentence whichever side rejects.
-  if (project.experimental?.apps !== true) {
-    process.stderr.write(
-      `${status.err('Apps is not enabled for this project. Enable it in Settings → Feature flags.')}\n`,
-    );
-    return null;
-  }
   return {
     projectId: resolved.projectId,
     auth: resolved.auth,
@@ -199,8 +190,8 @@ interface DeployFlags {
 export function deployFlags(rest: string[]): DeployFlags {
   dropRetiredBudgetFlag(rest);
   const provider = takeFlagValue(rest, ['--provider']) as AppHostingProvider | undefined;
-  if (provider && !['daytona', 'platinum', 'e2b'].includes(provider)) {
-    throw new Error('--provider must be daytona, platinum, or e2b');
+  if (provider && !['platinum', 'daytona'].includes(provider)) {
+    throw new Error('--provider must be platinum or daytona (legacy fallback)');
   }
   const accessMode = takeFlagValue(rest, ['--access']) as AppAccessMode | undefined;
   if (
@@ -251,10 +242,10 @@ export interface ManifestAppDefaults {
   block: AppBlockV2;
 }
 
-/** Every `apps.<name>` block of the v2 kortix.yaml above `cwd`, or null. */
+/** Every `apps.<name>` block of the kortix.yaml (kortix_version 2 or 3) above `cwd`, or null. */
 export function loadManifestApps(cwd: string): { root: string; blocks: Record<string, AppBlockV2> } | null {
   const manifest = loadLocalManifest(cwd);
-  if (!manifest || manifest.data.kortix_version !== 2) return null;
+  if (!manifest || !(Number(manifest.data.kortix_version) >= 2)) return null;
   const rawApps = manifest.data.apps;
   if (!rawApps || typeof rawApps !== 'object' || Array.isArray(rawApps)) return null;
   return { root: dirname(manifest.path), blocks: rawApps as Record<string, AppBlockV2> };
@@ -282,7 +273,10 @@ export function loadManifestAppDefaults(
   allowSingleDefault = false,
 ): ManifestAppDefaults | null {
   const loaded = loadManifestApps(cwd);
-  if (!loaded) return null;
+  if (!loaded) {
+    if (requestedName) throw new Error(`--manifest-app ${requestedName} needs a kortix.yaml (kortix_version 2 or 3) with an apps.${requestedName} block`);
+    return null;
+  }
   const entries = Object.entries(loaded.blocks);
   const selected = requestedName
     ? entries.find(([name]) => name === requestedName)

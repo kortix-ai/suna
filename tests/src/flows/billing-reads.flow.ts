@@ -128,16 +128,20 @@ flow(
       r.status(401);
     });
 
-    await ctx.step("OWNER reads the visible tiers: free and pro listed, the internal none tier hidden", async () => {
+    await ctx.step("OWNER reads the credits tier ladder ($50 … $50,000, 25 tiers) and the $50–$50,000 bounds", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/tier-configurations");
       r.status(OWNER_READ);
       if (r.statusCode !== 200) return;
-      const tiers = r.json<{ tiers: Array<{ name: string; display_name: string; monthly_price: number }> }>().tiers;
-      const names = tiers.map((t) => t.name);
-      if (!names.includes("free") || !names.includes("pro")) throw new Error(`expected free and pro, got ${JSON.stringify(names)}`);
-      if (names.includes("none")) throw new Error("the internal `none` tier is listed");
-      const pro = tiers.find((t) => t.name === "pro")!;
-      if (pro.display_name !== "Pro" || pro.monthly_price !== 20) throw new Error(`unexpected pro tier: ${JSON.stringify(pro)}`);
+      r.body()
+        .has("$.tiers[0].name", "credits_50")
+        .has("$.tiers[0].display_name", "5,000 credits")
+        .has("$.tiers[0].monthly_price", 50)
+        .has("$.tiers[3].monthly_price", 200)
+        .has("$.tiers[24].monthly_price", 50000)
+        .has("$.tiers[24].display_name", "5,000,000 credits")
+        .has("$.tiers[25]", undefined)
+        .has("$.min_monthly_usd", 50)
+        .has("$.max_monthly_usd", 50000);
     });
     await ctx.step("ANON cannot read tier-configurations → 401 (auth-gated, not public)", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/tier-configurations");

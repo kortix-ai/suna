@@ -54,11 +54,6 @@ accountStateRouter.openapi(
     }
     const accountId = await resolveScopedAccountId(c, 'query');
 
-    // NOTE: legacy → per-seat migration is NOT auto-triggered on sign-in anymore.
-    // Silently cancelling a customer's subs + creating a seat sub without consent
-    // was surprising. It now runs ONLY when the user explicitly clicks "Claim
-    // seat-based pricing" (POST /v1/billing/claim-per-seat → maybeMigrateLegacyAccount).
-
     try {
       const state = await buildAccountState(accountId);
       // Billing disabled — return real data but never block the user

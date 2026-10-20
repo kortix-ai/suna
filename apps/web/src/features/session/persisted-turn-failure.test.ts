@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Turn } from '@/ui';
+import { sessionLogOfV1Rows, sessionLogTurns } from '@kortix/sdk';
 import { failureShownByTurn, failureSupersededByTurn, persistedFailureText } from './persisted-turn-failure';
 
 const BODY = JSON.stringify({
@@ -8,11 +8,13 @@ const BODY = JSON.stringify({
   suggestion: 'Select a granted ChatGPT connection in session settings.',
 });
 
-function turn(id: string, error?: Record<string, unknown>, created?: number): Turn {
-  return {
-    userMessage: { info: { id, ...(created === undefined ? {} : { time: { created } }) }, parts: [] },
-    assistantMessages: [{ info: { id: `${id}-a`, ...(error ? { error } : {}) }, parts: [] }],
-  } as unknown as Turn;
+/** One turn from its v1 rows, as the transcript reads it (the `fromV1` view, grouped). */
+function turn(id: string, error?: Record<string, unknown>, created?: number) {
+  const rows = [
+    { info: { id, role: 'user', ...(created === undefined ? {} : { time: { created } }) }, parts: [] },
+    { info: { id: `${id}-a`, role: 'assistant', parentID: id, ...(error ? { error } : {}) }, parts: [{ id: `${id}-p`, type: 'text', text: 'x' }] },
+  ];
+  return sessionLogTurns(sessionLogOfV1Rows('kses', 'ses', rows as never).threads[0]!)[0]!;
 }
 
 describe('persistedFailureText', () => {

@@ -8,16 +8,16 @@ import { errorToast } from '@/components/ui/toast';
 
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
 import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 
+import { useDebounce } from '@/hooks/use-debounce';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { createAppAccessSession, type App } from '@kortix/sdk';
-import { useAppAccess, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
-import { ArrowUpRightIcon, HardDrivesIcon } from '@phosphor-icons/react';
+import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
+import { ArrowUpRightIcon, HardDrivesIcon, PlusIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
@@ -26,6 +26,7 @@ import { useEffect, useState } from 'react';
 import { AppPreview, PREVIEW_TILE_ASPECT } from './app-preview';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
+import { AddExternalAppDialog } from './app-add-external';
 import { appCan, appStatus, cardPreviewApp, gridApps } from './app-shared';
 export { DEPLOYMENT_COPY, deployNotice, appHost } from './app-shared';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from './app-preview';
@@ -36,10 +37,13 @@ function AppsHeader({
   columns,
   onColumnsChange,
   showColumns,
+  onAdd,
 }: {
   projectId: string;
   columns: AppGridColumns;
   onColumnsChange: (next: AppGridColumns) => void;
+  /** Absent: the viewer may not add Apps, and the control is not shown. */
+  onAdd?: () => void;
   /**
    * The control only exists to reshape a grid, so it is absent whenever there
    * is no grid — the feature gate, the error state and the empty state each
@@ -68,17 +72,19 @@ function AppsHeader({
         {tI18nComplete.raw('text7af023c43013')}
         <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
       </Link>
+      {onAdd ? (
+        <Button size="sm" variant="secondary" className="shrink-0 gap-1.5" onClick={onAdd} data-testid="apps-add-external">
+          <PlusIcon className="size-3.5 shrink-0" aria-hidden />
+          {tI18nComplete.raw('text3dd46a7b552c')}
+        </Button>
+      ) : null}
     </ProjectPageHeader>
   );
 }
 
 export function AppsView({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // One gating primitive, fail-closed. Apps NEVER enables itself from here:
-  // activation lives only in Customize → Feature flags, so this page has no
-  // mutation and no self-enable button.
-  const appsGate = useFeatureFlag(projectId, 'apps');
-  const apps = useProjectApps(appsGate.enabled ? projectId : null);
+  const apps = useProjectApps(projectId);
   const searchParams = useSearchParams();
   // Apps own their leaves — the routes assert project.app.write for policy and
   // shape changes and project.app.deploy for anything that changes what the
@@ -96,7 +102,19 @@ export function AppsView({ projectId }: { projectId: string }) {
   // `/backends/<id>` routes land here.
   const [openAppId, setOpenAppId] = useState<string | null>(() => searchParams.get('app'));
   const [gridColumns, setGridColumns] = useAppGridColumns();
+  const [adding, setAdding] = useState(false);
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
+  // Mirror the open App into `?app=` so a reload or a copied link reopens it.
+  // Debounced so a fast open/close writes one history entry, not two.
+  // `replaceState` touches only the `app` key and does not re-run the route.
+  const { debouncedValue: urlAppId } = useDebounce(openAppId, 200);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if ((url.searchParams.get('app') ?? null) === urlAppId) return;
+    if (urlAppId) url.searchParams.set('app', urlAppId);
+    else url.searchParams.delete('app');
+    window.history.replaceState(window.history.state, '', url);
+  }, [urlAppId]);
 
   useEffect(() => {
     const target = searchParams.get('open_app');
@@ -125,10 +143,10 @@ export function AppsView({ projectId }: { projectId: string }) {
         projectId={projectId}
         columns={gridColumns}
         onColumnsChange={setGridColumns}
-        showColumns={
-          appsGate.isLoading || (appsGate.enabled && (apps.isLoading || !!apps.data?.length))
-        }
+        showColumns={apps.isLoading || !!apps.data?.length}
+        onAdd={canWrite ? () => setAdding(true) : undefined}
       />
+      <AddExternalAppDialog projectId={projectId} open={adding} onOpenChange={setAdding} onAdded={setOpenAppId} />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* `max-w-7xl px-4` — the gallery's column, and the CONTAINER the grid
@@ -151,15 +169,7 @@ export function AppsView({ projectId }: { projectId: string }) {
             APP_GRID_CONTAINER,
           )}
         >
-          {appsGate.isLoading ? (
-            <AppGridSkeleton columns={gridColumns} />
-          ) : !appsGate.enabled ? (
-            <FeatureGateScreen
-              featureName="Apps"
-              internalOnly
-              description={tI18nComplete.raw('text3387c31a18b3')}
-            />
-          ) : apps.isLoading ? (
+          {apps.isLoading ? (
             <AppGridSkeleton columns={gridColumns} />
           ) : apps.isError ? (
             <ErrorState
@@ -203,10 +213,6 @@ export function AppsView({ projectId }: { projectId: string }) {
           canWrite={canWrite}
           canDeploy={canDeploy}
           canAdmin={canAdmin}
-          onOpenLinked={(slug) => {
-            const linked = apps.data?.find((item) => item.slug === slug);
-            if (linked) setOpenAppId(linked.app_id);
-          }}
           open
           onOpenChange={(next) => {
             if (!next) setOpenAppId(null);

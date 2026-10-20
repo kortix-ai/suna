@@ -137,21 +137,21 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       agentmail_email: false,
       llm_gateway: true,
       meta_agent: false,
-      apps: false,
       monitors: false,
       reminders: false,
       warm_sessions: false,
       secrets_egress: false,
       pooled_provider_secrets: false,
       pi_harness: false,
+      genui: false,
       us_region: false,
       event_triggers: false,
       notification_center: false,
       volumes: false,
-      stateless_sessions: false,
       drives: false,
-      ephemeral_sandboxes: false,
       session_log: false,
+      session_log_restore: false,
+      connectors_v2: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -291,12 +291,12 @@ describe('ProjectSchema', () => {
     expect(parsed.project_role).toBeNull();
   });
 
-  test('accepts E2B and rejects retired sandbox providers in project pin fields', () => {
+  test('accepts Platinum and Daytona and rejects retired sandbox providers in project pin fields', () => {
     expect(() =>
       ProjectSchema.parse(
         projectFixture({
-          default_sandbox_provider: 'e2b',
-          available_sandbox_providers: ['daytona', 'platinum', 'e2b'],
+          default_sandbox_provider: 'platinum',
+          available_sandbox_providers: ['platinum', 'daytona'],
         }),
       ),
     ).not.toThrow();
@@ -307,7 +307,8 @@ describe('ProjectSchema', () => {
         }),
       ),
     ).toThrow();
-    const retiredProviders = [['local', 'docker'].join('_'), ['local', 'docker'].join('-')];
+    // E2B support is discontinued: `e2b` is a retired provider too.
+    const retiredProviders = ['e2b', ['local', 'docker'].join('_'), ['local', 'docker'].join('-')];
     for (const retiredProvider of retiredProviders) {
       expect(() =>
         ProjectSchema.parse(
@@ -512,7 +513,7 @@ describe('pending session prompt contract', () => {
 
 describe('ProjectSessionSandboxSchema', () => {
   test('accepts every provider the platform can emit', () => {
-    for (const provider of ['daytona', 'platinum', 'e2b']) {
+    for (const provider of ['platinum', 'daytona']) {
       expect(() =>
         ProjectSessionSandboxSchema.strict().parse(sandboxFixture({ provider })),
       ).not.toThrow();
@@ -533,6 +534,20 @@ describe('TriggerSchema', () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  test('filter: a value or exactly one operator per path (KRTX-1721)', () => {
+    const filter = {
+      'body.type': 'push',
+      'body.sender.login': { not: ['kortix-bot'] },
+      'body.action': { in: ['opened'] },
+      'body.pull_request': { exists: true },
+      'body.base': { prefix: ['release/'] },
+      'body.ref': { not_prefix: ['refs/heads/kortix/'] },
+    };
+    expect(() => TriggerSchema.strict().parse(triggerFixture({ filter }))).not.toThrow();
+    expect(TriggerSchema.safeParse(triggerFixture({ filter: { 'body.ref': { in: ['a'], not: ['b'] } } })).success).toBe(false);
+    expect(TriggerSchema.safeParse(triggerFixture({ filter: { 'body.ref': { nott: ['a'] } } })).success).toBe(false);
   });
 
   test('accepts an event trigger with its subscription state', () => {
@@ -629,6 +644,25 @@ describe('SecretSchema', () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  test('status is ok or undecryptable, and optional for older servers', () => {
+    for (const status of ['ok', 'undecryptable'] as const) {
+      expect(SecretSchema.strict().parse(secretFixture({ status })).status).toBe(status);
+    }
+    expect(SecretSchema.strict().parse(secretFixture()).status).toBeUndefined();
+    expect(SecretSchema.safeParse(secretFixture({ status: 'missing' })).success).toBe(false);
+  });
+
+  test("mine.status reports the caller's override apart from the shared status", () => {
+    const mine = { active: true, updated_at: NOW, status: 'undecryptable' };
+    const parsed = SecretSchema.strict().parse(
+      secretFixture({ status: 'ok', effective_source: 'mine', mine }),
+    );
+    expect(parsed.status).toBe('ok');
+    expect(parsed.mine?.status).toBe('undecryptable');
+    expect(SecretSchema.parse(secretFixture({ mine: { active: true, updated_at: NOW } })).mine?.status).toBeUndefined();
+    expect(SecretSchema.safeParse(secretFixture({ mine: { ...mine, status: 'missing' } })).success).toBe(false);
   });
 
   test('accepts the system git-auth secret shape', () => {
@@ -738,27 +772,29 @@ describe('envelopes', () => {
   });
 
   test('feature flag keys stay in sync with the map schema', () => {
-    expect(FEATURE_FLAG_KEYS).toEqual([
+    // The static tuple order of a zod `keyof()` follows union order, which tsgo
+    // (TypeScript 7) sorts differently from tsc 5; the runtime order is the contract.
+    expect(FEATURE_FLAG_KEYS as readonly string[]).toEqual([
       'marketplace',
       'connectors_api_discover',
       'agentmail_email',
       'llm_gateway',
       'meta_agent',
-      'apps',
       'monitors',
       'reminders',
       'warm_sessions',
       'secrets_egress',
       'pooled_provider_secrets',
       'pi_harness',
+      'genui',
       'us_region',
       'event_triggers',
       'notification_center',
       'volumes',
-      'stateless_sessions',
       'drives',
-      'ephemeral_sandboxes',
       'session_log',
+      'session_log_restore',
+      'connectors_v2',
     ]);
   });
 
@@ -770,6 +806,32 @@ describe('envelopes', () => {
   test('sharing intent normalizes readonly member lists', () => {
     const parsed = SharingIntentSchema.parse({ mode: 'members', memberIds: ['u1'] });
     expect(parsed).toEqual({ mode: 'members', memberIds: ['u1'] });
+  });
+});
+
+test('SessionCreateInputSchema still accepts the withdrawn persistent_machine field (inert)', () => {
+  expect(SessionCreateInputSchema.strict().parse({ persistent_machine: true })).toMatchObject({ persistent_machine: true });
+});
+
+describe('SessionCreateInputSchema initial_context', () => {
+  test('accepts a bounded context beside the prompt and drops it when absent', () => {
+    const parsed = SessionCreateInputSchema.parse({
+      initial_prompt: 'Reply with the single word pong',
+      initial_context: '--- session contract ---\nDo not spawn other sessions.',
+    });
+    expect(parsed.initial_context).toMatch(/Do not spawn other sessions/);
+    expect(SessionCreateInputSchema.parse({ initial_prompt: 'hi' }).initial_context).toBeUndefined();
+    expect(SessionCreateInputSchema.parse({}).initial_context).toBeUndefined();
+  });
+
+  test('rejects an empty or oversized context', () => {
+    expect(SessionCreateInputSchema.safeParse({ initial_context: '' }).success).toBe(false);
+    expect(
+      SessionCreateInputSchema.safeParse({ initial_context: 'x'.repeat(8_193) }).success,
+    ).toBe(false);
+    expect(
+      SessionCreateInputSchema.safeParse({ initial_context: 'x'.repeat(8_192) }).success,
+    ).toBe(true);
   });
 });
 

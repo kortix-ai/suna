@@ -11,6 +11,8 @@ export {
   PROMPT_MODEL_SIGNATURE_CACHE_MAX,
   __resetBackgroundEnvRefreshForTests,
   __pendingBackgroundEnvRefreshesForTests,
+  __backgroundRefreshBackoffForTests,
+  __pendingEnvChecksForTests,
   __resetPromptModelSignatureCacheForTests,
   propagateLlmGatewayModeToActiveSandboxes,
   syncSandboxEnvForPrompt,

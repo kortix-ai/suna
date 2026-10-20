@@ -4,11 +4,11 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { cn } from '@/lib/utils';
 import { useClearFocusedToolCall, useFocusedToolCallId } from '@/stores/kortix-computer-store';
-import type { MessageWithParts } from '@/ui';
+import type { SessionLogMessage } from '@kortix/sdk';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
 import { ActionNavigator } from '../shared/action-navigator';
-import { collectToolParts } from '../shared/collect-tool-parts';
+import { collectToolCalls } from '../shared/collect-tool-parts';
 
 /**
  * Side-panel "Actions" view.
@@ -24,11 +24,12 @@ export const AdvancedPanel = memo(function AdvancedPanel({
   messages,
 }: {
   sessionId: string;
-  messages: MessageWithParts[] | undefined;
+  /** The thread's messages (`useSessionLogThread`). */
+  messages: SessionLogMessage[] | undefined;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const parts = useMemo(() => collectToolParts(messages), [messages]);
-  const count = parts.length;
+  const calls = useMemo(() => collectToolCalls(messages), [messages]);
+  const count = calls.length;
 
   const [index, setIndex] = useState(0);
   // 'live' follows the latest tool as new ones stream in; 'manual' pins the
@@ -42,7 +43,7 @@ export const AdvancedPanel = memo(function AdvancedPanel({
   }, [count, mode]);
 
   const safeIndex = Math.min(index, Math.max(0, count - 1));
-  const current = parts[safeIndex];
+  const current = calls[safeIndex];
   const atLatest = safeIndex >= count - 1;
   const isLive = atLatest && mode === 'live';
 
@@ -59,13 +60,13 @@ export const AdvancedPanel = memo(function AdvancedPanel({
   const clearFocusedToolCall = useClearFocusedToolCall();
   useEffect(() => {
     if (!focusedToolCallId) return;
-    const i = parts.findIndex((p) => p.callID === focusedToolCallId);
+    const i = calls.findIndex((c) => c.call_id === focusedToolCallId);
     if (i >= 0) {
       setMode(i >= count - 1 ? 'live' : 'manual');
       setIndex(i);
     }
     clearFocusedToolCall();
-  }, [focusedToolCallId, parts, count, clearFocusedToolCall]);
+  }, [focusedToolCallId, calls, count, clearFocusedToolCall]);
 
   if (count === 0) {
     return (
@@ -96,13 +97,13 @@ export const AdvancedPanel = memo(function AdvancedPanel({
                 the panel branch rendered its body unconditionally). This view
                 shows exactly one call at a time and the navigator below is how
                 you reach the others, so its row is always the open one. */}
-            <ToolPartRenderer part={current} sessionId={sessionId} defaultOpen />
+            <ToolPartRenderer call={current} sessionId={sessionId} defaultOpen />
           </ToolSurfaceContext.Provider>
         )}
       </div>
 
       <ActionNavigator
-        parts={parts}
+        calls={calls}
         index={safeIndex}
         isLive={isLive}
         onIndexChange={handleIndexChange}

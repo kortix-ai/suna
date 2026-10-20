@@ -16,6 +16,8 @@ export interface ConnectFailure {
   message: string;
   /** Raw error text, shown verbatim under the message. */
   detail?: string;
+  /** The provider removed the box: the action continues the session on a new computer (`recover`), not a restart. */
+  lost?: boolean;
 }
 
 export type ConnectStep =
@@ -26,14 +28,22 @@ export type ConnectStep =
   /** Stop the loop and show this failure. */
   | { kind: 'fail'; failure: ConnectFailure };
 
+const LOST_TITLE = "This session's computer was lost";
+const LOST_MESSAGE =
+  'Its cloud sandbox disappeared on the provider side. Continue the session on a new computer: it starts from the session branch and brings this conversation back. Work that was not committed and pushed stays lost.';
+
 /** Failed `/start` requests in a row before the loop gives up. */
 export const MAX_START_REQUEST_FAILURES = 3;
 
-type StartAnswer = Pick<SessionStartResult, 'stage' | 'retriable' | 'failure'> & {
+type StartAnswer = Pick<SessionStartResult, 'stage' | 'retriable' | 'failure' | 'reason'> & {
   sandbox: { status: string; external_id: string | null } | null;
 };
 
 export function connectStepFromStart(start: StartAnswer): ConnectStep {
+  // The provider removed the box and no in-place recovery answered (KRTX-2419).
+  if (start.reason === 'runtime_identity_unavailable') {
+    return { kind: 'fail', failure: { title: LOST_TITLE, message: LOST_MESSAGE, lost: true } };
+  }
   if (start.stage === 'failed' || start.sandbox?.status === 'error') {
     return fail(
       'Session failed to start',

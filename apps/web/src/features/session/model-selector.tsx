@@ -18,7 +18,7 @@ import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { getProjectDetail } from '@kortix/sdk';
+import { getProject } from '@kortix/sdk';
 import {
   contract,
   type FlatModel,
@@ -354,6 +354,8 @@ export interface ModelSelectorProps {
   disabled?: boolean;
   modelsLoading?: boolean;
   triggerLabelClassName?: string;
+  /** `secondary` for a page-level control; the composer keeps `ghost`. */
+  triggerVariant?: 'ghost' | 'secondary';
 
   projectId?: string;
 
@@ -394,6 +396,7 @@ export function ModelSelector({
   disabled = false,
   modelsLoading = false,
   triggerLabelClassName,
+  triggerVariant = 'ghost',
   offerChatGptAccounts = false,
   open: openProp,
   onOpenChange,
@@ -430,13 +433,13 @@ export function ModelSelector({
 
   const params = useParams<{ id?: string }>();
   const projectId = typeof params?.id === 'string' ? params.id : null;
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
+  const projectRowQuery = useQuery({
+    queryKey: qk.project.summary(projectId ?? ''),
+    queryFn: () => getProject(projectId as string),
     enabled: !!projectId,
     ...contract('config'),
   });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  const llmGatewayEnabled = isLlmGatewayEnabled(projectRowQuery.data);
   // Bring your own ChatGPT subscription (pooled provider secrets). Any member
   // connects their own account from here; Customize is not needed. Hidden when
   // a manager disabled the ChatGPT provider for the project.
@@ -451,11 +454,11 @@ export function ModelSelector({
   // Every write this picker offers is `project.model.write` on the API: the
   // star sets the ACCOUNT default (the default for every member, not a personal
   // one), and "+" / sliders open the provider modal. A member without the leaf
-  // got a "You don't have permission" toast for each. Hidden on a RECEIVED
-  // denial only, from the shared project-page probe batch.
+  // got a "You don't have permission" toast for each. Shown on a RECEIVED
+  // allow only, from the shared project-page probe batch.
   const caps = useProjectPageCans(projectId ?? undefined);
   const canManageModels =
-    !projectId || caps[PROJECT_ACTIONS.PROJECT_MODEL_WRITE]?.allowed !== false;
+    !projectId || caps[PROJECT_ACTIONS.PROJECT_MODEL_WRITE]?.allowed === true;
   const rowDefaultControls = canManageModels ? defaultControls : undefined;
   const baseModels = useMemo(() => {
     return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
@@ -626,9 +629,9 @@ export function ModelSelector({
         <CommandPopoverTrigger>
           <Button
             type="button"
-            variant="ghost"
+            variant={triggerVariant}
             size="sm"
-            className="text-muted-foreground rounded-lg"
+            className={cn('rounded-lg hit-area-y-3', triggerVariant === 'ghost' && 'text-muted-foreground')}
           >
             <span className={cn('max-w-30 truncate', triggerLabelClassName)}>{displayName}</span>
             <ChevronDown

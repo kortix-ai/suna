@@ -23,6 +23,39 @@ export function parseFilePaths(output: string): string[] | null {
 
 export { type GrepFileGroup, parseGrepOutput } from '@kortix/shared/tool-output';
 
+/**
+ * The files of a native directory listing, as paths under the listed directory: OpenCode
+ * `list` (the `/dir/` line, then entries indented two spaces per level) or pi `ls` (entries
+ * relative to `dir`, `/` after a directory, a `[…]` notice, `(empty directory)`), or absolute
+ * paths one per line. `[]` for a
+ * listing with no entry; `null` when the text is not a listing, or lists only directories.
+ */
+export function parseListing(output: string, dir?: string): string[] | null {
+  // Only pi's two notices are dropped: a `[…]` line and `(empty directory)`. An entry may
+  // start with `[` or `(` (route folders `[locale]/`, `(app)/`, a `[id].tsx` file).
+  const lines = output
+    .split(/\r?\n/)
+    .filter((l) => l.trim() && !/^\[.*\]$|^\(empty directory\)$/.test(l.trim()));
+  // A loop, not /\/*$/: that regex is quadratic on a long run of slashes (CodeQL js/polynomial-redos).
+  let end = dir?.length ?? 0;
+  while (end > 0 && dir![end - 1] === '/') end--;
+  let root = dir ? `${dir.slice(0, end)}/` : '';
+  if (/^\/.*\/$/.test(lines[0]?.trim() ?? '')) root = lines.shift()!.trim();
+  if (!root) return null;
+  if (lines.length === 0) return [];
+  const indent = (line: string) => line.length - line.trimStart().length;
+  const base = Math.min(...lines.map(indent));
+  const parents: string[] = [];
+  const files: string[] = [];
+  for (const line of lines) {
+    const name = line.trim();
+    parents.length = Math.min(parents.length, (indent(line) - base) >> 1);
+    if (name.endsWith('/')) parents.push(name);
+    else files.push(name.startsWith('/') ? name : root + parents.join('') + name);
+  }
+  return files.length ? files : null;
+}
+
 export function ToolListRow({
   icon,
   name,

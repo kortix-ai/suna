@@ -8,7 +8,7 @@ import { useTranslations } from '@/i18n/use-translations';
 // leave the hub for a standalone route, which dropped the left rail and read
 // as a different product next to the project panel; now it stays in the pane.
 //
-// The list is the shared `AccessList`/`AccessRow` — the same row every other
+// Each row is the shared `AccessRow`, flattened to a Linear list row — the row every other
 // access surface renders. Only `CreateGroupDialog` stays local: it DEFINES a
 // group, it does not grant access, so it is not an `AccessDialog` mode.
 
@@ -23,13 +23,13 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useMemo, useState } from 'react';
 
+import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GroupAccessPanel } from '@/components/iam/group-access-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import {
   InputGroupSearch,
@@ -50,16 +50,14 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import {
-  AccessList,
-  AccessRow,
-  RBAC_UPSELL_MESSAGE,
-  pluralize,
-} from '@/features/workspace/shared/access';
+import { AccessRow, RBAC_UPSELL_MESSAGE, pluralize } from '@/features/workspace/shared/access';
 import { type AccountGroup, createGroup, deleteGroup, listGroups } from '@/lib/iam-client';
+
+/** A Linear list row: flat on the page, a hover fill, no border or card.
+ *  Overrides `AccessRow`'s card dialect through its `className`. */
+const FLAT_ROW_CLASS = 'hover:bg-hover rounded-md border-0 bg-transparent px-3 py-2';
 
 interface GroupsTabProps {
   accountId: string;
@@ -85,6 +83,8 @@ interface GroupsTabProps {
   currentUserId: string;
   /** `member.update` — group member rows offer "Edit access" (account role). */
   canUpdateRole: boolean;
+  /** `member.read` — "View access" on another member's row. */
+  canReadMembers: boolean;
   /** Group member rows: "View access" opens that member's panel. */
   onSelectMember: (userId: string) => void;
   /** null = show the group list. A group id = show that group's access panel.
@@ -103,6 +103,7 @@ export function GroupsTab({
   accountName,
   currentUserId,
   canUpdateRole,
+  canReadMembers,
   onSelectMember,
   selectedGroupId,
   onSelectGroup,
@@ -119,6 +120,7 @@ export function GroupsTab({
         accountName={accountName}
         currentUserId={currentUserId}
         canUpdateRole={canUpdateRole}
+        canReadMembers={canReadMembers}
         onSelectMember={onSelectMember}
         onBack={() => onSelectGroup(null)}
       />
@@ -147,7 +149,6 @@ function GroupsList({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const openDemo = useRequestDemo();
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<AccountGroup | null>(null);
@@ -180,30 +181,32 @@ function GroupsList({
     );
   }, [groupsQuery.data, search]);
 
-  const gated = canCreate && !rbacEnabled;
-  const createAction = canCreate ? (
-    rbacEnabled ? (
-      <Button onClick={() => setCreateOpen(true)} size="sm" variant="secondary" className="gap-1.5">
-        <PlusIcon className="size-4" />
-        {tHardcodedUi.raw('i18nComplete.texte3c4877576de')}
-      </Button>
-    ) : (
-      <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
-        <span className="inline-flex items-center gap-1.5">
-          <Button size="sm" variant="secondary" className="gap-1.5" disabled>
-            <PlusIcon className="size-4" />
-            {tHardcodedUi.raw('i18nComplete.texte3c4877576de')}
-          </Button>
-          <Badge variant="outline" size="sm">
-            {tHardcodedUi.raw('i18nComplete.text3fbe5ed156f1')}
-          </Badge>
-        </span>
-      </Hint>
-    )
-  ) : null;
-
   const total = groupsQuery.data?.length ?? 0;
   const settled = !groupsQuery.isLoading && !groupsQuery.isError;
+  // A tier without `rbac` and no groups has nothing to manage here: the page
+  // is the Enterprise upsell alone, never an empty "No groups yet" list.
+  // Groups that already exist (made before a downgrade, or synced) still list,
+  // so they can be opened and cleaned up — deleting is never gated.
+  const upsellOnly = settled && !rbacEnabled && total === 0;
+
+  const createAction =
+    canCreate && settled && !upsellOnly ? (
+      rbacEnabled ? (
+        <Button onClick={() => setCreateOpen(true)} size="sm" variant="secondary" className="gap-1.5">
+          <PlusIcon className="size-4" />
+          {tHardcodedUi.raw('i18nComplete.texte3c4877576de')}
+        </Button>
+      ) : (
+        <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
+          <span className="inline-flex">
+            <Button size="sm" variant="secondary" className="gap-1.5" disabled>
+              <PlusIcon className="size-4" />
+              {tHardcodedUi.raw('i18nComplete.texte3c4877576de')}
+            </Button>
+          </span>
+        </Hint>
+      )
+    ) : null;
 
   // Stays in the hub: the account page turns this into
   // `?tab=groups&group=<id>` and mounts `GroupAccessPanel` in this same pane.
@@ -215,7 +218,6 @@ function GroupsList({
         <div className="space-y-0.5">
           <p className="text-foreground text-sm font-medium">
             {tHardcodedUi.raw('i18nComplete.text39bbb719fa2b')}
-            {settled ? ` · ${total}` : ''}
           </p>
           <p className="text-muted-foreground text-xs">
             {tHardcodedUi.raw(
@@ -226,36 +228,22 @@ function GroupsList({
         {createAction}
       </div>
 
-      {gated && (
-        <InfoBanner
-          tone="info"
-          title={tHardcodedUi.raw('i18nComplete.text9d48410d14d3')}
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openDemo({ source: 'accounts-groups' })}
-            >
-              {tHardcodedUi.raw('i18nComplete.text604abea32b49')}
-            </Button>
-          }
-        >
-          {RBAC_UPSELL_MESSAGE}
-        </InfoBanner>
-      )}
+      {upsellOnly ? <EnterpriseUpsell feature="groups" accountId={accountId} /> : null}
 
-      <InputGroupSearch>
-        <InputGroupSearchIcon>
-          <MagnifyingGlassIcon />
-        </InputGroupSearchIcon>
-        <InputGroupSearchInput
-          placeholder={tHardcodedUi.raw('i18nComplete.textd16be1a95200')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          variant="popover"
-        />
-        {search ? <InputGroupSearchClear onClick={() => setSearch('')} /> : null}
-      </InputGroupSearch>
+      {/* Search narrows a list. With no groups there is nothing to narrow. */}
+      {settled && total > 0 ? (
+        <InputGroupSearch>
+          <InputGroupSearchIcon>
+            <MagnifyingGlassIcon />
+          </InputGroupSearchIcon>
+          <InputGroupSearchInput
+            placeholder={tHardcodedUi.raw('i18nComplete.textd16be1a95200')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search ? <InputGroupSearchClear onClick={() => setSearch('')} /> : null}
+        </InputGroupSearch>
+      ) : null}
 
       {groupsQuery.isError && (
         <ErrorState
@@ -271,16 +259,15 @@ function GroupsList({
       )}
 
       {groupsQuery.isLoading && (
-        <div className="space-y-2">
-          {Array.from({ length: 2 }).map((_, i) => (
-            <Skeleton key={i} className="h-[58px] w-full rounded-md" />
+        <div className="space-y-1">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-11 w-full rounded-md" />
           ))}
         </div>
       )}
 
-      {settled && filtered.length === 0 && (
+      {settled && !upsellOnly && filtered.length === 0 && (
         <EmptyState
-          icon={UsersIcon}
           size="sm"
           title={
             search
@@ -288,43 +275,40 @@ function GroupsList({
               : tHardcodedUi.raw('i18nComplete.text07514d065adb')
           }
           description={
-            !search && canCreate
-              ? rbacEnabled
-                ? tHardcodedUi.raw('i18nComplete.texte268202ba9f5')
-                : RBAC_UPSELL_MESSAGE
-              : undefined
+            !search && canCreate ? tHardcodedUi.raw('i18nComplete.texte268202ba9f5') : undefined
           }
         />
       )}
 
-      {!groupsQuery.isLoading && filtered.length > 0 && (
-        <AccessList>
+      {settled && filtered.length > 0 && (
+        // Linear-style list: flat rows on the page, a hover fill, no card per row.
+        <ul className="-mx-2 flex flex-col gap-px">
           {filtered.map((g) => (
             <AccessRow
               key={g.group_id}
-              leading={<EntityAvatar icon={UsersIcon} size="md" />}
+              className={FLAT_ROW_CLASS}
+              leading={<EntityAvatar icon={UsersIcon} size="sm" />}
               title={g.name}
               badges={
-                <Badge
-                  variant="outline"
-                  size="sm"
-                  className={g.source === 'scim' ? undefined : 'capitalize'}
-                  title={
-                    g.source === 'scim'
-                      ? tHardcodedUi.raw('i18nComplete.text2aa5f5cc5cac')
-                      : undefined
-                  }
-                >
-                  {g.source === 'scim'
-                    ? tHardcodedUi.raw('i18nComplete.text2d83971aa73e')
-                    : g.source}
-                </Badge>
+                g.source === 'scim' ? (
+                  <Badge
+                    variant="outline"
+                    size="sm"
+                    title={tHardcodedUi.raw('i18nComplete.text2aa5f5cc5cac')}
+                  >
+                    {tHardcodedUi.raw('i18nComplete.text2d83971aa73e')}
+                  </Badge>
+                ) : null
               }
-              metaParts={[
-                g.description || null,
-                pluralize(g.member_count ?? 0, 'member'),
-                pluralize(g.project_count ?? 0, 'project'),
-              ].filter(Boolean)}
+              metaParts={[g.description || null].filter(Boolean)}
+              trailing={
+                <span className="tabular-nums">
+                  {[
+                    pluralize(g.member_count ?? 0, 'member'),
+                    pluralize(g.project_count ?? 0, 'project'),
+                  ].join(' · ')}
+                </span>
+              }
               onClick={() => openGroup(g.group_id)}
               kebabLabel={tHardcodedUi('i18nComplete.text33da220b1a34', { value0: g.name })}
               kebab={[
@@ -347,7 +331,7 @@ function GroupsList({
               ]}
             />
           ))}
-        </AccessList>
+        </ul>
       )}
 
       <CreateGroupDialog

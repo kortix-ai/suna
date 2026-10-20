@@ -31,6 +31,7 @@ import {
   isErrorOutput,
   partInput,
   partOutput,
+  partRawOutput,
   partStatus,
   useToolRowVariant,
 } from '../shared/infrastructure';
@@ -78,15 +79,15 @@ function FlatSourceList({ segments }: { segments: ReturnType<typeof webSearchSou
   );
 }
 
-export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function WebSearchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const { chain } = useToolRowVariant();
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const query = typeof input.query === 'string' ? input.query : '';
 
-  const rawOutput = part.state.status === 'completed' ? (part.state as { output?: unknown }).output : undefined;
+  const rawOutput = call.status === 'complete' ? partRawOutput(call) : undefined;
   const queryResults = useMemo(() => parseSdkWebSearchOutput(rawOutput ?? output), [rawOutput, output]);
   const segments = useMemo(() => webSearchSourceSegments(queryResults), [queryResults]);
   const totalSources = useMemo(() => countWebSearchSources(queryResults), [queryResults]);
@@ -98,7 +99,7 @@ export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProp
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={MagnifyingGlassIcon}
       trigger={
         <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap1_5 }}>

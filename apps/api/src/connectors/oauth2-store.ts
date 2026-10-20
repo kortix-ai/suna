@@ -12,13 +12,16 @@ import {
   connectionOAuthSessions,
 } from '@kortix/db';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { HTTPException } from 'hono/http-exception';
 import { connectionRowIsReachable } from '../projects/lib/connection-access';
-import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
+import { decryptNamedProjectSecret, decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
+import { SecretUndecryptableError } from '../secrets/undecryptable';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import { config } from '../config';
+import { logger } from '../lib/logger';
 import { connectionIsEffectiveProjectDefault, upsertConnectionCredential } from './credentials';
-import { nativeOAuth2CallbackUrl } from './oauth2-callback-url';
+import { nativeOAuth2CallbackResponse, nativeOAuth2CallbackUrl } from './oauth2-callback-url';
 import {
   createStoredDelegatedCredential,
   parseDelegatedCredential,
@@ -34,13 +37,15 @@ import {
 } from './oauth2-lifecycle';
 import { validateAuthorizationIssuer } from './oauth2-issuer';
 import { oauthCompletionRematerializeInput } from './oauth2-rematerialize';
+import { kortixClientApplication } from './mcp-apps';
 import { registerOAuth2Client } from './oauth2-registration';
 import {
   type ProtectedResourceProvider,
   discoverProtectedResourceOAuth2,
+  mcpSignInCheck,
 } from './oauth2-resource-discovery';
 
-interface ConnectionIdentity {
+export interface ConnectionIdentity {
   accountId: string;
   projectId: string;
   connectorId: string;
@@ -104,6 +109,12 @@ async function rematerializeAfterOAuthCompletion(connectionId: string): Promise<
       .where(eq(connectorConnections.connectionId, connectionId))
       .limit(1);
     if (!row) return;
+    // A sign-in on a Pipedream or Composio connector is a move to Kortix: switch it now.
+    if (row.providerType === 'pipedream' || row.providerType === 'composio') {
+      const { finishMarkedMove } = await import('./connector-move');
+      await finishMarkedMove(connectionId);
+      return;
+    }
     // INVARIANT (2026-09-16, account_required rule): `row.isDefault` is the
     // raw (possibly unpinned) flag; the project-wide MCP catalog rematerialize
     // must key on the EFFECTIVE default — pinned, or the connector's sole
@@ -158,22 +169,40 @@ export async function loadOAuth2Application(connectionId: string): Promise<{
   connectionId: string;
   application: OAuth2ApplicationInput;
 } | null> {
-  const [row] = await db
-    .select()
+  const [found] = await db
+    .select({ row: connectionOAuthApplications, slug: connectors.slug })
     .from(connectionOAuthApplications)
+    .innerJoin(connectors, eq(connectors.connectorId, connectionOAuthApplications.connectorId))
     .where(eq(connectionOAuthApplications.connectionId, connectionId))
     .limit(1);
-  if (!row) return null;
+  if (!found) return null;
+  const { row } = found;
   return {
     applicationId: row.applicationId,
     accountId: row.accountId,
     projectId: row.projectId,
     connectorId: row.connectorId,
     connectionId: row.connectionId,
+    // A config this server cannot decrypt throws SecretUndecryptableError
+    // (409 at the HTTP layer); saving the application again replaces it.
     application: JSON.parse(
-      decryptProjectSecret(row.projectId, row.configEnc),
+      decryptNamedProjectSecret(
+        row.projectId,
+        row.configEnc,
+        `The OAuth application of connector ${found.slug}`,
+        'Save the OAuth application again, then reconnect the account.',
+      ),
     ) as OAuth2ApplicationInput,
   };
+}
+
+/** The plaintext, or null when this server cannot decrypt the envelope. */
+function decryptOrNull(projectId: string, valueEnc: string): string | null {
+  try {
+    return decryptProjectSecret(projectId, valueEnc);
+  } catch {
+    return null;
+  }
 }
 
 export function redactOAuth2Application(application: OAuth2ApplicationInput) {
@@ -226,16 +255,20 @@ export async function discoverConnectionOAuth2Resource(
   runtime: OAuth2LifecycleRuntime = {},
 ): Promise<OAuth2ResourceDiscovery> {
   const [row] = await db
-    .select({ providerType: connectors.providerType, config: connectors.config })
+    .select({
+      providerType: connectors.providerType,
+      config: connectors.config,
+      metadata: connectorConnections.metadata,
+    })
     .from(connectorConnections)
     .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
     .where(eq(connectorConnections.connectionId, input.connectionId))
     .limit(1);
   if (!row) throw new Error('Connection not found');
-  const own = connectorProtectedResource(
-    row.providerType,
-    (row.config ?? {}) as Record<string, unknown>,
-  );
+  const moveUrl = await connectionMoveTargetUrl({ providerType: row.providerType, connectionId: input.connectionId });
+  const own = moveUrl
+    ? { url: moveUrl, provider: 'mcp' as const }
+    : connectorProtectedResource(row.providerType, (row.config ?? {}) as Record<string, unknown>);
   const target = input.resourceUrl
     ? { url: input.resourceUrl, provider: own?.provider ?? ('http' as const) }
     : own;
@@ -246,6 +279,35 @@ export async function discoverConnectionOAuth2Resource(
     { resourceUrl: target.url, provider: target.provider },
     runtime,
   );
+}
+
+/** A connection that moves its Pipedream or Composio connector to Kortix signs
+ *  in to the catalogue app's MCP server (connectors/connector-move.ts). */
+async function connectionMoveTargetUrl(row: { providerType: string; connectionId: string }): Promise<string | null> {
+  if (row.providerType !== 'pipedream' && row.providerType !== 'composio') return null;
+  const { moveTargetUrlForConnection } = await import('./connector-move');
+  return moveTargetUrlForConnection(row.connectionId);
+}
+
+async function kortixClientApplicationForConnection(
+  connectionId: string,
+): Promise<OAuth2ApplicationInput | null> {
+  const [row] = await db
+    .select({
+      providerType: connectors.providerType,
+      config: connectors.config,
+      metadata: connectorConnections.metadata,
+    })
+    .from(connectorConnections)
+    .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
+    .where(eq(connectorConnections.connectionId, connectionId))
+    .limit(1);
+  if (!row) return null;
+  const url =
+    row.providerType === 'mcp'
+      ? (row.config as { url?: unknown } | null)?.url
+      : await connectionMoveTargetUrl({ providerType: row.providerType, connectionId });
+  return typeof url === 'string' ? kortixClientApplication(url) : null;
 }
 
 /**
@@ -263,6 +325,18 @@ export async function registerConnectionOAuth2Client(
   runtime: OAuth2LifecycleRuntime = {},
 ): Promise<OAuth2ApplicationInput> {
   const { registration } = input;
+  if (!registration.registration_endpoint) {
+    // No dynamic registration: only a catalogue app signs in, with Kortix's own
+    // client and the catalogue's endpoints. Nothing from the request is used.
+    const application = await kortixClientApplicationForConnection(input.identity.connectionId);
+    if (!application) {
+      throw new Error(
+        'This authorization server does not support dynamic client registration (RFC 7591), and Kortix has no OAuth client for this server',
+      );
+    }
+    await saveOAuth2Application(input.identity, application, input.createdBy);
+    return application;
+  }
   const issued = await registerOAuth2Client(
     {
       registrationEndpoint: registration.registration_endpoint,
@@ -299,6 +373,75 @@ export async function registerConnectionOAuth2Client(
   };
   await saveOAuth2Application(input.identity, application, input.createdBy);
   return application;
+}
+
+/** A return page the OAuth callback may send the browser to: the web app, or the
+ *  mobile app's `kortix:` scheme. Anything else ends on the API's own "Connected" page. */
+function signInReturnUri(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const uri = new URL(value);
+    if (uri.protocol === 'kortix:') return uri.href;
+    const allowed = new Set([new URL(config.FRONTEND_URL).origin, 'https://kortix.com', 'https://dev.kortix.com', 'https://staging.kortix.com']);
+    return allowed.has(uri.origin) ? uri.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Start a one-click sign-in for a connection server-side: discover the MCP
+ * authorization chain, register Kortix as a client (or take Kortix's own
+ * client), start Authorization Code + PKCE. The provider URL to open, or null
+ * when the server needs no sign-in or none Kortix can run in one click. The
+ * same steps as the web's `startDiscoveredSignIn`, for a caller with no
+ * browser of its own: an agent's connect link, a setup link.
+ */
+export async function startConnectionSignIn(input: {
+  identity: ConnectionIdentity;
+  initiatedBy: string;
+  redirects?: { success?: string; error?: string };
+}): Promise<string | null> {
+  // An unreachable or refused server URL is a property of the connector the
+  // user configured, not a server defect: 400, like `oauth2/discover-resource`.
+  const discovery = await discoverConnectionOAuth2Resource({ connectionId: input.identity.connectionId }).catch(
+    (error: unknown) => {
+      throw new HTTPException(400, {
+        message: `Could not discover sign-in for this MCP server: ${(error as Error).message}`,
+      });
+    },
+  );
+  if (!mcpSignInCheck(discovery).one_click) return null;
+  const callbackUrl = nativeOAuth2CallbackUrl('http://localhost:8008/', config.KORTIX_URL);
+  const metadata = discovery.metadata ?? {};
+  await registerConnectionOAuth2Client({
+    identity: input.identity,
+    registration: {
+      ...(discovery.registration_endpoint ? { registration_endpoint: discovery.registration_endpoint } : {}),
+      ...(discovery.authorization_server ? { issuer: discovery.authorization_server } : {}),
+      ...(metadata.discovery_url ? { discovery_url: metadata.discovery_url } : {}),
+      ...(metadata.authorization_url ? { authorization_url: metadata.authorization_url } : {}),
+      ...(metadata.token_url ? { token_url: metadata.token_url } : {}),
+      ...(metadata.device_authorization_url ? { device_authorization_url: metadata.device_authorization_url } : {}),
+      ...(metadata.revocation_url ? { revocation_url: metadata.revocation_url } : {}),
+      ...(discovery.token_endpoint_auth_methods_supported?.length
+        ? { token_endpoint_auth_methods_supported: discovery.token_endpoint_auth_methods_supported }
+        : {}),
+      ...(discovery.scopes.length ? { scopes: discovery.scopes } : {}),
+      ...(discovery.resource ? { resource: discovery.resource } : {}),
+    },
+    callbackUrl,
+    createdBy: input.initiatedBy,
+  });
+  const started = await createAuthorizationCodeSession({
+    connectionId: input.identity.connectionId,
+    initiatedBy: input.initiatedBy,
+    callbackUrl,
+    ...(discovery.scopes.length ? { scopes: discovery.scopes } : {}),
+    successRedirectUri: signInReturnUri(input.redirects?.success),
+    errorRedirectUri: signInReturnUri(input.redirects?.error),
+  });
+  return started.authorizationUrl;
 }
 
 export async function discoverConfiguredOAuth2Application(
@@ -433,6 +576,11 @@ export async function completeAuthorizationCodeSession(input: {
     await rematerializeAfterOAuthCompletion(loaded.connectionId);
     return { redirectUri: claimed.successRedirectUri, ok: true };
   } catch (error) {
+    // The redirect only carries `token_exchange_failed`; the cause lives here.
+    logger.warn('[connector] OAuth code exchange failed', {
+      connectionId: claimed.connectionId,
+      err: (error as Error).message,
+    });
     await db
       .update(connectorConnections)
       .set({ status: 'error', updatedAt: new Date() })
@@ -584,9 +732,9 @@ export async function oauth2ConnectionStatus(connectionId: string) {
   if (!credential.valueEnc || credential.kind !== 'oauth2_delegated') {
     return { status: 'ready' as const };
   }
-  const stored = parseDelegatedCredential(
-    decryptProjectSecret(credential.projectId, credential.valueEnc),
-  );
+  const value = decryptOrNull(credential.projectId, credential.valueEnc);
+  if (value === null) return { status: 'error' as const, error_code: 'credential_undecryptable' };
+  const stored = parseDelegatedCredential(value);
   if (!stored) return { status: 'error' as const, error_code: 'invalid_credential' };
   return {
     status: 'active' as const,
@@ -596,27 +744,33 @@ export async function oauth2ConnectionStatus(connectionId: string) {
 }
 
 export async function revokeConnectionOAuth2(connectionId: string): Promise<void> {
-  const loaded = await loadOAuth2Application(connectionId);
+  // An application or a token this server cannot decrypt cannot be revoked
+  // upstream. The local credential is still deleted: a revoke must not fail on
+  // the state it clears.
+  const loaded = await loadOAuth2Application(connectionId).catch((error: unknown) => {
+    if (error instanceof SecretUndecryptableError) return 'undecryptable' as const;
+    throw error;
+  });
   if (!loaded) return;
+  const app = loaded === 'undecryptable' ? null : loaded;
   const [credential] = await db
     .select({ credentialId: connectionCredentials.credentialId, valueEnc: connectionCredentials.valueEnc })
     .from(connectionCredentials)
     .where(eq(connectionCredentials.connectionId, connectionId))
     .limit(1);
   if (credential) {
-    const stored = parseDelegatedCredential(
-      decryptProjectSecret(loaded.projectId, credential.valueEnc),
-    );
-    if (stored && loaded.application.revocation_url) {
+    const value = app ? decryptOrNull(app.projectId, credential.valueEnc) : null;
+    const stored = value === null ? null : parseDelegatedCredential(value);
+    if (app && stored && app.application.revocation_url) {
       if (stored.token.refresh_token) {
         await revokeOAuth2Token(
-          loaded.application,
+          app.application,
           stored.token.refresh_token,
           'refresh_token',
         ).catch(() => undefined);
       }
       await revokeOAuth2Token(
-        loaded.application,
+        app.application,
         stored.token.access_token,
         'access_token',
       ).catch(() => undefined);
@@ -645,11 +799,5 @@ export async function handleNativeOAuth2Callback(requestUrl: string) {
     callbackUrl: callback,
     issuer: url.searchParams.get('iss') ?? undefined,
   });
-  if (!result.redirectUri) {
-    return { status: 400 as const, body: 'OAuth2 authorization failed' };
-  }
-  const redirect = new URL(result.redirectUri);
-  redirect.searchParams.set('oauth2', result.ok ? 'connected' : 'error');
-  if (result.errorCode) redirect.searchParams.set('oauth2_error', result.errorCode);
-  return { status: 302 as const, location: redirect.href };
+  return nativeOAuth2CallbackResponse(result);
 }

@@ -7,7 +7,12 @@ import type {
   ProjectLlmCatalogResponse,
 } from '../rest/projects-client';
 import type { ModelDefaultsResponse } from '../rest/projects-client/model-defaults';
-import { resolveComposerModel, resolveModelDefault } from './composer-model';
+import {
+  latestPromptModel,
+  resolveComposerModel,
+  resolveModelDefault,
+  sessionModelCandidates,
+} from './composer-model';
 import type { FlatModel } from './model-flatten';
 import { createModelVisibility, hasUsableModel, modelInDefaultView } from './model-visibility';
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog/lite';
@@ -192,17 +197,17 @@ describe('createModelVisibility', () => {
     ).toBe(false);
   });
 
-  test('gateway: the platform default shows on free tier too (KRTX-1067)', () => {
+  test('gateway: free tier sees no managed model, the platform default included', () => {
     const gateway = [flat('kortix', PLATFORM_DEFAULT_MODEL_ID), flat('kortix', 'glm-5.3-flash')];
     const free = createModelVisibility({ catalogModels: gateway, freeTier: true });
-    expect(free({ providerID: 'kortix', modelID: PLATFORM_DEFAULT_MODEL_ID })).toBe(true);
+    expect(free({ providerID: 'kortix', modelID: PLATFORM_DEFAULT_MODEL_ID })).toBe(false);
     expect(free({ providerID: 'kortix', modelID: 'glm-5.3-flash' })).toBe(false);
   });
 
-  test('hasUsableModel: the platform default alone counts as usable on free tier (KRTX-1067)', () => {
+  test('hasUsableModel: no managed model counts as usable on free tier', () => {
     expect(
       hasUsableModel([flat('kortix', PLATFORM_DEFAULT_MODEL_ID)], { freeTier: true }),
-    ).toBe(true);
+    ).toBe(false);
     expect(hasUsableModel([flat('kortix', 'glm-5.3-flash')], { freeTier: true })).toBe(false);
   });
 });
@@ -263,16 +268,14 @@ describe('resolveModelDefault', () => {
     });
   });
 
-  test('a free-tier account resolves the platform default (KRTX-1067)', () => {
-    // The gateway serves the platform default to every tier (KRTX-1067), so
-    // the client resolves it instead of leaving a fresh free account with no
-    // model and a disabled Send.
+  test('a free-tier account never resolves the platform default', () => {
+    // The gateway refuses every managed model to free tier.
     expect(
       resolveModelDefault(
         { ...data, projectDefault: null, freeTier: true } as ModelDefaultsResponse,
         undefined,
       ),
-    ).toEqual({ providerID: 'kortix', modelID: 'kimi-k3' });
+    ).toBeUndefined();
   });
 
   test('a null platform default resolves to nothing, not a crash', () => {
@@ -369,5 +372,86 @@ describe('resolveComposerModel', () => {
     });
     expect(resolved.explicit).toEqual(key('amazon-bedrock', 'anthropic.claude-opus-5'));
     expect(resolved.model).toEqual(key('amazon-bedrock', 'global.anthropic.claude-opus-5'));
+  });
+});
+
+describe('sessionModelCandidates', () => {
+  const kortix = (modelID: string) => ({ providerID: 'kortix', modelID });
+  const session = (pin?: string, source?: string) => ({
+    metadata: {
+      ...(pin ? { opencode_model: pin } : {}),
+      ...(source ? { opencode_model_source: source } : {}),
+    },
+  });
+
+  test('a pin someone chose (CLI, SDK, Slack, PUT /model) ranks before the last prompt', () => {
+    expect(
+      sessionModelCandidates({
+        session: session('kortix/model-b', 'explicit'),
+        lastPromptModel: kortix('model-c'),
+        gatewayEnabled: true,
+      }),
+    ).toEqual([kortix('model-b'), kortix('model-c')]);
+  });
+
+  test('a pin the platform re-pointed off a retired model ranks like a chosen one', () => {
+    expect(
+      sessionModelCandidates({
+        session: session('kortix/model-b', 'repointed'),
+        lastPromptModel: kortix('model-retired'),
+        gatewayEnabled: true,
+      }),
+    ).toEqual([kortix('model-b'), kortix('model-retired')]);
+  });
+
+  test('a default pin ranks after the model the session last ran on', () => {
+    for (const source of ['account', 'project', 'agent', 'platform', undefined]) {
+      expect(
+        sessionModelCandidates({
+          session: session('kortix/model-b', source),
+          lastPromptModel: kortix('model-c'),
+          gatewayEnabled: true,
+        }),
+      ).toEqual([kortix('model-c'), kortix('model-b')]);
+    }
+  });
+
+  test('a session with no pin and no prompt has no model of its own', () => {
+    expect(sessionModelCandidates({ session: session(), gatewayEnabled: true })).toEqual([]);
+    expect(sessionModelCandidates({ session: null, gatewayEnabled: true })).toEqual([]);
+    expect(
+      sessionModelCandidates({ lastPromptModel: kortix('model-c'), gatewayEnabled: true }),
+    ).toEqual([kortix('model-c')]);
+  });
+
+  test('a native pin keeps its own provider when the gateway is off', () => {
+    expect(
+      sessionModelCandidates({
+        session: session('anthropic/claude-sonnet-4-6', 'explicit'),
+        gatewayEnabled: false,
+      }),
+    ).toEqual([{ providerID: 'anthropic', modelID: 'claude-sonnet-4-6' }]);
+  });
+});
+
+describe('latestPromptModel', () => {
+  test('reads the newest user message that records a model', () => {
+    expect(
+      latestPromptModel([
+        { role: 'user', model: { provider: 'kortix', model: 'model-b' } },
+        { role: 'user', model: { provider: 'kortix', model: 'model-c' } },
+        { role: 'assistant', model: { provider: 'kortix', model: 'model-x' } },
+        // A row with no model recorded says nothing about the session's model.
+        { role: 'user', model: null },
+      ]),
+    ).toEqual({ providerID: 'kortix', modelID: 'model-c' });
+  });
+
+  test('a transcript with no user model has none', () => {
+    expect(latestPromptModel([])).toBeUndefined();
+    expect(latestPromptModel(undefined)).toBeUndefined();
+    expect(
+      latestPromptModel([{ role: 'assistant', model: { provider: 'kortix', model: 'model-x' } }]),
+    ).toBeUndefined();
   });
 });

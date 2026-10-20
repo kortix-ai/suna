@@ -70,7 +70,6 @@ export interface CatalogState {
   source: CatalogSource;
   /** Categories the user can filter by, each with its true count. Empty for
    *  the Discover source and while the Easy Connect index is still building. */
-  categories: PipedreamCategory[];
   /** Apps matching the query that publish no actions, so the catalogue does
    *  not offer them. Lets the no-match state say why instead of implying the
    *  app does not exist — `q=SAP` is exactly this case. */
@@ -175,13 +174,15 @@ export const connectStatusQuery = {
  */
 export function catalogSectionsQuery(
   projectId: string,
-  catalogue: 'discover' | 'composio' | 'pipedream' | null,
+  catalogue: 'kortix' | 'discover' | 'composio' | 'pipedream' | null,
 ) {
   return {
     queryKey: ['catalog-sections', projectId, catalogue] as const,
     queryFn: async (): Promise<BrowseSectionsPage> => {
       const limits = { perCategory: SECTION_CARD_COUNT, maxCategories: SECTION_COUNT };
-      if (catalogue === 'discover') {
+      // `kortix` is the same Discover route: the API serves Kortix's own MCP
+      // apps to a `connectors_v2` project (apps/api/src/connectors/mcp-apps.ts).
+      if (catalogue === 'discover' || catalogue === 'kortix') {
         return sectionsPageFromDiscover(await listDiscoverSections(projectId, limits));
       }
       if (catalogue === 'pipedream') {
@@ -261,15 +262,15 @@ export function useCatalog(
     enabled: boolean;
     /** The API/MCP catalogue is on for this project (`connectors_api_discover`). */
     discoverEnabled: boolean;
-    /** The category the grid is filtered to, or `null` for everything. */
-    focusCategory?: string | null;
+    /** `connectors_v2`: the catalogue is Kortix's own MCP apps, served on the
+     *  Discover routes. No Composio or Pipedream request is sent. */
+    mcpApps?: boolean;
     /** Show the native Computer card: this deployment can connect computers. */
     computers?: boolean;
   },
 ): CatalogState {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { debouncedValue: activeQuery } = useDebounce(query.trim(), 300);
-  const category = opts.focusCategory ?? null;
   const computers = opts.computers === true;
   const searching = activeQuery.length > 0;
 
@@ -282,11 +283,15 @@ export function useCatalog(
   // deployment, the API/MCP catalogue is the whole catalogue.
   // `unknown` (the probe failed) falls back to the API/MCP catalogue too, as
   // before the merge of the two.
+  const mcpApps = opts.mcpApps === true;
   const source: CatalogSource =
-    opts.discoverEnabled && (connectStatus.state === 'absent' || connectStatus.state === 'unknown')
+    mcpApps ||
+    (opts.discoverEnabled && (connectStatus.state === 'absent' || connectStatus.state === 'unknown'))
       ? 'discover'
       : 'easy-connect';
   const searchDirect = opts.discoverEnabled && source === 'easy-connect' && searching;
+  // Keys the Discover cache by the catalogue the API answers with.
+  const discoverCatalogue = mcpApps ? 'kortix' : 'discover';
 
   // `unknown` proceeds: the probe failed, and refusing to load a catalogue that
   // may well exist is the worse of the two mistakes.
@@ -298,15 +303,13 @@ export function useCatalog(
   const discoverQuery = useInfiniteQuery({
     // An open category is a server-side filter, so it is part of the key. The
     // unfiltered key stays exactly the one `discover-catalogue.tsx` shares.
-    queryKey:
-      category === null
-        ? ['discover-connectors', projectId, activeQuery]
-        : ['discover-connectors', projectId, activeQuery, category],
+    queryKey: mcpApps
+      ? ['discover-connectors', projectId, activeQuery, 'kortix']
+      : ['discover-connectors', projectId, activeQuery],
     queryFn: ({ pageParam }) =>
       listDiscoverConnectors(projectId, {
         q: activeQuery || undefined,
         cursor: pageParam as string | undefined,
-        category: category ?? undefined,
       }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
@@ -316,14 +319,13 @@ export function useCatalog(
   });
 
   const easyConnectQuery = useInfiniteQuery({
-    queryKey: ['easy-connect-apps', projectId, activeQuery, category],
+    queryKey: ['easy-connect-apps', projectId, activeQuery, null],
     queryFn: ({ pageParam }) =>
       listConnectCatalogPage({
         projectId,
         provider: easyConnectProvider,
         q: activeQuery || undefined,
         cursor: pageParam as string | undefined,
-        category: category ?? undefined,
         limit: CATALOG_PAGE_SIZE,
       }),
     initialPageParam: undefined as string | undefined,
@@ -342,55 +344,35 @@ export function useCatalog(
   // response's facet is what lets the open category's header state its name
   // and size. Same key, so opening a category from the browse page costs no
   // request. Pipedream's paged endpoint carries its own facet.
-  const sectionsCatalogue = source === 'discover' ? 'discover' : easyConnectProvider;
+  const sectionsCatalogue = source === 'discover' ? discoverCatalogue : easyConnectProvider;
   const sectionsQuery = useQuery({
     ...catalogSectionsQuery(projectId, sectionsCatalogue),
-    enabled:
-      opts.enabled &&
-      (source === 'discover' || easyConnectRunnable) &&
-      !searching &&
-      (category === null || sectionsCatalogue !== 'pipedream'),
+    enabled: opts.enabled && (source === 'discover' || easyConnectRunnable) && !searching,
   });
 
   const active = source === 'discover' ? discoverQuery : easyConnectQuery;
 
-  const entries = useMemo(() => {
-    const native = computersCatalogEntry(tI18nComplete);
-    // The native Computers card is ours, not the catalogue's, so it is matched
-    // locally and hidden inside a category it does not claim.
-    const includeComputers =
-      computers &&
-      category === null &&
-      (!activeQuery ||
-        `${native.name} ${native.description ?? ''}`
-          .toLowerCase()
-          .includes(activeQuery.toLowerCase()));
-    const nativeEntries = includeComputers ? [native] : [];
-    if (source === 'discover') {
-      return nativeEntries.concat(
-        (discoverQuery.data?.pages ?? []).flatMap((page) =>
-          page.items.map(catalogEntryFromDiscover),
-        ),
-      );
-    }
-    const managed = (easyConnectQuery.data?.pages ?? []).flatMap((page) =>
-      page.apps.map(catalogEntryFromEasyConnect),
-    );
-    if (!searchDirect) return nativeEntries.concat(managed);
-    // ponytail: only the API/MCP catalogue's first page joins a search; its
-    // ranking puts the matches there. Page it too if users miss results.
-    const direct = (discoverQuery.data?.pages[0]?.items ?? []).map(catalogEntryFromDiscover);
-    return nativeEntries.concat(mergeSearchEntries(managed, direct));
-  }, [
-    searchDirect,
-    tI18nComplete,
-    computers,
-    category,
-    activeQuery,
-    source,
-    easyConnectQuery.data?.pages,
-    discoverQuery.data?.pages,
-  ]);
+  const entries = useMemo(
+    () =>
+      assembleCatalogEntries({
+        source,
+        computers,
+        activeQuery,
+        searchDirect,
+        tI18nComplete,
+        discoverPages: discoverQuery.data?.pages,
+        managedPages: easyConnectQuery.data?.pages,
+      }),
+    [
+      searchDirect,
+      tI18nComplete,
+      computers,
+      activeQuery,
+      source,
+      easyConnectQuery.data?.pages,
+      discoverQuery.data?.pages,
+    ],
+  );
 
   const {
     fetchNextPage,
@@ -410,7 +392,7 @@ export function useCatalog(
 
   // The browse page is loading until its own request lands — the paged query
   // behind it says nothing about whether the sections are ready.
-  const showingSections = !searching && category === null;
+  const showingSections = !searching;
   const { refetch: sectionsRefetch } = sectionsQuery;
 
   // Retry refetches the sections too: on the browse page they are what failed.
@@ -428,24 +410,15 @@ export function useCatalog(
    * accepts, so "View all" asks the server for the set the heading counted.
    */
   const sections = useMemo<CatalogSection[]>(() => {
-    if (searching || category !== null || !sectionsQuery.data) return [];
+    if (searching || !sectionsQuery.data) return [];
     return browseSections(sectionsQuery.data, {
       native: computers ? computersCatalogEntry(tI18nComplete) : null,
       cardCount: SECTION_CARD_COUNT,
       title: (label) => localizedSectionTitle(label, tI18nComplete),
     });
-  }, [searching, category, sectionsQuery.data, tI18nComplete, computers]);
+  }, [searching, sectionsQuery.data, tI18nComplete, computers]);
 
   const easyConnectPage = easyConnectQuery.data?.pages[0];
-  const categories = useMemo<PipedreamCategory[]>(() => {
-    if (source === 'easy-connect' && easyConnectProvider === 'pipedream') {
-      return easyConnectPage?.categories ?? [];
-    }
-    return (sectionsQuery.data?.categories ?? []).map((facet) => ({
-      ...facet,
-      label: localizedSectionTitle(facet.label, tI18nComplete),
-    }));
-  }, [source, easyConnectProvider, easyConnectPage, sectionsQuery.data, tI18nComplete]);
 
   const excludedNoActions = easyConnectPage?.excludedNoActions ?? 0;
 
@@ -463,7 +436,6 @@ export function useCatalog(
     total,
     activeQuery,
     source,
-    categories,
     excludedNoActions,
     sections,
     // `isLoading` is the COLD state only — no cards on screen at all. A search
@@ -487,4 +459,46 @@ export function useCatalog(
     loadMore,
     refetch,
   };
+}
+
+export function assembleCatalogEntries({
+  source,
+  computers,
+  activeQuery,
+  searchDirect,
+  tI18nComplete,
+  discoverPages,
+  managedPages,
+}: {
+  source: CatalogSource;
+  computers: boolean;
+  activeQuery: string;
+  searchDirect: boolean;
+  tI18nComplete: Parameters<typeof computersCatalogEntry>[0];
+  discoverPages?: Awaited<ReturnType<typeof listDiscoverConnectors>>[];
+  managedPages?: Awaited<ReturnType<typeof listConnectCatalogPage>>[];
+}) {
+  const native = computersCatalogEntry(tI18nComplete);
+  // The native Computers card is ours, not the catalogue's, so it is matched
+  // locally and hidden inside a category it does not claim.
+  const includeComputers =
+    computers &&
+    (!activeQuery ||
+      `${native.name} ${native.description ?? ''}`
+        .toLowerCase()
+        .includes(activeQuery.toLowerCase()));
+  const nativeEntries = includeComputers ? [native] : [];
+  if (source === 'discover') {
+    return nativeEntries.concat(
+      (discoverPages ?? []).flatMap((page) => page.items.map(catalogEntryFromDiscover)),
+    );
+  }
+  const managed = (managedPages ?? []).flatMap((page) =>
+    page.apps.map(catalogEntryFromEasyConnect),
+  );
+  if (!searchDirect) return nativeEntries.concat(managed);
+  // ponytail: only the API/MCP catalogue's first page joins a search; its
+  // ranking puts the matches there. Page it too if users miss results.
+  const direct = (discoverPages?.[0]?.items ?? []).map(catalogEntryFromDiscover);
+  return nativeEntries.concat(mergeSearchEntries(managed, direct));
 }

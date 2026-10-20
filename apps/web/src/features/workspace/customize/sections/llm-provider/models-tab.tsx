@@ -22,11 +22,12 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
-import { InlineMeta } from '@/components/ui/inline-meta';
 import { Switch } from '@/components/ui/switch';
 import { Tag } from '@/components/ui/tag';
 import { errorToast } from '@/components/ui/toast';
-import { ProviderLogo } from '@/features/providers/provider-branding';
+import { Badge } from '@/components/ui/badge';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import { ProviderLogoStatus } from '@/features/providers/provider-connect';
 import { cn } from '@/lib/utils';
 import { isManagedModelId, MANAGED_ENDPOINT_PROVIDERS } from '@kortix/llm-catalog';
 import {
@@ -41,11 +42,9 @@ import {
   CheckIcon as Check,
   FolderSimpleIcon as Folder,
   DotsThreeIcon as MoreHorizontal,
-  ShieldCheckIcon as ShieldCheck,
   StarIcon as Star,
 } from '@phosphor-icons/react';
-import { useMemo, useRef, useState } from 'react';
-import { ProviderAccessMenu } from './provider-access-menu';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
 
 import {
   DropdownMenu,
@@ -66,8 +65,11 @@ import { Copy } from '@/features/icon/icons/copy';
 import { ModelCapabilityIcons } from './model-capability-icons';
 import { buildModelGroups } from './model-rows';
 import { formatPricePerMillion, formatTokenCount } from './utils';
-import { CountBadge } from '@/components/ui/count-badge';
 import { useSlashFocus } from '@/hooks/utils';
+
+/** A row status pill as the Models board draws it: sentence case, Roobert,
+ *  round. `Badge`'s default is the uppercase mono label used elsewhere. */
+const STATUS_PILL = 'rounded-full font-sans text-xs tracking-normal normal-case';
 
 /**
  * `search` used to be driven by the provider modal's always-on search bar,
@@ -87,6 +89,7 @@ export function ModelsTab({
 }) {
   const tAccess = useTranslations('modelAccess');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tList = useTranslations('modelsList');
   const [ownSearch, setOwnSearch] = useState('');
   const search = hostSearch ?? ownSearch;
   const ownsSearch = hostSearch === undefined;
@@ -98,6 +101,8 @@ export function ModelsTab({
   const models = useProjectModels(projectId);
   const pickerCatalog = useProjectModelPickerCatalog(projectId);
   const enablement = useModelEnablement(projectId);
+  // Prices below are the provider's base price; the fee is added when the call bills.
+  const platformFee = pickerCatalog?.platformFeePercent;
   const access = useModelAccess(projectId);
   // Setting the project default from here is what makes the locked row
   // actionable: the only way to turn the default off is to make something else
@@ -129,72 +134,67 @@ export function ModelsTab({
     );
   }
 
+  // One managed model clears the ZDR + US claim when it serves from Kortix's
+  // own managed pool. Only a Morph route breaks it; a missing price feed still
+  // serves from the verified US ZDR pool.
+  const holdsDataClaim = (modelID: string) => {
+    const routes = pickerCatalog?.managedPricingRoutes?.[modelID];
+    return isManagedModelId(modelID) && !routes?.some((route) => route.route === 'morph');
+  };
+
   // No horizontal padding of its own: `CapabilityPageShell` supplies the page
   // column, and 20px more here indented this tab's content past the tab strip
   // that selects it.
   return (
     <div className="pb-4">
       {/*
-        The search field and "Start over" share ONE row, and that row's height
-        never changes.
-
-        They used to be two stacked blocks: the search box, then a spacer row
-        (`flex items-center justify-between … pb-2.5`) whose only content was a
-        conditional "Start over" button. The button appears the instant you
-        flip your first switch — `usingDefaults` goes false — so selecting a
-        model inserted a 26px band into the layout and pushed the whole list
-        down under the cursor that had just clicked it, leaving a 46px gap
-        between the search field and the first provider where 20px had been.
-        Measured on localhost:26300: `firstGroupTop` 233.7px → 259.4px, shift
-        +25.75px. That is the "too big a gap when you select the models".
-
-        A control that only sometimes exists cannot own a row of its own. Here
-        it rides the search field's row, which is always that height, so the
-        list below is fixed no matter what the toggles say.
+        The search field, the "N of M on" count and "Start over" share ONE row,
+        and that row's height never changes. "Start over" appears the instant
+        you flip your first switch; as a row of its own it pushed the whole list
+        down under the cursor that had just clicked it (+25.75px, measured).
       */}
-      {(ownsSearch || !enablement.usingDefaults) && (
-        <div className="mb-3 flex items-center gap-2">
-          {ownsSearch && (
-            <InputGroupSearch className="min-w-0 flex-1">
-              <InputGroupSearchIcon>
-                <Search />
-              </InputGroupSearchIcon>
-              <InputGroupSearchInput
-                ref={searchRef}
-                type="text"
-                placeholder={tI18nComplete.raw('text2380f018cc45')}
-                autoComplete="off"
-                value={ownSearch}
-                onChange={(event) => setOwnSearch(event.target.value)}
-              />
-              <InputGroupSearchClear onClick={() => setOwnSearch('')} />
-            </InputGroupSearch>
-          )}
-          {!enablement.usingDefaults && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!canWrite || enablement.isUpdating || access.isUpdating}
-              className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
-              onClick={() =>
-                void enablement
-                  .resetToDefaults()
-                  .catch((error: unknown) =>
-                    errorToast(error instanceof Error ? error.message : tAccess('resetError')),
-                  )
-              }
-            >
-              {tI18nComplete.raw('text5eed7e9fc8f3')}
-            </Button>
-          )}
-        </div>
-      )}
+      <div className="mb-4 flex items-center gap-3">
+        {ownsSearch && (
+          <InputGroupSearch className="min-w-0 flex-1">
+            <InputGroupSearchIcon>
+              <Search />
+            </InputGroupSearchIcon>
+            <InputGroupSearchInput
+              ref={searchRef}
+              type="text"
+              placeholder={tI18nComplete.raw('text2380f018cc45')}
+              autoComplete="off"
+              value={ownSearch}
+              onChange={(event) => setOwnSearch(event.target.value)}
+            />
+            <InputGroupSearchClear onClick={() => setOwnSearch('')} />
+          </InputGroupSearch>
+        )}
+        {!enablement.usingDefaults && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!canWrite || enablement.isUpdating || access.isUpdating}
+            className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
+            onClick={() =>
+              void enablement
+                .resetToDefaults()
+                .catch((error: unknown) =>
+                  errorToast(error instanceof Error ? error.message : tAccess('resetError')),
+                )
+            }
+          >
+            {tI18nComplete.raw('text5eed7e9fc8f3')}
+          </Button>
+        )}
+        <span className="text-muted-foreground ml-auto shrink-0 text-xs tabular-nums">
+          {tList('onCount', { on: enabledCount, total: models.length })}
+        </span>
+      </div>
 
       {/* The no-match message lives HERE, in the list's slot, never as an
-          early return above the search row. Returned early, a query that
-          matched nothing unmounted the input and its clear button: the string
-          survived in `ownSearch`, nothing on screen could change it, and the
-          tab stayed on "Nothing matches" until it was remounted. */}
+          early return above the search row: returned early, a query that
+          matched nothing unmounted the input and its clear button. */}
       {groups.length === 0 ? (
         <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
           <p className="text-muted-foreground text-xs">
@@ -205,57 +205,74 @@ export function ModelsTab({
         </div>
       ) : (
         <div className="space-y-6">
-          {groups.map((group) => (
-            <div key={group.providerID} className="space-y-2">
-              <div className="flex items-center gap-2">
-                <ProviderLogo
-                  providerID={group.providerID}
-                  name={group.providerName}
-                  size="small"
-                />
-                <span className="text-muted-foreground text-xs font-medium">
-                  {group.providerName}
-                </span>
-                <CountBadge count={group.rows.length} className="ml-auto" />
-                <ProviderAccessMenu
-                  access={access}
-                  providerId={group.providerID}
-                  name={group.providerName}
-                  canWrite={canWrite}
-                />
-              </div>
-              {group.providerID === 'kortix' &&
-                group.rows.every(({ model }) => {
-                  const routes = pickerCatalog?.managedPricingRoutes?.[model.modelID];
-                  // Only a Morph route breaks the claim. A model whose price
-                  // feed is missing still serves from the verified US ZDR pool.
-                  return isManagedModelId(model.modelID) && !routes?.some((route) => route.route === 'morph');
-                }) && (
-                  // One quiet line, not a green panel: both facts are
-                  // reassurance, not a warning, and the detail lives one hover
-                  // away. `tabIndex` keeps each hint reachable by keyboard.
-                  <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                    <Hint label={tAccess('zdrDescription')} side="top" className="max-w-xs">
-                      <span tabIndex={0} className="inline-flex cursor-help items-center gap-1">
-                        <ShieldCheck className="text-kortix-green size-3.5" weight="fill" />
-                        {tAccess('zdrTitle')}
-                      </span>
-                    </Hint>
-                    <Hint label={tAccess('usProvidersDescription')} side="top" className="max-w-xs">
-                      <span tabIndex={0} className="inline-flex cursor-help items-center gap-1">
-                        <UsFlag />
-                        {tAccess('usProvidersTitle')}
-                      </span>
-                    </Hint>
+          {groups.map((group) => {
+            const providerDisabled =
+              access.data?.disabledProviders.includes(group.providerID) ?? false;
+            const groupOn = group.rows.filter(({ model }) => model.enabled).length;
+            const dataClaim =
+              group.providerID === 'kortix' &&
+              group.rows.every(({ model }) => holdsDataClaim(model.modelID));
+            return (
+              <section
+                key={group.providerID}
+                data-provider-group={group.providerID}
+                className="bg-popover overflow-hidden rounded-lg border"
+              >
+                <header className="border-border flex items-center gap-3 border-b px-4 py-3">
+                  <ProviderLogoStatus
+                    providerId={group.providerID}
+                    label={group.providerName}
+                    status={
+                      providerDisabled
+                        ? 'none'
+                        : group.providerID === 'kortix'
+                          ? 'included'
+                          : 'connected'
+                    }
+                    size="medium"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-foreground truncate text-sm font-medium">
+                      {group.providerName}
+                    </p>
+                    {/* One quiet line, not a green panel: both facts are
+                        reassurance, and the detail lives one hover away.
+                        `tabIndex` keeps each hint reachable by keyboard. */}
+                    {group.providerID === 'kortix' && platformFee !== undefined ? (
+                      <p className="text-muted-foreground text-xs">
+                        {tList('platformFee', { fee: platformFee })}
+                      </p>
+                    ) : null}
+                    {dataClaim ? (
+                      <p className="text-muted-foreground text-xs">
+                        <Hint label={tAccess('zdrDescription')} side="top" className="max-w-xs">
+                          <span tabIndex={0} className="cursor-help">
+                            {tAccess('zdrTitle')}
+                          </span>
+                        </Hint>
+                        {' · '}
+                        <Hint label={tAccess('usProvidersDescription')} side="top" className="max-w-xs">
+                          <span tabIndex={0} className="cursor-help">
+                            {tAccess('usProvidersTitle')}
+                          </span>
+                        </Hint>
+                      </p>
+                    ) : null}
                   </div>
-                )}
-              <div className="bg-popover overflow-hidden rounded-md border">
-                {group.rows.map(({ model, wireId, isRollingAlias }, i) => {
+                  <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                    {tList('onCount', { on: groupOn, total: group.rows.length })}
+                  </span>
+                  <ProviderSwitch
+                    access={access}
+                    providerId={group.providerID}
+                    name={group.providerName}
+                    canWrite={canWrite}
+                  />
+                </header>
+                {group.rows.map(({ model, wireId, isRollingAlias }) => {
                   const isManaged =
                     group.providerID === 'kortix' && isManagedModelId(model.modelID);
                   const enabled = !!model.enabled;
-                  const providerDisabled =
-                    access.data?.disabledProviders.includes(group.providerID) ?? false;
                   const modelDisabled = access.data?.disabledModels.includes(wireId) ?? false;
                   const hiddenFromPicker =
                     !!access.data && !enabled && !providerDisabled && !modelDisabled;
@@ -266,129 +283,131 @@ export function ModelsTab({
                   const isProjectDefault = wireId === enablement.defaultModel;
                   // `useModelDefaults` builds every scope with `wireToModelKey`,
                   // which parks the whole wire id in `modelID` under the `kortix`
-                  // provider — so comparing `modelID` to this row's `wireId` is
-                  // the same comparison `isProjectDefault` makes one line up, not
-                  // a lucky string match.
+                  // provider — so this is the same comparison as the line above.
                   const isAccountDefault = defaults.accountDefault?.modelID === wireId;
                   const ctx = formatTokenCount(model.contextWindow);
-                  const priceIn = formatPricePerMillion(model.cost?.input);
-                  const priceOut = formatPricePerMillion(model.cost?.output);
-                  const pricingRoutes = isManaged ? pickerCatalog?.managedPricingRoutes?.[wireId] : undefined;
+                  const pricingRoutes = isManaged
+                    ? pickerCatalog?.managedPricingRoutes?.[wireId]
+                    : undefined;
+                  // The row shows ONE price — the cheapest route's, as "from" —
+                  // and the hover card shows every route. The routes used to be
+                  // printed as full sentences under each managed model.
+                  const hasRoutes = !!pricingRoutes && pricingRoutes.length > 0;
+                  const priceIn = formatPricePerMillion(
+                    hasRoutes
+                      ? Math.min(...pricingRoutes.map((route) => route.input))
+                      : model.cost?.input,
+                  );
+                  const priceOut = formatPricePerMillion(
+                    hasRoutes
+                      ? Math.min(...pricingRoutes.map((route) => route.output))
+                      : model.cost?.output,
+                  );
+                  const turnedOff = modelDisabled || providerDisabled;
+                  const metaLine = hiddenFromPicker
+                    ? tList('hiddenLine')
+                    : modelDisabled
+                      ? tList('blockedLine')
+                      : [
+                          isManaged
+                            ? model.capabilities?.vision
+                              ? tAccess('textImage')
+                              : tAccess('textOnly')
+                            : null,
+                          ctx ? tList('context', { value: ctx }) : null,
+                          priceIn && priceOut
+                            ? tList(hasRoutes ? 'fromPrice' : 'price', {
+                                input: priceIn,
+                                output: priceOut,
+                              })
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ');
                   return (
-                    // A plain row, NOT a <label>: it holds three controls (copy
-                    // id, set-as-default, the switch) and a label binds to the
-                    // FIRST labelable one — the copy button — so "click the row
-                    // to toggle" never did what it looked like. Each control
-                    // carries its own accessible name instead.
+                    // A plain row, NOT a <label>: it holds several controls and a
+                    // label binds to the FIRST labelable one, so "click the row
+                    // to toggle" never did what it looked like.
                     <div
                       key={wireId}
                       data-model-id={wireId}
-                      className={cn(
-                        'hover:bg-muted/40 flex items-start gap-3 px-3 py-2.5 transition-colors',
-                        i > 0 && 'border-border border-t',
-                        !enabled && 'opacity-60',
-                      )}
+                      className="border-border hover:bg-hover flex min-h-13 items-center gap-3 border-t px-4 py-2 transition-[background-color] duration-(--duration-normal) first-of-type:border-t-0"
                     >
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-foreground truncate text-sm">
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={cn(
+                              'truncate text-sm font-medium',
+                              turnedOff ? 'text-muted-foreground' : 'text-foreground',
+                            )}
+                          >
                             {model.modelName}
                           </span>
-                          {hiddenFromPicker && (
-                            <Hint label={tAccess('hiddenHint')}>
-                              <Tag>{tAccess('hidden')}</Tag>
-                            </Hint>
-                          )}
-                          {modelDisabled && !providerDisabled && <Tag>{tAccess('disabled')}</Tag>}
-                          <ModelCapabilityIcons
-                            reasoning={model.capabilities?.reasoning}
-                            toolCall={model.capabilities?.toolcall}
-                            vision={model.capabilities?.vision}
-                          />
-                          {/* Same display name as its pinned snapshots — say which
-                            row is the one that rolls forward. "latest" named
-                            the alias; "auto-updates" names what it DOES. */}
-                          {isRollingAlias && (
-                            <Hint label={tI18nComplete.raw('text7482f09d1b13')}>
-                              <Tag>{tI18nComplete.raw('textf096ba0a2aa6')}</Tag>
-                            </Hint>
-                          )}
-                          {/* Both scopes badge the model that holds them. A
-                            "set as default" control with no matching "this one
-                            IS the default" is the reason these moved here. */}
+                          {/* Both default scopes badge the model that holds them. */}
                           {isProjectDefault && (
-                            <Hint label={tI18nComplete.raw('text68cde35131cf')}>
-                              <Tag>{tI18nComplete.raw('text5e06ae1125b5')}</Tag>
+                            <Hint label={tI18nComplete.raw('text68cde35131cf')} side="bottom">
+                              <Badge variant="info" size="sm" className={STATUS_PILL}>
+                                {tI18nComplete.raw('text5e06ae1125b5')}
+                              </Badge>
                             </Hint>
                           )}
                           {isAccountDefault && (
-                            <Hint label={tI18nComplete.raw('textd197e66e9634')}>
-                              <Tag>{tI18nComplete.raw('text071c0f5e8495')}</Tag>
+                            <Hint label={tI18nComplete.raw('textd197e66e9634')} side="bottom">
+                              <Badge variant="info" size="sm" className={STATUS_PILL}>
+                                {tI18nComplete.raw('text071c0f5e8495')}
+                              </Badge>
+                            </Hint>
+                          )}
+                          {hiddenFromPicker && (
+                            <Hint label={tAccess('hiddenHint')} side="bottom">
+                              <Badge variant="muted" size="sm" className={STATUS_PILL}>
+                                {tAccess('hidden')}
+                              </Badge>
+                            </Hint>
+                          )}
+                          {modelDisabled && !providerDisabled && (
+                            <Badge variant="destructive" size="sm" className={STATUS_PILL}>
+                              {tAccess('disabled')}
+                            </Badge>
+                          )}
+                          {/* Same display name as its pinned snapshots — say
+                              which row is the one that rolls forward. */}
+                          {isRollingAlias && (
+                            <Hint label={tI18nComplete.raw('text7482f09d1b13')} side="bottom">
+                              <Tag>{tI18nComplete.raw('textf096ba0a2aa6')}</Tag>
                             </Hint>
                           )}
                         </div>
-
-                        {(isManaged || ctx || (!isManaged && priceIn && priceOut)) && (
-                          <InlineMeta>
-                            {isManaged && (
-                              <span>
-                                {model.capabilities?.vision
-                                  ? tAccess('textImage')
-                                  : tAccess('textOnly')}
-                              </span>
-                            )}
-                            {ctx && (
-                              <span className="tabular-nums">
-                                {ctx} {tI18nComplete.raw('text0230c6b1d833')}
-                              </span>
-                            )}
-                            {!isManaged && priceIn && priceOut && (
-                              <span className="tabular-nums">
-                                {priceIn} / {priceOut} {tI18nComplete.raw('text38989e6be9c4')}
-                              </span>
-                            )}
-                          </InlineMeta>
-                        )}
-                        {isManaged && pricingRoutes && pricingRoutes.length > 0 && (
-                          <div className="text-muted-foreground space-y-0.5 text-xs tabular-nums">
-                            <div>{tAccess('pricingEstimate')}</div>
-                            {pricingRoutes.map((price) => (
-                              <div key={price.route}>
-                                {tAccess('pricingRoute', {
-                                  route:
-                                    (MANAGED_ENDPOINT_PROVIDERS as Record<string, string>)[price.route] ??
-                                    price.route.split('/')[0],
-                                  input: formatPricePerMillion(price.input),
-                                  cacheRead: formatPricePerMillion(price.cacheRead),
-                                  output: formatPricePerMillion(price.output),
-                                })}
-                                {price.role === 'preferred' ? ` · ${tAccess('pricingPreferred')}` : ''}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        {metaLine ? (
+                          hasRoutes && !hiddenFromPicker && !modelDisabled ? (
+                            <ModelPriceHoverCard
+                              modelName={model.modelName}
+                              routes={pricingRoutes}
+                              dataClaim={holdsDataClaim(model.modelID)}
+                            >
+                              {metaLine}
+                            </ModelPriceHoverCard>
+                          ) : (
+                            <p className="text-muted-foreground text-xs tabular-nums">{metaLine}</p>
+                          )
+                        ) : null}
+                      </div>
+                      <div className="flex w-18 shrink-0 justify-end">
+                        <ModelCapabilityIcons
+                          chips
+                          reasoning={model.capabilities?.reasoning}
+                          toolCall={model.capabilities?.toolcall}
+                          vision={model.capabilities?.vision}
+                        />
                       </div>
                       {/*
-                      Both default scopes, on the row they apply to.
-
-                      Gated on `enabled` rather than on "is not already the
-                      default": a model the project does not OFFER cannot be
-                      anyone's default (the server refuses it), but a model that
-                      already holds one scope can still be given the other — the
-                      old `!isProjectDefault` gate hid the control on exactly the
-                      row you would reach for to also make it your own default.
-
-                      A menu rather than two icon buttons: two stars side by side
-                      say nothing about which is which, and each item can state
-                      its scope in words and carry its own check. It costs the
-                      project default a second click; it buys the account default
-                      a home and both of them a readable current state.
-
-                      `DropdownMenuContent` resolves its z-index through
-                      `useDialogDepth`, so it stacks above the modal this tab
-                      lives in without any per-call-site z-index.
-                    */}
-                      {canWrite && (enabled || hiddenFromPicker) && (
+                        Both default scopes and the wire id, in the row's own
+                        menu. Gated on `enabled`: a model the project does not
+                        OFFER cannot be anyone's default (the server refuses it).
+                        `DropdownMenuContent` resolves its z-index through
+                        `useDialogDepth`, so it stacks above the modal too.
+                      */}
+                      {canWrite && (enabled || hiddenFromPicker) ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
@@ -398,7 +417,7 @@ export function ModelsTab({
                                 value0: model.modelName,
                               })}
                               title={tI18nComplete.raw('textc3b312278ee5')}
-                              className="text-muted-foreground/50 hover:text-foreground hover:bg-muted data-[state=open]:bg-muted data-[state=open]:text-foreground mt-0.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                              className="text-muted-foreground hover:text-foreground hover:bg-muted data-[state=open]:bg-muted data-[state=open]:text-foreground flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color] duration-(--duration-normal) disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <MoreHorizontal className="size-4" />
                             </button>
@@ -442,13 +461,6 @@ export function ModelsTab({
                               {tI18nComplete.raw('textc74a21a56d79')}
                               {isAccountDefault && <Check className="ml-auto size-3.5" />}
                             </DropdownMenuItem>
-                            {/* The wire id's only home now that it is off the
-                              row. It was printed under every model name —
-                              `anthropic/claude-sonnet-4-5` on 34 rows, meaning
-                              nothing to most readers and needed only by the
-                              few about to paste one into a config file. A menu
-                              item costs them one click and everyone else
-                              nothing. */}
                             <DropdownMenuItem
                               onSelect={() => void navigator.clipboard?.writeText(wireId)}
                             >
@@ -457,6 +469,9 @@ export function ModelsTab({
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
+                      ) : (
+                        // Keeps the switch lane aligned on rows with no menu.
+                        <span aria-hidden className="size-6 shrink-0" />
                       )}
                       <Switch
                         checked={enabled}
@@ -465,7 +480,7 @@ export function ModelsTab({
                           access.isLoading ||
                           access.isUpdating ||
                           (isProjectDefault && enabled) ||
-                          access.data?.disabledProviders.includes(group.providerID)
+                          providerDisabled
                         }
                         aria-label={
                           isProjectDefault
@@ -488,31 +503,135 @@ export function ModelsTab({
                               ),
                             )
                         }
-                        className="mt-0.5 shrink-0"
+                        className="shrink-0"
                       />
                     </div>
                   );
                 })}
-              </div>
-            </div>
-          ))}
+              </section>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-/** US flag for the data-location hint. Phosphor has no flag; an emoji flag renders as "US" letters on Windows. */
-function UsFlag() {
+/**
+ * A whole provider on or off for this project. Credentials stay either way.
+ * The project default's provider cannot be turned off until the default moves
+ * elsewhere — the same lock the provider sheet's switch applies.
+ */
+function ProviderSwitch({
+  access,
+  providerId,
+  name,
+  canWrite,
+}: {
+  access: ReturnType<typeof useModelAccess>;
+  providerId: string;
+  name: string;
+  canWrite: boolean;
+}) {
+  const tAccess = useTranslations('modelAccess');
+  if (!access.data?.enforced) return null;
+  const enabled = !access.data.disabledProviders.includes(providerId);
+  const locked = access.defaultProvider === providerId && enabled;
   return (
-    <svg viewBox="0 0 19 10" className="h-2.5 w-auto shrink-0" aria-hidden="true">
-      <rect width="19" height="10" fill="#B22234" />
-      <path
-        d="M0 1.15h19M0 2.7h19M0 4.23h19M0 5.77h19M0 7.3h19M0 8.85h19"
-        stroke="#FFFFFF"
-        strokeWidth="0.77"
-      />
-      <rect width="7.6" height="5.38" fill="#3C3B6E" />
-    </svg>
+    <Hint label={locked ? tAccess('defaultProviderHint') : tAccess('credentialsHint')} side="bottom">
+      <span className="inline-flex shrink-0">
+        <Switch
+          checked={enabled}
+          disabled={!canWrite || access.isUpdating || locked}
+          aria-label={tAccess('enableProvider', { name })}
+          onCheckedChange={(next) =>
+            void access
+              .setEnabled({ target: 'provider', id: providerId, enabled: next })
+              .catch((error: unknown) =>
+                errorToast(error instanceof Error ? error.message : tAccess('providerError')),
+              )
+          }
+        />
+      </span>
+    </Hint>
+  );
+}
+
+type ManagedPricingRoute = NonNullable<
+  NonNullable<ReturnType<typeof useProjectModelPickerCatalog>>['managedPricingRoutes']
+>[string][number];
+
+/**
+ * The row's price, underlined; hovering opens every serving route's price and
+ * the data notes. The routes used to be printed as full sentences under each
+ * managed model — four lines of numbers per row.
+ */
+export function ModelPriceHoverCard({
+  modelName,
+  routes,
+  dataClaim,
+  children,
+}: {
+  modelName: string;
+  routes: readonly ManagedPricingRoute[];
+  dataClaim: boolean;
+  children: ReactNode;
+}) {
+  const tAccess = useTranslations('modelAccess');
+  const tList = useTranslations('modelsList');
+  return (
+    <HoverCard openDelay={150}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          className="text-foreground decoration-muted-foreground block cursor-help text-left text-xs tabular-nums underline decoration-dotted underline-offset-3"
+        >
+          {children}
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" className="w-98 space-y-3 p-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="text-foreground text-sm font-medium tabular-nums">
+            {tList('perMillion', { model: modelName })}
+          </p>
+          {/* The estimate disclaimer, one hover away. */}
+          <Hint label={tAccess('pricingEstimate')}>
+            <span tabIndex={0} className="text-muted-foreground cursor-help text-xs">
+              {tList('estimate')}
+            </span>
+          </Hint>
+        </div>
+        <div className="space-y-1.5 text-xs tabular-nums">
+          <div className="text-muted-foreground flex gap-2">
+            <span className="min-w-0 flex-1">{tList('route')}</span>
+            <span className="w-13 shrink-0 text-right">{tList('input')}</span>
+            <span className="w-13 shrink-0 text-right">{tList('cached')}</span>
+            <span className="w-13 shrink-0 text-right">{tList('output')}</span>
+          </div>
+          {routes.map((price) => (
+            <div key={price.route} className="text-foreground flex gap-2" data-pricing-route={price.route}>
+              <span className="min-w-0 flex-1 truncate">
+                {(MANAGED_ENDPOINT_PROVIDERS as Record<string, string>)[price.route] ??
+                  price.route.split('/')[0]}
+                {price.role === 'preferred' ? ` · ${tAccess('pricingPreferred')}` : ''}
+              </span>
+              <span className="w-13 shrink-0 text-right">{formatPricePerMillion(price.input)}</span>
+              <span className="w-13 shrink-0 text-right">{formatPricePerMillion(price.cacheRead)}</span>
+              <span className="w-13 shrink-0 text-right">{formatPricePerMillion(price.output)}</span>
+            </div>
+          ))}
+        </div>
+        {dataClaim ? (
+          <div className="border-border text-muted-foreground space-y-1 border-t pt-3 text-xs text-pretty">
+            <p>
+              {tAccess('zdrTitle')}. {tAccess('zdrDescription')}
+            </p>
+            <p>
+              {tAccess('usProvidersTitle')}. {tAccess('usProvidersDescription')}
+            </p>
+          </div>
+        ) : null}
+      </HoverCardContent>
+    </HoverCard>
   );
 }

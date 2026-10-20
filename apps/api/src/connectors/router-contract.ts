@@ -48,6 +48,12 @@ export interface ConnectorPrincipal {
    * a private session, never on `userId` (the launcher). Absent = legacy.
    */
   agentPrincipal?: { onBehalfOfUserId: string | null; agentId?: string | null } | null;
+  /**
+   * Resolve a connector's secret as no person: only values shared with the
+   * whole project. For unattended reads whose results reach sessions other
+   * people open (an app-event check), never a value narrowed to `userId`.
+   */
+  secretsAsProject?: boolean;
 }
 
 interface CatalogAction {
@@ -131,6 +137,9 @@ export type CrudOutcome =
 type PolicyAction = 'always_run' | 'require_approval' | 'block';
 export type DefaultMode = 'risk' | 'allow_all';
 
+/** Which catalogue Discover reads (`routes/catalogues.ts`). */
+export type DiscoverCatalogue = 'kortix' | 'integrations';
+
 export interface ProjectPolicyView {
   match: string;
   action: PolicyAction;
@@ -143,6 +152,9 @@ export interface ProjectPoliciesViewResponse {
   policies: ProjectPolicyView[];
   defaultMode: DefaultMode;
   errors: Array<{ path: string; error: string }>;
+  /** Per-connector rule counts from the same manifest — the parent `policy ls`
+   *  view must reflect a rule `policy <slug> set` just wrote (KRTX-2527). */
+  connectorRules?: Array<{ slug: string; count: number }>;
 }
 
 export interface ListCatalogOptions {
@@ -334,6 +346,10 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
       is_default: boolean;
       /** Who the account was authorized as. `null` when unknown. */
       connected_as?: string | null;
+      /** When the upstream first answered 401 to this account's stored
+       *  credential (a repeat 401 keeps the first time); cleared by a new
+       *  credential or an ok call. */
+      credential_rejected_at?: string | null;
     }>
   >;
   /**
@@ -400,6 +416,8 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
   connectStatus?(): Promise<{ configured: boolean; provider: string | null; providers?: string[] }>;
   /** API/MCP catalogue id by app join key, for the managed listings' `directId`. */
   catalogDirectIds?(): Promise<ReadonlyMap<string, string>>;
+  /** Hosted MCP server URL by app join key, for the managed listings' `directMcpUrl`. */
+  catalogDirectMcpUrls?(): Promise<ReadonlyMap<string, string>>;
   listConnectToolkits?(
     projectId: string,
     input: { q?: string; category?: string; cursor?: string; limit?: number },
@@ -460,8 +478,10 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     categories: Array<{ key: string; label: string; count: number }>;
     indexReady: boolean;
   }>;
-  /** Browse the direct integrations.sh catalogue. */
+  /** Browse the Discover catalogue: integrations.sh, or Kortix's own MCP apps
+   *  (`connectors_v2`). */
   listDiscoverConnectors?(input: {
+    catalogue?: DiscoverCatalogue;
     q?: string;
     cursor?: string;
     /** A browse-section key from `listDiscoverSections`. */
@@ -470,9 +490,13 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
   }): Promise<unknown>;
   /** The Discover browse page: Popular plus a fixed top slice of each
    *  section, each with the section's true total across the whole catalogue. */
-  listDiscoverSections?(input: { perCategory?: number; maxCategories?: number }): Promise<unknown>;
+  listDiscoverSections?(input: {
+    catalogue?: DiscoverCatalogue;
+    perCategory?: number;
+    maxCategories?: number;
+  }): Promise<unknown>;
   /** Resolve every known surface for one trusted catalogue record. */
-  getDiscoverConnector?(id: string): Promise<unknown>;
+  getDiscoverConnector?(id: string, catalogue?: DiscoverCatalogue): Promise<unknown>;
   /** Read project-level `policies:` list + `policy.default_mode` from kortix.yaml. */
   getProjectPolicies?(projectId: string): Promise<ProjectPoliciesViewResponse | null>;
   /** Replace project policies + default_mode (CRUD round-trips to kortix.yaml). */

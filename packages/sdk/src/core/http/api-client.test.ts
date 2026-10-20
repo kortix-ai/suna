@@ -6,6 +6,7 @@ import {
   backendApi,
   isAdminBypassEnabled,
   PROVISION_IN_FLIGHT_CODE,
+  SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
   setAdminBypass,
 } from './api-client';
 import { ApiError, featureDisabledKey, isFeatureDisabledError } from './api/errors';
@@ -21,10 +22,8 @@ describe('setAdminBypass / isAdminBypassEnabled', () => {
     expect(isAdminBypassEnabled()).toBe(false);
   });
 
-  test('toggles on and off', () => {
+  test('is a retired no-op: turning it on leaves it off', () => {
     setAdminBypass(true);
-    expect(isAdminBypassEnabled()).toBe(true);
-    setAdminBypass(false);
     expect(isAdminBypassEnabled()).toBe(false);
   });
 });
@@ -48,7 +47,7 @@ describe('makeRequest admin-bypass header', () => {
     };
   }
 
-  test('attaches x-kortix-admin-bypass when enabled', async () => {
+  test('sends no x-kortix-admin-bypass even when set (the header is retired)', async () => {
     configureKortix({
       backendUrl: 'http://api.test/v1',
       getToken: async () => 'test-token',
@@ -57,7 +56,7 @@ describe('makeRequest admin-bypass header', () => {
     try {
       setAdminBypass(true);
       await backendApi.get('/projects/abc/detail');
-      expect(stub.getHeaders()?.['x-kortix-admin-bypass']).toBe('1');
+      expect(stub.getHeaders()?.['x-kortix-admin-bypass']).toBeUndefined();
     } finally {
       stub.restore();
     }
@@ -1080,6 +1079,83 @@ describe('makeRequest classifies a typed provision_in_flight 409 as silent to Se
       const res = await backendApi.post('/projects/provision', {
         account_id: 'a1',
       });
+      expect(res.success).toBe(false);
+      expect(res.error?.status).toBe(409);
+      expect(onErrorCalls).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+});
+
+// Regression for Better Stack frontend pattern `6bc03d7d…`
+// (`ApiError: Internal server error` on app hibernate): the API answered a
+// generic 500 for an in-flight sandbox state transition. The API now answers a
+// typed 409 `sandbox_state_change_in_progress` (an EXPECTED, self-resolving
+// state — the in-flight transition is already doing what the caller asked).
+// Classify it SILENT to `onError` like the other typed 409s, still returning
+// the `ApiError` so a caller can branch on `.code`. A genuine 409 with no
+// typed code still reports. See
+// apps/api/src/shared/daytona-state-transition.ts.
+describe('makeRequest classifies a typed sandbox_state_change_in_progress 409 as silent to Sentry', () => {
+  function stubFetchOnce(status: number, body: unknown) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
+
+  test('a 409 with code=sandbox_state_change_in_progress does NOT fire onError but returns an ApiError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(409, {
+      error: true,
+      message: 'sandbox state change in progress; try again shortly',
+      code: SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
+      status: 409,
+    });
+    try {
+      const res = await backendApi.post('/projects/p-1/apps/app-1/stop', {});
+      expect(res.success).toBe(false);
+      expect(res.error).toBeInstanceOf(ApiError);
+      expect(res.error?.status).toBe(409);
+      expect(res.error?.code).toBe(SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE);
+      // The retryable message must still reach the caller (the web toast),
+      // but never page Sentry/Better Stack.
+      expect(res.error?.message).toBe('sandbox state change in progress; try again shortly');
+      expect(onErrorCalls).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a genuine 409 on the stop route (no typed code) STILL fires onError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(409, {
+      error: true,
+      message: 'Conflict',
+      status: 409,
+    });
+    try {
+      const res = await backendApi.post('/projects/p-1/apps/app-1/stop', {});
       expect(res.success).toBe(false);
       expect(res.error?.status).toBe(409);
       expect(onErrorCalls).toBe(1);

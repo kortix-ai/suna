@@ -5,6 +5,14 @@
  * (fire now, pause, delete, edit prompt).
  *
  * Mobile branding: PageHeader + PageContent chrome, bottom sheets, design tokens.
+ *
+ * Each control follows the leaves its trigger route asserts (KRTX-1720), from
+ * one `useCans` probe read through the SDK's `triggerControlsFrom` (the same
+ * mapping web's Triggers and Agent pages use): + on project.write +
+ * project.trigger.create, Fire now on project.trigger.fire, Pause/Resume and
+ * every edit (prompt, agent, model) on project.write + project.trigger.update,
+ * Delete on project.write + project.trigger.delete. An unresolved probe shows
+ * none of them.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -16,6 +24,8 @@ import {
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { TRIGGER_CONTROL_ACTIONS, triggerControlsFrom, type TriggerControls } from '@kortix/sdk';
+import { useCans } from '@kortix/sdk/react';
 import {
   TimerIcon as Timer,
   ClockIcon as Clock,
@@ -83,9 +93,6 @@ interface SchedulesPageProps {
   /** Pushed as a sub-page of project Settings: Go back in place of the hamburger. */
   onBack?: () => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
 const MONO = MONO_FONT_FAMILY;
@@ -263,16 +270,21 @@ function ScheduleCreateSheet({
 function ScheduleDetailSheet({
   projectId,
   trigger,
+  controls,
   onClose,
   isDark,
 }: {
   projectId: string;
   trigger: ProjectTrigger;
+  /** Which controls the viewer gets: one leaf per control. */
+  controls: TriggerControls;
   onClose: () => void;
   isDark: boolean;
 }) {
   const sheetBackground = useSheetBackground();
-  const barInset = usePinnedBarInset(ACTION_BAR_HEIGHT);
+  const { canFire, canUpdate, canDelete } = controls;
+  const hasActions = canFire || canUpdate || canDelete;
+  const barInset = usePinnedBarInset(hasActions ? ACTION_BAR_HEIGHT : 0);
   const fire = useFireProjectTrigger(projectId);
   const update = useUpdateProjectTrigger(projectId);
   const del = useDeleteProjectTrigger(projectId);
@@ -291,40 +303,43 @@ function ScheduleDetailSheet({
 
   const oneOff = !!trigger.run_at;
 
+  // Every schedule toast names the schedule, behind its clock (web's trigger toast).
+  const entity = { icon: Clock, label: trigger.name || trigger.slug };
+
   const handleFire = () => {
     haptics.tap();
     fire.mutate(trigger.slug, {
       onSuccess: (res) => {
         if (res.status === 'failed') {
-          toast.error('Unable to fire the schedule', { description: res.error || res.reason || 'Try again.' });
+          toast.error('Unable to fire the schedule', { entity, description: res.error || res.reason || 'Try again.' });
         } else {
-          toast.success(res.status === 'queued' ? 'Schedule queued' : 'Schedule fired');
+          toast.success(res.status === 'queued' ? 'Schedule queued' : 'Schedule fired', { entity });
         }
       },
-      onError: (e: any) => toast.error('Unable to fire the schedule', { description: e?.message || 'Try again.' }),
+      onError: (e: any) => toast.error('Unable to fire the schedule', { entity, description: e?.message || 'Try again.' }),
     });
   };
   const togglePaused = () => {
     haptics.tap();
     update.mutate({ slug: trigger.slug, input: { enabled: !trigger.enabled } }, {
-      onError: (e: any) => toast.error('Unable to update the schedule', { description: e?.message || 'Try again.' }),
+      onError: (e: any) => toast.error('Unable to update the schedule', { entity, description: e?.message || 'Try again.' }),
     });
   };
   const handleSavePrompt = (next: string) => {
     haptics.tap();
     update.mutate({ slug: trigger.slug, input: { prompt_template: next } }, {
       onSuccess: closePromptEditor,
-      onError: (e: any) => toast.error('Unable to save the prompt', { description: e?.message || 'Try again.' }),
+      onError: (e: any) => toast.error('Unable to save the prompt', { entity, description: e?.message || 'Try again.' }),
     });
   };
   const handleAgentChange = (agent: string) => {
     update.mutate({ slug: trigger.slug, input: { agent } }, {
-      onError: (e: any) => toast.error('Unable to change the agent', { description: e?.message || 'Try again.' }),
+      onError: (e: any) => toast.error('Unable to change the agent', { entity, description: e?.message || 'Try again.' }),
     });
   };
   const handleModelChange = (model: string | null) => {
     update.mutate({ slug: trigger.slug, input: { model } }, {
-      onError: (e: any) => toast.error('Unable to change the model', { description: e?.message || 'Try again.' }),
+      onError: (e: any) => toast.error('Unable to change the model', { entity, description: e?.message || 'Try again.' }),
     });
   };
   const handleDelete = () => {
@@ -337,7 +352,7 @@ function ScheduleDetailSheet({
         haptics.medium();
         del.mutate(trigger.slug, {
           onSuccess: onClose,
-          onError: (e: any) => toast.error('Unable to remove the schedule', { description: e?.message || 'Try again.' }),
+          onError: (e: any) => toast.error('Unable to remove the schedule', { entity, description: e?.message || 'Try again.' }),
         });
       },
     });
@@ -375,10 +390,25 @@ function ScheduleDetailSheet({
           {!oneOff && trigger.timezone ? <SettingsRow label="Time zone" value={trigger.timezone} /> : null}
         </SettingsGroup>
 
-        <PromptPreview value={trigger.prompt_template} onEdit={() => setEditingPrompt(true)} />
+        <PromptPreview
+          value={trigger.prompt_template}
+          onEdit={canUpdate ? () => setEditingPrompt(true) : undefined}
+        />
 
-        <AgentPickerField projectId={projectId} value={trigger.agent} onChange={handleAgentChange} flush />
-        <ModelPickerField projectId={projectId} value={trigger.model} onChange={handleModelChange} flush />
+        <AgentPickerField
+          projectId={projectId}
+          value={trigger.agent}
+          onChange={handleAgentChange}
+          disabled={!canUpdate}
+          flush
+        />
+        <ModelPickerField
+          projectId={projectId}
+          value={trigger.model}
+          onChange={handleModelChange}
+          disabled={!canUpdate}
+          flush
+        />
 
         <SettingsGroup>
           <SettingsRow label="Last fired" value={relativeTime(trigger.last_fired_at)} />
@@ -388,32 +418,42 @@ function ScheduleDetailSheet({
 
       {/* Pinned action bar, floating over a fade of the sheet, the content
           scrolling under it — the agent and skill detail's fade (Jay,
-          2026-09-22). Fire now · pause or resume · delete. */}
-      <PinnedBar controlHeight={ACTION_BAR_HEIGHT} background={sheetBackground} className="gap-3 px-4">
-        <Button size="lg" onPress={handleFire} disabled={fire.isPending} className="flex-1 rounded-full">
-          <Icon as={Play} size={16} className="text-primary-foreground" />
-          <Text>{fire.isPending ? 'Firing…' : 'Fire now'}</Text>
-        </Button>
-        <Button
-          variant="secondary"
-          size="lg"
-          className="rounded-full"
-          onPress={togglePaused}
-          disabled={update.isPending}
-          accessibilityLabel={trigger.enabled ? 'Pause schedule' : 'Resume schedule'}>
-          <Icon as={trigger.enabled ? Pause : Play} size={16} className="text-foreground" />
-          <Text>{trigger.enabled ? 'Pause' : 'Resume'}</Text>
-        </Button>
-        <Button
-          variant="secondary"
-          size="icon"
-          className="rounded-full"
-          onPress={handleDelete}
-          disabled={del.isPending}
-          accessibilityLabel="Delete schedule">
-          <Icon as={Trash2} size={18} className="text-destructive" />
-        </Button>
-      </PinnedBar>
+          2026-09-22). Fire now · pause or resume · delete, each on its own
+          leaf. Without Fire now, Pause/Resume takes its full-width slot; with
+          no control at all there is no bar. */}
+      {hasActions ? (
+        <PinnedBar controlHeight={ACTION_BAR_HEIGHT} background={sheetBackground} className="gap-3 px-4">
+          {canFire ? (
+            <Button size="lg" onPress={handleFire} disabled={fire.isPending} className="flex-1 rounded-full">
+              <Icon as={Play} size={16} className="text-primary-foreground" />
+              <Text>{fire.isPending ? 'Firing…' : 'Fire now'}</Text>
+            </Button>
+          ) : null}
+          {canUpdate ? (
+            <Button
+              variant="secondary"
+              size="lg"
+              className={canFire ? 'rounded-full' : 'flex-1 rounded-full'}
+              onPress={togglePaused}
+              disabled={update.isPending}
+              accessibilityLabel={trigger.enabled ? 'Pause schedule' : 'Resume schedule'}>
+              <Icon as={trigger.enabled ? Pause : Play} size={16} className="text-foreground" />
+              <Text>{trigger.enabled ? 'Pause' : 'Resume'}</Text>
+            </Button>
+          ) : null}
+          {canDelete ? (
+            <Button
+              variant="secondary"
+              size="icon"
+              className="rounded-full"
+              onPress={handleDelete}
+              disabled={del.isPending}
+              accessibilityLabel="Delete schedule">
+              <Icon as={Trash2} size={18} className="text-destructive" />
+            </Button>
+          ) : null}
+        </PinnedBar>
+      ) : null}
       </View>
       {confirmDialog}
     </Animated.View>
@@ -427,9 +467,6 @@ export function SchedulesPage({
   projectId,
   onBack,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: SchedulesPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -440,6 +477,7 @@ export function SchedulesPage({
   const detailSheetRef = React.useRef<BottomSheetModal>(null);
 
   const { data, isLoading, isError, error, refetch } = useProjectTriggers(projectId);
+  const controls = triggerControlsFrom(useCans({ projectId }, TRIGGER_CONTROL_ACTIONS));
 
   const bgColor = isDark ? THEME.dark.background : THEME.light.background;
   const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
@@ -467,10 +505,7 @@ export function SchedulesPage({
         title={page.label}
         onBack={onBack}
         onOpenDrawer={onBack ? undefined : onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
-        onAdd={() => { haptics.tap(); addSheetRef.current?.present(); }}
+        onAdd={controls.canCreate ? () => { haptics.tap(); addSheetRef.current?.present(); } : undefined}
         addLabel="New schedule"
       />
 
@@ -545,7 +580,13 @@ export function SchedulesPage({
         keyboardBlurBehavior="restore"
       >
         {selected ? (
-          <ScheduleDetailSheet projectId={projectId} trigger={selected} onClose={() => detailSheetRef.current?.dismiss()} isDark={isDark} />
+          <ScheduleDetailSheet
+            projectId={projectId}
+            trigger={selected}
+            controls={controls}
+            onClose={() => detailSheetRef.current?.dismiss()}
+            isDark={isDark}
+          />
         ) : (
           <View style={{ height: 1 }} />
         )}

@@ -4,11 +4,12 @@
  * A preview address is a real website address: people paste it, bookmark it,
  * open it in a fresh tab, and send it to each other. Every state it can be in
  * therefore needs a page — not JSON, and not an intermediary's error
- * interstitial. There are six, and they are all normal:
+ * interstitial. There are seven, and they are all normal:
  *
  *   signed-out    no credential yet            → offer to sign in
  *   forbidden     host claimed without a signature
  *   unknown       no such sandbox any more
+ *   unavailable   the share link is revoked, expired or deleted
  *   starting      the box is waking             → wait, retry
  *   not-listening nothing bound to that port yet → wait, retry
  *   unreachable   the box is up but not answering
@@ -72,6 +73,7 @@ export type PreviewState =
   | 'signed-out'
   | 'forbidden'
   | 'unknown'
+  | 'unavailable'
   | 'starting'
   | 'not-listening'
   | 'unreachable';
@@ -105,6 +107,16 @@ export function previewStateCopy(state: PreviewState, port?: number): PreviewSta
       return {
         title: 'This preview is no longer available',
         body: 'The sandbox behind this address does not exist any more. Sessions release their sandboxes when they are deleted.',
+        signIn: false,
+        autoRetry: false,
+      };
+    case 'unavailable':
+      // A share link outlives the share: revoking it or deleting the session
+      // leaves the URL in bookmarks and chats. This says why, not "unauthorized"
+      // — no credential revives a dead link, so no sign-in is offered.
+      return {
+        title: 'This share link is no longer available',
+        body: 'The person who shared this link revoked it, or it has expired.',
         signIn: false,
         autoRetry: false,
       };

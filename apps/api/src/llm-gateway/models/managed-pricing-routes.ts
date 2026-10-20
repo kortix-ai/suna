@@ -1,9 +1,10 @@
 import { MANAGED_MODELS } from '@kortix/llm-catalog';
+import { clearedOpenRouterEndpoints } from '../resolution/descriptors';
 
 export interface ManagedPriceRoute {
   route: string;
   role: 'preferred' | 'eligible';
-  /** Customer USD per million tokens, including the configured markup. */
+  /** USD per million tokens × the markup passed in (1 = the provider's base price). */
   input: number;
   cacheRead: number;
   output: number;
@@ -33,7 +34,7 @@ export function managedPricingRoutes(
       });
     }
     const allowed = openrouterAvailable
-      ? (model.openrouterProvider as { only?: string[] } | undefined)?.only ?? []
+      ? clearedOpenRouterEndpoints(model.openrouterProvider?.only)
       : [];
     for (const tag of allowed) {
       const price = model.openrouterEndpointPricing?.[tag];
@@ -77,7 +78,7 @@ export async function refreshManagedPricingRoutes(
   if (!options.apiKey) return quoted;
   const fetchImpl = options.fetchImpl ?? fetch;
   await Promise.all(MANAGED_MODELS.map(async (model) => {
-    const allowed = new Set((model.openrouterProvider as { only?: string[] } | undefined)?.only ?? []);
+    const allowed = new Set(clearedOpenRouterEndpoints(model.openrouterProvider?.only));
     if (!allowed.size) return;
     try {
       const response = await fetchImpl(

@@ -43,7 +43,7 @@ mock.module('../billing/services/billing-gate', () => ({
   checkBillingAdmission: async (accountId: string) => unfundedAccounts.has(accountId)
     ? {
         ok: false, reason: 'insufficient_credits', balance: 0, message: 'Insufficient credits',
-        billingModel: 'credits', hasSubscription: false, billingState: 'unfunded',
+        hasSubscription: false, billingState: 'unfunded',
       }
     : { ok: true },
 }));
@@ -224,7 +224,7 @@ withDb('always-on Apps: the provider is the truth, and liveness is stamped', () 
     expect(renewals).toEqual([]);
   });
 
-  test('on Daytona and E2B the provider idle timer is renewed every pass', async () => {
+  test('on Daytona the provider idle timer is renewed every pass', async () => {
     await seed(ALWAYS, { alwaysOn: true, status: 'running', provider: 'daytona' });
 
     await runAppKeepAlive(new Date(), true);

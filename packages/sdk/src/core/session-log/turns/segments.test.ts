@@ -5,7 +5,21 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type SessionLogBlock, type SessionLogMessage, type SessionLogThread, type ToolCallBlock } from '../types';
-import { sessionLogTurns, sessionLogBurstSteps, sessionLogTurnSegments, splitSessionLogTurnWork } from './index';
+import { classifyTurn, toToolView } from '../../turns/classify';
+import { sessionLogOfV1Rows } from '../v1-view';
+import {
+  classifySessionLogMessage,
+  sessionLogAnsweredQuestionCall,
+  sessionLogBurstRunning,
+  sessionLogBurstSteps,
+  sessionLogBurstSummary,
+  sessionLogBurstWorkLabel,
+  sessionLogOpenCall,
+  sessionLogShowGroupCall,
+  sessionLogTurnSegments,
+  sessionLogTurns,
+  splitSessionLogTurnWork,
+} from './index';
 
 const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
 let seq = 0;
@@ -113,5 +127,147 @@ describe('sessionLogBurstSteps', () => {
       call(id, 'question', { questions: [{ question: 'Which?', options: [{ label: 'A' }] }] }, { kind: 'question', result: { content: [{ type: 'text', text: 'User has answered your questions: "Which?"="A".' }], is_error: false } });
     const steps = sessionLogBurstSteps(turnOf([question('q1'), question('q2')]).blocks);
     expect(steps.map((s) => s.kind)).toEqual(['block', 'block']);
+  });
+});
+
+describe('sessionLogBurstSummary / sessionLogBurstRunning', () => {
+  test('the summary counts what the chain renders: one thought run, each call; plumbing only flags', () => {
+    const turn = turnOf([
+      { type: 'reasoning', id: 'r1', text: 'one' },
+      { type: 'reasoning', id: 'r2', text: 'two' },
+      call('mem', 'memory_search', { query: 'x' }),
+      call('b1', 'bash', { command: 'ls' }, { kind: 'shell' }),
+      call('b2', 'bash', { command: 'false' }, { kind: 'shell', status: 'error', result: { content: [{ type: 'text', text: 'exit 1' }], is_error: true, error: { message: 'exit 1' } } }),
+    ]);
+    expect(sessionLogBurstSummary(turn.blocks)).toEqual({ total: 3, failed: 1, completed: 2, hasPlumbing: true });
+  });
+
+  test('the work label names the calls and the failures, never the thinking or the plumbing', () => {
+    const turn = turnOf([
+      { type: 'reasoning', id: 'r1', text: 'one' },
+      call('mem', 'memory_search', { query: 'x' }),
+      call('b1', 'bash', { command: 'ls' }, { kind: 'shell' }),
+      call('b2', 'bash', { command: 'false' }, { kind: 'shell', status: 'error', result: { content: [{ type: 'text', text: 'exit 1' }], is_error: true, error: { message: 'exit 1' } } }),
+    ]);
+    expect(sessionLogBurstWorkLabel(turn.blocks)).toBe('Ran 2 commands · 1 failed');
+  });
+
+  test('a burst runs while the turn works: the trailing one always, another while a call is open or a thought streams', () => {
+    const running = turnOf([call('b1', 'bash', { command: 'make' }, { status: 'running', result: undefined })], { status: 'streaming' });
+    expect(sessionLogBurstRunning(running.blocks, { working: false })).toBe(false);
+    expect(sessionLogBurstRunning(running.blocks, { working: true })).toBe(true);
+    const settled = turnOf([call('b1', 'bash', { command: 'ls' })], { status: 'streaming' });
+    expect(sessionLogBurstRunning(settled.blocks, { working: true })).toBe(false);
+    expect(sessionLogBurstRunning(settled.blocks, { working: true, trailing: true })).toBe(true);
+    const thinking = turnOf([{ type: 'reasoning', id: 'r1', text: 'hmm' }], { status: 'streaming' });
+    expect(sessionLogBurstRunning(thinking.blocks, { working: true })).toBe(true);
+    const thought = turnOf([{ type: 'reasoning', id: 'r1', text: 'hmm' }], { status: 'complete' });
+    expect(sessionLogBurstRunning(thought.blocks, { working: true })).toBe(false);
+  });
+
+  test('a v1 thought with an end time is done, whatever its message says', () => {
+    const rows = [
+      { info: { id: 'msg_u', sessionID: 'ses', role: 'user', time: { created: 1 } }, parts: [{ id: 'prt_q', sessionID: 'ses', messageID: 'msg_u', type: 'text', text: 'go' }] },
+      {
+        info: { id: 'msg_a', sessionID: 'ses', role: 'assistant', parentID: 'msg_u', time: { created: 2 } },
+        parts: [{ id: 'prt_r', sessionID: 'ses', messageID: 'msg_a', type: 'reasoning', text: 'hmm', time: { start: 2, end: 3 } }],
+      },
+    ];
+    const [turn] = sessionLogTurns(sessionLogOfV1Rows('kses', 'ses', rows as never).threads[0]!);
+    expect(turn!.assistant[0]!.status).toBe('streaming');
+    expect(sessionLogBurstRunning(turn!.blocks, { working: true })).toBe(false);
+  });
+});
+
+describe('sessionLogOpenCall', () => {
+  test('a call the closure rule closed reads open (running once started, else pending, no result); every other call is itself', () => {
+    const closed = (over: Partial<ToolCallBlock>) =>
+      call('c', 'bash', { command: 'sleep 9' }, { status: 'error', result: { content: [{ type: 'text', text: '[interrupted]' }], is_error: true, synthetic: true, error: { code: 'interrupted', message: '[interrupted]' } }, ...over });
+    const started = closed({ started_at: '2026-10-01T00:00:00.000Z' });
+    const open = sessionLogOpenCall(started);
+    expect(open).toMatchObject({ status: 'running', call_id: 'call_c', input: { command: 'sleep 9' } });
+    expect(open.result).toBeUndefined();
+    expect(sessionLogOpenCall(started)).toBe(open);
+    expect(sessionLogOpenCall(closed({})).status).toBe('pending');
+    const failed = call('f', 'bash', {}, { status: 'error', result: { content: [{ type: 'text', text: 'exit 1' }], is_error: true } });
+    expect(sessionLogOpenCall(failed)).toBe(failed);
+    const done = call('d', 'bash');
+    expect(sessionLogOpenCall(done)).toBe(done);
+  });
+});
+
+describe('sessionLogShowGroupCall', () => {
+  test('adjacent show calls become one call of the first id whose input is the items carousel', () => {
+    const one = call('show1', 'show', { type: 'image', path: '/1.png' });
+    const two = call('show2', 'show', { type: 'image', path: '/2.png' });
+    const merged = sessionLogShowGroupCall([one, two]);
+    expect(merged).toMatchObject({ id: 'show1', call_id: 'call_show1', name: 'show', status: 'complete' });
+    expect((merged.input as { items: unknown[] }).items).toEqual([
+      { status: 'ready', type: 'image', path: '/1.png' },
+      { status: 'ready', type: 'image', path: '/2.png' },
+    ]);
+    const live = sessionLogShowGroupCall([one, call('show3', 'show', { type: 'image', path: '/3.png' }, { status: 'running', result: undefined })]);
+    expect(live.status).toBe('running');
+    const failed = sessionLogShowGroupCall([one, call('show4', 'show', { title: 'Chart' }, { status: 'error', result: { content: [{ type: 'text', text: 'gone' }], is_error: true, error: { message: 'gone' } } })]);
+    expect((failed.input as { items: unknown[] }).items.at(-1)).toEqual({ status: 'error', type: 'error', title: 'Chart', content: 'gone' });
+  });
+});
+
+describe('sessionLogAnsweredQuestionCall', () => {
+  test('the question call with the answers the user gave, before the harness confirms them', () => {
+    const asked = call('q', 'question', { questions: [{ question: 'Which?' }] }, { kind: 'question', status: 'running', result: undefined });
+    const answered = sessionLogAnsweredQuestionCall(asked, [['A']]);
+    expect(answered).toMatchObject({ id: 'q', call_id: 'call_q', status: 'complete', input: { questions: [{ question: 'Which?' }] } });
+    expect(toToolView(answered).answers).toEqual([['A']]);
+    const withInput = sessionLogAnsweredQuestionCall(asked, [['B']], { questions: [{ question: 'Other?' }] });
+    expect(withInput.input).toEqual({ questions: [{ question: 'Other?' }] });
+  });
+});
+
+describe('classifySessionLogMessage', () => {
+  const at = 1_790_000_000_000;
+  const v1User = { info: { id: 'msg_u', sessionID: 'ses_r', role: 'user', time: { created: at }, agent: 'build', model: { providerID: 'kortix', modelID: 'm' } }, parts: [{ id: 'prt_u', sessionID: 'ses_r', messageID: 'msg_u', type: 'text', text: 'go' }] };
+  const v1Reply = (over: Record<string, unknown> = {}, parts: Array<Record<string, unknown>> = []) => ({
+    info: { id: 'msg_a', sessionID: 'ses_r', role: 'assistant', parentID: 'msg_u', time: { created: at + 1, completed: at + 2 }, providerID: 'kortix', modelID: 'm', mode: 'build', agent: 'build', path: { cwd: '/w', root: '/w' }, cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } }, ...over },
+    parts: parts.map((p, i) => ({ id: `prt_${i}`, sessionID: 'ses_r', messageID: 'msg_a', ...p })),
+  });
+  const convert = (rows: unknown[]) => sessionLogOfV1Rows('S', 'ses_r', rows as never).threads[0]!.messages;
+
+  test('a converted reply classifies exactly as classifyTurn classified its v1 row', () => {
+    const row = v1Reply({}, [
+      { type: 'step-start' },
+      { type: 'reasoning', text: 'think', time: { start: at, end: at + 1 } },
+      { type: 'tool', callID: 'call_1', tool: 'bash', state: { status: 'completed', input: { command: 'ls' }, output: 'a.txt', title: 'ls', metadata: {}, time: { start: at, end: at + 1 } } },
+      { type: 'text', text: 'Done.' },
+      { type: 'file', mime: 'text/plain', filename: 'notes.txt', url: 'kortix-attachment://P/S/att_1' },
+      { type: 'step-finish', reason: 'stop', cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ]);
+    const [, reply] = convert([v1User, row]);
+    expect(classifySessionLogMessage(reply!)).toEqual(classifyTurn(row as never));
+  });
+
+  test("a failed reply keeps the gateway's own sentence, which the record's error.message does not carry", () => {
+    const error = { name: 'APIError', data: { message: 'Bad Request', statusCode: 402, isRetryable: false, responseBody: '{"error":"plan_upgrade_required","code":402,"message":"Pick a free model.","provider":"kortix","suggestion":"Upgrade your plan."}' } };
+    const [, reply] = convert([v1User, v1Reply({ error })]);
+    expect(reply!.error?.message).toBe('Bad Request');
+    expect(classifySessionLogMessage(reply!).error).toMatchObject({ name: 'APIError', message: 'Pick a free model.' });
+  });
+
+  test('a compaction is one message: the marker part, then the summary text', () => {
+    const marker = { info: { ...v1User.info, id: 'msg_c' }, parts: [{ id: 'prt_c', sessionID: 'ses_r', messageID: 'msg_c', type: 'compaction', auto: false }] };
+    const summary = v1Reply({ id: 'msg_s', parentID: 'msg_c', mode: 'compaction', agent: 'compaction', summary: true }, [{ type: 'text', text: 'SUMMARY' }]);
+    const [message] = convert([marker, summary]);
+    expect(message!.kind).toBe('compaction');
+    expect(classifySessionLogMessage(message!).parts.map((p) => p.kind === 'text' ? ['text', p.text] : [p.kind])).toEqual([['compaction'], ['text', 'SUMMARY']]);
+  });
+
+  test('a native record classifies from its blocks: text, a tool call as its tool view, an empty reply is empty', () => {
+    const tool = call('c1', 'bash', { command: 'ls' }, { kind: 'shell', result: { content: [{ type: 'text', text: 'a.txt' }], is_error: false } });
+    const native = msg('n1', 'assistant', [{ type: 'text', id: 't1', text: 'hi' }, tool], { reply_to: 'u' });
+    const classified = classifySessionLogMessage(native);
+    expect(classified.parts.map((p) => p.kind)).toEqual(['text', 'tool']);
+    expect(classified.parts[1]).toMatchObject({ kind: 'tool', tool: { name: 'bash', status: 'done', output: 'a.txt' } });
+    expect(classified.isEmpty).toBe(false);
+    expect(classifySessionLogMessage(msg('n2', 'assistant', [])).isEmpty).toBe(true);
   });
 });

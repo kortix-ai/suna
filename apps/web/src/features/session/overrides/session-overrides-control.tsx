@@ -216,7 +216,7 @@ export function SessionOverridesControl({ onSave, ...contentProps }: SessionOver
           size="icon"
           disabled={contentProps.saving}
           aria-label={t('sessionOverrides')}
-          className="text-muted-foreground hover:text-foreground data-[state=open]:text-foreground"
+          className="text-muted-foreground hover:text-foreground data-[state=open]:text-foreground hit-area-3"
         >
           <GearSixIcon className="size-4 shrink-0" />
         </Button>

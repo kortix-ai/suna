@@ -23,18 +23,17 @@
  * only: no `DropdownMenu`, no trigger, no portal of its own.
  */
 
+import { HubLink } from '@/features/accounts/hub/account-hub-location';
+import { useTranslations } from '@/i18n/use-translations';
+import { hubTarget } from '@/stores/account-panel-store';
 import {
   GearSixIcon as CogOne,
-  MagnifyingGlassIcon as Search,
   PlusIcon,
+  MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
-import { useQueries } from '@tanstack/react-query';
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
-import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
-import { useMemo, useState, type MouseEvent } from 'react';
+import { useState, type MouseEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -47,17 +46,13 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { captureHref } from '@/features/capture/area/use-capture-area';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
-import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import {
-  filterWorkspaceGroups,
-  groupWorkspacesByAccount,
-  resolveSwitcherAccountId,
   resolveWorkspaceRowNavigation,
   type WorkspaceRowNavigation,
 } from '@/features/workspace/project-sidebar/workspace-grouping';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { InvitationsMenuGroup } from './invitations-menu-group';
+import { useWorkspaceMenuModel } from './workspace-menu-model';
 import { isModifiedClick } from '@/lib/navigation/modified-click';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -65,9 +60,9 @@ import {
   shouldShowProjectSwitchLoading,
   useProjectSwitchStore,
 } from '@/stores/project-switch-store';
-import { listProjectsForAccount, type KortixProject } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
-import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
+import { type KortixProject } from '@kortix/sdk';
+import { CheckCircleIcon as CheckCircleSolid, MonitorPlayIcon } from '@phosphor-icons/react';
+import { InvitationsMenuGroup } from './invitations-menu-group';
 
 export function WorkspaceMenuSection() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -78,114 +73,19 @@ export function WorkspaceMenuSection() {
   const beginSwitch = useProjectSwitchStore((s) => s.beginSwitch);
   const switchingToProjectId = useProjectSwitchStore((s) => s.targetProjectId);
   const [query, setQuery] = useState('');
+  const tCapture = useTranslations('capture.account');
 
   const activeProjectId = pathname?.startsWith('/projects/') ? params?.id : undefined;
 
-  const accountsQuery = useAccountsList();
-
-  // Every account the user belongs to, and every workspace in each. This menu is
-  // the ONLY complete workspace directory now that the /projects index is gone,
-  // so it lists all accounts' workspaces, not just the selected one.
-  // `GET /projects` with no `account_id` scopes server-side to a single default
-  // account (apps/api resolveProjectAccount -> resolveAccountId), so there is no
-  // single unscoped call that returns everything — one listProjectsForAccount per
-  // account, fanned out and flattened below.
-  const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
-  const workspaceQueries = useQueries({
-    queries: accounts.map((account) => ({
-      queryKey: qk.projects.list(account.account_id),
-      queryFn: () => listProjectsForAccount(account.account_id),
-      ...contract('inventory'),
-    })),
-  });
-
-  // Loading until accounts themselves are known AND every account's workspaces
-  // are in. Without `accountsQuery.isLoading` this is `false` while accounts are
-  // still in flight (`workspaceQueries` starts as `[]`, and `[].some(...)` is
-  // `false` by definition) — the view would paint "No workspaces yet" before it
-  // had even asked how many accounts exist.
-  const workspacesLoading = accountsQuery.isLoading || workspaceQueries.some((q) => q.isLoading);
-  const allWorkspaces = workspaceQueries.flatMap((q) => q.data ?? []);
-
-  // Accounts whose workspace fetch failed. `workspaceQueries[i]` belongs to
-  // `accounts[i]` — both built from the same array in the same order — so this is
-  // a zip by index, not a second fetch. A failed account still gets its group
-  // header and a retry row instead of silently looking empty:
-  // `groupWorkspacesByAccount` drops any account with zero workspaces, and
-  // `undefined` data folds to `[]` on error, so without this the account would
-  // vanish indistinguishably from "genuinely has no workspaces".
-  const failedAccounts = accounts.flatMap((account, i) =>
-    workspaceQueries[i].isError ? [{ account, result: workspaceQueries[i] }] : [],
-  );
-
-  // Accounts the user may actually create a project in — the same owner/admin
-  // rule `/new` enforces (`filterCreatableAccounts`) and the API gates on
-  // (`ACCOUNT_ACTIONS.PROJECT_CREATE`, 403 "Owner or admin role required").
-  // Offering the create row to a plain member would dead-end in that 403.
-  const creatableAccounts = useCreatableAccounts(accounts);
-  const creatableAccountIds = useMemo(
-    () => new Set(creatableAccounts.map((account) => account.account_id)),
-    [creatableAccounts],
-  );
-
-  const groups = useMemo(
-    () =>
-      groupWorkspacesByAccount({
-        accounts,
-        workspaces: allWorkspaces,
-        activeWorkspaceId: activeProjectId ?? null,
-      }),
-    [accounts, allWorkspaces, activeProjectId],
-  );
-  // `groupWorkspacesByAccount` builds its groups from the PROJECTS it is given,
-  // so an account with none never becomes a group — and an account with no
-  // project is exactly the one you most want to create a project in. Seed those
-  // here rather than changing that function: its "drops accounts that have no
-  // workspaces" contract is pinned by `workspace-grouping.test.ts`, and the
-  // list below is the only place that wants them back.
-  //
-  // A FAILED account is deliberately excluded: `failedAccounts` already renders
-  // its own header + retry row, and an errored fetch folds to `[]`, so seeding
-  // it here would render that account twice — once as "empty", once as failed.
-  const groupsWithEmptyAccounts = useMemo(() => {
-    const present = new Set(groups.map((group) => group.accountId));
-    const failed = new Set(failedAccounts.map(({ account }) => account.account_id));
-    const seeded = creatableAccounts
-      .filter((account) => !present.has(account.account_id) && !failed.has(account.account_id))
-      .map((account) => ({
-        accountId: account.account_id,
-        accountName: account.name?.trim() || t('workspace.account'),
-        workspaces: [],
-      }));
-    return seeded.length > 0 ? [...groups, ...seeded] : groups;
-  }, [groups, creatableAccounts, failedAccounts, t]);
-
-  const visibleGroups = useMemo(
-    () => filterWorkspaceGroups(groupsWithEmptyAccounts, query),
-    [groupsWithEmptyAccounts, query],
-  );
-
-  // The account "Account settings" opens, and the account every row in the
-  // list below belongs to when there is only one. `null` while the user's
-  // accounts are still unknown — the row is withheld rather than pointed at
-  // `/accounts/null`. See `resolveSwitcherAccountId` for the order.
-  const switcherAccountId = resolveSwitcherAccountId({
-    accounts,
-    workspaces: allWorkspaces,
-    activeWorkspaceId: activeProjectId ?? null,
-    selectedAccountId,
-  });
-
-  // A failed account never appears in `groups` (it has zero workspaces, and
-  // `groupWorkspacesByAccount` drops those), so it must not count toward "empty"
-  // either — that would show "No workspaces yet" over an account we simply failed
-  // to load, instead of that account's own retry row.
-  // "No projects yet" is about PROJECTS, not groups. Seeding a group for an
-  // empty creatable account (above) makes `visibleGroups` non-empty for a user
-  // who owns accounts but no project at all, which would silently retire this
-  // state — so count the projects inside the groups, not the groups.
-  const isEmpty =
-    visibleGroups.every((group) => group.workspaces.length === 0) && failedAccounts.length === 0;
+  const {
+    workspacesLoading,
+    failedAccounts,
+    creatableAccountIds,
+    visibleGroups,
+    switcherAccountId,
+    isEmpty,
+    captureOn,
+  } = useWorkspaceMenuModel(activeProjectId, selectedAccountId, query);
 
   // No explicit close: these are `DropdownMenuItem`s, and Radix closes the menu
   // on select unless the handler calls `preventDefault`.
@@ -270,6 +170,14 @@ export function WorkspaceMenuSection() {
                 <span className="min-w-0 flex-1 truncate">{t('workspace.accountSettings')}</span>
               </HubLink>
             </DropdownMenuItem>
+            {captureOn ? (
+              <DropdownMenuItem asChild className="cursor-pointer px-1.5">
+                <Link href={captureHref(switcherAccountId, 'devices')}>
+                  <MonitorPlayIcon className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{tCapture('open')}</span>
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
           </div>
           <DropdownMenuSeparator />
         </>
@@ -317,37 +225,37 @@ export function WorkspaceMenuSection() {
                   const target = resolveWorkspaceRowNavigation(workspace, activeProjectId);
                   const rowBody = (
                     <>
-                        {/* Same union as the trigger above — see `workspace-switcher.tsx`.
+                      {/* Same union as the trigger above — see `workspace-switcher.tsx`.
                             Without `glyph`, every glyph-icon workspace in this
                             list falls back to its initial. */}
-                        <EntityAvatar
-                          label={workspace.name}
-                          glyph={workspace.icon_glyph}
-                          emoji={workspace.icon}
-                          size="sm"
-                        />
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                          {workspace.name}
+                      <EntityAvatar
+                        label={workspace.name}
+                        glyph={workspace.icon_glyph}
+                        emoji={workspace.icon}
+                        size="sm"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {workspace.name}
+                      </span>
+                      {loading ? (
+                        <Loading className="text-muted-foreground size-3.5" />
+                      ) : active ? (
+                        // The active row navigates to account settings rather
+                        // than switching, so pointing at it swaps the "you are
+                        // here" check for the destination's own icon. Stacked
+                        // rather than swapped in the tree so the trailing
+                        // column keeps one width and the label never reflows.
+                        <span className="relative size-4 shrink-0">
+                          <CheckCircleSolid
+                            weight="fill"
+                            className="text-kortix-green duration-normal absolute top-0 left-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-0"
+                          />
+                          <CogOne
+                            aria-hidden
+                            className="text-muted-foreground duration-normal absolute top-0 left-0 opacity-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-100"
+                          />
                         </span>
-                        {loading ? (
-                          <Loading className="text-muted-foreground size-3.5" />
-                        ) : active ? (
-                          // The active row navigates to account settings rather
-                          // than switching, so pointing at it swaps the "you are
-                          // here" check for the destination's own icon. Stacked
-                          // rather than swapped in the tree so the trailing
-                          // column keeps one width and the label never reflows.
-                          <span className="relative size-4 shrink-0">
-                            <CheckCircleSolid
-                              weight="fill"
-                              className="text-kortix-green duration-normal absolute top-0 left-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-0"
-                            />
-                            <CogOne
-                              aria-hidden
-                              className="text-muted-foreground duration-normal absolute top-0 left-0 opacity-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-100"
-                            />
-                          </span>
-                        ) : null}
+                      ) : null}
                     </>
                   );
                   return (

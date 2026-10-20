@@ -47,7 +47,7 @@ const ORIGINAL_ALLOWED_SANDBOX_PROVIDERS = process.env.ALLOWED_SANDBOX_PROVIDERS
 process.env.KORTIX_GITHUB_OWNER = TEST_GITHUB_OWNER;
 process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 process.env.KORTIX_URL = 'https://api.test.kortix.local';
-process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
+process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum,daytona';
 
 const { config } = await import('../config');
 
@@ -307,6 +307,17 @@ mock.module('../projects/lib/fast-boot-git-hint', () => ({
   resolveFastBootGitHintWithCache: async () => undefined,
 }));
 
+// The desired-release base check (`sharedBaseTip`) asks the upstream through a
+// real mirror clone. Against this fixture's fake repo URL it always fails, after
+// ~2.5 s of git retries per `/start`. Fail it at once: the same path, no git.
+const realBaseTip = await import('../config-releases/base-tip');
+mock.module('../config-releases/base-tip', () => ({
+  ...realBaseTip,
+  sharedBaseTip: async () => {
+    throw new Error('no upstream in this unit test');
+  },
+}));
+
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test
@@ -395,7 +406,7 @@ mock.module('../snapshots/builder', () => ({
   resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
-  templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
+  templateBuildProviders: () => ['platinum', 'daytona'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => undefined,
@@ -636,7 +647,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => ({
     accountId: ACCOUNT_ID,
     balance: 1_000_000,
-    billingModel: 'credits',
+    tier: 'credits',
     stripeSubscriptionId: 'sub_test',
     stripeSubscriptionStatus: 'active',
   }),
@@ -2391,6 +2402,73 @@ describe('project session runtime guards', () => {
     });
     expect(sessionRow?.status).toBe('stopped');
     expect(sessionRow?.runtimeSessionId).toBe('ses_root_existing');
+  });
+
+  // 2026-10-16: an open page on a lost session sent /start ~2.8 times a second.
+  // Each pass re-checked Platinum and re-wrote the row, and each write sent the
+  // page a frame that re-read /start. The next /start answers from the row.
+  test('the next start on a lost session answers from the row: no provider call, no write', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'platinum',
+      status: 'running',
+      runtimeSessionId: 'ses_root_existing',
+      metadata: {
+        existing: true,
+        initial_prompt: 'DO NOT REPLAY',
+        opencode_model: 'anthropic/claude-sonnet-4-6',
+      },
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-deleted',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'failed',
+      agent_name: 'default',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      sandbox: { external_id: 'box-deleted', status: 'stopped' },
+    });
+
+    const contactsAfterFirst = runtimeContactCalls;
+    const rowAfterFirst = structuredClone(sessionSandboxRows[0]);
+
+    const again = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      sandbox: { external_id: 'box-deleted', status: 'stopped' },
+    });
+    expect(runtimeContactCalls).toBe(contactsAfterFirst);
+    expect(providerRecoveryCalls).toBe(1);
+    expect(providerStartCalls).toBe(0);
+    expect(sessionSandboxRows[0]).toEqual(rowAfterFirst);
   });
 
   test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {

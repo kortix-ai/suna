@@ -25,6 +25,28 @@ export const RUNTIME_WAKE_HARD_MS = 12 * 60_000;
 // Covers the provider stop timeout while maintenance owns the late-start check.
 export const RUNTIME_WAKE_CLEANUP_LEASE_MS = 180_000;
 export const RUNTIME_WAKE_LATE_START_GUARD_MS = 15 * 60_000;
+/** `/start`'s reason for a runtime the provider has disowned. */
+export const RUNTIME_IDENTITY_UNAVAILABLE = 'runtime_identity_unavailable';
+
+/**
+ * How long a lost runtime's verdict stands before `/start` checks the provider
+ * again. Each check claims a recovery and preserves the loss again, which
+ * flips the box row `stopped → provisioning → stopped`; the session stream
+ * turns each flip into a frame and an open page re-reads `/start` on it. With
+ * no window that loop ran at the `/start` latency: 204 calls in 73 s from one
+ * open page (2026-10-16), each with three Platinum requests.
+ */
+export const LOST_RUNTIME_RECHECK_MS = 5 * 60_000;
+
+/** True while a lost runtime's last check (`runtimeUnavailableAt`) is inside `LOST_RUNTIME_RECHECK_MS`. */
+export function lostRuntimeCheckedRecently(
+  metadata: Record<string, unknown>,
+  now: Date = new Date(),
+): boolean {
+  const checkedAtMs = typeof metadata.runtimeUnavailableAt === 'string' ? Date.parse(metadata.runtimeUnavailableAt) : NaN;
+  return Number.isFinite(checkedAtMs) && now.getTime() - checkedAtMs < LOST_RUNTIME_RECHECK_MS;
+}
+
 // Wake-poll cadence. A Platinum CoW resume reaches `running` in ~1.9s
 // (measured 3/3: 1918/1906/2391ms), so a flat 1000ms poll spent up to a full
 // second sitting on an already-running VM. The ramp checks early where the

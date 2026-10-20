@@ -55,21 +55,21 @@ export const FeatureFlagMapSchema = z.object({
   agentmail_email: z.boolean(),
   llm_gateway: z.boolean(),
   meta_agent: z.boolean(),
-  apps: z.boolean(),
   monitors: z.boolean(),
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
+  genui: z.boolean(),
   us_region: z.boolean(),
   event_triggers: z.boolean(),
   notification_center: z.boolean(),
   volumes: z.boolean(),
-  stateless_sessions: z.boolean(),
   drives: z.boolean(),
-  ephemeral_sandboxes: z.boolean(),
   session_log: z.boolean(),
+  session_log_restore: z.boolean(),
+  connectors_v2: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -134,7 +134,9 @@ export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
 /** Every sandbox provider the current platform can select or emit. */
-export const SANDBOX_PROVIDERS = ['daytona', 'platinum', 'e2b'] as const;
+// Platinum is the reference provider; Daytona is a legacy fallback (removal
+// scheduled). E2B support is discontinued.
+export const SANDBOX_PROVIDERS = ['platinum', 'daytona'] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 
@@ -178,7 +180,9 @@ export const ProjectSchema = z.object({
   /** UI label for the caller's effective role (not an auth decision). */
   effective_project_role: ProjectRoleSchema.nullable(),
   dashboard_url: z.string(),
-  experimental: FeatureFlagMapSchema,
+  /** `apps` is not a flag (Apps graduated); it is always `true` so CLIs before
+   *  v0.14.0, which gate `kortix apps` on it, keep working. */
+  experimental: FeatureFlagMapSchema.extend({ apps: z.literal(true).optional() }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
   default_sandbox_provider: SandboxProviderSchema.nullable(),
@@ -800,6 +804,9 @@ export const OAuth2ResourceDiscoverySchema = z
       .omit({ has_client_secret: true, has_private_key: true })
       .optional(),
     registration_endpoint: z.string().optional(),
+    /** Kortix signs in with its own OAuth client: a catalogue app whose server
+     *  has no dynamic registration. Register without `registration_endpoint`. */
+    kortix_client: z.boolean().optional(),
     token_endpoint_auth_methods_supported: z.array(z.string()).optional(),
     code_challenge_methods_supported: z.array(z.string()).optional(),
     scopes: z.array(z.string()),
@@ -809,10 +816,12 @@ export const OAuth2ResourceDiscoverySchema = z
 export type OAuth2ResourceDiscovery = z.infer<typeof OAuth2ResourceDiscoverySchema>;
 
 /** Register Kortix as a client (RFC 7591) and save the issued client as the
- * connection's OAuth2 application. Endpoint fields come from discovery. */
+ * connection's OAuth2 application. Endpoint fields come from discovery.
+ * Without `registration_endpoint` the server uses Kortix's own OAuth client,
+ * which only a catalogue app with `kortix_client` discovery has. */
 export const OAuth2ClientRegistrationInputSchema = z
   .object({
-    registration_endpoint: OAuth2HttpsUrlSchema,
+    registration_endpoint: OAuth2HttpsUrlSchema.optional(),
     /** Authorization server issuer, recorded for RFC 9207 `iss` validation. */
     issuer: OAuth2HttpsUrlSchema.optional(),
     client_name: z.string().trim().min(1).max(128).optional(),
@@ -969,6 +978,9 @@ export const SessionMetadataInputSchema = JsonObjectSchema.refine(
   { message: `metadata must be at most ${SESSION_METADATA_MAX_CHARS} characters of JSON` },
 );
 
+/** The context the CLI's worker contract rides in, and its schema cap. */
+export const SESSION_INITIAL_CONTEXT_MAX_CHARS = 8_192;
+
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
@@ -976,6 +988,13 @@ export const SessionCreateInputSchema = z
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
     initial_prompt: z.string().optional(),
+    /**
+     * Harness context that rides beside `initial_prompt` and is delivered to
+     * the model as a synthetic (model-only) message part — e.g. the CLI's
+     * worker contract. The transcript keeps showing the caller's own words:
+     * every renderer already hides synthetic text parts.
+     */
+    initial_context: z.string().min(1).max(SESSION_INITIAL_CONTEXT_MAX_CHARS).optional(),
     pending_prompt: PendingSessionPromptSchema.optional(),
     provider_secret_pools: z.record(
       z.string().min(1).max(100),
@@ -1000,10 +1019,10 @@ export const SessionCreateInputSchema = z
       .optional(),
     provider: SandboxProviderSchema.optional(),
     /**
-     * Run the session on a persistent machine: its whole root disk persists
-     * across stops (installed packages, config, files). Platinum only. A stop
-     * keeps the disk and ends running processes; the machine stays on the
-     * image it was created from until it is reset.
+     * @deprecated INERT. Accepted and ignored: persistent machines left the
+     * product. The key stays because this object is `.strict()` and
+     * `@kortix/sdk` is published: dropping it would turn an old client's
+     * create into a 400.
      */
     persistent_machine: z.boolean().optional(),
     branch_already_created: z.boolean().optional(),
@@ -1034,6 +1053,7 @@ export const SessionCreateInputSchema = z
     agentName: z.string().min(1).optional(),
     sandboxSlug: z.string().min(1).optional(),
     initialPrompt: z.string().optional(),
+    initialContext: z.string().min(1).max(SESSION_INITIAL_CONTEXT_MAX_CHARS).optional(),
     opencodeModel: z.string().min(1).optional(),
     sessionId: z
       .string()
@@ -1137,10 +1157,28 @@ export const ProjectSessionSchema = z.object({
     .optional(),
   deleted_at: z.string().nullable().optional(),
   deleted_by: z.string().nullable().optional(),
+  /** A deleted session: the last instant `POST …/restore` takes it back (KRTX-2853). */
+  restore_until: z.string().nullable().optional(),
+  /** When the requesting person pinned / archived it (KRTX-2418). Present on
+   *  the list and the read by id for a person; absent for an agent, an API
+   *  key or a service account, and on other responses. */
+  pinned_at: z.string().nullable().optional(),
+  archived_at: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
 export type ProjectSession = z.infer<typeof ProjectSessionSchema>;
+
+/**
+ * `DELETE /v1/projects/:projectId/sessions/:sessionId`. The session is in the
+ * trash until `restore_until`: `POST .../restore` brings it back before then,
+ * and the retention purge deletes its messages and files after it.
+ */
+export const SessionDeleteResultSchema = z.object({
+  ok: z.literal(true),
+  restore_until: z.string(),
+});
+export type SessionDeleteResult = z.infer<typeof SessionDeleteResultSchema>;
 
 export const WarmProjectSessionWorkspaceRefreshSchema = z.object({
   status: z.enum(['skipped', 'unchanged', 'updated', 'failed']),
@@ -1417,6 +1455,23 @@ export const TriggerSessionAccessSchema = z
 export type TriggerSessionAccess = z.infer<typeof TriggerSessionAccessSchema>;
 
 /** One trigger entry as emitted by `loadTriggersForResponse`. */
+/**
+ * One trigger filter condition (KRTX-1721): exactly one operator. `not` and
+ * `in` compare the payload value as text; `prefix` and `not_prefix` test its
+ * start; `exists` tests that it is present and not null.
+ */
+export const TriggerFilterConditionSchema = z.union([
+  z.object({ not: z.array(z.string()) }).strict(),
+  z.object({ in: z.array(z.string()) }).strict(),
+  z.object({ exists: z.boolean() }).strict(),
+  z.object({ prefix: z.array(z.string()) }).strict(),
+  z.object({ not_prefix: z.array(z.string()) }).strict(),
+]);
+export type TriggerFilterCondition = z.infer<typeof TriggerFilterConditionSchema>;
+/** A filter path's condition: a string means "equals". */
+export const TriggerFilterValueSchema = z.union([z.string(), TriggerFilterConditionSchema]);
+export type TriggerFilterValue = z.infer<typeof TriggerFilterValueSchema>;
+
 export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
@@ -1460,6 +1515,10 @@ export const TriggerSchema = z.object({
       status: z.enum(['active', 'needs_connection', 'error', 'pending']),
       error: z.string().nullable(),
       last_event_at: z.string().nullable(),
+      /** Source `mcp`: when Kortix last checked the app with success. Null for other sources and before the first check. */
+      checked_at: z.string().nullable().optional(),
+      /** Source `mcp`: when Kortix checks the app next. Null for other sources, and while the trigger is not subscribed. */
+      next_check_at: z.string().nullable().optional(),
     })
     .nullable(),
   prompt_template: z.string(),
@@ -1471,8 +1530,27 @@ export const TriggerSchema = z.object({
    * per delivery to pick one session per key. Null otherwise.
    */
   session_key: z.string().nullable(),
-  /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
-  filter: z.record(z.string(), z.string()).nullable(),
+  /**
+   * Payload paths that must match for the trigger to fire. Null when unfiltered.
+   * A path maps to a value (equals) or one operator (KRTX-1721).
+   */
+  filter: z.record(z.string(), TriggerFilterValueSchema).nullable(),
+  /**
+   * Runs the trigger may start in any 60 minutes. Null when unset: the default,
+   * 60, applies. A fire past it is a skipped run with reason `throttled: …`.
+   */
+  max_runs_per_hour: z.number().int().nullable().optional(),
+  /** Runs the trigger may start in a UTC day. Null when unset: no daily cap. */
+  max_runs_per_day: z.number().int().nullable().optional(),
+  /**
+   * Set while the trigger paused itself (KRTX-1721): it ran at its hourly run
+   * limit through the previous hour and was still being held. No automatic
+   * fire starts a run until it is resumed (`PATCH enabled: true`). Absent on
+   * older servers.
+   */
+  auto_paused_at: z.string().nullable().optional(),
+  /** Why it paused, e.g. `auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row`. */
+  auto_paused_reason: z.string().nullable().optional(),
   /** Account-local policy for sessions this trigger creates. */
   session_access: TriggerSessionAccessSchema,
   last_fired_at: z.string().nullable(),
@@ -1492,9 +1570,83 @@ export type Trigger = z.infer<typeof TriggerSchema>;
 export const TriggerListSchema = z.object({
   triggers: z.array(TriggerSchema),
   triggers_paused: z.boolean(),
+  /** The account's Pause all automations: true stops every project's triggers. Older servers omit it. */
+  account_automations_paused: z.boolean().optional(),
   errors: z.array(z.object({ slug: z.string(), path: z.string(), error: z.string() })),
 });
 export type TriggerList = z.infer<typeof TriggerListSchema>;
+
+/**
+ * One run of a trigger (KRTX-1743): one fire from any source, its outcome, and
+ * the agent turn it started. `payload` is display-redacted: every value under a
+ * credential-named key reads `[redacted]`. A payload over 64 KiB reads
+ * `{ truncated: true, bytes }` and cannot be replayed.
+ */
+export const TriggerRunSchema = z.object({
+  run_id: z.string(),
+  slug: z.string(),
+  source: z.enum(['cron', 'webhook', 'manual', 'monitor', 'reminder', 'event']),
+  /** The fire's outcome. `fired` = a session was started or prompted. */
+  status: z.enum(['queued', 'running', 'fired', 'failed', 'skipped', 'rejected']),
+  /** The agent turn's outcome; null when the run started no turn. */
+  run_status: z.enum(['running', 'succeeded', 'failed']).nullable(),
+  /** Why the fire failed, was skipped or was rejected. */
+  error: z.string().nullable(),
+  /** Why the agent turn failed (`stopped` for a stopped turn). */
+  run_error: z.string().nullable(),
+  session_id: z.string().nullable(),
+  command_id: z.string().nullable(),
+  /** The run this one replayed, or null. */
+  replay_of: z.string().nullable(),
+  /** False for a webhook delivery refused before its signature verified. */
+  payload_verified: z.boolean(),
+  payload: z.record(z.string(), z.unknown()),
+  scheduled_for: z.string(),
+  created_at: z.string(),
+  started_at: z.string(),
+  /** Null while the run waits, runs, or its turn is still going. */
+  ended_at: z.string().nullable(),
+  duration_ms: z.number().nullable(),
+  /** LLM spend of the run's session between `started_at` and `ended_at` (or now). Null without a session. */
+  cost_usd: z.number().nullable(),
+});
+export type TriggerRun = z.infer<typeof TriggerRunSchema>;
+
+/** `GET …/triggers/:slug/runs` and `GET …/trigger-runs`: newest first, keyset-paged. */
+export const TriggerRunListSchema = z.object({
+  runs: z.array(TriggerRunSchema),
+  /** Pass as `cursor` for the next page; null on the last page. A page can hold fewer than `limit` runs. */
+  next_cursor: z.string().nullable(),
+});
+export type TriggerRunList = z.infer<typeof TriggerRunListSchema>;
+
+/** Optional body of `POST …/triggers/:slug/fire`. No body = a plain manual fire. */
+export const TriggerFireRequestSchema = z.object({
+  /** Deep-merged over the manual base payload at the root, e.g. `{ body: {…} }` for a webhook template. */
+  payload: z.record(z.string(), z.unknown()).optional(),
+  /** Render and evaluate only: no session, no command, no run row. */
+  dry_run: z.boolean().optional(),
+});
+export type TriggerFireRequest = z.infer<typeof TriggerFireRequestSchema>;
+
+/** `POST …/fire` with `dry_run: true`: what a real fire would send, with nothing written. */
+export const TriggerDryRunResultSchema = z.object({
+  dry_run: z.literal(true),
+  rendered_prompt: z.string(),
+  /** False when the trigger's `filter` would skip this payload. */
+  filter_matches: z.boolean(),
+  /** The rendered key of a `keyed` trigger; null otherwise. */
+  session_key: z.string().nullable(),
+  payload: z.record(z.string(), z.unknown()),
+});
+export type TriggerDryRunResult = z.infer<typeof TriggerDryRunResultSchema>;
+
+/** Optional body of `POST …/triggers/:slug/runs/:run_id/replay`. */
+export const TriggerReplayRequestSchema = z.object({
+  /** Required to replay a payload whose webhook signature never verified. */
+  confirm_unverified: z.boolean().optional(),
+});
+export type TriggerReplayRequest = z.infer<typeof TriggerReplayRequestSchema>;
 
 // ─── Session reads: transcript, turn, prompt queue, snapshot ────────────────
 // The wire shapes of the routes a session view reads on every open. apps/api
@@ -1648,6 +1800,12 @@ export const SessionTurnStatusSchema = z.object({
   recent_failures: z.array(SessionTurnFailureSchema).optional(),
   /** Present on the session stream's `kortix.control.turn` frame. */
   working: SessionWorkingSchema.optional(),
+  /**
+   * May THIS caller stop the running turn: its prompter, the session owner or
+   * a project manager. True when nothing runs. Present on `GET .../turn` and
+   * the snapshot's turn leg; absent on the stream frame, which is not per caller.
+   */
+  can_stop: z.boolean().optional(),
 });
 export type SessionTurnStatus = z.infer<typeof SessionTurnStatusSchema>;
 
@@ -1753,6 +1911,13 @@ export const SessionAuditActionSchema = z.object({
   at: z.string(),
   resolved_at: z.string().nullable(),
   approval_url: z.string().nullable(),
+  /** True only on an unresolved row the CALLER may approve or deny: the verdict
+   *  `POST /approvals/:executionId` enforces (KRTX-1724). False on every other row. */
+  can_resolve: z.boolean(),
+  /** Who decides an unresolved row, as a class: `managers` for a session
+   *  started with an API token or a service account (`origin: 'backend'`),
+   *  else `managers_and_launcher`. Null on every settled row. */
+  resolvers: z.enum(['managers', 'managers_and_launcher']).nullable(),
 });
 export type SessionAuditAction = z.infer<typeof SessionAuditActionSchema>;
 
@@ -1888,8 +2053,13 @@ export const ChangeRequestSchema = z.object({
 });
 export type ChangeRequest = z.infer<typeof ChangeRequestSchema>;
 
-/** `GET /v1/projects/:id/change-requests`: an envelope, not a bare array. */
-export const ChangeRequestListSchema = z.object({ change_requests: z.array(ChangeRequestSchema) });
+/** `GET /v1/projects/:id/change-requests`: an envelope, not a bare array. One
+ *  page, newest first; `next_cursor` is the next page's `cursor`, null on the
+ *  last page. */
+export const ChangeRequestListSchema = z.object({
+  change_requests: z.array(ChangeRequestSchema),
+  next_cursor: z.string().nullable(),
+});
 export type ChangeRequestList = z.infer<typeof ChangeRequestListSchema>;
 
 // ─── Accounts ───────────────────────────────────────────────────────────────
@@ -1961,6 +2131,14 @@ export type SecretDeliveryStatus = z.infer<typeof SecretDeliveryStatusSchema>;
  */
 export const SecretDeliveryBlockedReasonSchema = z.enum(['no_agent_grant']);
 export type SecretDeliveryBlockedReason = z.infer<typeof SecretDeliveryBlockedReasonSchema>;
+
+/**
+ * Can the server decrypt the stored value? `undecryptable`: the server's
+ * encryption key (`API_KEY_SECRET`) changed after the value was written, or the
+ * stored row is damaged. The value is lost; a person must enter it again.
+ */
+export const SecretValueStatusSchema = z.enum(['ok', 'undecryptable']);
+export type SecretValueStatus = z.infer<typeof SecretValueStatusSchema>;
 
 export const SecretInjectionSlotSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('header'), name: z.string(), template: z.string().optional() }),
@@ -2041,9 +2219,11 @@ export const SecretSchema = z.object({
   managed_by: z.literal('project_secret').nullable(),
   /** Is a shared project value set at all. */
   configured: z.boolean(),
-  /** The caller's private override (value omitted), or null. Used today only by
-   *  the CODEX_AUTH_JSON per-user provider login. */
-  mine: z.object({ active: z.boolean(), updated_at: z.string() }).nullable(),
+  /** The caller's private override (value omitted), or null. `status`: can the
+   *  server decrypt it? While `active`, it is the value the caller's sessions read. */
+  mine: z
+    .object({ active: z.boolean(), updated_at: z.string(), status: SecretValueStatusSchema.optional() })
+    .nullable(),
   /** Which value actually gets injected into the caller's sessions. */
   effective_source: z.enum(['mine', 'shared', 'none']),
   can_manage_shared: z.boolean(),
@@ -2066,6 +2246,10 @@ export const SecretSchema = z.object({
   /** Can the caller's sessions use the shared value? False only when it is
    *  shared with specific people and the caller is not one of them. */
   usable: z.boolean().optional(),
+  /** Can the server decrypt the shared value? Absent when none is set
+   *  (`configured: false`). `mine.status` reports the caller's override. Never
+   *  carries the value. */
+  status: SecretValueStatusSchema.optional(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
 
@@ -2092,3 +2276,45 @@ export const GrantSecretToAgentResultSchema = z.object({
   adopted_governance: z.boolean(),
 });
 export type GrantSecretToAgentResult = z.infer<typeof GrantSecretToAgentResultSchema>;
+
+// ─── Kortix Capture data API (`/v1/accounts/:accountId/capture/*`) ──────────
+// What apps/api/src/capture serializes for the account switch and search.
+// A Kortix API key reads the same bodies.
+
+export const CaptureWorkspaceSchema = z.object({
+  account_id: z.string(),
+  enabled: z.boolean(),
+  /** IAM `capture.read_all`: you read every member's devices and timeline. */
+  can_read_all: z.boolean(),
+  /** IAM `capture.manage`: you turn Capture on or off, set the policy, revoke any device. */
+  can_manage: z.boolean(),
+  updated_at: z.string().nullable(),
+});
+export type CaptureWorkspace = z.infer<typeof CaptureWorkspaceSchema>;
+
+export const CaptureSearchKindSchema = z.enum(['screen', 'actions', 'audio']);
+
+export const CaptureSearchHitSchema = z.object({
+  kind: CaptureSearchKindSchema,
+  id: z.string(),
+  ts: z.string(),
+  user_id: z.string(),
+  device_id: z.string(),
+  chunk_id: z.string(),
+  app: z.string().nullable(),
+  title: z.string().nullable(),
+  url: z.string().nullable(),
+  /** The display a screen hit shows; null for actions, audio and one-display devices. */
+  display_id: z.number().nullable(),
+  display_name: z.string().nullable(),
+  snippet: z.string(),
+});
+export type CaptureSearchHit = z.infer<typeof CaptureSearchHitSchema>;
+
+export const CaptureSearchResultSchema = z.object({
+  /** The person searched; null for an account-wide search (`scope=account`). */
+  user_id: z.string().nullable(),
+  q: z.string(),
+  hits: z.array(CaptureSearchHitSchema),
+});
+export type CaptureSearchResult = z.infer<typeof CaptureSearchResultSchema>;

@@ -6,6 +6,8 @@ import { errorToast } from '@/components/ui/toast';
 import {
   fetchSessionAttachment,
   isSessionAttachmentRef,
+  type SessionLogBlock,
+  type SessionLogMessage,
   type SessionMessageAuthor,
 } from '@kortix/sdk';
 
@@ -47,18 +49,7 @@ import { getFilename } from '@/lib/utils/file-utils';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
-import {
-  isAgentPart,
-  isFilePart,
-  isTextPart,
-  splitUserParts,
-  type AgentPart,
-  type Command,
-  type FilePart,
-  type MessageWithParts,
-  type Part,
-  type TextPart,
-} from '@/ui';
+import type { Command } from '@/ui';
 import {
   AttachmentRemoveButton,
   AttachmentTile,
@@ -106,7 +97,6 @@ import {
 } from '../message-parsing';
 
 import { useProjectSessionHref } from '@/lib/navigation/session-href';
-import { messageCreatedAt } from './message-time';
 import { MessageTimeLabel } from './message-time-label';
 import { PlanCard, useHasPlan } from './plan-card';
 
@@ -146,8 +136,11 @@ export const BUBBLE_TEXT = cn(
   'wrap-break-word whitespace-pre-wrap select-text',
 );
 
+// `muted`, the well surface, in both modes. Light mode used to borrow
+// `sidebar`, which most palettes set equal to the canvas (`pure-light` and
+// every generated light theme), so the bubble vanished into the page.
 export const BUBBLE_SURFACE = cn(
-  'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-3.5 py-2.5 select-none rounded-lg',
+  'bg-muted text-foreground flex max-w-full flex-col px-3.5 py-2.5 select-none rounded-lg',
 );
 
 /**
@@ -386,34 +379,47 @@ function offsetQuoteMarkers(text: string, offset: number): string {
  */
 const COMMAND_SLOT = '\uE002';
 
+/** A prompt block's visible text: a text block the harness did not write. Ignored text is a harness block. */
+function visibleText(block: SessionLogBlock): string | undefined {
+  return block.type === 'text' && !block.synthetic ? block.text : undefined;
+}
+
+/** The v1 file part a harness `file` block carries: a text/plain or directory mention. */
+interface MentionFileData {
+  mime?: string;
+  filename?: string;
+  url?: string;
+}
+
+/** The v1 agent part a harness `agent` block carries. */
+interface AgentMentionData {
+  source?: { start?: number; end?: number };
+}
+
 /**
- * Parse visible text parts once while retaining each upload reference's source
- * part. The source index lets the attachment normalizer merge references and
- * native file parts without changing their persisted order.
+ * Parse visible text blocks once while retaining each upload reference's source
+ * block. The source index lets the attachment normalizer merge references and
+ * native file blocks without changing their persisted order.
  */
-function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent {
-  const rawTextParts: string[] = [];
-  const cleanTextParts: string[] = [];
+function parseAttachmentContent(blocks: readonly SessionLogBlock[]): ParsedAttachmentContent {
+  const rawTexts: string[] = [];
+  const cleanTexts: string[] = [];
   const uploads: OrderedUploadReference[] = [];
   const quotes: string[] = [];
   const pastes: PastedContent[] = [];
 
-  parts.forEach((part, sourcePartIndex) => {
-    if (
-      !isTextPart(part) ||
-      !(part as TextPart).text?.trim() ||
-      (part as TextPart).synthetic ||
-      (part as TextPart & { ignored?: boolean }).ignored
-    ) {
-      return;
-    }
+  blocks.forEach((block, sourcePartIndex) => {
+    const blockText = visibleText(block);
+    if (!blockText?.trim()) return;
 
     // Pastes come out FIRST: a paste is the user's text, so a `<file>` or
-    // `<reply_context>` inside one is paste content, not a ref.
-    const pasted = splitPastedContent(stripSystemPtyText((part as TextPart).text));
-    const rawPartText = pasted.text;
+    // `<reply_context>` inside one is paste content, not a ref. They also come
+    // out before `stripSystemPtyText`, which collapses blank-line runs: a
+    // shorter body no longer matches its `chars` and the tile shows as raw XML.
+    const pasted = splitPastedContent(blockText);
+    const rawPartText = stripSystemPtyText(pasted.text);
     pastes.push(...pasted.pastes);
-    rawTextParts.push(rawPartText);
+    rawTexts.push(rawPartText);
 
     // Each part is parsed on its own, so its markers count from 0. Shift them
     // by the quotes already collected, or part 2's first marker would name
@@ -423,7 +429,7 @@ function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent
     quotes.push(...parsedReply.quotes);
 
     const parsedFiles = parseFileReferences(partText);
-    cleanTextParts.push(parsedFiles.cleanText);
+    cleanTexts.push(parsedFiles.cleanText);
     uploads.push(
       ...parsedFiles.files.map((file) => ({
         ...file,
@@ -433,8 +439,8 @@ function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent
   });
 
   return {
-    rawText: rawTextParts.join('\n'),
-    textAfterFiles: cleanTextParts.join('\n'),
+    rawText: rawTexts.join('\n'),
+    textAfterFiles: cleanTexts.join('\n'),
     quotes,
     uploads,
     pastes,
@@ -442,7 +448,8 @@ function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent
 }
 
 /**
- * The attachment strip's input, merged in original message-part order.
+ * The attachment strip's input, merged in original message-block order. A file
+ * is an attachment block or a text/plain or directory mention (a harness `file` block).
  *
  * A sent ref is keyed by its attachment identity. Any other upload is keyed by
  * POSITION first, then its path: three screenshots pasted in one message are
@@ -452,7 +459,7 @@ function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent
  * does not hold yet; it draws its sent picture or its name, never a spinner.
  */
 export function normalizeAttachments(
-  parts: readonly Part[],
+  blocks: readonly SessionLogBlock[],
   uploads: ReadonlyArray<{
     path: string;
     mime: string;
@@ -486,11 +493,20 @@ export function normalizeAttachments(
     });
   };
 
-  parts.forEach((part, sourcePartIndex) => {
-    if (isFilePart(part)) {
-      const file = part as FilePart;
+  // An image a `<file>` tag names (`source_path`, pi) draws once, through its tag.
+  const tagPaths = new Set(uploads.map((file) => file.path));
+  blocks.forEach((block, sourcePartIndex) => {
+    const file: MentionFileData | undefined =
+      block.type === 'attachment' && block.source_path && tagPaths.has(block.source_path)
+        ? undefined
+        : block.type === 'attachment'
+        ? { mime: block.mime, filename: block.name, url: block.url }
+        : block.type === 'harness' && block.kind === 'file'
+          ? (block.data as MentionFileData)
+          : undefined;
+    if (file) {
       normalized.push({
-        key: file.id,
+        key: block.id,
         filename: file.filename || 'File',
         mime: file.mime,
         src: file.url,
@@ -1080,7 +1096,7 @@ export function UserMessageBubble({
           {/* Gradient fade for collapsed long messages. Keyed to `muted`
               so it dissolves into the bubble it sits on, not the old card. */}
           {canExpand && !expanded && (
-            <div className="from-sidebar dark:from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
+            <div className="from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
           )}
         </div>
       )}
@@ -1107,13 +1123,12 @@ export function UserMessageBubble({
 }
 
 // ============================================================================
-// User message meta — when it was sent, whether it was edited, what you can do
+// User message meta — when it was sent, what you can do
 // ============================================================================
 
 /**
- * The line under a user bubble: when it was sent, whether it was edited, and
- * what you can do to it — one row, right-aligned against the same rail as the
- * bubble.
+ * The line under a user bubble: when it was sent and what you can do to it —
+ * one row, right-aligned against the same rail as the bubble.
  *
  * ONE row, deliberately, and the whole row reveals on hover. The transcript is
  * the message thread — a timestamp on every turn, permanently, is chrome
@@ -1134,7 +1149,6 @@ export function UserMessageBubble({
  */
 export function UserMessageActions({
   timestamp,
-  edited,
   copyText,
   messageId,
   rewindPromptText,
@@ -1144,7 +1158,6 @@ export function UserMessageActions({
 }: {
   /** Epoch milliseconds, or `null` when the backend never stamped one. */
   timestamp: number | null;
-  edited?: boolean;
   /** Omitted when there is nothing to copy — the row then carries meta alone
    *  rather than disappearing, so an attachment-only message keeps its time. */
   copyText?: string;
@@ -1163,7 +1176,7 @@ export function UserMessageActions({
   // Copy stays available while the agent is busy / rewind is locked.
   // Only edit-from-here is gated — hiding the whole bar was wrong.
   const canRewind = Boolean(onRewind && messageId && !rewindDisabled);
-  const hasMeta = timestamp !== null || Boolean(edited);
+  const hasMeta = timestamp !== null;
 
   // Nothing to say and nothing to do — don't leave an empty row behind.
   if (!hasMeta && !copyText && !deliveryStatus) return null;
@@ -1210,7 +1223,6 @@ export function UserMessageActions({
         {hasMeta && (
           <InlineMeta>
             {timestamp !== null && <MessageTimeLabel timestamp={timestamp} />}
-            {edited && 'edited'}
           </InlineMeta>
         )}
         {copyText && (
@@ -1382,20 +1394,21 @@ export function UserMessageEditor({
 // User Message
 // ============================================================================
 
-/** The message's own text parts, joined: what the edit-from-here editor starts from. */
-function messagePromptText(parts: readonly Part[]): string {
+/** The message's own text blocks, joined: what the edit-from-here editor starts from. */
+function messagePromptText(blocks: readonly SessionLogBlock[]): string {
   const lines: string[] = [];
-  for (const p of parts) {
-    if (!isTextPart(p) || (p as TextPart).synthetic || (p as TextPart & { ignored?: boolean }).ignored) continue;
-    const stripped = stripSystemPtyText((p as TextPart).text);
+  for (const block of blocks) {
+    const blockText = visibleText(block);
+    if (blockText === undefined) continue;
+    const stripped = stripSystemPtyText(blockText);
     if (stripped.trim()) lines.push(stripped);
   }
   return lines.join('\n').trim();
 }
 
 /** What "Copy message" copies: the prompt with each paste as its text, not its XML. */
-export function userMessageCopyText(parts: readonly Part[]): string {
-  return expandPastedContent(messagePromptText(parts));
+export function userMessageCopyText(blocks: readonly SessionLogBlock[]): string {
+  return expandPastedContent(messagePromptText(blocks));
 }
 
 export function UserMessage({
@@ -1419,7 +1432,8 @@ export function UserMessage({
   pendingText,
   onOpenPastedContent,
 }: {
-  message: MessageWithParts;
+  /** The user message, as a session-log record. */
+  message: SessionLogMessage;
   /** Who wrote this message, from the server's prompt record. */
   author?: SessionMessageAuthor;
   /** Draw the author's name above the bubble (group chat). */
@@ -1475,18 +1489,17 @@ export function UserMessage({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
-  const { stickyParts } = useMemo(() => splitUserParts(message.parts), [message.parts]);
 
-  // Extract visible text and file references in original part order. This must
-  // keep the source part index because a later native file cannot move ahead
-  // of workspace references that appeared in earlier text parts.
+  // Extract visible text and file references in original block order. This must
+  // keep the source block index because a later native file cannot move ahead
+  // of workspace references that appeared in earlier text blocks.
   const {
     rawText,
     textAfterFiles,
     quotes,
     uploads: uploadedFiles,
     pastes: partPastes,
-  } = useMemo(() => parseAttachmentContent(message.parts), [message.parts]);
+  } = useMemo(() => parseAttachmentContent(message.blocks), [message.blocks]);
   const { cleanText: textAfterProjects } = useMemo(
     () => parseProjectReferences(textAfterFiles),
     [textAfterFiles],
@@ -1519,8 +1532,8 @@ export function UserMessage({
   // parsed and then discarded — see `normalizeAttachments`.
   const fileAttachments = useMemo(
     () =>
-      mergeSentAttachments(normalizeAttachments(message.parts, uploadedFiles), pendingAttachments),
-    [message.parts, uploadedFiles, pendingAttachments],
+      mergeSentAttachments(normalizeAttachments(message.blocks, uploadedFiles), pendingAttachments),
+    [message.blocks, uploadedFiles, pendingAttachments],
   );
 
   /**
@@ -1598,7 +1611,7 @@ export function UserMessage({
     return pastes.length > 0 ? [...pastes.map(pastedAttachment), ...fileAttachments] : fileAttachments;
   }, [partPastes, commandBefore.pastes, commandArgs.pastes, fileAttachments]);
 
-  const promptText = useMemo(() => messagePromptText(message.parts), [message.parts]);
+  const promptText = useMemo(() => messagePromptText(message.blocks), [message.blocks]);
   const copyText = useMemo(() => expandPastedContent(promptText), [promptText]);
 
   const rewindPromptText = useMemo(() => {
@@ -1616,15 +1629,8 @@ export function UserMessage({
   // A reminder fire: platform-written `[REMINDER …]` header + the reminder text.
   const reminderInfo = useMemo(() => parseReminderPrompt(rawText), [rawText]);
 
-  // Check if any text part was edited
-  const isEdited = message.parts.some(
-    (part) =>
-      isTextPart(part) &&
-      (part as TextPart).text?.trim() &&
-      !(part as TextPart).synthetic &&
-      !(part as TextPart & { ignored?: boolean }).ignored &&
-      Boolean((part as TextPart & { metadata?: { edited?: boolean } }).metadata?.edited),
-  );
+  // `messageCreatedAt`'s rule on the record's ISO time: a missing or non-positive time is no time.
+  const createdAt = Date.parse(message.created_at);
 
   // Built once and rendered by every branch below — channel card, trigger card,
   // command card, bubble — so all four carry the same meta line.
@@ -1634,10 +1640,9 @@ export function UserMessage({
   // the timestamp is meta, not a control, and should not vanish with them.
   const actions = (
     <UserMessageActions
-      timestamp={messageCreatedAt(message)}
-      edited={isEdited}
+      timestamp={Number.isFinite(createdAt) && createdAt > 0 ? createdAt : null}
       copyText={copyText && onRewind ? copyText : undefined}
-      messageId={message.info.id}
+      messageId={message.message_id}
       rewindPromptText={rewindPromptText}
       onRewind={onRewind}
       rewindDisabled={rewindDisabled}
@@ -1645,14 +1650,6 @@ export function UserMessage({
     />
   );
 
-  // Inline file references
-  const inlineFiles = stickyParts.filter(isFilePart) as FilePart[];
-  const filesWithSource = inlineFiles.filter(
-    (f) => f.source?.text?.start !== undefined && f.source?.text?.end !== undefined,
-  );
-
-  // Agent mentions
-  const agentParts = stickyParts.filter(isAgentPart) as AgentPart[];
 
   const [expanded, setExpanded] = useState(false);
   const [canExpand, setCanExpand] = useState(false);
@@ -1686,23 +1683,19 @@ export function UserMessage({
    * it, so they would point at the wrong characters. The regex fill in
    * `buildMentionSegments` covers the args either way.
    */
+  // Agent mention spans only. A file mention's span is not read: the v1 render
+  // never reached one (every file part went to the attachment strip), so the
+  // regex fill in `buildMentionSegments` draws file chips.
   const sourceRefs = useMemo<MentionSourceRef[]>(() => {
     if (effectiveCommandInfo) return [];
-    return [
-      ...filesWithSource.map((f) => ({
-        start: f.source!.text!.start,
-        end: f.source!.text!.end,
-        type: 'file' as const,
-      })),
-      ...agentParts
-        .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
-        .map((a) => ({
-          start: a.source!.start,
-          end: a.source!.end,
-          type: 'agent' as const,
-        })),
-    ];
-  }, [effectiveCommandInfo, filesWithSource, agentParts]);
+    return message.blocks.flatMap((block) => {
+      if (block.type !== 'harness' || block.kind !== 'agent') return [];
+      const source = (block.data as AgentMentionData).source;
+      return source?.start !== undefined && source?.end !== undefined
+        ? [{ start: source.start, end: source.end, type: 'agent' as const }]
+        : [];
+    });
+  }, [effectiveCommandInfo, message.blocks]);
 
   const sessionTitles = useMemo(() => sessionRefs.map((s) => s.title), [sessionRefs]);
 
@@ -1854,7 +1847,7 @@ export function UserMessage({
         attachments={allAttachments}
         pending={editPending}
         onCancel={onEditCancel}
-        onSend={(text, kept) => onEditSend(message.info.id, text, kept)}
+        onSend={(text, kept) => onEditSend(message.message_id, text, kept)}
       />
     );
   }
@@ -1909,7 +1902,10 @@ export function UserMessage({
         />
       )}
 
-      {systemNotifications.length > 0 && (
+      {/* Never for a command: its text is the expanded template, and a skill
+          body split into `<overview>`, `<when-to-load>`, … sections drew one
+          card per section above the chip. */}
+      {systemNotifications.length > 0 && !effectiveCommandInfo && (
         <div className="mt-1 flex w-full flex-col gap-1.5">
           {withContentKeys(systemNotifications, (n) => `mixed-${n.tag}`).map(({ key, item }) => (
             <SystemNotificationCard key={key} notification={item} />
@@ -1927,7 +1923,7 @@ export function UserMessage({
             canExpand={canExpand}
             expanded={expanded}
             onToggle={() => setExpanded(!expanded)}
-            textId={`${message.info.id}-text`}
+            textId={`${message.message_id}-text`}
             textRef={textRef}
             quoted={Boolean(quotedPieces)}
           >
@@ -1944,7 +1940,7 @@ export function UserMessage({
           </UserMessageBubble>
         </MessageSenderAbove>
       )}
-      {/* Sent-at, "edited", and the hover actions are ONE row, sitting directly
+      {/* Sent-at and the hover actions are ONE row, sitting directly
           under the bubble they describe — notification cards below are separate
           objects and must not come between a message and its own meta. */}
       {actions}

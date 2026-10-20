@@ -291,6 +291,11 @@ export interface ConnectorAccount {
   is_default: boolean;
   /** Who the account was authorized as. `null` (or absent, on older servers) when unknown. */
   connected_as?: string | null;
+  /** When the upstream first answered 401 to this account's stored credential:
+   *  it expired or was revoked, and a person must replace it. `null` (or
+   *  absent, on older servers) when not rejected. An ok call or a new
+   *  credential clears it. */
+  credential_rejected_at?: string | null;
 }
 
 export interface ConnectorCallOptions {
@@ -766,6 +771,9 @@ export interface OAuth2ResourceDiscovery {
   authorization_server?: string;
   metadata?: Partial<Omit<OAuth2ApplicationView, 'has_client_secret' | 'has_private_key'>>;
   registration_endpoint?: string;
+  /** Kortix signs in with its own OAuth client: a catalogue app whose server
+   *  has no dynamic registration. Register without `registration_endpoint`. */
+  kortix_client?: boolean;
   token_endpoint_auth_methods_supported?: string[];
   code_challenge_methods_supported?: string[];
   scopes: string[];
@@ -778,7 +786,9 @@ export interface OAuth2ResourceDiscoveryInput {
 }
 
 export interface OAuth2ClientRegistrationInput {
-  registration_endpoint: string;
+  /** RFC 7591 endpoint. Absent: the API uses Kortix's own OAuth client, which
+   *  only a catalogue app with `kortix_client` discovery has. */
+  registration_endpoint?: string;
   /** Authorization server issuer, recorded for RFC 9207 `iss` validation. */
   issuer?: string;
   client_name?: string;
@@ -1533,6 +1543,71 @@ export async function discoverConnectorAuth(projectId: string, draft: ConnectorD
   );
 }
 
+/** Whether an MCP server needs a sign-in, and whether Kortix can run it with
+ *  nothing but the user's consent (OAuth metadata plus client registration). */
+export interface McpServerSignInCheck {
+  requires_sign_in: boolean;
+  one_click: boolean;
+}
+
+export async function checkMcpServerSignIn(projectId: string, url: string) {
+  return unwrap(
+    await backendApi.post<McpServerSignInCheck>(
+      `/connectors/projects/${projectId}/connectors/mcp-sign-in-check`,
+      { url },
+    ),
+  );
+}
+
+/** A Pipedream or Composio connector, and the Kortix app it moves to (`connectors_v2`). */
+export interface ConnectorMove {
+  slug: string;
+  name: string;
+  /** The retired provider the connector runs on. */
+  provider: 'pipedream' | 'composio';
+  /** The connector's app on that provider. */
+  app: string | null;
+  /** The Kortix app it moves to. `null`: no Kortix connection for this app on this deployment yet. */
+  to: { slug: string; name: string; icon: string | null } | null;
+  /** The account a started move signs in on. */
+  connection_id: string | null;
+  /** The move signed in; only the switch to `mcp` is left. */
+  signed_in: boolean;
+  /** Accounts on the connector. All but the moved one sign in again after the move. */
+  accounts: number;
+}
+
+/** `sign_in`: sign in on `connection_id` (the OAuth2 routes); the connector switches
+ *  to `provider: mcp` when the sign-in completes. `moved`: it switched. */
+export interface ConnectorMoveResult {
+  status: 'sign_in' | 'moved';
+  connection_id?: string;
+  to?: { slug: string; name: string; url: string };
+}
+
+/** The project's Pipedream and Composio connectors and the Kortix app each moves to. */
+export async function listConnectorMoves(projectId: string): Promise<ConnectorMove[]> {
+  return unwrap(await backendApi.get<{ moves: ConnectorMove[] }>(`/projects/${projectId}/connector-moves`)).moves;
+}
+
+/**
+ * Move a Pipedream or Composio connector to its Kortix app. The connector keeps its slug.
+ * The first call marks an account and answers `sign_in`; after the sign-in the
+ * connector switches by itself, and a second call finishes a switch that failed.
+ */
+export async function moveConnector(
+  projectId: string,
+  slug: string,
+  options: { connectionId?: string } = {},
+): Promise<ConnectorMoveResult> {
+  return unwrap(
+    await backendApi.post<ConnectorMoveResult>(
+      `/projects/${projectId}/connectors/${encodeURIComponent(slug)}/move`,
+      options.connectionId ? { connection_id: options.connectionId } : {},
+    ),
+  );
+}
+
 export async function deleteConnector(projectId: string, slug: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
@@ -1565,6 +1640,8 @@ export interface PipedreamApp {
   featuredWeight: number;
   /** The same app's API/MCP catalogue id (`ConnectToolkit.directId`). */
   directId?: string | null;
+  /** The app's hosted MCP server (`ConnectToolkit.directMcpUrl`). */
+  directMcpUrl?: string | null;
 }
 
 /** A category facet: the key to filter by, and its true size in the catalogue. */
@@ -1685,6 +1762,9 @@ export interface ConnectToolkit {
   /** The same app's API/MCP catalogue id, when the project has that catalogue
    *  on and it lists the app. The app page offers both ways to connect. */
   directId?: string | null;
+  /** The app's hosted MCP server. Install offers it before the managed app
+   *  when `checkMcpServerSignIn` says the sign-in is one click. */
+  directMcpUrl?: string | null;
 }
 
 export interface ConnectToolkitsPage {
@@ -1958,6 +2038,12 @@ export async function getConnectStatus() {
   );
 }
 
+/**
+ * Store a connector's shared credential. For an MCP connector the server then
+ * re-reads the tools: `sync` is that run, and a per-slug error in it means the
+ * credential is stored but the tools still fail to load. Absent for other
+ * providers and on older servers.
+ */
 export async function setConnectorCredential(
   projectId: string,
   slug: string,
@@ -1965,7 +2051,7 @@ export async function setConnectorCredential(
 ) {
   const input = typeof credential === 'string' ? { value: credential } : credential;
   return unwrap(
-    await backendApi.put<{ ok: boolean }>(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
       input,
     ),

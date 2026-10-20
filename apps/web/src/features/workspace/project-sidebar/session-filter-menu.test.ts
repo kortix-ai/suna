@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import { createTranslator } from 'next-intl';
 
 import type { ProjectSession } from '@kortix/sdk';
 
 import { testUiTranslator } from '@/i18n/test-translator';
+import enMessages from '../../../../translations/en.json';
+import { resolveSectionLabels } from './session-section-labels';
 import {
   resolveRenderedSectionIds,
   resolveShowOptions,
@@ -196,5 +199,109 @@ describe('resolveRenderedSectionIds', () => {
     expect(
       resolveRenderedSectionIds(sessions, 'status', 'activity', [], testUiTranslator, { a: 1 }),
     ).toEqual(['needs-you', 'recent']);
+  });
+});
+
+describe('resolveSectionLabels', () => {
+  // A translator over the real English catalog with `section.teams` overridden
+  // to a sentinel. In English every section label equals its untranslated
+  // fallback, so only a differing value can prove a row's label comes from the
+  // translation path (`t('section.*')`) and not the raw catalog string.
+  // `createTranslator` over the same catalog satisfies the structural
+  // `{ (key: SectionLabelKey): string }` parameter — no provider, no cast.
+  const SECTION_TEAMS_SENTINEL = 'Teams · localized';
+  const localizedSidebarTranslator = createTranslator({
+      locale: 'en',
+      messages: {
+        sidebar: {
+          filter: {
+            section: {
+              ...enMessages.sidebar.filter.section,
+              teams: SECTION_TEAMS_SENTINEL,
+            },
+          },
+        },
+      },
+      namespace: 'sidebar.filter',
+    });
+
+  // One session per section across the four declared modes. Activity
+  // fixtures are built from LOCAL calendar components relative to the run
+  // date — `resolveShowOptions` cannot thread a `now` into `groupSessions`
+  // (it uses the `Date.now()` default), so a fixed-date fixture would drift
+  // out of its bucket as real days pass. Noon local always exists (no DST
+  // gap crosses 12:00) and keeps each fixture inside its own calendar day:
+  // today 12:00 → `today`, yesterday 12:00 → `yesterday`, 5 days back →
+  // `week` (weekStart is 7 local midnights back; 5 days + 12 h stays inside),
+  // 60 days back → `older`.
+  const atLocalNoonDaysAgo = (id: string, daysAgo: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() - daysAgo);
+    d.setHours(12, 0, 0, 0);
+    return makeSession({ session_id: id, created_at: d.toISOString() });
+  };
+  const ALL_SECTION_SESSIONS: ProjectSession[] = [
+    makeSession({ session_id: 'status-review', status: 'completed' }), // needs-you
+    running('status-running'), // running (+ chat in source mode)
+    done('status-done'), // recent
+    atLocalNoonDaysAgo('activity-today', 0),
+    atLocalNoonDaysAgo('activity-yesterday', 1),
+    atLocalNoonDaysAgo('activity-week', 5),
+    atLocalNoonDaysAgo('activity-older', 60),
+    makeSession({ session_id: 'source-slack', metadata: { source: 'slack' } }),
+    makeSession({ session_id: 'source-telegram', metadata: { source: 'telegram' } }),
+    makeSession({ session_id: 'source-teams', metadata: { source: 'teams' } }),
+    makeSession({ session_id: 'source-email', metadata: { source: 'email' } }),
+    makeSession({ session_id: 'source-schedule', metadata: { trigger_source: 'cron' } }),
+    makeSession({ session_id: 'source-webhook', metadata: { trigger_source: 'webhook' } }),
+    makeSession({ session_id: 'source-event', metadata: { trigger_source: 'event' } }),
+    makeSession({ session_id: 'source-manual', metadata: { trigger_source: 'manual' } }),
+    // source mode's 'chat' section: any session without source/trigger
+    // metadata qualifies ('status-running' and friends).
+  ];
+  const REVIEW_COUNTS = { 'status-review': 1 };
+
+  test('every section id the Show submenu can list has a localized entry', () => {
+    const ids = new Set<string>();
+    for (const mode of ['status', 'activity', 'source', 'none'] as const) {
+      for (const option of resolveShowOptions(
+        ALL_SECTION_SESSIONS,
+        mode,
+        testUiTranslator,
+        REVIEW_COUNTS,
+      )) {
+        ids.add(option.id);
+      }
+    }
+    // `owner` mode is excluded: its section ids are per-owner data keys
+    // (`owner:<key>`) whose Show label is option.label itself — ownerSections
+    // localizes those at the source, so a static map can never cover them.
+
+    // Pin the four activity buckets explicitly: if a future change breaks the
+    // run-date-relative fixtures (or bucketing drifts), the sweep would
+    // silently narrow and stop covering `today`/`yesterday`/`week`/`older`.
+    for (const bucket of ['today', 'yesterday', 'week', 'older'] as const) {
+      expect(ids.has(bucket), `activity bucket ${bucket} must be swept`).toBe(true);
+    }
+
+    const labels = resolveSectionLabels(localizedSidebarTranslator);
+    const missing = [...ids].filter((id) => !(id in labels));
+    expect(missing).toEqual([]);
+  });
+
+  test("a Teams section's Show row renders the localized label, not the raw English catalog string", () => {
+    // 'Teams' has no product-catalog translation key, so the option label the
+    // fallback path renders is the raw English string in every locale — the
+    // exact symptom the missing map entry produced.
+    const [teamsOption] = resolveShowOptions(
+      [makeSession({ metadata: { source: 'teams' } })],
+      'source',
+      testUiTranslator,
+    );
+    expect(teamsOption?.id).toBe('teams');
+    expect(teamsOption?.label).toBe('Teams');
+
+    const labels = resolveSectionLabels(localizedSidebarTranslator);
+    expect(teamsOption && labels[teamsOption.id]).toBe(SECTION_TEAMS_SENTINEL);
   });
 });

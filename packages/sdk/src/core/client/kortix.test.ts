@@ -2,6 +2,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { listFiles as globalListFiles } from '../files/client';
 import { ApiError } from '../http/api/errors';
 import { isConfigured } from '../http/config';
+import type { ProjectSession } from '../rest/projects-client/sessions';
 import { SessionNotReadyError, createKortix } from './kortix';
 
 // Capture every outbound request the facade makes.
@@ -241,6 +242,11 @@ test('session(projectId, sessionId).cost binds project scope without starting th
   expect(last().method).toBe('GET');
 });
 
+test('session(...).restore takes the deleted session out of the trash', async () => {
+  await kortix.session('PID123', 'SID456').restore();
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/sessions/SID456/restore' });
+});
+
 test('project(id).session(sid) is the same session handle', async () => {
   await kortix.project('PA').session('SB').get();
   expect(last().url).toContain('/projects/PA/sessions/SB');
@@ -356,6 +362,9 @@ test('project(id).review hits the review-items endpoints', async () => {
   await kortix.project('PID123').review.submit({ kind: 'output', title: 'Result' });
   expect(last().url).toContain('/projects/PID123/review/items');
   expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').review.summary();
+  expect(last().url).toContain('/projects/PID123/review/summary');
 });
 
 test('project(id).approvals hits the approvals inbox endpoints', async () => {
@@ -736,10 +745,24 @@ test('kortix.billing covers the read surface (account-state, transactions, credi
   expect(last().url).toContain('/billing/tier-configurations');
 });
 
+test('session(...).log reads one page of the stored session log', async () => {
+  // The stub answers no page shape, so the read rejects after the request.
+  await expect(kortix.session('PID123', 'SID456').log({ thread: 'ses_c', limit: 5 })).rejects.toThrow('not a session log page');
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/log?thread=ses_c&limit=5');
+});
+
 test('session(...).transcript hits the compact transcript endpoint with limit/chars', async () => {
   await kortix.session('PID123', 'SID456').transcript({ limit: 10, chars: 200 });
   expect(last().url).toContain('/projects/PID123/sessions/SID456/transcript?limit=10&chars=200');
   expect(last().method).toBe('GET');
+});
+
+// KRTX-2316: the list is one page; the facade passes the status and the cursor.
+test('project(id).changeRequests.list pages with status, limit and cursor', async () => {
+  await kortix.project('PID123').changeRequests.list();
+  expect(last().url).toMatch(/\/projects\/PID123\/change-requests$/);
+  await kortix.project('PID123').changeRequests.list('all', { limit: 100, cursor: '51' });
+  expect(last().url).toContain('/projects/PID123/change-requests?status=all&limit=100&cursor=51');
 });
 
 test('project(id).changeRequests.requestChanges hits the request-changes endpoint', async () => {
@@ -861,12 +884,30 @@ test('kortix.billing.subscription covers portal/cancel/reactivate/downgrade/pror
   const downgrade = await kortix.billing.subscription.scheduleDowngrade('starter').catch((e: unknown) => e);
   expect((downgrade as ApiError).code).toBe('ENDPOINT_RETIRED');
 
-  await kortix.billing.subscription.cancelScheduledChange();
-  expect(last().url).toContain('/billing/cancel-scheduled-change');
+  const cancelChange = await kortix.billing.subscription.cancelScheduledChange().catch((e: unknown) => e);
+  expect((cancelChange as ApiError).code).toBe('ENDPOINT_RETIRED');
 
-  await kortix.billing.subscription.prorationPreview('price_123');
-  expect(last().url).toContain('/billing/proration-preview?new_price_id=price_123');
-  expect(last().method).toBe('GET');
+  const proration = await kortix.billing.subscription.prorationPreview('price_123').catch((e: unknown) => e);
+  expect((proration as ApiError).code).toBe('ENDPOINT_RETIRED');
+});
+
+test('kortix.billing.setPlan posts the monthly amount to /billing/plan', async () => {
+  await kortix.billing.setPlan({
+    monthlyUsd: 100,
+    successUrl: 'https://app.example.com/ok',
+    cancelUrl: 'https://app.example.com/no',
+  });
+  expect(last().url).toContain('/billing/plan');
+  expect(last().method).toBe('POST');
+});
+
+test('kortix.billing.acceptEnterpriseOffer posts to /billing/enterprise-offer/checkout', async () => {
+  await kortix.billing.acceptEnterpriseOffer({
+    successUrl: 'https://app.example.com/ok',
+    cancelUrl: 'https://app.example.com/no',
+  });
+  expect(last().url).toContain('/billing/enterprise-offer/checkout');
+  expect(last().method).toBe('POST');
 });
 
 test('kortix.billing.credits covers purchase + auto-topup get/configure', async () => {
@@ -997,6 +1038,71 @@ test('ensureReady names the runtime session from runtime_session_id first', asyn
   const ready = await k.session('PROJ', 'SESS-NEUTRAL').ensureReady();
   expect(ready.runtimeSessionId).toBe('rs-neutral');
   expect(ready.opencodeSessionId).toBe('rs-neutral');
+});
+
+function runningSessionRow(sessionId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    session_id: sessionId,
+    project_id: 'PROJ',
+    account_id: 'ACCT',
+    agent_name: 'agent',
+    status: 'running',
+    sandbox_id: 'sbx-row',
+    sandbox_provider: 'platinum',
+    sandbox_url: 'http://test.local/v1/p/sbx-row/8000',
+    runtime_session_id: 'rs-row',
+    opencode_session_id: 'rs-row',
+    metadata: {},
+    created_at: '2026-10-13T00:00:00.000Z',
+    updated_at: '2026-10-13T00:00:00.000Z',
+    ...overrides,
+  } as unknown as ProjectSession;
+}
+
+test('ensureReady adopts a running session row without calling /start', async () => {
+  const startCalls: string[] = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) startCalls.push(url);
+    return jsonResponse(sessionStartPayload('sb-start', 'rs-start'));
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k
+    .session('PROJ', 'SESS-ROW-RUNNING')
+    .ensureReady({ session: runningSessionRow('SESS-ROW-RUNNING') });
+  expect(startCalls).toEqual([]);
+  expect(ready.runtimeSessionId).toBe('rs-row');
+  expect(ready.sandboxId).toBe('sbx-row');
+});
+
+test('ensureReady never adopts the row of another session', async () => {
+  const startCalls: string[] = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) startCalls.push(url);
+    return jsonResponse(sessionStartPayload('sb-start', 'rs-start'));
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k
+    .session('PROJ', 'SESS-ROW-MINE')
+    .ensureReady({ session: runningSessionRow('SESS-ROW-SOMEONE-ELSE') });
+  expect(startCalls).toHaveLength(1);
+  expect(ready.sandboxId).toBe('sb-start');
+});
+
+test('ensureReady still calls /start for a row that is not running', async () => {
+  const startCalls: string[] = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) startCalls.push(url);
+    return jsonResponse(sessionStartPayload('sb-start', 'rs-start'));
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k
+    .session('PROJ', 'SESS-ROW-STOPPED')
+    .ensureReady({ session: runningSessionRow('SESS-ROW-STOPPED', { status: 'stopped' }) });
+  expect(startCalls).toHaveLength(1);
+  expect(ready.runtimeSessionId).toBe('rs-start');
 });
 
 test('two session handles resolve independent sandboxes: A.send never crosses to B (or back)', async () => {

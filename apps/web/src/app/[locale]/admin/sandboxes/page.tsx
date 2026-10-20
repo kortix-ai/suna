@@ -55,6 +55,12 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { SandboxProviderLabel } from '@/features/workspace/customize/sections/view/sandbox-provider-coverage';
+import {
+  formatSandboxProvider,
+  isLegacySandboxProvider,
+  sortSandboxProviders,
+} from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
 import { cn } from '@/lib/utils';
 import type { AdminProviderSandbox } from '@kortix/sdk';
 import { useAdminProviderDistribution, useAdminProviderSandboxes, useAdminProviderAnalytics, useAdminProviderFallback, useSetAdminProviderDistribution, useMigrateAdminSandboxProvider, useSetAdminProviderFallback } from '@kortix/sdk/react';
@@ -143,6 +149,7 @@ const RANGES = [
 
 export default function AdminSandboxesPage() {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tSandbox = useI18nTranslations('settings.sandbox');
   const ranges = useLocalizedUiCatalog(RANGES);
   const [tab, setTab] = useState('overview');
   const [days, setDays] = useState(7);
@@ -190,7 +197,7 @@ export default function AdminSandboxesPage() {
   });
 
   const dist = distQ.data;
-  const allowed = useMemo(() => dist?.allowed ?? [], [dist]);
+  const allowed = useMemo(() => sortSandboxProviders(dist?.allowed ?? []), [dist]);
   const totalW = allowed.reduce((s, p) => s + (Number(weights[p]) || 0), 0);
   const list = listQ.data;
   const targets = migrating ? allowed.filter((p) => p !== migrating.provider) : [];
@@ -285,7 +292,11 @@ export default function AdminSandboxesPage() {
                 return (
                   <StatTile
                     key={p}
-                    label={p[0].toUpperCase() + p.slice(1)}
+                    label={
+                      isLegacySandboxProvider(p)
+                        ? `${formatSandboxProvider(p)} · ${tSandbox('provider.legacy')}`
+                        : formatSandboxProvider(p)
+                    }
                     value={(countByProvider[p] ?? 0).toLocaleString()}
                     hint={tI18nComplete('text347cf684f3e7', { value0: pct })}
                   />
@@ -296,9 +307,9 @@ export default function AdminSandboxesPage() {
 
           <AdminSection
             title={tI18nComplete.raw('text43a857886565')}
-            description={tI18nComplete('textf6668c33ea1a', {
-              value0: dist ? ` (${dist.default})` : '',
-            })}
+            description={`${tI18nComplete('textf6668c33ea1a', {
+              value0: dist ? ` (${formatSandboxProvider(dist.default)})` : '',
+            })}${allowed.some(isLegacySandboxProvider) ? ` ${tSandbox('provider.legacyNote')}` : ''}`}
           >
             <AdminPanel className="space-y-5">
               {distQ.isLoading ? (
@@ -313,9 +324,9 @@ export default function AdminSandboxesPage() {
                         <Field key={p} className="w-40">
                           <FieldLabel
                             htmlFor={`weight-${p}`}
-                            className="flex items-center gap-1.5 capitalize"
+                            className="flex items-center gap-1.5"
                           >
-                            {p}
+                            <SandboxProviderLabel provider={p} />
                             {p === dist?.default && (
                               <Badge variant="outline" size="sm">
                                 {tI18nComplete.raw('text37a8eec1ce19')}
@@ -558,7 +569,7 @@ export default function AdminSandboxesPage() {
                 <StatTile
                   label={tI18nComplete.raw('text7982ad72bd36')}
                   value={an.totals.provisions.toLocaleString()}
-                  hint={`${an.totals.migrations} migrations`}
+                  hint={tI18nComplete('textbdb4791584c6', { count: an.totals.migrations })}
                 />
                 <StatTile
                   label={tI18nComplete.raw('text49da60f8a292')}
@@ -874,8 +885,8 @@ export default function AdminSandboxesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {targets.map((p) => (
-                    <SelectItem key={p} value={p} className="capitalize">
-                      {p}
+                    <SelectItem key={p} value={p}>
+                      <SandboxProviderLabel provider={p} />
                     </SelectItem>
                   ))}
                 </SelectContent>

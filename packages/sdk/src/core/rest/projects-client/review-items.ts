@@ -78,6 +78,13 @@ export interface ReviewApprovalAction {
   reviewComplete?: boolean;
   /** False when this viewer may not see connector arguments at all. */
   previewAuthorized?: boolean;
+  /** False when this viewer may not approve or deny the call: today only a
+   *  project manager or the session's launcher may (KRTX-1724). A host shows
+   *  the decision only when this is not false. */
+  canResolve?: boolean;
+  /** Who decides the call, for a viewer whose `canResolve` is false:
+   *  `managers` only, or `managers_and_launcher`. Absent when unknown. */
+  resolvers?: 'managers' | 'managers_and_launcher';
   /** The agent's own description of the call's effect. Unverified: the
    *  arguments remain the evidence. */
   approvalContext?: string;
@@ -341,6 +348,13 @@ function approvalDetail(detail: AnyRecord, row: ApiReviewItem): ReviewApprovalDe
         // The API omits `args_preview` for a viewer without argument visibility.
         // That is indistinguishable from "the row recorded none" without this flag.
         previewAuthorized: detail.args_preview_authorized !== false,
+        // A server older than `can_resolve` decided the argument verdict by the
+        // same rule, so it stands in.
+        canResolve:
+          typeof row.can_resolve === 'boolean'
+            ? row.can_resolve
+            : detail.args_preview_authorized !== false,
+        ...(row.resolvers ? { resolvers: row.resolvers } : {}),
         approvalContext: asString(detail.approval_context),
         connectorRisk: asString(detail.risk) ?? null,
         policySource: 'Requires approval',

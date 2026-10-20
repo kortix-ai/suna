@@ -10,21 +10,23 @@ import {
 } from './capability-tab-routes';
 
 describe('CAPABILITY_TABS', () => {
-  test('lists agent, skills, connectors, triggers, models, secrets, files, config in that order', () => {
+  test('lists agent, skills, connectors, triggers, models, secrets, files, review, config in that order', () => {
     // Agents lead the bar (Marko, 2026-09-01): an agent is the one object a
     // person is granted access to, so it is the object Customize is built
     // around. Skills — the other thing you BUILD — follows; the rest is what
     // agents draw on. Review sat on the row from 2026-09-02 until 2026-10-02,
-    // when it became a project page of its own (`reviewHref`). Models led
+    // was a sidebar page until 2026-10-17, and is a tab again. Models led
     // before all of that (Jay, 2026-08-17).
     expect(CAPABILITY_TABS.map((t) => t.key)).toEqual([
       'agent',
       'skills',
       'connectors',
       'triggers',
+      'reminders',
       'models',
       'secrets',
       'files',
+      'review',
       'config',
     ]);
   });
@@ -82,11 +84,11 @@ describe('capabilityTabHref', () => {
 });
 
 describe('reviewHref', () => {
-  test('Review is a project page of its own, outside Customize', () => {
-    expect(reviewHref('p1')).toBe('/projects/p1/review');
-    expect(CAPABILITY_TABS.map((t) => t.key)).not.toContain('review');
-    // The old tab address no longer lights a tab: it only redirects.
-    expect(activeCapabilityTab('/projects/p1/customize/review')).toBeNull();
+  test('Review is a Customize tab', () => {
+    expect(reviewHref('p1')).toBe('/projects/p1/customize/review');
+    expect(activeCapabilityTab('/projects/p1/customize/review')).toBe('review');
+    // The sidebar-era address only redirects; it lights no tab.
+    expect(activeCapabilityTab('/projects/p1/review')).toBeNull();
   });
 });
 

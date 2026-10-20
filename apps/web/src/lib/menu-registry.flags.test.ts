@@ -36,20 +36,19 @@ describe('menu registry feature-flag gating', () => {
   });
 
   test('Review Center is reachable with no flag and removed features stay absent', () => {
-    // Review graduated out of the flag system on 2026-09-02. Since 2026-10-02
-    // (#8761) it is its own project page, `/projects/<id>/review`, reached from
-    // a permanent sidebar row and this palette row, so it is no longer a
-    // Customize capability tab. Neither entry point declares a flag. Voice and
-    // Marketplace have no flag any more: both were removed from the product.
+    // Review graduated out of the flag system on 2026-09-02. Since 2026-10-17
+    // (#10124) it is a Customize tab again, `/projects/<id>/customize/review`,
+    // gated by the Customize access rule, not a flag. Voice and Marketplace
+    // have no flag any more: both were removed from the product.
     const keys = CAPABILITY_TABS.map((tab) => tab.key);
-    expect(keys).not.toContain('review');
+    expect(keys).toContain('review');
     expect(keys).not.toContain('voice');
     expect(keys).not.toContain('marketplace');
 
     const reviewRow = menuRegistry.find((item) => item.id === 'proj-review-inbox');
     expect(reviewRow).toBeDefined();
     expect(reviewRow?.requiresFlag).toBeUndefined();
-    expect(reviewRow?.href).toBe('/projects/{projectId}/review');
+    expect(reviewRow?.href).toBe('/projects/{projectId}/customize/review');
 
     // None of them is a settings tab any more, so the derived palette list
     // must not offer one — that would open the overlay on nothing.
@@ -76,13 +75,14 @@ describe('menu registry feature-flag gating', () => {
   });
 
   test('the palette honours requiresFlag for the entries that still declare one', () => {
-    // `proj-apps` is the only remaining flagged palette entry. The filter
-    // line is the whole gate, so it is pinned literally — a rename or a
-    // fail-OPEN rewrite of it would otherwise pass every other test here.
+    // `proj-shared-files` is the only remaining flagged palette entry (Apps
+    // graduated off the flag system in 2026-10). The filter line is the whole
+    // gate, so it is pinned literally — a rename or a fail-OPEN rewrite of it
+    // would otherwise pass every other test here.
     const flagged = menuRegistry.filter(
       (item) => item.requiresFlag && item.showIn.includes('commandPalette'),
     );
-    expect(flagged.map((item) => item.id)).toContain('proj-apps');
+    expect(flagged.map((item) => item.id)).toEqual(['proj-shared-files']);
     expect(paletteSource).toContain(
       'if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;',
     );

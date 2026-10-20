@@ -6,7 +6,9 @@ import { useTranslations } from 'next-intl';
 import {
   AsteriskIcon as Asterisk,
   BookOpenIcon,
-  CaretDownIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  InfoIcon,
   KeyIcon as KeyRound,
   LockSimpleIcon as Lock,
   DotsThreeIcon as MoreHorizontal,
@@ -14,12 +16,11 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from '@/components/site-link';
-import { type FormEvent, useCallback, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
@@ -29,9 +30,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import Hint from '@/components/ui/hint';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
@@ -55,6 +61,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  SplitSheet,
+  SplitSheetBody,
+  SplitSheetContent,
+  SplitSheetDescription,
+  SplitSheetFooter,
+  SplitSheetHeader,
+  SplitSheetMain,
+  SplitSheetTitle,
+} from '@/components/ui/split-sheet';
 import {
   Table,
   TableBody,
@@ -91,6 +107,7 @@ import {
   type SecretDeliveryStrategy,
   type SecretEgressPolicy,
   type SecretInjectionSlot,
+  deletePersonalProjectSecret,
   deleteProjectSecret,
   getProjectDetail,
   grantSecretToAgent,
@@ -152,6 +169,7 @@ import {
 } from './secret-optimistic-cache';
 
 import { AudienceBadge } from './audience-badge';
+import { UndecryptableValue } from './undecryptable-value';
 import { audienceVisibility } from './connector-connections';
 import {
   type SecretAudienceDraft,
@@ -194,6 +212,11 @@ export interface SecretRow {
   sharedWith: ConnectionShare[];
   /** False when it is shared with specific people and the viewer is not one of them. */
   usable: boolean;
+  /** Kortix can no longer decrypt the shared value (`status: 'undecryptable'`). */
+  undecryptable: boolean;
+  /** The viewer's own active override, which their sessions read, cannot be
+   *  decrypted (`mine.status: 'undecryptable'`). */
+  mineUndecryptable: boolean;
 }
 
 type SecretSavePlan = {
@@ -215,6 +238,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tSecrets = useI18nTranslations('secrets');
   const queryClient = useQueryClient();
   const { navigate } = useSettingsNav();
   const queryKey = useMemo(() => qk.project.secrets(projectId), [projectId]);
@@ -261,6 +285,9 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogRow, setDialogRow] = useState<SecretRow | null>(null);
+  // The editor reports its in-flight save so the sheet cannot close mid-write,
+  // the guard the modal used to apply itself.
+  const [editorSaving, setEditorSaving] = useState(false);
   const [deleteRow, setDeleteRow] = useState<SecretRow | null>(null);
 
   const refreshSecretsAndProviders = useCallback(() => {
@@ -271,6 +298,17 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const removeShared = useMutation({
     mutationFn: (identifier: string) => deleteProjectSecret(projectId, identifier),
     onSuccess: refreshSecretsAndProviders,
+  });
+  // The viewer's own override is addressed by its key. Its value is already
+  // lost, so deleting it needs no confirmation: sessions then read the shared value.
+  const deleteMine = useMutation({
+    mutationFn: (key: string) => deletePersonalProjectSecret(projectId, key),
+    onSuccess: () => {
+      refreshSecretsAndProviders();
+      successToast(tSecrets('undecryptable.mineDeleted'));
+    },
+    onError: (error) =>
+      errorToast(error instanceof Error && error.message ? error.message : tSecrets('undecryptable.mineDeleteError')),
   });
 
   const filtered = useMemo(() => {
@@ -305,15 +343,18 @@ export function SecretsView({ projectId }: { projectId: string }) {
   useSlashFocus(searchRef, showContent && allRows.length > 0);
 
   return (
+    <SplitSheet
+      open={dialogOpen}
+      onOpenChange={(next) => {
+        if (!next && editorSaving) return;
+        setDialogOpen(next);
+      }}
+      size="lg"
+      className="flex-1"
+    >
+    <SplitSheetMain>
     <CapabilityPageShell
       title={tI18nComplete.raw('textd8707d411d99')}
-      /* "the real value" is exact, not hedged: an enforced secret DOES put an
-         env var in the sandbox — an opaque handle under the same key
-         (`apps/api/src/projects/secrets.ts`
-         `env[row.key] = await input.mintHandleFor(row)`), never the
-         credential. "Environment variable is the only exposure that puts a
-         real value in the sandbox" is the claim the API actually guarantees
-         (`deliversPlaintextToSandbox`, `apps/api/src/secrets/strategy.ts`). */
       description={tI18nComplete.raw('texteca47e3afa10')}
       search={
         /* Hidden until there is a list to search, the same rule Triggers
@@ -335,38 +376,20 @@ export function SecretsView({ projectId }: { projectId: string }) {
           </InputGroupSearch>
         ) : undefined
       }
+      titleAddon={<SecretsAccessInfo showEnforced={showEnforced} />}
       action={
-        /* One right-hand cluster, secondary control first, primary last —
-           the pairing `SettingsTabHeader` renders for every pane with a
-           `docsHref`. This page has no registry entry to declare one from,
-           so the same button is written here rather than dropped. */
-        <div className="flex min-w-0 items-center gap-2">
-          {/* New tab: this page is often open over live work. */}
-          <Button asChild variant="secondary" size="sm" className="gap-1.5">
-            <Link href="/docs/project/secrets" target="_blank" rel="noreferrer">
-              <BookOpenIcon className="size-3.5 shrink-0" />
-              {tI18nComplete.raw('text7af023c43013')}
-            </Link>
-          </Button>
-          {showContent && canManage ? (
-            <NewEntityMenu
-              label={tI18nComplete.raw('text18fdd549b2ed')}
-              pending={configure.pending}
-              onChat={() => configure.start(newConfigPrompt('secret'))}
-              manual={{
-                description: tI18nComplete.raw('textefd041115e9e'),
-                onSelect: openCreate,
-              }}
-            />
-          ) : null}
-        </div>
+        showContent && canManage ? (
+          <NewEntityMenu
+            label={tI18nComplete.raw('text18fdd549b2ed')}
+            pending={configure.pending}
+            onChat={() => configure.start(newConfigPrompt('secret'))}
+            manual={{
+              description: tI18nComplete.raw('textefd041115e9e'),
+              onSelect: openCreate,
+            }}
+          />
+        ) : undefined
       }
-      /* The shell's secondary row — where Skills and Connectors put their
-         scope tabs. The legend is the same kind of thing: one small control
-         under the header that reframes the list below it. Collapsed it is a
-         single line, so it costs the table nothing; in the content column it
-         would sit between the header and the first row it explains. */
-      filters={<SecretsAccessExplainer showEnforced={showEnforced} />}
     >
       <div className="space-y-4">
         {secretsQuery.isLoading ? (
@@ -449,26 +472,16 @@ export function SecretsView({ projectId }: { projectId: string }) {
                       canManage={canManage}
                       viewerId={viewerId}
                       busy={removeShared.isPending && removeShared.variables === row.identifier}
+                      deletingMine={deleteMine.isPending && deleteMine.variables === row.key}
                       onEdit={() => openEdit(row)}
                       onDelete={() => setDeleteRow(row)}
+                      onDeleteMine={() => deleteMine.mutate(row.key)}
                     />
                   ))}
                 </TableBody>
               </Table>
             )}
 
-            <SecretDialog
-              key={dialogRow?.identifier ?? 'new'}
-              open={dialogOpen}
-              onOpenChange={setDialogOpen}
-              projectId={projectId}
-              row={dialogRow}
-              llmGatewayEnabled={llmGatewayEnabled}
-              connectors={connectorsQuery.data?.connectors ?? []}
-              connectorsLoading={connectorsQuery.isLoading}
-              egressEnabled={egressEnabled}
-              onSaved={refreshSecretsAndProviders}
-            />
           </>
         )}
       </div>
@@ -503,99 +516,128 @@ export function SecretsView({ projectId }: { projectId: string }) {
         isPending={removeShared.isPending}
       />
     </CapabilityPageShell>
+    </SplitSheetMain>
+    {/* The editor takes a column beside the table (Jay, 2026-10-14: "inside
+        a split sheet"). Keyed by row so switching rows starts a fresh form. */}
+    <SplitSheetContent>
+      <SecretDialog
+        key={dialogRow?.identifier ?? 'new'}
+        presentation="sheet"
+        onSavingChange={setEditorSaving}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        projectId={projectId}
+        row={dialogRow}
+        llmGatewayEnabled={llmGatewayEnabled}
+        connectors={connectorsQuery.data?.connectors ?? []}
+        connectorsLoading={connectorsQuery.isLoading}
+        egressEnabled={egressEnabled}
+        onSaved={refreshSecretsAndProviders}
+      />
+    </SplitSheetContent>
+    </SplitSheet>
   );
 }
 
 /**
- * What the Access column actually means, folded away until asked for.
+ * What the Access column means, behind the info button after the page title.
  *
- * The page shipped with a bare Identifier / Value / Access table and no words
- * at all, so a one-word badge beside `STRIPE_API_KEY` was a label with nothing
- * behind it. Six values, and the split between them is the whole feature: the
- * first three are the exposure you choose, the last three are usages another
- * flow assigned.
- *
- * Collapsed by default, and one click from the badges it defines: six
- * definitions permanently expanded above a five-row table would be a wall of
- * text in front of the thing the page is for.
+ * Six values, and the split between them is the whole feature: the first
+ * three are the exposure you choose, the last three are usages another flow
+ * assigned. Kept out of the page body so the header stays one line and the
+ * table is the first thing a reader sees.
  *
  * The labels and sentences come from `secretDeliveryLegend()`, the same tables
  * that render each row's badge and each option in the dialog's picker.
  * Restating them here in JSX is how the legend and the badge start disagreeing.
  */
-function SecretsAccessExplainer({ showEnforced }: { showEnforced: boolean }) {
+function SecretsAccessInfo({ showEnforced }: { showEnforced: boolean }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const [open, setOpen] = useState(false);
+  const heading = tI18nComplete.raw('text0d8c9f89b826');
   return (
-    /* `w-full` because the shell's filters row is a flex line: without it the
-       expanded legend shrink-wraps to its longest sentence instead of the
-       column. */
-    <Collapsible open={open} onOpenChange={setOpen} className="w-full">
-      <CollapsibleTrigger className="text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-xs font-medium transition-colors">
-        <CaretDownIcon
-          className={cn('size-3.5 shrink-0 transition-transform', open ? '' : '-rotate-90')}
-        />
-        {tI18nComplete.raw('text0d8c9f89b826')}
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <dl className="border-border bg-sidebar mt-2 flex flex-col gap-2.5 rounded-md border p-3">
+    <HoverCard openDelay={150}>
+      <HoverCardTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground"
+          aria-label={heading}
+        >
+          <InfoIcon className="size-4" />
+        </Button>
+      </HoverCardTrigger>
+      <HoverCardContent
+        align="start"
+        className="max-h-[min(36rem,70vh)] w-[26rem] max-w-[calc(100vw-2rem)] space-y-3 overflow-y-auto p-4"
+      >
+        <p className="text-foreground text-sm font-medium">{heading}</p>
+        <dl className="space-y-2.5">
           {secretDeliveryLegend(showEnforced, tI18nComplete).map((mode) => (
-            <div key={mode.key} className="flex flex-col gap-1 sm:flex-row sm:gap-3">
-              <dt className="shrink-0 sm:w-44">
+            <div key={mode.key} className="space-y-1">
+              <dt>
                 <Badge variant={mode.tone} size="sm">
                   {mode.label}
                 </Badge>
               </dt>
-              <dd className="text-muted-foreground min-w-0 text-xs text-pretty">
-                {mode.description}
-              </dd>
+              <dd className="text-muted-foreground text-xs text-pretty">{mode.description}</dd>
             </div>
           ))}
-          {/* Two things the list above cannot say on its own.
-
-              First, the grant. `resolveSecretDelivery`
-              (apps/api/src/secrets/strategy.ts) returns `agent_grant_unscoped`
-              for EVERY strategy other than `runtime`, so the enforced,
-              LLM gateway and Connector values are gated by the identical rule.
-              Environment variable is the one exception, and it has to stay
-              one — a project with no `agents:` block hands every environment
-              secret to every agent, so a blanket "a grant is always required"
-              would be false for most projects. See
-              `shouldWarnMissingAgentGrant`.
-
-              Second, the three assigned values. Their own flows write them,
-              which is why the picker does not offer them. A row can therefore
-              show a badge with no matching option, and that reads as a bug
-              unless the page says who set it. */}
-          <p className="text-muted-foreground border-border mt-0.5 border-t pt-2.5 text-xs text-pretty">
-            {showEnforced
-              ? tI18nComplete.raw('text8aa824e472ff')
-              : tI18nComplete.raw('texte5a718af362a')}{' '}
-            {tI18nComplete.raw('texte1673f438808')}
-            {showEnforced ? (
-              <>
-                {' '}
-                <span className="text-foreground">
-                  {tI18nComplete.raw('text82ff5452a98d')}
-                </span>{' '}
-                {tI18nComplete.raw('text49e63b9b35ec')} <code className="font-mono">secrets</code>{' '}
-                {tI18nComplete.raw('text582967534d0f')}{' '}
-                <code className="font-mono">kortix.yaml</code>;{' '}
-                <code className="font-mono">secrets: all</code>{' '}
-                {tI18nComplete.raw('text17313fb7bf82')}
-              </>
-            ) : null}{' '}
-            {tI18nComplete.raw('text52c3509531f1')}{' '}
-            <span className="text-foreground">{tI18nComplete.raw('textad26af1426b3')}</span>{' '}
-            {tI18nComplete.raw('textbbdce4215935')}{' '}
-            <span className="text-foreground">{tI18nComplete.raw('text8f0d706fff25')}</span>{' '}
-            {tI18nComplete.raw('text41232780dc9c')}{' '}
-            <span className="text-foreground">{tI18nComplete.raw('textb949c922b6ef')}</span>{' '}
-            {tI18nComplete.raw('text06a6228ef85f')}
-          </p>
         </dl>
-      </CollapsibleContent>
-    </Collapsible>
+        {/* Two things the list above cannot say on its own.
+
+            First, the grant. `resolveSecretDelivery`
+            (apps/api/src/secrets/strategy.ts) returns `agent_grant_unscoped`
+            for EVERY strategy other than `runtime`, so the enforced,
+            LLM gateway and Connector values are gated by the identical rule.
+            Environment variable is the one exception, and it has to stay
+            one — a project with no `agents:` block hands every environment
+            secret to every agent, so a blanket "a grant is always required"
+            would be false for most projects. See
+            `shouldWarnMissingAgentGrant`.
+
+            Second, the three assigned values. Their own flows write them,
+            which is why the picker does not offer them. A row can therefore
+            show a badge with no matching option, and that reads as a bug
+            unless the page says who set it. */}
+        <p className="text-muted-foreground border-border border-t pt-3 text-xs text-pretty">
+          {showEnforced
+            ? tI18nComplete.raw('text8aa824e472ff')
+            : tI18nComplete.raw('texte5a718af362a')}{' '}
+          {tI18nComplete.raw('texte1673f438808')}
+          {showEnforced ? (
+            <>
+              {' '}
+              <span className="text-foreground">
+                {tI18nComplete.raw('text82ff5452a98d')}
+              </span>{' '}
+              {tI18nComplete.raw('text49e63b9b35ec')} <code className="font-mono">secrets</code>{' '}
+              {tI18nComplete.raw('text582967534d0f')}{' '}
+              <code className="font-mono">kortix.yaml</code>;{' '}
+              <code className="font-mono">secrets: all</code>{' '}
+              {tI18nComplete.raw('text17313fb7bf82')}
+            </>
+          ) : null}{' '}
+          {tI18nComplete.raw('text52c3509531f1')}{' '}
+          <span className="text-foreground">{tI18nComplete.raw('textad26af1426b3')}</span>{' '}
+          {tI18nComplete.raw('textbbdce4215935')}{' '}
+          <span className="text-foreground">{tI18nComplete.raw('text8f0d706fff25')}</span>{' '}
+          {tI18nComplete.raw('text41232780dc9c')}{' '}
+          <span className="text-foreground">{tI18nComplete.raw('textb949c922b6ef')}</span>{' '}
+          {tI18nComplete.raw('text06a6228ef85f')}
+        </p>
+        {/* New tab: this page is often open over live work. */}
+        <Link
+          href="/docs/project/secrets"
+          target="_blank"
+          rel="noreferrer"
+          className="text-foreground inline-flex items-center gap-1.5 text-xs font-medium hover:underline"
+        >
+          <BookOpenIcon className="size-3.5 shrink-0" />
+          {tI18nComplete.raw('text7af023c43013')}
+        </Link>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
@@ -648,6 +690,8 @@ export function buildRows(
     deliveryBlockedReason: secretDeliveryBlockedReason(item),
     sharedWith: item.shared_with ?? [],
     usable: item.usable ?? true,
+    undecryptable: item.status === 'undecryptable',
+    mineUndecryptable: Boolean(item.mine?.active && item.mine.status === 'undecryptable'),
   });
 
   const rows: SecretRow[] = [];
@@ -679,6 +723,8 @@ export function buildRows(
       deliveryBlockedReason: null,
       sharedWith: [],
       usable: true,
+      undecryptable: false,
+      mineUndecryptable: false,
     });
   }
 
@@ -752,28 +798,33 @@ function SecretTableRow({
   canManage,
   viewerId,
   busy,
+  deletingMine,
   onEdit,
   onDelete,
+  onDeleteMine,
 }: {
   row: SecretRow;
   llmGatewayEnabled: boolean;
   canManage: boolean;
   viewerId: string | null;
   busy: boolean;
+  deletingMine: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onDeleteMine: () => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tSharing = useI18nTranslations('accessSharing');
+  const tSecrets = useI18nTranslations('secrets');
   const canManageShared = canManage && !row.system;
   const distinctKey = row.identifier !== row.key;
   const delivery = secretDeliveryPresentation(row.strategy, row.consumer, { llmGatewayEnabled });
 
+  // No row tint for an unset required secret: the orange asterisk carries that
+  // state, and a status hue belongs on the mark (color.md, Accents and status).
   return (
-    <TableRow
-      className={cn(row.requirement === 'required' && !row.configured && 'bg-kortix-orange/[0.04]')}
-    >
+    <TableRow>
       {/* The identifier and its marks share one line — the cell used to stack
           three blocks (identifier, → key, a badge row), so a five-row table
           read as fifteen. `→ key` still gets its own muted line, but only on
@@ -790,7 +841,20 @@ function SecretTableRow({
         </div>
       </TableCell>
       <TableCell className="text-muted-foreground max-w-[160px] align-middle text-xs whitespace-nowrap">
-        {statusLabel(row)}
+        {/* The viewer's own override first: it is what their sessions read, and
+            only they can delete it. A broken shared value shows once it is gone. */}
+        {row.mineUndecryptable ? (
+          <UndecryptableValue
+            hint={tSecrets('undecryptable.mineHint')}
+            actionLabel={tSecrets('undecryptable.deleteMine')}
+            onAction={onDeleteMine}
+            pending={deletingMine}
+          />
+        ) : row.undecryptable ? (
+          <UndecryptableValue onAction={canManageShared ? onEdit : undefined} />
+        ) : (
+          statusLabel(row)
+        )}
       </TableCell>
       <TableCell className="max-w-[220px] align-middle whitespace-normal">
         <div className="flex flex-col items-start gap-1">
@@ -929,11 +993,18 @@ function SecretDialog({
   connectorsLoading,
   egressEnabled,
   onSaved,
+  presentation = 'modal',
+  onSavingChange,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
   row: SecretRow | null;
+  /** `sheet`: render into the host's SplitSheet column (the Secrets page).
+   *  `modal`: a dialog, for hosts with no sheet (the agent editor). */
+  presentation?: 'modal' | 'sheet';
+  /** Told when a save starts and ends, so a sheet host can refuse to close. */
+  onSavingChange?: (saving: boolean) => void;
   llmGatewayEnabled: boolean;
   connectors: Awaited<ReturnType<typeof listConnectors>>['connectors'];
   connectorsLoading: boolean;
@@ -947,11 +1018,14 @@ function SecretDialog({
   const [identifier, setIdentifier] = useState(row?.identifier ?? '');
   const [key, setKey] = useState(row?.key ?? '');
   const [value, setValue] = useState('');
+  const [revealValue, setRevealValue] = useState(false);
+  const tPooled = useI18nTranslations('pooledSecrets');
   // Who can use the value. A new secret defaults to everyone, as every secret
   // did before audiences existed; editing opens on the stored audience.
   const viewerId = useAuth().user?.id ?? null;
   const accountId = useProjectAccountId(projectId);
   const tSharing = useI18nTranslations('accessSharing');
+  const tSecrets = useI18nTranslations('secrets');
   const projectName =
     useQuery({ queryKey: qk.project.detail(projectId), queryFn: () => getProjectDetail(projectId), ...contract('config') })
       .data?.project?.name ?? '';
@@ -1017,7 +1091,8 @@ function SecretDialog({
     setAudience(audienceDraftFrom(row?.sharedWith ?? [], viewerId));
   };
 
-  const requiresValue = !row?.configured;
+  // A value Kortix cannot decrypt is lost: saving without a new one would keep it broken.
+  const requiresValue = !row?.configured || Boolean(row?.undecryptable);
   const enforcedPolicy = buildEnforcedPolicy({
     hosts,
     legacyInject,
@@ -1227,6 +1302,13 @@ function SecretDialog({
     },
   });
 
+  useEffect(() => {
+    onSavingChange?.(save.isPending);
+    // A successful save closes (unmounts) the editor while still pending;
+    // clear the flag so the next sheet can close normally.
+    return () => onSavingChange?.(false);
+  }, [save.isPending, onSavingChange]);
+
   const startGrant = () => {
     if (!selectedGrantAgent || grant.isPending) return;
     if (grantPlan.adoptsGovernance) {
@@ -1303,87 +1385,117 @@ function SecretDialog({
       row !== null && nextSharedWith !== null && !sameSharedWith(row.sharedWith, nextSharedWith),
   });
 
-  return (
+  const fields = (
     <>
-      <Modal
-        open={open}
-        onOpenChange={(next) => {
-          if (save.isPending) return;
-          if (!next) resetForm();
-          onOpenChange(next);
-        }}
-      >
-        <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-xl">
-          <ModalHeader>
-            <ModalTitle>{title}</ModalTitle>
-            <ModalDescription>{tI18nComplete.raw('textd432610668ee')}</ModalDescription>
-          </ModalHeader>
-          <form onSubmit={handleSubmit} autoComplete="off">
-            <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
-              <div className="border-border bg-sidebar flex flex-col overflow-hidden rounded-md border">
-                <div className="flex flex-col gap-1 border-b px-3 py-2">
-                  <label
-                    className="text-muted-foreground text-xs font-medium"
-                    htmlFor="secret-dialog-identifier"
-                  >
-                    {tI18nComplete.raw('text9b10587f84a2')}
-                  </label>
-                  <Input
-                    id="secret-dialog-identifier"
-                    name="kortix-secret-identifier"
-                    value={identifier}
-                    onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder={key ? key : tI18nComplete.raw('text2f3263f5c933')}
-                    className="bg-sidebar disabled:bg-sidebar h-8 rounded-none border-none px-0 font-mono"
-                    autoFocus={!isEdit}
-                    autoComplete="off"
+              {/* Editing: the identifier is fixed, so it is shown ONCE as plain
+                  text. It used to render twice — an identifier block and a
+                  disabled key field holding the same name. */}
+              {isEdit && row ? (
+                <Field>
+                  <FieldLabel>{tI18nComplete.raw('text9b10587f84a2')}</FieldLabel>
+                  <div className="bg-muted flex min-h-9 min-w-0 flex-col justify-center gap-0.5 rounded-md px-3 py-2">
+                    <code className="text-foreground truncate font-mono text-sm">{row.identifier}</code>
+                    {row.key !== row.identifier ? (
+                      <code className="text-muted-foreground truncate font-mono text-xs">
+                        → {row.key}
+                      </code>
+                    ) : null}
+                  </div>
+                </Field>
+              ) : (
+                <>
+                  <Field>
+                    <FieldLabel htmlFor="secret-dialog-key">{tPooled('key')}</FieldLabel>
+                    <Input
+                      id="secret-dialog-key"
+                      name="kortix-secret-key"
+                      value={key}
+                      onChange={(e) =>
+                        setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))
+                      }
+                      placeholder="KEY_NAME"
+                      className="font-mono"
+                      autoFocus
+                      autoComplete="off"
+                      data-1p-ignore="true"
+                      data-lpignore="true"
+                      data-form-type="other"
+                      disabled={save.isPending}
+                      required
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="secret-dialog-identifier">
+                      {tI18nComplete.raw('text9b10587f84a2')}
+                    </FieldLabel>
+                    <Input
+                      id="secret-dialog-identifier"
+                      name="kortix-secret-identifier"
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      placeholder={key ? key : tI18nComplete.raw('text2f3263f5c933')}
+                      className="font-mono"
+                      autoComplete="off"
+                      data-1p-ignore="true"
+                      data-lpignore="true"
+                      data-form-type="other"
+                      disabled={save.isPending}
+                    />
+                    <FieldDescription>{tI18nComplete.raw('text39bccc5f46a7')}</FieldDescription>
+                  </Field>
+                </>
+              )}
+
+              <Field>
+                <FieldLabel htmlFor="secret-dialog-value">
+                  {tI18nComplete.raw('text8e37953d23da')}
+                </FieldLabel>
+                <InputGroup>
+                  <InputGroupInput
+                    id="secret-dialog-value"
+                    name="kortix-secret-value"
+                    type={revealValue ? 'text' : 'password'}
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    placeholder="••••••••"
+                    className="font-mono"
+                    autoComplete="new-password"
                     data-1p-ignore="true"
                     data-lpignore="true"
                     data-form-type="other"
-                    disabled={isEdit || save.isPending}
+                    autoFocus={isEdit}
+                    disabled={save.isPending}
                   />
-                </div>
-                <Input
-                  id="secret-dialog-key"
-                  name="kortix-secret-key"
-                  value={key}
-                  onChange={(e) => setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))}
-                  placeholder="KEY_NAME"
-                  className="bg-sidebar disabled:bg-sidebar rounded-none border-none font-mono"
-                  autoComplete="off"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-form-type="other"
-                  disabled={isEdit || save.isPending}
-                  required
-                />
-                <Input
-                  id="secret-dialog-value"
-                  name="kortix-secret-value"
-                  type="password"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  placeholder="••••••••"
-                  className="bg-secondary rounded-none rounded-t-sm border-none font-mono"
-                  autoComplete="new-password"
-                  data-1p-ignore="true"
-                  data-lpignore="true"
-                  data-form-type="other"
-                  autoFocus={isEdit}
-                  disabled={save.isPending}
-                />
-              </div>
-
-              {!isEdit && (
-                <p className="text-muted-foreground text-xs">
-                  {tI18nComplete.raw('text39bccc5f46a7')}
-                </p>
-              )}
-              {row?.configured && (
-                <p className="text-muted-foreground text-xs">
-                  {tI18nComplete.raw('text51b5970e84eb')}
-                </p>
-              )}
+                  {value ? (
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupButton
+                        size="icon-xs"
+                        onClick={() => setRevealValue((shown) => !shown)}
+                        aria-pressed={revealValue}
+                        aria-label={
+                          revealValue
+                            ? tI18nComplete('text1efc71237433', { value0: bindingIdentifier })
+                            : tI18nComplete('text2c6e8e7b3b77', { value0: bindingIdentifier })
+                        }
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        {revealValue ? (
+                          <EyeSlashIcon className="size-3.5" />
+                        ) : (
+                          <EyeIcon className="size-3.5" />
+                        )}
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  ) : null}
+                </InputGroup>
+                {row?.configured ? (
+                  <FieldDescription>
+                    {row.undecryptable
+                      ? tSecrets('undecryptable.dialog')
+                      : tI18nComplete.raw('text51b5970e84eb')}
+                  </FieldDescription>
+                ) : null}
+              </Field>
 
               <AudienceFields
                 projectId={projectId}
@@ -1690,32 +1802,79 @@ function SecretDialog({
                   {tI18nComplete.raw('text90c889e0b6ff')}
                 </InfoBanner>
               )}
-            </ModalBody>
+    </>
+  );
+  const cancelButton = (
+    <Button
+      type="button"
+      variant="outline-ghost"
+      size="sm"
+      className="w-full sm:w-auto"
+      onClick={() => onOpenChange(false)}
+      disabled={save.isPending}
+    >
+      {tI18nComplete.raw('text19766ed6ccb2')}
+    </Button>
+  );
+  const saveButton = (
+    <Button
+      type="submit"
+      size="sm"
+      className="w-full sm:w-auto"
+      disabled={save.isPending || !canSave}
+    >
+      {save.isPending && <Loading className="size-4 shrink-0" />}
+      {tI18nComplete.raw('text1509f561f241')}
+    </Button>
+  );
 
-            <ModalFooter className="sm:justify-between">
-              <Button
-                type="button"
-                variant="outline-ghost"
-                size="sm"
-                className="w-full sm:w-auto"
-                onClick={() => onOpenChange(false)}
-                disabled={save.isPending}
-              >
-                {tI18nComplete.raw('text19766ed6ccb2')}
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                className="w-full sm:w-auto"
-                disabled={save.isPending || !canSave}
-              >
-                {save.isPending && <Loading className="size-4 shrink-0" />}
-                {tI18nComplete.raw('text1509f561f241')}
-              </Button>
-            </ModalFooter>
-          </form>
-        </ModalContent>
-      </Modal>
+  return (
+    <>
+      {presentation === 'sheet' ? (
+        /* The Secrets page hosts this in its SplitSheet column (`SecretsView`):
+           the table narrows beside it instead of a dialog covering it. The form
+           is the column's flex child so the body scrolls between a fixed header
+           and footer. */
+        <form
+          onSubmit={handleSubmit}
+          autoComplete="off"
+          className="flex min-h-0 flex-1 flex-col"
+          data-secret-editor="sheet"
+        >
+          <SplitSheetHeader className="px-5 py-4">
+            <SplitSheetTitle className="font-mono text-base">{title}</SplitSheetTitle>
+            <SplitSheetDescription>{tI18nComplete.raw('textd432610668ee')}</SplitSheetDescription>
+          </SplitSheetHeader>
+          <SplitSheetBody className="space-y-5 px-5">{fields}</SplitSheetBody>
+          <SplitSheetFooter className="justify-between px-5">
+            {cancelButton}
+            {saveButton}
+          </SplitSheetFooter>
+        </form>
+      ) : (
+        <Modal
+          open={open}
+          onOpenChange={(next) => {
+            if (save.isPending) return;
+            if (!next) resetForm();
+            onOpenChange(next);
+          }}
+        >
+          <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-xl">
+            <ModalHeader>
+              <ModalTitle>{title}</ModalTitle>
+              <ModalDescription>{tI18nComplete.raw('textd432610668ee')}</ModalDescription>
+            </ModalHeader>
+            <form onSubmit={handleSubmit} autoComplete="off">
+              <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">{fields}</ModalBody>
+              <ModalFooter className="sm:justify-between">
+                {cancelButton}
+                {saveButton}
+              </ModalFooter>
+            </form>
+          </ModalContent>
+        </Modal>
+      )}
       <ConfirmDialog
         open={grantConfirmOpen}
         onOpenChange={(next) => {

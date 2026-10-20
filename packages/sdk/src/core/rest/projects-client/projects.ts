@@ -24,13 +24,14 @@ import {
  * every consumer's bundle. {@link FEATURE_FLAG_KEYS} is the runtime witness of
  * the same list, so other packages can assert the two have not drifted.
  *
- * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams` and
- * `config_releases` are deprecated. `agent_tunnel` graduated like
+ * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams`,
+ * `config_releases` and `apps` are deprecated. `agent_tunnel` graduated like
  * `review_center` below: a paired computer is a connector account and needs no
  * flag. So did `session_transcript_history`: every session saves its
  * transcript and shows it while its computer is off. And `teams`: every
  * project can connect Microsoft Teams. And `config_releases`: every session
- * runs its base branch's config release.
+ * runs its base branch's config release. And `apps`: Apps is generally
+ * available — every project can create and deploy Apps.
  *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
@@ -51,6 +52,7 @@ export type FeatureFlagKey =
   /** @deprecated Graduated — Review Center is on for every project. Removed in the next major. */
   | 'review_center'
   | 'meta_agent'
+  /** @deprecated Graduated — Apps is on for every project. Removed in the next major. */
   | 'apps'
   | 'monitors'
   | 'reminders'
@@ -62,6 +64,7 @@ export type FeatureFlagKey =
   | 'session_transcript_history'
   | 'pooled_provider_secrets'
   | 'pi_harness'
+  | 'genui'
   /** @deprecated Graduated — every session runs its base branch's config release. Removed in the next major. */
   | 'config_releases'
   /** @deprecated Graduated — every governed agent authorizes as itself; there is no switch. Removed in the next major. */
@@ -70,10 +73,14 @@ export type FeatureFlagKey =
   | 'event_triggers'
   | 'notification_center'
   | 'volumes'
+  /** @deprecated Withdrawn — stateless sessions left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'stateless_sessions'
   | 'drives'
+  /** @deprecated Withdrawn with `stateless_sessions`. The API no longer lists or resolves it. Removed in the next major. */
   | 'ephemeral_sandboxes'
   | 'session_log'
+  | 'session_log_restore'
+  | 'connectors_v2'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -86,7 +93,10 @@ type GraduatedFeatureFlagKey =
   | 'agent_principal'
   | 'human_messaging'
   | 'pi_worker'
-  | 'config_releases';
+  | 'config_releases'
+  | 'apps'
+  | 'stateless_sessions'
+  | 'ephemeral_sandboxes';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -101,21 +111,21 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'agentmail_email',
   'llm_gateway',
   'meta_agent',
-  'apps',
   'monitors',
   'reminders',
   'warm_sessions',
   'secrets_egress',
   'pooled_provider_secrets',
   'pi_harness',
+  'genui',
   'us_region',
   'event_triggers',
   'notification_center',
   'volumes',
-  'stateless_sessions',
   'drives',
-  'ephemeral_sandboxes',
   'session_log',
+  'session_log_restore',
+  'connectors_v2',
 ] as const;
 
 /**
@@ -138,15 +148,16 @@ export interface FeatureFlagView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
   /**
-   * True for an internal-only flag (`apps`). The catalog lists one
-   * only while it is on, so agents and people can see it. Only a Kortix
-   * platform operator can change it: `PATCH /features` answers `403` with
-   * `feature_operator_only`. Absent on servers older than this field.
+   * True for an internal-only flag (`session_log`, `session_log_restore`). The
+   * catalog lists one only while it is on, so agents and people can see it.
+   * Only a Kortix platform operator can change it: `PATCH /features` answers
+   * `403` with `feature_operator_only`. Absent on servers older than this field.
    */
   operator_only?: boolean;
   /**
-   * `organization`: one value for every project of the organization (`volumes`).
-   * Changing it needs `account.write`. Absent on servers older than this field.
+   * Always `project`: every flag is set per project. A server from
+   * 2026-10-12 sent `organization` for `volumes` and the withdrawn `stateless_sessions`.
+   * Absent on servers older than this field.
    */
   scope?: 'project' | 'organization';
 }
@@ -317,7 +328,9 @@ export interface GatewayCatalogModel {
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
-  /** Customer USD per million tokens for each eligible managed route. */
+  /** Kortix's platform fee on managed model usage, in percent of the base prices below. */
+  platformFeePercent?: number;
+  /** Base provider USD per million tokens, before `platformFeePercent`. */
   managedPricingRoutes?: Record<string, Array<{
     route: string;
     role: 'preferred' | 'eligible';
@@ -683,6 +696,24 @@ export async function provisionProject(
 export type ProvisionPhase = 'validating' | 'creating_repository' | 'registering' | 'seeding';
 
 /**
+ * Stable error code `provisionProjectStream` (below) puts on the error it
+ * throws when the stream closes WITHOUT a terminal `done`/`error` frame
+ * (`/provision-stream`'s contract is "always a terminal frame", so this
+ * shape means the connection died mid-provision — a proxy idle timeout, a
+ * dropped socket).
+ *
+ * The close is an UNKNOWN result, deliberately NOT classed as a transport
+ * failure: the request demonstrably reached the server (the 200 headers
+ * arrived) and may still commit or roll back — only the response was lost.
+ * The host recovers it by replaying the SAME `idempotency_key` over the
+ * plain `POST /projects/provision` (the key exists for exactly that), which
+ * answers `409 provision_in_flight` until the first attempt commits, then
+ * `201` with the same project. Client-side only: the server never emits
+ * this string.
+ */
+export const PROVISION_STREAM_UNTERMINATED_CODE = 'provision_stream_unterminated';
+
+/**
  * One frame of `POST /projects/provision-stream`'s SSE body.
  *
  * The `error` frame's `status` mirrors the HTTP status the equivalent
@@ -855,8 +886,46 @@ export async function provisionProjectStream(
   // A stream that closes without a terminal event is a failure, not a
   // success. Resolving here would hand the caller an undefined project id
   // and route a user to `/projects/undefined`.
-  if (!settled) throw new Error('Provision stream ended without a result');
+  //
+  // `ApiError` with a stable code, not a bare `Error`: the close means the
+  // create's result is UNKNOWN — the route's handler outlives a lost reader
+  // and may still commit or roll back — so a host cannot tell this apart
+  // from a real failure without sniffing the message. The code is what lets
+  // the host (`apps/web`'s `runProvisionAttempt`) replay the SAME
+  // idempotency key over the plain route and recover the true outcome
+  // (KRTX-1754) instead of reporting jargon. The message is unchanged for
+  // every existing reader.
+  if (!settled) {
+    throw new ApiError('Provision stream ended without a result', {
+      code: PROVISION_STREAM_UNTERMINATED_CODE,
+    });
+  }
   return settled;
+}
+
+export interface ProjectQuota {
+  /** True when the account cannot create another project right now. */
+  capped: boolean;
+  /** The active-project cap. `Number.MAX_SAFE_INTEGER` when the plan does not cap. */
+  limit: number;
+  /** Active projects in the account; null when the plan does not cap (no count ran). */
+  count: number | null;
+  /** The denial message a create would answer with; null when not capped. */
+  message: string | null;
+}
+
+/**
+ * The account's project-cap state — `GET /projects/quota`. Lets a create UI
+ * pre-check whether `provisionProject` would be denied by the plan cap
+ * BEFORE the user fills the form and hits the 403, so the page can show the
+ * cap reason up front and keep the submit disabled. Omit `accountId` to
+ * resolve the same default account the create itself targets (the server's
+ * `resolveProjectAccount` default); pass the account when the UI has already
+ * resolved one.
+ */
+export async function getProjectQuota(options?: { accountId?: string }): Promise<ProjectQuota> {
+  const query = options?.accountId ? `?account_id=${encodeURIComponent(options.accountId)}` : '';
+  return unwrap(await backendApi.get<ProjectQuota>(`/projects/quota${query}`));
 }
 
 export interface ManagedGitStatus {

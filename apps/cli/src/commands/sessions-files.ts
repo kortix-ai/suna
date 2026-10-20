@@ -157,11 +157,14 @@ export function buildPromptWithFiles(prompt: string, sandboxPaths: string[]): st
 }
 
 /**
- * Appended to every spawn prompt sent from INSIDE a sandbox (a coordinator
- * like the platform meta agent). Without it a worker session sees the same
- * CLI + token its coordinator has and re-delegates instead of working — the
- * observed failure: "generate a demo PDF" spawned a session that spawned
- * another session.
+ * Shipped beside the immediate `--prompt` spawn sent from INSIDE a sandbox (a
+ * coordinator like the platform meta agent) as `initial_context` — the runtime
+ * delivers it to the model as a synthetic part and the transcript keeps the
+ * caller's own words. (The deferred `--with-file` path still embeds it in the
+ * inbox prompt text — its comment in sessions.ts explains why.) Without it a
+ * worker session sees the same CLI + token its coordinator has and
+ * re-delegates instead of working — the observed failure: "generate a demo
+ * PDF" spawned a session that spawned another session.
  */
 export const SESSION_CONTRACT = [
   '--- session contract ---',
@@ -171,10 +174,22 @@ export const SESSION_CONTRACT = [
   'Write your deliverables to files under /workspace/out/ and state the exact paths in your final reply.',
 ].join('\n');
 
-/** Compose the outgoing spawn prompt; in-sandbox callers get the contract. */
-export function buildSpawnPrompt(prompt: string, opts: { fromSandbox: boolean }): string {
-  if (!opts.fromSandbox) return prompt;
-  return `${prompt}\n\n${SESSION_CONTRACT}`;
+export interface SpawnPrompt {
+  /** The caller's words, verbatim. This is what the session stores. */
+  prompt: string;
+  /** The worker contract, '' when the spawn comes from a human host. */
+  context: string;
+}
+
+/**
+ * Split the outgoing spawn prompt: the caller's words stay verbatim and the
+ * in-sandbox contract travels separately as `initial_context`, which the
+ * runtime delivers to the model as a synthetic (model-only) message part.
+ * Appending the contract into the prompt itself stored a user message the
+ * caller never wrote (KRTX-1547).
+ */
+export function buildSpawnPrompt(prompt: string, opts: { fromSandbox: boolean }): SpawnPrompt {
+  return { prompt, context: opts.fromSandbox ? SESSION_CONTRACT : '' };
 }
 
 /**

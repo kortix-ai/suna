@@ -1,7 +1,7 @@
 /**
- * The gate every App route runs: project membership, the App permission, the
- * `apps` flag, then the App's own visibility and the capability the route
- * needs. Shared by ./routes.ts and ./capability-routes.ts.
+ * The gate every App route runs: project membership, the App permission, then
+ * the App's own visibility and the capability the route needs. Shared by
+ * ./routes.ts and ./capability-routes.ts.
  */
 import { apps } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -9,7 +9,6 @@ import type { Context } from 'hono';
 import { PROJECT_ACTIONS } from '../iam';
 import { assertProjectCapability, loadProjectForUser } from '../projects/surface';
 import type { AppEnv } from '../types';
-import { requireFeatureFlag } from '../feature-flags/gate';
 import { db } from '../shared/db';
 import { appVisibleToUser } from './access';
 import { type AppCapability, type AppHostingType, appCapabilities, capabilityUnsupportedBody } from './capabilities';
@@ -18,9 +17,11 @@ import { type AppCapability, type AppHostingType, appCapabilities, capabilityUns
  * The App permission a route needs. Apps own these leaves outright — they no
  * longer borrow project.customize.write / project.gitops.read, so a custom role
  * can grant or revoke Apps without touching any other capability.
- *   read    list and inspect Apps, connect, mint a member token
- *   write   create, rename, resize, set access, read logs
- *   deploy  ship a version, roll back, start, stop
+ *   read    list and open the Apps the caller may see, connect, mint a member token
+ *   write   create, rename, resize, read and set the access policy
+ *   deploy  ship a version, roll back, start, stop; read the operations view:
+ *           deployments, their events and runtime logs, machines, volumes,
+ *           snapshots
  *   admin   administer the App
  */
 export type AppPermission = 'read' | 'write' | 'deploy' | 'admin';
@@ -33,21 +34,17 @@ const APP_PERMISSION_ACTION: Record<AppPermission, string> = {
 };
 
 /**
- * Membership + permission + `apps` flag, in that order. Returns the loaded
- * project on success, or the Response the route must return:
+ * Membership, then the App leaf: the leaf is the only permission gate, so a
+ * custom role that holds project.app.deploy alone may deploy. Returns the loaded project on
+ * success, or the Response the route must return:
  *   • 404 — the project does not exist or the caller is not a member (a
  *     non-member must not be able to distinguish the two).
- *   • 403 `feature_disabled` — the caller IS a member, but the project has the
- *     `apps` flag off. A member already knows the project exists, so the honest
- *     "turn it on in Settings" answer beats a misleading 404.
  * A permission denial still throws (403) from assertProjectCapability.
  */
 export async function authorizedProject(c: Context<AppEnv>, projectId: string, permission: AppPermission = 'read') {
-  const loaded = await loadProjectForUser(c, projectId, permission === 'read' ? 'read' : 'write');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, APP_PERMISSION_ACTION[permission]);
-  const gate = requireFeatureFlag(c, loaded.row.metadata, 'apps');
-  if (gate) return gate;
   return loaded;
 }
 
@@ -79,7 +76,9 @@ export function capabilityRefusal(
   c: Context<AppEnv>,
   capability: AppCapability,
   hostingType: AppHostingType | null = null,
+  app?: { externalUrl: string | null; externalFrameable: boolean },
 ) {
-  if (appCapabilities(hostingType).includes(capability)) return null;
+  const external = app?.externalUrl ? { frameable: app.externalFrameable } : null;
+  if (appCapabilities(hostingType, false, external).includes(capability)) return null;
   return c.json(capabilityUnsupportedBody(capability), 409);
 }

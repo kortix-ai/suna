@@ -61,7 +61,24 @@ describe('toolKind', () => {
   });
 });
 
+describe('toolKind of Claude Code names', () => {
+  test.each([
+    ['MultiEdit', 'edit'],
+    ['NotebookEdit', 'edit'],
+    // Not lowered: the web reads these outputs as another harness's, not as a native listing.
+    ['Grep', 'other'],
+    ['LS', 'other'],
+  ] as const)('%s → %s', (name, kind) => {
+    expect(toolKind(name)).toBe(kind);
+  });
+});
+
 describe('inputPath', () => {
+  test('reads Claude Code NotebookEdit notebook_path', () => {
+    expect(inputPath({ notebook_path: '/w/n.ipynb', cell_id: 'c1' })).toBe('/w/n.ipynb');
+  });
+
+
   test('reads OpenCode filePath, snake file_path and pi path', () => {
     expect(inputPath({ filePath: '/a.ts' })).toBe('/a.ts');
     expect(inputPath({ file_path: '/b.ts' })).toBe('/b.ts');

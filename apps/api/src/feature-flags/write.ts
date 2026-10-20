@@ -46,19 +46,3 @@ export async function writeProjectFeatureFlag(
   return row;
 }
 
-/**
- * The write path for an organization flag (`scope: 'organization'`). Sets
- * (`true`/`false`) or clears (`null`, back to the global switch and rollout)
- * the organization's entry in the store the flag reads. Today that is only
- * `volumes`: the per-organization entry Admin → Volumes edits.
- */
-export async function writeOrganizationFeatureFlag(
-  accountId: string,
-  feature: FeatureFlagKey,
-  enabled: boolean | null,
-): Promise<void> {
-  const store = await import('../platform/services/boot-mode-setting');
-  if (feature === 'volumes') return store.setVolumesForOrg(accountId, enabled);
-  if (feature === 'stateless_sessions') return store.setStatelessForOrg(accountId, enabled);
-  throw new Error(`'${feature}' is not an organization flag`);
-}

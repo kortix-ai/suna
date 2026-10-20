@@ -1,20 +1,11 @@
 // Single source of truth for IAM permission strings.
 //
-// Convention: <resource>.<verb>[.subresource]. The resource prefix MUST match
-// one of the iam_resource_type enum values, because the engine uses the prefix
-// to know which scope_type a policy needs to grant the action.
+// Convention: <resource>.<verb>[.subresource]. Every action is account- or
+// project-scoped: `kortix.permissions.resource_type` accepts only those two.
 //
 // Secrets / env-vars are intentionally absent — handled separately later.
 
-export const RESOURCE_TYPES = [
-  'account',
-  'project',
-  'sandbox',
-  'trigger',
-  'channel',
-  'member',
-  'group',
-] as const;
+export const RESOURCE_TYPES = ['account', 'project'] as const;
 export type ResourceType = (typeof RESOURCE_TYPES)[number];
 
 // ─── Account-scoped actions ────────────────────────────────────────────────
@@ -64,6 +55,11 @@ export const ACCOUNT_ACTIONS = {
   // "Create a brand-new project" must live at account scope (the project
   // doesn't exist yet to scope to).
   PROJECT_CREATE: 'project.create',
+
+  // Kortix Capture. Every member records and reads their own capture; these
+  // reach other people's. Owner and admin hold both by default.
+  CAPTURE_READ_ALL: 'capture.read_all',
+  CAPTURE_MANAGE: 'capture.manage',
 } as const;
 
 // ─── Project-scoped actions ────────────────────────────────────────────────
@@ -111,6 +107,9 @@ export const PROJECT_ACTIONS = {
   PROJECT_SKILL_READ: 'project.skill.read',
   PROJECT_SKILL_WRITE: 'project.skill.write',
   PROJECT_COMMAND_READ: 'project.command.read',
+  // No API route writes a command: a command is a repository file, changed by
+  // a git push (project.gitops.push). This leaf gates the web Edit control and
+  // stays a valid name in kortix.yaml `kortix_permissions` lists.
   PROJECT_COMMAND_WRITE: 'project.command.write',
   PROJECT_FILE_READ: 'project.file.read',
   PROJECT_FILE_WRITE: 'project.file.write',
@@ -145,8 +144,9 @@ export const PROJECT_ACTIONS = {
   // project.gitops.read, so a custom role could not grant or revoke Apps on its
   // own. These are the real leaves. `read` = list and inspect the Apps the
   // caller may see, connect, mint a member token. `write` = create, rename,
-  // resize, delete an App, set the access policy, read the
-  // process log. `deploy` = ship a version, roll back, start, or stop — the
+  // resize, delete an App, read and set the access policy. `deploy` = ship a
+  // version, roll back, start, or stop, and read the operations view
+  // (deployments, events, runtime logs, machines, volumes, snapshots) — the
   // action that changes what the public hostname serves, so it stays separable
   // from write exactly as project.gitops.merge is separable from
   // project.gitops.push. `admin` = the App-administration leaf; no route
@@ -173,14 +173,9 @@ export const PROJECT_ACTIONS = {
   PROJECT_CREDENTIALS_ISSUE: 'project.credentials.issue',
 } as const;
 
-// ─── Trigger-scoped actions (when scoped to an individual trigger) ─────────
-
-const TRIGGER_ACTIONS = {
-  TRIGGER_READ: 'trigger.read',
-  TRIGGER_UPDATE: 'trigger.update',
-  TRIGGER_DELETE: 'trigger.delete',
-  TRIGGER_FIRE: 'trigger.fire',
-} as const;
+// Trigger-scoped actions (trigger.read/update/delete/fire) were removed for
+// the same reason as the channel ones below: no route asserts them and the
+// catalog table never held them. Triggers use the project.trigger.* leaves.
 
 // Channel-scoped actions (channel.read/connect/send/disconnect) were removed
 // (dead-catalog cleanup, IAM enforcement audit): they were cataloged with
@@ -195,7 +190,6 @@ const TRIGGER_ACTIONS = {
 const ALL_ACTIONS = {
   ...ACCOUNT_ACTIONS,
   ...PROJECT_ACTIONS,
-  ...TRIGGER_ACTIONS,
 } as const;
 
 export type Action = (typeof ALL_ACTIONS)[keyof typeof ALL_ACTIONS];
@@ -206,7 +200,6 @@ export type Action = (typeof ALL_ACTIONS)[keyof typeof ALL_ACTIONS];
 export const VALID_ACTIONS: ReadonlySet<string> = new Set([
   ...Object.values(ACCOUNT_ACTIONS),
   ...Object.values(PROJECT_ACTIONS),
-  ...Object.values(TRIGGER_ACTIONS),
 ]);
 
 /**
@@ -237,11 +230,6 @@ export const ACTION_CATALOG: ActionCatalogEntry[] = [
     label: label(a),
     resourceType: resourceTypeForAction(a),
   })),
-  ...Object.values(TRIGGER_ACTIONS).map((a) => ({
-    action: a,
-    label: label(a),
-    resourceType: resourceTypeForAction(a),
-  })),
 ];
 
 /**
@@ -249,7 +237,6 @@ export const ACTION_CATALOG: ActionCatalogEntry[] = [
  * action. Derived from the dotted prefix.
  *
  * project.session.stop   → 'project'
- * sandbox.start          → 'sandbox'
  * member.invite          → 'account'  (account-level member admin)
  */
 export function resourceTypeForAction(action: string): ResourceType {
@@ -265,6 +252,7 @@ export function resourceTypeForAction(action: string): ResourceType {
     action.startsWith('token.') ||
     action.startsWith('billing.') ||
     action.startsWith('audit.') ||
+    action.startsWith('capture.') ||
     action === 'project.create'
   ) {
     return 'account';

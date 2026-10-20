@@ -28,6 +28,7 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { useAuthContext, useLanguage } from '@/contexts';
+import { useSignOutAndRoute } from '@/hooks/useSignOutAndRoute';
 import {
   acceptAccountInviteAndLand,
   accountInviteLanding,
@@ -42,7 +43,7 @@ import { projectKeys } from '@/lib/projects/hooks';
 import { listAccounts, listProjectsForAccount } from '@/lib/projects/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
-/** The API's own sentence for a refused request (expired, used, no seat), else `fallback`. */
+/** The API's own sentence for a refused request (expired, used), else `fallback`. */
 function refusal(err: unknown, fallback: string): string {
   const { status, message } = (err ?? {}) as { status?: unknown; message?: unknown };
   return typeof status === 'number' && status >= 400 && status < 500 && typeof message === 'string' && message
@@ -73,7 +74,7 @@ export default function InviteScreen() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { t } = useLanguage();
-  const { user, isAuthenticated, mfaRequired, signOut } = useAuthContext();
+  const { user, isAuthenticated, mfaRequired } = useAuthContext();
   const signedIn = isAuthenticated && !mfaRequired;
 
   // This screen shows the remembered link, so the start screen must not open
@@ -155,21 +156,17 @@ export default function InviteScreen() {
     leave();
   }, [id, leave]);
 
-  const [signingOut, setSigningOut] = React.useState(false);
+  const { signingOut, signOutAndRoute } = useSignOutAndRoute();
   const signOutAndContinue = React.useCallback(async () => {
     if (signingOut) return;
-    setSigningOut(true);
     // Sign-in ends at `/`, which opens this invite again.
     rememberInviteLink(id);
-    const result = await signOut().catch(() => null);
-    setSigningOut(false);
-    if (result?.success) {
-      router.replace('/auth');
-      return;
+    const signedOut = await signOutAndRoute();
+    if (!signedOut) {
+      takeInviteLink();
+      toast.error(t('auth.signOutFailed', 'Unable to sign out. Check your connection and try again.'));
     }
-    takeInviteLink();
-    toast.error(t('auth.signOutFailed', 'Unable to sign out. Check your connection and try again.'));
-  }, [id, router, signOut, signingOut, t, toast]);
+  }, [id, signingOut, signOutAndRoute, t, toast]);
 
   const backToProjects = (
     <Button size="lg" variant="secondary" className="rounded-full" onPress={leave}>

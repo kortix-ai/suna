@@ -12,6 +12,7 @@ import {
   isAlreadyNotRunning,
   sessionAttachmentStore,
 } from '../../projects/surface';
+import { markKortixRemovalIntent } from '../../projects/surface';
 import { db } from '../../shared/db';
 
 /** Provider calls in flight at once, the same bound as the sandbox reclaim. */
@@ -62,6 +63,21 @@ export async function deleteAccountExternalStores(
           logger.error(
             `[AccountDeletion] No provider client for ${row.provider}; parked sandbox ${row.sandboxId} stays at the provider`,
           );
+          return;
+        }
+        // Stamp the intent BEFORE the provider call: its `removed` webhook can
+        // land while this step is still running (the reported occurrence: 931 ms
+        // after the reclaim summary, whose select never sees a parked row) and
+        // must not read as a lost runtime. A parked box is inert — it cannot run
+        // or bill — so a stamp failure skips this box's removal and the retry
+        // stamps it again; the deletion stays retryable.
+        try {
+          await markKortixRemovalIntent(row.sandboxId);
+        } catch (err) {
+          failed++;
+          logger.error(`[AccountDeletion] Failed to stamp removal intent for parked sandbox ${row.sandboxId}:`, {
+            error: err instanceof Error ? err.message : err,
+          });
           return;
         }
         try {

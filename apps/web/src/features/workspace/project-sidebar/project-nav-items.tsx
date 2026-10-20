@@ -1,9 +1,7 @@
 'use client';
 
 import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
-import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
-import { ProjectRemindersNavItem } from '@/features/workspace/project-sidebar/footer/project-reminders-nav';
 import { ProjectCustomizeNavItem } from '@/features/workspace/project-sidebar/project-settings-nav';
 import {
   DropdownMenu,
@@ -48,7 +46,7 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
   return (
     <>
       {items.map((entry) => (
-        <NavItem key={entry.id} entry={entry} projectId={projectId} />
+        <NavItem key={entry.id} entry={entry} />
       ))}
       <MoreNavItem projectId={projectId} items={items} />
     </>
@@ -56,9 +54,9 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
 }
 
 /**
- * The last nav row, always present. Its menu holds every row set to "Show in
- * More", so hiding a row never makes its page unreachable, and then the one
- * pointer path into "Customize sidebar".
+ * The last nav row. Its menu holds every row set to "Show in More", so hiding
+ * a row never makes its page unreachable, and then the one pointer path into
+ * "Customize sidebar". Absent when the project offers the caller no row.
  */
 function MoreNavItem({
   projectId,
@@ -93,6 +91,10 @@ function MoreNavItem({
     closeTimer.current = setTimeout(() => setOpen(false), HOVER_CLOSE_DELAY_MS);
   };
   useEffect(() => cancelClose, []);
+
+  // No row this project offers the caller: nothing to arrange and nothing
+  // hidden to reach, so the row would open a menu with nothing in it.
+  if (Object.keys(meta).length === 0) return null;
 
   return (
     <SidebarMenuItem>
@@ -155,17 +157,13 @@ function MoreNavItem({
   );
 }
 
-function NavItem({ entry, projectId }: { entry: SidebarNavEntry; projectId: string }) {
+function NavItem({ entry }: { entry: SidebarNavEntry }) {
   if (entry.visibility === 'never') return null;
   switch (entry.id) {
     case 'customize':
       return <ProjectCustomizeNavItem />;
     case 'apps':
       return <ProjectAppsNavItem />;
-    case 'review':
-      return <ProjectChangeRequestsNavItem projectId={projectId} visibility={entry.visibility} />;
-    case 'reminders':
-      return <ProjectRemindersNavItem visibility={entry.visibility} />;
     case 'files':
       return <ProjectFilesNavItem />;
   }

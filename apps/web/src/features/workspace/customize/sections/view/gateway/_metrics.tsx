@@ -1,8 +1,7 @@
 'use client';
 
-import type { Icon as LucideIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis } from 'recharts';
+import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts';
 
 import {
   ChartContainer,
@@ -10,6 +9,8 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from '@/components/ui/chart';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { formatUsdAsCredits } from '@kortix/shared';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import type { GatewaySeriesPoint } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
@@ -41,16 +42,36 @@ export function fmtDay(value: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
-export function fmtUsd(n: number): string {
-  if (n >= 100) return `$${n.toFixed(0)}`;
-  if (n >= 1) return `$${n.toFixed(2)}`;
-  return `$${n.toFixed(4)}`;
+/** A USD amount the gateway spent, in credits (1 credit = $0.01): `1,842`, `0.4`, `<0.01`. */
+export function fmtCredits(usd: number, locale?: string): string {
+  return formatUsdAsCredits(usd, { locale });
 }
 
 export function fmtCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return n.toLocaleString();
+}
+
+/** Milliseconds as the latency tab reads them: `840ms`, `2.8s`. */
+export function fmtMs(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
+}
+
+/**
+ * The window's latency as one number: each day's p50, weighted by that day's
+ * requests. The gateway reports percentiles per day only, so this is an
+ * average of daily medians — the headline, not a true window median.
+ */
+export function weightedP50(series: readonly GatewaySeriesPoint[]): number | null {
+  let weight = 0;
+  let total = 0;
+  for (const point of series) {
+    if (point.requests <= 0 || !Number.isFinite(point.p50)) continue;
+    weight += point.requests;
+    total += point.p50 * point.requests;
+  }
+  return weight > 0 ? total / weight : null;
 }
 
 export function RangeSelector({
@@ -64,100 +85,66 @@ export function RangeSelector({
 }) {
   const ranges = useLocalizedUiCatalog(RANGES);
   return (
-    <div
-      className={cn(
-        'border-border/60 bg-card flex items-center gap-1 rounded-full border p-0.5',
-        className,
-      )}
-    >
-      {ranges.map((r) => (
-        <button
-          key={r.days}
-          type="button"
-          onClick={() => setDays(r.days)}
-          className={cn(
-            'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-            days === r.days
-              ? 'bg-primary/10 text-primary'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {r.label}
-        </button>
-      ))}
-    </div>
+    <Tabs value={String(days)} onValueChange={(next) => setDays(Number(next))} className={className}>
+      <TabsList size="xs">
+        {ranges.map((r) => (
+          <TabsTrigger key={r.days} value={String(r.days)} size="xs" className="tabular-nums">
+            {r.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   );
 }
 
-function MiniSpark({
-  data,
-  dataKey,
-  color,
-}: {
-  data: Record<string, unknown>[];
-  dataKey: string;
-  color: string;
-}) {
-  return (
-    <div className="h-8 w-20 shrink-0">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 2, bottom: 2 }}>
-          <Area
-            dataKey={dataKey}
-            type="monotone"
-            stroke={color}
-            fill={color}
-            fillOpacity={0.15}
-            strokeWidth={1.5}
-            dot={false}
-            isAnimationActive={false}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-export function StatCard({
+/**
+ * One metric in the chart card's header: its name and its total for the
+ * window. Selecting it swaps the chart below. Cells after the first carry a
+ * hairline on their left; the selected one a 2px foreground rule on its
+ * bottom edge.
+ */
+export function MetricTab({
   label,
   value,
-  sub,
-  icon: Icon,
-  accent,
-  spark,
-  sparkKey,
-  index = 0,
+  unit,
+  selected,
+  onSelect,
 }: {
   label: string;
   value: string;
-  // ReactNode, not string: the spend card's sub-line carries a two-part
-  // Kortix / provider breakdown with its own dot markers.
-  sub?: ReactNode;
-  icon: LucideIcon;
-  accent: string;
-  spark?: Record<string, unknown>[];
-  sparkKey?: string;
-  index?: number;
+  /** A unit word after the value, smaller and muted: `1,842 credits`. */
+  unit?: string;
+  selected: boolean;
+  onSelect: () => void;
 }) {
   return (
-    <div
-      className="group animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-both border-border/60 bg-card hover:border-border rounded-2xl border p-4 transition-colors duration-200"
-      style={{ animationDelay: `${index * 60}ms` }}
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      onClick={onSelect}
+      className={cn(
+        'border-border flex min-w-0 flex-1 basis-0 flex-col items-start gap-1 border-b-2 border-l px-5 py-4 text-left first:border-l-0',
+        'transition-[border-color,background-color] duration-(--duration-normal) ease-out',
+        'focus-visible:ring-ring/50 outline-none focus-visible:ring-2 focus-visible:ring-inset',
+        selected ? 'border-b-foreground' : 'hover:bg-muted border-b-transparent',
+      )}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-muted-foreground text-xs">{label}</span>
-        <div className="bg-muted text-muted-foreground flex size-6 items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-110">
-          <Icon className="size-3.5" />
-        </div>
-      </div>
-      <div className="text-foreground mt-1.5 truncate text-2xl font-semibold tracking-tight">
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <span
+        className={cn(
+          'truncate text-xl font-semibold tracking-tight tabular-nums',
+          selected ? 'text-foreground' : 'text-muted-foreground',
+        )}
+      >
         {value}
-      </div>
-      <div className="mt-1 flex items-end justify-between gap-2">
-        <span className="text-muted-foreground min-h-4 text-xs leading-tight">{sub ?? ''}</span>
-        {spark && sparkKey && <MiniSpark data={spark} dataKey={sparkKey} color={accent} />}
-      </div>
-    </div>
+        {unit ? (
+          <span className="text-muted-foreground ml-1 text-xs font-normal tracking-normal">
+            {unit}
+          </span>
+        ) : null}
+      </span>
+    </button>
   );
 }
 
@@ -165,16 +152,18 @@ export function UsageChart({
   data,
   keys,
   yFormatter,
+  className,
 }: {
   data: GatewaySeriesPoint[];
   keys: (keyof typeof chartConfig)[];
   yFormatter?: (v: number) => string;
+  className?: string;
 }) {
   const localizedChartConfig = useLocalizedUiCatalog(chartConfig);
   return (
-    <ChartContainer config={localizedChartConfig} className="h-[200px] w-full">
-      <AreaChart accessibilityLayer data={data} margin={{ left: 4, right: 8, top: 4 }}>
-        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+    <ChartContainer config={localizedChartConfig} className={cn('h-72 w-full', className)}>
+      <AreaChart accessibilityLayer data={data} margin={{ left: 4, right: 8, top: 8 }}>
+        <CartesianGrid vertical={false} />
         <XAxis
           dataKey="day"
           tickLine={false}
@@ -216,7 +205,7 @@ export function UsageChart({
             stackId={keys.length > 1 ? 'a' : undefined}
             stroke={`var(--color-${k})`}
             fill={`var(--color-${k})`}
-            fillOpacity={0.12}
+            fillOpacity={0.1}
             strokeWidth={2}
             dot={false}
             connectNulls
@@ -227,49 +216,67 @@ export function UsageChart({
   );
 }
 
-export function MeterRow({
-  rank,
-  accent,
-  label,
-  value,
-  segments,
-  sub,
+/**
+ * One section of the Costs page: a title row (title, one line of description,
+ * an action or a figure on the right) over its own bordered panel.
+ */
+export function CostSection({
+  title,
+  description,
+  action,
+  children,
+  className,
 }: {
-  rank: number;
-  accent: string;
-  label: ReactNode;
-  value: ReactNode;
-  segments: { pct: number; color: string }[];
-  sub?: ReactNode;
+  title: string;
+  description?: string;
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="group hover:bg-muted/40 -mx-2 rounded-lg px-2 py-2 transition-colors duration-150">
-      <div className="flex items-center gap-3">
-        <span className="text-muted-foreground/40 w-3 shrink-0 text-right text-xs tabular-nums">
-          {rank}
-        </span>
-        <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: accent }} />
-        <span className="text-foreground/90 min-w-0 flex-1 truncate font-mono text-xs">
-          {label}
-        </span>
-        <div className="bg-foreground/[0.07] flex h-1 w-20 shrink-0 overflow-hidden rounded-full sm:w-32">
-          {segments.map((s, i) => (
-            <div
-              key={i}
-              className="h-full transition-[width] duration-700 ease-out"
-              style={{ width: `${Math.max(0, Math.min(100, s.pct))}%`, backgroundColor: s.color }}
-            />
-          ))}
+    <section className={cn('flex min-w-0 flex-1 basis-0 flex-col gap-3', className)}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h3 className="text-foreground text-sm font-medium">{title}</h3>
+          {description ? (
+            <p className="text-muted-foreground text-xs text-pretty">{description}</p>
+          ) : null}
         </div>
-        <span className="text-muted-foreground w-16 shrink-0 text-right text-xs tabular-nums">
-          {value}
-        </span>
+        {action}
       </div>
-      {sub && (
-        <div className="text-muted-foreground/60 mt-1 flex items-center gap-3 pl-7 text-xs tabular-nums">
-          {sub}
-        </div>
-      )}
+      {children}
+    </section>
+  );
+}
+
+/** The bordered panel under a section's title row. */
+export function CostPanel({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn('border-border bg-surface flex flex-col rounded-md border px-4 py-1', className)}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** A share bar: segments stack left to right on a muted track. */
+export function ShareBar({
+  segments,
+  className,
+}: {
+  segments: { pct: number; color: string }[];
+  className?: string;
+}) {
+  return (
+    <div className={cn('bg-muted flex h-1 shrink-0 overflow-hidden rounded-xs', className)}>
+      {segments.map((s, i) => (
+        <div
+          key={i}
+          className="h-full"
+          style={{ width: `${Math.max(0, Math.min(100, s.pct))}%`, backgroundColor: s.color }}
+        />
+      ))}
     </div>
   );
 }

@@ -16,10 +16,12 @@
  * We mint a real SCIM token for the OWNER-owned team account to exercise the
  * 200/201 happy paths, then drive Users + Groups CRUD over that bearer.
  */
+import { strict as assert } from 'node:assert';
 import { flow } from '../core/flow';
 import type { Client } from '../core/client';
 import type { FlowContext } from '../core/types';
 import { ssoFixtureToken } from '../fixtures/supabase';
+import { offboardingEvent, pairBothPlacements, projectComputerAccount } from '../fixtures/tunnel';
 
 /** Mint a per-account SCIM bearer token for an account the OWNER controls. */
 async function mintScimToken(ctx: FlowContext, accountId: string): Promise<string> {
@@ -1176,5 +1178,74 @@ flow('SCIM-14', {
     (await scim.get('/scim/v2/accounts/:accountId/Groups/:groupId', {
       params: { ...params, groupId: groups[1]! },
     })).status(200).body().has('$.members', []);
+  });
+});
+
+// KRTX-1722: SCIM deactivation runs the same offboarding as removal and leave
+// (TUN-8, TUN-9), so the member's computer accounts end with the membership.
+flow('SCIM-16', {
+  domain: 'scim',
+  timeoutMs: 180_000,
+  serial: true,
+  routes: [
+    'POST /v1/tunnel/device-auth',
+    'GET /v1/tunnel/device-auth/:code/status',
+    'POST /v1/tunnel/device-auth/:code/approve',
+    'GET /v1/projects/:projectId/connections',
+    'PATCH /scim/v2/accounts/:accountId/Users/:userId',
+    'GET /v1/accounts/:accountId/audit',
+    'GET /v1/tunnel/connections',
+    'DELETE /v1/tunnel/connections/:tunnelId',
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team({ enterprise: true });
+  const member = await team.addMember('member');
+  const project = await team.project();
+  await team.grantProjectRole(project.id, member.userId!, 'manager');
+  const scim = ctx.client.withBearer(await mintScimToken(ctx, team.id), 'SCIM');
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const asMember = ctx.client.as(member);
+  const params = { accountId: team.id, userId: member.userId! };
+  const deactivate = () => scim.patch('/scim/v2/accounts/:accountId/Users/:userId', {
+    schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+    Operations: [{ op: 'replace', value: { active: false } }],
+  }, { params });
+  let machines!: Awaited<ReturnType<typeof pairBothPlacements>>;
+
+  await ctx.step('the member pairs a private machine and one shared with the project', async () => {
+    machines = await pairBothPlacements(ctx.client.as(ctx.P.ANON), asMember, { projectId: project.id, name: ctx.fixtures.name });
+    assert.equal((await projectComputerAccount(owner, project.id, machines.shared.connectionId))?.status, 'active');
+  });
+
+  await ctx.step('the IdP deactivates the member → 200 active:false', async () => {
+    (await deactivate()).status(200).body().has('$.active', false);
+  });
+
+  await ctx.step('the shared machine\'s computer account is revoked with revokedReason owner_left', async () => {
+    const shared = await projectComputerAccount(owner, project.id, machines.shared.connectionId);
+    assert.equal(shared?.status, 'revoked');
+    assert.equal(shared?.metadata?.revokedReason, 'owner_left');
+  });
+
+  await ctx.step('one member.offboarded audit event, with no human actor, counts both placements', async () => {
+    const event = await offboardingEvent(owner, team.id, member.userId!);
+    assert.equal(event.actor_user_id, null);
+    assert.equal(event.metadata?.reason, 'deprovisioned');
+    assert.equal(event.metadata?.computers_revoked, 2);
+  });
+
+  await ctx.step('a repeated deactivation → 200 and records no second offboarding', async () => {
+    (await deactivate()).status(200).body().has('$.active', false);
+    await offboardingEvent(owner, team.id, member.userId!);
+  });
+
+  await ctx.step('the machines stay the member\'s: they still list and unpair both', async () => {
+    const r = await asMember.get('/v1/tunnel/connections');
+    r.status(200);
+    const listed = r.json<any[]>().map((m) => m.tunnelId);
+    for (const machine of [machines.personal, machines.shared]) {
+      assert.ok(listed.includes(machine.tunnelId), `the member lists ${machine.tunnelId}`);
+      (await asMember.del('/v1/tunnel/connections/:tunnelId', { params: { tunnelId: machine.tunnelId } })).status(200);
+    }
   });
 });

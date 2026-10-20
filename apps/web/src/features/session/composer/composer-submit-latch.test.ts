@@ -366,6 +366,33 @@ describe('the composer submits through the latch', () => {
     );
   });
 
+  test('the dispatch ref is fresh before a prefill submit in the same commit', () => {
+    // The prefill effect submits in the commit that delivers the prefill. A
+    // passive refresh runs after it there, so that submit sent the previous
+    // render's agent, model and effort. A layout effect runs first.
+    const wiring = between('const dispatchSubmissionRef = useRef', 'const submitLatchRef = useRef');
+    expect(wiring.replace(/\s+/g, ' ')).toContain(
+      'useLayoutEffect(() => { dispatchSubmissionRef.current = dispatchSubmission; });',
+    );
+  });
+
+  test('the dispatch closure lists commandsResolved in its deps, beside commands', () => {
+    // The unresolved-chip guard (KRTX-1903) reads `commandsResolved` inside
+    // `dispatchSubmission`. The list and the bit flip together in today's
+    // hosts (both derive from one query datum), but nothing obliges a host to
+    // keep that coincidence — the bit is a separate prop. A deps array that
+    // omits it freezes the closure on the first render's value: a chip +
+    // attachment stays refused after the list resolves (and exhaustive-deps
+    // flags the omission today).
+    const dispatch = between(
+      'const dispatchSubmission = useCallback(',
+      'const dispatchSubmissionRef = useRef',
+    );
+    const deps = dispatch.slice(dispatch.lastIndexOf('['), dispatch.lastIndexOf(']') + 1);
+    expect(deps).toContain('commandsResolved');
+    expect(deps).toContain('commands');
+  });
+
   test('a stashed dispatch reports whether the host took the draft', () => {
     // Every refusal before the host is a bare `return;`, which `dispatchLatched`
     // reads as "give the stash back". Only three exits count as taken.
@@ -451,8 +478,14 @@ describe('the composer submits through the latch', () => {
     );
     // The tray shows the refused files again: the sent cache lets go of their pictures, unrevoked.
     expect(failed).toContain('disownSentAttachmentPreviews(sentFiles);');
-    // The host releases after its POST: the composer never forgets an upload.
-    expect(code()).not.toContain('.forget(');
+    // The host releases a send's uploads after its POST: the composer never
+    // forgets one. Its single release is on unmount, for the tray's finished
+    // uploads a draft keeps by handle. Those are listed, never handed off to a
+    // send, so the release cannot reach a send's uploads.
+    expect(code().split('.forget(').length - 1).toBe(1);
+    expect(code()).toContain(
+      'promptAttachmentsRef.current.forget(finishedUploadsRef.current.map(({ uploadId }) => uploadId));',
+    );
   });
 
   test('the composer never revokes a picture a Send took', () => {

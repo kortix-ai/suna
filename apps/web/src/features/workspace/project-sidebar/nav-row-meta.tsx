@@ -1,26 +1,15 @@
 'use client';
 
-import {
-  capabilityTabHref,
-  reviewHref,
-} from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { repoNavLabel } from '@/features/workspace/project-sidebar/footer/files-nav-label';
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { useAppsRowVisible } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
+import { filesRow } from '@/features/workspace/project-sidebar/footer/files-nav-label';
 import {
   CustomizeGlyph,
-  useCapabilityTab,
+  useProjectNavRows,
 } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useTranslations } from '@/i18n/use-translations';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan, useProjectPageCans } from '@/lib/use-project-can';
 import type { SidebarNavItemId } from '@/stores/sidebar-nav-store';
-import { useFeatureFlag } from '@kortix/sdk/react';
-import {
-  AlarmIcon,
-  AppWindowIcon,
-  FoldersIcon,
-  GitBranchIcon,
-  TrayIcon,
-} from '@phosphor-icons/react';
+import { AppWindowIcon, FoldersIcon, HardDrivesIcon } from '@phosphor-icons/react';
 import { useMemo, type ReactNode } from 'react';
 
 export interface NavRowMeta {
@@ -38,20 +27,15 @@ export interface NavRowMeta {
 export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemId, NavRowMeta>> {
   const t = useTranslations('sidebar');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const customizeTab = useCapabilityTab(projectId);
-  const apps = useFeatureFlag(projectId, 'apps');
-  const reminders = useFeatureFlag(projectId, 'reminders');
-  const volumes = useFeatureFlag(projectId, 'drives');
-  const canReview = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_REVIEW_READ).allowed === true;
-  const canReadFiles = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
-  const filesLabel = repoNavLabel(volumes.enabled);
-  const filesListed = canReadFiles.allowed || canReadFiles.isLoading;
+  const { customize: customizeTab, files: filesTarget } = useProjectNavRows(projectId);
+  const appsVisible = useAppsRowVisible(projectId);
 
   // Memoized on the gates, not rebuilt per render: the Customize sidebar
   // modal memoizes its rows on this object, and a fresh one per render would
   // re-render every row on every drag frame.
   return useMemo(() => {
     const base = `/projects/${projectId}`;
+    const files = filesTarget ? filesRow(projectId, filesTarget) : null;
     return {
       ...(customizeTab
         ? {
@@ -62,7 +46,7 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
             },
           }
         : {}),
-      ...(apps.enabled
+      ...(appsVisible
         ? {
             apps: {
               label: tI18nComplete.raw('text89dd748442c1'),
@@ -71,31 +55,15 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
             },
           }
         : {}),
-      ...(canReview
-        ? { review: { label: t('review'), icon: <TrayIcon />, href: reviewHref(projectId) } }
-        : {}),
-      ...(reminders.enabled
-        ? { reminders: { label: t('reminders'), icon: <AlarmIcon />, href: `${base}/reminders` } }
-        : {}),
-      ...(filesListed
+      ...(files
         ? {
             files: {
-              label: t(filesLabel),
-              icon: filesLabel === 'repo' ? <GitBranchIcon /> : <FoldersIcon />,
-              href: `${base}/files`,
+              label: t(files.label),
+              icon: files.label === 'drive' ? <HardDrivesIcon /> : <FoldersIcon />,
+              href: files.href,
             },
           }
         : {}),
     };
-  }, [
-    t,
-    tI18nComplete,
-    projectId,
-    customizeTab,
-    apps.enabled,
-    reminders.enabled,
-    canReview,
-    filesListed,
-    filesLabel,
-  ]);
+  }, [t, tI18nComplete, projectId, customizeTab, appsVisible, filesTarget]);
 }

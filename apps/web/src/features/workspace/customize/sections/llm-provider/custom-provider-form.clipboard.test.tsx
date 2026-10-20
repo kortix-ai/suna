@@ -6,17 +6,32 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 const successToast = mock(() => {});
 const errorToast = mock(() => {});
 const upsertProjectSecret = mock(async () => {});
-mock.module('@/components/ui/toast', () => ({ successToast, errorToast }));
+const uiToastMock = () => ({ successToast, errorToast });
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('@/i18n/use-translations', () => ({
-  useTranslations: () => ({ raw: (key: string) => `localized:${key}` }),
+  useTranslations: () =>
+    Object.assign((key: string) => `localized:${key}`, { raw: (key: string) => `localized:${key}` }),
 }));
-mock.module('@kortix/sdk', () => ({ upsertProjectSecret }));
+// Spread the real SDK modules: the form's import graph (the Shiki snippet)
+// reaches other SDK exports, and a bare stub breaks module linking.
+const realSdk = await import('@kortix/sdk');
+mock.module('@kortix/sdk', () => ({ ...realSdk, upsertProjectSecret }));
+const realSdkReact = await import('@kortix/sdk/react');
 mock.module('@kortix/sdk/react', () => ({
+  ...realSdkReact,
   qk: { project: { secrets: (id: string) => ['secrets', id] } },
   refreshProjectProviderState: mock(() => {}),
 }));
+const realMotion = await import('motion/react');
+// mock.module replaces the module WHOLESALE: a hand-listed stub deletes every
+// export it omits, and the missing name surfaces as a SyntaxError in whatever
+// file imports it next (here this file's own subject, via its UI imports).
+// Spread the real module.
 mock.module('motion/react', () => ({
+  ...realMotion,
   AnimatePresence: ({ children }: { children: ReactNode }) => children,
+  MotionConfig: ({ children }: { children: ReactNode }) => children,
   m: { span: ({ children }: { children: ReactNode }) => <span>{children}</span> },
 }));
 const { CustomProviderForm } = await import('./custom-provider-form');

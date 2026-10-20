@@ -25,7 +25,6 @@ import { ChatGPT } from '@/features/icon/icons/chat-gpt';
 import { Claude } from '@/features/icon/icons/claude';
 import { Github } from '@/features/icon/icons/github';
 import { OpenClaw } from '@/features/icon/icons/open-claw';
-import { Viktor } from '@/features/icon/icons/viktor';
 import { Zapier } from '@/features/icon/icons/zapier';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useIsMobile } from '@/hooks/utils';
@@ -151,8 +150,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
         return <Zapier />;
       case 'openclaw':
         return <OpenClaw />;
-      case 'viktor':
-        return <Viktor />;
       case 'chatgpt':
         return <ChatGPT />;
       case 'claude':
@@ -270,7 +267,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 <Link
                   href="/"
                   aria-label={tHardcodedUi.raw('i18nComplete.text7ecec93ed268')}
-                  className="hit-area-4 group-data-[state=open]/kortix-logo:bg-secondary group-data-[state=open]/kortix-logo:text-foreground flex shrink-0 items-center"
+                  className="group-data-[state=open]/kortix-logo:bg-secondary group-data-[state=open]/kortix-logo:text-foreground flex h-16 shrink-0 items-center"
                 >
                   <KortixLogo size={15} variant="logomark" />
                 </Link>
@@ -411,13 +408,13 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             )}
 
             {user ? (
-              <Button size="sm" asChild>
+              <Button size="sm" asChild className="hit-area-y-3">
                 <Link href={projectsHref} prefetch>
                   {tHardcodedUi.raw('i18nComplete.text04e2a9728af7')}
                 </Link>
               </Button>
             ) : (
-              <Button size="sm" asChild>
+              <Button size="sm" asChild className="hit-area-y-3">
                 <Link href={CTA_LINK} onClick={trackCtaSignup}>
                   {tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}
                 </Link>
@@ -428,7 +425,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               onClick={toggleDrawer}
               variant="ghost"
               size="icon-sm"
-              className="md:hidden"
+              className="size-12 md:hidden"
               aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
             >
               <Menu className="size-5" />
@@ -448,7 +445,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               href="/"
               aria-label={tHardcodedUi.raw('i18nComplete.text7ecec93ed268')}
               onClick={handleDrawerNavClick('/')}
-              className="flex items-center gap-2"
+              className="flex h-16 items-center gap-2"
             >
               <KortixLogo size={15} variant="logomark" />
               {isPending('/') && <Loading variant="spokes" />}
@@ -457,7 +454,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               onClick={toggleDrawer}
               variant="ghost"
               size="icon"
-              className="rounded-full"
+              className="size-12 rounded-full"
               aria-label={tHardcodedUi.raw('componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu')}
             >
               <X className="size-5" />

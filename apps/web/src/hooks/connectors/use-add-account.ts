@@ -4,15 +4,20 @@ import {
   listConnections,
   reconcileConnection,
   reconcileMemberConnection,
+  renameConnection,
   type AdminConnector,
+  type Connection,
 } from '@kortix/sdk';
 import { useProjectAccountId } from '@kortix/sdk/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
-import { errorToast } from '@/components/ui/toast';
+import { errorToast, warningToast } from '@/components/ui/toast';
 import { proposeAccountLabel } from '@/features/workspace/capabilities/connectors/install/install';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
-import { startDiscoveredSignIn } from '@/features/workspace/customize/sections/connector-oauth2-start';
+import {
+  signInOrReason,
+  startDiscoveredSignIn,
+} from '@/features/workspace/customize/sections/connector-oauth2-start';
 import {
   connectorConnectionRows,
   newAccountGrantees,
@@ -25,7 +30,9 @@ import { useTranslations } from '@/i18n/use-translations';
 /**
  * Add one account to a connector. The connector profile is the project's; the
  * ACCOUNT carries who may use it: only the caller, everyone in the project, or
- * picked people and groups (`NewAccountDraft`).
+ * picked people and groups (`NewAccountDraft`). A shared account on a
+ * connector whose only shared account is the empty one made with it reuses
+ * that one (`emptyProjectSlot`), so it stays the connector's default.
  *
  * Then sign it in at once:
  * - a managed provider (Composio, Pipedream) runs its hosted Connect Link;
@@ -47,6 +54,7 @@ export function useAddAccount({
   onCredential: (target: { connectionId: string; owner: 'project' | 'me' }) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tPages = useTranslations('connectorPages');
   const accountId = useProjectAccountId(projectId);
   // Same key and fetcher as `ConnectionsList`, so both share one cache entry.
   const connectionsQuery = useQuery({
@@ -65,11 +73,28 @@ export function useAddAccount({
       if (draft.audience === 'private') {
         return reconcileMemberConnection(projectId, { connector_alias: connector.slug, label });
       }
-      const connection = await reconcileConnection(projectId, {
-        connector_alias: connector.slug,
-        owner_type: 'project',
-        label,
-      });
+      // The empty shared account the server made with the connector IS the
+      // project's account: sign that one in. A second unpinned shared account
+      // leaves the connector with no default, so its sign-in never loads the
+      // tools. Read the list fresh: someone may have signed the slot in since.
+      const { data } = await connectionsQuery.refetch();
+      const rows = connectorConnectionRows(data?.connections, connector.slug);
+      const slot = emptyProjectSlot(connector, rows);
+      // The proposed name numbers past the slot itself ("<name> 2"): the slot
+      // keeps its name unless the user typed one of their own.
+      const proposal = proposeAccountLabel(
+        displayName,
+        rows.map((row) => row.label),
+      );
+      const connection = !slot
+        ? await reconcileConnection(projectId, {
+            connector_alias: connector.slug,
+            owner_type: 'project',
+            label,
+          })
+        : label === slot.label || label === proposal
+          ? slot
+          : await renameConnection(projectId, slot.connection_id, label);
       if (draft.audience === 'members') {
         await grantConnectionAccess(
           accountId ?? '',
@@ -91,20 +116,16 @@ export function useAddAccount({
         owner: draft.audience === 'private' ? ('me' as const) : ('project' as const),
       };
       // An MCP server that signs in with OAuth: straight to its consent page.
+      // Without one-click OAuth, credential entry; a start that failed says why.
       if (connector.provider === 'mcp') {
-        try {
-          const url = await startDiscoveredSignIn(
-            projectId,
-            connection.connection_id,
-            window.location.href,
-          );
-          if (url) {
-            window.location.assign(url);
-            return;
-          }
-        } catch {
-          // No one-click OAuth here: fall through to credential entry.
+        const { url, error } = await signInOrReason(() =>
+          startDiscoveredSignIn(projectId, connection.connection_id, window.location.href),
+        );
+        if (url) {
+          window.location.assign(url);
+          return;
         }
+        if (error) warningToast(tPages('addMcpSignInFailed', { name: displayName, reason: error }));
       }
       onAdded();
       onCredential(target);
@@ -117,14 +138,16 @@ export function useAddAccount({
   });
 
   const pending = createAccount.isPending || addManaged.isPending;
-  /** The next free name for a new account: `<name>`, `<name> 2`, … */
-  const proposedLabel = () =>
-    proposeAccountLabel(
+  /** The next free name for a new account: `<name>`, `<name> 2`, … The
+   *  unlisted empty slot does not take a name: "Everyone" reuses it. */
+  const proposedLabel = () => {
+    const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
+    const slot = emptyProjectSlot(connector, rows);
+    return proposeAccountLabel(
       displayName,
-      connectorConnectionRows(connectionsQuery.data?.connections, connector.slug).map(
-        (row) => row.label,
-      ),
+      rows.filter((row) => row !== slot).map((row) => row.label),
     );
+  };
   const submit = (draft: NewAccountDraft) => {
     if (pending) return;
     if (isManagedConnectorProvider(connector.provider)) {
@@ -136,4 +159,25 @@ export function useAddAccount({
   };
 
   return { submit, pending, proposedLabel };
+}
+
+/**
+ * The connector's empty shared account: the row the server made with the
+ * connector (`metadata.default_slot` `'project'`), never signed in, and the
+ * only shared account. Older servers send no `authorized`: no slot then. A
+ * connector that needs no credential (`requestAuthType` `'none'`) has none:
+ * its first account already works.
+ */
+export function emptyProjectSlot(
+  connector: AdminConnector,
+  rows: readonly Connection[],
+): Connection | null {
+  // `none` means the account works unsigned, for a direct connector only: a
+  // managed app reports `none` because Composio holds its sign-in.
+  if (connector.requestAuthType === 'none' && !isManagedConnectorProvider(connector.provider)) {
+    return null;
+  }
+  const shared = rows.filter((row) => row.owner_type === 'project');
+  const slot = shared.length === 1 ? shared[0]! : null;
+  return slot?.authorized === false && slot.metadata?.default_slot === 'project' ? slot : null;
 }

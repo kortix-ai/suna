@@ -27,6 +27,7 @@ import { approvalPageUrl } from '../../setup-links/token';
 import { lookupEmailsByUserIds } from '../lib/access';
 
 import type { SessionAuditAction as SessionAuditActionRow } from '@kortix/api-contract';
+import type { ApprovalResolvers } from './approval-authority';
 
 export interface SessionAuditActionsResult {
   session_id: string;
@@ -46,6 +47,18 @@ export interface ReadSessionAuditActionsParams {
    *  `routes/project-audit.ts` for why). */
   audited: boolean;
   limit: number;
+  /**
+   * May the CALLER approve or deny this session's pending calls? The verdict
+   * `POST /approvals/:executionId` enforces (`approvalCallerOf` +
+   * `mayResolveApproval`). Today's rule — a project manager or the session's
+   * launcher — depends only on the session, so one answer covers every pending
+   * row. Asked at most once, and only when a row is pending: the badge poll of
+   * a session with nothing pending pays no authority probe.
+   */
+  canResolve: () => Promise<boolean>;
+  /** Who decides this session's pending calls, as a class (`approvalResolvers`):
+   *  a client names it to a viewer whose `can_resolve` is false. */
+  resolvers: ApprovalResolvers;
 }
 
 /**
@@ -57,7 +70,7 @@ export interface ReadSessionAuditActionsParams {
 export async function readSessionAuditActions(
   params: ReadSessionAuditActionsParams,
 ): Promise<SessionAuditActionsResult> {
-  const { projectId, sessionId, agentName, audited, limit } = params;
+  const { projectId, sessionId, agentName, audited, limit, canResolve, resolvers } = params;
 
   const rows = await db
     .select({
@@ -111,6 +124,12 @@ export async function readSessionAuditActions(
     for (const conn of conns) slugByConnector.set(conn.connectorId, conn.slug);
   }
 
+  // The resolve route's own pending test (`isPendingApproval`): a decided row
+  // has nothing left to resolve, so it never offers a decision.
+  const isPending = (r: (typeof rows)[number]) =>
+    r.status === 'pending_approval' && !r.approvedBy && !r.resolvedAt;
+  const callerMayResolve = rows.some(isPending) ? await canResolve() : false;
+
   return {
     session_id: sessionId,
     agent: agentName,
@@ -138,6 +157,10 @@ export async function readSessionAuditActions(
         r.status === 'pending_approval' && !r.resolvedAt
           ? approvalPageUrl(projectId, r.executionId, sessionId)
           : null,
+      // KRTX-1724: true only when THIS caller's POST would succeed, so a
+      // client offers Approve / Deny to the people who can use them.
+      can_resolve: isPending(r) && callerMayResolve,
+      resolvers: isPending(r) ? resolvers : null,
     })),
   };
 }

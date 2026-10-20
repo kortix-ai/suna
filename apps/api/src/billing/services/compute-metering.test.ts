@@ -13,7 +13,6 @@ let billingEnabled = true;
 mock.module('../../config', () => ({
   SANDBOX_VERSION: '0.0.0-test',
   KNOWN_PROVIDERS: [],
-  KORTIX_MARKUP: 1,
   PLATFORM_FEE_MARKUP: 1,
   getToolCost: () => 0,
   parseAllowedProviders: () => [],
@@ -52,7 +51,7 @@ mock.module('./wallet-debits', () => ({
 mock.module('../repositories/credit-accounts', () => ({
   getCreditAccount: async () => {
     storageCalls.push('getCreditAccount');
-    return { billingModel: 'per_seat', tier: 'free' };
+    return { tier: 'free' };
   },
   getCreditBalance: async () => null,
   updateCreditAccount: async () => undefined,
@@ -178,7 +177,7 @@ describe('the partial-billing tick', () => {
 });
 
 describe('a failed compute settlement', () => {
-  // 10 minutes of 2 vCPU / 4 GB / 20 GB: 600 s * ($0.201312 / 3600 s) = $0.03355.
+  // 10 minutes of 2 vCPU / 4 GB / 20 GB: 600 s * ($0.109441 / 3600 s) = $0.01824.
   test('releases the window when the ledger holds no debit under the key', async () => {
     staleRows = [staleRow('sess-123')];
     claimResult = true;
@@ -207,15 +206,16 @@ describe('calculateComputeCost', () => {
   test.each([
     ['a zero-length window', SPEC, 0, 0],
     ['a negative window', SPEC, -5, 0],
-    ['one hour of 2 vCPU / 4 GB / 20 GB', SPEC, 3600, 0.201312],
-    ['one minute, with no minimum charge', SPEC, 60, 0.201312 / 60],
-    ['twice the machine for twice the time', { cpuCores: 4, memoryGb: 8, diskGb: 40, gpuCount: 0 }, 7200, 0.805248],
+    ['one hour of 2 vCPU / 4 GB / 20 GB', SPEC, 3600, 0.10944109589041096],
+    ['one minute, with no minimum charge', SPEC, 60, 0.10944109589041096 / 60],
+    ['twice the machine for twice the time', { cpuCores: 4, memoryGb: 8, diskGb: 40, gpuCount: 0 }, 7200, 4 * 0.10944109589041096],
   ])('%s', (_name, spec, seconds, cost) => {
     expect(calculateComputeCost(spec, seconds)).toBeCloseTo(cost, 8);
   });
 
-  test.each(['e2b', 'platinum'] as const)('%s bills the one hosted customer rate', (provider) => {
-    expect(calculateComputeCost(SPEC, 3600, provider)).toBeCloseTo(0.201312, 8);
+  // `e2b` is a legacy stored value (E2B support is discontinued); its window still closes.
+  test.each(['platinum', 'daytona', 'e2b'])('%s bills the one hosted customer rate', (provider) => {
+    expect(calculateComputeCost(SPEC, 3600, provider)).toBeCloseTo(0.10944109589041096, 8);
   });
 });
 

@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ProjectPageHeader } from './project-page-header';
 
-// The e2e journeys 18-apps-ui and 36-reminders-ui find these pages by the h1.
+// The e2e journey 18-apps-ui finds the page by the h1.
 test('the standalone page header gives the page exactly one visible h1, named by its title', () => {
   const html = renderToStaticMarkup(createElement(ProjectPageHeader, { title: 'Apps' }));
   expect(html.match(/<h1\b/g)?.length).toBe(1);

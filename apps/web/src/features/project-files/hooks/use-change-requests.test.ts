@@ -1,4 +1,7 @@
+import { Glob } from 'bun';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import type { ChangeRequest } from '../api/change-requests';
 import { findCachedChangeRequest, type CachedListEntry } from './use-change-requests';
@@ -71,6 +74,31 @@ describe('findCachedChangeRequest', () => {
     expect(hit?.key).toEqual(['list', 'all']);
   });
 
+  /**
+   * The Changes panel's `useInfiniteQuery` entry sits under the same list
+   * scope as `{ pages, pageParams }`. A scan that read only
+   * `data.change_requests` threw on it during render (KRTX-2316).
+   */
+  test('reads the paged panel entry and scans past it', () => {
+    const paged = cr('p', { status: 'merged' });
+    const target = cr('t', { status: 'closed' });
+    const entries: CachedListEntry[] = [
+      [
+        ['list', 'merged', 'pages'],
+        {
+          pages: [{ change_requests: [cr('x')] }, { change_requests: [paged] }],
+          pageParams: [undefined, 'c1'],
+        },
+      ],
+      entry(['list', 'closed'], [target]),
+    ];
+    expect(findCachedChangeRequest(entries, 't')).toEqual({ cr: target, key: ['list', 'closed'] });
+    expect(findCachedChangeRequest(entries, 'p')).toEqual({
+      cr: paged,
+      key: ['list', 'merged', 'pages'],
+    });
+  });
+
   test('tolerates a cache entry that has no data yet', () => {
     expect(findCachedChangeRequest([entry(['list', 'open'], undefined)], 'a')).toBeUndefined();
   });
@@ -85,5 +113,25 @@ describe('findCachedChangeRequest', () => {
 
   test('an empty id never matches', () => {
     expect(findCachedChangeRequest([entry(['list', 'open'], [cr('')])], '')).toBeUndefined();
+  });
+});
+
+/**
+ * The count badge and both command palette reads share the `list(…, 'open')`
+ * entry. One reader without the 100-row limit got the server's 50-row page and
+ * wrote it over the others, so the badge dropped from 73 to 50 (KRTX-2316).
+ */
+describe("the shared 'open' change-request entry", () => {
+  test('every reader builds it with openChangeRequestListQuery', () => {
+    const src = join(import.meta.dir, '../../..');
+    const owners: string[] = [];
+    for (const file of new Glob('**/*.{ts,tsx}').scanSync(src)) {
+      if (file.includes('.test.')) continue;
+      const hits = readFileSync(join(src, file), 'utf8').match(
+        /changeRequestKeys\.list\([^)]*'open'\)/g,
+      );
+      for (const _ of hits ?? []) owners.push(file);
+    }
+    expect(owners).toEqual(['features/project-files/hooks/use-change-requests.ts']);
   });
 });

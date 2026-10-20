@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { TranscriptReadError } from "./runtime-read-failure";
 import {
   readTranscriptPages,
   retryTranscriptCapture,
@@ -104,6 +105,26 @@ test("a FIRST page that fails still throws — nothing was read at all", async (
   await expect(
     readTranscriptPages(async () => new Response("", { status: 503 }), true),
   ).rejects.toThrow("503");
+});
+
+test("a failed first page throws a typed error that carries the status", async () => {
+  // The callers classify the expected stopped-box and gone-transcript states
+  // by STATUS, not by parsing message text.
+  const error = await readTranscriptPages(
+    async () => new Response("", { status: 404 }),
+    true,
+  ).catch((err: unknown) => err);
+  expect(error).toBeInstanceOf(TranscriptReadError);
+  expect((error as TranscriptReadError).status).toBe(404);
+  // The message stays the spelling every existing log pattern and test reads.
+  expect((error as TranscriptReadError).message).toBe("Transcript read failed: HTTP 404");
+
+  const stale = await readTranscriptPages(
+    async () => new Response("", { status: 503 }),
+    true,
+  ).catch((err: unknown) => err);
+  expect(stale).toBeInstanceOf(TranscriptReadError);
+  expect((stale as TranscriptReadError).status).toBe(503);
 });
 
 test("a complete walk reports complete", async () => {

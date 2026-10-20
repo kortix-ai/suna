@@ -61,7 +61,9 @@ export function registerGatewayPlaygroundRoutes(): void {
         loaded.userId,
         loaded.row.accountId,
         projectId,
-        PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+        // The playground spends credits on real model calls: a write, gated on
+        // the leaf that changes the project's models, not on a spend READ.
+        PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
       );
 
       const body = await c.req.json();

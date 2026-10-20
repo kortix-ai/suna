@@ -5,30 +5,34 @@
 // in by adapters later.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { connectorCalls, projectSessions } from '@kortix/db';
-import { and, eq, inArray } from 'drizzle-orm';
 import { relayReviewCard } from '../../channels/turn-relay';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
+import { isUuid } from '../../shared/validate';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { mayResolveApproval } from '../lib/approval-authority';
-import { actorOf } from '../../middleware/actor';
+import { approvalCallerOf } from '../lib/http-approval-caller';
+import { loadVisibleSession } from '../lib/access';
+import { projectReadView } from '../lib/project-read-view';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { isAdaptedId } from '../review-adapters';
 import {
+  REVIEW_PAGE_DEFAULT_LIMIT,
+  REVIEW_PAGE_MAX_LIMIT,
   type ReviewSegment,
   applyVerdict,
   bulkApplyVerdict,
+  decodeInboxCursor,
+  getInboxItem,
   getReviewItemById,
   insertReviewItem,
   isReviewVerdict,
   isSubmittableKind,
   listInboxItems,
+  reviewSummary,
   serializeReviewItem,
 } from '../review-items';
 
@@ -37,20 +41,71 @@ const RISKS = ['none', 'low', 'medium', 'high'] as const;
 const SEGMENTS = ['needs_you', 'waiting', 'done'] as const;
 
 export function registerReviewItemsRoutes(): void {
-  // GET /v1/projects/:projectId/review/items?segment=&kind=
+  // GET /v1/projects/:projectId/review/summary
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/review/summary',
+      tags: ['review'],
+      summary: 'Count the review items that need you',
+      description:
+        'How many review items wait on the caller (the Needs you segment of `GET /review/items`), in total and by originating session. Counts only: the always-mounted badges poll this, not the list.',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+      responses: {
+        200: json(
+          z.object({
+            needs_you_total: z.number().int(),
+            needs_you_by_session: z.record(z.string(), z.number().int()),
+          }),
+          'Needs-you counts',
+        ),
+        ...errors(403, 404),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_REVIEW_READ,
+      );
+      return c.json(
+        await reviewSummary(
+          projectId,
+          () => approvalCallerOf(c, loaded, projectId),
+          await projectReadView(c, loaded),
+        ),
+        200,
+      );
+    },
+  );
+
+  // GET /v1/projects/:projectId/review/items?segment=&kind=&session_id=&limit=&cursor=
   projectsApp.openapi(
     createRoute({
       method: 'get',
       path: '/{projectId}/review/items',
       tags: ['review'],
       summary: 'List review items (approvals and change requests)',
+      description:
+        'One page of the inbox: Needs you, then Waiting, then Done, newest first within each. `limit` defaults to 50; above 200 answers 400. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page. A walk is not a snapshot: an item whose status changes between two pages can come back on a later page or be missed.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
         query: z.object({}).passthrough(),
       },
       responses: {
-        200: json(z.object({ review_items: z.array(AnyObject) }), 'Review items'),
+        200: json(
+          z.object({ review_items: z.array(AnyObject), next_cursor: z.string().nullable() }),
+          'Review items',
+        ),
         ...errors(400, 403, 404),
       },
     }),
@@ -74,91 +129,32 @@ export function registerReviewItemsRoutes(): void {
       if (kind && !KINDS.includes(kind as (typeof KINDS)[number])) {
         return c.json({ error: 'Invalid kind' }, 400);
       }
-
-      // `args_preview` can contain email bodies, recipients, URLs, and other
-      // sensitive values. The broad `project.review.read` leaf may list the row,
-      // but only the same human authority that can resolve the exact approval may
-      // receive its parameters. New rows that race this query fail closed because
-      // their execution id will not be present in this set.
-      let isManager = false;
-      try {
-        await assertProjectCapability(
-          c,
-          loaded.userId,
-          loaded.row.accountId,
-          projectId,
-          PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-        );
-        isManager = true;
-      } catch {
-        isManager = false;
+      const sessionId = normalizeString(c.req.query('session_id'));
+      if (sessionId && !isUuid(sessionId)) return c.json({ error: 'Invalid session_id' }, 400);
+      // normalizeString answers null for an absent param: test nullish, or
+      // Number(null) is 0 and every plain list is refused.
+      const rawLimit = normalizeString(c.req.query('limit'));
+      const limit = rawLimit == null ? REVIEW_PAGE_DEFAULT_LIMIT : Number(rawLimit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > REVIEW_PAGE_MAX_LIMIT) {
+        return c.json({ error: `limit must be an integer from 1 to ${REVIEW_PAGE_MAX_LIMIT}` }, 400);
       }
-      const pendingExecutions = await db
-        .select({
-          executionId: connectorCalls.executionId,
-          sessionId: connectorCalls.sessionId,
-          actingUserId: connectorCalls.actingUserId,
-        })
-        .from(connectorCalls)
-        .where(
-          and(
-            eq(connectorCalls.projectId, projectId),
-            eq(connectorCalls.status, 'pending_approval'),
-          ),
-        );
-      const sessionIds = [
-        ...new Set(
-          pendingExecutions
-            .map((execution) => execution.sessionId)
-            .filter((sessionId): sessionId is string => Boolean(sessionId)),
-        ),
-      ];
-      const sessions = sessionIds.length
-        ? await db
-            .select({
-              sessionId: projectSessions.sessionId,
-              createdBy: projectSessions.createdBy,
-              origin: projectSessions.origin,
-            })
-            .from(projectSessions)
-            .where(
-              and(
-                eq(projectSessions.projectId, projectId),
-                inArray(projectSessions.sessionId, sessionIds),
-              ),
-            )
-        : [];
-      const sessionById = new Map(sessions.map((session) => [session.sessionId, session]));
-      // The resolved actor carries the credential kind, so a personal PAT (the
-      // person's own CLI token) counts as the human it belongs to — same rule
-      // as the resolve endpoint itself.
-      const actor = await actorOf(c, loaded.row.accountId);
-      const previewExecutionIds = new Set(
-        pendingExecutions
-          .filter((execution) => {
-            const session = execution.sessionId
-              ? sessionById.get(String(execution.sessionId))
-              : undefined;
-            return mayResolveApproval({
-              isManager,
-              targetSessionOrigin: session?.origin ?? (execution.sessionId ? null : 'user'),
-              targetSessionCreatedBy:
-                session?.createdBy ?? (execution.sessionId ? null : execution.actingUserId),
-              callerUserId: loaded.userId,
-              callerAuthType: (c.get('authType') as string | undefined) ?? null,
-              callerCredentialKind: actor.credential.kind,
-              callerSessionId: callerKortixSessionId(c),
-            }).allowed;
-          })
-          .map((execution) => execution.executionId),
-      );
+      const rawCursor = normalizeString(c.req.query('cursor'));
+      const after = rawCursor ? decodeInboxCursor(rawCursor) : null;
+      if (rawCursor && !after) return c.json({ error: 'Invalid cursor' }, 400);
 
-      const items = await listInboxItems(projectId, {
-        segment: segment as ReviewSegment | undefined,
-        kind: kind as (typeof KINDS)[number] | undefined,
-        canExposeConnectorCallPreview: (execution) => previewExecutionIds.has(execution.executionId),
-      });
-      return c.json({ review_items: items });
+      const page = await listInboxItems(
+        projectId,
+        {
+          segment: segment as ReviewSegment | undefined,
+          kind: kind as (typeof KINDS)[number] | undefined,
+          sessionId: sessionId ?? undefined,
+          limit,
+          after,
+        },
+        () => approvalCallerOf(c, loaded, projectId),
+        await projectReadView(c, loaded),
+      );
+      return c.json({ review_items: page.items, next_cursor: page.nextCursor });
     },
   );
 
@@ -190,9 +186,16 @@ export function registerReviewItemsRoutes(): void {
         PROJECT_ACTIONS.PROJECT_REVIEW_READ,
       );
 
-      const item = await getReviewItemById(c.req.param('reviewItemId'), projectId);
+      // A native id, `cr:<cr_id>` or a pending `call:<execution_id>`, in the
+      // list's shape: a link to an item does not depend on its page.
+      const item = await getInboxItem(
+        projectId,
+        c.req.param('reviewItemId'),
+        () => approvalCallerOf(c, loaded, projectId),
+        await projectReadView(c, loaded),
+      );
       if (!item) return c.json({ error: 'Review item not found' }, 404);
-      return c.json({ review_item: serializeReviewItem(item) });
+      return c.json({ review_item: item });
     },
   );
 
@@ -254,19 +257,14 @@ export function registerReviewItemsRoutes(): void {
           ? (body.detail as Record<string, unknown>)
           : {};
 
-      let originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
-      if (originSessionId) {
-        const [sessionRow] = await db
-          .select({ sessionId: projectSessions.sessionId })
-          .from(projectSessions)
-          .where(
-            and(
-              eq(projectSessions.sessionId, originSessionId),
-              eq(projectSessions.projectId, projectId),
-            ),
-          )
-          .limit(1);
-        if (!sessionRow) originSessionId = null;
+      // The origin session must be one the caller may open: an item raised
+      // against another member's private session would surface there.
+      const originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
+      if (
+        originSessionId &&
+        !(await loadVisibleSession(loaded, originSessionId, c.get('sessionId') ?? null, callerKortixSessionId(c)))
+      ) {
+        return c.json({ error: 'Session not found' }, 404);
       }
 
       const row = await insertReviewItem({
@@ -322,7 +320,7 @@ export function registerReviewItemsRoutes(): void {
       const projectId = c.req.param('projectId');
       const reviewItemId = c.req.param('reviewItemId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
         c,
@@ -380,7 +378,7 @@ export function registerReviewItemsRoutes(): void {
     async (c: any) => {
       const projectId = c.req.param('projectId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'write');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
         c,

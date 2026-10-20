@@ -181,13 +181,10 @@ export interface ConvergeSessionConfigOptions {
    * `wake` (default): the resume and restart schedule, both clocks.
    * `trigger`: one attempt plus the quick ladder for a box that is not
    * answering yet. A busy session or an old daemon ends the attempt: the next
-   * turn end or base move triggers again. Used by the base-move trigger, which
-   * fires often.
-   * `turn-start`: exactly ONE attempt and zero sleeps. A prompt is waiting on
-   * this; it must never sit behind a retry ladder. A box that could not
-   * converge now converges at the next prompt, base move or wake.
+   * turn end or base move triggers again. Used by the turn-end and base-move
+   * triggers, which fire often.
    */
-  schedule?: 'wake' | 'trigger' | 'turn-start';
+  schedule?: 'wake' | 'trigger';
   /** Pull the session branch. Default true (the wake path). Triggers pass false. */
   refreshRepo?: boolean;
 }
@@ -213,8 +210,6 @@ export async function convergeSessionConfig(
         }),
       );
       if ('done' in attempt) return attempt.done;
-      // One attempt, no sleeps: a prompt is waiting.
-      if (options.schedule === 'turn-start') return attempt.as;
       if (options.schedule === 'trigger' && attempt.retry === 'slow') return attempt.as;
       const delay =
         attempt.retry === 'transient' && soon < RETRY_SOON_MS.length

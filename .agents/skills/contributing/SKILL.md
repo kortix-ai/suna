@@ -54,15 +54,15 @@ Done when the commit exists and the hooks passed.
 
 ### 3. Verify in your box
 
-Run the narrowest relevant test first, then `pnpm test` (the **testing** skill). Then run
+Run T0 (`tsc` and lint for the packages you touched) and the one test you wrote or changed
+(the **testing** skill). On a Mac, suite-wide `pnpm test` modes exit `2`: the suite runs in
+CI. A diff that no test reads (docs, a skill, a standalone script) needs no run. Then run
 the changed behaviour on your worktree's stack: `pnpm worktree start <slug>` prints the web
 and API ports. Exercise the real surface: the HTTP route with `curl`, the real CLI process,
 or the page with agent-browser. No CI lane runs these for you before the merge.
-`pnpm test` writes `tests/attestations/<branch>.json` and deletes every other file
-there: commit `tests/attestations/` (`git add -A tests/attestations`). If a merge of
-`origin/main` conflicts on the legacy `tests/test-attestation.json`, delete it. The pre-push hook and the
-merge gate run `pnpm test:verify` against the pushed head and reject a stale or red
-attestation. Never push with `--no-verify`.
+No hook or merge gate requires a test run on a PR into `dev`. If a merge of `origin/dev`
+conflicts on a leftover `tests/attestations/` or `tests/test-attestation.json` file, delete it:
+the attestation system was removed on 2026-10-16.
 
 Done when the commands you will list under "How was this tested?" passed, with output
 captured.
@@ -196,14 +196,15 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 | Event | Workflows | Blocks? |
 | --- | --- | --- |
 | PR into `dev` | none. Adding `test` runs the `Tests` lanes once (~20 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
-| Push to `dev` (the merge) | every `Tests` lane (queued), `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. | no merge; a red `Tests` run blocks the next promotion |
-| Dispatch / schedule on `dev` | `Deploy Dev` and `Desktop`: dispatch only. `Tests`: daily. `drata`: daily. `CI`, `CodeQL`: weekly. | no |
-| PR into `staging` | the `Tests` lanes (skipped when the head SHA has a green `dev` run), `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
-| PR into `prod` | the same scanners plus `tests-release.yml` (dispatched by Promote to Production); its `full suite + quality gates` check is the only required check in the repo | yes |
+| Push to `dev` (the merge) | no `Tests` lane. `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. | no |
+| Dispatch / schedule on `dev` | `Deploy Dev` and `Desktop`: dispatch only. `Tests`: nightly (a red night comments on the commit). `drata`: daily. `CI`, `CodeQL`: weekly. | no |
+| PR into `staging` | none: Promote to Production opens and merges it | no |
+| PR into `prod` (release PR) | the release suite, once: `tests-release.yml` (contract lanes, deployed API smoke, browser journeys against staging) plus `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata`. `full suite + quality gates` requires every one green and is the only required check in the repo. | **yes, the only gate** |
 
 `tests/unit/sandbox-workflow.test.ts` fails when a workflow other than the label-gated
-`tests.yml` and `deploy-preview.yml` triggers on a pull request into `dev`. Move a new check to a schedule, a dispatch, the
-push to `dev`, or the release PRs, never to PRs into `dev`. GitHub-hosted runners are
+`tests.yml` and `deploy-preview.yml` triggers on a pull request into `dev`. Put a new check in the release suite on the PR into `prod`
+(one run per release tree), a schedule, or a dispatch. Never on PRs into `dev`, and never on the push to
+`dev` unless it is a seconds-long guard. GitHub-hosted runners are
 free on this public repo; the limit is the organization's concurrent-job cap, so a
 new `push: dev` workflow must queue (`cancel-in-progress: false` per ref), never run
 once per merge in parallel.

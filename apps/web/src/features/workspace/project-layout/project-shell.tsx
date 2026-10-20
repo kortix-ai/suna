@@ -1,5 +1,6 @@
 'use client';
 
+import { DriveUploadTray } from '@/features/project-files/components/drive-upload-tray';
 import { AppPreviewPoolLoader } from '@/features/apps/app-preview-pool-loader';
 import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
@@ -41,8 +42,14 @@ import {
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag, useGatewayCatalogSync } from '@kortix/sdk/react';
+import { getProject, getProjectDetail } from '@kortix/sdk';
+import {
+  contract,
+  qk,
+  useFeatureFlag,
+  useGatewayCatalogSync,
+  useSessionsNeedingInput,
+} from '@kortix/sdk/react';
 import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
 
 const CommandPalette = lazy(() =>
@@ -86,11 +93,25 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     enabled: !!projectId,
     ...contract('config'),
   });
+  // The owning account rides the bare project row (~10 ms on the server).
+  // `/detail` reads git (0.5–2.6 s on prod) and every billing read on the
+  // page, the model picker's gate included, waited behind it.
+  const { data: projectRow } = useQuery({
+    queryKey: qk.project.summary(projectId),
+    queryFn: () => getProject(projectId),
+    enabled: !!projectId,
+    ...contract('config'),
+  });
+  const projectAccountId = projectRow?.account_id ?? projectDetail?.project?.account_id;
 
   useGatewayCatalogSync(projectId);
   // Fill every Customize tab's cache on the first idle slot, so opening
   // Customize renders from memory instead of waiting on the API.
   useCustomizePrefetch(projectId);
+  // The one 30 s poll of GET needs-input for this project (KRTX-1739). The
+  // sidebar and the Sessions page read its cache (`useSessionNeedsYouCounts`):
+  // a poll in each would read up to twice per 30 s.
+  useSessionsNeedingInput(projectId);
 
   // Presence: this shell is mounted for EVERY /projects/[id] route and survives
   // in-project navigation, so mounting the warm hook here means "one ensure
@@ -142,10 +163,10 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // The project's owning account, falling back to the app-wide selected one
   // — the same resolution every account-scoped surface uses. Feeds the
   // `?customize=` redirect below, which can name an account-scoped section.
-  const shellAccountId = useSettingsAccountId(projectDetail?.project?.account_id);
+  const shellAccountId = useSettingsAccountId(projectAccountId);
   // An open project brands as ITS account (Enterprise branding), even when the
   // switcher's selected account is another one. Clears on unmount.
-  useBrandingScope(projectDetail?.project?.account_id);
+  useBrandingScope(projectAccountId);
 
   useEffect(() => {
     // Old bookmarks/links carry `?customize=<legacy-section-id>`. Files,
@@ -242,12 +263,12 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 
   return (
     // `resolved` is what keeps the sidebar's billing items from flickering:
-    // until project-detail lands we don't know this project's account, and a
+    // until the project row lands we don't know this project's account, and a
     // provisional fetch against the primary account would paint them once,
     // then unpaint them when the real account id swaps the cache slot.
     <BillingAccountProvider
-      accountId={projectDetail?.project?.account_id ?? null}
-      resolved={!!projectDetail}
+      accountId={projectAccountId ?? null}
+      resolved={!!projectAccountId}
     >
       <AppProviders
         showSidebar
@@ -264,6 +285,11 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         </div>
 
         <SettingsPanel projectId={projectId} />
+
+        {/* Drive uploads report here, on every page of the project, so a batch
+            started in one folder still shows its progress after the user moves
+            on. Empty, it renders nothing. */}
+        <DriveUploadTray />
 
         {/* App previews load here in the background and stay loaded while
             the project is open, so the Apps page shows them at once. */}

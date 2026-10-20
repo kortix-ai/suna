@@ -4,9 +4,11 @@
  * Header chip for this session's reminders (scheduled check-ins that re-prompt
  * the session). Renders nothing until the session has a reminder that can
  * still fire; then an alarm with the active count, and a popover to pause,
- * resume, or remove one, or to open the project Reminders page on this
+ * resume, or remove one, or to open the Customize Reminders tab on this
  * session. The session reminders read needs `project.session.start`, so a
- * read-only viewer's 403 simply leaves the chip hidden.
+ * read-only viewer's 403 simply leaves the chip hidden. The tab link shows only
+ * to a caller who has the tab (`capabilityAccess()`): a plain member manages
+ * their reminders here.
  */
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
@@ -16,6 +18,8 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Hint from '@/components/ui/hint';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { remindersHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { useCapabilityAccess } from '@/features/workspace/project-sidebar/project-settings-nav';
 import {
   formatFireTime,
   reminderTitle,
@@ -41,6 +45,7 @@ export function SessionRemindersIndicator({ runtimeSessionId }: { runtimeSession
   const reminders = useSessionReminders(gate.enabled ? projectId : null, sessionId);
   useRefetchAfterFire(reminders.data?.reminders, reminders.refetch);
   const now = useNow();
+  const hasTab = useCapabilityAccess(projectId).tabs.includes('reminders');
   // An agent sets reminders mid-turn with `kortix remind`; nothing announces
   // that to this query. The turn ending is the moment to look again.
   const working = useSessionWorking(projectId ?? '', sessionId ?? '', {
@@ -51,7 +56,7 @@ export function SessionRemindersIndicator({ runtimeSessionId }: { runtimeSession
   const wasWorking = useRef(isWorking);
   const queryClient = useQueryClient();
   useEffect(() => {
-    // The whole project prefix: the sidebar row and its count move with the chip.
+    // The whole project prefix: the Reminders tab moves with the chip.
     if (wasWorking.current && !isWorking && projectId) {
       void queryClient.invalidateQueries({ queryKey: qk.project.reminders(projectId) });
     }
@@ -137,16 +142,18 @@ export function SessionRemindersIndicator({ runtimeSessionId }: { runtimeSession
               </li>
             ))}
           </ul>
-          <div className="border-t px-4 py-2">
-            <Button asChild variant="ghost" size="sm" className="w-full justify-center">
-              <HoverPrefetchLink
-                href={`/projects/${projectId}/reminders?session=${sessionId}`}
-                onClick={() => setOpen(false)}
-              >
-                {t('manage')}
-              </HoverPrefetchLink>
-            </Button>
-          </div>
+          {hasTab ? (
+            <div className="border-t px-4 py-2">
+              <Button asChild variant="ghost" size="sm" className="w-full justify-center">
+                <HoverPrefetchLink
+                  href={`${remindersHref(projectId)}?session=${sessionId}`}
+                  onClick={() => setOpen(false)}
+                >
+                  {t('manage')}
+                </HoverPrefetchLink>
+              </Button>
+            </div>
+          ) : null}
         </PopoverContent>
       </Popover>
       <ConfirmDialog

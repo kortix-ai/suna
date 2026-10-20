@@ -4,6 +4,7 @@ import { ChainOfThought, ChainOfThoughtStep } from '@/components/ui/chain-of-tho
 import { DisclosureContent } from '@/components/ui/disclosure';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { memo } from 'react';
+import type { ToolCallBlock } from '@kortix/sdk';
 import type { Step } from '../action-panel/shared/group-steps';
 import { ActivityStep, iconFor } from './activity-step';
 import { ChainStepTrigger } from './chain-step-trigger';
@@ -45,12 +46,10 @@ import { samePartsList } from './same-parts';
 function ActivityGroupStepImpl({
   step,
   sessionId,
-  running,
   disableNavigation,
 }: {
-  step: Step;
+  step: Step<ToolCallBlock>;
   sessionId: string;
-  running: boolean;
   disableNavigation?: boolean;
 }) {
   const Icon = iconFor(step.parts[0]);
@@ -99,12 +98,11 @@ function ActivityGroupStepImpl({
         */}
         <div className="mt-3 pl-7">
           <ChainOfThought>
-            {step.parts.map((part) => (
-              <ChainOfThoughtStep key={part.id}>
+            {step.parts.map((call) => (
+              <ChainOfThoughtStep key={call.id}>
                 <ActivityStep
-                  part={part}
+                  call={call}
                   sessionId={sessionId}
-                  running={running}
                   disableNavigation={disableNavigation}
                 />
               </ChainOfThoughtStep>
@@ -137,13 +135,13 @@ function ActivityGroupStepImpl({
  *   That re-runs `mergeBurstSteps` → `groupSteps` → `finalize` for every group
  *   in the burst, tools that already settled included, and `finalize` builds a
  *   brand-new `Step` object (and a brand-new `parts` array around the same
- *   `ToolPart` elements) every time it runs. So `step` is a new object identity
+ *   `ToolCallBlock` elements) every time it runs. So `step` is a new object identity
  *   per delta even when nothing in that particular group changed — the default
  *   shallow compare fails on `step` alone, and every open group row re-renders
  *   on every token of an unrelated streaming tool call in the same burst.
  *   Comparing `step` by its actual content — `status`, `label`, and the
  *   underlying `parts` element-wise (`samePartsList`, since `finalize` rebuilds
- *   that array too but reuses the same `ToolPart` objects inside it) — is what
+ *   that array too but reuses the same `ToolCallBlock` objects inside it) — is what
  *   makes the boundary real. `texts` is exactly the same shape of problem one
  *   level up: `mergeBurstSteps` pushes a fresh `texts` array per thought run
  *   on every call, so `ThoughtChainStep` needs the same element-wise rule.
@@ -151,7 +149,7 @@ function ActivityGroupStepImpl({
  * `ActivityStep` (`activity-step.tsx`) is the one row in this chain where the
  * default shallow compare DOES hold: it takes `part` directly off the burst's
  * own `parts` prop — for an unwrapped run of one, `mergeBurstSteps` hands it
- * `step.parts[0]`, the very `Part` reference from the input array, never a
+ * `step.parts[0]`, the very call reference from the input array, never a
  * rebuilt copy. The session store only replaces the ONE part that actually
  * changed on a given SSE delta and keeps every sibling reference stable, so a
  * settled tool row's `part` prop keeps its identity across deltas that touch a
@@ -163,9 +161,8 @@ function ActivityGroupStepImpl({
  * there can never hold and would only add a failed comparison.
  */
 type ActivityGroupStepProps = {
-  step: Step;
+  step: Step<ToolCallBlock>;
   sessionId: string;
-  running: boolean;
   disableNavigation?: boolean;
 };
 
@@ -182,7 +179,6 @@ export function sameActivityGroupStepProps(
 ): boolean {
   return (
     a.sessionId === b.sessionId &&
-    a.running === b.running &&
     a.disableNavigation === b.disableNavigation &&
     a.step.status === b.step.status &&
     a.step.label === b.step.label &&

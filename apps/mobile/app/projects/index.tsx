@@ -14,6 +14,7 @@
 import * as React from 'react';
 import { Animated, FlatList, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useCan } from '@kortix/sdk/react';
 import { useColorScheme } from 'nativewind';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
@@ -159,8 +160,8 @@ export default function ProjectsPage() {
     [router],
   );
 
-  const canCreate =
-    activeAccount?.account_role === 'owner' || activeAccount?.account_role === 'admin';
+  // `project.create` is an account-scoped IAM leaf, not a role label.
+  const canCreate = useCan({ accountId: activeAccountId ?? undefined }, 'project.create').allowed;
 
   // Row ⋯ menu: a bottom sheet of actions (Open, Archive) with an
   // AlertDialog confirm for Archive. See components/projects/ProjectActions.

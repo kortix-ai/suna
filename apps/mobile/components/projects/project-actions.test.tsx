@@ -3,6 +3,11 @@
  * sheet closes, shows the project name, disables both buttons and relabels to
  * "Archiving…" while the request runs, refuses to close while pending, and
  * shows a failure in place with the confirm button re-enabled.
+ *
+ * KRTX-1720: Archive project offers only what `DELETE /projects/:id` allows.
+ * The row follows one `useCans` probe of `project.write` + `project.delete`,
+ * and hides while the probe is unresolved. It used to show whenever the role
+ * was unknown.
  */
 import { afterEach, beforeAll, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
@@ -75,7 +80,11 @@ mock.module('@/components/kortix/avatar', () => ({ Avatar: none }));
 // ends the dismiss animation synchronously (fires onDismiss).
 mock.module('@/components/kortix/sheet', () => {
   const { forwardRef, useImperativeHandle } = React;
+  // The real close-then slot: the archive confirm depends on its defer/take
+  // semantics, so the mock carries it through rather than stubbing it.
+  const { useCloseThen } = require('@/components/kortix/use-close-then');
   return {
+    useCloseThen,
     Sheet: forwardRef(function Sheet(props: HostProps & { onDismiss?: () => void }, ref) {
       useImperativeHandle(ref, () => ({
         open: () => sheetOpen.push(1),
@@ -105,6 +114,18 @@ mock.module('@/components/kortix/settings-list', () => ({
 mock.module('@/components/kortix/toast-provider', () => ({ useToast: () => ({ success: (m: string) => toastSuccess.push(m) }) }));
 mock.module('@/lib/haptics', () => ({ haptics: { tap: none, warning: none, medium: none, success: none } }));
 mock.module('@/lib/projects/hooks', () => ({ useArchiveProject: () => archive }));
+// The permission probe, per test: `cans` is what `useCans` answers.
+type Can = { allowed: boolean; reason: string | null; isLoading: boolean; isError: boolean };
+const can = (allowed: boolean, isLoading = false): Can => ({ allowed, reason: null, isLoading, isError: false });
+// The archive-dialog tests below run as a manager.
+let cans: Record<string, Can> = { 'project.write': can(true), 'project.delete': can(true) };
+const probes: Array<{ target: unknown; actions: readonly string[] }> = [];
+mock.module('@kortix/sdk/react', () => ({
+  useCans: (target: unknown, actions: readonly string[]) => {
+    probes.push({ target, actions });
+    return Object.fromEntries(actions.map((action) => [action, cans[action] ?? can(false, true)]));
+  },
+}));
 mock.module('@/lib/logger', () => ({ log: { error: none, warn: none, info: none } }));
 mock.module('@/lib/utils/theme', () => ({
   THEME: { light: {}, dark: {} },
@@ -120,9 +141,12 @@ beforeAll(async () => {
 
 const project = {
   project_id: 'p1',
+  account_id: 'acc-1',
   name: 'Apollo',
   effective_project_role: 'manager',
 } as never;
+
+const MANAGER = { 'project.delete': can(true), 'project.write': can(true) };
 
 let tree: ReactTestRenderer | undefined;
 const renderIt = () =>
@@ -161,6 +185,50 @@ afterEach(() => {
   archive.isPending = false;
   archive.deferred = undefined;
   archive.calls = 0;
+  cans = MANAGER;
+  probes.length = 0;
+});
+
+describe('who gets Archive project', () => {
+  test('one probe of project.write + project.delete on the row project, its account passed along', () => {
+    cans = MANAGER;
+    renderIt();
+    expect(probes.at(-1)).toEqual({
+      target: { projectId: 'p1', accountId: 'acc-1' },
+      actions: ['project.write', 'project.delete'],
+    });
+  });
+
+  test('a manager gets Open project and Archive project', () => {
+    cans = MANAGER;
+    renderIt();
+    expect(rows.map((r) => r.label)).toEqual(['Open project', 'Archive project']);
+  });
+
+  test('a built-in member gets Open project only', () => {
+    cans = { 'project.write': can(false), 'project.delete': can(false) };
+    renderIt();
+    expect(rows.map((r) => r.label)).toEqual(['Open project']);
+  });
+
+  test('project.delete without project.write gets no Archive project: the route loads the project for write', () => {
+    cans = { 'project.write': can(false), 'project.delete': can(true) };
+    renderIt();
+    expect(row('Archive project')).toBeUndefined();
+  });
+
+  test('a custom role with project.write but not project.delete gets no Archive project', () => {
+    cans = { 'project.write': can(true), 'project.delete': can(false) };
+    renderIt();
+    expect(row('Archive project')).toBeUndefined();
+  });
+
+  test('while the probe is unresolved, Archive project stays hidden (fail closed)', () => {
+    cans = {};
+    renderIt();
+    expect(row('Archive project')).toBeUndefined();
+    expect(row('Open project')).toBeTruthy();
+  });
 });
 
 describe('the ProjectActions archive confirm dialog', () => {

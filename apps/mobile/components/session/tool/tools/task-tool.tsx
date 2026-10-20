@@ -48,16 +48,16 @@ function FullViewAction({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const input = partInput(part);
-  const status = partStatus(part);
-  const childSessionId = useMemo(() => getChildSessionId(part), [part]);
-  const { childMessages, childToolParts } = useChildSession(childSessionId);
+export function TaskTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(call);
+  const status = partStatus(call);
+  const childSessionId = useMemo(() => getChildSessionId(call), [call]);
+  const { childThread, childCalls } = useChildSession(childSessionId);
   const { enabled: navigationEnabled, openSession } = useToolNavigation();
 
   const model = useMemo(
-    () => taskRowModel({ status, input, childSessionId, childToolParts }),
-    [status, input, childSessionId, childToolParts],
+    () => taskRowModel({ status, input, childSessionId, childCalls }),
+    [status, input, childSessionId, childCalls],
   );
 
   const openFullView = useCallback(() => {
@@ -71,7 +71,7 @@ export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   return (
     <>
       <BasicTool
-        disclosureId={disclosureKey('tool', part.id)}
+        disclosureId={disclosureKey('tool', call.id)}
         icon={KanbanIcon}
         trigger={{ title: model.title, subtitle: model.subtitle }}
         defaultOpen={defaultOpen}
@@ -82,10 +82,10 @@ export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         onClick={canOpen && model.rowOpensSession ? openFullView : undefined}
       >
         {model.hasInlineSteps ? (
-          <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+          <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />
         ) : undefined}
       </BasicTool>
-      <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
+      <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
     </>
   );
 }

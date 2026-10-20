@@ -4,23 +4,16 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { DiffView } from '@/components/diff/diff-view';
 import { Button } from '@/components/ui/button';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { GitCommit } from '@/features/file-browser/types';
+import { Copy } from '@/features/icon/icons/copy';
+import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { cn } from '@/lib/utils';
 import {
   WarningCircleIcon as AlertCircle,
-  CheckIcon as Check,
-  CaretDownIcon as ChevronDown,
-  CaretRightIcon as ChevronRight,
-  ClockIcon as Clock,
-  CopyIcon as Copy,
-  NotePencilIcon as FileEdit,
-  FilePlusIcon as FilePlus2,
-  FileArrowUpIcon as FileSymlink,
-  FileXIcon as FileX2,
   ClockCounterClockwiseIcon as History,
-  UserIcon as User,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { createTwoFilesPatch } from 'diff';
@@ -89,13 +82,6 @@ function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitH
       </div>
     );
 
-  const statusIcon = {
-    added: <FilePlus2 className="text-kortix-green size-3" />,
-    modified: <FileEdit className="text-kortix-blue size-3" />,
-    deleted: <FileX2 className="text-kortix-red size-3" />,
-    renamed: <FileSymlink className="text-kortix-orange size-3" />,
-  }[diff.status];
-
   const patchContent =
     diff.patch ||
     (diff.before !== undefined && diff.after !== undefined
@@ -103,21 +89,20 @@ function CompactCommitDiff({ filePath, commitHash }: { filePath: string; commitH
       : '');
 
   return (
-    <div className="border-border/30 bg-muted/20 border-t">
-      <div className="border-border/20 flex items-center gap-1.5 border-b px-2 py-1">
-        {statusIcon}
-        <span className="text-muted-foreground text-xs font-medium capitalize">{diff.status}</span>
-        <div className="ml-auto flex items-center gap-1 text-xs tabular-nums">
+    <div className="space-y-1.5 px-2 pt-1 pb-2">
+      <div className="text-muted-foreground flex items-center gap-2 px-1 text-xs">
+        <span className="capitalize">{diff.status}</span>
+        <span className="ml-auto flex items-center gap-1.5 tabular-nums">
           {diff.additions > 0 && <span className="text-kortix-green">+{diff.additions}</span>}
-          {diff.deletions > 0 && <span className="text-kortix-red">-{diff.deletions}</span>}
-        </div>
+          {diff.deletions > 0 && <span className="text-kortix-red">−{diff.deletions}</span>}
+        </span>
       </div>
       {patchContent ? (
-        <div className="max-h-[200px] overflow-auto">
+        <div className="border-border bg-background max-h-[220px] overflow-auto rounded-md border">
           <DiffView patch={patchContent} layout="unified" hideFileHeader />
         </div>
       ) : (
-        <div className="text-muted-foreground p-2 text-center text-xs">
+        <div className="text-muted-foreground px-1 py-2 text-xs">
           {tHardcodedUi.raw(
             'featuresProjectFilesComponentsFileHistoryPopover.line102JsxTextNoDiff',
           )}
@@ -148,15 +133,11 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
 
   const toggle = () => setExpanded((v) => !v);
   return (
-    <div
-      className={cn(
-        'overflow-hidden rounded-md border transition-colors',
-        expanded ? 'border-primary/30 bg-primary/5' : 'border-border/40 hover:border-border/60',
-      )}
-    >
+    <li className={cn('relative rounded-md', expanded && 'bg-muted')}>
       <div
         role="button"
         tabIndex={0}
+        aria-expanded={expanded}
         onClick={toggle}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -164,50 +145,40 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
             toggle();
           }
         }}
-        className="hover:bg-muted/20 focus-visible:ring-ring flex w-full cursor-pointer items-start gap-2 px-2.5 py-2 text-left outline-none focus-visible:ring-1"
+        className={cn(
+          'group/row focus-visible:ring-ring flex w-full cursor-pointer items-start gap-3 rounded-md px-2 py-2 text-left outline-none focus-visible:ring-1',
+          !expanded && 'hover:bg-muted',
+        )}
       >
-        <div className="mt-0.5 flex shrink-0 items-center gap-1">
-          {expanded ? (
-            <ChevronDown className="text-muted-foreground/50 size-3" />
-          ) : (
-            <ChevronRight className="text-muted-foreground/50 size-3" />
-          )}
-          <History className="text-primary/70 size-3.5" />
-        </div>
-        <div className="min-w-0 flex-1 space-y-0.5">
-          <p className="text-foreground line-clamp-1 text-xs leading-snug font-medium">
-            {commit.subject}
-          </p>
-          <div className="text-muted-foreground flex items-center gap-2 text-xs">
-            <span className="flex items-center gap-0.5">
-              <User className="size-2.5" />
-              {commit.author}
-            </span>
-            <span className="flex items-center gap-0.5" title={formatFullDate(commit.timestamp)}>
-              <Clock className="size-2.5" />
+        {/* Timeline dot; the rail behind it is drawn by the list. */}
+        <span className="border-muted-foreground bg-background relative z-10 mt-[5px] size-2.5 shrink-0 rounded-full border" />
+        <div className="min-w-0 flex-1">
+          <p className="text-foreground truncate text-sm font-medium">{commit.subject}</p>
+          <InlineMeta className="mt-0.5">
+            {commit.author}
+            <time title={formatFullDate(commit.timestamp)}>
               {formatRelativeDate(commit.timestamp)}
-            </span>
-          </div>
+            </time>
+          </InlineMeta>
         </div>
-        <Button
+        <button
+          type="button"
           onClick={handleCopyHash}
-          variant="muted"
-          size="xs"
-          className="shrink-0 font-mono"
+          className="text-muted-foreground hover:text-foreground flex shrink-0 items-center gap-1 rounded-sm px-1 font-mono text-xs leading-5"
           title={tHardcodedUi.raw(
             'featuresProjectFilesComponentsFileHistoryPopover.line160JsxAttrTitleCopyCheckpointId',
           )}
         >
           {copied ? (
-            <Check className="text-kortix-green size-2.5" />
+            <SolidCheckIcon className="text-kortix-green size-3" />
           ) : (
-            <Copy className="size-2.5" />
+            <Copy className="size-3 opacity-0 group-hover/row:opacity-100" />
           )}
           {commit.shortHash}
-        </Button>
+        </button>
       </div>
       {expanded && <CompactCommitDiff filePath={filePath} commitHash={commit.hash} />}
-    </div>
+    </li>
   );
 }
 
@@ -231,8 +202,7 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
   return (
     <div className="flex max-h-[500px] w-[420px] flex-col">
       {/* Header */}
-      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5">
-        <History className="text-muted-foreground h-4 w-4 shrink-0" />
+      <div className="flex shrink-0 items-center gap-2 border-b py-2 pr-2 pl-3">
         <span className="flex-1 truncate text-sm font-medium">{fileName}</span>
         {totalCheckpoints > 0 && (
           <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
@@ -240,8 +210,8 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
             {totalCheckpoints !== 1 ? 's' : ''}
           </span>
         )}
-        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={onClose}>
-          <X className="h-3.5 w-3.5" />
+        <Button variant="secondary" size="icon-sm" className="shrink-0" onClick={onClose}>
+          <X className="size-3.5" />
         </Button>
       </div>
 
@@ -281,13 +251,17 @@ export function FileHistoryPopoverContent({ filePath, onClose }: FileHistoryPopo
         )}
 
         {!isLoading && !error && totalCheckpoints > 0 && (
-          <div className="space-y-1.5 p-2">
-            {history!.commits.map((commit) => (
-              <CompactCommitRow key={commit.hash} commit={commit} filePath={filePath} />
-            ))}
+          <div className="p-2">
+            <ol className="relative space-y-0.5">
+              {/* The timeline rail, through the dots' centres. */}
+              <span aria-hidden className="bg-border absolute top-4 bottom-4 left-[12.5px] w-px" />
+              {history!.commits.map((commit) => (
+                <CompactCommitRow key={commit.hash} commit={commit} filePath={filePath} />
+              ))}
+            </ol>
             {history?.hasMore && (
-              <div className="py-1 text-center">
-                <span className="text-muted-foreground/50 text-xs">
+              <div className="pt-2 text-center">
+                <span className="text-muted-foreground text-xs">
                   {tHardcodedUi.raw(
                     'featuresProjectFilesComponentsFileHistoryPopover.line240JsxTextShowingTheMostRecent',
                   )}{' '}

@@ -22,15 +22,20 @@ import {
 } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useGenuiCopyMessages } from '@/features/genui/to-markdown';
+import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,
   getTranscriptFilename,
+  type ProjectSession,
   type TranscriptOptions,
 } from '@kortix/sdk';
 import {
-  loadSessionTranscriptMessages,
+  loadSessionExportMessages,
+  useProjectSession,
   useRuntimeSession,
+  useSessionLogRecord,
   useSessionSync,
 } from '@kortix/sdk/react';
 import {
@@ -43,6 +48,33 @@ import { Download } from '@/features/icon/icons/download';
 // ============================================================================
 // Export Modal
 // ============================================================================
+
+interface TranscriptSessionHeader {
+  id: string;
+  title: string;
+  time: { created: number; updated: number };
+}
+
+/**
+ * The transcript's header: the runtime's session while the computer runs, else
+ * the session row the page shows (asleep, stopped, failed). Null: nothing to
+ * name the export after yet.
+ */
+export function transcriptSessionHeader(
+  runtime: { id: string; title?: string; slug?: string; time: { created: number; updated: number } } | undefined,
+  row: ProjectSession | null,
+  sessionId: string,
+): TranscriptSessionHeader | null {
+  if (runtime) {
+    return { id: runtime.id, title: runtime.title || runtime.slug || 'Untitled', time: runtime.time };
+  }
+  if (!row) return null;
+  return {
+    id: sessionId,
+    title: getSessionDisplayTitle(row),
+    time: { created: Date.parse(row.created_at), updated: Date.parse(row.updated_at) },
+  };
+}
 
 interface ExportTranscriptModalProps {
   sessionId: string;
@@ -107,11 +139,25 @@ export function ExportTranscriptModal({
   onOpenChange,
 }: ExportTranscriptModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tGenui = useTranslations('genui');
   const [options, setOptions] = useState<TranscriptOptions>(DEFAULT_TRANSCRIPT_OPTIONS);
   const [copied, setCopied] = useState(false);
 
-  const { data: session } = useRuntimeSession(sessionId);
-  const { messages: visibleMessages } = useSessionSync(sessionId, { kortixSessionScope });
+  const { data: runtimeSession } = useRuntimeSession(sessionId);
+  // The row answers while the computer sleeps; the runtime session does not.
+  const [projectId, projectSessionId] = kortixSessionScope?.split('/') ?? [];
+  const { data: projectSession = null } = useProjectSession(projectId, projectSessionId, {
+    enabled: !!projectId && !!projectSessionId,
+  });
+  const session = useMemo(
+    () => transcriptSessionHeader(runtimeSession, projectSession, sessionId),
+    [runtimeSession, projectSession, sessionId],
+  );
+  // `mirror: null`: this dialog is mounted with every session header, and the
+  // page's `useSession` already reads the saved copy once per open. On v2 (the store
+  // holds the session's log) no saved copy is read: the export reads the log.
+  const sessionLog = useSessionLogRecord({ sessionId: projectSessionId ?? '' }) !== null;
+  const { messages: visibleMessages } = useSessionSync(sessionId, { kortixSessionScope, mirror: null, sessionLog });
   const [messages, setMessages] = useState(visibleMessages);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const visibleMessagesRef = useRef(visibleMessages);
@@ -123,7 +169,8 @@ export function ExportTranscriptModal({
     if (!open) return;
     let cancelled = false;
     setIsLoadingMessages(true);
-    void loadSessionTranscriptMessages(sessionId)
+    // v2: the session log's thread. v1: the runtime's history while the computer runs, else the saved copy.
+    void loadSessionExportMessages(sessionId, kortixSessionScope)
       .then((history) => {
         if (!cancelled) setMessages(history);
       })
@@ -139,20 +186,17 @@ export function ExportTranscriptModal({
     return () => {
       cancelled = true;
     };
-  }, [open, sessionId, tHardcodedUi]);
+  }, [open, sessionId, kortixSessionScope, tHardcodedUi]);
 
+  // Generative UI blocks become markdown before copy or download, one message at a time. While the
+  // converter loads, `transcript` is '' and both actions stay disabled.
+  // The converter (a lazy chunk) failed to load: nothing was copied yet, so say what failed.
+  const onConvertError = useCallback(() => errorToast(tGenui('convertFailed')), [tGenui]);
+  const exportMessages = useGenuiCopyMessages(messages, onConvertError);
   const transcript = useMemo(() => {
-    if (!session || messages.length === 0) return '';
-    return formatTranscript(
-      {
-        id: session.id,
-        title: session.title || session.slug || 'Untitled',
-        time: session.time,
-      },
-      messages,
-      options,
-    );
-  }, [session, messages, options]);
+    if (!session || !exportMessages || exportMessages.length === 0) return '';
+    return formatTranscript(session, exportMessages, options);
+  }, [session, exportMessages, options]);
 
   const filename = useMemo(() => {
     if (!session) return 'session.md';

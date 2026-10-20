@@ -73,10 +73,14 @@ export function toolPartOf(call: ToolCallBlock): ToolPart {
 export const isToolCallBlock = (value: unknown): value is ToolCallBlock =>
   typeof value === 'object' && value !== null && (value as { type?: unknown }).type === 'tool_call';
 
+/** The v1 part of a part or a block. Internal: a widened part helper reads its argument through it. */
+export const asToolPart = (value: ToolPart | ToolCallBlock): ToolPart => (isToolCallBlock(value) ? toolPartOf(value) : value);
+
 /**
  * The harness's display metadata of a tool call: the `state.metadata` of the v1 part it was
  * converted from (bash `command`, read `loaded`, task `sessionId`, edit `filediff`, ...), whole.
- * A native record carries only what its fields map (`exit` from `result.exit_code`). The same
+ * A native record carries its `details` (`result.details`, else its adapter's ext: pi's
+ * `ext.pi.data.details`) and `exit` from `result.exit_code`. The same
  * frozen empty object when there is none. Transitional: it stays until the session-log schema
  * carries display metadata of its own.
  */
@@ -85,4 +89,31 @@ export function toolCallMetadata(call: ToolCallBlock): Record<string, unknown> {
   return typeof metadata === 'object' && metadata !== null && !Array.isArray(metadata) && Object.keys(metadata).length
     ? (metadata as Record<string, unknown>)
     : EMPTY;
+}
+
+/** The text items of a result, joined: what `toV1` gives a v1 part as `output` or `error`. */
+const textOf = (call: ToolCallBlock) => (call.result?.content ?? []).flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('');
+
+/** The call's status in the words a renderer compares: `pending`, `running`, `completed` or `error`. */
+export function toolCallStatus(call: ToolCallBlock): 'pending' | 'running' | 'completed' | 'error' {
+  return call.status === 'complete' ? 'completed' : call.status;
+}
+
+const rawOutputs = new WeakMap<ToolCallBlock, string>();
+
+/** A completed call's output text as the tool returned it; `''` for any other call. One string per call object. */
+export function toolCallRawOutput(call: ToolCallBlock): string {
+  if (call.status !== 'complete') return '';
+  let text = rawOutputs.get(call);
+  if (text === undefined) rawOutputs.set(call, (text = textOf(call)));
+  return text;
+}
+
+/**
+ * A failed call's error text: its semantic error, else its result text (a native export closes
+ * a failed call with `is_error` and the tool's text only), as `toV1` gives `state.error`.
+ * `undefined` for a call that did not fail.
+ */
+export function toolCallError(call: ToolCallBlock): string | undefined {
+  return call.status === 'error' ? call.result?.error?.message || textOf(call) : undefined;
 }

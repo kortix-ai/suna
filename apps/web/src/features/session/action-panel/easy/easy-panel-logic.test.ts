@@ -1,4 +1,4 @@
-import { PREVIEW_PROBE_TIMEOUT_MS } from '@kortix/sdk';
+import { PREVIEW_PROBE_TIMEOUT_MS, type ToolCallBlock } from '@kortix/sdk';
 import { describe, expect, it, test } from 'bun:test';
 import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '../shared/group-steps';
@@ -646,9 +646,9 @@ describe('shouldAutoOpenPayoff (W2)', () => {
 
 describe('stepForCallId (chat -> panel focus)', () => {
   const steps = [
-    { id: 's1', parts: [{ callID: 'c1' }, { callID: 'c2' }] },
-    { id: 's2', parts: [{ callID: 'c3' }] },
-  ] as unknown as Step[];
+    { id: 's1', parts: [{ call_id: 'c1' }, { call_id: 'c2' }] },
+    { id: 's2', parts: [{ call_id: 'c3' }] },
+  ] as unknown as Step<ToolCallBlock>[];
 
   it('finds the step owning a given call, and returns undefined for an unknown call', () => {
     expect(stepForCallId(steps, 'c2')?.id).toBe('s1');
@@ -715,6 +715,16 @@ describe('sandboxRecents (AppPreview landing "Recents")', () => {
     ]);
   });
 
+  test('keeps Kortix App recents: the address bar opens those too', () => {
+    const recents = [
+      { url: 'https://dev-crm-0123456789abcdef.apps.kortix.com/deals', visitedAt: 1 },
+      { url: 'https://example.com', visitedAt: 2 },
+    ];
+    expect(sandboxRecents(recents).map((r) => r.url)).toEqual([
+      'https://dev-crm-0123456789abcdef.apps.kortix.com/deals',
+    ]);
+  });
+
   test('empty in, empty out — the landing falls back to the search hint', () => {
     expect(sandboxRecents([])).toEqual([]);
   });
@@ -742,7 +752,7 @@ describe('pathOutput', () => {
 });
 
 describe('focusIndexForCall (which command inside a group to open)', () => {
-  const parts = [{ callID: 'c1' }, { callID: 'c2' }, { callID: 'c3' }];
+  const parts = [{ call_id: 'c1' }, { call_id: 'c2' }, { call_id: 'c3' }];
 
   test('finds the clicked call inside the group', () => {
     // The bug: the panel opened at parts.length - 1, so clicking c1 showed c3.

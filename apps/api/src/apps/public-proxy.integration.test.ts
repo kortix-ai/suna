@@ -11,7 +11,7 @@ import {
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { config } from '../config';
-import type { AppHostingProvider, AppMachineSpec, AppdStatus } from './hosting';
+import type { AppHostingProvider, AppdStatus } from './hosting';
 import { ensureAppRuntimeRunning, handleAppPublicRequest, loadPublicApp, loadPublicAppState } from './public-proxy';
 import { APP_RUNTIME_VERSION, enqueueCurrentAppRuntime } from './deployment-worker';
 
@@ -135,10 +135,6 @@ function readyStatus(): AppdStatus {
   return { status: 'running', ready: true };
 }
 
-/** A provider that allocates exactly the requested machine; the wake path meters it. */
-function effectiveMachine(_provider: string, machine: AppMachineSpec): AppMachineSpec {
-  return machine;
-}
 
 describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
   beforeEach(cleanup);
@@ -157,8 +153,10 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
     expect(staticState?.deployment?.hostingType).toBe('static');
     expect(staticState?.runtime).toBeNull();
 
-    await testDb().update(projects).set({ metadata: {} }).where(eq(projects.projectId, PROJECT_ID));
-    expect(await loadPublicAppState(ROUTE_KEY)).toBeNull();
+    // Apps is generally available: the flag left the registry, so a stored
+    // override — even `apps: false` — no longer gates the public proxy.
+    await testDb().update(projects).set({ metadata: { experimental: { apps: false } } }).where(eq(projects.projectId, PROJECT_ID));
+    expect((await loadPublicAppState(ROUTE_KEY))?.deployment?.deploymentId).toBe(DEPLOYMENT_ID);
   });
 
   test('public handler rejects an unsigned edge request before loading the App', async () => {
@@ -201,7 +199,6 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
         readinessStarted.resolve();
         return releaseReadiness.promise;
       },
-      effectiveMachine,
       stop: async () => {},
     } as unknown as AppHostingProvider;
 
@@ -231,7 +228,6 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
         ensureCalls += 1;
       },
       waitUntilReady: async () => readyStatus(),
-      effectiveMachine,
       stop: async () => {},
     } as unknown as AppHostingProvider;
 
@@ -255,7 +251,6 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
     const hosting = {
       ensureRunning: async () => { ensureCalls += 1; },
       waitUntilReady: async () => readyStatus(),
-      effectiveMachine,
     } as unknown as AppHostingProvider;
 
     const runtime = await ensureAppRuntimeRunning(sleeping, hosting);
@@ -293,7 +288,6 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
       start: async () => { startCalls += 1; },
       ensureRunning: async () => { ensureCalls += 1; },
       waitUntilReady: async () => readyStatus(),
-      effectiveMachine,
       stop: async () => {},
     } as unknown as AppHostingProvider;
 
@@ -315,7 +309,6 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
         readinessStarted.resolve();
         return releaseReadiness.promise;
       },
-      effectiveMachine,
       stop: async () => {
         stopCalls += 1;
       },

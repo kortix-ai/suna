@@ -7,8 +7,9 @@
  */
 
 import type { ToolPart } from '../../runtime/client';
-import { toolKind } from '../tool-kind';
-import { isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
+import type { KortixToolState } from '../../runtime/transcript-types';
+import { inputPath, toolKind } from '../tool-kind';
+import { asToolPart, isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
 import type { ToolCallBlock } from '../../session-log/types';
 import { humanizeSearchQuery } from './search-query';
 import { stripTrailingSlashes } from '../text-scan';
@@ -66,10 +67,12 @@ function truncate(s: string, max = 60): string {
 /**
  * Extract the one thing that identifies a tool call in a one-liner.
  * Used for context-group item labels and any future compact views.
+ * Reads a session-log tool call block the same way as its v1 part.
  */
-export function getToolPrimaryArg(part: ToolPart): string {
-  const state = (part.state ?? {}) as any;
-  const input = (state.input ?? {}) as Record<string, any>;
+export function getToolPrimaryArg(call: ToolPart | ToolCallBlock): string {
+  const part = asToolPart(call);
+  const state = (part.state ?? {}) as KortixToolState;
+  const input = state.input ?? {};
   const key = normalizeName(part.tool);
 
   switch (key) {
@@ -77,8 +80,8 @@ export function getToolPrimaryArg(part: ToolPart): string {
     case 'edit':
     case 'write':
     case 'morph_edit': {
-      const p = input.filePath ?? input.file_path ?? input.path;
-      return p ? basename(String(p)) : '';
+      const p = inputPath(input);
+      return p ? basename(p) : '';
     }
     case 'glob':
       return input.pattern ? String(input.pattern) : '';
