@@ -128,6 +128,16 @@ describe('white-label SDK boundary', () => {
     expect(scanSource(`import { cn } from '@kortix/ui';`)).toEqual([]);
   });
 
+  test('a tagged-template fetch and a namespaced transport constructor are caught everywhere', () => {
+    const tagged = 'await fetch`/api/kortix/projects`;';
+    const namespaced = "const es = new window.EventSource('/api/kortix/x'); new globalThis . WebSocket('wss://x');";
+    expect(scanSource(tagged).map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
+    expect(scanSource(tagged, { client: false }).map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
+    expect(scanConvexSource(tagged).map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
+    expect(scanSource(namespaced).map((v) => v.rule)).toEqual(['raw-transport', 'raw-transport']);
+    expect(scanConvexSource(namespaced).map((v) => v.rule)).toEqual(['raw-transport', 'raw-transport']);
+  });
+
   test('Convex catches a dynamic import or require of the SDK outside "use node"', () => {
     const fixture = `const m = await import('@kortix/sdk/server');\nconst r = require("@kortix/sdk");`;
     expect(scanConvexSource(fixture).map((v) => v.rule)).toEqual([

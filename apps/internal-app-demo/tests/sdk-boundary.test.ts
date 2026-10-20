@@ -4,6 +4,11 @@ import { scanSource } from '../scripts/sdk-boundary.mjs';
 describe('internal app SDK boundary', () => {
   test('refuses every fetch, even a same-origin one', () => {
     expect(scanSource(`fetch('/api/preview-url');`).map((v) => v.rule)).toEqual(['any-fetch']);
+    expect(scanSource('await fetch`/api/kortix/projects`;').map((v) => v.rule)).toEqual(['any-fetch']);
+  });
+
+  test('refuses a namespaced transport constructor', () => {
+    expect(scanSource("new window.EventSource('/api/kortix/x');").map((v) => v.rule)).toEqual(['raw-transport']);
   });
 
   test('inherits the Lumen client rules', () => {

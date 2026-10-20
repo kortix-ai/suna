@@ -16,7 +16,7 @@ const SRC = join(APP_ROOT, 'src');
 const RULES = [
   {
     rule: 'any-fetch',
-    pattern: /\bfetch\s*\(/g,
+    pattern: /\bfetch\s*[(`]/g,
     message: 'No fetch: every Kortix call goes through the @kortix/sdk client in src/kortix.ts.',
   },
 ];

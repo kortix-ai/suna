@@ -58,6 +58,13 @@ const TRANSPORT_RULES = [
       /(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s+)['"`](?:node:)?(?:https?|http2|net|tls|undici|axios|ky|got|node-fetch|cross-fetch)['"`]|\bnavigator\s*\.\s*sendBeacon\b/gm,
     message: 'Do not open a raw HTTP client: Kortix calls go through @kortix/sdk.',
   },
+  {
+    scope: 'all',
+    rule: 'raw-transport',
+    // `new EventSource(`, `new window.EventSource(`, `new globalThis.WebSocket(`.
+    pattern: /\bnew\s+(?:(?:window|self|globalThis)\s*\.\s*)?(?:EventSource|XMLHttpRequest|WebSocket)\b/g,
+    message: 'Do not open your own transport: streams and requests go through @kortix/sdk.',
+  },
 ];
 
 const RULES = [
@@ -84,8 +91,7 @@ const RULES = [
   {
     scope: 'client',
     rule: 'raw-transport',
-    pattern:
-      /\bnew\s+(?:EventSource|XMLHttpRequest|WebSocket)\b|\b(?:globalThis|window|self)\s*(?:\.\s*fetch\b|\[\s*['"`]fetch['"`]\s*\])/g,
+    pattern: /\b(?:globalThis|window|self)\s*(?:\.\s*fetch\b|\[\s*['"`]fetch['"`]\s*\])/g,
     message: 'Client code must not open its own transport: streams and requests go through @kortix/sdk.',
   },
   {
@@ -175,7 +181,8 @@ function isFeatureClient(path) {
 
 function rawFetchViolations(source, client) {
   const violations = [];
-  const fetchPattern = /\bfetch\s*\(/g;
+  // `fetch(` and a tagged template `fetch`…`` (it sends a real GET).
+  const fetchPattern = /\bfetch\s*[(`]/g;
   for (const match of source.matchAll(fetchPattern)) {
     const expression = source.slice((match.index ?? 0) + match[0].length).trimStart();
     const target = staticFetchTarget(expression);
@@ -298,7 +305,7 @@ export function scanTestSource(source) {
       message: 'Application tests must import the public @kortix/sdk surface.',
     });
   }
-  const directTransportPattern = /\bfetch\s*\([^)]{0,500}\/api\/kortix(?:\/|['"`])/g;
+  const directTransportPattern = /\bfetch\s*[(`][^)]{0,500}\/api\/kortix(?:\/|['"`])/g;
   for (const match of source.matchAll(directTransportPattern)) {
     violations.push({
       rule: 'test-raw-kortix-transport',
