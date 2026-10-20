@@ -1169,6 +1169,7 @@ const catalog = {
     "upgrade": "Upgrade",
     "noMatch": {
       "title": "No models match",
+      "singleModelDescription": "Only 1 model is available in this project. Model availability depends on your plan and connected providers.",
       "description": "Nothing matches “{search}”. Try a different search.",
       "clear": "Clear search"
     },
@@ -6705,6 +6706,10 @@ const catalog = {
     "exists": "exists",
     "missing": "does not exist",
     "listPlaceholder": "value 1, value 2"
+  },
+  "featureGate": {
+    "enable": "Enable {name}",
+    "enabling": "Enabling…"
   },
   "rooms": {
     "title": "Rooms",

@@ -1,5 +1,5 @@
 {
-  "id": "c52214fc-577d-41d1-91c1-5babee0404be",
+  "id": "6e8eb084-392c-4369-bf82-a7399bc79e0c",
   "prevId": "1b70322d-6086-4c20-b401-570717e305b5",
   "version": "7",
   "dialect": "postgresql",
@@ -12832,6 +12832,101 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "kortix.gateway_spend_daily": {
+      "name": "gateway_spend_daily",
+      "schema": "kortix",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requests": {
+          "name": "requests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_cost": {
+          "name": "total_cost",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "tokens": {
+          "name": "tokens",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "gateway_spend_daily_project_id_projects_project_id_fk": {
+          "name": "gateway_spend_daily_project_id_projects_project_id_fk",
+          "tableFrom": "gateway_spend_daily",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "gateway_spend_daily_project_id_day_actor_user_id_pk": {
+          "name": "gateway_spend_daily_project_id_day_actor_user_id_pk",
+          "columns": [
+            "project_id",
+            "day",
+            "actor_user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.gateway_spend_pending_days": {
+      "name": "gateway_spend_pending_days",
+      "schema": "kortix",
+      "columns": {
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": true,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "kortix.role_permissions": {
       "name": "role_permissions",
       "schema": "kortix",
@@ -13862,18 +13957,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "room_id": {
-          "name": "room_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "room_thread_seq": {
-          "name": "room_thread_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -14098,7 +14181,7 @@
       "checkConstraints": {
         "notifications_kind": {
           "name": "notifications_kind",
-          "value": "\"kortix\".\"notifications\".\"kind\" IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message')"
+          "value": "\"kortix\".\"notifications\".\"kind\" IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered')"
         }
       },
       "isRLSEnabled": false
@@ -21287,460 +21370,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.room_members": {
-      "name": "room_members",
-      "schema": "kortix",
-      "columns": {
-        "member_id": {
-          "name": "member_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "room_id": {
-          "name": "room_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "member_kind": {
-          "name": "member_kind",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "notify": {
-          "name": "notify",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'all'"
-        },
-        "added_by_user_id": {
-          "name": "added_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_read_seq": {
-          "name": "last_read_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_room_members_room_session": {
-          "name": "idx_room_members_room_session",
-          "columns": [
-            {
-              "expression": "room_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"room_members\".\"session_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_room_members_room_user": {
-          "name": "idx_room_members_room_user",
-          "columns": [
-            {
-              "expression": "room_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"room_members\".\"user_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_room_members_session": {
-          "name": "idx_room_members_session",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_room_members_user": {
-          "name": "idx_room_members_user",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "room_members_room_fk": {
-          "name": "room_members_room_fk",
-          "tableFrom": "room_members",
-          "tableTo": "rooms",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "room_id"
-          ],
-          "columnsTo": [
-            "room_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "room_members_session_fk": {
-          "name": "room_members_session_fk",
-          "tableFrom": "room_members",
-          "tableTo": "project_sessions",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "session_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "room_members_notify_check": {
-          "name": "room_members_notify_check",
-          "value": "\"kortix\".\"room_members\".\"notify\" in ('all', 'mentions', 'none')"
-        },
-        "room_members_kind_check": {
-          "name": "room_members_kind_check",
-          "value": "(\"kortix\".\"room_members\".\"member_kind\" = 'session' and \"kortix\".\"room_members\".\"session_id\" is not null and \"kortix\".\"room_members\".\"user_id\" is null) or (\"kortix\".\"room_members\".\"member_kind\" = 'person' and \"kortix\".\"room_members\".\"user_id\" is not null and \"kortix\".\"room_members\".\"session_id\" is null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "kortix.room_messages": {
-      "name": "room_messages",
-      "schema": "kortix",
-      "columns": {
-        "message_id": {
-          "name": "message_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "room_id": {
-          "name": "room_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "seq": {
-          "name": "seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sender_kind": {
-          "name": "sender_kind",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sender_user_id": {
-          "name": "sender_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sender_session_id": {
-          "name": "sender_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sender_label": {
-          "name": "sender_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "text": {
-          "name": "text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reply_to_seq": {
-          "name": "reply_to_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_room_messages_room_seq": {
-          "name": "idx_room_messages_room_seq",
-          "columns": [
-            {
-              "expression": "room_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "seq",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_room_messages_room_thread": {
-          "name": "idx_room_messages_room_thread",
-          "columns": [
-            {
-              "expression": "room_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "reply_to_seq",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"room_messages\".\"reply_to_seq\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "room_messages_room_fk": {
-          "name": "room_messages_room_fk",
-          "tableFrom": "room_messages",
-          "tableTo": "rooms",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "room_id"
-          ],
-          "columnsTo": [
-            "room_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "room_messages_sender_kind_check": {
-          "name": "room_messages_sender_kind_check",
-          "value": "\"kortix\".\"room_messages\".\"sender_kind\" in ('member', 'session')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "kortix.rooms": {
-      "name": "rooms",
-      "schema": "kortix",
-      "columns": {
-        "room_id": {
-          "name": "room_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "topic": {
-          "name": "topic",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_seq": {
-          "name": "last_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by_session_id": {
-          "name": "created_by_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "archived_at": {
-          "name": "archived_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_rooms_project_name": {
-          "name": "idx_rooms_project_name",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "rooms_project_fk": {
-          "name": "rooms_project_fk",
-          "tableFrom": "rooms",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "rooms_name_check": {
-          "name": "rooms_name_check",
-          "value": "\"kortix\".\"rooms\".\"name\" ~ '^[a-z0-9][a-z0-9._/-]{0,63}$'"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "kortix.sandbox_compute_sessions": {
       "name": "sandbox_compute_sessions",
       "schema": "kortix",
@@ -22958,151 +22587,6 @@
         "session_content_purges_reason_check": {
           "name": "session_content_purges_reason_check",
           "value": "\"kortix\".\"session_content_purges\".\"reason\" IN ('session_deleted', 'subscription_ended')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "kortix.session_idle_watches": {
-      "name": "session_idle_watches",
-      "schema": "kortix",
-      "columns": {
-        "watch_id": {
-          "name": "watch_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "target_session_id": {
-          "name": "target_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "room_id": {
-          "name": "room_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "watcher_kind": {
-          "name": "watcher_kind",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "watcher_session_id": {
-          "name": "watcher_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "watcher_user_id": {
-          "name": "watcher_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "added_by_user_id": {
-          "name": "added_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_session_idle_watches_target": {
-          "name": "idx_session_idle_watches_target",
-          "columns": [
-            {
-              "expression": "target_session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "session_idle_watches_target_fk": {
-          "name": "session_idle_watches_target_fk",
-          "tableFrom": "session_idle_watches",
-          "tableTo": "project_sessions",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "target_session_id"
-          ],
-          "columnsTo": [
-            "session_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "session_idle_watches_project_fk": {
-          "name": "session_idle_watches_project_fk",
-          "tableFrom": "session_idle_watches",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "session_idle_watches_room_fk": {
-          "name": "session_idle_watches_room_fk",
-          "tableFrom": "session_idle_watches",
-          "tableTo": "rooms",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "room_id"
-          ],
-          "columnsTo": [
-            "room_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "session_idle_watches_kind_check": {
-          "name": "session_idle_watches_kind_check",
-          "value": "(\"kortix\".\"session_idle_watches\".\"watcher_kind\" = 'session' and \"kortix\".\"session_idle_watches\".\"watcher_session_id\" is not null and \"kortix\".\"session_idle_watches\".\"watcher_user_id\" is null) or (\"kortix\".\"session_idle_watches\".\"watcher_kind\" = 'person' and \"kortix\".\"session_idle_watches\".\"watcher_user_id\" is not null and \"kortix\".\"session_idle_watches\".\"watcher_session_id\" is null)"
         }
       },
       "isRLSEnabled": false

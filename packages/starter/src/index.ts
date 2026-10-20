@@ -59,6 +59,7 @@ export const KORTIX_MANAGED_SKILL_NAMES = [
   'kortix-connectors',
   'kortix-drives',
   'kortix-genui',
+  'kortix-goals',
   'kortix-harness-refinement',
   'kortix-marketplace',
   'kortix-memory',

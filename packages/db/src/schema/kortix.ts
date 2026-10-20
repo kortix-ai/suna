@@ -4273,6 +4273,39 @@ export const gatewayBudgets = kortixSchema.table(
 );
 
 /**
+ * Running spend per project, UTC day and actor: the gateway budgets read this
+ * instead of summing month-to-date gateway_request_logs (1.18M rows, ~1-4 s on
+ * the largest project). The AFTER INSERT trigger
+ * `kortix.gateway_spend_daily_add` adds every inserted log row in the same
+ * statement, so the two cannot drift. `actor_user_id` is the all-zero uuid for
+ * a row without an actor. `total_cost` uses the rule of shared/llm-spend.ts.
+ */
+export const gatewaySpendDaily = kortixSchema.table(
+  'gateway_spend_daily',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    day: date('day', { mode: 'string' }).notNull(),
+    actorUserId: uuid('actor_user_id').notNull(),
+    requests: integer('requests').default(0).notNull(),
+    totalCost: numeric('total_cost').default('0').notNull(),
+    tokens: bigint('tokens', { mode: 'number' }).default(0).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.day, table.actorUserId] })],
+);
+
+/**
+ * UTC days whose gateway_spend_daily rows are not complete yet: the days
+ * before the trigger existed, and the day it was installed. While a budget
+ * period overlaps one, its readers sum gateway_request_logs as before. The
+ * gateway-spend-backfill worker recomputes each closed day and deletes it here.
+ */
+export const gatewaySpendPendingDays = kortixSchema.table('gateway_spend_pending_days', {
+  day: date('day', { mode: 'string' }).primaryKey(),
+});
+
+/**
  * Per-project OTLP trace-export config — "connect any tool" for the gateway's
  * gen_ai.* spans (Langfuse/Datadog/Honeycomb/Braintrust/etc, anything OTLP).
  * One row per project (PK = project_id, upsert-only, mirrors

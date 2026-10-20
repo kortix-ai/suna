@@ -12,6 +12,7 @@ import { isSessionSandboxCredential } from '../../middleware/session-sandbox-cre
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import { cachedManagedPricingRoutes, withManagedPricing } from '../../llm-gateway/models/managed-pricing-routes';
+import { unavailableCatalog } from '../../llm-gateway/models/picker-catalog';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
@@ -205,6 +206,8 @@ export function registerModelsRoutes(): void {
       );
       return c.json({
         ...catalog,
+        // Discovery only: never add locked entries to the runnable picker.
+        catalog: unavailableCatalog(gatewayModelCatalog(projectId), catalog.models),
         models: withManagedPricing(catalog.models, quotes),
         managedPricingRoutes: Object.fromEntries(
           Object.entries(quotes).filter(([id]) => id in catalog.models),

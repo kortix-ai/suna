@@ -194,6 +194,12 @@ describe('unattended sessions', () => {
     expect(isUnattendedSessionMetadata({ source: 'trigger:monitor' })).toBe(true);
   });
 
+  test('a session that marks itself unattended is unattended (--meta unattended=true stores a string)', () => {
+    expect(isUnattendedSessionMetadata({ source: 'web', unattended: 'true' })).toBe(true);
+    expect(isUnattendedSessionMetadata({ source: 'web', unattended: true })).toBe(true);
+    expect(isUnattendedSessionMetadata({ source: 'web', unattended: 'false' })).toBe(false);
+  });
+
   test('a person or a channel is not unattended', () => {
     expect(isUnattendedSessionMetadata({ source: 'web' })).toBe(false);
     expect(isUnattendedSessionMetadata({ source: 'slack' })).toBe(false);

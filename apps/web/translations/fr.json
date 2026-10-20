@@ -22039,6 +22039,10 @@
     "title": "S’est mis en pause à sa limite d’exécutions",
     "description": "Il a tourné à sa limite d’exécutions horaire pendant 2 heures d’affilée, il ne lance donc plus d’exécutions. Trouvez ce qui le déclenche sans cesse, puis reprenez-le."
   },
+  "featureGate": {
+    "enable": "Activer {name}",
+    "enabling": "Activation…"
+  },
   "rooms": {
     "title": "Salons",
     "memberCount": "{count, plural, one {# membre} other {# membres}}",

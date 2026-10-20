@@ -49,6 +49,16 @@ export type SessionLifecyclePostCreateAction =
       /** Resolve at execution time so queued creates never capture stale access. */
       type: 'apply_trigger_session_access';
       triggerSlug: string;
+    }
+  | {
+      /** Move a session reminder to the new session (its session failed). */
+      type: 'repin_reminder';
+      reminderId: string;
+    }
+  | {
+      /** Take over the chat threads bound to a failed predecessor session. */
+      type: 'adopt_chat_threads';
+      fromSessionId: string;
     };
 
 export type SessionLifecycleStatus =

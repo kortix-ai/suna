@@ -145,6 +145,23 @@ const EASE = [0.23, 1, 0.32, 1] as const;
 // back to the form with. Consumed by the prefill effect on the next mount.
 const STALE_BUNDLE_EMAIL_KEY = 'kortix:stale-bundle-email';
 
+// Browser-wide method preference only; never store the address or credentials.
+const AUTH_METHOD_KEY = 'kortix:auth-method';
+function prefersPassword(): boolean {
+  try {
+    return window.localStorage.getItem(AUTH_METHOD_KEY) === 'password';
+  } catch {
+    return false;
+  }
+}
+function rememberAuthMethod(method: 'password' | 'magic') {
+  try {
+    window.localStorage.setItem(AUTH_METHOD_KEY, method);
+  } catch {
+    // Sign-in still works when browser storage is unavailable.
+  }
+}
+
 // sessionStorage keys for the pre-hydration entry-submit guard (see the
 // ENTRY_HYDRATION_GUARD script): the intent flag it sets when it prevents a
 // native submit of the entry form, the address it stashes while the visitor
@@ -483,6 +500,7 @@ function AuthCardForm({
     submitInFlight.current = true;
     clearNotices();
     setPendingAction(source);
+    if (source === 'link') rememberAuthMethod('magic');
 
     try {
       const formData = buildBaseFormData(target);
@@ -688,20 +706,9 @@ function AuthCardForm({
         // Work domain with no SAML provider → fall through to magic/password.
       }
 
-      // The email link is the default path: Continue emails a link and lands
-      // the user on the link step — the link signs in existing accounts and
-      // registers new ones, so no password is needed anywhere on the default
-      // path. That includes accounts created passwordless: GoTrue stores a
-      // random hash for those too (supabase/gotrue discussion #5741), so
-      // "does the visitor still know a password for this address" is not
-      // observable server-side, and a password-first default dead-ends a
-      // passwordless account on a form no password can pass. The password
-      // form stays one explicit choice away on the entry and link steps,
-      // and the link action re-checks closed signups and SSO
-      // server-side. Password-only deployments go through the existence check
-      // below, so the password step opens already knowing whether this is a
-      // sign-in or a registration.
-      if (magicLinkEnabled) {
+      // Keep email-first unless this browser explicitly chose password.
+      // The remembered choice still passes the server's SSO/signup gates.
+      if (magicLinkEnabled && !(passwordEnabled && prefersPassword())) {
         // sendMagic re-acquires the in-flight guard itself; release here first
         // or the hand-off would deadlock (this function already holds it).
         submitInFlight.current = false;
@@ -812,6 +819,7 @@ function AuthCardForm({
         failWith(t('errors.ssoRequired'));
         return;
       }
+      rememberAuthMethod('password');
       setCredMode(resolved);
       setStep('credentials');
     } catch (err) {
@@ -953,6 +961,7 @@ function AuthCardForm({
       failWith(t('errors.signupsClosed'));
       return;
     }
+    rememberAuthMethod('password');
     clearNotices();
     setCredMode(
       ssoFallbackMode === 'signin' || ssoFallbackMode === 'signup' ? ssoFallbackMode : 'unknown',

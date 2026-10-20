@@ -22039,6 +22039,10 @@
     "title": "Pausou-se ao atingir o limite de execuções",
     "description": "Rodou no limite de execuções por hora por 2 horas seguidas, então parou de iniciar execuções. Descubra o que continua acionando-o e depois retome-o."
   },
+  "featureGate": {
+    "enable": "Ativar {name}",
+    "enabling": "Ativando…"
+  },
   "rooms": {
     "title": "Salas",
     "memberCount": "{count, plural, one {# membro} other {# membros}}",

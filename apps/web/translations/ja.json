@@ -22039,6 +22039,10 @@
     "title": "実行上限に達したため自動で一時停止しました",
     "description": "1 時間あたりの実行上限で 2 時間連続して実行されたため、実行の開始を停止しました。何が起動し続けているかを確認してから再開してください。"
   },
+  "featureGate": {
+    "enable": "{name}を有効にする",
+    "enabling": "有効化中…"
+  },
   "rooms": {
     "title": "ルーム",
     "memberCount": "{count, plural, other {# 人のメンバー}}",

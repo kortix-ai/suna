@@ -134,6 +134,7 @@ function put(out, path, value) {
 
 function merge(into, from) {
   for (const [key, value] of Object.entries(from)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
     into[key] = typeof value === 'object' && value !== null && typeof into[key] === 'object' ? merge(into[key], value) : value;
   }
   return into;
@@ -205,7 +206,12 @@ export function buildCatalog() {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const next = buildCatalog();
-  const current = existsSync(OUT) ? readFileSync(OUT, 'utf8') : '';
+  let current = '';
+  try {
+    current = readFileSync(OUT, 'utf8');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   const where = relative(REPO, OUT);
   if (process.argv.includes('--check')) {
     if (next !== current) {

@@ -669,7 +669,9 @@ function showSessionToast(payload: WebNotificationPayload, sessionId: string) {
  * that suffix is dropped.
  */
 export function sessionDisplayName(sessionTitle: string | undefined, sessionId: string): string {
-  const title = sessionTitle?.replace(/\s+-\s+\d{4}-\d{2}-\d{2}T[\d:.]+Z$/, '').trim();
+  // One `\s` before `-`, not `\s+`: `.trim()` drops the rest of the run, and
+  // `\s+-` backtracks quadratically on a long space run (CodeQL js/polynomial-redos).
+  const title = sessionTitle?.replace(/\s-\s+\d{4}-\d{2}-\d{2}T[\d:.]+Z$/, '').trim();
   return title ? title.slice(0, 80) : `Session ${sessionId.slice(0, 8)}`;
 }
 

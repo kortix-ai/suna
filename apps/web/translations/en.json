@@ -1923,6 +1923,7 @@
     "upgrade": "Upgrade",
     "noMatch": {
       "title": "No models match",
+      "singleModelDescription": "Only 1 model is available in this project. Model availability depends on your plan and connected providers.",
       "description": "Nothing matches “{search}”. Try a different search.",
       "clear": "Clear search"
     },
@@ -22038,6 +22039,10 @@
   "triggerAutoPause": {
     "title": "Paused itself at its run limit",
     "description": "It ran at its hourly run limit for 2 hours in a row, so it stopped starting runs. Find what keeps firing it, then resume it."
+  },
+  "featureGate": {
+    "enable": "Enable {name}",
+    "enabling": "Enabling…"
   },
   "rooms": {
     "title": "Rooms",

@@ -25,8 +25,9 @@ import { C, help, pad, status } from '../style.ts';
 const HELP = help`Usage: kortix reminders <subcommand> [options]
        kortix remind "<prompt>" [schedule]        (= reminders add)
 
-Reminders are a per-project feature flag, off by default. Turn them on with
-\`kortix projects features enable reminders\` (or Settings → Feature flags).
+Reminders are a per-project feature flag, on by default. A project that turned
+them off turns them back on with \`kortix projects features enable reminders\`
+(or Settings → Feature flags).
 
 A reminder re-prompts ONE session on a schedule — "in 24h, check whether the
 email arrived", "every hour until the deploy is green". It is a trigger scoped

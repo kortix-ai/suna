@@ -168,7 +168,9 @@ export function buildEmailConnectorConnectionSlug(baseInput: string, uniqueId: s
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '')
+      // One `_` at most per end: the line above folds every run that holds
+      // `_` into one `_`. `_+$` backtracks quadratically (CodeQL js/polynomial-redos).
+      .replace(/^_|_$/g, '')
       .slice(0, 48) || 'inbox';
   const suffix =
     uniqueId

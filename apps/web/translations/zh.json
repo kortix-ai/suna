@@ -22039,6 +22039,10 @@
     "title": "已在运行上限处自动暂停",
     "description": "它连续 2 小时达到每小时运行上限，因此已停止启动运行。找出持续触发它的原因，然后恢复它。"
   },
+  "featureGate": {
+    "enable": "启用{name}",
+    "enabling": "正在启用…"
+  },
   "rooms": {
     "title": "聊天室",
     "memberCount": "{count, plural, other {# 位成员}}",
