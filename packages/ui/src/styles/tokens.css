@@ -67,14 +67,6 @@
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
-  --liquid-glass-bg: color-mix(in oklch, var(--secondary) 45%, transparent);
-  --liquid-glass-bg-hover: color-mix(in oklch, var(--secondary) 62%, transparent);
-  --liquid-glass-blur: 20px;
-  --liquid-glass-saturate: 1.8;
-  --liquid-glass-shadow: 0 20px 48px -16px oklch(0 0 0 / 0.65), inset 0 1.5px 0 oklch(1 0 0 / 0.35), inset 0 -1px 0 oklch(1 0 0 / 0.08);
-  --liquid-glass-highlight: radial-gradient(circle at 30% 20%, oklch(1 0 0 / 0.28), transparent 55%);
-  --font-sans-system: ui-sans-serif, -apple-system, 'Segoe UI', 'Helvetica Neue', 'Noto Sans', sans-serif;
-  --font-mono-system: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   --text-xs: 0.8125rem;
   --text-xs--line-height: calc(1 / 0.8125);
   --text-sm: 0.875rem;
@@ -101,6 +93,14 @@
   --text-7xl--line-height: 1;
   --text-8xl: 6rem;
   --text-8xl--line-height: 1;
+  --liquid-glass-bg: color-mix(in oklch, var(--secondary) 45%, transparent);
+  --liquid-glass-bg-hover: color-mix(in oklch, var(--secondary) 62%, transparent);
+  --liquid-glass-blur: 20px;
+  --liquid-glass-saturate: 1.8;
+  --liquid-glass-shadow: 0 20px 48px -16px oklch(0 0 0 / 0.65), inset 0 1.5px 0 oklch(1 0 0 / 0.35), inset 0 -1px 0 oklch(1 0 0 / 0.08);
+  --liquid-glass-highlight: radial-gradient(circle at 30% 20%, oklch(1 0 0 / 0.28), transparent 55%);
+  --font-sans-system: ui-sans-serif, -apple-system, 'Segoe UI', 'Helvetica Neue', 'Noto Sans', sans-serif;
+  --font-mono-system: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
 .dark {

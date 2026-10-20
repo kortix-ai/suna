@@ -166,3 +166,13 @@ describe('serializeSession warm status', () => {
     expect((source as { metadata: Record<string, unknown> }).metadata.warm).toBe(true);
   });
 });
+
+test('list serialization prefers the durable conversation selection without changing the creation pin', () => {
+  const source = row({ metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } });
+  const out = serializeSession(source, { trimListMetadata: true, conversationModel: 'kortix/glm-5.3-flash' });
+  expect(out.model).toBe('kortix/glm-5.3-flash');
+  expect(out.metadata.opencode_model).toBe('kortix/deepseek-v4.1-flash');
+  expect(serializeSession(source).model).toBe('kortix/deepseek-v4.1-flash');
+  expect(serializeSession(row({ metadata: {} })).model).toBeNull();
+  expect(serializeSession(source, { canAccess: false, conversationModel: 'kortix/glm-5.3-flash' }).model).toBeNull();
+});

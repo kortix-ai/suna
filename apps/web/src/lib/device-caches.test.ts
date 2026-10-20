@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, mock, test } from 'bun:test';
 
-import { getSharedQueryClient, registerQueryClient } from '@/lib/query-client-singleton';
-import { safeSetItem } from '@/lib/storage/managed-storage';
+import { getSharedQueryClient, registerQueryClient } from '@kortix/ui/internal/lib/query-client-singleton';
+import { safeSetItem } from '@kortix/ui/internal/lib/storage/managed-storage';
 import {
   type SessionTranscriptSyncEnvelope,
   createPersistedQueryCache,
@@ -41,7 +41,11 @@ const indexedStorage = {
   setItem: async (key: string, value: string) => void indexed.set(key, value),
   removeItem: async (key: string) => void indexed.delete(key),
 };
+// A bun module mock is process-wide: keep the real exports, or a file that runs
+// after this one in the same `bun test` process imports a module with holes.
+const idbSyncCache = await import('@kortix/sdk/internal/idb-sync-cache');
 mock.module('@kortix/sdk/internal/idb-sync-cache', () => ({
+  ...idbSyncCache,
   indexedDBKeyValueStorage: () => indexedStorage,
 }));
 const { adoptDeviceCaches, clearDeviceCaches, sweepRetiredDeviceCaches, WEB_QUERY_CACHE_MAX_BYTES } =
@@ -72,7 +76,7 @@ afterAll(() => {
 
 const USER = 'user-a';
 const STORAGE_KEY = `kortix.query-cache:${USER}`;
-const gateKey = ['project-access-boundary', 'project-1', USER];
+const gateKey = qk.project.summary('project-1');
 const listKey = qk.project.sessionsPaged('project-1');
 const messagesKey = qk.project.messages('project-1', 'session-1');
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -141,7 +145,7 @@ function sessionRow(n: number) {
 // the skeleton instead of its kept conversation (journey 34, release 0.14.3).
 describe('adopt runs before the query client registers (#10344)', () => {
   const user = 'user-early';
-  const gate = ['project-access-boundary', 'project-early', user];
+  const gate = qk.project.summary('project-early');
   const opensOn = (pathname: string) => Object.assign(pageWindow, { location: { pathname } });
 
   test('registers the saved-copy store and prefetches the opened session with no client yet', async () => {

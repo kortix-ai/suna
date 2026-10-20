@@ -241,6 +241,8 @@ await runAll([
   when('packages/sdk', () => run(['pnpm', '--filter', '@kortix/sdk', 'typecheck'])),
   when('packages/sdk', () => run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install'])),
   when('packages/ui', () => run(['pnpm', '--filter', '@kortix/ui', 'typecheck'])),
+  // The apps/web rules (SDK boundary, query keys, icons) over the moved session UI.
+  when('packages/ui', () => run(['pnpm', '--filter', '@kortix/ui', 'lint'])),
   // Frozen counts (apps/api/eslint.config.mjs): new violations fail, fixed ones must be pruned.
   when('apps/api', () => run(['pnpm', '--filter', 'kortix-api', 'lint'])),
   // The migration file lint (backfill-safe sign-off, CONCURRENTLY, safety header).

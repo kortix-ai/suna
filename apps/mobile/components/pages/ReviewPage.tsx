@@ -291,6 +291,7 @@ export function ReviewPage({
               the page — the same bar as the switcher sheet's. */}
           <PinnedBar controlHeight={FLOATING_BAR_HEIGHT} background={pageBackground} className="justify-center px-4">
             <FloatingTabCapsule
+              glass
               items={SEGMENT_TABS}
               activeIndex={REVIEW_SEGMENTS.findIndex(({ key }) => key === segment)}
               onSelect={(index) => {

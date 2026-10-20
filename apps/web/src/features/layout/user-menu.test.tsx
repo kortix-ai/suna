@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { TERMINAL_THEMES } from '@/lib/interface-themes';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 
 import en from '../../../translations/en.json';
 import { INTERFACE_THEME_OPTIONS } from './interface-theme';

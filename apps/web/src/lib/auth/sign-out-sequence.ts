@@ -1,4 +1,4 @@
-import { type BudgetOutcome, withTimeBudget } from '@/lib/utils/time-budget';
+import { type BudgetOutcome, withTimeBudget } from '@kortix/ui/internal/lib/utils/time-budget';
 
 /**
  * The sign-out SEQUENCE: what happens, in what order, what a failure at each

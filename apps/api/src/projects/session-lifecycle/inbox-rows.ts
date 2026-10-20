@@ -1,4 +1,5 @@
 import { sessionLifecycleCommands } from '@kortix/db';
+import { promptState } from '../lib/session-prompt-state';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
@@ -24,9 +25,9 @@ import { forwardedSql, heldSql, isStopPaused, notHeldSql, stopPausedOnDeliverySq
  */
 
 /** A `continue_session` row the USER created through the composer. */
-export function inboxScope(sessionId: string) {
+export function inboxScope(sessionId: string | string[]) {
   return and(
-    eq(sessionLifecycleCommands.sessionId, sessionId),
+    (typeof sessionId === 'string' ? eq(sessionLifecycleCommands.sessionId, sessionId) : inArray(sessionLifecycleCommands.sessionId, sessionId)),
     eq(sessionLifecycleCommands.commandType, 'continue_session'),
     // THE inbox predicate. Only the prompt routes write `clientMessageId`;
     // every automation producer leaves it absent.
@@ -98,6 +99,34 @@ export async function listInboxPrompts(
     )
     .orderBy(...inboxOrderBy())
     .limit(limit);
+}
+
+/** Only live work facts: terminal history and prompt/attachment bodies never leave SQL. */
+export async function listInboxPromptsForSessions(sessionIds: string[]) {
+  if (sessionIds.length === 0) return [];
+  const rows = await db.select({
+    sessionId: sessionLifecycleCommands.sessionId,
+    status: sessionLifecycleCommands.status,
+    result: sql<Record<string, unknown>>`jsonb_strip_nulls(jsonb_build_object(
+      'status', ${sessionLifecycleCommands.result}->'status',
+      'delivery_started_at', ${sessionLifecycleCommands.result}->'delivery_started_at',
+      'admission_reason', ${sessionLifecycleCommands.result}->'admission_reason',
+      'delivery_blocked', ${sessionLifecycleCommands.result}->'delivery_blocked'))`,
+    client_sent_at_ms: sql<unknown>`${sessionLifecycleCommands.payload}->'clientSentAtMs'`,
+  }).from(sessionLifecycleCommands).where(and(
+    inboxScope(sessionIds), notHeldSql,
+    or(inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+      and(eq(sessionLifecycleCommands.status, 'succeeded'), forwardedSql)),
+    // promptState gives forwarded and admitted deliveries precedence over admission_reason.
+    or(forwardedSql,
+      and(eq(sessionLifecycleCommands.status, 'running'), sql`jsonb_typeof(${sessionLifecycleCommands.result}->'delivery_started_at') = 'string'`),
+      sql`${sessionLifecycleCommands.result}->>'admission_reason' IS DISTINCT FROM 'held'`),
+  ));
+  return rows.map(row => ({
+    sessionId: row.sessionId,
+    ...promptState(row),
+    client_sent_at_ms: typeof row.client_sent_at_ms === 'number' ? row.client_sent_at_ms : null,
+  }));
 }
 
 export type InboxPromptDeletion =

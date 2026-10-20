@@ -13,6 +13,7 @@ import {
   sessionLogCallStatus,
   sessionLogOfV1Rows,
   sessionModelPin,
+  sessionListStatus,
   toolCallError,
   toolCallRawOutput,
 } from '@kortix/sdk';
@@ -91,7 +92,12 @@ export async function loadSessionForChat(
       client,
       projectId,
       session,
-      onNotRunning: options.requireRunning === false ? 'ignore' : 'fail',
+      onNotRunning: options.requireRunning === false
+        ? 'ignore'
+        : cliCommand === 'sessions chat' && session.status === 'provisioning' ? 'start' : 'fail',
+      onStarting: () => {
+        process.stderr.write(`${C.dim}  Starting session…${C.reset}\n`);
+      },
     });
   } catch (error) {
     if (error instanceof SessionRuntimeError && error.kind === 'not-running') {
@@ -148,6 +154,14 @@ function logMessageText(message: SessionLogMessage): string {
 }
 
 /** A v1 message's text, as `sessions chat` prints it. */
+/** The turn error a v1 reply carries, worded as `sessions chat` prints it
+ *  (the gateway's own sentence), or null. */
+export function extractMessageError(msg: MessageWithParts): string | null {
+  const message = sessionLogOfV1Rows('', msg.info.sessionID, [msg]).threads[0]?.messages[0];
+  const error = message ? classifySessionLogMessage(message).error : null;
+  return error ? `${error.name}: ${error.message}` : null;
+}
+
 export function extractMessageText(msg: MessageWithParts): string {
   const message = sessionLogOfV1Rows('', msg.info.sessionID, [msg]).threads[0]?.messages[0];
   return message ? logMessageText(message) : '';
@@ -1092,13 +1106,16 @@ const STATUS_HELP = help`Usage: kortix sessions status [options]
 
 Mission control: a one-line overview of every session and what each agent is
 doing *right now* — for when many run in parallel. For each running session it
-reads the live agent state (current tool / generating / idle + last activity).
+uses canonical work activity without waking its computer. Older servers fall
+back to live agent state (current tool / generating / idle + last activity).
 By default shows active sessions (running / provisioning / failed); pass --all
 to include stopped ones. Aliases: \`overview\`, \`ps\`.
 
   --all, -a         Include stopped/completed sessions.
   --json            Structured output for scripting; each session carries
                     model, its resolved model id (null when none stored).
+                    status is computer lifecycle; working is canonical activity;
+                    display_status is the list verdict.
   --project <id>    Operate on this project id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
@@ -1121,7 +1138,7 @@ interface SessionActivity {
 
 /**
  * `kortix sessions status` — overview of all sessions + live per-agent
- * activity. Running sessions get one concurrent OpenCode read each (capped),
+ * activity. Older servers get one concurrent runtime read per running session (capped),
  * so it scales to a wall of parallel sessions without a thundering herd.
  */
 export async function runSessionsStatus(argv: string[]): Promise<number> {
@@ -1169,10 +1186,17 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
       Date.parse(b.updated_at) - Date.parse(a.updated_at),
   );
 
-  // Pull live activity for running sessions, concurrency-capped.
+  // Canonical activity never needs a runtime probe (which could wake the computer).
   const running = shown.filter((s) => s.status === 'running');
   const activity = new Map<string, SessionActivity>();
-  await mapLimit(running, 8, async (s) => {
+  for (const s of shown) {
+    if (s.working) activity.set(s.session_id, {
+      working: s.working.state === 'working',
+      summary: s.working.state === 'working' ? 'working…' : 'idle',
+      ...(s.working.since ? { last_at: s.working.since } : {}),
+    });
+  }
+  await mapLimit(running.filter((s) => !s.working), 8, async (s) => {
     const a = await fetchSessionActivity(s, ctx.projectId, auth);
     if (a) activity.set(s.session_id, a);
   });
@@ -1183,11 +1207,12 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
         session_id: s.session_id,
         name: s.name ?? null,
         status: s.status,
+        working: s.working ?? null,
+        display_status: sessionListStatus(s),
         branch: s.branch_name,
         agent: s.agent_name,
-        // Stored resolved model pin; null = the row stores none and the
-        // session follows the default chain.
-        model: sessionModelPin(s),
+        // Prefer the conversation selection; preserve old-server compatibility.
+        model: s.model === undefined ? sessionModelPin(s) : s.model,
         updated_at: s.updated_at,
         activity: activity.get(s.session_id) ?? null,
       })),
@@ -1211,7 +1236,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
 
   process.stdout.write(`\n  ${C.dim}${headline}${C.reset}\n\n`);
   for (const s of shown) {
-    const dot = statusDot(s.status);
+    const dot = statusDot(sessionListStatus(s));
     const label = s.name ?? s.agent_name;
     const id = shortId(s.session_id);
     const act = activity.get(s.session_id);
@@ -1223,7 +1248,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
         : `${C.faded}${s.status}${C.reset}`;
     const age = formatRelative(act?.last_at ?? s.updated_at, { maxRelativeDays: null });
     process.stdout.write(
-      `  ${dot} ${C.dim}${id}${C.reset}  ${pad(label, labelW)}  ${doing}  ${C.faded}${age}${C.reset}\n`,
+      `  ${dot} ${C.dim}${id}${C.reset}  ${pad(label, labelW)}  ${doing}  ${C.dim}computer: ${s.status}${C.reset}  ${C.faded}${age}${C.reset}\n`,
     );
   }
   process.stdout.write('\n');
@@ -1412,7 +1437,10 @@ function statusDot(s: string): string {
 
 function countByStatus(sessions: ProjectSession[]): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const s of sessions) out[s.status] = (out[s.status] ?? 0) + 1;
+  for (const s of sessions) {
+    const state = sessionListStatus(s);
+    out[state] = (out[state] ?? 0) + 1;
+  }
   return out;
 }
 
