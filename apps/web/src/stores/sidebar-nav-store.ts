@@ -35,8 +35,9 @@ export const SIDEBAR_NAV_DEFAULTS: readonly SidebarNavEntry[] = [
   { id: 'customize', visibility: 'always' },
   { id: 'files', visibility: 'always' },
   { id: 'apps', visibility: 'always' },
-  // Rooms (2026-10-19, flag `agent_rooms`): conversations between sessions and people.
-  { id: 'rooms', visibility: 'always' },
+  // Rooms (2026-10-19, flag `agent_rooms`): chat rooms for sessions and people.
+  // In the More menu until the person pins it (2026-10-20).
+  { id: 'rooms', visibility: 'never' },
 ];
 
 function isItemId(value: unknown): value is SidebarNavItemId {
@@ -67,6 +68,18 @@ export function normalizeSidebarNav(saved: unknown): SidebarNavEntry[] {
     if (!out.some((e) => e.id === entry.id)) out.splice(Math.min(index, out.length), 0, { ...entry });
   });
   return out;
+}
+
+/**
+ * v1 → v2 (2026-10-20): Rooms moved into the More menu by default. A v1
+ * layout persisted the old default (`always`) on first load, before anyone
+ * chose it, so the migration moves Rooms into More. A layout the account saved
+ * remotely is a deliberate choice and is not migrated.
+ */
+export function migrateSidebarNav(persisted: unknown, version: number): { items: SidebarNavEntry[] } {
+  const items = normalizeSidebarNav((persisted as { items?: unknown } | undefined)?.items);
+  if (version >= 2) return { items };
+  return { items: items.map((e) => (e.id === 'rooms' ? { id: 'rooms', visibility: 'never' } : e)) };
 }
 
 /** The `user_metadata` key that carries the layout to every device the
@@ -140,7 +153,8 @@ export const useSidebarNavStore = create<SidebarNavState>()(
     {
       name: STORAGE_KEY,
       storage: createSafeJSONStorage(),
-      version: 1,
+      version: 2,
+      migrate: (persisted, version) => migrateSidebarNav(persisted, version) as unknown as SidebarNavState,
       partialize: (state) => ({ items: state.items }),
       merge: (persisted, current) => ({
         ...current,

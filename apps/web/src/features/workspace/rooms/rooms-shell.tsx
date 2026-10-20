@@ -2,39 +2,32 @@
 
 import { Button } from '@/components/ui/button';
 import { CountBadge } from '@/components/ui/count-badge';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { RoomConversation } from '@kortix/sdk';
 import { useRoomConversations } from '@kortix/sdk/react';
-import { CaretDownIcon, HashIcon, PlusIcon } from '@phosphor-icons/react';
+import { HashIcon, PlusIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useMemo, useState, type ReactNode } from 'react';
 
-import { BrowseChannelsModal, CreateChannelModal } from './channel-modals';
-
-type RoomsModal = 'create' | 'browse' | null;
+import { RoomsDialog } from './room-modals';
 
 /**
- * The Slack layout for /projects/[id]/rooms*: the channel list on the left,
- * the open channel on the right. Below the container's `@2xl` width it shows
- * one pane: the list at /rooms, the channel (with a back button) at
- * /rooms/[roomId].
+ * The Slack layout for /projects/[id]/rooms*: the room list on the left, the
+ * open room on the right. Below the container's `@2xl` width it shows one
+ * pane: the list at /rooms, the room (with a back button) at /rooms/[roomId].
  */
 export function RoomsShell({ projectId, children }: { projectId: string; children: ReactNode }) {
   const params = useParams<{ roomId?: string }>();
   const roomId = params?.roomId ?? null;
   const conversations = useRoomConversations(projectId);
-  const [modal, setModal] = useState<RoomsModal>(null);
+  const [adding, setAdding] = useState(false);
   const joined = useMemo(() => new Set((conversations.data ?? []).map((c) => c.room_id)), [conversations.data]);
 
   return (
@@ -46,57 +39,55 @@ export function RoomsShell({ projectId, children }: { projectId: string; childre
             roomId ? 'hidden' : 'flex',
           )}
         >
-          <ChannelSidebar projectId={projectId} activeRoomId={roomId} conversations={conversations} onOpen={setModal} />
+          <RoomSidebar projectId={projectId} activeRoomId={roomId} conversations={conversations} onAdd={() => setAdding(true)} />
         </aside>
         <main className={cn('min-h-0 min-w-0 flex-1 flex-col', roomId ? 'flex' : 'hidden @2xl:flex')}>{children}</main>
       </div>
-      <CreateChannelModal
-        projectId={projectId}
-        open={modal === 'create'}
-        onOpenChange={(open) => setModal(open ? 'create' : null)}
-      />
-      <BrowseChannelsModal
-        projectId={projectId}
-        joined={joined}
-        open={modal === 'browse'}
-        onOpenChange={(open) => setModal(open ? 'browse' : null)}
-      />
+      <RoomsDialog projectId={projectId} joined={joined} open={adding} onOpenChange={setAdding} />
     </>
   );
 }
 
-function ChannelSidebar({
+function RoomSidebar({
   projectId,
   activeRoomId,
   conversations,
-  onOpen,
+  onAdd,
 }: {
   projectId: string;
   activeRoomId: string | null;
   conversations: ReturnType<typeof useRoomConversations>;
-  onOpen: (modal: Exclude<RoomsModal, null>) => void;
+  onAdd: () => void;
 }) {
   const t = useTranslations('rooms');
-  const [open, setOpen] = useState(true);
-  const channels = useMemo(
+  const sidebar = useOptionalSidebar();
+  const rooms = useMemo(
     () =>
       (conversations.data ?? [])
         .filter((c) => !c.archived_at)
-        .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '')),
+        .sort((a, b) => a.name.localeCompare(b.name)),
     [conversations.data],
   );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="border-border flex h-12 shrink-0 items-center gap-2 border-b px-4">
-        <h1 className="text-foreground min-w-0 flex-1 truncate text-sm font-semibold">{t('title')}</h1>
-        <Hint label={t('createChannel')} side="bottom">
-          <Button variant="ghost" size="icon-sm" aria-label={t('createChannel')} onClick={() => onOpen('create')}>
-            <PlusIcon />
-          </Button>
-        </Hint>
+      {/* The project page title bar (`ProjectPageHeader` classes): the sidebar
+          opener when the app sidebar is collapsed, and the desktop drag band. */}
+      <header
+        className="kx-titlebar-row kx-capability-titlebar border-border relative flex shrink-0 items-center gap-1 border-b px-2"
+        data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
+      >
+        <SidebarToggle />
+        <div className="kx-titlebar-tabs flex h-10 min-w-0 flex-1 items-center gap-2 pl-2">
+          <h1 className="text-foreground min-w-0 flex-1 truncate text-sm font-semibold">{t('title')}</h1>
+          <Hint label={t('addRooms')} side="bottom">
+            <Button variant="ghost" size="icon-sm" aria-label={t('addRooms')} onClick={onAdd}>
+              <PlusIcon />
+            </Button>
+          </Hint>
+        </div>
       </header>
-      <nav aria-label={t('channels')} className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+      <nav aria-label={t('title')} className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         {conversations.isError ? (
           <ErrorState
             size="sm"
@@ -114,63 +105,30 @@ function ChannelSidebar({
             ))}
           </div>
         ) : (
-          <section>
-            <div className="flex h-7 items-center gap-1 px-1">
+          <ul className="space-y-px">
+            {rooms.map((c) => (
+              <RoomRow key={c.room_id} projectId={projectId} conversation={c} active={c.room_id === activeRoomId} />
+            ))}
+            <li>
               <button
                 type="button"
-                aria-expanded={open}
-                onClick={() => setOpen((v) => !v)}
-                className="text-muted-foreground hover:text-foreground flex min-w-0 flex-1 items-center gap-1 rounded-sm px-1 text-left text-xs font-medium"
+                onClick={onAdd}
+                className="text-muted-foreground hover:bg-hover hover:text-foreground flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm"
               >
-                <CaretDownIcon
-                  className={cn(
-                    'duration-moderate size-3 shrink-0 transition-transform ease-out motion-reduce:transition-none',
-                    !open && '-rotate-90',
-                  )}
-                />
-                <span className="truncate">{t('channels')}</span>
+                <span className="bg-muted flex size-5 shrink-0 items-center justify-center rounded-sm">
+                  <PlusIcon className="size-3" />
+                </span>
+                <span className="truncate">{t('addRooms')}</span>
               </button>
-              <DropdownMenu>
-                <Hint label={t('addChannels')}>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon-xs" aria-label={t('addChannels')}>
-                      <PlusIcon />
-                    </Button>
-                  </DropdownMenuTrigger>
-                </Hint>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => onOpen('create')}>{t('createChannel')}</DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onOpen('browse')}>{t('browseChannels')}</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-            {open ? (
-              <ul className="space-y-px">
-                {channels.map((c) => (
-                  <ChannelRow key={c.room_id} projectId={projectId} conversation={c} active={c.room_id === activeRoomId} />
-                ))}
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => onOpen('browse')}
-                    className="text-muted-foreground hover:bg-hover hover:text-foreground flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-sm"
-                  >
-                    <span className="bg-muted flex size-5 shrink-0 items-center justify-center rounded-sm">
-                      <PlusIcon className="size-3" />
-                    </span>
-                    <span className="truncate">{t('addChannels')}</span>
-                  </button>
-                </li>
-              </ul>
-            ) : null}
-          </section>
+            </li>
+          </ul>
         )}
       </nav>
     </div>
   );
 }
 
-function ChannelRow({
+function RoomRow({
   projectId,
   conversation,
   active,
@@ -186,7 +144,7 @@ function ChannelRow({
         href={`/projects/${projectId}/rooms/${conversation.room_id}`}
         aria-current={active ? 'page' : undefined}
         className={cn(
-          'flex h-7 items-center gap-2 rounded-md px-2 text-sm',
+          'flex h-8 items-center gap-2 rounded-md px-2 text-sm',
           active
             ? 'bg-active text-foreground font-medium'
             : unread

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { RoomMessage } from '@kortix/sdk';
 
-import { activeMention, groupMessages, parseSessionLabel, sessionDisplay, splitMessageText } from './room-text';
+import { activeMention, groupMessages, parseSessionLabel, relativeTime, sessionDisplay, splitMessageText } from './room-text';
 
 const SESSION = 'aaaabbbb-1111-2222-3333-444455556666';
 const USER = 'ccccdddd-1111-2222-3333-444455556666';
@@ -17,6 +17,8 @@ function message(seq: number, at: string, sender: 'a' | 'b'): RoomMessage {
     sender_label: sender,
     text: 'x',
     reply_to_seq: null,
+    reply_count: 0,
+    last_reply_at: null,
     created_at: at,
   };
 }
@@ -88,5 +90,14 @@ describe('activeMention', () => {
     expect(activeMention('@', 1)).toEqual({ query: '', start: 0 });
     expect(activeMention('mail a@b', 8)).toBeNull();
     expect(activeMention('hey @bui there', 14)).toBeNull();
+  });
+});
+
+describe('relativeTime', () => {
+  test('rounds to the largest whole unit', () => {
+    const now = Date.parse('2026-10-20T12:00:00Z');
+    expect(relativeTime('2026-10-20T11:55:00Z', now, 'en')).toBe('5 minutes ago');
+    expect(relativeTime('2026-10-20T09:00:00Z', now, 'en')).toBe('3 hours ago');
+    expect(relativeTime('2026-10-20T11:59:50Z', now, 'en')).toBe('now');
   });
 });

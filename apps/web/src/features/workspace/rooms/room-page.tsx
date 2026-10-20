@@ -11,16 +11,19 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { addRoomPerson, updateRoom, type RoomMember, type RoomMessage } from '@kortix/sdk';
-import { qk, useRoom, useRoomConversations, useRoomMessages } from '@kortix/sdk/react';
+import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
+import { qk, useRoom, useRoomConversations, useRoomMessages, useRoomThread } from '@kortix/sdk/react';
 import { ArrowLeftIcon, HashIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { ParticipantAvatar } from './room-identity';
 import { RoomComposer } from './room-composer';
 import { RoomMembersPanel } from './room-members-panel';
-import { RoomMessageList } from './room-messages';
+import { repliersOf, RoomMessageList } from './room-messages';
+import { RoomThreadPanel } from './room-thread-panel';
 import { useMentionTargets, useRoomPeople, useRoomSessions } from './use-room-directory';
 
 const EMPTY_MEMBERS: RoomMember[] = [];
@@ -32,10 +35,12 @@ function subscribeVisibility(onChange: () => void) {
 }
 
 /**
- * /projects/[id]/rooms/[roomId] — one channel, Slack-style: a header with the
- * name, topic and members, the messages, and a composer. A person member's
- * read cursor moves to the newest message whenever the page is visible. A
- * viewer who is not in the channel reads it and can join it.
+ * /projects/[id]/rooms/[roomId] — one room, Slack-style: a header with the
+ * name, topic and members, the top-level messages, and a composer. Replies
+ * live in threads: `?thread=<seq>` opens the thread panel beside the room
+ * (one side panel at a time, the members panel being the other). A person
+ * member's read cursor moves to the newest message whenever the page is
+ * visible. A viewer who is not in the room reads it and can join it.
  */
 export function RoomPage({ projectId, roomId }: { projectId: string; roomId: string }) {
   const t = useTranslations('rooms');
@@ -44,7 +49,7 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
   const viewerId = user?.id ?? null;
   const room = useRoom(projectId, roomId);
   const conversations = useRoomConversations(projectId);
-  const messages = useRoomMessages(projectId, roomId);
+  const messages = useRoomMessages(projectId, roomId, { top: true });
   const sessions = useRoomSessions(projectId);
   const people = useRoomPeople(projectId);
   const conversation = conversations.data?.find((c) => c.room_id === roomId) ?? null;
@@ -52,7 +57,23 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
   const members = room.data?.members ?? EMPTY_MEMBERS;
   const lastSeq = messages.data?.last_seq ?? 0;
   const [membersOpen, setMembersOpen] = useState(false);
-  const [replyTo, setReplyTo] = useState<RoomMessage | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const threadParam = Number(searchParams.get('thread'));
+  const threadSeq = Number.isInteger(threadParam) && threadParam > 0 ? threadParam : null;
+  // A thread opened by link highlights its root in the room once.
+  const [linkedSeq] = useState(threadSeq);
+  const openThread = (seq: number | null) => {
+    if (seq !== null) setMembersOpen(false);
+    router.replace(seq === null ? pathname : `${pathname}?thread=${seq}`, { scroll: false });
+  };
+  // Replier avatars under a root come from its thread when that thread is loaded.
+  const openThreadData = useRoomThread(projectId, roomId, threadSeq);
+  const repliers = useMemo(() => {
+    const replies = (openThreadData.data?.messages ?? []).filter((m) => m.seq !== threadSeq);
+    return threadSeq !== null && replies.length > 0 ? new Map([[threadSeq, repliersOf(replies)]]) : undefined;
+  }, [openThreadData.data, threadSeq]);
   const atBottomRef = useRef(true);
   const targets = useMentionTargets(members, sessions.sessions, people.data ?? [], viewerId);
   const visible = useSyncExternalStore(
@@ -65,7 +86,9 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
   const [newFromSeq, setNewFromSeq] = useState<number | null | undefined>(undefined);
   if (newFromSeq === undefined && conversations.isSuccess && messages.isSuccess) {
     const unread = conversation?.unread ?? 0;
-    setNewFromSeq(unread > 0 ? Math.max(1, messages.data.last_seq - unread + 1) : null);
+    // `unread` counts top-level messages, so the line sits above the unread-th newest one.
+    const top = messages.data.messages;
+    setNewFromSeq(unread > 0 ? (top[Math.max(0, top.length - unread)]?.seq ?? null) : null);
   }
 
   // Read cursor: once per new newest message, only while a person can see it.
@@ -117,7 +140,10 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
           members={members}
           canEdit={isMember}
           membersOpen={membersOpen}
-          onToggleMembers={() => setMembersOpen((v) => !v)}
+          onToggleMembers={() => {
+            if (!membersOpen && threadSeq !== null) openThread(null);
+            setMembersOpen((v) => !v);
+          }}
         />
         {messages.isLoading || room.isLoading ? (
           <MessageSkeletons />
@@ -137,34 +163,48 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
           <RoomMessageList
             projectId={projectId}
             messages={messages.data?.messages ?? EMPTY_MESSAGES}
-            intro={<ChannelIntro title={title} />}
+            intro={<RoomIntro title={title} />}
             newFromSeq={newFromSeq ?? null}
             targets={targets}
             atBottomRef={atBottomRef}
-            onReply={setReplyTo}
+            highlightSeq={linkedSeq}
+            repliers={repliers}
+            onOpenThread={openThread}
           />
         )}
         {room.data && !isMember && !conversations.isLoading ? (
           <JoinBar name={title} onJoin={join} />
         ) : (
           <RoomComposer
-            projectId={projectId}
-            placeholder={t('messageChannel', { name: title })}
+            placeholder={t('messageRoom', { name: title })}
             roomName={title}
             members={members}
             sessions={sessions.sessions}
             people={people.data ?? []}
             viewerId={viewerId}
-            replyTo={replyTo}
-            onCancelReply={() => setReplyTo(null)}
-            onSend={async (text, reply) => {
+            onSend={async (text) => {
               atBottomRef.current = true;
-              await messages.post.mutateAsync({ text, reply_to: reply });
+              await messages.post.mutateAsync({ text });
             }}
           />
         )}
       </div>
-      {membersOpen && room.data ? (
+      {threadSeq !== null && room.data ? (
+        <RoomThreadPanel
+          key={threadSeq}
+          projectId={projectId}
+          roomId={roomId}
+          roomName={title}
+          rootSeq={threadSeq}
+          members={members}
+          sessions={sessions.sessions}
+          people={people.data ?? []}
+          viewerId={viewerId}
+          targets={targets}
+          canPost={isMember}
+          onClose={() => openThread(null)}
+        />
+      ) : membersOpen && room.data ? (
         <RoomMembersPanel
           projectId={projectId}
           roomId={roomId}
@@ -203,7 +243,12 @@ function RoomHeader({
   const stack = [...members].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'person' ? -1 : 1)).slice(0, 3);
 
   return (
-    <header className="border-border flex h-12 shrink-0 items-center gap-2 border-b px-4">
+    <header className="kx-titlebar-row kx-capability-titlebar border-border relative flex shrink-0 items-center gap-1 border-b px-2">
+      {/* Below `@2xl` the room list is hidden, so the room header carries the opener. */}
+      <span className="flex @2xl:hidden">
+        <SidebarToggle />
+      </span>
+      <div className="kx-titlebar-tabs flex h-10 min-w-0 flex-1 items-center gap-2 pl-2">
       <Hint label={t('back')} side="bottom">
         <Button asChild variant="ghost" size="icon-sm" aria-label={t('back')} className="@2xl:hidden">
           <Link href={`/projects/${projectId}/rooms`}>
@@ -241,6 +286,7 @@ function RoomHeader({
           </Button>
         </Hint>
       ) : null}
+      </div>
     </header>
   );
 }
@@ -333,15 +379,15 @@ function TopicEditor({
   );
 }
 
-function ChannelIntro({ title }: { title: string }) {
+function RoomIntro({ title }: { title: string }) {
   const t = useTranslations('rooms');
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 px-5">
       <h2 className="text-foreground flex items-center gap-1 text-xl font-medium">
         <HashIcon className="size-5 shrink-0" />
         <span className="min-w-0 truncate">{title}</span>
       </h2>
-      <p className="text-muted-foreground text-sm text-pretty">{t('introChannel', { name: title })}</p>
+      <p className="text-muted-foreground text-sm text-pretty">{t('introRoom', { name: title })}</p>
     </div>
   );
 }
@@ -352,7 +398,7 @@ function JoinBar({ name, onJoin }: { name: string; onJoin: () => Promise<void> }
   return (
     <div className="shrink-0 px-5 pb-5">
       <div className="bg-popover border-border flex flex-col items-center gap-2 rounded-md border px-4 py-3">
-        <p className="text-foreground text-sm">{t('viewingChannel', { name })}</p>
+        <p className="text-foreground text-sm">{t('viewingRoom', { name })}</p>
         <Button
           size="sm"
           disabled={pending}
@@ -363,7 +409,7 @@ function JoinBar({ name, onJoin }: { name: string; onJoin: () => Promise<void> }
             setPending(false);
           }}
         >
-          {t('joinChannel')}
+          {t('joinRoom')}
         </Button>
       </div>
     </div>

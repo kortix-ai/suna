@@ -5,9 +5,8 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useRoomConversations } from '@kortix/sdk/react';
 
 /**
- * /projects/[id]/rooms — the conversation pane with nothing open. The list
- * beside it carries "New message" and "Add channels", so this pane only says
- * what to do.
+ * /projects/[id]/rooms — the room pane with nothing open. The list beside it
+ * carries "Add rooms", so this pane only says what to do.
  */
 export function RoomsPage({ projectId }: { projectId: string }) {
   const t = useTranslations('rooms');
@@ -20,7 +19,7 @@ export function RoomsPage({ projectId }: { projectId: string }) {
       {none ? (
         <EmptyState size="sm" title={t('empty')} description={t('emptyHint')} />
       ) : (
-        <EmptyState size="sm" title={t('pickConversation')} />
+        <EmptyState size="sm" title={t('pickRoom')} />
       )}
     </div>
   );

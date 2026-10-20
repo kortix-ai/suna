@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   SIDEBAR_NAV_DEFAULTS,
   type SidebarNavEntry,
+  migrateSidebarNav,
   moveSidebarNavItem,
   normalizeSidebarNav,
   resolveSidebarNav,
@@ -47,13 +48,34 @@ describe('normalizeSidebarNav', () => {
       { id: 'customize', visibility: 'always' },
       { id: 'files', visibility: 'always' },
       { id: 'apps', visibility: 'never' },
-      { id: 'rooms', visibility: 'always' },
+      { id: 'rooms', visibility: 'never' },
     ]);
+  });
+
+  test('Rooms sits in the More menu until the person pins it', () => {
+    expect(normalizeSidebarNav(null).find((e) => e.id === 'rooms')?.visibility).toBe('never');
+    expect(
+      normalizeSidebarNav([{ id: 'rooms', visibility: 'always' }]).find((e) => e.id === 'rooms')?.visibility,
+    ).toBe('always');
   });
 
   test('the retired "active" visibility falls back to the default', () => {
     const out = normalizeSidebarNav([{ id: 'files', visibility: 'active' }]);
     expect(out.find((e) => e.id === 'files')?.visibility).toBe('always');
+  });
+});
+
+describe('migrateSidebarNav', () => {
+  test('a v1 layout moves Rooms into More and keeps every other choice', () => {
+    const v1 = { items: [{ id: 'files', visibility: 'never' }, { id: 'rooms', visibility: 'always' }] };
+    const out = migrateSidebarNav(v1, 1).items;
+    expect(out.find((e) => e.id === 'rooms')?.visibility).toBe('never');
+    expect(out.find((e) => e.id === 'files')?.visibility).toBe('never');
+  });
+
+  test('a v2 layout keeps a pinned Rooms row', () => {
+    const v2 = { items: [{ id: 'rooms', visibility: 'always' }] };
+    expect(migrateSidebarNav(v2, 2).items.find((e) => e.id === 'rooms')?.visibility).toBe('always');
   });
 });
 

@@ -19,8 +19,8 @@ import { ParticipantAvatar, StatusDot, sessionStatusKey } from './room-identity'
 import { sessionDisplay } from './room-text';
 
 /**
- * The channel's members beside the messages: people, then agent sessions
- * (each opens its session). A member of the channel adds and removes members
+ * The room's members beside the messages: people, then agent sessions
+ * (each opens its session). A member of the room adds and removes members
  * here; a viewer who has not joined lists them only.
  */
 export function RoomMembersPanel({
@@ -34,7 +34,7 @@ export function RoomMembersPanel({
   projectId: string;
   roomId: string;
   members: RoomMember[];
-  /** The viewer is in the channel: add and remove show. */
+  /** The viewer is in the room: add and remove show. */
   editable: boolean;
   viewerId: string | null;
   onClose: () => void;
@@ -110,7 +110,7 @@ export function RoomMembersPanel({
           editable
             ? [
                 {
-                  label: m.user_id === viewerId && !isAgent ? t('leaveChannel') : t('remove'),
+                  label: m.user_id === viewerId && !isAgent ? t('leaveRoom') : t('remove'),
                   variant: 'destructive' as const,
                   onSelect: () => setRemoving(m),
                 },
@@ -126,15 +126,17 @@ export function RoomMembersPanel({
       aria-label={t('members')}
       className="bg-background border-border absolute inset-0 z-20 flex min-h-0 flex-col @5xl:static @5xl:w-80 @5xl:shrink-0 @5xl:border-l"
     >
-      <header className="border-border flex h-12 shrink-0 items-center gap-2 border-b px-4">
-        <h2 className="text-foreground min-w-0 flex-1 truncate text-sm font-semibold">
-          {t('memberCount', { count: members.length })}
-        </h2>
-        <Hint label={t('closeMembers')} side="bottom">
-          <Button variant="ghost" size="icon-sm" aria-label={t('closeMembers')} onClick={onClose}>
-            <XIcon />
-          </Button>
-        </Hint>
+      <header className="kx-titlebar-row border-border relative flex shrink-0 items-center gap-1 border-b px-2">
+        <div className="kx-titlebar-tabs flex h-10 min-w-0 flex-1 items-center gap-2 pl-2">
+          <h2 className="text-foreground min-w-0 flex-1 truncate text-sm font-semibold">
+            {t('memberCount', { count: members.length })}
+          </h2>
+          <Hint label={t('closeMembers')} side="bottom">
+            <Button variant="ghost" size="icon-sm" aria-label={t('closeMembers')} onClick={onClose}>
+              <XIcon />
+            </Button>
+          </Hint>
+        </div>
       </header>
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
         {editable ? (

@@ -6,13 +6,12 @@ import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { MenuCard, MenuRow, MenuSectionHeading } from '@/features/session/composer/menus/menu-shell';
 import { useTranslations } from '@/i18n/use-translations';
-import type { ProjectSession, RoomMember, RoomMessage, RoomPerson } from '@kortix/sdk';
-import { AtIcon, MegaphoneSimpleIcon, PaperPlaneRightIcon, XIcon } from '@phosphor-icons/react';
+import type { ProjectSession, RoomMember, RoomPerson } from '@kortix/sdk';
+import { AtIcon, MegaphoneSimpleIcon, PaperPlaneRightIcon } from '@phosphor-icons/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import { ParticipantAvatar } from './room-identity';
-import { senderView } from './room-messages';
-import { activeMention, firstLine, MENTION_ID_CHARS, sessionDisplay } from './room-text';
+import { activeMention, MENTION_ID_CHARS, sessionDisplay } from './room-text';
 import { projectSessionTitle } from './use-room-directory';
 
 const MAX_HEIGHT_PX = 240;
@@ -28,33 +27,30 @@ interface Candidate {
 }
 
 /**
- * The Slack message box: Enter sends, Shift+Enter breaks the line, a reply
- * chip sits above the text, and `@` opens a member → agent → people menu that
+ * The Slack message box (room timeline and thread panel): Enter sends,
+ * Shift+Enter breaks the line, and `@` opens a member → agent → people menu that
  * inserts the token the server resolves: `@3f2a1b9c` for a session,
  * `@ada@example.test` for a person with an email.
  */
 export function RoomComposer({
-  projectId,
   placeholder,
   roomName,
   members,
   sessions,
   people,
   viewerId,
-  replyTo,
-  onCancelReply,
+  autoFocus = false,
   onSend,
 }: {
-  projectId: string;
   placeholder: string;
   roomName: string;
   members: readonly RoomMember[];
   sessions: readonly ProjectSession[];
   people: readonly RoomPerson[];
   viewerId: string | null;
-  replyTo: RoomMessage | null;
-  onCancelReply: () => void;
-  onSend: (text: string, replyTo: number | null) => Promise<void>;
+  /** The thread composer takes focus when its panel opens. */
+  autoFocus?: boolean;
+  onSend: (text: string) => Promise<void>;
 }) {
   const t = useTranslations('rooms');
   const [text, setText] = useState('');
@@ -77,8 +73,8 @@ export function RoomComposer({
   }, [text]);
 
   useEffect(() => {
-    if (replyTo) textareaRef.current?.focus();
-  }, [replyTo]);
+    if (autoFocus) textareaRef.current?.focus();
+  }, [autoFocus]);
 
   const mention = activeMention(text, caret);
   const menuOpen = mention !== null && mention.start !== dismissedAt;
@@ -151,7 +147,7 @@ export function RoomComposer({
         : [];
     let index = 0;
     return [
-      { key: 'members', heading: t('inThisConversation'), items: [...inMembers.slice(0, PER_SECTION), ...everyone] },
+      { key: 'members', heading: t('inThisRoom'), items: [...inMembers.slice(0, PER_SECTION), ...everyone] },
       { key: 'agents', heading: t('agents'), items: agents.slice(0, PER_SECTION) },
       { key: 'people', heading: t('people'), items: persons.slice(0, PER_SECTION) },
     ]
@@ -183,10 +179,9 @@ export function RoomComposer({
     if (!body || sending) return;
     setSending(true);
     try {
-      await onSend(body, replyTo?.seq ?? null);
+      await onSend(body);
       setText('');
       setCaret(0);
-      onCancelReply();
     } catch (error) {
       errorToast(error instanceof Error ? error.message : t('sendFailed'));
     } finally {
@@ -215,11 +210,6 @@ export function RoomComposer({
       setDismissedAt(mention!.start);
       return;
     }
-    if (event.key === 'Escape' && replyTo) {
-      event.preventDefault();
-      onCancelReply();
-      return;
-    }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       void send();
@@ -236,8 +226,6 @@ export function RoomComposer({
     setText(`${text.slice(0, at)}${lead}${text.slice(at)}`);
     el?.focus();
   };
-
-  const reply = replyTo ? senderView(projectId, replyTo) : null;
 
   return (
     <div className="shrink-0 px-5 pb-5">
@@ -283,17 +271,6 @@ export function RoomComposer({
           </div>
         ) : null}
         <div className="bg-popover border-border focus-within:border-ring focus-within:ring-ring/15 rounded-md border focus-within:ring-3">
-          {replyTo && reply ? (
-            <div className="border-border text-muted-foreground flex items-center gap-2 border-b py-1.5 pr-1.5 pl-3 text-xs">
-              <span className="shrink-0 font-medium">{t('replyingTo', { name: reply.name })}</span>
-              <span className="min-w-0 flex-1 truncate">{firstLine(replyTo.text)}</span>
-              <Hint label={t('cancelReply')} side="top">
-                <Button variant="ghost" size="icon-xs" aria-label={t('cancelReply')} onClick={onCancelReply}>
-                  <XIcon />
-                </Button>
-              </Hint>
-            </div>
-          ) : null}
           <textarea
             ref={textareaRef}
             value={text}
