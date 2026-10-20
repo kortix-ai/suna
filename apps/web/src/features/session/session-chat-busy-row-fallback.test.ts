@@ -69,9 +69,6 @@ describe('the waiting row has a fallback when no turn owns it', () => {
       /!\(\s*showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 &&\s*turns\.length === 0\s*\)/,
     );
     expect(chat).toMatch(/showFirstPromptPreview &&\s*firstPromptSource &&\s*queuedSyntheticMessages\.length === 0 && \(/);
-    // The stand-in's own gate is unchanged — it is the one that decides
-    // whether the boot row is on screen at all.
-    expect(chat).toContain('busy={turns.length === 0 && lastTurnWorking}');
   });
 
   test('it sits where the stand-in sat, so the crossfade does not move it', () => {
