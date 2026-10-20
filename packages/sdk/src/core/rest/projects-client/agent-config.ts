@@ -134,6 +134,7 @@ export async function updateAgentConfig(
   projectId: string,
   agentName: string,
   block: AgentConfigBlock,
+  options?: { createOnly?: boolean },
 ) {
   const canonicalBlock = canonicalizeAgentBlock(block, true);
   const response = unwrap(
@@ -142,7 +143,9 @@ export async function updateAgentConfig(
       agent: string;
       schema_version: number;
       block: AgentConfigBlock | null;
-    }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`, canonicalBlock),
+    }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`, canonicalBlock, {
+      headers: options?.createOnly ? { 'If-None-Match': '*' } : undefined,
+    }),
   );
   return {
     ...response,

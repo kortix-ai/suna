@@ -69,6 +69,7 @@ import {
   resolveBehaviorDraft,
   readAgentBlockV2,
 } from '../lib/agent-config-v2';
+import { agentConfigCreateConflict } from '../lib/agent-config-create-only';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
 import { projectsApp } from '../lib/app';
 import {
@@ -513,6 +514,10 @@ export function registerAgentConfigRoutes(): void {
           { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
           400,
         );
+      }
+
+      if (agentConfigCreateConflict(manifest, agentName, c.req.header('If-None-Match'))) {
+        return c.json({ error: `Agent "${agentName}" already exists`, code: 'agent_exists' }, 409);
       }
 
       if (governanceBlock.sandbox) {

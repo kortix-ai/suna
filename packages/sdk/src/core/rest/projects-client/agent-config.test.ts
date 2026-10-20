@@ -8,7 +8,7 @@ import {
   updateAgentConfig,
 } from './agent-config';
 
-let calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+let calls: Array<{ url: string; body: Record<string, unknown>; headers: Headers }> = [];
 let nextBody: Record<string, unknown> = { ok: true };
 
 beforeEach(() => {
@@ -17,6 +17,7 @@ beforeEach(() => {
   globalThis.fetch = mock(async (url: unknown, options: RequestInit = {}) => {
     calls.push({
       url: String(url),
+      headers: new Headers(options.headers),
       body: options.body
         ? (JSON.parse(String(options.body)) as Record<string, unknown>)
         : {},
@@ -54,6 +55,15 @@ describe('AgentConfigBlock', () => {
 });
 
 describe('updateAgentConfig', () => {
+  test('sends a create-only precondition only when requested', async () => {
+    await updateAgentConfig('project-1', 'support', {}, { createOnly: true });
+    expect(calls[0]?.headers.get('If-None-Match')).toBe('*');
+    await updateAgentConfig('project-1', 'support', {});
+    expect(calls[1]?.headers.has('If-None-Match')).toBe(false);
+    await updateAgentConfig('project-1', 'support', {}, { createOnly: false });
+    expect(calls[2]?.headers.has('If-None-Match')).toBe(false);
+  });
+
   test('serializes the deprecated input alias as canonical', async () => {
     await updateAgentConfig('project-1', 'support', {
       connectors: ['gmail'],

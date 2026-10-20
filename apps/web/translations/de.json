@@ -2046,6 +2046,19 @@
         "all": "Jede Erweiterung in diesem Projekt, auch später hinzugefügte.",
         "empty": "In diesem Projekt sind noch keine Erweiterungen registriert."
       }
+    },
+    "manualCreate": {
+      "title": "Agent erstellen",
+      "description": "Speichere einen Agenten im Projekt und konfiguriere dann seine Zugriffsrechte und sein Modell.",
+      "entryDescription": "Wähle einen Namen und schreibe die Anweisungen.",
+      "upgrade": "Stelle dieses Projekt in den Einstellungen auf kortix.yaml um, bevor du einen Agenten manuell erstellst.",
+      "name": "Name",
+      "instructions": "Anweisungen",
+      "duplicate": "Ein Agent mit diesem Namen existiert bereits.",
+      "nameHint": "Verwende Kleinbuchstaben, Zahlen, Bindestriche oder Unterstriche.",
+      "cancel": "Abbrechen",
+      "creating": "Wird erstellt…",
+      "submit": "Agent erstellen"
     }
   },
   "home": {

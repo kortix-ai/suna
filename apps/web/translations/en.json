@@ -2046,6 +2046,19 @@
         "all": "Every extension in this project, including ones added later.",
         "empty": "No extensions registered in this project yet."
       }
+    },
+    "manualCreate": {
+      "title": "Create agent",
+      "description": "Save an agent to the project, then configure its access and model.",
+      "entryDescription": "Choose a name and write the instructions.",
+      "upgrade": "Upgrade this project to kortix.yaml in Settings before creating an agent manually.",
+      "name": "Name",
+      "instructions": "Instructions",
+      "duplicate": "An agent with this name already exists.",
+      "nameHint": "Use lowercase letters, numbers, hyphens or underscores.",
+      "cancel": "Cancel",
+      "creating": "Creating…",
+      "submit": "Create agent"
     }
   },
   "home": {

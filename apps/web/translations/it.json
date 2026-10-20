@@ -2046,6 +2046,19 @@
         "all": "Ogni estensione di questo progetto, comprese quelle aggiunte in seguito.",
         "empty": "Nessuna estensione registrata in questo progetto."
       }
+    },
+    "manualCreate": {
+      "title": "Crea agente",
+      "description": "Salva un agente nel progetto, poi configura i permessi di accesso e il modello.",
+      "entryDescription": "Scegli un nome e scrivi le istruzioni.",
+      "upgrade": "Passa a kortix.yaml nelle impostazioni del progetto prima di creare un agente manualmente.",
+      "name": "Nome",
+      "instructions": "Istruzioni",
+      "duplicate": "Esiste già un agente con questo nome.",
+      "nameHint": "Usa lettere minuscole, numeri, trattini o trattini bassi.",
+      "cancel": "Annulla",
+      "creating": "Creazione…",
+      "submit": "Crea agente"
     }
   },
   "home": {

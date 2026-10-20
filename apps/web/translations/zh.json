@@ -2046,6 +2046,19 @@
         "all": "此项目中的所有扩展，包括之后添加的。",
         "empty": "此项目尚未注册扩展。"
       }
+    },
+    "manualCreate": {
+      "title": "创建代理",
+      "description": "将代理保存到项目后，再配置其访问权限和模型。",
+      "entryDescription": "选择名称并编写指令。",
+      "upgrade": "手动创建代理前，请先在设置中将此项目升级为使用 kortix.yaml。",
+      "name": "名称",
+      "instructions": "指令",
+      "duplicate": "已存在同名代理。",
+      "nameHint": "请使用小写字母、数字、连字符或下划线。",
+      "cancel": "取消",
+      "creating": "正在创建…",
+      "submit": "创建代理"
     }
   },
   "home": {

@@ -208,3 +208,14 @@ describe('createCorsMiddleware', () => {
     expect(allowed).toContain('mcp-session-id');
   });
 });
+
+test('create-only agent writes allow their conditional header through browser preflight', async () => {
+  const app = new Hono();
+  app.use('*', createCorsMiddleware({ internalEnvironment: 'prod', extraOrigins: [] }));
+  const response = await app.request('/v1/projects/project/agents/new/config', {
+    method: 'OPTIONS',
+    headers: { Origin: 'https://kortix.com', 'Access-Control-Request-Method': 'PUT', 'Access-Control-Request-Headers': 'authorization,content-type,if-none-match' },
+  });
+  expect(response.status).toBe(204);
+  expect(response.headers.get('access-control-allow-headers')?.toLowerCase()).toContain('if-none-match');
+});

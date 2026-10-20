@@ -1,5 +1,10 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+import { Modal, ModalContent, ModalHeader, ModalTitle, ModalDescription, ModalBody } from '@/components/ui/modal';
+import { NewAgentForm } from './new-agent-form';
+import { updateAgentConfig } from '@kortix/sdk';
+import { invalidateProject } from '@kortix/sdk/react';
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useMemo, useRef, useState } from 'react';
@@ -89,6 +94,19 @@ type Agent = ProjectConfigSummary['agents'][number];
  */
 export function AgentsPage({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tCreate = useI18nTranslations('agents.manualCreate');
+  const [createOpen, setCreateOpen] = useState(false);
+  const router = useRouter();
+  const createQueryClient = useQueryClient();
+  const create = useMutation({
+    mutationFn: ({ name, block }: { name: string; block: Parameters<typeof updateAgentConfig>[2] }) => updateAgentConfig(projectId, name, block, { createOnly: true }),
+    onSuccess: (response) => {
+      void invalidateProject(createQueryClient, projectId);
+      setCreateOpen(false);
+      router.push(agentHref(projectId, response.agent));
+    },
+    onError: (error: Error) => errorToast(error.message),
+  });
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
   const accountId = useProjectAccountId(projectId);
@@ -193,13 +211,27 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         pending={configure.pending}
         onChat={() => configure.start(newConfigPrompt('agent'))}
         manual={{
-          description: tI18nComplete.raw('text5210c5acc2cd'),
-          href: `/projects/${projectId}/files`,
+          description: tCreate('entryDescription'),
+          onSelect: () => setCreateOpen(true),
         }}
       />
     ) : null;
 
   return (
+    <>
+    <Modal open={createOpen} onOpenChange={(open) => { if (!create.isPending) setCreateOpen(open); }}>
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>{tCreate('title')}</ModalTitle>
+          <ModalDescription>{tCreate('description')}</ModalDescription>
+        </ModalHeader>
+        {detectManifestVersion(config?.manifest_raw) < 2 ? (
+          <ModalBody>{tCreate('upgrade')}</ModalBody>
+        ) : (
+          <NewAgentForm existingNames={agents.map((agent) => agent.name)} pending={create.isPending} onCancel={() => setCreateOpen(false)} onSubmit={(name, block) => create.mutate({ name, block })} />
+        )}
+      </ModalContent>
+    </Modal>
     <CapabilityPageShell
       title={tI18nComplete.raw('text279b44d2ab4b')}
       description={tI18nComplete.raw('text636453e23d69')}
@@ -335,6 +367,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         </section>
       ) : null}
     </CapabilityPageShell>
+    </>
   );
 }
 
