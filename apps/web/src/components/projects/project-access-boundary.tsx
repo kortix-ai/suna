@@ -331,8 +331,11 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   // token publication before interpreting any result as an access decision.
   const view = resolveBoundaryView({
     authReady,
-    isPending: query.isPending || (query.isFetching && !query.isFetchedAfterMount),
-    hasData: query.data !== undefined && query.isFetchedAfterMount,
+    // A project this device kept renders at once while the mount refetch
+    // revalidates it (spec 34, instant loads). A 404 or 403 from that refetch
+    // still replaces it with the gate.
+    isPending: query.isPending,
+    hasData: query.data !== undefined,
     errorState,
   });
   if (view === 'pending') return <ProjectPendingScreen />;
