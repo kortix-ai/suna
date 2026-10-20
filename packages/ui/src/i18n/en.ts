@@ -6701,6 +6701,10 @@ const catalog = {
     "exists": "exists",
     "missing": "does not exist",
     "listPlaceholder": "value 1, value 2"
+  },
+  "featureGate": {
+    "enable": "Enable {name}",
+    "enabling": "Enabling…"
   }
 };
 
