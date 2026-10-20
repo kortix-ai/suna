@@ -122,7 +122,13 @@ export function SessionDeleteModal({
           onUndo: () => void undoDelete(id, toastId),
         },
       );
-      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
+      // Every list refetches. The deleted session's own reads do not: they
+      // would answer 404 while the page they sit on navigates away.
+      const own = qk.project.session(projectId, id);
+      void queryClient.invalidateQueries({
+        queryKey: qk.project.sessionsScope(projectId),
+        predicate: (q) => !own.every((part, i) => q.queryKey[i] === part),
+      });
       onDeleted?.();
       onOpenChange(false);
     },

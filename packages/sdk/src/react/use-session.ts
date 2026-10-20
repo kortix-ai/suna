@@ -41,7 +41,7 @@ import { getBackendUrl } from '../core/session/server-store/url-helpers';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { isSessionFresh } from '../core/http/fresh-sessions';
-import { onSessionStopped } from '../core/http/session-stopped';
+import { onSessionDeleted, onSessionStopped } from '../core/http/session-stopped';
 import { formatRuntimeError } from '../core/http/runtime-errors';
 import {
   type CreateSessionPromptInput,
@@ -1241,8 +1241,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     presencePageExitRef.current = presencePageExit;
   }, [presencePageExit]);
 
+  // A deleted session answers 404 to every read and to `/start`: once this tab
+  // deletes it, the hook goes quiet while the host navigates away.
+  const [deletedSessionId, setDeletedSessionId] = useState<string | null>(null);
+  useEffect(
+    () => onSessionDeleted((id) => (id === sessionId ? setDeletedSessionId(id) : undefined)),
+    [sessionId],
+  );
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
-  const startEnabled = enabled && !!projectId && !!sessionId;
+  const startEnabled = enabled && !!projectId && !!sessionId && deletedSessionId !== sessionId;
   // Read by `/start`'s refetch interval, which runs outside render.
   const streamConnectedRef = useRef(false);
   // The session a Stop in THIS tab stopped. Until something else brings the
@@ -1489,7 +1496,11 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // Clear the current runtime when this session view unmounts.
   useEffect(() => () => setCurrentRuntime(null), []);
 
-  const switched = startReady && !!sandbox?.external_id && switchedBoxId === sandbox.external_id;
+  const switched =
+    deletedSessionId !== sessionId &&
+    startReady &&
+    !!sandbox?.external_id &&
+    switchedBoxId === sandbox.external_id;
 
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat

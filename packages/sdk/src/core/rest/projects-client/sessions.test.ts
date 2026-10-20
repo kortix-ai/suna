@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { type SavedCopyStore, setSavedCopyStore } from '../../session-sync/saved-copy-store';
 import { clearSessionFresh, isSessionFresh } from '../../http/fresh-sessions';
-import { onSessionStopped } from '../../http/session-stopped';
+import { onSessionDeleted, onSessionStopped } from '../../http/session-stopped';
 import type {
   CreateProjectSessionInput,
   ProjectSession,
@@ -1305,6 +1305,21 @@ test('stopProjectSession tells the open session hook, but only when the stop suc
     expect(heard).toEqual([]);
     nextResponse = { status: 200, body: { ok: true, session_id: 'S-ok', status: 'stopped' } };
     await stopProjectSession('P1', 'S-ok');
+    expect(heard).toEqual(['S-ok']);
+  } finally {
+    off();
+  }
+});
+
+test('deleteProjectSession tells the open session hook, but only when the delete succeeded', async () => {
+  const heard: string[] = [];
+  const off = onSessionDeleted((id) => heard.push(id));
+  try {
+    nextResponse = { status: 404, body: { error: 'Session not found' } };
+    await deleteProjectSession('P1', 'S-fail').catch(() => {});
+    expect(heard).toEqual([]);
+    nextResponse = { status: 200, body: { ok: true } };
+    await deleteProjectSession('P1', 'S-ok');
     expect(heard).toEqual(['S-ok']);
   } finally {
     off();

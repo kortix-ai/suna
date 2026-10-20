@@ -3,7 +3,7 @@
 import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { currentSavedCopyStore } from '../../session-sync/saved-copy-store';
-import { noteSessionStopped } from '../../http/session-stopped';
+import { noteSessionDeleted, noteSessionStopped } from '../../http/session-stopped';
 import { isSessionLogPage } from '../../session-log/guard';
 import { loadSessionLogPage, type SessionLogPage, type SessionLogPageQuery } from '../../session-log/source';
 import type { AuditEvent } from './audit';
@@ -1706,6 +1706,7 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
   );
   // The device's saved copy of a deleted session would only take space.
   void currentSavedCopyStore()?.remove(projectId, sessionId);
+  noteSessionDeleted(sessionId);
   return result;
 }
 
