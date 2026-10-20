@@ -104,7 +104,7 @@ test('duplicate display names are ambiguous', async () => {
   expect(writes).toHaveLength(0);
 });
 test('legacy discovered skills do not need a registry entry', async () => {
-  raw = { kortix_version: 2, agents: { worker: { skills: ['Research Notes'] } } };
+  raw = { kortix_version: 2, agents: { worker: { skills: ['research'] } } };
   expect((await remove()).status).toBe(200);
   expect(writtenManifest().agents.worker.skills).toEqual([]);
 });
