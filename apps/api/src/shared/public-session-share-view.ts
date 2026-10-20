@@ -15,7 +15,8 @@
  * `toPublicMessage`: only message role, text, tool NAME + status (no
  * args/output), file NAME + mime (no content), and a `reasoning_omitted` flag
  * are ever returned — raw tool call arguments, command output, file contents,
- * message ids and error text never leave the sandbox.
+ * message ids and raw error details never reach the public response. Failed
+ * assistant turns receive a fixed notice instead of provider error text.
  */
 
 import { eq } from 'drizzle-orm';
@@ -165,7 +166,10 @@ function toPublicMessage(message: CompactMessage): CompactPublicMessage {
     role: message.role,
     created: message.created,
     completed: message.completed,
-    text: message.text,
+    text: [
+      message.text,
+      message.role === 'assistant' && message.error ? 'The assistant could not complete this response.' : '',
+    ].filter(Boolean).join('\n\n'),
     tools: message.tools.map(({ tool, status }) => ({ tool, status })),
     files: message.files,
     reasoning_omitted: message.reasoning_omitted,
