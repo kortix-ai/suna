@@ -149,7 +149,7 @@ export function bulkSupports(
   if (call?.canResolve === false) return false;
   if (verb === 'deny') return true;
   if (call?.previewAuthorized === false) return false;
-  return approvalReviewable(call?.rawArgsPreview, call?.reviewComplete);
+  return approvalReviewable(call?.rawArgsPreview, call?.reviewComplete, call?.resolvedPreview);
 }
 
 /** True when any bar verb acts on `item`: the row shows a checkbox. */

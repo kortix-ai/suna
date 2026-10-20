@@ -68,12 +68,24 @@ export function previewArgsSummary(
     // '[redacted]' is the server's marker for a credential-shaped field; showing
     // it would add noise without adding information.
     if (value === null || value === undefined || value === '[redacted]') continue;
-    const rendered = Array.isArray(value) ? value.join(', ') : String(value);
+    // A nested object reads as compact JSON, never `[object Object]`.
+    const text = (item: unknown) =>
+      item !== null && typeof item === 'object' ? JSON.stringify(item) : String(item);
+    const rendered = Array.isArray(value) ? value.map(text).join(', ') : text(value);
     if (!rendered) continue;
     parts.push(`${key}: ${(typeof value === 'string' && channelNames?.get(value)) || rendered}`);
     if (parts.length === SUMMARY_FIELDS) break;
   }
   return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/** The summary of the content Kortix resolved, else of the call's own
+ *  arguments. An empty resolved preview (`{}`) falls through. */
+export function reviewArgsSummary(
+  resolvedPreview: Record<string, unknown> | null | undefined,
+  argsPreview: Record<string, unknown> | null | undefined,
+): string | null {
+  return previewArgsSummary(resolvedPreview) ?? previewArgsSummary(argsPreview);
 }
 
 /**
@@ -91,14 +103,18 @@ export function previewArgsSummary(
  * that shows its parameters is decidable, elisions and all. One that shows none
  * is not — and no approve path is offered for it, rather than a dead control.
  *
- * Mirrors `approvalPreviewReviewable` in apps/api (connectors/args-preview.ts),
- * which enforces the same rule on POST /approvals/:executionId.
+ * Content Kortix read from the provider (`resolvedPreview`) is reviewable on
+ * its own. Mirrors `approvalPreviewReviewable` in apps/api
+ * (connectors/args-preview.ts), which enforces the same rule on
+ * POST /approvals/:executionId.
  */
 export function approvalReviewable(
   argsPreview: Record<string, unknown> | null | undefined,
   reviewComplete: boolean | undefined,
+  resolvedPreview?: Record<string, unknown> | null,
 ): boolean {
   if (argsPreview && Object.keys(argsPreview).length > 0) return true;
+  if (resolvedPreview && Object.keys(resolvedPreview).length > 0) return true;
   // No preview is still reviewable when the server confirms nothing was
   // withheld — an argument-less call hides nothing.
   return reviewComplete !== false;

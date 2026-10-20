@@ -619,7 +619,11 @@ export function ApprovalRequest({
 }: ApprovalRequestProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reviewComplete = request.reviewComplete !== false;
-  const reviewable = approvalReviewable(request.argsPreview, request.reviewComplete);
+  const reviewable = approvalReviewable(
+    request.argsPreview,
+    request.reviewComplete,
+    request.resolvedPreview,
+  );
   const waiting = request.pending && outcome === null && request.canResolve === false;
   const actionable = request.pending && !waiting && onDecision;
   const resolved = !request.pending || outcome !== null;

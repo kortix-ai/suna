@@ -89,7 +89,7 @@ import {
   isQuickDecidableApproval,
   resolveBulkOutcome,
 } from './review-actions';
-import { previewArgsSummary } from '../../session/prompts/session-approval-review';
+import { reviewArgsSummary } from '../../session/prompts/session-approval-review';
 import { ApprovalDecisionModal, reviewApprovalDetails } from './approval-modal';
 import { type ReviewActions, ReviewDetail } from './review-detail';
 import {
@@ -1224,8 +1224,9 @@ export function ReviewCenter({
                     // The arguments, as the approval modal reads them: the
                     // content Kortix resolved, else the call's own preview.
                     const details = reviewApprovalDetails(i);
-                    const args = previewArgsSummary(
-                      details?.resolved_preview ?? details?.args_preview,
+                    const args = reviewArgsSummary(
+                      details?.resolved_preview,
+                      details?.args_preview,
                     );
                     return (
                       <li key={i.id} className="flex items-center gap-3 px-2.5 py-1.5">

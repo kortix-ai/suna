@@ -9,6 +9,8 @@ import {
   approvalNoticeRows,
   approvalLauncherName,
   approvalRequestFromAction,
+  previewArgsSummary,
+  reviewArgsSummary,
 } from './session-approval-review';
 
 function action(overrides: Partial<SessionAuditAction> = {}): SessionAuditAction {
@@ -272,5 +274,46 @@ describe('approvalArgsSummary with Slack channel names', () => {
     };
     expect(approvalArgsSummary(slackAction, new Map([['C0TEST1', '#general']]))).toBe('channel: #general · text: Deploy done');
     expect(approvalArgsSummary(slackAction)).toBe('channel: C0TEST1 · text: Deploy done');
+  });
+});
+
+describe('approvalReviewable with resolved content', () => {
+  test('a non-empty resolved preview alone is reviewable, like the server gate', () => {
+    expect(approvalReviewable(null, false, { body: 'Draft text' })).toBe(true);
+    expect(approvalReviewable({}, false, { body: 'Draft text' })).toBe(true);
+  });
+
+  test('an empty resolved preview adds nothing', () => {
+    expect(approvalReviewable(null, false, {})).toBe(false);
+    expect(approvalReviewable(null, false, null)).toBe(false);
+  });
+});
+
+describe('previewArgsSummary nested values', () => {
+  test('renders a nested object as compact JSON', () => {
+    expect(previewArgsSummary({ to: 'a@example.test', meta: { cc: ['b@example.test'] } })).toBe(
+      'to: a@example.test · meta: {"cc":["b@example.test"]}',
+    );
+  });
+
+  test('renders objects inside an array as compact JSON', () => {
+    expect(previewArgsSummary({ items: [{ id: 1 }, 'x'] })).toBe('items: {"id":1}, x');
+  });
+
+  test('still drops a redacted field', () => {
+    expect(previewArgsSummary({ token: '[redacted]', to: 'a@example.test' })).toBe(
+      'to: a@example.test',
+    );
+  });
+});
+
+describe('reviewArgsSummary', () => {
+  test('prefers the resolved content', () => {
+    expect(reviewArgsSummary({ subject: 'Hi' }, { draft_id: 'd-1' })).toBe('subject: Hi');
+  });
+
+  test('an empty resolved preview falls back to the call arguments', () => {
+    expect(reviewArgsSummary({}, { draft_id: 'd-1' })).toBe('draft_id: d-1');
+    expect(reviewArgsSummary(null, { draft_id: 'd-1' })).toBe('draft_id: d-1');
   });
 });

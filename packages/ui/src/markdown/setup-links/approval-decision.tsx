@@ -278,7 +278,11 @@ export function ApprovalDecisionPanel({
   const expired = outcome === null && details.status === 'expired';
   const resolved = !details.pending || outcome !== null || expired;
   const waiting = !resolved && !onDecision;
-  const reviewable = approvalReviewable(details.args_preview, details.review_complete);
+  const reviewable = approvalReviewable(
+    details.args_preview,
+    details.review_complete,
+    details.resolved_preview,
+  );
   const label = resolvedLabel(
     {
       status: expired ? 'expired' : details.status,
