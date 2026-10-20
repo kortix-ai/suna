@@ -28,7 +28,9 @@ import {
 } from './composer';
 import { shouldFocusEditorFromPadding } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
+import { AgentRunSettings } from './agent-run-settings';
 import { ComposerUnderbar } from './composer-underbar';
+import { EffortIcon } from './reasoning-effort-selector';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import type { SlashAction } from './menus/slash-actions';
 import type { AttachedFile } from './types';
@@ -176,6 +178,8 @@ export function ComposerCard({
   modelsLoading = false,
   modelRequired = false,
   onModelChange,
+  modelOnDefault,
+  onModelReset,
   modelDefaultControls,
   providers,
   variants = EMPTY_VARIANTS,
@@ -196,6 +200,59 @@ export function ComposerCard({
 }: ComposerCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const inlineUnderbar = underbarPlacement === 'inline';
+
+  // KRTX-2700: model and reasoning live under the agent they run with. Only
+  // when the agent popover can open; an inert picker keeps them in the toolbar.
+  const groupRunSettings = !noAccessibleAgents && primaryAgents.length > 0 && !!onModelChange;
+  const runVariant =
+    selectedVariant && variants.includes(selectedVariant) ? selectedVariant : null;
+  const agentSettings = groupRunSettings ? (
+    <AgentRunSettings
+      agent={primaryAgents.find((a) => a.name === selectedAgent) ?? primaryAgents[0]}
+      models={models}
+      modelsLoading={modelsLoading}
+      selectedModel={availableSelectedModel}
+      onModelChange={onModelChange}
+      modelOnDefault={modelOnDefault}
+      onModelReset={onModelReset}
+      modelDefaultControls={modelDefaultControls}
+      providers={providers}
+      projectId={projectId}
+      modelMenuOpen={modelMenuOpen}
+      onModelMenuOpenChange={setModelMenuOpen}
+      variants={variants}
+      selectedVariant={runVariant}
+      onVariantChange={onVariantChange}
+      reasoningMenuOpen={reasoningMenuOpen}
+      onReasoningMenuOpenChange={setReasoningMenuOpen}
+    />
+  ) : undefined;
+  const runModelName = models.find(
+    (m) =>
+      m.providerID === availableSelectedModel?.providerID &&
+      m.modelID === availableSelectedModel?.modelID,
+  )?.modelName;
+  // Reasoning shows as its icon only; Auto shows nothing.
+  const agentTriggerMeta = groupRunSettings ? (
+    <>
+      {runModelName && (
+        <span className="text-muted-foreground max-w-[8rem] truncate font-normal">
+          {runModelName}
+        </span>
+      )}
+      {runVariant && <EffortIcon value={runVariant} className="size-3.5 shrink-0" />}
+    </>
+  ) : undefined;
+  // The `/` palette opens the model or reasoning menu: open the agent popover
+  // that now holds them. Closing it closes both.
+  const agentPopoverOpen = agentMenuOpen || (groupRunSettings && (modelMenuOpen || reasoningMenuOpen));
+  const onAgentPopoverOpenChange = (open: boolean) => {
+    setAgentMenuOpen(open);
+    if (!open) {
+      setModelMenuOpen(false);
+      setReasoningMenuOpen(false);
+    }
+  };
 
   return (
     <>
@@ -368,8 +425,10 @@ export function ComposerCard({
                   agents={primaryAgents}
                   selectedAgent={selectedAgent}
                   onAgentChange={onAgentChange}
-                  agentMenuOpen={agentMenuOpen}
-                  onAgentMenuOpenChange={setAgentMenuOpen}
+                  agentMenuOpen={agentPopoverOpen}
+                  onAgentMenuOpenChange={onAgentPopoverOpenChange}
+                  agentSettings={agentSettings}
+                  agentTriggerMeta={agentTriggerMeta}
                   noAccessibleAgents={noAccessibleAgents}
                   messages={messages}
                   models={models}
@@ -381,7 +440,7 @@ export function ComposerCard({
             modelsLoading={modelsLoading}
             models={models}
             selectedModel={availableSelectedModel}
-            onModelChange={onModelChange}
+            onModelChange={groupRunSettings ? undefined : onModelChange}
             modelDefaultControls={modelDefaultControls}
             providers={providers}
             modelRequired={modelRequired}
@@ -391,7 +450,7 @@ export function ComposerCard({
             onReasoningMenuOpenChange={setReasoningMenuOpen}
             variants={variants}
             selectedVariant={selectedVariant}
-            onVariantChange={onVariantChange}
+            onVariantChange={groupRunSettings ? undefined : onVariantChange}
             projectId={projectId}
             // Inline placement has no under-row, so the slot (the session
             // overrides gear, meta indicator) rides the toolbar itself. With
@@ -452,8 +511,10 @@ export function ComposerCard({
         agents={primaryAgents}
         selectedAgent={selectedAgent}
         onAgentChange={onAgentChange}
-                  agentMenuOpen={agentMenuOpen}
-                  onAgentMenuOpenChange={setAgentMenuOpen}
+        agentMenuOpen={agentPopoverOpen}
+        onAgentMenuOpenChange={onAgentPopoverOpenChange}
+        agentSettings={agentSettings}
+        agentTriggerMeta={agentTriggerMeta}
         noAccessibleAgents={noAccessibleAgents}
         messages={messages}
         models={models}

@@ -114,6 +114,8 @@ export function resolveComposerModel(input: {
   globalDefault?: ModelKey;
   /** The current agent's configured `model`. */
   agentModel?: ModelKey;
+  /** Rank `agentModel` first among the defaults: the agent's own model is the baseline. */
+  agentModelFirst?: boolean;
   /** The runtime config's `model` (`provider/model`). */
   configModel?: string;
   /** Recently used models, newest first. */
@@ -177,7 +179,11 @@ export function resolveComposerModel(input: {
   const explicit = firstValid(input.picks ?? []);
   const resolved =
     explicit ??
-    firstValid([input.serverDefault, input.globalDefault, input.agentModel, fallback]);
+    firstValid(
+      input.agentModelFirst
+        ? [input.agentModel, input.serverDefault, input.globalDefault, fallback]
+        : [input.serverDefault, input.globalDefault, input.agentModel, fallback],
+    );
   // EVERY source above can hand back a bare Bedrock in-region id — the
   // explicit slot most of all. Bedrock answers a hard 400 for those and
   // OpenCode retries forever, so heal here, at the single seam every source

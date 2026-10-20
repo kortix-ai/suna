@@ -241,6 +241,10 @@ export interface SessionChatInputProps {
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
+  /** The agent runs on its own model: no override in this composer (KRTX-2700). */
+  modelOnDefault?: boolean;
+  /** Drops this agent's model override. */
+  onModelReset?: () => void;
   modelDefaultControls?: ModelDefaultControls;
   variants?: string[];
   selectedVariant?: string | null;

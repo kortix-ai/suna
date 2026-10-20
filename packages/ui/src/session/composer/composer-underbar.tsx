@@ -69,6 +69,10 @@ export interface ComposerUnderbarProps {
    */
   variant?: 'row' | 'inline';
   toolbarSlot?: React.ReactNode;
+  /** The selected agent's model + reasoning pane, inside the agent popover (KRTX-2700). */
+  agentSettings?: React.ReactNode;
+  /** What the agent runs with, on the agent trigger: model name and reasoning icon. */
+  agentTriggerMeta?: React.ReactNode;
 }
 
 export function ComposerUnderbar({
@@ -85,6 +89,8 @@ export function ComposerUnderbar({
   onContextClick,
   variant = 'row',
   toolbarSlot,
+  agentSettings,
+  agentTriggerMeta,
 }: ComposerUnderbarProps) {
   const t = useTranslations('threads');
 
@@ -153,6 +159,8 @@ export function ComposerUnderbar({
           onSelect={onAgentChange ?? NO_AGENT_SELECT}
           triggerLabelClassName="max-w-[7rem]"
           unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
+          settings={agentSettings}
+          triggerMeta={agentTriggerMeta}
         />
       </div>
 

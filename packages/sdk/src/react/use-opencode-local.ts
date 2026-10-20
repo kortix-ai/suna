@@ -15,7 +15,7 @@ import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { composerSelectableAgents } from '../core/agents/composer-agents';
 import { resolveComposerModel, sessionModelCandidates } from '../core/models/composer-model';
 import type { Agent, Config, ProviderListResponse } from '../core/runtime/runtime-types';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { createAgentSelectionScope } from './agent-selection-scope';
 import { useKortixRouteProjectId } from './route-project';
 import { healBedrockModelKey } from './bedrock-invokable';
@@ -97,6 +97,8 @@ export interface RuntimeLocalModel {
   list: FlatModel[];
   /** Set model (optionally push to recent, or mark as auto-seeded from message) */
   set: (model: ModelKey | undefined, options?: { recent?: boolean; autoSeed?: boolean }) => void;
+  /** Drop this agent's explicit pick (this session and across sessions); `onDefault` turns true. */
+  reset: () => void;
   /** Check if a model is visible */
   visible: (model: ModelKey) => boolean;
   /** Set visibility for a model */
@@ -346,10 +348,6 @@ export function useRuntimeLocal({
     explicitAgentName,
     lastAgentName: modelStore.lastAgentName,
   });
-  const scopedSessionModelKey = useMemo(
-    () => scopedModelSelectionKey(sessionId, providerMode),
-    [sessionId, providerMode],
-  );
 
   const setCurrentAgentName = useCallback(
     (name: string | undefined) => {
@@ -395,6 +393,20 @@ export function useRuntimeLocal({
     () => agentScopedModelSelectionKey(providerMode, currentAgent?.name),
     [providerMode, currentAgent?.name],
   );
+  // This session's pick for THIS agent: each agent keeps its own model, so a
+  // pick never follows the user to another agent in the same session.
+  const scopedSessionModelKey = useMemo(
+    () =>
+      scopedModelSelectionKey(
+        sessionId ? `${sessionId}:${currentAgent?.name ?? ''}` : undefined,
+        providerMode,
+      ),
+    [sessionId, currentAgent?.name, providerMode],
+  );
+  // The session's history (legacy agent-less slots, its server pin, its last
+  // prompt) belongs to the agent the session was created with.
+  const ownsSessionHistory =
+    !boundAgentName?.trim() || !currentAgent || currentAgent.name === boundAgentName.trim();
 
   // What the server says this session runs on. A new object each render from
   // the caller must not recompute the resolution, so key it by value.
@@ -424,51 +436,71 @@ export function useRuntimeLocal({
   // fallback slots resolve fine without one, and the agent roster can be empty
   // (e.g. a project with no configured agents, or `enableProjects` off) — the
   // agent-keyed slots are simply skipped then. ----
-  const modelResolution = useMemo(
-    () =>
-      resolveComposerModel({
-        models: flatModels,
-        picks: [
-          // Per-session model (user's explicit choice in this session — survives reload)
-          scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined,
-          // Back-compat: the old unscoped slot, only if valid in the current mode.
-          sessionId ? modelStore.getSessionModel(sessionId) : undefined,
-          // The model the session already runs on, from the server. Above the
-          // per-agent slots: those are this browser's picks for OTHER sessions.
-          ...sessionModels,
-          // Per-agent model (persisted across sessions for this agent, or in the
-          // agent-less slot when the caller has access to no agent at all).
-          modelStore.getSelectedModel(agentModelSlotKey),
-          currentAgent ? modelStore.getSelectedModel(currentAgent.name) : undefined,
-        ],
-        // The gateway-configured default for the current agent (agent -> project
-        // -> account -> platform), when the host supplies a resolver.
-        serverDefault: resolveServerDefault?.(currentAgent?.name),
-        globalDefault: modelStore.globalDefault,
-        agentModel: currentAgent?.model as ModelKey | undefined,
-        configModel: config?.model,
-        recent: modelStore.recent,
-        providers,
-      }),
-    [
-      flatModels,
-      scopedSessionModelKey,
-      sessionId,
-      agentModelSlotKey,
-      currentAgent,
-      resolveServerDefault,
-      sessionModels,
-      config?.model,
+  const legacySessionModelKey = scopedModelSelectionKey(sessionId, providerMode);
+  const { modelResolution, onDefaultModel } = useMemo(() => {
+    // Per-session picks for this agent (user's explicit choice — survives
+    // reload), then the pre-per-agent session slots for the session's own agent.
+    const sessionPicks = [
+      scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined,
+      ...(ownsSessionHistory && sessionId
+        ? [
+            legacySessionModelKey ? modelStore.getSessionModel(legacySessionModelKey) : undefined,
+            modelStore.getSessionModel(sessionId),
+          ]
+        : []),
+    ];
+    // The model the session already runs on, from the server. Above the
+    // per-agent slots: those are this browser's picks for OTHER sessions.
+    const history = ownsSessionHistory ? sessionModels : [];
+    const resolution = resolveComposerModel({
+      models: flatModels,
+      picks: [
+        ...sessionPicks,
+        ...history,
+        // Per-agent model (persisted across sessions for this agent, or in the
+        // agent-less slot when the caller has access to no agent at all).
+        modelStore.getSelectedModel(agentModelSlotKey),
+        currentAgent ? modelStore.getSelectedModel(currentAgent.name) : undefined,
+      ],
+      // The gateway-configured default for the current agent (agent -> project
+      // -> account -> platform), when the host supplies a resolver.
+      serverDefault: resolveServerDefault?.(currentAgent?.name),
+      globalDefault: modelStore.globalDefault,
+      agentModel: currentAgent?.model as ModelKey | undefined,
+      // The agent's own model is the baseline unless the user set an account
+      // default during setup.
+      agentModelFirst: !(modelStore.globalDefault && isModelValid(modelStore.globalDefault)),
+      configModel: config?.model,
+      recent: modelStore.recent,
       providers,
-      modelStore,
-    ],
-  );
+    });
+    const firstValid = (list: ReadonlyArray<ModelKey | undefined>) =>
+      list.find((m): m is ModelKey => !!m && isModelValid(m));
+    // On the default unless a pick of the user's wins. The session's own
+    // model counts as the default: it is what this session runs, not an override.
+    const fromHistory = !firstValid(sessionPicks) && !!firstValid(history);
+    return {
+      modelResolution: resolution,
+      onDefaultModel: !resolution.explicit || fromHistory,
+    };
+  }, [
+    flatModels,
+    scopedSessionModelKey,
+    legacySessionModelKey,
+    ownsSessionHistory,
+    sessionId,
+    agentModelSlotKey,
+    currentAgent,
+    resolveServerDefault,
+    sessionModels,
+    config?.model,
+    providers,
+    modelStore,
+    isModelValid,
+  ]);
   const fallbackModel = modelResolution.fallback;
   const explicitModelKey = modelResolution.explicit;
   const currentModelKey = modelResolution.model;
-
-  // True when the user has not made an explicit pick.
-  const onDefaultModel = !explicitModelKey;
 
   // Healed as well as `currentModelKey`: `resolvePromptModel` can prefer the
   // RAW explicit slot, and a chip that reads "Claude Opus 5" while the request
@@ -522,6 +554,24 @@ export function useRuntimeLocal({
     [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid],
   );
 
+  const resetModel = useCallback(() => {
+    modelStore.setSelectedModel(agentModelSlotKey, undefined);
+    if (currentAgent) modelStore.setSelectedModel(currentAgent.name, undefined);
+    if (scopedSessionModelKey) modelStore.setSessionModel(scopedSessionModelKey, undefined);
+    if (ownsSessionHistory && sessionId) {
+      if (legacySessionModelKey) modelStore.setSessionModel(legacySessionModelKey, undefined);
+      modelStore.setSessionModel(sessionId, undefined);
+    }
+  }, [
+    agentModelSlotKey,
+    currentAgent,
+    scopedSessionModelKey,
+    ownsSessionHistory,
+    sessionId,
+    legacySessionModelKey,
+    modelStore,
+  ]);
+
   // ---- Agent set (matching SolidJS local.tsx:52-63) ----
   const setAgent = useCallback(
     (name: string | undefined) => {
@@ -566,32 +616,9 @@ export function useRuntimeLocal({
     [visibleAgents, currentAgentName, setCurrentAgentName],
   );
 
-  // ---- When agent changes externally (via setAgent), auto-set model if agent has one ----
-  // Only applies when there's no persisted selection for this agent yet AND no global default.
-  const prevAgentRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (!currentAgent) return;
-    if (prevAgentRef.current === currentAgent.name) return;
-    prevAgentRef.current = currentAgent.name;
-    // Don't override if user already has a persisted selection for this agent
-    const persisted = modelStore.getSelectedModel(currentAgent.name);
-    if (persisted && isModelValid(persisted)) return;
-    // Don't override if user set a global default during onboarding setup
-    if (modelStore.globalDefault && isModelValid(modelStore.globalDefault)) return;
-    if (currentAgent.model) {
-      if (isModelValid(currentAgent.model as ModelKey)) {
-        setModel(
-          {
-            providerID: currentAgent.model.providerID,
-            modelID: currentAgent.model.modelID,
-          },
-          { autoSeed: true },
-        );
-      }
-    }
-    // Only trigger on agent change — intentionally exclude setModel/modelStore from deps
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentAgent?.name, isModelValid]);
+  // No effect seeds `agent.model` into the pick slots on an agent change: that
+  // made the agent's own model indistinguishable from a user override. The
+  // resolver ranks it first among the defaults instead (`agentModelFirst`).
 
   // ---- Cycle through recent models (matching SolidJS local.tsx:142-163) ----
   const cycleModel = useCallback(
@@ -675,6 +702,7 @@ export function useRuntimeLocal({
       recent: recentModels,
       list: flatModels,
       set: setModel,
+      reset: resetModel,
       // The server's enablement answer, not the localStorage heuristic — the
       // one predicate every surface (picker list, stash replay, default
       // resolution) agrees on.

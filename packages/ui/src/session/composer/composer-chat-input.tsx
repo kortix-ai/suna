@@ -317,6 +317,8 @@ export function ComposerChatInput({
       models={local.model.list}
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
+      modelOnDefault={local.model.onDefault}
+      onModelReset={local.model.reset}
       modelRequired
       modelsLoading={providersLoading}
       variants={local.model.variant.list}

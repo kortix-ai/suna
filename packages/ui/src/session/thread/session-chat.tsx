@@ -4771,6 +4771,8 @@ export function SessionChat({
                 models={local.model.list}
                 selectedModel={local.model.currentKey ?? null}
                 onModelChange={handleModelChange}
+                modelOnDefault={local.model.onDefault}
+                onModelReset={local.model.reset}
                 modelDefaultControls={chatModelDefaultControls}
                 variants={local.model.variant.list}
                 selectedVariant={local.model.variant.current ?? null}

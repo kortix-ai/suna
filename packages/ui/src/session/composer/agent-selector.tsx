@@ -57,6 +57,8 @@ export function AgentSelector({
   unavailableHint,
   open: controlledOpen,
   onOpenChange,
+  settings,
+  triggerMeta,
 }: {
   agents: Agent[];
   selectedAgent: string | null;
@@ -73,6 +75,14 @@ export function AgentSelector({
   unavailableHint?: string | null;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /**
+   * The selected agent's model and reasoning (KRTX-2700), shown as a second
+   * pane beside the list. With it, picking an agent keeps the popover open so
+   * its settings stay in view.
+   */
+  settings?: React.ReactNode;
+  /** Trailing trigger content: the model name and reasoning icon the agent runs with. */
+  triggerMeta?: React.ReactNode;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('threads');
@@ -155,7 +165,7 @@ export function AgentSelector({
         className={cn('items-start gap-2 py-2', isSelected && 'bg-primary/[0.06]')}
         onSelect={() => {
           onSelect(agent.name);
-          setOpen(false);
+          if (!settings) setOpen(false);
         }}
       >
         {meta && (
@@ -260,6 +270,7 @@ export function AgentSelector({
         >
           {metaSelected && <SparkleIcon className="size-3.5 shrink-0" weight="fill" />}
           <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
+          {triggerMeta}
           <CaretDownIcon
             className={cn(
               'size-3 transition-transform duration-200 ease-out',
@@ -276,71 +287,86 @@ export function AgentSelector({
         side="top"
         align="start"
         sideOffset={8}
-        className="w-[min(300px,calc(100vw-1.5rem))]"
+        className={
+          settings
+            ? 'w-[min(540px,calc(100vw-1.5rem))]'
+            : 'w-[min(300px,calc(100vw-1.5rem))]'
+        }
       >
-        {/*
-          A search field over four agents is a control that costs a row of
-          chrome to save nobody any time — the whole list is already on screen
-          and readable in one glance. It only earns its place once the list
-          outgrows the popover and scanning turns into scrolling.
+        <div className={settings ? 'flex flex-col sm:flex-row' : undefined}>
+          <div
+            className={
+              settings
+                ? 'border-border min-w-0 border-b sm:w-[220px] sm:shrink-0 sm:border-r sm:border-b-0'
+                : undefined
+            }
+          >
+            {/*
+              A search field over four agents is a control that costs a row of
+              chrome to save nobody any time — the whole list is already on screen
+              and readable in one glance. It only earns its place once the list
+              outgrows the popover and scanning turns into scrolling.
 
-          It stays MOUNTED either way, just visually hidden, and that is
-          deliberate: cmdk drives arrow-key navigation from a keydown handler
-          on its own root, and the input is the only focusable descendant
-          inside it. Unmounting it would leave focus on the Radix content
-          wrapper — the parent — where keydown never reaches cmdk at all, so
-          the arrow keys would silently stop working on exactly the short
-          lists this is meant to simplify.
-        */}
-        <div className={showSearch ? undefined : 'sr-only'}>
-          <CommandInput
-            compact
-            placeholder={tHardcodedUi.raw(
-              'componentsSessionSessionChatInput.line231JsxAttrPlaceholderSearchAgents',
-            )}
-            value={search}
-            onValueChange={setSearch}
-          />
-        </div>
-
-        <CommandList className="max-h-[320px]">
-          {/*
-            ONE group, no heading — and the group is not optional dressing.
-            `CommandPopoverContent` forces `[data-slot=command-list]:py-0` and
-            gives `[data-slot=command-group]` its `py-1`, so the GROUP is what
-            carries this popover's vertical inset. Dropping it (and padding the
-            list instead) loses that fight on specificity — a descendant
-            selector beats a plain class — and the rows end up flush against
-            the popover's top and bottom edges.
-
-            The heading is what goes, not the group. The row's own badge
-            carries the type, so a heading would repeat it — and with no meta
-            agents (the common case) it captioned a single group with a lone
-            "Agents" label that told the reader nothing they could not see.
-            Meta agents are ordered first, so the grouping still reads without
-            being announced.
-          */}
-          {filteredPrimary.length > 0 && (
-            <CommandGroup forceMount>
-              {filteredMeta.map((agent) => renderAgentItem(agent, true))}
-              {filteredMeta.length > 0 && filteredProject.length > 0 && (
-                <CommandSeparator className="my-1" />
-              )}
-              {filteredProject.map((agent) => renderAgentItem(agent, false))}
-            </CommandGroup>
-          )}
-
-          {/* No results */}
-          {filteredPrimary.length === 0 && search.trim() && (
-            <div className="text-muted-foreground/50 py-8 text-center text-xs">
-              {tHardcodedUi.raw(
-                'componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo',
-              )}
-              {search.trim()}
-              {tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextRdquo')}
+              It stays MOUNTED either way, just visually hidden, and that is
+              deliberate: cmdk drives arrow-key navigation from a keydown handler
+              on its own root, and the input is the only focusable descendant
+              inside it. Unmounting it would leave focus on the Radix content
+              wrapper — the parent — where keydown never reaches cmdk at all, so
+              the arrow keys would silently stop working on exactly the short
+              lists this is meant to simplify.
+            */}
+            <div className={showSearch ? undefined : 'sr-only'}>
+              <CommandInput
+                compact
+                placeholder={tHardcodedUi.raw(
+                  'componentsSessionSessionChatInput.line231JsxAttrPlaceholderSearchAgents',
+                )}
+                value={search}
+                onValueChange={setSearch}
+              />
             </div>
-          )}
-        </CommandList>
+
+            <CommandList className="max-h-[320px]">
+              {/*
+                ONE group, no heading — and the group is not optional dressing.
+                `CommandPopoverContent` forces `[data-slot=command-list]:py-0` and
+                gives `[data-slot=command-group]` its `py-1`, so the GROUP is what
+                carries this popover's vertical inset. Dropping it (and padding the
+                list instead) loses that fight on specificity — a descendant
+                selector beats a plain class — and the rows end up flush against
+                the popover's top and bottom edges.
+
+                The heading is what goes, not the group. The row's own badge
+                carries the type, so a heading would repeat it — and with no meta
+                agents (the common case) it captioned a single group with a lone
+                "Agents" label that told the reader nothing they could not see.
+                Meta agents are ordered first, so the grouping still reads without
+                being announced.
+              */}
+              {filteredPrimary.length > 0 && (
+                <CommandGroup forceMount>
+                  {filteredMeta.map((agent) => renderAgentItem(agent, true))}
+                  {filteredMeta.length > 0 && filteredProject.length > 0 && (
+                    <CommandSeparator className="my-1" />
+                  )}
+                  {filteredProject.map((agent) => renderAgentItem(agent, false))}
+                </CommandGroup>
+              )}
+
+              {/* No results */}
+              {filteredPrimary.length === 0 && search.trim() && (
+                <div className="text-muted-foreground/50 py-8 text-center text-xs">
+                  {tHardcodedUi.raw(
+                    'componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo',
+                  )}
+                  {search.trim()}
+                  {tHardcodedUi.raw('componentsSessionSessionChatInput.line273JsxTextRdquo')}
+                </div>
+              )}
+            </CommandList>
+          </div>
+          {settings && <div className="min-w-0 flex-1 p-3">{settings}</div>}
+        </div>
       </CommandPopoverContent>
     </CommandPopover>
   );
