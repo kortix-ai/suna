@@ -38,8 +38,7 @@ Everything in this folder is synthetic: invented parties ("Brightwater Example H
 
 | You have | Do this |
 |---|---|
-| 5 minutes and this repo | Follow [Run it](#run-it) (local Convex, no Convex account), sign up, pick **Add the sample matter** in onboarding. The matter arrives with six synthetic agreements, ready to search and ask about. |
-| A Kortix operator token | Set `KORTIX_UPSTREAM` and `KORTIX_OPERATOR_TOKEN` in Convex. Every firm that signs up gets its own Kortix project and Lumen's agent kit, installed through `@kortix/sdk`. |
+| This repo and a Kortix operator token | Follow [Run it](#run-it) (local Convex, no Convex account) and set `KORTIX_UPSTREAM` and `KORTIX_OPERATOR_TOKEN` in Convex. Sign up and pick **Add the sample matter** in onboarding. Your firm gets its own Kortix project and Lumen's agent kit, and the matter arrives with six synthetic agreements, ready to search and ask about. Without the token, sign-up and matters work, but documents stay unprocessed and the Assistant stays off ("Workspace setup failed"). |
 | Stripe test keys | Set the five `STRIPE_*` values (see [Billing](#billing)). Upgrade, seats and the customer portal turn on. Without them Lumen runs on trial seats. |
 | Ten contracts to measure on | `pnpm --filter @kortix/white-label-lumen eval` runs the real engine on the synthetic dataset and scores it against an answer key ([Quality, measured](#quality-measured)). |
 
