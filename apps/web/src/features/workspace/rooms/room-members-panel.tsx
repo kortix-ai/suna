@@ -1,12 +1,12 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import Hint from '@/components/ui/hint';
-import { Label } from '@/components/ui/label';
-import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTitle } from '@/components/ui/modal';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { AccessRow } from '@/features/workspace/shared/access/access-row';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import Hint from '@kortix/ui/hint';
+import { Label } from '@kortix/ui/label';
+import { Modal, ModalBody, ModalContent, ModalDescription, ModalHeader, ModalTitle } from '@kortix/ui/modal';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { AccessRow } from '@kortix/ui/access/access/access-row';
 import { useTranslations } from '@/i18n/use-translations';
 import { addRoomPerson, addRoomSession, removeRoomPerson, removeRoomSession, type RoomMember } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';

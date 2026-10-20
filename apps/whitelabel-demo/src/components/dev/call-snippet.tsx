@@ -38,7 +38,7 @@ import {
   highlight,
 } from '@/lib/syntax-highlight';
 import { useEffect, useRef, useState } from 'react';
-import { cn } from '@kortix/ui/lib/utils';
+import { cn } from '@kortix/ui';
 import { errorToast, successToast } from '@kortix/ui/toast';
 import { CaretDownIcon, CheckIcon, CodeIcon, CopyIcon } from '@phosphor-icons/react';
 

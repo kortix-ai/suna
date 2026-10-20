@@ -13,6 +13,9 @@ let provisionBodies: unknown[];
 let refuseCreation: boolean;
 let useLocalRepo: boolean;
 let managedRepo: boolean;
+let onboardingBodies: unknown[];
+let refuseOnboarding: boolean;
+let refuseCredential: boolean;
 
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), 'kortix-ship-host-'));
@@ -24,6 +27,9 @@ beforeEach(() => {
   refuseCreation = false;
   useLocalRepo = false;
   managedRepo = false;
+  onboardingBodies = [];
+  refuseOnboarding = false;
+  refuseCredential = false;
   bareRepo = join(cwd, 'remote.git');
   server = Bun.serve({
     port: 0,
@@ -39,11 +45,18 @@ beforeEach(() => {
           account_id: 'account_workspace',
           name: 'Workspace',
           repo_url: bareRepo,
-          push_token: 'synthetic_push_token',
-          metadata: {},
+          push_token: refuseCredential ? undefined : 'synthetic_push_token',
+          metadata: { git: { managed: true } },
         });
       }
-      if (path.endsWith('/git-token')) return Response.json({ push_token: 'synthetic', repo_url: bareRepo });
+      if (path.endsWith('/onboarding')) {
+        expect(req.method).toBe('PATCH');
+        onboardingBodies.push(await req.json());
+        return Response.json({}, { status: refuseOnboarding ? 403 : 200 });
+      }
+      if (path.endsWith('/git-token')) return refuseCredential
+        ? Response.json({ error: 'credential refused' }, { status: 403 })
+        : Response.json({ push_token: 'synthetic', repo_url: bareRepo });
       if (path.endsWith('/connectors/sync')) return Response.json({ ok: true });
       if (path.startsWith('/v1/projects/'))
         return Response.json({
@@ -230,13 +243,15 @@ test.each([false, true])('projects use then ship pushes twice without provisioni
   writeFileSync(join(cwd, 'README.md'), 'Synthetic second ship\n');
   expect((await cli(args)).code).toBe(0);
   expect(provisionBodies).toEqual([]);
+  expect(onboardingBodies).toEqual([]);
   const pushed = Bun.spawnSync(['git', '--git-dir', bareRepo, 'show', 'main:README.md']);
   expect(pushed.exitCode).toBe(0);
   expect(pushed.stdout.toString()).toBe('Synthetic second ship\n');
   expect(hits.filter((hit) => hit.path === '/v1/projects/chosen_project')).toHaveLength(3);
 });
 
-test('first ship provisions on the named host and pushes the actual commit to local Git', async () => {
+test.each([false, true])('first ship dismisses onboarding without failing a push when persistence is refused=%s', async (refused) => {
+  refuseOnboarding = refused;
   clearDefaults();
   expect(Bun.spawnSync(['git', 'init', '--bare', bareRepo]).exitCode).toBe(0);
   expect(Bun.spawnSync(['git', 'config', 'user.name', 'Synthetic Agent'], { cwd }).exitCode).toBe(
@@ -259,6 +274,7 @@ test('first ship provisions on the named host and pushes the actual commit to lo
     '-y',
   ]);
   expect(result.code).toBe(0);
+  expect(onboardingBodies).toEqual([{ completed: true }]);
   expect(provisionBodies).toEqual([
     { name: 'synthetic-workspace', account_id: 'account_workspace', seed_starter: false },
   ]);
@@ -266,6 +282,7 @@ test('first ship provisions on the named host and pushes the actual commit to lo
   expect(hits.map((hit) => hit.path)).toEqual([
     '/v1/accounts/me',
     '/v1/projects/provision',
+    '/v1/projects/created_workspace/onboarding',
     '/v1/connectors/projects/created_workspace/connectors/sync',
   ]);
   const pushed = Bun.spawnSync(['git', '--git-dir', bareRepo, 'show', 'main:kortix.yaml']);
@@ -332,4 +349,19 @@ exec ${JSON.stringify(realGit)} "$@"
   expect(git('show', 'HEAD:kortix.yaml')).toBe('name: local-work');
   expect(hits.some((hit) => hit.path.includes('/git-token'))).toBe(true);
   expect(hits.every((hit) => hit.auth === 'Bearer tok_workspace')).toBe(true);
+});
+
+test('creation dismisses onboarding even if credential resolution fails before the first push', async () => {
+  clearDefaults();
+  refuseCredential = true;
+  const result = await cli(['ship', '--no-verify', '--no-env', '--no-connect', '--origin', 'managed', '-y']);
+  expect(result.code).toBe(1);
+  expect(result.stderr).toContain('credential refused');
+  expect(onboardingBodies).toEqual([{ completed: true }]);
+  expect(hits.map((hit) => hit.path)).toEqual([
+    '/v1/accounts/me',
+    '/v1/projects/provision',
+    '/v1/projects/created_workspace/onboarding',
+    '/v1/projects/created_workspace/git-token',
+  ]);
 });

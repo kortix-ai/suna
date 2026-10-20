@@ -1,6 +1,6 @@
 'use client';
 
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { EmptyState } from '@kortix/ui/empty-state';
 import { useTranslations } from '@/i18n/use-translations';
 import { useRoomConversations } from '@kortix/sdk/react';
 

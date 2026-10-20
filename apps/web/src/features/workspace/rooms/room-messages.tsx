@@ -1,11 +1,11 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
-import Hint from '@/components/ui/hint';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ButtonGroup } from '@kortix/ui/button-group';
+import Hint from '@kortix/ui/hint';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { RoomMessage } from '@kortix/sdk';
 import { ArrowDownIcon, ChatTeardropTextIcon, CheckIcon, CopyIcon } from '@phosphor-icons/react';
 import Link from 'next/link';

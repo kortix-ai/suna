@@ -21,8 +21,10 @@
  *  - `src/lib/call-snippets.ts` is EXCLUDED from the scan. It quotes SDK calls
  *    in its snippet text, and scanning it would let a snippet prove the app
  *    makes a call by being the only thing that mentions it.
- *  - the scanner only sees calls written as `kortix.…`. Actions that go through
- *    `@kortix/sdk/react` hooks or a hand-built request never appear, so those
+ *  - the scanner only sees calls written as `kortix.…` in this app's source.
+ *    Actions that go through `@kortix/sdk/react` hooks, a @kortix/ui screen the
+ *    app mounts (ProjectHome, SessionWorkspace), or a hand-built request never
+ *    appear, so those
  *    are declared in `OFF_CHAIN_ACTIONS` with a source marker that must still
  *    exist — an entry cannot survive the code it describes.
  *
@@ -195,7 +197,7 @@ const REASONS = {
   'account-admin':
     'Account administration. `src/server/policy.ts` denies every `/accounts*` route but `accounts/me` in wrapper mode, so this is direct-mode UI a wrapper end user cannot reach at all.',
   'dashboard-parity':
-    'Not a KaaB action: Lumen mirrors the Kortix dashboard here (project settings, workspace files, git, change requests, previews, and the reads that back those screens). Ownership-gated like everything under `projects/{id}`, but the proxy neither narrows the request nor stamps a field on it, so a wrapper author writes the same call an operator does.',
+    'Not a KaaB action: Lumen mirrors the Kortix dashboard here (project settings and the reads that back those screens). Ownership-gated like everything under `projects/{id}`, but the proxy neither narrows the request nor stamps a field on it, so a wrapper author writes the same call an operator does.',
   'sdk-handle':
     'Builds an SDK handle or resolves the session runtime rather than issuing a REST request a wrapper author writes themselves — `session.prompt` is where that transport is explained.',
 } as const;
@@ -221,13 +223,9 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   'kortix.projects.provision()': 'project.provision',
   'kortix.projects.list()': 'project.provision',
   'kortix.project().connectors.connections.list()': 'connections.list',
-  'kortix.project().sessions.create()': 'session.create',
   'kortix.session().changeModel()': 'session.model',
-  'kortix.session().scope()': 'session.rescope',
-  'kortix.session().rescope()': 'session.rescope',
   'kortix.project().sessions.list()': 'sessions.list',
   'kortix.session().restart()': 'session.delete',
-  'kortix.session().delete()': 'session.delete',
   'kortix.billing.sessionCosts.list()': 'session.costs',
   'kortix.project().approvals.resolve()': 'approval.resolve',
   'kortix.project().secrets.upsert()': 'secret.upsert',
@@ -259,33 +257,14 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   'kortix.project().access.revokeInvite()': 'dashboard-parity',
   'kortix.project().access.update()': 'dashboard-parity',
   'kortix.project().archive()': 'dashboard-parity',
-  'kortix.project().changeRequests.close()': 'dashboard-parity',
-  'kortix.project().changeRequests.diff()': 'dashboard-parity',
-  'kortix.project().changeRequests.get()': 'dashboard-parity',
-  'kortix.project().changeRequests.list()': 'dashboard-parity',
-  'kortix.project().changeRequests.merge()': 'dashboard-parity',
-  'kortix.project().changeRequests.mergePreview()': 'dashboard-parity',
-  'kortix.project().changeRequests.open()': 'dashboard-parity',
-  'kortix.project().changeRequests.reopen()': 'dashboard-parity',
   'kortix.project().connectors.config()': 'dashboard-parity',
   'kortix.project().connectors.create()': 'dashboard-parity',
   'kortix.project().connectors.list()': 'dashboard-parity',
   'kortix.project().connectors.remove()': 'dashboard-parity',
   'kortix.project().connectors.sync()': 'dashboard-parity',
   'kortix.project().detail()': 'dashboard-parity',
-  'kortix.project().files.archive()': 'dashboard-parity',
-  'kortix.project().files.history()': 'dashboard-parity',
-  'kortix.project().files.list()': 'dashboard-parity',
-  'kortix.project().files.read()': 'dashboard-parity',
-  'kortix.project().files.search()': 'dashboard-parity',
   'kortix.project().get()': 'dashboard-parity',
-  'kortix.project().git.branches()': 'dashboard-parity',
-  'kortix.project().git.commit()': 'dashboard-parity',
-  'kortix.project().git.commitDiff()': 'dashboard-parity',
-  'kortix.project().git.commits()': 'dashboard-parity',
-  'kortix.project().git.versionDiff()': 'dashboard-parity',
   'kortix.project().llmCatalog()': 'dashboard-parity',
-  'kortix.project().onboardingComplete()': 'dashboard-parity',
   'kortix.project().policies.list()': 'dashboard-parity',
   'kortix.project().policies.set()': 'dashboard-parity',
   'kortix.project().sandboxHealth()': 'dashboard-parity',
@@ -302,17 +281,8 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   'kortix.project().triggers.update()': 'dashboard-parity',
   'kortix.project().update()': 'dashboard-parity',
   'kortix.project().updateExperimentalFeature()': 'dashboard-parity',
-  'kortix.projects.sandboxTemplates()': 'dashboard-parity',
   'kortix.session().audit()': 'dashboard-parity',
-  'kortix.session().commit()': 'dashboard-parity',
   'kortix.session().get()': 'dashboard-parity',
-  'kortix.session().health()': 'dashboard-parity',
-  'kortix.session().previews()': 'dashboard-parity',
-  'kortix.session().publicShares.create()': 'dashboard-parity',
-  'kortix.session().publicShares.list()': 'dashboard-parity',
-  'kortix.session().publicShares.revoke()': 'dashboard-parity',
-  'kortix.session().setSharing()': 'dashboard-parity',
-  'kortix.session().update()': 'dashboard-parity',
 
   // ── Handles and runtime resolution ────────────────────────────────────────
   'kortix.session()': 'sdk-handle',
@@ -333,10 +303,22 @@ const OFF_CHAIN_ACTIONS: {
   why: string;
 }[] = [
   {
+    id: 'session.create',
+    file: 'src/app/projects/[id]/page.tsx',
+    marker: '<ProjectHome',
+    why: '@kortix/ui ProjectHome sends the first prompt through `useProjectHomeSend`, which creates the session with it.',
+  },
+  {
     id: 'session.prompt',
-    file: 'src/components/workbench/workbench-tabs.tsx',
-    marker: '<SessionThread',
-    why: 'A prompt goes through the `useSession` hook, which owns the runtime transport; @kortix/ui SessionThread calls `session.send`.',
+    file: 'src/app/projects/[id]/sessions/[sessionId]/page.tsx',
+    marker: '<SessionWorkspace',
+    why: 'A prompt goes through the `useSession` hook, which owns the runtime transport; the @kortix/ui SessionWorkspace composer calls `session.send`.',
+  },
+  {
+    id: 'session.rescope',
+    file: 'src/app/projects/[id]/sessions/[sessionId]/page.tsx',
+    marker: '<SessionWorkspace',
+    why: 'The @kortix/ui SessionWorkspace composer carries the overrides toolbar, whose `useSessionScope` reads `scope()` and saves with `rescope()`.',
   },
 ];
 
@@ -429,7 +411,7 @@ describe('the panel covers every KaaB action this app performs', () => {
   test('every snippet is mounted somewhere in the app', () => {
     // A snippet that exists but is never rendered teaches nobody. The id has to
     // appear as a literal outside the builder — `<CallSnippet id="…">` or the
-    // row-to-call maps that drive it (src/components/workbench/session-scope.tsx).
+    // id lists that drive it (SESSION_CALLS in src/app/projects/[id]/sessions/page.tsx).
     const app = sourceFiles(SRC_ROOT)
       .filter((path) => !NOT_APP_BEHAVIOUR.includes(relative(APP_ROOT, path)))
       .map((path) => readFileSync(path, 'utf8'))

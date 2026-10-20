@@ -1,14 +1,14 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { CountBadge } from '@/components/ui/count-badge';
-import Hint from '@/components/ui/hint';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useOptionalSidebar } from '@/components/ui/sidebar';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
+import { Button } from '@kortix/ui/button';
+import { CountBadge } from '@kortix/ui/count-badge';
+import Hint from '@kortix/ui/hint';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { useOptionalSidebar } from '@kortix/ui/sidebar';
+import { ErrorState } from '@kortix/ui/error-state';
+import { SidebarToggle } from '@kortix/ui/workspace';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { RoomConversation } from '@kortix/sdk';
 import { useRoomConversations } from '@kortix/sdk/react';
 import { HashIcon, PlusIcon } from '@phosphor-icons/react';

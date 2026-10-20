@@ -1,5 +1,5 @@
 import { CareersPage as CareersPageContent } from '@/features/marketing/careers/careers-page';
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 import type { Metadata } from 'next';
 import { languageAlternates, localePath, metaDescription, requestLocale } from '@/lib/seo/metadata';
 import { getTranslations } from '@/i18n/get-translations';

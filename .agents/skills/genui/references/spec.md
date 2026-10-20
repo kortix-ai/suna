@@ -118,7 +118,7 @@ The web and native renderers map each `name` to a component. An unknown componen
 
 | Surface | Integration point (verified 2026-10-09) |
 |---|---|
-| Web markdown | `apps/web/src/components/markdown/code/markdown-code.tsx`: new branch before `isMermaidCode` (L50) |
+| Web markdown | `packages/ui/src/markdown/code/markdown-code.tsx`: new branch before `isMermaidCode` (L50) |
 | Mobile markdown | `apps/mobile/components/kortix/selectable-markdown.tsx`: `FencedCode` (L183) |
 | Project flag | `apps/api/src/feature-flags/registry.ts`, next to `pi_harness` (L311), plus the other 5 places its header lists |
 | Prompt, OpenCode | File added to OpenCode `instructions`, the same pattern as `secret-capabilities` (`harness/open-code/lifecycle.ts`) |
@@ -156,7 +156,7 @@ General rules for every component:
 | 19 | `Checklist` | `title`, `items[]`; ticks stay local, never stored or sent | 1–20 items, each ≤ 120 chars | `**title**` then a task list (`- [ ]`) |
 
 ### 6.1 Charts
-- **Web:** `recharts`. It is already a dependency (`apps/web/package.json`) and the shadcn `components/ui/chart.tsx` wraps it. The chart code loads only when a chart block appears.
+- **Web:** `recharts`. It is already a dependency (`apps/web/package.json`) and the shadcn `packages/ui/src/primitives/chart.tsx` wraps it. The chart code loads only when a chart block appears.
 - **Mobile:** `react-native-svg` (already installed, 15.15.4) plus a small scale/path helper. No new native module, so it ships over the air.
 - Every chart has a "Show data" control that renders the `toMarkdown` table. This is also the screen-reader path.
 
@@ -169,8 +169,8 @@ General rules for every component:
 - The map has a fixed height (web 280px, mobile 220px), so it does not cause a layout jump.
 
 ### 6.3 Tabs and Accordion
-- **Web:** existing `components/ui/tabs.tsx` and `components/ui/accordion.tsx` (Radix, keyboard-accessible).
-- **Mobile:** existing `components/ui/tabs.tsx`. Accordion is new, built with reanimated (4.3.1, installed) and following the **animations-dev** rules.
+- **Web:** existing `packages/ui/src/primitives/tabs.tsx` and `packages/ui/src/primitives/accordion.tsx` (Radix, keyboard-accessible).
+- **Mobile:** existing `packages/ui/src/primitives/tabs.tsx`. Accordion is new, built with reanimated (4.3.1, installed) and following the **animations-dev** rules.
 - **Streaming:** while the block streams, the tab or item that is being written is the one shown, so the user sees progress. After the stream, the model's `default` / `open` value applies.
 - **Fallback:** every panel expanded. No content is hidden in markdown, copy, Slack, or export.
 

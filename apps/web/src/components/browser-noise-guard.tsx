@@ -1,6 +1,6 @@
 'use client';
 
-import { shouldIgnoreBrowserRuntimeNoise } from '@/lib/browser-error-noise';
+import { shouldIgnoreBrowserRuntimeNoise } from '@kortix/ui/internal/lib/browser-error-noise';
 import { useEffect } from 'react';
 
 export function BrowserNoiseGuard() {

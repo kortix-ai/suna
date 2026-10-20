@@ -1,8 +1,8 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+import { Button } from '@kortix/ui/button';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@kortix/ui/field';
+import { Input } from '@kortix/ui/input';
 import {
   InputGroup,
   InputGroupAddon,
@@ -10,9 +10,9 @@ import {
   InputGroupSearch,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { InlineMeta } from '@/components/ui/inline-meta';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/input-group';
+import { InlineMeta } from '@kortix/ui/inline-meta';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -21,9 +21,9 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast } from '@/components/ui/toast';
+} from '@kortix/ui/modal';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast } from '@kortix/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
 import { addRoomPerson, createRoom, type Room } from '@kortix/sdk';

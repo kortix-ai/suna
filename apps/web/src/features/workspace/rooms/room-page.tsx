@@ -1,17 +1,17 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast } from '@/components/ui/toast';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { Button } from '@kortix/ui/button';
+import Hint from '@kortix/ui/hint';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast } from '@kortix/ui/toast';
+import { ErrorState } from '@kortix/ui/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { addRoomPerson, updateRoom, type RoomMember, type RoomMessage } from '@kortix/sdk';
-import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
+import { SidebarToggle } from '@kortix/ui/workspace';
 import { qk, useRoom, useRoomConversations, useRoomMessages, useRoomThread } from '@kortix/sdk/react';
 import { ArrowLeftIcon, HashIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';

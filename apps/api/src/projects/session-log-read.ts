@@ -199,12 +199,12 @@ export async function readStoredTranscriptWindow(input: {
 /** The project flag `session_log` of the session's project. False for an unknown session. */
 export async function sessionLogEnabled(sessionId: string): Promise<boolean> {
   const [row] = await db
-    .select({ projectMetadata: projects.metadata })
+    .select({ projectMetadata: projects.metadata, sessionMetadata: projectSessions.metadata })
     .from(projectSessions)
     .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
-  return !!row && resolveFeatureFlag(row.projectMetadata, 'session_log');
+  return !!row && (typeof row.sessionMetadata?.forkedFromSessionId === 'string' || resolveFeatureFlag(row.projectMetadata, 'session_log'));
 }
 
 /** The mirror order: `created` (missing first), then id. */
@@ -231,6 +231,7 @@ async function readLogTranscriptWindow(input: {
       updatedAt: sessionLogs.updatedAt,
       projectId: sessionLogs.projectId,
       metadata: projects.metadata,
+      sessionMetadata: projectSessions.metadata,
       threads: sql<ThreadRow[] | null>`(SELECT json_agg(json_build_object('threadId', ${sessionLogThreads.threadId}, 'parentThreadId', ${sessionLogThreads.parentThreadId}, 'record', ${sessionLogThreads.record}) ORDER BY ${sessionLogThreads.createdAt}, ${sessionLogThreads.threadId}) FROM ${sessionLogThreads} WHERE ${sessionLogThreads.sessionId} = ${qualifiedColumn(projectSessions.sessionId)})`,
     })
     .from(projectSessions)
@@ -238,7 +239,7 @@ async function readLogTranscriptWindow(input: {
     .leftJoin(sessionLogs, eq(sessionLogs.sessionId, projectSessions.sessionId))
     .where(eq(projectSessions.sessionId, input.sessionId))
     .limit(1);
-  if (!row || !resolveFeatureFlag(row.metadata, 'session_log')) return 'mirror';
+  if (!row || (typeof row.sessionMetadata?.forkedFromSessionId !== 'string' && !resolveFeatureFlag(row.metadata, 'session_log'))) return 'mirror';
   // No log yet: pre-journal history the backfill has not converted (until P8.2 drops the mirror).
   if (row.record === null || row.updatedAt === null || row.projectId === null) return 'mirror';
   const log = { record: row.record, updatedAt: row.updatedAt, projectId: row.projectId };

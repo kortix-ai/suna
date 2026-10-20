@@ -1,10 +1,10 @@
 'use client';
 
-import { EntityAvatar, type EntityAvatarSize } from '@/components/ui/entity-avatar';
-import { STATUS_DOT, type StatusTone } from '@/components/ui/status';
-import { UserAvatar, type UserAvatarSize } from '@/components/ui/user-avatar';
+import { EntityAvatar, type EntityAvatarSize } from '@kortix/ui/entity-avatar';
+import { STATUS_DOT, type StatusTone } from '@kortix/ui/status';
+import { UserAvatar, type UserAvatarSize } from '@kortix/ui/user-avatar';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { RobotIcon } from '@phosphor-icons/react';
 
 import { sessionDisplay } from './room-text';

@@ -60,7 +60,6 @@ mock.module('@/lib/env-config', () => ({
 const uiToastMock = () => ({
   errorToast: (message: string) => toasts.push(message),
 });
-mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 
 /** The exact client-visible shape of Next 16's missing-server-action failure. */

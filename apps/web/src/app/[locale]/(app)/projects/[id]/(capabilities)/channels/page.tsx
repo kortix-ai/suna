@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-import { channelsHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { channelsHref } from '@kortix/ui/workspace';
 
 /**
  * `/projects/[id]/channels` — retired, and kept only to forward.

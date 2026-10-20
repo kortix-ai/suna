@@ -1,10 +1,10 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
-import { MenuCard, MenuRow, MenuSectionHeading } from '@/features/session/composer/menus/menu-shell';
+import { Button } from '@kortix/ui/button';
+import Hint from '@kortix/ui/hint';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
+import { MenuCard, MenuRow, MenuSectionHeading } from '@kortix/ui/session/composer/menus/menu-shell';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ProjectSession, RoomMember, RoomPerson } from '@kortix/sdk';
 import { AtIcon, MegaphoneSimpleIcon, PaperPlaneRightIcon } from '@phosphor-icons/react';

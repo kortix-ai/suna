@@ -4,7 +4,7 @@ import { useActiveSection } from '@/hooks/use-active-section';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 export type TocItem = { title: ReactNode; url: string; depth: number };
 

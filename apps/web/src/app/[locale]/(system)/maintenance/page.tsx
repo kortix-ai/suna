@@ -1,4 +1,4 @@
-import { LocalTime } from '@/components/ui/local-time';
+import { LocalTime } from '@kortix/ui/local-time';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import { WrenchIcon as Wrench } from '@/lib/icons/ssr';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';

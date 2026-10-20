@@ -54,34 +54,34 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
+} from '@kortix/ui/dropdown-menu';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import {
   SidebarContext,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from '@/components/ui/sidebar';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/sidebar';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { accountCreated } from '@/features/accounts/account-created';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
-import { Download } from '@/features/icon/icons/download';
+import { Download } from '@kortix/ui/internal/icons/download';
 import { useAuth } from '@/features/providers/auth-provider';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
-import { COMPUTER_SETUP_EVENT } from '@/features/tunnel/computer-connect';
+import { COMPUTER_SETUP_EVENT } from '@kortix/ui/internal/tunnel/computer-connect';
 import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
-import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
-import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
-import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
+import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-param';
+import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
+import { WorkspaceMenuSection } from '@kortix/ui/workspace/sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
-import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
-import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
+import { type SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
+import { useAccountsList, useAccountsQueryKey } from '@kortix/ui/internal/hooks/account/use-accounts-list';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
-import { cn } from '@/lib/utils';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { cn } from '@kortix/ui';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import { getProject, type KortixAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {

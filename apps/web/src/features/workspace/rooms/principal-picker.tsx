@@ -1,12 +1,12 @@
 'use client';
 
-import { InputGroupSearch, InputGroupSearchIcon, InputGroupSearchInput } from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
-import { UserAvatar } from '@/components/ui/user-avatar';
+import { InputGroupSearch, InputGroupSearchIcon, InputGroupSearchInput } from '@kortix/ui/input-group';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { UserAvatar } from '@kortix/ui/user-avatar';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 

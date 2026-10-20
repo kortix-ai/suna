@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import { getTranslations } from '@/i18n/get-translations';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';

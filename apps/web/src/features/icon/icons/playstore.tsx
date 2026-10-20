@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /** Google Play's own brand colours, a third-party mark: never theme tokens. */
 const GOOGLE_PLAY = {

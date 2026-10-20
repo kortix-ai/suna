@@ -1,6 +1,6 @@
 'use client';
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import { CostExplorer } from '@/features/billing/cost-explorer/cost-explorer';
 import CreditTransactions from '@/features/billing/credit-transactions';
 import { useTranslations } from '@/i18n/use-translations';

@@ -13,7 +13,7 @@
  * `lib/session/attachment-tile.ts`.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -83,6 +83,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { useToast } from '@/components/kortix/toast-provider';
+import { NativeContextMenu, type NativeContextMenuAction } from '@/modules/kortix-context-menu';
 
 // ─── Values (web → rendered px) ──────────────────────────────────────────────
 
@@ -92,14 +93,22 @@ const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 13, lineHeig
 /** The full-message sheet opens full screen (Jay, 2026-10-07). A module constant: gorhom wants a stable array. */
 const FULL_SCREEN = ['100%'];
 const SHEET_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 15, lineHeight: 23 } as const;
-/** `px-3.5 py-2.5 rounded-lg`. */
-const BUBBLE_PADDING_X = webSpace(3.5);
-const BUBBLE_PADDING_Y = webSpace(2.5);
-const BUBBLE_RADIUS = 10;
+/** 12pt on every side (Jay, 2026-10-20), not web's `px-3.5 py-2.5`. */
+const BUBBLE_PADDING_X = 12;
+const BUBBLE_PADDING_Y = 12;
+/**
+ * 20pt, rounder than web's `rounded-lg` (Jay, 2026-10-20): a one-line bubble
+ * (19pt line + 2 × 12pt padding = 43pt) reads as a near pill, as in Messages
+ * and the Claude app. The edit card shares it.
+ */
+const BUBBLE_RADIUS = 20;
 /** Web's 4px top-right corner under the sender's avatar (`--radius` 10 minus 6). */
 const BUBBLE_TAIL_RADIUS = 4;
 /** `max-h-[200px]`. */
 const CLAMP_HEIGHT = 200;
+/** A message clamps (fade + "Show more") only above this many characters (Jay, 2026-10-20). */
+const SHOW_MORE_MIN_CHARS = 300;
+const CLAMP_STYLE = { maxHeight: CLAMP_HEIGHT, overflow: 'scroll' } as const;
 /** `h-10` fade. */
 const FADE_HEIGHT = webSpace(10);
 /** `text-xs` = 0.8125rem with a 1rem line. */
@@ -273,7 +282,7 @@ function SessionSourcePill({
 
 // ─── UserMessage ─────────────────────────────────────────────────────────────
 
-export function UserMessage({
+function UserMessageImpl({
   turn,
   isDark,
   agentNames,
@@ -384,6 +393,9 @@ export function UserMessage({
     Keyboard.dismiss();
     menuRef.current?.open();
   }, [copyText]);
+  // iOS: the system menu owns the long press (`NativeContextMenu`); the
+  // bubble's own Pressable must not also fire it.
+  const longPress = NativeContextMenu ? undefined : openMenu;
   const menuProps = {
     menuRef,
     text: copyText,
@@ -433,7 +445,7 @@ export function UserMessage({
         {body ? (
           <MessageMenu {...menuProps}>
             <View className="items-end">
-              <UserMessageBubble isDark={isDark} onLongPress={openMenu} fullText={fullText}>
+              <UserMessageBubble isDark={isDark} onLongPress={longPress} fullText={fullText}>
                 {body}
               </UserMessageBubble>
             </View>
@@ -546,7 +558,7 @@ export function UserMessage({
                 attachments={attachments}
                 status={failed}
                 onOpenPath={onFileMention}
-                onLongPressPaste={selecting ? undefined : openMenu}
+                onLongPressPaste={selecting ? undefined : longPress}
               />
             </MessageMenu>
           )
@@ -556,7 +568,7 @@ export function UserMessage({
         {hasBubble ? (
           <MessageSenderAbove sender={sender}>
             {/* A failed send greys its bubble; "Try again" above stays full strength. */}
-            <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
+            <MessageMenu {...menuProps} selecting={selecting} onSelectText={() => setSelecting(true)}>
               <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
                 <UserMessageBubble
                   isDark={isDark}
@@ -564,7 +576,7 @@ export function UserMessage({
                   quotes={content.quotes}
                   fullText={selecting ? undefined : promptText}
                   // While selecting, a long press belongs to the text selection.
-                  onLongPress={selecting ? undefined : openMenu}>
+                  onLongPress={selecting ? undefined : longPress}>
                   {selecting ? (
                     <SelectableMessageText text={promptText} isDark={isDark} />
                   ) : bodyText || commandInfo ? (
@@ -596,6 +608,14 @@ export function UserMessage({
  * end-aligned like the bubble): the time it was sent, then Copy · Select text
  * · Edit. The components are the RNR `context-menu`; `ContextMenuContent`
  * portals over the thread and closes on a tap outside or an item.
+ *
+ * iOS (a binary with the `KortixContextMenu` module): the system context menu
+ * instead, as in Messages and the Claude app. `NativeContextMenu` is a plain
+ * UIKit container with `UIContextMenuInteraction`: React Native still lays the
+ * bubble out, a long press lifts the real bubble (clipped to its corners),
+ * blurs the thread and opens a `UIMenu`, Liquid Glass on iOS 26. Not SwiftUI
+ * (`@expo/ui` `ContextMenu` + `RNHostView`): that sized the row a pass late and
+ * broke the thread's layout twice (2026-10-20).
  */
 function MessageMenu({
   menuRef,
@@ -603,6 +623,7 @@ function MessageMenu({
   timestamp,
   onEdit,
   onSelectText,
+  selecting = false,
   children,
 }: {
   menuRef: React.RefObject<TriggerRef | null>;
@@ -610,6 +631,8 @@ function MessageMenu({
   timestamp: number | null;
   onEdit?: () => void;
   onSelectText?: () => void;
+  /** Select text is on: a long press belongs to the text selection, not the menu. */
+  selecting?: boolean;
   children: React.ReactNode;
 }) {
   const toast = useToast();
@@ -620,6 +643,38 @@ function MessageMenu({
     haptics.success();
     toast.success('Copied');
   }, [text, toast]);
+
+  const nativeActions = useMemo<NativeContextMenuAction[]>(
+    () => [
+      { id: 'copy', title: 'Copy', systemImage: 'doc.on.doc' },
+      ...(onSelectText ? [{ id: 'select', title: 'Select text', systemImage: 'character.cursor.ibeam' }] : []),
+      ...(onEdit ? [{ id: 'edit', title: 'Edit', systemImage: 'pencil' }] : []),
+    ],
+    [onSelectText, onEdit],
+  );
+  const onNativeAction = useCallback(
+    ({ nativeEvent }: { nativeEvent: { id: string } }) => {
+      if (nativeEvent.id === 'copy') void copy();
+      else if (nativeEvent.id === 'select') onSelectText?.();
+      else if (nativeEvent.id === 'edit') onEdit?.();
+    },
+    [copy, onSelectText, onEdit],
+  );
+
+  if (NativeContextMenu) {
+    // Always the same wrapper: Select text toggles `enabled`, so the bubble
+    // never remounts.
+    return (
+      <NativeContextMenu
+        menuTitle={sentLabel ?? ''}
+        actions={nativeActions}
+        previewCornerRadius={BUBBLE_RADIUS}
+        enabled={!selecting && !!text}
+        onPressAction={onNativeAction}>
+        {children}
+      </NativeContextMenu>
+    );
+  }
 
   return (
     <ContextMenu relativeTo="trigger">
@@ -770,8 +825,9 @@ export function MessageBody({
 // ─── Bubble ──────────────────────────────────────────────────────────────────
 
 /**
- * `bg-sidebar dark:bg-muted px-3.5 py-2.5 rounded-lg`, hugging its text. Long
- * text clamps at 200px under a 36.8px fade in the bubble colour, with a
+ * `bg-sidebar dark:bg-muted`, 12pt padding, 20pt corners, hugging its text. A
+ * message over 300 characters that is taller than 200px clamps under a 36.8px
+ * fade in the bubble colour, with a
  * "Show more" label (a label, not a control) at the bottom left. A tap on a
  * clamped bubble opens the whole message in a sheet with selectable text
  * (`FullMessageSheet`); it never expands in place. Long press still opens the
@@ -799,7 +855,9 @@ export function UserMessageBubble({
   const palette = paletteFor(isDark);
   const surface = isDark ? palette.muted : palette.sidebar;
   const [contentHeight, setContentHeight] = useState(0);
-  const clamped = contentHeight > CLAMP_HEIGHT + 2;
+  // Only a long message clamps: a short one with many lines shows whole.
+  const long = (fullText?.length ?? 0) > SHOW_MORE_MIN_CHARS;
+  const clamped = long && contentHeight > CLAMP_HEIGHT + 2;
   const sheetRef = useRef<BottomSheetModal>(null);
   const opensSheet = clamped && !!fullText;
 
@@ -858,7 +916,7 @@ export function UserMessageBubble({
                 under 'hidden' the text measured 200pt and never read as long.
                 'scroll' measures the full text and still clips it (no
                 ScrollView, nothing scrolls). */}
-            <View style={{ maxHeight: CLAMP_HEIGHT, overflow: 'scroll' }}>
+            <View style={long ? CLAMP_STYLE : undefined}>
               <View onLayout={onContentLayout}>{children}</View>
             </View>
 
@@ -1143,3 +1201,19 @@ function MessageAttachmentTile({
   }
   return <AttachmentTile filename={file.filename} mime={file.mime} onPress={open} />;
 }
+
+type UserMessageProps = Parameters<typeof UserMessageImpl>[0];
+
+/**
+ * The prompt reads only `turn.user`. The live turn is a new object on every
+ * streamed frame; comparing the prompt instead keeps the bubble from
+ * re-rendering while the reply streams under it.
+ */
+function sameUserMessageProps(a: UserMessageProps, b: UserMessageProps): boolean {
+  for (const key of Object.keys(b) as (keyof UserMessageProps)[]) {
+    if (key === 'turn' ? a.turn.user !== b.turn.user : a[key] !== b[key]) return false;
+  }
+  return Object.keys(a).length === Object.keys(b).length;
+}
+
+export const UserMessage = memo(UserMessageImpl, sameUserMessageProps);

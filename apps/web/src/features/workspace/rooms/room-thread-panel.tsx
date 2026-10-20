@@ -1,9 +1,9 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { Button } from '@kortix/ui/button';
+import Hint from '@kortix/ui/hint';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { ErrorState } from '@kortix/ui/error-state';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ProjectSession, RoomMember, RoomMessage, RoomPerson } from '@kortix/sdk';
 import { useRoomThread } from '@kortix/sdk/react';
