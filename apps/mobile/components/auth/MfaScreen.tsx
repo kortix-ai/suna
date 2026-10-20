@@ -7,11 +7,17 @@
  * The email screen's layout with web's six code cells (components/kortix/
  * code-cells). No back button: the only way out is Sign out, which signs this
  * device out.
+ *
+ * `preview` (dev builds, `/mfa-preview` from the Debug page): the same screen
+ * outside the auth gates, which send any session that owes no code away from
+ * `/auth/mfa`. Verify is fake (`000000` passes, anything else is a wrong code)
+ * and Sign out only goes back, so the focus and keyboard behaviour can be
+ * checked while signed in.
  */
 
 import * as React from 'react';
 import { View } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,11 +30,20 @@ import { Text } from '@/components/ui/text';
 import { useAuthContext } from '@/contexts';
 import { useSignOutAndRoute } from '@/hooks/useSignOutAndRoute';
 
-export default function MfaScreen() {
+type VerifyTotp = ReturnType<typeof useAuthContext>['verifyTotp'];
+
+const previewVerify: VerifyTotp = async (code) => {
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  return code === '000000' ? null : { code: 'mfa_verification_failed' };
+};
+
+export function MfaScreen({ preview = false }: { preview?: boolean }) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { colorScheme } = useColorScheme();
   const { t } = useTranslation();
-  const { verifyTotp } = useAuthContext();
+  const auth = useAuthContext();
+  const verifyTotp = preview ? previewVerify : auth.verifyTotp;
 
   const [code, setCode] = React.useState('');
   const [verifying, setVerifying] = React.useState(false);
@@ -45,7 +60,8 @@ export default function MfaScreen() {
       setErrorMessage(null);
       const error = await verifyTotp(value);
       setVerifying(false);
-      // Success: the routing gates leave this screen.
+      // Success: the routing gates leave this screen (preview: go back).
+      if (!error && preview) router.back();
       if (error) {
         setErrorMessage(
           error.code === 'mfa_verification_failed'
@@ -54,7 +70,7 @@ export default function MfaScreen() {
         );
       }
     },
-    [code, verifyTotp, t]
+    [code, verifyTotp, t, preview, router]
   );
 
   // The code submits itself once complete. Input waits while a check runs;
@@ -70,8 +86,9 @@ export default function MfaScreen() {
   );
 
   const handleSignOut = React.useCallback(() => {
-    void signOutAndRoute();
-  }, [signOutAndRoute]);
+    if (preview) router.back();
+    else void signOutAndRoute();
+  }, [signOutAndRoute, preview, router]);
 
   const busy = verifying || signingOut;
 

@@ -259,6 +259,37 @@ export function lastTextBlockId(segments: ReadonlyArray<TurnSegment>): string | 
   return undefined;
 }
 
+function messageOfBlockId(assistant: ReadonlyArray<SessionLogMessage>, blockId: string) {
+  return assistant.find((m) => m.blocks.some((b) => b.id === blockId));
+}
+
+/**
+ * KRTX-2933: the text block that can still grow, by the part's own state, not
+ * only the turn's. It is the last text segment, its message still streams,
+ * and no later block of that message follows it. Call only while the turn is
+ * live: `turn.live` follows the session's busy flag, which can read busy
+ * after the reply ended.
+ */
+export function liveTextBlockId(
+  assistant: ReadonlyArray<SessionLogMessage>,
+  segments: ReadonlyArray<TurnSegment>,
+): string | undefined {
+  const id = lastTextBlockId(segments);
+  return id !== undefined && isOpenTextBlock(assistant, id) ? id : undefined;
+}
+
+/** The block's message still streams and the block is that message's last block. */
+export function isOpenTextBlock(assistant: ReadonlyArray<SessionLogMessage>, blockId: string): boolean {
+  const message = messageOfBlockId(assistant, blockId);
+  return message?.status === 'streaming' && message.blocks[message.blocks.length - 1]?.id === blockId;
+}
+
+/** `message_id:block_id`: the key the stream pacer remembers a part's revealed length under. */
+export function textBlockRevealKey(assistant: ReadonlyArray<SessionLogMessage>, blockId: string): string {
+  const message = messageOfBlockId(assistant, blockId);
+  return message ? `${message.message_id}:${blockId}` : blockId;
+}
+
 // ─── Settled-turn fold (KRTX-2113) ───────────────────────────────────────────
 
 /** False when `SessionTurn` draws nothing for the segment (a plumbing-only burst, a hidden tool, blank text). */
