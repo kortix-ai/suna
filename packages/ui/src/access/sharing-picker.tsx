@@ -11,6 +11,7 @@ import { localizeUiCatalog } from '../i18n/ui-catalog/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '../i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import { useTranslations } from '../i18n';
 import { useMemo } from 'react';
+import { useUiHostConfig } from '../providers/ui-provider';
 import {
   DEFAULT_COPY,
   type SharingCopy,
@@ -107,6 +108,11 @@ export function SharingPicker({
   // Project-wide/Private or moves the people onto an agent.
   const legacyMembers = hideMembers && value.mode === 'members';
   const isDisabled = (mode: SharingMode) => Boolean(disabledModes?.includes(mode));
+  // A host that fronts one operator key (`accountApiEnabled: false`) has no
+  // roster of its own users: the project's members are the operator's
+  // account. Offer no "specific people" there, unless the value already is one.
+  const { accountApiEnabled } = useUiHostConfig();
+  const offerMembers = !hideMembers && (accountApiEnabled || value.mode === 'members');
 
   return (
     <div className="space-y-3">
@@ -128,7 +134,7 @@ export function SharingPicker({
           desc={c.private.desc}
           disabled={isDisabled('private')}
         />
-        {!hideMembers && (
+        {offerMembers && (
           <ShareOption
             value="members"
             label={c.members.label}
@@ -137,7 +143,7 @@ export function SharingPicker({
           />
         )}
       </RadioGroup>
-      {!hideMembers && value.mode === 'members' && (
+      {offerMembers && value.mode === 'members' && (
         <SubjectPicker
           projectId={projectId}
           memberIds={value.memberIds}

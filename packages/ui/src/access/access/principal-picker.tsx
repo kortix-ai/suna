@@ -27,7 +27,7 @@ import {
 } from '../../primitives/input-group';
 import { Skeleton } from '../../primitives/skeleton';
 import { UserAvatar } from '../../primitives/user-avatar';
-import { useUiViewer } from '../../providers/ui-provider';
+import { useUiHostConfig, useUiViewer } from '../../providers/ui-provider';
 import { cn } from '../../internal/lib/utils';
 import { listAccountMembers, listGroups, listProjectAccess } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
@@ -214,6 +214,9 @@ export function PrincipalPicker({
   // chosen; `editing` re-opens the list without clearing the value.
   const [editing, setEditing] = useState(false);
   const authUser = useUiViewer();
+  // Account members and groups are account routes; a host that blocks them
+  // (`accountApiEnabled: false`) lists project members only.
+  const { accountApiEnabled } = useUiHostConfig();
 
   const showMembers = kinds.includes('member');
   const showGroups = kinds.includes('group');
@@ -231,7 +234,7 @@ export function PrincipalPicker({
   const accountMembersQuery = useQuery({
     queryKey: ['account-members', scope.kind === 'account' ? scope.accountId : null],
     queryFn: () => listAccountMembers((scope as { accountId: string }).accountId),
-    enabled: scope.kind === 'account' && showMembers,
+    enabled: scope.kind === 'account' && showMembers && accountApiEnabled,
     staleTime: 30_000,
   });
 
@@ -242,7 +245,7 @@ export function PrincipalPicker({
   const groupsQuery = useQuery({
     queryKey: ['account-groups', derivedAccountId],
     queryFn: () => listGroups(derivedAccountId as string),
-    enabled: showGroups && !!derivedAccountId,
+    enabled: showGroups && !!derivedAccountId && accountApiEnabled,
     staleTime: 60_000,
   });
 
