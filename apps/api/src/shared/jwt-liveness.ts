@@ -15,6 +15,7 @@
  */
 
 import { sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import { db, hasDatabase } from './db';
 import { getSupabase } from './supabase';
 import { isUuid } from './validate';
@@ -66,6 +67,7 @@ async function askGoTrue(token: string): Promise<LiveUser | null> {
 }
 
 let goTrueLoader: GoTrueLoader = askGoTrue;
+let lastLookupWarningAt = -Infinity;
 let sessionLoader: SessionLoader = askDatabase;
 
 /**
@@ -77,8 +79,16 @@ export async function confirmJwtLive(token: string, claims: SessionClaims): Prom
   if (hasDatabase && sessionId && isUuid(sessionId) && isUuid(claims.sub)) {
     try {
       return await sessionLoader(claims.sub, sessionId);
-    } catch {
-      // DB read failed: GoTrue answers instead.
+    } catch (err) {
+      // GoTrue answers instead. One line a minute: a lookup that always fails
+      // (no grant on `auth`, an API DB that is not GoTrue's) puts every
+      // request back on the GoTrue hop, and that must be visible.
+      if (Date.now() - lastLookupWarningAt >= 60_000) {
+        lastLookupWarningAt = Date.now();
+        logger.warn('jwt-liveness: auth.sessions lookup failed, asking GoTrue', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }
   return goTrueLoader(token);

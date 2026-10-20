@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeAll, describe, expect, setSystemTime, spyOn, test } from 'bun:test';
 
 /**
  * ES256 (JWKS) access tokens must pass the same liveness check as HS256.
@@ -117,9 +117,23 @@ describe('ES256 tokens', () => {
     liveness.__setSessionLivenessLoaderForTests(async () => {
       throw new Error('db down');
     });
-    const token = await sign({ sub: USER, session_id: '00000000-0000-4000-8000-00000000c003', exp: inAnHour() });
-    expect((await verifySupabaseJwt(token)).ok).toBe(true);
-    expect(goTrue.length).toBe(1);
+    const { logger } = await import('../lib/logger');
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      setSystemTime(new Date('2026-10-20T12:00:00Z'));
+      const token = await sign({ sub: USER, session_id: '00000000-0000-4000-8000-00000000c003', exp: inAnHour() });
+      for (let i = 0; i < 3; i += 1) expect((await verifySupabaseJwt(token)).ok).toBe(true);
+      expect(goTrue.length).toBe(3);
+      // Visible, but one line a minute, not one per request.
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain('auth.sessions lookup failed');
+      setSystemTime(new Date('2026-10-20T12:01:01Z'));
+      expect((await verifySupabaseJwt(token)).ok).toBe(true);
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      setSystemTime();
+      warn.mockRestore();
+    }
   });
 
   test('GoTrue unreachable is inconclusive, so the caller falls back to the network path', async () => {
