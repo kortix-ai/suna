@@ -1,7 +1,7 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { cn } from '@/lib/utils';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
 import {
   BrainIcon,
   CpuIcon,

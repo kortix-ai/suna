@@ -12,9 +12,9 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { createContext, useContext, useId, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { RadioGroupItem } from '@/components/ui/radio-group';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import { RadioGroupItem } from '@kortix/ui/radio-group';
+import { cn } from '@kortix/ui';
 
 const StepIdentityContext = createContext<string | null>(null);
 

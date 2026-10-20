@@ -7,7 +7,7 @@
  * branching: this constant is the single source of truth.
  *
  * How it reaches icons — you never pass a weight prop:
- *   • Client components  → IconProvider (src/components/ui/icon-provider.tsx)
+ *   • Client components  → IconProvider (primitives/icon-provider.tsx)
  *     feeds it to Phosphor's IconContext.
  *   • Server components  → icons imported from '@phosphor-icons/react/ssr' have it
  *     pre-bound (RSC cannot use React context, so the weight is bound there).

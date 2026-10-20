@@ -37,11 +37,11 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
  * words to nobody who did not already know them.
  */
 
-import { Skeleton } from '@/components/ui/skeleton';
-import { formatWholeUsd } from '@/features/billing/compute-pricing';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { formatWholeUsd } from '@kortix/ui/internal/billing/compute-pricing';
+import { useAccountState } from '@kortix/ui/internal/billing/use-account-state';
+import { cn } from '@kortix/ui';
 import { CreditExpiry } from '@/features/billing/credit-expiry';
-import { useAccountState } from '@/hooks/billing/use-account-state';
-import { cn } from '@/lib/utils';
 import { resolvedPlan, type AccountState } from '@kortix/sdk';
 import { formatUsdAsCredits } from '@kortix/shared';
 

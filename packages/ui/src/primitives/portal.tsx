@@ -1,0 +1,24 @@
+import { usePortalContainer } from '../lib/portal-container';
+import { getPortalRoot } from '../lib/portal-root';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+
+interface PortalProps {
+  children: React.ReactNode;
+}
+
+export function Portal({ children }: PortalProps) {
+  const [mounted, setMounted] = useState(false);
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  const scoped = usePortalContainer();
+
+  useEffect(() => {
+    setMounted(true);
+    setContainer(getPortalRoot());
+    return () => setMounted(false);
+  }, []);
+
+  if (!mounted || !container) return null;
+
+  return createPortal(children, scoped ?? container);
+}

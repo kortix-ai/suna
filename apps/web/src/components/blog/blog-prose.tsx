@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /**
  * Editorial prose for rendered blog MDX. Token-driven (no hardcoded colors),

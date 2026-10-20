@@ -2,18 +2,18 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { CreditTransactionsTable } from '@/features/billing/transactions-table';
-import { useTransactions } from '@/hooks/billing/use-transactions';
+import { useTransactions } from '@kortix/ui/internal/billing/use-transactions';
 import { isBillingEnabled } from '@/lib/config';
 import { CoinsIcon as Coins, ArrowClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
 import { useState } from 'react';

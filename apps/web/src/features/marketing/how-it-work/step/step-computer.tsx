@@ -1,7 +1,7 @@
 'use client';
 
-import { UnifiedMarkdown } from '@/components/markdown';
-import { ActivityBurst } from '@/features/session/turn/activity-burst';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import { ActivityBurst } from '@kortix/ui/session';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ToolCallBlock } from '@kortix/sdk';
 import { m, useReducedMotion, type Transition } from 'motion/react';
@@ -273,7 +273,7 @@ function Block({ children, className }: { children: ReactNode; className?: strin
  * The user's turn.
  *
  * Surface and text scale copied from `UserMessageBubble` in
- * `features/session/turn/user-message.tsx` (its `BUBBLE_SURFACE` /
+ * `packages/ui/src/session/turn/user-message.tsx` (its `BUBBLE_SURFACE` /
  * `BUBBLE_TEXT` constants) rather than imported: that module is the real chat
  * turn — XML parsers, attachment tiles, the image lightbox, two zustand stores
  * — and importing it would ship all of it to the landing page to reuse two

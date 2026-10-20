@@ -13,7 +13,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { ComposerEditor, type ComposerEditorHandle } from '../editor/composer-editor';
+import { ComposerEditor, type ComposerEditorHandle } from '@kortix/ui/composer';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },

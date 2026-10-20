@@ -14,8 +14,8 @@
  * only thing a person can change is the tier.
  */
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
 import {
   DEFAULT_TIER_USD,
   FREE_MONTHLY_CREDITS,
@@ -23,15 +23,15 @@ import {
   isValidMonthlyUsd,
   monthlyCreditsForUsd,
   tierForMonthlyUsd,
-} from '@/features/billing/compute-pricing';
+} from '@kortix/ui/internal/billing/compute-pricing';
 import { CreditExpiry } from '@/features/billing/credit-expiry';
 import { CreditTierSelect } from '@/features/billing/credit-tier-select';
 import { useChangeCreditPlan } from '@/features/billing/use-change-credit-plan';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { accountHasLiveSubscription } from '@/lib/billing/billing-gate-state';
+import { accountHasLiveSubscription } from '@kortix/ui/internal/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
-import { cn } from '@/lib/utils';
-import { useBillingAccountId } from '@/stores/billing-account-context';
+import { cn } from '@kortix/ui';
+import { useBillingAccountId } from '@kortix/ui/internal/stores/billing-account-context';
 import { canManageBilling, resolvedPlan, type AccountState } from '@kortix/sdk';
 import { useBillingPlanPreview } from '@kortix/sdk/react';
 import { formatCredits } from '@kortix/shared';

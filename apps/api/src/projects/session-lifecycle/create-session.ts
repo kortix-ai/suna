@@ -11,7 +11,7 @@ import { mayRequeueFailedCreate } from './requeue-policy';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
-import { providerPoolConflicts, runtimeContextConflicts } from './idempotency-conflicts';
+import { forkSourceConflicts, providerPoolConflicts, runtimeContextConflicts } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { applyTriggerSessionAccess } from '../trigger-session-access';
 import { resolveProjectAutomationActor } from './actor';
@@ -91,6 +91,7 @@ export async function createSession(
         ? (existingPayload.body as Record<string, unknown>)
         : {};
     const conflicts = [
+      [() => forkSourceConflicts(existingBody.fork_from_session_id, command.body.fork_from_session_id), 'IDEMPOTENCY_FORK_CONFLICT', 'a different fork source'],
       [() => connectorBindingPayloadConflicts(existingBody.connector_bindings, command.body.connector_bindings), 'IDEMPOTENCY_BINDING_CONFLICT', 'different connector bindings'],
       [() => providerPoolConflicts(existingBody.provider_secret_pools, command.body.provider_secret_pools), 'IDEMPOTENCY_PROVIDER_POOL_CONFLICT', 'different provider secret pools'],
       [() => secretsAllowlistPayloadConflicts(existingBody.secrets as string[] | null | undefined, command.body.secrets as string[] | null | undefined), 'IDEMPOTENCY_SECRETS_CONFLICT', 'a different secrets allowlist'],

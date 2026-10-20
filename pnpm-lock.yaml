@@ -1715,9 +1715,84 @@ importers:
 
   packages/ui:
     dependencies:
+      '@codemirror/commands':
+        specifier: ^6.10.3
+        version: 6.11.1
+      '@codemirror/lint':
+        specifier: ^6.9.5
+        version: 6.9.7
+      '@codemirror/state':
+        specifier: 6.7.6
+        version: 6.7.6
+      '@codemirror/view':
+        specifier: 6.43.13
+        version: 6.43.13
+      '@embedpdf/core':
+        specifier: ^2.14.4
+        version: 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/engines':
+        specifier: ^2.14.4
+        version: 2.15.0(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/models':
+        specifier: ^2.14.4
+        version: 2.15.0
+      '@embedpdf/plugin-document-manager':
+        specifier: ^2.14.4
+        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-interaction-manager':
+        specifier: ^2.14.4
+        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-render':
+        specifier: ^2.14.4
+        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-rotate':
+        specifier: ^2.14.4
+        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-scroll':
+        specifier: ^2.14.4
+        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-search':
+        specifier: ^2.14.4
+        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-selection':
+        specifier: ^2.14.4
+        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-interaction-manager@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-thumbnail':
+        specifier: ^2.14.4
+        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-render@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-tiling':
+        specifier: ^2.14.4
+        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-render@2.15.0)(@embedpdf/plugin-scroll@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-viewport':
+        specifier: ^2.14.4
+        version: 2.15.0(@embedpdf/core@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@embedpdf/plugin-zoom':
+        specifier: ^2.14.4
+        version: 2.15.0(@embedpdf/core@2.15.0)(@embedpdf/plugin-scroll@2.15.0)(@embedpdf/plugin-viewport@2.15.0)(preact@10.29.8)(react-dom@19.3.0)(react@19.3.0)(svelte@5.57.1)(vue@3.5.43)
+      '@extend-ai/react-docx':
+        specifier: ^0.7.5
+        version: 0.7.6(react-dom@19.3.0)(react@19.3.0)
+      '@extend-ai/react-xlsx':
+        specifier: 0.13.4
+        version: 0.13.4(react-dom@19.3.0)(react@19.3.0)
+      '@glideapps/glide-data-grid':
+        specifier: 6.0.4-alpha24
+        version: 6.0.4-alpha24(lodash@4.18.1)(marked@16.4.2)(react-dom@19.3.0)(react-responsive-carousel@3.2.23)(react@19.3.0)
+      '@kortix/llm-catalog':
+        specifier: workspace:*
+        version: link:../llm-catalog
+      '@lezer/highlight':
+        specifier: 1.2.3
+        version: 1.2.3
+      '@paper-design/shaders-react':
+        specifier: ^0.0.76
+        version: 0.0.76(@types/react@19.2.18)(react@19.3.0)
       '@phosphor-icons/react':
         specifier: 2.1.10
         version: 2.1.10(react-dom@19.3.0)(react@19.3.0)
+      '@pierre/diffs':
+        specifier: 1.1.22
+        version: 1.1.22(react-dom@19.3.0)(react@19.3.0)
       '@radix-ui/react-accordion':
         specifier: ^1.2.11
         version: 1.2.20(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
@@ -1781,6 +1856,63 @@ importers:
       '@radix-ui/react-visually-hidden':
         specifier: ^1.2.4
         version: 1.2.11(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
+      '@tanstack/react-virtual':
+        specifier: ^3.13.12
+        version: 3.14.13(react-dom@19.3.0)(react@19.3.0)
+      '@tiptap/core':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/pm@3.30.5)
+      '@tiptap/extension-bubble-menu':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@tiptap/extension-document':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)
+      '@tiptap/extension-floating-menu':
+        specifier: 3.30.5
+        version: 3.30.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@tiptap/extension-hard-break':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)
+      '@tiptap/extension-paragraph':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)
+      '@tiptap/extension-placeholder':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/extensions@3.30.5)
+      '@tiptap/extension-text':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)
+      '@tiptap/extensions':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@tiptap/pm':
+        specifier: 3.30.5
+        version: 3.30.5
+      '@tiptap/react':
+        specifier: 3.30.5
+        version: 3.30.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
+      '@tiptap/suggestion':
+        specifier: 3.30.5
+        version: 3.30.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@uiw/codemirror-extensions-langs':
+        specifier: ^4.23.10
+        version: 4.25.11(@codemirror/autocomplete@6.20.3)(@codemirror/language@6.12.4)(@codemirror/state@6.7.6)(@codemirror/view@6.43.13)(@lezer/common@1.5.3)(@lezer/highlight@1.2.3)(@lezer/javascript@1.5.6)(@lezer/lr@1.4.10)
+      '@uiw/codemirror-themes':
+        specifier: 4.23.10
+        version: 4.23.10(@codemirror/language@6.12.4)(@codemirror/state@6.7.6)(@codemirror/view@6.43.13)
+      '@uiw/react-codemirror':
+        specifier: ^4.23.10
+        version: 4.25.11(@babel/runtime@8.0.5)(@codemirror/autocomplete@6.20.3)(@codemirror/language@6.12.4)(@codemirror/lint@6.9.7)(@codemirror/search@6.7.2)(@codemirror/state@6.7.6)(@codemirror/theme-one-dark@6.1.3)(@codemirror/view@6.43.13)(codemirror@6.0.2)(react-dom@19.3.0)(react@19.3.0)
+      '@xterm/addon-fit':
+        specifier: ^0.10.0
+        version: 0.10.0(@xterm/xterm@5.5.0)
+      '@xterm/addon-web-links':
+        specifier: ^0.11.0
+        version: 0.11.0(@xterm/xterm@5.5.0)
+      '@xterm/xterm':
+        specifier: ^5.5.0
+        version: 5.5.0
       ag-grid-community:
         specifier: ^35.1.0
         version: 35.3.1
@@ -1796,9 +1928,30 @@ importers:
       cmdk:
         specifier: ^0.2.1
         version: 0.2.1(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
+      color-bits:
+        specifier: ^1.1.0
+        version: 1.2.0
+      date-fns:
+        specifier: ^3.6.0
+        version: 3.6.0
+      diff:
+        specifier: ^8.0.3
+        version: 8.0.4
       frimousse:
         specifier: ^0.3.0
         version: 0.3.0(react@19.3.0)(typescript@5.9.3)
+      heic2any:
+        specifier: 0.0.4
+        version: 0.0.4
+      i18next:
+        specifier: ^26.3.6
+        version: 26.4.2(typescript@5.9.3)
+      jszip:
+        specifier: ^3.10.1
+        version: 3.10.2
+      katex:
+        specifier: ^0.16.22
+        version: 0.16.47
       maplibre-gl:
         specifier: 6.12.0
         version: 6.12.0
@@ -1808,12 +1961,24 @@ importers:
       motion:
         specifier: ^12.40.0
         version: 12.43.0(react-dom@19.3.0)(react@19.3.0)
+      papaparse:
+        specifier: ^5.5.2
+        version: 5.7.0
+      pdf-lib:
+        specifier: ^1.17.1
+        version: 1.17.1
+      pptx-react-viewer:
+        specifier: ^1.15.0
+        version: 1.25.5(fast-xml-parser@5.11.1)(framer-motion@12.43.0)(i18next@26.4.2)(jspdf@4.2.1)(jszip@3.10.2)(lucide-react@1.51.0)(react-dom@19.3.0)(react-i18next@17.0.14)(react-icons@5.7.0)(react@19.3.0)
       radix-ui:
         specifier: ^1.6.0
         version: 1.6.7(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
       react-day-picker:
         specifier: ^8.10.1
         version: 8.10.2(date-fns@3.6.0)(react@19.3.0)
+      react-i18next:
+        specifier: ^17.0.9
+        version: 17.0.14(i18next@26.4.2)(react-dom@19.3.0)(react@19.3.0)(typescript@5.9.3)
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.2.18)(react@19.3.0)
@@ -1826,19 +1991,55 @@ importers:
       recharts:
         specifier: ^3.2.1
         version: 3.10.1(@types/react@19.2.18)(react-dom@19.3.0)(react-is@19.3.0)(react@19.3.0)(redux@5.0.1)
+      rehype-sanitize:
+        specifier: ^6.0.0
+        version: 6.0.0
+      rehype-stringify:
+        specifier: ^10.0.1
+        version: 10.0.1
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0
+      remark-rehype:
+        specifier: ^11.1.2
+        version: 11.1.2
+      shaders:
+        specifier: ^2.5.94
+        version: 2.5.135(patch_hash=eaej5q3lhsnrsoz6e7zxio5l2e)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.1)(vue@3.5.43)
+      shiki:
+        specifier: ^3.12.0
+        version: 3.23.0
       sonner:
         specifier: ^2.0.3
         version: 2.0.8(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
+      sql.js:
+        specifier: ^1.14.1
+        version: 1.14.2
+      streamdown:
+        specifier: ^1.6.11
+        version: 1.6.11(micromark@4.0.3)(react@19.3.0)
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.7.0
+      unified:
+        specifier: ^11.0.5
+        version: 11.0.5
+      use-intl:
+        specifier: ^4.13.4
+        version: 4.14.5(react@19.3.0)
       vaul:
         specifier: ^1.1.2
         version: 1.1.2(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
+      zustand:
+        specifier: ^5.0.3
+        version: 5.0.15(@types/react@19.2.18)(react@19.3.0)(use-sync-external-store@1.7.0)
     devDependencies:
+      '@kortix/manifest-schema':
+        specifier: workspace:*
+        version: link:../manifest-schema
       '@kortix/sdk':
         specifier: workspace:*
         version: link:../sdk
@@ -1848,18 +2049,30 @@ importers:
       '@tailwindcss/cli':
         specifier: 4.3.3
         version: 4.3.3
+      '@tanstack/react-query':
+        specifier: ^5.75.2
+        version: 5.103.0(react@19.3.0)
       '@types/bun':
         specifier: ^1.3.12
         version: 1.4.3
+      '@types/papaparse':
+        specifier: ^5.5.2
+        version: 5.5.2
       '@types/react':
         specifier: 19.2.18
         version: 19.2.18
       '@types/react-dom':
         specifier: 19.2.3
         version: 19.2.3(@types/react@19.2.18)
+      '@types/react-test-renderer':
+        specifier: ^19.3.0
+        version: 19.3.0
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260707.2
         version: 7.0.0-dev.20260707.2
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.5
       happy-dom:
         specifier: ^20.14.5
         version: 20.14.5
@@ -1867,6 +2080,9 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0
       react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
+      react-test-renderer:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
       tailwind-scrollbar:
@@ -4273,7 +4489,7 @@ packages:
       '@codemirror/state': 6.7.6
       '@codemirror/view': 6.43.13
       '@lezer/common': 1.5.3
-      '@lezer/javascript': 1.5.4
+      '@lezer/javascript': 1.5.6
     dev: false
 
   /@codemirror/lang-jinja@6.0.1:
@@ -4430,7 +4646,7 @@ packages:
       '@lezer/common': 1.5.3
       '@lezer/highlight': 1.2.3
       '@lezer/lr': 1.4.10
-      style-mod: 4.1.3
+      style-mod: 4.1.4
     dev: false
 
   /@codemirror/legacy-modes@6.5.4:
@@ -6466,6 +6682,27 @@ packages:
       - supports-color
     dev: false
 
+  /@glideapps/glide-data-grid@6.0.4-alpha24(lodash@4.18.1)(marked@16.4.2)(react-dom@19.3.0)(react-responsive-carousel@3.2.23)(react@19.3.0):
+    resolution: {integrity: sha512-o3hq7n5XKS1R7lXZ5vGyTG6O/11qPmu9DQyxPnqOej3UMuQDEe4bJth75pcnYueLCAoffpa8vTB2hz5Q0qZLHg==}
+    peerDependencies:
+      lodash: ^4.17.19
+      marked: ^16.0.10
+      react: ^16.12.0 || 17.x || 18.x || 19.x
+      react-dom: ^16.12.0 || 17.x || 18.x || 19.x
+      react-responsive-carousel: ^3.2.7
+    dependencies:
+      '@linaria/react': 6.3.0(react@19.3.0)
+      canvas-hypertxt: 1.0.3
+      lodash: 4.18.1
+      marked: 16.4.2
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
+      react-number-format: 5.4.5(react-dom@19.3.0)(react@19.3.0)
+      react-responsive-carousel: 3.2.23
+    transitivePeerDependencies:
+      - supports-color
+    dev: false
+
   /@google/genai@2.21.0:
     resolution: {integrity: sha512-+PDtco2/Z0ONdzCGekCoCT+O1VJS9xJQNN4XzQpXG/t3El/SWWMkCWlFRO1KmivOHPa4Q0VjUYu1HBKCZ/v33Q==}
     engines: {node: '>=20.0.0'}
@@ -7029,14 +7266,6 @@ packages:
 
   /@lezer/java@1.1.4:
     resolution: {integrity: sha512-gQylJ2xHV2xXsVqtnAcJrcROvLZJaQiC0tR//+q0k961BxqvyYttusPkJ8d9T1fPDJKHJW2etUH8XbIn9jhVUg==}
-    dependencies:
-      '@lezer/common': 1.5.3
-      '@lezer/highlight': 1.2.3
-      '@lezer/lr': 1.4.10
-    dev: false
-
-  /@lezer/javascript@1.5.4:
-    resolution: {integrity: sha512-vvYx3MhWqeZtGPwDStM2dwgljd5smolYD2lR2UyFcHfxbBQebqx8yjmFmxtJ/E6nN6u1D9srOiVWm3Rb4tmcUA==}
     dependencies:
       '@lezer/common': 1.5.3
       '@lezer/highlight': 1.2.3
@@ -8654,7 +8883,7 @@ packages:
     dependencies:
       '@pierre/theme': 2.0.0
       '@pierre/theming': 1.0.1(@pierre/theme@2.0.0)(react-dom@19.3.0)(react@19.3.0)(shiki@3.23.0)
-      '@shikijs/transformers': 3.23.0
+      '@shikijs/transformers': 4.4.3
       diff: 9.0.0
       hast-util-to-html: 9.0.5
       lru_map: 0.4.1
@@ -14247,18 +14476,16 @@ packages:
       '@tiptap/pm': 3.30.5
     dev: false
 
-  /@tiptap/extension-bubble-menu@3.31.4(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5):
-    resolution: {integrity: sha512-Ml/yswuys+3QkOMajfXyAGlUKCxEbT3dMyF8vHwQ5mDk9MDm+dqp10It5CrDBkUT/KkVTa6AJI3kb0TXZJZiAA==}
-    requiresBuild: true
+  /@tiptap/extension-bubble-menu@3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5):
+    resolution: {integrity: sha512-redcmBInVwmipjF/WEVcNwCUJgJygUv8leidfRb/jBSAwx7GgnQWPr2HVQDk9zeTt3ykWld2NRdrk94Crjymow==}
     peerDependencies:
-      '@tiptap/core': 3.31.4
-      '@tiptap/pm': 3.31.4
+      '@tiptap/core': 3.30.5
+      '@tiptap/pm': 3.30.5
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@tiptap/core': 3.30.5(@tiptap/pm@3.30.5)
       '@tiptap/pm': 3.30.5
     dev: false
-    optional: true
 
   /@tiptap/extension-document@3.30.5(@tiptap/core@3.30.5):
     resolution: {integrity: sha512-4mKoD3bBr5W2AQ2Y/7amOqcVw0eqJbUwRtwvxypeo5Hi0PB9O5Ev8P05c3EUTo10bllqdKYXGeCU5AcgdQsHWQ==}
@@ -14268,19 +14495,17 @@ packages:
       '@tiptap/core': 3.30.5(@tiptap/pm@3.30.5)
     dev: false
 
-  /@tiptap/extension-floating-menu@3.31.4(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5):
-    resolution: {integrity: sha512-pKzulkDmolpVt7IP9FSPsC5pKbXQ5pyeqkaAYr8cyOVW+KUObpPRIzAuXvEso8PCjWgwJ1f2qyishOEMw8MbfQ==}
-    requiresBuild: true
+  /@tiptap/extension-floating-menu@3.30.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5):
+    resolution: {integrity: sha512-gTjGPWUpGn8IoW533TciZJZC/81LmBgU7zee+aRMRF3ix3K2z1pJjl6knDvrRQA6Kom+yWFaiueqGNXkrk38XQ==}
     peerDependencies:
       '@floating-ui/dom': ^1.0.0
-      '@tiptap/core': 3.31.4
-      '@tiptap/pm': 3.31.4
+      '@tiptap/core': 3.30.5
+      '@tiptap/pm': 3.30.5
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@tiptap/core': 3.30.5(@tiptap/pm@3.30.5)
       '@tiptap/pm': 3.30.5
     dev: false
-    optional: true
 
   /@tiptap/extension-hard-break@3.30.5(@tiptap/core@3.30.5):
     resolution: {integrity: sha512-PcL4Z8l/DlauwZUJg0jf6SXKk6/YOXJtd8yYzqHrmCLRoY4kAa7+TxUhc/lWhuitUiOZ8+nB8V/NNM+WR6mRaw==}
@@ -14370,8 +14595,8 @@ packages:
       react-dom: 19.3.0(react@19.3.0)
       use-sync-external-store: 1.7.0(react@19.3.0)
     optionalDependencies:
-      '@tiptap/extension-bubble-menu': 3.31.4(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
-      '@tiptap/extension-floating-menu': 3.31.4(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@tiptap/extension-bubble-menu': 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@tiptap/extension-floating-menu': 3.30.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
     transitivePeerDependencies:
       - '@floating-ui/dom'
     dev: false
@@ -25171,7 +25396,7 @@ packages:
       micromark-factory-space: 2.0.1
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
-      micromark-util-types: 2.0.2
+      micromark-util-types: 2.0.3
     dev: false
 
   /micromark-extension-mdx-expression@3.0.1:
@@ -25380,9 +25605,6 @@ packages:
 
   /micromark-util-symbol@2.0.1:
     resolution: {integrity: sha512-vs5t8Apaud9N28kgCrRUdEed4UJ+wWNvicHLPxCa9ENlYuAY31M0ETy5y1vA33YoNPDFTghEbnh6efaE8h4x0Q==}
-
-  /micromark-util-types@2.0.2:
-    resolution: {integrity: sha512-Yw0ECSpJoViF1qTU4DC6NwtC4aWGt1EkzaQB8KPPyCRR8z9TWeV0HbEFGTO+ZY1wB22zmxnJqhPyTpOVCpeHTA==}
 
   /micromark-util-types@2.0.3:
     resolution: {integrity: sha512-oxB2Ik03hI0gv+VNn9tnh1t1YEe9MDPptViAEgfdf3YQHsn0pzGTgCdlSCJXcwhqm8phaEuM7zeEu3QQzVBrPg==}
@@ -28762,7 +28984,7 @@ packages:
     dependencies:
       '@types/mdast': 4.0.4
       mdast-util-from-markdown: 2.0.3
-      micromark-util-types: 2.0.2
+      micromark-util-types: 2.0.3
       unified: 11.0.5
     transitivePeerDependencies:
       - supports-color
@@ -30150,10 +30372,6 @@ packages:
 
   /structured-headers@0.4.1:
     resolution: {integrity: sha512-0MP/Cxx5SzeeZ10p/bZI0S6MpgD+yxAhi1BOQ34jgnMXsCq3j1t6tQnZu+KdlL7dvJTLT3g9xN8tl10TqgFMcg==}
-
-  /style-mod@4.1.3:
-    resolution: {integrity: sha512-i/n8VsZydrugj3Iuzll8+x/00GH2vnYsk1eomD8QiRrSAeW6ItbCQDtfXCeJHd0iwiNagqjQkvpvREEPtW3IoQ==}
-    dev: false
 
   /style-mod@4.1.4:
     resolution: {integrity: sha512-XXWIQt633/EpAFx8aZDOTjBzrCaGmhvEQlQo6MVPfa2OzO2cWo+4hV9h+6UkHYlXGfy+ODXKUdP7Pthmcu5ATw==}

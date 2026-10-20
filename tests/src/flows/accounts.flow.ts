@@ -15,9 +15,9 @@ flow(
   'ME-1',
   { domain: 'accounts', tags: ['deployed', 'smoke'], routes: ['GET /v1/accounts/me'] },
   async (ctx) => {
-    await ctx.step('OWNER sees own identity', async () => {
+    await ctx.step('OWNER sees own identity; a web session carries no token_id', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/me');
-      r.status(200).body().exists('$.user_id').exists('$.email');
+      r.status(200).body().exists('$.user_id').exists('$.email').has('$.token_context.token_id', null);
     });
     await ctx.step('ANON → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).get('/v1/accounts/me');
@@ -1145,9 +1145,11 @@ flow(
       memberSecret = j.secret_key;
     });
 
-    await ctx.step('the member token authenticates as the member → /accounts/me 200, auth_type pat', async () => {
+    await ctx.step('the member token authenticates as the member → /accounts/me 200, auth_type pat, token_id names this token', async () => {
       const r = await ctx.client.withBearer(memberSecret).get('/v1/accounts/me');
-      r.status(200).body().has('$.token_context.auth_type', 'pat');
+      // token_id lets a client tell its own credential from the rest
+      // (`kortix tokens rm` refuses to revoke it, KRTX-1842).
+      r.status(200).body().has('$.token_context.auth_type', 'pat').has('$.token_context.token_id', memberTokenId);
     });
 
     await ctx.step('the member token carries only member rights → renaming the account 403', async () => {

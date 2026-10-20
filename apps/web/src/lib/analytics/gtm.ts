@@ -14,7 +14,7 @@ import { locales } from '@/i18n/catalog.mjs';
 import {
   safeSessionGetItem,
   safeSessionSetItem,
-} from '@/lib/storage/managed-storage';
+} from '@kortix/ui/internal/lib/storage/managed-storage';
 
 // Extend the Window interface to include dataLayer
 interface GTMWindow extends Window {

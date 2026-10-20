@@ -1,7 +1,7 @@
 /**
  * Parsers for Kortix orchestrator tool outputs (projects, connectors).
  *
- * Mobile re-exports these; apps/web `lib/utils/kortix-tool-output.ts` holds a
+ * Mobile re-exports these; apps/web `packages/ui/src/internal/lib/utils/kortix-tool-output.ts` holds a
  * regex copy of the same code.
  */
 

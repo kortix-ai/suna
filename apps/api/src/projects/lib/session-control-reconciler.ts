@@ -47,6 +47,7 @@
  * it, and a reconnect needs no replay to be correct.
  */
 
+import { registerSessionRuntimeTurnEnds, forgetSessionRuntimeTurnEnds } from './session-runtime-turn-ends';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
 import { serializePrompt } from './session-prompt-view';
 import { readSessionTurnState } from './session-turn-read';
@@ -260,6 +261,7 @@ export function acquireControlReconciler(
       },
     };
     reconcilers.set(sessionId, reconciler);
+    registerSessionRuntimeTurnEnds(sessionId, reconciler.runtimeTurnEnds);
   }
   const target = reconciler;
   target.projectId ??= projectId;
@@ -351,6 +353,7 @@ function sweepIdleReconcilers(): void {
     if (reconciler.refs <= 0 && reconciler.idleSince !== null && reconciler.idleSince < cutoff) {
       if (reconciler.timer) clearInterval(reconciler.timer);
       reconcilers.delete(sessionId);
+      forgetSessionRuntimeTurnEnds(sessionId);
     }
   }
 }
@@ -664,7 +667,8 @@ export function publishRuntimeStateFrame(sessionId: string, payload: unknown): C
 
 /** Test-only: stop and forget every reconciler. */
 export function __resetControlReconcilersForTests(): void {
-  for (const reconciler of reconcilers.values()) {
+  for (const [sessionId, reconciler] of reconcilers) {
+    forgetSessionRuntimeTurnEnds(sessionId);
     if (reconciler.timer) clearInterval(reconciler.timer);
   }
   reconcilers.clear();

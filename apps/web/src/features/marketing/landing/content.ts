@@ -1,5 +1,5 @@
 import { AGENTS_LANDING_TRANSLATION_KEYS } from '@/i18n/agents-landing-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import type { UiTranslator } from '@/i18n/translator';
 
 /**
