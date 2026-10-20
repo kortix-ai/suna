@@ -395,6 +395,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/ops/overview': { action: 'admin.ops.overview.read', title: 'Viewed platform operations overview' },
   'ALL /v1/p/:sandboxId/:port/*': { action: 'sandbox.port.proxy', title: 'Accessed sandbox port' },
   'OPTIONS /v1/p/auth': { action: 'sandbox.preview.cors.check', title: 'Checked sandbox preview CORS access' },
+  'POST /v1/p/ticket': { action: 'sandbox.preview.ticket.issue', title: 'Issued a scoped preview navigation ticket' },
   'POST /v1/p/auth': { action: 'sandbox.preview.authenticate', title: 'Authenticated to sandbox previews' },
   'GET /v1/p/config': { action: 'sandbox.preview.config.read', title: 'Viewed sandbox preview URL template' },
   'GET /v1/p/public-share/:token': { action: 'sandbox.public_share.read', title: 'Viewed public share link' },

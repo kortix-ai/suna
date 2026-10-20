@@ -369,6 +369,14 @@ describe('legacy basejump references to the auth user', () => {
       create table if not exists public.agent_versions (
         id uuid primary key default gen_random_uuid(),
         created_by uuid references basejump.accounts(id));
+      create table if not exists public.agents (
+        id uuid primary key default gen_random_uuid(),
+        account_id uuid not null references basejump.accounts(id) on delete cascade,
+        current_version_id uuid references public.agent_versions(id));
+      create table if not exists public.legacy_audit (
+        id uuid primary key default gen_random_uuid(),
+        account_id uuid not null references basejump.accounts(id));
+      grant all on public.agents, public.legacy_audit to postgres;
       create table if not exists public.google_oauth_tokens (
         id uuid primary key default gen_random_uuid(),
         user_id uuid references auth.users(id));
@@ -437,6 +445,43 @@ describe('legacy basejump references to the auth user', () => {
     // Another user's rows survive with the reference nulled.
     expect(await count(`select count(*)::int n from basejump.accounts where primary_owner_user_id = $1 and created_by is null`, [other])).toBe(1);
     expect(await count(`select count(*)::int n from public.user_roles where granted_by is null`, [])).toBeGreaterThanOrEqual(1);
+  });
+
+  test('preserves another account’s current agent version while clearing creator attribution', async () => {
+    realAuthDelete();
+    const { userId, requestId } = await seed({ subscription: false });
+    const { personal, other } = await seedLegacy(userId);
+    const agentId = crypto.randomUUID();
+    await superuser.query(`
+      insert into public.agents (id, account_id, current_version_id)
+      select $1, a.id, v.id from basejump.accounts a, public.agent_versions v
+      where a.primary_owner_user_id = $2 and v.created_by = $3`, [agentId, other, personal]);
+
+    const result = await processScheduledDeletions();
+
+    expect(result.errors).toEqual([]);
+    expect(await requestStatus(requestId)).toBe('completed');
+    expect(await authUserCount(userId)).toBe(0);
+    const retained = await superuser.query(`
+      select v.created_by from public.agents a
+      join public.agent_versions v on v.id = a.current_version_id where a.id = $1`, [agentId]);
+    expect(retained.rows).toEqual([{ created_by: null }]);
+    await deleteAccountImmediately(userId, userId);
+    expect((await superuser.query(`select id from public.agents where id = $1`, [agentId])).rows).toHaveLength(1);
+  });
+
+  test('refuses unknown non-null account references instead of deleting their rows', async () => {
+    realAuthDelete();
+    const { userId, requestId } = await seed({ subscription: false });
+    const { personal } = await seedLegacy(userId);
+    await superuser.query(`insert into public.legacy_audit (account_id) values ($1)`, [personal]);
+
+    const result = await processScheduledDeletions();
+
+    expect(result.errors.some((e) => e.includes('legacy_audit') && e.includes('NOT NULL'))).toBe(true);
+    expect(await requestStatus(requestId)).toBe('pending');
+    expect(await authUserCount(userId)).toBe(1);
+    expect((await superuser.query(`select account_id from public.legacy_audit where account_id = $1`, [personal])).rows).toHaveLength(1);
   });
 
   test('refuses to delete the login while the user owns a non-personal basejump account', async () => {
