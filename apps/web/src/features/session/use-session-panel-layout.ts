@@ -3,7 +3,7 @@
 import {
   aspectChangedWidth,
   resolveSideSize,
-} from '@/features/session/action-panel/easy/easy-panel-logic';
+} from '@/features/session/session-panel-sizing';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
