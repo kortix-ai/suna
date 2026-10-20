@@ -13,7 +13,6 @@ import { isUuid } from '../shared/validate';
 import { db } from '../shared/db';
 import { nonSsoIdentitySql, ssoProviderIdOf } from '../shared/auth-identity';
 import { selfHostOperatorAllowlist } from '../shared/self-host-operator';
-import { forgetUserJwtLiveness } from '../shared/jwt-liveness';
 import { accountGroupNameRow, ssoGroupByNameRow } from '../iam/group-read';
 import { invalidateIamCacheForAccount } from '../iam/cache-invalidation';
 
@@ -214,8 +213,7 @@ export async function signOutNonSsoMembers(accountId: string, revokedBy: string 
          ${operators.length > 0 ? sql`AND NOT (${nonSsoIdentitySql(sql`person`)} AND lower(trim(person.email)) = ANY(${sql.param(operators)}::text[]))` : sql``}
       RETURNING s.id, s.user_id
     ), stamped AS (
-      -- A liveness cache on another replica can still answer "live"; the
-      -- session gate (iam/session-gate.ts) reads this row and refuses.
+      -- The session gate (iam/session-gate.ts) reads this row and refuses.
       UPDATE kortix.account_session_activity a
          SET revoked_at = now(), revoked_reason = 'sso_enforced', revoked_by = ${revokedBy}::uuid
         FROM ended
@@ -223,7 +221,6 @@ export async function signOutNonSsoMembers(accountId: string, revokedBy: string 
     )
     SELECT ended.user_id::text AS user_id FROM ended
   `)) as unknown as Array<{ user_id: string }>;
-  for (const userId of new Set(ended.map((row) => row.user_id))) forgetUserJwtLiveness(userId);
   return ended.length;
 }
 

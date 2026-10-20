@@ -28,9 +28,9 @@ npm i @openuidev/lang-core@0.3.1 zod   # optional peers of @kortix/sdk; the thre
 npm i tw-animate-css tailwind-scrollbar tailwind-scrollbar-hide   # Tailwind v4 hosts only
 ```
 
-`@kortix/ui` is not on npm yet. Inside `kortix-ai/suna`, use `"workspace:*"`. Outside it, install
-the tarballs that `npm pack` makes in `packages/llm-catalog`, `packages/sdk` and `packages/ui`
-after `node ../../scripts/stage-npm-publish.mjs` (what `packages/ui/scripts/smoke-install.mjs` does).
+`@kortix/ui` and `@kortix/sdk` carry the Kortix release version: install the same version of each.
+The module entries this guide uses (`session`, `workspace`, `files`, `theme`) need 0.14.4 or later.
+Inside `kortix-ai/suna`, use `"workspace:*"`.
 Without `@openuidev/lang-core`, `vite build` fails with `Missing export` in `@kortix/sdk/dist/genui`.
 Name `react@19 react-dom@19`: with an unversioned `react`, npm picks React 18 for `cmdk`'s peer and the install never finishes.
 

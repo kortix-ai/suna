@@ -30,6 +30,7 @@ let requests: Array<{ url: string; method: string; body: RequestBody; auth: stri
 
 /** Shared secret rows the mocked GET returns; mutate per-test. */
 let secretItems: Array<{
+  agents?: string[] | 'all' | null;
   identifier: string;
   name: string;
   configured?: boolean;
@@ -92,6 +93,7 @@ function secret(
       expires_at: null;
     }>;
     usable?: boolean;
+    agents?: string[] | 'all' | null;
     status?: 'ok' | 'undecryptable';
     mine?: { active: boolean; updated_at: string; status?: 'ok' | 'undecryptable' } | null;
   } = {},
@@ -115,6 +117,7 @@ function secret(
     network_boundary_available: state.network_boundary_available,
     requires_rotation: state.requires_rotation ?? false,
     ...(state.shared_with ? { shared_with: state.shared_with } : {}),
+    ...(state.agents === undefined ? {} : { agents: state.agents }),
     ...(state.usable === undefined ? {} : { usable: state.usable }),
     ...(state.status === undefined ? {} : { status: state.status }),
     ...(state.mine === undefined ? {} : { mine: state.mine }),
@@ -1633,4 +1636,10 @@ describe('secrets set --host', () => {
     expect(out).toContain('Host "ghost" (--host) is not logged in');
     expect(out).toContain('kortix login --host ghost');
   });
+});
+
+test('ls displays manifest agent grants alongside the people audience', async () => {
+  secretItems = [{ identifier: 'AUDIT_KEY', name: 'AUDIT_KEY', agents: ['audit-agent'] }];
+  expect(await runSecrets(['ls'])).toBe(0);
+  expect(stripAnsi(stdout)).toContain('agents: audit-agent');
 });

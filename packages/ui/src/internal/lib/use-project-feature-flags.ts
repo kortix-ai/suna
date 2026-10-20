@@ -30,7 +30,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const marketplace = useFeatureFlag(projectId, 'marketplace');
   const connectorsApiDiscover = useFeatureFlag(projectId, 'connectors_api_discover');
   const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
-  const llmGateway = useFeatureFlag(projectId, 'llm_gateway');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const monitors = useFeatureFlag(projectId, 'monitors');
   const reminders = useFeatureFlag(projectId, 'reminders');
@@ -48,13 +47,14 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const sessionLogRestore = useFeatureFlag(projectId, 'session_log_restore');
   const connectorsV2 = useFeatureFlag(projectId, 'connectors_v2');
   const projectChannels = useFeatureFlag(projectId, 'project_channels');
+  const agentRooms = useFeatureFlag(projectId, 'agent_rooms');
+  const goals = useFeatureFlag(projectId, 'goals');
 
   return {
     flags: {
       marketplace: marketplace.enabled,
       connectors_api_discover: connectorsApiDiscover.enabled,
       agentmail_email: agentmailEmail.enabled,
-      llm_gateway: llmGateway.enabled,
       meta_agent: metaAgent.enabled,
       monitors: monitors.enabled,
       reminders: reminders.enabled,
@@ -72,8 +72,10 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       session_log_restore: sessionLogRestore.enabled,
       connectors_v2: connectorsV2.enabled,
       project_channels: projectChannels.enabled,
+      agent_rooms: agentRooms.enabled,
+      goals: goals.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: projectChannels.isLoading,
+    isLoading: goals.isLoading,
   };
 }

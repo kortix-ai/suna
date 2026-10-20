@@ -327,6 +327,10 @@ export const qk = {
     /** Persisted provider/model inference restrictions and the effective default. */
     modelAccess: (projectId: string) => [...qk.project.scope(projectId), 'model-access'] as const,
 
+    /** `listCustomLlmProviders`: the project's OpenAI-compatible endpoints (`useCustomLlmProviders`). */
+    customLlmProviders: (projectId: string) =>
+      [...qk.project.scope(projectId), 'custom-llm-providers'] as const,
+
     /**
      * Invalidation prefix for the WHOLE sessions family: the list, in every
      * scope, and every individual session/message beneath it. Never pass
@@ -527,6 +531,21 @@ export const qk = {
     /** `listProjectTriggerRuns` pages — every run of the project, one slot per status filter. */
     projectTriggerRuns: (id: string, status?: string | null) =>
       [...qk.project.triggers(id), 'project-runs', status ?? 'all'] as const,
+
+    /** Every conversation read of a project (flag `agent_rooms`): the prefix of
+     *  the keys below, so a post or a read refreshes the list, the unread
+     *  counts and the thread together. */
+    rooms: (id: string) => [...qk.project.scope(id), 'rooms'] as const,
+    /** `listRooms` — the named rooms. */
+    roomList: (id: string) => [...qk.project.rooms(id), 'list'] as const,
+    /** `listRooms({ mine: true })` — the caller's conversations with unread counts. */
+    roomConversations: (id: string) => [...qk.project.rooms(id), 'mine'] as const,
+    /** `getRoom` — one conversation and its members. */
+    room: (id: string, roomId: string) => [...qk.project.rooms(id), 'room', roomId] as const,
+    /** `listRoomMessages` — the newest messages of one conversation. */
+    roomMessages: (id: string, roomId: string, view: 'all' | 'top' = 'all') => [...qk.project.rooms(id), 'messages', roomId, view] as const,
+    /** `listRoomMessages(…, { thread })` — one thread. */
+    roomThread: (id: string, roomId: string, root: number) => [...qk.project.rooms(id), 'thread', roomId, root] as const,
 
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
      *  of every `sessionReminders` key, so invalidating it refreshes the

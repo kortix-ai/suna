@@ -72,3 +72,4 @@ public/i18n/
 dist/
 public/docs/
 .blume/
+.blume-build.lock/

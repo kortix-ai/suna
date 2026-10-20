@@ -144,7 +144,7 @@ import {
   useTeamsInstall,
   useTeamsMode,
 } from '@kortix/sdk/react';
-import { storedModelRefToKey } from '../../../internal/lib/llm-gateway';
+import { modelRefToKey } from '@kortix/sdk';
 import { PROJECT_ACTIONS } from '../../../internal/lib/project-actions';
 import { useProjectCan } from '../../../internal/lib/use-project-can';
 import { cn } from '../../../internal/lib/utils';
@@ -714,12 +714,8 @@ function ChannelSettingsModalContent({
     () => flattenModels(providers, { providerMode: modelProviderMode(providers) }),
     [providers],
   );
-  // Mode-aware read-back: a native (gateway-off) pin is `provider/model` and
-  // must not be forced under the synthetic `kortix` provider, or the selector
-  // shows "Project default" beside a channel that has an explicit pin.
-  const llmGatewayFlag = useFeatureFlag(projectId, 'llm_gateway');
   const boundModel: ChannelModelKey = binding.opencodeModel
-    ? storedModelRefToKey(binding.opencodeModel, llmGatewayFlag.enabled === true)
+    ? modelRefToKey(binding.opencodeModel)
     : null;
 
   const [agentDraft, setAgentDraft] = useState<string | null | undefined>(undefined);

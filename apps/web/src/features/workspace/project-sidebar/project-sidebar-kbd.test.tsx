@@ -120,6 +120,9 @@ mock.module('@kortix/ui/workspace/sidebar/footer/project-balance-warning', () =>
 mock.module('@kortix/ui/workspace/sidebar/footer/project-upgrade-button', () => ({
   SidebarUpgradeButton: () => null,
 }));
+mock.module('@kortix/ui/workspace/repository-disconnected', () => ({
+  ProjectRepositoryDisconnectedAlert: () => null,
+}));
 mock.module('@kortix/ui/workspace/sidebar/project-nav-items', () => ({
   ProjectNavItems: () => null,
 }));

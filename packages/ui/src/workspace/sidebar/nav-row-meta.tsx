@@ -3,6 +3,7 @@
 import { uiRoutes } from '../../lib/routes';
 import { capabilityTabHref } from '../../internal/lib/capability-tab-routes';
 import { useAppsRowVisible } from './footer/project-apps-nav';
+import { useRoomsRowVisible } from './footer/project-rooms-nav';
 import { filesRow } from '../../internal/layout/files-nav-label';
 import {
   CustomizeGlyph,
@@ -10,7 +11,7 @@ import {
 } from '../../internal/layout/project-settings-nav';
 import { useTranslations } from '../../i18n';
 import type { SidebarNavItemId } from '../../internal/stores/sidebar-nav-store';
-import { AppWindowIcon, FoldersIcon, HardDrivesIcon } from '@phosphor-icons/react';
+import { AppWindowIcon, ChatsTeardropIcon, FoldersIcon, HardDrivesIcon } from '@phosphor-icons/react';
 import { useMemo, type ReactNode } from 'react';
 
 export interface NavRowMeta {
@@ -30,12 +31,14 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { customize: customizeTab, files: filesTarget } = useProjectNavRows(projectId);
   const appsVisible = useAppsRowVisible(projectId);
+  const roomsVisible = useRoomsRowVisible(projectId);
 
   // Memoized on the gates, not rebuilt per render: the Customize sidebar
   // modal memoizes its rows on this object, and a fresh one per render would
   // re-render every row on every drag frame.
   return useMemo(() => {
     const appsHref = uiRoutes().apps(projectId);
+    const roomsHref = uiRoutes().rooms(projectId);
     const files = filesTarget ? filesRow(projectId, filesTarget) : null;
     return {
       ...(customizeTab
@@ -56,6 +59,15 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
             },
           }
         : {}),
+      ...(roomsVisible && roomsHref
+        ? {
+            rooms: {
+              label: t('rooms'),
+              icon: <ChatsTeardropIcon />,
+              href: roomsHref,
+            },
+          }
+        : {}),
       ...(files
         ? {
             files: {
@@ -66,5 +78,5 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
           }
         : {}),
     };
-  }, [t, tI18nComplete, projectId, customizeTab, appsVisible, filesTarget]);
+  }, [t, tI18nComplete, projectId, customizeTab, appsVisible, roomsVisible, filesTarget]);
 }

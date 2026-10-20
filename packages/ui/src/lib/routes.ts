@@ -22,6 +22,8 @@ export interface UiRoutes {
   files: (projectId: string, panel?: 'proposed-changes') => string | null;
   drive: (projectId: string) => string | null;
   apps: (projectId: string) => string | null;
+  /** The project's chat rooms (flag `agent_rooms`). */
+  rooms: (projectId: string) => string | null;
   members: (projectId: string) => string | null;
   /** The project settings page, on its sandbox section. */
   sandboxSettings: (projectId: string) => string | null;
@@ -44,6 +46,7 @@ const DEFAULT_ROUTES = {
   files: (p: string, panel?: 'proposed-changes') => `/projects/${p}/files${panel ? `?panel=${panel}` : ''}`,
   drive: (p: string) => `/projects/${p}/drive`,
   apps: (p: string) => `/projects/${p}/apps`,
+  rooms: (p: string) => `/projects/${p}/rooms`,
   members: (p: string) => `/projects/${p}/members`,
   sandboxSettings: (p: string) => `/projects/${p}/config?section=sandbox`,
   customize: (p: string, path?: string) => `/projects/${p}/customize${path ? `/${path}` : ''}`,

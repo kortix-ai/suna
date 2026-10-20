@@ -22,7 +22,6 @@ import { isPaidTier } from '../../billing/services/tiers';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
 import { getCatalogEntry } from '../../marketplace/catalog';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -108,7 +107,6 @@ function buildItemInstallPrompt(
 async function installModelGate(
   loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>,
 ): Promise<{ status: 402; body: { error: string; code: string } } | null> {
-  if (!projectLlmGatewayEnabled(loaded.row.metadata)) return null;
   if (await accountMayUseManagedModels(loaded.row.accountId)) return null;
   const mirroredDefaultAgent = normalizeString(
     (loaded.row.metadata as Record<string, unknown> | null | undefined)?.default_agent,

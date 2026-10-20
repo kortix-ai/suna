@@ -55,7 +55,7 @@ export function CapabilityAccessGate({
   // `/customize` itself (no tab) is a redirect page that waits on its own.
   if (!key) return children;
   if (settled && remindersDisabled) {
-    return <FeatureGateScreen featureName={t('title')} description={t('gateDescription')} />;
+    return <FeatureGateScreen featureKey="reminders" featureName={t('title')} description={t('gateDescription')} />;
   }
   if (settled && allowed) return children;
   return <CapabilitiesSkeleton />;

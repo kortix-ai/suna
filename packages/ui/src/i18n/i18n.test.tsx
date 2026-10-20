@@ -20,6 +20,12 @@ describe('@kortix/ui/i18n without a host', () => {
     expect(html(<Probe ns="threads" run={(t) => t('queuedFiles', { count: 2 })} />)).toBe('en|2 files');
   });
 
+  test('renders agent audiences from bundled English without host translations', () => {
+    expect(html(<Probe ns="secrets" run={(t) => t('agentAccess', { agents: 'audit-agent' })} />)).toBe('en|Agents: audit-agent');
+    expect(html(<Probe ns="secrets" run={(t) => t('agentAccess', { agents: t('allAgents') })} />)).toBe('en|Agents: All agents');
+    expect(html(<Probe ns="secrets" run={(t) => t('agentAccess', { agents: t('noAgents') })} />)).toBe('en|Agents: No agents');
+  });
+
   test('t.raw and t.has read the catalog; a missing key renders `namespace.key`', () => {
     expect(html(<Probe ns="threads" run={(t) => String(t.raw('stoppedBy'))} />)).toBe('en|Stopped by {name}');
     expect(html(<Probe ns="threads" run={(t) => `${t.has('stoppedBy')},${t.has('noSuchKey')}`} />)).toBe('en|true,false');

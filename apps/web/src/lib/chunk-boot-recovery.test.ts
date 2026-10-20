@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { CHUNK_BOOT_RECOVERY_SCRIPT } from './chunk-boot-recovery';
-import { reloadForChunkLoadError } from './chunk-load-recovery';
+import { reloadForChunkLoadError } from '@kortix/ui/internal/lib/chunk-load-recovery';
 
 function browser() {
   const window = new Window({ url: 'http://localhost:13000/settings/profile?accountTab=settings' });

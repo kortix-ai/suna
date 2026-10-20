@@ -42,7 +42,6 @@ process.env.DAYTONA_API_KEY = 'test-daytona-key';
 process.env.DAYTONA_SERVER_URL = 'https://daytona.example.test';
 process.env.DAYTONA_TARGET = 'test-target';
 process.env.KORTIX_URL = 'https://api.example.test';
-process.env.LLM_GATEWAY_ENABLED = 'true';
 
 // ─── In-memory git mock ─────────────────────────────────────────────────────
 // Every git read/write goes through this map so a test's "commitFile" is
@@ -364,16 +363,6 @@ mock.module('../platform/services/provider-balancer', () => ({
     if (providerFailure) throw providerFailure;
     return 'daytona';
   },
-}));
-
-const mockedProjectLlmGatewayEnabled = (metadata: unknown) =>
-  (metadata as { experimental?: { llm_gateway?: unknown } } | null)?.experimental
-    ?.llm_gateway === true;
-mock.module('../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: mockedProjectLlmGatewayEnabled,
-  // The by-id variant (secrets delivery, title generation) resolves against
-  // the same fixture row this suite mutates per test.
-  projectLlmGatewayEnabledById: async () => mockedProjectLlmGatewayEnabled(projectRow.metadata),
 }));
 
 // The fire's model gate (KRTX-1505) reads the servable catalog. Mocked rather

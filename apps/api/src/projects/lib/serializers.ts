@@ -328,7 +328,9 @@ export function serializeProject(
     // them. SoT = ../../feature-flags/registry.
     // `apps` graduated (registry.ts) but stays here as `true`: CLIs before
     // v0.14.0 refuse every `kortix apps` command unless it reads true.
-    experimental: { ...resolveFeatureFlags(row.metadata), apps: true },
+    // `llm_gateway` graduated on 2026-10-20 and stays `true` too: mobile builds
+    // and SDKs from before then read false as the removed native model mode.
+    experimental: { ...resolveFeatureFlags(row.metadata), apps: true, llm_gateway: true },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);
@@ -595,6 +597,15 @@ export function buildSecretView(input: {
     // grant, because the CLI, the SDK and the web chip all key off that meaning.
     // The grant axis is per-project and lives here.
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
+    agents: strategy === 'denied' ? []
+      : !input.agentGrants ? null
+      : input.agentGrants.agent_discovery === 'opencode' ? (strategy === 'runtime' ? 'all' : [])
+      : input.agentGrants.agent_discovery !== 'declarative' || !input.agentGrants.agents.length ? null
+      : input.agentGrants.agents.filter((agent) => {
+          if (agent.enabled === false) return false;
+          const env = agent.scope?.env;
+          return Array.isArray(env) ? grantAdmits(env, identifier) : strategy === 'runtime';
+        }).map((agent) => agent.name),
     // Always true since the exposure/usage model: one mechanism serves every
     // provider, so there is no deployment where egress-enforced delivery is missing. Kept on
     // the wire because published SDK and CLI versions still read it — an absent

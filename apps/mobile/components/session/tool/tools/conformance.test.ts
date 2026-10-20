@@ -2,7 +2,7 @@
  * Registry conformance: every tool name apps/web registers a renderer for has
  * a registered renderer on mobile.
  *
- * 1. Web side (static): read `@kortix/ui/session/tool/tools/register.ts` (the
+ * 1. Web side (static): read `packages/ui/src/session/tool/tools/register.ts` (the
  *    registry apps/web imports since #10480), follow each
  *    import to its tool file, and collect every `ToolRegistry.register('name', …)`
  *    literal plus the string arrays registered through
