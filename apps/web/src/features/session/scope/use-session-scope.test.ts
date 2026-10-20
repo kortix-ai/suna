@@ -262,13 +262,11 @@ describe('loadSessionScopeCatalog', () => {
   });
 });
 
-// Source pins. Both call sites gate a query on a manager-tier leaf; neither
-// behaviour is observable from the pure loader above, and both are one careless
-// edit away from silently sending the request again.
+// Source pin. The scope catalog gates its query on manager-tier leaves; that
+// behaviour is not observable from the pure loader above, and it is one
+// careless edit away from silently sending the request again. (The model
+// connection gate sends no /secrets request since #10320.)
 const scopeSrc = await Bun.file(new URL('./use-session-scope.ts', import.meta.url).pathname).text();
-const gateSrc = await Bun.file(
-  new URL('../use-model-connection-gate.tsx', import.meta.url).pathname,
-).text();
 
 describe('project-home makes no request it knows will 403', () => {
   test('the scope catalog probes both leaves and holds the query until they answer', () => {
@@ -279,10 +277,5 @@ describe('project-home makes no request it knows will 403', () => {
     // (both false) and again with the real answer.
     expect(scopeSrc).toContain('catalogPermitsResolved');
     expect(scopeSrc).toContain('enabled: Boolean(projectId) && catalogPermitsResolved');
-  });
-
-  test('the model connection gate requires project.secret.read before listing secrets', () => {
-    expect(gateSrc).toContain('PROJECT_ACTIONS.PROJECT_SECRET_READ');
-    expect(gateSrc).toContain('llmGatewayEnabled && canReadSecrets');
   });
 });
