@@ -15,7 +15,13 @@ import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
-import { reconcileEventSubscriptionsFromCatalog, releaseProjectEventSubscriptions, retireWarmProjectSessions } from '../projects/surface';
+import {
+  assignUnassignedSessions,
+  ensureDefaultSpace,
+  reconcileEventSubscriptionsFromCatalog,
+  releaseProjectEventSubscriptions,
+  retireWarmProjectSessions,
+} from '../projects/surface';
 import { resolveFeatureFlag } from './registry';
 
 export interface FeatureFlagToggleContext {
@@ -57,6 +63,12 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
   },
   llm_gateway: async ({ projectId, metadata }) => {
     await propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(metadata));
+  },
+  // On: create `#general` and file every session that has no space into it. Off: nothing is deleted.
+  project_channels: async ({ projectId, accountId, metadata }) => {
+    if (!resolveFeatureFlag(metadata, 'project_channels')) return;
+    const general = await ensureDefaultSpace(projectId, accountId);
+    await assignUnassignedSessions(projectId, general.spaceId);
   },
 };
 

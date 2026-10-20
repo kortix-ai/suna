@@ -1237,6 +1237,53 @@ export const ClaimWarmProjectSessionInputSchema = z
   .strict();
 export type ClaimWarmProjectSessionInput = z.infer<typeof ClaimWarmProjectSessionInputSchema>;
 
+/**
+ * A project space: a channel (product word "Channel") or the caller's DM with
+ * one agent. `/projects/:id/spaces`, behind the `project_channels` flag.
+ */
+export const SPACE_KINDS = ['channel', 'dm'] as const;
+export const SpaceSchema = z
+  .object({
+    space_id: z.string(),
+    kind: z.enum(SPACE_KINDS),
+    /** Channels: lowercase `a-z0-9-`, 1–40 chars. Null for a DM. */
+    slug: z.string().nullable(),
+    name: z.string(),
+    description: z.string().nullable(),
+    is_default: z.boolean(),
+    dm_agent_name: z.string().nullable(),
+    archived_at: z.string().nullable(),
+    created_at: z.string(),
+    updated_at: z.string(),
+  })
+  .strict();
+export type Space = z.infer<typeof SpaceSchema>;
+
+export const SpaceListSchema = z.object({ spaces: z.array(SpaceSchema) }).strict();
+export type SpaceList = z.infer<typeof SpaceListSchema>;
+
+export const SpaceCreateInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    description: z.string().trim().max(500).optional(),
+  })
+  .strict();
+export type SpaceCreateInput = z.infer<typeof SpaceCreateInputSchema>;
+
+export const SpaceUpdateInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80).optional(),
+    /** `null` clears the description. */
+    description: z.string().trim().max(500).nullable().optional(),
+    /** `true` archives the channel; `false` unarchives it. */
+    archived: z.boolean().optional(),
+  })
+  .strict();
+export type SpaceUpdateInput = z.infer<typeof SpaceUpdateInputSchema>;
+
+export const SpaceDmInputSchema = z.object({ agent_name: z.string().trim().min(1).max(200) }).strict();
+export type SpaceDmInput = z.infer<typeof SpaceDmInputSchema>;
+
 export const SESSION_SANDBOX_STATUSES = [
   'provisioning',
   'active',

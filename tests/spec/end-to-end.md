@@ -464,6 +464,15 @@ in the composer. The sent message shows its tiles from the first frame, with no
 progress ring and no busy state. Drafts never store File bytes, blob URLs, data
 URLs, signed download URLs, or upload handles.
 
+### 7a. Channels and DMs (`/projects/:id/spaces`, behind `project_channels`)
+
+DB `project_spaces` (`kind channel|dm`). A thread is a `project_sessions` row with `space_id`. Channel slugs are unique per project including archived channels. Only the API's `ensureDefaultSpace` sets `is_default` (`#general`). Phase 1 has no membership: every member with `session` project access sees every channel; a DM is visible to its owner only.
+
+`SPACE-1` Flag off (the default) — `GET`/`POST /spaces`, `PATCH /spaces/:id`, `POST /spaces/dm` → 403 `{code: feature_disabled, feature: project_channels}`; the refused reads store no `project_spaces` row; ANON → 401.
+`SPACE-2` Default channel and toggle — a session exists in no space; `PATCH /features {project_channels: true}`; two concurrent `GET /spaces` → 200, each exactly one channel `{slug: general, name: general, is_default: true, archived_at: null}` with the same `space_id`, and a third read returns it again; the toggle effect files the earlier session into `#general` (`space_id` set within 15 s); turning the flag off → `GET` 403, `#general` and the session's `space_id` stay.
+`SPACE-3` Channel lifecycle — `POST {name: 'Launch Week', description}` → 201 `{kind: channel, slug: launch-week}`; the list is `#general` then `launch-week`; `'launch   WEEK!'` → 409 `{code: slug_taken, space_id, archived: false}`; `'!!!'` → 400 `invalid_name`, an unknown field or a blank name → 400; `PATCH {name: 'Growth'}` → slug `growth`, `{name: 'General'}` → 409 naming `#general`; `{archived: true}` → `archived_at` set and gone from `GET`; `POST {name: 'Growth'}` → 409 `{slug_taken, space_id, archived: true}`; `{archived: false}` → listed again; archiving `#general` → 400 `default_channel`; an unknown or malformed space id → 404.
+`SPACE-4` DMs — `POST /spaces/dm {agent_name: kortix}` twice → 200, same `space_id`, `{kind: dm, dm_agent_name: kortix, slug: null}`; the owner's list is `#general` then the DM; another project member (with `run(kortix)`) lists `#general` and not the owner's DM, and their own DM is a different space; an agent the manifest does not declare → 404 `agent_not_found`; `PATCH` on a DM → 400 `dm_not_editable`.
+
 ---
 
 ## 8. Sandbox lifecycle + snapshots

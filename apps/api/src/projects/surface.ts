@@ -131,3 +131,7 @@ export type { GitBackedProject } from './git/types';
 export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
+
+// `project_channels` on: file every session into `#general` (consumed by
+// ../feature-flags/toggle-effects).
+export { assignUnassignedSessions, ensureDefaultSpace } from './lib/project-spaces';
