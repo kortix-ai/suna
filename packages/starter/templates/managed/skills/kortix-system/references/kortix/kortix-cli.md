@@ -104,10 +104,23 @@ invocation: `kortix projects ls --host local`.
 | Command | Effect |
 | --- | --- |
 | `kortix projects ls` | Every project on the active account. |
-| `kortix projects info [<id-or-slug>]` | Show one project (defaults to the linked one — see below). |
+| `kortix projects info [<id-or-slug>]` | Show one project (defaults to the linked one — see below), including its `git` line: `connected`, or `disconnected (<reason>)` with the cause and the reconnect link. |
 | `kortix projects link [<id>]` | Bind cwd to a remote project. Writes `.kortix/link.json` with `project_id`, `account_id`, `host`, `host_url`. No arg → arrow-key picker. |
 | `kortix projects unlink` | Drop `.kortix/link.json`. |
 | `kortix projects open [<id>]` | Open the dashboard URL for a project in your browser. |
+
+#### Repository disconnected
+
+When the Kortix GitHub App can no longer reach the project's repository (the
+App was uninstalled or suspended on the GitHub owner, or the repository was
+deleted, renamed, or removed from the App), every command that reads the
+repository fails with HTTP `409` `repository_disconnected`. The message names
+the cause and who fixes it. `git fetch` and `git push` print the same message
+as `remote: …`. New sessions and scheduled triggers do not start until it is
+fixed. An agent cannot fix it: tell the user that a GitHub owner of the
+organization must reinstall the App or re-grant the repository
+(**Customize → Settings → Git repo → Reconnect GitHub**, or the link
+`kortix projects info` prints). Do not retry in a loop.
 
 #### How a command finds "the project"
 
