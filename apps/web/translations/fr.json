@@ -638,6 +638,7 @@
         "userNotFound": "Utilisateur introuvable",
         "profilePictureUpdated": "Photo de profil mise à jour",
         "profilePictureUploadFailed": "Impossible de télécharger la photo de profil",
+        "avatarUploadOffline": "Impossible d’envoyer votre photo. Vérifiez votre connexion et réessayez.",
         "profilePictureRemoved": "Photo de profil supprimée",
         "profilePictureRemoveFailed": "Impossible de supprimer la photo de profil",
         "chooseImageFile": "Veuillez choisir un fichier image",
@@ -819,7 +820,17 @@
       "email": "E-mail",
       "channelSwitch": "{kind} : {channel}",
       "preferencesLoadError": "Impossible de charger vos paramètres de notification",
-      "retry": "Réessayer"
+      "retry": "Réessayer",
+      "recovery": {
+        "instructions": "Comment débloquer les notifications du navigateur",
+        "chrome": "Chrome : ouvrez les commandes du site à côté de l’adresse → Paramètres du site → Notifications → Autoriser.",
+        "edge": "Edge : ouvrez les commandes du site à côté de l’adresse → Autorisations pour ce site → Notifications → Autoriser.",
+        "firefox": "Firefox : ouvrez l’icône des permissions à côté de l’adresse et supprimez la permission de notification bloquée. Activez les notifications ici pour demander à nouveau cette permission.",
+        "safari": "Safari sur Mac : ouvrez Safari → Réglages → Sites web → Notifications, puis choisissez Autoriser pour ce site. Sur iPhone ou iPad, ajoutez Kortix à l’écran d’accueil et activez les notifications depuis cette app.",
+        "afterChange": "Rechargez cette page après avoir modifié les permissions du navigateur, puis activez les notifications. Les réglages de notifications du système doivent également autoriser votre navigateur.",
+        "fallback": "Tant qu’un onglet Kortix est ouvert, les sons de fin peuvent vous avertir sans autorisation de notification du navigateur. Ne coupez pas le son de l’onglet ni de l’appareil. Cette option active les sons de notification et vous fait écouter un aperçu du son de fin.",
+        "enableSound": "Activer le son de fin"
+      }
     },
     "git": {
       "updateFailed": "Impossible de mettre à jour le dépôt",
@@ -20594,6 +20605,12 @@
     "mcpNotChecked": "Pas encore vérifié",
     "runLimits": "Limites d'exécution",
     "runLimitsHint": "Un déclenchement au-delà d'une limite ne lance rien et apparaît comme une exécution ignorée. Un lancement manuel n'est jamais retenu, mais il compte.",
+    "overlap": "Chevauchement",
+    "overlapHint": "Si l’exécution précédente est encore en cours, un nouveau déclenchement attend ou lance une seconde exécution. Une exécution que vous lancez vous-même s’exécute toujours.",
+    "overlapDefaultSkip": "Par défaut : ignorer tant que la dernière exécution est en cours",
+    "overlapDefaultAllow": "Par défaut : lancer quand même une nouvelle exécution",
+    "overlapSkip": "Ignorer tant que la dernière exécution est en cours",
+    "overlapAllow": "Lancer quand même une nouvelle exécution",
     "perHour": "Par heure",
     "perDay": "Par jour",
     "noLimit": "Sans limite"
@@ -22000,5 +22017,9 @@
     "exists": "existe",
     "missing": "n’existe pas",
     "listPlaceholder": "valeur 1, valeur 2"
+  },
+  "triggerAutoPause": {
+    "title": "S’est mis en pause à sa limite d’exécutions",
+    "description": "Il a tourné à sa limite d’exécutions horaire pendant 2 heures d’affilée, il ne lance donc plus d’exécutions. Trouvez ce qui le déclenche sans cesse, puis reprenez-le."
   }
 }

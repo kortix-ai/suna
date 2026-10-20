@@ -274,3 +274,19 @@ describe('SessionsTabView with the notification center', () => {
     expect(out).not.toContain('A turn ends.');
   });
 });
+
+describe('blocked notification recovery', () => {
+  test('denied permission offers browser-specific instructions and an inline sound fallback', () => {
+    const out = renderToStaticMarkup(<SessionsTabView notificationPermission="denied" />);
+    for (const browser of ['Chrome', 'Edge', 'Firefox', 'Safari']) expect(out).toContain(browser);
+    expect(out).toContain('Enable completion sound');
+    expect(out).toContain('While a Kortix tab is open');
+  });
+
+  test('recovery is not shown when permission can still be requested or is already granted', () => {
+    for (const permission of ['default', 'granted'] as const) {
+      const out = renderToStaticMarkup(<SessionsTabView notificationPermission={permission} />);
+      expect(out).not.toContain('Enable completion sound');
+    }
+  });
+});

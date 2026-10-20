@@ -385,6 +385,20 @@ channels:
       'kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nsession_mode = "sometimes"\n',
   },
 
+  // ─── shared sections: trigger `overlap` (KRTX-1721) ─────────────────────
+  {
+    name: 'overlap: skip is valid',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 0 9 * * *"\n    prompt: go\n    overlap: skip\n',
+  },
+  {
+    name: 'overlap: queue is invalid',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 0 9 * * *"\n    prompt: go\n    overlap: queue\n',
+  },
+
   // ─── shared sections: trigger `filter` operators (KRTX-1721) ───────────
   {
     name: 'filter: a value and every operator is valid',

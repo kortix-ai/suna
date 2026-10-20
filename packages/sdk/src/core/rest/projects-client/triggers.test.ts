@@ -102,6 +102,36 @@ test('listProjectTriggers reads a monitor entry off the wire without losing its 
   });
 });
 
+// KRTX-1721: overlap — skip holds a fire while the previous run is active.
+test('createProjectTrigger and updateProjectTrigger send overlap; the listing reads it', async () => {
+  nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, overlap: 'allow' }], errors: [] } };
+  await createProjectTrigger('P1', { name: 'Nightly', type: 'cron', cron: '0 0 3 * * *', prompt_template: 'Go', overlap: 'skip' });
+  expect(last().body).toMatchObject({ overlap: 'skip' });
+  await updateProjectTrigger('P1', 'nightly', { overlap: null });
+  expect(last().body).toEqual({ overlap: null });
+  const [trigger] = (await listProjectTriggers('P1')).triggers;
+  const overlap: 'skip' | 'allow' | null | undefined = trigger!.overlap;
+  // @ts-expect-error overlap is skip or allow
+  const bad: CreateProjectTriggerInput['overlap'] = 'queue';
+  expect(overlap).toBe('allow');
+  expect([overlap, bad]).toHaveLength(2);
+});
+
+// KRTX-1721: a trigger that paused itself after a sustained run-limit breach.
+test('listProjectTriggers keeps the auto-pause the API reports', async () => {
+  const reason = 'auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row';
+  nextResponse = {
+    status: 200,
+    body: { triggers: [{ ...MONITOR_WIRE_ENTRY, auto_paused_at: '2026-10-19T12:00:00.000Z', auto_paused_reason: reason }], errors: [] },
+  };
+
+  const [trigger] = (await listProjectTriggers('P1')).triggers;
+  const pausedAt: string | null | undefined = trigger!.auto_paused_at;
+  const why: string | null | undefined = trigger!.auto_paused_reason;
+
+  expect([pausedAt, why]).toEqual(['2026-10-19T12:00:00.000Z', reason]);
+});
+
 // The API reports the last fire or run outcome; a host shows a failed trigger.
 test('listProjectTriggers keeps the last run outcome the API reports', async () => {
   nextResponse = {

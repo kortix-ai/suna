@@ -89,12 +89,13 @@ export function shouldRetryStaticFileHealth(attempts: number): boolean {
  * `a.html.bak` starts with the URL for `a.html`.
  *
  * Both sides go through the same `URL` round-trip, so both carry the same
- * encoding; `token` is dropped because it is the credential, not the address.
+ * encoding; authentication parameters are dropped because they are credentials, not the address.
  */
 function normalizeAddress(candidate: string): string | null {
   try {
     const url = new URL(candidate);
     url.searchParams.delete('token');
+    url.searchParams.delete('preview_ticket');
     url.searchParams.sort();
     return url.toString();
   } catch {

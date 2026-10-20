@@ -94,6 +94,17 @@ describe('triggerPatch: only what changed', () => {
     expect(triggerPatch(older, { ...older })).toEqual({});
   });
 
+  // KRTX-1721: overlap is default (unset), skip or allow; default sends null.
+  test('overlap: the saved value fills the draft, a change sends it, default resets it', () => {
+    const unset = saved(trigger());
+    expect(unset.overlap).toBe('default');
+    expect(triggerPatch(unset, { ...unset })).toEqual({});
+    expect(triggerPatch(unset, { ...unset, overlap: 'allow' })).toEqual({ overlap: 'allow' });
+    const skip = saved(trigger({ overlap: 'skip' }));
+    expect(skip.overlap).toBe('skip');
+    expect(triggerPatch(skip, { ...skip, overlap: 'default' })).toEqual({ overlap: null });
+  });
+
   test('two changed fields make one payload with both', () => {
     const base = saved(eventTrigger(), eventType());
     expect(

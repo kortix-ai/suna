@@ -79,6 +79,7 @@ const {
   cancelSubscription,
   reactivateSubscription,
   cancelFreeSubscriptionForUpgrade,
+  syncSubscription,
 } = await import('../../billing/services/subscriptions');
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -253,5 +254,42 @@ describe('checkout session retrieval: missing session maps to a typed 404', () =
     await expect(
       getCheckoutSessionDetails('acc_test_123', 'cs_missing_123'),
     ).rejects.toThrow('Stripe internal error');
+  });
+});
+
+
+describe('syncSubscription', () => {
+  test('reports a missing stored subscription as 404 without changing billing state', async () => {
+    mockRegistry.stripeClient.subscriptions.retrieve = async () => {
+      throw Object.assign(new Error("No such subscription: 'sub_test_missing'"), {
+        code: 'resource_missing', statusCode: 404,
+      });
+    };
+
+    const error = await syncSubscription('acc_test_123').catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(BillingError);
+    expect(error).toMatchObject({ message: 'Subscription not found in the current Stripe account', statusCode: 404 });
+    expect(updateCreditAccountCalls).toEqual([]);
+    expect(walletGrants).toEqual([]);
+  });
+
+  test('preserves transient Stripe failures without changing billing state', async () => {
+    const failure = Object.assign(new Error('Stripe unavailable'), { statusCode: 503 });
+    mockRegistry.stripeClient.subscriptions.retrieve = async () => { throw failure; };
+    await expect(syncSubscription('acc_test_123')).rejects.toBe(failure);
+    expect(updateCreditAccountCalls).toEqual([]);
+  });
+
+  test('syncs an existing subscription status and billing anchor', async () => {
+    const subscription = createMockStripeSubscription();
+    mockRegistry.stripeClient.subscriptions.retrieve = async () => subscription;
+    expect(await syncSubscription('acc_test_123')).toEqual({ success: true, message: 'Subscription synced' });
+    expect(updateCreditAccountCalls).toEqual([{
+      accountId: 'acc_test_123',
+      data: {
+        stripeSubscriptionStatus: subscription.status,
+        billingCycleAnchor: new Date(subscription.billing_cycle_anchor * 1000).toISOString(),
+      },
+    }]);
   });
 });
