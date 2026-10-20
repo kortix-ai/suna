@@ -13,8 +13,13 @@ import { randomUUID } from 'node:crypto';
 import { createScopedKortix } from '@kortix/sdk/server';
 
 export const APP_ROOT = join(import.meta.dir, '..', '..');
-/** Includes one cold production build before the first test app starts in CI. */
-export const APP_SETUP_TIMEOUT_MS = 120_000;
+/**
+ * Includes one cold production build before the first test app starts in CI.
+ * Since Lumen renders the @kortix/ui session and workspace screens (#10480), a
+ * cold CI build compiles for ~108 s before `next build` type-checks; 120 s
+ * killed it mid type-check (exit 143) and failed every live suite.
+ */
+export const APP_SETUP_TIMEOUT_MS = 300_000;
 const NEXT_BIN = join(APP_ROOT, 'node_modules', '.bin', 'next');
 
 /**

@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,9 +8,9 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import Hint from '@/components/ui/hint';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from '@kortix/ui/dropdown-menu';
+import Hint from '@kortix/ui/hint';
+import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ProjectReminder, SessionReminderState } from '@kortix/sdk';
 import { CaretDownIcon, XIcon } from '@phosphor-icons/react';

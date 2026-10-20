@@ -1,7 +1,7 @@
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import { UserAvatar, type UserAvatarSize } from '@/components/ui/user-avatar';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
+import { UserAvatar, type UserAvatarSize } from '@kortix/ui/user-avatar';
 import type { Author } from '@/lib/blog';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /**
  * Tile geometry mirrors `SIZE_MAP` in `<UserAvatar>` so a Kortix byline and a

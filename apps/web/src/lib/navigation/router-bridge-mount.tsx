@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
-import { registerAppRouter } from './router-bridge';
+import { registerAppRouter } from '@kortix/ui/internal/lib/navigation/router-bridge';
 
 /**
  * Publishes the App Router instance to `router-bridge.ts` so non-component

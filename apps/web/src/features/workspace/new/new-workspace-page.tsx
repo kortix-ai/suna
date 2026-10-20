@@ -1,8 +1,8 @@
 'use client';
 
-import { readAccountParam } from '@/features/workspace/new/account-param';
-import { readCloneParam } from '@/features/workspace/new/clone-param';
-import { readSourceParam } from '@/features/workspace/new/source-param';
+import { readAccountParam } from '@kortix/ui/workspace/new/account-param';
+import { readCloneParam } from '@kortix/ui/workspace/new/clone-param';
+import { readSourceParam } from '@kortix/ui/workspace/new/source-param';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
@@ -10,15 +10,15 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { DesktopCloseButton } from '@/components/desktop/desktop-close-button';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
-import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
+import { ProjectIconField } from '@kortix/ui/workspace/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
 import { AccountTopBar } from '@/features/workspace/account-top-bar';
-import { AccountPicker } from '@/features/workspace/new/account-picker';
-import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
+import { AccountPicker } from '@kortix/ui/workspace/new/account-picker';
+import { AdvancedFields } from '@kortix/ui/workspace/new/advanced-fields';
 import {
   INITIAL_FORM_STATE,
   isForeignAccountList,
@@ -26,21 +26,21 @@ import {
   resolveDefaultCreatableAccountId,
   shouldShowAccountLine,
   type NewWorkspaceFormState,
-} from '@/features/workspace/new/new-workspace-form';
-import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
-import { useCreateWorkspace } from '@/features/workspace/new/use-create-workspace';
-import { useProjectQuota } from '@/features/workspace/new/use-project-quota';
-import { WorkspaceHandoff } from '@/features/workspace/new/workspace-handoff';
+} from '@kortix/ui/workspace/new/new-workspace-form';
+import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
+import { useCreateWorkspace } from '@kortix/ui/workspace/new/use-create-workspace';
+import { useProjectQuota } from '@kortix/ui/workspace/new/use-project-quota';
+import { WorkspaceHandoff } from '@kortix/ui/workspace/new/workspace-handoff';
 import {
   WORKSPACE_NAME_MAX_LENGTH,
   suggestWorkspaceName,
   validateWorkspaceName,
-} from '@/features/workspace/new/workspace-name';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
+} from '@kortix/ui/workspace/new/workspace-name';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
-import { cn } from '@/lib/utils';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { cn } from '@kortix/ui';
+import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
 
 /**
  * The form <-> `WorkspaceHandoff` swap's ONLY transition — a plain opacity

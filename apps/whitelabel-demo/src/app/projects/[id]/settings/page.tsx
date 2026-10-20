@@ -50,7 +50,7 @@ export default function SettingsPage() {
     <ProjectShell>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         <div className="mx-auto max-w-2xl px-4 py-8 md:px-6">
-          <h1 className="text-xl font-semibold tracking-tight">Project settings</h1>
+          <h1 className="font-display text-3xl tracking-tight">Project settings</h1>
           <Tabs defaultValue="general" className="mt-6">
             {/* Seven tabs: an underline row that scrolls sideways instead of wrapping under the pill. */}
             <TabsList type="underline" className="scrollbar-hide max-w-full overflow-x-auto">

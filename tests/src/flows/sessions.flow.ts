@@ -1519,6 +1519,28 @@ flow(
       if (JSON.stringify(r.json()) !== JSON.stringify(same)) throw new Error('the two routes answered different bodies');
     });
 
+    await ctx.step('detail reads report the persisted runtime status, including after a restart', async () => {
+      const { Client } = await import('pg');
+      const database = new Client({ connectionString: ctx.env.databaseUrl });
+      await database.connect();
+      try {
+        await database.query(
+          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+           VALUES ($1::uuid, $1, $2, $3, 'active')`,
+          [sharedId, team.id, project.id],
+        );
+        for (const status of ['active', 'stopped', 'active']) {
+          await database.query('UPDATE kortix.session_sandboxes SET status = $2 WHERE session_id = $1', [sharedId, status]);
+          (await owner.get(byId, { params: { sessionId: sharedId } })).status(200).body().has('$.runtime_status', status);
+          (await owner.get(inProject, { params: { projectId: project.id, sessionId: sharedId } })).status(200).body().has('$.runtime_status', status);
+        }
+        (await owner.get(byId, { params: { sessionId: privateId } })).status(200).body().has('$.runtime_status', null);
+      } finally {
+        await database.query('DELETE FROM kortix.session_sandboxes WHERE session_id = $1', [sharedId]);
+        await database.end();
+      }
+    });
+
     await ctx.step('a project member reads a project-visible session by id → 200', async () => {
       (await ctx.client.as(member).get(byId, { params: { sessionId: sharedId } }))
         .status(200)
@@ -1963,6 +1985,7 @@ flow(
     requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: [
+      'PATCH /v1/projects/:projectId/experimental',
       'POST /v1/projects/:projectId/sessions/warm',
       'POST /v1/projects/:projectId/sessions/warm/claim',
       'GET /v1/projects/:projectId/sessions/:sessionId',
@@ -1982,6 +2005,18 @@ flow(
     let warmSessionId = '';
     let replacementId = '';
     let replacementInsertedAt = '';
+
+    await ctx.step('warming is disabled until the project explicitly opts in', async () => {
+      const params = { projectId: p.id };
+      const denied = await owner.post('/v1/projects/:projectId/sessions/warm', {}, { params });
+      denied.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'warm_sessions');
+      const enabled = await owner.patch(
+        '/v1/projects/:projectId/experimental',
+        { feature: 'warm_sessions', enabled: true },
+        { params },
+      );
+      enabled.status(200);
+    });
 
     await ctx.step('warming creates an ordinary session marked unused, in the contract shape', async () => {
       const r = await owner.post(
