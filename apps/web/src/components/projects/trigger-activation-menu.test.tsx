@@ -22,7 +22,7 @@ mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 const { PROJECT_ACTIONS } = await import('@kortix/sdk');
 const { TooltipProvider } = await import('@kortix/ui/tooltip');
-const { TriggerActivationMenu } = await import('@kortix/ui/workspace/projects/schedule-view');
+const { TriggerActivationMenu } = await import('@kortix/ui/customize/triggers/schedule-view');
 
 const { PROJECT_WRITE, PROJECT_TRIGGER_CREATE, PROJECT_TRIGGER_FIRE, PROJECT_TRIGGER_UPDATE } =
   PROJECT_ACTIONS;

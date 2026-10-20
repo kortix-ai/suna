@@ -26,8 +26,8 @@ import { useTranslations } from '../../i18n';
  * one-line mount as a result: the shell is the route's scroll container.
  */
 
-import { AppLogo } from './onboarding/app-logo';
-import { fireResultToast, triggerToastEntity } from '../../customize/triggers/schedule/trigger-toast';
+import { AppLogo } from '../../workspace/projects/onboarding/app-logo';
+import { fireResultToast, triggerToastEntity } from './schedule/trigger-toast';
 import { Alert, AlertActions, AlertDescription, AlertTitle } from '../../primitives/alert';
 import { Button } from '../../primitives/button';
 import { ButtonGroup } from '../../primitives/button-group';
@@ -52,16 +52,16 @@ import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { errorToast, successToast } from '../../primitives/toast';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
-import { CapabilityPageShell } from '../../customize/shared/capability-page-shell';
+import { CapabilityPageShell } from '../shared/capability-page-shell';
 import {
   NewEntityMenu,
   RICH_ROW_CLASS,
   RichRowBody,
-} from '../../customize/shared/new-entity-menu';
+} from '../shared/new-entity-menu';
 import {
   newConfigPrompt,
   useConfigureThread,
-} from '../../customize/use-configure-thread';
+} from '../use-configure-thread';
 import { useProjectFeatureFlags } from '../../internal/lib/use-project-feature-flags';
 import { hasOpenFloatingLayer } from '../../lib/z-stack';
 import {
@@ -88,7 +88,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useDebounce } from '../../hooks/use-debounce';
 import { useSlashFocus } from '../../internal/hooks';
-import { EventAppsStrip } from '../../customize/triggers/schedule/event-apps-strip';
+import { EventAppsStrip } from './schedule/event-apps-strip';
 import {
   type TriggerKind,
   describeWhen,
@@ -98,10 +98,10 @@ import {
   localizedTriggersCopy,
   matchesQuery,
   triggerName,
-} from '../../customize/triggers/schedule/schedule-copy';
-import { ScheduleDetailSplitContent } from '../../customize/triggers/schedule/schedule-detail-sheet';
-import { TriggerComposer } from '../../customize/triggers/schedule/trigger-composer';
-import { useTriggerControls } from '../../customize/triggers/schedule/trigger-controls';
+} from './schedule/schedule-copy';
+import { ScheduleDetailSplitContent } from './schedule/schedule-detail-sheet';
+import { TriggerComposer } from './schedule/trigger-composer';
+import { useTriggerControls } from './schedule/trigger-controls';
 import {
   TRIGGER_FILTERS,
   type TriggerFilter,
@@ -110,10 +110,10 @@ import {
   parseTriggerFilter,
   readTriggerSheet,
   triggerSheetHref,
-} from '../../customize/triggers/schedule/trigger-filter';
-import { TriggerList } from '../../customize/triggers/schedule/trigger-list';
-import { runsInFlight } from '../../customize/triggers/schedule/trigger-runs-logic';
-import { runsOf } from '../../customize/triggers/schedule/trigger-runs-panel';
+} from './schedule/trigger-filter';
+import { TriggerList } from './schedule/trigger-list';
+import { runsInFlight } from './schedule/trigger-runs-logic';
+import { runsOf } from './schedule/trigger-runs-panel';
 import {
   bulkTargets,
   runSequentially,
@@ -121,9 +121,9 @@ import {
   selectRange,
   toggleSlug,
   visibleSelection,
-} from '../../customize/triggers/schedule/trigger-selection';
-import { type BulkVerb, TriggerSelectionBar } from '../../customize/triggers/schedule/trigger-selection-bar';
-import { useEventTitles } from '../../customize/triggers/schedule/use-event-titles';
+} from './schedule/trigger-selection';
+import { type BulkVerb, TriggerSelectionBar } from './schedule/trigger-selection-bar';
+import { useEventTitles } from './schedule/use-event-titles';
 
 /** Tab label per filter: the three kinds reuse the page's existing words. */
 const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {

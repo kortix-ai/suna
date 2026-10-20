@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { TooltipProvider } from '../../primitives/tooltip';
 import { TriggerToolbarMenu } from './schedule-view';
-import { readTriggerSheet, triggerSheetHref } from '../../customize/triggers/schedule/trigger-filter';
+import { readTriggerSheet, triggerSheetHref } from './schedule/trigger-filter';
 
 /**
  * The toolbar ⋯ menu holds the project-wide pause (`TriggerActivationMenu`).

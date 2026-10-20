@@ -31,7 +31,7 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
 } from '@phosphor-icons/react';
 import { useState, type ReactNode } from 'react';
-import { useHostPreviewUrl } from '../../browser/use-host-preview-url';
+import { useHostPreviewUrl } from '../../providers/use-host-preview-url';
 import { useSessionIds } from '../../providers/session-ids';
 import { useUiPreviewUrlResolver, type UiPreviewUrlResolver } from '../../providers/ui-provider';
 import { framePolicy } from './preview-policy';

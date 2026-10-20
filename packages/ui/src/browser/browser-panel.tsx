@@ -9,14 +9,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../primitives/dropdown-menu';
-import { useAppInBrowser, withoutAppAccessToken } from '../apps/app-in-browser';
+import { useAppInBrowser, withoutAppAccessToken } from './app-in-browser';
 import { successToast } from '../primitives/toast';
 import { EmptyState } from '../primitives/empty-state';
 import { ErrorState } from '../primitives/error-state';
 import { isKortixAppUrl } from '../apps/kortix-app-url';
 import { useAuthenticatedPreviewUrl } from '@kortix/sdk/react';
 import { useUiPreviewUrlResolver } from '../providers/ui-provider';
-import { useHostPreviewUrl } from './use-host-preview-url';
+import { useHostPreviewUrl } from '../providers/use-host-preview-url';
 import { PublicShareLinkConfirm } from '../internal/share/public-share-link-confirm';
 import { usePublicShareLink } from '../internal/share/use-public-share-link';
 import { useSandboxProxy } from '../internal/hooks/use-sandbox-proxy';

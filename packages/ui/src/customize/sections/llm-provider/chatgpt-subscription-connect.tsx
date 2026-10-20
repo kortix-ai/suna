@@ -1,6 +1,6 @@
 'use client';
 
-import { ChatGptDeviceChallenge } from '../../../workspace/projects/chatgpt-device-challenge';
+import { ChatGptDeviceChallenge } from './chatgpt-device-challenge';
 import { Button } from '../../../primitives/button';
 import { InfoBanner } from '../../../primitives/info-banner';
 import Loading from '../../../primitives/loading';

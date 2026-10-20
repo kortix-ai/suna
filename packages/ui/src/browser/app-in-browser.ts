@@ -10,13 +10,13 @@
  * App redeems it with a 303 to the same path and a host-only cookie.
  */
 
-import { isKortixAppUrl } from './kortix-app-url';
+import { isKortixAppUrl } from '../apps/kortix-app-url';
 import { APP_ACCESS_PARAM, withoutAppAccessToken } from '../internal/lib/utils/app-access-token';
 import type { App } from '@kortix/sdk';
 import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
 import { useRef } from 'react';
 
-import { appCan } from './app-shared';
+import { appCan } from '../apps/app-shared';
 
 export { withoutAppAccessToken };
 

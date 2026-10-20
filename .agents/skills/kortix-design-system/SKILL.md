@@ -153,7 +153,7 @@ is the current shell for capability pages. The older `CustomizeSectionWrapper`
 (`customize/sections/component/section-wrapper.tsx`) still backs the
 `customize/sections/view/*` screens.
 
-**Other references:** tinted-icon tiles → `packages/ui/src/workspace/projects/schedule-view.tsx`; sidebar → `project-sidebar/project-sidebar.tsx`.
+**Other references:** tinted-icon tiles → `packages/ui/src/customize/triggers/schedule-view.tsx`; sidebar → `project-sidebar/project-sidebar.tsx`.
 
 ## Layout & responsiveness
 

@@ -2,7 +2,7 @@
 
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
-import { EditorSection } from '../../customize/sections/view/agent-editor-primitives';
+import { EditorSection } from '../sections/view/agent-editor-primitives';
 import { Button } from '../../primitives/button';
 import { Skeleton } from '../../primitives/skeleton';
 import { Switch } from '../../primitives/switch';
@@ -13,7 +13,7 @@ import {
   useProjectDrive,
   useShareFolder,
   useUnshareFolder,
-} from './use-drives';
+} from '../../files/drives/use-drives';
 import { useTranslations } from '../../i18n';
 import type { DriveEntry } from '@kortix/sdk';
 import { HardDriveIcon } from '@phosphor-icons/react';

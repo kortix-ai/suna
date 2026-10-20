@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from '../../i18n';
+import { useTranslations } from '../../../i18n';
 /**
  * Create / edit dialog for a project's sandbox template.
  *
@@ -18,7 +18,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
-import { Button } from '../../primitives/button';
+import { Button } from '../../../primitives/button';
 import {
   Dialog,
   DialogContent,
@@ -26,13 +26,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../primitives/dialog';
-import { Input } from '../../primitives/input';
-import { Label } from '../../primitives/label';
-import Loading from '../../primitives/loading';
-import { Textarea } from '../../primitives/textarea';
-import { errorToast, successToast } from '../../primitives/toast';
-import { cn } from '../../internal/lib/utils';
+} from '../../../primitives/dialog';
+import { Input } from '../../../primitives/input';
+import { Label } from '../../../primitives/label';
+import Loading from '../../../primitives/loading';
+import { Textarea } from '../../../primitives/textarea';
+import { errorToast, successToast } from '../../../primitives/toast';
+import { cn } from '../../../internal/lib/utils';
 import { createSandboxTemplate, updateSandboxTemplate, type SandboxTemplate } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 

@@ -118,6 +118,7 @@
     "./customize/shared/use-customize-prefetch": "./src/customize/shared/use-customize-prefetch.ts",
     "./customize/shared/with-search": "./src/customize/shared/with-search.ts",
     "./customize/skills/skills-page": "./src/customize/skills/skills-page.tsx",
+    "./customize/triggers/schedule-view": "./src/customize/triggers/schedule-view.tsx",
     "./customize/triggers/schedule/schedule-copy": "./src/customize/triggers/schedule/schedule-copy.ts",
     "./customize/triggers/triggers-page": "./src/customize/triggers/triggers-page.tsx",
     "./data-grid": "./src/primitives/data-grid.tsx",
@@ -522,7 +523,6 @@
     "./workspace/projects/onboarding/app-logo": "./src/workspace/projects/onboarding/app-logo.tsx",
     "./workspace/projects/onboarding/connect-app": "./src/workspace/projects/onboarding/connect-app.ts",
     "./workspace/projects/policies-panel": "./src/workspace/projects/policies-panel.tsx",
-    "./workspace/projects/schedule-view": "./src/workspace/projects/schedule-view.tsx",
     "./workspace/projects/session-shared-icon": "./src/workspace/projects/session-shared-icon.tsx",
     "./workspace/review/map": "./src/workspace/review/map.ts",
     "./workspace/review/mock-data": "./src/workspace/review/mock-data.ts",
@@ -927,6 +927,10 @@
       "./customize/skills/skills-page": {
         "types": "./dist/customize/skills/skills-page.d.ts",
         "import": "./dist/customize/skills/skills-page.js"
+      },
+      "./customize/triggers/schedule-view": {
+        "types": "./dist/customize/triggers/schedule-view.d.ts",
+        "import": "./dist/customize/triggers/schedule-view.js"
       },
       "./customize/triggers/schedule/schedule-copy": {
         "types": "./dist/customize/triggers/schedule/schedule-copy.d.ts",
@@ -2522,10 +2526,6 @@
       "./workspace/projects/policies-panel": {
         "types": "./dist/workspace/projects/policies-panel.d.ts",
         "import": "./dist/workspace/projects/policies-panel.js"
-      },
-      "./workspace/projects/schedule-view": {
-        "types": "./dist/workspace/projects/schedule-view.d.ts",
-        "import": "./dist/workspace/projects/schedule-view.js"
       },
       "./workspace/projects/session-shared-icon": {
         "types": "./dist/workspace/projects/session-shared-icon.d.ts",

@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from '../../i18n';
+import { useTranslations } from '../../../i18n';
 /**
  * Review Center wired to live data: fetches the project's review items, maps the
  * API rows into the inbox view model, and routes the inbox's actions to the right
@@ -14,16 +14,16 @@ import { useTranslations } from '../../i18n';
  * prototype.
  */
 
-import { errorToast, infoToast, successToast } from '../../primitives/toast';
-import { useProjectContext } from '../../files/project/context';
-import { useChangeRequestRecovery } from '../../files/project/hooks/use-change-request-recovery';
+import { errorToast, infoToast, successToast } from '../../../primitives/toast';
+import { useProjectContext } from '../../../files/project/context';
+import { useChangeRequestRecovery } from '../../../files/project/hooks/use-change-request-recovery';
 import {
   useCloseChangeRequest,
   useMergeChangeRequest,
   useRequestChangesOnChangeRequest,
-} from '../../files/project/hooks/use-change-requests';
-import { useProjectCans } from '../../internal/lib/use-project-can';
-import { useSettingsPanelStore } from '../../internal/stores/settings-panel-store';
+} from '../../../files/project/hooks/use-change-requests';
+import { useProjectCans } from '../../../internal/lib/use-project-can';
+import { useSettingsPanelStore } from '../../../internal/stores/settings-panel-store';
 import {
   type ReviewSegment,
   type ReviewVerdict,
@@ -35,7 +35,7 @@ import {
 } from '@kortix/sdk';
 import { clearStartStash, contract, qk, reviewItemsOf } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
+import { useUiRouter, useUiSearchParams } from '../../../providers/ui-provider';
 import { useEffect, useMemo, useState } from 'react';
 import {
   invalidateReviewInbox,
@@ -43,10 +43,10 @@ import {
   useBulkActReviewItems,
   useResolveReviewApproval,
   useReviewItems,
-} from './hooks/use-review-items';
-import { mapApiReviewItem } from './map';
-import { connectorCallId, crChangeRequestId, itemDeepLink, planBulkAction } from './review-actions';
-import { ReviewCenter } from './review-center';
+} from '../../../workspace/review/hooks/use-review-items';
+import { mapApiReviewItem } from '../../../workspace/review/map';
+import { connectorCallId, crChangeRequestId, itemDeepLink, planBulkAction } from '../../../workspace/review/review-actions';
+import { ReviewCenter } from '../../../workspace/review/review-center';
 
 /**
  * How many session deep links the inbox warms up front. A page holds up to 50

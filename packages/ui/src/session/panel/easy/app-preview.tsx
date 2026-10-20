@@ -24,7 +24,7 @@ import { Button } from '../../../primitives/button';
 import { ButtonGroup } from '../../../primitives/button-group';
 import Hint from '../../../primitives/hint';
 import Loading from '../../../primitives/loading';
-import { useAppInBrowser, withoutAppAccessToken } from '../../../apps/app-in-browser';
+import { useAppInBrowser, withoutAppAccessToken } from '../../../browser/app-in-browser';
 import { framePolicy } from '../../../files/viewer/preview-policy';
 import { ErrorState } from '../../../primitives/error-state';
 import { useAuthenticatedPreviewUrl } from '@kortix/sdk/react';

@@ -1,10 +1,10 @@
 'use client';
 
-import { CopyButton } from '../../markdown/copy-button';
-import { Button } from '../../primitives/button';
-import Hint from '../../primitives/hint';
+import { CopyButton } from '../../../markdown/copy-button';
+import { Button } from '../../../primitives/button';
+import Hint from '../../../primitives/hint';
 import { ArrowSquareOutIcon } from '@phosphor-icons/react';
-import { useTranslations } from '../../i18n';
+import { useTranslations } from '../../../i18n';
 
 export function ChatGptDeviceChallenge({ url, code, description }: {
   url: string;

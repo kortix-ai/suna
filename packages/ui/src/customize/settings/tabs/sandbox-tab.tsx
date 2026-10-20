@@ -5,7 +5,7 @@ import { FactCell } from './fact-cell';
 
 import { type ReactNode, useState } from 'react';
 
-import { SandboxTemplateForm } from '../../../workspace/projects/sandbox-template-form';
+import { SandboxTemplateForm } from './sandbox-template-form';
 import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
 import { ConfirmDialog } from '../../../primitives/confirm-dialog';

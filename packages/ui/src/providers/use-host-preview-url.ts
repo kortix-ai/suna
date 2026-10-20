@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-import type { UiPreviewRequest, UiPreviewUrlResolver } from '../providers/ui-provider';
+import type { UiPreviewRequest, UiPreviewUrlResolver } from './ui-provider';
 
 export interface HostPreviewUrl {
   /** False: no resolver, or it returned null. The caller uses the SDK default. */

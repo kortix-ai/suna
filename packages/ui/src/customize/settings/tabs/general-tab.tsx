@@ -11,7 +11,7 @@ import { Skeleton } from '../../../primitives/skeleton';
 import { errorToast, successToast } from '../../../primitives/toast';
 import { TypeToConfirmDialog } from '../../../primitives/type-to-confirm-dialog';
 import { ErrorState } from '../../../primitives/error-state';
-import { buildProjectEditPatch } from '../../../workspace/projects/modal/project-edit-patch';
+import { buildProjectEditPatch } from './project-edit-patch';
 import {
   ProjectIconField,
   type ProjectIconValue,

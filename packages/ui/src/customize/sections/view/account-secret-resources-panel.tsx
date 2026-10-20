@@ -9,7 +9,7 @@ import {
   pollProjectProviderOAuth, startProjectProviderOAuth,
 } from '@kortix/sdk';
 import { refreshProjectProviderState, useAccountSecretResources } from '@kortix/sdk/react';
-import { ChatGptDeviceChallenge } from '../../../workspace/projects/chatgpt-device-challenge';
+import { ChatGptDeviceChallenge } from '../llm-provider/chatgpt-device-challenge';
 import { Button } from '../../../primitives/button';
 import { ConfirmDialog } from '../../../primitives/confirm-dialog';
 import { Field, FieldLabel } from '../../../primitives/field';

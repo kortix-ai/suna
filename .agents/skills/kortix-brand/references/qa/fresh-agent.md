@@ -54,7 +54,7 @@ cp -R "$REPO/$W/components/ui" $W/components/ui
 for f in \
   packages/ui/src/markdown/copy-button.tsx \
   components/projects/project-pending-screen.tsx \
-  packages/ui/src/workspace/projects/schedule-view.tsx \
+  packages/ui/src/customize/triggers/schedule-view.tsx \
   packages/ui/src/markdown/setup-links/connector-handshake.tsx \
   packages/ui/src/primitives/empty-state.tsx \
   packages/ui/src/primitives/error-state.tsx \

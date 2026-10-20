@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { act, create } from 'react-test-renderer';
 
-import type { UiPreviewRequest, UiPreviewUrlResolver } from '../providers/ui-provider';
+import type { UiPreviewRequest, UiPreviewUrlResolver } from './ui-provider';
 import { type HostPreviewUrl, useHostPreviewUrl } from './use-host-preview-url';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

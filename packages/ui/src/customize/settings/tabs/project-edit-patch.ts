@@ -1,7 +1,7 @@
 import type { GlyphSelection } from '../../../primitives/glyph-picker';
 import type { ProjectInput } from '@kortix/sdk';
 
-import type { ProjectIconValue } from './project-icon-field';
+import type { ProjectIconValue } from '../../../workspace/projects/modal/project-icon-field';
 
 /**
  * What the Edit-project modal sends, derived from what the user actually
