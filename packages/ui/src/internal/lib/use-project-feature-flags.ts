@@ -30,7 +30,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const marketplace = useFeatureFlag(projectId, 'marketplace');
   const connectorsApiDiscover = useFeatureFlag(projectId, 'connectors_api_discover');
   const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
-  const llmGateway = useFeatureFlag(projectId, 'llm_gateway');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const monitors = useFeatureFlag(projectId, 'monitors');
   const reminders = useFeatureFlag(projectId, 'reminders');
@@ -53,7 +52,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       marketplace: marketplace.enabled,
       connectors_api_discover: connectorsApiDiscover.enabled,
       agentmail_email: agentmailEmail.enabled,
-      llm_gateway: llmGateway.enabled,
       meta_agent: metaAgent.enabled,
       monitors: monitors.enabled,
       reminders: reminders.enabled,

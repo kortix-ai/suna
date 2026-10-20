@@ -32,18 +32,6 @@
  *   - sandbox health    → `SANDBOX_HEALTH_QUERY_KEY(id)` (`useSandboxHealth`, the sidebar footer)
  *   - model picker      → `qk.project.modelPicker(id)`  (`useProjectModels` / `useProjectModelPickerCatalog`)
  *
- * MODEL PICKER IS A REAL SECOND HOP, NOT A PARALLEL READ. It only exists for a
- * project with `llm_gateway` enabled — a flag that lives INSIDE the detail
- * response (the same rule `use-project-llm-gateway.ts`'s
- * `projectDetailLlmGatewayEnabled` applies; that predicate is package-internal,
- * not re-exported from `@kortix/sdk/react`, so `gatewayEnabledFromDetail` below
- * duplicates its one-line check rather than taking on a new SDK public-surface
- * export for a single boolean read). Firing it unconditionally would 404
- * `llm_gateway_disabled` for every native project. So it waits on detail
- * resolving here too, but that wait is ONE hop against an already-in-flight
- * read, not a wait for the whole shell to mount — still strictly earlier than
- * today's serialized wave.
- *
  * WHAT THIS DELIBERATELY DOES NOT FLATTEN. Billing (`account-state`) and the
  * IAM `effective`/`effective:batch` probes need `project.account_id`, which
  * ONLY exists once `detail` resolves — a real dependency, not an artificial
@@ -64,68 +52,38 @@ import {
   getProjectModelPicker,
   getProjectSandboxHealth,
   listProjectSessionsPage,
-  type ProjectDetail,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
 import { SANDBOX_HEALTH_QUERY_KEY } from '@kortix/ui/workspace/sidebar/footer/sandbox-health';
 
 /**
- * Same rule as `projectDetailLlmGatewayEnabled` (`packages/sdk/src/react/use-
- * project-llm-gateway.ts`), duplicated rather than imported — see the doc
- * comment above for why. Pure, so it is independently testable.
+ * Fire the project shell's detail/sessions/sandbox-health/model-picker reads
+ * for `projectId` as soon as the route names it. Fire-and-forget, never throws.
  */
-export function gatewayEnabledFromDetail(detail: ProjectDetail | undefined): boolean {
-  return detail?.project?.experimental?.llm_gateway === true;
-}
+export function prefetchProjectShellReads(queryClient: QueryClient, projectId: string): void {
+  if (!projectId) return;
 
-/**
- * The real second hop: the model picker only exists for a gateway-enabled
- * project, and that flag lives inside the detail response. `fetchQuery`
- * (not `prefetchQuery`) so this function gets the resolved value back —
- * it still populates the exact same `qk.project.detail(id)` cache entry every
- * other detail reader shares, with the same options, so this is not a second,
- * differently-configured read of the same data.
- */
-async function prefetchModelPickerOnceGatewayKnown(
-  queryClient: QueryClient,
-  projectId: string,
-): Promise<void> {
   // An entry that already settled as error WITHOUT data belongs to the
-  // contract's retry policy, not to this prefetch: `fetchQuery` refetches an
+  // contract's retry policy, not to this prefetch: a prefetch refetches an
   // errored entry unconditionally, so every navigation to a project the
   // boundary denies re-asked a final 404 — the gone screen's second source of
   // the KRTX-2436 refetch loop (the mounted hooks' interval and `retryOnMount`
   // are fixed in `contract()` itself). Remounting hooks decide instead: a
   // transient error retries on mount, a gone answer (404/410) stands down.
   const detailState = queryClient.getQueryState(qk.project.detail(projectId));
-  if (detailState?.status === 'error' && detailState.data === undefined) return;
-  const detail = await queryClient
-    .fetchQuery({
+  if (!(detailState?.status === 'error' && detailState.data === undefined)) {
+    void queryClient.prefetchQuery({
       queryKey: qk.project.detail(projectId),
       queryFn: () => getProjectDetail(projectId),
       ...contract('config'),
-    })
-    .catch(() => undefined);
-  if (!gatewayEnabledFromDetail(detail)) return;
-  await queryClient
-    .prefetchQuery({
+    });
+    void queryClient.prefetchQuery({
       queryKey: qk.project.modelPicker(projectId),
       queryFn: () => getProjectModelPicker(projectId),
       ...contract('config'),
-    })
-    .catch(() => undefined);
-}
-
-/**
- * Fire the project shell's detail/sessions/sandbox-health reads for
- * `projectId` as soon as the route names it, plus the model picker once
- * detail says the project's gateway is on. Fire-and-forget, never throws.
- */
-export function prefetchProjectShellReads(queryClient: QueryClient, projectId: string): void {
-  if (!projectId) return;
-
-  void prefetchModelPickerOnceGatewayKnown(queryClient, projectId);
+    });
+  }
 
   void queryClient.prefetchInfiniteQuery({
     queryKey: qk.project.sessionsPaged(projectId, 'visible'),

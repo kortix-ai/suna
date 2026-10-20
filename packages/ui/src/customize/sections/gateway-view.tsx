@@ -154,26 +154,6 @@ export function isQuickLlmTab(tab: string): tab is QuickLlmTab {
 }
 
 /**
- * The tabs a NATIVE project (llm_gateway flag off) gets — key intake only.
- *
- * Off-gateway there is no managed catalog, no model-defaults chain, no
- * gateway key/routing/costs/logs: OpenCode in the sandbox owns models, and
- * the provider keys entered here reach it as plain env vars. Same slice
- * discipline as `QUICK_LLM_TABS`: a subset of `LLM_TABS`, never a second
- * list.
- */
-type NativeLlmTab = 'providers' | 'custom';
-
-export const NATIVE_LLM_TABS: LlmTabEntry[] = LLM_TABS.filter((t) =>
-  (['providers', 'custom'] as string[]).includes(t.id),
-);
-
-/** True when `tab` exists for a native (gateway-off) project. */
-export function isNativeLlmTab(tab: string): tab is NativeLlmTab {
-  return NATIVE_LLM_TABS.some((t) => t.id === tab);
-}
-
-/**
  * The legacy Customize overlay's `llm-*` `CustomizeSection` ids. The new
  * Settings overlay's `SettingsTab` union has no equivalent — every one of
  * these collapses into the single `models` tab at the redirect
@@ -346,16 +326,7 @@ export function LlmSections({
           provider modal's own "Models" tab. Flattened to a sibling here so it
           keeps a home now that `ProviderConnect` has no tabs of its own. */}
       {tab === 'models' && <ModelsTab projectId={projectId} canWrite={canWrite} />}
-      {/* A saved custom provider gets a key like any other and a row on the
-          provider list, so a "Done" that leaves you on the form you just
-          submitted is not done. */}
-      {tab === 'custom' && (
-        <CustomProviderPanel
-          projectId={projectId}
-          canWrite={canWrite}
-          onDone={() => onTabChange('providers')}
-        />
-      )}
+      {tab === 'custom' && <CustomProviderPanel projectId={projectId} canWrite={canWrite} />}
       {tab === 'gateway' && (
         <GatewayAccessTab
           projectId={projectId}
@@ -378,23 +349,11 @@ export function LlmSections({
   );
 }
 
-export function LlmManagementView({
-  projectId,
-  llmGatewayEnabled = true,
-}: {
-  projectId: string;
-  /**
-   * The project's `llm_gateway` flag. Off ⇒ the page is the NATIVE key-intake
-   * surface: Providers + Custom only, no project-default picker, no gateway
-   * administration tabs (their routes 404 `llm_gateway_disabled`).
-   */
-  llmGatewayEnabled?: boolean;
-}) {
+export function LlmManagementView({ projectId }: { projectId: string }) {
   const { isOpen: open, activeTab: section } = useSettingsNav();
   const [tab, setTab] = useState<LlmTab>(
     () => TAB_BY_SECTION[section as LegacyLlmSubTab] ?? 'providers',
   );
-  const effectiveTab: LlmTab = llmGatewayEnabled ? tab : isNativeLlmTab(tab) ? tab : 'providers';
 
   // A role with the LLM section's READ leaf (project.read) but not
   // project.write sees the gateway read-only: logs/overview/spend stay
@@ -415,7 +374,7 @@ export function LlmManagementView({
   return (
     <ProviderSheetSplit
       projectId={projectId}
-      providerId={effectiveTab === 'providers' ? providerId : null}
+      providerId={tab === 'providers' ? providerId : null}
       onProviderChange={setProviderId}
       canWrite={canWrite}
     >
@@ -424,20 +383,16 @@ export function LlmManagementView({
       description={MODELS_PAGE_DESCRIPTION}
       filters={
         /* The tab strip on the left, the project default on the right of the
-           same row. Native mode has no model-defaults chain, so no picker. */
+           same row. */
         <>
-          <LlmTabStrip
-            value={effectiveTab}
-            tabs={llmGatewayEnabled ? undefined : NATIVE_LLM_TABS}
-            onValueChange={(v) => setTab(v as LlmTab)}
-          />
-          {canWrite && llmGatewayEnabled ? <ProjectDefaultPicker projectId={projectId} /> : null}
+          <LlmTabStrip value={tab} onValueChange={(v) => setTab(v as LlmTab)} />
+          {canWrite ? <ProjectDefaultPicker projectId={projectId} /> : null}
         </>
       }
     >
       <LlmSections
         projectId={projectId}
-        tab={effectiveTab}
+        tab={tab}
         onTabChange={setTab}
         canWrite={canWrite}
         enabled={open}

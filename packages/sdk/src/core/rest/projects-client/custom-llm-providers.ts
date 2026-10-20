@@ -37,7 +37,7 @@ export async function listCustomLlmProviders(projectId: string): Promise<CustomL
     )).providers;
 }
 
-/** Create or replace one custom provider. Rejects with `400` `invalid_body` or `reserved_provider_id`. */
+/** Create or replace one custom provider. Rejects with `400` `invalid_body`, `reserved_provider_id` or `unsafe_base_url`. */
 export async function putCustomLlmProvider(
   projectId: string,
   providerId: string,

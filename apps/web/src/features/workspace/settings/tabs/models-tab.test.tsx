@@ -77,7 +77,6 @@ function code(path: string): string {
     .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '');
 }
 
-const tabSource = code(uiSourcePath('customize/settings/tabs/models-tab.tsx'));
 const gatewaySource = code(uiSourcePath('customize/sections/gateway-view.tsx'));
 const gatewayAccessSource = code(
   uiSourcePath('customize/sections/gateway-access-tab.tsx'),
@@ -115,13 +114,9 @@ describe('Models page chrome', () => {
     expect(gatewaySource).not.toContain('SettingsSectionHeader');
     expect(gatewaySource).not.toContain('SettingsTabHeader');
     expect(gatewaySource).not.toContain('CustomizeSectionWrapper');
-    expect(tabSource).not.toContain('CapabilityPageShell');
-    expect(tabSource).not.toContain('gatewaySlot');
   });
 
   test('the tab strip is the shell’s filters slot, in the DEFAULT pill style', () => {
-    // Multiline now: the strip takes `value`/`tabs` forked on the gateway
-    // flag (native mode shows the Providers/Custom subset).
     expect(gatewaySource).toContain('filters={');
     expect(gatewaySource).toContain('<LlmTabStrip');
     // The exact control Connectors draws: a bare `TabsList`, no `type`, no
@@ -210,21 +205,6 @@ describe('Models page chrome', () => {
     expect(gatewaySource).not.toContain('TabsContent');
     expect(gatewaySource).not.toContain('overflow-y-auto');
     expect(gatewaySource).not.toContain('h-full');
-  });
-});
-
-describe('Models tab — the mode fork', () => {
-  test('forwards the host-computed flag; native mode renders the key-intake subset, not null', () => {
-    // The flag the host threads in, NOT a second derivation. Both modes render
-    // the page now — gateway off restricts LlmManagementView to Providers +
-    // Custom (see gateway-view.tsx NATIVE_LLM_TABS) instead of blanking the
-    // route its rail row / hub card / ⌘K entry still advertise.
-    expect(tabSource).not.toContain('return null');
-    expect(tabSource).not.toContain('isLlmGatewayEnabled(');
-    expect(tabSource).not.toContain('llmGatewayAvailable');
-    expect(tabSource).toContain(
-      '<LlmManagementView projectId={projectId} llmGatewayEnabled={llmGatewayEnabled} />',
-    );
   });
 });
 
