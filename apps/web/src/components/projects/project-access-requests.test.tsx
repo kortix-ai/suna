@@ -1,5 +1,6 @@
 import { afterAll, afterEach, expect, mock, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { qk } from '@kortix/sdk/react';
 import { configureKortix } from '@kortix/sdk';
 import { Window } from 'happy-dom';
 import { act } from 'react';
@@ -14,10 +15,10 @@ for (const [key, value] of Object.entries(globals)) Object.defineProperty(global
 mock.module('@/features/providers/auth-provider', () => ({ useAuth: () => ({ user: { id: 'synthetic-member' }, isLoading: false }) }));
 mock.module('@/lib/auth/use-signed-out-redirect', () => ({ useSignedOutRedirect: () => {} }));
 mock.module('next/navigation', () => ({ useParams: () => ({ sessionId: 'synthetic-session' }), useRouter: () => ({ replace: () => {} }), usePathname: () => '/projects/synthetic-project' }));
-mock.module('@/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: { isAdmin: false } }) }));
-mock.module('@/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/projects' }));
-mock.module('@/features/auth/auth-card-shell', () => ({ AuthFrame: ({ children }: { children: React.ReactNode }) => children }));
-mock.module('@/features/auth/auth-primitives', () => ({
+mock.module('@kortix/ui/internal/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: { isAdmin: false } }) }));
+mock.module('@kortix/ui/internal/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/projects' }));
+mock.module('@kortix/ui/internal/auth/auth-card-shell', () => ({ AuthFrame: ({ children }: { children: React.ReactNode }) => children }));
+mock.module('@kortix/ui/internal/auth/auth-primitives', () => ({
   Rise: ({ children }: { children: React.ReactNode }) => children,
   StepHeader: ({ title }: { title: string }) => <h1>{title}</h1>,
   ErrorStrip: () => null,
@@ -50,8 +51,7 @@ test.each([403, 404])('denied project (%s) makes only the access request, includ
   }, { preconnect: originalFetch.preconnect });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client = queryClient;
-  const gateKey = 'project-access-boundary';
-  queryClient.setQueryData([gateKey, 'synthetic-project', 'synthetic-member'], { project_id: 'synthetic-project' });
+  queryClient.setQueryData(qk.project.summary('synthetic-project'), { project_id: 'synthetic-project' });
   const container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
