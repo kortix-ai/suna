@@ -13,7 +13,13 @@
 
 import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { composerSelectableAgents } from '../core/agents/composer-agents';
-import { resolveComposerModel, sessionModelCandidates } from '../core/models/composer-model';
+import {
+  resolveComposerModel,
+  sessionModelCandidates,
+  sessionModelFallback,
+  sessionPickStands,
+  type SessionModelFallback,
+} from '../core/models/composer-model';
 import type { Agent, Config, ProviderListResponse } from '../core/runtime/runtime-types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAgentSelectionScope } from './agent-selection-scope';
@@ -103,6 +109,12 @@ export interface RuntimeLocalModel {
   cycle: (direction: 1 | -1) => void;
   /** Whether this session has an explicit per-session model selection in localStorage */
   hasSessionModel: boolean;
+  /**
+   * Set while the composer runs on a fallback the gateway switched this
+   * session to because its own model could not serve. `set(fallback.from)`
+   * switches back.
+   */
+  fallback?: SessionModelFallback;
   /** Variant management */
   variant: {
     current: string | undefined;
@@ -400,10 +412,29 @@ export function useRuntimeLocal({
     [
       projectSession?.metadata?.opencode_model,
       projectSession?.metadata?.opencode_model_source,
+      projectSession?.metadata?.opencode_model_restored,
       lastPromptModel?.providerID,
       lastPromptModel?.modelID,
     ],
   );
+
+  // A gateway fallback switch outranks this browser's session picks made
+  // before it: sending one would name the model that cannot serve again.
+  const sessionFallback = useMemo(
+    () => sessionModelFallback(projectSession),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      projectSession?.metadata?.opencode_model,
+      projectSession?.metadata?.opencode_model_source,
+      projectSession?.metadata?.opencode_model_fallback_from,
+      projectSession?.metadata?.opencode_model_fallback_at,
+      providerMode,
+    ],
+  );
+  const sessionPick = (key: string | undefined): ModelKey | undefined =>
+    key && sessionPickStands(modelStore.getSessionModelFallbackAt(key), sessionFallback)
+      ? modelStore.getSessionModel(key)
+      : undefined;
 
   // ---- Model resolution — the framework-free chain (`resolveComposerModel`):
   // explicit (session slots > the session's own model > per-agent slots) >
@@ -420,9 +451,9 @@ export function useRuntimeLocal({
         models: flatModels,
         picks: [
           // Per-session model (user's explicit choice in this session — survives reload)
-          scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined,
+          sessionPick(scopedSessionModelKey),
           // Back-compat: the old unscoped slot, only if valid in the current mode.
-          sessionId ? modelStore.getSessionModel(sessionId) : undefined,
+          sessionPick(sessionId),
           // The model the session already runs on, from the server. Above the
           // per-agent slots: those are this browser's picks for OTHER sessions.
           ...sessionModels,
@@ -448,6 +479,7 @@ export function useRuntimeLocal({
       currentAgent,
       resolveServerDefault,
       sessionModels,
+      sessionFallback,
       config?.model,
       providers,
       modelStore,
@@ -496,7 +528,10 @@ export function useRuntimeLocal({
       }
       // Also persist per-session so the selection survives page reload
       if (scopedSessionModelKey && next) {
-        modelStore.setSessionModel(scopedSessionModelKey, next);
+        // A person's pick records the switch it was made over, so it outranks
+        // that switch and no newer one. A seed was picked before this session
+        // existed: it records none and never outranks a switch.
+        modelStore.setSessionModel(scopedSessionModelKey, next, options?.autoSeed ? undefined : sessionFallback?.atMs);
       }
       if (options?.recent && model) {
         modelStore.pushRecent(model);
@@ -506,7 +541,7 @@ export function useRuntimeLocal({
         // for NEW sessions even when they change model in an existing session.
       }
     },
-    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid],
+    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid, sessionFallback?.atMs],
   );
 
   // ---- Agent set (matching SolidJS local.tsx:52-63) ----
@@ -669,6 +704,13 @@ export function useRuntimeLocal({
       setVisibility: modelStore.setVisibility,
       cycle: cycleModel,
       hasSessionModel,
+      // Only while the composer is on the fallback: a later pick ends the note.
+      fallback:
+        sessionFallback &&
+        currentModelKey?.providerID === sessionFallback.model.providerID &&
+        currentModelKey?.modelID === sessionFallback.model.modelID
+          ? sessionFallback
+          : undefined,
       variant: {
         current: variantCurrent,
         list: variantList,

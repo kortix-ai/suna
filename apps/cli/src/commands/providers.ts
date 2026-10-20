@@ -44,6 +44,10 @@ Subcommands:
   ls [--json]                       List configured providers (OAuth +
                                     API-key secrets that map to known
                                     providers).
+  ls --catalog [--search <query>]    Browse the bundled provider catalog,
+                                    filtered by id or name. --json supported.
+                                    env lists project secrets to configure
+                                    with \`kortix secrets set NAME=value\`.
   login <provider>                  Run the OAuth device-code flow.
                                     Providers: openai, opencode (Zen),
                                     opencode-go. Zen and Go each need
@@ -167,6 +171,8 @@ export async function runProviders(argv: string[]): Promise<number> {
   let regionFlag: string | undefined;
   let accountFlag: string | undefined;
   let json = false;
+  let catalog = false;
+  let search: string | undefined;
   let custom: CustomFlags = { models: [], keyStdin: false };
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
@@ -175,6 +181,10 @@ export async function runProviders(argv: string[]): Promise<number> {
     regionFlag = takeFlagValue(rest, ['--region']);
     accountFlag = takeFlagValue(rest, ['--account']);
     json = takeFlagBool(rest, ['--json']);
+    if (sub === 'ls' || sub === 'list') {
+      catalog = takeFlagBool(rest, ['--catalog']);
+      search = takeFlagValue(rest, ['--search']);
+    }
     if (sub === 'custom') {
       custom = {
         name: takeFlagValue(rest, ['--name']),
@@ -196,12 +206,13 @@ export async function runProviders(argv: string[]): Promise<number> {
     sub === 'ls' || sub === 'list' ? rest : rest.filter((arg) => arg.startsWith('-'));
   const unknown = rejectUnknownArgs(leftovers, usage);
   if (unknown !== null) return unknown;
+  if (search !== undefined && !catalog) return fail('--search requires --catalog');
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'ls':
     case 'list':
-      return providersLs(ctxOpts, json);
+      return catalog ? providersCatalog(search, json) : providersLs(ctxOpts, json);
     case 'login':
     case 'oauth':
       return providersLogin(rest[0], enterpriseFlag, ctxOpts);
@@ -262,6 +273,24 @@ async function providersRetry(provider: string | undefined, accountArg: string |
     return 0;
   }
   for (const row of cooling) process.stdout.write(`${status.ok(`${row.label} (${row.provider_id}) is usable again.`)}\n`);
+  return 0;
+}
+
+function providersCatalog(search: string | undefined, json: boolean): number {
+  const query = (search ?? '').trim().toLowerCase();
+  const providers = CATALOG.providers
+    .filter((provider) => `${provider.id} ${provider.name}`.toLowerCase().includes(query))
+    .map((provider) => ({
+      id: provider.id, name: provider.name,
+      env: primaryAuthEnvVars(provider), doc: provider.doc,
+    }));
+  if (json) emitJson({ providers });
+  else {
+    for (const provider of providers) {
+      process.stdout.write(`${provider.id}  ${provider.name}  ${provider.env.join(' + ') || '(no API-key secrets)'}\n`);
+    }
+    if (!providers.length) process.stdout.write('No providers match your search.\n');
+  }
   return 0;
 }
 

@@ -21547,7 +21547,10 @@
       "dictationDescription": "Detta un prompt invece di scriverlo."
     },
     "appStore": "App Store",
-    "googlePlay": "Google Play"
+    "googlePlay": "Google Play",
+    "scanTitle": "Scansiona per scaricare l'app",
+    "scanDescription": "Inquadra il codice con la fotocamera del telefono. Apre l'App Store o Google Play.",
+    "qrLabel": "Codice QR dell'app mobile Kortix"
   },
   "capture": {
     "authorize": {

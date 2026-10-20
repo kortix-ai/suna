@@ -29,6 +29,7 @@ import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconcili
 import { type BudgetCrossing, checkBudget, releaseBudgetReservation } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
+import { fallbackSwitchOf, switchSessionToFallback } from './resolution/session-model-fallback';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
@@ -641,6 +642,10 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
       ...(trace.fallbackFrom ? { fallbackFrom: trace.fallbackFrom } : {}),
     },
   });
+  // Off the latency path: a session whose model could not serve moves to the
+  // fallback that answered, so its next prompt names the working model.
+  const fallback = fallbackSwitchOf(trace);
+  if (fallback) void switchSessionToFallback(fallback);
   // Non-blocking: never let telemetry delay the caller or affect the trace write.
   emitGatewayGenAiSpan(trace);
   await settleWarnBudgets(trace);

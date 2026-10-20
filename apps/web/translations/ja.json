@@ -21547,7 +21547,10 @@
       "dictationDescription": "プロンプトを入力せずに音声で伝えられます。"
     },
     "appStore": "App Store",
-    "googlePlay": "Google Play"
+    "googlePlay": "Google Play",
+    "scanTitle": "スキャンしてアプリを入手",
+    "scanDescription": "スマートフォンのカメラでコードを読み取ると、App Store または Google Play が開きます。",
+    "qrLabel": "Kortix モバイルアプリの QR コード"
   },
   "capture": {
     "authorize": {
