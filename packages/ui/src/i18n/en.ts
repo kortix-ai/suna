@@ -4136,6 +4136,7 @@ const catalog = {
       "texta9af71008fda": "Account · Identity",
       "texta9b8859fba62": "Promotional",
       "texta9bbb082ce1b": "Full project control — edit, deploy, triggers, members, delete.",
+      "texta9c0123d9962": "Attachments are too large",
       "texta9e82cd23e9d": "Enter a valid positive amount",
       "texta9f78a15820d": "Rule {value0} condition {value1} comparison",
       "textaa023456aca4": "Connect ChatGPT",
