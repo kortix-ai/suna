@@ -2,6 +2,7 @@
 
 import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
+import { ButtonGroup } from '@kortix/ui/button-group';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import { CopyButton } from '@kortix/ui/markdown';
 import Hint from '@kortix/ui/hint';
@@ -31,7 +32,6 @@ import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@kortix/ui';
 import { type App, type AppDeployment } from '@kortix/sdk';
 import { useAppAccess, useAppDeployments, useProjectApps } from '@kortix/sdk/react';
-import { ButtonGroup } from '@/components/ui/button-group';
 import { ArrowClockwiseIcon, ArrowSquareOutIcon, GearSixIcon, PauseIcon, PlayIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
 
 import { useCallback, useState } from 'react';

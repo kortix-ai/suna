@@ -23,7 +23,7 @@ mock.module('@kortix/sdk', () => ({
   },
 }));
 // The debounce is not under test: pass the value straight through.
-mock.module('@/hooks/use-debounce', () => ({
+mock.module('../../hooks/use-debounce', () => ({
   useDebounce: <T,>(value: T) => ({ debouncedValue: value, isLoading: false }),
 }));
 
@@ -38,7 +38,7 @@ function PickerStub(_props: PickerProps) {
   }, []);
   return createElement('div', { 'data-testid': 'repo-picker' });
 }
-mock.module('@/features/projects/modal/github-import-pickers', () => ({
+mock.module('../projects/modal/github-import-pickers', () => ({
   RepositoryPicker: PickerStub,
   BranchPicker: () => null,
 }));
