@@ -72,7 +72,8 @@ export const ingest = internalAction({
       const sha256 = createHash("sha256").update(bytes).digest("hex");
       const dup = await ctx.runQuery(internal.documents.duplicateOf, { documentId, sha256 });
       if (dup) {
-        await ctx.runMutation(internal.documents.settle, { documentId, error: `Already in this vault (${dup})` });
+        console.warn(`[lumen] ingest ${documentId}: duplicate of ${dup}, discarded`);
+        await ctx.runMutation(internal.documents.discardDuplicate, { documentId });
         return null;
       }
       let pages: string[];

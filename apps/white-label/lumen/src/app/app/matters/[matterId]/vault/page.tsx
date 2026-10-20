@@ -75,9 +75,9 @@ export default function VaultPage() {
           contentType: file.type,
         });
       } catch (err) {
-        errorToast(`${file.name}: could not upload`, {
-          description: errorText(err),
-        });
+        const why = errorText(err);
+        if (why.startsWith('Already in this vault')) errorToast(`${file.name} is already in this vault`, { description: why });
+        else errorToast(`${file.name}: could not upload`, { description: why });
       } finally {
         setUploading(({ [file.name]: _, ...rest }) => rest);
       }

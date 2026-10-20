@@ -476,3 +476,17 @@ describe('vault reads: search, preview, citation check, delete', () => {
     expect(jobs.map((j) => j.name)).toContain('ingest:removeFromDrive');
   });
 });
+
+describe('vault upload: the same bytes twice', () => {
+  test('the second upload is refused before a row, a count or an audit event exists', async () => {
+    const { t, alice, matter } = await world();
+    const bytes = new TextEncoder().encode('MUTUAL NDA between two example parties.').buffer as ArrayBuffer;
+    const args = { matterId: matter, filename: 'nda.txt', bytes, contentType: 'text/plain' };
+    await alice.as.action(api.documents.upload, args);
+    await expect(alice.as.action(api.documents.upload, { ...args, filename: 'nda-copy.txt' })).rejects.toThrow(/409: Already in this vault \(nda\.txt\)/);
+    const rows = await t.run((ctx) => ctx.db.query('documents').collect());
+    expect(rows.map((d) => d.filename)).toEqual(['nda.txt']);
+    const audits = await t.run((ctx) => ctx.db.query('auditEvents').collect());
+    expect(audits.filter((a) => a.action === 'document.upload')).toHaveLength(1);
+  });
+});
