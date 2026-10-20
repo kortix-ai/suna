@@ -51,6 +51,7 @@ export function prepareSkillDeletion(
   if (manifest.imports || protectedPaths.some(inside)) return conflict;
   const deletes = files.filter(file => inside(file.path)).map(file => file.path);
   if (deletes.some(path => !safePath(path))) return conflict;
+  if (deletes.length && !deletes.includes(path)) return conflict;
   const raw = structuredClone(manifest.raw);
   if (Object.hasOwn(registry, name)) delete record(raw.skills)[name];
   for (const agent of Object.values(record(raw.agents))) {

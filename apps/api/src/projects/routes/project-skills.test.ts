@@ -144,3 +144,10 @@ test('rejects a shadowed fallback copy that would resurrect the skill', async ()
   expect((await remove()).status).toBe(409);
   expect(writes).toHaveLength(0);
 });
+test('refuses a registered source subtree without its own skill entrypoint', async () => {
+  skills = [{ name: 'Research Notes', path: 'apps/api/SKILL.md' }];
+  raw.skills = { 'Research Notes': 'apps/api' };
+  paths = ['kortix.yaml', 'apps/api/src/index.ts', 'apps/api/nested/SKILL.md'];
+  expect((await remove()).status).toBe(409);
+  expect(writes).toHaveLength(0);
+});
