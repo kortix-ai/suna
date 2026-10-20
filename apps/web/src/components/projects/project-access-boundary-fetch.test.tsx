@@ -1,4 +1,5 @@
 import { configureKortix } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, expect, jest, mock, test } from 'bun:test';
 import { createElement } from 'react';
@@ -23,7 +24,7 @@ mock.module('@/i18n/use-translations', () => ({
 }));
 const { ProjectAccessBoundary } = await import('./project-access-boundary');
 let tree: ReactTestRenderer | undefined;
-const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 300_000 } } });
 afterEach(async () => {
   if (tree) await act(async () => tree?.unmount());
   tree = undefined;
@@ -31,7 +32,9 @@ afterEach(async () => {
   jest.useRealTimers();
 });
 
-test('a deleted project settles once and stays quiet across a cached revisit', async () => {
+for (const seeded of [false, true]) {
+test(`a deleted project stays quiet across revisit (seeded=${seeded})`, async () => {
+  if (seeded) client.setQueryData(qk.project.summary('deleted-project'), { project_id: 'deleted-project' }, { updatedAt: Date.now() });
   jest.useFakeTimers();
   const urls: string[] = [];
   const reports: unknown[] = [];
@@ -73,6 +76,8 @@ test('a deleted project settles once and stays quiet across a cached revisit', a
   expect(urls).toEqual(['http://api.test/v1/projects/deleted-project']);
   expect(reports).toHaveLength(0);
 });
+
+}
 
 test('a transient failure retries on revisit and successful access starts shell reads', async () => {
   jest.useFakeTimers();

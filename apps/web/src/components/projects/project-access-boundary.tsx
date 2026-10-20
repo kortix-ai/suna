@@ -248,6 +248,7 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
     enabled: authReady && !!projectId,
     // Keep a gone verdict across remounts; transient errors may recover.
     retryOnMount: (query) => errorStatus(query.state.error) !== 404,
+    refetchOnMount: (query) => errorStatus(query.state.error) === 404 ? false : 'always',
   });
 
   // Do not speculate on inaccessible projects: a deleted URL must settle
@@ -255,15 +256,15 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   const queryClient = useQueryClient();
   const routeSessionId = routeSessionIdFromParams(useParams());
   useEffect(() => {
-    if (!authReady || !query.isSuccess || !routeSessionId) return;
+    if (!authReady || !query.isSuccess || !query.isFetchedAfterMount || !routeSessionId) return;
     void prefetchSessionOpen(queryClient, projectId, routeSessionId);
     prefetchSessionRouteReads(queryClient, projectId, routeSessionId);
-  }, [authReady, query.isSuccess, projectId, routeSessionId, queryClient]);
+  }, [authReady, query.isSuccess, query.isFetchedAfterMount, projectId, routeSessionId, queryClient]);
 
   useEffect(() => {
-    if (!authReady || !query.isSuccess || !projectId) return;
+    if (!authReady || !query.isSuccess || !query.isFetchedAfterMount || !projectId) return;
     prefetchProjectShellReads(queryClient, projectId);
-  }, [authReady, query.isSuccess, projectId, queryClient]);
+  }, [authReady, query.isSuccess, query.isFetchedAfterMount, projectId, queryClient]);
 
   const { refetch } = query;
   // Background poll: silent, and must never touch the button's pending state.
@@ -330,8 +331,8 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   // token publication before interpreting any result as an access decision.
   const view = resolveBoundaryView({
     authReady,
-    isPending: query.isPending,
-    hasData: query.data !== undefined,
+    isPending: query.isPending || (query.isFetching && !query.isFetchedAfterMount),
+    hasData: query.data !== undefined && query.isFetchedAfterMount,
     errorState,
   });
   if (view === 'pending') return <ProjectPendingScreen />;
