@@ -1,4 +1,4 @@
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { SECURITY_SELFHOST_TRANSLATION_KEYS } from '@/i18n/security-selfhost-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
 

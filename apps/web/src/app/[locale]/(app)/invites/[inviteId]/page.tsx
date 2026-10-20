@@ -7,22 +7,22 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useSyncExternalStore } from 'react';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import {
   AuthPendingScreen,
   DetailPanel,
   DetailRow,
   OutcomeTitle,
-} from '@/features/auth/auth-consent';
-import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
+} from '@kortix/ui/internal/auth/auth-consent';
+import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
-import { inviteLandingPath } from '@/features/workspace/project-selector/project-selector-model';
+import { inviteLandingPath } from '@kortix/ui/workspace/project-selector/project-selector-model';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
 import {
   acceptAccountInviteAndLand,
   accountInviteLanding,

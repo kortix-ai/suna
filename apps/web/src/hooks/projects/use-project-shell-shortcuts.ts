@@ -1,9 +1,9 @@
 'use client';
 
 import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
-import { isDesktop } from '@/lib/desktop';
+import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 import { CUSTOMIZE_TAB_ID, useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 

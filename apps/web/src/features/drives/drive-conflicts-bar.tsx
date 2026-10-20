@@ -1,10 +1,10 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { errorToast } from '@/components/ui/toast';
-import { useDismissDriveConflict, useDriveConflicts } from '@/hooks/drives/use-drives';
+import { Button } from '@kortix/ui/button';
+import { errorToast } from '@kortix/ui/toast';
+import { useDismissDriveConflict, useDriveConflicts } from '@kortix/ui/files';
 import { useFormatter, useNow, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { CaretUpIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';

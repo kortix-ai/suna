@@ -5,9 +5,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { GatewayModelStat, GatewaySeriesPoint } from '@/lib/projects-gateway-client';
 
-import { CostSection, MetricTab, ShareBar, fmtCredits, fmtMs, weightedP50 } from './_metrics';
-import { MemberRow } from './gateway-budgets';
-import { mostSpend } from './gateway-overview';
+import { CostSection, MetricTab, ShareBar, fmtCredits, fmtMs, weightedP50 } from '@kortix/ui/customize/sections/view/gateway/_metrics';
+import { MemberRow } from '@kortix/ui/customize/sections/view/gateway/gateway-budgets';
+import { mostSpend } from '@kortix/ui/customize/sections/view/gateway/gateway-overview';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 function point(day: string, requests: number, p50: number): GatewaySeriesPoint {
   return {
@@ -173,8 +174,8 @@ describe('Costs — member caps', () => {
 });
 
 describe('Costs — segmented controls come from the design system', () => {
-  const budgets = readFileSync(join(import.meta.dir, 'gateway-budgets.tsx'), 'utf8');
-  const metrics = readFileSync(join(import.meta.dir, '_metrics.tsx'), 'utf8');
+  const budgets = readFileSync(uiSourcePath('customize/sections/view/gateway/gateway-budgets.tsx'), 'utf8');
+  const metrics = readFileSync(uiSourcePath('customize/sections/view/gateway/_metrics.tsx'), 'utf8');
 
   test('the budget dialog’s Period and At limit use Tabs, named by their labels', () => {
     expect(budgets).not.toContain('FilterBar');

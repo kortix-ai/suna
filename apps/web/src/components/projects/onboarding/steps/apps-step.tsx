@@ -13,25 +13,25 @@ import { CheckCircleIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 
-import { InfoBanner } from '@/components/ui/info-banner';
+import { InfoBanner } from '@kortix/ui/info-banner';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/input-group';
+import Loading from '@kortix/ui/loading';
+import { Skeleton } from '@kortix/ui/skeleton';
 import {
   listConnectCatalogPage,
   useConnectProviderStatus,
-} from '@/features/workspace/capabilities/connectors/catalog/use-catalog';
-import { useDebounce } from '@/hooks/use-debounced-value';
+} from '@kortix/ui/customize/connectors/catalog/use-catalog';
+import { useDebounce } from '@kortix/ui/internal/hooks/use-debounced-value';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
-import { AppLogo } from '../app-logo';
-import type { CatalogApp } from '../connect-app';
+import { AppLogo } from '@kortix/ui/workspace/projects/onboarding/app-logo';
+import type { CatalogApp } from '@kortix/ui/workspace/projects/onboarding/connect-app';
 import { StepShell } from '../step-shell';
 
 export type AppConnectionState = 'idle' | 'connecting' | 'connected';

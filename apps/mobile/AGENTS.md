@@ -38,7 +38,7 @@ Kortix-specific: 39 files, built on top of `components/ui/`. **There is no
 | Separator | `@/components/ui/separator` → `<Separator>` | ad-hoc `border-b` / hairline `View`s |
 | Avatar (3-part composition) | `@/components/ui/avatar` → `<Avatar>` + `AvatarImage` / `AvatarFallback` | see **Avatar** section — most screens want `@/components/kortix/avatar` instead |
 | Native-only animated wrapper | `@/components/ui/native-only-animated-view` → `<NativeOnlyAnimatedView>` | animating a view that must also render inertly on web |
-| Context menu (long press, anchored to its trigger) | `@/components/ui/context-menu` → `<ContextMenu relativeTo="trigger">` + `ContextMenuTrigger` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuLabel` (the user message menu, `turn/user-message.tsx`) | a bottom sheet for a short action list on one element; `react-native-context-menu-view` (native module, absent in Expo Go) |
+| Context menu (long press, anchored to its trigger) | `@/components/ui/context-menu` → `<ContextMenu relativeTo="trigger">` + `ContextMenuTrigger` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuLabel` (Android; on iOS the user message menu, `turn/user-message.tsx`, is the system context menu: `NativeContextMenu` from the local module `modules/kortix-context-menu`, a plain UIKit container with `UIContextMenuInteraction` around the React Native bubble, Liquid Glass on iOS 26. A binary without the module keeps the RNR menu. Never `@expo/ui` `ContextMenu` + `RNHostView` around a transcript row: SwiftUI sized the row a pass late and broke the thread's layout twice — Jay, 2026-10-20) | a bottom sheet for a short action list on one element; `react-native-context-menu-view` (native module, absent in Expo Go) |
 
 ## Kortix-specific components — `components/kortix/` (39 files)
 
@@ -202,7 +202,9 @@ before 26 and a binary without `ExpoUI` keep the opaque capsule
 (`supportsLiquidGlass`, `lib/ui/liquid-glass.ts`). Every hamburger
 (`MenuButton`: floating header, `PageHeader`, `SettingsHeader`) and the thread's
 `···` (`ProjectHeaderActions`) sit on a 40pt glass circle behind the unchanged
-ghost button (Jay, 2026-10-20). `PageHeader`'s right column (`rightActions` +
+ghost button (Jay, 2026-10-20), and so does the thread's scroll-to-bottom
+chevron above the composer (`ScrollToBottomButton` in `SessionPage.tsx`; its
+bordered `secondary` circle stays elsewhere). `PageHeader`'s right column (`rightActions` +
 `+`) shares one glass capsule, a button group. Never the native SwiftUI glass
 button there (rejected 2026-09-17).
 Every sheet title row (`SheetTitleRow`: `KortixBottomSheetModal title`,

@@ -2,9 +2,9 @@
  * The account-hub deep link over the standalone settings route.
  *
  * The hub is a modal mounted in `(app)/layout.tsx` whose open state IS the
- * `?accountId=` param (`stores/account-panel-store.ts`), and the personal
+ * `?accountId=` param (`packages/ui/src/internal/stores/account-panel-store.ts`), and the personal
  * settings panel is another full-screen modal that this route raises on
- * mount. Both live on the z-stack (`lib/z-stack.tsx`), where the dialog that
+ * mount. Both live on the z-stack (`packages/ui/src/lib/z-stack.tsx`), where the dialog that
  * opened later wins — so a hard load of `/settings?accountId=<id>` (a hub
  * deep link: the hub's own address bar URL and its Manage link's href) used
  * to raise the personal panel ON TOP of the already-open hub, and the user
@@ -40,12 +40,12 @@ mock.module('@/hooks/account/use-ensure-selected-account', () => ({
 // The route's decision is what this file pins; the panel rendering it is
 // `settings-panel.test.tsx`'s subject, and its body cannot mount here.
 mock.module('./settings-panel', () => ({ SettingsPanel: () => null }));
-mock.module('@/lib/onboarding/last-project-cookie', () => ({
+mock.module('@kortix/ui/internal/lib/onboarding/last-project-cookie', () => ({
   readLastProjectId: () => null,
 }));
 
 const { StandaloneSettingsRoute } = await import('./standalone-settings-route');
-const { useSettingsPanelStore } = await import('@/stores/settings-panel-store');
+const { useSettingsPanelStore } = await import('@kortix/ui/internal/stores/settings-panel-store');
 
 type StandaloneTab = Parameters<typeof StandaloneSettingsRoute>[0]['tab'];
 

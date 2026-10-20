@@ -3,7 +3,7 @@
 import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { currentSavedCopyStore } from '../../session-sync/saved-copy-store';
-import { noteSessionStopped } from '../../http/session-stopped';
+import { noteSessionDeleted, noteSessionStopped } from '../../http/session-stopped';
 import { isSessionLogPage } from '../../session-log/guard';
 import { loadSessionLogPage, type SessionLogPage, type SessionLogPageQuery } from '../../session-log/source';
 import type { AuditEvent } from './audit';
@@ -176,8 +176,8 @@ export interface ProjectSession {
  *
  * Three hosts hand-rolled the identical `typeof meta.spawned_by_session ===
  * 'string'` cast over an `unknown` bag
- * (`apps/web/src/components/projects/session-label.ts:61`,
- * `apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359`,
+ * (`packages/ui/src/session/actions/session-label.ts:61`,
+ * `packages/ui/src/session/actions/project-session-list-helpers.ts:359`,
  * `apps/tui/src/lib/session-groups.ts:145`). `metadata` is jsonb, so a
  * malformed row is possible and a non-string must never escape as a session
  * id. A self-referential link is rejected too: a session that is its own
@@ -238,6 +238,8 @@ export interface PendingSessionPrompt {
  * The later `/start` call is an idempotent readiness/resume operation.
  */
 export interface CreateProjectSessionInput {
+  /** Authorized platform session whose saved conversation is copied before boot. */
+  fork_from_session_id?: string;
   base_ref?: string;
   agent_name?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */
@@ -728,7 +730,7 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   // `session_id` is exactly the route param those navigations land on.
   // Skip when an initial_prompt is set: those sessions get a server-side reply,
   // so they must mount the real chat to stream it (the shell would hold it back).
-  if (!input?.initial_prompt) {
+  if (!input?.initial_prompt && !input?.fork_from_session_id) {
     markSessionFresh((session as ProjectSession | undefined)?.session_id);
   }
   return session;
@@ -1717,6 +1719,7 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
   );
   // The device's saved copy of a deleted session would only take space.
   void currentSavedCopyStore()?.remove(projectId, sessionId);
+  noteSessionDeleted(sessionId);
   return result;
 }
 

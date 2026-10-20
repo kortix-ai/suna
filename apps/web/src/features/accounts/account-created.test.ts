@@ -1,5 +1,5 @@
-import { useAccountPanelStore } from '@/stores/account-panel-store';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useAccountPanelStore } from '@kortix/ui/internal/stores/account-panel-store';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import type { KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { QueryClient, QueryClientProvider, type QueryKey } from '@tanstack/react-query';
@@ -92,14 +92,14 @@ describe('account creation handoff', () => {
           replace: navigate('replace'),
         }),
       }));
-      mock.module('@/hooks/account/use-accounts-list', () => ({
+      mock.module('@kortix/ui/internal/hooks/account/use-accounts-list', () => ({
         useAccountsQueryKey: () => key,
         useAccountsList: () => ({ data: [], isLoading: false, isError: false }),
       }));
       mock.module('@/hooks/account/use-ensure-selected-account', () => ({
         useEnsureSelectedAccount() {},
       }));
-      mock.module('@/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
+      mock.module('@kortix/ui/internal/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
       mock.module('@/features/providers/auth-provider', () => ({
         useAuth: () => ({ user: { id: 'synthetic-reader' }, isLoading: false }),
       }));
@@ -126,7 +126,7 @@ describe('account creation handoff', () => {
             'DropdownMenuTrigger',
           ].map((name) => [name, children]),
         );
-      mock.module('@/components/ui/dropdown-menu', uiDropdownMenuMock);
+      mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
       mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
       const { createContext } = await import('react');
       const uiSidebarMock = () => ({
@@ -135,24 +135,24 @@ describe('account creation handoff', () => {
         SidebarMenuButton: children,
         SidebarMenuItem: children,
       });
-      mock.module('@/components/ui/sidebar', uiSidebarMock);
+      mock.module('@kortix/ui/sidebar', uiSidebarMock);
       mock.module('@kortix/ui/sidebar', uiSidebarMock);
       mock.module('@/features/layout/user-menu-shared', () => ({
         HelpSubmenu: () => null,
         ThemeSubmenu: () => null,
         useLogoutFlow: () => ({ openConfirm() {}, dialog: null }),
       }));
-      mock.module('@/features/tunnel/computer-connect', () => ({
+      mock.module('@kortix/ui/internal/tunnel/computer-connect', () => ({
         COMPUTER_SETUP_EVENT: 'synthetic-setup',
       }));
       mock.module('@/features/tunnel/local-computer-modal', () => ({
         LocalComputerModal: () => null,
       }));
-      mock.module('@/features/workspace/project-sidebar/workspace-menu-section', () => ({
+      mock.module('@kortix/ui/workspace/sidebar/workspace-menu-section', () => ({
         WorkspaceMenuSection: () => null,
       }));
       mock.module('./hub/account-pane', () => ({ AccountPane: children }));
-      mock.module('./hub/account-hub-location', () => ({ HubLink: children }));
+      mock.module('@kortix/ui/internal/account-hub/account-hub-location', () => ({ HubLink: children }));
       // The child is an external creation boundary. Execute the real host's callback.
       function CreationBoundary(_props: { onCreated: (value: KortixAccount) => void }) {
         return null;

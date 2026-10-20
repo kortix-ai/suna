@@ -1,0 +1,149 @@
+'use client';
+
+import { cn } from '../lib/utils';
+import * as React from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+
+export const FadedScrollArea = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<'div'> & {
+    fadeColor?: string;
+    orientation?: 'vertical' | 'horizontal';
+    rootClassName?: string;
+    /** Tailwind spacing unit (`10` → `h-10`) or a CSS length (`1.5rem`). */
+    fadeSize?: string;
+  }
+>(function FadedScrollArea(
+  {
+    children,
+    className,
+    fadeColor = 'from-sidebar',
+    orientation = 'vertical',
+    rootClassName,
+    fadeSize = '10',
+    style,
+    ...props
+  },
+  ref,
+) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showStartFade, setShowStartFade] = useState(false);
+  const [showEndFade, setShowEndFade] = useState(false);
+  const isHorizontal = orientation === 'horizontal';
+  const fadeSizeValue = /^\d+(\.\d+)?$/.test(fadeSize.trim())
+    ? `calc(var(--spacing) * ${fadeSize.trim()})`
+    : fadeSize.trim();
+
+  const setScrollRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      scrollRef.current = node;
+      if (typeof ref === 'function') {
+        ref(node);
+      } else if (ref) {
+        ref.current = node;
+      }
+    },
+    [ref],
+  );
+
+  const updateScrollFades = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    if (isHorizontal) {
+      const { scrollLeft, scrollWidth, clientWidth } = el;
+      const maxScroll = scrollWidth - clientWidth;
+      const canScroll = maxScroll > 1;
+      if (!canScroll) {
+        setShowStartFade(false);
+        setShowEndFade(false);
+        return;
+      }
+      setShowStartFade(scrollLeft > 1);
+      setShowEndFade(scrollLeft < maxScroll - 1);
+      return;
+    }
+
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const maxScroll = scrollHeight - clientHeight;
+    const canScroll = maxScroll > 1;
+    if (!canScroll) {
+      setShowStartFade(false);
+      setShowEndFade(false);
+      return;
+    }
+    setShowStartFade(scrollTop > 1);
+    setShowEndFade(scrollTop < maxScroll - 1);
+  }, [isHorizontal]);
+
+  useLayoutEffect(() => {
+    updateScrollFades();
+  }, [updateScrollFades]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(updateScrollFades);
+    ro.observe(el);
+    el.addEventListener('scroll', updateScrollFades, { passive: true });
+    window.addEventListener('resize', updateScrollFades);
+    // Keep wheel/touch scroll working inside Radix scroll-lock layers (Dialog/Modal).
+    const stopScrollLockCapture = (e: Event) => e.stopPropagation();
+    el.addEventListener('wheel', stopScrollLockCapture, { passive: false });
+    el.addEventListener('touchmove', stopScrollLockCapture, { passive: false });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener('scroll', updateScrollFades);
+      window.removeEventListener('resize', updateScrollFades);
+      el.removeEventListener('wheel', stopScrollLockCapture);
+      el.removeEventListener('touchmove', stopScrollLockCapture);
+    };
+  }, [updateScrollFades]);
+
+  return (
+    <div
+      className={cn(
+        'relative flex min-h-0 min-w-0',
+        isHorizontal ? 'w-full min-w-0 flex-1 self-center' : 'h-full flex-col',
+        rootClassName,
+      )}
+      style={{ '--fade-size': fadeSizeValue, ...style } as React.CSSProperties}
+    >
+      <div
+        className={cn(
+          'pointer-events-none absolute z-10 transition-opacity',
+          fadeColor,
+          isHorizontal
+            ? 'inset-y-0 left-0 w-(--fade-size) bg-gradient-to-r to-transparent'
+            : 'inset-x-0 top-0 h-(--fade-size) bg-gradient-to-b to-transparent',
+          showStartFade ? 'opacity-100' : 'opacity-0',
+        )}
+        aria-hidden
+      />
+      <div
+        className={cn(
+          'pointer-events-none absolute z-10 transition-opacity',
+          fadeColor,
+          isHorizontal
+            ? 'inset-y-0 right-0 w-(--fade-size) bg-gradient-to-l to-transparent'
+            : 'inset-x-0 bottom-0 h-(--fade-size) bg-gradient-to-t to-transparent',
+          showEndFade ? 'opacity-100' : 'opacity-0',
+        )}
+        aria-hidden
+      />
+      <div
+        ref={setScrollRef}
+        className={cn(
+          'scrollbar-hide min-h-0 min-w-0 flex-1 pb-0',
+          isHorizontal ? 'touch-pan-x overflow-x-auto overflow-y-hidden' : 'overflow-y-auto',
+          className,
+        )}
+        {...props}
+      >
+        {children}
+      </div>
+    </div>
+  );
+});
+
+FadedScrollArea.displayName = 'FadedScrollArea';

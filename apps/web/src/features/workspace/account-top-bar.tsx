@@ -5,16 +5,16 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { BackPillBody, backPillClass } from '@/components/ui/back-pill';
+import { Button } from '@kortix/ui/button';
+import { BackPillBody, backPillClass } from '@kortix/ui/back-pill';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/dropdown-menu';
+import Loading from '@kortix/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
 
 // Client only: the inbox is per signed-in person and polls, so the server
@@ -22,7 +22,7 @@ import { useTranslations } from '@/i18n/use-translations';
 // bell itself renders only while a cached project has the
 // `notification_center` flag on (these pages have no project of their own).
 const NotificationBell = dynamic(
-  () => import('@/features/notifications/notification-bell').then((mod) => mod.NotificationBell),
+  () => import('@kortix/ui/internal/notifications/notification-bell').then((mod) => mod.NotificationBell),
   { ssr: false },
 );
 

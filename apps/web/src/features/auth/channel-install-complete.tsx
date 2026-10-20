@@ -15,17 +15,17 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-import { ConnectorHandshake } from '@/components/setup-links/connector-handshake';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { ConnectorHandshake } from '@kortix/ui/markdown/setup-links/connector-handshake';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import {
   AuthPendingScreen,
   AuthStatusScreen,
   DetailPanel,
   DetailRow,
-} from '@/features/auth/auth-consent';
-import { Rise, StepHeader } from '@/features/auth/auth-primitives';
+} from '@kortix/ui/internal/auth/auth-consent';
+import { Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import type { ChannelInstallCompletion, ChannelInstallCompletionInput } from '@kortix/sdk';
 

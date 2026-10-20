@@ -7,8 +7,8 @@
 // server-side (supabase discussion #5741). Defaulting a returning account to
 // the password form dead-ends a passwordless one on a form no password can
 // pass — the regression pinned here. The password form stays one explicit
-// choice away ("Use a password instead" on the link step); whatever the
-// resolver says, without a remembered choice the client uses the link, which re-checks
+// choice away (on entry and link steps); without a remembered choice the
+// client uses the link action, which re-checks
 // closed signups and SSO server-side.
 //
 // Every step also renders its failure inline: a failed send keeps the
@@ -81,7 +81,6 @@ mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'magic,password', AUTH_PROVIDERS: '' }),
 }));
 const uiToastMock = () => ({ errorToast: () => {} });
-mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 const { default: AuthPage } = await import('./page');
 
@@ -333,6 +332,45 @@ test('a rate-limited send cools the password form link button down', async () =>
     emailFailure = null;
     emailFailureStatus = null;
     jest.useRealTimers();
+    await act(async () => root.unmount());
+  }
+});
+
+test('entry offers password sign-in without sending an email', async () => {
+  resolvedMode = 'signin';
+  emailCodeSends = 0;
+  let root: ReturnType<typeof create> | undefined;
+  await act(async () => {
+    root = create(<NextIntlClientProvider locale="en" messages={messages}><AuthPage /></NextIntlClientProvider>);
+  });
+  if (!root) throw new Error('Auth page did not render');
+  const tree = root;
+  try {
+    await act(async () => tree.root.findByProps({ autoComplete: 'email' }).props.onChange({ target: { value: 'returning@example.test' } }));
+    await goToPasswordForm(tree);
+    expect(tree.root.findByProps({ autoComplete: 'current-password', type: 'password' }).props.name).toBe('password');
+    expect(JSON.stringify(tree.toJSON())).toContain('Welcome back');
+    expect(emailCodeSends).toBe(0);
+  } finally {
+    await act(async () => tree.unmount());
+  }
+});
+
+test('a failed entry email send does not block password sign-in', async () => {
+  resolvedMode = 'signin';
+  emailCodeSends = 0;
+  emailFailure = 'Email rate limit exceeded. Try again later.';
+  emailFailureStatus = 429;
+  const root = await continueWithEmail('returning@example.test');
+  try {
+    expect(root.root.findAllByProps({ role: 'alert' })).toHaveLength(1);
+    await goToPasswordForm(root);
+    expect(root.root.findByProps({ autoComplete: 'current-password', type: 'password' }).props.name).toBe('password');
+    expect(root.root.findAllByProps({ role: 'alert' })).toHaveLength(0);
+    expect(emailCodeSends).toBe(1);
+  } finally {
+    emailFailure = null;
+    emailFailureStatus = null;
     await act(async () => root.unmount());
   }
 });
