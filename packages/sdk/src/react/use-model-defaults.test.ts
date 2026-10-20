@@ -48,8 +48,8 @@ describe('resolveModelDefault', () => {
 });
 
 // The session-open snapshot (`GET .../snapshot`) answers `/model-defaults` in
-// its `models` leg. Nothing read it: `useModelDefaults` waited for `/detail`
-// to name the gateway flag, then issued its own `/model-defaults`.
+// its `models` leg. `useModelDefaults` reads it and issues no request of its
+// own. The gateway is the only model path, so nothing waits on `/detail`.
 describe('model defaults from the session-open snapshot', () => {
   const originalFetch = globalThis.fetch;
   let root: ReactTestRenderer | undefined;
@@ -78,25 +78,17 @@ describe('model defaults from the session-open snapshot', () => {
     };
   }
 
-  /** Serves the snapshot; `/detail` waits for `releaseDetail`. */
+  /** Serves the snapshot; every other path answers the defaults route. */
   function serve(models: unknown) {
     const requests: string[] = [];
-    let releaseDetail!: () => void;
-    const detailGate = new Promise<void>((resolve) => {
-      releaseDetail = resolve;
-    });
     globalThis.fetch = mock(async (url: unknown) => {
       const path = String(url);
       requests.push(path);
       if (path.includes('/snapshot')) return Response.json(snapshot(models));
-      if (path.endsWith('/detail')) {
-        await detailGate;
-        return Response.json({ project: { experimental: { llm_gateway: true } }, config: {} });
-      }
       return Response.json({ ...DEFAULTS, projectDefault: 'from/the-route' });
     }) as unknown as typeof fetch;
     configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
-    return { requests, releaseDetail };
+    return { requests };
   }
 
   const settle = () =>
@@ -117,8 +109,8 @@ describe('model defaults from the session-open snapshot', () => {
     resetSessionOpenBundles();
   });
 
-  test('the snapshot answers model defaults before /detail lands, with no /model-defaults request', async () => {
-    const { requests, releaseDetail } = serve({ known: true, ...DEFAULTS });
+  test('the snapshot answers model defaults with no /model-defaults and no /detail request', async () => {
+    const { requests } = serve({ known: true, ...DEFAULTS });
     let value!: ReturnType<typeof useModelDefaults>;
     function Probe() {
       value = useModelDefaults('p1');
@@ -131,24 +123,12 @@ describe('model defaults from the session-open snapshot', () => {
     });
     await settle();
 
-    // `/detail` has not answered: the gateway flag is unknown, the defaults are not.
-    expect(value.llmGatewayEnabled).toBe(false);
-    expect(value.data).toEqual(DEFAULTS as never);
-    expect(value.resolveDefaultFor('coder')).toEqual({ providerID: 'kortix', modelID: 'google/gemini-agent' });
-
-    releaseDetail();
-    // A fixed 10 ms sleep is a lane-load race: under parallel workers the
-    // /detail response can land after the sleep, so the update fires outside
-    // act and the assertion reads the pre-response render. Wait, bounded and
-    // inside act, until the response has actually landed.
-    await act(async () => {
-      for (let i = 0; i < 100 && !value.llmGatewayEnabled; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-    });
+    // `llmGatewayEnabled` is deprecated: the gateway serves every project.
     expect(value.llmGatewayEnabled).toBe(true);
     expect(value.data).toEqual(DEFAULTS as never);
+    expect(value.resolveDefaultFor('coder')).toEqual({ providerID: 'kortix', modelID: 'google/gemini-agent' });
     expect(requests.filter((url) => url.includes('/model-defaults'))).toHaveLength(0);
+    expect(requests.filter((url) => url.endsWith('/detail'))).toHaveLength(0);
   });
 
   test('a snapshot never replaces defaults a read already cached', async () => {
@@ -160,12 +140,13 @@ describe('model defaults from the session-open snapshot', () => {
     expect(client.getQueryData<{ projectDefault: string }>(KEY)?.projectDefault).toBe('already/cached');
   });
 
-  test('an unknown models leg (gateway off, or a failed read) seeds nothing', async () => {
-    serve({ known: false, reason: 'llm_gateway_disabled' });
+  test('an unknown models leg (a failed read) falls back to the route', async () => {
+    const { requests } = serve({ known: false, reason: 'read_failed' });
     openSessionBundle('p1', 's1');
     seedModelDefaultsFromOpenBundle(client, 'p1', 's1');
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(client.getQueryData(KEY)).toBeUndefined();
+    expect(client.getQueryData<{ projectDefault: string }>(KEY)?.projectDefault).toBe('from/the-route');
+    expect(requests.filter((url) => url.includes('/model-defaults'))).toHaveLength(1);
   });
 
   test('no open snapshot: nothing is seeded and nothing is requested', async () => {

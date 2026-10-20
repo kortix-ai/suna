@@ -305,6 +305,7 @@
     "./workspace/projects/onboarding/connect-app",
     "./workspace/projects/policies-panel",
     "./workspace/projects/session-shared-icon",
+    "./workspace/repository-disconnected",
     "./workspace/review/map",
     "./workspace/review/mock-data",
     "./workspace/review/review-center",

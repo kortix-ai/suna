@@ -475,16 +475,14 @@ flow(
         ...["session.rewind", "session.fork", "session.mcp", "session.todo", "session.shell", "session.attach", "session.config"].map((feature) => ({ feature, status: "lost" })),
       ];
 
-      await ctx.step("restore off, gateway off: preflight to pi → 200 not available (llm_gateway_off), and the whole history (4 live messages) is the first loss", async () => {
-        await setFeatureAsOperator(ctx, project.id, "llm_gateway", false);
+      await ctx.step("restore off: preflight to pi → 200 available without a restore, and the whole history (4 live messages) is the first loss", async () => {
         (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
-          session_id: sessionId, from: "opencode", to: "pi", available: false, reason: "llm_gateway_off", restores: false,
+          session_id: sessionId, from: "opencode", to: "pi", available: true, reason: null, restores: false,
           losses: [{ feature: "history", used: 4, status: "lost" }, ...losses], unsupported,
         });
       });
 
-      await ctx.step("restore and gateway on: preflight to pi → 200 available; losses: the PDF, the todos, the rewind, the MCP tool (the sub-agent is native on pi); unsupported adds what was never used (fork, shell, attach, config)", async () => {
-        await setFeatureAsOperator(ctx, project.id, "llm_gateway", true);
+      await ctx.step("restore on: preflight to pi → 200 available; losses: the PDF, the todos, the rewind, the MCP tool (the sub-agent is native on pi); unsupported adds what was never used (fork, shell, attach, config)", async () => {
         await setFeatureAsOperator(ctx, project.id, "session_log_restore", true);
         (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
           session_id: sessionId, from: "opencode", to: "pi", available: true, reason: null, restores: true, losses, unsupported,
@@ -531,7 +529,6 @@ flow(
       });
     } finally {
       await setFeatureAsOperator(ctx, project.id, "session_log_restore", null).catch(() => {});
-      await setFeatureAsOperator(ctx, project.id, "llm_gateway", null).catch(() => {});
       await close();
     }
   },

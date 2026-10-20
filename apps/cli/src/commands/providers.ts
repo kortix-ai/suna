@@ -3,6 +3,7 @@ import { formatRelative } from '@kortix/shared';
 
 import { ApiError } from '../api/client.ts';
 import type {
+  CustomLlmProvider,
   OauthFlowStartResponse,
   OauthListResponse,
   OauthPollResponse,
@@ -19,6 +20,7 @@ import {
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
+  takeFlagValues,
 } from '../command-helpers.ts';
 import { readSecret, readVisible } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
@@ -26,14 +28,17 @@ import { sleep } from '@kortix/shared/guards';
 
 const HELP = help`Usage: kortix providers <subcommand> [options]
 
-Configure LLM providers for the linked Kortix project. Two paths:
+Configure LLM providers for the linked Kortix project. Three paths:
 
   • OAuth (zero config) — uses the upstream provider's device-code flow
     (ChatGPT Pro/Plus, an OpenCode Console account for OpenCode Zen or Go).
     Tokens land encrypted on the project; Kortix refreshes them.
 
-  • API key — stored as an encrypted project secret. Injected into
-    sessions at boot, picked up by opencode's provider lookup.
+  • API key — stored as an encrypted project secret. The Kortix LLM
+    gateway uses it; the key never enters a sandbox.
+
+  • Custom endpoint — any OpenAI-compatible API (vLLM, LiteLLM, Ollama
+    behind a public host). The gateway serves its models as <id>/<model>.
 
 Subcommands:
   ls [--json]                       List configured providers (OAuth +
@@ -60,6 +65,15 @@ Subcommands:
                                     provider, every account still cooling down.
                                     Otherwise the gateway re-tries one every
                                     15 min on its own. --account <id>.
+  custom ls [--json]                List custom OpenAI-compatible endpoints.
+  custom set <id> --base-url <url> --model <model>[=<name>] [--model …]
+             [--name <name>] [--key-stdin]
+                                    Create or replace an endpoint. --model
+                                    repeats; it replaces the model list.
+                                    --name defaults to <id>. --key-stdin
+                                    saves the API key read from stdin as
+                                    CUSTOM_<ID>_API_KEY.
+  custom rm <id>                    Remove the endpoint and its key.
 
 Known API-key providers (provider → project secret(s)):
   anthropic       → ANTHROPIC_API_KEY
@@ -80,6 +94,10 @@ Global options:
   --region <region>  (set bedrock) AWS region, e.g. us-east-1.
   --enterprise <url> (login github-copilot) Enterprise GHE URL.
   -h, --help         Show this help.
+
+Example:
+  printf %s "$KEY" | kortix providers custom set my-vllm \\
+    --base-url https://llm.example.com/v1 --model "qwen-3=Qwen 3" --key-stdin
 `;
 
 const LOGIN_HELP = help`Usage: kortix providers login <provider> [options]
@@ -155,6 +173,7 @@ export async function runProviders(argv: string[]): Promise<number> {
   let json = false;
   let catalog = false;
   let search: string | undefined;
+  let custom: CustomFlags = { models: [], keyStdin: false };
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
@@ -165,6 +184,14 @@ export async function runProviders(argv: string[]): Promise<number> {
     if (sub === 'ls' || sub === 'list') {
       catalog = takeFlagBool(rest, ['--catalog']);
       search = takeFlagValue(rest, ['--search']);
+    }
+    if (sub === 'custom') {
+      custom = {
+        name: takeFlagValue(rest, ['--name']),
+        baseUrl: takeFlagValue(rest, ['--base-url']),
+        models: takeFlagValues(rest, ['--model']),
+        keyStdin: takeFlagBool(rest, ['--key-stdin']),
+      };
     }
   } catch (err) {
     return fail((err as Error).message);
@@ -197,6 +224,8 @@ export async function runProviders(argv: string[]): Promise<number> {
       return providersRm(rest[0], ctxOpts);
     case 'retry':
       return providersRetry(rest[0], accountFlag, hostFlag, json);
+    case 'custom':
+      return providersCustom(rest[0], rest[1], custom, ctxOpts, json);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -490,7 +519,7 @@ async function providersSet(
   }
   process.stdout.write(
     `\n${status.ok(`Saved ${C.bold}${Object.keys(values).join(', ')}${C.reset} for ${C.bold}${provider}${C.reset}`)}\n` +
-      `  ${C.dim}Will be injected on the next sandbox boot.${C.reset}\n\n`,
+      `  ${C.dim}The LLM gateway uses it; the key never enters a sandbox.${C.reset}\n\n`,
   );
   return 0;
 }
@@ -537,6 +566,124 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
   process.stdout.write(
     `${status.ok(`Removed ${parts.join(' + ')} for ${C.bold}${provider}${C.reset}`)}\n`,
   );
+  return 0;
+}
+
+// ── custom OpenAI-compatible endpoints ────────────────────────────────────
+
+interface CustomFlags { name?: string; baseUrl?: string; models: string[]; keyStdin: boolean }
+
+/** `--model id=Name` → `{ id, name }`; a bare id names itself. */
+export function parseCustomModel(value: string): { id: string; name: string } {
+  const eq = value.indexOf('=');
+  if (eq === -1) return { id: value, name: value };
+  const id = value.slice(0, eq);
+  return { id, name: value.slice(eq + 1) || id };
+}
+
+async function providersCustom(
+  action: string | undefined,
+  id: string | undefined,
+  flags: CustomFlags,
+  opts: CtxOpts,
+  json: boolean,
+): Promise<number> {
+  if (action === 'ls' || action === 'list') return customLs(opts, json);
+  if (action !== 'set' && action !== 'rm' && action !== 'remove') {
+    process.stderr.write(`${status.err(`unknown subcommand "custom ${action ?? ''}"`)}\n\n${HELP}`);
+    return 2;
+  }
+  if (!id) return missing('a custom provider id');
+  if (action !== 'set') return customRm(id, opts);
+  if (!flags.baseUrl) return fail('Pass --base-url <url> (the OpenAI-compatible API root, e.g. https://host/v1).');
+  if (flags.models.length === 0) return fail('Pass at least one --model <model>[=<name>].');
+
+  let key: string | undefined;
+  if (flags.keyStdin) {
+    key = (await Bun.stdin.text()).trim();
+    if (!key) return fail('--key-stdin read an empty key.');
+  }
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  const base = `/projects/${ctx.projectId}/custom-providers`;
+  let provider: CustomLlmProvider;
+  try {
+    provider = await ctx.client.put<CustomLlmProvider>(`${base}/${encodeURIComponent(id)}`, {
+      name: flags.name ?? id,
+      base_url: flags.baseUrl,
+      models: flags.models.map(parseCustomModel),
+    });
+    if (key) {
+      // The same write the web Custom form makes: the gateway spends the key,
+      // the sandbox never sees it.
+      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+        name: provider.secret_name,
+        value: key,
+        strategy: 'broker',
+        consumer: 'llm_gateway',
+      });
+      provider = { ...provider, has_key: true };
+    }
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson(provider);
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`Saved ${C.bold}${provider.id}${C.reset} → ${provider.base_url} (${provider.models.length} model${provider.models.length === 1 ? '' : 's'})`)}\n` +
+      `  ${C.dim}${provider.has_key ? `Key: ${provider.secret_name}` : `No key. Add one: kortix providers custom set ${provider.id} … --key-stdin`}${C.reset}\n`,
+  );
+  return 0;
+}
+
+async function customLs(opts: CtxOpts, json: boolean): Promise<number> {
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  let providers: CustomLlmProvider[];
+  try {
+    ({ providers } = await ctx.client.get<{ providers: CustomLlmProvider[] }>(
+      `/projects/${ctx.projectId}/custom-providers`,
+    ));
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson({ providers });
+    return 0;
+  }
+  if (providers.length === 0) {
+    process.stdout.write(
+      `  ${C.dim}No custom providers. Try:${C.reset}\n` +
+        `    ${C.cyan}kortix providers custom set my-llm --base-url https://host/v1 --model my-model --key-stdin${C.reset}\n`,
+    );
+    return 0;
+  }
+  const idW = Math.max(...providers.map((p) => p.id.length), 2);
+  process.stdout.write(`  ${C.dim}${pad('ID', idW)}   KEY  ENDPOINT${C.reset}\n`);
+  for (const p of providers) {
+    const endpoint = p.configured
+      ? `${p.base_url}  ${C.dim}${p.models.map((m) => m.id).join(', ')}${C.reset}`
+      : `${C.dim}no endpoint (kortix providers custom set ${p.id} --base-url …)${C.reset}`;
+    process.stdout.write(`  ${pad(p.id, idW)}   ${p.has_key ? 'yes' : 'no '}  ${endpoint}\n`);
+  }
+  return 0;
+}
+
+async function customRm(id: string, opts: CtxOpts): Promise<number> {
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  try {
+    await ctx.client.delete(`/projects/${ctx.projectId}/custom-providers/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      process.stdout.write(`  ${C.dim}Nothing to remove for "${id}".${C.reset}\n`);
+      return 0;
+    }
+    return surfaceApiError(err);
+  }
+  process.stdout.write(`${status.ok(`Removed custom provider ${C.bold}${id}${C.reset} and its key`)}\n`);
   return 0;
 }
 

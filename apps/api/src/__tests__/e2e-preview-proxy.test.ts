@@ -368,6 +368,8 @@ mock.module('../config', () => ({
     // config default, because this file's collaborators resolve a mix of the
     // mocked and the real module — a disagreement here reads as a CORS bug.
     FRONTEND_URL: 'http://localhost:3000',
+    // The origin every env push derives the gateway base URL from.
+    KORTIX_URL: 'https://api.example.test',
   },
 }));
 
@@ -968,7 +970,10 @@ describe('Preview proxy: forwarding', () => {
         OPENROUTER_API_KEY: 'sk-live',
         SENTRY_DSN: 'https://example.test/1',
       },
-      llmGatewayEnabled: false,
+      // Every push carries the gateway: this is what moves a box that booted
+      // in the removed native mode onto it.
+      llmGatewayEnabled: true,
+      llmGatewayBaseUrl: 'https://api.example.test/v1/llm',
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
       // `runtimeEnv` for a W3 daemon, the same map as `opencodeEnv` for an older one.
       runtimeEnv: {},

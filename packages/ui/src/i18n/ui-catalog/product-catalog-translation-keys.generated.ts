@@ -146,7 +146,5 @@ export const PRODUCT_CATALOG_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   Git: 'textb949c922b6ef',
   'Spent for repository access. It never enters the sandbox.': 'text5fb0b5e63db5',
   'Model provider': 'textea70384c465d',
-  'A model provider key. The LLM Gateway is off for this project, so it loads into the sandbox environment and OpenCode connects the provider natively.':
-    'text91c25d5354de',
   'This key signs requests locally; egress enforcement cannot apply.': 'text99fbfee11e96',
 };
