@@ -7,32 +7,39 @@ import {
   type ApprovalDecisionValue,
   ApprovalParameters,
   type ApprovalResolvers,
+  ApprovalWaitingNotice,
   approvalReviewable,
+  approvalSubject,
+  approvalVerb,
   resolvedLabel,
   resolvedTone,
-  useApprovalWaitingText,
+  useIssuePriorityWord,
 } from '../../session/prompts/approval-request';
-import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
+import { cn } from '../../lib/utils';
 import { Alert, AlertDescription } from '../../primitives/alert';
 import { Skeleton } from '../../primitives/skeleton';
 import { errorToast, successToast } from '../../primitives/toast';
 import { AuthFrame } from '../../internal/auth/auth-card-shell';
-import { DetailPanel, DetailRow, OutcomeTitle } from '../../internal/auth/auth-consent';
-import { ErrorStrip, Rise, StepHeader } from '../../internal/auth/auth-primitives';
+import { OutcomeTitle } from '../../internal/auth/auth-consent';
+import { Rise, StepHeader } from '../../internal/auth/auth-primitives';
 import { useTranslations } from '../../i18n';
 import { type ApprovalLinkDetails, getApprovalLink, resolveApproval } from '@kortix/sdk';
-import { ArrowUpRightIcon } from '@phosphor-icons/react';
+import {
+  CheckCircleIcon,
+  ClockIcon,
+  EyeIcon,
+  MinusCircleIcon,
+  PencilSimpleIcon,
+  UserIcon,
+  WarningIcon,
+  XCircleIcon,
+} from '@phosphor-icons/react';
 import { UiLink as Link, useUiRouter } from '../../providers/ui-provider';
 import { useEffect, useState } from 'react';
 
 import { isApprovalExpiredError } from '../../workspace/review/review-actions';
-import { ConnectorHandshake } from './connector-handshake';
-
-const requestedAtFormat = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
+import { ConnectorAppMark } from './connector-handshake';
 
 /** `github.merge_pull_request` → "Merge pull request". Null when the action has no readable tail. */
 function actionLabel(action: string): string | null {
@@ -54,26 +61,9 @@ function connectorLogoUrl(details: ApprovalLinkDetails): string | null {
     : null;
 }
 
-/** The catalogue word for a risk level; an unknown level is shown as sent. */
-const RISK_LABEL_KEY: Record<string, string> = {
-  read: 'text9b9a8d05a7ec',
-  write: 'text3f00927a7193',
-  destructive: 'textc3e58a73609d',
-};
-
 /**
- * The standalone approval screen: which connector, which call, with which
- * parameters, then the decision — or, once decided, how it was decided.
- *
- * One layout for every connector. The handshake names the connector by its
- * logo. The first panel is one fact per row: what runs, the tool path, the
- * access level, the project, the time. The agent's description follows when
- * there is one, then the parameters (`ApprovalParameters`, shared with the
- * session notice and the Review Center, so all three show the same redacted
- * values). A call with no parameters shows no parameters section.
- *
- * A decided call leads with its outcome: the words at the leading edge and a
- * filled mark at the trailing edge, in the outcome's colour. Never colour alone.
+ * The standalone approval screen: the decision panel (`ApprovalDecisionPanel`)
+ * in a bordered card, or, once decided, the same card with its outcome.
  */
 
 export function ApprovalDecision({ token }: { token: string }) {
@@ -136,8 +126,9 @@ export function ApprovalDecision({ token }: { token: string }) {
     }
   }
 
-  const sessionHref =
-    details?.session_id ? uiRoutes().session(details.project_id, details.session_id) : null;
+  const sessionHref = details?.session_id
+    ? uiRoutes().session(details.project_id, details.session_id)
+    : null;
 
   return (
     <ApprovalDecisionView
@@ -223,23 +214,130 @@ export function ApprovalDecisionView({
 
   return (
     <AuthFrame footerVariant="none">
-      <ApprovalDecisionPanel
-        details={details}
-        outcome={outcome}
-        busyDecision={busyDecision}
-        error={error}
-        onDecision={onDecision}
-        onOpenSession={onOpenSession}
-      />
+      <div className="border-border overflow-hidden rounded-xl border">
+        <ApprovalDecisionPanel
+          details={details}
+          outcome={outcome}
+          busyDecision={busyDecision}
+          error={error}
+          onDecision={onDecision}
+          onOpenSession={onOpenSession}
+        />
+      </div>
     </AuthFrame>
   );
 }
 
+/** Below this much time left, the expiry chip turns to the warning tone. */
+const EXPIRY_WARN_MS = 6 * 60 * 60 * 1000;
+
+/** What the expiry chip says for `msLeft`, and whether it warns (< 6 h). */
+export function expiryChip(msLeft: number): {
+  key: 'leftDays' | 'leftHours' | 'leftHoursMinutes' | 'leftMinutes';
+  values: Record<string, number>;
+  warn: boolean;
+} {
+  const minutes = Math.max(0, Math.floor(msLeft / 60_000));
+  const hours = Math.floor(minutes / 60);
+  const warn = msLeft < EXPIRY_WARN_MS;
+  if (hours >= 48) return { key: 'leftDays', values: { days: Math.floor(hours / 24) }, warn };
+  if (hours >= 6) return { key: 'leftHours', values: { hours }, warn };
+  if (hours >= 1) {
+    return {
+      key: 'leftHoursMinutes',
+      values: { hours, minutes: minutes % 60 },
+      warn,
+    };
+  }
+  return { key: 'leftMinutes', values: { minutes }, warn };
+}
+
+const clockFormat = new Intl.DateTimeFormat(undefined, {
+  hour: '2-digit',
+  minute: '2-digit',
+});
+const dateFormat = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
+function sameDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+/** The time now, refreshed every 30 s so the chip counts down while the panel is open. */
+function useClock(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
+
+/** A pill at the header's trailing edge: the time left, or the outcome. The words stay ink. */
+function HeaderChip({
+  warn = false,
+  icon,
+  children,
+}: {
+  warn?: boolean;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        'text-foreground flex shrink-0 items-center gap-1.5 rounded-full py-1 pr-2.5 pl-2 text-xs font-medium tabular-nums',
+        warn ? 'bg-kortix-orange/15' : 'bg-muted',
+      )}
+    >
+      {icon}
+      {children}
+    </span>
+  );
+}
+
+/** One fact under the preview: a 16 px glyph slot and one line. */
+function FactRow({
+  icon,
+  muted = false,
+  children,
+}: {
+  icon: React.ReactNode;
+  muted?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className="flex h-5 w-4 shrink-0 items-center justify-center">{icon}</span>
+      <p
+        className={cn(
+          'min-w-0 text-xs leading-5 text-pretty',
+          muted ? 'text-muted-foreground' : 'text-foreground',
+        )}
+      >
+        {children}
+      </p>
+    </div>
+  );
+}
+
 /**
- * The approval itself — connector, call, parameters, decision — without the
- * page frame around it. The standalone page wraps it in `AuthFrame`; the
- * Review Center opens the same panel in `ApprovalDecisionModal`, so a call
- * reads and decides the same way on both surfaces.
+ * The approval itself, without the page frame: the standalone page wraps it in
+ * a bordered card inside `AuthFrame`; the Review Center opens the same panel in
+ * `ApprovalDecisionModal`, so a call reads and decides the same way on both.
+ *
+ * Top to bottom (Paper V01, sentence-first): the connector and action with the
+ * time left; one plain sentence of what the agent wants; the agent's own
+ * description as a quotation; the call as the app shows it (an email, a pull
+ * request, an issue, or the key/value list); the access it needs and who asked;
+ * then the note and the two decisions. The tool id stays on the header as its
+ * tooltip.
  *
  * No `onDecision` = read-only: the viewer may see the call but not decide it.
  * A pending call then says who decides (`resolvers`, KRTX-1724).
@@ -252,8 +350,9 @@ export function ApprovalDecisionPanel({
   onDecision,
   onOpenSession,
   previewAuthorized = true,
-  markOnMobile = false,
   resolvers = null,
+  agentName = null,
+  sessionTitle = null,
 }: {
   details: ApprovalLinkDetails;
   outcome: ApprovalDecisionValue | null;
@@ -264,14 +363,18 @@ export function ApprovalDecisionPanel({
   onOpenSession?: () => void;
   /** False when this viewer may not see the call's arguments at all. */
   previewAuthorized?: boolean;
-  /** Keep the connector mark on mobile (the modal has no corner logo). */
-  markOnMobile?: boolean;
   /** Who decides the call, for a viewer who may not. Null: the plain wording. */
   resolvers?: ApprovalResolvers | null;
+  /** The agent that asked. Null: "An agent". */
+  agentName?: string | null;
+  /** The session that asked, by its title. Null: not named. */
+  sessionTitle?: string | null;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const waitingText = useApprovalWaitingText(resolvers);
+  const t = useTranslations('hardcodedUi.approvalPage');
+  const priorityWord = useIssuePriorityWord();
+  const now = useClock();
   const expiresAt = Date.parse(details.expires_at);
   // The server says `expired` once the window closed. A row read before that
   // still offers the decision; the API then answers 409 APPROVAL_EXPIRED.
@@ -297,17 +400,70 @@ export function ApprovalDecisionPanel({
   );
   const readable = actionLabel(details.action);
   const hasParameters = !!details.args_preview && Object.keys(details.args_preview).length > 0;
+  // A display name, never the bare slug: `gmail` reads "Gmail".
+  const connectorName =
+    details.connector_name ??
+    (details.connector
+      ? details.connector.charAt(0).toUpperCase() + details.connector.slice(1)
+      : null);
+  const agent = agentName?.trim() || null;
+  const subject = approvalSubject(
+    details.action,
+    details.args_preview,
+    details.resolved_preview ?? null,
+  );
 
-  // Named by the connector when the API says what it is called; a slug is not
-  // a name ("github", "googledrive") and never goes into a title.
-  // "Approve this … action" asks a viewer who may not decide for the one thing
-  // they cannot do: they read the state instead.
-  let title: React.ReactNode = waiting
-    ? tI18nComplete.raw('textdb0e960b68b5')
-    : details.connector_name
-      ? tHardcodedUi('approvalPage.title', { connector: details.connector_name })
-      : tI18nComplete.raw('text1862f81ed9d6');
+  const who = agent ?? t('anAgent');
+  const headline =
+    subject.kind === 'email'
+      ? subject.others > 0
+        ? t('wantsEmailOthers', {
+            agent: who,
+            recipient: subject.recipient,
+            count: subject.others,
+          })
+        : t('wantsEmail', { agent: who, recipient: subject.recipient })
+      : subject.kind === 'merge'
+        ? subject.base
+          ? t('wantsMerge', {
+              agent: who,
+              number: subject.number,
+              base: subject.base,
+            })
+          : t('wantsMergePr', { agent: who, number: subject.number })
+        : subject.kind === 'issue'
+          ? (() => {
+              const priority = priorityWord(subject.priority);
+              return t('wantsIssue', {
+                agent: who,
+                article: /^[aeiou]/i.test(priority) ? 'an' : 'a',
+                priority,
+                team: subject.team,
+              });
+            })()
+          : subject.kind === 'newIssue'
+            ? t('wantsCreateIssue', { agent: who })
+            : readable
+              ? t('wantsAction', { agent: who, action: readable.toLowerCase() })
+              : t('wantsCall', { agent: who, action: details.action });
+
+  const verb = approvalVerb(details.action);
+  const approveLabel =
+    verb === 'send'
+      ? t('approveSend')
+      : verb === 'merge'
+        ? t('approveMerge')
+        : verb === 'create'
+          ? t('approveCreate')
+          : t('approve');
+
+  // The chip counts down only while the call can still be decided.
+  const live = details.pending && outcome === null && !expired && Number.isFinite(expiresAt);
+  let chip: React.ReactNode = null;
   if (resolved) {
+    const tone = resolvedTone(label);
+    const Mark =
+      tone === 'success' ? CheckCircleIcon : tone === 'destructive' ? XCircleIcon : MinusCircleIcon;
     const words =
       label === 'Approved'
         ? tI18nComplete.raw('text0674d4a026cb')
@@ -316,118 +472,151 @@ export function ApprovalDecisionPanel({
           : label === 'Expired'
             ? tI18nComplete.raw('text424a2551d356')
             : label;
-    title = <OutcomeTitle tone={resolvedTone(label)}>{words}</OutcomeTitle>;
+    chip = (
+      <HeaderChip
+        icon={
+          <Mark
+            weight="fill"
+            aria-hidden
+            className={cn(
+              'size-3.5 shrink-0',
+              tone === 'success'
+                ? 'text-kortix-green'
+                : tone === 'destructive'
+                  ? 'text-kortix-red'
+                  : 'text-muted-foreground',
+            )}
+          />
+        }
+      >
+        {words}
+      </HeaderChip>
+    );
+  } else if (live) {
+    const left = expiryChip(expiresAt - now);
+    chip = (
+      <HeaderChip
+        warn={left.warn}
+        icon={
+          <ClockIcon
+            aria-hidden
+            className={cn(
+              'size-3.5 shrink-0',
+              left.warn ? 'text-kortix-orange' : 'text-muted-foreground',
+            )}
+          />
+        }
+      >
+        {t(left.key, left.values)}
+      </HeaderChip>
+    );
   }
 
+  const expiresWhen = (() => {
+    if (!live) return null;
+    const at = new Date(expiresAt);
+    const today = new Date(now);
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    if (sameDay(at, today)) return t('today', { time: clockFormat.format(at) });
+    if (sameDay(at, tomorrow)) return t('tomorrow', { time: clockFormat.format(at) });
+    return dateFormat.format(at);
+  })();
+
+  const askedAgent = agent ?? t('anAgentLower');
+  const sessionWords = sessionTitle?.trim() || (onOpenSession ? t('thisSession') : null);
+  const asked = sessionWords
+    ? t.rich('askedByIn', {
+        agent: askedAgent,
+        title: sessionWords,
+        session: (chunks) =>
+          onOpenSession ? (
+            <button
+              type="button"
+              onClick={onOpenSession}
+              className="text-foreground underline-offset-2 transition-colors hover:underline"
+            >
+              {chunks}
+            </button>
+          ) : (
+            chunks
+          ),
+      })
+    : t('askedBy', { agent: askedAgent });
+
+  const risk =
+    details.risk === 'destructive' ? (
+      <FactRow icon={<WarningIcon aria-hidden className="text-kortix-red size-4" />}>
+        {t('riskDestructive')}
+      </FactRow>
+    ) : details.risk === 'write' ? (
+      <FactRow icon={<PencilSimpleIcon aria-hidden className="text-foreground size-4" />}>
+        {t('riskWrite', { action: (readable ?? details.action).toLowerCase() })}
+      </FactRow>
+    ) : details.risk === 'read' ? (
+      <FactRow icon={<EyeIcon aria-hidden className="text-foreground size-4" />}>
+        {t('riskRead')}
+      </FactRow>
+    ) : null;
+
+  const decidable = details.pending && !resolved && !!onDecision;
+  const footer = error || expired || decidable || waiting;
+
   return (
-    <>
-      <Rise>
-        <StepHeader
-          markOnMobile={markOnMobile}
-          mark={
-            <ConnectorHandshake
-              name={details.connector_name ?? details.connector ?? details.action}
+    <Rise>
+      <div className="flex flex-col gap-3 px-5 pt-5 pb-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2" title={details.action}>
+            <ConnectorAppMark
+              name={connectorName ?? details.action}
               iconUrl={connectorLogoUrl(details)}
-              size="lg"
-              collapsible={false}
+              size="md"
             />
-          }
-          title={title}
-          description={
-            resolved
-              ? undefined
-              : waiting
-                ? waitingText
-                : tI18nComplete.raw('text32c6817c8380')
-          }
-        />
-      </Rise>
+            <p className="text-muted-foreground min-w-0 truncate text-xs">
+              {[connectorName, readable ?? details.action].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+          {chip}
+        </div>
+        <h2 className="text-foreground text-xl leading-snug font-semibold wrap-anywhere">
+          {headline}
+        </h2>
+        <ApprovalAgentContext quote context={details.approval_context} />
+      </div>
 
-      <Rise delay={0.06}>
-        <div className="space-y-5">
-          <DetailPanel>
-            <DetailRow
-              label={tI18nComplete.raw('text00d60e31a4e6')}
-              value={readable ?? details.action}
-              mono={!readable}
-            />
-            {readable ? (
-              <DetailRow
-                label={tI18nComplete.raw('text2e53bdcd0740')}
-                value={details.action}
-                mono
-              />
-            ) : null}
-            {details.risk ? (
-              <DetailRow
-                label={tI18nComplete.raw('textec5ba0abb717')}
-                value={
-                  <Badge
-                    variant={
-                      details.risk === 'destructive'
-                        ? 'destructive'
-                        : details.risk === 'write'
-                          ? 'warning'
-                          : 'badgeSuccess'
-                    }
-                    size="xs"
-                    className="capitalize"
-                  >
-                    {RISK_LABEL_KEY[details.risk]
-                      ? tI18nComplete.raw(RISK_LABEL_KEY[details.risk])
-                      : details.risk}
-                  </Badge>
-                }
-              />
-            ) : null}
-            <DetailRow label={tI18nComplete.raw('text985959785319')} value={details.project_name} />
-            <DetailRow
-              label={tI18nComplete.raw('text2d9e28289fac')}
-              value={requestedAtFormat.format(new Date(details.requested_at))}
-            />
-            {/* A decided call no longer expires; the row would only mislead. */}
-            {Number.isFinite(expiresAt) && (expired || (details.pending && outcome === null)) ? (
-              <DetailRow
-                label={tHardcodedUi('approvalPage.expires')}
-                value={requestedAtFormat.format(expiresAt)}
-              />
-            ) : null}
-            {onOpenSession ? (
-              <DetailRow
-                label={tI18nComplete.raw('text6959b4159575')}
-                value={
-                  <button
-                    type="button"
-                    onClick={onOpenSession}
-                    className="text-foreground hover:text-muted-foreground inline-flex items-center gap-1 underline-offset-2 transition-colors hover:underline"
-                  >
-                    {tI18nComplete.raw('textb205bb47f81a')}
-                    <ArrowUpRightIcon className="size-3.5" />
-                  </button>
-                }
-              />
-            ) : null}
-          </DetailPanel>
+      {/* Renders nothing when the call recorded nothing and nothing was
+          loaded: the warning below then says it cannot be reviewed. A
+          viewer who may not see arguments gets that warning too. */}
+      {hasParameters || previewAuthorized ? (
+        <div className="px-5">
+          <ApprovalParameters
+            native
+            action={details.action}
+            argsPreview={details.args_preview}
+            reviewComplete={details.review_complete !== false}
+            resolvedPreview={details.resolved_preview}
+            resolvedFrom={details.connector_name ?? details.connector}
+            resolvedError={details.resolved_error}
+            className="overflow-hidden rounded-lg border"
+          />
+        </div>
+      ) : null}
 
-          <ApprovalAgentContext context={details.approval_context} className="rounded-md border" />
+      <div className="flex flex-col gap-2 px-5 py-4">
+        {risk}
+        <FactRow muted icon={<UserIcon aria-hidden className="text-muted-foreground size-4" />}>
+          {asked}
+          {expiresWhen ? ` · ${t('expiresAt', { when: expiresWhen })}` : null}
+        </FactRow>
+      </div>
 
-          {/* Renders nothing when the call recorded nothing and nothing was
-              loaded: the warning below then says it cannot be reviewed. A
-              viewer who may not see arguments gets that warning too. */}
-          {hasParameters || previewAuthorized ? (
-            <ApprovalParameters
-              action={details.action}
-              argsPreview={details.args_preview}
-              reviewComplete={details.review_complete !== false}
-              resolvedPreview={details.resolved_preview}
-              resolvedFrom={details.connector_name ?? details.connector}
-              resolvedError={details.resolved_error}
-              className="overflow-hidden rounded-md border"
-            />
+      {footer ? (
+        <div className="border-border flex flex-col gap-3 border-t px-5 pt-4 pb-5">
+          {error ? (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           ) : null}
-
-          {error ? <ErrorStrip message={error} /> : null}
-
           {expired ? (
             <>
               <Alert>
@@ -437,13 +626,16 @@ export function ApprovalDecisionPanel({
                 <ApprovalDecisionActions
                   onDecision={onDecision}
                   disabled
-                  stretch
                   sessionId={details.session_id}
+                  notePlaceholder={
+                    agent ? t('notePlaceholder', { agent }) : t('notePlaceholderAgent')
+                  }
+                  approveLabel={approveLabel}
                   className="border-0 p-0"
                 />
               ) : null}
             </>
-          ) : details.pending && !resolved && onDecision ? (
+          ) : decidable && onDecision ? (
             <>
               {reviewable ? null : (
                 <Alert variant="warning">
@@ -458,14 +650,19 @@ export function ApprovalDecisionPanel({
                 onDecision={onDecision}
                 busyDecision={busyDecision}
                 approvable={reviewable}
-                stretch
                 sessionId={details.session_id}
+                notePlaceholder={
+                  agent ? t('notePlaceholder', { agent }) : t('notePlaceholderAgent')
+                }
+                approveLabel={approveLabel}
                 className="border-0 p-0"
               />
             </>
+          ) : waiting ? (
+            <ApprovalWaitingNotice dense resolvers={resolvers} />
           ) : null}
         </div>
-      </Rise>
-    </>
+      ) : null}
+    </Rise>
   );
 }

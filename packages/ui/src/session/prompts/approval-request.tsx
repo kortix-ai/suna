@@ -8,10 +8,14 @@ import { Textarea } from '../../primitives/textarea';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import {
+  ArrowRightIcon,
+  CellSignalHighIcon,
   CheckCircleIcon,
   ClockIcon,
+  FileIcon,
   InfoIcon,
   ShieldWarningIcon,
+  UserIcon,
   WarningIcon,
   XCircleIcon,
 } from '@phosphor-icons/react';
@@ -263,9 +267,141 @@ function emailView(
     return { label, value: to.length > 0 ? to : undefined };
   });
   const body = valueOf(EMAIL_BODY_KEYS);
-  const attachments = listOf(valueOf(EMAIL_ATTACHMENT_KEYS)).map(attachmentName);
+  const files = listOf(valueOf(EMAIL_ATTACHMENT_KEYS));
+  const attachments = files.map(attachmentName);
   const rest = Object.fromEntries(Object.entries(args ?? {}).filter(([key]) => !EMAIL_KEYS.has(key)));
-  return { header, body, attachments, rest };
+  return { header, body, attachments, files, rest };
+}
+
+const MERGE_ACTION = /^github[\w-]*\.merge_(a_)?pull_request$/i;
+const ISSUE_ACTION = /^linear[\w-]*\.create(_linear)?_issue$/i;
+/** Arguments the pull-request card shows itself; every other one is listed under it. */
+const MERGE_KEYS = new Set(['owner', 'repo', 'pull_number', 'title', 'head', 'base', 'merge_method']);
+/** Arguments the issue card shows itself; every other one is listed under it. */
+const ISSUE_KEYS = new Set(['team', 'team_name', 'title', 'description', 'priority', 'assignee', 'labels']);
+
+/** A non-empty string or a number, as text. Null for anything else. */
+function textOf(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function restOf(args: Record<string, unknown> | null, shown: Set<string>) {
+  return Object.fromEntries(Object.entries(args ?? {}).filter(([key]) => !shown.has(key)));
+}
+
+/** `{owner, repo}` → "owner/repo"; a `repo` that already has its owner stays as sent. */
+function repoOf(merged: Record<string, unknown>): string | null {
+  const repo = textOf(merged.repo);
+  const owner = textOf(merged.owner);
+  if (!repo) return null;
+  return owner && !repo.includes('/') ? `${owner}/${repo}` : repo;
+}
+
+function mergeView(
+  action: string | null | undefined,
+  args: Record<string, unknown> | null,
+  loaded: Record<string, unknown> | null,
+) {
+  if (!action || !MERGE_ACTION.test(action)) return null;
+  const merged = { ...args, ...loaded };
+  const number = textOf(merged.pull_number);
+  if (!number) return null;
+  return {
+    number,
+    repo: repoOf(merged),
+    title: textOf(merged.title),
+    head: textOf(merged.head),
+    base: textOf(merged.base),
+    method: textOf(merged.merge_method),
+    rest: restOf(args, MERGE_KEYS),
+  };
+}
+
+/** Linear priority: the word when the call sends one, its 1–4 level otherwise. 0 is "no priority". */
+export type IssuePriority = { word: string } | { level: 1 | 2 | 3 | 4 } | null;
+
+function priorityOf(value: unknown): IssuePriority {
+  if (typeof value === 'number') {
+    return value === 1 || value === 2 || value === 3 || value === 4 ? { level: value } : null;
+  }
+  const word = textOf(value);
+  return word ? { word } : null;
+}
+
+function issueView(
+  action: string | null | undefined,
+  args: Record<string, unknown> | null,
+  loaded: Record<string, unknown> | null,
+) {
+  if (!action || !ISSUE_ACTION.test(action)) return null;
+  const merged = { ...args, ...loaded };
+  const title = textOf(merged.title);
+  if (!title) return null;
+  return {
+    team: textOf(merged.team_name) ?? textOf(merged.team),
+    title,
+    description: textOf(merged.description),
+    priority: priorityOf(merged.priority),
+    assignee: textOf(merged.assignee),
+    labels: listOf(merged.labels).map(textOf).filter((label): label is string => label !== null),
+    rest: restOf(args, ISSUE_KEYS),
+  };
+}
+
+/**
+ * What the call does, in the words of the headline sentence ("Writer wants to
+ * …"). Read from the arguments and the content Kortix loaded, never invented:
+ * a value the call does not carry falls back to the plain action.
+ */
+export type ApprovalSubject =
+  | { kind: 'email'; recipient: string; others: number }
+  | { kind: 'merge'; number: string; base: string | null }
+  | { kind: 'issue'; priority: NonNullable<IssuePriority>; team: string }
+  | { kind: 'newIssue' }
+  | { kind: 'action' };
+
+export function approvalSubject(
+  action: string | null | undefined,
+  args: Record<string, unknown> | null,
+  loaded: Record<string, unknown> | null = null,
+): ApprovalSubject {
+  const email = emailView(action, args, loaded);
+  const to = email ? listOf(email.header.find(({ label }) => label === 'to')?.value).map(textOf) : [];
+  if (email && to[0]) return { kind: 'email', recipient: to[0], others: to.length - 1 };
+  const merge = mergeView(action, args, loaded);
+  if (merge) return { kind: 'merge', number: merge.number, base: merge.base };
+  const issue = issueView(action, args, loaded);
+  if (issue?.team && issue.priority) return { kind: 'issue', priority: issue.priority, team: issue.team };
+  if (action && ISSUE_ACTION.test(action)) return { kind: 'newIssue' };
+  return { kind: 'action' };
+}
+
+/** The word on the Approve button: what approving does. */
+export function approvalVerb(action: string | null | undefined): 'send' | 'merge' | 'create' | null {
+  if (!action) return null;
+  if (EMAIL_ACTION.test(action)) return 'send';
+  if (MERGE_ACTION.test(action)) return 'merge';
+  if (ISSUE_ACTION.test(action)) return 'create';
+  return null;
+}
+
+/** The translated priority word ("High"). */
+export function useIssuePriorityWord(): (priority: NonNullable<IssuePriority>) => string {
+  const t = useTranslations('hardcodedUi.approvalPage');
+  return (priority) => ('word' in priority ? priority.word : t(`priority${priority.level}`));
+}
+
+/** An attachment's size, when the call states one in bytes. */
+const kilobytes = new Intl.NumberFormat(undefined, {
+  style: 'unit',
+  unit: 'kilobyte',
+  maximumFractionDigits: 0,
+});
+function attachmentSize(item: unknown): string | null {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+  const size = (item as Record<string, unknown>).size;
+  return typeof size === 'number' && size >= 0 ? kilobytes.format(Math.max(1, size / 1024)) : null;
 }
 
 /** The call names its target only by id (`draft_id`), or names nothing at all. */
@@ -430,6 +566,170 @@ function EmailCard({
   );
 }
 
+/** A muted line under a native preview: where content came from, or what is missing. */
+function PreviewNote({ children, warn = false }: { children: React.ReactNode; warn?: boolean }) {
+  return (
+    <p className="text-muted-foreground flex items-start gap-1.5 text-xs text-pretty">
+      {warn ? <WarningIcon className="text-kortix-orange mt-px size-3.5 shrink-0" /> : null}
+      {children}
+    </p>
+  );
+}
+
+/**
+ * The email as the recipient gets it: the header rows (Cc and Bcc only when
+ * set), then the subject as a bold line over the body, then each attachment
+ * as a small tile.
+ */
+function NativeEmail({
+  email,
+  notes,
+  channelNames,
+}: {
+  email: NonNullable<ReturnType<typeof emailView>>;
+  notes: React.ReactNode;
+  channelNames?: ReadonlyMap<string, string>;
+}) {
+  const t = useTranslations('hardcodedUi.approvalParameters');
+  const subject = email.header.find(({ label }) => label === 'subject')?.value;
+  const rows = email.header.filter(
+    ({ label, value }) =>
+      label !== 'subject' && !((label === 'cc' || label === 'bcc') && emptyValue(value)),
+  );
+  return (
+    <>
+      <dl className="border-border grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1.5 border-b px-4 py-3 text-xs">
+        {rows.map(({ label, value }) => (
+          <Fragment key={label}>
+            <dt className="text-muted-foreground">{t(label)}</dt>
+            <dd className="text-foreground min-w-0 wrap-anywhere">
+              <ArgValue value={value} channelNames={channelNames} />
+            </dd>
+          </Fragment>
+        ))}
+      </dl>
+      <div className="flex flex-col gap-2 p-4">
+        <p className="text-foreground text-sm font-semibold wrap-anywhere">
+          {emptyValue(subject) ? (
+            <span className="text-muted-foreground font-normal">{t('subject')}: {t('none')}</span>
+          ) : (
+            <ArgValue value={subject} />
+          )}
+        </p>
+        <ClampedValue className="text-foreground text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
+          <ArgValue value={email.body} />
+        </ClampedValue>
+        {email.files.map((file, index) => {
+          const size = attachmentSize(file);
+          return (
+            <span
+              key={index}
+              className="bg-muted flex max-w-full items-center gap-2 self-start rounded-md py-1.5 pr-2.5 pl-2 text-xs"
+            >
+              <FileIcon aria-hidden className="text-foreground size-4 shrink-0" />
+              <span className="text-foreground min-w-0 truncate">
+                <ArgValue value={email.attachments[index]} />
+              </span>
+              {size ? <span className="text-muted-foreground shrink-0 tabular-nums">{size}</span> : null}
+            </span>
+          );
+        })}
+        {notes}
+      </div>
+    </>
+  );
+}
+
+/** A pull request merge as GitHub shows it: repository, title, branches, method. */
+function NativeMerge({ view }: { view: NonNullable<ReturnType<typeof mergeView>> }) {
+  const t = useTranslations('hardcodedUi.approvalPage');
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3">
+      {view.repo ? <p className="text-muted-foreground text-xs wrap-anywhere">{view.repo}</p> : null}
+      <p className="text-foreground text-sm font-semibold wrap-anywhere">
+        {view.title ? `${view.title} #${view.number}` : t('pullRequest', { number: view.number })}
+      </p>
+      {view.head || view.base || view.method ? (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          {view.head && view.base ? (
+            <>
+              <code className="bg-muted text-foreground rounded-sm px-1.5 py-0.5 font-mono">{view.head}</code>
+              <ArrowRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+              <code className="bg-muted text-foreground rounded-sm px-1.5 py-0.5 font-mono">{view.base}</code>
+            </>
+          ) : null}
+          {view.method ? (
+            <span className="text-muted-foreground">
+              {view.head && view.base ? '· ' : ''}
+              {t('mergeMethod', { method: view.method })}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** One property of a new issue, as a small outlined chip. */
+function IssueChip({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <span className="border-border text-foreground flex h-6 items-center gap-1.5 rounded-sm border px-2 text-xs">
+      {icon}
+      {children}
+    </span>
+  );
+}
+
+/** A new issue as Linear shows it: team, title, description, then its properties. */
+function NativeIssue({ view }: { view: NonNullable<ReturnType<typeof issueView>> }) {
+  const t = useTranslations('hardcodedUi.approvalPage');
+  const priorityWord = useIssuePriorityWord();
+  const chips = view.priority || view.assignee || view.labels.length > 0;
+  return (
+    <>
+      <div className="flex flex-col gap-2 px-4 py-3">
+        <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+          {view.team ? (
+            <>
+              <span className="wrap-anywhere">{view.team}</span>
+              <span aria-hidden>›</span>
+            </>
+          ) : null}
+          <span>{t('newIssue')}</span>
+        </p>
+        <p className="text-foreground text-sm font-semibold wrap-anywhere">{view.title}</p>
+        {view.description ? (
+          <ClampedValue className="text-muted-foreground text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
+            {view.description}
+          </ClampedValue>
+        ) : null}
+      </div>
+      {chips ? (
+        <div className="border-border flex flex-wrap items-center gap-1.5 border-t px-4 py-2.5">
+          {view.priority ? (
+            <IssueChip icon={<CellSignalHighIcon aria-hidden className="size-3 shrink-0" />}>
+              {priorityWord(view.priority)}
+            </IssueChip>
+          ) : null}
+          {view.assignee ? (
+            <IssueChip icon={<UserIcon aria-hidden className="text-muted-foreground size-3 shrink-0" />}>
+              {view.assignee}
+            </IssueChip>
+          ) : null}
+          {view.labels.map((label) => (
+            <IssueChip
+              key={label}
+              icon={<span aria-hidden className="bg-muted-foreground size-2 shrink-0 rounded-full" />}
+            >
+              {label}
+            </IssueChip>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 /**
  * The redacted parameters the connector would receive — the whole reason an
  * approval is decidable rather than a guess. Shared by the standalone page, the
@@ -458,11 +758,16 @@ export function ApprovalParameters({
   resolvedFrom = null,
   resolvedError = null,
   dense = false,
+  native = false,
   channelNames,
   className,
 }: DenseProp & {
   /** The call's action path (`gmail.send_email`). Only a mail send renders as an email card. */
   action?: string | null;
+  /** Show a Gmail send, a GitHub merge and a Linear issue as the app shows them,
+   *  in one bordered card (the approval decision panel). Every argument the
+   *  card does not show is listed under it. */
+  native?: boolean;
   argsPreview: Record<string, unknown> | null;
   reviewComplete?: boolean;
   resolvedPreview?: Record<string, unknown> | null;
@@ -491,6 +796,52 @@ export function ApprovalParameters({
     dense ? 'border-border overflow-hidden rounded-sm border' : 'border-border border-t',
     className,
   );
+  if (native) {
+    const card = 'border-border divide-border divide-y overflow-hidden rounded-lg border';
+    if (email) {
+      const incomplete = reviewComplete ? null : tI18nComplete.raw('text877c39a121a9');
+      const unavailable = resolvedError
+        ? argsPreview && 'draft_id' in argsPreview
+          ? t('resolvedUnavailable')
+          : t('senderUnavailable')
+        : null;
+      return (
+        <div className={cn(card, className)}>
+          <div>
+            <NativeEmail
+              email={email}
+              channelNames={channelNames}
+              notes={
+                <>
+                  {incomplete ? <PreviewNote>{incomplete}</PreviewNote> : null}
+                  {unavailable ? <PreviewNote warn>{unavailable}</PreviewNote> : null}
+                  {caption ? <PreviewNote>{caption}</PreviewNote> : null}
+                </>
+              }
+            />
+          </div>
+          <PreviewValues preview={email.rest} channelNames={channelNames} />
+        </div>
+      );
+    }
+    const merge = mergeView(action, argsPreview, loaded);
+    const issue = merge ? null : issueView(action, argsPreview, loaded);
+    const view = merge ?? issue;
+    if (view) {
+      return (
+        <div className={cn(card, className)}>
+          <div>{merge ? <NativeMerge view={merge} /> : issue ? <NativeIssue view={issue} /> : null}</div>
+          <PreviewValues preview={view.rest} channelNames={channelNames} />
+          {reviewComplete && !caption ? null : (
+            <div className="flex flex-col gap-1.5 px-4 py-2.5">
+              {reviewComplete ? null : <PreviewNote>{tI18nComplete.raw('text877c39a121a9')}</PreviewNote>}
+              {caption ? <PreviewNote>{caption}</PreviewNote> : null}
+            </div>
+          )}
+        </div>
+      );
+    }
+  }
   // An email send is ONE email card with no section headers. Arguments that
   // are not part of the email, except the harmless ones, follow it as a list.
   if (email) {
@@ -554,12 +905,60 @@ export function ApprovalParameters({
 export function ApprovalAgentContext({
   context,
   dense = false,
+  quote = false,
   className,
-}: DenseProp & { context: string | null | undefined; className?: string }) {
+}: DenseProp & {
+  context: string | null | undefined;
+  /** The decision panel: the words as a muted quotation, the note's trigger at the trailing edge, no label. */
+  quote?: boolean;
+  className?: string;
+}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('hardcodedUi.approvalParameters');
   const noteId = useId();
   if (!context) return null;
+  const trigger = (
+    <>
+      {/* Radix opens a hover card on pointer hover and on keyboard focus. */}
+      <HoverCard openDelay={150}>
+        <HoverCardTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground shrink-0"
+            aria-label={t('aboutDescription')}
+            aria-describedby={noteId}
+          >
+            <InfoIcon
+              weight={quote ? 'regular' : 'fill'}
+              className={dense ? 'size-3' : 'size-3.5'}
+            />
+          </Button>
+        </HoverCardTrigger>
+        <HoverCardContent align="end" className="w-64 p-3">
+          <p className="text-muted-foreground text-xs text-pretty">
+            {tI18nComplete.raw('textfa0db737cb09')}
+          </p>
+        </HoverCardContent>
+      </HoverCard>
+      {/* The hover card mounts only while open; the note stays readable to
+          a screen reader through aria-describedby. */}
+      <span id={noteId} className="sr-only">
+        {tI18nComplete.raw('textfa0db737cb09')}
+      </span>
+    </>
+  );
+  if (quote) {
+    return (
+      <div className={cn('flex items-start gap-1.5', className)}>
+        <p className="text-muted-foreground min-w-0 flex-1 text-sm text-pretty wrap-break-word whitespace-pre-wrap">
+          {t('quoted', { text: context })}
+        </p>
+        {trigger}
+      </div>
+    );
+  }
   return (
     <div
       className={cn(
@@ -569,31 +968,7 @@ export function ApprovalAgentContext({
     >
       <div className="flex items-center justify-between gap-2">
         <p className="text-foreground text-xs font-medium">{tI18nComplete.raw('text9dcde51d9ff2')}</p>
-        {/* Radix opens a hover card on pointer hover and on keyboard focus. */}
-        <HoverCard openDelay={150}>
-          <HoverCardTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              className="text-muted-foreground"
-              aria-label={t('aboutDescription')}
-              aria-describedby={noteId}
-            >
-              <InfoIcon weight="fill" className={dense ? 'size-3' : 'size-3.5'} />
-            </Button>
-          </HoverCardTrigger>
-          <HoverCardContent align="end" className="w-64 p-3">
-            <p className="text-muted-foreground text-xs text-pretty">
-              {tI18nComplete.raw('textfa0db737cb09')}
-            </p>
-          </HoverCardContent>
-        </HoverCard>
-        {/* The hover card mounts only while open; the note stays readable to
-            a screen reader through aria-describedby. */}
-        <span id={noteId} className="sr-only">
-          {tI18nComplete.raw('textfa0db737cb09')}
-        </span>
+        {trigger}
       </div>
       <p
         className={cn(
@@ -690,8 +1065,14 @@ export function ApprovalDecisionActions({
   dense = false,
   stretch = false,
   sessionId,
+  notePlaceholder,
+  approveLabel,
   className,
 }: DenseProp & {
+  /** The note's label and placeholder. Default: "Message to the agent (optional)". */
+  notePlaceholder?: string;
+  /** The Approve button's words. Default: "Approve this call". */
+  approveLabel?: string;
   /** Both decisions and the note are off: the call can no longer be decided. */
   disabled?: boolean;
   /** Picks the session's own busy mark, the one its busy indicator shows.
@@ -716,8 +1097,8 @@ export function ApprovalDecisionActions({
   return (
     <div className={cn('space-y-2', dense ? '' : 'border-border border-t px-4 py-3', className)}>
       <Textarea
-        aria-label={tI18nComplete.raw('text2edf70730233')}
-        placeholder={tI18nComplete.raw('text2edf70730233')}
+        aria-label={notePlaceholder ?? tI18nComplete.raw('text2edf70730233')}
+        placeholder={notePlaceholder ?? tI18nComplete.raw('text2edf70730233')}
         value={note}
         onChange={(event) => setNote(event.target.value)}
         disabled={disabled || busyDecision !== null}
@@ -751,7 +1132,7 @@ export function ApprovalDecisionActions({
             {busyDecision === 'approve' ? (
               <SessionDotMatrix size={14} className="shrink-0" />
             ) : null}
-            {tI18nComplete.raw('texta1982c442ca3')}
+            {approveLabel ?? tI18nComplete.raw('texta1982c442ca3')}
           </Button>
         ) : null}
       </div>

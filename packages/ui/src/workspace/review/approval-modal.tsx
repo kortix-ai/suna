@@ -56,6 +56,22 @@ export function reviewApprovalDetails(item: ReviewItem): ApprovalLinkDetails | n
 }
 
 /**
+ * Who asked for the call, as the decision panel names them. The SDK labels a
+ * row with no agent "Agent", and an approval's summary is its session's title
+ * only when that title is known; anything else names nobody.
+ */
+export function reviewApprovalAsker(
+  item: ReviewItem,
+  sessionLabels: Record<string, string> = {},
+): { agentName: string | null; sessionTitle: string | null } {
+  const agent = item.agent && item.agent !== 'Agent' ? item.agent : null;
+  return {
+    agentName: agent,
+    sessionTitle: item.sessionId ? (sessionLabels[item.sessionId] ?? null) : null,
+  };
+}
+
+/**
  * The standalone approve page (`/approve/[token]`), in a modal over the inbox.
  * One approval UI everywhere: the same panel, the same rows, the same decision.
  * No `onDecision` = the viewer may read the call but not decide it.
@@ -68,6 +84,8 @@ export function ApprovalDecisionModal({
   onOpenSession,
   onClose,
   resolvers = null,
+  agentName = null,
+  sessionTitle = null,
 }: {
   details: ApprovalLinkDetails | null;
   previewAuthorized?: boolean;
@@ -77,6 +95,10 @@ export function ApprovalDecisionModal({
   onDecision?: (decision: ApprovalDecisionValue, note?: string) => void;
   onOpenSession?: () => void;
   onClose: () => void;
+  /** The agent that asked. Null: "An agent". */
+  agentName?: string | null;
+  /** The session that asked, by its title. Null: not named. */
+  sessionTitle?: string | null;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const waitingText = useApprovalWaitingText(resolvers);
@@ -85,7 +107,9 @@ export function ApprovalDecisionModal({
   const waiting = details?.pending === true && !onDecision;
   return (
     <Modal open={details !== null} onOpenChange={(open) => !open && onClose()}>
-      <ModalContent className="lg:h-auto lg:max-h-[85svh] lg:max-w-md">
+      {/* The panel's header carries the expiry chip where the close button
+          sits; Escape and a click outside close the dialog. */}
+      <ModalContent showCloseButton={false} className="lg:h-auto lg:max-h-[85svh] lg:max-w-md">
         <ModalTitle className="sr-only">
           {waiting ? tI18nComplete.raw('textdb0e960b68b5') : tI18nComplete.raw('text1862f81ed9d6')}
         </ModalTitle>
@@ -93,19 +117,18 @@ export function ApprovalDecisionModal({
           {waiting ? waitingText : tI18nComplete.raw('text32c6817c8380')}
         </ModalDescription>
         {details ? (
-          <div className="px-6 pt-8 pb-6">
-            <ApprovalDecisionPanel
-              details={details}
-              outcome={null}
-              busyDecision={busyDecision}
-              error={null}
-              onDecision={onDecision}
-              onOpenSession={onOpenSession}
-              previewAuthorized={previewAuthorized}
-              resolvers={resolvers}
-              markOnMobile
-            />
-          </div>
+          <ApprovalDecisionPanel
+            details={details}
+            outcome={null}
+            busyDecision={busyDecision}
+            error={null}
+            onDecision={onDecision}
+            onOpenSession={onOpenSession}
+            previewAuthorized={previewAuthorized}
+            resolvers={resolvers}
+            agentName={agentName}
+            sessionTitle={sessionTitle}
+          />
         ) : null}
       </ModalContent>
     </Modal>

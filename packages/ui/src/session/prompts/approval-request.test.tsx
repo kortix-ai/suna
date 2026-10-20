@@ -6,6 +6,8 @@ import {
   ApprovalParameters,
   ApprovalRequest,
   approvalReviewable,
+  approvalSubject,
+  approvalVerb,
 } from './approval-request';
 
 const request = {
@@ -469,5 +471,106 @@ describe('ApprovalParameters email card safety', () => {
       />,
     );
     expect(draft).toContain('Couldn&#x27;t load the draft.');
+  });
+});
+
+describe('approvalSubject', () => {
+  test('gmail send: the first To recipient and how many more', () => {
+    expect(approvalSubject('gmail.send_email', { to: 'a@example.test', body: 'x' })).toEqual({
+      kind: 'email',
+      recipient: 'a@example.test',
+      others: 0,
+    });
+    expect(
+      approvalSubject('gmail.send_email', { to: ['a@example.test', 'b@example.test'], body: 'x' }),
+    ).toEqual({ kind: 'email', recipient: 'a@example.test', others: 1 });
+    // The draft the server loaded names the recipient of an id-only send.
+    expect(
+      approvalSubject('gmail.send_draft', { draft_id: 'r-1' }, { to: 'c@example.test', body: 'x' }),
+    ).toEqual({ kind: 'email', recipient: 'c@example.test', others: 0 });
+  });
+
+  test('github merge: the pull number and the base only when the call names it', () => {
+    expect(approvalSubject('github.merge_pull_request', { pull_number: 482 })).toEqual({
+      kind: 'merge',
+      number: '482',
+      base: null,
+    });
+    expect(approvalSubject('github.merge_pull_request', { pull_number: 7, base: 'main' })).toEqual({
+      kind: 'merge',
+      number: '7',
+      base: 'main',
+    });
+  });
+
+  test('linear create issue: priority and team when both are known, a plain new issue otherwise', () => {
+    expect(
+      approvalSubject('linear.create_issue', { title: 'x', team: 'Platform', priority: 2 }),
+    ).toEqual({ kind: 'issue', priority: { level: 2 }, team: 'Platform' });
+    expect(approvalSubject('linear.create_issue', { title: 'x', team_id: 'uuid' })).toEqual({
+      kind: 'newIssue',
+    });
+  });
+
+  test('any other action, or a send with no recipient: the plain action', () => {
+    expect(approvalSubject('slack.post_message', { text: 'x' })).toEqual({ kind: 'action' });
+    expect(approvalSubject('gmail.send_email', { body: 'x' })).toEqual({ kind: 'action' });
+  });
+});
+
+describe('approvalVerb', () => {
+  test('send, merge, create, or none', () => {
+    expect(approvalVerb('gmail.send_email')).toBe('send');
+    expect(approvalVerb('gmail.send_draft')).toBe('send');
+    expect(approvalVerb('github.merge_pull_request')).toBe('merge');
+    expect(approvalVerb('linear.create_issue')).toBe('create');
+    expect(approvalVerb('slack.post_message')).toBeNull();
+  });
+});
+
+describe('ApprovalParameters native card', () => {
+  const native = (action: string, args: Record<string, unknown>) =>
+    renderToStaticMarkup(<ApprovalParameters native action={action} argsPreview={args} />);
+
+  test('gmail: subject as a bold line over the body, no Subject row, Cc only when set', () => {
+    const html = native('gmail.send_email', { to: 'a@example.test', subject: 'Q3', body: 'Hi' });
+    expect(html).toContain('font-semibold');
+    expect(html).toContain('Q3');
+    expect(html).not.toContain('>Subject<');
+    expect(html).not.toContain('>Cc<');
+  });
+
+  test('github merge: shows only what the call carries, the rest listed under the card', () => {
+    const html = native('github.merge_pull_request', {
+      owner: 'acme',
+      repo: 'web',
+      pull_number: 9,
+      commit_title: 'Ship it',
+    });
+    expect(html).toContain('acme/web');
+    expect(html).toContain('Pull request #9');
+    expect(html).toContain('>commit_title<');
+    expect(html).toContain('Ship it');
+  });
+
+  test('a call no native card knows keeps the key/value list', () => {
+    const html = native('slack.post_message', { channel: 'C1' });
+    expect(html).toContain('>channel<');
+    expect(html).toContain('>Parameters<');
+  });
+});
+
+describe('ApprovalDecisionActions labels', () => {
+  test('the host can name the note and the approve action', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalDecisionActions
+        onDecision={() => undefined}
+        notePlaceholder="Add a note for Writer (optional)"
+        approveLabel="Approve and send"
+      />,
+    );
+    expect(html).toContain('Add a note for Writer (optional)');
+    expect(html).toContain('Approve and send');
+    expect(html).not.toContain('Approve this call');
   });
 });

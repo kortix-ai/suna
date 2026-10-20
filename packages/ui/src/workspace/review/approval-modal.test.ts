@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { reviewApprovalDetails } from './approval-modal';
+import { reviewApprovalAsker, reviewApprovalDetails } from './approval-modal';
 import type { ReviewItem } from './types';
 
 const connectorCall: ReviewItem = {
@@ -104,5 +104,21 @@ describe('reviewApprovalDetails', () => {
     expect(
       reviewApprovalDetails({ ...connectorCall, detail: { actions: [] } } as ReviewItem),
     ).toBeNull();
+  });
+});
+
+describe('reviewApprovalAsker', () => {
+  test('names the agent and the session title when the inbox knows them', () => {
+    expect(reviewApprovalAsker(connectorCall, { 'session-1': 'Q3 launch prep' })).toEqual({
+      agentName: 'Agent 1',
+      sessionTitle: 'Q3 launch prep',
+    });
+  });
+
+  test('the SDK fallback "Agent" and an unlabelled session name nobody', () => {
+    expect(reviewApprovalAsker({ ...connectorCall, agent: 'Agent' })).toEqual({
+      agentName: null,
+      sessionTitle: null,
+    });
   });
 });

@@ -88,7 +88,7 @@ import {
   resolveBulkOutcome,
 } from './review-actions';
 import { reviewArgsSummary } from '../../session/prompts/session-approval-review';
-import { ApprovalDecisionModal, reviewApprovalDetails } from './approval-modal';
+import { ApprovalDecisionModal, reviewApprovalAsker, reviewApprovalDetails } from './approval-modal';
 import { type ReviewActions, ReviewDetail } from './review-detail';
 import {
   KIND_META,
@@ -1284,6 +1284,7 @@ export function ReviewCenter({
       details={approval}
       previewAuthorized={approvalCall?.previewAuthorized !== false}
       resolvers={approvalCall?.resolvers}
+      {...(approval && selected ? reviewApprovalAsker(selected, sessionLabels) : null)}
       busyDecision={selected && pendingId === selected.id ? pendingDecision : null}
       onDecision={
         // Only the viewer the API lets decide this call gets the decision.
