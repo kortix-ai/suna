@@ -269,3 +269,66 @@ describe('us_region: a template not yet copied to the region', () => {
     expect(err).toBe(refused);
   });
 });
+
+describe('us_region: a drive that lives in another region', () => {
+  const drives = { '/drives/notes': { volume: 'kd-755bd1b433bd4e54920b' } };
+  const refusals = {
+    // Platinum with the volume directory names where the volume lives.
+    'volume_in_other_region': platinumHttpError(
+      'platinum POST /v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000 -> 409 ' +
+      JSON.stringify({
+        error: 'volume kd-755bd1b433bd4e54920b lives in region eu-west; call https://api.platinum.dev or create the sandbox in eu-west',
+        code: 'volume_in_other_region', volume: 'kd-755bd1b433bd4e54920b', region: 'eu-west', api_url: 'https://api.platinum.dev',
+      }),
+    ),
+    // Platinum without it only says the region has no such volume.
+    'volume_not_found': platinumHttpError(
+      'platinum POST /v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000 -> 404 ' +
+      JSON.stringify({ error: 'volume kd-755bd1b433bd4e54920b not found', code: 'volume_not_found' }),
+    ),
+  };
+
+  for (const [code, refused] of Object.entries(refusals)) {
+    test(`${code} ⇒ the box boots where its drives live`, async () => {
+      createSequence = [{ error: refused }, { result: { id: 'sbx_home', state: 'running', region: 'eu-west' } }];
+      const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+      const p = new PlatinumProvider();
+      const result = await p.create({ ...baseOpts, createAttempt: 1, location: 'us-east', volumes: drives });
+      warn.mockRestore();
+
+      const [regional, home] = createCalls();
+      expect(createCalls()).toHaveLength(2);
+      expect(regional.body?.region).toBe('us-east');
+      expect(home.body && 'region' in home.body).toBe(false);
+      expect(home.body?.volumes).toEqual(drives);
+      expect(result.externalId).toBe('sbx_home');
+      expect(result.metadata?.regionFallback).toMatchObject({
+        requested: 'us-east',
+        state: 'volume_in_other_region',
+        volumeRegion: code === 'volume_in_other_region' ? 'eu-west' : null,
+      });
+    });
+  }
+
+  test('a drive missing at home too still fails loudly, after one home retry', async () => {
+    createSequence = [{ error: refusals.volume_not_found }];
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    const p = new PlatinumProvider();
+    const err = await p.create({ ...baseOpts, createAttempt: 1, location: 'us-east', volumes: drives }).catch((e) => e);
+    warn.mockRestore();
+
+    expect(createCalls()).toHaveLength(2);
+    expect((err as Error).message).toContain('[drives]');
+  });
+
+  test('a warm (speculative) box keeps its region and fails with the drives error', async () => {
+    createSequence = [{ error: refusals.volume_in_other_region }];
+    const p = new PlatinumProvider();
+    const err = await p
+      .create({ ...baseOpts, createAttempt: 1, location: 'us-east', locationRequired: true, volumes: drives })
+      .catch((e) => e);
+
+    expect(createCalls()).toHaveLength(1);
+    expect((err as Error).message).toContain('[drives]');
+  });
+});
