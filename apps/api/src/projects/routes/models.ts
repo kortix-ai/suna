@@ -79,9 +79,9 @@ async function loadModelDefaultsWriter(
   return { ownerAccountId: loaded.row.accountId, userId: loaded.userId, row: loaded.row };
 }
 
-async function modelAccessDefault(userId: string, accountId: string, projectId: string): Promise<string | undefined> {
+async function modelAccessDefault(userId: string, accountId: string, projectId: string, personalUserId: string | null): Promise<string | undefined> {
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
-  const resolved = await resolveEffectiveModel({ userId, accountId, projectId, freeModelsOnly });
+  const resolved = await resolveEffectiveModel({ userId, accountId, projectId, freeModelsOnly, personalUserId });
   return resolved.model ?? (freeModelsOnly ? undefined : platformDefaultModelId());
 }
 
@@ -217,7 +217,7 @@ export function registerModelsRoutes(): void {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId);
+    const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId, await requestPersonalOwner(c, loaded));
     return c.json({
       ...readModelAccess(loaded.row.metadata),
       defaultModel,
@@ -249,7 +249,7 @@ export function registerModelsRoutes(): void {
         return c.json({ error: 'Use a concrete model id', code: 'invalid_body' }, 400);
       }
     }
-    const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId);
+    const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId, await requestPersonalOwner(c, loaded));
     // Protect stored preferences even if their provider is temporarily disconnected.
     const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
     const configuredDefault = defaults.projects[projectId] ?? defaults.account;

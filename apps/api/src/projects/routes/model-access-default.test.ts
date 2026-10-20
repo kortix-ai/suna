@@ -1,5 +1,9 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 
+let personalOwner: string | null = 'user-test';
+const scopes: Array<string | null | undefined> = [];
+const personalResources = await import('../lib/personal-resources');
+mock.module('../lib/personal-resources', () => ({ ...personalResources, requestPersonalOwner: async () => personalOwner }));
 let managed = false;
 let configuredDefault: string | null = null;
 let resolvedModel: string | null = null;
@@ -11,7 +15,10 @@ mock.module('../../repositories/model-preferences', () => ({
   upsertAccountModelPreference: async () => {},
 }));
 mock.module('../../llm-gateway/resolution/default-model', () => ({
-  resolveEffectiveModel: async () => ({ model: resolvedModel, source: 'platform' }),
+  resolveEffectiveModel: async (input: { personalUserId?: string | null }) => {
+    scopes.push(input.personalUserId);
+    return { model: resolvedModel, source: 'platform' };
+  },
   invalidateAccountModelDefaults: () => {},
   isModelServableForAccount: async () => true,
 }));
@@ -34,7 +41,7 @@ mock.module('../../llm-gateway/enablement', () => ({ projectLlmGatewayEnabled: (
 const { projectsApp } = await import('../lib/app');
 (await import('./models')).registerModelsRoutes();
 
-beforeEach(() => { managed = false; configuredDefault = null; resolvedModel = null; changes.length = 0; });
+beforeEach(() => { personalOwner = 'user-test'; scopes.length = 0; managed = false; configuredDefault = null; resolvedModel = null; changes.length = 0; });
 
 async function access(method: 'GET' | 'PUT') {
   const response = await projectsApp.request('/project-test/model-access', {
@@ -66,3 +73,13 @@ test('PUT protects a configured preference even when it is temporarily unservabl
   expect((await access('PUT')).defaultModel).toBeUndefined();
   expect(changes[0]?.defaultModel).toBe('codex/gpt-6');
 });
+
+for (const method of ['GET', 'PUT'] as const) {
+  for (const owner of [null, 'delegated-user']) {
+    test(`${method} forwards personal scope ${owner} to default resolution`, async () => {
+      personalOwner = owner;
+      await access(method);
+      expect(scopes).toEqual([owner]);
+    });
+  }
+}
