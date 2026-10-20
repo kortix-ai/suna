@@ -237,7 +237,7 @@ export async function runProjects(argv: string[]): Promise<number> {
 const FEATURES_HELP = help`Usage: kortix projects features [ls | enable | disable | reset] [<flag>]
 
 Per-project feature flags — the same switches as Settings → Feature flags.
-A flag is a stable key (e.g. monitors, event_triggers, llm_gateway). State is
+A flag is a stable key (e.g. monitors, event_triggers). State is
 stored on the project row, never in kortix.yaml.
 
 Subcommands:

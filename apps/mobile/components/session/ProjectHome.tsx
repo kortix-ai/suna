@@ -254,7 +254,7 @@ export function ProjectHome({
   // default is `@kortix/sdk`'s: `/model-defaults` for this agent, then the
   // provider defaults. A pick equal to the default is no pick
   // (`selectComposerModel`): the session keeps following the default.
-  const { gatewayEnabled, providers, models, modelDefaults, isLoading: modelsLoading, refetchModelCount } =
+  const { providers, models, modelDefaults, isLoading: modelsLoading, refetchModelCount } =
     useComposerModels(projectId);
   const globalDefault = useLocalConfigStore((s) => s.globalDefault) ?? undefined;
   // The pick persists in the store the thread reads (`agentModels`, per
@@ -302,10 +302,9 @@ export function ProjectHome({
     }),
     [levels, variant, variantKey, setStoredVariant],
   );
-  // A gateway project that offers no model: the chip asks to connect one, and
-  // Send opens the connect sheet instead of starting a session (KRTX-251).
+  // A project that offers no model: the chip asks to connect one, and Send
+  // opens the connect sheet instead of starting a session (KRTX-251).
   const modelUnavailable = isModelUnavailable({
-    hasCatalog: gatewayEnabled,
     loading: modelsLoading,
     modelCount: offeredModelCount(models),
   });
