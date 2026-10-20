@@ -28,7 +28,7 @@ import { OpenClaw } from '@/features/icon/icons/open-claw';
 import { Zapier } from '@/features/icon/icons/zapier';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useIsMobile, cn } from '@kortix/ui';
-import { useGitHubStars } from '@kortix/ui/internal/hooks/use-github-stars';
+import { useGitHubStars } from '@/hooks/use-github-stars';
 import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { SITE_CONFIG_TRANSLATION_KEYS } from '@/i18n/site-config-translation-keys.generated';
 import { trackCtaSignup } from '@/lib/analytics/gtm';

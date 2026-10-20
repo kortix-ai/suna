@@ -116,7 +116,6 @@
     "./internal/hooks/use-channel-bindings",
     "./internal/hooks/use-copy",
     "./internal/hooks/use-debounced-value",
-    "./internal/hooks/use-github-stars",
     "./internal/hooks/use-media-query",
     "./internal/hooks/use-notification-center",
     "./internal/icons/claude",

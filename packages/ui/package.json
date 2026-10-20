@@ -258,7 +258,6 @@
     "./internal/hooks/use-channel-bindings": "./src/internal/hooks/use-channel-bindings.ts",
     "./internal/hooks/use-copy": "./src/internal/hooks/use-copy.ts",
     "./internal/hooks/use-debounced-value": "./src/internal/hooks/use-debounced-value.ts",
-    "./internal/hooks/use-github-stars": "./src/internal/hooks/use-github-stars.ts",
     "./internal/hooks/use-media-query": "./src/internal/hooks/use-media-query.ts",
     "./internal/hooks/use-notification-center": "./src/internal/hooks/use-notification-center.ts",
     "./internal/icons/claude": "./src/internal/icons/claude.tsx",
@@ -1477,10 +1476,6 @@
       "./internal/hooks/use-debounced-value": {
         "types": "./dist/internal/hooks/use-debounced-value.d.ts",
         "import": "./dist/internal/hooks/use-debounced-value.js"
-      },
-      "./internal/hooks/use-github-stars": {
-        "types": "./dist/internal/hooks/use-github-stars.d.ts",
-        "import": "./dist/internal/hooks/use-github-stars.js"
       },
       "./internal/hooks/use-media-query": {
         "types": "./dist/internal/hooks/use-media-query.d.ts",

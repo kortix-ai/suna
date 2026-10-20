@@ -1,6 +1,6 @@
 'use client';
 
-import { useGitHubStars } from '@kortix/ui/internal/hooks/use-github-stars';
+import { useGitHubStars } from '@/hooks/use-github-stars';
 import { cn } from '@kortix/ui';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
