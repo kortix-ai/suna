@@ -17,6 +17,10 @@ const { resolveBillingWriteAccountId, resolveBillingReadAccountId } = await impo
 
 let upstreamCalls = 0;
 const app = new Hono();
+app.post('/plan/preview', async (c) => {
+  await resolveBillingWriteAccountId(c, 'body', 'preview');
+  return c.json({ ok: true });
+});
 app.post('/:operation', async (c) => {
   await resolveBillingWriteAccountId(c);
   upstreamCalls++;
@@ -52,4 +56,13 @@ test('permission refusals do not spend the account billing-write budget', async 
   for (let i = 0; i < 6; i++) expect((await app.request('/plan', { method: 'POST', headers })).status).toBe(403);
   permitted = true;
   expect((await app.request('/plan', { method: 'POST', headers })).status).toBe(200);
+});
+
+test('five distinct plan previews leave the confirmation budget available', async () => {
+  const headers = { 'x-test-account': 'preview-account', 'Content-Type': 'application/json' };
+  for (const monthly_usd of [20, 30, 40, 50, 60]) {
+    expect((await app.request('/plan/preview', { method: 'POST', headers, body: JSON.stringify({ monthly_usd }) })).status).toBe(200);
+  }
+  expect((await app.request('/plan', { method: 'POST', headers, body: JSON.stringify({ monthly_usd: 60 }) })).status).toBe(200);
+  expect((await app.request('/plan/preview', { method: 'POST', headers })).status).toBe(429);
 });

@@ -31,7 +31,9 @@ account buys, and which features it may use.
 
 After account membership and `billing.write` authorization, interactive billing
 operations share a per-account token bucket: five requests per minute per API
-process, including plan previews and portal/setup requests. Excess requests
+process, including portal/setup requests. Plan previews use a separate
+per-account bucket with the same limit, so browsing upgrade amounts cannot
+consume the confirmation budget. Excess requests
 return HTTP 429 with `Retry-After` before calling Stripe. Billing reads and
 signed webhooks are not charged to this budget. This bounds runaway callers;
 it is not a fleet-wide quota and does not retry failed money operations.

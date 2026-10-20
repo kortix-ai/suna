@@ -75,7 +75,7 @@ subscriptionsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body', 'preview');
     const body = await readJsonObject(c);
     return c.json(await previewPlan({ accountId, monthlyUsd: parseMonthlyUsd(body.monthly_usd) }));
   },
