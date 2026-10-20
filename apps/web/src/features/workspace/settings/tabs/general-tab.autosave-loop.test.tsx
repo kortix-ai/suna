@@ -70,7 +70,7 @@ mock.module('@/features/providers/auth-provider', () => ({
 }));
 mock.module('@/lib/use-project-can', () => ({
   useProjectCans: () => ({
-    [PROJECT_ACTIONS.PROJECT_WRITE]: { allowed: true },
+    [PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]: { allowed: true },
     [PROJECT_ACTIONS.PROJECT_DELETE]: { allowed: true },
   }),
 }));

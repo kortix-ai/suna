@@ -66,11 +66,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { accountCreated } from '@/features/accounts/account-created';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { Download } from '@/features/icon/icons/download';
-import { useAuth } from '@/features/providers/auth-provider';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
+import { useAuth } from '@/features/providers/auth-provider';
 import { COMPUTER_SETUP_EVENT } from '@/features/tunnel/computer-connect';
 import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
-import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
@@ -79,6 +79,8 @@ import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accoun
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
@@ -89,6 +91,7 @@ import {
   CaretUpDownIcon,
   GearSixIcon as CogOne,
   SignOutIcon as LogOut,
+  PencilSimpleIcon,
   PlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -99,6 +102,8 @@ import { useEffect, useState } from 'react';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
+  const tUi = useI18nTranslations('hardcodedUi.i18nComplete');
+  const canRename = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE).allowed;
   const tNewWorkspace = useI18nTranslations('newWorkspace');
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -302,6 +307,15 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 </DropdownMenuPortal>
               </DropdownMenuSub>
               <DropdownMenuSeparator />
+
+              {canRename === true && (
+                <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                  <Link href={projectSettingsSectionHref(projectId, 'general')} prefetch>
+                    <PencilSimpleIcon />
+                    {tUi('text3064d79a295c')}
+                  </Link>
+                </DropdownMenuItem>
+              )}
 
               {/* `profile`, NOT `general`. In the merged settings vocabulary
                   (`settings/settings-tabs.ts`) `general` is Workspace →
