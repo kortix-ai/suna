@@ -3,13 +3,13 @@
 /** The "Shared secrets" card: the create/rotate form, its pre-flight notices,
  *  and the call snippet that shows the body it sends. */
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
 import { CallSnippet } from '@/components/dev/call-snippet';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
 import { kortix } from '@/lib/kortix';
 import { normalizeSecretKey } from '@/lib/secret-collisions';
 import { pendingKeyCollision } from '@/lib/secret-collisions';
@@ -21,10 +21,10 @@ import {
 } from '@/lib/secret-upsert';
 import type { ProjectSecret } from '@kortix/sdk';
 import { useMutation } from '@tanstack/react-query';
-import { KeyRound } from 'lucide-react';
 import { type Dispatch, type SetStateAction, useState } from 'react';
-import { toast } from 'sonner';
 import { ALLOWLIST_IS_CREATE_ONLY, Notice, ROTATION_REACHES_RUNNING_SESSIONS_LATE } from './shared';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { KeyIcon } from '@phosphor-icons/react';
 
 export function SecretUpsertForm({
   projectId,
@@ -60,9 +60,9 @@ export function SecretUpsertForm({
       setIdentifierEdited(false);
       setValue('');
       onSaved();
-      toast.success(intent.kind === 'rotate' ? 'Secret rotated' : 'Secret saved');
+      successToast(intent.kind === 'rotate' ? 'Secret rotated' : 'Secret saved');
     },
-    onError: () => toast.error('Could not save secret'),
+    onError: () => errorToast('Could not save secret'),
   });
 
   const blocked = intent.kind === 'retarget';
@@ -71,7 +71,7 @@ export function SecretUpsertForm({
   return (
     <Card className="p-5">
       <div className="flex items-center gap-2 text-sm font-medium">
-        <KeyRound className="size-4 text-muted-foreground" /> Shared secrets
+        <KeyIcon className="size-4 text-muted-foreground" /> Shared secrets
       </div>
       <SecretFormIntro />
       <form

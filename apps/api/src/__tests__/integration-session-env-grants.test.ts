@@ -412,7 +412,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
     }
   });
 
-  test('a lost session continued on a new computer (lostRecoveredAt) restores from its log with the project flag off; another session does not', async () => {
+  test('a lost session continued on a new computer (lostRecoveredAt) and a restored deleted session (restoredAt) restore from their log with the project flag off; another session does not', async () => {
     const boot = (sessionId: string) =>
       buildSessionSandboxEnvVars({
         accountId: ctx.accountId,
@@ -424,22 +424,24 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
         agentName: 'default',
         llmGatewayEnabled: false,
       });
-    const mark = (on: boolean) =>
+    const mark = (key: string, on: boolean) =>
       db
         .update(projectSessions)
         .set({
           metadata: on
-            ? sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || '{"lostRecoveredAt":"2026-10-15T10:00:00.000Z"}'::jsonb`
-            : sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) - 'lostRecoveredAt'`,
+            ? sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || jsonb_build_object(${key}::text, '2026-10-15T10:00:00.000Z')`
+            : sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) - ${key}::text`,
         })
         .where(eq(projectSessions.sessionId, PRINCIPAL_SESSION));
-    try {
-      expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(PRINCIPAL_SESSION))).toBe(false);
-      await mark(true);
-      expect((await boot(PRINCIPAL_SESSION)).KORTIX_SESSION_LOG_RESTORE).toBe('1');
-      expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(SESSION_ID))).toBe(false);
-    } finally {
-      await mark(false);
+    for (const key of ['lostRecoveredAt', 'restoredAt']) {
+      try {
+        expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(PRINCIPAL_SESSION))).toBe(false);
+        await mark(key, true);
+        expect({ key, env: (await boot(PRINCIPAL_SESSION)).KORTIX_SESSION_LOG_RESTORE }).toEqual({ key, env: '1' });
+        expect('KORTIX_SESSION_LOG_RESTORE' in (await boot(SESSION_ID))).toBe(false);
+      } finally {
+        await mark(key, false);
+      }
     }
   });
 

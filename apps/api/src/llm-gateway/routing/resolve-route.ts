@@ -32,6 +32,12 @@ export interface GatewayRouteResolverOptions {
    * overridable so tests don't need a live runtime catalog.
    */
   catalogModelFor?: (model: string) => CatalogModel | undefined;
+  /**
+   * The canonical id a platform policy is keyed by. A legacy or `kortix/`-prefixed
+   * id (`kimi-k3`, `kortix/deepseek-v4.1-flash`) resolves to the same upstream as
+   * its canonical id and must get the same fallback chain.
+   */
+  canonicalModel?: (model: string) => string;
 }
 
 export type GatewayRouteResolver = (
@@ -112,7 +118,7 @@ export function createGatewayRouteResolver(
       };
     }
 
-    const policy = fallbackPolicies.route(primaryModel);
+    const policy = fallbackPolicies.route(options.canonicalModel?.(primaryModel) ?? primaryModel);
     if (!policy) {
       return {
         policyId: 'direct',

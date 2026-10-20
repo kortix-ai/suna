@@ -62,6 +62,7 @@ const MARKETING_ROUTES = [
   '/solutions',
   '/support',
   '/use-cases',
+  '/white-label',
 ];
 
 // Pure marketing/promo routes that a self-host with the landing page disabled
@@ -88,6 +89,7 @@ const SELF_HOST_MARKETING_ONLY = [
   '/solutions',
   '/connectors',
   '/security',
+  '/white-label',
 ];
 
 // Routes that don't require authentication
@@ -115,6 +117,7 @@ const PUBLIC_ROUTES = [
   '/automations', // marketing page should be public
   '/channels', // marketing page should be public
   '/self-hosted', // marketing page should be public
+  '/white-label', // marketing page should be public
   '/company-as-code', // marketing page should be public
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)

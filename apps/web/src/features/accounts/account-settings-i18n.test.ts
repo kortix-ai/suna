@@ -50,7 +50,7 @@ describe('account settings copy comes from the catalog', () => {
   });
 
   test('the shared confirm dialog defaults to the viewer language, not English', () => {
-    const dialog = source('../../components/ui/confirm-dialog.tsx');
+    const dialog = source('../../../../../packages/ui/src/components/ui/confirm-dialog.tsx');
     expect(dialog).not.toContain("cancelLabel = 'Cancel'");
     expect(dialog).not.toContain("confirmLabel = 'Confirm'");
     expect(t.raw('text4118fb4fed0e')).toBe('Entfernt');

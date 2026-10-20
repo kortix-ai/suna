@@ -1,7 +1,7 @@
 // `kortix.push_device_tokens` on PostgreSQL: the upsert keyed on the token
 // (insert, preference updates, ownership moves), the owner-only delete, and
 // the list / bulk delete the push sender uses.
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { pushDeviceTokens } from '@kortix/db';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
@@ -21,6 +21,21 @@ async function rowOf(token: string) {
   return row ?? null;
 }
 
+const users: string[] = [];
+
+/** A live sign-in of `userId`, which `listByUser` needs to return a token. */
+async function signIn(userId: string): Promise<string> {
+  const id = crypto.randomUUID();
+  if (!users.includes(userId)) {
+    users.push(userId);
+    await db.execute(sql`
+      insert into auth.users (id, email, instance_id, aud, role)
+      values (${userId}::uuid, ${`push-${userId}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')`);
+  }
+  await db.execute(sql`insert into auth.sessions (id, user_id) values (${id}::uuid, ${userId}::uuid)`);
+  return id;
+}
+
 withDb('push device token store', () => {
   let userA: string;
   let userB: string;
@@ -30,6 +45,10 @@ withDb('push device token store', () => {
     userA = crypto.randomUUID();
     userB = crypto.randomUUID();
     token = `ExponentPushToken[test-${crypto.randomUUID()}]`;
+  });
+
+  afterEach(async () => {
+    for (const id of users.splice(0)) await db.execute(sql`delete from auth.users where id = ${id}::uuid`);
   });
 
   test('a new token is inserted with every preference true', async () => {
@@ -87,8 +106,8 @@ withDb('push device token store', () => {
   });
 
   test('a token registered by another user moves to that user', async () => {
-    await store.upsert({ token, userId: userA, platform: 'ios', provider: 'expo' });
-    await store.upsert({ token, userId: userB, platform: 'ios', provider: 'expo' });
+    await store.upsert({ token, userId: userA, platform: 'ios', provider: 'expo', authSessionId: await signIn(userA) });
+    await store.upsert({ token, userId: userB, platform: 'ios', provider: 'expo', authSessionId: await signIn(userB) });
 
     const rows = await db.select().from(pushDeviceTokens).where(eq(pushDeviceTokens.token, token));
     expect(rows).toHaveLength(1);
@@ -112,37 +131,35 @@ withDb('push device token store', () => {
   test("listByUser returns every token of that user and none of another user's", async () => {
     const second = `${token}-2`;
     const foreign = `${token}-foreign`;
-    await store.upsert({ token, userId: userA, platform: 'ios', provider: 'expo' });
-    await store.upsert({ token: second, userId: userA, platform: 'android', provider: 'expo' });
-    await store.upsert({ token: foreign, userId: userB, platform: 'ios', provider: 'expo' });
+    const a = await signIn(userA);
+    await store.upsert({ token, userId: userA, platform: 'ios', provider: 'expo', authSessionId: a });
+    await store.upsert({ token: second, userId: userA, platform: 'android', provider: 'expo', authSessionId: a });
+    await store.upsert({ token: foreign, userId: userB, platform: 'ios', provider: 'expo', authSessionId: await signIn(userB) });
 
     expect((await store.listByUser(userA)).map((r) => r.token).sort()).toEqual([token, second].sort());
   });
 
   // KRTX-1722: a phone signed out from Settings > Security, or by "sign out
-  // other devices" in GoTrue, kept getting lock-screen pushes.
-  test('listByUser skips a token whose sign-in ended, and keeps one registered without a sign-in', async () => {
-    const live = crypto.randomUUID();
-    const ended = crypto.randomUUID();
-    await db.execute(sql`
-      insert into auth.users (id, email, instance_id, aud, role)
-      values (${userA}::uuid, ${`push-${userA}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')`);
-    try {
-      await db.execute(sql`
-        insert into auth.sessions (id, user_id) values (${live}::uuid, ${userA}::uuid), (${ended}::uuid, ${userA}::uuid)`);
-      const onLive = `${token}-live`;
-      const onEnded = `${token}-ended`;
-      const legacy = `${token}-legacy`;
-      await store.upsert({ token: onLive, userId: userA, platform: 'ios', provider: 'expo', authSessionId: live });
-      await store.upsert({ token: onEnded, userId: userA, platform: 'ios', provider: 'expo', authSessionId: ended });
-      await store.upsert({ token: legacy, userId: userA, platform: 'android', provider: 'expo' });
-      expect((await store.listByUser(userA)).map((r) => r.token).sort()).toEqual([legacy, onEnded, onLive].sort());
+  // other devices" in GoTrue, kept getting lock-screen pushes. KRTX-2242: a
+  // row with no recorded sign-in was pushed forever after the app signed out.
+  test('listByUser returns only tokens whose sign-in still lives', async () => {
+    const live = await signIn(userA);
+    const ended = await signIn(userA);
+    const expired = await signIn(userA);
+    await db.execute(sql`update auth.sessions set not_after = now() + interval '1 hour' where id = ${live}::uuid`);
+    await db.execute(sql`update auth.sessions set not_after = now() - interval '1 minute' where id = ${expired}::uuid`);
+    const onLive = `${token}-live`;
+    const onEnded = `${token}-ended`;
+    const onExpired = `${token}-expired`;
+    const unbound = `${token}-unbound`;
+    await store.upsert({ token: onLive, userId: userA, platform: 'ios', provider: 'expo', authSessionId: live });
+    await store.upsert({ token: onEnded, userId: userA, platform: 'ios', provider: 'expo', authSessionId: ended });
+    await store.upsert({ token: onExpired, userId: userA, platform: 'ios', provider: 'expo', authSessionId: expired });
+    await store.upsert({ token: unbound, userId: userA, platform: 'android', provider: 'expo' });
+    expect((await store.listByUser(userA)).map((r) => r.token).sort()).toEqual([onEnded, onLive].sort());
 
-      await db.execute(sql`delete from auth.sessions where id = ${ended}::uuid`);
-      expect((await store.listByUser(userA)).map((r) => r.token).sort()).toEqual([legacy, onLive].sort());
-    } finally {
-      await db.execute(sql`delete from auth.users where id = ${userA}::uuid`);
-    }
+    await db.execute(sql`delete from auth.sessions where id = ${ended}::uuid`);
+    expect((await store.listByUser(userA)).map((r) => r.token)).toEqual([onLive]);
   });
 
   test('a re-registration records the sign-in it came from', async () => {

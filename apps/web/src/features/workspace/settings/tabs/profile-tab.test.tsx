@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 // the portal-based `Modal` is replaced by a flat stand-in — the same handling
 // as `sub-session-modal.characterization.test.tsx`. The real modal behavior
 // is exercised by the browser journeys.
-mock.module('@/components/ui/modal', () => ({
+const uiModalMock = () => ({
   Modal: ({ open, children }: { open: boolean; children: ReactNode }) =>
     open ? <div>{children}</div> : null,
   ModalBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -15,7 +15,9 @@ mock.module('@/components/ui/modal', () => ({
   ModalFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ModalHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ModalTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-}));
+});
+mock.module('@/components/ui/modal', uiModalMock);
+mock.module('@kortix/ui/modal', uiModalMock);
 
 // Imported after the mock so the module binds to the stand-in.
 const { ProfileTabView } = await import('./profile-tab');

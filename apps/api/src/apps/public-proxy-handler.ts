@@ -240,9 +240,8 @@ async function fetchWithRecovery(
     }
   }
 
-  // 400 was Daytona's shape. E2B reports a dead runtime as 5xx, so the check has
-  // to see those statuses or the recovery below can never run for it.
-  if (upstream.status === 400 || upstream.status >= 502) {
+  // 400 is Daytona's shape for a runtime it can no longer reach.
+  if (upstream.status === 400) {
     const body = await upstream.clone().text().catch(() => '');
     if (appProviderStoppedResponse(provider(), upstream.status, body)) {
       await upstream.body?.cancel().catch(() => {});

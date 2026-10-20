@@ -201,7 +201,7 @@ describe('resolveSandboxRuntimeStatus', () => {
   test('ignores providers the platform has not enabled', () => {
     const status = resolveSandboxRuntimeStatus({
       snapshotName: CURRENT,
-      coverage: [coverage('daytona', 'ready'), coverage('e2b', 'unavailable')],
+      coverage: [coverage('platinum', 'ready'), coverage('daytona', 'unavailable')],
       selectedProvider: null,
       builds: [build()],
     });

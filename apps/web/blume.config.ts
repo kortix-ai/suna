@@ -21,7 +21,7 @@ const sidebar = [
   { label: 'Administer', items: ['accounts', 'accounts/identity', 'audit-actions', 'credits'] },
   { label: 'Self-host', items: ['host'] },
   { label: 'Develop', items: ['git', 'cli', 'tui', 'api'] },
-  { label: 'SDK', items: ['sdk', 'sdk/auth', 'sdk/sessions', 'sdk/react', 'sdk/genui', 'sdk/reference'] },
+  { label: 'SDK', items: ['sdk', 'sdk/auth', 'sdk/sessions', 'sdk/react', 'sdk/ui', 'sdk/genui', 'sdk/reference'] },
 ];
 
 // The docs render through Blume, not through the Next app. Nothing in

@@ -18,7 +18,7 @@ import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { getProjectDetail } from '@kortix/sdk';
+import { getProject } from '@kortix/sdk';
 import {
   contract,
   type FlatModel,
@@ -433,13 +433,13 @@ export function ModelSelector({
 
   const params = useParams<{ id?: string }>();
   const projectId = typeof params?.id === 'string' ? params.id : null;
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
+  const projectRowQuery = useQuery({
+    queryKey: qk.project.summary(projectId ?? ''),
+    queryFn: () => getProject(projectId as string),
     enabled: !!projectId,
     ...contract('config'),
   });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  const llmGatewayEnabled = isLlmGatewayEnabled(projectRowQuery.data);
   // Bring your own ChatGPT subscription (pooled provider secrets). Any member
   // connects their own account from here; Customize is not needed. Hidden when
   // a manager disabled the ChatGPT provider for the project.
@@ -631,7 +631,7 @@ export function ModelSelector({
             type="button"
             variant={triggerVariant}
             size="sm"
-            className={cn('rounded-lg', triggerVariant === 'ghost' && 'text-muted-foreground')}
+            className={cn('rounded-lg hit-area-y-3', triggerVariant === 'ghost' && 'text-muted-foreground')}
           >
             <span className={cn('max-w-30 truncate', triggerLabelClassName)}>{displayName}</span>
             <ChevronDown

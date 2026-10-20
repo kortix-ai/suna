@@ -159,12 +159,14 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
       const r = await admin.get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
       r.status(403);
     });
-    await ctx.step("platform admin WITH x-kortix-admin-bypass → 200 (read-only escape hatch)", async () => {
+    // The header is retired (#10246): an admin opens a project by acting as
+    // its account (IMP-2), so the header must grant nothing here either.
+    await ctx.step("platform admin WITH the retired x-kortix-admin-bypass header → still 403", async () => {
       const r = await admin.get("/v1/projects/:projectId/detail", {
         params: { projectId: p.id },
         headers: { "x-kortix-admin-bypass": "1" },
       });
-      r.status(200).body().has("$.project.project_id", p.id);
+      r.status(403);
     });
   }
 });

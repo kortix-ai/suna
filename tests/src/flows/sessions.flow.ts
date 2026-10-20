@@ -1,8 +1,8 @@
 /**
  * Sessions — create/list/get/delete/restore + unified runtime start. Maps to spec §16 (SESS-*).
- * Session creation provisions a REAL Daytona sandbox (fire-and-forget), so these
+ * Session creation provisions a REAL Platinum sandbox (fire-and-forget), so these
  * assert the contract (201 provisioning, status transitions) without blocking on
- * a full boot. Gated on the `daytona` capability, except SESS-36 and SESS-51,
+ * a full boot. Gated on the `sandbox` capability, except SESS-36 and SESS-51,
  * which run on the local profile against a database session with a saved
  * transcript, and SESS-52, which seeds its sessions as database rows.
  */
@@ -25,7 +25,7 @@ flow(
   'SESS-1',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
   },
@@ -50,7 +50,7 @@ flow(
   'SESS-4',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 120_000,
     routes: ['GET /v1/projects/:projectId/sessions'],
   },
@@ -69,7 +69,7 @@ flow(
   'SESS-5',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId'],
   },
@@ -99,7 +99,7 @@ flow(
   'SESS-8',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: ['POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
@@ -123,7 +123,7 @@ flow(
   'SESS-7',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: ['DELETE /v1/projects/:projectId/sessions/:sessionId'],
   },
@@ -172,7 +172,7 @@ flow(
   'SESS-13',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -428,7 +428,7 @@ flow(
   'SESS-14',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -584,7 +584,7 @@ flow(
   'SESS-26',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -729,7 +729,7 @@ flow(
   'SESS-15',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId/audit'],
   },
@@ -804,7 +804,7 @@ flow(
   'SESS-16',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: [
       'POST /v1/projects/:projectId/sessions/:sessionId/public-shares',
@@ -1036,6 +1036,8 @@ flow(
     const project = await team.project();
     const member = await team.addMember('member');
     await team.grantProjectRole(project.id, member.userId!, 'member');
+    // An account admin manages every project: may restore what others deleted.
+    const admin = await team.addMember('admin');
     const newSession = async () => {
       // Shared with the project: the member can open it, but only its owner
       // or a project manager may delete or restore it.
@@ -1062,12 +1064,25 @@ flow(
         .status(200)
         .json<Array<{ session_id: string }>>()
         .some((row) => row.session_id === sessionId);
+    // Recently deleted (KRTX-2853): the deleted sessions this caller may restore.
+    const deletedRow = async (who: ReturnType<typeof ctx.client.as>, id = sessionId) => {
+      const r = await who.get('/v1/projects/:projectId/sessions', {
+        params: { projectId: project.id },
+        query: { deleted: 'only' },
+      });
+      r.status(200).body().schema(ProjectSessionSchema.array());
+      return r
+        .json<Array<{ session_id: string; deleted_at?: string | null; deleted_by?: string | null; restore_until?: string | null }>>()
+        .find((row) => row.session_id === id);
+    };
     const sessionRows = async (id: string) => {
       const db = await openFlowDb(ctx.env);
       try {
         const session = (
-          await db.query<{ status: string; branch_name: string; deleted_at: string | null }>(
-            `SELECT status::text AS status, branch_name, metadata->>'deletedAt' AS deleted_at FROM kortix.project_sessions WHERE session_id = $1`,
+          await db.query<{ status: string; branch_name: string; deleted_at: string | null; restored_at: string | null; log_messages: string }>(
+            `SELECT status::text AS status, branch_name, metadata->>'deletedAt' AS deleted_at, metadata->>'restoredAt' AS restored_at,
+                    (SELECT count(*) FROM kortix.session_log_messages m WHERE m.session_id = s.session_id AND m.deleted_at IS NULL) AS log_messages
+               FROM kortix.project_sessions s WHERE session_id = $1`,
             [id],
           )
         ).rows[0];
@@ -1111,6 +1126,26 @@ flow(
 
     await ctx.step('a repeated delete answers the same restore_until: the window does not move', async () => {
       (await owner.del(sessionRoute, { params })).status(200).body().has('$.restore_until', restoreUntil);
+    });
+
+    await ctx.step('deleted=only lists it for its owner and a manager, with deleted_at, deleted_by and restore_until; not for a member who cannot restore it', async () => {
+      for (const who of [owner, ctx.client.as(admin)]) {
+        const row = await deletedRow(who);
+        if (!row) throw new Error('deleted=only does not list the deleted session');
+        if (!row.deleted_at || row.deleted_by !== ctx.P.OWNER.userId || row.restore_until !== restoreUntil) {
+          throw new Error(`deleted row: ${JSON.stringify(row)}`);
+        }
+      }
+      if (await deletedRow(ctx.client.as(member))) throw new Error('a member who cannot restore it sees it under deleted=only');
+    });
+
+    await ctx.step('deleted=only does not combine with pinned or archived → 400', async () => {
+      for (const view of ['pinned', 'archived']) {
+        (await owner.get('/v1/projects/:projectId/sessions', {
+          params: { projectId: project.id },
+          query: { deleted: 'only', [view]: 'only' },
+        })).status(400);
+      }
     });
 
     await ctx.step('the deleted session is hidden: the list omits it, and a read of it or of its file → 404', async () => {
@@ -1174,6 +1209,7 @@ flow(
       }
       (await owner.post(restoreRoute, {}, { params })).status(200).body().has('$.ok', true);
       if (!(await listed())) throw new Error('the restored session is not listed');
+      if (await deletedRow(owner)) throw new Error('the restored session is still under deleted=only');
       (await owner.get(sessionRoute, { params })).status(200).body().has('$.status', 'stopped').has('$.deleted_at', null);
     });
 
@@ -1185,6 +1221,16 @@ flow(
       // A retired row: no external id, marked so the next open claims it and provisions.
       if (sandbox?.status !== 'stopped' || sandbox.external_id !== null || sandbox.metadata.ephemeralRetiredExternalId !== sessionId) {
         throw new Error(`restored sandbox row: ${JSON.stringify(sandbox)}`);
+      }
+    });
+
+    await ctx.step('the fresh box gets the conversation back: the session is marked to restore from its session log at boot, and its saved transcript is that log', async () => {
+      const { session } = await sessionRows(sessionId);
+      // `restoredAt` turns KORTIX_SESSION_LOG_RESTORE on for this session's
+      // boxes (`session-sandbox-env-build.ts`); the v1 mirror is converted so
+      // the box has a log to restore from.
+      if (!session?.restored_at || Number(session.log_messages) !== 2) {
+        throw new Error(`restored session conversation: ${JSON.stringify(session)}`);
       }
     });
 
@@ -1205,7 +1251,7 @@ flow(
       (await owner.post(restoreRoute, {}, { params: { projectId: project.id, sessionId: 'not-a-uuid' } })).status(400);
     });
 
-    await ctx.step('a session deleted more than 30 days ago → 410 session_purged, and it stays deleted', async () => {
+    await ctx.step('a session deleted more than 30 days ago → 410 session_purged, stays deleted, and is not under deleted=only', async () => {
       const lateId = await newSession();
       const late = { projectId: project.id, sessionId: lateId };
       (await owner.del(sessionRoute, { params: late })).status(200);
@@ -1220,6 +1266,8 @@ flow(
       }
       (await owner.post(restoreRoute, {}, { params: late })).status(410).body().has('$.code', 'session_purged');
       (await owner.get(sessionRoute, { params: late })).status(404);
+      // Past its window it can no longer be restored, so it is not offered.
+      if (await deletedRow(owner, lateId)) throw new Error('deleted=only lists a session past its restore window');
     });
   },
 );
@@ -1660,7 +1708,7 @@ flow(
   'SESS-17',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId/previews'],
   },
@@ -1721,7 +1769,7 @@ flow(
   'SESS-18',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: [
       'POST /v1/projects/:projectId/sessions/warm',
@@ -1956,7 +2004,7 @@ flow(
   'SESS-28',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 600_000,
     routes: [
       'PUT /v1/projects/:projectId/agents/:agentName/config',
@@ -3021,7 +3069,7 @@ flow(
     const start = (sessionId: string) => owner.post('/v1/projects/:projectId/sessions/:sessionId/start', {}, { params: { projectId: project.id, sessionId } });
     const seed = async (
       sessionStatus: 'provisioning' | 'failed',
-      sandbox: { provider: 'daytona' | 'e2b'; status: 'provisioning' | 'error'; metadata: Record<string, unknown>; ageMinutes?: number },
+      sandbox: { provider: 'platinum' | 'daytona'; status: 'provisioning' | 'error'; metadata: Record<string, unknown>; ageMinutes?: number },
     ): Promise<string> => {
       const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
       ctx.track('session', sessionId, { projectId: project.id });
@@ -3053,7 +3101,7 @@ flow(
       });
 
       await ctx.step('a fresh provisioning row with no provider identity answers provisioning and is left alone', async () => {
-        const sessionId = await seed('provisioning', { provider: 'daytona', status: 'provisioning', metadata: { initStatus: 'pending', initAttempts: 0, initMaxAttempts: 3 } });
+        const sessionId = await seed('provisioning', { provider: 'platinum', status: 'provisioning', metadata: { initStatus: 'pending', initAttempts: 0, initMaxAttempts: 3 } });
         (await start(sessionId))
           .status(200)
           .body()
@@ -3072,7 +3120,7 @@ flow(
         ['stale_provisioning_lost', { initStatus: 'provisioning', initAttempts: 1, initMaxAttempts: 3, initUpdatedAt: new Date(Date.now() - 6 * 60_000).toISOString() }, 6],
       ] as const) {
         await ctx.step(`an abandoned provisioning row is retired: ${reason}, no sandbox, the old row gone`, async () => {
-          const sessionId = await seed('provisioning', { provider: 'daytona', status: 'provisioning', metadata, ageMinutes });
+          const sessionId = await seed('provisioning', { provider: 'platinum', status: 'provisioning', metadata, ageMinutes });
           (await start(sessionId)).status(200).body().has('$.stage', 'provisioning').has('$.retriable', true).has('$.sandbox', null).has('$.reason', reason);
           // A deployed target's sandboxes can reach the API, so /start begins a
           // replacement row at once; the local stack cannot, so it starts none.
@@ -3086,15 +3134,15 @@ flow(
       for (const c of [
         {
           label: 'a stored capacity failure answers one typed terminal failure, twice, without re-provisioning',
-          provider: 'e2b',
+          provider: 'platinum',
           metadata: { initStatus: 'failed', initAttempts: 1, initMaxAttempts: 1, failureCategory: 'provider-capacity', errorMessage: 'The sandbox provider is at capacity right now. Stop another session and retry.' },
           category: 'provider-capacity',
           message: 'The sandbox provider is at capacity right now. Stop another session and retry.',
           retryable: true,
         },
         {
-          label: 'a stored E2B placement error is transient: /start re-provisions it, and when it cannot allocate it answers the exhausted contract instead of replaying',
-          provider: 'e2b',
+          label: 'a stored placement error is transient, and once its automatic retries are spent /start answers the exhausted contract instead of replaying',
+          provider: 'platinum',
           metadata: {
             initStatus: 'failed',
             initAttempts: 3,
@@ -3102,14 +3150,16 @@ flow(
             failureCategory: 'sandbox-provider',
             errorMessage: 'The sandbox provider could not start this session. Try again.',
             lastProvisioningError: '500: Failed to place sandbox',
+            // TRANSIENT_PROVISION_MAX_RETRIES: every automatic retry is spent.
+            transientRetryCount: 6,
           },
           category: 'provider-capacity',
-          message: 'The sandbox provider could not start this session after 1 attempts. Restart the session to try again.',
+          message: 'The sandbox provider could not start this session after 7 attempts. Restart the session to try again.',
           retryable: true,
           reason: 'provider_transient_retries_exhausted',
         },
         {
-          label: 'a protected-delivery failure is actionable and not retryable',
+          label: 'a protected-delivery failure on a legacy Daytona row is actionable and not retryable',
           provider: 'daytona',
           metadata: { initStatus: 'failed', initAttempts: 1, initMaxAttempts: 1, failureCategory: 'unsupported-secret-delivery', errorMessage: PROTECTED },
           category: 'unsupported-secret-delivery',
@@ -3129,9 +3179,8 @@ flow(
               .has('$.failure.message', c.message)
               .has('$.failure.retryable', c.retryable);
             // The transient case runs the #9489 retry path. Its exhausted answer is
-            // the deterministic one here: the local profile's allowed providers
-            // (platinum, daytona) exclude this case's provider, so /start can never
-            // allocate and always reports the spent-retries verdict, retry after retry.
+            // deterministic on every target: the seeded row has spent every
+            // automatic retry, so /start never allocates and reports the verdict.
             if ('reason' in c) answer.has('$.reason', c.reason);
           }
           const rows = await sandboxRows(sessionId);

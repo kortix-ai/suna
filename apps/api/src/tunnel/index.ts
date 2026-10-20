@@ -177,6 +177,9 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
       metadata: {
         accountId: tunnel.accountId,
         capabilities,
+        // The agent's own handler list, valid by the check above. Approval can
+        // widen later (PATCH /connections/:id) up to this list.
+        registeredCapabilities: auth.capabilities ?? [],
         approvedCapabilities: tunnel.capabilities || [],
         agentVersion,
         reportsAccess: auth.reportsAccess === true,

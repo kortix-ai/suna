@@ -40,6 +40,7 @@ pnpm worktree create --name auth-config --full-supabase --yes
 | `pnpm worktree list [name] --json` | The same data as JSON on stdout for scripting — effective ports, both the probed and recorded status, and URLs. |
 | `pnpm worktree status [n]` | Live health (🟢/⚪) of web/api/Supabase per worktree. |
 | `pnpm worktree doctor [--yes]` | Check (or `--yes` install) the toolchain + flag worktree/registry drift. |
+| `pnpm worktree sweep [--idle 60m] [--yes]` | Delete build output (`.next`, `.turbo`, `dist`, `target`, test reports) in every idle git worktree. Skips checkouts with a process or a write within `--idle`, and dirs with tracked files. Dry run without `--yes`. |
 
 `--yes` on `create`/`doctor` auto-installs anything missing for the selected
 mode (`bun`, Node 22, `pnpm`, and when needed Supabase CLI, Docker, `psql`, or
@@ -155,5 +156,5 @@ registry drift in both directions; `pnpm worktree stop --all` clears the lot.
   `start` and isolated DB work require Docker running.
 - `create` is idempotent and resumable: a crash leaves the registry at the last
   good step, and re-running continues from there. `doctor` reports drift.
-- `start` opens a cloudflared quick tunnel by default for cloud Daytona sandbox
-  callbacks. Pass `--no-tunnel` for offline/local-only work.
+- `start` opens a cloudflared quick tunnel by default for cloud sandbox
+  (Platinum) callbacks. Pass `--no-tunnel` for offline/local-only work.

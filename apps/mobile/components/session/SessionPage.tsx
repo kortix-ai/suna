@@ -107,6 +107,8 @@ import {
   useRuntimeConfig,
   useRuntimeSession,
   useRuntimeSessions,
+  useFeatureFlag,
+  useSessionLogOlder,
   useSessionLogThread,
   useSessionMessages,
   useSessionSync,
@@ -250,7 +252,6 @@ interface SessionPageProps {
   /** The project session row. Its model pin is the model the composer opens on. */
   projectSession?: { metadata?: Record<string, unknown> | null } | null;
   /** True when the right drawer is currently open — swaps the grid icon for an X */
-  isRightDrawerOpen?: boolean;
 }
 
 // Module-level empty values: a `?? []` default creates a new array on every
@@ -321,7 +322,7 @@ function readSavedScrollOffset(sessionId: string): number {
   return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
 }
 
-function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, projectSession, isRightDrawerOpen }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, projectSession }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -448,18 +449,31 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // (`readSavedSessionCopy`) it answers from the copy that view read, and the
   // snapshot `useSession` starts asks for no window: one download per open.
   // A sub-agent reads its own window.
+  // With the project flag `session_log` on (and while it is unknown) no v1 copy
+  // is read: the session log is the saved copy (`useSession` reads its page, a
+  // sub-agent's thread loads by `useSessionLogThread`), and older pages are its
+  // (`GET …/log?before_seq=`).
   const kortixSessionScope = projectId && projectSessionId ? `${projectId}/${projectSessionId}` : undefined;
+  const sessionLogFlag = useFeatureFlag(projectId ?? null, 'session_log');
   // The session stream (R5.3): while it is up, the SDK's tail and ask polls
   // stand down — the box's ring replays what a reconnect missed.
   const streamConnected = useSessionStreamConnected(projectId ?? '', projectSessionId ?? '');
-  const { hasOlder, isLoadingOlder, loadOlder, retryTranscript } = useSessionSync(sessionId, {
+  const sync = useSessionSync(sessionId, {
     kortixSessionScope,
     streamConnected,
     networkEnabled: runtimeReady,
     savedChild: isSubThread,
+    sessionLog: sessionLogFlag.enabled || sessionLogFlag.isLoading,
     // The rows are read below, paced: a streamed delta does not re-render this hook.
     subscribeMessages: false,
   });
+  const logOlder = useSessionLogOlder(
+    { projectId: projectId ?? '', sessionId: projectSessionId ?? '' },
+    isSubThread ? sessionId : undefined,
+    { enabled: sessionLogFlag.enabled },
+  );
+  const { hasOlder, isLoadingOlder, loadOlder } = sessionLogFlag.enabled ? logOlder : sync;
+  const { retryTranscript } = sync;
   const loadOlderRef = useRef(loadOlder);
   loadOlderRef.current = loadOlder;
 

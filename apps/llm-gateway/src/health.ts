@@ -8,7 +8,7 @@ const SERVICE_COMMIT = process.env.KORTIX_COMMIT ?? 'unknown';
 // Below this volume in the window, a high error rate is statistical noise.
 const ERROR_RATE_MIN_VOLUME = 20;
 const ERROR_RATE_ALERT = 0.5;
-export function registerHealth(app: Hono, api: ReturnType<typeof createApiClient>, inflight: InflightBudget, traces: TraceSink | null, trafficSnapshot: () => { window_s: number; requests: number; errors: number; error_rate: number }) {
+export function registerHealth(app: Hono, api: ReturnType<typeof createApiClient>, inflight: InflightBudget, traces: TraceSink | null, trafficSnapshot: () => { window_s: number; requests: number; errors: number; error_rate: number }, upstreamIncidents: () => string[]) {
 
   // Shallow liveness: the process is up. The k8s livenessProbe should point here
   // so a dependency outage (which a restart can't fix) doesn't crash-loop the pod.
@@ -47,6 +47,8 @@ export function registerHealth(app: Hono, api: ReturnType<typeof createApiClient
       incidents.push(
         `error rate ${(traffic.error_rate * 100).toFixed(0)}% over ${traffic.window_s}s`,
       );
+    // A managed model short of upstream capacity, even while fallbacks answer.
+    incidents.push(...upstreamIncidents());
     if (traceStreakAlert)
       incidents.push(
         `langfuse trace recording failed ${tracesStatus.consecutiveFailures}x in a row (${tracesStatus.lastError ?? 'unknown error'})`,

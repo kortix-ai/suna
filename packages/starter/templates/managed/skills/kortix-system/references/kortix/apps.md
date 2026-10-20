@@ -115,7 +115,7 @@ minutes, without a redeploy. A machine size change applies to the next
 release: a new release with a new `vm` resizes without an image rebuild.
 
 **Provider.** On Platinum (Kortix Cloud), an always-on App's VM is persistent.
-On Daytona and E2B (self-host), the VM keeps the provider's idle backstop and
+On the legacy Daytona fallback (self-host), the VM keeps the provider's idle backstop and
 keep-alive renews it. When the provider stops the VM anyway, keep-alive
 restarts it within 5 minutes, so the App can be unreachable for up to 5
 minutes.

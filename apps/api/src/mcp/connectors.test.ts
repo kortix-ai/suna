@@ -95,3 +95,44 @@ describe('call_connector', () => {
     expect(text.length).toBeLessThan(45_000);
   });
 });
+
+describe('apps on a Connectors v2 project', () => {
+  /** A host whose project has `connectors_v2` on; records every API call. */
+  function v2Host(calls: Array<{ method: string; path: string; query?: unknown; body?: unknown }>) {
+    return {
+      projectId: () => 'proj-1',
+      arg: (input: Record<string, unknown>, key: string) => String(input[key]),
+      optionalArg: (input: Record<string, unknown>, key: string) => (typeof input[key] === 'string' ? (input[key] as string) : undefined),
+      input: (message: string) => new Error(message),
+      apiResult: (reply: { status: number; body: string }) => ({ content: [{ type: 'text', text: reply.body }], isError: true }),
+      text: (value: string) => ({ content: [{ type: 'text', text: value }] }),
+      call: async (method: string, path: string, opts: { query?: unknown; body?: unknown } = {}) => {
+        calls.push({ method, path, ...opts });
+        if (path === '/v1/projects/proj-1') return { status: 200, body: JSON.stringify({ project: { experimental: { connectors_v2: true } } }) };
+        if (path.endsWith('/discover/connectors')) {
+          return { status: 200, body: JSON.stringify({ items: [{ slug: 'linear', name: 'Linear', description: 'Issues.', categories: ['productivity'], mcpUrl: 'https://mcp.linear.app/mcp' }], nextCursor: undefined }) };
+        }
+        if (path.endsWith('/discover/connectors/detail')) {
+          return { status: 200, body: JSON.stringify({ item: { slug: 'linear', name: 'Linear', mcpUrl: 'https://mcp.linear.app/mcp' }, variants: [] }) };
+        }
+        return { status: 201, body: JSON.stringify({ sync: { synced: 1 } }) };
+      },
+    } as unknown as Host;
+  }
+
+  test('search_connector_apps lists MCP apps from Kortix’s catalogue, not Composio', async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const result = (await runConnectorTool('search_connector_apps', { project_id: 'proj-1', query: 'linear' }, v2Host(calls))) as { content: Array<{ text: string }> };
+    expect(JSON.parse(result.content[0]!.text).apps).toEqual([
+      { slug: 'linear', name: 'Linear', description: 'Issues.', categories: ['productivity'], mcp_url: 'https://mcp.linear.app/mcp' },
+    ]);
+    expect(calls.some((c) => c.path.includes('/connect/toolkits'))).toBe(false);
+  });
+
+  test('add_connector with app adds the app’s MCP server', async () => {
+    const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+    await runConnectorTool('add_connector', { project_id: 'proj-1', app: 'linear' }, v2Host(calls));
+    const created = calls.find((c) => c.method === 'POST' && c.path.endsWith('/connectors'));
+    expect(created?.body).toEqual({ slug: 'linear', provider: 'mcp', name: 'Linear', url: 'https://mcp.linear.app/mcp', transport: 'http' });
+  });
+});

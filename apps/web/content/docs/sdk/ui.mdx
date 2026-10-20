@@ -1,0 +1,217 @@
+---
+title: Kortix UI
+description: "@kortix/ui: the Kortix React components and the session chat, themed by CSS variables, for your own app."
+---
+
+`@kortix/ui` is the React component library that the Kortix web app renders. The same package serves Kortix Apps, white-label hosts and your own app, so a button, a modal or a chat thread looks and behaves the same everywhere. Components are Tailwind CSS v4 class strings that read CSS variables. You re-theme them by overriding the variables, never by copying a component.
+
+<Callout type="warning">
+`@kortix/ui` is not on npm yet. Today it is a workspace package of the [kortix-ai/suna](https://github.com/kortix-ai/suna) repository: inside that repository, add `"@kortix/ui": "workspace:*"` to your package's dependencies. This page describes the package as it ships there.
+</Callout>
+
+## Install
+
+| Import | Holds |
+| --- | --- |
+| `@kortix/ui` | The light core: `cn`, `UiProvider`, `useUiStrings`, `useUiLink`, `useUiBrand`, `defaultUiStrings`, `defaultChatStrings`, `useIsDark`, and the primitives `Button`, `Badge`, `Card`, `Input`, `Textarea`, `Label`, `Checkbox`, `Switch`, `Select`, `Modal`, `Hint`, `Popover`, `DropdownMenu`, `Tabs`, `Separator`, `Skeleton`, `Bubble`, `Message`, `Marker` with their parts, plus `FilterBar` / `FilterBarItem` (the pill row of `tabs`). It also exports `Dialog` and `Tooltip`, the primitives `Modal` and `Hint` build on; they are marked `@deprecated` for feature code. |
+| `@kortix/ui/<component>` | One component file, for example `@kortix/ui/modal` or `@kortix/ui/dot-matrix/session-dot-matrix`. Heavy components (charts, maps, data grids, diagrams, the emoji picker) load only from their own subpath. |
+| `@kortix/ui/chat` | The session chat: `SessionThread` and its parts. It needs `@kortix/sdk` and its React peers. |
+| `@kortix/ui/lib/<name>`, `/hooks/<name>`, `/icons/<name>` | The helpers the components use, such as `@kortix/ui/lib/utils` and `@kortix/ui/hooks/use-mobile`. |
+| `@kortix/ui/tailwind.css`, `/tokens.css`, `/theme.css`, `/styles.css`, `/fonts.css` | The stylesheets. Load them as the next section says. |
+
+`react` and `react-dom` 18 or later are peer dependencies. Install the rest by what you use:
+
+| You use | Also install |
+| --- | --- |
+| `@kortix/ui/tailwind.css` (a Tailwind v4 host) | `tw-animate-css`, `tailwind-scrollbar`, `tailwind-scrollbar-hide` (optional peers: a host without Tailwind never installs Tailwind) |
+| `@kortix/ui/chat`, any part of it | `@kortix/sdk` and `@tanstack/react-query` 5, plus one `QueryClientProvider` ([React setup of the SDK](/docs/sdk/react#set-up)). Without `@tanstack/react-query`, the bundler fails on an import inside `@kortix/sdk/react`. |
+
+After the first npm release:
+
+```bash
+npm i @kortix/ui @kortix/sdk @tanstack/react-query
+```
+
+<Callout type="info">
+With React 19, npm prints `ERESOLVE overriding peer dependency` warnings for `cmdk@0.2.1`, which declares a React 18 peer. The install succeeds and `Command` works on React 19. A host with `strict-peer-dependencies` must allow `cmdk`'s React peer.
+</Callout>
+
+## Add the styles
+
+Load the styles once, in your app's main stylesheet or entry file. Pick the row for your host.
+
+<Tabs>
+<Tab title="Tailwind CSS v4 host">
+Import `@kortix/ui/tailwind.css` after Tailwind. It brings the tokens (`tokens.css`), the component layer (`theme.css`: the `dark` variant, the `@theme` keys the component classes resolve against, the utilities and the keyframes), the animation utilities and the scrollbar plugins. `theme.css` also adds an `@source` rule, so Tailwind scans the package for class names.
+
+```css title="app.css"
+@import 'tailwindcss';
+@import '@kortix/ui/tailwind.css';
+```
+
+Your own classes resolve against the same tokens: `bg-background`, `text-muted-foreground`, `border-border`.
+
+<Callout type="warning">
+`tokens.css` sets `--spacing: 0.23rem`, 8% tighter than Tailwind's `0.25rem`. Your own spacing utilities follow it: `p-4` is 14.72px, not 16px. To keep stock Tailwind spacing for your own classes, set `--spacing: 0.25rem` in `:root` after the import. The components then render 8% larger.
+</Callout>
+
+To bring your own token values instead of `tokens.css`, import the parts one by one. Every line except `tokens.css` is required: without `tw-animate-css` and the two plugins, overlays lose their enter and exit animations and `scrollbar-hide` does nothing, and the build reports no error.
+
+```css title="app.css"
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@kortix/ui/tokens.css'; /* optional: or set every variable yourself */
+@import '@kortix/ui/theme.css';
+@plugin 'tailwind-scrollbar';
+@plugin 'tailwind-scrollbar-hide';
+```
+</Tab>
+<Tab title="Host without Tailwind">
+Import one prebuilt file. It holds the reset, the tokens and every class the components use.
+
+```ts title="main.tsx"
+import '@kortix/ui/styles.css';
+```
+
+It holds no class that only your own code uses. Style your own markup with plain CSS that reads the variables, such as `var(--border)`.
+</Tab>
+</Tabs>
+
+- Dark mode is the `dark` class on `<html>`. Add or remove it to switch themes. `useIsDark()` returns the current state.
+- Both paths style the page itself: `body` paints `--background` and `--foreground`, borders default to `--border`, native controls follow the theme (`color-scheme`), text selection reads `--selection`, and interactive elements show the pointer cursor. You add no base rules of your own.
+- `@kortix/ui/fonts.css` loads the Roobert font, for Kortix-owned surfaces only. Every other host renders the system font stack (`--font-sans-system`).
+
+## Mount the providers
+
+Mount these once, at the root of your app:
+
+```tsx title="providers.tsx"
+import { UiProvider, type UiLinkComponent } from '@kortix/ui';
+import { IconProvider } from '@kortix/ui/icon-provider';
+import { Toaster } from '@kortix/ui/toast';
+import { Link } from 'react-router-dom';
+
+// Any router: `UiProvider` passes anchor props with `href`.
+const RouterLink: UiLinkComponent = ({ href = '', ...props }) => <Link to={href} {...props} />;
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <UiProvider strings={{ confirm: 'Confirm', cancel: 'Cancel' }} link={RouterLink}>
+      <IconProvider>
+        {children}
+        <Toaster />
+      </IconProvider>
+    </UiProvider>
+  );
+}
+```
+
+| Provider | What it does | Without it |
+| --- | --- | --- |
+| `UiProvider` | `strings`: the copy the components render when you pass no label, for translation: `confirm`, `cancel`, `close` (the screen-reader label of the dialog and sheet close button), `commandPaletteTitle`, `commandPaletteDescription`, and `chat` for every string of `@kortix/ui/chat` (`defaultChatStrings` lists the keys and their English values). Pass only the keys you translate. `link`: the link component of your router, called with `href`. `useBrand`: a hook that returns your organization's logo URLs for `KortixLogo`. | English copy, a plain `<a>` and the Kortix logo. |
+| `IconProvider` | Gives every Phosphor icon the Kortix weight and size. | Phosphor's defaults. |
+| `<Toaster />` from `@kortix/ui/toast` | Renders the toasts that `successToast`, `errorToast` and the other helpers in `@kortix/ui/toast` raise. | No toast appears. |
+
+## Theme it for your brand
+
+Every color, radius and font is a CSS variable from `tokens.css`. To white-label, override the variables after the import, in your own `:root` for light and `.dark` for dark. These variables carry the brand:
+
+| Variable | Default | What follows it |
+| --- | --- | --- |
+| `--kortix-blue` | Kortix blue | The accent: a checked `Switch`, `Checkbox` and `RadioGroup`, the `brand` and `blue` `Button` variants, the info `Badge`, `InfoBanner`, `Alert` and status tone. |
+| `--ring` | Kortix blue | Focus rings and the focused composer border. `--kortix-base`, the sidebar focus ring (`--sidebar-ring`) and the sidebar selection (`--sidebar-primary`) follow it. |
+| `--foreground`, `--background` | Ink on white | Text, the page, and the default `Button` (`bg-foreground text-background`). |
+| `--primary`, `--primary-foreground` | Ink | `Progress`, `Slider`, the `Calendar` selection, the menu row highlight tint and the default text selection. |
+| `--kortix-green`, `--kortix-orange`, `--destructive` | Green, orange, red | The success, warning and error tones. Keep their meaning. |
+| `--radius`, `--font-sans-system` | | Corner radius and the font stack. |
+
+```css title="brand.css"
+:root {
+  --kortix-blue: oklch(0.585 0.22 277);
+  --ring: oklch(0.585 0.22 277);
+  --radius: 0.5rem;
+  --font-sans-system: 'Inter', ui-sans-serif, sans-serif;
+}
+.dark {
+  --kortix-blue: oklch(0.62 0.2 277);
+  --ring: oklch(0.62 0.2 277);
+}
+```
+
+After this override, a checked `Switch` and the `brand` `Button` render indigo, and focus rings follow. The default `Button` stays ink until you change `--foreground` and `--background`. The white-label demo (`apps/whitelabel-demo/src/app/globals.css`) is the reference.
+
+A host without Tailwind can also skip `tokens.css` and set every variable itself. The rules:
+
+- Override variables. Never fork or restyle a component: a forked copy stops receiving fixes.
+- Pass your logo through `UiProvider useBrand`, so `KortixLogo` renders your marks.
+- Do not load `fonts.css`. Set your font in `--font-sans-system`.
+
+## Components
+
+Each component is one subpath, `@kortix/ui/<file>`. The live catalog at [kortix.com/design-system](https://kortix.com/design-system) renders every one in light and dark, with its usage rules.
+
+| Need | Compose | Import | Live |
+| --- | --- | --- | --- |
+| Actions | `Button`, `ButtonGroup`, `Toggle` | `button`, `button-group`, `toggle` | [Button](https://kortix.com/design-system#comp-button), [Button Group](https://kortix.com/design-system#comp-button-group) |
+| Forms | `Field`, `Input`, `Textarea`, `Select`, `CheckboxGroup`, `RadioGroup`, `Switch`, `Slider`, `Label` | `field`, `input`, `textarea`, `select`, `checkbox-group`, `radio-group`, `switch`, `slider`, `label` | [Input](https://kortix.com/design-system#comp-input), [Select](https://kortix.com/design-system#comp-select), [Switch](https://kortix.com/design-system#comp-switch) |
+| Search | `InputGroupSearch`, `PageSearchBar`, `Command` | `input-group`, `page-search-bar`, `command` | [PageSearchBar](https://kortix.com/design-system#pat-search-bar) |
+| Overlays | `Modal`, `Sheet`, `Popover`, `DropdownMenu`, `Hint` | `modal`, `sheet`, `popover`, `dropdown-menu`, `hint` | [Modal](https://kortix.com/design-system#comp-modal), [Sheet](https://kortix.com/design-system#comp-sheet), [Popover](https://kortix.com/design-system#comp-popover), [Dropdown](https://kortix.com/design-system#comp-dropdown), [Tooltip](https://kortix.com/design-system#comp-tooltip) |
+| Confirm | `ConfirmDialog`, `AlertDialog` | `confirm-dialog`, `alert-dialog` | [Alert Dialog](https://kortix.com/design-system#comp-alert-dialog) |
+| Feedback | `InfoBanner`, the toast helpers, `Loading`, `Skeleton`, `Progress` | `info-banner`, `toast`, `loading`, `skeleton`, `progress` | [InfoBanner](https://kortix.com/design-system#pat-info-banner), [Toast](https://kortix.com/design-system#comp-toast), [Skeleton](https://kortix.com/design-system#comp-skeleton) |
+| Status | `Badge`, `CountBadge`, `StatusBadge` | `badge`, `count-badge`, `status` | [Badge](https://kortix.com/design-system#comp-badge), [Status](https://kortix.com/design-system#pat-status) |
+| Layout | `Card`, `Section`, `Tabs`, `Disclosure`, `Accordion`, `Separator`, `ScrollArea` | `card`, `section`, `tabs`, `disclosure`, `accordion`, `separator`, `scroll-area` | [Card](https://kortix.com/design-system#comp-card), [Tabs](https://kortix.com/design-system#comp-tabs), [Accordion](https://kortix.com/design-system#comp-accordion) |
+| Data | `Table`, `DefinitionList`, `InlineMeta`, `Empty`, `Calendar` | `table`, `definition-list`, `inline-meta`, `empty`, `calendar` | [Table](https://kortix.com/design-system#comp-table), [DefinitionList](https://kortix.com/design-system#pat-definition-list), [InlineMeta](https://kortix.com/design-system#pat-inline-meta) |
+| People | `UserAvatar`, `EntityAvatar` | `user-avatar`, `entity-avatar` | [Avatars](https://kortix.com/design-system#pat-avatars) |
+
+Compose before you create. Use `Modal` for a dialog, `Hint` for a tooltip, `Loading` for a spinner, `Badge` for a chip and `ConfirmDialog` before a destructive action. Never call `sonner`'s `toast()` directly, and never use an icon with `animate-spin` as a spinner. Icons come from `@phosphor-icons/react`.
+
+## Add a chat
+
+`SessionThread` renders the whole chat of one session from one [`useSession`](/docs/sdk/react#usesession) result: the transcript, the streaming turn, tool calls, the runtime state, permission and question prompts, the typed send error, and the composer with slash commands, the model and agent pickers and Stop.
+
+```tsx title="chat.tsx"
+import { useSession } from '@kortix/sdk/react';
+import { SessionThread } from '@kortix/ui/chat';
+import { errorToast } from '@kortix/ui/toast';
+
+export function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const session = useSession(projectId, sessionId);
+  return (
+    <div className="h-dvh">
+      <SessionThread session={session} onError={(message) => errorToast(message)} />
+    </div>
+  );
+}
+```
+
+The parent sets the height, and the thread fills it. Everything reads off `session`: there is no second chat hook and no transport to write.
+
+| Prop | What it does |
+| --- | --- |
+| `session` | The `useSession(projectId, sessionId)` result. Required. |
+| `composerToolbar` | Replaces the composer's control row. Default: `SessionPickers`, the model and agent pickers. |
+| `composerFooter` | Renders under the composer card. |
+| `emptyState` | Shows when the thread has no messages. Default: `DefaultEmptyState`. |
+| `renderTool` | `(tool) => ReactNode \| undefined`. Replaces the card of one tool call. Return `undefined` to keep the default `ToolCall`. |
+| `renderers` | Overrides the renderer of any part kind (`text`, `reasoning`, `tool`, `file` and the rest). |
+| `onError` | `(message, error) => void`. Reports a failed permission reply, question reply or slash command, for a toast. Without it, the error shows inline. A refused slash command also puts the typed line back into the composer. |
+| `providerLabel` | `(model) => string`. The provider line of a model row in the model picker. A white-label returns its own name for Kortix-managed models (`model.providerID === 'kortix'`). `ModelPicker` takes the same prop. |
+
+The thread follows the transcript rules of the Kortix web app. When a provider error interrupts a turn, the harness resumes it with its own `[auto-recovery]` prompt: the thread shows no bubble for that prompt and no error row for the failure it continued. If the chain still ends in failure, one error row shows, with how many automatic retries ran. The composer shows the `/ for commands` hint only when the session has a command. In the model picker, ArrowUp and ArrowDown move the highlight and Enter picks it.
+
+For a layout of your own, compose the parts from the same `useSession` result: `MessageList`, `MessageView`, `Composer`, `PermissionPrompt`, `QuestionPrompt`, `ModelPicker` and `AgentPicker`, all from `@kortix/ui/chat`. `Markdown` renders a streaming message and holds back half-written code fences and tables, so the text does not flicker.
+
+### Render the transcript yourself
+
+To draw every part with your own components, skip `@kortix/ui/chat` and use the headless kit in `@kortix/sdk/react`: `useChatTurns` and `renderParts`. `renderParts` requires one renderer per part kind, so a new kind fails your build, not your UI. See [Build a chat UI](/docs/sdk/react#build-a-chat-ui).
+
+## For agents
+
+The package ships a skill at `packages/ui/skills/kortix-ui/SKILL.md`, and every Kortix session loads it as the `kortix-ui` skill. It tells an agent how to set up the package, which component to compose, which primitives are banned, and how to verify a page. Point your own coding agent at it before it writes UI with `@kortix/ui`.
+
+## Next steps
+
+<CardGroup>
+  <Card icon="atom" title="React" href="/docs/sdk/react">The `useSession` hook and the data hooks the chat reads.</Card>
+  <Card icon="app-window" title="Apps" href="/docs/apps#build-an-internal-tool">Build an internal tool as a Kortix App.</Card>
+</CardGroup>

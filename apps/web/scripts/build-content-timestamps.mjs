@@ -60,6 +60,7 @@ const MARKETING_SOURCES = {
   connectors: 'apps/web/src/app/[locale]/(public)/(marketing)/connectors/page.tsx',
   security: 'apps/web/src/app/[locale]/(public)/(marketing)/security/page.tsx',
   'self-hosted': 'apps/web/src/app/[locale]/(public)/(marketing)/self-hosted/page.tsx',
+  'white-label': 'apps/web/src/app/[locale]/(public)/(marketing)/white-label/page.tsx',
   // Solutions: the hub, then one entry per role. The eight role pages share a
   // single dynamic route, so the meaningful source of each one is its own
   // content file — that is the file whose last commit dates the page.

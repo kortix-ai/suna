@@ -12,6 +12,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useProjectTriggerEventApps } from '@kortix/sdk/react';
 
 import type { EventApp } from './event-trigger-copy';
+import { EventCount } from './event-count';
 import { eventAppStrip } from './trigger-filter';
 
 export function EventAppsStrip({
@@ -33,7 +34,7 @@ export function EventAppsStrip({
       <Label>{tI18nComplete.raw('text07fb9f8661dc')}</Label>
       <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {apps.map((app) => (
-          <li key={app.app}>
+          <li key={`${app.source ?? app.provider}:${app.app}`}>
             <button
               type="button"
               disabled={disabled}
@@ -46,7 +47,7 @@ export function EventAppsStrip({
                   {app.name}
                 </span>
                 <span className="text-muted-foreground block text-xs">
-                  {tI18nComplete('text6e4a170bdf81', { count: app.event_count })}
+                  <EventCount app={app} />
                 </span>
               </span>
             </button>

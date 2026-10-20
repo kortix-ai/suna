@@ -66,58 +66,40 @@ export function partitionUploadBatch<T extends UploadCandidate>(
 }
 
 /**
- * Success toast text for the files that ACTUALLY uploaded.
- *
- * The old code read `files[0].name` whenever exactly one upload succeeded, so
- * dropping `a,b,c` with only `c` succeeding reported "Uploaded a.png".
+ * Share of the run sent, 0-1, by bytes: a finished file counts whole, a failed
+ * one drops out. An all-empty batch falls back to counting files.
  */
-export function describeUploadSuccess(names: readonly string[]): string | null {
-  if (names.length === 0) return null;
-  if (names.length === 1) return `Uploaded ${names[0]}`;
-  if (names.length === 2) return `Uploaded ${names[0]} and ${names[1]}`;
-  return `Uploaded ${names.length} files`;
+export function uploadedFraction(
+  uploads: readonly { file: { size: number }; status: string; sent?: number }[],
+): number {
+  const live = uploads.filter((u) => u.status !== 'error');
+  if (live.length === 0) return 0;
+  const total = live.reduce((n, u) => n + u.file.size, 0);
+  if (total === 0) return live.filter((u) => u.status === 'done').length / live.length;
+  const sent = live.reduce(
+    (n, u) => n + (u.status === 'done' ? u.file.size : Math.min(u.sent ?? 0, u.file.size)),
+    0,
+  );
+  return sent / total;
 }
 
-/** Outstanding upload work across every in-flight batch. */
-export interface UploadProgress {
-  /** Files finished (succeeded or failed) in the current run of batches. */
-  readonly done: number;
-  /** Files admitted across every batch still running. */
-  readonly total: number;
-}
-
-export const IDLE_UPLOAD_PROGRESS: UploadProgress = { done: 0, total: 0 };
+/** Files sent at once. Enough to fill the pipe, few enough not to starve the listing. */
+export const UPLOAD_CONCURRENCY = 4;
 
 /**
- * Admit `count` more files. Additive, never assigned — a second batch starting
- * while a first is still running must not reset the first one's total.
+ * Run `fn` over `items`, at most `limit` at a time, in order of start. A
+ * failure in one call is the caller's to catch: the pool never aborts.
  */
-export function beginUploadBatch(prev: UploadProgress, count: number): UploadProgress {
-  if (count <= 0) return prev;
-  return { done: prev.done, total: prev.total + count };
-}
-
-/**
- * Mark one file finished. Returns to idle only when nothing is outstanding, so
- * a short batch finishing cannot blank the indicator for a longer one still
- * uploading.
- */
-export function settleUploadUnit(prev: UploadProgress): UploadProgress {
-  const done = prev.done + 1;
-  if (done >= prev.total) return IDLE_UPLOAD_PROGRESS;
-  return { done, total: prev.total };
-}
-
-/** "3 of 12" — the file being sent right now out of everything admitted. */
-export function uploadProgressLabel(progress: UploadProgress): string {
-  if (progress.total === 0) return '';
-  return `${Math.min(progress.done + 1, progress.total)} of ${progress.total}`;
-}
-
-/** Completed share of the run, 0-100, for the determinate progress bar. */
-export function uploadProgressPercent(progress: UploadProgress): number {
-  if (progress.total === 0) return 0;
-  return Math.round((progress.done / progress.total) * 100);
+export async function forEachLimit<T>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) await fn(items[next++]!);
+  });
+  await Promise.all(lanes);
 }
 
 /**

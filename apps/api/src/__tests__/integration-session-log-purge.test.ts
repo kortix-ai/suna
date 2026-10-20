@@ -58,7 +58,9 @@ async function seedContent(project: SeededProject, opts: { deletedAt?: Date } = 
   if (opts.deletedAt) await markDeleted(sessionId, opts.deletedAt);
   const scope = { sessionId, projectId: project.project_id, accountId: project.account_id };
   const t = BASE;
-  await db.insert(sessionLogs).values({ ...scope, v: 1, harnessCurrent: 'opencode', restoreGrade: 'A', record: {} });
+  // A journal's log, as the box writes it: a restore leaves it alone (its
+  // mirror conversion runs only for a log no journal owns).
+  await db.insert(sessionLogs).values({ ...scope, v: 1, harnessCurrent: 'opencode', restoreGrade: 'A', record: {}, journalSeenAt: new Date() });
   await db.insert(sessionLogThreads).values({ sessionId, threadId: 'main', v: 1, record: {} });
   await db.insert(sessionLogMessages).values({
     sessionId, messageId: 'msg_1', threadId: 'main', seq: 0, role: 'user', kind: 'turn', inContext: true, createdAt: t,

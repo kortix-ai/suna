@@ -1,6 +1,8 @@
 # Lumen white-label reference
 
-Lumen is the complete reference app for `@kortix/sdk`.
+Lumen is the complete reference app for `@kortix/sdk` and `@kortix/ui`: the
+data layer is the SDK, every UI primitive and the whole chat come from the
+Kortix component library, and the brand is a set of CSS variables.
 
 The app has five architecture rules:
 
@@ -19,7 +21,10 @@ Client code imports only:
 
 - `@kortix/sdk`
 - `@kortix/sdk/react`
-- Local UI and application modules
+- `@kortix/ui/<name>` (primitives), `@kortix/ui/chat` (the chat) and
+  `@kortix/ui/toast` (toasts)
+- `@phosphor-icons/react` (the icon set @kortix/ui renders)
+- Local application modules
 
 Client code does not:
 
@@ -190,6 +195,12 @@ NEXT_PUBLIC_KORTIX_API_URL=https://api.kortix.com/v1 \
   pnpm --filter @kortix/whitelabel-demo dev
 ```
 
+Run against a local worktree stack (`pnpm worktree start <slug>`):
+`WHITELABEL_PORT=3010 NEXT_PUBLIC_KORTIX_API_URL=http://localhost:<worktree api port>/v1 pnpm --filter @kortix/whitelabel-demo dev`.
+Port `3010` is the port the local API allows through CORS. Start the stack
+with its tunnel (no `--no-tunnel`): a cloud sandbox calls back to the local API
+through it, and without it no session starts.
+
 Run wrapper mode with the variables in `.env.example`:
 
 ```bash
@@ -215,10 +226,37 @@ request-scoped SDK client. Tests do not construct Kortix backend requests. The
 suite verifies auth, mode selection, ownership, route policy, proxy behavior,
 preview resolution, rate limits, session cost markup, and the SDK boundary.
 
+## UI: @kortix/ui
+
+The app has no UI kit of its own. It composes `@kortix/ui`:
+
+- `src/app/globals.css` imports `tailwindcss` and `@kortix/ui/tailwind.css`
+  (tokens, component layer, animation and scrollbar plugins), then overrides
+  token variables for the brand.
+- `src/app/providers.tsx` mounts `<UiProvider link={NextLink}>` once, with
+  `<IconProvider>` from `@kortix/ui/icon-provider` inside it and the
+  `<Toaster />` from `@kortix/ui/toast`; toasts are `successToast` /
+  `errorToast` from the same module.
+- Dialogs are `Modal` from `@kortix/ui/modal`. A destructive action confirms
+  through `ConfirmDialog` from `@kortix/ui/confirm-dialog`.
+- The session chat is `<SessionThread session={useSession(…)} />` from
+  `@kortix/ui/chat`, with Lumen's scope bar in the `composerFooter` slot
+  (`src/components/workbench/workbench-tabs.tsx`).
+- `next.config.ts` lists `@kortix/ui` in `transpilePackages`.
+
+`scripts/sdk-boundary.mjs` rejects a file under `src/components/ui`, an
+import of a local UI primitive, a second UI kit (`lucide-react`, `radix-ui`,
+`class-variance-authority`, `next-themes`, `react-markdown`), a direct
+sonner `toast` call and an import of the `@kortix/ui/dialog` primitive.
+
 ## Rebrand
 
-- Product name, tagline, accent, and API URL: `src/config/brand.ts`
-- Theme tokens: `src/app/globals.css`
+- Product name, tagline, and API URL: `src/config/brand.ts`
+- Colors: override `@kortix/ui` token variables in `src/app/globals.css`
+  (`:root` light, `.dark` dark). Lumen sets `--brand` and points `--ring`,
+  `--sidebar-primary` and `--sidebar-ring` at it. Never fork a component.
+- Fonts: the system stack from `tokens.css`. A white-label never loads
+  `@kortix/ui/fonts.css` (Roobert is for Kortix-owned surfaces).
 - Direct-mode credential input: `src/components/api-key-gate.tsx`
 - Wrapper authentication: `src/server/auth.ts`
 - Wrapper authorization: `src/server/users.ts` and `src/server/policy.ts`

@@ -16,6 +16,8 @@ import { actorForUser } from '../iam/actor';
 import { PROJECT_ACTIONS, upsertResourceGrant } from '../iam';
 import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
 import { insertIntoView } from './helpers/compat-views';
+import { runWithContext } from '../lib/request-context';
+import { setImpersonationContext } from '../shared/impersonation';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -111,6 +113,20 @@ describe('per-resource scoping (iam_resource_grants)', () => {
     const listed = (userId: string) => filterAccessibleObjects(actorForUser(userId, ACCOUNT), PROJECT, 'agent', [AGENT]);
     expect(await listed(dave)).toEqual([AGENT]);
     expect(await listed(outsider)).toEqual([]);
+  });
+
+  test('a platform admin acting as the account may run every agent, and nothing without the grant', async () => {
+    // No account membership at all: the operator reaches the account only
+    // through act-as. Without this, "Open as admin" could read a project but
+    // not start a session in it (403 no_agent_access).
+    const operator = uid();
+    const listed = () => filterAccessibleObjects(actorForUser(operator, ACCOUNT), PROJECT, 'agent', [SCOPED_AGENT, OPEN_AGENT]);
+    expect(await listed()).toEqual([]);
+    const acting = await runWithContext('GET', '/v1/projects', () => {
+      setImpersonationContext({ grantId: uid(), targetAccountId: ACCOUNT, impersonatorUserId: operator });
+      return listed();
+    });
+    expect(acting).toEqual([SCOPED_AGENT, OPEN_AGENT]);
   });
 
   test('account owner bypasses per-resource scoping (implicit Manager)', async () => {

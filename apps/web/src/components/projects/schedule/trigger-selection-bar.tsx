@@ -68,7 +68,7 @@ export function TriggerSelectionBar({
     icon: ReactNode,
     onClick: () => void,
     disabled: boolean,
-    className?: string,
+    destructive = false,
   ) => (
     <Hint label={label} side="top">
       <Button
@@ -78,7 +78,10 @@ export function TriggerSelectionBar({
         aria-label={label}
         onClick={onClick}
         disabled={disabled}
-        className={cn('h-8 shrink-0 gap-1.5', className)}
+        className={cn(
+          'h-8 shrink-0 gap-1.5',
+          destructive && 'text-destructive hover:text-destructive',
+        )}
       >
         {icon}
         <span className="hidden @xl/bar:inline">{label}</span>
@@ -123,7 +126,7 @@ export function TriggerSelectionBar({
               <TrashIcon className="size-3.5 shrink-0" />,
               onDelete,
               busy || selectedCount === 0,
-              'text-destructive hover:text-destructive',
+              true,
             )
           : null}
       </ButtonGroup>

@@ -55,12 +55,24 @@ export async function enqueueJob(
   return inserted.length > 0;
 }
 
-/** Insert many jobs of one queue in one statement; existing keys are skipped. Returns how many were new. */
-export async function enqueueJobs(queue: string, jobs: Array<{ key: string; payload?: Record<string, unknown> }>): Promise<number> {
+/**
+ * Insert many jobs of one queue in one statement; existing keys are skipped. Returns how many were new.
+ * `executor`: a transaction, so the jobs commit with the state change that produced them.
+ */
+export async function enqueueJobs(
+  queue: string,
+  jobs: Array<{ key: string; payload?: Record<string, unknown> }>,
+  opts: { maxAttempts?: number; executor?: Pick<typeof db, 'insert'> } = {},
+): Promise<number> {
   if (jobs.length === 0) return 0;
-  const inserted = await db
+  const inserted = await (opts.executor ?? db)
     .insert(jobQueue)
-    .values(jobs.map((job) => ({ queue, jobKey: job.key, payload: job.payload ?? {} })))
+    .values(jobs.map((job) => ({
+      queue,
+      jobKey: job.key,
+      payload: job.payload ?? {},
+      ...(opts.maxAttempts ? { maxAttempts: opts.maxAttempts } : {}),
+    })))
     .onConflictDoNothing({ target: [jobQueue.queue, jobQueue.jobKey] })
     .returning({ jobId: jobQueue.jobId });
   return inserted.length;

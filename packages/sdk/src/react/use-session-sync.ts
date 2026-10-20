@@ -129,6 +129,13 @@ interface UseSessionSyncOptions {
    * scope holds the conversation's copy.
    */
   savedChild?: boolean;
+  /**
+   * The session log (v2) owns this session's history (`useSession` once `session_log` is
+   * negotiated): no saved copy is read (`mirror` is ignored, no `GET …/transcript`, no device
+   * v1 copy), none is refreshed after a turn, and the saved copy is not paged. The runtime
+   * tail and the live rows still fill the store; older history is the session log's.
+   */
+  sessionLog?: boolean;
 }
 
 /**
@@ -185,6 +192,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     mirror,
     subscribeMessages = true,
     savedChild = false,
+    sessionLog = false,
   } = options;
   const runtimeHealthy = useSandboxConnectionStore((state) => state.healthy === true);
   const runtimeScope = useCurrentRuntime((state) => state.sandboxId) ?? 'none';
@@ -262,7 +270,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // A layout effect over a synchronous localStorage read parsed up to 300 KB
   // before the browser painted anything.
   useEffect(() => {
-    if (!canQueryRuntimeSession(sessionId) || !kortixSessionScope) return;
+    if (sessionLog || !canQueryRuntimeSession(sessionId) || !kortixSessionScope) return;
     // Already have the thread (a warm remount, or the runtime beat us): the
     // live read outranks a snapshot and must never be overwritten by one.
     // An EMPTY runtime read is not the thread: it is lost box state, so the
@@ -343,7 +351,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       }
     });
     return () => abort.abort();
-  }, [kortixSessionScope, sessionId, mirror, mirrorKey, savedChild]);
+  }, [kortixSessionScope, sessionId, mirror, mirrorKey, savedChild, sessionLog]);
 
   // Keep the device's copy current: the server writes a new saved copy when a
   // turn ends, so re-read it shortly after this session goes idle. Without
@@ -353,7 +361,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   useEffect(() => {
     const endedTurn = wasWorking.current && !working;
     wasWorking.current = working === true;
-    if (!endedTurn || savedChild) return;
+    if (!endedTurn || savedChild || sessionLog) return;
     const scope = parseKortixSessionScope(kortixSessionScope);
     const saved = currentSavedCopyStore();
     if (!scope || !saved) return;
@@ -361,7 +369,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       void refreshSavedCopy(saved, scope.projectId, scope.sessionId);
     }, SAVED_COPY_REFRESH_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [working, kortixSessionScope, savedChild]);
+  }, [working, kortixSessionScope, savedChild, sessionLog]);
 
   // NO DISK PAINT. The transcript renders from the runtime and from this tab's
   // own optimistic writes — nothing else.
@@ -556,7 +564,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   const savedCursorCovered = useSyncStore(
     () => !!mirrorCursor && !sync.hasOlder && hasRuntimeConfirmedMessage(sessionId, mirrorCursor),
   );
-  const savedCursor = savedCursorCovered ? null : mirrorCursor;
+  const savedCursor = savedCursorCovered || sessionLog ? null : mirrorCursor;
 
   const loadOlder = useCallback((): Promise<void> => {
     const source = chooseOlderSource({

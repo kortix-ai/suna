@@ -49,16 +49,20 @@ let calls: { url: string; method: string; body: unknown; status: number }[] = []
 let toastCalls: { kind: 'success' | 'error'; message: string }[] = [];
 let failNextPatch = false;
 
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   ...realToast,
   successToast: (message: string) => toastCalls.push({ kind: 'success', message }),
   errorToast: (message: string) => toastCalls.push({ kind: 'error', message }),
-}));
+});
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 // The IAM probe is a collaborator, not the subject: the effect under test
 // reads `canManage`, which this stub answers directly. `Hint` (a Radix
 // tooltip, reached through `CopyButton`) needs a real DOM for its portal — a
 // passthrough keeps the harness DOM-free.
-mock.module('@/components/ui/hint', () => ({ default: Passthrough }));
+const uiHintMock = () => ({ default: Passthrough });
+mock.module('@/components/ui/hint', uiHintMock);
+mock.module('@kortix/ui/hint', uiHintMock);
 mock.module('@/lib/use-deployment-cli-install-command', () => ({
   useDeploymentCliInstallCommand: () => 'install kortix',
 }));

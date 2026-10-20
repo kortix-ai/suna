@@ -6,37 +6,38 @@
  * pending state spans every row, as before.
  */
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalHeader,
+  ModalTitle,
+  ModalTrigger,
+} from '@kortix/ui/modal';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/select';
+import { Separator } from '@kortix/ui/separator';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import type { AdminConnector } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plug, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { ArrowsClockwiseIcon, PlugIcon, SlidersHorizontalIcon, TrashIcon } from '@phosphor-icons/react';
 
 export type ConnectorProvider =
   | 'pipedream'
@@ -80,9 +81,9 @@ function AddConnectorForm({ projectId }: { projectId: string }) {
       setName('');
       setUrl('');
       refresh();
-      toast.success('Connector added');
+      successToast('Connector added');
     },
-    onError: () => toast.error('Could not add connector'),
+    onError: () => errorToast('Could not add connector'),
   });
 
   return (
@@ -207,7 +208,7 @@ export function ConnectorRow({
           onClick={onRemove}
           aria-label={`Remove ${cSlug}`}
         >
-          <Trash2 className="size-4" />
+          <TrashIcon className="size-4" />
         </Button>
       </div>
     </div>
@@ -234,46 +235,48 @@ function ConnectorConfigDialog({
     : [];
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <Modal open={open} onOpenChange={setOpen}>
+      <ModalTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
           className="size-8 text-muted-foreground"
           aria-label={`Configure ${slug}`}
         >
-          <Settings2 className="size-4" />
+          <SlidersHorizontalIcon className="size-4" />
         </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="font-mono text-base">{slug}</DialogTitle>
-          <DialogDescription>Connector configuration (read-only).</DialogDescription>
-        </DialogHeader>
-        {config.isLoading && <Skeleton className="h-24 w-full" />}
-        {config.isError && <p className="text-sm text-destructive">Could not load config.</p>}
-        {config.isSuccess && (
-          <div className="space-y-2 text-sm">
-            {rows.length === 0 && <p className="text-muted-foreground">No configurable fields.</p>}
-            {rows.map(([k, v]) => (
-              <div key={k} className="flex items-start justify-between gap-4">
-                <span className="text-muted-foreground">{k}</span>
-                <span className="truncate font-mono text-xs">{String(v)}</span>
-              </div>
-            ))}
-            <Separator />
-            {data?.auth && (
-              <div className="flex items-start justify-between gap-4">
-                <span className="text-muted-foreground">auth</span>
-                <span className="truncate font-mono text-xs">
-                  {String(data.auth?.type ?? 'none')}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
+      </ModalTrigger>
+      <ModalContent>
+        <ModalHeader>
+          <ModalTitle className="font-mono text-base">{slug}</ModalTitle>
+          <ModalDescription>Connector configuration (read-only).</ModalDescription>
+        </ModalHeader>
+        <ModalBody>
+          {config.isLoading && <Skeleton className="h-24 w-full" />}
+          {config.isError && <p className="text-sm text-destructive">Could not load config.</p>}
+          {config.isSuccess && (
+            <div className="space-y-2 text-sm">
+              {rows.length === 0 && <p className="text-muted-foreground">No configurable fields.</p>}
+              {rows.map(([k, v]) => (
+                <div key={k} className="flex items-start justify-between gap-4">
+                  <span className="text-muted-foreground">{k}</span>
+                  <span className="truncate font-mono text-xs">{String(v)}</span>
+                </div>
+              ))}
+              <Separator />
+              {data?.auth && (
+                <div className="flex items-start justify-between gap-4">
+                  <span className="text-muted-foreground">auth</span>
+                  <span className="truncate font-mono text-xs">
+                    {String(data.auth?.type ?? 'none')}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </ModalBody>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -290,17 +293,17 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
     mutationFn: () => kortix.project(projectId).connectors.sync(),
     onSuccess: (res) => {
       refresh();
-      toast.success(`Synced ${res.synced} connector(s)`);
+      successToast(`Synced ${res.synced} connector(s)`);
     },
-    onError: () => toast.error('Sync failed'),
+    onError: () => errorToast('Sync failed'),
   });
   const remove = useMutation({
     mutationFn: (s: string) => kortix.project(projectId).connectors.remove(s),
     onSuccess: () => {
       refresh();
-      toast.success('Connector removed');
+      successToast('Connector removed');
     },
-    onError: () => toast.error('Could not remove connector'),
+    onError: () => errorToast('Could not remove connector'),
   });
 
   const items: AdminConnector[] = connectors.data?.connectors ?? [];
@@ -311,7 +314,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-sm font-medium">
-              <Plug className="size-4 text-muted-foreground" /> Connectors
+              <PlugIcon className="size-4 text-muted-foreground" /> Connectors
             </div>
             <p className="text-xs text-muted-foreground">
               Tools and connectors the agent can call at runtime.
@@ -323,7 +326,7 @@ export function ConnectorsTab({ projectId }: { projectId: string }) {
             disabled={sync.isPending}
             onClick={() => sync.mutate()}
           >
-            {sync.isPending ? <Loading className="size-4" /> : <RefreshCw className="size-4" />}
+            {sync.isPending ? <Loading className="size-4" /> : <ArrowsClockwiseIcon className="size-4" />}
             Sync
           </Button>
         </div>

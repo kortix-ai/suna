@@ -136,7 +136,7 @@ export function StepShell({
           <Button
             size="lg"
             variant="ghost"
-            className="w-full whitespace-nowrap active:scale-[0.96] motion-reduce:active:scale-100 md:w-auto"
+            className="w-full whitespace-nowrap active:scale-[0.96] motion-reduce:active:scale-100 md:w-auto hit-area-y-2"
             onClick={onSkip}
           >
             {skipLabel}
@@ -144,7 +144,7 @@ export function StepShell({
         )}
         <Button
           size="lg"
-          className="w-full whitespace-nowrap active:scale-[0.96] motion-reduce:active:scale-100 md:w-auto md:min-w-36"
+          className="w-full whitespace-nowrap active:scale-[0.96] motion-reduce:active:scale-100 md:w-auto md:min-w-36 hit-area-y-2"
           onClick={onPrimary}
           disabled={primaryDisabled}
         >

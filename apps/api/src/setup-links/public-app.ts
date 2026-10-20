@@ -476,14 +476,6 @@ async function resolveConnectorLink(c: Context): Promise<
   if (resolved.payload.kind !== 'connector') {
     return { error: c.json({ error: 'Wrong link type' }, 400) };
   }
-  if (!composioConfigured() && !pipedreamConfigured()) {
-    return {
-      error: c.json(
-        { error: 'No hosted connector authorization provider is configured on this deployment' },
-        501,
-      ),
-    };
-  }
   if (!resolved.payload.app) {
     return { error: c.json({ error: 'This connector has no provider app bound' }, 400) };
   }
@@ -504,8 +496,17 @@ async function resolveConnectorLink(c: Context): Promise<
   // handlers. This check was missed when those were opened up, so a Composio
   // connector produced a link whose own intake page then answered
   // "Connector not found" — the button worked and the modal behind it 404'd.
-  if (!connector || (connector.providerType !== 'pipedream' && connector.providerType !== 'composio')) {
+  if (!connector || !['pipedream', 'composio', 'mcp'].includes(connector.providerType)) {
     return { error: c.json({ error: 'Connector not found' }, 404) };
+  }
+  // An MCP connector signs in through Kortix itself; the others need a hosted provider.
+  if (connector.providerType !== 'mcp' && !composioConfigured() && !pipedreamConfigured()) {
+    return {
+      error: c.json(
+        { error: 'No hosted connector authorization provider is configured on this deployment' },
+        501,
+      ),
+    };
   }
   // Links minted before `owner` existed decode without it. Every one of them
   // authorized the caller's own account, so `me` is the faithful default.

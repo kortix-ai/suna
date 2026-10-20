@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 843,
+  "count": 853,
   "routes": [
     {
       "method": "GET",
@@ -29,6 +29,10 @@
     {
       "method": "GET",
       "path": "/health/ready"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/admit"
     },
     {
       "method": "POST",
@@ -241,6 +245,14 @@
     {
       "method": "POST",
       "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/automations"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/automations"
     },
     {
       "method": "DELETE",
@@ -1507,6 +1519,10 @@
       "path": "/v1/notifications/device-token/:token"
     },
     {
+      "method": "POST",
+      "path": "/v1/notifications/device-token/release"
+    },
+    {
       "method": "GET",
       "path": "/v1/notifications/preferences"
     },
@@ -2103,6 +2119,22 @@
       "path": "/v1/projects/:projectId/channels/teams/oauth/complete"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/telegram"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/channels/telegram/allowed-users"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/telegram/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/telegram/installation"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/cli-token"
     },
@@ -2225,6 +2257,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/connections/me"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-moves"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connectors/:slug/move"
     },
     {
       "method": "POST",

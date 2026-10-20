@@ -70,7 +70,7 @@ export interface ProjectSession {
   project_id: string;
   branch_name: string;
   base_ref: string;
-  sandbox_provider: 'daytona' | 'platinum' | 'e2b' | null;
+  sandbox_provider: 'platinum' | 'daytona' | null;
   /** Null until the session has a sandbox. */
   sandbox_id: string | null;
   sandbox_url: string | null;
@@ -147,9 +147,12 @@ export interface ProjectSession {
   can_access?: boolean;
   /** Exact lifecycle state of the backing runtime resource, when present. */
   runtime_status?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
-  /** Server-managed soft-deletion audit fields, present in project inventory mode. */
+  /** Server-managed soft-deletion audit fields: the `project` inventory and
+   *  the `deleted: 'only'` list (Recently deleted). */
   deleted_at?: string | null;
   deleted_by?: string | null;
+  /** A deleted session: the last instant `restoreProjectSession` takes it back. */
+  restore_until?: string | null;
   /** When the caller pinned / archived this session in their own list
    *  (KRTX-2418). Present for a person's list and read by id; absent for an
    *  agent, an API key or a service account. */
@@ -248,7 +251,7 @@ export interface CreateProjectSessionInput {
   labels?: string[];
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
-  provider?: 'daytona' | 'platinum' | 'e2b';
+  provider?: 'platinum' | 'daytona';
   /** @deprecated Withdrawn — persistent machines left the product. The API ignores it. Removed in the next major. */
   persistent_machine?: boolean;
   branch_already_created?: boolean;
@@ -361,8 +364,10 @@ export interface ListProjectSessionsOptions {
   /** Only sessions that carry EVERY one of these labels (exact match). */
   labels?: string[];
   /** Only the caller's pinned or archived sessions. Omit for the list, which
-   *  leaves out the sessions the caller archived. */
-  view?: 'pinned' | 'archived';
+   *  leaves out the sessions the caller archived. `'deleted'`: Recently
+   *  deleted, the deleted sessions the caller may restore
+   *  (`restoreProjectSession`) inside their window, each with `restore_until`. */
+  view?: 'pinned' | 'archived' | 'deleted';
 }
 
 /** One keyset page of a project's sessions. */
@@ -404,6 +409,10 @@ export async function listProjectSessionsPage(
 ): Promise<ProjectSessionPage> {
   const response = await backendApi.get<ProjectSession[]>(
     `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
+    // A background read (shell prefetch, 5s sidebar poll): its query state
+    // reports a failure. The host toast would announce a 403 over the access
+    // gate that already explains it.
+    { showErrors: false },
   );
   const items = unwrap(response);
   return {

@@ -96,6 +96,7 @@ const projectWebhookRejectedRunLimiter = new TokenBucketRateLimiter('project_web
 const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
 const llmGatewayLimiter = new TokenBucketRateLimiter('llm_gateway');
 const feedbackLimiter = new TokenBucketRateLimiter('feedback');
+const deviceTokenReleaseLimiter = new TokenBucketRateLimiter('device_token_release');
 
 /**
  * Per-project budget on secret WRITES (POST/PUT/PATCH/DELETE under
@@ -294,6 +295,29 @@ export function createProjectWebhookRateLimitMiddleware() {
 }
 
 /**
+ * Guards the public `POST /v1/notifications/device-token/release`. Keyed on
+ * client IP; a signed-out app calls it once per sign-out. The rejection path
+ * writes no audit row, so a flood cannot become a database-write flood.
+ */
+export function createDeviceTokenReleaseRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const result = deviceTokenReleaseLimiter.check(requestClientKey(c), { limit: 30, windowMs: 60_000 });
+    setHeaders(c, result);
+    if (!result.allowed) {
+      return c.json(
+        {
+          error: 'rate_limit_exceeded',
+          message: 'Rate limit exceeded. Please retry shortly.',
+          retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+        },
+        429,
+      );
+    }
+    await next();
+  };
+}
+
+/**
  * Bound forced Git mirror refreshes by project, independent of source IP.
  * Each API replica owns a local mirror, so each replica needs its own budget.
  */
@@ -372,4 +396,5 @@ export function resetRateLimiters() {
   projectSecretWriteLimiter.reset();
   llmGatewayLimiter.reset();
   feedbackLimiter.reset();
+  deviceTokenReleaseLimiter.reset();
 }

@@ -1980,7 +1980,6 @@ function TurnFooter(
     {turnErrorRow.text && !turnErrorRow.isAbort && !turn.autoRetry?.continued && !!turn.autoRetry?.retries && (
       <TurnAutoRetryNote count={turn.autoRetry.retries} />
     )}
-    <TurnFallbackRows working={working} events={servedModel?.fallbacks ?? []} />
     {/* ── Who stopped it, when it was someone else: an own stop is not news ── */}
     {!working && stoppedBy && <TurnStoppedBy name={stoppedBy} />}
     {/* ── Outcomes — what this turn left behind ──
@@ -2228,6 +2227,9 @@ function SessionTurnImpl(props: SessionTurnProps) {
   return (
     <div className="group/turn text-factor-[2] space-y-2.5">
       <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
+      {/* Model switches happened while the turn worked, so they sit above
+          its work and its answer, not under the answer. */}
+      <TurnFallbackRows working={model.working} events={props.servedModel?.fallbacks} />
       <GenuiTelemetryContext.Provider value={genuiTelemetry}>
         <TurnToolBlocks
           {...props}

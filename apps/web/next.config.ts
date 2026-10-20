@@ -294,7 +294,7 @@ const ALLOWED_PROXY_ORIGINS =
 const nextConfig = (): NextConfig => ({
   // The frontend data layer lives in the @kortix/sdk workspace package (TS
   // source), so Next must transpile it.
-  transpilePackages: ['@kortix/sdk'],
+  transpilePackages: ['@kortix/sdk', '@kortix/ui'],
   // Standalone bundles the app for Docker via a slow monorepo-wide file-tracing
   // pass. Vercel injects a Next adapter. Next 16.3 does not emit the whole-app
   // NFT for adapter builds, but its standalone finalizer still requires that

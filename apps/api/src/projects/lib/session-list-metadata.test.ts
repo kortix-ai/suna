@@ -47,7 +47,7 @@ const row = (over: Record<string, unknown> = {}) =>
     projectId: 'p',
     branchName: 'b',
     baseRef: 'main',
-    sandboxProvider: 'e2b',
+    sandboxProvider: 'platinum',
     sandboxId: 's',
     sandboxUrl: null,
     opencodeSessionId: null,
