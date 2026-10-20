@@ -3,8 +3,14 @@
  * turn ends on a session that a fallback took over, move it back to the model
  * it stood in for once that model can serve again. A pool that is cooling
  * down cannot, so the session stays on the fallback until a later turn end.
+ * Neither does a route the gateway still holds: it answers the original model
+ * with the fallback for up to MAX_HOLD_SECONDS after the switch
+ * (pipeline/route-memory.ts), so moving back sooner shows a model that does not
+ * answer (measured: a reconnect cleared the cooldown, the next prompt named
+ * Sol and DeepSeek answered it).
  */
 import { projectSessions } from '@kortix/db';
+import { MAX_HOLD_SECONDS } from '@kortix/llm-gateway';
 import { and, eq, sql } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { logger } from '../../lib/logger';
@@ -19,7 +25,7 @@ import { resolveSessionPersonalOwner } from './personal-resources';
 const RESTORABLE_SOURCES = new Set(['explicit', 'repointed']);
 
 /** Never throws. Returns the restored model ref, or null when the session stays. */
-export async function revertSessionModelFallback(sessionId: string): Promise<string | null> {
+export async function revertSessionModelFallback(sessionId: string, nowMs = Date.now()): Promise<string | null> {
   try {
     const [row] = await db
       .select({
@@ -36,6 +42,7 @@ export async function revertSessionModelFallback(sessionId: string): Promise<str
     const from = metadata[FALLBACK_KEYS.from];
     const at = metadata[FALLBACK_KEYS.at];
     if (typeof from !== 'string' || !from) return null;
+    if (typeof at === 'number' && nowMs - at < MAX_HOLD_SECONDS * 1000) return null;
 
     const personalUserId = await resolveSessionPersonalOwner({
       projectId: row.projectId,

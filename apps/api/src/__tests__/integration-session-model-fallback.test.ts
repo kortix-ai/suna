@@ -175,6 +175,19 @@ describe('session model fallback', () => {
     expect((await metadataOf(sessionId)).opencode_model_source).toBe('explicit');
   });
 
+  test('the session stays on the fallback while the gateway still holds the route', async () => {
+    // The gateway holds a resting route up to MAX_HOLD_SECONDS from the switch
+    // (pipeline/route-memory.ts) and answers the original model with the
+    // fallback until then: moving back earlier shows a model that does not answer.
+    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
+    await switchSessionToFallback(change(sessionId), 1_000_000);
+    servable = true;
+    probes.length = 0;
+    expect(await revertSessionModelFallback(sessionId, 1_000_000 + 599_000)).toBeNull();
+    expect(probes).toEqual([]);
+    expect(await revertSessionModelFallback(sessionId, 1_000_000 + 600_000)).toBe(SOL);
+  });
+
   test('a session no fallback took over is left alone', async () => {
     const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' });
     servable = true;
