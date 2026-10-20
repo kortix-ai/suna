@@ -642,7 +642,17 @@
       "email": "Email",
       "channelSwitch": "{kind}: {channel}",
       "preferencesLoadError": "Could not load your notification settings",
-      "retry": "Try again"
+      "retry": "Try again",
+      "recovery": {
+        "instructions": "How to unblock browser notifications",
+        "chrome": "Chrome: open the site controls beside the address → Site settings → Notifications → Allow.",
+        "edge": "Edge: open the site controls beside the address → Permissions for this site → Notifications → Allow.",
+        "firefox": "Firefox: open the permissions icon beside the address and remove the Blocked notification permission. Enable notifications here to request it again.",
+        "safari": "Safari on Mac: open Safari → Settings → Websites → Notifications, then set this site to Allow. On iPhone or iPad, add Kortix to the Home Screen and enable notifications from that app.",
+        "afterChange": "Reload this page after changing browser permissions, then enable notifications. System notification settings must also allow your browser.",
+        "fallback": "While a Kortix tab is open, completion sounds can alert you without browser notification permission. Keep the tab and device unmuted. This enables notification sounds and previews the completion sound.",
+        "enableSound": "Enable completion sound"
+      }
     },
     "git": {
       "updateFailed": "Failed to update repository",
