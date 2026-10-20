@@ -24,6 +24,7 @@ import {
 } from '../channels/install-store';
 import { approvalPageUrl } from '../setup-links/token';
 import { config } from '../config';
+import { logger } from '../lib/logger';
 import type { ConnectionOwnerType } from '../projects/lib/connection-access';
 import {
   getProjectSecretConsumerConfigurationStatus,
@@ -470,14 +471,24 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     loadPolicies: loadConnectorPoliciesFor,
     loadProjectPolicies: loadProjectPoliciesFor,
     loadDefaultMode: loadDefaultModeFor,
-    // The link expires with the approval it points at (`expires_at`).
+    // The link expires with the approval it points at (`expires_at`). A failed
+    // read still mints the link, with the default 24 h token.
     mintApprovalLink: async ({ projectId, executionId, sessionId }) => {
-      const [row] = await db
-        .select({ expiresAt: connectorCalls.expiresAt })
-        .from(connectorCalls)
-        .where(eq(connectorCalls.executionId, executionId))
-        .limit(1);
-      return approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL, row?.expiresAt);
+      let expiresAt: Date | null = null;
+      try {
+        const [row] = await db
+          .select({ expiresAt: connectorCalls.expiresAt })
+          .from(connectorCalls)
+          .where(eq(connectorCalls.executionId, executionId))
+          .limit(1);
+        expiresAt = row?.expiresAt ?? null;
+      } catch (error) {
+        logger.warn('[approvals] expires_at read failed; minting a 24h approval link', {
+          executionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL, expiresAt);
     },
     // Lazy: channels import connectors, so a static import here would cycle.
     postApprovalCard: async (input) =>
