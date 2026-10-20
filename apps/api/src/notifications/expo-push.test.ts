@@ -185,6 +185,19 @@ describe('sendExpoPushMessages', () => {
     expect(result.removedTokens).toEqual([]);
   });
 
+  test('enabled: false sends nothing (a local stack, KRTX-2938)', async () => {
+    const { fn, calls } = fakeFetch(okTickets);
+    const result = await sendExpoPushMessages([message(1)], { fetch: fn, retryDelayMs: 0, logger, enabled: false });
+    expect(calls).toHaveLength(0);
+    expect(result).toEqual({ tickets: [], removedTokens: [], failedMessages: 0 });
+  });
+
+  test('origin is stamped into every message data', async () => {
+    const { fn, calls } = fakeFetch(okTickets);
+    await sendExpoPushMessages([message(1)], { fetch: fn, retryDelayMs: 0, logger, origin: 'https://api.example.test' });
+    expect(calls[0].body[0].data).toEqual({ ...message(1).data, origin: 'https://api.example.test' });
+  });
+
   test('an empty message list sends nothing', async () => {
     const { fn, calls } = fakeFetch(okTickets);
     await sendExpoPushMessages([], { fetch: fn, retryDelayMs: 0, logger });

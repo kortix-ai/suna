@@ -33,8 +33,8 @@ import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { cn } from '@kortix/ui/lib/utils';
-import { CheckIcon, ShieldCheckIcon, ShieldWarningIcon, XIcon } from '@phosphor-icons/react';
+import { cn } from '@kortix/ui';
+import { CheckIcon, ShieldWarningIcon, XIcon } from '@phosphor-icons/react';
 
 /** Query key kept local: `lib/query-keys.ts` is shared by every panel and this
  *  is the only reader of the session audit. */
@@ -50,12 +50,9 @@ const RISK_BADGE: Record<string, string> = {
 export function SessionApprovals({
   projectId,
   sessionId,
-  waitingInChat = 0,
 }: {
   projectId: string;
   sessionId: string;
-  /** Open question and permission prompts in the transcript (`useSession`). They are human decisions too. */
-  waitingInChat?: number;
 }) {
   const qc = useQueryClient();
   const [failure, setFailure] = useState<ApprovalFailure | null>(null);
@@ -84,9 +81,9 @@ export function SessionApprovals({
     onSettled: () => setDeciding(null),
   });
 
-  // A session whose audit can't be read must not render as "nothing pending" —
-  // that is a claim about a gate, and a wrong one leaves the agent stuck with
-  // no sign of why.
+  // Quiet unless a gate is pending: the thread shows its own prompts, and a
+  // permanent "nothing is waiting" strip was noise above every session. A
+  // failed read is not "nothing pending", so it gets one quiet line.
   if (audit.isError) {
     return (
       <Strip>
@@ -95,41 +92,8 @@ export function SessionApprovals({
       </Strip>
     );
   }
-  if (audit.isLoading) {
-    return (
-      <Strip>
-        <Loading className="size-3.5" />
-        Checking for anything waiting on a human…
-      </Strip>
-    );
-  }
-
   const view = sessionApprovalsView(audit.data);
-
-  if (view.pending.length === 0 && waitingInChat > 0) {
-    return (
-      <Strip>
-        <ShieldWarningIcon className="size-3.5 shrink-0" />
-        The agent is waiting on your answer in the conversation below.
-      </Strip>
-    );
-  }
-
-  if (view.pending.length === 0) {
-    return (
-      <Strip>
-        <ShieldCheckIcon className="size-3.5 shrink-0" />
-        <span>
-          Nothing is waiting on a human decision.
-          {view.trailLimited
-            ? ' Only pending approvals are shown here.'
-            : view.recent.length > 0
-              ? ` ${view.recent.length} governed action${view.recent.length === 1 ? '' : 's'} so far, most recently ${view.recent[0]!.action}.`
-              : ''}
-        </span>
-      </Strip>
-    );
-  }
+  if (view.pending.length === 0) return null;
 
   return (
     <div className="shrink-0 border-b border-border bg-kortix-orange/15 px-5 py-3">

@@ -493,3 +493,37 @@ describe('useSession presenceAwake', () => {
     expect(result!.presenceAwake).toBeNull();
   });
 });
+
+/**
+ * WL3-3: deleting the open session navigates away, and the unmount would
+ * end the presence lease with an absent PUT. The session is gone, so that
+ * PUT only answers 404: a deleted session sends no more presence.
+ */
+describe('useSession presence after its session is deleted', () => {
+  test('unmounting a deleted session sends no absent PUT', async () => {
+    const { noteSessionDeleted } = await import('../core/http/session-stopped');
+    act(() => {
+      renderer = create(mount({ presencePageExit: true }));
+    });
+    await flush();
+    act(() => noteSessionDeleted(SESSION_ID));
+    await flush();
+    act(() => renderer!.unmount());
+    renderer = null;
+    await flush();
+    expect(puts.map((p) => p.body.active)).toEqual([true]);
+  });
+
+  test('another session deleted elsewhere keeps this lease', async () => {
+    const { noteSessionDeleted } = await import('../core/http/session-stopped');
+    act(() => {
+      renderer = create(mount({ presencePageExit: true }));
+    });
+    await flush();
+    act(() => noteSessionDeleted('kses_other'));
+    act(() => renderer!.unmount());
+    renderer = null;
+    await flush();
+    expect(puts.map((p) => p.body.active)).toEqual([true, false]);
+  });
+});

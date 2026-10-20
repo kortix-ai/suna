@@ -14,19 +14,19 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import { Button } from '@/components/ui/button';
+} from '@kortix/ui/breadcrumb';
+import { Button } from '@kortix/ui/button';
 import {
   SidebarEdgePeek,
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
-} from '@/components/ui/sidebar';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+} from '@kortix/ui/sidebar';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
 import { AdminSidebar, isAdminNavActive } from './admin-sidebar';
 

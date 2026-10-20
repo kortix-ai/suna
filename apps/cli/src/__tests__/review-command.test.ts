@@ -172,7 +172,7 @@ function startServer(): string {
   return `http://127.0.0.1:${server.port}`;
 }
 
-async function runCli(args: string[], configFile?: string) {
+async function runCli(args: string[], configFile?: string, ambient: Record<string, string> = {}) {
   const env: Record<string, string | undefined> = {
     ...process.env,
     KORTIX_NO_UPDATE_CHECK: '1',
@@ -184,6 +184,7 @@ async function runCli(args: string[], configFile?: string) {
   for (const key of ['KORTIX_API_URL', 'KORTIX_CLI_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN', 'KORTIX_SESSION_ID', 'BASH_ENV']) {
     delete env[key];
   }
+  Object.assign(env, ambient);
   const proc = Bun.spawn({
     cmd: [process.execPath, entry, ...args],
     cwd: tmp,
@@ -430,6 +431,34 @@ describe('kortix review', () => {
       },
     });
     expect(r.stdout).toContain('rv_new');
+  });
+
+  // KRTX-2864: inside a sandbox, KORTIX_SESSION_ID is a session of the
+  // sandbox's own project (KORTIX_PROJECT_ID). Sent as the origin of an item
+  // in another project it answered "Session not found".
+  test('submit drops an ambient session of another project, and says so', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['submit', '--kind', 'decision', '--title', 'Ship v2 pricing', '--project', PROJECT],
+      config,
+      { KORTIX_SESSION_ID: 'sess_foreign', KORTIX_PROJECT_ID: 'proj_sandbox_own' },
+    );
+    expect(r.code).toBe(0);
+    expect(calls[0]?.body).toEqual({ kind: 'decision', title: 'Ship v2 pricing' });
+    expect(r.stderr).toContain('KORTIX_SESSION_ID');
+    expect(r.stderr).toContain('--session');
+  });
+
+  test('submit keeps the ambient session when it belongs to the same project', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['submit', '--kind', 'decision', '--title', 'Ship v2 pricing', '--project', PROJECT],
+      config,
+      { KORTIX_SESSION_ID: 'sess_own', KORTIX_PROJECT_ID: PROJECT },
+    );
+    expect(r.code).toBe(0);
+    expect(calls[0]?.body).toEqual({ kind: 'decision', title: 'Ship v2 pricing', session_id: 'sess_own' });
+    expect(r.stderr).not.toContain('KORTIX_SESSION_ID');
   });
 
   test('submit without --title exits 2 and never calls the API', async () => {

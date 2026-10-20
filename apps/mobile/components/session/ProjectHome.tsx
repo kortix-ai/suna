@@ -24,7 +24,7 @@
  *   above the keyboard, so the symbol never sits under the composer. It is
  *   large at rest and scales down with the keyboard.
  * - At rest the composer sits at the thread composer's distance from the
- *   bottom (SessionPage pads `insets.bottom`, SessionChatInput adds `pb-3`).
+ *   bottom: `max(insets.bottom, 12)`, the card on the safe-area line (KRTX-2930).
  * - The composer follows the keyboard down to KEYBOARD_GAP above it once it appears.
  *
  * The draft lives in `HomeComposer`, not here: a keystroke re-renders the
@@ -333,7 +333,9 @@ export function ProjectHome({
     [defaultModel, models, setModelForAgent, agentSlot],
   );
 
-  const restingGap = insets.bottom + COMPOSER_BOTTOM_GAP;
+  // The card rests on the safe-area line, as in the thread (KRTX-2930): the
+  // inset already holds the home indicator's clearance, so the 12pt is not stacked on it.
+  const restingGap = Math.max(insets.bottom, COMPOSER_BOTTOM_GAP);
   const { progress } = useReanimatedKeyboardAnimation();
   const composerStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: progress.value * (restingGap - KEYBOARD_GAP) }],
@@ -416,8 +418,8 @@ export function ProjectHome({
       <FloatingMenuButton onPress={onOpenDrawer}>
         {/* Dev builds only: Metro folds `__DEV__` to false, so a release build has no button. */}
         {__DEV__ ? (
-          <Button variant="secondary" size="sm" className="rounded-full" onPress={() => router.push('/genui-debug')}>
-            <Text>Debug GenUI</Text>
+          <Button variant="secondary" size="sm" className="rounded-full" onPress={() => router.push('/debug')}>
+            <Text>Debug</Text>
           </Button>
         ) : null}
         {notifications ? (
