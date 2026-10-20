@@ -1,18 +1,79 @@
-# Lumen: a customer-facing product built on Kortix
+<p align="center">
+  <img src="public/screenshots/lumen-mark.svg" width="56" alt="Lumen mark" />
+</p>
 
-Lumen is the reference for an **outward-facing app**: a product with its own
-users, its own organizations and its own database, that uses Kortix as the
-backend for off-the-shelf agents. Lumen sells three specialists (Finance
-analyst, Legal reviewer, Research). Its customers never get a Kortix account
-and never hold a Kortix credential. What of Kortix a customer can still see is
-listed under "What a customer can see".
+<h1 align="center">Lumen</h1>
 
-- Stack: Next.js 16, Convex (database + server functions), Better Auth on
-  Convex (email + password, organizations).
-- UI: `@kortix/ui`, re-themed by tokens. The session page is the same
-  `useSession` + `@kortix/ui/session` workbench every Kortix host renders.
-- Kortix access: `@kortix/sdk` only. Server-side calls use
-  `@kortix/sdk/server`; the browser uses the one `createKortix` client.
+<p align="center">
+  <b>AI agents for finance, legal and research teams. Your product, your brand, Kortix underneath.</b><br/>
+  The reference for an <b>outward-facing app</b> on Kortix: its own users, organizations and database,
+  with Kortix as the agent backend.
+</p>
+
+<p align="center">
+  <a href="#try-it-now">Try it now</a> ·
+  <a href="#what-it-does">What it does</a> ·
+  <a href="#who-owns-what">Architecture</a> ·
+  <a href="#setup">Setup</a> ·
+  <a href="../internal-app-demo/README.md">The internal-tool example</a>
+</p>
+
+Lumen sells three specialists (Finance analyst, Legal reviewer, Research). A customer signs up,
+creates an organization, picks a specialist, and asks it a question. The agent works in a cloud
+sandbox: its tool calls stream in, the files it writes open in the Files tab, and its commits show
+in Changes. The customer never gets a Kortix account and never holds a Kortix credential: Lumen's
+server talks to Kortix, and Lumen's proxy decides which Kortix calls a member may make.
+
+- Stack: Next.js 16, Convex (database + server functions), Better Auth on Convex (email +
+  password, organizations).
+- UI: `@kortix/ui`, re-themed by one typed theme (`src/config/theme.ts`). The thread is the same
+  `useSession` + `SessionThread` every Kortix host renders.
+- Kortix access: `@kortix/sdk` only. Server-side calls use `@kortix/sdk/server`; the browser uses
+  the one `createKortix` client, pointed at Lumen's own origin.
+
+## Try it now
+
+| I want to… | Do this |
+| --- | --- |
+| **Run it against a Kortix stack** | Follow [Setup](#setup): local Convex, four env values, `pnpm --filter @kortix/whitelabel-demo dev` |
+| **Make it my brand** | `src/config/brand.ts` (name, tagline) and `src/config/theme.ts` (colors, radius, spacing, shadows, motion, fonts) |
+| **Change the specialists** | `convex/templates.ts` (`SEED`), then `npx convex run templates:seed` |
+| **Build an internal tool instead** | [`apps/internal-app-demo`](../internal-app-demo/README.md): a static Kortix App, sign-in is Kortix's |
+
+![A tour of Lumen against a real cloud sandbox: sign up, create an organization, pick the Finance analyst, ask a question, the agent's tool rows and reply stream in, the file it wrote in Files, its commit in Changes, light and dark](public/screenshots/tour.gif)
+
+## What it does
+
+**Organizations and members.** Better Auth sign-up, organizations, an organization switcher and
+invitations by link. Members of one organization never see another's workspaces: Convex returns
+nothing, and the proxy answers `403`.
+
+**Workspaces from templates.** A workspace is one specialist: Lumen provisions a Kortix project,
+installs the template's agent as its default, and shows the workspace once it is ready (~15 s).
+
+**Threads.** Each question starts a thread: one Kortix session with its own sandbox. The thread is
+Kortix's own transcript (streaming markdown, grouped tool rows, questions and approvals, Stop)
+under Lumen's chrome. Rename, restart and delete from the thread menu.
+
+**Files and Changes.** The files and commits of this thread: the thread's branch, read only.
+Markdown renders as a document. Workspace configuration (agents, skills, the manifest) stays
+hidden, and every commit names Lumen as its author.
+
+**Preview and Scope.** A sandbox app opens in the Preview tab through a 15-minute preview share,
+never a token. Scope lists what the thread may still change: model, agent, secrets, connections.
+
+**Your brand, not a recolor.** Lagoon teal on warm sand, deep teal ink in dark mode, softer
+corners (0.875rem), stock Tailwind density, warm shadows, a slower settle-in curve, Instrument Sans
+and Instrument Serif headings, and Lumen's aperture mark wherever `@kortix/ui` would draw the Kortix
+symbol. Light, dark or system, applied before the first paint.
+
+| | |
+| --- | --- |
+| ![New workspace: the three specialists](public/screenshots/templates.png) | ![A workspace: ask the agent, the thread list](public/screenshots/workspace.png) |
+| ![The agent at work: tool rows streaming in](public/screenshots/streaming.png) | ![The finished reply](public/screenshots/session.png) |
+| ![Files: the memo the agent wrote, rendered](public/screenshots/files.png) | ![Changes: the thread's commit, authored by Lumen](public/screenshots/changes.png) |
+
+<p align="center"><img src="public/screenshots/session-light.png" width="720" alt="The same thread in the light theme" /></p>
 
 ## When to pick this example
 
@@ -44,18 +105,25 @@ writes on each session (below). No Kortix API has a Lumen concept in it.
   `owner_avatar_url` and the initiator label, and `message-authors` loses its
   member entries. The transcript therefore shows no "Sent by" or "Stopped
   by" line.
-- Commits in the Changes tab name their Kortix author ("Kortix",
-  `noreply@kortix.ai`), and the project's seed commits name Kortix.
+- Git history names Lumen as every author and committer, with no email, and
+  the word Kortix in a commit message becomes Lumen (`scrubGit`). A failed
+  turn's error copy names Lumen (`scrubTurn`), and the slash-command list
+  leaves out the platform's own commands. The live event stream is not
+  rewritten: a turn that fails while the page is open can show Kortix's error
+  copy until the next reload.
+- The Files tab hides the workspace configuration (`agents/`, `skills/`,
+  `harnesses/`, `memory/`, `kortix.yaml`, the scaffold `README.md`). Raw JSON
+  of some proxied reads (the project record, the manifest) still names Kortix
+  in platform metadata; Lumen's UI does not render those fields.
 - `GET /api/kortix/projects/<id>` returns the operator's `account_id` and the
   project's repository fields. They are opaque ids, not credentials.
 - The agent knows what it runs on. Each template prompt tells it never to name
   the platform, provider or model (`AS_LUMEN` in `convex/templates.ts`). A
   workspace keeps the prompt it was provisioned with; re-run
   `templates:seed` and create a new workspace to pick up a change.
-- The session UI shows the session model id, which names the provider: the
-  composer's model label and the Scope panel's "Model" row (for example
-  `kortix/deepseek-v4.1-flash`). Give your agents models whose ids you are
-  willing to show, or hide those controls in your own session screen.
+- The session UI shows the session model: the composer's model picker shows
+  its display name, and the scope chips show its id without the `kortix/`
+  prefix (`brandModelId`, for example `deepseek-v4.1-flash`).
 - A session PATCH through the proxy keeps the session's `lumen-` labels and
   drops client `lumen_` metadata keys (`tagSessionPatch` in
   `convex/tags.ts`). A member can rename and relabel a thread, but cannot
@@ -137,6 +205,9 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
    (Kortix would list the operator). Two reads the session UI makes stay
    refused (`403`) and the UI works without them: `GET billing/account-state`
    (the operator's credits) and the runtime's `GET global/config`.
+   `UiProvider` keeps `accountApiEnabled` on for this reason: with it off,
+   `@kortix/ui` would skip the probes, treat every action as allowed, and send
+   the configuration reads (agent config, connectors) the proxy refuses.
 7. A new session gets Lumen's labels first; a client label in the `lumen-`
    namespace is dropped (`tagSessionCreate`, `convex/tags.ts`).
 8. Every token Lumen mints is revoked at its expiry by a scheduled Convex
@@ -165,7 +236,13 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
     `x-kortix-client-version`. Cookies, user agent, referer, `Origin`, client
     hints and forwarded-for headers stay in Lumen; the proxy sets
     `authorization` to the member token.
-13. A rename through the proxy also renames the Lumen thread
+13. The Files and Changes tabs read the thread's branch (Kortix names it after
+    the session id; `useSessionRef` in `src/lib/session-ref.ts`), so a file
+    appears there once the agent commits and pushes it. Each template prompt
+    tells the agent to (`AS_LUMEN` in `convex/templates.ts`). The sandbox's
+    live files are not read: the proxy refuses the runtime's file content
+    route, because the sandbox daemon follows symlinks out of `/workspace`.
+14. A rename through the proxy also renames the Lumen thread
     (`threads.renameFromProxy`), so the thread list shows the new title. The
     Changes tab is read only: Lumen refuses commits, pushes and change
     requests, so it draws no control for them.
@@ -218,7 +295,7 @@ not matter here: the browser only calls Lumen's own origin.
 | header | Organization switcher, "New organization", Members (list + invite link), sign out |
 | `/invite/<id>` | Accept an invitation (sign in with the invited email, verify it, accept) |
 | `/w/<workspaceId>` | Workspace: setup status, ask the agent (starts a thread), thread list |
-| `/projects/<projectId>/sessions/<sessionId>` | The thread: the shared session workbench. `src/app/projects/[id]/layout.tsx` maps the project to its workspace and checks membership first |
+| `/projects/<projectId>/sessions/<sessionId>` | The thread: Chat, Files, Changes, Preview, Scope. `src/app/projects/[id]/layout.tsx` maps the project to its workspace and checks membership first |
 
 There is no email provider in this example. An invitation is a link the
 inviter copies from the Members dialog. The invitee must verify the invited
@@ -244,6 +321,9 @@ from `emailVerification.sendVerificationEmail` and adds
 | `src/app/api/session-model`, `connections` | Server routes on the member token |
 | `src/lib/kortix.ts` | The one browser SDK client (`backendUrl: '/api/kortix'`) |
 | `src/lib/session.ts` | The active workspace bearer |
+| `src/lib/session-ref.ts` | The thread's git ref, and which files are workspace configuration |
+| `src/lib/preview-url.ts` | `UiProvider resolvePreviewUrl`: sandbox links resolve through `/api/preview-url` |
+| `src/app/providers.tsx` | Convex + Better Auth, React Query, `UiProvider` (Lumen's mark, host config, route table, preview resolver) |
 
 ## Client boundary
 
@@ -284,12 +364,24 @@ cd apps/whitelabel-demo && pnpm test:convex                          # the Conve
 
 ## UI and rebrand
 
-- Name and tagline: `src/config/brand.ts`. Colors, radius, fonts:
-  `src/config/theme.ts` and the token overrides in `src/app/globals.css`.
-  Never fork a `@kortix/ui` component.
+- Name and tagline: `src/config/brand.ts`.
+- Look: `src/config/theme.ts`, a typed `KortixTheme` (`@kortix/ui/theme`):
+  colors per mode, `radius`, `spacing`, `shadows`, `durations`, `easing`,
+  `fonts`. `src/app/layout.tsx` compiles it with `themeToCss` into one
+  `<style>` in `<head>`. `action` / `actionForeground` color the default
+  Button; `blue`, `ring`, `primary` and `selection` follow `--brand`.
+- Fonts: `next/font` in `src/app/layout.tsx` (Instrument Sans, Instrument
+  Serif as `font-display` for headings, JetBrains Mono). Never load
+  `@kortix/ui/fonts.css`.
+- Mark: `src/components/brand-mark.tsx`. `LUMEN_UI_BRAND` goes to
+  `UiProvider useBrand`, so `@kortix/ui` draws it wherever it would draw the
+  Kortix symbol.
+- Pages Lumen does not serve: `setUiRoutes` in `src/app/providers.tsx` maps
+  them to `null`, and `@kortix/ui` hides every link to them.
 - Agent templates: `convex/templates.ts` (`SEED`), then
   `npx convex run templates:seed`. A template is a slug, a name, a tagline and
   an agent prompt; provisioning installs it as the workspace project's default
   agent.
-- A missing primitive or chat slot is added to `packages/ui`, not to this app.
+- Never fork a `@kortix/ui` component. A missing primitive or chat slot is
+  added to `packages/ui`, not to this app.
 - Missing backend behavior is added to `@kortix/sdk` before this app uses it.
