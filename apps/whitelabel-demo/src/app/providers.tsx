@@ -29,11 +29,13 @@ const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useP
 const useLumenBrand = () => LUMEN_UI_BRAND;
 
 // The app features the session UI renders whole. A slot left out hides its
-// control. Lumen ships Kortix's own sharing dialog (who can open a session,
-// public links), loaded on first open.
+// control. Lumen ships Kortix's own sharing dialog (who can open a session),
+// loaded on first open.
 // A Kortix deployment serves its managed model lineup; without this flag the
 // model picker would list only the account's own provider keys.
-const config = { managedModelsEnabled: true };
+// Lumen serves no CLI installer and no public share page, so it hides the
+// Terminal's "Connect from your machine" bar and every public-link control.
+const config = { managedModelsEnabled: true, cliConnectEnabled: false, publicSharesEnabled: false };
 // Wrapper mode proxies HTTP through Next route handlers, which cannot upgrade
 // the terminal's WebSocket, so the Terminal control is hidden there. Its policy
 // (src/server/policy.ts) also blocks the account routes, so the UI sends no

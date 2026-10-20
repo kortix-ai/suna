@@ -34,6 +34,7 @@ export function PublicShareLinkButton({
 }) {
   const share = usePublicShareLink({ projectId, sessionId, input });
   const disabled = !share.canShare || share.isPending;
+  if (!share.enabled) return null;
 
   return (
     <>

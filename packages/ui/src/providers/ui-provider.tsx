@@ -228,6 +228,21 @@ export interface UiHostConfig {
    */
   terminalEnabled: boolean;
   /**
+   * The Terminal panel offers "Connect from your machine": the deployment's
+   * CLI installer (`<origin>/install`) and `kortix sessions connect`. A host
+   * that serves no installer and ships no Kortix CLI sets false, and the bar
+   * is hidden. Default: true.
+   */
+  cliConnectEnabled: boolean;
+  /**
+   * The host serves the public share page at `share.public_path`
+   * (`/share/session/<token>` on its own origin). False hides every control
+   * that mints or lists a public link: the Share dialog's public-link section,
+   * the Browser panel's Copy link and Manage links, and the file and app
+   * viewers' Copy link. Default: true.
+   */
+  publicSharesEnabled: boolean;
+  /**
    * Where the host serves the provider icons (`<base>/<icon>.svg`, apps/web: `/provider-icons`).
    * Default: none, so provider logos load from models.dev. The `kortix` provider draws `useBrand`'s icon.
    */
@@ -270,6 +285,8 @@ export const defaultUiHostConfig: UiHostConfig = {
   connectorsEnabled: true,
   managedModelsEnabled: false,
   terminalEnabled: true,
+  cliConnectEnabled: true,
+  publicSharesEnabled: true,
   commandPaletteShortcut: false,
   settingsShortcut: false,
   accountApiEnabled: true,

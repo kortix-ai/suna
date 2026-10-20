@@ -436,29 +436,35 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
                 'autoComponentsTabsPreviewTabContentJsxAttrTitleOpenPrivate087e249c',
               )}
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={app ? copyAppLink : shareLink.copyLink}
-              disabled={app ? false : !canShare || shareLink.isPending}
-            >
-              <Link2 />
-              {tHardcodedUi.raw('i18nComplete.text8a29ed34cf47')}
-            </DropdownMenuItem>
+            {/* A host without the public share page (`config.publicSharesEnabled`)
+                keeps only the app's own link. */}
+            {app || shareLink.enabled ? (
+              <DropdownMenuItem
+                onClick={app ? copyAppLink : shareLink.copyLink}
+                disabled={app ? false : !canShare || shareLink.isPending}
+              >
+                <Link2 />
+                {tHardcodedUi.raw('i18nComplete.text8a29ed34cf47')}
+              </DropdownMenuItem>
+            ) : null}
             {/* The only route to revoking a link. Enabled whenever the session
                 has project context — unlike Copy link it does not need a live
                 preview, since the links you want to revoke usually outlive the
                 app that produced them. */}
-            <DropdownMenuItem
-              onClick={() => setSharesOpen(true)}
-              disabled={!projectId || !projectSessionId}
-            >
-              <Settings2 />
-              {tHardcodedUi.raw('i18nComplete.texteb147164ac2a')}
-              {liveShares.length > 0 && (
-                <Badge variant="secondary" size="xs" className="ml-auto">
-                  {liveShares.length}
-                </Badge>
-              )}
-            </DropdownMenuItem>
+            {shareLink.enabled ? (
+              <DropdownMenuItem
+                onClick={() => setSharesOpen(true)}
+                disabled={!projectId || !projectSessionId}
+              >
+                <Settings2 />
+                {tHardcodedUi.raw('i18nComplete.texteb147164ac2a')}
+                {liveShares.length > 0 && (
+                  <Badge variant="secondary" size="xs" className="ml-auto">
+                    {liveShares.length}
+                  </Badge>
+                )}
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

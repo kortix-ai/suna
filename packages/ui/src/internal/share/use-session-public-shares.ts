@@ -20,6 +20,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { errorToast, successToast } from '../../primitives/toast';
+import { useUiHostConfig } from '../../providers/ui-provider';
 
 export function publicSharesQueryKey(projectId: string, sessionId: string) {
   return ['session-public-shares', projectId, sessionId] as const;
@@ -113,13 +114,15 @@ export function publicShareUrl(
 }
 
 export function useSessionPublicShares(projectId?: string, sessionId?: string) {
+  // No public share page on this host (`config.publicSharesEnabled: false`): nothing to list.
+  const { publicSharesEnabled } = useUiHostConfig();
   const query = useQuery({
     queryKey: publicSharesQueryKey(projectId ?? '', sessionId ?? ''),
     queryFn: async () => {
       if (!projectId || !sessionId) return { shares: [] };
       return listSessionPublicShares(projectId, sessionId);
     },
-    enabled: !!projectId && !!sessionId,
+    enabled: publicSharesEnabled && !!projectId && !!sessionId,
     // The list 403s for a project member who neither created the session nor
     // has manage rights. That is a settled answer, not a blip, so retrying it
     // three times on every panel mount just multiplies a guaranteed failure.

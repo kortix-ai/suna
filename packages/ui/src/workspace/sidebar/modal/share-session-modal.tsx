@@ -91,7 +91,7 @@ export function ShareSessionModal({
   // while the dialog is open (a user action), and silently absent on any error
   // — the IAM read never toasts (`showErrors: false`).
   const accountId = session?.account_id ?? null;
-  const { accountApiEnabled } = useUiHostConfig();
+  const { accountApiEnabled, publicSharesEnabled } = useUiHostConfig();
   const oversightQuery = useQuery({
     queryKey: sessionOversightQueryKey(accountId ?? ''),
     queryFn: () => getSessionOversight(accountId!),
@@ -189,7 +189,7 @@ export function ShareSessionModal({
           {/* Next to the in-team picker: who in the project can open the
               session, and a read-only link for anyone outside it. Same
               server verdict as the picker (`can_manage_sharing`). */}
-          {view.canEdit && session ? (
+          {view.canEdit && session && publicSharesEnabled ? (
             <SessionPublicLinkSection projectId={projectId} sessionId={session.session_id} />
           ) : null}
         </ModalBody>

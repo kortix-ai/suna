@@ -10,6 +10,7 @@ import {
   shouldRequestSessionWake,
 } from './pty-connection';
 import { SessionTerminalConnectBar } from './session-terminal-connect-bar';
+import { useUiHostConfig } from '../providers/ui-provider';
 import { useBoundedRuntimeWait } from '../internal/hooks/use-bounded-runtime-wait';
 import { useTranslations } from '../i18n';
 import { useSessionBrowserStore } from '../internal/stores/session-browser-store';
@@ -60,6 +61,8 @@ export function SessionTerminalPanel({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  // A host with no CLI installer and no Kortix CLI hides the connect bar (`config.cliConnectEnabled`).
+  const { cliConnectEnabled } = useUiHostConfig();
 
   // The terminal belongs to the sandbox daemon. It does not depend on OpenCode
   // health. Bind every PTY operation to this session's explicit runtime URL.
@@ -328,7 +331,7 @@ export function SessionTerminalPanel({
 
   return (
     <div className="bg-background flex h-full w-full flex-col">
-      {projectSessionId && <SessionTerminalConnectBar projectSessionId={projectSessionId} />}
+      {projectSessionId && cliConnectEnabled && <SessionTerminalConnectBar projectSessionId={projectSessionId} />}
       <div className="relative min-h-0 flex-1">{content}</div>
     </div>
   );

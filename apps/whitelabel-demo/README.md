@@ -53,7 +53,9 @@ opens it on the first frame.
 rows, questions and approvals, the send error, Stop. Every file the agent touches is a
 link. The header opens Files, the Terminal and the Browser in a resizable side panel, and
 the composer keeps the model and agent pickers. Wrapper mode hides the Terminal: its proxy
-is Next route handlers, which cannot upgrade the pty WebSocket.
+is Next route handlers, which cannot upgrade the pty WebSocket. Lumen serves no CLI
+installer, so the Terminal shows no "Connect from your machine" bar
+(`cliConnectEnabled: false`).
 
 **Files and the viewer.** The session's files, the changes it made, and a viewer for every
 kind: markdown, code, pdf, docx, xlsx, csv, pptx, images.
@@ -63,7 +65,8 @@ In wrapper mode Lumen resolves the preview URL on its server (`resolvePreviewUrl
 `POST /api/preview-url`), with a project-scoped preview token. The Lumen session token
 never appears in a frame URL.
 
-**Sharing and access.** Kortix's share dialog: who can open a session, public links.
+**Sharing and access.** Kortix's share dialog: who can open a session. Lumen has no
+public share page, so it sets `publicSharesEnabled: false` and the UI offers no public link.
 Members, roles and invites per account.
 
 **Project settings.** Seven tabs: general (with the project's experiments), capabilities,

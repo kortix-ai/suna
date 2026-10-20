@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlTestProvider } from '../../test-utils/intl';
+import { UiProvider } from '../../providers/ui-provider';
 import { isRich, reportsIntrinsicSize } from '../../session/panel/easy/file-preview';
 import { FileViewer, isHtml, isMarkdown, isSvg, languageFor } from './file-viewer';
 
@@ -342,6 +343,25 @@ describe('FileViewer actions', () => {
       </Wrapped>,
     );
     expect(noPath).not.toContain('aria-label="Copy link"');
+  });
+
+  test('a host with no public share page offers no Copy link', () => {
+    // `config.publicSharesEnabled: false`: the link would 404 on the host's origin.
+    const md = renderToStaticMarkup(
+      <UiProvider config={{ publicSharesEnabled: false }}>
+        <Wrapped>
+          <FileViewer
+            content="hi"
+            fileName="notes.txt"
+            path="/workspace/notes.txt"
+            shareContext={SHARE_CONTEXT}
+          />
+        </Wrapped>
+      </UiProvider>,
+    );
+    expect(md).toContain('aria-label="Copy file contents"');
+    expect(md).not.toContain('aria-label="Copy link"');
+    expect(count(md, 'aria-label="Download"')).toBe(1);
   });
 
   test('a path with no share context shows Download, and no Copy link', () => {
