@@ -2802,6 +2802,7 @@ describe('project session runtime guards', () => {
   // The warm create runs `createProjectSession` with an empty body: no prompt,
   // so no title source. The first real prompt titles the session later.
   test('a warm session is created without a prompt or a title source', async () => {
+    projectRow.metadata = { ...projectRow.metadata, experimental: { warm_sessions: true } };
     const app = createApp();
     sessionRow = null;
 
