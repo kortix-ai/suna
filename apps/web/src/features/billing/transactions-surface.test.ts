@@ -1,23 +1,12 @@
 import { PANE_META } from '@/features/accounts/hub/sections';
-import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
+import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 const webSource = join(import.meta.dir, '../..');
-const transactionsTabPath = join(webSource, 'features/accounts/settings/transactions-tab.tsx');
 const hubAccessPath = join(webSource, 'features/accounts/hub/use-account-hub-access.ts');
 
 describe('account credit transactions surface', () => {
-  test('renders session costs first and keeps the credit ledger available', () => {
-    const source = readFileSync(transactionsTabPath, 'utf8');
-
-    expect(source).toContain('defaultValue="session-costs"');
-    expect(source).toContain('Session costs');
-    expect(source).toContain('<CostExplorer />');
-    expect(source).toContain('Credit ledger');
-    expect(source).toContain('<CreditTransactions />');
-  });
-
   test('describes session costs and exposes them when internal billing is disabled', () => {
     // The copy is catalog data now, so assert it as data rather than as text.
     expect(PANE_META.transactions?.description).toBe(

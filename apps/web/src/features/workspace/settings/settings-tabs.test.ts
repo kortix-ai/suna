@@ -363,7 +363,7 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
       const expected =
         legacyId === 'members'
           ? `/projects/p1?accountId=acc1&accountTab=${tab}&accountProject=p1`
-          : `/projects/p1?accountId=acc1&accountTab=${tab}`;
+          : `/projects/p1?accountId=acc1&accountTab=${tab}${legacyId === 'credits' ? '&accountTransactions=credit-ledger' : ''}`;
       expect(legacySectionRedirect('p1', legacyId, 'acc1')).toBe(expected);
     }
   });
