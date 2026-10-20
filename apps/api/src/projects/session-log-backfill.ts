@@ -111,7 +111,7 @@ export type BackfillState = {
   dryCommit?: string;
 };
 
-const newBackfillState = (mode: BackfillMode | null = null): BackfillState => ({
+export const newBackfillState = (mode: BackfillMode | null = null): BackfillState => ({
   mode,
   after: null,
   totals: zero(),
@@ -233,13 +233,15 @@ async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof
  * `more` is true while the queue may hold more (a full batch, or the budget cut it).
  * When a write pass ends, the state starts over; when a dry pass ends, every later
  * dry tick does nothing. `convert` is the capture write; tests wrap it.
+ * `state` is caller-owned for the operator dry pass: never loaded or saved.
  */
 export async function backfillSessionLogs(
   mode: BackfillMode,
-  options: { budgetMs?: number; convert?: typeof writeSessionLogFromMirror } = {},
+  options: { budgetMs?: number; convert?: typeof writeSessionLogFromMirror; state?: BackfillState } = {},
 ): Promise<{ more: boolean; counts: BackfillCounts }> {
   const { budgetMs = BACKFILL_BUDGET_MS, convert = writeSessionLogFromMirror } = options;
-  const { state, rev } = await loadState();
+  // The operator owns an ephemeral pass; background ticks keep their durable cursor.
+  const { state, rev } = options.state ? { state: options.state, rev: 0 } : await loadState();
   // A new mode, or a dry pass that an older build ended, starts a new pass.
   if (state.mode !== mode || (state.dryDone && state.dryCommit !== config.KORTIX_COMMIT)) Object.assign(state, newBackfillState(mode));
   const counts = zero();
@@ -270,7 +272,7 @@ export async function backfillSessionLogs(
   if (counts.sessions > 0) logger.info('[session-log] backfill tick', { mode, ...counts, more, ms: Date.now() - started });
   const summary = !more && state.totals.sessions > 0 ? { mode, ...state.totals } : null;
   if (!more) Object.assign(state, newBackfillState(mode), mode === 'dry' ? { dryDone: true, dryCommit: config.KORTIX_COMMIT } : {});
-  if (!(await saveState(state, rev))) logger.warn('[session-log] backfill state changed under this tick; its cursor is not saved', { mode });
+  if (!options.state && !(await saveState(state, rev))) logger.warn('[session-log] backfill state changed under this tick; its cursor is not saved', { mode });
   else if (summary) logger.info('[session-log] backfill pass complete', summary);
   return { more, counts };
 }

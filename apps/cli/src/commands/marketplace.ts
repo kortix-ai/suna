@@ -85,7 +85,7 @@ function parseFlags(argv: string[]): MarketplaceFlags {
 }
 
 async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Promise<number> {
-  const itemId = argv[0];
+  let itemId = argv[0];
   if (!itemId || itemId.startsWith('-')) {
     process.stderr.write(
       `${status.err('pass an item id or name: kortix marketplace install kortix-starter:pdf')}\n`,
@@ -128,6 +128,29 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
     signal: controller.signal,
   });
   try {
+    // The server takes only a full `<registry>:<name>` id. A short name
+    // resolves the way `show` resolves it, and a name two registries share is
+    // refused rather than guessed (KRTX-2822).
+    if (!itemId.includes(':')) {
+      const name = itemId;
+      const { items } = await client.get<CatalogResponse>(
+        `/marketplace/items${queryString(flags, name)}`,
+      );
+      const matches = items.filter((i) => i.name === name || i.id.endsWith(`:${name}`));
+      if (matches.length === 0)
+        return finish(
+          1,
+          'not_found',
+          `No marketplace item matches "${name}". \`kortix marketplace search ${name}\` lists the close ones.`,
+        );
+      if (matches.length > 1)
+        return finish(
+          2,
+          'ambiguous',
+          `"${name}" names ${matches.length} items: ${matches.map((i) => i.id).join(', ')}. Pass the full id.`,
+        );
+      itemId = matches[0].id;
+    }
     const result = await client.post<{ session_id: string }>(
       `/projects/${ctx.projectId}/marketplace/install-session`,
       { id: itemId },

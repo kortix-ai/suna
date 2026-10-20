@@ -638,6 +638,7 @@
         "userNotFound": "Utente non trovato",
         "profilePictureUpdated": "Immagine del profilo aggiornata",
         "profilePictureUploadFailed": "Impossibile caricare l'immagine del profilo",
+        "avatarUploadOffline": "Impossibile caricare la tua immagine. Controlla la connessione e riprova.",
         "profilePictureRemoved": "Immagine del profilo rimossa",
         "profilePictureRemoveFailed": "Impossibile rimuovere l'immagine del profilo",
         "chooseImageFile": "Scegli un file immagine",
@@ -819,7 +820,17 @@
       "email": "Email",
       "channelSwitch": "{kind}: {channel}",
       "preferencesLoadError": "Impossibile caricare le impostazioni delle notifiche",
-      "retry": "Riprova"
+      "retry": "Riprova",
+      "recovery": {
+        "instructions": "Come sbloccare le notifiche del browser",
+        "chrome": "Chrome: apri i controlli del sito accanto all’indirizzo → Impostazioni sito → Notifiche → Consenti.",
+        "edge": "Edge: apri i controlli del sito accanto all’indirizzo → Autorizzazioni per questo sito → Notifiche → Consenti.",
+        "firefox": "Firefox: apri l’icona dei permessi accanto all’indirizzo e rimuovi il permesso di notifica bloccato. Attiva le notifiche qui per richiederlo di nuovo.",
+        "safari": "Safari su Mac: apri Safari → Impostazioni → Siti web → Notifiche, poi seleziona Consenti per questo sito. Su iPhone o iPad, aggiungi Kortix alla schermata Home e attiva le notifiche da quell’app.",
+        "afterChange": "Ricarica questa pagina dopo aver modificato i permessi del browser, quindi attiva le notifiche. Anche le impostazioni delle notifiche del sistema devono consentire quelle del browser.",
+        "fallback": "Finché una scheda di Kortix è aperta, i suoni di completamento possono avvisarti senza il permesso per le notifiche del browser. Mantieni attivo l’audio della scheda e del dispositivo. Questa opzione attiva i suoni di notifica e riproduce un’anteprima del suono di completamento.",
+        "enableSound": "Attiva il suono di completamento"
+      }
     },
     "git": {
       "updateFailed": "Impossibile aggiornare il repository",
@@ -20594,6 +20605,12 @@
     "mcpNotChecked": "Non ancora controllato",
     "runLimits": "Limiti di esecuzione",
     "runLimitsHint": "Un'attivazione oltre un limite non avvia nulla e compare come esecuzione saltata. Un avvio manuale non viene mai trattenuto, ma conta.",
+    "overlap": "Sovrapposizione",
+    "overlapHint": "Se l’esecuzione precedente è ancora in corso, un nuovo avvio aspetta oppure avvia una seconda esecuzione. Un’esecuzione che avvii tu parte sempre.",
+    "overlapDefaultSkip": "Predefinito: salta finché l’ultima esecuzione è in corso",
+    "overlapDefaultAllow": "Predefinito: avvia comunque una nuova esecuzione",
+    "overlapSkip": "Salta finché l’ultima esecuzione è in corso",
+    "overlapAllow": "Avvia comunque una nuova esecuzione",
     "perHour": "Per ora",
     "perDay": "Per giorno",
     "noLimit": "Nessun limite"
@@ -22000,5 +22017,9 @@
     "exists": "esiste",
     "missing": "non esiste",
     "listPlaceholder": "valore 1, valore 2"
+  },
+  "triggerAutoPause": {
+    "title": "Si è messo in pausa al limite di esecuzioni",
+    "description": "Ha girato al suo limite orario di esecuzioni per 2 ore di fila, quindi ha smesso di avviarne. Trova cosa continua ad attivarlo, poi riprendilo."
   }
 }

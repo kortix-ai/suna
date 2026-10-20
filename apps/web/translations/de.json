@@ -638,6 +638,7 @@
         "userNotFound": "Benutzer nicht gefunden",
         "profilePictureUpdated": "Profilbild aktualisiert",
         "profilePictureUploadFailed": "Profilbild konnte nicht hochgeladen werden",
+        "avatarUploadOffline": "Dein Bild konnte nicht hochgeladen werden. Prüfe deine Verbindung und versuche es erneut.",
         "profilePictureRemoved": "Profilbild entfernt",
         "profilePictureRemoveFailed": "Profilbild konnte nicht entfernt werden",
         "chooseImageFile": "Bitte wählen Sie eine Bilddatei aus",
@@ -819,7 +820,17 @@
       "email": "E-Mail",
       "channelSwitch": "{kind}: {channel}",
       "preferencesLoadError": "Deine Benachrichtigungseinstellungen konnten nicht geladen werden",
-      "retry": "Erneut versuchen"
+      "retry": "Erneut versuchen",
+      "recovery": {
+        "instructions": "Browser-Benachrichtigungen entsperren",
+        "chrome": "Chrome: Öffne die Website-Steuerung neben der Adresse → Website-Einstellungen → Benachrichtigungen → Zulassen.",
+        "edge": "Edge: Öffne die Website-Steuerung neben der Adresse → Berechtigungen für diese Website → Benachrichtigungen → Zulassen.",
+        "firefox": "Firefox: Öffne das Berechtigungssymbol neben der Adresse und entferne die blockierte Benachrichtigungsberechtigung. Aktiviere hier Benachrichtigungen, um die Berechtigung erneut anzufordern.",
+        "safari": "Safari auf dem Mac: Öffne Safari → Einstellungen → Websites → Mitteilungen und wähle für diese Website „Erlauben“. Füge Kortix auf dem iPhone oder iPad zum Home-Bildschirm hinzu und aktiviere Mitteilungen in dieser App.",
+        "afterChange": "Lade diese Seite nach dem Ändern der Browser-Berechtigungen neu und aktiviere dann Benachrichtigungen. Auch die Mitteilungseinstellungen des Systems müssen deinen Browser zulassen.",
+        "fallback": "Solange ein Kortix-Tab geöffnet ist, können dich Abschlusstöne auch ohne Berechtigung für Browser-Benachrichtigungen benachrichtigen. Schalte den Tab und das Gerät nicht stumm. Mit dieser Option aktivierst du Benachrichtigungstöne und hörst eine Vorschau des Abschlusstons.",
+        "enableSound": "Abschlusston aktivieren"
+      }
     },
     "git": {
       "updateFailed": "Repository konnte nicht aktualisiert werden",
@@ -20594,6 +20605,12 @@
     "mcpNotChecked": "Noch nicht geprüft",
     "runLimits": "Ausführungslimits",
     "runLimitsHint": "Ein Auslöser über einem Limit startet nichts und erscheint als übersprungene Ausführung. Eine manuelle Ausführung wird nie zurückgehalten, zählt aber mit.",
+    "overlap": "Überschneidung",
+    "overlapHint": "Läuft die vorige Ausführung noch, wartet ein neuer Auslöser entweder ab oder startet eine zweite Ausführung. Eine Ausführung, die du selbst startest, läuft immer.",
+    "overlapDefaultSkip": "Standard: überspringen, solange die letzte Ausführung läuft",
+    "overlapDefaultAllow": "Standard: trotzdem eine neue Ausführung starten",
+    "overlapSkip": "Überspringen, solange die letzte Ausführung läuft",
+    "overlapAllow": "Trotzdem eine neue Ausführung starten",
     "perHour": "Pro Stunde",
     "perDay": "Pro Tag",
     "noLimit": "Kein Limit"
@@ -22000,5 +22017,9 @@
     "exists": "existiert",
     "missing": "existiert nicht",
     "listPlaceholder": "Wert 1, Wert 2"
+  },
+  "triggerAutoPause": {
+    "title": "Hat sich an seinem Ausführungslimit selbst pausiert",
+    "description": "Er lief 2 Stunden in Folge an seinem stündlichen Ausführungslimit und startet daher keine Ausführungen mehr. Finde heraus, was ihn ständig auslöst, und setze ihn dann fort."
   }
 }
