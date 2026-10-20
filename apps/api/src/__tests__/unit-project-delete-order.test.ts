@@ -17,6 +17,7 @@
  * so the fault paths live here.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { accountTokens } from '@kortix/db';
 
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const steps: string[] = [];
@@ -59,15 +60,17 @@ const realDb = await import('../shared/db');
 mock.module('../shared/db', () => ({
   ...realDb,
   db: {
-    update: () => ({
-      set: (values: { status?: string }) => ({
+    update: (table: unknown) => ({
+      set: (values: { status?: string }) => {
+        if (table === accountTokens) steps.push('revoke-tokens');
+        return ({
         where: () => ({
           returning: async () => {
             steps.push(`archive:${values.status}`);
             return [{ projectId: PROJECT_ID, status: values.status }];
           },
         }),
-      }),
+      }); },
     }),
   },
 }));
@@ -90,7 +93,7 @@ describe('DELETE /projects/:projectId step order', () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, archived: true, repo_deleted: true });
-    expect(steps).toEqual(['release', 'delete-repo', 'purge-connectors', 'archive:archived']);
+    expect(steps).toEqual(['release', 'delete-repo', 'purge-connectors', 'archive:archived', 'revoke-tokens']);
   });
 
   test('a failed repository delete answers 502 and leaves the project active', async () => {

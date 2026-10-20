@@ -6,8 +6,8 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { accountTokens, projects } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import {
   AnyObject,
@@ -279,13 +279,19 @@ export function registerProjectSettingsRoutes(): void {
       return c.json({ error: 'Failed to purge project connectors' }, 500);
     }
 
-    const [row] = await db
-      .update(projects)
+    // Commit the tombstone before revoking: a concurrent late mint must see
+    // the archive even if it inserts after the revocation UPDATE's snapshot.
+    const [row] = await db.update(projects)
       .set({ status: 'archived', updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId))
-      .returning();
-
+      .where(eq(projects.projectId, projectId)).returning();
     if (!row) return c.json({ error: 'Not found' }, 404);
+    await db.update(accountTokens)
+      .set({ status: 'revoked', revokedAt: new Date() })
+      .where(and(
+        eq(accountTokens.projectId, projectId),
+        eq(accountTokens.accountId, loaded.row.accountId),
+        eq(accountTokens.status, 'active'),
+      ));
     // An archived project fires nothing: release its app-event provider instances.
     await releaseProjectEventSubscriptions(projectId);
     return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
