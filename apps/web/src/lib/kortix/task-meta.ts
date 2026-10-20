@@ -105,7 +105,7 @@ export function shortTaskId(id: string): string {
   return `KTX-${tail || '0000'}`;
 }
 
-export { relativeTime } from '@/lib/relative-time';
+export { relativeTime } from '@kortix/ui/internal/lib/relative-time';
 
 export function fullDate(t?: string | null): string {
   if (!t) return '';

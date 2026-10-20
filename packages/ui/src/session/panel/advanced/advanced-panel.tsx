@@ -1,0 +1,113 @@
+'use client';
+
+import { useTranslations } from '../../../i18n';
+
+import { cn } from '../../../lib/utils';
+import { useClearFocusedToolCall, useFocusedToolCallId } from '../../../internal/stores/kortix-computer-store';
+import type { SessionLogMessage } from '@kortix/sdk';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
+import { ActionNavigator } from '../shared/action-navigator';
+import { collectToolCalls } from '../shared/collect-tool-parts';
+
+/**
+ * Side-panel "Actions" view.
+ *
+ * The focused, one-at-a-time representation of the session's tool calls —
+ * a different presentation of the *same* data the chat shows inline. It
+ * renders the selected tool through the canonical `ToolPartRenderer` (so
+ * there is exactly one tool-rendering implementation), expanded and
+ * uncapped to fill the panel, with prev/next navigation and live-follow.
+ */
+export const AdvancedPanel = memo(function AdvancedPanel({
+  sessionId,
+  messages,
+}: {
+  sessionId: string;
+  /** The thread's messages (`useSessionLogThread`). */
+  messages: SessionLogMessage[] | undefined;
+}) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const calls = useMemo(() => collectToolCalls(messages), [messages]);
+  const count = calls.length;
+
+  const [index, setIndex] = useState(0);
+  // 'live' follows the latest tool as new ones stream in; 'manual' pins the
+  // user's chosen index until they navigate back to the latest.
+  const [mode, setMode] = useState<'live' | 'manual'>('live');
+
+  // Live-follow + clamp when the list grows/shrinks.
+  useEffect(() => {
+    if (count === 0) return;
+    setIndex((i) => (mode === 'live' ? count - 1 : Math.min(i, count - 1)));
+  }, [count, mode]);
+
+  const safeIndex = Math.min(index, Math.max(0, count - 1));
+  const current = calls[safeIndex];
+  const atLatest = safeIndex >= count - 1;
+  const isLive = atLatest && mode === 'live';
+
+  // Stable identity so ActionNavigator's keydown effect doesn't re-subscribe
+  // on every streaming re-render; setState setters are already stable.
+  const handleIndexChange = useCallback((i: number, m: 'live' | 'manual') => {
+    setMode(m);
+    setIndex(i);
+  }, []);
+
+  // Jump to the tool the user clicked in the chat (focus by callID, robust to
+  // ordering). Pins manual mode so it doesn't immediately snap back to live.
+  const focusedToolCallId = useFocusedToolCallId();
+  const clearFocusedToolCall = useClearFocusedToolCall();
+  useEffect(() => {
+    if (!focusedToolCallId) return;
+    const i = calls.findIndex((c) => c.call_id === focusedToolCallId);
+    if (i >= 0) {
+      setMode(i >= count - 1 ? 'live' : 'manual');
+      setIndex(i);
+    }
+    clearFocusedToolCall();
+  }, [focusedToolCallId, calls, count, clearFocusedToolCall]);
+
+  if (count === 0) {
+    return (
+      <div className="text-muted-foreground/70 flex h-full items-center justify-center p-8 text-center text-sm">
+        {tHardcodedUi.raw('componentsSessionSessionActionsPanel.line152JsxTextNoActionsYet')}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div
+        key={current?.id}
+        className={cn(
+          'min-h-0 flex-1 overflow-auto',
+          // Uncapped so the focused tool fills the panel instead of scrolling
+          // in its own inner box (see detail-view.tsx for the same un-cap).
+          // Height only, not overflow: overflow-visible kills the x-axis
+          // scrollbar ToolCodeCard needs for long mono lines, clipping
+          // memory/read/edit/write output at the card frame.
+          '[&_[data-scrollable]]:max-h-none',
+        )}
+      >
+        {current && (
+          <ToolSurfaceContext.Provider value="panel">
+            {/* `defaultOpen` is what keeps this view expanded now that the panel
+                surface is a disclosure row (it used to be inert here, because
+                the panel branch rendered its body unconditionally). This view
+                shows exactly one call at a time and the navigator below is how
+                you reach the others, so its row is always the open one. */}
+            <ToolPartRenderer call={current} sessionId={sessionId} defaultOpen />
+          </ToolSurfaceContext.Provider>
+        )}
+      </div>
+
+      <ActionNavigator
+        calls={calls}
+        index={safeIndex}
+        isLive={isLive}
+        onIndexChange={handleIndexChange}
+      />
+    </div>
+  );
+});

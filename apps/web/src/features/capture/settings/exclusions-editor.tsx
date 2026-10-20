@@ -20,15 +20,15 @@ import {
 } from '@phosphor-icons/react';
 import { useState, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
 import {
   InputGroupSearch,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from '@kortix/ui/input-group';
+import { Label } from '@kortix/ui/label';
+import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import { useTranslations } from '@/i18n/use-translations';
 
 import {

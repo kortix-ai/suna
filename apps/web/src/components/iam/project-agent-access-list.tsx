@@ -14,27 +14,29 @@
  * Admin-only, like roles: every read here asserts `policy.read`.
  */
 
-import { Badge } from '@/components/ui/badge';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { Badge } from '@kortix/ui/badge';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import {
   AccessDialog,
-  AccessList,
   AccessRow,
+} from '@kortix/ui/access';
+import {
+  AccessList,
   builtinRole,
   customRole,
   formatExpiry,
   roleValueLabel,
   type KebabItem,
-} from '@/features/workspace/shared/access';
+} from '@kortix/ui/access/access/index';
 import {
   agentRolesQueryKey,
   useAgentIdentities,
   useProjectAgentAssignments,
-} from '@/features/workspace/shared/access/agent-principals';
+} from '@kortix/ui/access/access/agent-principals';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { listRoles, revokeAssignment, type ProjectRole, type RoleAssignment } from '@kortix/sdk';
 import { invalidatePermissionProbes } from '@kortix/sdk/react';
 import { PencilSimpleIcon, RobotIcon, TrashIcon } from '@phosphor-icons/react';

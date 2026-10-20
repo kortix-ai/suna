@@ -25,3 +25,12 @@ describe('runtimeContextConflicts', () => {
     expect(runtimeContextConflicts(undefined, null)).toBe(false);
   });
 });
+
+test('fork source is part of the create idempotency payload', async () => {
+  const { forkSourceConflicts } = await import('./idempotency-conflicts');
+  expect(forkSourceConflicts('source-a', 'source-b')).toBe(true);
+  expect(forkSourceConflicts(undefined, 'source-a')).toBe(true);
+  expect(forkSourceConflicts('source-a', undefined)).toBe(true);
+  expect(forkSourceConflicts('source-a', 'source-a')).toBe(false);
+  expect(forkSourceConflicts(undefined, null)).toBe(false);
+});

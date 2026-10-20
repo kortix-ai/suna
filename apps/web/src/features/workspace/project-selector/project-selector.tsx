@@ -17,24 +17,24 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, type MouseEvent } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { Input } from '@/components/ui/input';
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
+import { Button } from '@kortix/ui/button';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { Input } from '@kortix/ui/input';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { AccountTopBar } from '@/features/workspace/account-top-bar';
-import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-param';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { isModifiedClick } from '@/lib/navigation/modified-click';
-import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
-import { relativeTime } from '@/lib/relative-time';
-import { cn } from '@/lib/utils';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { isModifiedClick } from '@kortix/ui/internal/lib/navigation/modified-click';
+import { writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
+import { cn } from '@kortix/ui';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 
 import {
   COLLAPSED_PROJECT_LIMIT,
@@ -43,7 +43,7 @@ import {
   filterSections,
   inviteLandingPath,
   type AccountSection,
-} from './project-selector-model';
+} from '@kortix/ui/workspace/project-selector/project-selector-model';
 import { useProjectSelectorData } from './use-project-selector-data';
 
 /**

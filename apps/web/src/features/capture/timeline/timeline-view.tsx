@@ -31,25 +31,25 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import Hint from '@/components/ui/hint';
+} from '@kortix/ui/dropdown-menu';
+import Hint from '@kortix/ui/hint';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { EmptyState } from '@kortix/ui/empty-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { CapturePage } from '../area/capture-area-shell';
@@ -59,7 +59,7 @@ import {
   deviceOs,
   useCaptureArea,
   useCaptureDirectory,
-} from '../area/use-capture-area';
+} from '@kortix/ui/internal/capture/use-capture-area';
 import { clockTime, indexAtOrBefore, localTimeZone, shortDate } from '../capture-time';
 import { deviceStatus } from '../devices/device-status';
 import {

@@ -1,24 +1,50 @@
 'use client';
 
-import { UiProvider } from '@kortix/ui';
+import { lazyClient, UiProvider, type UiHostComponents, type UiNavigation } from '@kortix/ui';
 import { IconProvider } from '@kortix/ui/icon-provider';
 import Loading from '@kortix/ui/loading';
 import { TooltipProvider } from '@kortix/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import NextLink from 'next/link';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { createContext, useContext, useEffect, useState } from 'react';
 
 // Importing the client configures the SDK platform seam once (createKortix),
 // defaulting to direct mode. `configureWrapperMode` re-points it below when
 // wrapper mode is confirmed.
+import { LUMEN_UI_BRAND } from '@/components/brand-mark';
 import { configureWrapperMode } from '@/lib/kortix';
 import { fetchWrapperMode } from '@/lib/mode';
+import { resolveWrapperPreviewUrl } from '@/lib/preview-url';
 // The toast host. @kortix/ui/toast draws every toast (successToast,
 // errorToast, …) into the <Toaster /> it exports, so the host needs no sonner
 // dependency of its own.
 import { Toaster } from '@kortix/ui/toast';
 
 const WrapperModeContext = createContext(false);
+
+// Client-side navigation for @kortix/ui (useUiRouter().push), not full page loads.
+const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
+// Lumen's mark wherever @kortix/ui would draw the Kortix symbol.
+const useLumenBrand = () => LUMEN_UI_BRAND;
+
+// The app features the session UI renders whole. A slot left out hides its
+// control. Lumen ships Kortix's own sharing dialog (who can open a session),
+// loaded on first open.
+// A Kortix deployment serves its managed model lineup; without this flag the
+// model picker would list only the account's own provider keys.
+// Lumen serves no CLI installer and no public share page, so it hides the
+// Terminal's "Connect from your machine" bar and every public-link control.
+const config = { managedModelsEnabled: true, cliConnectEnabled: false, publicSharesEnabled: false };
+// Wrapper mode proxies HTTP through Next route handlers, which cannot upgrade
+// the terminal's WebSocket, so the Terminal control is hidden there. Its policy
+// (src/server/policy.ts) also blocks the account routes, so the UI sends no
+// IAM probe, billing or oversight request, and the policy enforces each route.
+const wrapperConfig = { ...config, terminalEnabled: false, accountApiEnabled: false };
+
+const components: UiHostComponents = {
+  ShareSessionModal: lazyClient(() => import('@kortix/ui/workspace').then((m) => m.ShareSessionModal)),
+};
 
 /**
  * True when this server has `KORTIX_API_KEY` set — Lumen is running as a BFF
@@ -77,10 +103,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <WrapperModeContext.Provider value={wrapperMode}>
       <QueryClientProvider client={queryClient}>
-        {/* @kortix/ui's host adapters: links navigate with next/link; copy keeps
-            the English defaults. IconProvider gives every Phosphor icon the house
+        {/* @kortix/ui's host adapters: links and router calls navigate with
+            next/link and next/navigation; copy keeps the English defaults; images
+            stay plain <img> (next/image would need images.remotePatterns for
+            organization logos); the brand is Lumen's mark. IconProvider gives every Phosphor icon the house
             weight. Mounted once. */}
-        <UiProvider link={NextLink}>
+        <UiProvider link={NextLink} navigation={navigation} components={components} config={wrapperMode ? wrapperConfig : config}
+          resolvePreviewUrl={wrapperMode ? resolveWrapperPreviewUrl : undefined} useBrand={useLumenBrand}>
           <IconProvider>
             <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
             <Toaster />
