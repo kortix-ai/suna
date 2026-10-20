@@ -175,12 +175,6 @@ const envSchema = z.object({
   // asking GoTrue on every request (shared/jwt-verify.ts). Optional: without it
   // HS256 tokens keep the per-request GoTrue round trip.
   SUPABASE_JWT_SECRET: optStr,
-  // How long a GoTrue confirmation that an HS256 token's session is still live
-  // is reused, per token, per replica. This is the upper bound on how long a
-  // signed-out or deleted user's still-unexpired HS256 token keeps working on a
-  // replica that already confirmed it. 0 = confirm with GoTrue on every request
-  // (the pre-2026-09-23 behavior).
-  SUPABASE_JWT_LIVENESS_TTL_MS: optInt(0),
 
   // ── Prompt attachment uploads (optional, non-secret) ────────────────────
   // `direct` (default): the client PUTs each file once to a signed Storage URL.
@@ -1320,7 +1314,6 @@ export const config = {
   KORTIX_PUBLIC_AUTH_PROVIDERS: env.KORTIX_PUBLIC_AUTH_PROVIDERS,
   ENABLE_EMAIL_AUTOCONFIRM: env.ENABLE_EMAIL_AUTOCONFIRM,
   SUPABASE_JWT_SECRET: env.SUPABASE_JWT_SECRET,
-  SUPABASE_JWT_LIVENESS_TTL_MS: env.SUPABASE_JWT_LIVENESS_TTL_MS,
   PROMPT_ATTACHMENT_UPLOAD_MODE: env.PROMPT_ATTACHMENT_UPLOAD_MODE,
   PROMPT_ATTACHMENT_CHUNK_BYTES: env.PROMPT_ATTACHMENT_CHUNK_BYTES,
 
