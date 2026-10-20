@@ -7,7 +7,7 @@ import { PROJECT_ACTIONS } from '../../../internal/lib/project-actions';
 import { useProjectCan } from '../../../internal/lib/use-project-can';
 import { useProjectApps } from '@kortix/sdk/react';
 import { AppWindowIcon } from '@phosphor-icons/react';
-import { useUiParams, useUiPathname } from '../../../providers/ui-provider';
+import { useUiPathname } from '../../../providers/ui-provider';
 
 /**
  * The Apps row shows to a caller who can deploy an App, or while the project
@@ -23,11 +23,9 @@ export function useAppsRowVisible(projectId: string | undefined): boolean {
   return (apps.data?.length ?? 0) > 0;
 }
 
-export function ProjectAppsNavItem() {
+export function ProjectAppsNavItem({ projectId }: { projectId: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const pathname = useUiPathname();
-  const params = useUiParams<{ id: string }>();
-  const projectId = params?.id;
   const visible = useAppsRowVisible(projectId);
 
   if (!projectId || !visible) return null;

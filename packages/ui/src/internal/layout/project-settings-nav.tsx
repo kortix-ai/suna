@@ -6,7 +6,7 @@ import { CustomizeGlyph } from '../icons/customize';
 export { CustomizeGlyph } from '../icons/customize';
 
 import { useTranslations } from '../../i18n';
-import { useUiParams, useUiPathname } from '../../providers/ui-provider';
+import { useUiPathname } from '../../providers/ui-provider';
 
 import { CountBadge } from '../../primitives/count-badge';
 import {
@@ -259,11 +259,9 @@ export function useProjectNavRows(projectId: string | undefined): ProjectNavRows
  * duplicate, not as two ways in. No keycap either — Mod+, is printed on the
  * Settings row, and one shortcut advertised on two rows is a lie on one of them.
  */
-export function ProjectCustomizeNavItem() {
+export function ProjectCustomizeNavItem({ projectId }: { projectId: string }) {
   const t = useTranslations('sidebar');
   const pathname = useUiPathname();
-  const params = useUiParams<{ id: string }>();
-  const projectId = params?.id;
   const access = useCapabilityAccess(projectId);
   const rows = useProjectNavRows(projectId);
   const tab = rows.customize;

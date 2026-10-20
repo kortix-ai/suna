@@ -418,6 +418,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
   return (
     <div className="bg-background relative flex h-full flex-col">
       <DriveHeader
+        projectId={projectId || undefined}
         offsetForSidebarToggle={!embedded}
         historyToggle={{
           open: rightPanel === 'history',

@@ -92,7 +92,7 @@ for (const [name, experimental] of [
     mounted = root;
     await act(async () => {
       root.render(React.createElement(QueryClientProvider, { client: queryClient },
-        React.createElement('ul', { 'data-testid': 'sidebar' }, React.createElement(navModule.ProjectAppsNavItem)),
+        React.createElement('ul', { 'data-testid': 'sidebar' }, React.createElement(navModule.ProjectAppsNavItem, { projectId })),
         React.createElement(viewModule.AppsView, { projectId }),
       ));
     });

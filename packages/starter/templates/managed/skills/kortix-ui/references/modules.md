@@ -341,7 +341,7 @@ Props:
 - `SessionLayout`: `sessionId` (runtime id), `projectId`, `projectSessionId`, `children` (the thread), `bootStage`, `transient`.
 - `ProjectHome`: `projectId`; `beforeSend` (runs first, throw to refuse); `onSend` + `busy` (replace the send).
 - `useProjectHomeSend(projectId, { beforeSend })` returns `{ send, sending }`.
-- `ProjectSessionList`, `ProjectSessionsView`, `ProjectFilesView`: `projectId`. `ProjectSidebar`: `projectId`, `menu`.
+- `ProjectSessionList`, `ProjectSessionsView`, `ProjectFilesView`: `projectId`. `ProjectSidebar`: `projectId`, `menu`, `onOpenSearch` (the header shows Search only with it); its Files, Apps and Customize rows read `projectId`, not the route.
 
 ```tsx
 import { useSession } from '@kortix/sdk/react';

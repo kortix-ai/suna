@@ -4,7 +4,7 @@ import { ProjectNavRow } from '../../../internal/layout/project-nav-row';
 
 import { useTranslations } from '../../../i18n';
 import { useQueryClient } from '@tanstack/react-query';
-import { useUiParams, useUiPathname } from '../../../providers/ui-provider';
+import { useUiPathname } from '../../../providers/ui-provider';
 import { useCallback } from 'react';
 
 import { CountBadge } from '../../../primitives/count-badge';
@@ -42,11 +42,9 @@ import { filesRow } from '../../../internal/layout/files-nav-label';
  * layout, so four rows bought nothing over one: ProjectCustomizeNavItem
  * replaced them and moved to the top of the panel, under New session.
  */
-export function ProjectFilesNavItem() {
+export function ProjectFilesNavItem({ projectId }: { projectId: string }) {
   const t = useTranslations('sidebar');
   const pathname = useUiPathname();
-  const params = useUiParams<{ id: string }>();
-  const projectId = params?.id;
   const target = useProjectNavRows(projectId).files;
   const queryClient = useQueryClient();
   const tDrives = useTranslations('drives');

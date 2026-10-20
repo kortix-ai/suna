@@ -15,7 +15,6 @@ import {
   useSidebar,
 } from '../../primitives/sidebar';
 import { NotificationBell } from '../../internal/notifications/notification-bell';
-import { openCommandPalette } from '../../internal/layout/open-command-palette';
 import { ComputerConnectModal } from '../../internal/tunnel/computer-connect';
 import { ConnectMcpModal } from '../../internal/layout/connect-mcp-modal';
 import { ProjectMcpNavItem } from './footer/project-mcp-nav';
@@ -47,8 +46,14 @@ const modSymbol = isMac ? '⌘' : 'Ctrl';
 export function ProjectSidebar({
   projectId,
   menu,
+  onOpenSearch,
 }: {
   projectId: string;
+  /**
+   * Opens the host's search (apps/web: its command palette). Without it, the
+   * header has no Search button.
+   */
+  onOpenSearch?: () => void;
   /**
    * The header's first control: who is signed in, the workspace, account
    * actions (apps/web passes `WorkspaceSwitcher`). Without it, the header
@@ -105,8 +110,8 @@ export function ProjectSidebar({
   // session from here.
   const handleOpenSearch = useCallback(() => {
     if (isMobile) setOpenMobile(false);
-    openCommandPalette();
-  }, [isMobile, setOpenMobile]);
+    onOpenSearch?.();
+  }, [isMobile, setOpenMobile, onOpenSearch]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -178,6 +183,7 @@ export function ProjectSidebar({
                 too: there is no keystroke to fall back on there. The ⌘K
                 keycaps stay desktop-only: on a phone the press's sticky hover
                 showed a shortcut that cannot exist there (KRTX-2005). */}
+            {onOpenSearch && (
             <Hint
               side="bottom"
               label={
@@ -207,6 +213,7 @@ export function ProjectSidebar({
                 <MagnifyingGlassIcon className="size-4" />
               </Button>
             </Hint>
+            )}
             {/* Desktop only. On mobile the panel is a Sheet — it has no docked
                 state to collapse (`state` there still reads the desktop cookie),
                 and it already dismisses by backdrop/swipe. Clicking while the

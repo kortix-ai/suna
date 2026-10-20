@@ -46,7 +46,7 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
   return (
     <>
       {items.map((entry) => (
-        <NavItem key={entry.id} entry={entry} />
+        <NavItem key={entry.id} entry={entry} projectId={projectId} />
       ))}
       <MoreNavItem projectId={projectId} items={items} />
     </>
@@ -157,14 +157,14 @@ function MoreNavItem({
   );
 }
 
-function NavItem({ entry }: { entry: SidebarNavEntry }) {
+function NavItem({ entry, projectId }: { entry: SidebarNavEntry; projectId: string }) {
   if (entry.visibility === 'never') return null;
   switch (entry.id) {
     case 'customize':
-      return <ProjectCustomizeNavItem />;
+      return <ProjectCustomizeNavItem projectId={projectId} />;
     case 'apps':
-      return <ProjectAppsNavItem />;
+      return <ProjectAppsNavItem projectId={projectId} />;
     case 'files':
-      return <ProjectFilesNavItem />;
+      return <ProjectFilesNavItem projectId={projectId} />;
   }
 }
