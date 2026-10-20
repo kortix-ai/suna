@@ -286,6 +286,47 @@ describe('ApprovalDecisionPanel body', () => {
     expect(html).not.toContain('checks passing');
   });
 
+  test('github merge with the pull request Kortix loaded: title, branches, files, commits, draft', () => {
+    const loaded = {
+      title: 'Fix stale cache on project switch',
+      number: 482,
+      state: 'open',
+      draft: true,
+      author: 'octo-dev',
+      head: 'fix/stale-cache',
+      base: 'main',
+      head_sha: 'a'.repeat(40),
+      additions: 128,
+      deletions: 41,
+      changed_files: 6,
+      commits: 3,
+    };
+    const html = panel({
+      agentName: 'Writer',
+      details: call({
+        connector_name: 'GitHub',
+        args_preview: { owner: 'example-org', repo: 'web', pull_number: 482, merge_method: 'squash' },
+        resolved_preview: loaded,
+      }),
+    });
+    expect(html).toContain('Writer wants to merge PR #482 into main');
+    expect(html).toContain('example-org/web');
+    expect(html).toContain('Fix stale cache on project switch #482');
+    expect(html).toContain('fix/stale-cache');
+    expect(html).toContain('6 files');
+    expect(html).toContain('+128 −41');
+    expect(html).toContain('3 commits by octo-dev');
+    expect(html).toContain('Draft pull request');
+    // Counts are ink, not status colour.
+    expect(html).not.toContain('text-kortix-green');
+    // Loaded fields never fall into the leftover argument list.
+    expect(html).not.toContain('>head_sha<');
+    // Not a draft: no warning line.
+    expect(
+      panel({ details: call({ args_preview: { owner: 'o', repo: 'r', pull_number: 1 }, resolved_preview: { ...loaded, number: 1, draft: false } }) }),
+    ).not.toContain('Draft pull request');
+  });
+
   test('gmail: header rows, subject over the body, attachment tile with its size', () => {
     const html = panel({
       details: call({

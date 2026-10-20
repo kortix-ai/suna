@@ -20397,7 +20397,11 @@
       "priority2": "Visok",
       "priority3": "Srednji",
       "priority4": "Nizak",
-      "canOnlyBeDenied": "Može se samo odbiti"
+      "canOnlyBeDenied": "Može se samo odbiti",
+      "prFiles": "{count, plural, one {# fajl} few {# fajla} other {# fajlova}}",
+      "prCommits": "{count, plural, one {# commit} few {# commita} other {# commitova}}",
+      "prCommitsBy": "{count, plural, one {# commit} few {# commita} other {# commitova}} od {author}",
+      "prDraft": "Nacrt pull requesta"
     },
     "reviewBulk": {
       "approve": "Одобри",

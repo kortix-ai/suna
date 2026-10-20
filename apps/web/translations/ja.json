@@ -20397,7 +20397,11 @@
       "priority2": "高",
       "priority3": "中",
       "priority4": "低",
-      "canOnlyBeDenied": "拒否のみ可能"
+      "canOnlyBeDenied": "拒否のみ可能",
+      "prFiles": "{count} 個のファイル",
+      "prCommits": "{count} 件のコミット",
+      "prCommitsBy": "{author} による {count} 件のコミット",
+      "prDraft": "ドラフトのプルリクエスト"
     },
     "reviewBulk": {
       "approve": "承認",

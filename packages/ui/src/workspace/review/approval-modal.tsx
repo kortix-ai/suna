@@ -33,6 +33,7 @@ export function reviewApprovalDetails(item: ReviewItem): ApprovalLinkDetails | n
     session_id: item.sessionId ?? null,
     action: call.actionPath || call.title,
     connector: call.connector || null,
+    connector_name: call.connectorName ?? null,
     risk: call.connectorRisk ?? null,
     status:
       item.status === 'approved'

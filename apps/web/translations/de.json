@@ -20397,7 +20397,11 @@
       "priority2": "Hoch",
       "priority3": "Mittel",
       "priority4": "Niedrig",
-      "canOnlyBeDenied": "Kann nur abgelehnt werden"
+      "canOnlyBeDenied": "Kann nur abgelehnt werden",
+      "prFiles": "{count, plural, one {# Datei} other {# Dateien}}",
+      "prCommits": "{count, plural, one {# Commit} other {# Commits}}",
+      "prCommitsBy": "{count, plural, one {# Commit} other {# Commits}} von {author}",
+      "prDraft": "Pull Request im Entwurf"
     },
     "reviewBulk": {
       "approve": "Genehmigen",

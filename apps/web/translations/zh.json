@@ -20397,7 +20397,11 @@
       "priority2": "高",
       "priority3": "中",
       "priority4": "低",
-      "canOnlyBeDenied": "只能拒绝"
+      "canOnlyBeDenied": "只能拒绝",
+      "prFiles": "{count} 个文件",
+      "prCommits": "{count} 个提交",
+      "prCommitsBy": "{author} 的 {count} 个提交",
+      "prDraft": "草稿拉取请求"
     },
     "reviewBulk": {
       "approve": "批准",

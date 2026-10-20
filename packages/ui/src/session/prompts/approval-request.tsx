@@ -13,6 +13,7 @@ import {
   CheckCircleIcon,
   ClockIcon,
   FileIcon,
+  GitCommitIcon,
   InfoIcon,
   ShieldWarningIcon,
   UserIcon,
@@ -286,6 +287,10 @@ function textOf(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function countOf(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
 function restOf(args: Record<string, unknown> | null, shown: Set<string>) {
   return Object.fromEntries(Object.entries(args ?? {}).filter(([key]) => !shown.has(key)));
 }
@@ -314,6 +319,13 @@ function mergeView(
     head: textOf(merged.head),
     base: textOf(merged.base),
     method: textOf(merged.merge_method),
+    // Loaded from the provider (approval-enrichers.ts); absent on an args-only call.
+    author: textOf(loaded?.author),
+    files: countOf(loaded?.changed_files),
+    additions: countOf(loaded?.additions),
+    deletions: countOf(loaded?.deletions),
+    commits: countOf(loaded?.commits),
+    draft: loaded?.draft === true,
     rest: restOf(args, MERGE_KEYS),
   };
 }
@@ -644,28 +656,66 @@ function NativeEmail({
 function NativeMerge({ view }: { view: NonNullable<ReturnType<typeof mergeView>> }) {
   const t = useTranslations('hardcodedUi.approvalPage');
   return (
-    <div className="flex flex-col gap-2 px-4 py-3">
-      {view.repo ? <p className="text-muted-foreground text-xs wrap-anywhere">{view.repo}</p> : null}
-      <p className="text-foreground text-sm font-semibold wrap-anywhere">
-        {view.title ? `${view.title} #${view.number}` : t('pullRequest', { number: view.number })}
-      </p>
-      {view.head || view.base || view.method ? (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          {view.head && view.base ? (
-            <>
-              <code className="bg-muted text-foreground rounded-sm px-1.5 py-0.5 font-mono">{view.head}</code>
-              <ArrowRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
-              <code className="bg-muted text-foreground rounded-sm px-1.5 py-0.5 font-mono">{view.base}</code>
-            </>
+    <>
+      <div className="flex flex-col gap-2 px-4 py-3">
+        {view.repo ? <p className="text-muted-foreground text-xs wrap-anywhere">{view.repo}</p> : null}
+        <p className="text-foreground text-sm font-semibold wrap-anywhere">
+          {view.title ? `${view.title} #${view.number}` : t('pullRequest', { number: view.number })}
+        </p>
+        {view.head || view.base || view.method ? (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            {view.head && view.base ? (
+              <>
+                <code className="bg-muted text-foreground rounded-sm px-1.5 py-0.5 font-mono">{view.head}</code>
+                <ArrowRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+                <code className="bg-muted text-foreground rounded-sm px-1.5 py-0.5 font-mono">{view.base}</code>
+              </>
+            ) : null}
+            {view.method ? (
+              <span className="text-muted-foreground">
+                {view.head && view.base ? '· ' : ''}
+                {t('mergeMethod', { method: view.method })}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      {view.files !== null || view.commits !== null || view.draft ? (
+        <div className="border-border flex flex-col gap-2 border-t px-4 py-3 text-xs">
+          {view.files !== null ? (
+            <PullRequestFact icon={<FileIcon aria-hidden className="text-muted-foreground size-4" />}>
+              <span>{t('prFiles', { count: view.files })}</span>
+              {view.additions !== null && view.deletions !== null ? (
+                <span className="font-mono tabular-nums">
+                  +{view.additions} −{view.deletions}
+                </span>
+              ) : null}
+            </PullRequestFact>
           ) : null}
-          {view.method ? (
-            <span className="text-muted-foreground">
-              {view.head && view.base ? '· ' : ''}
-              {t('mergeMethod', { method: view.method })}
-            </span>
+          {view.commits !== null ? (
+            <PullRequestFact icon={<GitCommitIcon aria-hidden className="text-muted-foreground size-4" />}>
+              {view.author
+                ? t('prCommitsBy', { count: view.commits, author: view.author })
+                : t('prCommits', { count: view.commits })}
+            </PullRequestFact>
+          ) : null}
+          {view.draft ? (
+            <PullRequestFact icon={<WarningIcon aria-hidden className="text-kortix-orange size-4" />}>
+              {t('prDraft')}
+            </PullRequestFact>
           ) : null}
         </div>
       ) : null}
+    </>
+  );
+}
+
+/** One row under a loaded pull request: a 16 px glyph slot and one line in ink. */
+function PullRequestFact({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="text-foreground flex items-center gap-2">
+      <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>
+      <span className="flex min-w-0 items-center gap-2">{children}</span>
     </div>
   );
 }

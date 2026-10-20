@@ -20397,7 +20397,11 @@
       "priority2": "Alta",
       "priority3": "Média",
       "priority4": "Baixa",
-      "canOnlyBeDenied": "Só pode ser negada"
+      "canOnlyBeDenied": "Só pode ser negada",
+      "prFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
+      "prCommits": "{count, plural, one {# commit} other {# commits}}",
+      "prCommitsBy": "{count, plural, one {# commit} other {# commits}} de {author}",
+      "prDraft": "Pull request em rascunho"
     },
     "reviewBulk": {
       "approve": "Aprovar",

@@ -20409,7 +20409,11 @@
       "priority2": "High",
       "priority3": "Medium",
       "priority4": "Low",
-      "canOnlyBeDenied": "Can only be denied"
+      "canOnlyBeDenied": "Can only be denied",
+      "prFiles": "{count, plural, one {# file} other {# files}}",
+      "prCommits": "{count, plural, one {# commit} other {# commits}}",
+      "prCommitsBy": "{count, plural, one {# commit} other {# commits}} by {author}",
+      "prDraft": "Draft pull request"
     },
     "reviewBulk": {
       "approve": "Approve",

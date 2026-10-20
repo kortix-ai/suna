@@ -107,6 +107,15 @@ describe('reviewApprovalDetails', () => {
   });
 });
 
+describe('reviewApprovalDetails connector name', () => {
+  test('the display name the API sends reaches the panel; none, null', () => {
+    const action = connectorCall.kind === 'approval' ? connectorCall.detail.actions[0] : null;
+    const named = { ...connectorCall, detail: { actions: [{ ...action, connectorName: 'GitHub' }] } } as ReviewItem;
+    expect(reviewApprovalDetails(named)?.connector_name).toBe('GitHub');
+    expect(reviewApprovalDetails(connectorCall)?.connector_name).toBeNull();
+  });
+});
+
 describe('reviewApprovalAsker', () => {
   test('names the agent and the session title when the inbox knows them', () => {
     expect(reviewApprovalAsker(connectorCall, { 'session-1': 'Q3 launch prep' })).toEqual({
