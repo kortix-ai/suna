@@ -110,6 +110,12 @@ export const MONITOR_MIN_INTERVAL_SECONDS = 30;
 export const MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
 /** Floor for a cron trigger's `max_lateness` (the misfire bound, KRTX-1743). */
 export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
+/**
+ * A trigger starts at most this many runs in any 60 minutes when its
+ * `max_runs_per_hour` is unset (KRTX-1721). Twice the busiest production
+ * trigger's hour in October 2026; the 60 s cron floor allows exactly this.
+ */
+export const DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR = 60;
 /** Longest `run` command accepted. Bounds a hostile manifest out of the box config. */
 export const MONITOR_RUN_MAX_LENGTH = 1024;
 
@@ -424,6 +430,12 @@ export const HARNESS_TOOL_NAMES = [
  * were re-added once (#9902) and removed again; a test pins them out.
  */
 export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
+/**
+ * Kortix tools that no longer exist. Manifests written while #9902 was live
+ * still name them (the v2 starter, v3 agent excludes). Naming one is
+ * a warning, not an error: no session can load it, so the name has no effect.
+ */
+export const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe'];
 /** A `tools:` value that keeps a Kortix tool: `kortix:<name>`. */
 export const KORTIX_TOOL_PREFIX = 'kortix:';
 
@@ -469,6 +481,7 @@ export const KORTIX_SKILL_NAMES = [
   'kortix-system',
   'kortix-teams',
   'kortix-ui',
+  'kortix-user-memory',
 ] as const;
 /** The prefix only Kortix skills use. */
 export const KORTIX_SKILL_PREFIX = 'kortix-';

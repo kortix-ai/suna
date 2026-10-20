@@ -21,6 +21,7 @@ function TurnFallbackRow({
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const why = tI18nComplete('servedModelReason', { reason });
   return (
     <div
       role="note"
@@ -30,8 +31,8 @@ function TurnFallbackRow({
       <ArrowsSplitIcon className="text-muted-foreground size-4 flex-none" aria-hidden="true" />
       <span className="text-muted-foreground min-w-0 wrap-anywhere">
         {count > 1
-          ? tI18nComplete('servedModelTurnRowRepeated', { requested, reason, served, count })
-          : tI18nComplete('servedModelTurnRow', { requested, reason, served })}
+          ? tI18nComplete('servedModelTurnRowRepeated', { requested, reason: why, served, count })
+          : tI18nComplete('servedModelTurnRow', { requested, reason: why, served })}
       </span>
     </div>
   );

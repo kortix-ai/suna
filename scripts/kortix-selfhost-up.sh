@@ -31,7 +31,7 @@
 # (or omit --tunnel to stay fully local-only — no agent sessions either way).
 #
 # Required for agent sessions to actually run (set later, any time):
-#   kortix self-host env set DAYTONA_API_KEY=... MANAGED_GIT_GITHUB_TOKEN=... MANAGED_GIT_GITHUB_OWNER=...
+#   kortix self-host env set PLATINUM_API_KEY=... MANAGED_GIT_GITHUB_TOKEN=... MANAGED_GIT_GITHUB_OWNER=...
 # or interactively: kortix self-host configure
 #
 # Flags (all optional):
@@ -43,7 +43,8 @@
 #   --auto-update <on|off>     In-compose auto-updater (default: on). Env: KORTIX_SELFHOST_AUTO_UPDATE.
 #   --update-interval <secs>   Auto-updater poll interval (default: 86400). Env: KORTIX_SELFHOST_UPDATE_INTERVAL.
 #   --instance <name>          Self-host instance name (default: default). Env: KORTIX_SELFHOST_INSTANCE.
-#   --daytona-key <key>        Daytona API key (agent sandbox provider). Env: DAYTONA_API_KEY.
+#   --platinum-key <key>       Platinum API key (the reference sandbox provider). Env: PLATINUM_API_KEY.
+#   --daytona-key <key>        Legacy fallback only (removal scheduled, no support). Env: DAYTONA_API_KEY.
 #   -h, --help                 Show this help.
 #
 # Note on env var naming: KORTIX_SELFHOST_CHANNEL (not KORTIX_CHANNEL) is used
@@ -59,7 +60,7 @@ warn() { printf '\033[33mkortix-selfhost-up: %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[31mkortix-selfhost-up: %s\033[0m\n' "$*" >&2; exit 1; }
 
 usage() {
-  sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,55p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # ─── Args + env defaults ─────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ CHANNEL="${KORTIX_SELFHOST_CHANNEL:-stable}"
 AUTO_UPDATE="${KORTIX_SELFHOST_AUTO_UPDATE:-on}"
 UPDATE_INTERVAL="${KORTIX_SELFHOST_UPDATE_INTERVAL:-86400}"
 INSTANCE="${KORTIX_SELFHOST_INSTANCE:-default}"
+PLATINUM_KEY="${PLATINUM_API_KEY:-}"
 DAYTONA_KEY="${DAYTONA_API_KEY:-}"
 
 while [ $# -gt 0 ]; do
@@ -81,6 +83,7 @@ while [ $# -gt 0 ]; do
     --auto-update) AUTO_UPDATE="${2:?--auto-update requires a value}"; shift 2 ;;
     --update-interval) UPDATE_INTERVAL="${2:?--update-interval requires a value}"; shift 2 ;;
     --instance) INSTANCE="${2:?--instance requires a value}"; shift 2 ;;
+    --platinum-key) PLATINUM_KEY="${2:?--platinum-key requires a value}"; shift 2 ;;
     --daytona-key) DAYTONA_KEY="${2:?--daytona-key requires a value}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown argument: $1 (see --help)" ;;
@@ -193,9 +196,20 @@ if [ -n "$DOMAIN" ]; then
 fi
 
 # ─── Optional: sandbox provider now, instead of later ────────────────────────
+# Platinum is the reference provider and comes first. Daytona is a legacy
+# fallback: its removal is scheduled and it gets no support guarantee.
+PROVIDER_ARGS=()
+PROVIDERS=""
+if [ -n "$PLATINUM_KEY" ]; then
+  PROVIDER_ARGS+=("PLATINUM_API_KEY=$PLATINUM_KEY"); PROVIDERS="platinum"
+fi
 if [ -n "$DAYTONA_KEY" ]; then
-  log "configuring Daytona sandbox key"
-  kortix self-host env set --instance "$INSTANCE" "DAYTONA_API_KEY=$DAYTONA_KEY"
+  warn "--daytona-key: Daytona is a legacy fallback (removal scheduled, no support guarantee). Use --platinum-key."
+  PROVIDER_ARGS+=("DAYTONA_API_KEY=$DAYTONA_KEY"); PROVIDERS="${PROVIDERS:+$PROVIDERS,}daytona"
+fi
+if [ -n "$PROVIDERS" ]; then
+  log "configuring sandbox providers: $PROVIDERS"
+  kortix self-host env set --instance "$INSTANCE" "${PROVIDER_ARGS[@]}" "ALLOWED_SANDBOX_PROVIDERS=$PROVIDERS"
 fi
 
 # ─── 5. Start ─────────────────────────────────────────────────────────────────
@@ -214,7 +228,7 @@ kortix self-host is up.
   Status     kortix self-host status --instance $INSTANCE
   Logs       kortix self-host logs --instance $INSTANCE
   Doctor     kortix self-host doctor --instance $INSTANCE
-  Configure  kortix self-host configure --instance $INSTANCE   (Daytona sandbox key, GitHub, Pipedream)
+  Configure  kortix self-host configure --instance $INSTANCE   (Platinum sandbox key, GitHub, Pipedream)
   Update     kortix self-host update --instance $INSTANCE      (or let the in-compose updater do it — on by default)
 
 SUMMARY

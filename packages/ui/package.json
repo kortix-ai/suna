@@ -82,6 +82,8 @@
     "./customize/sections/component/slack-byo-wizard": "./src/customize/sections/component/slack-byo-wizard.tsx",
     "./customize/sections/component/slack-connect-card": "./src/customize/sections/component/slack-connect-card.tsx",
     "./customize/sections/component/teams-byo-wizard": "./src/customize/sections/component/teams-byo-wizard.tsx",
+    "./customize/sections/component/teams-connect-card": "./src/customize/sections/component/teams-connect-card.tsx",
+    "./customize/sections/component/telegram-channel-row": "./src/customize/sections/component/telegram-channel-row.tsx",
     "./customize/sections/connector-connection-form": "./src/customize/sections/connector-connection-form.ts",
     "./customize/sections/connector-oauth2": "./src/customize/sections/connector-oauth2.ts",
     "./customize/sections/connector-oauth2-application-fields": "./src/customize/sections/connector-oauth2-application-fields.tsx",
@@ -101,6 +103,7 @@
     "./customize/sections/view/gateway/gateway-overview": "./src/customize/sections/view/gateway/gateway-overview.tsx",
     "./customize/sections/view/gateway/gateway-routing": "./src/customize/sections/view/gateway/gateway-routing.tsx",
     "./customize/sections/view/review-view": "./src/customize/sections/view/review-view.tsx",
+    "./customize/sections/view/sandbox-provider-coverage": "./src/customize/sections/view/sandbox-provider-coverage.tsx",
     "./customize/settings/rail": "./src/customize/settings/rail.ts",
     "./customize/settings/rail-copy-context": "./src/customize/settings/rail-copy-context.tsx",
     "./customize/settings/settings-tab-header": "./src/customize/settings/settings-tab-header.tsx",
@@ -307,6 +310,7 @@
     "./internal/lib/provider-branding": "./src/internal/lib/provider-branding.tsx",
     "./internal/lib/query-client-singleton": "./src/internal/lib/query-client-singleton.ts",
     "./internal/lib/relative-time": "./src/internal/lib/relative-time.ts",
+    "./internal/lib/sandbox-providers": "./src/internal/lib/sandbox-providers.ts",
     "./internal/lib/security/iframe-sandbox": "./src/internal/lib/security/iframe-sandbox.ts",
     "./internal/lib/settings-tab-id": "./src/internal/lib/settings-tab-id.ts",
     "./internal/lib/shaders-react": "./src/internal/lib/shaders-react.ts",
@@ -783,6 +787,14 @@
         "types": "./dist/customize/sections/component/teams-byo-wizard.d.ts",
         "import": "./dist/customize/sections/component/teams-byo-wizard.js"
       },
+      "./customize/sections/component/teams-connect-card": {
+        "types": "./dist/customize/sections/component/teams-connect-card.d.ts",
+        "import": "./dist/customize/sections/component/teams-connect-card.js"
+      },
+      "./customize/sections/component/telegram-channel-row": {
+        "types": "./dist/customize/sections/component/telegram-channel-row.d.ts",
+        "import": "./dist/customize/sections/component/telegram-channel-row.js"
+      },
       "./customize/sections/connector-connection-form": {
         "types": "./dist/customize/sections/connector-connection-form.d.ts",
         "import": "./dist/customize/sections/connector-connection-form.js"
@@ -858,6 +870,10 @@
       "./customize/sections/view/review-view": {
         "types": "./dist/customize/sections/view/review-view.d.ts",
         "import": "./dist/customize/sections/view/review-view.js"
+      },
+      "./customize/sections/view/sandbox-provider-coverage": {
+        "types": "./dist/customize/sections/view/sandbox-provider-coverage.d.ts",
+        "import": "./dist/customize/sections/view/sandbox-provider-coverage.js"
       },
       "./customize/settings/rail": {
         "types": "./dist/customize/settings/rail.d.ts",
@@ -1676,6 +1692,10 @@
       "./internal/lib/relative-time": {
         "types": "./dist/internal/lib/relative-time.d.ts",
         "import": "./dist/internal/lib/relative-time.js"
+      },
+      "./internal/lib/sandbox-providers": {
+        "types": "./dist/internal/lib/sandbox-providers.d.ts",
+        "import": "./dist/internal/lib/sandbox-providers.js"
       },
       "./internal/lib/security/iframe-sandbox": {
         "types": "./dist/internal/lib/security/iframe-sandbox.d.ts",

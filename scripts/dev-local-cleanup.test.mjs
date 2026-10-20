@@ -51,7 +51,7 @@ esac`);
     const unrelated = spawn('/bin/sleep', ['120'], { stdio: 'ignore' });
     const child = spawn('bash', [script, ...(signal === 'build failure' ? ['--build'] : [])], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: {
       PATH: `${bin}:${process.env.PATH}`, HOME: process.env.HOME, STATE: dir,
-      MODE: signal ? 'signal' : 'normal', ALLOWED_SANDBOX_PROVIDERS: 'daytona',
+      MODE: signal ? 'signal' : 'normal', ALLOWED_SANDBOX_PROVIDERS: 'platinum',
       KORTIX_BILLING_INTERNAL_ENABLED: 'true', STRIPE_SECRET_KEY: 'synthetic',
       SUPABASE_URL: 'https://example.test', DATABASE_URL: 'postgresql://example.test/db',
     } });

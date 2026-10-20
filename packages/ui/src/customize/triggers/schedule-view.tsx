@@ -292,6 +292,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const router = useUiRouter();
   const pathname = useUiPathname();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tAutomations = useTranslations('automationsPause');
   const copy = localizedTriggersCopy(tI18nComplete);
   const kindCopy = localizedKindCopy(tI18nComplete);
   const queryClient = useQueryClient();
@@ -556,6 +557,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   };
   const parseErrors = triggersQuery.data?.errors ?? [];
   const paused = triggersQuery.data?.triggers_paused ?? false;
+  const accountPaused = triggersQuery.data?.account_automations_paused ?? false;
 
   return (
     // The open trigger takes a column beside the list, wider than it (60/40):
@@ -662,6 +664,14 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             because a project that runs nothing on its own is something a
             reader has to know before they read the list. The control itself
             is the header's Pause all / Resume all button. */}
+            {/* The account's Pause all automations (KRTX-1721): it stops this
+                project too, and it is changed in account settings. */}
+            {accountPaused && showContent && (
+              <Alert variant="warning">
+                <AlertTitle>{tAutomations('bannerTitle')}</AlertTitle>
+                <AlertDescription>{tAutomations('bannerDescription')}</AlertDescription>
+              </Alert>
+            )}
             {paused && showContent && (
               <Alert variant="warning">
                 <AlertTitle>{tI18nComplete.raw('textb18b93a52cd2')}</AlertTitle>

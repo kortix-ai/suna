@@ -35,6 +35,7 @@ import {
   loadSessionExportMessages,
   useProjectSession,
   useRuntimeSession,
+  useSessionLogRecord,
   useSessionSync,
 } from '@kortix/sdk/react';
 import {
@@ -153,8 +154,10 @@ export function ExportTranscriptModal({
     [runtimeSession, projectSession, sessionId],
   );
   // `mirror: null`: this dialog is mounted with every session header, and the
-  // page's `useSession` already reads the saved copy once per open.
-  const { messages: visibleMessages } = useSessionSync(sessionId, { kortixSessionScope, mirror: null });
+  // page's `useSession` already reads the saved copy once per open. On v2 (the store
+  // holds the session's log) no saved copy is read: the export reads the log.
+  const sessionLog = useSessionLogRecord({ sessionId: projectSessionId ?? '' }) !== null;
+  const { messages: visibleMessages } = useSessionSync(sessionId, { kortixSessionScope, mirror: null, sessionLog });
   const [messages, setMessages] = useState(visibleMessages);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const visibleMessagesRef = useRef(visibleMessages);
@@ -166,7 +169,7 @@ export function ExportTranscriptModal({
     if (!open) return;
     let cancelled = false;
     setIsLoadingMessages(true);
-    // The runtime's history while the computer runs, else the saved copy.
+    // v2: the session log's thread. v1: the runtime's history while the computer runs, else the saved copy.
     void loadSessionExportMessages(sessionId, kortixSessionScope)
       .then((history) => {
         if (!cancelled) setMessages(history);

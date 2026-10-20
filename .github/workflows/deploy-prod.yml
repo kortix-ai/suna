@@ -710,12 +710,10 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      # Signing material lives in kortix-ci-env. Every key is optional: a build
-      # never hard-fails on missing certs. The read is skipped on Windows,
-      # where no signing material has ever been stored (WINDOWS_CERTIFICATE*
-      # stays empty, so Windows installers build UNSIGNED, as before). Only
-      # the Apple-ID notarization keys are stored today; the APPLE_API_* keys
-      # are read in case they are added later.
+      # Signing material lives in kortix-ci-env, read on every OS. Every key is
+      # optional: a build never hard-fails on missing certs. Windows signs through
+      # Microsoft Artifact Signing (the AZURE_SIGNING_* keys, same as Kortix
+      # Capture); see the kortix-capture skill, release-runbook "Windows signing setup".
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -789,12 +787,12 @@ jobs:
         shell: bash
         run: |
           # Windows: Authenticode through Microsoft Artifact Signing when kortix-ci-env has it.
+          # scripts/sign-windows-azure.js signs each file with the ArtifactSigning module (the one
+          # azure/trusted-signing-action uses): electron-builder 25's azureSignOptions uses the
+          # retired TrustedSigning module, whose NuGet v2 downloads fail. The script signs SHA-256 only.
           azure=()
           if [ "${{ runner.os }}" = Windows ] && [ "${{ steps.sign.outputs.enabled }}" = true ] && [ -n "${AZURE_CLIENT_SECRET:-}" ]; then
-            azure=(--config.win.azureSignOptions.publisherName="Kortix AI Corp"
-                   --config.win.azureSignOptions.endpoint="$AZURE_SIGNING_ENDPOINT"
-                   --config.win.azureSignOptions.codeSigningAccountName="$AZURE_SIGNING_ACCOUNT"
-                   --config.win.azureSignOptions.certificateProfileName="$AZURE_SIGNING_PROFILE")
+            azure=(--config.win.signtoolOptions.sign="$(cd apps/desktop-electron && pwd -W)/scripts/sign-windows-azure.js")
           fi
           pnpm --filter @kortix/desktop-electron exec electron-builder ${{ matrix.eb_flag }} \
           "${azure[@]}" \

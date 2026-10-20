@@ -12,6 +12,7 @@ import {
   connectionOAuthSessions,
 } from '@kortix/db';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { HTTPException } from 'hono/http-exception';
 import { connectionRowIsReachable } from '../projects/lib/connection-access';
 import { decryptNamedProjectSecret, decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { SecretUndecryptableError } from '../secrets/undecryptable';
@@ -108,9 +109,9 @@ async function rematerializeAfterOAuthCompletion(connectionId: string): Promise<
       .where(eq(connectorConnections.connectionId, connectionId))
       .limit(1);
     if (!row) return;
-    // A sign-in on a Pipedream connector is a move to Kortix: switch it now.
-    if (row.providerType === 'pipedream') {
-      const { finishMarkedMove } = await import('./pipedream-move');
+    // A sign-in on a Pipedream or Composio connector is a move to Kortix: switch it now.
+    if (row.providerType === 'pipedream' || row.providerType === 'composio') {
+      const { finishMarkedMove } = await import('./connector-move');
       await finishMarkedMove(connectionId);
       return;
     }
@@ -280,11 +281,11 @@ export async function discoverConnectionOAuth2Resource(
   );
 }
 
-/** A connection that moves its Pipedream connector to Kortix signs in to the
- *  catalogue app's MCP server (connectors/pipedream-move.ts). */
+/** A connection that moves its Pipedream or Composio connector to Kortix signs
+ *  in to the catalogue app's MCP server (connectors/connector-move.ts). */
 async function connectionMoveTargetUrl(row: { providerType: string; connectionId: string }): Promise<string | null> {
-  if (row.providerType !== 'pipedream') return null;
-  const { moveTargetUrlForConnection } = await import('./pipedream-move');
+  if (row.providerType !== 'pipedream' && row.providerType !== 'composio') return null;
+  const { moveTargetUrlForConnection } = await import('./connector-move');
   return moveTargetUrlForConnection(row.connectionId);
 }
 
@@ -401,7 +402,15 @@ export async function startConnectionSignIn(input: {
   initiatedBy: string;
   redirects?: { success?: string; error?: string };
 }): Promise<string | null> {
-  const discovery = await discoverConnectionOAuth2Resource({ connectionId: input.identity.connectionId });
+  // An unreachable or refused server URL is a property of the connector the
+  // user configured, not a server defect: 400, like `oauth2/discover-resource`.
+  const discovery = await discoverConnectionOAuth2Resource({ connectionId: input.identity.connectionId }).catch(
+    (error: unknown) => {
+      throw new HTTPException(400, {
+        message: `Could not discover sign-in for this MCP server: ${(error as Error).message}`,
+      });
+    },
+  );
   if (!mcpSignInCheck(discovery).one_click) return null;
   const callbackUrl = nativeOAuth2CallbackUrl('http://localhost:8008/', config.KORTIX_URL);
   const metadata = discovery.metadata ?? {};

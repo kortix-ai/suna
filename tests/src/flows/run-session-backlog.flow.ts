@@ -6,7 +6,7 @@
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
- * FLOW level on `requires: ["funded"]` and/or `["daytona"]`. The runner
+ * FLOW level on `requires: ["funded"]` and/or `["sandbox"]`. The runner
  * self-skips a flow whose capability is absent, so these SKIP cleanly locally
  * and run for real against a deployed target.
  *
@@ -58,7 +58,7 @@ harnessFlow(
   'SESS-10',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     // Boot (≤540s) + one turn (≤240s) + the mirror wait (≤180s) exceeds 360s.
     timeoutMs: 900_000,
@@ -141,7 +141,7 @@ harnessFlow(
   'RUN-1',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -172,7 +172,7 @@ harnessFlow(
   {
     domain: 'agent-run',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -237,7 +237,7 @@ harnessFlow(
   {
     domain: 'agent-run',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -270,7 +270,7 @@ harnessFlow(
   'RUN-4',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -304,7 +304,7 @@ harnessFlow(
   'RUN-5',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -360,7 +360,7 @@ harnessFlow(
   'RUN-6',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -404,7 +404,7 @@ harnessFlow(
   {
     domain: 'agent-run',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -478,7 +478,7 @@ flow(
   {
     domain: 'agent-run',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     retry: { attempts: 2 },
     routes: [
@@ -530,7 +530,7 @@ flow(
   'SESS-2',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 300_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
@@ -568,7 +568,7 @@ flow(
   'SESS-3',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 240_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
   },
@@ -603,7 +603,7 @@ harnessFlow(
   'SESS-9',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -636,7 +636,7 @@ harnessFlow(
   {
     domain: 'sessions',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -705,7 +705,7 @@ flow(
   'FILE-8',
   {
     domain: 'files',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 360_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -756,7 +756,7 @@ flow(
   {
     domain: 'files',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 600_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -816,7 +816,7 @@ flow(
   {
     domain: 'golden',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 600_000,
     routes: [
@@ -989,13 +989,13 @@ flow(
 // closest real boundary: a `event_callback`/`app_mention` POST is accepted and
 // (when an install + signature are present on the target) acknowledged 200
 // `{ok:true}` and a `source:slack` session subsequently appears; otherwise the
-// install gate (404) is asserted. This flow is gated on funded+daytona because a
+// install gate (404) is asserted. This flow is gated on funded+sandbox because a
 // successful dispatch spins a real sandbox.
 flow(
   'CHN-6',
   {
     domain: 'channels',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 240_000,
     routes: ['POST /v1/webhooks/slack/:projectId', 'GET /v1/projects/:projectId/sessions'],
@@ -1091,7 +1091,7 @@ harnessFlow(
   'RUN-10',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Boot (≤540s) + the boot turn (≤240s).
     timeoutMs: 900_000,
     routes: [
@@ -1161,7 +1161,7 @@ flow(
   'RUN-11',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1191,7 +1191,7 @@ harnessFlow(
   'RUN-12',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -1257,7 +1257,7 @@ flow(
   'RUN-20',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1385,7 +1385,7 @@ harnessFlow(
   'RUN-15',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Three sessions: boot (≤540s) + one turn (≤240s) each.
     timeoutMs: 2_500_000,
     routes: [
@@ -1479,7 +1479,7 @@ harnessFlow(
   'RUN-19',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // One session: boot (≤540s) + one turn (≤240s).
     timeoutMs: 900_000,
     routes: [
@@ -1574,7 +1574,7 @@ harnessFlow(
   'RUN-13',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1654,7 +1654,7 @@ harnessFlow(
   'RUN-14',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1769,7 +1769,7 @@ harnessFlow(
   'RUN-17',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Boot (≤540s) + the boot turn + two turns (≤240s each).
     timeoutMs: 1_200_000,
     routes: [
@@ -1830,7 +1830,7 @@ flow(
   'RUN-16',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -1877,7 +1877,7 @@ harnessFlow(
   'RUN-18',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',

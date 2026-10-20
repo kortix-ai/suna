@@ -65,8 +65,6 @@ export function registerProjectDetailRoutes(): void {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
-      // A page view: serve the warm git mirror, refresh it behind the response.
-      allowStaleMirrorReads();
 
       // The open stamp is a page-view counter: the project selector and the
       // command palette sort by it, and nothing in this request reads it back.
@@ -117,6 +115,8 @@ export function registerProjectDetailRoutes(): void {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
+      // A page view: serve the warm git mirror, refresh it behind the response.
+      allowStaleMirrorReads();
 
       const gitProject = await withProjectGitAuth(loaded.row);
       let files: Awaited<ReturnType<typeof listRepoFiles>> = [];

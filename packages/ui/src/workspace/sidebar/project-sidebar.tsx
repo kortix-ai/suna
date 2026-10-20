@@ -175,6 +175,7 @@ export function ProjectSidebar({
                 of the three icon buttons, so the row fits the 208px floor. */}
             <NotificationBell
               projectId={projectId}
+              surface="bg-sidebar"
               onNavigate={() => {
                 if (isMobile) setOpenMobile(false);
               }}

@@ -12,7 +12,7 @@ import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectPageCans } from '../../internal/lib/use-project-can';
 import type { ProviderModalTab } from '../../internal/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '../../internal/stores/upgrade-dialog-store';
-import { getProjectDetail, listProjectSecrets, platformConfig } from '@kortix/sdk';
+import { getProject, platformConfig } from '@kortix/sdk';
 import { contract, type FlatModel, type ModelKey, qk } from '@kortix/sdk/react';
 import { resolveEntitlementsPending } from '../composer/entitlements-pending';
 
@@ -80,13 +80,15 @@ export function useModelConnectionGate(
 
   const projectId = resolveGateProjectId(options?.projectId, useSessionIds().projectId);
 
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
+  // The gateway flag rides the bare project row (~10 ms), not `/detail`,
+  // which reads git and held the picker spinner for up to 2.6 s on prod.
+  const projectRowQuery = useQuery({
+    queryKey: qk.project.summary(projectId ?? ''),
+    queryFn: () => getProject(projectId as string),
     enabled: !!projectId,
     ...contract('config'),
   });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  const llmGatewayEnabled = isLlmGatewayEnabled(projectRowQuery.data);
   const caps = useProjectPageCans(projectId ?? undefined);
   // The provider modal's writes are `project.model.write`, the same leaf the
   // model picker gates its "+" and sliders on.
@@ -99,18 +101,6 @@ export function useModelConnectionGate(
     () => (llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix')),
     [models, llmGatewayEnabled],
   );
-  // `project.secret.read` is manager-tier, so for a project `member` this query
-  // was a guaranteed 403 on every project-home render — a permission check
-  // performed by asking the server to refuse. Gate it on the leaf instead.
-  // `allowed === true` also holds the query while the probe is still loading,
-  // so it fires once, when the answer is known, or not at all.
-  const canReadSecrets = caps[PROJECT_ACTIONS.PROJECT_SECRET_READ]?.allowed === true;
-  const secretsQuery = useQuery({
-    queryKey: qk.project.secrets(projectId ?? ''),
-    queryFn: () => listProjectSecrets(projectId as string),
-    enabled: !!projectId && llmGatewayEnabled && canReadSecrets,
-    ...contract('config'),
-  });
   const accountStateQuery = useAccountState();
   // Availability is SERVER-resolved, never re-derived here. `/model-picker`
   // already applies plan entitlement (`freeManagedOnly`) and connected-BYOK
@@ -149,9 +139,10 @@ export function useModelConnectionGate(
     },
     [modelsByKey, isModelOffered],
   );
-  // `hasSelectableModels` is only trustworthy once every input the served
-  // catalog depends on has loaded — a secret write invalidates `/model-picker`,
-  // so a gate keyed on a half-loaded answer flashes, then vanishes.
+  // `hasSelectableModels` is only trustworthy once the inputs it reads have
+  // loaded. Connected keys are not one of them: `/model-picker` resolves them
+  // on the server, so the gate never waits on `/secrets` (it held the picker
+  // for 1.8 s on dev, inside the ~45 requests a project page fires at load).
   //
   // Each query is passed WHOLE. This used to restate every query's `enabled`
   // inline, because a disabled react-query reports `isPending` forever; one
@@ -160,8 +151,7 @@ export function useModelConnectionGate(
   // spun over a catalog already sitting in the browser. `fetchStatus` answers
   // the question without a copy to keep in sync — see `entitlements-pending`.
   const entitlementsPending = resolveEntitlementsPending([
-    projectDetailQuery,
-    secretsQuery,
+    projectRowQuery,
     accountStateQuery,
   ]);
 
@@ -178,9 +168,9 @@ export function useModelConnectionGate(
   const openUpgrade = useCallback(() => {
     openUpgradeDialog({
       reason: 'subscription_required',
-      accountId: projectDetailQuery.data?.project.account_id,
+      accountId: projectRowQuery.data?.account_id,
     });
-  }, [openUpgradeDialog, projectDetailQuery.data?.project.account_id]);
+  }, [openUpgradeDialog, projectRowQuery.data?.account_id]);
 
   const providerModalOpened = useOpenedOnce(projectModalOpen);
   const modal =

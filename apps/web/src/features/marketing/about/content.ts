@@ -22,7 +22,7 @@
  *    "ChatGPT Cowork". Claim nothing about their limits or concurrency.
  *  - Never name a licence — "open source" and stop. Never claim a certification.
  *  - NEVER claim blanket "microVM isolation": true for Platinum, not for
- *    Daytona, which is the default. Write "its own isolated machine".
+ *    Daytona, the legacy fallback. Write "its own isolated machine".
  *  - NEVER write that a secret is "never visible to the model". A granted
  *    runtime secret is a real env value in the session. CONNECTOR credentials
  *    are the ones brokered server-side that never enter the machine.

@@ -70,7 +70,7 @@ export interface ProjectSession {
   project_id: string;
   branch_name: string;
   base_ref: string;
-  sandbox_provider: 'daytona' | 'platinum' | 'e2b' | null;
+  sandbox_provider: 'platinum' | 'daytona' | null;
   /** Null until the session has a sandbox. */
   sandbox_id: string | null;
   sandbox_url: string | null;
@@ -251,7 +251,7 @@ export interface CreateProjectSessionInput {
   labels?: string[];
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
-  provider?: 'daytona' | 'platinum' | 'e2b';
+  provider?: 'platinum' | 'daytona';
   /** @deprecated Withdrawn — persistent machines left the product. The API ignores it. Removed in the next major. */
   persistent_machine?: boolean;
   branch_already_created?: boolean;

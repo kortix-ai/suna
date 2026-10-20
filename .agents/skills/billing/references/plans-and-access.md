@@ -33,7 +33,7 @@ account buys, and which features it may use.
 |---|---|---|
 | Price | $0 | $50–$50,000 a month (25 ladder tiers; sales above it) |
 | Usage | 500 credits a month | Monthly credits, 1-month rollover, top-ups |
-| Features | Every self-serve feature: managed models, credit purchases | Same as Free |
+| Features | Every self-serve feature except managed models; credit purchases | Same as Free, plus Kortix-managed models |
 | Limits | 1 project, free model rate budget | 200 projects, paid model rate budget |
 
 `credit_accounts.tier` is the billing plan: `free` or `credits` (legacy keys
@@ -101,6 +101,23 @@ A model request on the account's own provider key is billed by the provider
 `entitlement_overrides` keys: `managedModels`, `sso`, `scim`, `rbac`,
 `auditAccess`, `branding`, `byokFee`. Each `{ value: boolean, expires_at? }`.
 Set through `PUT /v1/admin/api/accounts/{id}/overrides`.
+
+## Managed models are sold, never given
+
+Only a paid billing plan or a licensed Enterprise contract carries
+`managedModels` (`paysForManagedModels` in `resolve-billing.ts`, applied last).
+Free and No Plan never get it: not from the catalog, an override, or the
+Enterprise demo. The admin route refuses a `managedModels: true` override on
+them with `400`. Two independent gates enforce it at request time:
+
+1. `resolveManagedCandidates` refuses every managed model, the platform
+   default and any fallback included, with `plan_upgrade_required`.
+2. The billing admission (`assertLlmBillingActive` with `creditsRequest`)
+   refuses a Kortix-billed request from such an account.
+
+`unit-managed-models-invariant.test.ts` sweeps every plan key, Enterprise
+state and override; `unit-resolve-candidates-free-tier.test.ts` sweeps every
+managed id and alias. Learnings 2026-10-19.
 
 ## Removed
 

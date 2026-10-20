@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 852,
+  "count": 855,
   "routes": [
     {
       "method": "GET",
@@ -29,6 +29,10 @@
     {
       "method": "GET",
       "path": "/health/ready"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/admit"
     },
     {
       "method": "POST",
@@ -241,6 +245,14 @@
     {
       "method": "POST",
       "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/automations"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/automations"
     },
     {
       "method": "DELETE",

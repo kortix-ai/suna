@@ -197,17 +197,17 @@ describe('createModelVisibility', () => {
     ).toBe(false);
   });
 
-  test('gateway: the platform default shows on free tier too (KRTX-1067)', () => {
+  test('gateway: free tier sees no managed model, the platform default included', () => {
     const gateway = [flat('kortix', PLATFORM_DEFAULT_MODEL_ID), flat('kortix', 'glm-5.3-flash')];
     const free = createModelVisibility({ catalogModels: gateway, freeTier: true });
-    expect(free({ providerID: 'kortix', modelID: PLATFORM_DEFAULT_MODEL_ID })).toBe(true);
+    expect(free({ providerID: 'kortix', modelID: PLATFORM_DEFAULT_MODEL_ID })).toBe(false);
     expect(free({ providerID: 'kortix', modelID: 'glm-5.3-flash' })).toBe(false);
   });
 
-  test('hasUsableModel: the platform default alone counts as usable on free tier (KRTX-1067)', () => {
+  test('hasUsableModel: no managed model counts as usable on free tier', () => {
     expect(
       hasUsableModel([flat('kortix', PLATFORM_DEFAULT_MODEL_ID)], { freeTier: true }),
-    ).toBe(true);
+    ).toBe(false);
     expect(hasUsableModel([flat('kortix', 'glm-5.3-flash')], { freeTier: true })).toBe(false);
   });
 });
@@ -268,16 +268,14 @@ describe('resolveModelDefault', () => {
     });
   });
 
-  test('a free-tier account resolves the platform default (KRTX-1067)', () => {
-    // The gateway serves the platform default to every tier (KRTX-1067), so
-    // the client resolves it instead of leaving a fresh free account with no
-    // model and a disabled Send.
+  test('a free-tier account never resolves the platform default', () => {
+    // The gateway refuses every managed model to free tier.
     expect(
       resolveModelDefault(
         { ...data, projectDefault: null, freeTier: true } as ModelDefaultsResponse,
         undefined,
       ),
-    ).toEqual({ providerID: 'kortix', modelID: 'kimi-k3' });
+    ).toBeUndefined();
   });
 
   test('a null platform default resolves to nothing, not a crash', () => {

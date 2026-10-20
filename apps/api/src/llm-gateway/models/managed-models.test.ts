@@ -180,7 +180,8 @@ describe('isRetiredManagedModelId', () => {
   test('a current lineup id is not retired', () => {
     expect(isRetiredManagedModelId('deepseek-v4.1-flash')).toBe(false);
     expect(isRetiredManagedModelId('glm-5.3-flash')).toBe(false);
-    expect(isRetiredManagedModelId('kimi-k3')).toBe(false);
+    // Kimi K3 left the lineup on 2026-10-19.
+    expect(isRetiredManagedModelId('kimi-k3')).toBe(true);
   });
 
   test('an id this catalog has never heard of is not retired — it is simply unknown', () => {
@@ -259,6 +260,6 @@ describe('retiredManagedModelReplacement', () => {
   });
 
   test('returns null for an id that was never retired', () => {
-    expect(retiredManagedModelReplacement('kimi-k3', lineup)).toBeNull();
+    expect(retiredManagedModelReplacement('glm-5.3-flash', lineup)).toBeNull();
   });
 });

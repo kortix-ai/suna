@@ -122,7 +122,7 @@ export function FileThumbnail({ filePath, fileName, className, deferPreview }: F
         }
         aria-hidden
       >
-        <FileContentRenderer filePath={filePath} readOnly showHeader={false} />
+        <FileContentRenderer filePath={filePath} readOnly showHeader={false} imageControls="none" />
       </div>
       {extBadge}
     </div>

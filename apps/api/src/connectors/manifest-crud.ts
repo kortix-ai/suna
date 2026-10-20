@@ -177,15 +177,20 @@ async function connectorIdFor(projectId: string, slug: string): Promise<string |
   return row?.connectorId ?? null;
 }
 
-/**
- * Create/update a connector in kortix.yaml, then materialize it. `beforeSync`
- * runs after the commit and before the sync (a Pipedream move swaps credentials there).
- */
+/** Extra steps of one connector write (a connector move uses both). */
+export interface ConnectorWriteOptions {
+  /** Edits other parts of the same kortix.yaml commit (a move rewrites its triggers). An error string refuses the write. */
+  alsoMutate?: (manifest: EditableManifest) => string | null;
+  /** Runs after the commit and before the sync (a move swaps credentials there). */
+  beforeSync?: () => Promise<void>;
+}
+
+/** Create/update a connector in kortix.yaml, then materialize it. */
 export async function upsertConnectorInManifest(
   projectId: string,
   accountId: string,
   draft: ConnectorDraft,
-  beforeSync?: () => Promise<void>,
+  options: ConnectorWriteOptions = {},
 ): Promise<CrudResult> {
   // Slack is a first-class channel connector — reserve its namespace so a new
   // Pipedream/OpenAPI app can't take the `slack` name (and shadow the built-in
@@ -225,15 +230,15 @@ export async function upsertConnectorInManifest(
     return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
   }
 
-  const result = await upsertConnectorInManifestWithRetry(gitProject, draft);
+  const result = await upsertConnectorInManifestWithRetry(gitProject, draft, options.alsoMutate);
   if (!result.ok) return result;
-  await beforeSync?.();
+  await options.beforeSync?.();
 
   const sync = await syncProjectConnectors(projectId, accountId);
   return { ok: true, sync };
 }
 
-type EditableManifest = Awaited<ReturnType<typeof loadManifestForEdit>>;
+export type EditableManifest = Awaited<ReturnType<typeof loadManifestForEdit>>;
 
 async function mutateProjectConnectorManifest(
   projectId: string,
@@ -252,6 +257,7 @@ async function mutateProjectConnectorManifest(
 async function upsertConnectorInManifestWithRetry(
   project: Awaited<ReturnType<typeof withProjectGitAuth>>,
   draft: ConnectorDraft,
+  alsoMutate?: ConnectorWriteOptions['alsoMutate'],
 ): Promise<CrudResult> {
   return mutateManifestWithRetry(
     project,
@@ -277,6 +283,8 @@ async function upsertConnectorInManifestWithRetry(
         (candidate) => candidate.slug === draft.slug,
       );
       if (error) return { ok: false, error: error.error, status: 400 };
+      const refused = alsoMutate?.(manifest);
+      if (refused) return { ok: false, error: refused, status: 409 };
       return {
         ok: true,
         commitMessage: `chore: ${idx >= 0 ? 'update' : 'add'} connector ${draft.slug}`,

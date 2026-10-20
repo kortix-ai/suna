@@ -640,7 +640,7 @@ describe('kortix CLI black-box behavior', () => {
       '--port',
       '3000',
       '--provider',
-      'daytona',
+      'platinum',
       '--access',
       'password',
       '--password',
@@ -676,29 +676,31 @@ describe('kortix CLI black-box behavior', () => {
         command: ['node', 'server.js'],
         port: 3000,
       },
-      provider: 'daytona',
+      provider: 'platinum',
     });
 
-    const retiredProviderId = ['local', 'docker'].join('-');
-    const retiredProvider = await runCli([
-      'apps',
-      'deploy',
-      '--app',
-      'demo',
-      '--image',
-      'ghcr.io/kortix/demo:1',
-      '--command',
-      '["node","server.js"]',
-      '--port',
-      '3000',
-      '--provider',
-      retiredProviderId,
-      '--no-wait',
-      '--project',
-      'proj_e2e',
-    ], tmp, { KORTIX_CONFIG_FILE: configFile });
-    expect(retiredProvider.code).toBe(1);
-    expect(retiredProvider.stderr).toContain('--provider must be daytona, platinum, or e2b');
+    // Retired providers (E2B support is discontinued) are rejected before any request.
+    for (const retiredProviderId of [['local', 'docker'].join('-'), 'e2b']) {
+      const retiredProvider = await runCli([
+        'apps',
+        'deploy',
+        '--app',
+        'demo',
+        '--image',
+        'ghcr.io/kortix/demo:1',
+        '--command',
+        '["node","server.js"]',
+        '--port',
+        '3000',
+        '--provider',
+        retiredProviderId,
+        '--no-wait',
+        '--project',
+        'proj_e2e',
+      ], tmp, { KORTIX_CONFIG_FILE: configFile });
+      expect(retiredProvider.code).toBe(1);
+      expect(retiredProvider.stderr).toContain('--provider must be platinum or daytona (legacy fallback)');
+    }
 
     const access = await runCli([
       'apps',

@@ -197,6 +197,12 @@ export const accounts = kortixSchema.table(
    *  may change it (`PATCH /accounts/:id/iam/session-oversight`). Members see
    *  a disclosure in the share dialog while it is on. */
   adminsSeeAllSessions: boolean('admins_see_all_sessions').default(false).notNull(),
+  /** Pause all automations (KRTX-1721): set, no schedule, reminder, webhook,
+   *  app event or monitor of any project in the account fires on its own. A
+   *  manual fire still runs. NULL = automations run. `PATCH /accounts/:id/automations`. */
+  automationsPausedAt: timestamp('automations_paused_at', { withTimezone: true }),
+  /** Who paused them; NULL while running. */
+  automationsPausedBy: uuid('automations_paused_by'),
   /** Organization branding (enterprise `branding` entitlement): the product
    *  name plus the Storage URLs of the logo / icon / favicon (light + optional
    *  dark) that replace the Kortix marks for this account's members. `{}` = default Kortix branding. The
@@ -2045,6 +2051,12 @@ export const sessionLifecycleCommands = kortixSchema.table(
     index('idx_session_lifecycle_commands_forwarded')
       .on(table.updatedAt)
       .where(sql`(${table.result}->>'status') = 'forwarded'`),
+    // The claim drain (`claimDueLifecycleCommands`). Without it the claim
+    // reads every due queued row and detoasts the payload of each held
+    // prompt, which can be megabytes, on every tick.
+    index('idx_session_lifecycle_commands_claimable')
+      .on(table.availableAt)
+      .where(sql`${table.status} = 'queued' AND (COALESCE(${table.result}->>'held', '') <> 'true' OR ${table.payload}->>'clientMessageId' IS NULL)`),
   ],
 );
 

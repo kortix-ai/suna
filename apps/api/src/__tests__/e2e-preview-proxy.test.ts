@@ -344,8 +344,8 @@ mock.module('../platform/providers', () => ({
                   'X-Daytona-Disable-CORS': 'true',
                   ...(mockPreviewToken ? { 'X-Daytona-Preview-Token': mockPreviewToken } : {}),
                 }
-              : name === 'e2b' && mockPreviewToken
-                ? { 'e2b-traffic-access-token': mockPreviewToken }
+              : name === 'platinum' && mockPreviewToken
+                ? { 'x-provider-traffic-token': mockPreviewToken }
                 : {},
           effectivePort: route.effectivePort,
           websocket: route.websocket,
@@ -435,8 +435,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
   // Let non-proxy URLs through (e.g. internal Hono test requests)
   if (
     !urlStr.startsWith('https://preview.') &&
-    !urlStr.startsWith('http://preview.') &&
-    !urlStr.includes('.e2b.test')
+    !urlStr.startsWith('http://preview.')
   ) {
     return originalFetch(url, init);
   }
@@ -1241,13 +1240,13 @@ describe('Preview proxy: forwarding', () => {
         'x-daytona-disable-cors': 'true',
         'x-daytona-preview-token': 'daytona-preview-token-123',
       },
-      absent: ['e2b-traffic-access-token'],
+      absent: ['x-provider-traffic-token'],
     },
     {
-      provider: 'e2b',
-      previewUrl: 'https://8080-e2b-sandbox.e2b.test',
-      token: 'e2b-traffic-token',
-      present: { 'e2b-traffic-access-token': 'e2b-traffic-token' },
+      provider: 'platinum',
+      previewUrl: 'https://preview.platinum.test/proxy-url',
+      token: 'platinum-traffic-token',
+      present: { 'x-provider-traffic-token': 'platinum-traffic-token' },
       absent: ['x-daytona-preview-token'],
     },
   ])('$provider ingress headers are forwarded as the provider resolved them', async (row) => {

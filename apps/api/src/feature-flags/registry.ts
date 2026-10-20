@@ -222,7 +222,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Monitors need a provider that can run a persistent (never auto-stopped)
     // box. Only Platinum supports autoStop=0 — Daytona clamps auto-stop to
-    // ≥1 min and E2B caps runtime at 1 h — so the surface stays dark unless
+    // ≥1 min — so the surface stays dark unless
     // Platinum credentials are configured.
     available: () => Boolean(config.PLATINUM_API_KEY),
     // Explicit opt-in: off by default even where Platinum is available.
@@ -315,7 +315,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text. On ⇒ every new session of this project (and any session rebuilt from scratch) lists the kortix-genui system skill, which teaches the agent the Kortix generative UI catalog when an answer needs it (KORTIX_GENUI=1 in kortixd). Off ⇒ the agent writes markdown only; blocks already in a transcript still render.',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
+    // On by default: rich answers are the product. Turn it off per project, or
+    // for every project with the GENUI_ENABLED=false kill switch.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
       'Read at session provisioning (projects/lib/genui-env.ts → KORTIX_GENUI). An in-place restart keeps the sandbox env, so a running or restarted session keeps its skill list until a new session starts. kortixd hides the kortix-genui skill while the flag is off (OpenCode: kortixd does not write the skill files, and removes a copy a reused config release still holds, because the `"*": "allow"` of a project config outranks any skill deny; pi: the skill is dropped from its list); the catalog is never in the system prompt. A flag change deletes every unclaimed warm session of the project (pre-created by the web client before the user types, projects/lib/warm-sessions.ts; feature-flags/toggle-effects.ts → retireWarmProjectSessions), so the next prompt starts a session with the new value. The deletion runs in the background after the change is saved: a warm session claimed before it runs keeps the old value. The API kill switch GENUI_ENABLED=false forces it off for every project; it is read at API boot, and a warm session provisioned before an API restart keeps its old value until it is used or idles out.',
@@ -429,8 +431,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'BEHAVIORAL only. On, the API serves the stored v1 transcript reads ' +
       '(transcript shape=sync and the compact fallback, the open bundle, the ' +
       'public share, MCP read_session) from the session log, and the open ' +
-      'bundle carries a `log` leg (P4.2). The SDK v2 negotiation (P4.5, v2 only ' +
-      'when health lists `session.log.v2` and the flag is on) will read it too.',
+      'bundle carries a `log` leg (P4.2). With the flag on, the SDK reads the ' +
+      'history from the session log (P8.0a): pages, sub-agent threads, no v1 saved copy.',
   },
   {
     key: 'session_log_restore',

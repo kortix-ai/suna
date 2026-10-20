@@ -110,8 +110,7 @@ jobs:
             echo "::error::Pull request head is not a full Git SHA."
             exit 1
           }
-          # Previews run on Platinum only, host and sessions (2026-09-22). The
-          # shared Daytona org hit its snapshot quota on 2026-09-21.
+          # Previews run on Platinum, the reference provider, host and sessions.
           case "$provider" in auto|platinum) ;; *) echo "::error::Previews run on Platinum only."; exit 1 ;; esac
 
           current="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.sha)"
@@ -341,7 +340,6 @@ jobs:
       PREVIEW_LOCKFILE_SHA256: ${{ needs.authorize.outputs.lockfile_sha256 }}
       PREVIEW_SANDBOX_PROVIDER: ${{ needs.authorize.outputs.provider }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -349,9 +347,7 @@ jobs:
           persist-credentials: false
       # Preview runtime credentials. The dedicated preview GitHub App and
       # managed-Git values are CI-only (kortix-ci-env); the rest are read from
-      # the runtime blob that already holds them. DAYTONA_API_URL was never
-      # stored and stays unset (sandbox-preview.ts falls back to
-      # DAYTONA_SERVER_URL, then the public API). MANAGED_GIT_GITHUB_TOKEN is
+      # the runtime blob that already holds them. MANAGED_GIT_GITHUB_TOKEN is
       # optional and takes PRECEDENCE over the App when set: the App can only
       # create repos if it is installed on the owner AND has administration:
       # write; a PAT needs neither.
@@ -367,8 +363,6 @@ jobs:
         with:
           keys: |
             PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
-            DAYTONA_API_URL?
-            DAYTONA_API_KEY=kortix-preview-env:DAYTONA_API_KEY
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
             KORTIX_GITHUB_APP_ID=kortix-ci-env:PREVIEW_KORTIX_GITHUB_APP_ID
@@ -639,7 +633,6 @@ jobs:
       # branch environment has no expiry to fall back on.
       PREVIEW_BRANCH_ENV: ${{ github.event.pull_request.head.ref }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -657,10 +650,8 @@ jobs:
         with:
           keys: |
             PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
-            DAYTONA_API_URL?
-            DAYTONA_API_KEY=kortix-preview-env:DAYTONA_API_KEY
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - name: Delete the Platinum or Daytona preview sandbox
+      - name: Delete the Platinum preview sandbox
         run: bun tests/bin/sandbox-preview.ts teardown
       - name: Mark GitHub deployment inactive
         run: |
@@ -675,7 +666,7 @@ jobs:
           id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PREVIEW_PR_NUMBER}/comments" --paginate \
             --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
           body="$(printf '%s\n' "$marker" '## Preview environment - torn down' '' \
-            'The Platinum or Daytona sandbox and its full self-host data plane were deleted.')"
+            'The Platinum sandbox and its full self-host data plane were deleted.')"
           [ -z "$id" ] || gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -f body="$body" >/dev/null
 
   teardown-branch:
@@ -702,9 +693,7 @@ jobs:
       GITHUB_REPOSITORY: ${{ github.repository }}
       # No PREVIEW_PR_NUMBER: a delete event carries no pull request, and it
       # needs none — the branch IS the environment's identity, so the CLI
-      # accepts the branch alone. There is no Daytona credential either: a
-      # branch environment is pinned to Platinum (a Daytona fallback would
-      # change its origin), so nothing of it can exist there.
+      # accepts the branch alone. Previews run on Platinum only.
       #
       # The branch name is attacker-chosen text, so it arrives as an environment
       # variable and is never interpolated into a `run:` script. `bun` compares
@@ -748,7 +737,6 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -766,7 +754,5 @@ jobs:
         with:
           keys: |
             PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
-            DAYTONA_API_URL?
-            DAYTONA_API_KEY=kortix-preview-env:DAYTONA_API_KEY
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun tests/bin/sandbox-preview.ts reconcile

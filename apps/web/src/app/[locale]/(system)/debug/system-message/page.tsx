@@ -49,7 +49,7 @@ Blocker: STAGING_DATABASE_URL is unset, so the staging rollout would fall back t
 </blocker_raised>`,
 
   `<snapshot_build_queued>
-Provider: daytona
+Provider: platinum
 Region: us-east-1
 Snapshot: kortix-agent-2f9c1ab
 Queued at: 14:02:19Z

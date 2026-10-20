@@ -36,9 +36,10 @@ interface ImageRendererProps {
    * open for surfaces where looking at the artwork IS the task, and moves it to
    * the bottom edge: a permanently-open shelf at the top would sit directly
    * under the host's own toolbar and read as a second toolbar. It is also the
-   * only honest option on touch, where hover never fires.
+   * only honest option on touch, where hover never fires. `'none'` draws no
+   * shelf: a thumbnail is opened to be looked at, never zoomed in place.
    */
-  controls?: 'hover' | 'always';
+  controls?: 'hover' | 'always' | 'none';
   /** Add the backdrop swatches to the shelf (see `ImageBackdrop`). Off by
    *  default — an opaque JPEG has exactly one meaningful background. */
   backdrop?: boolean;
@@ -321,7 +322,7 @@ export function ImageRenderer({
           hover-in/out retargets cleanly. `controls="always"` opts out of the
           reveal entirely and moves the shelf to the bottom edge (see the prop's
           doc comment). */}
-      {!imgError && (
+      {!imgError && controls !== 'none' && (
         <div
           className={cn(
             'absolute left-1/2 z-10 -translate-x-1/2',
@@ -334,12 +335,11 @@ export function ImageRenderer({
                 ],
           )}
         >
-          <ButtonGroup className="bg-background rounded-md border shadow-sm">
+          <ButtonGroup>
             <Hint label={zoomOutLabel} side="bottom">
               <Button
-                variant="accent"
-                size="icon"
-                className="text-foreground"
+                variant="secondary"
+                size="icon-base"
                 onClick={handleZoomOut}
                 disabled={zoom <= MIN_ZOOM}
                 aria-label={zoomOutLabel}
@@ -349,9 +349,9 @@ export function ImageRenderer({
             </Hint>
             <Hint label={tHardcodedUi.raw('i18nComplete.textce89ae822e8b')} side="bottom">
               <Button
-                variant="accent"
-                size="toolbar"
-                className="text-foreground min-w-14 tabular-nums"
+                variant="secondary"
+                size="sm"
+                className="min-w-14 tabular-nums"
                 onClick={handleResetZoom}
                 aria-label={tHardcodedUi.raw('i18nComplete.textce89ae822e8b')}
               >
@@ -360,9 +360,8 @@ export function ImageRenderer({
             </Hint>
             <Hint label={zoomInLabel} side="bottom">
               <Button
-                variant="accent"
-                size="icon"
-                className="text-foreground"
+                variant="secondary"
+                size="icon-base"
                 onClick={handleZoomIn}
                 disabled={zoom >= MAX_ZOOM}
                 aria-label={zoomInLabel}
@@ -372,9 +371,8 @@ export function ImageRenderer({
             </Hint>
             <Hint label={tHardcodedUi.raw('i18nComplete.textc3613b1704f5')} side="bottom">
               <Button
-                variant="accent"
-                size="icon"
-                className="text-foreground"
+                variant="secondary"
+                size="icon-base"
                 onClick={handleRotate}
                 aria-label={tHardcodedUi.raw('i18nComplete.text9dc6b57eecba')}
               >
@@ -393,10 +391,9 @@ export function ImageRenderer({
                 {backdrops.map(({ value, label }) => (
                   <Hint key={value} label={`${label} background`} side="bottom">
                     <Button
-                      variant="accent"
-                      size="icon"
-                      className="text-foreground"
-                      onClick={() => setBackdrop(value)}
+                      variant="secondary"
+                      size="icon-base"
+                                            onClick={() => setBackdrop(value)}
                       aria-label={`${label} background`}
                       aria-pressed={backdrop === value}
                     >

@@ -24,6 +24,7 @@ import {
   describeFailedBuild,
   formatSandboxProvider,
   formatSandboxProviders,
+  isLegacySandboxProvider,
 } from '../../../workspace/sidebar/footer/sandbox-alert-state';
 import { useSandboxRecovery } from '../../../workspace/sidebar/footer/sandbox-health';
 import { APP_REGISTRY_TRANSLATION_KEYS } from '../../../i18n/ui-catalog/app-registry-translation-keys.generated';
@@ -102,10 +103,12 @@ const BUILD_STATUS_TILE: Record<
 };
 
 function ProviderBadge({ provider }: { provider: string | null | undefined }) {
+  const t = useTranslations('settings.sandbox');
   if (!provider) return null;
   return (
     <Badge variant="muted" size="sm">
       {formatSandboxProvider(provider)}
+      {isLegacySandboxProvider(provider) ? ` · ${t('provider.legacy')}` : null}
     </Badge>
   );
 }
@@ -210,6 +213,7 @@ export function BuildDetails({
   copy?: SnapshotMessages;
 }) {
   const translatedCopy = useSnapshotMessages();
+  const tSandbox = useTranslations('settings.sandbox');
   const copy = copyOverride ?? translatedCopy;
   const duration = formatBuildDuration(build.started_at, build.finished_at, copy.duration);
   const category = build.error_category ?? 'unknown';
@@ -243,7 +247,11 @@ export function BuildDetails({
           <FactCell
             icon={HardDrivesIcon}
             label={copy.facts.runsOn}
-            value={formatSandboxProvider(provider)}
+            value={
+              isLegacySandboxProvider(provider)
+                ? `${formatSandboxProvider(provider)} · ${tSandbox('provider.legacy')}`
+                : formatSandboxProvider(provider)
+            }
           />
         ) : null}
       </dl>

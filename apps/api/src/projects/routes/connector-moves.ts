@@ -1,6 +1,6 @@
-/** Move a Pipedream connector to its Kortix MCP app (`connectors_v2`). The service: connectors/pipedream-move.ts. */
+/** Move a Pipedream or Composio connector to its Kortix MCP app (`connectors_v2`). The service: connectors/connector-move.ts. */
 import { createRoute, z } from '@hono/zod-openapi';
-import { listConnectorMoves, moveConnector } from '../../connectors/pipedream-move';
+import { listConnectorMoves, moveConnector } from '../../connectors/connector-move';
 import { requireFeatureFlag } from '../../feature-flags/http-gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -12,7 +12,8 @@ import { loadMutableConnection } from '../lib/connection-mutation';
 const ConnectorMoveSchema = z.object({
   slug: z.string(),
   name: z.string(),
-  app: z.string().nullable().openapi({ description: "The connector's Pipedream app." }),
+  provider: z.enum(['pipedream', 'composio']).openapi({ description: 'The retired provider the connector runs on.' }),
+  app: z.string().nullable().openapi({ description: "The connector's app on that provider." }),
   to: z
     .object({ slug: z.string(), name: z.string(), icon: z.string().nullable() })
     .nullable()
@@ -41,10 +42,10 @@ export function registerConnectorMoveRoutes(): void {
       ...auth,
       method: 'get',
       path: '/{projectId}/connector-moves',
-      summary: 'List Pipedream connectors and the Kortix app each moves to',
+      summary: 'List Pipedream and Composio connectors and the Kortix app each moves to',
       request: { params: z.object({ projectId: z.string() }) },
       responses: {
-        200: json(z.object({ moves: z.array(ConnectorMoveSchema) }), 'Pipedream connectors'),
+        200: json(z.object({ moves: z.array(ConnectorMoveSchema) }), 'Pipedream and Composio connectors'),
         ...errors(403, 404),
       },
     }),
@@ -64,7 +65,7 @@ export function registerConnectorMoveRoutes(): void {
       ...auth,
       method: 'post',
       path: '/{projectId}/connectors/{slug}/move',
-      summary: 'Move a Pipedream connector to its Kortix app',
+      summary: 'Move a Pipedream or Composio connector to its Kortix app',
       description:
         'Starts a move: marks an account and returns it with `status: sign_in`. Sign in on that account with the OAuth2 routes; the connector switches to `provider: mcp` when the sign-in completes, and keeps its slug. Calling again after the sign-in finishes a move whose switch failed.',
       request: {

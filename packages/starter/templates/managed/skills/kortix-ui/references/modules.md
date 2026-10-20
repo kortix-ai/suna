@@ -153,7 +153,7 @@ Names: `ChangeList`, `ChangeSummary`, `DiffLayoutToggle`, `ExpandAllButton`, `us
 
 Source: `src/files/index.ts`. Browse and edit files. Project files are the git-backed repo; sandbox files are a live session workspace.
 
-Mount: Project files: inside `ProjectFilesProvider` (`projectId`, optional git `ref`). Sandbox files: inside a mounted `useSession`. `FilePreviewHost`: once, on a page with no session side panel; a file open (`openPreview`) shows there. `SessionThread` mounts it already.
+Mount: Project files: inside `ProjectFilesProvider` (`projectId`, optional git `ref`). Sandbox files: inside a mounted `useSession`. `FilePreviewHost`: once, on a page with no session side panel; a file open (`openPreview`) shows there. `SessionThread` mounts it already. `DriveUploadTray`: once per project shell; it lists the Drive uploads in flight and stays mounted across pages.
 
 Props: `ProjectFilesView` (`@kortix/ui/workspace`): `projectId`. It fills its parent (`h-full`): the parent sets the height, or only the header shows. `FileExplorerPage`: `embedded`. `SandboxFileExplorer`: `embedded`, `shareContext`, `leading`. `FilePreviewHost`: none.
 
@@ -177,7 +177,7 @@ export function PreviewHost() {
 }
 ```
 
-Names: `saveDriveFile`, `useDismissDriveConflict`, `useDriveAvailability`, `useDriveConflicts`, `useDriveFolder`, `useFolderAccess`, `useFolderPrincipals`, `useInvalidateDrives`, `useProjectDrive`, `useShareFolder`, `useUnshareFolder`, `FilesStoreProvider`, `getFileIcon`, `FilePreviewHost`, `ChangeRequestDetailDialog`, `DiffRenderer`, `DriveExplorer`, `FileExplorerPage`, `FileThumbnail`, `ProjectFilesProvider`, `useProjectContext`, `FileExplorerSourceProvider`, `ExplorerQueryResult`, `FileExplorerSource`, `gitRefExplorerSource`, `useChangeRequestRecovery`, `changeRequestKeys`, `openChangeRequestListQuery`, `useChangeRequestDiff`, `useChangeRequestMergePreview`, `useCloseChangeRequest`, `useMergeChangeRequest`, `useRequestChangesOnChangeRequest`, `useSelectedVersion`, `workspaceFileSource`, `useWorkspaceSearch`, `SandboxFileExplorer`
+Names: `saveDriveFile`, `useDismissDriveConflict`, `useDriveAvailability`, `useDriveConflicts`, `useDriveFolder`, `useFolderAccess`, `useFolderPrincipals`, `useInvalidateDrives`, `useProjectDrive`, `useShareFolder`, `useUnshareFolder`, `FilesStoreProvider`, `getFileIcon`, `FilePreviewHost`, `ChangeRequestDetailDialog`, `DiffRenderer`, `DriveExplorer`, `DriveUploadTray`, `FileExplorerPage`, `FileThumbnail`, `ProjectFilesProvider`, `useProjectContext`, `FileExplorerSourceProvider`, `ExplorerQueryResult`, `FileExplorerSource`, `gitRefExplorerSource`, `useChangeRequestRecovery`, `changeRequestKeys`, `openChangeRequestListQuery`, `useChangeRequestDiff`, `useChangeRequestMergePreview`, `useCloseChangeRequest`, `useMergeChangeRequest`, `useRequestChangesOnChangeRequest`, `useSelectedVersion`, `workspaceFileSource`, `useWorkspaceSearch`, `SandboxFileExplorer`
 
 ## `@kortix/ui/file-viewer`
 

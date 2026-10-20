@@ -71,6 +71,22 @@ export interface ProjectTriggerEvent {
 }
 
 /** Parsed trigger spec — what the listing endpoint returns. */
+/**
+ * One trigger filter condition (KRTX-1721): exactly one operator. `not` and
+ * `in` compare the payload value as text; `prefix` and `not_prefix` test how
+ * it starts; `exists` tests that it is present and not null. A missing path
+ * reads as an empty string.
+ */
+export type TriggerFilterCondition =
+  | { not: string[] }
+  | { in: string[] }
+  | { exists: boolean }
+  | { prefix: string[] }
+  | { not_prefix: string[] };
+
+/** A filter path's condition: a string means "equals". */
+export type TriggerFilterValue = string | TriggerFilterCondition;
+
 export interface ProjectTrigger {
   /** URL-safe slug (the filename minus `.md`). */
   slug: string;
@@ -113,6 +129,14 @@ export interface ProjectTrigger {
   prompt_template: string;
   /** Session strategy — see {@link ProjectTriggerSessionMode}. */
   session_mode: ProjectTriggerSessionMode;
+  /**
+   * Runs the trigger may start in any 60 minutes. Null when unset: the
+   * default, 60, applies. A fire past it starts nothing and is recorded as a
+   * skipped run, `throttled: …`. Optional: older servers omit it.
+   */
+  max_runs_per_hour?: number | null;
+  /** Runs the trigger may start in a UTC day. Null when unset: no daily cap. */
+  max_runs_per_day?: number | null;
   /** For session_mode === 'pinned' only: the session id looped. Null otherwise. */
   session_id: string | null;
   /**
@@ -124,11 +148,12 @@ export interface ProjectTrigger {
   session_key: string | null;
   /**
    * Payload paths (dotted, rooted at the same `body`/`headers` object the
-   * prompt template sees) mapped to the value they must equal for the trigger
-   * to fire. A non-matching delivery is accepted but spawns no session. Null
-   * when unfiltered.
+   * prompt template sees) mapped to the condition each must meet for the
+   * trigger to fire: a value it must equal, or one operator
+   * ({@link TriggerFilterCondition}). A non-matching delivery is accepted but
+   * spawns no session. Null when unfiltered.
    */
-  filter: Record<string, string> | null;
+  filter: Record<string, TriggerFilterValue> | null;
   /** Access policy applied to every session this trigger creates. */
   session_access: TriggerSessionAccess;
   last_fired_at: string | null;
@@ -170,6 +195,12 @@ export interface ProjectTriggerListing {
    * ONE repo deployed to two control planes (e.g. dev + prod) from double-firing.
    */
   triggers_paused?: boolean;
+  /**
+   * The account's Pause all automations (`PATCH /accounts/:id/automations`):
+   * true stops every automatic fire in every project of the account, this one
+   * included. Manual `fire` still works. Older servers omit it.
+   */
+  account_automations_paused?: boolean;
 }
 
 export interface CreateProjectTriggerInput {
@@ -217,6 +248,10 @@ export interface CreateProjectTriggerInput {
   event?: string;
   /** For type='event'. Provider event config, shaped by the event type's `config_schema`. */
   event_config?: Record<string, unknown>;
+  /** Runs it may start in any 60 minutes, a whole number ≥ 1. Omit for the default, 60. */
+  max_runs_per_hour?: number;
+  /** Runs it may start in a UTC day, a whole number ≥ 1. Omit for no daily cap. */
+  max_runs_per_day?: number;
   /**
    * Session strategy across fires. Omit for the type's default — 'fresh' on
    * cron/webhook, 'reuse' on monitor (a monitor fires repeatedly by design, so
@@ -231,8 +266,8 @@ export interface CreateProjectTriggerInput {
    * sent explicitly.
    */
   session_key?: string | null;
-  /** Payload paths mapped to the value they must equal for the trigger to fire. */
-  filter?: Record<string, string> | null;
+  /** Payload paths mapped to the condition each must meet for the trigger to fire. See {@link ProjectTrigger.filter}. */
+  filter?: Record<string, TriggerFilterValue> | null;
   /** Defaults to private. This is account-local runtime state, not manifest config. */
   session_access?: TriggerSessionAccess;
 }
@@ -270,12 +305,16 @@ export interface UpdateProjectTriggerInput {
   event?: string;
   /** For type='event'. Replaces the provider event config. */
   event_config?: Record<string, unknown>;
+  /** null resets it to the default, 60. */
+  max_runs_per_hour?: number | null;
+  /** null removes the daily cap. */
+  max_runs_per_day?: number | null;
   session_mode?: ProjectTriggerSessionMode;
   session_id?: string | null;
   /** See {@link CreateProjectTriggerInput.session_key}. null clears it. */
   session_key?: string | null;
-  /** null or {} clears the filter. */
-  filter?: Record<string, string> | null;
+  /** Replaces the whole filter. null or {} clears it. */
+  filter?: Record<string, TriggerFilterValue> | null;
   /** Replaces the policy and updates prior sessions created by this trigger. */
   session_access?: TriggerSessionAccess;
 }
@@ -318,6 +357,31 @@ export async function deleteProjectTrigger(projectId: string, slug: string) {
     await backendApi.delete<{ ok: boolean }>(
       `/projects/${projectId}/triggers/${slug}`,
     ),
+  );
+}
+
+/**
+ * The account's Pause all automations: `paused` stops every automatic fire in
+ * every project of the account — schedules, reminders, webhooks, app events and
+ * monitors. A manual fire still runs.
+ */
+export interface AccountAutomationsStatus {
+  paused: boolean;
+  paused_at: string | null;
+  /** The user who paused them; null while running. */
+  paused_by: string | null;
+  /** True when the caller may pause or resume (account.write). */
+  can_change: boolean;
+}
+
+export async function getAccountAutomations(accountId: string) {
+  return unwrap(await backendApi.get<AccountAutomationsStatus>(`/accounts/${accountId}/automations`));
+}
+
+/** Pause or resume every automation of the account. Needs account.write (owners and admins by default). */
+export async function setAccountAutomationsPaused(accountId: string, paused: boolean) {
+  return unwrap(
+    await backendApi.patch<AccountAutomationsStatus>(`/accounts/${accountId}/automations`, { paused }, { showErrors: false }),
   );
 }
 

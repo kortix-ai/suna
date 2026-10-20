@@ -118,9 +118,11 @@ function ProjectHomeView({
 
   // The sandbox TEMPLATE catalog, not live sandbox health (that is
   // `useSandboxHealth`, its own key and its own polling). Changed only by this
-  // app's own mutations, which invalidate this key — see `FRESHNESS.sandboxes`.
+  // app's own mutations, which invalidate `qk.project.sandboxes` (a prefix of
+  // this key) — see `FRESHNESS.sandboxes`. Same entry as the Customize prefetch
+  // and the agent editor: one `GET /sandboxes` per load, not two.
   const sandboxesQuery = useQuery({
-    queryKey: qk.project.sandboxes(projectId),
+    queryKey: qk.project.sandboxTemplates(projectId),
     queryFn: () => listProjectSandboxes(projectId),
     ...contract('config'),
     refetchOnWindowFocus: false,

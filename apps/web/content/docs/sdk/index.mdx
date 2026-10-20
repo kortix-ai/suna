@@ -83,7 +83,7 @@ A session is one unit of agent work, on its own sandbox and branch. From code, i
 `kortix.projects.list()` returns the projects the token can open. `kortix.projects.provision({ name })` creates a project with a Kortix-managed repository and the starter configuration.
 </Step>
 <Step title="Create the session">
-`kortix.project(projectId).sessions.create(input?)` returns the session with its `session_id`. The sandbox starts to provision now, in the background. All input fields are optional: `name`, `agent_name`, `model` (a bare managed id such as `kimi-k3`, or `provider/model` for your own provider key; see [Models](/docs/project/models#how-a-session-gets-a-model)), `initial_prompt`, `labels`, `metadata`, `base_ref` and more. See [Create a session](/docs/sdk/sessions#create-a-session).
+`kortix.project(projectId).sessions.create(input?)` returns the session with its `session_id`. The sandbox starts to provision now, in the background. All input fields are optional: `name`, `agent_name`, `model` (a bare managed id such as `glm-5.3-flash`, or `provider/model` for your own provider key; see [Models](/docs/project/models#how-a-session-gets-a-model)), `initial_prompt`, `labels`, `metadata`, `base_ref` and more. See [Create a session](/docs/sdk/sessions#create-a-session).
 </Step>
 <Step title="Get the session handle">
 `kortix.session(projectId, sessionId)` binds both ids. The handle has no network cost.

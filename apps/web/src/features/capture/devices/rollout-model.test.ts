@@ -33,6 +33,7 @@ describe('IT rollout model', () => {
     expect(cmd).toBe(
       'curl.exe -fsSL -o "%TEMP%\\KortixCapture-x64.msi" https://github.com/kortix-ai/suna/releases/latest/download/KortixCapture-x64.msi' +
         ' && start /wait msiexec /i "%TEMP%\\KortixCapture-x64.msi" /qn /l*v "%TEMP%\\KortixCapture-install.log" KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_x' +
+        ' && sc query KortixCapture >nul 2>&1' +
         ' && echo Kortix Capture installed. It records from the next Windows sign-in.' +
         ' || echo Install failed. Log: "%TEMP%\\KortixCapture-install.log"',
     );

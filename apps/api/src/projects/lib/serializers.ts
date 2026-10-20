@@ -183,7 +183,8 @@ export function serializeSession(
     project_id: row.projectId,
     branch_name: row.branchName,
     base_ref: row.baseRef,
-    sandbox_provider: row.sandboxProvider,
+    // A legacy `e2b` row passes through as stored: E2B support is discontinued.
+    sandbox_provider: row.sandboxProvider as ProjectSession['sandbox_provider'],
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
     runtime_session_id: row.runtimeSessionId,

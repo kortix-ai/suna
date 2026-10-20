@@ -25,7 +25,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *     app after `start` (`secrets-registry.ts`: "NOT init-required").
  *  3. Pipedream IS a wizard prompt, but it is optional and defaults to skip.
  *  4. AIR-GAPPED IS NOT WHAT `kortix self-host start` GIVES YOU. By default the
- *     agent sandboxes run on a third-party provider (Daytona) and the instance
+ *     agent sandboxes run on a remote provider (Platinum) and the instance
  *     must be reachable from the internet so the sandbox can call back. Saying
  *     otherwise would be false. This page states the boundary plainly and sends
  *     isolated topologies to `/enterprise`.
@@ -55,7 +55,7 @@ export const hero = {
 
 /* ── 1 · what you keep ─────────────────────────────────────────────────────
    HONESTY GATE. The control plane is genuinely yours. Sandbox compute is NOT,
-   by default — the API reaches Daytona (or Platinum, or E2B) over egress, and
+   by default — the API reaches Platinum (or legacy Daytona) over egress, and
    the instance must be publicly reachable so the sandbox can call back. Both
    columns below are drawn from that reality, not from a wish. */
 export const yours = {
@@ -79,7 +79,7 @@ export const yours = {
       'Agent sandboxes, which run on the provider you configure',
       'The image registry the stack pulls from, which needs no credentials',
     ],
-    note: 'Sandbox compute is a provider choice: Daytona by default, or Platinum or E2B. Fully isolated topologies are scoped with us rather than self-served.',
+    note: 'Sandbox compute runs on Platinum. Daytona remains a legacy fallback, and its removal is scheduled. Fully isolated topologies are scoped with us rather than self-served.',
   },
 } as const;
 
@@ -164,7 +164,7 @@ export const firstRun = {
       {
         n: '05',
         k: 'Your sandbox provider and its key',
-        v: 'Daytona, Platinum, or E2B. This is the one credential the stack genuinely cannot start without.',
+        v: 'A Platinum API key. This is the one credential the stack genuinely cannot start without.',
       },
       {
         n: '06',

@@ -5,6 +5,7 @@ import { type Env, loadEnv } from '../../src/core/env';
 import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
 import { queryDatabaseRows, runDatabaseSql } from '../helpers/database';
 import { createApiJsonClient } from '../helpers/http';
+import { fundAccount } from '../helpers/manifest-project';
 import {
   type AuthSession,
   createAuthUser,
@@ -115,6 +116,10 @@ test.describe("50 — the onboarding wizard's exit buttons dismiss it", () => {
       test.setTimeout(300_000);
       const user = await freshUserWithProject();
       try {
+        // "Open workspace" is the models step's primary action only for an account that can run
+        // Kortix models (`planAction`). Free cannot (#10297): its primary action is "See plans".
+        // A paid tier with credits gets the button this exit tests.
+        if (exit.button === 'Open workspace') await fundAccount(user.env.databaseUrl!, user.accountId);
         await installBrowserSessionDirect(
           page,
           user.session,
