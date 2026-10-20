@@ -14,29 +14,29 @@ import {
 } from '@phosphor-icons/react';
 import { useEffect } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Field, FieldContent, FieldDescription, FieldTitle } from '@/components/ui/field';
-import Hint from '@/components/ui/hint';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Separator } from '@/components/ui/separator';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Slider } from '@/components/ui/slider';
-import { Switch } from '@/components/ui/switch';
+import { Button } from '@kortix/ui/button';
+import { Field, FieldContent, FieldDescription, FieldTitle } from '@kortix/ui/field';
+import Hint from '@kortix/ui/hint';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
+import { Separator } from '@kortix/ui/separator';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Slider } from '@kortix/ui/slider';
+import { Switch } from '@kortix/ui/switch';
 import { NotificationToggle } from '@/features/accounts/settings/notifications-tab';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { useNotificationCenter } from '@/features/notifications/use-notification-center';
-import { webPushSupported } from '@/features/notifications/web-push';
+import { ErrorState } from '@kortix/ui/error-state';
+import { useNotificationCenter } from '@kortix/ui/internal/hooks/use-notification-center';
+import { webPushSupported } from '@kortix/ui/internal/notifications/web-push';
 import { useAuth } from '@/features/providers/auth-provider';
-import { isDesktop } from '@/lib/desktop';
-import { previewSound } from '@/lib/sounds';
-import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
-import { useSoundStore, type SoundEvent, type SoundPack } from '@/stores/sound-store';
+import { isDesktop } from '@kortix/ui/internal/lib/desktop';
+import { previewSound } from '@kortix/ui/internal/lib/sounds';
+import { isNotificationSupported, sendWebNotification } from '@kortix/ui/internal/lib/web-notifications';
+import { useSoundStore, type SoundEvent, type SoundPack } from '@kortix/ui/internal/stores/sound-store';
 import {
   useWebNotificationStore,
   type WebNotificationPermission,
   type WebNotificationPreferences,
-} from '@/stores/web-notification-store';
+} from '@kortix/ui/internal/stores/web-notification-store';
 import {
   DEFAULT_NOTIFICATION_PREFERENCES as DEFAULT_KIND_PREFERENCES,
   INBOX_NOTIFICATION_KINDS,
@@ -44,7 +44,7 @@ import {
   type NotificationPreferences,
 } from '@kortix/sdk';
 import { useNotificationPreferences } from '@kortix/sdk/react';
-import { SettingsTabHeader } from '../settings-tab-header';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 
 const SOUND_PACKS: { id: SoundPack; label: string; description: string }[] = [
   { id: 'off', label: 'Off', description: 'All sounds disabled' },

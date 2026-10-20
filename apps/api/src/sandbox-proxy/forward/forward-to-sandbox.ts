@@ -312,7 +312,7 @@ export async function forwardToSandbox(
       ? extractTurnIdentity(remainingPath, requestBody)
       : null;
 
-  return forwardWithRetry(
+  const response = await forwardWithRetry(
     {
       sandboxId,
       port,
@@ -341,4 +341,15 @@ export async function forwardToSandbox(
     },
     requestBody,
   );
+  const forkSource = carriesSessionData(upstreamPort) && method.toUpperCase() === 'POST'
+    ? /^\/?session\/([^/]+)\/fork$/.exec(remainingPath)?.[1]
+    : undefined;
+  if (forkSource && response.ok) {
+    const { registerRuntimeFork } = await import('../../projects/surface');
+    await registerRuntimeFork({
+      sessionId: record.sessionId, projectId: record.projectId, accountId: record.accountId,
+      sourceId: forkSource, fork: await response.clone().json(),
+    });
+  }
+  return response;
 }

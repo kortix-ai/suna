@@ -58,7 +58,7 @@ Values live in `visual-system.json` (keys `spacing.*`, `radius.*`). This file co
 
 ### Split modal
 
-**Rule.** A split modal pairs art with content: `lg:max-w-3xl`, a 5-column grid with art in 2 columns and content in 3, `p-5 lg:p-8`, `gap-5`. On a phone the art becomes an `h-48` banner. The art rounds its own outer corners. — *Why:* the modal clip does not reach a WebGL canvas (`features/tunnel/computer-connect.tsx`, #8491). — *Where:* app. — *When silent:* copy `computer-connect.tsx`. Art rules are in `graphic-elements.md`.
+**Rule.** A split modal pairs art with content: `lg:max-w-3xl`, a 5-column grid with art in 2 columns and content in 3, `p-5 lg:p-8`, `gap-5`. On a phone the art becomes an `h-48` banner. The art rounds its own outer corners. — *Why:* the modal clip does not reach a WebGL canvas (`packages/ui/src/internal/tunnel/computer-connect.tsx`, #8491). — *Where:* app. — *When silent:* copy `computer-connect.tsx`. Art rules are in `graphic-elements.md`.
 
 **Rule.** Inside a modal, a list has no bordered panel of its own. The modal is the container, and rows divide with `divide-y divide-border`. — *Why:* a box inside a box causes nested rounding (#8491, #8421). — *Where:* app. — *When silent:* drop the inner border.
 

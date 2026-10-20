@@ -43,7 +43,15 @@ export function LiquidGlassCapsule({ cornerRadius }: { cornerRadius?: number } =
   const { Host, Spacer } = swiftUI;
   const { frame, glassEffect } = swiftUIModifiers;
   return (
-    <Host pointerEvents="none" style={StyleSheet.absoluteFill} colorScheme={colorScheme === 'dark' ? 'dark' : 'light'}>
+    // `ignoreSafeArea="all"`: the glass is a background that fills its parent.
+    // The hosting controller otherwise insets SwiftUI by the safe area, and by
+    // the keyboard while it is up: the composer card's glass lost the height
+    // the keyboard covered, and the typed text ran past it (2026-10-20).
+    <Host
+      pointerEvents="none"
+      ignoreSafeArea="all"
+      style={StyleSheet.absoluteFill}
+      colorScheme={colorScheme === 'dark' ? 'dark' : 'light'}>
       <Spacer
         modifiers={[
           frame({ maxWidth: FILL, maxHeight: FILL }),

@@ -624,3 +624,34 @@ flow(
     }
   },
 );
+
+flow('CLI-MODEL-CATALOG', {
+  domain: 'cli',
+  routes: ['GET /v1/projects/:projectId/model-picker'],
+}, async (ctx) => {
+  const project = await ctx.fixtures.project();
+  const sandbox = await authenticatedCli(ctx, 'model-catalog');
+  try {
+    await ctx.step('a fresh project discovers unavailable ids through JSON and terminal output', async () => {
+      const args = ['models', 'ls', '--project', project.id];
+      const payload = parseJson<{
+        models: Record<string, unknown>;
+        catalog: Record<string, { availability: string }>;
+      }>(await sandbox.run([...args, '--json']), 'models ls --json');
+      const entries = Object.entries(payload.catalog);
+      if (!entries.length) throw new Error('fresh project has no discoverable catalog ids');
+      const output = await sandbox.run(args);
+      requireExit(output, 0, 'models ls');
+      for (const [id, metadata] of entries) {
+        if (id in payload.models) throw new Error('unavailable id leaked into runnable picker');
+        if (!['plan', 'login', 'provider'].includes(metadata.availability)) {
+          throw new Error(`missing availability for ${id}`);
+        }
+        if (!output.stdout.includes(id)) throw new Error(`terminal omitted catalog id ${id}`);
+      }
+      if (!output.stdout.includes('Unavailable catalog ids')) throw new Error('availability section missing');
+    });
+  } finally {
+    sandbox.dispose();
+  }
+});

@@ -95,7 +95,14 @@ export function mirrorMessagesForHydrate(
 		const parts = (Array.isArray(row.parts) ? row.parts : [])
 			.filter((p): p is Record<string, unknown> => !!p && typeof p === "object")
 			.slice()
-			.sort((a, b) => String(a.id ?? "").localeCompare(String(b.id ?? "")));
+			// Byte order, as `reconcile-parts.ts` sorts and the store's binary
+			// search reads. `localeCompare` is collation order and disagreed on
+			// mixed-case ids (KRTX-2897).
+			.sort((a, b) => {
+				const x = String(a.id ?? "");
+				const y = String(b.id ?? "");
+				return x < y ? -1 : x > y ? 1 : 0;
+			});
 		out.push({ info: info as unknown as Message, parts: parts as unknown as Part[] });
 	}
 	return out;

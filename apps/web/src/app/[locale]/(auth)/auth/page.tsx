@@ -30,13 +30,13 @@ import {
   submitAuthForm,
 } from '@/lib/auth/submit-auth';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { FieldError, FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { FieldError, FieldLabel, InfoStrip, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 
@@ -126,7 +126,7 @@ import {
   parseAuthMethods,
   passwordFailureCopy,
 } from '@/lib/auth/unified-auth-flow';
-import { authRedirectUrl } from '@/lib/desktop';
+import { authRedirectUrl } from '@kortix/ui/internal/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import {
@@ -144,6 +144,23 @@ const EASE = [0.23, 1, 0.32, 1] as const;
 // sessionStorage key holding the address a stale-bundle recovery is handing
 // back to the form with. Consumed by the prefill effect on the next mount.
 const STALE_BUNDLE_EMAIL_KEY = 'kortix:stale-bundle-email';
+
+// Browser-wide method preference only; never store the address or credentials.
+const AUTH_METHOD_KEY = 'kortix:auth-method';
+function prefersPassword(): boolean {
+  try {
+    return window.localStorage.getItem(AUTH_METHOD_KEY) === 'password';
+  } catch {
+    return false;
+  }
+}
+function rememberAuthMethod(method: 'password' | 'magic') {
+  try {
+    window.localStorage.setItem(AUTH_METHOD_KEY, method);
+  } catch {
+    // Sign-in still works when browser storage is unavailable.
+  }
+}
 
 // sessionStorage keys for the pre-hydration entry-submit guard (see the
 // ENTRY_HYDRATION_GUARD script): the intent flag it sets when it prevents a
@@ -483,6 +500,7 @@ function AuthCardForm({
     submitInFlight.current = true;
     clearNotices();
     setPendingAction(source);
+    if (source === 'link') rememberAuthMethod('magic');
 
     try {
       const formData = buildBaseFormData(target);
@@ -688,20 +706,9 @@ function AuthCardForm({
         // Work domain with no SAML provider → fall through to magic/password.
       }
 
-      // The email link is the default path: Continue emails a link and lands
-      // the user on the link step — the link signs in existing accounts and
-      // registers new ones, so no password is needed anywhere on the default
-      // path. That includes accounts created passwordless: GoTrue stores a
-      // random hash for those too (supabase/gotrue discussion #5741), so
-      // "does the visitor still know a password for this address" is not
-      // observable server-side, and a password-first default dead-ends a
-      // passwordless account on a form no password can pass. The password
-      // form stays one explicit choice away ("Use a password instead" on the
-      // link step), and the link action re-checks closed signups and SSO
-      // server-side. Password-only deployments go through the existence check
-      // below, so the password step opens already knowing whether this is a
-      // sign-in or a registration.
-      if (magicLinkEnabled) {
+      // Keep email-first unless this browser explicitly chose password.
+      // The remembered choice still passes the server's SSO/signup gates.
+      if (magicLinkEnabled && !(passwordEnabled && prefersPassword())) {
         // sendMagic re-acquires the in-flight guard itself; release here first
         // or the hand-off would deadlock (this function already holds it).
         submitInFlight.current = false;
@@ -787,13 +794,14 @@ function AuthCardForm({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- replay on hydration and when the entry step appears; the submit path reads refs, not stale state
   }, [step]);
-  // Escape hatch off the link step for people who'd rather type a password.
+  // Password entry from either the entry or link step, without sending email.
   // The address can live in either field depending on how the step was reached,
   // and the credentials step renders it read-only from `email` — so settle on
   // one before switching, and bounce focus back if we somehow have neither.
   // Resolves existence on the way so the step opens in the right mode.
   const goToPassword = async () => {
-    const target = (email || sentEmail || '').trim();
+    if (step === 'entry' && emailRef.current && !emailRef.current.reportValidity()) return;
+    const target = (emailRef.current?.value || email || sentEmail || '').trim();
     if (!target) {
       emailRef.current?.focus();
       return;
@@ -811,6 +819,7 @@ function AuthCardForm({
         failWith(t('errors.ssoRequired'));
         return;
       }
+      rememberAuthMethod('password');
       setCredMode(resolved);
       setStep('credentials');
     } catch (err) {
@@ -952,6 +961,7 @@ function AuthCardForm({
       failWith(t('errors.signupsClosed'));
       return;
     }
+    rememberAuthMethod('password');
     clearNotices();
     setCredMode(
       ssoFallbackMode === 'signin' || ssoFallbackMode === 'signup' ? ssoFallbackMode : 'unknown',
@@ -1218,6 +1228,19 @@ function AuthCardForm({
             {t('continue')}
           </Button>
         </form>
+
+        {passwordEnabled && magicLinkEnabled && (
+          <p className="text-muted-foreground mt-4 text-sm">
+            <button
+              type="button"
+              onClick={() => void goToPassword()}
+              disabled={pending}
+              className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+            >
+              {pendingAction === 'password' ? t('oneMoment') : t('usePasswordInstead')}
+            </button>
+          </p>
+        )}
 
         {/* Explicit SSO entry — the discoverable counterpart of the silent
             home-realm discovery Continue already performs. Same dialect as the

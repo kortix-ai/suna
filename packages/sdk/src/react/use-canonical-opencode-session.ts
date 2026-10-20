@@ -60,6 +60,12 @@ export interface CanonicalRuntimeSession {
   pinSettled: boolean;
   /** The sandbox's live OpenCode session list (read-only) for ?oc + UI. */
   sessions: Session[];
+  /**
+   * The list has not answered yet: it is being fetched, or it is not enabled
+   * yet (`listRuntimeSessions: false`, before this session owns the runtime).
+   * False once it answered or failed. An empty `sessions` with this true means
+   * "not asked yet", never "no child sessions".
+   */
   isLoading: boolean;
   isError: boolean;
   listed: boolean;
@@ -144,7 +150,9 @@ export function useCanonicalRuntimeSession(params: {
     pinSettled:
       rootSessionId !== null || (projectSessionQuery.isFetched && !projectSessionQuery.isFetching),
     sessions: sessionsQuery.data ?? [],
-    isLoading: sessionsQuery.isLoading,
+    // `isPending`, not `isLoading`: a disabled query is pending with nothing
+    // in flight, and TanStack reports that as `isLoading: false`.
+    isLoading: sessionsQuery.isPending,
     isError: sessionsQuery.isError,
     listed: sessionsQuery.isSuccess,
     error: sessionsQuery.error ?? null,

@@ -248,6 +248,27 @@ describe('session reminders on the trigger tables', () => {
     expect(listed.map((r) => r.slug)).toEqual([row.slug, oneShot.slug]);
   });
 
+  test('resuming a one-shot restarts its original delay, including after its original deadline and a second pause', async () => {
+    const created = new Date('2026-10-01T12:00:00Z');
+    const sessionId = await seedSession();
+    const { row } = await seedReminder(sessionId, { prompt: 'check once', in: '5m' }, created);
+    const paused = await setSessionReminderEnabled(row, false, new Date(created.getTime() + 120_000));
+    const earlyAt = new Date(created.getTime() + 180_000);
+    const early = await setSessionReminderEnabled(paused, true, earlyAt);
+    expect(early.nextFireAt?.getTime()).toBe(earlyAt.getTime() + 300_000);
+    const pausedAfterEarly = await setSessionReminderEnabled(early, false, earlyAt);
+    const resumedAt = new Date(created.getTime() + 600_000);
+    const resumed = await setSessionReminderEnabled(pausedAfterEarly, true, resumedAt);
+    expect(resumed.nextFireAt?.getTime()).toBe(resumedAt.getTime() + 300_000);
+    const readBack = await getSessionReminder(PROJECT, sessionId, row.slug);
+    expect(readBack?.nextFireAt?.getTime()).toBe(resumedAt.getTime() + 300_000);
+
+    const pausedAgain = await setSessionReminderEnabled(resumed, false, resumedAt);
+    const againAt = new Date(resumedAt.getTime() + 60_000);
+    const again = await setSessionReminderEnabled(pausedAgain, true, againAt);
+    expect(again.nextFireAt?.getTime()).toBe(againAt.getTime() + 300_000);
+  });
+
   test('deleting the session row keeps no execution pointing at it', async () => {
     const now = new Date();
     const sessionId = await seedSession();

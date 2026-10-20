@@ -16,21 +16,21 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
-import { CopyButton } from '@/components/markdown/copy-button';
+import { CopyButton } from '@kortix/ui/markdown';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
-import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { inputSurfaceClasses, inputTransitionClasses } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { SessionDotMatrix } from '@kortix/ui/dot-matrix/session-dot-matrix';
+import Hint from '@kortix/ui/hint';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { inputSurfaceClasses, inputTransitionClasses } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { Modal, ModalContent, ModalDescription, ModalTitle } from '@kortix/ui/modal';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { requestMfaStepUp } from '@/features/auth/mfa-step-up';
 import { Bun } from '@/features/icon/icons/bun';
 import { Chrome } from '@/features/icon/icons/chrome';
@@ -38,14 +38,14 @@ import { Edge } from '@/features/icon/icons/edge';
 import { Firefox } from '@/features/icon/icons/firefox';
 import { Linux } from '@/features/icon/icons/linux';
 import { Safari } from '@/features/icon/icons/safari';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import { type EnrollingFactor, useMfa } from '@/hooks/account/use-mfa';
-import { useCopy } from '@/hooks/use-copy';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
 import { createClient } from '@/lib/supabase/client';
 import type { FactorInfo } from '@/lib/supabase/mfa';
-import { cn } from '@/lib/utils';
-import { SettingsTabHeader } from '../settings-tab-header';
+import { cn } from '@kortix/ui';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 import { type DeviceBrand, describeUserAgent } from './device-label';
 
 const BRAND_MARK: Record<DeviceBrand, (props: { className?: string }) => React.JSX.Element> = {

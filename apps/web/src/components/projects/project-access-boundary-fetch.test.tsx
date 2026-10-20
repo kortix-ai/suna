@@ -9,8 +9,8 @@ mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({ user: { id: 'synthetic-user' }, isLoading: false }),
 }));
 mock.module('@/lib/auth/use-signed-out-redirect', () => ({ useSignedOutRedirect: () => {} }));
-mock.module('@/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
-mock.module('@/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/' }));
+mock.module('@kortix/ui/internal/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
+mock.module('@kortix/ui/internal/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/' }));
 mock.module('next/navigation', () => ({
   usePathname: () => '/projects/deleted-project',
   useParams: () => ({ sessionId: 'synthetic-session' }),

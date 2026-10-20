@@ -3,7 +3,7 @@
  *
  * The project's agents, from the SERVER-side project config
  * (`ProjectConfigSummary.agents`) — the same source
- * `apps/web/src/features/workspace/capabilities/agents/agents-page.tsx` reads,
+ * `packages/ui/src/customize/agents/agents-page.tsx` reads,
  * and the one that works before any sandbox runtime exists.
  */
 

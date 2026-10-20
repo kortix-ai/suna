@@ -33,9 +33,9 @@
 
 import { GearSixIcon } from '@phosphor-icons/react';
 
-import { railGroups, type SettingsRailTranslator } from '@/features/workspace/settings/rail';
-import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
-import type { RailItem } from '@/features/workspace/settings/type';
+import { railGroups, type SettingsRailTranslator } from '@kortix/ui/customize/settings/rail';
+import type { SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
+import type { RailItem } from '@kortix/ui/customize/settings/type';
 
 /**
  * Mirrors `ACCOUNT_SCOPED_SETTINGS_TABS` (settings-panel.tsx) — the tabs that
