@@ -181,7 +181,8 @@ for (const linkHost of [undefined, 'ambient', HOST_NAME]) {
     expect(result.stderr).toBe('');
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout).project_id).toBe(PROJECT_ID);
-    expect(requests).toEqual([`GET /v1/projects/${PROJECT_ID}`]);
+    // `projects info` also reads the repository connection (#10544).
+  expect(requests).toEqual([`GET /v1/projects/${PROJECT_ID}`, `GET /v1/projects/${PROJECT_ID}/git/connection`]);
   });
 }
 
@@ -197,7 +198,8 @@ test('explicit project wins over the named host default and link', async () => {
   );
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout).project_id).toBe(PROJECT_ID);
-  expect(requests).toEqual([`GET /v1/projects/${PROJECT_ID}`]);
+  // `projects info` also reads the repository connection (#10544).
+  expect(requests).toEqual([`GET /v1/projects/${PROJECT_ID}`, `GET /v1/projects/${PROJECT_ID}/git/connection`]);
 });
 
 for (const command of ['info', 'clone', 'open', 'rm']) {

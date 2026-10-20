@@ -303,6 +303,41 @@ test('projects use binds only the named host despite session injection', async (
 });
 
 
+test('projects clone keeps a shipped link and README clean', async () => {
+  useLocalRepo = true;
+  const hostUrl = `http://127.0.0.1:${server.port}`;
+  const binding = JSON.stringify({
+    project_id: 'workspace_project',
+    account_id: 'account_workspace',
+    host: 'workspace',
+    host_url: hostUrl,
+    linked_at: '2026-01-01T00:00:00.000Z',
+  }, null, 2) + '\n';
+  writeFileSync(join(cwd, '.kortix/link.json'), binding);
+  writeFileSync(join(cwd, 'README.md'), 'Synthetic shipped content\n');
+  const git = (...args: string[]) => {
+    const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    expect(result.exitCode).toBe(0);
+    return result.stdout.toString();
+  };
+  git('add', 'kortix.yaml', 'README.md', '.kortix/link.json');
+  git('-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.test', 'commit', '-m', 'ship fixture');
+  git('clone', '--bare', '.', bareRepo);
+
+  for (const destination of ['clone-one', 'clone-two']) {
+    const result = await cli(['projects', 'clone', 'workspace_project', destination, '--host', 'workspace']);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('Cloned Workspace');
+    expect(result.stderr).not.toContain('git clone failed');
+    const cloned = join(cwd, destination);
+    expect(readFileSync(join(cloned, '.kortix/link.json'), 'utf8')).toBe(binding);
+    expect(readFileSync(join(cloned, 'README.md'), 'utf8')).toBe('Synthetic shipped content\n');
+    const status = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd: cloned });
+    expect(status.exitCode).toBe(0);
+    expect(status.stdout.toString()).toBe('');
+  }
+});
+
 test.each([false, true])('seeded managed ship recovery preserves history (fetch fails=%s)', async (failFetch) => {
   useLocalRepo = true;
   managedRepo = true;

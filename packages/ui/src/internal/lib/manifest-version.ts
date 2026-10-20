@@ -11,7 +11,7 @@
  * treating it as "not yet migrated" is the safer UI default).
  */
 
-import { getProjectDetail } from '@kortix/sdk';
+import { getProjectDetail, repositoryDisconnectedReason } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -62,5 +62,8 @@ export function useProjectManifestVersion(projectId: string): ProjectManifestVer
   if (detail.isLoading || !detail.data) {
     return { version: null, isLoading: detail.isLoading };
   }
+  // A disconnected repository was not read: its version is unknown, not v1,
+  // so no surface offers an upgrade it cannot run (KRTX-2955).
+  if (repositoryDisconnectedReason(detail.data.git_connection)) return { version: null, isLoading: false };
   return { version: detectManifestVersion(detail.data.config.manifest_raw), isLoading: false };
 }

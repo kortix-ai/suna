@@ -38,6 +38,7 @@ import {
   type RefUpdate,
 } from './receive-pack';
 import { evaluateRefUpdates, principalLabel } from './ref-policy';
+import { isRepositoryDisconnectedError } from '../shared/repository-health';
 import { annotateGitTransfer, bindGitProxyPrincipal, gitAuditOutcome, gitPushRefSummary } from './audit';
 import { denialsAfterScopes, sessionMayBypassGrantReview } from './ref-scopes';
 import {
@@ -195,7 +196,17 @@ async function forwardAuthorized(
   pushedRefs: readonly RefUpdate[] = [],
 ): Promise<Response> {
   const projectId = auth.project.projectId;
-  const upstream = await resolveProjectUpstreamMemo(auth.project, scope);
+  let upstream: UpstreamGit | null;
+  try {
+    upstream = await resolveProjectUpstreamMemo(auth.project, scope);
+  } catch (err) {
+    // git prints a text/plain error body as `remote: <line>` above its own
+    // `fatal:` line, so the cause and the fix reach the terminal and the agent.
+    if (isRepositoryDisconnectedError(err)) {
+      return c.text(`${err.message}\n`, 409, { 'X-Kortix-Error-Code': err.code });
+    }
+    throw err;
+  }
   if (!upstream || !upstream.url) {
     return c.text('No git upstream is configured for this project', 502);
   }

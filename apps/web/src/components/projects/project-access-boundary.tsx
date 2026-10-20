@@ -245,14 +245,14 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
 
   const query = useQuery({
     ...projectGateQuery(projectId),
-    // A fresh cached summary is not a current access verdict after revocation.
-    refetchOnMount: 'always',
     enabled: authReady && !!projectId,
+    // Keep a gone verdict across remounts; transient errors may recover.
+    retryOnMount: (query) => errorStatus(query.state.error) !== 404,
+    refetchOnMount: (query) => errorStatus(query.state.error) === 404 ? false : 'always',
   });
 
-  // Wait for the access verdict before speculative reads. A revoked member
-  // otherwise sends a burst of denied shell and session requests while the
-  // boundary is still deciding whether it can render the project.
+  // Do not speculate on inaccessible projects: a deleted URL must settle
+  // from the access check alone, without a burst of shell/session 404s.
   const queryClient = useQueryClient();
   const routeSessionId = routeSessionIdFromParams(useParams());
   useEffect(() => {
@@ -261,7 +261,6 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
     prefetchSessionRouteReads(queryClient, projectId, routeSessionId);
   }, [authReady, query.isSuccess, query.isFetchedAfterMount, projectId, routeSessionId, queryClient]);
 
-  // Warm the shell only after access is confirmed, including on a direct URL.
   useEffect(() => {
     if (!authReady || !query.isSuccess || !query.isFetchedAfterMount || !projectId) return;
     prefetchProjectShellReads(queryClient, projectId);
@@ -332,8 +331,8 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   // token publication before interpreting any result as an access decision.
   const view = resolveBoundaryView({
     authReady,
-    isPending: query.isPending || !query.isFetchedAfterMount,
-    hasData: query.data !== undefined,
+    isPending: query.isPending || (query.isFetching && !query.isFetchedAfterMount),
+    hasData: query.data !== undefined && query.isFetchedAfterMount,
     errorState,
   });
   if (view === 'pending') return <ProjectPendingScreen />;

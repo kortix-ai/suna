@@ -25,8 +25,6 @@ mock.module('../../config', () => ({
         if (Object.hasOwn(target, key)) return target[key];
         if (key === 'KORTIX_MANAGED_PROVIDER_ENABLED') return false;
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return false;
-        if (key === 'LLM_GATEWAY_ENABLED') return true;
-        if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return false;
         if (key === 'LLM_GATEWAY_MANAGED_MODELS') return undefined;
         if (key === 'TUNNEL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return 'claude-sonnet-4.6';

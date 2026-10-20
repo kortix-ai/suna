@@ -23,7 +23,7 @@ export default function ProjectRoomsLayout({ children }: { children: ReactNode }
   if (!rooms.enabled) {
     return (
       <div className="mx-auto w-full max-w-3xl p-4">
-        <FeatureGateScreen featureName={t('title')} description={t('gateDescription')} />
+        <FeatureGateScreen featureKey="agent_rooms" featureName={t('title')} description={t('gateDescription')} />
       </div>
     );
   }

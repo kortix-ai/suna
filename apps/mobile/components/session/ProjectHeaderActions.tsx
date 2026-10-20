@@ -24,6 +24,7 @@
 import * as React from 'react';
 import { Keyboard, View } from 'react-native';
 
+import { HEADER_BUTTON_SIZE, HEADER_ICON_SIZE } from '@/components/kortix/header-button';
 import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -43,7 +44,7 @@ export function ProjectHeaderActions({ onOpenMore, children }: ProjectHeaderActi
       {onOpenMore ? (
         <Button
           variant="ghost"
-          size="icon"
+          size={HEADER_BUTTON_SIZE}
           className={LIQUID_GLASS_AVAILABLE ? 'rounded-full' : '-mr-2.5 rounded-full bg-background'}
           onPress={() => {
             Keyboard.dismiss();
@@ -52,7 +53,7 @@ export function ProjectHeaderActions({ onOpenMore, children }: ProjectHeaderActi
           accessibilityLabel="Session actions"
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           {LIQUID_GLASS_AVAILABLE ? <LiquidGlassCapsule /> : null}
-          <Icon as={DotsThreeIcon} size={20} className="text-foreground" />
+          <Icon as={DotsThreeIcon} size={HEADER_ICON_SIZE} className="text-foreground" />
         </Button>
       ) : null}
     </View>
