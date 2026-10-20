@@ -1,5 +1,6 @@
 /** A project's repository contents: files, archive, search, history, branches, commits, and diffs. */
 import { createHash } from 'node:crypto';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { commitFileToBranch, GitFileRevisionConflictError } from '../git/commit-writer';
 import { assertAgentSessionWorkspaceAllowsRepository } from '../lib/access';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -97,11 +98,17 @@ export function registerProjectFilesRoutes(): void {
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_WRITE);
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_PUSH);
       const body = c.req.valid('json');
       if (body.path.startsWith('/') || body.path.includes('..') || body.path.includes('\\') || body.path.includes('\0')) {
         return c.json({ error: 'Invalid file path' }, 400);
       }
       if (!(await (await projectReadView(c, loaded)).refsVisible(body.ref))) return c.json({ error: 'Not found' }, 404);
+      // Server-side commits bypass the git proxy: preserve the session's branch boundary here.
+      const callerSessionId = callerKortixSessionId(c);
+      if (callerSessionId !== null && body.ref !== callerSessionId) {
+        return c.json({ error: 'A session may only write its own branch; use a change request for other branches' }, 403);
+      }
       const denier = await resourceDenierForRequest({
         userId: loaded.userId, accountId: loaded.row.accountId, projectId,
         actingTokenId: c.get('iamTokenId'), row: loaded.row,
