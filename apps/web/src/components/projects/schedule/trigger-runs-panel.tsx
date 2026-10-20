@@ -230,12 +230,15 @@ export function TriggerRunsPanel({
     body = <EmptyState size="sm" title={t.raw('text6de3a7d8e5db')} />;
   } else if (shown.length === 0 && !query.hasNextPage) {
     // Paper C06 / C14: one line, then Run now; no histogram.
-    const next = trigger.next_fire_at ? Date.parse(trigger.next_fire_at) : Number.NaN;
+    const nextIso = trigger.next_cron_at ?? trigger.next_fire_at;
+    const next = nextIso ? Date.parse(nextIso) : Number.NaN;
     const line = !trigger.enabled
       ? t.raw('text75c4316dcad4')
       : Number.isFinite(next)
         ? t('textdf86da65c421', {
             value0: new Date(next).toLocaleString(locale, {
+              timeZoneName: 'short',
+              second: '2-digit',
               weekday: 'long',
               hour: '2-digit',
               minute: '2-digit',

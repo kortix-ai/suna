@@ -196,10 +196,10 @@ export function paneWidth(section: AccountSection): AccountPaneWidth {
 /**
  * `?tab=` → section, or `null` for anything that is not one. Legacy callers
  * pass `tab=overview` — the limits/wallet/spend panels now live at the top of
- * the Billing tab, so fold it.
+ * the Billing tab, so fold it. `usage` aliases the existing transactions pane.
  */
 export function parseAccountSection(raw: string | null | undefined): AccountSection | null {
-  const value = raw === 'overview' ? 'billing' : raw;
+  const value = raw === 'overview' ? 'billing' : raw === 'usage' ? 'transactions' : raw;
   return value && (VALID_TABS as readonly string[]).includes(value)
     ? (value as AccountSection)
     : null;
