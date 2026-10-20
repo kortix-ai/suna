@@ -63,9 +63,6 @@ const ModelDefaultBody = z.object({
 // PUT and DELETE /model-defaults share one guard, in one order:
 //   1. project visible to the caller      → else 404 'Not found'
 //   2. project.model.write                → else 403 (thrown)
-//   3. the project's LLM gateway enabled  → else 404 llm_gateway_disabled
-// The permission check runs before the gateway check, so a caller who may not
-// write model defaults never learns the project's gateway setting.
 async function loadModelDefaultsWriter(
   c: any,
   projectId: string,

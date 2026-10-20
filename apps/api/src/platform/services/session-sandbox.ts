@@ -660,13 +660,9 @@ export async function provisionSessionSandbox(opts: {
   // boots clobbered each other and left older sandboxes with a stale token the
   // gateway rejects (401). The PAT is per-session and stable.
   //
-  // Enablement is the project's `llm_gateway` flag alone (operator
-  // availability + per-project opt-in), the same rule prompt-time env-sync
-  // applies (sandbox-env-sync.ts). The account's plan is NOT a boot gate: the
+  // Every box gets the gateway. The account's plan is NOT a boot gate: the
   // gateway limits a free account to free/BYOK models per request
-  // (principal.freeModelsOnly, resolve-candidates.ts). Gating boot on the plan
-  // booted free accounts without the gateway; OpenCode recovered on the first
-  // prompt's env-sync, but pi has no native path and never started.
+  // (principal.freeModelsOnly, resolve-candidates.ts).
 
   const extraEnvVars = await extraEnvRead.catch(async (error) => {
     // The row exists and no box ever will: close it. The caller fails the session.
