@@ -32,8 +32,10 @@ version). Sessions that are running keep the kit they started with.
 
 Lumen writes `input.json` (schema `input`) into
 `/drives/company/Lumen/Runs/<runId>/<batchId>/`. The agent writes each result
-with `lumen result write` into `out/` (review rows as `out/rows/<docId>.json`,
-an answer as `out/answer.json`) and finishes with `lumen result done`, which
+with `lumen result write` into `out/` (review rows as `out/rows/<docId>.json`;
+one `out/answer.json`, `out/issues.json`, `out/report.json` or `out/draft.json`
+for the other kinds; files a result names, such as `redline.docx`, go next to
+it) and finishes with `lumen result done`, which
 refuses to write `done.json` while any result is invalid. A citation is
 `{doc_id, a: "p<page>.<n>", quote}`; `lumen cite check` and Lumen apply the
 same rules.

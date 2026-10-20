@@ -91,20 +91,38 @@ and the document beside it. A quote the source does not contain shows as a struc
 | ![The Vault: search, then the original PDF beside the list](public/screenshots/vault-preview.png) | ![An answer's citation opened: the quoted paragraph, verified](public/screenshots/assistant-source.png) |
 | ![A citation whose quote is not in the source](public/screenshots/assistant-not-found.png) | |
 
-**Runs: reviews and questions.** "New review" turns the vault into a table: one row per document,
-eight commercial terms per row (parties, term, auto-renewal, termination for convenience,
-liability cap, governing law, assignment, change of control). "Ask" answers one question across
-the vault. Each run fans out into Kortix sessions on Lumen's own agents; cells fill as each
-document's row lands; every value carries citations that Lumen checks against the source before
-it shows them (Verified, or "Not found in source").
+**Reviews.** A review turns the vault into a table: one row per document, one column per question.
+Start from the "Commercial contract basics" preset (parties, term, auto-renewal, termination for
+convenience, liability cap, governing law, assignment, change of control) or write your own
+columns (label, question, format: text, yes/no, date, money, tag, verbatim). Cells fill as each
+document's row lands. A click opens the cell: the value, how it was read, and each citation with
+the quoted paragraph. A lawyer can **Verify**, **Flag** or **Edit** a cell; each is audited. Add
+columns later (only the new columns run, on the existing rows) or re-run one column from its
+header menu. No run overwrites a verified or edited cell: the newer AI answer waits beside it
+("Newer AI answer", one click to adopt it). **Export CSV** writes every row, the effective value
+(edited ?? AI), each cell's review state and a citations column.
+
+**Workflows** (`/app/matters/<id>/workflows`):
+
+| Workflow | Agent and batches | Result |
+|---|---|---|
+| Contract review | `lumen-reviewer`, 1 session | One issue per playbook rule (aligned, deviates, missing) with severity, finding, citations and the smallest redline, plus clauses no rule covers. Accept or Dismiss each (audited). **Download redline (.docx)**: tracked changes and one comment per edit, by "Lumen". |
+| Due-diligence summary | `lumen-extractor` × ⌈N/4⌉ (the checklist, a review) then 1 `lumen-counsel` report batch | A red-flag table (severity, quote, document, page) and a cited report in the skill's sections; citation chips open the Source panel. The checklist is a normal review: verify, flag, edit, export. |
+| Draft from template | `lumen-drafter`, 1 session | The filled template (reading view and a Word preview), the fields left to confirm (`[[CONFIRM: field]]`), **Download (.docx)**. Parties and the date come from the matter. |
+| Ask across the vault | `lumen-counsel`, 1 session | One cited answer, or "The documents in this matter do not address this." |
+
+**Library** (`/app/library`). The firm's playbooks and templates in Markdown: the "Lumen standard
+NDA playbook" (12 rules) and two templates on day one. Owners and admins edit them; a run copies
+the version current at its start into its run folder, so an edit changes the next run and never a
+running one.
+
+**History** (`/app/matters/<id>/history`). Every run and conversation on the matter, newest first,
+with its status and duration. A run opens its result screen, with the batches and the activity log.
 
 | | |
 | --- | --- |
-| ![A review filling live: batches, cells, activity](public/screenshots/review-running.png) | ![A cell with its verified citation, quote highlighted](public/screenshots/review-cell.png) |
-
-Contract review against a playbook, due-diligence reports, drafting from templates and the
-Library are on the build plan and are not in this version. The agent kit already ships their
-agents, skills, tools and result schemas.
+| ![A review: verified, flagged and edited cells, the cell panel](public/screenshots/review-grid.png) | ![Contract review: issues by severity, a redline, the quoted clause](public/screenshots/contract-review.png) |
+| ![Due diligence: red flags with their quotes, then the cited report](public/screenshots/diligence-report.png) | ![The workflow catalog](public/screenshots/workflows.png) |
 
 ## The agent kit and the run engine
 
@@ -148,6 +166,18 @@ batch  pending → starting → working → succeeded | failed                  
   verified, relocated (anchor corrected) or unverified ("Not found in source", never shown as
   support). A verified or edited cell keeps its value; a newer AI answer is kept beside it.
 - Every transition writes a `runEvents` row: the run screen subscribes to it.
+- Each kind has one result contract (`resultContract` in `convex/runs.ts`): rows
+  `out/rows/<docId>.json` (review, column, diligence map), or one file: `out/answer.json`,
+  `out/issues.json`, `out/report.json`, `out/draft.json`. Other files in `out/` are ignored.
+- A result can name files (`redline.docx`, `draft.docx`). Convex reads them from Drive into its own
+  storage before it accepts the result; the browser downloads them through the access-checked
+  `workflows.fileBytes` action. A named file that has not reached Drive 90 s later is a repair.
+- Due diligence runs as map + reduce: the report batch starts only when every checklist batch is
+  done, and Convex writes it the accepted rows (verified citations only) into `in/rows/`.
+- Playbooks and templates are copied into the batch folder at start (`in/playbook.md`,
+  `in/template.md`).
+- A draft with no source documents may not fill a field the lawyer left empty: Convex rejects it
+  (repair prompt) unless the field stays `[[CONFIRM: field]]`.
 
 Kortix ids stay on Lumen rows: `runBatches.kortixSessionId`, and each session carries the labels
 `lumen-firm:`, `lumen-matter:`, `lumen-user:` and `lumen-run:`.
@@ -411,6 +441,18 @@ npx convex run billing:setPlan '{"firmId":"<firm id>","plan":"team","seats":10}'
 New firms get a 14-day trial in mode A. Lumen calls Stripe's REST API with `fetch`; there is no
 Stripe SDK dependency. No Stripe key is ever in a tracked file.
 
+### Workflows on real sessions
+
+Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
+
+| Run | Time | Result |
+|---|---|---|
+| Contract review: mutual NDA vs the 12-rule playbook (API and UI, 2 runs) | 50 s, 69 s | 4 of 4 planted deviations each run (NDA-01 7-year term High, NDA-02 no residuals, NDA-04 Novaria law High, NDA-05 24-month non-solicit); 0 false High on the 8 aligned rules; every citation verified; `redline.docx` with 4 insertions, 4 deletions, 4 comments, opened by LibreOffice |
+| Same, after the playbook edit "3 years" → "5 years" | 70 s | The finding reads "the playbook maximum is five (5) years" |
+| Due diligence: Project Aster, 6 documents (API and UI) | 203 s, 168 s | 4 of 4 planted red flags (uncapped MSA liability, SPA change of control, lease escalation 8 %/y and structural repairs, supply exclusivity), each cited; 14 and 13 flags, 8 sections; all citations verified (54 of 54 chips in the UI report) |
+| Draft: mutual NDA template, no sources | 47 s | Both parties and the date filled, `governing_law` left as `[[CONFIRM]]`, `draft.docx` |
+| Review: 6 documents × 8 columns, then + 1 column, then 1 column re-run | 66 s, 33 s, 44 s | 48 + 6 + 6 cells; the MSA "Liability cap" reads "Uncapped" with its clause; the verified and the edited cell kept their values |
+
 ## Limits
 
 - Matters are separated by Lumen's access control: Convex queries, the proxy's matter check and
@@ -430,7 +472,12 @@ Stripe SDK dependency. No Stripe key is ever in a tracked file.
 | `/app` | Home: ask about a matter (matter picker), open matters |
 | `/app/matters`, `/app/matters/new` | Matters: search, status filter, new matter |
 | `/app/matters/<id>` | Overview: recent activity, details, parties, who can see it |
-| `/app/matters/<id>/assistant[/<threadId>]` | Threads in this matter; one thread (Chat, Files, Changes, Preview, Scope) |
+| `/app/matters/<id>/vault` | Upload, search, preview, delete |
+| `/app/matters/<id>/assistant[/<threadId>]` | Threads in this matter, with citation chips and the Source panel |
+| `/app/matters/<id>/reviews`, `/reviews/new`, `/reviews/<reviewId>` | Reviews: list, column builder, the grid with the cell panel |
+| `/app/matters/<id>/workflows` | Contract review, due diligence, draft from template, ask |
+| `/app/matters/<id>/history`, `/runs/<runId>` | Every run and conversation; one run's result, batches and activity |
+| `/app/library` | Playbooks and templates |
 | `/app/settings/{firm,members,billing,usage,audit}` | Firm admin |
 | `⌘K` | Command palette: matters and actions |
 
@@ -454,7 +501,12 @@ Stripe SDK dependency. No Stripe key is ever in a tracked file.
 | `src/components/vault/` | The document panel (original + anchored text) and its read-only `FileSource` |
 | `scripts/copy-viewer-wasm.mjs` | Copies the PDF/DOCX/XLSX viewer engines into `public/` before `dev` and `build` |
 | `agent-kit/`, `convex/kit.ts`, `convex/kitInstall.ts` | The agent kit and its versioned install per firm |
-| `convex/runs.ts`, `convex/engine.ts` | The run engine: state, fan-out, polling, repair, citation checks |
+| `convex/runs.ts`, `convex/engine.ts` | The run engine: state, fan-out, map + reduce, polling, repair, result files, citation checks |
+| `convex/reviews.ts`, `convex/lib/columns.ts` | Reviews: create, add columns, re-run a column, verify / flag / edit; the column presets |
+| `convex/workflows.ts` | Contract review, due diligence, draft; issue decisions; run files; the matter history |
+| `convex/library.ts`, `convex/kit/library.generated.ts` | Playbooks and templates; the defaults every firm starts with |
+| `src/components/runs/workflow-results.tsx` | The issues, report and draft screens |
+| `src/lib/review-cells.ts` | Cell text and the review CSV |
 | `convex/seed.ts`, `scripts/seed-demo.ts`, `scripts/run-watch.ts` | Operator scripts (admin key): demo data, start and watch a run |
 | `demo-data/` | The synthetic dataset: Markdown sources, `build.py`, rendered PDF/DOCX/TXT in `dist/` |
 | `convex/lumenAgent.ts` | Agent names, skill grants and the firm's Drive folders |
