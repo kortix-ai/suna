@@ -14,3 +14,26 @@ describe('reportMarkdown: the diligence report as a file that reads outside Lume
     expect(md).not.toContain('/cite?');
   });
 });
+
+describe('reportMarkdown: a citation the check did not confirm never reads as a plain reference', () => {
+  const bad = { documentId: 'd1', filename: 'msa.pdf', page: 2, quote: 'capped at USD 5m', status: 'unverified' as const };
+  const good = { documentId: 'd1', filename: 'msa.pdf', page: 4, quote: 'no cap applies', status: 'verified' as const };
+
+  test('an unverified body citation and an unverified-only red flag say "not found in source"', () => {
+    const md = reportMarkdown('DD', {
+      sections: [{ heading: 'Liability', bodyMd: 'Capped at USD 5m [1](/cite?d=d1&a=p2.33&q=capped%20at%20USD%205m).', citations: [bad] }],
+      redFlags: [{ title: 'Fabricated cap', severity: 'high', filename: 'msa.pdf', citations: [bad] }],
+    });
+    expect(md).toContain('Capped at USD 5m (msa.pdf, p. 2, not found in source).');
+    expect(md).toContain('- **High**: Fabricated cap (msa.pdf, p. 2, not found in source)');
+  });
+
+  test('a red flag cites its first verified citation; a link the check never saw is not found', () => {
+    const md = reportMarkdown('DD', {
+      sections: [{ heading: 'S', bodyMd: 'A [1](/cite?d=d1&a=p4.1&q=no%20cap%20applies) B [2](/cite?d=d9&a=p7.1&q=x).', citations: [good] }],
+      redFlags: [{ title: 'Uncapped', severity: 'high', filename: 'msa.pdf', citations: [bad, good] }],
+    });
+    expect(md).toContain('A (msa.pdf, p. 4) B (document, p. 7, not found in source).');
+    expect(md).toContain('- **High**: Uncapped (msa.pdf, p. 4)\n');
+  });
+});

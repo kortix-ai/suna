@@ -7,7 +7,8 @@
 import { CitationLayer } from '@/components/chat/citation-layer';
 import { CitationCard, type RunView } from '@/components/runs/run-parts';
 import { useBlobFileSource } from '@/components/vault/vault-source';
-import { reportMarkdown } from '@/lib/report-markdown';
+import { markdownDocx } from '@/lib/markdown-docx';
+import { bestCitation, reportMarkdown } from '@/lib/report-markdown';
 import { fieldLabel } from '@/lib/run-activity';
 import { errorText } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
@@ -197,19 +198,26 @@ export function IssuesView({ view, runId }: { view: RunView; runId: Id<'runs'> }
 }
 
 export function ReportView({ view, matterId, runId }: { view: RunView; matterId: Id<'matters'>; runId: Id<'runs'> }) {
-  const download = useDownload(runId);
   const log = useMutation(api.workflows.logExport);
   if (!view.result) return <Waiting text="The report appears when every document is read. The checklist table fills first." />;
   const rank = { high: 0, medium: 1, low: 2 } as const;
   const flags = [...(view.result.redFlags ?? [])].sort((a, b) => rank[a.severity] - rank[b.severity]);
-  const docx = view.result.files.find((f) => f.name.endsWith('.docx'));
   const base = view.run.title.replace(/[^\w.-]+/g, '-').replace(/^-|-$/g, '') || 'due-diligence';
   const md = () => reportMarkdown(view.run.title, { sections: view.result!.sections, redFlags: flags });
-  function downloadMarkdown() {
-    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([md()], { type: 'text/markdown' })), download: `${base}.md` });
+  // Both files come from the checked result, never from the sandbox's own report.docx.
+  function save(blob: Blob, file: string) {
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: file });
     a.click();
     URL.revokeObjectURL(a.href);
-    void log({ runId, file: `${base}.md` });
+    void log({ runId, file });
+  }
+  const downloadMarkdown = () => save(new Blob([md()], { type: 'text/markdown' }), `${base}.md`);
+  async function downloadDocx() {
+    try {
+      save(await markdownDocx(md()), `${base}.docx`);
+    } catch (err) {
+      errorToast('Could not build the report', { description: errorText(err) });
+    }
   }
   async function copyMarkdown() {
     try {
@@ -222,11 +230,9 @@ export function ReportView({ view, matterId, runId }: { view: RunView; matterId:
   return (
     <div className="space-y-4" data-testid="report-view">
       <div className="flex flex-wrap items-center gap-2">
-        {docx && (
-          <Button size="sm" onClick={() => download(docx, `${base}.docx`)} data-testid="download-report-docx">
-            <DownloadSimpleIcon className="size-4" /> Download report (.docx)
-          </Button>
-        )}
+        <Button size="sm" onClick={() => void downloadDocx()} data-testid="download-report-docx">
+          <DownloadSimpleIcon className="size-4" /> Download report (.docx)
+        </Button>
         <Button size="sm" variant="outline" onClick={downloadMarkdown} data-testid="download-report-md">
           <DownloadSimpleIcon className="size-4" /> Markdown
         </Button>
@@ -240,24 +246,29 @@ export function ReportView({ view, matterId, runId }: { view: RunView; matterId:
         </header>
         <table className="w-full text-sm">
           <tbody className="divide-y divide-border">
-            {flags.map((f, i) => (
-              <tr key={i} className="align-top" data-testid="red-flag">
-                <td className="w-20 py-3 pr-2 pl-4 sm:w-24 sm:pl-5"><SeverityBadge severity={f.severity} /></td>
-                <td className="py-3 pr-4 pl-2 sm:pr-2">
-                  <p className="font-medium">{f.title}</p>
-                  {f.citations[0] && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">“{f.citations[0].quote}”</p>}
-                  <p className="mt-1 text-xs text-muted-foreground sm:hidden">
-                    {f.filename}
-                    {f.citations[0] && <span className="ml-1 font-mono">p. {f.citations[0].page}</span>}
-                  </p>
-                </td>
-                <td className="hidden px-5 py-3 text-right text-xs text-muted-foreground sm:table-cell">
+            {flags.map((f, i) => {
+              // The first quote that passed the check; an unchecked one is never shown as fact.
+              const c = bestCitation(f.citations);
+              const missing = !!c && c.status === 'unverified';
+              const where = (
+                <>
                   {f.filename}
-                  {f.citations[0] && <span className="ml-1 font-mono">p. {f.citations[0].page}</span>}
-                  {f.citations.every((c) => c.status === 'unverified') && <span className="block">Citation not found</span>}
-                </td>
-              </tr>
-            ))}
+                  {c && <span className="ml-1 font-mono">p. {c.page}</span>}
+                  {missing && <span className="ml-1 text-destructive sm:ml-0 sm:block" data-testid="citation-not-found">Citation not found</span>}
+                </>
+              );
+              return (
+                <tr key={i} className="align-top" data-testid="red-flag">
+                  <td className="w-20 py-3 pr-2 pl-4 sm:w-24 sm:pl-5"><SeverityBadge severity={f.severity} /></td>
+                  <td className="py-3 pr-4 pl-2 sm:pr-2">
+                    <p className="font-medium">{f.title}</p>
+                    {c && !missing && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">“{c.quote}”</p>}
+                    <p className="mt-1 text-xs text-muted-foreground sm:hidden">{where}</p>
+                  </td>
+                  <td className="hidden px-5 py-3 text-right text-xs text-muted-foreground sm:table-cell">{where}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </section>
