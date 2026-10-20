@@ -246,6 +246,11 @@ async function startSingletonWorkers() {
   const { startGrantExpirySweeper, stopGrantExpirySweeper } = await import('./workers/grant-expiry-worker');
   startGrantExpirySweeper();
   lazyStops.push(stopGrantExpirySweeper);
+  // Connector approvals: close pending approvals past expires_at every 60s
+  // (status expired, audit event, chat card replaced). Never resumes a session.
+  const { startApprovalExpirySweeper, stopApprovalExpirySweeper } = await import('./workers/approval-expiry-worker');
+  startApprovalExpirySweeper();
+  lazyStops.push(stopApprovalExpirySweeper);
   // OAuth housekeeping: expired authorization requests, abandoned self-registered clients.
   const { startOAuthSweeper, stopOAuthSweeper } = await import('./workers/oauth-sweep-worker');
   startOAuthSweeper();

@@ -1,5 +1,5 @@
 {
-  "id": "1dd3d158-5e3e-4211-93fc-640a787bb5e5",
+  "id": "689e04f4-da6c-4d02-8f56-366ada06b112",
   "prevId": "62853af9-bb8e-482a-82fc-0a3ae4006f52",
   "version": "7",
   "dialect": "postgresql",
@@ -9131,6 +9131,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -9145,6 +9151,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_connector_calls_pending_expiry": {
+          "name": "idx_connector_calls_pending_expiry",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"connector_calls\".\"status\" = 'pending_approval'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -9880,6 +9902,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'allow_all'"
+        },
+        "approval_ttl_seconds": {
+          "name": "approval_ttl_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",
@@ -17752,12 +17780,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "space_id": {
-          "name": "space_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "secrets_allowlist": {
           "name": "secrets_allowlist",
           "type": "jsonb",
@@ -17807,34 +17829,6 @@
         }
       },
       "indexes": {
-        "idx_project_sessions_space": {
-          "name": "idx_project_sessions_space",
-          "columns": [
-            {
-              "expression": "space_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"project_sessions\".\"space_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_project_sessions_account": {
           "name": "idx_project_sessions_account",
           "columns": [
@@ -18105,20 +18099,6 @@
             "project_id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_sessions_space_fk": {
-          "name": "project_sessions_space_fk",
-          "tableFrom": "project_sessions",
-          "tableTo": "project_spaces",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "space_id"
-          ],
-          "columnsTo": [
-            "space_id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -18568,224 +18548,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "kortix.project_spaces": {
-      "name": "project_spaces",
-      "schema": "kortix",
-      "columns": {
-        "space_id": {
-          "name": "space_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "project_space_kind",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_default": {
-          "name": "is_default",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "dm_user_id": {
-          "name": "dm_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "dm_agent_name": {
-          "name": "dm_agent_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "archived_at": {
-          "name": "archived_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uniq_project_spaces_channel_slug": {
-          "name": "uniq_project_spaces_channel_slug",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"project_spaces\".\"kind\" = 'channel'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uniq_project_spaces_dm": {
-          "name": "uniq_project_spaces_dm",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "dm_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "dm_agent_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"project_spaces\".\"kind\" = 'dm'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uniq_project_spaces_default": {
-          "name": "uniq_project_spaces_default",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"project_spaces\".\"is_default\"",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_project_spaces_project": {
-          "name": "idx_project_spaces_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "project_spaces_account_id_accounts_account_id_fk": {
-          "name": "project_spaces_account_id_accounts_account_id_fk",
-          "tableFrom": "project_spaces",
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "account_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_spaces_project_id_projects_project_id_fk": {
-          "name": "project_spaces_project_id_projects_project_id_fk",
-          "tableFrom": "project_spaces",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "project_spaces_kind_shape_check": {
-          "name": "project_spaces_kind_shape_check",
-          "value": "(\"kortix\".\"project_spaces\".\"kind\" = 'channel' and \"kortix\".\"project_spaces\".\"slug\" is not null and \"kortix\".\"project_spaces\".\"dm_user_id\" is null and \"kortix\".\"project_spaces\".\"dm_agent_name\" is null) or (\"kortix\".\"project_spaces\".\"kind\" = 'dm' and \"kortix\".\"project_spaces\".\"slug\" is null and \"kortix\".\"project_spaces\".\"dm_user_id\" is not null and \"kortix\".\"project_spaces\".\"dm_agent_name\" is not null)"
-        }
-      },
       "isRLSEnabled": false
     },
     "kortix.project_trigger_event_polls": {
@@ -28526,7 +28288,8 @@
         "ok",
         "error",
         "denied",
-        "pending_approval"
+        "pending_approval",
+        "expired"
       ]
     },
     "kortix.connector_connection_owner_type": {
@@ -28750,14 +28513,6 @@
         "private",
         "project",
         "restricted"
-      ]
-    },
-    "kortix.project_space_kind": {
-      "name": "project_space_kind",
-      "schema": "kortix",
-      "values": [
-        "channel",
-        "dm"
       ]
     },
     "kortix.project_status": {

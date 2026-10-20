@@ -132,6 +132,8 @@ export interface ManifestV3 {
   triggers?: Array<Record<string, unknown>>;
   policy?: Record<string, unknown>;
   policies?: Array<Record<string, unknown>>;
+  /** `ttl`: how long a held connector call waits for a decision (`30m`, `4h`, `7d`). */
+  approvals?: { ttl?: string };
   agents: Record<string, AgentBlockV3>;
 }
 
@@ -154,6 +156,7 @@ const TOP_LEVEL_KEYS_V3 = [
   'triggers',
   'policy',
   'policies',
+  'approvals',
   'agents',
 ] as const;
 

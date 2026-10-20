@@ -50,7 +50,7 @@ export interface AuditEvent {
   credential_id?: string | null;
   /** Display name for a `personal_access_token` or `oauth_app` credential, when it still exists. */
   credential_name?: string | null;
-  outcome: 'success' | 'failure' | 'denied' | 'pending' | null;
+  outcome: 'success' | 'failure' | 'denied' | 'pending' | 'expired' | null;
   action: string;
   phase?: string;
   resource_type: string | null;
@@ -100,7 +100,7 @@ export interface ListAccountAuditOptions {
   credentialKind?: string;
   /** Exact lifecycle phase, such as pending, completed, failed, or denied. */
   phase?: string;
-  outcome?: 'success' | 'failure' | 'denied' | 'pending';
+  outcome?: 'success' | 'failure' | 'denied' | 'pending' | 'expired';
   resourceType?: string;
   requestId?: string;
   correlationId?: string;
