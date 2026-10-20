@@ -113,6 +113,10 @@ export default function FirmSettings() {
             <span className="text-muted-foreground">Workspace</span>
             <span>{firm.status === 'ready' ? 'Ready' : firm.status === 'failed' ? 'Setup failed' : 'Setting up…'}</span>
           </div>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-muted-foreground">Agent kit</span>
+            <span className="font-mono text-xs" data-testid="kit-version">{firm.kitVersion ?? 'Installs with the first run'}</span>
+          </div>
         </div>
       </fieldset>
       {admin && (

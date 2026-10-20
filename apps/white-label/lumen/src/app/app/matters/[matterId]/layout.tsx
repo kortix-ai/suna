@@ -31,7 +31,9 @@ export default function MatterLayout({ children }: { children: React.ReactNode }
 
 const TABS = [
   { seg: '', label: 'Overview' },
+  { seg: '/vault', label: 'Vault' },
   { seg: '/assistant', label: 'Assistant' },
+  { seg: '/runs', label: 'Runs' },
 ] as const;
 
 function MatterChrome({ children }: { children: React.ReactNode }) {
