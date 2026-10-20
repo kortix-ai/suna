@@ -638,6 +638,7 @@
         "userNotFound": "Usuario no encontrado",
         "profilePictureUpdated": "Foto de perfil actualizada",
         "profilePictureUploadFailed": "No se pudo subir la foto de perfil",
+        "avatarUploadOffline": "No se pudo subir tu imagen. Comprueba tu conexión e inténtalo de nuevo.",
         "profilePictureRemoved": "Foto de perfil eliminada",
         "profilePictureRemoveFailed": "No se pudo eliminar la foto de perfil",
         "chooseImageFile": "Por favor elija un archivo de imagen",

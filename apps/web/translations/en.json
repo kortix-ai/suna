@@ -460,6 +460,7 @@
         "userNotFound": "User not found",
         "profilePictureUpdated": "Profile picture updated",
         "profilePictureUploadFailed": "Could not upload profile picture",
+        "avatarUploadOffline": "Couldn't upload your picture. Check your connection and try again.",
         "profilePictureRemoved": "Profile picture removed",
         "profilePictureRemoveFailed": "Could not remove profile picture",
         "chooseImageFile": "Please choose an image file",
