@@ -1,3 +1,4 @@
+import Link from '@/components/site-link';
 import { AppleMark, LinuxMark, PlayStoreMark, WindowsMark } from '@/components/brand/brand-logos';
 import { DesktopCardImage, MobileCardImage } from '@/features/marketing/download/card-images';
 import { localizedDownloadContent } from '@/features/marketing/download/content';
@@ -41,11 +42,12 @@ export default async function DownloadPage({
 }: {
   searchParams: Promise<{ platform?: string }>;
 }) {
-  const [headerList, params, release, tI18nComplete] = await Promise.all([
+  const [headerList, params, release, tI18nComplete, tComputers] = await Promise.all([
     headers(),
     searchParams,
     getDesktopRelease(),
     getTranslations('hardcodedUi.i18nComplete'),
+    getTranslations('computers'),
   ]);
   const {
     hero,
@@ -86,7 +88,14 @@ export default async function DownloadPage({
     <PlatformCard
       image={<DesktopCardImage />}
       title={DESKTOP_CARD.title}
-      description={DESKTOP_CARD.description}
+      description={
+        <>
+          {DESKTOP_CARD.description}{' '}
+          <Link href="/settings/computers" className="text-foreground underline underline-offset-4">
+            {tComputers('connectYourComputer')}
+          </Link>
+        </>
+      }
       rows={desktopRows}
       filled={onPhone ? null : detected}
     />

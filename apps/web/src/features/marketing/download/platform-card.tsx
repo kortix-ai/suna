@@ -48,7 +48,7 @@ export function PlatformCard({
 }: {
   image: React.ReactNode;
   title: string;
-  description: string;
+  description: React.ReactNode;
   rows: CardRow[];
   filled: Platform | null;
   className?: string;
