@@ -139,6 +139,21 @@ describe('free tier monthly credit rotation', () => {
     expect(walletResets[0].key).toEqual({ event: 'free_tier_rotation_acc_300_left_2026-07' });
   });
 
+  test('records the next reset as expiry across October and November rotations', async () => {
+    for (const [now, expiry] of [
+      ['2026-10-20T10:00:00.000Z', '2026-11-20T10:00:00.000Z'],
+      ['2026-11-20T10:00:00.000Z', '2026-12-20T10:00:00.000Z'],
+      ['2026-01-31T10:00:00.000Z', '2026-02-28T10:00:00.000Z'],
+    ]) {
+      freeAccountsDueResult = [createMockCreditAccount({
+        accountId: 'acc_rotation_expiry', tier: 'free', nextCreditGrant: now,
+      })];
+      await processFreeTierCreditRotation(new Date(now));
+      expect(walletResets.at(-1)?.expiresAt).toBe(expiry);
+      expect(updateCreditAccountCalls.at(-1)?.data.nextCreditGrant).toBe(expiry);
+    }
+  });
+
   test('updates the next monthly grant anchor after resetting', async () => {
     freeAccountsDueResult = [
       createMockCreditAccount({
