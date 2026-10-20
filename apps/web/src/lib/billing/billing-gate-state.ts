@@ -41,7 +41,12 @@ export type AccountStateLike = Pick<
   AccountState,
   'billing_state' | 'has_active_subscription'
 > & {
-  credits?: { can_run?: boolean | null; total?: number | null } | null;
+  credits?: {
+    can_run?: boolean | null;
+    total?: number | null;
+    lifetime_granted?: number | null;
+    lifetime_purchased?: number | null;
+  } | null;
   subscription?: { subscription_id?: string | null; status?: string | null } | null;
   tier?: { can_purchase_credits?: boolean | null } | null;
 };
@@ -99,8 +104,19 @@ export function billingStateNeedsTopUp(state: BillingState | null): boolean {
   return state === 'out_of_credits' || state === 'payment_failed';
 }
 
-/** Warn below this wallet value (dollars) on an account that is still running. */
+/**
+ * Warn below this wallet value (dollars) on an account that is still running,
+ * or below a fifth of what the account has been given, whichever is lower
+ * (KRTX-2910): the free grant is $5, so a flat $5 line flagged every new free
+ * account after its first cent.
+ */
 export const LOW_BALANCE_USD = 5;
+const LOW_BALANCE_SHARE = 0.2;
+
+function lowBalanceLine(credits: NonNullable<AccountStateLike['credits']>): number {
+  const funded = (credits.lifetime_granted ?? 0) + (credits.lifetime_purchased ?? 0);
+  return funded > 0 ? Math.min(LOW_BALANCE_USD, funded * LOW_BALANCE_SHARE) : LOW_BALANCE_USD;
+}
 
 export type WalletSeverity = 'blocked' | 'low' | null;
 
@@ -130,8 +146,8 @@ export function walletSeverity(state: AccountStateLike | null | undefined): Wall
   if (billingStateNeedsTopUp(billingState)) return 'blocked';
   if (!billingStateAllowsRun(billingState)) return null; // `no_subscription` / `no_account` own their own CTA.
   const balance = state.credits?.total;
-  if (typeof balance !== 'number') return null;
-  return balance < LOW_BALANCE_USD ? 'low' : null;
+  if (typeof balance !== 'number' || !state.credits) return null;
+  return balance < lowBalanceLine(state.credits) ? 'low' : null;
 }
 
 /**

@@ -350,6 +350,12 @@ describe('describeNextRun', () => {
       ),
     ).toBeNull();
     expect(describeNextRun(trigger({ type: 'cron', enabled: true }))).toBeNull();
+    // An auto-paused cron trigger (KRTX-1721) claims no slot until it is resumed.
+    expect(
+      describeNextRun(
+        trigger({ type: 'cron', enabled: true, next_fire_at: '2026-10-08T09:12:00.000Z', auto_paused_at: '2026-10-08T08:00:00.000Z' }),
+      ),
+    ).toBeNull();
   });
 });
 
@@ -375,6 +381,9 @@ describe('triggerBadgeState: the one status every surface shows', () => {
     expect(triggerBadgeState(trigger({ type: 'event', enabled: false, event: ev('error') }))).toBe(
       'paused',
     );
+  });
+  test('an auto-paused trigger is paused though its manifest says enabled (KRTX-1721)', () => {
+    expect(triggerBadgeState(trigger({ enabled: true, auto_paused_at: '2026-10-19T12:00:00.000Z' }))).toBe('paused');
   });
   test('an event trigger shows its subscription state', () => {
     for (const status of ['needs_connection', 'error', 'pending'] as const) {
