@@ -1,6 +1,7 @@
 'use client';
 
 import { type Firm, useFirm } from '@/components/access';
+import { KIND, historyHref } from '@/components/runs/history-list';
 import { useTheme, type ThemeChoice } from '@/components/theme';
 import { authClient } from '@/lib/auth-client';
 import { isAdmin, roleLabel } from '@/lib/roles';
@@ -338,15 +339,19 @@ function ProvisioningBanner({ firm }: { firm: Firm }) {
 function Palette({ open, onOpenChange, firm }: { open: boolean; onOpenChange: (o: boolean) => void; firm: Firm }) {
   const router = useRouter();
   const matters = useQuery(api.matters.list, open ? { firmId: firm._id } : 'skip');
+  const recent = useQuery(api.workflows.firmHistory, open ? { firmId: firm._id, limit: 30 } : 'skip');
   const go = (href: string) => {
     onOpenChange(false);
     router.push(href);
   };
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} title="Search Lumen" description="Matters and actions">
-      <CommandInput placeholder="Search matters, or type a command…" />
+    <CommandDialog open={open} onOpenChange={onOpenChange} title="Search Lumen" description="Matters, recent questions and runs, and actions">
+      <CommandInput placeholder="Search matters, questions and runs…" />
       <CommandList>
-        <CommandEmpty>Nothing matches.</CommandEmpty>
+        <CommandEmpty>
+          <span className="block">Nothing matches.</span>
+          <span className="mt-1 block text-xs text-muted-foreground">To search inside documents, open a matter&apos;s Vault and use its search.</span>
+        </CommandEmpty>
         <CommandGroup heading="Actions">
           <CommandItem onSelect={() => go('/app/matters/new')}>
             <PlusIcon className="size-4" /> New matter
@@ -370,6 +375,20 @@ function Palette({ open, onOpenChange, firm }: { open: boolean; onOpenChange: (o
                 <span className="truncate text-xs text-muted-foreground">{m.client}</span>
               </CommandItem>
             ))}
+          </CommandGroup>
+        )}
+        {recent && recent.length > 0 && (
+          <CommandGroup heading="Recent questions and runs">
+            {recent.map((i) => {
+              const Icon = (KIND[i.kind] ?? KIND.thread).icon;
+              return (
+                <CommandItem key={i._id} value={`${i.title} ${i.matterName} ${i._id}`} onSelect={() => go(historyHref(i))}>
+                  <Icon className="size-4" />
+                  <span className="flex-1 truncate">{i.title}</span>
+                  <span className="truncate text-xs text-muted-foreground">{i.matterName}</span>
+                </CommandItem>
+              );
+            })}
           </CommandGroup>
         )}
       </CommandList>

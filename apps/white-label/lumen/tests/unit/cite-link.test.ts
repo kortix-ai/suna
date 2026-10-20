@@ -18,7 +18,7 @@ describe('hasUnlinkedCitations: a finished answer citing a bare [n] is flagged',
   const doc = (html: string) => {
     const d = new Window().document;
     d.body.innerHTML = html;
-    return d.body;
+    return d.body as unknown as ParentNode;
   };
   test('bare [1] in a finished answer: flagged; linked, streaming or no markers: not', () => {
     expect(hasUnlinkedCitations(doc('<div class="kortix-markdown" data-streaming="false">Uncapped [1].</div>'))).toBe(true);
