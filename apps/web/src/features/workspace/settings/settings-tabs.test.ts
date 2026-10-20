@@ -10,16 +10,11 @@ import {
   resolveSettingsOverlayHref,
 } from './settings-tabs';
 
-describe('standalone account settings destinations', () => {
-  test('connected opens the selected account Git pane without a project', () => {
-    expect(legacySectionRedirect('', 'connected', 'acc1')).toBe(
-      '/projects?accountId=acc1&accountTab=git',
-    );
-  });
-
-  test('waits for the account rather than guessing a destination', () => {
-    expect(isAccountGraduatedSection('connected')).toBe(true);
-    expect(legacySectionRedirect('', 'connected')).toBeNull();
+describe('personal connected-account destinations', () => {
+  test('opens the personal profile without waiting for an organization', () => {
+    expect(isAccountGraduatedSection('connected')).toBe(false);
+    expect(resolveOverlayTab('connected')).toBe('profile');
+    expect(legacySectionRedirect('p1', 'connected')).toBe('/projects/p1/settings/profile');
   });
 });
 
@@ -346,7 +341,6 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
     // The overlay's Account group (Credits, Plan) left on 2026-09-03.
     credits: 'transactions',
     plan: 'billing',
-    connected: 'git',
   };
 
   test('the mirror above is the whole map', () => {

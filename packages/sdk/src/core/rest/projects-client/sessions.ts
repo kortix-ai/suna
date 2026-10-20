@@ -65,6 +65,8 @@ export interface ProjectSessionInitiator {
 }
 
 export interface ProjectSession {
+  /** Conversation model from the durable log; creation pin until one is recorded. Absent on older APIs. */
+  model?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;
@@ -98,6 +100,13 @@ export interface ProjectSession {
   labels?: string[];
   agent_name: string | null;
   status: ProjectSessionStatus;
+  /** Canonical work activity, independent of computer lifecycle. Absent on older servers. */
+  working?: {
+    state: 'working' | 'idle';
+    since: string | null;
+    turn_token: string | null;
+    pending_delivery: boolean;
+  };
   error: string | null;
   metadata: ProjectSessionMetadata;
   /** The runtime's conversation tree. Served by APIs since W4. */

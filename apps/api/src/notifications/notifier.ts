@@ -214,7 +214,7 @@ export function liveNotifierDeps(overrides: Partial<NotifierDeps> = {}): Notifie
     presence: loadSessionPresence,
     listDevices: (userId) => devices.listByUser(userId),
     sendExpo: (messages) =>
-      sendExpoPushMessages(messages, { accessToken: config.EXPO_ACCESS_TOKEN || undefined, store: devices, logger }),
+      sendExpoPushMessages(messages, { accessToken: config.EXPO_ACCESS_TOKEN || undefined, enabled: config.EXPO_PUSH_ENABLED, origin: config.KORTIX_URL, store: devices, logger }),
     sendWebPush: sendWebPushToUser,
     emailAvailable: isNotificationEmailAvailable,
     sendEmailNow: sendImmediateNotificationEmail,

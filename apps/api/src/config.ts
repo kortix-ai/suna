@@ -328,8 +328,12 @@ const envSchema = z.object({
   // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only. The pass resumes across leaders
   // (`kortix.session_log_backfill_state`). A dry pass runs once per build (KORTIX_COMMIT): a new
   // build runs it again; on the same build, `DELETE FROM kortix.session_log_backfill_state`.
-  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) is not converted (`too_large`).
+  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) converts in a
+  // Worker thread, only while the process has room for it (SESSION_LOG_BACKFILL_MEMORY_MB).
   SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('off'),
+  // The API task's memory in MiB (prod and dev ECS tasks: 4096). The backfill starts a conversion
+  // thread only while RSS plus its estimate stays under 75 % of this, or of cgroup memory.max when lower.
+  SESSION_LOG_BACKFILL_MEMORY_MB: optInt(4096),
   // The source commit the image was built from (Dockerfile ARG, kept across the prod retag). 'unknown' locally.
   KORTIX_COMMIT: optStrDefault('unknown'),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
@@ -912,6 +916,10 @@ const envSchema = z.object({
   // (notifications/expo-push.ts). The access token is optional: Expo accepts
   // unauthenticated sends unless the project enables enhanced push security.
   EXPO_ACCESS_TOKEN: optStr,
+  // Expo push sends (KRTX-2938). Unset: off on a local stack (the launchers
+  // set KORTIX_INSTANCE_ID), on everywhere else. A local stack holds tokens of
+  // real phones, and Expo routes them to the App Store app. `true` opts in.
+  EXPO_PUSH_ENABLED: optBoolUnset,
   // Kill switch for session push notifications. On by default; `0` or `false`
   // stops every send. Device-token registration keeps working.
   PUSH_NOTIFICATIONS_ENABLED: z
@@ -1299,6 +1307,7 @@ export const config = {
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
+  SESSION_LOG_BACKFILL_MEMORY_MB: env.SESSION_LOG_BACKFILL_MEMORY_MB,
   KORTIX_COMMIT: env.KORTIX_COMMIT,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
@@ -1594,6 +1603,7 @@ export const config = {
   RESEND_API_KEY: env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
   EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN,
+  EXPO_PUSH_ENABLED: env.EXPO_PUSH_ENABLED ?? !env.KORTIX_INSTANCE_ID,
   PUSH_NOTIFICATIONS_ENABLED: env.PUSH_NOTIFICATIONS_ENABLED,
   MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,

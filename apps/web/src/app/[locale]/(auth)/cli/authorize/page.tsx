@@ -1,6 +1,8 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
+
+import { callbackTimeoutMessage, callbackUnreachableMessage } from './callback-errors';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
@@ -125,13 +127,9 @@ function CliAuthorizeInner() {
         // leave a dead token in the DB after a failed delivery.
         revokeAccountToken(minted.token_id).catch(() => {});
         if ((err as Error).name === 'AbortError') {
-          throw new Error(
-            `Timed out delivering the API key to ${new URL(callback).host}. Is the \`kortix login\` process still running in your terminal?`,
-          );
+          throw new Error(callbackTimeoutMessage(new URL(callback).host));
         }
-        throw new Error(
-          `Could not reach ${new URL(callback).host}: ${(err as Error).message}. Make sure \`kortix login\` is running in your terminal and try again.`,
-        );
+        throw new Error(callbackUnreachableMessage(new URL(callback).host, (err as Error).message));
       } finally {
         clearTimeout(callbackTimer);
       }
