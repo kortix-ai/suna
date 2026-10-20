@@ -5,6 +5,7 @@ import {
   blockedReason,
   forwardedHeaders,
   localAnswer,
+  memberSessionCreateBody,
   redactError,
   redactIdentity,
   redactsIdentity,
@@ -459,5 +460,16 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
     expect(redactsIdentity(`${S}/prompts`)).toBe(false);
     const body = { owner_email: OPERATOR };
     expect(redactIdentity(`${S}/prompts`, body)).toBe(body);
+  });
+});
+
+describe('proxy policy: a member session create carries only member keys', () => {
+  test('fork_from_session_id and operator keys are dropped; name, labels, metadata, agent and prompt stay', () => {
+    const body = memberSessionCreateBody({
+      name: 'x', labels: ['a'], metadata: { k: 1 }, agent_name: 'lumen-counsel', initial_prompt: 'hi',
+      fork_from_session_id: '22222222-1111-4222-8333-944455556666', connector_bindings: { gmail: {} },
+      session_id: 's', sandbox_slug: 'b', model: 'm', provider_secret_pools: {},
+    });
+    expect(body).toEqual({ name: 'x', labels: ['a'], metadata: { k: 1 }, agent_name: 'lumen-counsel', initial_prompt: 'hi' });
   });
 });

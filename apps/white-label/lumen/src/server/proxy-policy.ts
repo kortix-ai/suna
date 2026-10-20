@@ -25,6 +25,19 @@ const SEG = '[^/]+';
 export const SESSION_CREATE = new RegExp(`^projects/${PROJECT}/sessions$`);
 
 /**
+ * The session-create keys a member may send. Every other key is dropped before
+ * the request leaves Lumen: `fork_from_session_id` would copy another matter's
+ * transcript (the member token is the project owner, so Kortix sees every
+ * session), and `connector_bindings`, `session_id`, `sandbox_slug`, `model`,
+ * `provider_secret_pools` are operator decisions.
+ */
+const MEMBER_CREATE_KEYS = ['name', 'labels', 'metadata', 'agent_name', 'initial_prompt'] as const;
+
+export function memberSessionCreateBody(body: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(MEMBER_CREATE_KEYS.filter((k) => body[k] !== undefined).map((k) => [k, body[k]]));
+}
+
+/**
  * One session. PATCH renames it, relabels it or merges metadata: the proxy
  * keeps Lumen's tags on it. DELETE goes through the thread record: only the
  * thread's creator or an org owner/admin may delete it.

@@ -32,6 +32,7 @@ import {
   blockedReason,
   forwardedHeaders,
   localAnswer,
+  memberSessionCreateBody,
   redactError,
   redactIdentity,
   redactsIdentity,
@@ -131,7 +132,7 @@ function forwardJson(req: NextRequest, upstreamUrl: string, member: Member, body
 async function createSession(req: NextRequest, upstreamUrl: string, member: Member) {
   const body = await readJson(req);
   if (!body) return Response.json({ error: 'Invalid request body' }, { status: 400 });
-  const res = await forwardJson(req, upstreamUrl, member, tagSessionCreate(body, member));
+  const res = await forwardJson(req, upstreamUrl, member, tagSessionCreate(memberSessionCreateBody(body), member));
   if (!res.ok) return res;
   const text = await res.text();
   // The session exists now. A failed thread record must not turn it into a
