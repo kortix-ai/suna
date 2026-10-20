@@ -7,7 +7,8 @@
  * - "Without a journal" is `session_logs.journal_seen_at` null: an old daemon,
  *   a daemon in `KORTIX_SESSION_LOG_DUMP_DIR` mode, or one whose posts have not
  *   committed yet. Checked once before the read and again under the lock.
- * - Records are `fromV1` of the mirror rows: thread, message and block ids
+ * - Records are `fromV1` of the mirror rows as the v1 read serves them (a call the old
+ *   mirror stripped gets back its proven input: `writeConverted`): thread, message and block ids
  *   (block id = part id), seq, residuals and the `kortix.transcript.v1` ext are
  *   exactly what `fromV1` gives. `harness` is the one the daemon reported in its
  *   runtime projection (`session_runtime_projections.harness`); else `pi` when the
@@ -29,7 +30,8 @@
  *   bytes (`pg_column_size`, read without detoasting) gets no log (`too_large`);
  *   a restore answers 413 above `SESSION_LOG_RESTORE_MAX_BYTES` anyway. A session
  *   that already has a log keeps its captures, so its log never goes stale. The
- *   stages yield to the event loop (`breathe`).
+ *   stages yield to the event loop (`breathe`). The backfill converts a session over
+ *   the cap in a Bun `Worker` (`uncapped`, `session-log-backfill.ts`); a capture never does.
  * - The `session_log` flag on (P8): the capture writes no mirror row. It converts
  *   the box read straight into the log (`writeSessionLogFromRead`), merged into the
  *   stored log. A mirror converts only into a log without a message (the backfill,
@@ -58,6 +60,7 @@ import { config } from '../config';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
+import { restoreStrippedToolParts } from './lib/session-transcript-mirror';
 import { SESSION_LOG_CAPTURE_REV_LIMIT, sessionLogContentHash, writeCapturedSessionLog } from './session-log-ingest';
 
 const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' } as const;
@@ -67,7 +70,7 @@ const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' }
  *   a newer mirror capture ran, or the capture revs are exhausted.
  * - `invalid`: `fromV1` of the mirror fails `SessionLogSchema`; nothing written.
  * - `too_large`: no log yet, and the mirror is over the size cap; nothing read or written.
- * - `written`, or `dry` (nothing written): `log` is `fromV1` of the mirror rows `rows`, `batch` what was (would be) written.
+ * - `written`, or `dry` (nothing written): `log` is `fromV1` of `rows` (the mirror rows as the v1 read serves them), `batch` what was (would be) written.
  *   `harnessFrom`: `projection`, `root` (no projection harness, a pi-minted root: `pi`), or `default` (`opencode`).
  * - `failed`: the apply path refused the batch (`status`), or something threw.
  */
@@ -93,7 +96,8 @@ export const mirrorStoredCap = () => Math.floor(config.SESSION_LOG_RESTORE_MAX_B
  */
 export const breathe = () => new Promise<void>((resolve) => setImmediate(resolve));
 
-export async function writeSessionLogFromMirror(sessionId: string, options: { dry?: boolean } = {}): Promise<MirrorLogWrite> {
+/** `uncapped`: no size cap. Only the backfill's conversion thread passes it (`session-log-backfill-thread.ts`). */
+export async function writeSessionLogFromMirror(sessionId: string, options: { dry?: boolean; uncapped?: boolean } = {}): Promise<MirrorLogWrite> {
   try {
     if (!options.dry && !config.SESSION_LOG_INGEST_ENABLED) return SKIPPED;
     const read = await db.transaction(async (tx) => {
@@ -126,7 +130,7 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
         .limit(1);
       // No mirror to convert.
       if (!mirror) return null;
-      if (!s.hasLog) {
+      if (!s.hasLog && !options.uncapped) {
         const [size] = await tx.execute<{ bytes: string }>(sql`
           SELECT coalesce(sum(pg_column_size(info) + coalesce(pg_column_size(parts), 0)), 0)::bigint AS bytes
             FROM kortix.session_transcript_messages WHERE session_id = ${sessionId}`);
@@ -258,6 +262,10 @@ export async function writeSessionLogFromRead(
  * `fromV1` of `rows` written through the journal's apply path. Only a message whose `content_hash`
  * changed is put, at the next capture rev. `puts` limits the puts to those message ids and turns
  * tombstones off; without it, a stored message `fromV1` no longer gives gets a tombstone.
+ *
+ * The rows convert as the v1 read serves them: a call the old mirror stripped (before 2026-09-28)
+ * gets back the input its `title` and `metadata` prove (`restoreStrippedToolParts`), so the log, its
+ * `grade_counts.tool_input` and a restore hold it. The result's `rows` are these served rows.
  */
 async function writeConverted(
   sessionId: string,
@@ -268,7 +276,8 @@ async function writeConverted(
 ): Promise<MirrorLogWrite> {
   const harnessFrom = s.harness === 'pi' || s.harness === 'opencode' ? 'projection' : s.root?.startsWith('ses_pi') ? 'root' : 'default';
   const harness = harnessFrom === 'projection' ? (s.harness as 'pi' | 'opencode') : harnessFrom === 'root' ? 'pi' : 'opencode';
-  const log = fromV1({ session_id: sessionId, root_id: s.root, rows }, { harness });
+  const served = rows.map((row) => (Array.isArray(row.parts) ? { ...row, parts: restoreStrippedToolParts(row.parts as unknown as Array<Record<string, unknown>>) as unknown as V1Row['parts'] } : row));
+  const log = fromV1({ session_id: sessionId, root_id: s.root, rows: served }, { harness });
   await breathe();
   const valid = SessionLogSchema.safeParse(log);
   if (!valid.success) {
@@ -296,7 +305,7 @@ async function writeConverted(
     logger.warn('[session-log] capture revs exhausted; the capture writes no more v2 rows', { sessionId });
     return SKIPPED;
   }
-  if (options.dry) return { outcome: 'dry', log, rows, batch, harnessFrom };
+  if (options.dry) return { outcome: 'dry', log, rows: served, batch, harnessFrom };
 
   const outcome = await writeCapturedSessionLog({ sessionId, projectId: s.projectId, accountId: s.accountId }, batch, options.current);
   if (outcome === 'skipped') return SKIPPED;
@@ -304,5 +313,5 @@ async function writeConverted(
     logger.warn('[session-log] capture write refused', { sessionId, status: outcome.status, body: outcome.body });
     return { outcome: 'failed', status: outcome.status };
   }
-  return { outcome: 'written', log, rows, batch, harnessFrom };
+  return { outcome: 'written', log, rows: served, batch, harnessFrom };
 }

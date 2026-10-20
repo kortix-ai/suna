@@ -23,8 +23,7 @@ import {
 import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
-import { DEFAULT_ICON_WEIGHT, SHIPPED_ICON_WEIGHTS } from '@/lib/icons/icon-config';
-import { cn } from '@/lib/utils';
+import { DEFAULT_ICON_WEIGHT, SHIPPED_ICON_WEIGHTS, cn } from '@kortix/ui';
 
 const SAMPLE_ICONS: Icon[] = [
   PlusIcon,

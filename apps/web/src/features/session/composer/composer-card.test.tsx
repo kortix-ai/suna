@@ -15,9 +15,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@kortix/ui/tooltip';
 import { AuthProvider } from '@/features/providers/auth-provider';
-import { ComposerCard } from './ComposerCard';
+import { ComposerCard } from '@kortix/ui/composer';
 
 const noop = () => {};
 const asyncNoop = async () => {};

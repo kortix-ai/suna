@@ -1,7 +1,7 @@
 'use client';
 
 import { EASE_OUT, LEAD, panel } from '@/features/marketing/component/hero-motion';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { CheckIcon } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';

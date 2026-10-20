@@ -130,3 +130,22 @@ export function cachedManagedPricingRoutes(
   cachedQuote = { key, expiresAt: now + 300_000, value };
   return value;
 }
+
+/** Project the web's route-price estimates onto the model costs exposed to CLI clients. */
+export function withManagedPricing<T extends { cost?: { input?: number; output?: number } }>(
+  models: Record<string, T>,
+  quotes: Record<string, ManagedPriceRoute[]>,
+): Record<string, T> {
+  return Object.fromEntries(Object.entries(models).map(([id, model]) => {
+    const routes = quotes[id];
+    if (!routes?.length) return [id, model];
+    return [id, {
+      ...model,
+      cost: {
+        input: Math.min(...routes.map((route) => route.input)),
+        output: Math.min(...routes.map((route) => route.output)),
+        cache_read: Math.min(...routes.map((route) => route.cacheRead)),
+      },
+    }];
+  }));
+}

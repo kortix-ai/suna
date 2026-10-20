@@ -18,8 +18,8 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/breadcrumb';
+import { cn } from '@kortix/ui';
 
 export interface MarketplaceCrumb {
   label: string;

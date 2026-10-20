@@ -1,8 +1,8 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { cn } from '@kortix/ui';
 import { useConnectorSetup } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
@@ -11,7 +11,8 @@ import {
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useEffect } from 'react';
-import { browserLinkInfoStorage, setupLinkApiBase } from './util';
+import { setupLinkApiBase } from '@kortix/ui/markdown/setup-links/api-base';
+import { browserLinkInfoStorage } from '@kortix/ui/markdown/setup-links/util';
 
 /**
  * Renders 1-click authorization for an agent-minted connect link.

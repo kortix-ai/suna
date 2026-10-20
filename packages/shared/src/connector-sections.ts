@@ -391,7 +391,7 @@ export function groupIntoSections<T>(
  * A catalogue category as a section heading. The values arrive kebab-case
  * (`sales-and-marketing`, `financial-services`), which reads as broken markup
  * when rendered raw. Hyphen -> space matches the existing transform at
- * `lib/utils/kortix-system-tags.ts:131`.
+ * `packages/ui/src/internal/lib/utils/kortix-system-tags.ts:131`.
  *
  * Only the first character is capitalized; the tail is left exactly as the
  * catalogue published it. Lowercasing the tail would produce sentence case for

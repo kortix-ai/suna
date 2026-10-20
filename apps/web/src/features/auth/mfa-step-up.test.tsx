@@ -107,7 +107,6 @@ const uiToastMock = () => ({
   successToast: (message: string) => toasts.push(`success:${message}`),
   errorToast: (message: string) => toasts.push(`error:${message}`),
 });
-mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 
 // The real Dialog reaches through Radix portals and the z-stack; these tests
@@ -124,32 +123,28 @@ const uiDialogMock = () => ({
   DialogDescription: host('p'),
   DialogTitle: host('h2'),
 });
-mock.module('@/components/ui/dialog', uiDialogMock);
-mock.module('@kortix/ui/dialog', uiDialogMock);
+const realDialog = await import('@kortix/ui/dialog');
+mock.module('@kortix/ui/dialog', () => ({ ...realDialog, ...uiDialogMock() }));
 const uiButtonMock = () => ({
   Button: ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) =>
     createElement('button', props, children),
 });
-mock.module('@/components/ui/button', uiButtonMock);
-mock.module('@kortix/ui/button', uiButtonMock);
+const realButton = await import('@kortix/ui/button');
+mock.module('@kortix/ui/button', () => ({ ...realButton, ...uiButtonMock() }));
 const uiDotMatrixSessionDotMatrixMock = () => ({
   SessionDotMatrix: () => createElement('span', null, 'matrix'),
 });
-mock.module('@/components/ui/dot-matrix/session-dot-matrix', uiDotMatrixSessionDotMatrixMock);
 mock.module('@kortix/ui/dot-matrix/session-dot-matrix', uiDotMatrixSessionDotMatrixMock);
 const uiKortixLogoMock = () => ({ KortixLogo: host('svg') });
-mock.module('@/components/ui/kortix-logo', uiKortixLogoMock);
 mock.module('@kortix/ui/kortix-logo', uiKortixLogoMock);
 const uiLoadingMock = () => ({
   default: (props: Record<string, unknown>) => createElement('span', props, 'loading'),
 });
-mock.module('@/components/ui/loading', uiLoadingMock);
 mock.module('@kortix/ui/loading', uiLoadingMock);
 const uiInfoBannerMock = () => ({
   InfoBanner: ({ children, title }: { children?: React.ReactNode; title?: React.ReactNode }) =>
     createElement('aside', null, title, children),
 });
-mock.module('@/components/ui/info-banner', uiInfoBannerMock);
 mock.module('@kortix/ui/info-banner', uiInfoBannerMock);
 mock.module('@phosphor-icons/react', () => ({
   ShieldCheckIcon: host('svg'),
@@ -158,7 +153,7 @@ mock.module('@phosphor-icons/react', () => ({
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 const { MfaStepUpProvider, MfaGate, requestMfaStepUp } = await import('./mfa-step-up');
-const { clearPendingMfaAction } = await import('./mfa-pending-action');
+const { clearPendingMfaAction } = await import('@kortix/ui/internal/auth/mfa-pending-action');
 
 // ─── Render helpers ─────────────────────────────────────────────────────────
 // bun test has no `window`; the repo pattern installs a minimal shim. A fresh

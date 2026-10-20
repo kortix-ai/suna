@@ -1,5 +1,5 @@
-import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
+import { Separator } from '@kortix/ui/separator';
+import { cn } from '@kortix/ui';
 import type { ReactNode } from 'react';
 
 export function SectionDivider(): ReactNode {

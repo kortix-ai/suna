@@ -9,9 +9,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
-import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-body';
-import { SessionBusyIndicator } from '@/features/session/session-busy-indicator';
-import { ThrottledMarkdown } from '@/features/session/turn/throttled-markdown';
+import { SESSION_TRANSCRIPT_CLASS } from '@kortix/ui/session/thread/session-body';
+import { SessionBusyIndicator, ThrottledMarkdown } from '@kortix/ui/session';
 
 /** Tokens are several hundred URL-safe characters; the length is what matters. */
 const FAKE_TOKEN = `ksl_${'eyJwIjoiZGVidWciLCJrIjoic3RyZWFtIn0'.repeat(9)}`;

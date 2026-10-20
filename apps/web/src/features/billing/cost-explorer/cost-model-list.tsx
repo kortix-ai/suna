@@ -5,12 +5,12 @@ import { useState } from 'react';
 
 import type { CostModelRow } from '@kortix/sdk';
 
-import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { IconChevronDown } from '@/components/ui/kortix-icons';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@kortix/ui/disclosure';
+import { IconChevronDown } from '@kortix/ui/kortix-icons';
+import { cn } from '@kortix/ui';
 
-import { formatSessionCostCredits } from '../session-cost-format';
+import { formatSessionCostCredits } from '@kortix/ui/internal/billing/session-cost-format';
 
 const VISIBLE_COUNT = 5;
 

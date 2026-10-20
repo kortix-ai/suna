@@ -164,6 +164,7 @@ async function runAccountDeletion(accountId: string, userId?: string, requestId?
   await performDeletion(accountId, requester);
   await deleteAccountData(accountId, requestId);
   if (requester) {
+    await deleteUserAvatars(requester);
     await clearLegacyAuthUserReferences(requester);
     // A device token is the person's data; it has no foreign key to cascade.
     await db.delete(pushDeviceTokens).where(eq(pushDeviceTokens.userId, requester));
@@ -177,6 +178,22 @@ async function runAccountDeletion(accountId: string, userId?: string, requestId?
     // after step 3 already ran) is the state this step produces.
     if (error && !isAuthUserNotFound(error)) throw error;
     forgetUserJwtLiveness(requester);
+  }
+}
+
+/** Storage objects must go before GoTrue removes their owner. */
+async function deleteUserAvatars(userId: string): Promise<void> {
+  const bucket = getSupabase().storage.from('avatars');
+  let previous = '';
+  for (;;) {
+    const { data, error } = await bucket.list(userId, { limit: 100 });
+    if (error) throw error;
+    if (!data?.length) return;
+    const names = data.map(file => file.name).join('\n');
+    if (names === previous) throw new Error('Avatar storage cleanup did not complete');
+    previous = names;
+    const removed = await bucket.remove(data.map(file => `${userId}/${file.name}`));
+    if (removed.error) throw removed.error;
   }
 }
 
@@ -196,8 +213,8 @@ const LEGACY_ROWS_DELETED_WITH_USER = new Set(['basejump.invitations', 'public.g
  *
  *   1. refuse (throw) while the user owns a NON-personal basejump account:
  *      that is team data, never deleted here;
- *   2. delete the user's personal basejump accounts and the rows that
- *      reference them without cascade (`agent_versions`);
+ *   2. clear nullable attribution to personal basejump accounts, refuse unknown
+ *      NOT NULL references, then delete the personal accounts;
  *   3. nullable references from other rows are set NULL; invitations and
  *      Google OAuth tokens of the user are deleted;
  *   4. any other NOT NULL reference (an admin audit actor) refuses: an audit
@@ -236,9 +253,16 @@ async function clearLegacyAuthUserReferences(userId: string): Promise<void> {
         const ids = sql.join(personal.map((id) => sql`${id}::uuid`), sql`, `);
         const dependents = (await tx.execute(refsInto('basejump.accounts'))) as unknown as Ref[];
         for (const ref of dependents) {
-          await tx.execute(
-            sql`DELETE FROM ${sql.raw(ref.tbl)} WHERE ${sql.raw(ref.col)} IN (${ids})`,
-          );
+          if (!ref.notnull) {
+            await tx.execute(
+              sql`UPDATE ${sql.raw(ref.tbl)} SET ${sql.raw(ref.col)} = NULL WHERE ${sql.raw(ref.col)} IN (${ids})`,
+            );
+          } else {
+            const rows = await tx.execute(sql`SELECT 1 FROM ${sql.raw(ref.tbl)} WHERE ${sql.raw(ref.col)} IN (${ids}) LIMIT 1`);
+            if (rows.length > 0) {
+              throw new Error(`personal account is still referenced by ${ref.tbl}.${ref.col} (NOT NULL); not rewritten or deleted`);
+            }
+          }
         }
         await tx.execute(sql`DELETE FROM basejump.accounts WHERE id IN (${ids})`);
       }
