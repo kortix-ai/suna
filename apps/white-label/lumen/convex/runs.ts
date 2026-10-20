@@ -620,7 +620,7 @@ async function ingestIssues(ctx: MutationCtx, c: Ctx, value: any, files: Array<I
   await event(ctx, c.run._id, "issues", `${deviating} of ${value.issues.length} rules need attention`, c.batch._id);
 }
 
-async function ingestReport(ctx: MutationCtx, c: Ctx, value: any) {
+async function ingestReport(ctx: MutationCtx, c: Ctx, value: any, files: Array<Infer<typeof fileArg>>) {
   const sections = [];
   for (const s of value.sections as any[]) {
     sections.push({ heading: String(s.heading).slice(0, 120), bodyMd: String(s.body_md).slice(0, 8000), citations: await cite(ctx, c, s.citations) });
@@ -633,7 +633,7 @@ async function ingestReport(ctx: MutationCtx, c: Ctx, value: any) {
       citations: await cite(ctx, c, f.citations),
     });
   }
-  await putResult(ctx, c.run, { runId: c.run._id, matterId: c.run.matterId, kind: "report", sections, redFlags, files: [] });
+  await putResult(ctx, c.run, { runId: c.run._id, matterId: c.run.matterId, kind: "report", sections, redFlags, files });
   await event(ctx, c.run._id, "report", `Report ready: ${sections.length} sections, ${redFlags.length} red flags`, c.batch._id);
 }
 
@@ -683,7 +683,7 @@ export const ingestResult = internalMutation({
       else await ctx.db.insert("answers", row);
       await event(ctx, run._id, "answer", value.addressed ? "Answer ready" : "Answer ready: the documents do not address this", batchId);
     } else if (got === "issues") await ingestIssues(ctx, c, value, files);
-    else if (got === "diligence-report") await ingestReport(ctx, c, value);
+    else if (got === "diligence-report") await ingestReport(ctx, c, value, files);
     else if (got === "draft") await ingestDraft(ctx, c, value, files, problems);
     if (problems.length && got === "draft") return problems;
     if (c.unverified) await event(ctx, run._id, "citations", `${c.unverified} citation${c.unverified === 1 ? "" : "s"} not found in the source`, batchId);

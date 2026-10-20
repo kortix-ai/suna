@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "properties": {
     "schema": { "enum": ["diligence-report/1"] },
+    "files": { "type": "array", "maxItems": 2, "items": { "enum": ["report.docx"] } },
     "sections": {
       "type": "array",
       "items": {

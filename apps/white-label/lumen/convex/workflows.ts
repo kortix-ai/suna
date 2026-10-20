@@ -101,11 +101,13 @@ export const decideIssue = mutation({
 
 /** The audit trail of a DOCX download (the browser fetches the file from Lumen's storage). */
 export const logExport = mutation({
-  args: { runId: v.id("runs"), file: v.string() },
+  /** `title`: what the file is of, when that is not the run (a review's CSV is the whole review, not its last column run). */
+  args: { runId: v.id("runs"), file: v.string(), title: v.optional(v.string()) },
   returns: v.null(),
-  handler: async (ctx, { runId, file }) => {
+  handler: async (ctx, { runId, file, title }) => {
     const { run, firm, userId } = await requireRun(ctx, runId);
-    await audit(ctx, { firm, actorId: userId, action: file.endsWith(".csv") ? "export.csv" : "export.docx", matterId: run.matterId, detail: `${run.title}: ${file}` });
+    const action = file.endsWith(".csv") ? "export.csv" : file.endsWith(".md") ? "export.md" : "export.docx";
+    await audit(ctx, { firm, actorId: userId, action, matterId: run.matterId, detail: `${(title ?? run.title).slice(0, 120)}: ${file}` });
     return null;
   },
 });

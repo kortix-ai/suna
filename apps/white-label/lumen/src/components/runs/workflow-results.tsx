@@ -7,6 +7,8 @@
 import { CitationLayer } from '@/components/chat/citation-layer';
 import { CitationCard, type RunView } from '@/components/runs/run-parts';
 import { useBlobFileSource } from '@/components/vault/vault-source';
+import { reportMarkdown } from '@/lib/report-markdown';
+import { fieldLabel } from '@/lib/run-activity';
 import { errorText } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
@@ -17,8 +19,8 @@ import { FileContentRenderer, FileSourceProvider } from '@kortix/ui/file-viewer'
 import { UnifiedMarkdown } from '@kortix/ui/markdown';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
-import { errorToast } from '@kortix/ui/toast';
-import { CheckIcon, DownloadSimpleIcon, XIcon } from '@phosphor-icons/react';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { CheckIcon, CopyIcon, DownloadSimpleIcon, XIcon } from '@phosphor-icons/react';
 import { useAction, useMutation } from 'convex/react';
 import { useCallback, useState } from 'react';
 
@@ -194,12 +196,44 @@ export function IssuesView({ view, runId }: { view: RunView; runId: Id<'runs'> }
   );
 }
 
-export function ReportView({ view, matterId }: { view: RunView; matterId: Id<'matters'> }) {
+export function ReportView({ view, matterId, runId }: { view: RunView; matterId: Id<'matters'>; runId: Id<'runs'> }) {
+  const download = useDownload(runId);
+  const log = useMutation(api.workflows.logExport);
   if (!view.result) return <Waiting text="The report appears when every document is read. The checklist table fills first." />;
   const rank = { high: 0, medium: 1, low: 2 } as const;
   const flags = [...(view.result.redFlags ?? [])].sort((a, b) => rank[a.severity] - rank[b.severity]);
+  const docx = view.result.files.find((f) => f.name.endsWith('.docx'));
+  const base = view.run.title.replace(/[^\w.-]+/g, '-').replace(/^-|-$/g, '') || 'due-diligence';
+  const md = () => reportMarkdown(view.run.title, { sections: view.result!.sections, redFlags: flags });
+  function downloadMarkdown() {
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([md()], { type: 'text/markdown' })), download: `${base}.md` });
+    a.click();
+    URL.revokeObjectURL(a.href);
+    void log({ runId, file: `${base}.md` });
+  }
+  async function copyMarkdown() {
+    try {
+      await navigator.clipboard.writeText(md());
+      successToast('Report copied as Markdown');
+    } catch (err) {
+      errorToast('Could not copy the report', { description: errorText(err) });
+    }
+  }
   return (
     <div className="space-y-4" data-testid="report-view">
+      <div className="flex flex-wrap items-center gap-2">
+        {docx && (
+          <Button size="sm" onClick={() => download(docx, `${base}.docx`)} data-testid="download-report-docx">
+            <DownloadSimpleIcon className="size-4" /> Download report (.docx)
+          </Button>
+        )}
+        <Button size="sm" variant="outline" onClick={downloadMarkdown} data-testid="download-report-md">
+          <DownloadSimpleIcon className="size-4" /> Markdown
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => void copyMarkdown()}>
+          <CopyIcon className="size-4" /> Copy
+        </Button>
+      </div>
       <section className="overflow-hidden rounded-xl border border-border bg-card">
         <header className="border-b border-border px-5 py-3">
           <h3 className="text-sm font-medium">Red flags · {flags.length}</h3>
@@ -256,7 +290,7 @@ export function DraftView({ view, runId }: { view: RunView; runId: Id<'runs'> })
       <section className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4">
         <h3 className="text-sm font-medium">{view.result.title}</h3>
         {unfilled.length > 0 ? (
-          <span className="text-xs text-muted-foreground">To confirm: {unfilled.join(', ')}</span>
+          <span className="text-xs text-muted-foreground">To confirm: {unfilled.map(fieldLabel).join(', ')}</span>
         ) : (
           <span className="text-xs text-muted-foreground">Every field filled</span>
         )}

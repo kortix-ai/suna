@@ -32,6 +32,7 @@ const ACTIONS: Record<string, string> = {
   'billing.checkout': 'Checkout started',
   'export.csv': 'Data exported',
   'export.docx': 'Document downloaded',
+  'export.md': 'Report downloaded',
   'document.upload': 'Document uploaded',
   'document.delete': 'Document deleted',
   'run.start': 'Run started',
@@ -56,6 +57,11 @@ export default function AuditPage() {
     </AdminOnly>
   );
 }
+
+/** Minute precision: an audit row's second adds width, not meaning. The CSV keeps the full timestamp. */
+const when = (t: number) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+/** The detail a person reads: no content hash ("Legal agents updated 1.1.4", not "1.1.4 (4761f331f5f6ccd0)"). */
+const detailOf = (d: string | undefined) => d?.replace(/\s*\([0-9a-f]{16}\)/, '');
 
 function Audit() {
   const firm = useFirm();
@@ -124,14 +130,28 @@ function Audit() {
           <DownloadSimpleIcon className="size-4" /> Export CSV
         </Button>
       </div>
-      <div className="rounded-xl border border-border bg-card">
-        <Table>
+      {/* Phone: one card per event (time, who, what); the table needs ≥ 640 px. */}
+      <ul className="divide-y divide-border rounded-xl border border-border bg-card sm:hidden">
+        {rows === undefined && <li className="p-4"><Skeleton className="h-5" /></li>}
+        {rows && shown.length === 0 && <li className="p-6 text-center text-sm text-muted-foreground">No events match these filters.</li>}
+        {shown.map((r) => (
+          <li key={r._id} data-action={r.action} className="space-y-0.5 px-4 py-3 text-sm">
+            <p className="font-medium">{ACTIONS[r.action] ?? r.action}</p>
+            {detailOf(r.detail) && <p className="text-xs text-muted-foreground">{detailOf(r.detail)}</p>}
+            <p className="text-xs text-muted-foreground">
+              {when(r._creationTime)} · {actorName(r.actorId)}{r.matterName ? ` · ${r.matterName}` : ''}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-hidden rounded-xl border border-border bg-card sm:block">
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-44">Time</TableHead>
-              <TableHead className="w-56">Who</TableHead>
+              <TableHead className="w-40">Time</TableHead>
+              <TableHead className="w-48">Who</TableHead>
               <TableHead>What</TableHead>
-              <TableHead>Matter</TableHead>
+              <TableHead className="w-48">Matter</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -151,13 +171,13 @@ function Audit() {
             )}
             {shown.map((r) => (
               <TableRow key={r._id} data-action={r.action}>
-                <TableCell className="font-mono text-xs text-muted-foreground">{new Date(r._creationTime).toLocaleString()}</TableCell>
+                <TableCell className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">{when(r._creationTime)}</TableCell>
                 <TableCell className="truncate">{actorName(r.actorId)}</TableCell>
-                <TableCell>
+                <TableCell className="whitespace-normal">
                   <span>{ACTIONS[r.action] ?? r.action}</span>
-                  {r.detail && <span className="ml-2 text-xs text-muted-foreground">{r.detail}</span>}
+                  {detailOf(r.detail) && <span className="ml-2 text-xs text-muted-foreground">{detailOf(r.detail)}</span>}
                 </TableCell>
-                <TableCell className="text-muted-foreground">{r.matterName ?? '—'}</TableCell>
+                <TableCell className="truncate text-muted-foreground">{r.matterName ?? '—'}</TableCell>
               </TableRow>
             ))}
           </TableBody>

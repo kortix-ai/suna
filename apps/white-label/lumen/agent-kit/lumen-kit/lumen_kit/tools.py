@@ -95,6 +95,38 @@ def draft_render(template: str, fields: dict, out: str) -> dict:
     return {"ok": True, "docx": out, "markdown": md_out, "unfilled": unfilled}
 
 
+_CITE = re.compile(r"\[([^\]]*)\]\(/cite\?d=([^&)]+)&a=p(\d+)\.\d+[^)]*\)")
+
+
+def report_docx(batch: str) -> dict:
+    """out/report.json -> out/report.md + out/report.docx. A citation link becomes "(filename, p. N)"."""
+    with open(os.path.join(batch, "input.json"), encoding="utf-8") as f:
+        names = {d["doc_id"]: d["filename"] for d in json.load(f).get("documents", [])}
+    with open(os.path.join(batch, "out", "report.json"), encoding="utf-8") as f:
+        report = json.load(f)
+
+    def cite(m):
+        return f"({names.get(m.group(2), 'document')}, p. {m.group(3)})"
+
+    lines = ["# Due diligence report", ""]
+    for s in report.get("sections", []):
+        lines += [f"## {s['heading']}", "", _CITE.sub(cite, s["body_md"]).strip(), ""]
+    flags = report.get("red_flags", [])
+    if flags:
+        lines += ["## Red flags", ""]
+        for r in flags:
+            lines += [f"**{r['severity'].upper()}**: {r['title']} ({names.get(r['doc_id'], 'document')})", ""]
+    md = "\n".join(lines).strip() + "\n"
+    md_out = os.path.join(batch, "out", "report.md")
+    out = os.path.join(batch, "out", "report.docx")
+    _atomic_write(md_out, md)
+    try:
+        subprocess.run(["pandoc", md_out, "-o", out], check=True, capture_output=True)
+    except FileNotFoundError:
+        _docx_from_markdown(md, out)
+    return {"ok": True, "docx": out, "markdown": md_out}
+
+
 def _docx_from_markdown(md: str, out: str) -> None:
     """Headings, numbered clauses and paragraphs, for an image without pandoc. **bold** spans stay bold."""
     from docx import Document

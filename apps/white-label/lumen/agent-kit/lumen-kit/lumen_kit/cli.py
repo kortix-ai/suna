@@ -64,6 +64,10 @@ def build() -> argparse.ArgumentParser:
     s.add_argument("--fields", required=True, help="JSON object or @file.json")
     s.add_argument("--out", required=True)
 
+    s = sub.add_parser("report", help="render out/report.json to out/report.docx (diligence)")
+    s.add_argument("action", choices=["docx"])
+    s.add_argument("--batch", required=True)
+
     s = sub.add_parser("ocr", help="OCR a scanned PDF into Text/<doc_id>.ocr.md")
     s.add_argument("--pdf", required=True)
     s.add_argument("--doc", required=True)
@@ -110,6 +114,8 @@ def run(a) -> dict:
     if a.cmd == "draft":
         fields = _json_arg(None, a.fields[1:]) if a.fields.startswith("@") else json.loads(a.fields)
         return tools.draft_render(a.template, fields, a.out)
+    if a.cmd == "report":
+        return tools.report_docx(a.batch)
     if a.cmd == "ocr":
         return tools.ocr(a.pdf, a.out, a.doc)
     raise core.KitError(f"unknown command {a.cmd}")

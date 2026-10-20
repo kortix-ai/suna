@@ -172,5 +172,26 @@ class Draft(unittest.TestCase):
             self.assertEqual(Document(out).paragraphs[0].style.name, "Heading 1")
 
 
+
+class Report(unittest.TestCase):
+    def test_report_docx_names_documents_and_pages(self):
+        from unittest import mock
+        from docx import Document
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "out"))
+            with open(os.path.join(tmp, "input.json"), "w") as f:
+                json.dump({"documents": [{"doc_id": "d1", "filename": "msa.pdf"}]}, f)
+            with open(os.path.join(tmp, "out", "report.json"), "w") as f:
+                json.dump({"schema": "diligence-report/1", "files": ["report.docx"],
+                           "sections": [{"heading": "Liability", "body_md": "Uncapped [1](/cite?d=d1&a=p2.4&q=x).", "citations": []}],
+                           "red_flags": [{"title": "Uncapped liability", "severity": "high", "doc_id": "d1", "citations": []}]}, f)
+            with mock.patch.object(tools.subprocess, "run", side_effect=FileNotFoundError("pandoc")):
+                r = tools.report_docx(tmp)
+            text = "\n".join(p.text for p in Document(r["docx"]).paragraphs)
+            self.assertIn("Uncapped (msa.pdf, p. 2).", text)
+            self.assertIn("HIGH: Uncapped liability (msa.pdf)", text)
+            self.assertNotIn("/cite?", open(r["markdown"]).read())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

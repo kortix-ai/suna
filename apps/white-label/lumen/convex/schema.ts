@@ -31,6 +31,7 @@ export const auditAction = v.union(
   v.literal("issue.accept"), v.literal("issue.dismiss"),
   v.literal("library.create"), v.literal("library.update"),
   v.literal("export.docx"),
+  v.literal("export.md"),
 );
 
 export const documentStatus = v.union(v.literal("uploading"), v.literal("extracting"), v.literal("ready"), v.literal("failed"));

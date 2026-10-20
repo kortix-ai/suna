@@ -65,11 +65,11 @@ function Grid({ view, selected, onSelect, onRerun, busy }: {
       <table className="w-max min-w-full border-separate border-spacing-0 text-[13px]">
         <thead>
           <tr>
-            <th className="sticky left-0 top-0 z-20 w-56 border-b border-r border-border bg-card px-3 py-2 text-left text-xs font-medium text-muted-foreground">
+            <th className="sticky left-0 top-0 z-20 w-32 border-b border-r border-border bg-card px-3 py-2 text-left text-xs sm:w-56 font-medium text-muted-foreground">
               Document
             </th>
             {view.columns.map((c) => (
-              <th key={c.key} className="sticky top-0 z-10 w-52 border-b border-border bg-card px-1 py-1 text-left text-xs font-medium text-muted-foreground">
+              <th key={c.key} className="sticky top-0 z-10 w-44 border-b sm:w-52 border-border bg-card px-1 py-1 text-left text-xs font-medium text-muted-foreground">
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
@@ -93,7 +93,7 @@ function Grid({ view, selected, onSelect, onRerun, busy }: {
         <tbody>
           {view.documents.map((d) => (
             <tr key={d._id}>
-              <th className="sticky left-0 z-10 max-w-56 truncate border-b border-r border-border bg-card px-3 py-2.5 text-left align-top font-medium" scope="row" title={d.filename}>
+              <th className="sticky left-0 z-10 max-w-32 truncate border-b border-r border-border bg-card px-3 py-2.5 sm:max-w-56 text-left align-top font-medium" scope="row" title={d.filename}>
                 {d.filename}
               </th>
               {view.columns.map((col) => {
@@ -110,7 +110,7 @@ function Grid({ view, selected, onSelect, onRerun, busy }: {
                       onClick={() => onSelect(k)}
                       ref={selected === k ? (el) => el?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) : undefined}
                       className={cn(
-                        'flex h-auto min-h-11 w-52 flex-col items-start justify-start gap-1 whitespace-normal rounded-none px-3 py-2 text-left text-[13px] font-normal hover:bg-muted/40',
+                        'flex h-auto min-h-11 w-44 sm:w-52 flex-col items-start justify-start gap-1 whitespace-normal rounded-none px-3 py-2 text-left text-[13px] font-normal hover:bg-muted/40',
                         selected === k && 'bg-brand/5 ring-1 ring-inset ring-brand/40',
                         cell?.reviewStatus === 'flagged' && 'bg-flag/5',
                       )}
@@ -307,11 +307,11 @@ export default function ReviewPage() {
   function exportCsv() {
     const name = `${view!.review.title.replace(/[^\w.-]+/g, '-').replace(/^-|-$/g, '') || 'review'}.csv`;
     downloadCsv(name, reviewCsv({ ...view!, columns: view!.columns.map((c) => ({ ...c, format: c.format as CellFormat })) }));
-    void logExport({ runId: latest!._id, file: name });
+    void logExport({ runId: latest!._id, file: name, title: view!.review.title });
   }
 
   return (
-    <div className="mx-auto w-full max-w-[90rem] space-y-4 px-4 py-6 sm:px-6">
+    <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-6 sm:px-6">
       <div className="flex flex-wrap items-center gap-3">
         <Link href={`${base}/reviews`} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <CaretLeftIcon className="size-3" /> Reviews
