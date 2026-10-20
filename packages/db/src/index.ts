@@ -7,6 +7,7 @@ export {
   // Schema namespace
   kortixSchema,
   usedRefreshTokens,
+  cliDeviceGrants,
   // Enums
   sandboxStatusEnum,
   projectStatusEnum,

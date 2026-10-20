@@ -19,7 +19,7 @@ import {
 } from '@/features/auth/auth-consent';
 import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
-import { createAccountToken, revokeAccountToken } from '@kortix/sdk';
+import { backendApi, createAccountToken, revokeAccountToken } from '@kortix/sdk';
 import { validateCallback } from './validate-callback';
 
 /**
@@ -53,6 +53,7 @@ function CliAuthorizeInner() {
   const router = useRouter();
   const params = useSearchParams();
 
+  const userCode = params.get('user_code');
   const callback = params.get('callback');
   const state = params.get('state');
   const label = params.get('label') ?? '';
@@ -72,6 +73,26 @@ function CliAuthorizeInner() {
 
   if (isLoading || !user) {
     return <AuthPendingScreen />;
+  }
+
+  if (userCode) {
+    return (
+      <AuthFrame>
+        <StepHeader title="Authorize Kortix CLI" description="Approve only a login you started. Check this code against your terminal." />
+        <DetailPanel><DetailRow label="Login code" value={userCode} mono /></DetailPanel>
+        {error ? <ErrorStrip message={error} /> : null}
+        {phase === 'success' ? <p>Login approved. Return to your terminal.</p> : (
+          <Button disabled={phase === 'authorizing'} onClick={async () => {
+            setPhase('authorizing'); setError(null);
+            try {
+              const result = await backendApi.post('/cli/device/decide', { user_code: userCode, approve: true });
+              if (!result.success) throw result.error ?? new Error('Could not approve login.');
+              setPhase('success');
+            } catch (err) { setError((err as Error).message); setPhase('error'); }
+          }}>Authorize CLI</Button>
+        )}
+      </AuthFrame>
+    );
   }
 
   if (!callback || !state) {
