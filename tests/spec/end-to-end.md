@@ -1535,6 +1535,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `SCIM-15` provisions populated Entra default mappings: phone numbers, work addresses, preferred language, enterprise department, employee number, and manager. Create, GET, filtered PATCH, removal, atomic invalid-value rollback, ResourceTypes, and Schemas must preserve the same attributes.
 
 `SCIM-16` SCIM deactivation runs the offboarding of removal and leave (TUN-8, KRTX-1722). A member who manages a project pairs one machine privately and one shared with the project. `PATCH /Users/:userId` with `active: false` → 200. The shared machine's computer account is `revoked` with `metadata.revokedReason: owner_left`. Exactly one `member.offboarded` audit event names the member, `actor_user_id: null`, `reason: deprovisioned` and `computers_revoked: 2`. A repeated `active: false` → 200 and writes no second event. The member still lists and unpairs both machines.
+`SCIM-17` An admin re-invite keeps the SCIM groups an invite is waiting on (KRTX-2329). SCIM creates a person who has not signed in and adds them to a group. The group waits on their invite. An owner re-invites the same email with a project grant → 201 `pending`. The person signs up and accepts → 200. The account's group roster lists them, and they hold the project grant.
 
 
 `SEC-7` A project manager creates a secret setup request. The public link validates its token and writes the submitted value once.

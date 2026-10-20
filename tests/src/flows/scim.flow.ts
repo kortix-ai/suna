@@ -1249,3 +1249,63 @@ flow('SCIM-16', {
     }
   });
 });
+
+flow('SCIM-17', {
+  domain: 'scim',
+  routes: [
+    'POST /scim/v2/accounts/:accountId/Users',
+    'POST /scim/v2/accounts/:accountId/Groups',
+    'GET /scim/v2/accounts/:accountId/Groups/:groupId',
+    'POST /v1/accounts/:accountId/members',
+    'POST /v1/account-invites/:inviteId/accept',
+    'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
+    'GET /v1/projects/:projectId/access',
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team({ enterprise: true });
+  const project = await team.project();
+  const scim = ctx.client.withBearer(await mintScimToken(ctx, team.id), 'SCIM');
+  const email = `${ctx.fixtures.name('scim-reinvite')}@${ctx.env.testEmailDomain}`.toLowerCase();
+  let groupId = '';
+  let inviteId = '';
+
+  await ctx.step('SCIM creates a person who has not signed in and adds them to a group → 201, the group waits on their invite', async () => {
+    const user = await scim.post('/scim/v2/accounts/:accountId/Users', { userName: email }, { params: { accountId: team.id } });
+    user.status(201);
+    const group = await scim.post('/scim/v2/accounts/:accountId/Groups', {
+      displayName: ctx.fixtures.name('scim-reinvite-group'),
+      members: [{ value: user.json<{ id: string }>().id }],
+    }, { params: { accountId: team.id } });
+    group.status(201);
+    groupId = group.json<{ id: string }>().id;
+  });
+
+  await ctx.step('an owner re-invites the same email with a project grant → 201 pending', async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/:accountId/members', {
+      email,
+      role: 'member',
+      project_grants: [{ project_id: project.id, role: 'member' }],
+    }, { params: { accountId: team.id } });
+    r.status(201).body().has('$.status', 'pending');
+    inviteId = r.json<{ invite_id: string }>().invite_id;
+  });
+
+  await ctx.step('the person signs up and accepts → 200; the group roster lists them and they hold the project grant', async () => {
+    const person = await ctx.fixtures.userWithEmail(email, { label: 'SCIM-17-INVITEE' });
+    (await ctx.client.as(person).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+      .status(200).body().has('$.account_id', team.id);
+    // The SCIM view names the person by their SCIM id before and after sign-in;
+    // the account's own group roster is where the membership lands.
+    const roster = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/groups/:groupId/members', {
+      params: { accountId: team.id, groupId },
+    });
+    const members = roster.status(200).json<{ members: Array<{ user_id?: string; userId?: string }> }>().members;
+    if (!members.some((m) => (m.user_id ?? m.userId) === person.userId)) {
+      throw new Error(`the accepted person is not in the SCIM group: ${JSON.stringify(members)}`);
+    }
+    const access = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+    const row = access.status(200).json<{ members: Array<{ user_id: string; effective_project_role: string }> }>()
+      .members.find((m) => m.user_id === person.userId);
+    if (row?.effective_project_role !== 'member') throw new Error(`expected the project grant to land, got ${JSON.stringify(row)}`);
+  });
+});
