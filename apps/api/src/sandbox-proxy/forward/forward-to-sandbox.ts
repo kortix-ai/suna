@@ -1,3 +1,4 @@
+import { registerRuntimeFork } from '../../projects/surface';
 import { clientAbortTarget } from '../client-abort';
 import { NOT_TURN_PROMPTER, NOT_TURN_PROMPTER_MESSAGE } from '../../shared/turn-stop-refusal';
 import { extractTurnIdentity, markTurnStopRequested } from '../../projects/session-turn-ledger';
@@ -298,7 +299,7 @@ export async function forwardToSandbox(
       ? extractTurnIdentity(remainingPath, requestBody)
       : null;
 
-  return forwardWithRetry(
+  const response = await forwardWithRetry(
     {
       sandboxId,
       port,
@@ -327,4 +328,14 @@ export async function forwardToSandbox(
     },
     requestBody,
   );
+  const forkSource = carriesSessionData(upstreamPort) && method.toUpperCase() === 'POST'
+    ? /^\/?session\/([^/]+)\/fork$/.exec(remainingPath)?.[1]
+    : undefined;
+  if (forkSource && response.ok) {
+    await registerRuntimeFork({
+      sessionId: record.sessionId, projectId: record.projectId, accountId: record.accountId,
+      sourceId: forkSource, fork: await response.clone().json(),
+    });
+  }
+  return response;
 }

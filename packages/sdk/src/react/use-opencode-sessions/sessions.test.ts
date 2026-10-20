@@ -1,3 +1,4 @@
+import { qk } from '../query-keys';
 import { describe, expect, test, beforeEach, mock } from 'bun:test';
 // Imported BEFORE `mock.module` below runs, so this binds to the REAL store
 // (module resolution for a static import happens before the rest of this
@@ -371,6 +372,14 @@ describe('useInitSession', () => {
 // ============================================================================
 
 describe('useForkSession', () => {
+  test('a successful fork refreshes persistent project inventories', async () => {
+    const { onSuccess } = useForkSession() as unknown as { onSuccess: (session: { id: string }) => Promise<void> };
+    await onSuccess({ id: 'ses_fork', time: { updated: 1 } } as never);
+    const call = fakeQueryClient.refetchCalls[0] as { predicate: (query: { queryKey: string[] }) => boolean };
+    expect(call.predicate({ queryKey: [...qk.project.sessions('p')] })).toBe(true);
+    expect(call.predicate({ queryKey: ['runtime', 'sessions'] })).toBe(false);
+  });
+
   test('forks the conversation and returns the forked session', async () => {
     const forked = { id: 'ses_fork', title: 'Old (fork #1)', time: { updated: 5 } };
     let forkArgs: unknown;

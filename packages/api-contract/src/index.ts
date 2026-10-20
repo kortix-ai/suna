@@ -1084,6 +1084,7 @@ export type SessionUpdateInput = z.input<typeof SessionUpdateInputSchema>;
  *  (`apps/api/src/projects/opencode-session-snapshot.ts`). Times are epoch ms. */
 export const RuntimeSessionSnapshotSchema = z.object({
   id: z.string(),
+  fork_source_id: z.string().optional(),
   title: z.string().nullable(),
   parent_id: z.string().nullable(),
   project_id: z.string().nullable(),
