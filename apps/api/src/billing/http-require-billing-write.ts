@@ -3,6 +3,13 @@ import { resolveScopedAccountId } from '../middleware/resolve-account';
 import { assertAuthorized } from '../iam/authorize';
 import { actorOf } from '../iam/actor';
 import { ACCOUNT_ACTIONS } from '../iam/actions';
+import { HTTPException } from 'hono/http-exception';
+import { enforceRateLimit } from '../middleware/rate-limit';
+import { TokenBucketRateLimiter } from '../shared/rate-limit';
+import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
+
+// ponytail: replica-local runaway protection, use a shared bucket if fleet-wide quotas become necessary.
+const billingWriteLimiter = new TokenBucketRateLimiter('billing_write');
 
 /**
  * Resolve the account a billing *write* targets AND assert the caller is
@@ -27,6 +34,15 @@ export async function resolveBillingWriteAccountId(
 ): Promise<string> {
   const accountId = await resolveScopedAccountId(c, source);
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_WRITE);
+  const denied = await enforceRateLimit(c, billingWriteLimiter, accountId, { limit: 5, windowMs: 60_000 }, {
+    accountId,
+    actorUserId: c.get('userId'),
+    action: RATE_LIMIT_EXCEEDED_ACTION,
+    resourceType: 'billing',
+    resourceId: accountId,
+    metadata: { limiter: 'billing_write' },
+  });
+  if (denied) throw new HTTPException(429, { res: denied });
   return accountId;
 }
 
