@@ -113,6 +113,24 @@ test('whoami exposes the explicitly named host default project', async () => {
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout).default_project).toEqual(project);
 });
+test('hosts ls reports stored credentials only for hosts with a token', async () => {
+  const result = await cli(['hosts', 'ls', '--json']);
+  expect(result.code).toBe(0);
+  expect(result.stderr).toBe('');
+  const rows = JSON.parse(result.stdout);
+  expect(rows.find((row: { name: string }) => row.name === 'stored')).toMatchObject({
+    logged_in: true,
+    credential_source: 'stored',
+  });
+  for (const name of ['cloud', 'local-dev', 'kortix-internal-dev', 'selfhost']) {
+    expect(rows.find((row: { name: string }) => row.name === name)).toMatchObject({
+      logged_in: false,
+      credential_source: null,
+    });
+  }
+  expect(result.stdout).not.toContain(token);
+});
+
 test('hosts ls distinguishes effective delegated authentication from stored credentials', async () => {
   const result = await cli(['hosts', 'ls', '--json'], true);
   expect(result.code).toBe(0);
