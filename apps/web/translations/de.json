@@ -20371,7 +20371,7 @@
       "denying": "{count} werden abgelehnt…",
       "dismissing": "{count} werden verworfen…",
       "approveTitle": "{count, plural, one {# Aktion} other {# Aktionen}} genehmigen?",
-      "approveDescription": "Jeder Agent führt seine Aktion wie aufgeführt aus. Öffnen Sie eine Genehmigung, um zuerst alle Parameter zu lesen.",
+      "approveDescription": "Prüfen Sie die Details jeder Aktion, bevor Sie genehmigen.",
       "approveConfirm": "{count} genehmigen",
       "denyTitle": "{count, plural, one {# Aktion} other {# Aktionen}} ablehnen?",
       "denyDescription": "Die Agenten führen diese Aktionen nicht aus.",

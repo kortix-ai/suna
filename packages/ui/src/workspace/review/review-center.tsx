@@ -62,6 +62,7 @@ import {
   ArrowUUpLeftIcon as ArrowUUpLeft,
   CheckIcon as Check,
   CheckCircleIcon as CheckCircleSolid,
+  CheckSquareIcon,
   CaretDownIcon as ChevronDown,
   ClockIcon as Clock,
   DotsThreeIcon as DotsThree,
@@ -88,6 +89,7 @@ import {
   isQuickDecidableApproval,
   resolveBulkOutcome,
 } from './review-actions';
+import { previewArgsSummary } from '../../session/prompts/session-approval-review';
 import { ApprovalDecisionModal, reviewApprovalDetails } from './approval-modal';
 import { type ReviewActions, ReviewDetail } from './review-detail';
 import {
@@ -254,7 +256,7 @@ function ItemRow({
       className={cn(
         'size-5 shrink-0',
         glyph ? glyph.className : kind.iconColor,
-        selectable && !selecting && 'group-hover:hidden',
+        selectable && !selecting && 'group-focus-within:hidden group-hover:hidden',
       )}
       aria-label={reviewKindLabel(item.kind, tI18nComplete)}
     />
@@ -283,7 +285,7 @@ function ItemRow({
               e.preventDefault();
               selection.onToggle(e.shiftKey);
             }}
-            className="hidden group-hover:flex"
+            className="hidden group-focus-within:flex group-hover:flex"
           />
         </>
       )}
@@ -328,6 +330,10 @@ function ItemRow({
     </>
   );
 
+  // The menu's Select hands focus to the row (select mode drops the menu), not
+  // back to the trigger that is about to unmount.
+  const enteringSelect = useRef(false);
+
   const diffStat = diff ? (
     <DiffStat
       additions={diff.additions}
@@ -345,7 +351,7 @@ function ItemRow({
         role="option"
         aria-selected={selection.checked}
         aria-disabled={selection.disabled || undefined}
-        tabIndex={selectable ? 0 : undefined}
+        tabIndex={selectable ? 0 : -1}
         onClick={selectable ? (e) => selection.onToggle(e.shiftKey) : undefined}
         onKeyDown={(e) => {
           if (selectable && (e.key === ' ' || e.key === 'Enter')) {
@@ -398,7 +404,14 @@ function ItemRow({
               <DotsThree className="size-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuContent
+            align="end"
+            className="w-52"
+            onCloseAutoFocus={(e) => {
+              if (enteringSelect.current) e.preventDefault();
+              enteringSelect.current = false;
+            }}
+          >
             <DropdownMenuItem onClick={onOpen}>
               {tI18nComplete.raw('texted077f3d8125')}
               <DropdownMenuShortcut>↵</DropdownMenuShortcut>
@@ -421,6 +434,22 @@ function ItemRow({
                 <DropdownMenuShortcut>d</DropdownMenuShortcut>
               </DropdownMenuItem>
             )}
+            {/* The touch and Tab path into select mode (Triggers parity). */}
+            {selectable && selection ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => {
+                    enteringSelect.current = true;
+                    selection.onToggle(false);
+                  }}
+                >
+                  <CheckSquareIcon />
+                  {tI18nComplete.raw('text2a78025de6aa')}
+                  <DropdownMenuShortcut>x</DropdownMenuShortcut>
+                </DropdownMenuItem>
+              </>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -709,12 +738,19 @@ export function ReviewCenter({
     setAnchorId(null);
   };
   const toggleSelected = (id: string, range: boolean, via: 'pointer' | 'key') => {
-    setSelectedIds((prev) => {
-      const next = range ? selectRange(prev, selectableIds, anchorId, id) : toggleId(prev, id);
-      // The cap keeps the first 50 chosen; a 51st toggle changes nothing.
-      return next.size > BULK_MAX ? new Set([...next].slice(0, BULK_MAX)) : next;
-    });
+    let next = range
+      ? selectRange(selectedIds, selectableIds, anchorId, id)
+      : toggleId(selectedIds, id);
+    if (next.size > BULK_MAX) {
+      // A 51st single toggle changes nothing, the anchor included; a range
+      // keeps its first 50.
+      if (!range) return;
+      next = new Set([...next].slice(0, BULK_MAX));
+    }
+    setSelectedIds(next);
     setAnchorId(id);
+    // The toggled row takes the cursor, so select mode focuses it.
+    setFocusedIdx(visibleIndexById.get(id) ?? 0);
     setSelectMode((mode) => mode || via);
   };
   // A segment, kind, session or search change drops the selection: a bulk
@@ -739,6 +775,16 @@ export function ReviewCenter({
   useEffect(() => {
     setFocusedIdx((i) => Math.max(0, Math.min(i, visible.length - 1)));
   }, [visible.length]);
+
+  // Select mode: DOM focus follows the cursor (j/k, a toggled row), so Space
+  // and Enter act on the row the user sees, and a pointer entry that
+  // unmounts the clicked checkbox keeps focus on its row.
+  useEffect(() => {
+    if (!selectMode) return;
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-idx="${focusedIdx}"]`)
+      ?.focus({ preventScroll: true });
+  }, [selectMode, focusedIdx]);
 
   // Scroll the focused row into view.
   useEffect(() => {
@@ -1175,6 +1221,12 @@ export function ReviewCenter({
                   .map((i) => {
                     const call = i.kind === 'approval' ? i.detail.actions?.[0] : undefined;
                     const risk = RISK_BADGE[i.risk];
+                    // The arguments, as the approval modal reads them: the
+                    // content Kortix resolved, else the call's own preview.
+                    const details = reviewApprovalDetails(i);
+                    const args = previewArgsSummary(
+                      details?.resolved_preview ?? details?.args_preview,
+                    );
                     return (
                       <li key={i.id} className="flex items-center gap-3 px-2.5 py-1.5">
                         <span className="flex min-w-0 flex-1 flex-col">
@@ -1182,6 +1234,11 @@ export function ReviewCenter({
                           {call ? (
                             <span className="text-muted-foreground truncate font-mono text-xs">
                               {call.actionPath || call.title}
+                            </span>
+                          ) : null}
+                          {args ? (
+                            <span className="text-muted-foreground truncate font-mono text-xs">
+                              {args}
                             </span>
                           ) : null}
                         </span>

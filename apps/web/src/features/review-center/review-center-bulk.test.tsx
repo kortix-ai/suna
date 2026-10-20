@@ -85,7 +85,7 @@ const call = (n: number, risk: 'low' | 'high' = 'low') =>
         {
           ...(native.kind === 'approval' ? native.detail.actions[0] : {}),
           actionPath: `gmail.send_email_${n}`,
-          rawArgsPreview: { to: 'team' },
+          rawArgsPreview: { token: '[redacted]', subject: `Weekly ${n}`, to: 'team' },
           reviewComplete: true,
         },
       ],
@@ -193,6 +193,45 @@ describe('selecting rows', () => {
     expect(text()).not.toContain('selected');
   });
 
+  test('the row menu Select enters select mode on that row (touch and Tab path)', () => {
+    mount([call(1), call(2)]);
+    const trigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="More actions for Send report 2"]',
+    )!;
+    act(() => {
+      trigger.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+    });
+    const item = [...document.querySelectorAll('[role="menuitem"]')].find((el) =>
+      el.textContent?.startsWith('Select'),
+    )!;
+    click(item);
+    expect(text()).toContain('1 selected');
+    expect(option('Send report 2').getAttribute('aria-selected')).toBe('true');
+    // Focus lands on the row, not on the unmounted menu trigger.
+    expect(document.activeElement).toBe(option('Send report 2'));
+  });
+
+  test('in select mode j moves DOM focus to the next row', () => {
+    mount([call(1), call(2)]);
+    press('x');
+    expect(document.activeElement).toBe(option('Send report 1'));
+    press('j');
+    expect(document.activeElement).toBe(option('Send report 2'));
+  });
+
+  test('the selection stops at 50', () => {
+    mount(Array.from({ length: 52 }, (_, n) => call(n + 1)));
+    click(rowCheckbox('Send report 1'));
+    click(barButton('Select all')!);
+    expect(text()).toContain('50 selected');
+    expect(text()).toContain('Up to 50 at a time');
+    // The list sorts by title, so "Send report 9" is the last row: past the cap.
+    expect(option('Send report 9').getAttribute('aria-selected')).toBe('false');
+    click(option('Send report 9'));
+    expect(text()).toContain('50 selected');
+    expect(option('Send report 9').getAttribute('aria-selected')).toBe('false');
+  });
+
   test('a change request shows no checkbox', () => {
     const cr = { ...mockItem('rv-change-1'), id: 'cr:9' } as ReviewItem;
     mount([cr]);
@@ -230,6 +269,10 @@ describe('bulk Approve', () => {
     expect(dialog.textContent).toContain('Approve 2 actions?');
     expect(dialog.textContent).toContain('gmail.send_email_1');
     expect(dialog.textContent).toContain('gmail.send_email_2');
+    // Each row's arguments, recipient first, the redacted field left out.
+    expect(dialog.textContent).toContain('to: team · subject: Weekly 1');
+    expect(dialog.textContent).toContain('to: team · subject: Weekly 2');
+    expect(dialog.textContent).not.toContain('[redacted]');
     expect(dialog.textContent).toContain('High risk');
     expect(dialog.textContent).toContain('Low risk');
     expect(bulkCalls).toEqual([]);

@@ -10,6 +10,7 @@
 
 import type { ReviewVerdict } from '@kortix/sdk';
 import { uiRoutes } from '../../lib/routes';
+import { approvalReviewable } from '../../session/prompts/session-approval-review';
 import { type ReviewItem, type ReviewRisk, segmentForStatus } from './types';
 
 export const CR_ID_PREFIX = 'cr:';
@@ -130,9 +131,8 @@ export const BULK_VERDICT: Record<BulkVerb, ReviewVerdict> = {
 /**
  * Whether a bar verb acts on `item`, decided before the request so the bar
  * never sends an id the server must refuse. Approve and Deny decide a pending
- * approval; Approve also needs a call this viewer could read in full (the
- * `approvalReviewable` rule of session/prompts/approval-request.tsx) that has
- * not expired. Dismiss acts on native items only. A `cr:` id takes no verb.
+ * approval; Approve also needs a call this viewer could review
+ * (`approvalReviewable`) that has not expired. Dismiss acts on native items only. A `cr:` id takes no verb.
  */
 export function bulkSupports(
   item: ReviewItem,
@@ -149,8 +149,7 @@ export function bulkSupports(
   if (call?.canResolve === false) return false;
   if (verb === 'deny') return true;
   if (call?.previewAuthorized === false) return false;
-  const args = call?.rawArgsPreview;
-  return (args != null && Object.keys(args).length > 0) || call?.reviewComplete !== false;
+  return approvalReviewable(call?.rawArgsPreview, call?.reviewComplete);
 }
 
 /** True when any bar verb acts on `item`: the row shows a checkbox. */

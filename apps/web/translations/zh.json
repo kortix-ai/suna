@@ -20371,7 +20371,7 @@
       "denying": "正在拒绝 {count} 项…",
       "dismissing": "正在关闭 {count} 项…",
       "approveTitle": "批准 {count} 个操作？",
-      "approveDescription": "每个代理将按所列执行其操作。可先打开审批查看完整参数。",
+      "approveDescription": "批准前请检查每个操作的详细信息。",
       "approveConfirm": "批准 {count} 项",
       "denyTitle": "拒绝 {count} 个操作？",
       "denyDescription": "代理不会执行这些操作。",

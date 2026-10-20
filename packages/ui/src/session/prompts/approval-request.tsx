@@ -14,6 +14,7 @@ import {
   XCircleIcon,
 } from '@phosphor-icons/react';
 import type { SessionAuditAction } from '@kortix/sdk';
+import { approvalReviewable } from './session-approval-review';
 import { Fragment, useEffect, useRef, useState } from 'react';
 
 /** Matches `Date#toLocaleString()` with no options — date + time, default locale. */
@@ -69,33 +70,8 @@ export type ApprovalDecisionValue = 'approve' | 'deny';
  *  decision, so a deny can say what to do instead. */
 export type ApprovalDecisionHandler = (decision: ApprovalDecisionValue, note?: string) => void;
 
-/**
- * Can a human actually judge this call from what we recorded?
- *
- * TRUNCATION IS NOT BLINDNESS. `reviewComplete` (server:
- * `args_preview_complete`) goes false whenever the preview builder elided
- * ANYTHING — an 11th recipient, a 96-char URL, a fourth nesting level, an
- * attachment body — and every elision is written into the preview the human
- * reads (`[+3 more]`, `[204800 chars omitted]`). Gating the decision on it made
- * an ordinary "email this PDF" call permanently un-approvable: a disabled
- * button beside a warning, with Deny as the only possible answer.
- *
- * Reviewability is the narrower question: is there anything to look at? A call
- * that shows its parameters is decidable, elisions and all. One that shows none
- * is not — and no approve path is offered for it, rather than a dead control.
- *
- * Mirrors `approvalPreviewReviewable` in apps/api (connectors/args-preview.ts),
- * which enforces the same rule on POST /approvals/:executionId.
- */
-export function approvalReviewable(
-  argsPreview: Record<string, unknown> | null | undefined,
-  reviewComplete: boolean | undefined,
-): boolean {
-  if (argsPreview && Object.keys(argsPreview).length > 0) return true;
-  // No preview is still reviewable when the server confirms nothing was
-  // withheld — an argument-less call hides nothing.
-  return reviewComplete !== false;
-}
+// The rule lives in the pure module so non-React callers share it.
+export { approvalReviewable };
 
 interface ApprovalRequestProps {
   request: ApprovalRequestData;

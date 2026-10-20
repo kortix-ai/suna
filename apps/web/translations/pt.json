@@ -20371,7 +20371,7 @@
       "denying": "Negando {count}…",
       "dismissing": "Dispensando {count}…",
       "approveTitle": "Aprovar {count, plural, one {# ação} other {# ações}}?",
-      "approveDescription": "Cada agente executa a sua ação conforme listado. Abra uma aprovação para ler antes todos os parâmetros.",
+      "approveDescription": "Verifique os detalhes de cada ação antes de aprovar.",
       "approveConfirm": "Aprovar {count}",
       "denyTitle": "Negar {count, plural, one {# ação} other {# ações}}?",
       "denyDescription": "Os agentes não executam estas ações.",

@@ -20371,7 +20371,7 @@
       "denying": "{count} 件を拒否中…",
       "dismissing": "{count} 件を閉じています…",
       "approveTitle": "{count} 件のアクションを承認しますか？",
-      "approveDescription": "各エージェントは一覧のとおりにアクションを実行します。先に承認を開いてすべてのパラメーターを確認できます。",
+      "approveDescription": "承認する前に各アクションの詳細を確認してください。",
       "approveConfirm": "{count} 件を承認",
       "denyTitle": "{count} 件のアクションを拒否しますか？",
       "denyDescription": "エージェントはこれらのアクションを実行しません。",

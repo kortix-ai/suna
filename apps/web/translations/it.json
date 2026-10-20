@@ -20371,7 +20371,7 @@
       "denying": "Rifiuto di {count}…",
       "dismissing": "{count} da ignorare…",
       "approveTitle": "Approvare {count, plural, one {# azione} other {# azioni}}?",
-      "approveDescription": "Ogni agente esegue la sua azione come indicato. Apri un'approvazione per leggerne prima tutti i parametri.",
+      "approveDescription": "Controlla i dettagli di ogni azione prima di approvare.",
       "approveConfirm": "Approva {count}",
       "denyTitle": "Negare {count, plural, one {# azione} other {# azioni}}?",
       "denyDescription": "Gli agenti non eseguono queste azioni.",

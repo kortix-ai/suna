@@ -20371,7 +20371,7 @@
       "denying": "Одбијање {count}…",
       "dismissing": "Затварање {count}…",
       "approveTitle": "Одобрити {count, plural, one {# акцију} few {# акције} other {# акција}}?",
-      "approveDescription": "Сваки агент изводи своју акцију како је наведено. Отворите одобрење да прво прочитате све параметре.",
+      "approveDescription": "Проверите детаље сваке акције пре него што одобрите.",
       "approveConfirm": "Одобри {count}",
       "denyTitle": "Одбити {count, plural, one {# акцију} few {# акције} other {# акција}}?",
       "denyDescription": "Агенти не изводе ове акције.",

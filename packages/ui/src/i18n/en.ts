@@ -5627,7 +5627,7 @@ const catalog = {
       "denying": "Denying {count}…",
       "dismissing": "Dismissing {count}…",
       "approveTitle": "Approve {count, plural, one {# action} other {# actions}}?",
-      "approveDescription": "Each agent runs its action as listed. Open an approval to read its full parameters first.",
+      "approveDescription": "Check each action's details before you approve.",
       "approveConfirm": "Approve {count}",
       "denyTitle": "Deny {count, plural, one {# action} other {# actions}}?",
       "denyDescription": "The agents do not run these actions.",

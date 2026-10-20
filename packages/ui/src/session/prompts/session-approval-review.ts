@@ -46,7 +46,15 @@ export function approvalArgsSummary(
   /** Bound Slack conversation ids → names: the summary reads the name. */
   channelNames?: ReadonlyMap<string, string>,
 ): string | null {
-  const preview = approvalArgsPreview(action);
+  return previewArgsSummary(approvalArgsPreview(action), channelNames);
+}
+
+/** `approvalArgsSummary` for a preview record already in hand (a Review
+ *  Center item's resolved or raw arguments). */
+export function previewArgsSummary(
+  preview: Record<string, unknown> | null | undefined,
+  channelNames?: ReadonlyMap<string, string>,
+): string | null {
   if (!preview) return null;
 
   const rank = (key: string) => {
@@ -66,6 +74,34 @@ export function approvalArgsSummary(
     if (parts.length === SUMMARY_FIELDS) break;
   }
   return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/**
+ * Can a human actually judge this call from what we recorded?
+ *
+ * TRUNCATION IS NOT BLINDNESS. `reviewComplete` (server:
+ * `args_preview_complete`) goes false whenever the preview builder elided
+ * ANYTHING — an 11th recipient, a 96-char URL, a fourth nesting level, an
+ * attachment body — and every elision is written into the preview the human
+ * reads (`[+3 more]`, `[204800 chars omitted]`). Gating the decision on it made
+ * an ordinary "email this PDF" call permanently un-approvable: a disabled
+ * button beside a warning, with Deny as the only possible answer.
+ *
+ * Reviewability is the narrower question: is there anything to look at? A call
+ * that shows its parameters is decidable, elisions and all. One that shows none
+ * is not — and no approve path is offered for it, rather than a dead control.
+ *
+ * Mirrors `approvalPreviewReviewable` in apps/api (connectors/args-preview.ts),
+ * which enforces the same rule on POST /approvals/:executionId.
+ */
+export function approvalReviewable(
+  argsPreview: Record<string, unknown> | null | undefined,
+  reviewComplete: boolean | undefined,
+): boolean {
+  if (argsPreview && Object.keys(argsPreview).length > 0) return true;
+  // No preview is still reviewable when the server confirms nothing was
+  // withheld — an argument-less call hides nothing.
+  return reviewComplete !== false;
 }
 
 /** Row → the shape every approval surface renders. */
