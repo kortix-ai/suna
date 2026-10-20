@@ -1485,6 +1485,7 @@ export function DriveExplorer({
 
               {isEmpty && !parked && (
                 <EmptyState
+                  className="min-h-full"
                   media={<DriveEmptyArt />}
                   title={tHardcodedUi.raw(
                     'featuresProjectFilesComponentsDriveListView.line396JsxTextThisFolderIsEmpty',
