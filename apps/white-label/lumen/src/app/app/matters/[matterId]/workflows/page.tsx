@@ -169,7 +169,7 @@ function DraftForm() {
   const client = matter.parties.find((p) => p.role === 'client')?.name ?? matter.client;
   const other = matter.parties.find((p) => p.role !== 'client')?.name ?? '';
   const defaults: Record<string, string> = {
-    party_a: client, party_b: other, effective_date: new Date().toISOString().slice(0, 10), governing_law: firm.jurisdiction ?? '',
+    party_a: client, party_b: other, effective_date: new Date().toLocaleDateString('en-CA') /* local YYYY-MM-DD, not UTC */, governing_law: firm.jurisdiction ?? '',
   };
   const value = (f: string) => fields[f] ?? defaults[f] ?? '';
   return (

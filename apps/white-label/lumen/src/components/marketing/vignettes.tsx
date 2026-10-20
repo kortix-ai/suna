@@ -51,11 +51,11 @@ export function AssistantVignette() {
   );
 }
 
+// The three real hits for "indemnif" in the demo matter's Vault (one page each).
 const DOCS = [
-  ['Master Services Agreement', 'PDF', 3],
-  ['Office Lease, Cedar Row', 'PDF', 2],
-  ['Share Purchase Agreement (excerpt)', 'PDF', 2],
-  ['Data Processing Agreement', 'DOCX', 1],
+  ['msa-brightwater-quillon.pdf', 'PDF', 2],
+  ['supply-agreement-meridian.pdf', 'PDF', 1],
+  ['saas-agreement-lattice.docx', 'DOCX', 1],
 ] as const;
 
 export function VaultVignette() {
@@ -66,12 +66,11 @@ export function VaultVignette() {
         <span className="ml-auto text-[11px]">3 documents, 3 pages</span>
       </div>
       <ul className="divide-y divide-border">
-        {DOCS.map(([name, type, pages]) => (
+        {DOCS.map(([name, type, page]) => (
           <li key={name} className="flex items-center gap-2 py-2">
             <span className="grid h-6 w-9 place-items-center rounded bg-muted font-mono text-[10px] text-muted-foreground">{type}</span>
             <span className="min-w-0 flex-1 truncate">{name}</span>
-            <span className="font-mono text-[11px] text-muted-foreground">{pages} pp</span>
-            <span className="rounded-full bg-brand/10 px-1.5 text-[10px] text-brand">Ready</span>
+            <span className="font-mono text-[11px] text-muted-foreground">p. {page}</span>
           </li>
         ))}
       </ul>
