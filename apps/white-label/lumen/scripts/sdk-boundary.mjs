@@ -24,12 +24,7 @@ const SERVER_ROOT = join(CLIENT_ROOT, 'server');
 const ALLOWED_CLIENT_BFF_ROUTES = [
   // Better Auth (sign-in, organizations), proxied to Convex.
   '/api/auth',
-  // Connections a member may bind, pre-filtered server-side.
-  '/api/connections',
   '/api/preview-url',
-  // Provider-neutral session model control: the upstream field is named after
-  // the runtime, so the translation stays server-side and the client says `model`.
-  '/api/session-model',
   // Static files: the synthetic sample matter's documents (public/sample/).
   '/sample',
 ];

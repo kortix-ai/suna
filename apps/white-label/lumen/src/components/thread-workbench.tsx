@@ -3,11 +3,12 @@
 import { SessionApprovals } from '@/components/workbench/approvals-panel';
 import { BootScreen } from '@/components/workbench/boot-screen';
 import { SessionHeader } from '@/components/workbench/session-header';
-import { WorkbenchTabs } from '@/components/workbench/workbench-tabs';
+import { useRuntimeRecovery } from '@/components/workbench/use-runtime-recovery';
 import { CitationLayer } from '@/components/chat/citation-layer';
 import '@/components/chat/lumen-tool-row';
 import type { Id } from '@convex/_generated/dataModel';
 import { useSession } from '@kortix/sdk/react';
+import { SessionThread } from '@kortix/ui/session';
 
 /** One thread: the Kortix session behind it, streamed through Lumen's proxy. */
 export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId: string; sessionId: string; matterId: Id<'matters'> }) {
@@ -16,6 +17,8 @@ export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId:
   // projection, interactive requests, and message synchronization.
   // The host reads the provider-neutral session state and renders it.
   const session = useSession(projectId, sessionId);
+  // One automatic restart when a connected runtime drops.
+  useRuntimeRecovery(session);
 
   return (
     <>
@@ -38,10 +41,11 @@ export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId:
           onRetry={session.retry}
         />
       ) : (
-        // A lawyer sees the conversation and its sources. The repo views
-        // (files, changes, preview, scope) stay out of the Assistant.
+        // A lawyer sees the conversation and its sources: @kortix/ui's
+        // SessionThread (the thread apps/web renders) over the one useSession
+        // result. No repo views, no scope chips, no second chat hook.
         <CitationLayer matterId={matterId}>
-          <WorkbenchTabs session={session} projectId={projectId} sessionId={sessionId} chatOnly />
+          <SessionThread session={session} hideHeader className="flex-1" />
         </CitationLayer>
       )}
     </>

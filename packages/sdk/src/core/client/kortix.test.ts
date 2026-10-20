@@ -1422,7 +1422,7 @@ test("health() resolves against the handle's own runtime URL once ready", async 
 
 // ── shared session-runtime registry (regression: apps/white-label/lumen's
 // session-header.tsx polls health() on a FRESH `kortix.session(...)` handle
-// every 15s, and preview-panel.tsx calls previewUrl() in render on a handle
+// every 15s, and a preview panel calls previewUrl() in render on a handle
 // that never itself called ensureReady() — both used to throw
 // SessionNotReadyError forever because a handle's `_ready` cache never
 // survived past that one instance) ──────────────────────────────────────────

@@ -79,17 +79,17 @@ describe('white-label SDK boundary', () => {
     const root = resolve(import.meta.dir, '../../src/components/ui');
 
     expect(isLocalUiFile(resolve(root, 'button.tsx'))).toBe(true);
-    expect(isLocalUiFile(resolve(root, '../chat/scope-bar.tsx'))).toBe(false);
+    expect(isLocalUiFile(resolve(root, '../chat/citation-layer.tsx'))).toBe(false);
   });
 
   test('permits the documented same-origin BFF routes', () => {
     const fixture = `
       fetch('/api/auth/sign-in/email');
       fetch('/api/preview-url');
-      fetch('/api/session-model?projectId=p');
     `;
 
     expect(scanSource(fixture)).toEqual([]);
+    expect(scanSource(`fetch('/api/session-model');`).map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
     expect(scanSource(`fetch('/api/mode');`).map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
   });
 

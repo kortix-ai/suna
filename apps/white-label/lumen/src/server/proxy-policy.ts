@@ -56,15 +56,16 @@ const RT = `p/${SEG}/8000`;
 // edit and rewind, attachment, @-mention, every tab, rename, restart, delete,
 // reload mid-stream). A route the UI never calls is refused.
 const RULES: readonly Rule[] = [
-  // The project: its card, agents and models (the picker and its defaults), connection and secret names, change requests.
-  rule('GET', `projects/${PROJECT}(?:/(?:detail|change-requests|model-picker|model-defaults|connections|secrets))?`),
+  // The project: its card, agents and models (the picker and its defaults), change requests.
+  // No connection or secret names: the thread shows no scope chips.
+  rule('GET', `projects/${PROJECT}(?:/(?:detail|change-requests|model-picker|model-defaults))?`),
   // No repository reads (files, branches, commits, history, diffs): Lumen's thread calls none of
   // them, and they span every matter. Kortix names each session's branch after its session id, so a
   // branch list hands a lawyer the session ids of matters they cannot open.
   rule('POST', `projects/${PROJECT}/sessions`),
   rule('POST', `projects/${PROJECT}/attachments(?:/${SEG}/complete)?`),
-  // One session: the session, its live stream, transcript, turn, queue, authors, model usage, scope, previews.
-  rule('GET', `${S}(?:/(?:events|snapshot|transcript|turn|prompts|message-authors|model-usage|scope|previews))?`),
+  // One session: the session, its live stream, transcript, turn, queue, authors, model usage.
+  rule('GET', `${S}(?:/(?:events|snapshot|transcript|turn|prompts|message-authors|model-usage))?`),
   rule('PATCH DELETE', S),
   rule('POST', `${S}/(?:start|restart|prompts|prompts/hold)`),
   // A queued prompt's edit and removal (the composer's queue; not seen live: prompts steered).

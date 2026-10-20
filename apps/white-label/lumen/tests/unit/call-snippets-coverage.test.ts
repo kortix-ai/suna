@@ -192,8 +192,6 @@ function scanApp(): Map<string, string[]> {
  * call, it needs a snippet.
  */
 const REASONS = {
-  'server-route':
-    'Runs in a Lumen server route with the member token (`/api/connections`). The browser calls that route, not Kortix, and the route answers in provider-neutral terms.',
   'dashboard-parity':
     'Not a KaaB action: Lumen mirrors the Kortix dashboard here (project settings, workspace files, git, change requests, previews, and the reads that back those screens). The member token limits it to the workspace’s project, and the proxy forwards it unchanged, so a wrapper author writes the same call an operator does.',
   'sdk-handle':
@@ -218,11 +216,6 @@ function snippetIds(verdict: CallSnippetId | CallSnippetId[] | Reason): CallSnip
  */
 const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   // ── Shown, with the control that performs it ───────────────────────────────
-  'kortix.project().connectors.connections.list()': 'server-route',
-  'kortix.project().sessions.create()': 'session.create',
-  'kortix.session().changeModel()': 'session.model',
-  'kortix.session().scope()': 'session.rescope',
-  'kortix.session().rescope()': 'session.rescope',
   'kortix.session().restart()': 'session.delete',
   'kortix.session().delete()': 'session.delete',
   'kortix.project().approvals.resolve()': 'approval.resolve',
@@ -230,24 +223,11 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   // ── Account administration ────────────────────────────────────────────────
 
   // ── Project administration + workspace (dashboard parity) ─────────────────
-  'kortix.project().files.history()': 'dashboard-parity',
-  'kortix.project().files.list()': 'dashboard-parity',
-  'kortix.project().files.read()': 'dashboard-parity',
-  'kortix.project().files.search()': 'dashboard-parity',
-  'kortix.project().git.branches()': 'dashboard-parity',
-  'kortix.project().git.commit()': 'dashboard-parity',
-  'kortix.project().git.commitDiff()': 'dashboard-parity',
-  'kortix.project().git.commits()': 'dashboard-parity',
-  'kortix.project().git.versionDiff()': 'dashboard-parity',
-  'kortix.project().secrets.list()': 'dashboard-parity',
   'kortix.session().audit()': 'dashboard-parity',
   'kortix.session().get()': 'dashboard-parity',
   'kortix.session().health()': 'dashboard-parity',
-  'kortix.session().previews()': 'dashboard-parity',
   'kortix.session().update()': 'dashboard-parity',
 
-  // ── Handles and runtime resolution ────────────────────────────────────────
-  'kortix.session()': 'sdk-handle',
 };
 
 /**
@@ -260,14 +240,7 @@ const OFF_CHAIN_ACTIONS: {
   file: string;
   marker: string;
   why: string;
-}[] = [
-  {
-    id: 'session.prompt',
-    file: 'src/components/workbench/workbench-tabs.tsx',
-    marker: '<SessionThread',
-    why: 'A prompt goes through the `useSession` hook, which owns the runtime transport; @kortix/ui SessionThread calls `session.send`.',
-  },
-];
+}[] = [];
 
 // ── The checks ───────────────────────────────────────────────────────────────
 

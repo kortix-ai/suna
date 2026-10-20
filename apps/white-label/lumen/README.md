@@ -320,8 +320,10 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
    One token serves all of a member's matters in a firm (one per firm and
    member). Every `projects/<id>/sessions/<sid>/…` call also checks that the
    session is a thread of the bearer's matter (`threads.bySession`), else
-   `404`. The two side routes that take a session id, `/api/session-model`
-   and `/api/preview-url`, run the same check (`resolveMemberForSession` in
+   `404`. A session create forwards only `name`, `labels`, `metadata`,
+   `agent_name` and `initial_prompt` (`memberSessionCreateBody`), so
+   `fork_from_session_id` cannot copy another matter's thread. The side route
+   that takes a session id, `/api/preview-url`, runs the same check (`resolveMemberForSession` in
    `src/server/member.ts`). The runtime routes (`p/<sandbox>/8000/…`) are not tied to a matter:
    restricted visibility is an application rule, not a wall inside the firm's
    project (see Limits).
@@ -333,10 +335,10 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
 5. A project-scoped token carries its minter's role on that project (owner).
    `src/server/proxy-policy.ts` therefore names each route the session UI
    calls, by method, measured from the customer journey: the project card,
-   model picker, connection and secret names, change requests;
+   model picker, change requests;
    session start and restart,
    rename and delete, the session's live stream, transcript, turn, prompt
-   queue, attachments, scope and previews. On the session runtime (port 8000
+   queue and attachments. On the session runtime (port 8000
    of the sandbox) it allows status and health reads, the transcript, the
    command list, pending permissions and questions and their replies, abort,
    edit-and-rewind, and the composer's file search inside `/workspace`.
@@ -583,8 +585,7 @@ imports `@kortix/sdk/server` or any other `@kortix/sdk/<subpath>` (they are
 deprecated or internal) and never opens its own transport (`EventSource`,
 `XMLHttpRequest`, `WebSocket`, `navigator.sendBeacon`, `const f = fetch`,
 `fetch.call(...)`, a raw HTTP client import such as `axios` or `node:https`). Its own `fetch` calls go
-to `/api/auth`, `/api/connections`, `/api/preview-url`,
-`/api/session-model` and the static `/sample/` files only. Convex files import `@kortix/sdk` (statically,
+to `/api/auth`, `/api/preview-url` and the static `/sample/` files only. Convex files import `@kortix/sdk` (statically,
 with `import()` or with `require()`) only in `"use node"` files, never call
 or alias `fetch` and never import a raw HTTP client. `scripts/sdk-boundary.mjs` enforces these rules and runs before
 `build`, `test` and `typecheck`. A rule is a source scan: it catches the

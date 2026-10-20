@@ -23,8 +23,7 @@ export function bindProjectOperationsWorkspace(projectId: string) {
     },
 
     git: {
-      /** Newest first. `ref` lists one branch (a session's branch is named by its id); default: the default branch. */
-      commits: (options?: Parameters<typeof P.listProjectCommits>[1]) => P.listProjectCommits(projectId, options),
+      commits: () => P.listProjectCommits(projectId),
       commit: (sha: string) => P.getProjectCommit(projectId, sha),
       commitDiff: (sha: string) => P.getProjectCommitDiff(projectId, sha),
       branches: () => P.listProjectBranches(projectId),

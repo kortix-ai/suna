@@ -25,7 +25,6 @@
  * claims it sends can be asserted without rendering anything.
  */
 
-import { NO_OVERRIDES, type SessionOverrides, buildSessionCreateInput } from './session-overrides';
 
 /** Rendered wherever a real secret value would otherwise go. */
 export const SECRET_VALUE_PLACEHOLDER = '$SECRET_VALUE';
@@ -58,10 +57,6 @@ const PLACEHOLDER = {
  * to make that a test failure rather than an omission nobody notices.
  */
 export const CALL_SNIPPET_IDS = [
-  'session.create',
-  'session.prompt',
-  'session.model',
-  'session.rescope',
   'session.delete',
   'approval.resolve',
 ] as const;
@@ -71,9 +66,6 @@ export type CallSnippetId = (typeof CALL_SNIPPET_IDS)[number];
 export interface SnippetContext {
   projectId?: string;
   sessionId?: string;
-  /** The initial overrides currently chosen, so the create snippet shows
-   *  what THIS dialog would send rather than a generic example. */
-  overrides?: SessionOverrides;
   /** The agent a prompt would name, when one is picked. */
   agent?: string | null;
   executionId?: string;
@@ -145,144 +137,6 @@ export function isCopyableHttp(form: HttpForm): boolean {
 
 // ── The calls ────────────────────────────────────────────────────────────────
 
-function sessionCreate(ctx: SnippetContext): CallSnippet {
-  const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
-  // Built by the SAME function the dialog submits with, so the snippet cannot
-  // drift from the request: an override the builder omits is omitted here too.
-  const body = buildSessionCreateInput(ctx.overrides ?? NO_OVERRIDES, {
-    sessionId,
-  });
-  // The app never types a session id — `generateSessionId()` produces it — so
-  // the SDK form shows the variable and the HTTP form shows the value.
-  const sdkBody = json(body).replace(`"${sessionId}"`, 'sessionId');
-
-  return {
-    id: 'session.create',
-    title: 'Start a session with overrides',
-    summary: 'The create call sets the initial session scope and runtime options.',
-    sdk: [
-      "import { generateSessionId } from '@kortix/sdk';",
-      '',
-      'const sessionId = generateSessionId();',
-      `await kortix.project(projectId).sessions.create(${sdkBody});`,
-    ].join('\n'),
-    http: {
-      kind: 'rest',
-      method: 'POST',
-      path: `/v1/projects/${ctx.projectId ?? PLACEHOLDER.projectId}/sessions`,
-      body,
-    },
-    serverInjected: [],
-    notes: [
-      "The browser sends this call to Lumen's proxy (`src/app/api/kortix/[...path]/route.ts`), which swaps in the member token and adds `labels` and `metadata` that carry Lumen's org, workspace and user ids. Lumen's \"New thread\" button makes the same create from Convex (`convex/kortix.ts` `createThread`, `kortix.projects.createSession`) with the operator token and the same tags.",
-      '`agent_name` and runtime context are create options. The scope endpoint reads and replaces `secrets` and `connector_bindings` later.',
-      '`secrets` lists secret IDENTIFIERS, not env KEYs. Two identifiers may share one KEY, and naming both in one create is refused 409 SECRET_IDENTIFIER_KEY_COLLISION.',
-      '`inherit_unbound: true` accompanies any binding so the aliases nobody chose keep their project default instead of being switched off.',
-      'The create body also accepts the session model, under a field named after the session runtime — the same field `changeModel()` writes on a running session.',
-    ],
-  };
-}
-
-function sessionPrompt(ctx: SnippetContext): CallSnippet {
-  const agent = ctx.agent ?? null;
-  return {
-    id: 'session.prompt',
-    title: 'Send a prompt (and switch agent per message)',
-    summary: 'Each message names the agent that runs it — the one override that moves mid-session.',
-    sdk: [
-      'await kortix',
-      '  .session(projectId, sessionId)',
-      agent
-        ? `  .send('Refund order 4182', { agent: '${agent}' });`
-        : "  .send('Refund order 4182');",
-      '',
-      '// Or make the choice sticky for every following message:',
-      `kortix.session(projectId, sessionId).setAgent(${agent ? `'${agent}'` : "'support'"});`,
-    ].join('\n'),
-    http: {
-      kind: 'runtime',
-      summary:
-        'A prompt is not a REST call. It goes to the session runtime through the authenticated session proxy, and the SDK owns that URL — `ensureReady()` resolves the runtime, then sends the message. Client code is forbidden from building the path (scripts/sdk-boundary.mjs), so integrate through the SDK rather than reconstructing it.',
-    },
-    serverInjected: [],
-    notes: [
-      'The agent is per MESSAGE, not per session: `send(text, { agent })` overrides the sticky pick for that one turn.',
-      'A switch re-scopes secret delivery plus connector and Kortix CLI grants before the prompt runs. This only affects future access; it cannot erase a secret an earlier agent already read.',
-    ],
-  };
-}
-
-function sessionRescope(ctx: SnippetContext): CallSnippet {
-  const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
-  const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
-  return {
-    id: 'session.rescope',
-    title: 'Re-scope a running session',
-    summary: 'Read the current scope, then send one complete replacement.',
-    sdk: [
-      'const current = await kortix.session(projectId, sessionId).scope();',
-      '',
-      '// Both axes are complete replacements. Preserve the unchanged axis.',
-      'await kortix.session(projectId, sessionId).rescope({',
-      "  secrets: ['TEST_KEY_2'],",
-      '  connector_bindings: current.connector_bindings,',
-      '});',
-    ].join('\n'),
-    http: {
-      kind: 'rest',
-      method: 'PUT',
-      path: `/v1/projects/${projectId}/sessions/${sessionId}/scope`,
-      body: {
-        secrets: ['TEST_KEY_2'],
-        connector_bindings: { gmail: { connection_id: 'auth_123' } },
-      },
-    },
-    serverInjected: [],
-    notes: [
-      '`scope()` is the authoritative read-back. Do not reconstruct the unchanged axis from create metadata or UI state.',
-      '`rescope()` uses complete replacement semantics for both `secrets` and `connector_bindings`. Omitting an existing item removes it.',
-      'Dropping a secret stops it being DELIVERED from the next prompt. It cannot un-read a value the agent already has in its context or in a shell it already started — rotate it if that matters. The response says so with `retroactive: false`.',
-      'Connector bindings resolve server-side on each tool call, so a binding change IS fully effective immediately.',
-      'The agent’s manifest grant stays the ceiling: a session may narrow within it and restore anything inside it, never exceed it.',
-    ],
-  };
-}
-
-function sessionModel(ctx: SnippetContext): CallSnippet {
-  const model = PLACEHOLDER.model;
-  const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
-  const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
-
-  return {
-    id: 'session.model',
-    title: 'Change the model mid-session',
-    summary: 'The one create-time override that is still movable once a session is running.',
-    sdk: [
-      '// Server side (src/app/api/session-model/route.ts):',
-      `await kortix.session(projectId, sessionId).changeModel('${model}');`,
-      '',
-      '// Browser side — this app goes through its own route, so the runtime-named',
-      '// field stays server-side and client code says `model`:',
-      `await fetch('/api/session-model?projectId=${projectId}&sessionId=${sessionId}', {`,
-      "  method: 'PUT',",
-      `  body: JSON.stringify({ model: '${model}' }),`,
-      '});',
-    ].join('\n'),
-    http: {
-      kind: 'rest',
-      method: 'PUT',
-      path: `/v1/projects/${projectId}/sessions/${sessionId}/model`,
-      body: { '<runtime>_model': model },
-    },
-    serverInjected: [],
-    notes: [
-      'The upstream body field is named after the session runtime; `changeModel()` writes it for you. This app never spells it in client code (scripts/sdk-boundary.mjs keeps provider terminology out of the browser bundle) — the real field name is in `src/app/api/session-model/route.ts`.',
-      'The reply carries `applied_live`. False means the model was stored and applies at the NEXT start; telling someone the model changed when their next answer comes from the old one is a lie worth avoiding.',
-      'A live change restarts the runtime, which ends any in-flight turn.',
-    ],
-  };
-}
-
 function sessionDelete(ctx: SnippetContext): CallSnippet {
   const projectId = ctx.projectId ?? PLACEHOLDER.projectId;
   const sessionId = ctx.sessionId ?? PLACEHOLDER.sessionId;
@@ -343,10 +197,6 @@ function approvalResolve(ctx: SnippetContext): CallSnippet {
 // denial, surfaced by the transcript's `SetupLinkButton` — not a snippet here.
 
 const BUILDERS: Record<CallSnippetId, (ctx: SnippetContext) => CallSnippet> = {
-  'session.create': sessionCreate,
-  'session.prompt': sessionPrompt,
-  'session.model': sessionModel,
-  'session.rescope': sessionRescope,
   'session.delete': sessionDelete,
   'approval.resolve': approvalResolve,
 };

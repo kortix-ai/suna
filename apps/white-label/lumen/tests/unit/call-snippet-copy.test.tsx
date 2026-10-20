@@ -33,7 +33,7 @@ async function mount() {
   const host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => root?.render(<CallSnippet id="session.prompt" defaultOpen />));
+  await act(async () => root?.render(<CallSnippet id="session.delete" defaultOpen />));
   const button = host.querySelector<HTMLButtonElement>('[aria-label="Copy the SDK call"]');
   if (!button) throw new Error('SDK copy button missing');
   return button;
@@ -106,7 +106,7 @@ test('the panel renders nothing unless NEXT_PUBLIC_LUMEN_DEV_PANELS=1 (customers
     const host = document.createElement('div');
     document.body.append(host);
     root = createRoot(host);
-    await act(async () => root?.render(<CallSnippet id="session.create" defaultOpen />));
+    await act(async () => root?.render(<CallSnippet id="session.delete" defaultOpen />));
     expect(host.innerHTML).toBe('');
   } finally {
     process.env.NEXT_PUBLIC_LUMEN_DEV_PANELS = '1';

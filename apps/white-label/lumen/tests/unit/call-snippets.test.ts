@@ -9,7 +9,6 @@ import {
   isCopyableHttp,
   renderHttp,
 } from '../../src/lib/call-snippets';
-import { NO_OVERRIDES, buildSessionCreateInput } from '../../src/lib/session-overrides';
 
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
@@ -85,72 +84,7 @@ describe('attribution data is absent', () => {
   });
 });
 
-describe('the create snippet is the request the dialog would send', () => {
-  test('an untouched dialog shows the bare create', () => {
-    const snippet = callSnippet('session.create', { overrides: NO_OVERRIDES });
-    expect(snippet.sdk).not.toContain('agent_name');
-    expect(snippet.sdk).not.toContain('secrets');
-    expect(snippet.sdk).not.toContain('connector_bindings');
-  });
-
-  test('the chosen overrides are the ones rendered', () => {
-    const snippet = callSnippet('session.create', {
-      projectId: PROJECT_ID,
-      sessionId: SESSION_ID,
-      overrides: {
-        agent: 'support',
-        secrets: ['STRIPE_KEY'],
-        bindings: { slack: 'connection_9' },
-        runtimeContext: null,
-      },
-    });
-    expect(snippet.sdk).toContain('"agent_name": "support"');
-    expect(snippet.sdk).toContain('"secrets"');
-    expect(snippet.sdk).toContain('"connection_id": "connection_9"');
-    // Binding one alias must not read as unplugging the others.
-    expect(snippet.sdk).toContain('"inherit_unbound": true');
-  });
-
-  test('the session id is a generated variable, not something to type', () => {
-    const snippet = callSnippet('session.create', { sessionId: SESSION_ID });
-    expect(snippet.sdk).toContain('generateSessionId()');
-    expect(snippet.sdk).toContain('"session_id": sessionId');
-    // The wire form still shows the concrete value.
-    expect(renderHttp(snippet.http)).toContain(`"session_id": "${SESSION_ID}"`);
-  });
-
-  test('the path is the project the screen is on', () => {
-    const snippet = callSnippet('session.create', { projectId: PROJECT_ID });
-    expect(renderHttp(snippet.http)).toContain(`POST /v1/projects/${PROJECT_ID}/sessions`);
-  });
-});
-
 describe('the other calls', () => {
-  test('a prompt has no REST path to copy — the SDK owns the runtime transport', () => {
-    const snippet = callSnippet('session.prompt', { agent: 'support' });
-    expect(isCopyableHttp(snippet.http)).toBe(false);
-    expect(snippet.sdk).toContain(".send('Refund order 4182', { agent: 'support' })");
-    // Printing a runtime path here is exactly what scripts/sdk-boundary.mjs
-    // forbids client code from constructing.
-    expect(rendered('session.prompt')).not.toContain('/v1/p/');
-  });
-
-  test('the model change shows both hops and neither spells the runtime field', () => {
-    // The model text is the module's own placeholder — no caller names a model,
-    // so `SnippetContext` has no `model` field to pass one through.
-    const snippet = callSnippet('session.model', {
-      projectId: PROJECT_ID,
-      sessionId: SESSION_ID,
-    });
-    expect(snippet.sdk).toContain("changeModel('anthropic/claude-sonnet-4-5')");
-    expect(snippet.sdk).toContain('/api/session-model');
-    expect(renderHttp(snippet.http)).toContain(
-      `PUT /v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/model`,
-    );
-    expect(rendered('session.model').toLowerCase()).not.toContain('opencode');
-  });
-
-
   test('an approval resolves by execution id, and carries no widening scope', () => {
     const snippet = callSnippet('approval.resolve', {
       projectId: PROJECT_ID,
@@ -184,37 +118,3 @@ describe('every snippet is complete', () => {
   });
 });
 
-describe('the create snippet cannot drift from what the app sends', () => {
-  test('a bound connection prints its connection id', () => {
-    const snippet = callSnippet('session.create', {
-      projectId: 'p1',
-      overrides: {
-        ...NO_OVERRIDES,
-        bindings: { slack: 'auth_9' },
-        runtimeContext: null,
-      },
-    });
-    const printed = `${snippet.sdk}${renderHttp(snippet.http)}`;
-    expect(printed).toContain('"connection_id": "auth_9"');
-  });
-
-  test('the same builder the submit path uses produces the body', () => {
-    // Guards the mechanism rather than one output: if someone hand-rolls the
-    // body here again, an override added to buildSessionCreateInput stops
-    // appearing and this goes red.
-    const overrides = {
-      ...NO_OVERRIDES,
-      agent: 'reviewer',
-      secrets: ['GMAIL'],
-    };
-    const snippet = callSnippet('session.create', {
-      projectId: 'p1',
-      overrides,
-    });
-    const expected = buildSessionCreateInput(overrides, { sessionId: 'SID' });
-    for (const key of Object.keys(expected)) {
-      if (key === 'session_id') continue;
-      expect(`${snippet?.sdk ?? ''}${renderHttp(snippet!.http)}`).toContain(key);
-    }
-  });
-});

@@ -83,7 +83,7 @@ describe('resolveMember: one Convex call per (user, matter) at a time', () => {
   });
 });
 
-describe('resolveMemberForSession: the side routes (session-model, preview-url) check the matter like the proxy', () => {
+describe('resolveMemberForSession: the side route (preview-url) checks the matter like the proxy', () => {
   const OWN = '0b8c9d3e-1111-4222-8333-944455556666';
   const OTHER = '7a1b2c3d-1111-4222-8333-944455556666';
   test('a session of the bearer matter resolves; a session of another matter or no thread is 404', async () => {

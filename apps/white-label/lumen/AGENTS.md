@@ -101,7 +101,7 @@ not come back.
   `textarea`, `select`, `switch`, `modal`, `confirm-dialog`, `card`, `badge`,
   `tabs`, …). Never `@kortix/ui/dialog`: it is the primitive `modal` builds on.
 - The session chat is `<SessionThread>` from `@kortix/ui/session`, the same
-  thread apps/web renders. Lumen adds only its scope bar under it. Never
+  thread apps/web renders, inside Lumen's `CitationLayer`. Never
   re-implement the transcript, composer or prompts.
 - Toasts: `successToast` / `errorToast` / `infoToast` / `warningToast` from
   `@kortix/ui/toast`. `providers.tsx` mounts its `<Toaster />` once.
@@ -147,11 +147,9 @@ feature controls (`<button>`, `<input>`, …) and feature-level spinners.
 
 - `src/lib/kortix.ts`: One browser SDK client.
 - `src/app/globals.css`: `@kortix/ui` tokens + theme, and the white-label overrides.
-- `src/components/chat/scope-bar*`: Lumen's session-scope chips (the
-  `SessionThread` composer footer).
-- `src/components/workbench/`: Session workbench. Files and Changes read the
-  thread's branch (`useSessionRef`, `src/lib/session-ref.ts`) and leave out the
-  workspace configuration (`isCustomerFile`).
+- `src/components/chat/citation-layer.tsx`: checks each citation link in a thread and opens the Source panel.
+- `src/components/thread-workbench.tsx`: one Assistant thread: header, approvals, boot screen, `SessionThread`.
+- `src/components/workbench/`: the thread's header, approvals strip, boot screen and runtime recovery.
 - `src/app/**`: Route components.
 - `src/app/api/**`: Same-origin server endpoints.
 - `src/server/**`: Better Auth helpers, member token resolution, and the proxy policy.
