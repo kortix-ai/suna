@@ -246,35 +246,25 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   const query = useQuery({
     ...projectGateQuery(projectId),
     enabled: authReady && !!projectId,
+    // Keep a gone verdict across remounts; transient errors may recover.
+    retryOnMount: (query) => errorStatus(query.state.error) !== 404,
+    refetchOnMount: (query) => errorStatus(query.state.error) === 404 ? false : 'always',
   });
 
-  // A session route's open read needs only the two route ids, so it starts
-  // HERE, beside `getProject`, instead of after this boundary renders the
-  // session page. Staging HAR (cold open): the snapshot waited 1.68 s for
-  // `GET /projects/<id>` before it could start. Read-only — it never wakes a
-  // sandbox — and a project this user cannot read answers 403 to it as well.
-  //
-  // `prefetchSessionRouteReads` (config/scope) rides the SAME signal: those
-  // reads also only need the route ids, and were waiting on
-  // `ProjectSessionView`'s own chunk to mount. `/start` is not prefetched:
-  // see `session-route-prefetch.ts`.
+  // Do not speculate on inaccessible projects: a deleted URL must settle
+  // from the access check alone, without a burst of shell/session 404s.
   const queryClient = useQueryClient();
   const routeSessionId = routeSessionIdFromParams(useParams());
   useEffect(() => {
-    if (!authReady || !routeSessionId) return;
+    if (!authReady || !query.isSuccess || !query.isFetchedAfterMount || !routeSessionId) return;
     void prefetchSessionOpen(queryClient, projectId, routeSessionId);
     prefetchSessionRouteReads(queryClient, projectId, routeSessionId);
-  }, [authReady, projectId, routeSessionId, queryClient]);
+  }, [authReady, query.isSuccess, query.isFetchedAfterMount, projectId, routeSessionId, queryClient]);
 
-  // The project SHELL's own reads (detail, sessions list, sandbox health, and
-  // — once detail says the gateway is on — the model picker) need only
-  // `projectId`, exactly like `getProject` above, so they start here too
-  // instead of waiting for `getProject` to resolve AND `ProjectShell`'s own
-  // chunk to mount. See `project-shell-prefetch.ts`.
   useEffect(() => {
-    if (!authReady || !projectId) return;
+    if (!authReady || !query.isSuccess || !query.isFetchedAfterMount || !projectId) return;
     prefetchProjectShellReads(queryClient, projectId);
-  }, [authReady, projectId, queryClient]);
+  }, [authReady, query.isSuccess, query.isFetchedAfterMount, projectId, queryClient]);
 
   const { refetch } = query;
   // Background poll: silent, and must never touch the button's pending state.
@@ -341,8 +331,8 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   // token publication before interpreting any result as an access decision.
   const view = resolveBoundaryView({
     authReady,
-    isPending: query.isPending,
-    hasData: query.data !== undefined,
+    isPending: query.isPending || (query.isFetching && !query.isFetchedAfterMount),
+    hasData: query.data !== undefined && query.isFetchedAfterMount,
     errorState,
   });
   if (view === 'pending') return <ProjectPendingScreen />;

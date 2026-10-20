@@ -68,7 +68,7 @@ import { UiLink as Link, useUiHostConfig } from '../../../providers/ui-provider'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { CopyButton } from '../../../markdown/copy-button';
-import { RepositoryDisconnectedBanner, repositoryDisconnectOf } from '../../../workspace/repository-disconnected';
+import { RepositoryDisconnectedBanner, repositoryDisconnectOf } from '../../../internal/components/repository-disconnected';
 import {
   filterBranchNames,
   connectionStatusLabel,
