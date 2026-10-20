@@ -33,6 +33,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /health': { action: 'system.health.read', title: 'Checked API health' },
   'GET /health/live': { action: 'system.health.liveness.read', title: 'Checked API liveness' },
   'GET /health/ready': { action: 'system.health.readiness.read', title: 'Checked API readiness' },
+  'POST /internal/gateway/admit': { action: 'gateway.internal.request.admit', title: 'Admitted LLM gateway request' },
   'POST /internal/gateway/authenticate': { action: 'gateway.internal.token.authenticate', title: 'Authenticated LLM gateway token' },
   'POST /internal/gateway/authorize': { action: 'gateway.internal.request.authorize', title: 'Authorized LLM gateway request' },
   'POST /internal/gateway/billing': { action: 'gateway.internal.billing.check', title: 'Checked LLM billing eligibility' },

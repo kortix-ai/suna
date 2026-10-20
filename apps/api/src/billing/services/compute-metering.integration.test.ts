@@ -31,9 +31,8 @@ Object.assign(process.env, {
   STRIPE_SECRET_KEY: 'sk_test_compute_metering',
   STRIPE_WEBHOOK_SECRET: 'whsec_compute_metering',
   KORTIX_URL: 'http://127.0.0.1:1',
-  DAYTONA_API_KEY: 'compute-metering-test',
-  DAYTONA_SERVER_URL: 'http://127.0.0.1:1',
-  DAYTONA_TARGET: 'us',
+  PLATINUM_API_KEY: 'compute-metering-test',
+  PLATINUM_API_URL: 'http://127.0.0.1:1',
 });
 
 /** Provider status per external id; an Error makes the probe throw. */

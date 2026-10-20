@@ -9,6 +9,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|health",
   "GET|health|live",
   "GET|health|ready",
+  "POST|internal|gateway|admit",
   "POST|internal|gateway|authenticate",
   "POST|internal|gateway|authorize",
   "POST|internal|gateway|billing",

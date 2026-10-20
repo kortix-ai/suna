@@ -8,7 +8,7 @@ import { ApiError } from '../../core/http/api/errors';
 // (backoff 1, 2, 4, then 8 s x7). Same harness as `../use-tunnel.test.ts`:
 // react-query is reduced to identity functions so a hook returns its config.
 
-let detailData: unknown = null;
+let rowData: unknown = null;
 
 mock.module('react', () => ({
   useMemo: (fn: () => unknown) => fn(),
@@ -18,7 +18,7 @@ mock.module('react', () => ({
 mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => ({
     ...config,
-    data: detailData,
+    data: rowData,
     isSuccess: true,
     isLoading: false,
   }),
@@ -40,7 +40,7 @@ mock.module('./keys', () => ({
 }));
 
 mock.module('../../core/rest/projects-client', () => ({
-  getProjectDetail: async () => detailData,
+  getProject: async () => rowData,
   getProjectModelPicker: async () => ({ models: [] }),
   getProjectLlmCatalogProviders: async () => ({ providers: [] }),
   listProjectSecrets: async () => ({ items: [] }),
@@ -49,7 +49,7 @@ mock.module('../../core/rest/projects-client', () => ({
 const providers = await import('./providers');
 
 beforeEach(() => {
-  detailData = { project: { experimental: { llm_gateway: true } } };
+  rowData = { experimental: { llm_gateway: true } };
 });
 
 type Config = { retry?: (failureCount: number, error: unknown) => boolean };
@@ -79,7 +79,7 @@ describe('useRuntimeProviders gateway query retry policy', () => {
 
 describe('useRuntimeProviders native query retry policy', () => {
   test('does not retry a 401 from a dead token', () => {
-    detailData = { project: { experimental: { llm_gateway: false } } };
+    rowData = { experimental: { llm_gateway: false } };
     const config = providers.useRuntimeProviders() as Config;
     // The shape the native queryFn actually throws: the runtime client resolves
     // `{ error, response }` and the react-layer unwrap throws an Error carrying
@@ -91,7 +91,7 @@ describe('useRuntimeProviders native query retry policy', () => {
   });
 
   test('still retries the status-less boot race (no connected models yet) up to the cap', () => {
-    detailData = { project: { experimental: { llm_gateway: false } } };
+    rowData = { experimental: { llm_gateway: false } };
     const config = providers.useRuntimeProviders() as Config;
     const bootRace = new Error(
       'opencode provider list has no connected models yet — sandbox still warming up',

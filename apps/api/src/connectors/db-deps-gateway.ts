@@ -1,5 +1,5 @@
 /** DB-backed GatewayDeps for one principal (makeDbGatewayDeps) and the approval carry-over reads it uses. */
-import { connectorConnections, connectorActions, connectors, connectorCalls } from '@kortix/db';
+import { connectionCredentials, connectorConnections, connectorActions, connectors, connectorCalls } from '@kortix/db';
 import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
 import { and, desc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
 import { resolveAgentMailApiKey } from '../channels/agentmail-api';
@@ -494,6 +494,24 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // Every connector request resolves and checks its target, on each
     // redirect hop too. See egress.ts.
     fetchImpl: connectorEgressFetch,
+    markCredentialRejected: async (connectionId, rejected) => {
+      await db
+        .update(connectorConnections)
+        .set({
+          metadata: rejected
+            ? sql`${connectorConnections.metadata} || jsonb_build_object('credential_rejected_at', now())`
+            : sql`${connectorConnections.metadata} - 'credential_rejected_at'`,
+        })
+        .where(eq(connectorConnections.connectionId, connectionId));
+    },
+    credentialKind: async (connectionId) => {
+      const [row] = await db
+        .select({ kind: connectionCredentials.kind })
+        .from(connectionCredentials)
+        .where(eq(connectionCredentials.connectionId, connectionId))
+        .limit(1);
+      return row?.kind ?? null;
+    },
     enforcePolicies: true,
   };
 }

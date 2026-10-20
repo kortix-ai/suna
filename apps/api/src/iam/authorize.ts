@@ -672,7 +672,7 @@ async function resolvePrincipalUncached(
         ssoRequired: sql<boolean>`EXISTS (
           SELECT 1
             FROM kortix.account_sso_providers enforcing
-            JOIN auth.users person ON person.id::text = ${pid}
+            JOIN auth.users person ON person.id = ${pid}::uuid
            WHERE enforcing.account_id = ${qualifiedColumn(accounts.accountId)}
              AND enforcing.enforce_sso
              AND enforcing.domain_verified_at IS NOT NULL
