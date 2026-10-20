@@ -217,9 +217,9 @@ function GroupsList({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-0.5">
-          <p className="text-foreground text-sm font-medium">
+          <h1 className="text-foreground text-2xl font-medium tracking-tight text-balance">
             {tHardcodedUi.raw('i18nComplete.text39bbb719fa2b')}
-          </p>
+          </h1>
           <p className="text-muted-foreground text-xs">
             {tHardcodedUi.raw(
               'autoComponentsIamGroupsTabJsxAttrDescriptionBundleMembersTogether2839aadc',

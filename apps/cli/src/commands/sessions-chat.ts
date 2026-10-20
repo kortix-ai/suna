@@ -93,8 +93,12 @@ export async function loadSessionForChat(
       client,
       projectId,
       session,
-      onNotRunning: options.onNotRunning,
-      onStarting: options.onStarting,
+      onNotRunning: options.onNotRunning ?? (
+        cliCommand === 'sessions chat' && session.status === 'provisioning' ? 'start' : 'fail'
+      ),
+      onStarting: options.onStarting ?? (() => {
+        process.stderr.write(`${C.dim}  Starting session…${C.reset}\n`);
+      }),
     });
   } catch (error) {
     if (error instanceof SessionRuntimeError && error.kind === 'not-running') {

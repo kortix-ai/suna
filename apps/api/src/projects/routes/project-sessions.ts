@@ -64,6 +64,7 @@ import {
 } from '../lib/session-metadata-keys';
 import { loadSessionUserStates } from '../lib/session-user-state';
 import { personUserId } from './session-watch';
+import { readRuntimeControlState } from '../lib/session-control-readers';
 import { sessionCreateSurface } from '../lib/session-surface';
 
 import { readSessionsWorking } from '../lib/session-working-read';
@@ -104,16 +105,18 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
   // The same owner resolution the list uses: without it a read-by-id reported
   // owner_type 'unknown' and no owner name for the very session the list named.
   const personId = personUserId(c, loaded);
-  const [owners, userStates, conversationModels, working] = await Promise.all([
+  const [owners, userStates, conversationModels, working, runtime] = await Promise.all([
     visible.row.createdBy
       ? resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)
       : undefined,
     personId ? loadSessionUserStates([sessionId], personId) : undefined,
     readSessionConversationModels([sessionId]),
     readSessionsWorking([sessionId]),
+    readRuntimeControlState(sessionId),
   ]);
   const owner = visible.row.createdBy ? owners?.get(visible.row.createdBy) : undefined;
   return c.json({ ...serializeSession(visible.row, {
+    runtimeStatus: runtime.sandbox_status,
     grants: visible.grants,
     conversationModel: conversationModels.get(sessionId),
     viewerId: loaded.userId,

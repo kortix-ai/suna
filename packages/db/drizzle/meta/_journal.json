@@ -1198,6 +1198,13 @@
       "when": 1792481755915,
       "tag": "20261020073555_krtx_2763_spend_audit_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1792499131052,
+      "tag": "20261020122531_gateway_spend_daily",
+      "breakpoints": true
     }
   ]
 }

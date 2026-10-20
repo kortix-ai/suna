@@ -126,8 +126,9 @@ export function useConnectorSetup(
   const [info, setInfo] = useState<ConnectorSetupLinkInfo | null>(seed ?? null);
   const [error, setError] = useState<string | null>(null);
   // Bumped every time the popup is opened, so reopening restarts the poll
-  // window instead of inheriting an already-expired one.
-  const [openedAt, setOpenedAt] = useState(0);
+  // window instead of inheriting an already-expired one. A counter, not a
+  // timestamp: two opens in the same millisecond must still differ.
+  const [openCount, setOpenCount] = useState(0);
   // Who the account was authorized as, from finalize. Shown on success so a
   // login used by mistake (a personal account on a shared slot) is visible
   // the moment it lands, not months later.
@@ -200,7 +201,7 @@ export function useConnectorSetup(
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [phase, openedAt, token, backendUrl]);
+  }, [phase, openCount, token, backendUrl]);
 
   async function connect() {
     setPhase('starting');
@@ -221,7 +222,7 @@ export function useConnectorSetup(
       return;
     }
     options.openPopup(outcome.url);
-    setOpenedAt(Date.now());
+    setOpenCount((count) => count + 1);
     setPhase('opened');
     options.onOpened?.();
   }
