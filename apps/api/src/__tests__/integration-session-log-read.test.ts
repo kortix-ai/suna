@@ -391,6 +391,15 @@ test('inventory reports the durable project-default turn model instead of the cr
     expect(detail.status).toBe(200);
     expect(await detail.json()).toMatchObject({ model: 'kortix/glm-5.3-flash' });
   }
+  for (const route of ['snapshot', 'open-bundle']) {
+    for (const transcript of [0, 40]) {
+      const bundle = await get(`${base(id)}/${route}?transcript=${transcript}`);
+      expect(bundle.status).toBe(200);
+      expect(await bundle.json()).toMatchObject({
+        session: { model: 'kortix/glm-5.3-flash', metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } },
+      });
+    }
+  }
   expect(rows.find((row) => row.session_id === id)).toMatchObject({
     model: 'kortix/glm-5.3-flash',
     metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' },
