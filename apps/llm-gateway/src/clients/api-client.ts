@@ -18,6 +18,11 @@ export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 export interface ApiClientOptions {
   baseUrl: string;
+  /**
+   * The API inside the VPC (KORTIX_API_INTERNAL_URL), tried before `baseUrl`.
+   * A call it does not answer marks it down for a minute; `baseUrl` serves.
+   */
+  internalBaseUrl?: string;
   token: string;
   /** Proof for `/internal/*` at the public API edge (KORTIX_INTERNAL_EDGE_KEY). */
   edgeKey?: string;
@@ -69,6 +74,9 @@ const RETRY_SLOW = { retryOnTimeout: true } as const;
 /** How long an API that answered 404 for `/admit` is not asked again. */
 const ADMIT_MISSING_MS = 60_000;
 
+/** How long a private URL that did not answer is skipped for the public one. */
+const INTERNAL_DOWN_MS = 60_000;
+
 interface ResolutionErrorBody {
   code: NoUpstreamReasonCode;
   message: string;
@@ -99,7 +107,25 @@ function billingResult(result: BillingBody): { holdUsd?: number } | Error {
 
 export function createApiClient(opts: ApiClientOptions): ApiClient {
   const baseUrl = opts.baseUrl.replace(/\/+$/, '');
-  const fetchImpl: FetchLike = opts.fetchImpl ?? ((input, init) => fetch(input, init));
+  const internalBaseUrl = opts.internalBaseUrl?.replace(/\/+$/, '') || undefined;
+  const rawFetch: FetchLike = opts.fetchImpl ?? ((input, init) => fetch(input, init));
+  // ponytail: one per-process switch; a broken private path costs one failed attempt per minute.
+  let internalDownUntil = 0;
+  // A thrown fetch (refused, reset, DNS, timeout) on the private URL sends the
+  // next minute of calls to the public one. A response, even a 5xx, is the
+  // API answering, so it keeps the private URL.
+  const fetchImpl = async (path: string, init: RequestInit): Promise<Response> => {
+    const base = internalBaseUrl && Date.now() >= internalDownUntil ? internalBaseUrl : baseUrl;
+    try {
+      return await rawFetch(`${base}${path}`, init);
+    } catch (err) {
+      if (base === baseUrl) throw err;
+      internalDownUntil = Date.now() + INTERNAL_DOWN_MS;
+      // A GET (the ping) repeats safely, so it does not report the API down.
+      if (init.method === 'GET') return rawFetch(`${baseUrl}${path}`, init);
+      throw err;
+    }
+  };
   const timeoutMs = opts.timeoutMs ?? 5_000;
   const admitTimeoutMs = opts.admitTimeoutMs ?? 10_000;
 
@@ -133,7 +159,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       async (signal) => {
         let response: Response;
         try {
-          response = await fetchImpl(`${baseUrl}${path}`, {
+          response = await fetchImpl(path, {
             method: 'POST',
             headers: {
               'content-type': 'application/json',
@@ -306,7 +332,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     ping: async () => {
       const started = Date.now();
       try {
-        const res = await fetchImpl(`${baseUrl}/health`, {
+        const res = await fetchImpl('/health', {
           method: 'GET',
           signal: AbortSignal.timeout(3_000),
         });
