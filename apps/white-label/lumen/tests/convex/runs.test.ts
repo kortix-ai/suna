@@ -226,6 +226,55 @@ describe('run engine: fan-out, validation, repair, nudge, relaunch, limits', () 
   });
 });
 
+describe('watchdog: an interrupted action never leaves a run stuck', () => {
+  test('a run stuck in preparing (its action died) fails after 10 min with an audit row, and Retry runs it to success', async () => {
+    const { t, owner, matterId, docs } = await world(2);
+    docs.forEach((d, i) => docIndex.set(d, i + 1));
+    const { runId } = await owner.as.mutation(api.runs.startReview, { matterId });
+    // The prepare action is lost (a backend restart): the run sits in preparing with pending batches.
+    await t.run(async (ctx) => {
+      for (const f of await ctx.db.system.query('_scheduled_functions').collect()) await ctx.scheduler.cancel(f._id);
+      await ctx.db.patch(runId, { status: 'preparing' });
+    });
+    expect(await t.mutation(internal.runs.sweep, {})).toEqual({ failedRuns: 0, failedBatches: 0, rescheduled: 0 });
+    vi.setSystemTime(Date.now() + 11 * 60_000);
+    expect(await t.mutation(internal.runs.sweep, {})).toMatchObject({ failedRuns: 1 });
+    const run = await t.run((ctx) => ctx.db.get(runId));
+    expect(run).toMatchObject({ status: 'failed', error: 'The run stopped while it was starting. Retry it.' });
+    const batches = await t.run((ctx) => ctx.db.query('runBatches').withIndex('by_run', (q) => q.eq('runId', runId)).collect());
+    expect(batches.every((b) => b.status === 'failed')).toBe(true);
+    const audit = await t.run((ctx) => ctx.db.query('auditEvents').collect());
+    expect(audit.some((a) => a.action === 'run.finish' && a.detail?.endsWith(': failed'))).toBe(true);
+    fake.script.onStart = writeAll;
+    await owner.as.mutation(api.runs.retryFailed, { runId });
+    await finish(t);
+    expect((await t.run((ctx) => ctx.db.get(runId)))?.status).toBe('succeeded');
+  });
+
+  test('a batch stuck in starting fails; a working batch with a dead poll chain fails past 25 min', async () => {
+    const { t, owner, matterId } = await world(5);
+    const { runId } = await owner.as.mutation(api.runs.startReview, { matterId });
+    const [b1, b2] = await t.run(async (ctx) => {
+      for (const f of await ctx.db.system.query('_scheduled_functions').collect()) await ctx.scheduler.cancel(f._id);
+      await ctx.db.patch(runId, { status: 'running', startedAt: Date.now() });
+      const bs = await ctx.db.query('runBatches').withIndex('by_run', (q) => q.eq('runId', runId)).collect();
+      await ctx.db.patch(bs[0]._id, { status: 'starting' });
+      await ctx.db.patch(bs[1]._id, { status: 'working', kortixSessionId: 'sess_x', startedAt: Date.now(), lastProgressAt: Date.now() });
+      return bs.map((b) => b._id);
+    });
+    vi.setSystemTime(Date.now() + 11 * 60_000);
+    expect(await t.mutation(internal.runs.sweep, {})).toMatchObject({ failedRuns: 0, failedBatches: 1 });
+    await finish(t);
+    vi.setSystemTime(Date.now() + 15 * 60_000);
+    expect(await t.mutation(internal.runs.sweep, {})).toMatchObject({ failedBatches: 1 });
+    await finish(t);
+    const got = await t.run(async (ctx) => [await ctx.db.get(b1), await ctx.db.get(b2), await ctx.db.get(runId)]);
+    expect(got[0]).toMatchObject({ status: 'failed', error: 'The workspace could not start' });
+    expect(got[1]).toMatchObject({ status: 'failed', error: 'No progress for 20 minutes' });
+    expect(got[2]?.status).toBe('failed');
+  });
+});
+
 describe('concurrency', () => {
   test('10 one-batch runs in one firm: 8 run at once, the 2 waiting runs start when slots free', async () => {
     const { t, matterId, docs } = await world(1);

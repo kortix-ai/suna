@@ -793,6 +793,86 @@ export const settleBatch = internalMutation({
   },
 });
 
+/** A run start (prepare) or a batch launch has this long before the watchdog reads it as interrupted. */
+export const START_STALL_MS = 10 * 60_000;
+/** The watchdog's margin over poll's own limits: poll settles first while its chain is alive. */
+const SWEEP_GRACE_MS = 5 * 60_000;
+const ACTIVE_RUN = ["queued", "preparing", "running", "finalizing"] as const;
+
+/**
+ * The watchdog (convex/crons.ts, every 5 min). An action that a deploy or a
+ * backend restart interrupts is not retried, and nothing else re-drives its
+ * run. This settles every active run that stopped moving:
+ * - queued/preparing with no event for 10 min → failed (Retry runs it again)
+ * - a batch stuck in starting for 10 min → failed
+ * - a working batch past the 20 min no-progress limit (+5 min) → failed
+ * - a running run past 60 min (+5 min) → failed
+ * - a running run with pending batches and none running → scheduled again
+ */
+export const sweep = internalMutation({
+  args: {},
+  returns: v.object({ failedRuns: v.number(), failedBatches: v.number(), rescheduled: v.number() }),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const out = { failedRuns: 0, failedBatches: 0, rescheduled: 0 };
+    const lastEventAt = async (runId: Id<"runs">, batchId?: Id<"runBatches">) => {
+      const events = await ctx.db.query("runEvents").withIndex("by_run", (q) => q.eq("runId", runId)).order("desc").take(200);
+      const e = batchId ? events.find((x) => x.batchId === batchId) : events[0];
+      return e?.at ?? 0;
+    };
+    for (const firm of await ctx.db.query("firms").collect()) {
+      for (const status of ACTIVE_RUN) {
+        const runs = await ctx.db.query("runs").withIndex("by_firm_status", (q) => q.eq("firmId", firm._id).eq("status", status)).take(100);
+        for (const run of runs) {
+          const since = Math.max(run._creationTime, await lastEventAt(run._id));
+          if (status === "queued" || status === "preparing") {
+            if (now - since < START_STALL_MS) continue;
+            await failRun(ctx, run, "The run stopped while it was starting. Retry it.");
+            out.failedRuns++;
+            continue;
+          }
+          if (run.startedAt && now - run.startedAt > RUN_TIMEOUT_MS + SWEEP_GRACE_MS) {
+            await failRun(ctx, run, "The run took longer than 60 minutes");
+            out.failedRuns++;
+            continue;
+          }
+          const batches = await batchesOf(ctx, run._id);
+          let live = 0;
+          for (const b of batches) {
+            if (b.status === "starting" && now - Math.max(since, await lastEventAt(run._id, b._id)) > START_STALL_MS) {
+              await ctx.scheduler.runAfter(0, internal.runs.settleBatch, { batchId: b._id, status: "failed", error: "The workspace could not start" });
+              out.failedBatches++;
+            } else if ((b.status === "working" || b.status === "validating") && now - (b.lastProgressAt ?? b.startedAt ?? since) > NO_PROGRESS_MS + SWEEP_GRACE_MS) {
+              await ctx.scheduler.runAfter(0, internal.runs.settleBatch, { batchId: b._id, status: "failed", error: "No progress for 20 minutes" });
+              out.failedBatches++;
+            } else if ((RUNNING_BATCH as readonly string[]).includes(b.status)) live++;
+          }
+          if (!live && batches.some((b) => b.status === "pending") && now - since > START_STALL_MS) {
+            await ctx.scheduler.runAfter(0, internal.runs.schedule, { runId: run._id });
+            out.rescheduled++;
+          }
+        }
+      }
+    }
+    if (out.failedRuns || out.failedBatches || out.rescheduled) console.warn(`[lumen] watchdog: ${JSON.stringify(out)}`);
+    return out;
+  },
+});
+
+/** markRun(failed) for the watchdog, with the finish audit row a settled run gets. */
+async function failRun(ctx: MutationCtx, run: Doc<"runs">, error: string) {
+  const now = Date.now();
+  await ctx.db.patch(run._id, { status: "failed", error, finishedAt: now });
+  await event(ctx, run._id, "failed", error);
+  for (const b of await batchesOf(ctx, run._id)) {
+    if (!TERMINAL_BATCH.has(b.status)) await ctx.db.patch(b._id, { status: "failed", error, finishedAt: now });
+  }
+  await failPendingCells(ctx, run, run.documentIds);
+  const firm = await ctx.db.get(run.firmId);
+  if (firm) await audit(ctx, { firm, actorId: "system", action: "run.finish", matterId: run.matterId, detail: `${run.title}: failed` });
+  await wakeFirm(ctx, run.firmId);
+}
+
 /** Operator view of a run (scripts only): status, batches and the event log. */
 export const debug = internalQuery({
   args: { runId: v.id("runs") },
