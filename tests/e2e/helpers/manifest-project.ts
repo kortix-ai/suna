@@ -96,6 +96,7 @@ export interface ManifestProjectOptions {
   userId: string;
   name: string;
   databaseUrl: string;
+  manifestVersion?: 2 | 3;
 }
 
 /**
@@ -143,7 +144,7 @@ export async function createManifestProject(
   }
 
   const env = loadEnv();
-  const repository: LocalGitRepository = await createLocalGitRepository(name);
+  const repository: LocalGitRepository = await createLocalGitRepository(name, { manifestVersion: options.manifestVersion });
   const project = await createDatabaseProject(env, {
     accountId,
     userId,

@@ -197,10 +197,10 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         pending={configure.pending}
         onChat={() => configure.start(newConfigPrompt('agent'))}
         manual={{
-          description: detectManifestVersion(config?.manifest_raw) === 2
+          description: detectManifestVersion(config?.manifest_raw) >= 2
             ? tManual('description')
             : tI18nComplete.raw('text5210c5acc2cd'),
-          ...(detectManifestVersion(config?.manifest_raw) === 2
+          ...(detectManifestVersion(config?.manifest_raw) >= 2
             ? { onSelect: () => setCreateOpen(true) }
             : { href: `/projects/${projectId}/files` }),
         }}

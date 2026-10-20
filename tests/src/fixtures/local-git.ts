@@ -11,7 +11,7 @@ export interface LocalGitRepository {
 
 export async function createLocalGitRepository(
   name: string,
-  opts?: { allowAllSecrets?: boolean; allowAllConnectors?: boolean },
+  opts?: { allowAllSecrets?: boolean; allowAllConnectors?: boolean; manifestVersion?: 2 | 3 },
 ): Promise<LocalGitRepository> {
   const root = await mkdtemp(join(tmpdir(), "ke2e-git-"));
   const repoUrl = join(root, "remote.git");
@@ -24,7 +24,7 @@ export async function createLocalGitRepository(
     await writeFile(join(work, "README.md"), `# ${name}\n`);
     await writeFile(
       join(work, "kortix.yaml"),
-      `kortix_version: 2\nproject:\n  name: ${name}\ndefault_agent: kortix\nagents:\n  kortix:${
+      `kortix_version: ${opts?.manifestVersion ?? 2}\nproject:\n  name: ${name}\ndefault_agent: kortix\nagents:\n  kortix:${
         opts?.allowAllSecrets || opts?.allowAllConnectors
           ? `${opts.allowAllSecrets ? '\n    secrets: all' : ''}${opts.allowAllConnectors ? '\n    connectors: all' : ''}`
           : ' {}'

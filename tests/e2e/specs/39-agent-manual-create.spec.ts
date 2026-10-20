@@ -50,6 +50,7 @@ test("39 — manual agent creation and editing require no model", async ({
       userId: owner.id,
       name: "Manual agent test",
       databaseUrl,
+      manifestVersion: 3,
     });
     const route = `/projects/${project.id}/customize/agents`;
     await installBrowserSessionDirect(page, session, route, auth);
