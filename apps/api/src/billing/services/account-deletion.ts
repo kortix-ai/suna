@@ -2,6 +2,7 @@ import { and, eq, inArray, isNotNull, ne, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import {
   accountDeletionRequests,
+  accountTokens,
   accounts,
   appDeploymentEvents,
   appDeployments,
@@ -11,6 +12,11 @@ import {
   connectorCalls,
   connectorConnections,
   gatewayRequestLogs,
+  gatewayApiKeys,
+  oauthAccessTokens,
+  oauthAuthorizationCodes,
+  oauthRefreshTokens,
+  scimTokens,
   impersonationGrants,
   kortixApiKeys,
   legacySandboxMigrations,
@@ -39,7 +45,7 @@ import { getSupabase } from '../../shared/supabase';
 import { deleteAccountSiteObjects } from '../../apps/static-site';
 import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
-import { db } from '../../shared/db';
+import { db, withDbTransaction } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { ownedAccountRows } from '../../iam/membership-read';
 import { BillingError } from '../../errors';
@@ -83,7 +89,32 @@ export async function requestAccountDeletion(
   const scheduledFor = new Date(Date.now() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000).toISOString();
   let request: Awaited<ReturnType<typeof createDeletionRequest>>;
   try {
-    request = await createDeletionRequest(accountId, userId, scheduledFor, reason);
+    request = await withDbTransaction(async () => {
+      const pending = await createDeletionRequest(accountId, userId, scheduledFor, reason);
+      await db.update(accountTokens)
+        .set({ status: 'revoked', revokedAt: new Date() })
+        .where(and(eq(accountTokens.accountId, accountId), eq(accountTokens.status, 'active')));
+      await db.update(kortixApiKeys)
+        .set({ status: 'revoked' })
+        .where(and(eq(kortixApiKeys.accountId, accountId), eq(kortixApiKeys.status, 'active')));
+      await db.update(gatewayApiKeys)
+        .set({ status: 'revoked', revokedAt: new Date() })
+        .where(and(eq(gatewayApiKeys.accountId, accountId), eq(gatewayApiKeys.status, 'active')));
+      await db.delete(oauthAuthorizationCodes).where(eq(oauthAuthorizationCodes.accountId, accountId));
+      await db.update(oauthAccessTokens).set({ revokedAt: new Date() })
+        .where(eq(oauthAccessTokens.accountId, accountId));
+      await db.update(oauthRefreshTokens).set({ revokedAt: new Date() })
+        .where(eq(oauthRefreshTokens.accountId, accountId));
+      await db.update(scimTokens).set({ revokedAt: new Date() })
+        .where(eq(scimTokens.accountId, accountId));
+      // A personal-account deletion ends existing sign-ins, not the identity:
+      // a fresh sign-in can still cancel during the grace period. Deleting a
+      // team account must not end the owner's access to their other accounts.
+      if (accountId === userId) {
+        await db.execute(sql`DELETE FROM auth.sessions WHERE user_id = ${userId}::uuid`);
+      }
+      return pending;
+    });
   } catch (err) {
     // A concurrent request inserted its pending row after our read.
     // uniq_account_deletion_requests_pending refuses the second one; answer it
