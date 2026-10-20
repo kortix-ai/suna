@@ -1280,6 +1280,11 @@ export const config = {
   // 'dev' above, and the router credit gate must not read that fallback as a
   // dev exemption (see router/services/credit-gate-env.ts).
   INTERNAL_KORTIX_ENV_EXPLICIT: Boolean(process.env.INTERNAL_KORTIX_ENV),
+  // A local stack (the worktree launcher and scripts/dev-local.sh export it).
+  // It runs as INTERNAL_KORTIX_ENV=dev on dev's sandbox provider organisation
+  // but reads its own database, so it must never delete provider images it
+  // did not build (KRTX-2546). No deployed environment sets it.
+  KORTIX_LOCAL_DEV: process.env.KORTIX_LOCAL_DEV === '1',
   // Empty string reads as unset: the launchers always export the var, and a
   // blank value must not turn into an instance called "".
   KORTIX_INSTANCE_ID: env.KORTIX_INSTANCE_ID || undefined,

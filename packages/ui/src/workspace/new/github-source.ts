@@ -84,9 +84,12 @@ export function repoSlugFromName(name: string): string {
     .trim()
     .replace(/[^a-zA-Z0-9._-]+/g, '-')
     .replace(/-{2,}/g, '-')
-    .replace(/^[._-]+/, '')
-    .replace(/[._-]+$/, '');
-  return slug || 'workspace';
+    .replace(/^[._-]+/, '');
+  // A loop, not `/[._-]+$/`: that regex backtracks quadratically on a long
+  // run of `.`/`_` (CodeQL js/polynomial-redos).
+  let end = slug.length;
+  while (end > 0 && '._-'.includes(slug[end - 1])) end -= 1;
+  return slug.slice(0, end) || 'workspace';
 }
 
 /**

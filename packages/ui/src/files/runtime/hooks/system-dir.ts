@@ -1,3 +1,5 @@
+import { stripTrailingSlashes } from '@kortix/sdk';
+
 /**
  * Elevated system directories that appear in the file tree but are directories,
  * not files. GET /file/content?path=.opencode always returns 400 "Path is a
@@ -10,6 +12,6 @@ const SYSTEM_DIRECTORIES = new Set(['.opencode', '.kortix', '.git']);
 
 export function isSystemDirectoryPath(filePath: string | null): boolean {
   if (!filePath) return false;
-  const normalized = filePath.replace(/^\/+/, '').replace(/\/+$/, '');
+  const normalized = stripTrailingSlashes(filePath.replace(/^\/+/, ''));
   return SYSTEM_DIRECTORIES.has(normalized);
 }

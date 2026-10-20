@@ -25,7 +25,7 @@ import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME } fro
  * deletes the credential, audits it, and refreshes the model catalog. Nothing
  * called it.
  */
-export type SubscriptionAction = 'connect' | 'reconnect' | 'disconnect';
+type SubscriptionAction = 'connect' | 'reconnect' | 'disconnect';
 
 function isSubscriptionCredential(name: string): boolean {
   return name === CODEX_AUTH_JSON_SECRET_NAME || name === LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME;

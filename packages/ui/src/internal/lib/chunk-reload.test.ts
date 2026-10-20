@@ -99,7 +99,7 @@ describe('reloadForStaleChunk', () => {
     const fake = installFakeWindow();
     expect(reloadForStaleChunk()).toBe(true);
     expect(fake.reloads()).toBe(1);
-    expect(fake.store.get('kortix.staleChunkReloadAt')).toBe(String(1_000_000));
+    expect(fake.store.get('kortix:chunk-reload-at')).toBe(String(1_000_000));
   });
 
   test('refuses a second reload within 45 s', () => {
@@ -151,7 +151,7 @@ describe('withStaleChunkRecovery', () => {
     const held = wrapped();
     await flushRecovery();
     expect(fake.reloads()).toBe(1);
-    expect(fake.store.has('kortix.staleChunkReloadAt')).toBe(true);
+    expect(fake.store.has('kortix:chunk-reload-at')).toBe(true);
     // The promise next/dynamic waits on never settles while the page reloads.
     expect(await Promise.race([held.then(() => 'settled'), flushRecovery().then(() => 'held')])).toBe(
       'held',

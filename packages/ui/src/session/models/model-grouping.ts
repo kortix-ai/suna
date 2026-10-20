@@ -82,7 +82,9 @@ export function splitModelLabel(modelName: string | undefined): {
   trail: string;
 } {
   const trimmed = (modelName ?? '').trim();
-  const match = /^(\S+)\s+(.*)$/.exec(trimmed);
+  // `(\S.*)`, not `(.*)`: the input is trimmed, so the same strings match, and
+  // `\s+` and `.*` no longer compete for spaces (CodeQL js/polynomial-redos).
+  const match = /^(\S+)\s+(\S.*)$/.exec(trimmed);
   if (!match) return { lead: trimmed, trail: '' };
   return { lead: match[1], trail: match[2].trim() };
 }

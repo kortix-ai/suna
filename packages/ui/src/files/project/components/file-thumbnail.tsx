@@ -2,6 +2,7 @@
 
 import { Badge } from '../../../primitives/badge';
 import Loading from '../../../primitives/loading';
+import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import { chalkColors } from '@kortix/shared';
 import { useCallback, useRef, useState } from 'react';
@@ -11,6 +12,7 @@ interface FileThumbnailProps {
   filePath: string;
   fileName: string;
   className?: string;
+  onOpen?: () => void;
   /**
    * Render a lightweight placeholder instead of the live preview. Without it,
    * the card shows the placeholder until it comes near the viewport.
@@ -61,7 +63,14 @@ const VIRTUAL_PCT = `${100 / THUMB_SCALE}%`;
  * components end-to-end. A uniform CSS scale shrinks the viewport so the
  * rendered output reads as a zoomed-out thumbnail.
  */
-export function FileThumbnail({ filePath, fileName, className, deferPreview }: FileThumbnailProps) {
+export function FileThumbnail({
+  filePath,
+  fileName,
+  className,
+  deferPreview,
+  onOpen,
+}: FileThumbnailProps) {
+  const t = useTranslations('hardcodedUi.i18nComplete');
   const extLower = fileName.split('.').pop()?.toLowerCase() || '';
   // An SVG is an `image` by extension but arrives as TEXT, so
   // `FileContentRenderer` draws its SOURCE — `imageDataUrl` only forms for
@@ -109,8 +118,9 @@ export function FileThumbnail({ filePath, fileName, className, deferPreview }: F
 
   return (
     <div className={cn('bg-popover relative overflow-hidden rounded-md', className)}>
+      {/* A miniature document is decoration; its controls belong outside the scale. */}
       <div
-        className="pointer-events-none absolute top-0 left-0 origin-top-left select-none [&_*]:!cursor-default"
+        className="pointer-events-none absolute top-0 left-0 origin-top-left select-none [&_*]:!cursor-default [&_button]:hidden"
         style={
           rendersAsPicture
             ? { width: '100%', height: '100%' }
@@ -125,6 +135,18 @@ export function FileThumbnail({ filePath, fileName, className, deferPreview }: F
         <FileContentRenderer filePath={filePath} readOnly showHeader={false} imageControls="none" />
       </div>
       {extBadge}
+      {onOpen && (extLower === 'md' || extLower === 'mdx') && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen();
+          }}
+          className="bg-popover text-muted-foreground hover:text-foreground absolute bottom-2 left-2 rounded-sm px-2 py-1 text-xs font-medium focus-visible:ring-2 focus-visible:outline-none"
+        >
+          {t.raw('textf5c9bd131486')}
+        </button>
+      )}
     </div>
   );
 }

@@ -43,6 +43,8 @@ let auditPending = false;
 let runtimeCommandsData: { name: string }[] | undefined = [];
 /** The `data` the agent-scoped call (`useRuntimeCommands({ agent })`) sees — same cache today, its own hook instance. */
 let agentCommandsData: { name: string }[] | undefined = [];
+/** The options the last render passed to `useRuntimeAgents`. */
+let runtimeAgentsArgs: { directory?: string; projectId?: string | null } | undefined;
 /** The props the last render handed the composer — the host-wire observables. */
 let composerProps: { commandsResolved?: boolean } | undefined;
 mock.module('@kortix/sdk/react', () => ({
@@ -59,7 +61,10 @@ mock.module('@kortix/sdk/react', () => ({
   }),
   useRuntimeReady: () => true,
   useRuntimeSession: () => ({ data: { id: 'session-fixture' }, isFetched: true }),
-  useRuntimeAgents: () => ({ data: [{ name: 'build' }] }),
+  useRuntimeAgents: (opts?: { directory?: string; projectId?: string | null }) => {
+    runtimeAgentsArgs = opts;
+    return { data: [{ name: 'build' }] };
+  },
   useRuntimeCommands: (opts?: { agent?: string }) => ({
     data: opts !== undefined ? agentCommandsData : runtimeCommandsData,
   }),
@@ -792,5 +797,34 @@ describe('SessionChat command-list resolution wire', () => {
       agentCommandsData = [];
       runtimeCommandsData = [];
     }
+  });
+});
+
+describe('SessionChat agent roster source', () => {
+  // The sub-agent "View" modal mounts the chat with no projectId, only the
+  // parent scope. Without a projectId the roster fell back to the runtime's
+  // OpenCode `GET /agent`, which a pi box answers 404 (KRTX-2887).
+  test('a sub-agent chat under a parent scope reads the project roster, not the runtime', () => {
+    runtimeAgentsArgs = undefined;
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <IntlTestProvider locale="en" messages={enMessages} onError={() => {}}>
+          <TestUiHost params={ROUTE} viewerId="viewer-1">
+            <SidebarProvider>
+              <SessionChat
+                sessionId="session-fixture"
+                hideHeader
+                readOnly
+                initialScrollTop
+                savedHistoryScope="project-fixture/project-session-fixture"
+              />
+            </SidebarProvider>
+          </TestUiHost>
+        </IntlTestProvider>
+      </QueryClientProvider>,
+    );
+    // Assigned inside the mocked hook: TS cannot see that write from here.
+    const args = runtimeAgentsArgs as { projectId?: string | null } | undefined;
+    expect(args?.projectId).toBe('project-fixture');
   });
 });

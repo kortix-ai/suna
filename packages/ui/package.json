@@ -119,6 +119,7 @@
     "./customize/shared/capability-skeleton": "./src/customize/shared/capability-skeleton.tsx",
     "./customize/shared/capability-tabs": "./src/customize/shared/capability-tabs.tsx",
     "./customize/shared/entity/entity-files": "./src/customize/shared/entity/entity-files.ts",
+    "./customize/shared/feature-gate-screen": "./src/customize/shared/feature-gate-screen.tsx",
     "./customize/shared/use-customize-prefetch": "./src/customize/shared/use-customize-prefetch.ts",
     "./customize/shared/with-search": "./src/customize/shared/with-search.ts",
     "./customize/skills/skills-page": "./src/customize/skills/skills-page.tsx",
@@ -290,6 +291,7 @@
     "./internal/lib/browser-error-noise": "./src/internal/lib/browser-error-noise.ts",
     "./internal/lib/browser-noise/evidence": "./src/internal/lib/browser-noise/evidence.ts",
     "./internal/lib/capability-tab-routes": "./src/internal/lib/capability-tab-routes.ts",
+    "./internal/lib/chunk-load-recovery": "./src/internal/lib/chunk-load-recovery.ts",
     "./internal/lib/chunk-reload": "./src/internal/lib/chunk-reload.ts",
     "./internal/lib/code-theme": "./src/internal/lib/code-theme.ts",
     "./internal/lib/delivered-but-disconnected": "./src/internal/lib/delivered-but-disconnected.ts",
@@ -932,6 +934,10 @@
       "./customize/shared/entity/entity-files": {
         "types": "./dist/customize/shared/entity/entity-files.d.ts",
         "import": "./dist/customize/shared/entity/entity-files.js"
+      },
+      "./customize/shared/feature-gate-screen": {
+        "types": "./dist/customize/shared/feature-gate-screen.d.ts",
+        "import": "./dist/customize/shared/feature-gate-screen.js"
       },
       "./customize/shared/use-customize-prefetch": {
         "types": "./dist/customize/shared/use-customize-prefetch.d.ts",
@@ -1610,6 +1616,10 @@
       "./internal/lib/capability-tab-routes": {
         "types": "./dist/internal/lib/capability-tab-routes.d.ts",
         "import": "./dist/internal/lib/capability-tab-routes.js"
+      },
+      "./internal/lib/chunk-load-recovery": {
+        "types": "./dist/internal/lib/chunk-load-recovery.d.ts",
+        "import": "./dist/internal/lib/chunk-load-recovery.js"
       },
       "./internal/lib/chunk-reload": {
         "types": "./dist/internal/lib/chunk-reload.d.ts",
