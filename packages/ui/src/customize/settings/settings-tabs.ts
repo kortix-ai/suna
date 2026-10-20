@@ -31,7 +31,6 @@ import { accountPanelUrl, hubTarget } from '../../internal/stores/account-panel-
 import {
   capabilityTabHref,
   channelsHref,
-  reviewHref,
 } from '../../internal/lib/capability-tab-routes';
 
 export type SettingsTab =
@@ -222,7 +221,7 @@ export const GRADUATED: Record<string, (projectId: string) => string> = {
   upgrades: (p) => `${capabilityTabHref(p, 'config')}?section=upgrades`,
   // `upgrade`, singular, is the old Customize id for the Upgrades pane.
   upgrade: (p) => `${capabilityTabHref(p, 'config')}?section=upgrades`,
-  review: reviewHref,
+  review: (p) => capabilityTabHref(p, 'review'),
   // Secrets, Channels, and Models graduated a SECOND time — off the Settings
   // sub-nav entirely and onto their own top-level Customize tab. `models` and
   // every `llm-*` sub-section (the old Models pane's own sub-tabs) all land

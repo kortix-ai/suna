@@ -36,7 +36,6 @@ import { useSettingsPanelStore, type MembersTab } from '../../internal/stores/se
 import {
   capabilityTabHref,
   channelsHref,
-  reviewHref,
   type CapabilityTab,
 } from '../../internal/lib/capability-tab-routes';
 
@@ -79,7 +78,7 @@ export function projectCapabilityNavHref(
   target: CapabilityTab['key'] | 'members' | 'review',
 ): string {
   if (tab === 'channels') return channelsHref(projectId);
-  if (target === 'review') return reviewHref(projectId);
+  if (target === 'review') return capabilityTabHref(projectId, 'review');
   // `'members'` is not a real `CapabilityTab['key']` — `capabilityTabHref`
   // would reject it at the type level. The redirect page at that path is
   // still the right destination.

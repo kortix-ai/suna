@@ -33,6 +33,7 @@ import {
 } from '@phosphor-icons/react';
 import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
 import { useSessionIds } from '../../providers/session-ids';
+import { isProjectPath } from '../../lib/routes';
 import { useState, type MouseEvent } from 'react';
 
 import { Button } from '../../primitives/button';
@@ -75,7 +76,8 @@ export function WorkspaceMenuSection() {
   const [query, setQuery] = useState('');
   const tCapture = useTranslations('capture.account');
 
-  const activeProjectId = pathname?.startsWith('/projects/') ? routeProjectId : undefined;
+  const activeProjectId =
+    routeProjectId && isProjectPath(pathname, routeProjectId) ? routeProjectId : undefined;
 
   const {
     workspacesLoading,

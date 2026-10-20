@@ -64,3 +64,26 @@ export function uiRoutes(): UiRoutes {
 export function customizePath(projectId: string, path?: string): string {
   return routes.customize(projectId, path) ?? DEFAULT_ROUTES.customize(projectId, path);
 }
+
+/**
+ * The session id `pathname` shows, read through the host's `session` route
+ * (so a host URL scheme works), or null when it is not a session page of
+ * `projectId`.
+ */
+export function sessionIdFromPath(pathname: string | null | undefined, projectId: string): string | null {
+  if (!pathname) return null;
+  const MARK = '\u0001';
+  const [prefix, suffix = ''] = routes.session(projectId, MARK).split(MARK);
+  if (!prefix || !pathname.startsWith(prefix)) return null;
+  const rest = pathname.slice(prefix.length);
+  const id = rest.split(/[/?#]/)[0];
+  if (!id || (suffix && !rest.slice(id.length).startsWith(suffix))) return null;
+  return decodeURIComponent(id);
+}
+
+/** True when `pathname` is the project's page or a page under it, per the host's `project` route. */
+export function isProjectPath(pathname: string | null | undefined, projectId: string): boolean {
+  if (!pathname) return false;
+  const root = routes.project(projectId).replace(/\/$/, '');
+  return pathname === root || pathname.startsWith(`${root}/`) || pathname.startsWith(`${root}?`);
+}

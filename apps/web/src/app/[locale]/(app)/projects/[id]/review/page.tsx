@@ -1,4 +1,4 @@
-import { reviewHref } from '@kortix/ui/workspace';
+import { capabilityTabHref } from '@kortix/ui/workspace';
 import { redirect } from 'next/navigation';
 
 /**
@@ -21,5 +21,6 @@ export default async function LegacyReviewPage({
     }
   }
   const suffix = search.toString();
-  redirect(suffix ? `${reviewHref(id)}?${suffix}` : reviewHref(id));
+  const href = capabilityTabHref(id, 'review');
+  redirect(suffix ? `${href}?${suffix}` : href);
 }

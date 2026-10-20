@@ -1,6 +1,6 @@
 'use client';
 
-import { customizePath } from '../../lib/routes';
+import { customizePath, uiRoutes } from '../../lib/routes';
 import { ProjectNavRow } from './project-nav-row';
 
 import { CustomizeGlyph } from '../icons/customize';
@@ -232,7 +232,9 @@ export function projectNavRows(
 export function useProjectNavRows(projectId: string | undefined): ProjectNavRows {
   const readRepo = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
   const drives = useFeatureFlag(projectId, 'drives').enabled;
-  return projectNavRows(useCapabilityAccess(projectId), readRepo, drives);
+  const rows = projectNavRows(useCapabilityAccess(projectId), readRepo, drives);
+  // A host that serves no customize pages (`setUiRoutes({ customize: () => null })`) gets no row.
+  return projectId && uiRoutes().customize(projectId) === null ? { ...rows, customize: null } : rows;
 }
 
 /**

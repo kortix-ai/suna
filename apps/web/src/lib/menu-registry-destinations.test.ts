@@ -7,7 +7,6 @@ import { CAPABILITY_TABS } from '@kortix/ui/internal/lib/capability-tab-routes';
 import {
   capabilityTabHref,
   channelsHref,
-  reviewHref,
 } from '@kortix/ui/workspace';
 import {
   SETTINGS_TAB_SUBMENU_PAGE,
@@ -166,7 +165,7 @@ describe('the Review page', () => {
     // Review left Customize for a project page of its own (2026-10-02). Review
     // Center graduated out of the flag system, so its row must never hide
     // behind one.
-    const row = rowFor(reviewHref(PROJECT_TOKEN));
+    const row = rowFor(capabilityTabHref(PROJECT_TOKEN, 'review'));
     expect(row).toBeDefined();
     expect(row?.requiresFlag).toBeUndefined();
   });

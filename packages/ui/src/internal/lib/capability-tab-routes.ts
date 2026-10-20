@@ -1,4 +1,4 @@
-import { customizePath } from '../../lib/routes';
+import { customizePath, uiRoutes } from '../../lib/routes';
 
 /**
  * The capability pages that graduated out of the Customize overlay. Commands
@@ -145,19 +145,31 @@ export function capabilityTabHref(projectId: string, key: CapabilityTab['key']):
 }
 
 /**
- * The Review Center: the Customize Review tab. `/projects/<id>/review`, its
- * address from 2026-10-02 to 2026-10-17, redirects here.
+ * A link to a capability tab from outside the customize pages (sidebar, session
+ * header, hover cards). Null when the host serves no customize pages
+ * (`setUiRoutes({ customize: () => null })`): the caller hides the link.
+ * `capabilityTabHref` is the customize pages' own tab URL and never null.
  */
-export function reviewHref(projectId: string): string {
-  return capabilityTabHref(projectId, 'review');
+export function capabilityLinkHref(projectId: string, key: CapabilityTab['key']): string | null {
+  return uiRoutes().customize(projectId, CAPABILITY_SEGMENT[key]);
 }
 
 /**
- * The Reminders page: the Customize Reminders tab. `/projects/<id>/reminders`,
- * its address until 2026-10-19, redirects here.
+ * The Review Center: the Customize Review tab, or null when the host serves no
+ * customize pages. `/projects/<id>/review`, its address from 2026-10-02 to
+ * 2026-10-17, redirects here.
  */
-export function remindersHref(projectId: string): string {
-  return capabilityTabHref(projectId, 'reminders');
+export function reviewHref(projectId: string): string | null {
+  return capabilityLinkHref(projectId, 'review');
+}
+
+/**
+ * The Reminders page: the Customize Reminders tab, or null when the host
+ * serves no customize pages. `/projects/<id>/reminders`, its address until
+ * 2026-10-19, redirects here.
+ */
+export function remindersHref(projectId: string): string | null {
+  return capabilityLinkHref(projectId, 'reminders');
 }
 
 /**

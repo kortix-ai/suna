@@ -1,6 +1,6 @@
 'use client';
 
-import { uiRoutes } from '../../lib/routes';
+import { sessionIdFromPath, uiRoutes } from '../../lib/routes';
 import { useTranslations } from '../../i18n';
 
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
@@ -241,7 +241,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const searchParams = useUiSearchParams();
   const firstChatPending = useFirstChatPending(projectId);
   const activeRuntimeSessionId = readRuntimeSessionParam(searchParams);
-  const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
+  const activeSessionId = sessionIdFromPath(pathname, projectId);
   const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
   const beginSessionSwitch = useSessionSwitchStore((state) => state.beginSwitch);
   const cancelSessionSwitch = useSessionSwitchStore((state) => state.cancelSwitch);
@@ -443,7 +443,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // own to show.
   const renderSessionNode = (session: ProjectSession, nested: boolean, inSharedGroup = false) => {
     const href = uiRoutes().session(session.project_id, session.session_id);
-    const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+    const isActive = sessionIdFromPath(pathname, session.project_id) === session.session_id;
     const isSwitchTarget = switchingToSessionId === session.session_id;
     const children = directSubsessions(session);
     const spawnedCount = nested ? 0 : (session.child_count ?? 0);

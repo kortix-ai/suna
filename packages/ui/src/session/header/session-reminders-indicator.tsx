@@ -46,6 +46,8 @@ export function SessionRemindersIndicator({ runtimeSessionId }: { runtimeSession
   useRefetchAfterFire(reminders.data?.reminders, reminders.refetch);
   const now = useNow();
   const hasTab = useCapabilityAccess(projectId).tabs.includes('reminders');
+  // Null when the host serves no customize pages: no "Manage" link.
+  const manageHref = hasTab ? remindersHref(projectId) : null;
   // An agent sets reminders mid-turn with `kortix remind`; nothing announces
   // that to this query. The turn ending is the moment to look again.
   const working = useSessionWorking(projectId ?? '', sessionId ?? '', {
@@ -142,11 +144,11 @@ export function SessionRemindersIndicator({ runtimeSessionId }: { runtimeSession
               </li>
             ))}
           </ul>
-          {hasTab ? (
+          {manageHref ? (
             <div className="border-t px-4 py-2">
               <Button asChild variant="ghost" size="sm" className="w-full justify-center">
                 <HoverPrefetchLink
-                  href={`${remindersHref(projectId)}?session=${sessionId}`}
+                  href={`${manageHref}?session=${sessionId}`}
                   onClick={() => setOpen(false)}
                 >
                   {t('manage')}

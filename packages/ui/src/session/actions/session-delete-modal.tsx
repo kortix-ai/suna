@@ -1,6 +1,6 @@
 'use client';
 
-import { uiRoutes } from '../../lib/routes';
+import { sessionIdFromPath, uiRoutes } from '../../lib/routes';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import { IconDelete } from '../../primitives/kortix-icons';
 import {
@@ -13,7 +13,8 @@ import {
 import { deleteProjectSession, restoreProjectSession } from '@kortix/sdk';
 import { qk, removeCachedProjectSession } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useUiParams, useUiRouter } from '../../providers/ui-provider';
+import { useUiPathname, useUiRouter } from '../../providers/ui-provider';
+import { useSessionIds } from '../../providers/session-ids';
 import { useTranslations } from '../../i18n';
 
 /** Days a deleted session stays restorable (`SESSION_DELETE_ROWS_DAYS` in the API). */
@@ -67,7 +68,9 @@ export function SessionDeleteModal({
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
   const router = useUiRouter();
-  const openSessionId = useUiParams<{ sessionId?: string }>()?.sessionId;
+  // The session the page shows: the host's ids, else its session URL.
+  const pathname = useUiPathname();
+  const openSessionId = useSessionIds().sessionId ?? sessionIdFromPath(pathname, projectId);
 
   // Runs from the toast, after the dialog closed (and maybe unmounted).
   const undoDelete = async (id: string, toastId: string) => {
