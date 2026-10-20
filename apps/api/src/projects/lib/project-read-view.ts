@@ -11,7 +11,7 @@
  */
 import type { Context } from 'hono';
 import { projectSessions } from '@kortix/db';
-import { type AnyColumn, SQL, and, eq, inArray, or } from 'drizzle-orm';
+import { type AnyColumn, type SQL, and, eq, exists, inArray, or, sql } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { isAgentPrincipalActor } from '../../iam/actor';
 import { callerKortixSessionId } from '../../middleware/caller-session';
@@ -73,23 +73,22 @@ export async function projectReadView(c: Context, loaded: LoadedProject): Promis
   // The sessions this caller may open, by the session list's SQL rules
   // (`sessionListViewerSql`, the twin of `isProjectSessionVisibleTo`).
   // Deleted sessions stay in: their work is still the caller's.
+  const visibleSql = and(
+    eq(projectSessions.projectId, loaded.row.projectId),
+    eq(projectSessions.accountId, loaded.row.accountId),
+    sessionListViewerSql({
+      scope: 'project',
+      viewerId: loaded.userId,
+      boundCredentialSessionId: bound,
+      agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
+      canManageProject: false,
+      accountSessionOversight: false,
+    }),
+  );
   const visibleSessionIdsSql = db
     .select({ sessionId: projectSessions.sessionId })
     .from(projectSessions)
-    .where(
-      and(
-        eq(projectSessions.projectId, loaded.row.projectId),
-        eq(projectSessions.accountId, loaded.row.accountId),
-        sessionListViewerSql({
-          scope: 'project',
-          viewerId: loaded.userId,
-          boundCredentialSessionId: bound,
-          agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
-          canManageProject: false,
-          accountSessionOversight: false,
-        }),
-      ),
-    );
+    .where(visibleSql);
   const visibleSessionIds = async (ids: readonly string[]): Promise<Set<string>> => {
     const out = new Set<string>();
     // A busy repository carries thousands of session branches: stay far below
@@ -117,11 +116,19 @@ export async function projectReadView(c: Context, loaded: LoadedProject): Promis
       const visible = await visibleSessionIds(ids);
       return ids.every((id) => visible.has(id));
     },
+    // A correlated EXISTS, not `IN (visible ids)`: under the OR the IN form is
+    // always a hashed subplan that reads (and detoasts the metadata of) every
+    // session of the project, ~600 ms on a 15k-session project for 4 pending
+    // calls. EXISTS lets the planner probe the session by primary key per row,
+    // and it still picks the hashed form when the outer side is large.
     where: (sessionColumn, createdByColumn) =>
       or(
-        sessionColumn instanceof SQL
-          ? inArray(sessionColumn, visibleSessionIdsSql)
-          : inArray(sessionColumn, visibleSessionIdsSql),
+        exists(
+          db
+            .select({ one: sql`1` })
+            .from(projectSessions)
+            .where(and(eq(projectSessions.sessionId, sessionColumn), visibleSql)),
+        ),
         createdByColumn ? eq(createdByColumn, loaded.userId) : undefined,
       ),
     allows: async (row) => {
