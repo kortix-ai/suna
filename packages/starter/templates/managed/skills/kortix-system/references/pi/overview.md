@@ -23,7 +23,6 @@ Kortix selects the harness when a session is created:
 
 | Rule, in order | Harness |
 | --- | --- |
-| The project's `llm_gateway` flag is off | OpenCode |
 | The project's `pi_harness` flag is on (the default) | pi |
 | `kortix.yaml` sets `runtime: pi` | pi |
 | Anything else | OpenCode |

@@ -341,7 +341,7 @@ SessionLogSwitchPreflightSchema = {
   from: string
   to: SessionLogHarnessSchema
   available: boolean
-  reason: enum(same_harness | llm_gateway_off) | null
+  reason: enum(same_harness) | null
   restores: boolean
   losses: array(SessionLogSwitchLossSchema)
   unsupported: array(SessionLogSwitchGapSchema)

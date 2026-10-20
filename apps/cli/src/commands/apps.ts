@@ -699,6 +699,12 @@ async function showCommand(
           ? `server · ${app.always_on ? 'always on' : 'on demand'} · ${app.desired_state}`
           : 'not deployed';
     process.stdout.write(`\n  ${C.bold}${app.name}${C.reset}\n  ${C.dim}${hosting}${C.reset}\n${appLines(app)}`);
+    if (!app.external_url && app.access_mode !== 'public') {
+      process.stdout.write(`  ${C.dim}${pad('access', 14)}${C.reset}${app.access_mode}\n`);
+      process.stdout.write(
+        `  Open in a browser: kortix apps access-link ${app.app_id} --project ${ctx.projectId}${options.hostArg ? ` --host ${options.hostArg}` : ''}\n`,
+      );
+    }
     for (const deployment of result.deployments) {
       const live =
         deployment.deployment_id === result.app.active_deployment_id

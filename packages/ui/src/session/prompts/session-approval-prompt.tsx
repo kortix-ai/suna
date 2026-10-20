@@ -139,7 +139,7 @@ export function SessionApprovalPrompt({
             [executionId]: { action: row.action, decision },
           }));
           successToast(
-            decision === tI18nComplete.raw('text74e21680eac7')
+            decision === 'approve'
               ? tI18nComplete.raw('text0674d4a026cb')
               : tI18nComplete.raw('text4341be8eb7f0'),
           );

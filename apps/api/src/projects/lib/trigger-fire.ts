@@ -1,4 +1,3 @@
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
@@ -209,16 +208,12 @@ export async function findKeyedTriggerSession(
  * session pinned to a managed model the account can no longer use.
  *
  * The one place a stored ref becomes the runtime's `{providerID, modelID}`:
- * with the LLM gateway every model is the `kortix` provider's; without it the
- * ref is the native `provider/model`, and a managed id has no provider.
+ * every model is the `kortix` provider's.
  */
-export function triggerModelOverride(
-  model: string | null | undefined,
-  gatewayEnabled = true,
-): PromptOverridesWire | undefined {
+export function triggerModelOverride(model: string | null | undefined): PromptOverridesWire | undefined {
   const trimmed = (model ?? '').trim();
   if (!trimmed) return undefined;
-  const ref = gatewayEnabled ? toOpencodeModelRef(trimmed) : trimmed.replace(/^kortix\//, '');
+  const ref = toOpencodeModelRef(trimmed);
   const slash = ref.indexOf('/');
   if (slash <= 0 || slash === ref.length - 1) return undefined;
   return { model: { providerID: ref.slice(0, slash), modelID: ref.slice(slash + 1) } };
@@ -267,7 +262,7 @@ async function enqueueTriggerPrompt(input: {
     // Same per-due-slot key the create path uses — a fire the sweep timed out
     // on but that actually enqueued isn't duplicated when the next tick retries.
     idempotencyKey: input.idempotencyKey ?? null,
-    overrides: triggerModelOverride(input.model, projectLlmGatewayEnabled(input.project.metadata)),
+    overrides: triggerModelOverride(input.model),
     ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
   });
   // The same delivery again: its prompt is already queued or delivered (KRTX-1735).
@@ -559,24 +554,21 @@ async function createGitTriggerSession(
   // ("requires a paid plan") while the caller keeps a 202 + a session id that
   // points at nothing (dogfood journey trig-webhook). Gate on the same catalog
   // the chat composer gates on: zero enabled models = nothing to run. Only
-  // gateway projects gate (native mode resolves models outside the gateway),
-  // and only the fresh-create path — reminders and re-prompts of an existing
+  // the fresh-create path gates — reminders and re-prompts of an existing
   // session keep their semantics.
-  if (projectLlmGatewayEnabled(project.metadata)) {
-    const catalog = await servableProjectCatalog({
-      projectId: project.projectId,
-      accountId: project.accountId,
-      // The run executes as this actor (the account owner), so its personal
-      // keys count exactly as the gateway will count them for the session.
-      principalUserId: actor,
-    });
-    if (!Object.values(catalog.models).some((model) => model.enabled)) {
-      return {
-        status: 'failed',
-        error: 'No usable model for this account. Connect a provider key or upgrade the plan, then fire again.',
-        errorCode: 'no_usable_model',
-      };
-    }
+  const catalog = await servableProjectCatalog({
+    projectId: project.projectId,
+    accountId: project.accountId,
+    // The run executes as this actor (the account owner), so its personal
+    // keys count exactly as the gateway will count them for the session.
+    principalUserId: actor,
+  });
+  if (!Object.values(catalog.models).some((model) => model.enabled)) {
+    return {
+      status: 'failed',
+      error: 'No usable model for this account. Connect a provider key or upgrade the plan, then fire again.',
+      errorCode: 'no_usable_model',
+    };
   }
   const sessionResult = await createSession({
     source: `trigger:${source}`,

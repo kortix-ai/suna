@@ -2,7 +2,6 @@ import { config } from '../config';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';
 import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';
-import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
 import { isModelServableForAccount } from '../llm-gateway/resolution/default-model';
 import { accountMayUseManagedModels } from '../billing/services/entitlements';
 
@@ -245,8 +244,6 @@ export async function channelTurnModel(input: {
   // would have skipped exactly those. The probe is cached per person, session
   // and model, so a burst of chat costs one resolution.
   if (!hasImage && !currentModel) return null;
-
-  if (!(await projectLlmGatewayEnabledById(projectId).catch(() => false))) return null;
 
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId).catch(() => false));
   const probe = async (model: string): Promise<boolean> => {

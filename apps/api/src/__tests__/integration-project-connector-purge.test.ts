@@ -16,6 +16,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
   accounts,
+  accountTokens,
   connectorConnections,
   connectorPolicies,
   connectionCredentials,
@@ -160,12 +161,21 @@ describe('purging a project removes its connector rows', () => {
   });
 
   test('DELETE /v1/projects/:projectId archives the project and purges every connector row', async () => {
+    const tokenId = crypto.randomUUID();
+    await db.insert(accountTokens).values({
+      tokenId, accountId: ACCOUNT, userId: OWNER, projectId: PROJECT,
+      sessionId: SESSION, name: 'synthetic-session',
+      publicKey: `synthetic-${tokenId}`, secretKeyHash: 'synthetic-hash',
+    });
     const res = await projectsApp.request(`/${PROJECT}`, { method: 'DELETE' });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, archived: true, repo_deleted: false });
 
     const [row] = await db.select().from(projects).where(eq(projects.projectId, PROJECT)).limit(1);
     expect(row?.status).toBe('archived');
+    const [token] = await db.select().from(accountTokens).where(eq(accountTokens.tokenId, tokenId));
+    expect(token?.status).toBe('revoked');
+    expect(token?.revokedAt).toBeInstanceOf(Date);
 
     // The connector row is gone, and the database cascaded its dependents.
     expect(await counts()).toEqual({

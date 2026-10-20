@@ -1,3 +1,4 @@
+import { ApiError } from '../api/client.ts';
 import {
   describeConfigStatus,
   describeReloadOutcome,
@@ -560,7 +561,9 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
     );
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
-      process.stderr.write(`${status.err(`Project "${ctx.projectId}" was not found or is no longer accessible.`)} Run \`kortix projects ls\`, then \`kortix projects use <id>\` to select an available project.\n`);
+      const hostFlag = opts.hostArg ? ` --host ${opts.hostArg}` : '';
+      process.stderr.write(`${status.err(`Project "${ctx.projectId}" was not found or is no longer accessible.`)} Run ` +
+        `\`kortix projects ls${hostFlag}\`, then \`kortix projects use <id>${hostFlag}\` to select an available project.\n`);
       return 1;
     }
     return surfaceApiError(err);

@@ -22,7 +22,6 @@ import { asc, eq, sql } from 'drizzle-orm';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { config } from '../config';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import { db } from '../shared/db';
 import { sessionLogRestoreFits } from './session-log-restore';
 
@@ -106,7 +105,6 @@ export async function sessionLogSwitchPreflight(input: {
         threads: [...byThread.values()],
       } as unknown as SessionLog;
       return switchPreflight(slim, input.to, {
-        llmGateway: projectLlmGatewayEnabled(input.projectMetadata),
         // Over the restore cap the new box gets the note alone (413): the history does not restore.
         restore:
           config.SESSION_LOG_RESTORE_ENABLED &&

@@ -237,7 +237,7 @@ describe('connect → thread: the window is downloaded once per open (KRTX-189)'
           transcript: url.includes('transcript=0')
             ? { known: true, requested: false }
             : { known: true, requested: true, ...copy(OPEN_ROOT, 2) },
-          config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: false },
+          config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: true },
           models: { known: false, reason: 'test' },
         };
       }

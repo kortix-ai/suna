@@ -17,8 +17,7 @@ await runtime.lifecycle.start()
 `KORTIX_HARNESS` (`opencode` | `pi`; unset means `opencode`) is set by apps/api
 at provisioning (`buildSessionSandboxEnvVars` → `selectSessionHarness`): pi when
 the project's `pi_harness` feature flag is on, or when the manifest says
-`runtime: pi`, and the `llm_gateway` flag is on (pi has no model path without
-the gateway); OpenCode otherwise. `loadConfig` reads it BEFORE the adapter
+`runtime: pi`; OpenCode otherwise. `loadConfig` reads it BEFORE the adapter
 loads its own environment, so only the selected adapter's variables are parsed.
 There is no per-request switching: one box, one harness, for the life of the
 box. A new box of the session re-reads the selection, so a change of the flag or
@@ -27,11 +26,28 @@ of `runtime:` switches an existing session's harness at its next new box. With
 records the switch in `harness.history` ("Harness history, a switch" below).
 `POST /v1/projects/:p/sessions/:s/log/switch-preflight` (apps/api) answers
 before that happens: whether the switch can happen (`available`, `reason`:
-`same_harness`, or `llm_gateway_off` for pi), whether the new box restores the
+`same_harness`), whether the new box restores the
 log (`restores`; off, `losses` starts with `history`), what the session uses
 that the target handles worse (`losses`) and everything the target lacks, used
 or not (`unsupported`). The contract is `switchPreflight` in
 `@kortix/api-contract/session-log` (`capabilities.ts`).
+
+## Models: the LLM gateway only
+
+Both harnesses send every model request to the Kortix LLM gateway, under one
+provider id, `kortix`. There is no native provider mode. OpenCode's composed
+config always registers the `kortix` provider and sets
+`enabled_providers: ['kortix']` (`buildOpencodeConfigContent`,
+`open-code/lifecycle.ts`), and every model ref becomes `kortix/<wire id>`.
+
+- A box without the gateway env (`KORTIX_LLM_BASE_URL` + `KORTIX_TOKEN`, or
+  `KORTIX_LLM_PROXY_URL`) logs an error at each config compose. OpenCode keeps
+  the `kortix`-only config with no upstream, so turns fail; it never falls back
+  to provider keys in the process env. pi throws at model setup
+  (`createPiModels`, `pi/model.ts`).
+- `POST /kortix/env` with `llmGatewayEnabled: true` sets `KORTIX_LLM_BASE_URL`
+  and re-points a running LLM proxy. `llmGatewayEnabled: false` (an API from
+  before the graduation) is logged and ignored: it never clears the gateway env.
 
 ## Ownership
 

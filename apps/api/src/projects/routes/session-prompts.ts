@@ -6,6 +6,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { promptModelOverride } from '../lib/prompt-model';
+import { clearRestoredModelPin } from '../lib/session-model-fallback-revert';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../../middleware/caller-session';
@@ -398,6 +399,10 @@ export function registerSessionPromptsRoutes(): void {
         undefined,
         sendState.then((state) => state.held),
       );
+      // This prompt runs on the pin the revert restored: drop the marker.
+      if ((visible.row.metadata as Record<string, unknown> | null)?.opencode_model_restored === true) {
+        void clearRestoredModelPin(sessionId);
+      }
 
       // KRTX-1742: a person who prompts a session follows its notifications
       // from now on. Never un-mutes; the creator follows without a row. Only
