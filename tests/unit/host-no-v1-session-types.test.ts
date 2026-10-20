@@ -48,8 +48,6 @@ const V1_NAMES = new Set([
 const ALLOWED: Record<string, string> = {
   'apps/mobile/lib/projects/projects-client.ts: *':
     'a namespace import of the SDK REST client (projects, secrets, connectors, change requests); it reads no transcript',
-  'packages/ui/src/session/pickers/user-message-parts.ts: ClassifiedPart':
-    'the public @kortix/ui/session API (#10257) renders classified v1 parts; it moves to blocks with that API',
 };
 
 const SDK_PACKAGE = /^@kortix\/sdk(?:\/|$)/;

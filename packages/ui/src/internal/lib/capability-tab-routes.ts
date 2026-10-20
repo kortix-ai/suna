@@ -8,7 +8,7 @@ import { customizePath, uiRoutes } from '../../lib/routes';
  *
  * Triggers graduated out of the Settings overlay, where it was two rail tabs
  * (Schedules, Webhooks) rendering one component
- * (`packages/ui/src/workspace/projects/schedule-view.tsx`) filtered by trigger type. It is
+ * (`packages/ui/src/customize/triggers/schedule-view.tsx`) filtered by trigger type. It is
  * ONE tab here, not two: both are the same backend resource — a project
  * trigger — that starts an agent either on a schedule or on an incoming
  * request, and a person deciding "how should this start?" should not have to

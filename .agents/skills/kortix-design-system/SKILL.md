@@ -353,9 +353,9 @@ Reference implementations:
 | --- | --- |
 | `app/[locale]/(public)/share/session/[token]/page.tsx` | Header actions, all `secondary`: open app, full screen, download or copy link, Open in Kortix |
 | `packages/ui/src/browser/sandbox-browser-chrome.tsx` | Back / forward, `ghost`; Reload and the pill's trailing actions inside the address pill |
-| `packages/ui/src/session/panel/easy/viewer-actions.tsx` (`ViewerPathPill`) | Refresh, copy, copy link inside the path pill, `ghost` |
+| `packages/ui/src/files/viewer/viewer-actions.tsx` (`ViewerPathPill`) | Refresh, copy, copy link inside the path pill, `ghost` |
 | `packages/ui/src/session/panel/easy/app-preview.tsx` | Open in new tab, full screen, close, `ghost` |
-| `packages/ui/src/session/panel/easy/file-viewer.tsx`, `file-preview.tsx` | Save as PDF or Present, Download, full screen, close, `ghost` |
+| `packages/ui/src/files/viewer/file-viewer.tsx`, `file-preview.tsx` | Save as PDF or Present, Download, full screen, close, `ghost` |
 | `packages/ui/src/changes/change-list.tsx` | Unified / split diff toggle, `outline` |
 
 ## Cursor affordance
