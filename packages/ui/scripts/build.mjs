@@ -184,7 +184,7 @@ if (typeSpecs.size > 0) {
       const rel = posix(relative(dirname(index), join(vendorTypes, mod)));
       const spec = rel.startsWith('.') ? rel : `./${rel}`;
       const text = readFileSync(index, 'utf8');
-      const kept = text.replace(new RegExp(`^export \\* from ['"]${spec.replace(/[.]/g, '\\.')}(?:\\.js)?['"];?\\n`, 'gm'), '');
+      const kept = text.replace(new RegExp(`^export \\* from ['"]${spec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\.js)?['"];?\\n`, 'gm'), '');
       if (kept !== text) writeFileSync(index, kept);
     }
     rmSync(dts);

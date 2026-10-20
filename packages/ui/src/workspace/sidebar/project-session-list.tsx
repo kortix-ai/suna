@@ -504,7 +504,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               { sessionId: session.session_id },
               {
                 onSuccess: (fork) => {
-                  successToast('Conversation forked');
+                  successToast(tI18nComplete.raw('text95de71e25038'));
                   router.push(uiRoutes().session(projectId, fork.session_id));
                 },
                 onError: (err) => {
