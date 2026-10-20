@@ -155,15 +155,20 @@ Source: `src/files/index.ts`. Browse and edit files. Project files are the git-b
 
 Mount: Project files: inside `ProjectFilesProvider` (`projectId`, optional git `ref`). Sandbox files: inside a mounted `useSession`. `FilePreviewHost`: once, on a page with no session side panel; a file open (`openPreview`) shows there. `SessionThread` mounts it already.
 
-Props: `ProjectFilesView` (`@kortix/ui/workspace`): `projectId`. `FileExplorerPage`: `embedded`. `SandboxFileExplorer`: `embedded`, `shareContext`, `leading`. `FilePreviewHost`: none.
+Props: `ProjectFilesView` (`@kortix/ui/workspace`): `projectId`. It fills its parent (`h-full`): the parent sets the height, or only the header shows. `FileExplorerPage`: `embedded`. `SandboxFileExplorer`: `embedded`, `shareContext`, `leading`. `FilePreviewHost`: none.
 
 ```tsx
 import { FilePreviewHost } from '@kortix/ui/files';
 import { ProjectFilesView } from '@kortix/ui/workspace';
 
 // The project's git-backed files: browse, open any file in the viewer.
+// The parent sets the height.
 export function Files({ projectId }: { projectId: string }) {
-  return <ProjectFilesView projectId={projectId} />;
+  return (
+    <div className="h-dvh">
+      <ProjectFilesView projectId={projectId} />
+    </div>
+  );
 }
 
 // Once per page that has no side panel: file opens show in a dialog here.
@@ -178,7 +183,7 @@ Names: `saveDriveFile`, `useDismissDriveConflict`, `useDriveAvailability`, `useD
 
 Source: `src/files/viewer/index.ts`. Render any file kind (pdf, docx, xlsx, csv, pptx, zip, images, code) from a byte source.
 
-Mount: Inside `FileSourceProvider` (where the bytes come from).
+Mount: `FileViewer` with `content` needs no provider, no SDK client and no `QueryClientProvider`; with a `shareContext` it needs both (its Copy link reads the session). `FileContentRenderer`: inside `FileSourceProvider` (where the bytes come from).
 
 Props: `FileViewer`: `content`, `fileName`, optional `path`, `onClose`, `refresh`, `className`. `FileContentRenderer`: `filePath`, `showHeader`, `readOnly`, `targetLine`, `onSaved`. `FileSource`: `id`, `useFileContent`, `useBinaryBlob`, `download`, `upload`, optional `save`, `bytesOnly`.
 

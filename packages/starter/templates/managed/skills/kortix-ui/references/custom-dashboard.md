@@ -23,7 +23,7 @@ viewer, 0 console errors.
 ## 1. Install
 
 ```sh
-npm i @kortix/sdk @kortix/ui @tanstack/react-query @phosphor-icons/react react@19 react-dom@19 react-router-dom
+npm i @kortix/sdk @kortix/ui @tanstack/react-query @phosphor-icons/react@2.1.10 react@19 react-dom@19 react-router-dom
 npm i @openuidev/lang-core@0.3.1 zod   # optional peers of @kortix/sdk; the thread renders genui blocks
 npm i tw-animate-css tailwind-scrollbar tailwind-scrollbar-hide   # Tailwind v4 hosts only
 ```
@@ -187,8 +187,8 @@ pass stable objects (module scope):
 | --- | --- | --- |
 | `link` | a plain `<a>` | its router's link, called with `href` |
 | `navigation` | full page loads; `usePathname` / `useSearchParams` read `window.location` | `{ useRouter, usePathname, useSearchParams, useParams }` of its router |
-| `config` | `{ connectorsEnabled: true, managedModelsEnabled: false }` | `managedModelsEnabled: true` when the deployment serves its model lineup. Billing is the SDK flag `configureKortix({ billingEnabled })`, which every billing gate reads. It is for Kortix's own app: its upgrade actions open the Kortix plan dialog that apps/web mounts. A custom host leaves it off, so no upgrade control renders. |
-| `resolvePreviewUrl` | the SDK preview URL, with the SDK token | a function that returns the framed URL with the host's own scoped token (a host whose origin is not the Kortix backend). `config.terminalEnabled: false` hides the Terminal when the host's proxy cannot upgrade a WebSocket. `config.commandPaletteShortcut` / `config.settingsShortcut` (default false): true when the host opens a command palette on ⌘K or settings on ⌘,; only then does the composer hint at them. `config.providerIconBaseUrl`: where the host serves provider logos (`<base>/<icon>.svg`); without it they load from models.dev, and the Kortix provider draws `useBrand`'s icon. |
+| `config` | `{ connectorsEnabled: true, managedModelsEnabled: false }` | `managedModelsEnabled: true` when the deployment serves its model lineup. Billing is the SDK flag `billingEnabled` of `createKortix({ backendUrl, getToken, billingEnabled })`, which every billing gate reads. It is for Kortix's own app: its upgrade actions open the Kortix plan dialog that apps/web mounts. A custom host leaves it off, so no upgrade control renders. |
+| `resolvePreviewUrl` | the SDK preview URL, with the SDK token | an async function of the request (it returns a Promise) that resolves to the framed URL with the host's own scoped token, or to `null` to keep the SDK preview URL (a host whose origin is not the Kortix backend). `config.terminalEnabled: false` hides the Terminal when the host's proxy cannot upgrade a WebSocket. `config.commandPaletteShortcut` / `config.settingsShortcut` (default false): true when the host opens a command palette on ⌘K or settings on ⌘,; only then does the composer hint at them. `config.providerIconBaseUrl`: where the host serves provider logos (`<base>/<icon>.svg`); without it they load from models.dev, and the Kortix provider draws `useBrand`'s icon. |
 | `components` | no slots: each control that opens one is hidden | `ShareSessionModal` (`@kortix/ui/workspace` exports Kortix's), `HomeAnnouncement`, `Wallpaper`, `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal` |
 | `useBrand` | the Kortix marks | a hook that returns `{ app_name, logo_url, icon_url }` |
 | `image` | a plain `<img>` | its image component |

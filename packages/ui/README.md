@@ -88,7 +88,7 @@ any prop gets these defaults:
 | `i18n` | the bundled English catalog of `@kortix/ui/i18n` |
 | `useViewerId` | no signed-in user (`undefined`): a one-person session names no sender and no "Stopped by". A session several people write in needs it |
 | `useBrand` | the Kortix marks |
-| `config` | `{ connectorsEnabled: true, managedModelsEnabled: false, terminalEnabled: true, commandPaletteShortcut: false, settingsShortcut: false }`. The two shortcut flags say the host opens a command palette on ⌘K or settings on ⌘,; only then does the composer hint at them. `config.providerIconBaseUrl`: where the host serves provider logos (`<base>/<icon>.svg`); without it they load from models.dev, and the Kortix provider draws `useBrand`'s icon. Billing is the SDK flag `configureKortix({ billingEnabled })`, which every billing gate reads. It is for Kortix's own app: its upgrade actions open the Kortix plan dialog that apps/web mounts. A custom host leaves it off, so no upgrade control renders. |
+| `config` | `{ connectorsEnabled: true, managedModelsEnabled: false, terminalEnabled: true, commandPaletteShortcut: false, settingsShortcut: false }`. The two shortcut flags say the host opens a command palette on ⌘K or settings on ⌘,; only then does the composer hint at them. `config.providerIconBaseUrl`: where the host serves provider logos (`<base>/<icon>.svg`); without it they load from models.dev, and the Kortix provider draws `useBrand`'s icon. Billing is the SDK flag `billingEnabled` of `createKortix({ backendUrl, getToken, billingEnabled })`, which every billing gate reads. It is for Kortix's own app: its upgrade actions open the Kortix plan dialog that apps/web mounts. A custom host leaves it off, so no upgrade control renders. |
 | `components` | no slots: a control that opens a missing slot is hidden (`ShareSessionModal`, `HomeAnnouncement`, `Wallpaper`, `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal`) |
 
 `strings` takes any subset of `UiStrings`. `MermaidRenderer`'s controls are
@@ -116,7 +116,7 @@ const i18n: UiI18nHost = { useTranslations, useLocale };
 const useViewerId = () => useAuth().user?.id;
 
 <UiProvider
-  strings={{ confirm: t('confirm'), chat: { model: t('model') } }}
+  strings={{ confirm: t('confirm') }}
   link={NextLink}
   image={NextImage}
   navigation={navigation}
@@ -188,7 +188,8 @@ are the public API (semver). Each needs `@kortix/sdk` and `@tanstack/react-query
 5 (an optional peer, shared with the host so both read one `QueryClient`: the bundler
 fails without it, npm does not warn), one
 `QueryClientProvider`, and, for the thread, `@openuidev/lang-core@0.3.1` and `zod`:
-`npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod`.
+`npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod @phosphor-icons/react@2.1.10`
+(the icon set, at the version `@kortix/ui` pins, for your own icons).
 
 | Entry | What it is | Minimal mount |
 | --- | --- | --- |

@@ -57,6 +57,7 @@
     "./checkbox-group": "./src/primitives/checkbox-group.tsx",
     "./collapsible": "./src/primitives/collapsible.tsx",
     "./command": "./src/primitives/command.tsx",
+    "./components.css": "./src/styles/components.css",
     "./composer": "./src/session/composer/index.ts",
     "./confirm-dialog": "./src/primitives/confirm-dialog.tsx",
     "./context-menu": "./src/primitives/context-menu.tsx",
@@ -399,6 +400,7 @@
     "./popover": "./src/primitives/popover.tsx",
     "./portal": "./src/primitives/portal.tsx",
     "./preview-image": "./src/primitives/preview-image.tsx",
+    "./print.css": "./src/styles/print.css",
     "./progress": "./src/primitives/progress.tsx",
     "./progress-ring": "./src/primitives/progress-ring.tsx",
     "./project-icon-picker": "./src/primitives/project-icon-picker.tsx",
@@ -684,6 +686,7 @@
         "types": "./dist/primitives/command.d.ts",
         "import": "./dist/primitives/command.js"
       },
+      "./components.css": "./dist/styles/components.css",
       "./composer": {
         "types": "./dist/session/composer/index.d.ts",
         "import": "./dist/session/composer/index.js"
@@ -2043,6 +2046,7 @@
         "types": "./dist/primitives/preview-image.d.ts",
         "import": "./dist/primitives/preview-image.js"
       },
+      "./print.css": "./dist/styles/print.css",
       "./progress": {
         "types": "./dist/primitives/progress.d.ts",
         "import": "./dist/primitives/progress.js"

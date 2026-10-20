@@ -132,7 +132,7 @@ export function Session({ projectId, sessionId }: { projectId: string; sessionId
 }
 ```
 
-- The parent sets the height. Install `@tanstack/react-query`, `@openuidev/lang-core@0.3.1` and `zod` with it.
+- The parent sets the height (also of `ProjectFilesView`). Install `@tanstack/react-query`, `@openuidev/lang-core@0.3.1` and `zod` with it.
   `SessionThread` (`@kortix/ui/session`) is the thread alone; with no side panel, file and preview opens show in a dialog.
 - A custom tool row: `ToolRegistry.register('<tool name>', Row)`; `Row` gets `ToolProps`, draws `BasicTool`.
 - A whole dashboard or App (client, router adapters, sidebar, project home, session, files, theme, tool row, App
