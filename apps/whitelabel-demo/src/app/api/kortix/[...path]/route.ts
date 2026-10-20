@@ -8,7 +8,9 @@
  *    the member's identity is Lumen's, not the operator's Kortix user.
  * 4. Anything outside the session surface is refused (`blockedReason`).
  * 5. `forwardKortixRequest` forwards with the member token and streams the
- *    response (REST, SSE, runtime routes alike).
+ *    response (REST, SSE, runtime routes alike). Only the request headers
+ *    Kortix needs leave Lumen (`forwardedHeaders`), and responses that name
+ *    the operator's Kortix user lose those names (`redactIdentity`).
  * 6. A new session gets Lumen's tags and becomes a Lumen thread
  *    (`createSession`), whichever screen created it. A session update keeps
  *    those tags (`patchSession`): a member cannot forge or erase them. A
@@ -24,7 +26,15 @@
 
 import { fetchAuthMutation } from '@/server/auth-server';
 import { type Member, memberKortix, resolveMember } from '@/server/member';
-import { SESSION_CREATE, SESSION_ONE, blockedReason, localAnswer } from '@/server/proxy-policy';
+import {
+  SESSION_CREATE,
+  SESSION_ONE,
+  blockedReason,
+  forwardedHeaders,
+  localAnswer,
+  redactIdentity,
+  redactsIdentity,
+} from '@/server/proxy-policy';
 import { buildUpstreamPath, upstreamBase } from '@/server/upstream-path';
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
@@ -36,11 +46,16 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
+  const { path = [] } = await ctx.params;
+  const built = buildUpstreamPath(path);
+  const res = await route(req, built);
+  return built.ok && res.ok && redactsIdentity(built.path) ? redacted(res, built.path) : res;
+}
+
+async function route(req: NextRequest, built: ReturnType<typeof buildUpstreamPath>): Promise<Response> {
   const resolved = await resolveMember(req);
   if ('error' in resolved) return resolved.error;
 
-  const { path = [] } = await ctx.params;
-  const built = buildUpstreamPath(path);
   if (!built.ok) return Response.json({ error: `Invalid request path: ${built.reason}` }, { status: 400 });
 
   const search = new URL(req.url).search;
@@ -60,7 +75,28 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   if (one && req.method !== 'GET' && req.method !== 'HEAD') {
     return patchSession(req, upstreamUrl, resolved.member, one[1], one[2]);
   }
-  return forwardKortixRequest({ request: req, upstreamUrl, token: resolved.member.token });
+  return forwardKortixRequest({ request: await outbound(req), upstreamUrl, token: resolved.member.token });
+}
+
+/** The request Kortix receives: the browser's method and body, only the allowed headers. */
+async function outbound(req: NextRequest, body?: BodyInit): Promise<Request> {
+  const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
+  return new Request(req.url, {
+    method: req.method,
+    headers: forwardedHeaders(req.headers),
+    body: hasBody ? (body ?? (await req.arrayBuffer())) : undefined,
+  });
+}
+
+async function redacted(res: Response, path: string): Promise<Response> {
+  const text = await res.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return new Response(text, { status: res.status, headers: res.headers });
+  }
+  return new Response(JSON.stringify(redactIdentity(path, body)), { status: res.status, headers: res.headers });
 }
 
 async function readJson(req: Request): Promise<Record<string, unknown> | null> {
@@ -69,11 +105,9 @@ async function readJson(req: Request): Promise<Record<string, unknown> | null> {
 }
 
 function forwardJson(req: NextRequest, upstreamUrl: string, member: Member, body: unknown) {
-  return forwardKortixRequest({
-    request: new Request(req.url, { method: req.method, headers: req.headers, body: JSON.stringify(body) }),
-    upstreamUrl,
-    token: member.token,
-  });
+  return outbound(req, JSON.stringify(body)).then((request) =>
+    forwardKortixRequest({ request, upstreamUrl, token: member.token }),
+  );
 }
 
 async function createSession(req: NextRequest, upstreamUrl: string, member: Member) {
@@ -126,7 +160,7 @@ async function deleteSession(req: NextRequest, upstreamUrl: string, member: Memb
     const status = convexStatus(err);
     return Response.json({ error: status === 403 ? "Only the thread's creator or an admin may delete it" : 'Not found' }, { status });
   }
-  const res = await forwardKortixRequest({ request: req, upstreamUrl, token: member.token });
+  const res = await forwardKortixRequest({ request: await outbound(req), upstreamUrl, token: member.token });
   if (!res.ok && res.status !== 404) return res;
   // The session is gone on Kortix. A failed record delete leaves a thread row
   // that points at a deleted session, and is logged.
@@ -146,7 +180,17 @@ async function patchSession(req: NextRequest, upstreamUrl: string, member: Membe
     if (!session) return Response.json({ error: 'Not found' }, { status: 404 });
     current = session.labels ?? [];
   }
-  return forwardJson(req, upstreamUrl, member, tagSessionPatch(body, current));
+  const res = await forwardJson(req, upstreamUrl, member, tagSessionPatch(body, current));
+  if (res.ok && typeof body.name === 'string') {
+    // The thread list reads Lumen's own title. A failed update leaves the old title and is logged.
+    await fetchAuthMutation(api.threads.renameFromProxy, {
+      workspaceId: member.workspaceId as Id<'workspaces'>,
+      kortixSessionId: sessionId,
+      title: body.name,
+      proxySecret: process.env.LUMEN_PROXY_SECRET ?? '',
+    }).catch((err) => process.stderr.write(`lumen: thread for session ${sessionId} not renamed: ${String(err)}\n`));
+  }
+  return res;
 }
 
 export { handle as DELETE, handle as GET, handle as PATCH, handle as POST, handle as PUT };

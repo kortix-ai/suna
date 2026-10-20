@@ -45,6 +45,8 @@ const RULES: readonly Rule[] = [
   rule('GET', `projects/${PROJECT}(?:/(?:detail|change-requests|model-picker|connections|secrets))?`),
   // The Files and Changes tabs: the project repository, read only.
   rule('GET', `projects/${PROJECT}/(?:files|files/content|files/search|files/history|branches|commits|version-diff)`),
+  // One commit and its patch: the Changes tab's commit dialog.
+  rule('GET', `projects/${PROJECT}/commits/[0-9a-f]{7,40}(?:/diff)?`),
   rule('POST', `projects/${PROJECT}/sessions`),
   rule('POST', `projects/${PROJECT}/attachments(?:/${SEG}/complete)?`),
   // One session: the session, its live stream, transcript, turn, queue, authors, model usage, scope, previews.
@@ -151,4 +153,69 @@ export function localAnswer(
     return Response.json({ results: Array.isArray(probes) ? probes.slice(0, 200).map((p) => probeResult(p as Probe)) : [] });
   }
   return null;
+}
+
+/**
+ * The request headers Kortix gets from the browser: the ones the SDK and the
+ * browser set that a session route reads (measured from `packages/sdk/src`:
+ * `Content-Type`, `Accept`, `Last-Event-ID` on a stream resume,
+ * `X-Kortix-Client-Version`; the browser's `If-None-Match` revalidation).
+ * Cookies, user agent, referer, client hints, `Origin` and forwarded-for
+ * headers stay in Lumen. The proxy sets `Authorization` itself.
+ */
+const FORWARDED_HEADERS = ['accept', 'content-type', 'last-event-id', 'if-none-match', 'x-kortix-client-version'];
+
+export function forwardedHeaders(headers: Headers): Headers {
+  const out = new Headers();
+  for (const name of FORWARDED_HEADERS) {
+    const value = headers.get(name);
+    if (value !== null) out.set(name, value);
+  }
+  return out;
+}
+
+// Responses that name the session's Kortix owner: the session record (create,
+// read, rename), the open-session snapshot, and the transcript's authors.
+const SESSION_RECORD = new RegExp(`^projects/${PROJECT}/sessions(?:/${SESSION})?$`);
+const SESSION_SNAPSHOT = new RegExp(`^${S}/snapshot$`);
+const MESSAGE_AUTHORS = new RegExp(`^${S}/message-authors$`);
+
+/** True when `redactIdentity` rewrites this path's JSON response. */
+export function redactsIdentity(path: string): boolean {
+  return SESSION_RECORD.test(path) || SESSION_SNAPSHOT.test(path) || MESSAGE_AUTHORS.test(path);
+}
+
+type Json = Record<string, unknown>;
+const isObject = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
+
+function scrubSession(session: unknown): unknown {
+  if (!isObject(session)) return session;
+  const out: Json = { ...session, owner_email: null, owner_name: null, owner_avatar_url: null };
+  if (isObject(session.initiator)) out.initiator = { ...session.initiator, label: null };
+  return out;
+}
+
+const notMember = (a: unknown) => !(isObject(a) && a.kind === 'member');
+
+/**
+ * Every member token is the operator's Kortix user, so every name and email
+ * Kortix returns for a person is the operator's. Lumen shows none of them:
+ * the session record loses its owner name, email and avatar and its
+ * initiator label; message authors and stops lose their `member` entries
+ * ("Messages with no known sender are absent"), so the transcript draws no
+ * "Sent by" or "Stopped by". Authors that are agent sessions stay.
+ */
+export function redactIdentity(path: string, body: unknown): unknown {
+  if (!isObject(body)) return body;
+  if (SESSION_RECORD.test(path)) return scrubSession(body);
+  if (SESSION_SNAPSHOT.test(path)) return { ...body, session: scrubSession(body.session) };
+  if (!MESSAGE_AUTHORS.test(path)) return body;
+  const keep = (map: unknown) =>
+    isObject(map) ? Object.fromEntries(Object.entries(map).filter(([, a]) => notMember(a))) : map;
+  return {
+    ...body,
+    authors: keep(body.authors),
+    initial_author: notMember(body.initial_author) ? body.initial_author : null,
+    ...('stops' in body ? { stops: keep(body.stops) } : {}),
+  };
 }

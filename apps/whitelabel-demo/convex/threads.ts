@@ -71,6 +71,26 @@ export const recordFromProxy = mutation({
 });
 
 /**
+ * A member renamed a thread's Kortix session through the proxy: the thread
+ * list shows the new name. Only the Next.js proxy calls this.
+ */
+export const renameFromProxy = mutation({
+  args: { workspaceId: v.id("workspaces"), kortixSessionId: v.string(), title: v.string(), proxySecret: v.string() },
+  returns: v.null(),
+  handler: async (ctx, a) => {
+    requireProxy(a.proxySecret);
+    await requireWorkspace(ctx, a.workspaceId);
+    const row = await ctx.db
+      .query("threads")
+      .withIndex("by_kortixSessionId", (q) => q.eq("kortixSessionId", a.kortixSessionId))
+      .unique();
+    const title = a.title.trim().slice(0, 120);
+    if (row && row.workspaceId === a.workspaceId && title && row.title !== title) await ctx.db.patch(row._id, { title });
+    return null;
+  },
+});
+
+/**
  * A member deletes a thread's Kortix session through the proxy. Only the
  * thread's creator or an org owner/admin may. `remove: false` checks, and the
  * proxy then deletes the session on Kortix; `remove: true` drops the thread

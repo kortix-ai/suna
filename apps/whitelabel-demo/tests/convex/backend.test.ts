@@ -139,6 +139,22 @@ describe('threads.recordFromProxy: one Lumen thread per Kortix session', () => {
   });
 });
 
+describe('threads.renameFromProxy: a rename through the proxy renames the thread', () => {
+  test('the title follows the session name; a non-member, a wrong secret and another workspace change nothing', async () => {
+    const { t, alice, mallory, ready, provisioning } = await world();
+    const ws = ready as Id<'workspaces'>;
+    await alice.as.mutation(api.threads.recordFromProxy, { workspaceId: ws, kortixSessionId: 'sess_r', title: 'old', proxySecret: PROXY_SECRET });
+    const args = { workspaceId: ws, kortixSessionId: 'sess_r', title: '  Q3 plan ', proxySecret: PROXY_SECRET };
+    await expect(mallory.as.mutation(api.threads.renameFromProxy, args)).rejects.toThrow(/403: not a member/);
+    await expect(alice.as.mutation(api.threads.renameFromProxy, { ...args, proxySecret: 'nope' })).rejects.toThrow(/403: proxy only/);
+    await alice.as.mutation(api.threads.renameFromProxy, { ...args, workspaceId: provisioning as Id<'workspaces'>, title: 'wrong' });
+    await alice.as.mutation(api.threads.renameFromProxy, { ...args, title: '   ' });
+    expect((await t.run((ctx) => ctx.db.query('threads').collect())).map((th) => th.title)).toEqual(['old']);
+    await alice.as.mutation(api.threads.renameFromProxy, args);
+    expect((await t.run((ctx) => ctx.db.query('threads').collect())).map((th) => th.title)).toEqual(['Q3 plan']);
+  });
+});
+
 describe('threads.deleteFromProxy: only the creator or an admin deletes a thread', () => {
   test('a plain member cannot delete another member\'s thread; the creator and an owner can', async () => {
     const { t, acme, alice, ready } = await world();

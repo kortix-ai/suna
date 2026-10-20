@@ -230,14 +230,6 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   // ── Account administration ────────────────────────────────────────────────
 
   // ── Project administration + workspace (dashboard parity) ─────────────────
-  'kortix.project().changeRequests.close()': 'dashboard-parity',
-  'kortix.project().changeRequests.diff()': 'dashboard-parity',
-  'kortix.project().changeRequests.get()': 'dashboard-parity',
-  'kortix.project().changeRequests.list()': 'dashboard-parity',
-  'kortix.project().changeRequests.merge()': 'dashboard-parity',
-  'kortix.project().changeRequests.mergePreview()': 'dashboard-parity',
-  'kortix.project().changeRequests.open()': 'dashboard-parity',
-  'kortix.project().changeRequests.reopen()': 'dashboard-parity',
   'kortix.project().files.archive()': 'dashboard-parity',
   'kortix.project().files.history()': 'dashboard-parity',
   'kortix.project().files.list()': 'dashboard-parity',
@@ -250,14 +242,9 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   'kortix.project().git.versionDiff()': 'dashboard-parity',
   'kortix.project().secrets.list()': 'dashboard-parity',
   'kortix.session().audit()': 'dashboard-parity',
-  'kortix.session().commit()': 'dashboard-parity',
   'kortix.session().get()': 'dashboard-parity',
   'kortix.session().health()': 'dashboard-parity',
   'kortix.session().previews()': 'dashboard-parity',
-  'kortix.session().publicShares.create()': 'dashboard-parity',
-  'kortix.session().publicShares.list()': 'dashboard-parity',
-  'kortix.session().publicShares.revoke()': 'dashboard-parity',
-  'kortix.session().setSharing()': 'dashboard-parity',
   'kortix.session().update()': 'dashboard-parity',
 
   // ── Handles and runtime resolution ────────────────────────────────────────

@@ -37,9 +37,15 @@ writes on each session (below). No Kortix API has a Lumen concept in it.
 
 ### What a customer can see
 
-- The transcript names the prompt author as the operator account ("Sent by
-  …", "Stopped by …"), because every member token belongs to the operator
-  user. Use an operator account named after your product.
+- Every member token belongs to the operator's Kortix user, so Kortix names
+  that user as each session's owner and each prompt's author. The proxy
+  removes those names (`redactIdentity` in `src/server/proxy-policy.ts`): the
+  session record and snapshot lose `owner_name`, `owner_email`,
+  `owner_avatar_url` and the initiator label, and `message-authors` loses its
+  member entries. The transcript therefore shows no "Sent by" or "Stopped
+  by" line.
+- Commits in the Changes tab name their Kortix author ("Kortix",
+  `noreply@kortix.ai`), and the project's seed commits name Kortix.
 - `GET /api/kortix/projects/<id>` returns the operator's `account_id` and the
   project's repository fields. They are opaque ids, not credentials.
 - The agent knows what it runs on. Each template prompt tells it never to name
@@ -105,7 +111,8 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
    `src/server/proxy-policy.ts` therefore names each route the session UI
    calls, by method, measured from the customer journey: the project card,
    model picker, connection and secret names, change requests; the project
-   repository read only (Files and Changes tabs); session start and restart,
+   repository read only (Files and Changes tabs, one commit and its patch);
+   session start and restart,
    rename and delete, the session's live stream, transcript, turn, prompt
    queue, attachments, scope and previews. On the session runtime (port 8000
    of the sandbox) it allows status and health reads, the transcript, the
@@ -153,13 +160,22 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
     outside `/workspace`); it cannot stop the agent from reading its own
     environment. The fix belongs in Kortix: keep the sandbox token out of the
     agent's tool environment, or narrow it to what the agent needs.
+12. Only the request headers Kortix needs leave Lumen (`forwardedHeaders`):
+    `accept`, `content-type`, `last-event-id`, `if-none-match` and
+    `x-kortix-client-version`. Cookies, user agent, referer, `Origin`, client
+    hints and forwarded-for headers stay in Lumen; the proxy sets
+    `authorization` to the member token.
+13. A rename through the proxy also renames the Lumen thread
+    (`threads.renameFromProxy`), so the thread list shows the new title. The
+    Changes tab is read only: Lumen refuses commits, pushes and change
+    requests, so it draws no control for them.
 
 ## Setup
 
 Prerequisites: a Kortix API URL and an operator token for the Kortix account
 that will own Lumen's projects (an account-level PAT or a service-account
-key; use an account named after your product, because its email appears as
-the prompt author in session transcripts).
+key). Its email never reaches a member: the proxy removes it from session
+responses.
 
 ```bash
 pnpm install

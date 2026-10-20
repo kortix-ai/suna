@@ -1,6 +1,7 @@
 'use client';
 
 import { CallSnippet } from '@/components/dev/call-snippet';
+import { useWorkspace } from '@/components/workspace-access';
 import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
@@ -91,6 +92,7 @@ function SessionActions({
 }) {
   const qc = useQueryClient();
   const router = useRouter();
+  const workspaceId = useWorkspace()._id;
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
   // Delete used to fire straight off the menu item. It now confirms, because
@@ -119,10 +121,11 @@ function SessionActions({
   const remove = useMutation({
     mutationFn: () => kortix.session(projectId, sessionId).delete(),
     onSuccess: () => {
-      invalidateSessions(qc, projectId);
+      // Leave first: the session page would refetch a session that is gone
+      // and show its error state. `replace`, so Back does not return to it.
+      router.replace(`/w/${workspaceId}`);
       setConfirmingDelete(false);
       successToast('Session deleted');
-      router.push(`/projects/${projectId}`);
     },
     onError: () => errorToast('Could not delete'),
   });

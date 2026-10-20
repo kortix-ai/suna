@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { SESSION_CREATE, SESSION_ONE, blockedReason, localAnswer } from '../../src/server/proxy-policy';
+import {
+  SESSION_CREATE,
+  SESSION_ONE,
+  blockedReason,
+  forwardedHeaders,
+  localAnswer,
+  redactIdentity,
+  redactsIdentity,
+} from '../../src/server/proxy-policy';
 
 const P = 'projects/0b8c9d3e-1111-4222-8333-944455556666';
 const S = `${P}/sessions/7a1b2c3d-1111-4222-8333-944455556666`;
@@ -24,6 +32,8 @@ describe('proxy policy: what a member token may do', () => {
     ['GET', `${P}/files/history`],
     ['GET', `${P}/branches`],
     ['GET', `${P}/commits`],
+    ['GET', `${P}/commits/81af8705bc8e64adaeda3717cc9f081dcca520f9`],
+    ['GET', `${P}/commits/81af870/diff`],
     ['GET', `${P}/version-diff`],
     ['POST', `${P}/sessions`],
     ['POST', `${P}/attachments`],
@@ -289,5 +299,77 @@ describe('proxy policy: account reads Lumen answers itself', () => {
     expect(localAnswer('GET', 'accounts/tokens', none, null, member)).toBeNull();
     expect(localAnswer('POST', 'accounts/me', none, null, member)).toBeNull();
     expect(localAnswer('GET', `${S}/prompts`, none, null, member)).toBeNull();
+  });
+});
+
+describe('proxy request headers: only what Kortix needs leaves Lumen', () => {
+  test('the SDK and browser headers a session route reads pass; cookies, identity and client hints do not', () => {
+    const out = forwardedHeaders(
+      new Headers({
+        accept: 'text/event-stream',
+        'content-type': 'application/json',
+        'last-event-id': '42',
+        'if-none-match': 'W/"1"',
+        'x-kortix-client-version': '1.2.3',
+        cookie: 'better-auth.session_token=secret',
+        authorization: 'Bearer ws.abc',
+        'user-agent': 'Mozilla/5.0',
+        referer: 'http://localhost:3020/w/1',
+        origin: 'http://localhost:3020',
+        'accept-language': 'en-GB',
+        'sec-ch-ua': '"Chromium"',
+        'x-forwarded-for': '203.0.113.7',
+        'x-kortix-impersonate': 'user_2',
+      }),
+    );
+    expect([...out.entries()].sort()).toEqual([
+      ['accept', 'text/event-stream'],
+      ['content-type', 'application/json'],
+      ['if-none-match', 'W/"1"'],
+      ['last-event-id', '42'],
+      ['x-kortix-client-version', '1.2.3'],
+    ]);
+  });
+});
+
+describe("proxy responses: the operator's Kortix identity never reaches a member", () => {
+  const OPERATOR = 'operator@example.test';
+  const session = {
+    session_id: 's1',
+    name: 'Q3',
+    owner_email: OPERATOR,
+    owner_name: 'Operator',
+    owner_avatar_url: 'https://example.test/a.png',
+    initiator: { type: 'member', id: 'u_op', label: OPERATOR },
+  };
+
+  test('the session record (create, read, rename) and the snapshot lose owner name, email, avatar and initiator label', () => {
+    for (const path of [`${P}/sessions`, S]) {
+      expect(redactsIdentity(path)).toBe(true);
+      const out = redactIdentity(path, session);
+      expect(JSON.stringify(out)).not.toContain(OPERATOR);
+      expect(out).toMatchObject({ session_id: 's1', name: 'Q3', owner_name: null, initiator: { type: 'member', id: 'u_op', label: null } });
+    }
+    const snap = redactIdentity(`${S}/snapshot`, { observed_at: 't', session });
+    expect(JSON.stringify(snap)).not.toContain(OPERATOR);
+    expect(snap).toMatchObject({ observed_at: 't', session: { session_id: 's1', owner_email: null } });
+  });
+
+  test('message authors and stops drop member entries; agent-session authors stay', () => {
+    const member = { kind: 'member', user_id: 'u_op', name: OPERATOR, email: OPERATOR };
+    const agent = { kind: 'session', session_id: 's2', name: 'Research', agent: 'research' };
+    const out = redactIdentity(`${S}/message-authors`, {
+      authors: { m1: member, m2: agent },
+      initial_author: member,
+      stops: { m1: member },
+    });
+    expect(out).toEqual({ authors: { m2: agent }, initial_author: null, stops: {} });
+  });
+
+  test('other routes pass through unchanged', () => {
+    expect(redactsIdentity(`${S}/events`)).toBe(false);
+    expect(redactsIdentity(`${S}/prompts`)).toBe(false);
+    const body = { owner_email: OPERATOR };
+    expect(redactIdentity(`${S}/prompts`, body)).toBe(body);
   });
 });

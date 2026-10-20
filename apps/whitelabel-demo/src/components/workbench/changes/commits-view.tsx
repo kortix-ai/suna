@@ -3,11 +3,11 @@
 import Loading from '@kortix/ui/loading';
 
 /**
- * The "Commits" tab of the workbench changes panel: the "Commit session changes"
- * box (`session.commit`), branches (`git.branches`), the commit list
+ * The workbench changes panel, read only: branches (`git.branches`), the commit list
  * (`git.commits`) with a detail dialog (`git.commit`, `git.commitDiff`), and the
  * compare-to-base summary (`git.versionDiff`). Everything routes through the
- * `@kortix/sdk` facade — no raw HTTP.
+ * `@kortix/sdk` facade — no raw HTTP. Commits and change requests are the
+ * Lumen operator's: the proxy refuses them, so the panel offers none.
  */
 
 import { Badge } from '@kortix/ui/badge';
@@ -24,15 +24,13 @@ import {
 import { ScrollArea } from '@kortix/ui/scroll-area';
 import { Separator } from '@kortix/ui/separator';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { Textarea } from '@kortix/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import type { ProjectBranch, ProjectCommit } from '@kortix/sdk';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { DiffStat, DiffView } from './diff-view';
-import { errorToast, infoToast, successToast } from '@kortix/ui/toast';
-import { CheckIcon, GitBranchIcon, GitCommitIcon, ScalesIcon } from '@phosphor-icons/react';
+import { GitBranchIcon, GitCommitIcon, ScalesIcon } from '@phosphor-icons/react';
 
 function CompareToBaseCard({
   projectId,
@@ -106,75 +104,6 @@ function CompareToBaseCard({
           )}
         </CardContent>
       )}
-    </Card>
-  );
-}
-
-function CommitSessionCard({
-  projectId,
-  sessionId,
-}: {
-  projectId: string;
-  sessionId: string;
-}) {
-  const qc = useQueryClient();
-  const [message, setMessage] = useState('');
-
-  const commitSession = useMutation({
-    mutationFn: () =>
-      kortix
-        .session(projectId, sessionId)
-        .commit(message.trim() ? { message: message.trim() } : undefined),
-    onSuccess: (res) => {
-      if (res.nothing_to_do) {
-        infoToast('Nothing to commit');
-      } else {
-        successToast(
-          res.pushed ? 'Committed and pushed session changes' : 'Committed session changes',
-        );
-      }
-      setMessage('');
-      qc.invalidateQueries({ queryKey: ['project-commits', projectId] });
-      qc.invalidateQueries({ queryKey: ['project-branches', projectId] });
-    },
-    onError: () => errorToast('Could not commit session changes'),
-  });
-
-  return (
-    <Card className="shrink-0">
-      {/* Commit session changes */}
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <GitCommitIcon className="size-4 text-muted-foreground" />
-          Commit session changes
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <Textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Commit message (optional)"
-          rows={2}
-          className="resize-none font-mono text-xs"
-        />
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate font-mono text-[0.7rem] text-muted-foreground">
-            {sessionId}
-          </span>
-          <Button
-            size="sm"
-            onClick={() => commitSession.mutate()}
-            disabled={commitSession.isPending}
-          >
-            {commitSession.isPending ? (
-              <Loading className="size-3.5" />
-            ) : (
-              <CheckIcon className="size-3.5" />
-            )}
-            Commit
-          </Button>
-        </div>
-      </CardContent>
     </Card>
   );
 }
@@ -290,8 +219,6 @@ export function CommitsView({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <CommitSessionCard projectId={projectId} sessionId={sessionId} />
-
       <CompareToBaseCard projectId={projectId} sessionId={sessionId} />
 
       <BranchBadges items={branchItems} isLoading={branches.isLoading} />
