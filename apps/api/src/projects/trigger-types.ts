@@ -219,6 +219,16 @@ export interface ParsedManifest {
    * edit back to the declaring file instead of flattening it into the root.
    */
   imports?: ResolvedManifest;
+  /**
+   * The exact source text this manifest was parsed from, when it was read as
+   * YAML. Comment preservation is per-FORMAT: the `yaml` package's Document
+   * is lossless (comments + blank lines ride on the node tree), while a TOML
+   * parser only decodes data, so a TOML write is a full re-serialize. The
+   * edit path (serializeManifest) splices its changes into this text instead
+   * of reserializing; reads never need it. null/undefined = fall back to a
+   * full re-serialize.
+   */
+  source?: string | null;
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */
