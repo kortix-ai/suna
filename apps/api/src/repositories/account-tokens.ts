@@ -146,12 +146,15 @@ export class PatPolicyError extends Error {
   }
 }
 
-async function loadPatPolicy(accountId: string): Promise<{
+async function loadPatPolicy(
+  accountId: string,
+  database: Pick<typeof db, 'select'>,
+): Promise<{
   maxLifetimeDays: number | null;
   requireExpiry: boolean;
   idleRevokeDays: number | null;
 } | null> {
-  const [row] = await db
+  const [row] = await database
     .select({
       maxLifetimeDays: accounts.patMaxLifetimeDays,
       requireExpiry: accounts.patRequireExpiry,
@@ -209,7 +212,7 @@ async function insertAccountToken(
   }
 
   if (!params.sessionId) {
-    const policy = await loadPatPolicy(params.accountId);
+    const policy = await loadPatPolicy(params.accountId, database);
     if (policy) {
       if (policy.requireExpiry && !params.expiresAt) {
         throw new PatPolicyError(
