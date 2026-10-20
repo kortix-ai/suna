@@ -18,7 +18,7 @@
 
 import type { KortixProject } from '@kortix/sdk';
 import { qk, useFeatureFlag } from '@kortix/sdk/react';
-import { useQueryClient, type Query, type QueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type Query, type QueryClient } from '@tanstack/react-query';
 import { useCallback, useState, useSyncExternalStore } from 'react';
 
 export const NOTIFICATION_CENTER_FLAG = 'notification_center';
@@ -106,7 +106,13 @@ export function useNotificationCenter(projectId?: string | null): boolean {
  * load of a project page starts off.
  */
 export function useNotificationHostGate(projectId?: string | null): boolean {
-  const flag = useFeatureFlag(projectId, NOTIFICATION_CENTER_FLAG);
+  // The global host sits outside the access boundary. Observe the shell's
+  // detail entry without starting a request for a potentially revoked project.
+  const detail = useQuery<{ project?: FlagHolder }>({
+    queryKey: qk.project.detail(projectId ?? ''),
+    enabled: false,
+  });
+  const flag = { isLoading: detail.isPending, enabled: notificationCenterOn(detail.data?.project) };
   const client = useQueryClient();
   const anyProject = useAnyCachedNotificationCenter(client, !projectId);
   const [previous, setPrevious] = useState(false);

@@ -50,6 +50,8 @@ test.each([403, 404])('denied project (%s) makes only the access request, includ
   }, { preconnect: originalFetch.preconnect });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client = queryClient;
+  const gateKey = 'project-access-boundary';
+  queryClient.setQueryData([gateKey, 'synthetic-project', 'synthetic-member'], { project_id: 'synthetic-project' });
   const container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
