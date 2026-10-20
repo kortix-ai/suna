@@ -1,3 +1,4 @@
+import { BRAND } from '@/config/brand';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = { title: 'Security · Lumen' };
@@ -42,7 +43,9 @@ export default function SecurityPage() {
           </section>
         ))}
       </div>
-      <p className="mt-16 border-t border-border pt-6 text-xs text-muted-foreground">Lumen is powered by Kortix.</p>
+      {BRAND.subprocessorNote && (
+        <p className="mt-16 border-t border-border pt-6 text-xs text-muted-foreground">{BRAND.subprocessorNote}</p>
+      )}
     </div>
   );
 }

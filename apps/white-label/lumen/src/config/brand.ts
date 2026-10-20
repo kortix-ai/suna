@@ -10,6 +10,12 @@ export const BRAND = {
   tagline: 'AI for legal teams.',
   /** The marketing subline. */
   subline: 'Review a data room in an afternoon. Every answer cites the clause.',
+  /**
+   * A subprocessor line for the Security page, for a partner whose contracts
+   * name its infrastructure providers (for example "Agent sessions run on
+   * Kortix."). Null: no line. Firms never see the platform otherwise.
+   */
+  subprocessorNote: null as string | null,
 } as const;
 
 export type Brand = typeof BRAND;

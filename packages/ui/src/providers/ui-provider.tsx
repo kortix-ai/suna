@@ -261,6 +261,28 @@ export interface UiHostConfig {
    * still enforces each route. Default: true.
    */
   accountApiEnabled: boolean;
+  /**
+   * The composer shows the model picker and the reasoning-effort picker. A
+   * host that runs one model for its users sets false: the session runs its
+   * resolved default model. Default: true.
+   */
+  modelPickerEnabled: boolean;
+  /** The composer shows the context-usage ring (and its route to the context modal). Default: true. */
+  contextMeterEnabled: boolean;
+  /**
+   * The composer shows the session-overrides gear (sandbox, secrets,
+   * connectors, provider keys, folders). A host whose users never see the
+   * infrastructure behind a session sets false. Default: true.
+   */
+  sessionOverridesEnabled: boolean;
+  /**
+   * The agents the composer's agent picker offers, by name. Unset: every
+   * selectable agent. A host that installs its own agents beside the
+   * project's defaults lists its own here.
+   */
+  offeredAgents?: readonly string[];
+  /** Display names by agent name, for the agent picker. Unset or missing: the title-cased name. */
+  agentLabels?: Readonly<Record<string, string>>;
 }
 
 /** What the session browser frames: a port and path inside the session's sandbox, or a URL. */
@@ -292,6 +314,9 @@ export const defaultUiHostConfig: UiHostConfig = {
   commandPaletteShortcut: false,
   settingsShortcut: false,
   accountApiEnabled: true,
+  modelPickerEnabled: true,
+  contextMeterEnabled: true,
+  sessionOverridesEnabled: true,
 };
 
 const useNoViewer = (): string | undefined => undefined;
