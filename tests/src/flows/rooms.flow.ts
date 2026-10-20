@@ -584,14 +584,15 @@ flow(
       const note = await waitFor(async () => (await messageNotes())[0] ?? null, { until: (row) => row !== null, timeoutMs: 10_000, intervalMs: 250, description: 'message notification' });
       if (!note || note.room_id !== roomId || !note.url.startsWith(`/projects/${project.id}/rooms/${roomId}?notification=`) || note.read) throw new Error(JSON.stringify(note));
     });
-    await ctx.step('Ada marks the room read → unread 0 and the notification is read; her reply to #2 notifies the owner', async () => {
+    await ctx.step('Ada marks the room read → unread 0 and the notification is read; her thread reply to #2 notifies the owner, room unread stays 0', async () => {
       (await asAda.post(READ, {}, { params: d })).status(200).body().has('$.last_read_seq', 2);
       (await asAda.get(`${ROOMS}?mine=true`, { params: p })).status(200).body().has('$.rooms[0].unread', 0);
       if ((await messageNotes()).some((n) => !n.read)) throw new Error('message notification still unread');
       const res = await asAda.post(MESSAGES, { text: 'Yes, nothing reads it since July.', reply_to: 2 }, { params: d });
       res.status(201);
       if (delivery(res.json<PostResult>(), ctx.P.OWNER.userId!).state !== 'notified') throw new Error(`a reply did not notify the owner: ${res.text()}`);
-      (await owner.get(`${ROOMS}?mine=true`, { params: p })).status(200).body().has('$.rooms[0].unread', 1);
+      // A thread reply notifies; it does not count as room unread (Slack).
+      (await owner.get(`${ROOMS}?mine=true`, { params: p })).status(200).body().has('$.rooms[0].unread', 0);
     });
     await ctx.step('there are no direct conversations: POST /rooms/direct → 404', async () => {
       (await owner.post('/v1/projects/:projectId/rooms/direct', { email: ada.email }, { params: p })).status(404);
