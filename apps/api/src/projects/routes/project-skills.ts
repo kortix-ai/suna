@@ -16,15 +16,15 @@
 // immediately and the catalog's next config read sees it.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { slugifySlug } from '@kortix/manifest-schema';
+import { slugifySlug, validateManifest } from '@kortix/manifest-schema';
 import { stringify as stringifyYaml } from 'yaml';
 import type { Context } from 'hono';
 import type { AppEnv } from '../../types';
 
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { auth, errors, json } from '../../openapi';
-import { GitFileRevisionConflictError, commitFileToBranch } from '../git/branches';
-import { isRepoFileNotFoundError, readRepoFile } from '../git/files';
+import { GitFileRevisionConflictError, commitFileToBranch, commitMultipleFilesToBranch } from '../git/branches';
+import { isRepoFileNotFoundError, readRepoFile, listRepoFiles } from '../git/files';
 import { isRemotePushPolicyRejection } from '../git/mirror';
 import {
   assertAgentSessionWorkspaceAllowsRepository,
@@ -34,9 +34,17 @@ import {
 import { projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 
+import { readManifest, manifestWrites } from '../manifest-io';
+import { resolveBranchTip } from '../git/commits';
+import { refreshMirror } from '../git/mirror';
+import { invalidateProjectResourceConfig } from '../lib/project-resources';
+import { planSkillRemoval } from '../lib/skill-removal';
+
 /** Longest name/description the route accepts. Bounds one line of YAML. */
 const SKILL_NAME_MAX = 100;
 const SKILL_DESCRIPTION_MAX = 1024;
+
+const RemoveSkillSchema = z.object({ folder: z.string().min(1).max(1024), confirm: z.literal(true) });
 
 const CreateSkillSchema = z.object({
   name: z
@@ -78,6 +86,65 @@ function renderSkillMarkdown(skill: CreateSkillInput): string {
 }
 
 export function registerProjectSkillsRoutes(): void {
+  projectsApp.openapi(createRoute({
+    method: 'post', path: '/{projectId}/skills/remove', tags: ['projects'],
+    summary: 'Remove a selected project skill folder, including edits', ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: RemoveSkillSchema } } },
+    },
+    responses: { 200: json(z.object({ ok: z.literal(true), commitSha: z.string(), removed: z.array(z.string()) }), 'Removed skill'), ...errors(400, 403, 404, 409, 502) },
+  }), async (c: Context<AppEnv>) => {
+    const projectId = c.req.param('projectId');
+    if (!projectId) return c.json({ error: 'Not found' }, 404);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
+    for (const action of [PROJECT_ACTIONS.PROJECT_SKILL_WRITE, PROJECT_ACTIONS.PROJECT_AGENT_WRITE]) {
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
+    }
+    const body = RemoveSkillSchema.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'Explicit confirmation of whole-folder removal is required' }, 400);
+    const project = await withProjectGitAuth(loaded.row);
+    try {
+      await refreshMirror(project, true);
+      const commit = await resolveBranchTip(project, project.defaultBranch);
+      const manifest = await readManifest(project, { rethrowReadErrors: true });
+      if (!manifest || manifest.commit !== commit || manifest.revision === undefined) {
+        return c.json({ error: 'A readable committed manifest is required; refresh and retry' }, 409);
+      }
+      if (!validateManifest(manifest.raw, manifest.format).valid) {
+        return c.json({ error: 'Repair invalid project configuration before removing a skill' }, 409);
+      }
+      let plan;
+      try {
+        plan = planSkillRemoval(manifest.raw, (await listRepoFiles(project, commit)).map((file) => file.path), body.data.folder);
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+      }
+      const validation = validateManifest(plan.raw, manifest.format);
+      if (!validation.valid) return c.json({ error: 'Removal would leave invalid project configuration', issues: validation.issues }, 409);
+      manifest.raw = plan.raw;
+      const writes = manifestWrites(manifest);
+      // An imported manifest inside the removed folder would leave dangling imports.
+      if ([manifest.path, ...writes.alsoExpect.map((file) => file.path)].some((path) => path?.startsWith(`${body.data.folder}/`))) {
+        return c.json({ error: 'Skill folder contains manifest configuration' }, 409);
+      }
+      const result = await commitMultipleFilesToBranch(project, {
+        files: writes.files, deletes: plan.deletes, alsoExpect: writes.alsoExpect,
+        branch: project.defaultBranch, expectedCommit: commit,
+        expectedFileRevision: { path: manifest.path || loaded.row.manifestPath || 'kortix.yaml', sha: manifest.revision, candidatePaths: manifest.candidatePaths },
+        message: `chore: remove project skill ${body.data.folder}`,
+      });
+      invalidateProjectResourceConfig(projectId);
+      return c.json({ ok: true as const, commitSha: result.commitSha, removed: plan.deletes }, 200);
+    } catch (error) {
+      if (error instanceof GitFileRevisionConflictError || isRemotePushPolicyRejection(error)) {
+        return c.json({ error: error.message }, 409);
+      }
+      return c.json({ error: 'Could not remove the skill from the repository' }, 502);
+    }
+  });
   projectsApp.openapi(
   createRoute({
     method: 'post',

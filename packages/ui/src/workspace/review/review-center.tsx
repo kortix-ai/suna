@@ -6,13 +6,16 @@ import { useTranslations } from '../../i18n';
  * finished, what changed, what needs approval, and what's waiting on a decision,
  * across web and Slack-triggered sessions.
  *
- * Built for speed: keyboard-driven (j/k, Enter, a, e, d, 1-3, /, ?), every
- * action is undoable, and live search. Multi-select left the UI on 2026-09-03;
- * the bulk plumbing (`onBulkAct`, `resolveBulkOutcome`) stays for `d`.
+ * Built for speed: keyboard-driven (j/k, Enter, a, e, d, x, 1-3, /, ?), every
+ * action is undoable, and live search. In Needs you, a row's checkbox (on
+ * hover) or `x` starts select mode: the floating bar approves, denies or
+ * dismisses up to 50 items through `onBulkAct`.
  * Prototype: mock data, optimistic local actions.
  */
 
 import { Badge } from '../../primitives/badge';
+import { Checkbox } from '../../primitives/checkbox';
+import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import { CountBadge } from '../../primitives/count-badge';
 import { Button } from '../../primitives/button';
 import {
@@ -39,21 +42,32 @@ import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '../../p
 import { Skeleton } from '../../primitives/skeleton';
 import { DiffStat } from '../../primitives/status';
 import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
-import { infoToast, successToast, toastIcon, undoToast } from '../../primitives/toast';
+import {
+  errorToast,
+  infoToast,
+  successToast,
+  toastIcon,
+  undoToast,
+} from '../../primitives/toast';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
 import { localizeUiCatalog } from '../../i18n/ui-catalog/localize-ui-catalog';
 import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '../../i18n/ui-catalog/product-catalog-translation-keys.generated';
 import { cn } from '../../internal/lib/utils';
+import { hasOpenFloatingLayer } from '../../lib/z-stack';
+import { SelectionBar, type SelectionBarAction } from '../selection/selection-bar';
+import { selectRange, toggleId } from '../selection/selection';
 import type { ReviewVerdict } from '@kortix/sdk';
 import {
   ArrowUUpLeftIcon as ArrowUUpLeft,
   CheckIcon as Check,
   CheckCircleIcon as CheckCircleSolid,
+  CheckSquareIcon,
   CaretDownIcon as ChevronDown,
   ClockIcon as Clock,
   DotsThreeIcon as DotsThree,
   MagnifyingGlassIcon as Search,
+  WarningIcon,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
@@ -61,12 +75,28 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { statusToVerdict } from './map';
 import { getLocalizedMockItems } from './mock-data';
 import {
+  BULK_MAX,
+  BULK_VERDICT,
+  type BulkResult,
+  type BulkVerb,
+  bulkResultMessage,
+  bulkSelectable,
   bulkSkipMessage,
+  bulkSupports,
+  formatExpiresIn,
   formatItemAge,
   isQuickDecidableApproval,
   resolveBulkOutcome,
 } from './review-actions';
-import { ApprovalDecisionModal, reviewApprovalDetails } from './approval-modal';
+import { reviewArgsSummary } from '../../session/prompts/session-approval-review';
+import { approvalIdentity } from '../../markdown/setup-links/approval-decision';
+import { ConnectorAppMark } from '../../markdown/setup-links/connector-handshake';
+import {
+  ApprovalDecisionModal,
+  reviewApprovalAsker,
+  reviewApprovalDenyOnly,
+  reviewApprovalDetails,
+} from './approval-modal';
 import { type ReviewActions, ReviewDetail } from './review-detail';
 import {
   KIND_META,
@@ -84,6 +114,7 @@ import {
 import {
   type ReviewItem,
   type ReviewKind,
+  type ReviewRisk,
   type ReviewSegment,
   type ReviewStatus,
   segmentForStatus,
@@ -98,6 +129,28 @@ function TimeAgo({ iso }: { iso: string }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   return <span className="tabular-nums">{mounted ? formatItemAge(iso) : ''}</span>;
+}
+
+/** "Expires in 3h" on a pending approval. Under one hour a clock glyph in the
+ *  warning accent leads it; the text stays muted (an accent paints a glyph,
+ *  never text). Client-only, like `TimeAgo`. Nothing once no time is left. */
+function ExpiresIn({ iso }: { iso: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const left = mounted ? formatExpiresIn(iso) : null;
+  if (!left) return null;
+  return (
+    <>
+      <Dot />
+      {left.soon ? (
+        <Clock aria-hidden className="text-kortix-orange size-3.5 shrink-0" />
+      ) : null}
+      <span className="shrink-0 tabular-nums">
+        {tHardcodedUi('approvalPage.expiresIn', { time: left.time })}
+      </span>
+    </>
+  );
 }
 
 const SEGMENTS: { value: ReviewSegment; label: string }[] = [
@@ -139,6 +192,7 @@ const STATUS_GLYPH: Partial<Record<ReviewStatus, { icon: typeof Check; className
   changes_requested: { icon: ArrowUUpLeft, className: 'text-kortix-orange' },
   rejected: { icon: X, className: 'text-kortix-red' },
   dismissed: { icon: X, className: 'text-muted-foreground' },
+  expired: { icon: Clock, className: 'text-muted-foreground' },
 };
 
 function Dot() {
@@ -159,6 +213,7 @@ function ItemRow({
   onAskChanges,
   onDismiss,
   onOpenSession,
+  selection,
 }: {
   item: ReviewItem;
   idx: number;
@@ -175,8 +230,18 @@ function ItemRow({
   onAskChanges?: () => void;
   onDismiss?: () => void;
   onOpenSession?: () => void;
+  /** A row a bar verb acts on. `selecting`: select mode is on, so a click
+   *  toggles the row (shift: a range) instead of opening it. `disabled`: in
+   *  select mode, a row no bar verb acts on. Null: the row shows no checkbox. */
+  selection: {
+    checked: boolean;
+    selecting: boolean;
+    disabled?: boolean;
+    onToggle: (range: boolean) => void;
+  } | null;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tBulk = useTranslations('hardcodedUi.reviewBulk');
   const kind = KIND_META[item.kind];
   const segment = segmentForStatus(item.status);
   const pending = segment === 'needs_you';
@@ -186,6 +251,145 @@ function ItemRow({
   // Meta line: when · who · where. The session stands in for the repo; when
   // the group already names it, the row's own summary fills the slot.
   const where = sessionLabel ?? item.summary;
+  // Nothing to review: the modal offers only Deny, so the row says so in
+  // place of "awaiting approval". Nothing is denied automatically.
+  const denyOnly = pending && reviewApprovalDenyOnly(item);
+  const tReview = useTranslations('hardcodedUi.approvalPage');
+  const selecting = selection?.selecting ?? false;
+  const selectable = !!selection && !selection.disabled;
+
+  // The leading icon names the kind by shape and the outcome by color:
+  // blue while it needs you, then green/orange/red/muted once decided — the
+  // same tone as the status check beside the title.
+  const kindIcon = (
+    <kind.icon
+      className={cn(
+        'size-5 shrink-0',
+        glyph ? glyph.className : kind.iconColor,
+        selectable && !selecting && 'group-focus-within:hidden group-hover:hidden',
+      )}
+      aria-label={reviewKindLabel(item.kind, tI18nComplete)}
+    />
+  );
+  // One fixed 20 px slot: the kind icon, swapped for the checkbox on row
+  // hover and for the whole of select mode. Nothing shifts.
+  const leading = !selectable || !selection ? (
+    kindIcon
+  ) : (
+    <span className="flex size-5 shrink-0 items-center justify-center">
+      {selecting ? (
+        <Checkbox
+          checked={selection.checked}
+          tabIndex={-1}
+          aria-hidden
+          className="pointer-events-none"
+        />
+      ) : (
+        <>
+          {kindIcon}
+          <Checkbox
+            checked={false}
+            aria-label={tBulk('selectRow', { title: item.title })}
+            onClick={(e) => {
+              // The row's own state decides; Radix skips its toggle.
+              e.preventDefault();
+              selection.onToggle(e.shiftKey);
+            }}
+            className="hidden group-focus-within:flex group-hover:flex"
+          />
+        </>
+      )}
+    </span>
+  );
+
+  const body = (
+    <>
+      <span className="flex items-center gap-1.5">
+        <span className="text-foreground truncate text-sm font-medium">{item.title}</span>
+        {number != null && (
+          <span className="text-muted-foreground shrink-0 text-sm tabular-nums">#{number}</span>
+        )}
+        {glyph && (
+          <Hint label={reviewStatusLabel(item.status, tI18nComplete)}>
+            <glyph.icon
+              className={cn('size-3.5 shrink-0', glyph.className)}
+              aria-label={reviewStatusLabel(item.status, tI18nComplete)}
+            />
+          </Hint>
+        )}
+        {fresh && (
+          <Badge variant="new" size="sm" className="shrink-0">
+            {tI18nComplete.raw('text18fdd549b2ed')}
+          </Badge>
+        )}
+      </span>
+      <span className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
+        <TimeAgo iso={item.createdAt} />
+        {item.kind === 'approval' && segment !== 'done' && item.expiresAt ? (
+          <ExpiresIn iso={item.expiresAt} />
+        ) : null}
+        <Dot />
+        <span className="truncate">{item.agent}</span>
+        {denyOnly ? (
+          <>
+            <Dot />
+            <span className="flex min-w-0 items-center gap-1">
+              <WarningIcon aria-hidden className="text-kortix-orange size-3.5 shrink-0" />
+              <span className="truncate">{tReview('canOnlyBeDenied')}</span>
+            </span>
+          </>
+        ) : where ? (
+          <>
+            <Dot />
+            <span className="truncate">{where}</span>
+          </>
+        ) : null}
+      </span>
+    </>
+  );
+
+  // The menu's Select hands focus to the row (select mode drops the menu), not
+  // back to the trigger that is about to unmount.
+  const enteringSelect = useRef(false);
+
+  const diffStat = diff ? (
+    <DiffStat
+      additions={diff.additions}
+      deletions={diff.deletions}
+      className="hidden text-xs sm:inline-flex"
+    />
+  ) : null;
+
+  // Select mode: the whole row is the option (trigger-list.tsx), with no
+  // open button and no menu inside it to steal the click.
+  if (selecting && selection) {
+    return (
+      <li
+        data-idx={idx}
+        role="option"
+        aria-selected={selection.checked}
+        aria-disabled={selection.disabled || undefined}
+        tabIndex={selectable ? 0 : -1}
+        onClick={selectable ? (e) => selection.onToggle(e.shiftKey) : undefined}
+        onKeyDown={(e) => {
+          if (selectable && (e.key === ' ' || e.key === 'Enter')) {
+            e.preventDefault();
+            selection.onToggle(e.shiftKey);
+          }
+        }}
+        className={cn(
+          'flex items-center gap-3 rounded-md px-3 py-1.5 outline-none select-none',
+          'focus-visible:ring-ring focus-visible:ring-2',
+          focused || selection.checked ? 'bg-active' : selectable && 'hover:bg-hover',
+          selectable && 'cursor-pointer',
+        )}
+      >
+        {leading}
+        <span className="min-w-0 flex-1">{body}</span>
+        {diffStat ? <span className="flex shrink-0 items-center">{diffStat}</span> : null}
+      </li>
+    );
+  }
 
   return (
     <li
@@ -195,59 +399,18 @@ function ItemRow({
         focused ? 'bg-active' : 'hover:bg-hover',
       )}
     >
-      {/* The leading icon names the kind by shape and the outcome by color:
-          blue while it needs you, then green/orange/red/muted once decided —
-          the same tone as the status check beside the title. */}
-      <kind.icon
-        className={cn('size-5 shrink-0', glyph ? glyph.className : kind.iconColor)}
-        aria-label={reviewKindLabel(item.kind, tI18nComplete)}
-      />
+      {leading}
 
       <button
         type="button"
         onClick={onOpen}
         className="focus-visible:ring-ring min-w-0 flex-1 rounded-sm text-left focus-visible:ring-2 focus-visible:outline-none"
       >
-        <span className="flex items-center gap-1.5">
-          <span className="text-foreground truncate text-sm font-medium">{item.title}</span>
-          {number != null && (
-            <span className="text-muted-foreground shrink-0 text-sm tabular-nums">#{number}</span>
-          )}
-          {glyph && (
-            <Hint label={reviewStatusLabel(item.status, tI18nComplete)}>
-              <glyph.icon
-                className={cn('size-3.5 shrink-0', glyph.className)}
-                aria-label={reviewStatusLabel(item.status, tI18nComplete)}
-              />
-            </Hint>
-          )}
-          {fresh && (
-            <Badge variant="new" size="sm" className="shrink-0">
-              {tI18nComplete.raw('text18fdd549b2ed')}
-            </Badge>
-          )}
-        </span>
-        <span className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
-          <TimeAgo iso={item.createdAt} />
-          <Dot />
-          <span className="truncate">{item.agent}</span>
-          {where && (
-            <>
-              <Dot />
-              <span className="truncate">{where}</span>
-            </>
-          )}
-        </span>
+        {body}
       </button>
 
       <div className="flex shrink-0 items-center gap-2">
-        {diff && (
-          <DiffStat
-            additions={diff.additions}
-            deletions={diff.deletions}
-            className="hidden text-xs sm:inline-flex"
-          />
-        )}
+        {diffStat}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -259,7 +422,14 @@ function ItemRow({
               <DotsThree className="size-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuContent
+            align="end"
+            className="w-52"
+            onCloseAutoFocus={(e) => {
+              if (enteringSelect.current) e.preventDefault();
+              enteringSelect.current = false;
+            }}
+          >
             <DropdownMenuItem onClick={onOpen}>
               {tI18nComplete.raw('texted077f3d8125')}
               <DropdownMenuShortcut>↵</DropdownMenuShortcut>
@@ -282,6 +452,22 @@ function ItemRow({
                 <DropdownMenuShortcut>d</DropdownMenuShortcut>
               </DropdownMenuItem>
             )}
+            {/* The touch and Tab path into select mode (Triggers parity). */}
+            {selectable && selection ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => {
+                    enteringSelect.current = true;
+                    selection.onToggle(false);
+                  }}
+                >
+                  <CheckSquareIcon />
+                  {tI18nComplete.raw('text2a78025de6aa')}
+                  <DropdownMenuShortcut>x</DropdownMenuShortcut>
+                </DropdownMenuItem>
+              </>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -302,7 +488,14 @@ function ListSkeleton({ rows = 4 }: { rows?: number }) {
 
 function KeyboardHelp({ open, onClose }: { open: boolean; onClose: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const shortcuts = localizeUiCatalog(SHORTCUTS, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS);
+  const localized = localizeUiCatalog(SHORTCUTS, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS);
+  // `x` after `d`. Its label is the shared "Select" message, which the
+  // generated catalog map does not list.
+  const shortcuts = [
+    ...localized.slice(0, 5),
+    { keys: ['x'], label: tI18nComplete.raw('text2a78025de6aa') },
+    ...localized.slice(5),
+  ];
   return (
     <Modal open={open} onOpenChange={(o) => !o && onClose()}>
       <ModalContent className="lg:max-w-sm">
@@ -334,6 +527,26 @@ const UNDO_TOAST_MS = 6000;
 /** The prototype inbox's rule: every verdict, since nothing reaches a route. */
 const EVERY_VERDICT = () => true;
 
+/** The status a bar verb leaves an item in, for the optimistic update. */
+const BULK_STATUS: Record<BulkVerb, ReviewStatus> = {
+  approve: 'approved',
+  deny: 'rejected',
+  dismiss: 'dismissed',
+};
+const BULK_PROGRESS = { approve: 'approving', deny: 'denying', dismiss: 'dismissing' } as const;
+const RISK_BADGE: Record<
+  ReviewRisk,
+  {
+    variant: 'muted' | 'warning' | 'destructive';
+    key: 'riskNone' | 'riskLow' | 'riskMedium' | 'riskHigh';
+  }
+> = {
+  none: { variant: 'muted', key: 'riskNone' },
+  low: { variant: 'muted', key: 'riskLow' },
+  medium: { variant: 'warning', key: 'riskMedium' },
+  high: { variant: 'destructive', key: 'riskHigh' },
+};
+
 export function ReviewCenter({
   initialItems,
   segment: segmentProp,
@@ -361,8 +574,12 @@ export function ReviewCenter({
   loadMore?: { onLoadMore: () => void; isLoading: boolean; isError: boolean };
   /** Connected mode: fire the server verdict for a single item. */
   onAct?: (id: string, verdict: ReviewVerdict, feedback?: string) => void;
-  /** Connected mode: fire the server verdict for many items (multi-select). */
-  onBulkAct?: (ids: string[], verdict: ReviewVerdict) => void;
+  /** Connected mode: fire the server verdict for many items (the select-mode
+   *  bar and `d`). Resolves with one result per id; absent results mean all ok. */
+  onBulkAct?: (
+    ids: string[],
+    verdict: ReviewVerdict,
+  ) => void | Promise<readonly BulkResult[] | undefined>;
   /** Connected mode: open a session (e.g. to watch the agent revise a change). */
   onOpenSession?: (sessionId: string) => void;
   /** Connected mode: start a recovery session for a conflicted change. */
@@ -388,6 +605,7 @@ export function ReviewCenter({
   verdictAllowed?: (item: ReviewItem, verdict: ReviewVerdict) => boolean;
 } = {}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tBulk = useTranslations('hardcodedUi.reviewBulk');
   const tSidebar = useTranslations('sidebar');
   const segments = useMemo(
     () => localizeUiCatalog(SEGMENTS, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS),
@@ -497,6 +715,71 @@ export function ReviewCenter({
     visible.forEach((i, idx) => m.set(i.id, idx));
     return m;
   }, [visible]);
+  /* ── Select mode: pick up to 50 rows, then Approve / Deny / Dismiss ── */
+  // 'key' when `x` opened it: the bar then skips its enter animation.
+  const [selectMode, setSelectMode] = useState<false | 'pointer' | 'key'>(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [anchorId, setAnchorId] = useState<string | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{
+    label: string;
+    done: number;
+    total: number;
+  } | null>(null);
+  // The verb outlives `open` so the dialog keeps its copy while it closes.
+  const [confirm, setConfirm] = useState<{ verb: BulkVerb; open: boolean }>({
+    verb: 'approve',
+    open: false,
+  });
+  // Only Needs you holds rows a bar verb acts on.
+  const selectableIds = useMemo(
+    () =>
+      segment === 'needs_you'
+        ? visible.filter((i) => bulkSelectable(i, verdictAllowed)).map((i) => i.id)
+        : [],
+    [visible, segment, verdictAllowed],
+  );
+  // Rows that left the list (decided, filtered) drop out of the selection.
+  const selectedItems = useMemo(
+    () => visible.filter((i) => selectedIds.has(i.id)),
+    [visible, selectedIds],
+  );
+  const bulkIds = useMemo(() => {
+    const idsFor = (verb: BulkVerb) =>
+      selectedItems.filter((i) => bulkSupports(i, verb, verdictAllowed)).map((i) => i.id);
+    return { approve: idsFor('approve'), deny: idsFor('deny'), dismiss: idsFor('dismiss') };
+  }, [selectedItems, verdictAllowed]);
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setAnchorId(null);
+  };
+  const toggleSelected = (id: string, range: boolean, via: 'pointer' | 'key') => {
+    let next = range
+      ? selectRange(selectedIds, selectableIds, anchorId, id)
+      : toggleId(selectedIds, id);
+    if (next.size > BULK_MAX) {
+      // A 51st single toggle changes nothing, the anchor included; a range
+      // keeps its first 50.
+      if (!range) return;
+      next = new Set([...next].slice(0, BULK_MAX));
+    }
+    setSelectedIds(next);
+    setAnchorId(id);
+    // The toggled row takes the cursor, so select mode focuses it.
+    setFocusedIdx(visibleIndexById.get(id) ?? 0);
+    setSelectMode((mode) => mode || via);
+  };
+  // A segment, kind, session or search change drops the selection: a bulk
+  // verb never reaches a hidden row. Leaving Needs you leaves select mode.
+  const selectionScope = `${segment}\u0000${kindFilter}\u0000${sessionFilter}\u0000${query}`;
+  const [selectionScopeSeen, setSelectionScopeSeen] = useState(selectionScope);
+  if (selectionScope !== selectionScopeSeen) {
+    setSelectionScopeSeen(selectionScope);
+    setSelectedIds(new Set());
+    setAnchorId(null);
+    if (segment !== 'needs_you') setSelectMode(false);
+  }
+
   // If the active session filter no longer has items in this segment, reset it.
   useEffect(() => {
     if (sessionFilter !== 'all' && !sessionOpts.some((s) => s.sessionId === sessionFilter)) {
@@ -508,6 +791,16 @@ export function ReviewCenter({
   useEffect(() => {
     setFocusedIdx((i) => Math.max(0, Math.min(i, visible.length - 1)));
   }, [visible.length]);
+
+  // Select mode: DOM focus follows the cursor (j/k, a toggled row), so Space
+  // and Enter act on the row the user sees, and a pointer entry that
+  // unmounts the clicked checkbox keeps focus on its row.
+  useEffect(() => {
+    if (!selectMode) return;
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-idx="${focusedIdx}"]`)
+      ?.focus({ preventScroll: true });
+  }, [selectMode, focusedIdx]);
 
   // Scroll the focused row into view.
   useEffect(() => {
@@ -689,7 +982,10 @@ export function ReviewCenter({
           bulkSetStatus(items, outcome.act, 'dismissed'),
           `Dismissed ${outcome.act.length}`,
           'info',
-          () => onBulkAct(outcome.act, 'dismiss'),
+          () =>
+            void Promise.resolve(onBulkAct(outcome.act, 'dismiss')).catch((e: Error) =>
+              errorToast(e.message),
+            ),
         );
       }
       return;
@@ -701,6 +997,38 @@ export function ReviewCenter({
       onBulkAct ? () => onBulkAct(ids, 'dismiss') : undefined,
     );
   };
+
+  /** The bar's verb on every selected row that supports it. One request; the
+   *  results drive the optimistic update (ok ids only) and the toast. */
+  const runBulk = async (verb: BulkVerb) => {
+    setConfirm((c) => ({ ...c, open: false }));
+    const ids = bulkIds[verb];
+    if (ids.length === 0) return;
+    setBulkProgress({
+      label: tBulk(BULK_PROGRESS[verb], { count: ids.length }),
+      done: 0,
+      total: ids.length,
+    });
+    let results: readonly BulkResult[];
+    try {
+      results =
+        (await onBulkAct?.(ids, BULK_VERDICT[verb])) ?? ids.map((id) => ({ id, ok: true }));
+    } catch (e) {
+      setBulkProgress(null);
+      errorToast(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    setBulkProgress(null);
+    const okIds = new Set(results.filter((r) => r.ok).map((r) => r.id));
+    setItems((prev) => bulkSetStatus(prev, okIds, BULK_STATUS[verb]));
+    setSelectedIds((prev) => new Set([...prev].filter((id) => !okIds.has(id))));
+    const message = bulkResultMessage(tBulk, verb, results);
+    if (okIds.size === results.length) successToast(message);
+    else if (okIds.size > 0) infoToast(message);
+    else errorToast(message);
+  };
+  // Every bulk verb confirms first, listing what it will decide.
+  const startBulk = (verb: BulkVerb) => setConfirm({ verb, open: true });
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
   useEffect(() => {
@@ -733,9 +1061,14 @@ export function ReviewCenter({
         if (helpOpen) return setHelpOpen(false);
         if (typing) return (el as HTMLElement).blur();
         if (selectedId) return setSelectedId(null);
+        // An Esc that a dialog or menu already handled is theirs, not the selection's.
+        if (selectMode && !bulkProgress && !e.defaultPrevented && !hasOpenFloatingLayer()) {
+          exitSelectMode();
+        }
         return;
       }
-      if (helpOpen || selectedId) return; // help or a review page owns the keyboard
+      // Help, a review page or the bulk confirm owns the keyboard.
+      if (helpOpen || selectedId || confirm.open) return;
       if (typing) return; // don't hijack search typing
 
       if (e.key === '/') {
@@ -757,6 +1090,11 @@ export function ReviewCenter({
       } else if (e.key === 'k' || e.key === 'ArrowUp') {
         e.preventDefault();
         setFocusedIdx((i) => Math.max(0, i - 1));
+      } else if (e.key === 'x') {
+        if (cur && selectableIds.includes(cur.id)) toggleSelected(cur.id, false, 'key');
+      } else if (selectMode) {
+        // Select mode: a row's Space or Enter toggles it; no verb shortcut fires.
+        return;
       } else if (e.key === 'Enter' || e.key === 'o') {
         e.preventDefault();
         if (cur) setSelectedId(cur.id);
@@ -794,9 +1132,24 @@ export function ReviewCenter({
       onOpenSession={
         item.sessionId && onOpenSession ? () => onOpenSession(item.sessionId!) : undefined
       }
+      selection={
+        selectMode || selectableIds.includes(item.id)
+          ? {
+              checked: selectedIds.has(item.id),
+              selecting: !!selectMode,
+              disabled: !selectableIds.includes(item.id),
+              onToggle: (range) => toggleSelected(item.id, range, 'pointer'),
+            }
+          : null
+      }
     />
   );
 
+  // Select mode makes each row list a multi-select listbox (trigger-list.tsx).
+  const listboxProps = {
+    role: selectMode ? 'listbox' : undefined,
+    'aria-multiselectable': selectMode ? true : undefined,
+  };
   const listProps = {
     ref: (el: HTMLElement | null) => {
       listRef.current = el;
@@ -837,6 +1190,85 @@ export function ReviewCenter({
     </button>
   );
 
+  const bulkActions: SelectionBarAction[] = [
+    {
+      id: 'approve',
+      label: tBulk('approve'),
+      disabled: bulkIds.approve.length === 0,
+      onSelect: () => startBulk('approve'),
+    },
+    {
+      id: 'deny',
+      label: tBulk('deny'),
+      tone: 'destructive',
+      disabled: bulkIds.deny.length === 0,
+      onSelect: () => startBulk('deny'),
+    },
+    {
+      id: 'dismiss',
+      label: tBulk('dismiss'),
+      tone: 'destructive',
+      disabled: bulkIds.dismiss.length === 0,
+      onSelect: () => startBulk('dismiss'),
+    },
+  ];
+
+  const confirmCount = bulkIds[confirm.verb].length;
+  // Every item the verb will decide: which app, what it does, to what, how risky.
+  const confirmList = (
+    <ul className="border-border divide-border max-h-72 w-full min-w-0 divide-y overflow-y-auto rounded-lg border">
+      {selectedItems
+        .filter((i) => bulkIds[confirm.verb].includes(i.id))
+        .map((i) => {
+          const risk = RISK_BADGE[i.risk];
+          // The arguments, as the approval modal reads them: the content
+          // Kortix resolved, else the call's own preview.
+          const details = reviewApprovalDetails(i);
+          const args = reviewArgsSummary(details?.resolved_preview, details?.args_preview);
+          const who = details ? approvalIdentity(details) : null;
+          return (
+            <li key={i.id} className="flex min-w-0 items-center gap-3 px-3 py-2.5" title={details?.action}>
+              {/* md tile (32px) spans the two text lines beside it. */}
+              {who ? <ConnectorAppMark name={who.connector ?? i.title} iconUrl={who.iconUrl} size="md" /> : null}
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="text-foreground truncate text-sm leading-5">
+                  {who?.connector && who.action ? `${who.connector} · ${who.action}` : i.title}
+                </span>
+                {args ? <span className="text-muted-foreground truncate text-xs leading-4">{args}</span> : null}
+              </span>
+              <Badge variant={risk.variant} size="xs" className="shrink-0">
+                {tBulk(risk.key)}
+              </Badge>
+            </li>
+          );
+        })}
+    </ul>
+  );
+  const withList = (text: string) => (
+    <div className="space-y-3">
+      <p>{text}</p>
+      {confirmList}
+    </div>
+  );
+  const confirmCopy =
+    confirm.verb === 'approve'
+      ? {
+          title: tBulk('approveTitle', { count: confirmCount }),
+          confirm: tBulk('approveConfirm', { count: confirmCount }),
+          description: withList(tBulk('approveDescription')),
+        }
+      : confirm.verb === 'deny'
+        ? {
+            title: tBulk('denyTitle', { count: confirmCount }),
+            confirm: tBulk('denyConfirm', { count: confirmCount }),
+            description: withList(tBulk('denyDescription')),
+          }
+        : {
+            title: tBulk('dismissTitle', { count: confirmCount }),
+            confirm: tBulk('dismissConfirm', { count: confirmCount }),
+            description: withList(tBulk('dismissDescription')),
+          };
+
   // A `?id=` we cannot resolve yet: hold the row skeleton until the list has
   // fetched once, so a refresh never flashes the inbox on the way to the page.
   if (idParam && !selected && !listLoaded && !isError) {
@@ -861,6 +1293,7 @@ export function ReviewCenter({
       details={approval}
       previewAuthorized={approvalCall?.previewAuthorized !== false}
       resolvers={approvalCall?.resolvers}
+      {...(approval && selected ? reviewApprovalAsker(selected, sessionLabels) : null)}
       busyDecision={selected && pendingId === selected.id ? pendingDecision : null}
       onDecision={
         // Only the viewer the API lets decide this call gets the decision.
@@ -899,9 +1332,10 @@ export function ReviewCenter({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="w-full px-4">
+        {/* The select bar covers the list's last row: pad for it. */}
+        <div className={cn('w-full px-4', selectMode && segment === 'needs_you' && 'pb-20')}>
           {/* One control row: what list you're in, then how to narrow it. */}
           <div className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between">
             <Tabs
@@ -1083,7 +1517,7 @@ export function ReviewCenter({
                       </button>
                     )}
                   </div>
-                  <ul className={LIST_CLASS}>
+                  <ul {...listboxProps} className={LIST_CLASS}>
                     {g.items.map((item) =>
                       renderRow(item, visibleIndexById.get(item.id) ?? 0, true),
                     )}
@@ -1092,13 +1526,51 @@ export function ReviewCenter({
               ))}
             </div>
           ) : (
-            <ul {...listProps} className={LIST_CLASS}>
+            <ul {...listProps} {...listboxProps} className={LIST_CLASS}>
               {visible.map((item, idx) => renderRow(item, idx, false))}
             </ul>
           )}
           {visible.length > 0 && loadMore ? loadMoreButton : null}
+
         </div>
       </div>
+      {selectMode && segment === 'needs_you' ? (
+        // Pinned to the bottom of the list column, not to the end of the list:
+        // `sticky` stops where a short list ends (schedule-view.tsx).
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center px-4">
+          <div className="pointer-events-auto w-full max-w-xl">
+            <SelectionBar
+              selectedCount={selectedItems.length}
+              allSelected={
+                selectableIds.length > 0 &&
+                selectedItems.length >= Math.min(BULK_MAX, selectableIds.length)
+              }
+              canSelectAll={selectableIds.length > 0}
+              onSelectAll={() => setSelectedIds(new Set(selectableIds.slice(0, BULK_MAX)))}
+              onClear={() => setSelectedIds(new Set())}
+              onExit={exitSelectMode}
+              actions={bulkActions}
+              progress={bulkProgress}
+              animateIn={selectMode !== 'key'}
+              note={
+                selectedItems.length >= BULK_MAX && selectableIds.length > BULK_MAX
+                  ? tBulk('limitNote', { count: BULK_MAX })
+                  : undefined
+              }
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <ConfirmDialog
+        open={confirm.open}
+        onOpenChange={(open) => setConfirm((c) => ({ ...c, open }))}
+        title={confirmCopy.title}
+        description={confirmCopy.description}
+        confirmLabel={confirmCopy.confirm}
+        confirmVariant={confirm.verb === 'approve' ? 'default' : 'destructive'}
+        onConfirm={() => void runBulk(confirm.verb)}
+      />
 
       {approvalModal}
       <KeyboardHelp open={helpOpen} onClose={() => setHelpOpen(false)} />

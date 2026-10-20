@@ -24,10 +24,14 @@ const originalFetch = globalThis.fetch;
 let urls: string[] = [];
 /** The project flag `session_log` the project detail answers. */
 let sessionLogOn = false;
+const BACKEND = 'http://test.local/v1';
 function serve(route: (url: string) => unknown) {
   urls = [];
   globalThis.fetch = mock(async (input: unknown) => {
     const url = String(input instanceof Request ? input.url : input);
+    // A GET that failed in transport is retried by the SDK 250 ms and 750 ms
+    // later. A retry from an earlier test's other backend is not this test's read.
+    if (!url.startsWith(BACKEND)) throw new TypeError('Network request failed');
     urls.push(url);
     if (url.endsWith('/projects/p1/detail')) return Response.json({ project: { project_id: 'p1', experimental: { session_log: sessionLogOn } }, config: {} });
     const answer = route(url);
@@ -87,7 +91,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   sessionLogOn = false;
-  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+  configureKortix({ backendUrl: BACKEND, getToken: async () => 'token' });
 });
 
 afterEach(async () => {
@@ -128,6 +132,9 @@ describe('useSavedCopy', () => {
   });
 
   test('a failed read paints nothing and claims nothing', async () => {
+    // Its own backend: the SDK retries these failed reads after the test ends,
+    // and `serve` refuses a request to any backend but BACKEND.
+    configureKortix({ backendUrl: 'http://failed-read.test.local/v1', getToken: async () => 'token' });
     globalThis.fetch = mock(async () => {
       throw new TypeError('Network request failed');
     }) as unknown as typeof fetch;

@@ -2256,6 +2256,8 @@ export const SecretSchema = z.object({
    *  any agent may actually receive the secret. See
    *  `SecretDeliveryBlockedReasonSchema` for the tri-state rule. */
   delivery_blocked_reason: SecretDeliveryBlockedReasonSchema.nullable().optional(),
+  /** Manifest agent grants; null means the roster could not be loaded. */
+  agents: z.union([z.array(z.string()), z.literal('all')]).nullable().optional(),
   network_boundary_available: z.boolean().optional(),
   egress_policy: SecretEgressPolicySchema.nullable(),
   strategy_locked: z.boolean(),
