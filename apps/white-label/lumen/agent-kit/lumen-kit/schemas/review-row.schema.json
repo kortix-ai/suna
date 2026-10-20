@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review-row",
+  "type": "object",
+  "required": ["schema", "doc_id", "cells"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "enum": ["review-row/1"] },
+    "doc_id": { "type": "string", "minLength": 1 },
+    "cells": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["value", "note", "confidence", "citations"],
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": ["string", "boolean", "number", "object", "null"] },
+          "not_found": { "type": "boolean" },
+          "note": { "type": "string", "maxLength": 280 },
+          "confidence": { "enum": ["high", "medium", "low"] },
+          "citations": { "type": "array", "maxItems": 6, "items": { "$ref": "citation" } }
+        }
+      }
+    }
+  }
+}

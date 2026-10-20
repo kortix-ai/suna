@@ -1,0 +1,50 @@
+---
+name: lumen-clause-extraction
+description: How to answer review-table columns - formats, normalization, "not found" rules and the commercial preset columns.
+---
+
+# Clause extraction
+
+## Formats
+
+| `format` | `value` | Example |
+|---|---|---|
+| `text` | a string of at most 40 words, the answer first | `"3 years from 1 April 2026"` |
+| `yes_no` | `true`, `false` | `true` |
+| `date` | ISO `YYYY-MM-DD`, or an ISO duration `P2Y`, `P90D` | `"2026-04-01"` |
+| `money` | `{"amount": 2000000, "currency": "GBP"}` | |
+| `tag` | one of the column's `options`, exactly | `"England and Wales"` |
+| `verbatim` | the exact quote, nothing else | |
+
+## Not found
+
+- If the document has no clause on the column's question, the cell is
+  `{"value": null, "not_found": true, "note": "No clause on X; checked clauses 1-14.", "confidence": "high", "citations": []}`.
+- `not_found` means the document is silent. It is not "no": a lease with no renewal clause is `not_found`, not `false`.
+- Use `false` only when a clause says no ("Neither party may terminate for convenience").
+
+## Normalization
+
+- Durations as written plus a number: "seven (7) years" -> `"7 years from each disclosure"`.
+- Parties: the legal names, comma separated, with their role: `"Brightwater Example Holdings Ltd (Customer), Quillon Analytics Inc. (Supplier)"`.
+- Governing law: the jurisdiction only: `"England and Wales"`, `"State of New York"`.
+- Caps: the rule, then the amount: `"Uncapped: neither party's liability is limited"`, `"12 months' fees"`, `"GBP 2,000,000 per year"`.
+
+## Confidence
+
+- `high` - one clause answers it directly.
+- `medium` - you combined clauses, or a defined term changes it.
+- `low` - the wording is ambiguous. Say why in `note`.
+
+## The commercial preset
+
+| key | question |
+|---|---|
+| `parties` | Who are the parties? |
+| `term` | How long does the agreement, or its main obligation, last? |
+| `auto_renewal` | Does the agreement renew automatically? (`yes_no`) |
+| `termination_convenience` | Can a party terminate without cause, for convenience, or under a break clause? (`yes_no`) |
+| `liability_cap` | Is liability capped, and at what amount? |
+| `governing_law` | Which law governs the agreement? |
+| `assignment` | Can a party assign the agreement, and on what condition? |
+| `change_of_control` | Does the agreement contain a change-of-control provision: a consent requirement, condition or termination right triggered by a change of control of a party or of the target? (`yes_no`) |
