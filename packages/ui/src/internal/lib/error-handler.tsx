@@ -269,6 +269,16 @@ export const handleApiError = (
   const v2AccountId: string | undefined =
     typeof v2Detail?.account_id === 'string' ? v2Detail.account_id : undefined;
 
+  // Marketplace imports can use either a paid managed model or a provider
+  // key. Preserve the server's remedy instead of swallowing this BillingError
+  // or sending an already-paid customer to the plan picker.
+  if (v2Status === 402 && v2Code === 'no_servable_model') {
+    if (!context?.silent) {
+      errorToast(v2Message ?? errorMessage, { duration: 6000 });
+    }
+    return;
+  }
+
   // Billing block on a user action (session start, send, purchase). One modal
   // handles both shapes and picks the right view off the 402's billing_state +
   // has_subscription: a free/no-plan account gets the plan picker; a paying
