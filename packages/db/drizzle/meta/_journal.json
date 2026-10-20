@@ -1205,6 +1205,13 @@
       "when": 1792499131052,
       "tag": "20261020122531_gateway_spend_daily",
       "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1792510728100,
+      "tag": "20261020153848_agent_rooms",
+      "breakpoints": true
     }
   ]
 }

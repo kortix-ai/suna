@@ -149,6 +149,11 @@ export {
   notificationWatchers,
   triggerWatchers,
   webPushSubscriptions,
+  // Rooms: agent-to-agent messaging (flag agent_rooms)
+  rooms,
+  roomMessages,
+  roomMembers,
+  sessionIdleWatches,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Billing v2 — per-seat + compute metering + per-member YOLO

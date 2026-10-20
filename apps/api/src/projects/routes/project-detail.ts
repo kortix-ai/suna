@@ -25,6 +25,8 @@ import { addPlatformMetaAgent } from '../lib/platform-meta-agent';
 import { normalizeProjectGlyph } from '../lib/project-glyph';
 import { normalizeProjectIcon } from '../lib/project-icon';
 import { denierFromConfig, filterConfigResourcesForUser } from '../lib/project-resources';
+import { featureFlagsEnvValue } from '../lib/feature-flag-env';
+import { managedSkillFeatureFlag } from '../../skills/catalog';
 import {
   normalizeString,
   serializeProject,
@@ -154,9 +156,19 @@ export function registerProjectDetailRoutes(): void {
       // The platform coordinator appears in the agent list (and becomes the
       // default) only for projects that opted into the `meta_agent` experimental
       // feature. Flag off: the config is exactly the repo-declared surface.
-      const config = resolveFeatureFlag(loaded.row.metadata, 'meta_agent')
+      const withAgents = resolveFeatureFlag(loaded.row.metadata, 'meta_agent')
         ? addPlatformMetaAgent(filteredConfig)
         : filteredConfig;
+      // A Kortix skill behind a feature flag is listed only while the flag is on: the box does
+      // not have it either (feature-flag-env.ts → kortixd).
+      const enabledFlags = new Set(featureFlagsEnvValue(loaded.row.metadata).split(','));
+      const config = {
+        ...withAgents,
+        skills: withAgents.skills.filter((skill) => {
+          const flag = managedSkillFeatureFlag(skill.name);
+          return !flag || enabledFlags.has(flag);
+        }),
+      };
       // …and hide the raw FILES of those resources from the file list (visibility
       // isolation). Reuses the config already loaded — no extra git round-trip.
       const denier = await denierFromConfig(rawConfig, denierCtx);

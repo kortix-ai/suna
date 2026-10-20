@@ -35,6 +35,9 @@ export function useSignedOutRedirect(): void {
 
   useEffect(() => {
     if (isSigningOut()) return;
-    if (!isLoading && !user) router.replace('/auth');
+    if (!isLoading && !user) {
+      const returnPath = window.location.pathname + window.location.search;
+      router.replace(`/auth?redirect=${encodeURIComponent(returnPath)}`);
+    }
   }, [isLoading, user, router]);
 }
