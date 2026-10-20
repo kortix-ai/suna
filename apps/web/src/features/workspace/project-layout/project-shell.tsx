@@ -1,5 +1,6 @@
 'use client';
 
+import { CommandPaletteBoundary } from '@/features/workspace/command-palette-boundary';
 import { DriveUploadTray } from '@/features/project-files/components/drive-upload-tray';
 import { AppPreviewPoolLoader } from '@/features/apps/app-preview-pool-loader';
 import { useTranslations } from '@/i18n/use-translations';
@@ -277,9 +278,9 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         sidebarContent={<ProjectSidebar projectId={projectId} />}
       >
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <Suspense fallback={null}>
+          <CommandPaletteBoundary>
             <CommandPalette />
-          </Suspense>
+          </CommandPaletteBoundary>
 
           <ProjectSheelLayout><SessionRouteCache>{children}</SessionRouteCache></ProjectSheelLayout>
         </div>
