@@ -16,9 +16,8 @@ import {
   selectAccountForUi,
 } from "../helpers/ui";
 
-const api = createApiJsonClient(
-  process.env.E2E_API_URL || "http://localhost:8008/v1",
-);
+const apiBase = process.env.E2E_API_URL || "http://localhost:8008/v1";
+const api = createApiJsonClient(apiBase);
 const auth = {
   supabaseUrl: process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321",
   password: "ManualAgentTest123!",
@@ -76,7 +75,7 @@ test("39 — manual agent creation and editing require no model", async ({
     const response = await saved;
     expect(response.status()).toBe(200);
     expect(response.request().headers()["if-none-match"]).toBe("*");
-    const collision = await fetch(`${process.env.E2E_API_URL}${endpoint}`, {
+    const collision = await fetch(`${apiBase}${endpoint}`, {
       method: "PUT",
       headers: {
         Authorization: `Bearer ${session.access_token}`,
@@ -115,6 +114,33 @@ test("39 — manual agent creation and editing require no model", async ({
     await expect(instructions).toHaveValue(
       "Review updated synthetic examples.",
     );
+
+    // Editing the existing default agent is configuration-only too.
+    const defaultEndpoint = `/projects/${project.id}/agents/kortix/config`;
+    await page.goto(`${route}/kortix`);
+    await page.getByRole("tab", { name: "Edit", exact: true }).click();
+    await instructions.fill("Review default-agent synthetic examples.");
+    const defaultSaved = page.waitForResponse(
+      (result) => result.request().method() === "PUT" && result.url().endsWith(defaultEndpoint),
+    );
+    await page.getByRole("button", { name: /^Save/ }).click();
+    expect((await defaultSaved).status()).toBe(200);
+    await page.goto(`${route}/kortix?section=tools`);
+    await page.getByRole("combobox", { name: "Default for every tool", exact: true }).click();
+    await page.getByRole("option", { name: "Ask", exact: true }).click();
+    const toolsSaved = page.waitForResponse(
+      (result) => result.request().method() === "PUT" && result.url().endsWith(defaultEndpoint),
+    );
+    await page.getByRole("button", { name: /^Save/ }).click();
+    expect((await toolsSaved).status()).toBe(200);
+    await page.reload();
+    await expect(page.getByRole("combobox", { name: "Default for every tool", exact: true })).toHaveText("Ask");
+    const defaultConfig = await api<{
+      block: { behavior: { prompt: string; model?: string; permission?: string } };
+    }>(session.access_token, "GET", defaultEndpoint);
+    expect(defaultConfig.block.behavior.prompt).toBe("Review default-agent synthetic examples.");
+    expect(defaultConfig.block.behavior.model).toBeUndefined();
+    expect(defaultConfig.block.behavior.permission).toBe("ask");
   } finally {
     await project?.dispose();
     await deleteAuthUser(owner.id, auth);
