@@ -88,7 +88,8 @@ Subcommands:
                            Fire the trigger again with that run's stored
                            payload. A run whose webhook signature did not
                            verify needs --confirm-unverified.
-  enable <slug> [--apply]  Set enabled = true on a trigger.
+  enable <slug> [--apply]  Set enabled = true on a trigger. With --apply it also
+                           resumes a trigger that auto-paused at its run limit.
   disable <slug> [--apply] Set enabled = false on a trigger.
   pause                    Deactivate ALL of this project's triggers server-side
                            (crons + webhooks stop auto-running). Use it on one
@@ -197,6 +198,10 @@ Run limits (any type; add, add --apply, and set):
   --max-runs-per-day <n>   Runs it may start in a UTC day (default: no cap).
                            On \`set\`, \`none\` removes either cap.
 A manual \`fire\` is never held, but it counts.
+  --overlap skip|allow     Fresh session mode only: skip holds a fire while
+                           the previous run is still active. Default: skip for
+                           cron, allow for the others. On \`set\`, \`default\`
+                           resets it.
 
 Monitor options (--type monitor). A monitor is a repo command the platform
 runs 24/7; each stdout line fires the trigger. EXPERIMENTAL — the platform
@@ -255,6 +260,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     tf.sessionMode = takeFlagValue(rest, ['--session-mode']);
     tf.maxRunsPerHour = takeFlagValue(rest, ['--max-runs-per-hour']);
     tf.maxRunsPerDay = takeFlagValue(rest, ['--max-runs-per-day']);
+    tf.overlap = takeFlagValue(rest, ['--overlap']);
     tf.sessionKey = takeFlagValue(rest, ['--session-key']);
     tf.sessionId = takeFlagValue(rest, ['--session-id']);
     tf.sessionAccess = takeFlagValue(rest, ['--session-access']);
@@ -433,14 +439,22 @@ async function triggersLs(
       `  ${C.dim}${pad('SLUG', slugW)}   ${pad('NAME', nameW)}   TYPE     STATE     SCHEDULE / SECRET / MODE / SOURCE              LAST FIRED${C.reset}\n`,
     );
     const printRow = (t: ProjectTrigger) => {
-      const state = t.enabled ? `${C.green}enabled ${C.reset}` : `${C.faded}disabled${C.reset}`;
+      const state = t.auto_paused_at
+        ? `${C.yellow}paused  ${C.reset}`
+        : t.enabled
+          ? `${C.green}enabled ${C.reset}`
+          : `${C.faded}disabled${C.reset}`;
       const detail = triggerDetail(t);
       const eventNote =
         t.type === 'event' && t.event
           ? `  ${t.event.status === 'active' ? C.green : t.event.status === 'error' ? C.red : C.yellow}${eventNextStep(t).word}${C.reset}`
           : '';
       const lastFired = t.last_fired_at ? formatRelative(t.last_fired_at) : '—';
-      const failed = t.last_status === 'failed' ? `  ${C.red}last run failed${C.reset}` : '';
+      const failed = t.auto_paused_at
+        ? `  ${C.yellow}auto-paused${C.reset}`
+        : t.last_status === 'failed'
+          ? `  ${C.red}last run failed${C.reset}`
+          : '';
       process.stdout.write(
         `  ${pad(t.slug, slugW)}   ${pad(t.name, nameW)}   ${pad(t.type, 7)}  ${state}   ${pad(trimMid(detail, 44), 44)}  ${C.faded}${lastFired}${C.reset}${failed}${eventNote}\n`,
       );
@@ -761,6 +775,11 @@ async function triggersInfo(
   }
   rows.push(['max_runs_per_hour', String(t.max_runs_per_hour ?? '60 (default)')]);
   if (t.max_runs_per_day) rows.push(['max_runs_per_day', String(t.max_runs_per_day)]);
+  if (t.session_mode === 'fresh') rows.push(['overlap', t.overlap ?? `${t.type === 'cron' ? 'skip' : 'allow'} (default)`]);
+  if (t.auto_paused_at) {
+    rows.push(['auto_paused', `${C.yellow}${t.auto_paused_at}${C.reset} — ${t.auto_paused_reason ?? 'auto-paused'}`]);
+    rows.push(['resume', `kortix triggers enable ${t.slug} --apply`]);
+  }
   rows.push(['last_fired', t.last_fired_at ?? 'never']);
   if (t.last_status)
     rows.push([
