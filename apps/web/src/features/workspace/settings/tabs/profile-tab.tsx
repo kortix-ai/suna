@@ -1,6 +1,7 @@
 'use client';
 
 import { localizedCopy } from './localized-copy';
+import { removeProfileAvatar } from './profile-avatar';
 
 /**
  * The Profile tab — profile picture, email, display name, the organizations
@@ -662,6 +663,7 @@ export function ProfileTab() {
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData.user?.id;
       if (!userId) throw new Error(t('toasts.userNotFound'));
+      await removeProfileAvatar(supabase, userId);
       const fileExt = (file.name.split('.').pop() || 'png').toLowerCase();
       const filePath = `${userId}/${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage
@@ -690,8 +692,10 @@ export function ProfileTab() {
 
   const removeAvatarMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.auth.updateUser({ data: { avatar_url: '' } });
+      const { data, error } = await supabase.auth.getUser();
       if (error) throw error;
+      if (!data.user) throw new Error(t('toasts.userNotFound'));
+      await removeProfileAvatar(supabase, data.user.id);
     },
     onSuccess: () => {
       successToast(tI18nComplete('text2fd3b5709d0d'));
