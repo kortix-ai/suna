@@ -3,10 +3,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-mock.module('@/lib/use-project-can', () => ({
+mock.module('../../internal/lib/use-project-can', () => ({
   useProjectCan: () => ({ allowed: false }),
 }));
-mock.module('@/features/workspace/customize/use-configure-thread', () => ({
+mock.module('../use-configure-thread', () => ({
   useConfigureThread: () => ({ pending: false }),
   newConfigPrompt: () => '',
 }));
