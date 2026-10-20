@@ -1,3 +1,4 @@
+import { testUiTranslator } from '@/i18n/test-translator';
 import type { IamRole } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
@@ -103,7 +104,7 @@ describe('built-in role lists', () => {
 
   test('labels come from the descriptors', () => {
     expect(builtinRoleLabel('account', 'owner')).toBe('Account owner');
-    expect(builtinRoleLabel('project', 'manager')).toBe('Project admin');
+    expect(builtinRoleLabel('project', 'manager')).toBe('Project manager');
     expect(builtinRoleLabel('project', 'member')).toBe('Project member');
   });
 });
@@ -129,7 +130,7 @@ describe('roleValueLabel', () => {
   const roles = [role({ role_id: 'r_proj', name: 'Support' })];
 
   test('built-in → display name', () => {
-    expect(roleValueLabel('project', builtinRole('manager'), roles)).toBe('Project admin');
+    expect(roleValueLabel('project', builtinRole('manager'), roles)).toBe('Project manager');
   });
 
   test('custom → the role name', () => {
@@ -143,5 +144,19 @@ describe('roleValueLabel', () => {
 
   test('none → the em dash the access list uses for "no access"', () => {
     expect(roleValueLabel('project', ROLE_NONE, roles)).toBe('—');
+  });
+});
+
+// The displayed project role must match the CLI's public manager key.
+describe('project role terminology across access surfaces', () => {
+  test('manager is named consistently without changing its persisted value', () => {
+    const value = selectValueToRoleValue('builtin:manager');
+    expect(value).toEqual(builtinRole('manager'));
+    expect(baselineBuiltinRole('project', value)).toBe('manager');
+    expect(builtinRoleLabel('project', 'manager')).toBe('Project manager');
+    expect(roleValueLabel('project', value)).toBe('Project manager');
+    expect(builtinRoleLabel('project', 'manager', testUiTranslator)).toBe('Project manager');
+    expect(roleValueLabel('project', value, [], testUiTranslator)).toBe('Project manager');
+    expect(builtinRoleLabel('account', 'admin', testUiTranslator)).toBe('Account admin');
   });
 });

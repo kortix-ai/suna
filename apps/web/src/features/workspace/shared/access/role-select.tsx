@@ -81,13 +81,13 @@ export const ACCOUNT_ROLE_DESCRIPTORS: Record<AccountRole, RoleDescriptor> = {
     label: 'Account owner',
     blurb: 'Full control of the account: billing, members, transfer or delete it.',
     summary:
-      'Full control of the account — billing, members, transferring ownership, deleting it. Project admin on every project.',
+      'Full control of the account — billing, members, transferring ownership, deleting it. Project manager on every project.',
   },
   admin: {
     label: 'Account admin',
     blurb: 'Everything except deleting the account or transferring ownership.',
     summary:
-      'Everything an owner can do except deleting the account or transferring ownership. Project admin on every project.',
+      'Everything an owner can do except deleting the account or transferring ownership. Project manager on every project.',
   },
   member: {
     label: 'Account member',
@@ -100,7 +100,7 @@ export const ACCOUNT_ROLE_DESCRIPTORS: Record<AccountRole, RoleDescriptor> = {
 /**
  * The two project roles, and the whole difference between them (Marko,
  * 2026-09-03): a member USES agents — the ones they are granted — and a
- * project admin CONFIGURES the project, which is Customize. Nothing in
+ * project manager CONFIGURES the project, which is Customize. Nothing in
  * between. The keys stay `member` / `manager` (they are the API's role
  * keys and the URL vocabulary); only what a person reads changed.
  */
@@ -112,7 +112,7 @@ export const PROJECT_ROLE_DESCRIPTORS: Record<OfferedProjectRole, RoleDescriptor
       'Starts and works in sessions with the agents they are granted — nothing else. No access to Customize. The project floor role.',
   },
   manager: {
-    label: 'Project admin',
+    label: 'Project manager',
     blurb: 'Customize and everything in it — every agent, skill, connector, secret, trigger, and member.',
     summary:
       'Customize and everything in it — every agent, skill, connector, secret and trigger, plus members and the project itself.',
