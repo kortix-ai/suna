@@ -738,7 +738,10 @@ same `/kortix/runtime/*` namespace and the same raw routes
 session: the root id is `ses_pi<sha256(sessionId)[:24]>`, deterministic (or the
 root thread id a session-log restore wrote into the dump), so a restart
 resolves the same root and restores the transcript from
-`$KORTIX_RUNTIME_STATE_DIR/pi/<session>.json`.
+`$KORTIX_RUNTIME_STATE_DIR/pi/<session>.json`. The root's title stays
+`New session`, also after a restore: the session title is Kortix's
+(`metadata.name`, generated from the first prompt), and the API drops the
+placeholder (`isPlaceholderOpencodeTitle`).
 
 Config it reads (all set by apps/api for every session, harness-neutral values):
 `KORTIX_MODEL` (the resolved session model), `KORTIX_COMPILED_AGENT_CONFIG`
