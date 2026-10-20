@@ -423,6 +423,11 @@ WHITELABEL_PORT=3020 pnpm --filter @kortix/white-label-lumen dev
 pnpm --filter @kortix/white-label-lumen seed:demo -- --firm <firmId>
 ```
 
+The rendered dataset (`demo-data/dist/`: 10 PDF, DOCX and TXT files, the playbook and the
+templates) is committed, so `dev`, `build`, the tests, `seed:demo` and `eval` need no extra step.
+After you edit a source in `demo-data/src/`, render it again with `python3 demo-data/build.py`
+(needs `pip install python-docx reportlab`) and commit `dist/` and `manifest.json`.
+
 Open `http://localhost:3020`, choose **Start free trial**, and follow onboarding.
 
 A developer with a Convex login can run `npx convex dev` instead of `dev:convex`. For
@@ -487,7 +492,7 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
   the agent prompt. A sandbox in the firm's project can technically read another matter's Drive
   folder. A walled matter (its own Kortix project) is planned.
 - The agent runs with its sandbox's own project token in its environment (a Kortix gap; see
-  item 11 below). A member who makes the agent print it gets a credential for the firm's project.
+  item 11 above, under Credential flow). A member who makes the agent print it gets a credential for the firm's project.
 
 ## Screens
 
@@ -517,7 +522,7 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 
 | Path | What |
 |---|---|
-| `convex/schema.ts` | `firms`, `matters`, `matterMembers`, `threads`, `memberTokens`, `auditEvents`, `stripeEvents` |
+| `convex/schema.ts` | 21 tables. Firm and access: `firms`, `matters`, `matterMembers`, `threads`, `memberTokens`, `auditEvents`, `stripeEvents`. Vault: `documents`, `documentPages`, `documentParas`. Kit: `kitInstalls`. Engine: `runs`, `runBatches`, `runFiles`, `runEvents`, `runResults`. Results: `reviews`, `reviewCells`, `answers`, `issues`. Library: `libraryItems` |
 | `convex/access.ts` | `requireFirm`, `requireFirmAdmin`, `requireMatterAccess` |
 | `convex/auth.ts`, `convex/betterAuth/` | Better Auth as a local Convex component, organizations, the seat and audit hooks |
 | `convex/firms.ts`, `convex/matters.ts`, `convex/threads.ts`, `convex/members.ts` | Queries and mutations |

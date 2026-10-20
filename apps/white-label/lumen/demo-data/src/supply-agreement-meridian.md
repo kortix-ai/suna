@@ -34,6 +34,8 @@ This Supply Agreement (the "Agreement") is made on 9 September 2024 between Aste
 
 8.1 The Supplier's total liability under this Agreement in any year shall not exceed two million pounds sterling (GBP 2,000,000).
 
+8.2 The Supplier shall indemnify the Customer against all losses arising from any recall of the Products caused by a defect in the Products. This indemnity is subject to the limit in clause 8.1.
+
 ## 9. Termination
 
 9.1 Either party may terminate this Agreement by written notice if the other party commits a material breach and does not remedy it within thirty (30) days.

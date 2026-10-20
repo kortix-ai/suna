@@ -42,6 +42,8 @@ This Software-as-a-Service Agreement (the "Agreement") is dated 15 February 2026
 
 7.2 Neither party is liable for any indirect or consequential loss, or for loss of profit, revenue or goodwill.
 
+7.3 The Provider shall indemnify the Customer against any third-party claim that the Service infringes that third party's intellectual property rights. This indemnity is subject to the limit in clause 7.1.
+
 ## 8. Change of Control
 
 8.1 If the Provider undergoes a change of control, the Customer may terminate this Agreement by written notice within ninety (90) days after it is notified of the change of control.

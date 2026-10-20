@@ -1396,7 +1396,7 @@ test('sandboxPortUrl() throws SessionNotReadyError before ensureReady()', () => 
 
 // health() is a liveness POLL, not an action gated on the runtime being up —
 // pollers (e.g. a header dot ticking every 15s on a fresh inline
-// `kortix.session(...)` handle, see apps/white-label/lumen/session-header.tsx)
+// `kortix.session(...)` handle, see apps/white-label/lumen/src/components/workbench/session-header.tsx)
 // must be able to call it before the session has ever resolved a runtime, so
 // it degrades to the graceful "no URL yet" shape instead of throwing.
 test('health() resolves gracefully (ok: false) before ensureReady() instead of throwing', async () => {

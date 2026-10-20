@@ -28,6 +28,7 @@ import {
   sessionApprovalsView,
   type ApprovalFailure,
 } from '@/components/workbench/approvals-model';
+import { CallSnippet } from '@/components/dev/call-snippet';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -166,6 +167,9 @@ export function SessionApprovals({
             </div>
           );
         })}
+
+        {/* Dev panels only (NEXT_PUBLIC_LUMEN_DEV_PANELS=1): the SDK call these buttons send. */}
+        <CallSnippet id="approval.resolve" context={{ projectId, executionId: view.pending[0]?.executionId }} />
 
         {failure && (
           <div
