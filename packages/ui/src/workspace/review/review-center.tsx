@@ -101,8 +101,9 @@ function TimeAgo({ iso }: { iso: string }) {
   return <span className="tabular-nums">{mounted ? formatItemAge(iso) : ''}</span>;
 }
 
-/** "Expires in 3h" on a pending approval; the warning tone under one hour.
- *  Client-only, like `TimeAgo`. Nothing once it has no time left. */
+/** "Expires in 3h" on a pending approval. Under one hour a clock glyph in the
+ *  warning accent leads it; the text stays muted (an accent paints a glyph,
+ *  never text). Client-only, like `TimeAgo`. Nothing once no time is left. */
 function ExpiresIn({ iso }: { iso: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [mounted, setMounted] = useState(false);
@@ -112,7 +113,10 @@ function ExpiresIn({ iso }: { iso: string }) {
   return (
     <>
       <Dot />
-      <span className={cn('shrink-0 tabular-nums', left.soon && 'text-kortix-orange')}>
+      {left.soon ? (
+        <Clock aria-hidden className="text-kortix-orange size-3.5 shrink-0" />
+      ) : null}
+      <span className="shrink-0 tabular-nums">
         {tHardcodedUi('approvalPage.expiresIn', { time: left.time })}
       </span>
     </>

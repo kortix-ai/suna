@@ -339,16 +339,25 @@ describe('a pending approval row', () => {
       span.textContent?.startsWith('Expires in'),
     );
 
+  /** The orange glyph in the row's meta line, beside the label. */
+  const warningGlyph = () =>
+    [...(expiryLabel()?.parentElement?.querySelectorAll('svg') ?? [])].find((svg) =>
+      svg.getAttribute('class')?.includes('text-kortix-orange'),
+    );
+
   test('says how long it can still be decided', () => {
     mount([expiringIn(3 * 3_600_000 + 60_000)], MANAGER);
     expect(expiryLabel()?.textContent).toBe('Expires in 3h');
-    expect(expiryLabel()?.className).not.toContain('text-kortix-orange');
+    expect(warningGlyph()).toBeUndefined();
   });
 
-  test('turns to the warning tone under one hour', () => {
-    mount([expiringIn(30 * 60_000)], MANAGER);
+  test('under one hour a warning clock leads it; the text stays muted', () => {
+    // Half a minute of slack: the label floors, and the render takes time.
+    mount([expiringIn(30 * 60_000 + 30_000)], MANAGER);
     expect(expiryLabel()?.textContent).toBe('Expires in 30m');
-    expect(expiryLabel()?.className).toContain('text-kortix-orange');
+    // An accent paints a glyph, never text (kortix-brand color.md).
+    expect(expiryLabel()?.className).not.toContain('text-kortix-orange');
+    expect(warningGlyph()?.nextElementSibling).toBe(expiryLabel());
   });
 
   test('an approval with no expiry shows no label', () => {

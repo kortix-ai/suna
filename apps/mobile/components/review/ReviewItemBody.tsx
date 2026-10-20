@@ -13,6 +13,7 @@ import { fileStatusMeta } from '@/components/diff/PatchDiffView';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Icon } from '@/components/ui/icon';
+import { ClockIcon } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import type { ChangeRequestDiff } from '@/lib/projects/projects-client';
 import { splitFilePath } from '@/lib/review/review-detail';
@@ -41,8 +42,9 @@ function Lines({ lines }: { lines: string[] }) {
   );
 }
 
-/** "Expires in 3h" while the call waits, in the warning tone under one hour;
- *  the reason once it expired. Nothing for a call with no expiry. */
+/** "Expires in 3h" while the call waits; under one hour a clock glyph in the
+ *  warning accent leads it (an accent paints a glyph, never text). The reason
+ *  once it expired. Nothing for a call with no expiry. */
 function ApprovalExpiry({ item }: { item: ReviewItem }) {
   if (item.status === 'expired') {
     return (
@@ -58,9 +60,10 @@ function ApprovalExpiry({ item }: { item: ReviewItem }) {
   if (!left) return null;
   return (
     <Section>
-      <Text variant="muted" className={left.soon ? 'text-kortix-orange' : undefined}>
-        Expires in {left.time}
-      </Text>
+      <View className="flex-row items-center gap-1.5">
+        {left.soon ? <Icon as={ClockIcon} size={14} className="text-kortix-orange" /> : null}
+        <Text variant="muted">Expires in {left.time}</Text>
+      </View>
     </Section>
   );
 }

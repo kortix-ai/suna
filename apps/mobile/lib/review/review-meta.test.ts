@@ -129,6 +129,11 @@ describe('formatApprovalExpiresIn', () => {
   test('time left in the compact idiom; soon under one hour', () => {
     expect(formatApprovalExpiresIn('2026-09-21T15:00:00.000Z', now)).toEqual({ time: '3h', soon: false });
     expect(formatApprovalExpiresIn('2026-09-21T12:30:00.000Z', now)).toEqual({ time: '30m', soon: true });
+    // Floored: 59.6 min is "59m", never "1h" beside the under-one-hour glyph.
+    expect(formatApprovalExpiresIn(new Date(now + 59.6 * 60_000).toISOString(), now)).toEqual({
+      time: '59m',
+      soon: true,
+    });
   });
   test('no expiry or a past time has no label', () => {
     expect(formatApprovalExpiresIn(undefined, now)).toBeNull();

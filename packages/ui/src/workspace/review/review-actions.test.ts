@@ -187,6 +187,12 @@ describe('formatExpiresIn', () => {
     expect(formatExpiresIn('2026-07-01T13:00:00.000Z', now)).toEqual({ time: '3h', soon: false });
     expect(formatExpiresIn('2026-07-01T10:59:00.000Z', now)).toEqual({ time: '59m', soon: true });
     expect(formatExpiresIn('2026-07-03T10:00:00.000Z', now)).toEqual({ time: '2d', soon: false });
+    // Floored: 59.6 min is "59m", never "1h" beside the under-one-hour glyph.
+    expect(formatExpiresIn(new Date(now + 59.6 * 60_000).toISOString(), now)).toEqual({
+      time: '59m',
+      soon: true,
+    });
+    expect(formatExpiresIn(new Date(now + 150 * 60_000).toISOString(), now)?.time).toBe('2h');
   });
   test('no expiry, an unparseable value, or a past time has no label', () => {
     expect(formatExpiresIn(undefined, now)).toBeNull();

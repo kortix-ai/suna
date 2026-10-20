@@ -143,11 +143,7 @@ export function bulkSkipMessage(outcome: BulkOutcome): string {
  *  `TimeAgo` in review-center.tsx, which renders this client-only to avoid
  *  an SSR/hydration mismatch on `Date.now()`). */
 export function formatItemAge(iso: string, now = Date.now()): string {
-  return compactMinutes(Math.round((now - new Date(iso).getTime()) / 60_000));
-}
-
-function compactMinutes(minutes: number): string {
-  const mins = Math.max(1, minutes);
+  const mins = Math.max(1, Math.round((now - new Date(iso).getTime()) / 60_000));
   if (mins < 60) return `${mins}m`;
   const hrs = Math.round(mins / 60);
   if (hrs < 24) return `${hrs}h`;
@@ -162,7 +158,12 @@ export function formatExpiresIn(
 ): { time: string; soon: boolean } | null {
   const left = iso ? new Date(iso).getTime() - now : Number.NaN;
   if (!(left > 0)) return null;
-  return { time: compactMinutes(Math.round(left / 60_000)), soon: left < 3_600_000 };
+  // Floored at every step: time left never reads longer than it is, so the
+  // under-one-hour glyph never sits beside "1h".
+  const mins = Math.max(1, Math.floor(left / 60_000));
+  const hrs = Math.floor(mins / 60);
+  const time = mins < 60 ? `${mins}m` : hrs < 24 ? `${hrs}h` : `${Math.floor(hrs / 24)}d`;
+  return { time, soon: left < 3_600_000 };
 }
 
 /** True when the API reports the approval expired before this decision (HTTP 409). */
