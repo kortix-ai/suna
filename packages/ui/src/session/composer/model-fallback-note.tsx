@@ -42,7 +42,7 @@ export function ModelFallbackNote({
         type="button"
         variant="ghost"
         size="xs"
-        className="text-muted-foreground hover:text-foreground h-auto shrink-0 px-1.5 py-0.5 text-xs"
+        className="text-muted-foreground hover:text-foreground shrink-0"
         onClick={() => onUse(fallback.from)}
       >
         {t('servedModelFallbackUse', { requested })}
