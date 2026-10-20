@@ -236,7 +236,10 @@ live API. Every entry with its props and an example: `references/modules.md`.
 ## Layout
 
 `src/<module>/` holds one responsibility each. A file imports its own module or
-a lower layer; `internal` has no public entry and no semver.
+a lower layer; `internal` has no public entry and no semver. The static upward
+imports that still exist (26, mostly `customize` → `workspace` and `internal` →
+`customize`) are listed in `src/module-cycles.test.ts` (`KNOWN_UPWARD`): a new
+one fails the test, and the list only shrinks.
 
 | Layer | Module | Entry |
 | --- | --- | --- |

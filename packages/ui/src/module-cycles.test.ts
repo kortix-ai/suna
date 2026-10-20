@@ -72,3 +72,75 @@ describe('module boundaries', () => {
     expect(crossing).toEqual([]);
   });
 });
+
+// The README's layer table (## Layout): a file imports its own module or a lower
+// layer. KNOWN_UPWARD lists the static upward imports that exist (2026-10-20,
+// 26); move a file down or its dependency up and delete its line. It only shrinks.
+const LAYER: Record<string, number> = {
+  lib: 0,
+  hooks: 0,
+  icons: 0,
+  providers: 0,
+  i18n: 0,
+  theme: 0,
+  styles: 0,
+  types: 0,
+  primitives: 1,
+  internal: 2,
+  markdown: 3,
+  diff: 3,
+  changes: 4,
+  files: 4,
+  terminal: 4,
+  apps: 4,
+  browser: 4,
+  access: 4,
+  session: 5,
+  customize: 6,
+  workspace: 7,
+};
+
+const KNOWN_UPWARD: string[] = [
+  'access/access/agent-principals.ts -> customize/sections/view/agent-editor-catalog.ts',
+  'customize/connectors/connectors-page.tsx -> workspace/projects/policies-panel.tsx',
+  'customize/sections/view/review-center-connected.tsx -> workspace/review/hooks/use-review-items.ts',
+  'customize/sections/view/review-center-connected.tsx -> workspace/review/map.ts',
+  'customize/sections/view/review-center-connected.tsx -> workspace/review/review-actions.ts',
+  'customize/sections/view/review-center-connected.tsx -> workspace/review/review-center.tsx',
+  'customize/settings/tabs/general-tab.tsx -> workspace/projects/modal/project-icon-field.tsx',
+  'customize/settings/tabs/snapshots-tab.tsx -> workspace/sidebar/footer/sandbox-alert-state.ts',
+  'customize/settings/tabs/snapshots-tab.tsx -> workspace/sidebar/footer/sandbox-health.ts',
+  'customize/triggers/schedule-view.tsx -> workspace/projects/onboarding/app-logo.tsx',
+  'customize/triggers/schedule/event-apps-strip.tsx -> workspace/projects/onboarding/app-logo.tsx',
+  'customize/triggers/schedule/use-event-app-connect.ts -> workspace/projects/onboarding/connect-app.ts',
+  'customize/triggers/schedule/when-event.tsx -> workspace/projects/onboarding/app-logo.tsx',
+  'internal/auth/auth-consent.tsx -> markdown/copy-button.tsx',
+  'internal/hooks/connectors/use-add-account.ts -> access/access/access-dialog-share.tsx',
+  'internal/hooks/connectors/use-add-account.ts -> customize/connectors/install/install.ts',
+  'internal/hooks/connectors/use-add-account.ts -> customize/connectors/provider-label.ts',
+  'internal/hooks/connectors/use-add-account.ts -> customize/sections/connector-oauth2-start.ts',
+  'internal/hooks/connectors/use-add-account.ts -> customize/sections/view/connector-connections.ts',
+  'internal/hooks/connectors/use-add-managed-account.ts -> access/access/access-dialog-share.tsx',
+  'internal/hooks/connectors/use-add-managed-account.ts -> customize/sections/view/connector-connections.ts',
+  'internal/hooks/connectors/use-tool-connect.ts -> customize/sections/connector-connection-form.ts',
+  'internal/hooks/projects/use-new-project-session.ts -> session/scope/create-scoped-session.ts',
+  'internal/stores/session-filter-store.ts -> workspace/sidebar/session-grouping.ts',
+  'internal/stores/settings-panel-store.ts -> customize/settings/settings-tabs.ts',
+  'markdown/setup-links/approval-decision.tsx -> session/prompts/approval-request.tsx',
+];
+
+describe('module layers', () => {
+  test('no file imports a higher layer outside KNOWN_UPWARD', () => {
+    const upward: string[] = [];
+    for (const [file, targets] of edges) {
+      const from = LAYER[moduleOf(file)];
+      for (const target of targets) {
+        const to = LAYER[moduleOf(target)];
+        if (from !== undefined && to !== undefined && to > from) {
+          upward.push(`${relative(SRC, file)} -> ${relative(SRC, target)}`);
+        }
+      }
+    }
+    expect([...new Set(upward)].sort()).toEqual(KNOWN_UPWARD);
+  });
+});
