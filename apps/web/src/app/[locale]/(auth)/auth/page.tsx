@@ -30,13 +30,13 @@ import {
   submitAuthForm,
 } from '@/lib/auth/submit-auth';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { FieldError, FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { FieldError, FieldLabel, InfoStrip, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 
@@ -126,7 +126,7 @@ import {
   parseAuthMethods,
   passwordFailureCopy,
 } from '@/lib/auth/unified-auth-flow';
-import { authRedirectUrl } from '@/lib/desktop';
+import { authRedirectUrl } from '@kortix/ui/internal/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import {

@@ -1,15 +1,20 @@
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { useKortixComputerStore } from '@kortix/ui/internal/stores/kortix-computer-store';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { act, create } from 'react-test-renderer';
-import { AdvancedPanel } from './advanced/advanced-panel';
-import { EasyPanel } from './easy/easy-panel';
-import { ActionPanel } from './index';
-import { SessionPanelContext, SessionPanelProvider, useOptionalSessionPanel, type SessionPanelValue } from './session-panel-provider';
+import {
+  AdvancedPanel,
+  EasyPanel,
+  ActionPanel,
+  SessionPanelContext,
+  SessionPanelProvider,
+  useOptionalSessionPanel,
+  type SessionPanelValue,
+} from '@kortix/ui/session-panel';
 import { useSessionStateStore } from '@kortix/sdk/react';
 
 // The cards read everything from `SessionPanelProvider`. Standing the real one

@@ -19,7 +19,7 @@ import {
   authRateLimitCopy,
   resolveEmailFlowMode,
 } from '@/lib/auth/unified-auth-flow';
-import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@/lib/onboarding/landing-destination';
+import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import { checkAccessEmail, submitAccessRequest } from '@kortix/sdk';

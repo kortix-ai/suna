@@ -14,10 +14,10 @@
  * section task edits its own block only.
  */
 
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
-import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@kortix/ui/internal/lib/kortix-cli';
 
 /** A two-line headline: `muted` renders first and dimmed, `ink` second. */
 export type TwoTone = { muted: string; ink: string };

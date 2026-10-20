@@ -7,6 +7,7 @@ import {
   isAppOwnedStorageKey,
   isKeptStorageKey,
 } from './clear-local-storage';
+import { useDiagnosticsStore } from '@kortix/ui/internal/stores/diagnostics-store';
 
 /**
  * A minimal but FUNCTIONAL `Storage` — real `length`/`key(i)` iteration, not
@@ -259,4 +260,11 @@ describe('clearUserLocalStorage', () => {
     expect(() => clearUserLocalStorage()).not.toThrow();
     expect(fakeSessionStorage.length).toBe(0);
   });
+});
+
+test('the diagnostics store persist name is swept at sign-out and not kept', () => {
+  const name = useDiagnosticsStore.persist.getOptions().name;
+  expect(name).toBe('kortix-diagnostics');
+  expect(isAppOwnedStorageKey(name!)).toBe(true);
+  expect(isKeptStorageKey(name!)).toBe(false);
 });

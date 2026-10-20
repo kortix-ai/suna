@@ -1,9 +1,9 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
-import { AuthMobileLogo, Rise, StepHeader, SuccessStrip } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
+import { AuthMobileLogo, Rise, StepHeader, SuccessStrip } from '@kortix/ui/internal/auth/auth-primitives';
 import { OtpVerification } from '@/features/auth/phone-verification/otp-verification';
 import { PhoneInput } from '@/features/auth/phone-verification/phone-input';
 import {
@@ -15,7 +15,7 @@ import {
   useVerifyChallenge,
 } from '@/hooks/auth';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
 import { SignOutIcon as LogOut } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';

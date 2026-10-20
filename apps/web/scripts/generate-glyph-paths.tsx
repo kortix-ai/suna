@@ -1,5 +1,5 @@
 /**
- * Writes packages/ui/src/components/ui/glyph-paths.generated.ts: the path data of every
+ * Writes packages/ui/src/primitives/glyph-paths.generated.ts: the path data of every
  * catalogue glyph in the app's icon weight (DEFAULT_ICON_WEIGHT).
  *
  * Why: EntityAvatar drew each glyph through its Phosphor component, and each
@@ -13,8 +13,8 @@
  */
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { renderGlyphPathsModule } from '../../../packages/ui/src/components/ui/glyph-paths-source';
+import { renderGlyphPathsModule } from '../../../packages/ui/src/primitives/glyph-paths-source';
 
-const target = join(import.meta.dir, '..', '..', '..', 'packages', 'ui', 'src', 'components', 'ui', 'glyph-paths.generated.ts');
+const target = join(import.meta.dir, '..', '..', '..', 'packages', 'ui', 'src', 'primitives', 'glyph-paths.generated.ts');
 writeFileSync(target, renderGlyphPathsModule());
 console.log(`wrote ${target}`);

@@ -2,7 +2,7 @@ import { WrenchIcon as RawWrenchIcon } from '@phosphor-icons/react/dist/ssr';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { DEFAULT_ICON_WEIGHT } from './icon-config';
+import { DEFAULT_ICON_WEIGHT } from '@kortix/ui';
 import { CaretRightIcon, WrenchIcon } from './ssr';
 
 describe('server-component icons', () => {

@@ -13,7 +13,7 @@ interface EmailSenderPolicy {
   allowedRegex: string | null;
 }
 
-interface EmailInstallation {
+export interface EmailInstallation {
   connectionSlug: string;
   inboxId: string;
   email: string;
@@ -25,7 +25,7 @@ interface EmailInstallation {
   connection_id?: string | null;
 }
 
-interface EmailMode {
+export interface EmailMode {
   provider: 'agentmail';
   enabled?: boolean;
   managed_available: boolean;
