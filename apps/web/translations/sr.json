@@ -20594,6 +20594,12 @@
     "mcpNotChecked": "Још није проверено",
     "runLimits": "Ograničenja pokretanja",
     "runLimitsHint": "Okidanje preko ograničenja ništa ne pokreće i prikazuje se kao preskočeno pokretanje. Ručno pokretanje se nikada ne zadržava, ali se računa.",
+    "overlap": "Преклапање",
+    "overlapHint": "Ако претходно извршавање још траје, ново покретање или чека или покреће друго извршавање. Извршавање које сам покренеш увек се изврши.",
+    "overlapDefaultSkip": "Подразумевано: прескочи док последње извршавање траје",
+    "overlapDefaultAllow": "Подразумевано: ипак покрени ново извршавање",
+    "overlapSkip": "Прескочи док последње извршавање траје",
+    "overlapAllow": "Ипак покрени ново извршавање",
     "perHour": "Po satu",
     "perDay": "Po danu",
     "noLimit": "Bez ograničenja"

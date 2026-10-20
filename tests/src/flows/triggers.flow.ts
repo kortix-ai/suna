@@ -3028,3 +3028,112 @@ flow(
     });
   },
 );
+
+/**
+ * TRG-39 — overlap (KRTX-1721). A fresh-mode trigger with `overlap: skip` starts
+ * nothing while its previous run is still active (a session it created is
+ * still being set up or running a turn). `skip` is the cron default, `allow`
+ * the default for the other types. Local only: the active session is seeded.
+ */
+flow(
+  'TRG-39',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/secrets',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'POST /v1/webhooks/projects/:projectId/:slug',
+      'GET /v1/projects/:projectId/triggers/:slug/runs',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return;
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const slugParams = { ...params, slug: 'one-at-a-time' };
+    const secret = `ke2e-overlap-${crypto.randomUUID()}`;
+    const overlapOf = async (slug: string) => {
+      const t = (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200)
+        .json<{ triggers: Array<{ slug: string; overlap?: string | null }> }>().triggers.find((row) => row.slug === slug);
+      if (!t) throw new Error(`${slug} is not listed`);
+      return t.overlap;
+    };
+    const deliver = async () => {
+      const rawBody = JSON.stringify({ action: 'opened' });
+      return ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
+        params: slugParams,
+        raw: true,
+        headers: {
+          'content-type': 'application/json',
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-delivery-id': crypto.randomUUID(),
+        },
+      });
+    };
+
+    await ctx.step('overlap other than skip or allow → 400; a cron trigger without it lists null (the skip default applies)', async () => {
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Bad', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x', overlap: 'queue' }, { params }))
+        .status(400).body().has('$.error', 'overlap must be "skip" or "allow"');
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'Nightly', slug: 'nightly', type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'x' }, { params })).status(201);
+      const listed = await overlapOf('nightly');
+      if (listed !== null) throw new Error(`nightly overlap: ${JSON.stringify(listed)}, expected null`);
+    });
+
+    await ctx.step('a webhook trigger with overlap: skip → 201 and lists skip; a PATCH of only overlap writes it', async () => {
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'one-at-a-time', slug: 'one-at-a-time', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'Run {{ body.action }}', overlap: 'skip' }, { params })).status(201);
+      if ((await overlapOf('one-at-a-time')) !== 'skip') throw new Error('one-at-a-time does not list overlap skip');
+      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { overlap: 'allow' }, { params: { ...params, slug: 'nightly' } })).status(200);
+      if ((await overlapOf('nightly')) !== 'allow') throw new Error('a PATCH of only overlap did not write it');
+    });
+
+    await ctx.step('with a session of this trigger still being set up, a signed delivery → 200 skipped "overlap: …", a skipped run, no new session', async () => {
+      const sessionId = crypto.randomUUID();
+      await withDb(ctx, (db) =>
+        db.query(
+          `INSERT INTO kortix.project_sessions (session_id, account_id, project_id, branch_name, created_by, status, metadata)
+           SELECT $1, account_id, project_id, $2, $3, 'provisioning', '{"trigger_slug":"one-at-a-time","trigger_kind":"git"}'::jsonb
+             FROM kortix.projects WHERE project_id = $4`,
+          [sessionId, `session/${sessionId}`, ctx.P.OWNER.userId!, p.id],
+        ),
+      );
+      const reason = `overlap: the previous run is still active (session ${sessionId})`;
+      (await deliver()).status(200).body().has('$.status', 'skipped').has('$.reason', reason);
+      const runs = (await owner.get('/v1/projects/:projectId/triggers/:slug/runs', { params: slugParams })).status(200).json<RunList>().runs;
+      if (!runs.some((run) => run.status === 'skipped' && run.error === reason && run.session_id === null)) throw new Error(`no skipped overlap run: ${JSON.stringify(runs)}`);
+      const sessions = await withDb(ctx, async (db) =>
+        Number((await db.query(`SELECT count(*) AS n FROM kortix.project_sessions WHERE project_id = $1 AND metadata->>'trigger_slug' = 'one-at-a-time'`, [p.id])).rows[0]?.n ?? 0),
+      );
+      if (sessions !== 1) throw new Error(`a held delivery created a session: ${sessions} sessions`);
+    });
+
+    await ctx.step('a manual fire is not held: it reaches the fire path (402 locally)', async () => {
+      (await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: slugParams })).status(402);
+    });
+
+    await ctx.step('CLI: `--overlap default` resets it, info prints the effective value, `--overlap queue` exits 2', async () => {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg39') });
+      const sb = new CliSandbox('trg39');
+      try {
+        const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
+        if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+        const reset = await sb.run(['triggers', 'set', 'one-at-a-time', '--overlap', 'default', '--project', p.id]);
+        throwIfCliInfraFailure(reset, 'triggers set');
+        if (reset.exitCode !== 0) throw new Error(`set --overlap default: exit ${reset.exitCode}: ${reset.all}`);
+        if ((await overlapOf('one-at-a-time')) !== null) throw new Error('--overlap default did not reset it');
+        const info = await sb.run(['triggers', 'info', 'one-at-a-time', '--project', p.id]);
+        if (info.exitCode !== 0 || !/overlap\s+allow \(default\)/.test(info.stdout)) throw new Error(`info: exit ${info.exitCode}: ${info.all}`);
+        const bad = await sb.run(['triggers', 'set', 'one-at-a-time', '--overlap', 'queue', '--project', p.id]);
+        if (bad.exitCode !== 2 || !bad.stderr.includes('--overlap must be skip or allow, or default to reset it (got "queue").')) {
+          throw new Error(`set --overlap queue: exit ${bad.exitCode}: ${bad.all}`);
+        }
+      } finally {
+        sb.dispose();
+      }
+    });
+  },
+);
