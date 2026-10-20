@@ -48,6 +48,7 @@ describe('denial', () => {
     [['whoami', '--token-only']],
     [['env', 'pull']],
     [['env', 'push']],
+    [['drive', 'put', './a.txt', '/a.txt']],
     [['apps', 'deploy', './x']],
     [['apps', 'exec', 'db', '--', 'ls']],
     [['apps', 'token', 'main']],

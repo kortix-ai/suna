@@ -521,10 +521,10 @@ describe('kortix projects upgrade', () => {
       resolve(
         CLI_ROOT,
         '..',
-        'web',
+        '..',
+        'packages',
+        'ui',
         'src',
-        'features',
-        'workspace',
         'customize',
         'migrate-to-v2',
         'migration-prompt.ts',
