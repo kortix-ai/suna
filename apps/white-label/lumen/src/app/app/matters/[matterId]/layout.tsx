@@ -17,6 +17,7 @@ import {
 import { errorToast } from '@kortix/ui/toast';
 import { CaretDownIcon, CaretRightIcon, LockSimpleIcon } from '@phosphor-icons/react';
 import { useMutation } from 'convex/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
 
@@ -43,10 +44,22 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const base = `/app/matters/${matter._id}`;
   const update = useMutation(api.matters.update);
+  // The active tab is always in view on a phone, and a fade marks tabs past the right edge.
+  const tabs = useRef<HTMLElement>(null);
+  const [more, setMore] = useState(false);
+  const edge = useCallback(() => {
+    const el = tabs.current;
+    if (el) setMore(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+  useEffect(() => {
+    tabs.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    edge();
+  }, [path, edge]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="shrink-0 border-b border-border px-4 pt-4 sm:px-6">
+      <header className="shrink-0 border-b border-border">
+        <div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6">
         <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Link href="/app/matters" className="hover:text-foreground">
             Matters
@@ -84,7 +97,16 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
           </DropdownMenu>
         </div>
         {matter.client && <p className="mt-0.5 text-sm text-muted-foreground">{matter.client}</p>}
-        <nav aria-label="Matter" className="scrollbar-none -mx-4 mt-3 flex gap-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <nav
+          ref={tabs}
+          onScroll={edge}
+          aria-label="Matter"
+          className={cn(
+            'scrollbar-none -mx-4 mt-3 flex gap-4 overflow-x-auto px-4 sm:mx-0 sm:px-0',
+            // More tabs to the right than fit (390 px): fade the edge so the strip reads as scrollable.
+            more && '[mask-image:linear-gradient(to_right,black_80%,transparent)]',
+          )}
+        >
           {TABS.map((t) => {
             const href = `${base}${t.seg}`;
             // A run's detail page belongs to History.
@@ -104,6 +126,7 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
+        </div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
     </div>

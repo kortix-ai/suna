@@ -3,17 +3,19 @@
 import { Notice, useMatter } from '@/components/access';
 import { BATCH_ICON, CitationCard, Elapsed, type RunView, RunStatusBadge, isActive } from '@/components/runs/run-parts';
 import { DraftView, IssuesView, ReportView } from '@/components/runs/workflow-results';
+import { activityText } from '@/lib/run-activity';
 import { errorText } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
 import { cn } from '@kortix/ui';
 import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
 import { UnifiedMarkdown } from '@kortix/ui/markdown';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { errorToast } from '@kortix/ui/toast';
 import { ArrowClockwiseIcon, CaretLeftIcon, FileMagnifyingGlassIcon, StopIcon, TableIcon, XIcon } from '@phosphor-icons/react';
-import { useMutation, useQuery } from 'convex/react';
+import { useConvexConnectionState, useMutation, useQuery } from 'convex/react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
@@ -140,13 +142,11 @@ function Progress({ view }: { view: RunView }) {
               <span className="min-w-0 flex-1">
                 <span className="block">
                   {b.phase === 'reduce' ? 'Report' : view.batches.length === 1 ? 'Workspace' : `Batch ${b.index + 1}`}{' '}
-                  <span className="text-muted-foreground">· {b.documentCount} document{b.documentCount === 1 ? '' : 's'}</span>
+                  {b.documentCount > 0 && <span className="text-muted-foreground">· {b.documentCount} document{b.documentCount === 1 ? '' : 's'}</span>}
                 </span>
                 <span className="block text-xs text-muted-foreground">
                   {s.label}
                   {b.startedAt ? <> · <Elapsed from={b.startedAt} to={b.finishedAt} /></> : null}
-                  {b.attempts.repair + b.attempts.nudge + b.attempts.relaunch > 0 &&
-                    ` · ${b.attempts.repair} repair, ${b.attempts.nudge} nudge, ${b.attempts.relaunch} restart`}
                 </span>
                 {b.error && <span className="block text-xs text-destructive">{b.error}</span>}
               </span>
@@ -160,7 +160,7 @@ function Progress({ view }: { view: RunView }) {
           {[...view.events].reverse().slice(0, 40).map((e, i) => (
             <li key={i} className="flex gap-2">
               <span className="w-16 shrink-0 font-mono tabular-nums text-muted-foreground">{new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-              <span>{e.detail ?? e.type}</span>
+              <span>{activityText(e.detail ?? e.type)}</span>
             </li>
           ))}
         </ol>
@@ -216,6 +216,7 @@ export default function RunPage() {
         </Link>
         <h2 className="min-w-0 flex-1 truncate font-display text-xl tracking-tight" data-testid="run-title">{run.title}</h2>
         <span className="text-xs text-muted-foreground"><Elapsed from={run.startedAt} to={run.finishedAt} /></span>
+        {isActive(run.status) && <Reconnecting />}
         <span data-testid="run-status" data-status={run.status}><RunStatusBadge status={run.status} /></span>
         {isActive(run.status) && (
           <Button size="sm" variant="outline" onClick={() => cancel({ runId }).catch((e) => errorToast('Could not cancel', { description: errorText(e) }))}>
@@ -247,7 +248,7 @@ export default function RunPage() {
           ) : run.kind === 'contract_review' ? (
             <IssuesView view={view} runId={runId} />
           ) : run.kind === 'diligence' ? (
-            <ReportView view={view} matterId={matter._id} />
+            <ReportView view={view} matterId={matter._id} runId={runId} />
           ) : run.kind === 'draft' ? (
             <DraftView view={view} runId={runId} />
           ) : (
@@ -260,5 +261,19 @@ export default function RunPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The run keeps going on Lumen's backend when this tab loses its connection.
+ * The screen says so instead of looking frozen, and catches up on reconnect.
+ */
+function Reconnecting() {
+  const c = useConvexConnectionState();
+  if (!c.hasEverConnected || c.isWebSocketConnected) return null;
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status" data-testid="run-reconnecting">
+      <Loading className="size-3" /> Reconnecting… the run continues
+    </span>
   );
 }

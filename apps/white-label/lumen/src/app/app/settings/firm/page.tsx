@@ -94,7 +94,7 @@ export default function FirmSettings() {
           <div className="space-y-1.5">
             <Label>Firm size</Label>
             <Select value={sizeBand} onValueChange={(v) => setSizeBand(v as typeof sizeBand)}>
-              <SelectTrigger aria-label="Firm size">
+              <SelectTrigger aria-label="Firm size" className="h-10">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -114,7 +114,7 @@ export default function FirmSettings() {
             <span>{firm.status === 'ready' ? 'Ready' : firm.status === 'failed' ? 'Setup failed' : 'Setting up…'}</span>
           </div>
           <div className="mt-2 flex items-center justify-between">
-            <span className="text-muted-foreground">Agent kit</span>
+            <span className="text-muted-foreground">Legal agents</span>
             <span className="font-mono text-xs" data-testid="kit-version">{firm.kitVersion ?? 'Installs with the first run'}</span>
           </div>
         </div>

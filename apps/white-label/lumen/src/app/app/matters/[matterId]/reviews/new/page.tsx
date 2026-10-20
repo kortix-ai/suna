@@ -45,7 +45,7 @@ export default function NewReviewPage() {
   }
 
   return (
-    <form onSubmit={start} className="mx-auto w-full max-w-5xl space-y-5 px-4 py-6 sm:px-6">
+    <form onSubmit={start} className="mx-auto w-full max-w-6xl space-y-5 px-4 py-6 sm:px-6">
       <Link href={`${base}/reviews`} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
         <CaretLeftIcon className="size-3" /> Reviews
       </Link>

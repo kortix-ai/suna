@@ -248,7 +248,7 @@ export default function WorkflowsPage() {
   const [open, setOpen] = useState<Kind | null>(null);
   const item = CATALOG.find((c) => c.kind === open);
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
       <div className="mb-4">
         <h2 className="text-sm font-medium">Workflows</h2>
         <p className="text-xs text-muted-foreground">Multi-step legal work on this matter’s vault. Results are checked against the source before you see them.</p>

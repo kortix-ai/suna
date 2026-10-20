@@ -1,10 +1,11 @@
 'use client';
 
 import { useFirm } from '@/components/access';
+import { BRAND } from '@/config/brand';
 import { isAdmin, PLAN_LABEL } from '@/lib/roles';
 import { errorText } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
-import { Badge } from '@kortix/ui/badge';
+import { cn } from '@kortix/ui';
 import { Button } from '@kortix/ui/button';
 import { Input } from '@kortix/ui/input';
 import { Label } from '@kortix/ui/label';
@@ -29,20 +30,18 @@ export default function BillingPage() {
       <section className="grid divide-y divide-border rounded-xl border border-border bg-card sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <div className="p-5">
           <p className="text-xs text-muted-foreground">Plan</p>
-          <p className="mt-1 font-display text-2xl">{PLAN_LABEL[s.plan]}</p>
+          <p className="mt-1 text-2xl font-medium tracking-tight">{PLAN_LABEL[s.plan]}</p>
         </div>
         <div className="p-5">
           <p className="text-xs text-muted-foreground">Seats used</p>
-          <p className="mt-1 font-mono text-2xl" data-testid="billing-seats">
+          <p className="mt-1 text-2xl font-medium tracking-tight tabular-nums" data-testid="billing-seats">
             {used} / {s.seats}
           </p>
           {s.pending > 0 && <p className="text-xs text-muted-foreground">{s.pending} pending invitation{s.pending > 1 ? 's' : ''}</p>}
         </div>
         <div className="p-5">
           <p className="text-xs text-muted-foreground">Status</p>
-          <p className="mt-1.5">
-            <Badge variant={s.billingStatus === 'past_due' ? 'warning' : 'outline'}>{STATUS[s.billingStatus]}</Badge>
-          </p>
+          <p className={cn('mt-1 text-2xl font-medium tracking-tight', s.billingStatus === 'past_due' && 'text-destructive')}>{STATUS[s.billingStatus]}</p>
           {s.trialEndsAt && s.plan === 'trial' && (
             <p className="mt-1 text-xs text-muted-foreground">Trial ends {new Date(s.trialEndsAt).toLocaleDateString()}</p>
           )}
@@ -50,7 +49,9 @@ export default function BillingPage() {
       </section>
 
       {s.mode === 'off' ? (
-        <p className="text-sm text-muted-foreground">Billing is not configured on this deployment.</p>
+        <p className="text-sm text-muted-foreground">
+          {s.plan === 'trial' ? 'Your trial is active. ' : ''}To add seats or change your plan, contact {BRAND.name}.
+        </p>
       ) : admin ? (
         <StripeControls hasCustomer={s.hasCustomer} seats={Math.max(s.seats, used)} />
       ) : (

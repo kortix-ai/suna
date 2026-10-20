@@ -39,7 +39,7 @@ export default function MatterOverview() {
   const who = (id: string) => directory?.find((d) => d.userId === id);
 
   return (
-    <div className="mx-auto grid w-full max-w-5xl gap-4 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+    <div className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="space-y-4">
         <section>
           <div className="mb-3 flex items-center justify-between gap-2">

@@ -14,7 +14,7 @@ import Loading from '@kortix/ui/loading';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@kortix/ui/table';
 import { errorToast, successToast } from '@kortix/ui/toast';
-import { FileDocIcon, FilePdfIcon, FileTextIcon, MagnifyingGlassIcon, TableIcon, TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
+import { ChatCircleTextIcon, FileDocIcon, FilePdfIcon, FileTextIcon, MagnifyingGlassIcon, TableIcon, TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'next/navigation';
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
@@ -106,7 +106,7 @@ export default function VaultPage() {
   return (
     <div className="flex min-h-0 flex-1">
       <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-5xl space-y-4 px-4 py-6 sm:px-6">
+        <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-6 sm:px-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-medium">Documents</h2>
@@ -118,8 +118,11 @@ export default function VaultPage() {
               <Button variant="outline" size="sm" onClick={() => input.current?.click()}>
                 <UploadSimpleIcon className="size-4" /> Upload
               </Button>
+              <Button variant="outline" size="sm" disabled={ready.length === 0} onClick={() => router.push(`/app/matters/${matter._id}/assistant`)}>
+                <ChatCircleTextIcon className="size-4" /> Ask
+              </Button>
               <Button size="sm" disabled={ready.length === 0 || starting} onClick={review}>
-                {starting ? <Loading className="size-4" /> : <TableIcon className="size-4" />} Review these
+                {starting ? <Loading className="size-4" /> : <TableIcon className="size-4" />} Review all
               </Button>
             </div>
           </div>

@@ -2,9 +2,11 @@
 
 import { Elapsed, RunStatusBadge } from '@/components/runs/run-parts';
 import { relativeTime } from '@/lib/utils';
-import type { api } from '@convex/_generated/api';
+import { useFirm } from '@/components/access';
+import { api } from '@convex/_generated/api';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { ChatCircleTextIcon, FileMagnifyingGlassIcon, ListChecksIcon, PenNibIcon, TableIcon } from '@phosphor-icons/react';
+import { useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import Link from 'next/link';
 
@@ -31,6 +33,9 @@ export function historyHref(i: HistoryItem) {
 export function HistoryList({ items, empty, showMatter, rows = 6 }: {
   items: HistoryItem[] | null | undefined; empty: string; showMatter?: boolean; rows?: number;
 }) {
+  const firm = useFirm();
+  const directory = useQuery(api.members.directory, { firmId: firm._id });
+  const who = (id: string) => (id === 'system' ? 'Lumen' : directory?.find((d) => d.userId === id)?.name || directory?.find((d) => d.userId === id)?.email);
   if (items === undefined) {
     return <div className="space-y-2">{Array.from({ length: rows }, (_, i) => <Skeleton key={i} className="h-12 w-full rounded-xl" />)}</div>;
   }
@@ -49,7 +54,8 @@ export function HistoryList({ items, empty, showMatter, rows = 6 }: {
                 <span className="block truncate text-sm font-medium">{i.title}</span>
                 <span className="block truncate text-xs text-muted-foreground">
                   {k.label}
-                  {showMatter && <> · {i.matterName}</>} · {relativeTime(new Date(i.at).toISOString())}
+                  {showMatter && <> · {i.matterName}</>}
+                  {who(i.createdBy) && <> · {who(i.createdBy)}</>} · {relativeTime(new Date(i.at).toISOString())}
                   {i.startedAt ? <> · <Elapsed from={i.startedAt} to={i.finishedAt} /></> : null}
                 </span>
               </span>

@@ -68,7 +68,7 @@ export function AuthScreen({
           {signUp && (
             <div className="space-y-1.5">
               <Label htmlFor="name">Name</Label>
-              <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} />
+              <Input id="name" autoFocus required autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
           )}
           <div className="space-y-1.5">
@@ -76,7 +76,8 @@ export function AuthScreen({
             <Input
               id="email"
               type="email"
-              autoFocus
+              autoFocus={!signUp}
+              autoComplete="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -92,7 +93,8 @@ export function AuthScreen({
               minLength={10}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={signUp ? 'At least 10 characters' : '••••••••••'}
+              autoComplete={signUp ? 'new-password' : 'current-password'}
+              placeholder={signUp ? 'At least 10 characters' : undefined}
             />
           </div>
           {error && (
