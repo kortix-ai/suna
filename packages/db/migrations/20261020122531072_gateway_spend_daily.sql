@@ -15,11 +15,25 @@ set statement_timeout = '30s';
 --   * The trigger runs in the log INSERT's own statement: a row and its total
 --     commit together or not at all. The table is insert-only (account
 --     deletion removes the project too, which cascades here).
+--     tests/unit/gateway-logs-insert-only.test.ts fails on any UPDATE or
+--     DELETE of gateway_request_logs in apps/api/src or a later migration. A
+--     cost correction must also re-insert the affected days into
+--     gateway_spend_pending_days, so the backfill worker recomputes them.
+--   * Trigger order is load-bearing. Postgres fires AFTER ROW triggers in
+--     name order, so gateway_request_logs_project_audit (per-session audit
+--     lock) fires before gateway_spend_daily_add (the hot per-project total
+--     row). Reversed, an insert holds the project row lock while it waits on
+--     a session lock, and every insert of that project queues behind it on
+--     the audit pool (lock_timeout 2.5 s): inserts fail and spend goes
+--     uncounted. Never rename either trigger to sort the other way.
 --   * total_cost is the per-row rule of apps/api/src/shared/llm-spend.ts
 --     (rowTotalSpendSql). numeric without a scale, so a sum of rows equals the
 --     SUM over gateway_request_logs exactly.
 --   * Days before this migration have no rows yet. They go into
 --     gateway_spend_pending_days with the install day itself (partly counted).
+--     The seed reads clock_timestamp(), not now(): it runs after CREATE
+--     TRIGGER, so it covers the day the trigger went live even when this
+--     transaction started before UTC midnight and took the lock after it.
 --     Readers sum gateway_request_logs while a period overlaps a pending day.
 --     The gateway-spend-backfill worker recomputes each closed day in its own
 --     short transaction and removes it from the list. No backfill runs here:
@@ -87,6 +101,6 @@ EXECUTE FUNCTION kortix.gateway_spend_daily_add();--> statement-breakpoint
 INSERT INTO kortix.gateway_spend_pending_days (day)
 SELECT generate_series(
   least(date_trunc('month', now() AT TIME ZONE 'UTC'), date_trunc('week', now() AT TIME ZONE 'UTC'))::date,
-  (now() AT TIME ZONE 'UTC')::date,
+  (clock_timestamp() AT TIME ZONE 'UTC')::date,
   interval '1 day'
 )::date;

@@ -102,23 +102,25 @@ export async function budgetSpends(
   });
   const from = new Date(Math.min(...windows.map((w) => w.periodStart.getTime())));
 
-  let agg: Record<string, number> | undefined;
-  if (await dailyTotalsComplete(from)) {
-    const d = gatewaySpendDaily;
-    [agg] = await db
-      .select(
-        Object.fromEntries(
-          windows.map((w, i) => {
-            const rows = w.subject
-              ? sql`${gte(d.day, utcDay(w.periodStart))} and ${eq(d.actorUserId, w.subject)}`
-              : gte(d.day, utcDay(w.periodStart));
-            return [`b${i}`, sql<number>`coalesce(sum(${d.totalCost}) filter (where ${rows}), 0)::float8`];
-          }),
-        ),
-      )
-      .from(d)
-      .where(and(eq(d.projectId, projectId), gte(d.day, utcDay(from))));
-  } else {
+  // The pending-day check rides in the same statement as the sum, so the
+  // admission gate pays one round trip once every day has settled.
+  const d = gatewaySpendDaily;
+  const [daily] = await db
+    .select({
+      pending: sql<boolean>`exists (select 1 from ${gatewaySpendPendingDays} where ${gte(gatewaySpendPendingDays.day, utcDay(from))})`,
+      ...Object.fromEntries(
+        windows.map((w, i) => {
+          const rows = w.subject
+            ? sql`${gte(d.day, utcDay(w.periodStart))} and ${eq(d.actorUserId, w.subject)}`
+            : gte(d.day, utcDay(w.periodStart));
+          return [`b${i}`, sql<number>`coalesce(sum(${d.totalCost}) filter (where ${rows}), 0)::float8`];
+        }),
+      ),
+    })
+    .from(d)
+    .where(and(eq(d.projectId, projectId), gte(d.day, utcDay(from))));
+  let agg = daily as Record<string, unknown> | undefined;
+  if (daily?.pending) {
     [agg] = await db
       // TOTAL spend, not the Kortix-billed slice. A gateway budget caps what a
       // project spends on inference; measuring it with `final_cost` alone made
@@ -140,7 +142,7 @@ export async function budgetSpends(
       .where(and(eq(gatewayRequestLogs.projectId, projectId), gte(gatewayRequestLogs.createdAt, from)));
   }
   return windows.map((w, i) => ({
-    spentUsd: agg?.[`b${i}`] ?? 0,
+    spentUsd: Number(agg?.[`b${i}`] ?? 0),
     periodStart: w.periodStart,
     resetsAt: w.resetsAt,
   }));
@@ -220,8 +222,9 @@ export async function monthToDateGatewaySpend(
  * Recompute one closed pending UTC day of gateway_spend_daily from the log
  * rows and take it off the pending list, in one transaction. Returns false
  * when no closed day is pending. A day counts as closed 10 minutes after UTC
- * midnight: a log row's created_at is its INSERT's start, and the gateway's
- * statement timeout (25 s) ends every INSERT long before that. `skip locked`
+ * midnight: a log row's created_at is its INSERT's start, and the audit pool
+ * that runs the INSERT (DB_AUDIT_STATEMENT_TIMEOUT_MS, 10 s by default) ends
+ * every INSERT long before that. `skip locked`
  * lets a second runner pass over a day in progress.
  */
 export async function settleGatewaySpendDay(): Promise<boolean> {
@@ -363,11 +366,15 @@ export async function checkBudget(
     ...(warnings.length ? { warnings } : {}),
     ...(crossings.length ? { crossings } : {}),
   });
-  for (const b of budgets) {
-    if (b.action !== action) continue;
-    if (b.scope === 'member' && b.subjectUserId !== principal.userId) continue;
+  const applicable = budgets.filter(
+    (b) => b.action === action && !(b.scope === 'member' && b.subjectUserId !== principal.userId),
+  );
+  if (applicable.length === 0) return { exceeded: false };
+  // Every budget of this action in one statement.
+  const spends = await budgetSpends(principal.projectId, applicable, now);
+  for (const [i, b] of applicable.entries()) {
     const subject = b.scope === 'member' ? b.subjectUserId : null;
-    const spent = (await budgetSpends(principal.projectId, [b], now))[0]?.spentUsd ?? 0;
+    const spent = spends[i]?.spentUsd ?? 0;
     const limit = Number(b.limitUsd);
     const threshold = spent >= limit ? 100 : spent >= limit * 0.8 ? 80 : null;
     if (threshold && b.budgetId) {

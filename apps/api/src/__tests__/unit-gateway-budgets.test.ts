@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { gatewayBudgets, gatewayRequestLogs, gatewaySpendPendingDays } from '@kortix/db';
+import { gatewayBudgets, gatewayRequestLogs, gatewaySpendDaily } from '@kortix/db';
 import type { AuthedPrincipal } from '@kortix/llm-gateway';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
@@ -25,6 +25,11 @@ let spendQueue: number[] = [];
 // test can assert WHICH cost the budget gate is actually measuring — not just
 // that it issued a query. See the total-spend test at the bottom.
 let spendExpressions: string[] = [];
+// True: a day of the window is still pending, so budgetSpends falls back from
+// gateway_spend_daily to the log SUM. False: the running total answers alone.
+let pendingDay = true;
+// The table of every spend statement issued, in order.
+let spendStatements: string[] = [];
 let budgetRows: Array<{
   budgetId?: string;
   scope: 'project' | 'member';
@@ -38,21 +43,23 @@ mock.module('../shared/db', () => ({
   db: {
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
-        // A pending day keeps budgetSpends on the log SUM this mock serves.
-        // The running-total path runs against real PostgreSQL in
+        // The real SQL of both paths runs against PostgreSQL in
         // llm-gateway/gateway-spend-daily.integration.test.ts.
-        where: table === gatewaySpendPendingDays ? () => ({ limit: async () => [{ day: '2026-10-20' }] }) : async () => {
+        where: async () => {
           if (table === gatewayBudgets) return budgetRows;
-          if (table === gatewayRequestLogs) {
-            // The gate measures one budget per statement: one selected field.
-            const [key, expression] = Object.entries(fields ?? {})[0] ?? ['cost', undefined];
-            if (expression) {
-              spendExpressions.push(new PgDialect().sqlToQuery(expression as SQL).sql);
-            }
-            const cost = spendQueue.length ? spendQueue.shift()! : 0;
-            return [{ [key]: cost }];
+          if (table !== gatewaySpendDaily && table !== gatewayRequestLogs) {
+            throw new Error('unexpected table in mocked db.select().from()');
           }
-          throw new Error('unexpected table in mocked db.select().from()');
+          spendStatements.push(table === gatewaySpendDaily ? 'daily' : 'logs');
+          if (table === gatewaySpendDaily && pendingDay) return [{ pending: true }];
+          // One statement for every budget: one `b<i>` field per budget, in order.
+          const row: Record<string, unknown> = { pending: false };
+          for (const [key, expression] of Object.entries(fields ?? {})) {
+            if (!/^b\d+$/.test(key)) continue;
+            if (table === gatewayRequestLogs) spendExpressions.push(new PgDialect().sqlToQuery(expression as SQL).sql);
+            row[key] = spendQueue.length ? spendQueue.shift()! : 0;
+          }
+          return [row];
         },
       }),
     }),
@@ -76,6 +83,8 @@ describe('checkBudget', () => {
   beforeEach(() => {
     spendQueue = [];
     spendExpressions = [];
+    spendStatements = [];
+    pendingDay = true;
     budgetRows = [];
     __resetBudgetReservationsForTests();
   });
@@ -140,10 +149,11 @@ describe('checkBudget', () => {
         { scope: 'project', subjectUserId: null, limitUsd: '10', period: 'day', action: 'block' },
         { scope: 'project', subjectUserId: null, limitUsd: '100', period: 'month', action: 'block' },
       ];
-      spendQueue = [10]; // only one value queued — a second call would throw "empty queue -> 0", not fail, but assert call count instead
+      spendQueue = [10, 0];
       const result = await checkBudget(principal());
       expect(result.exceeded).toBe(true);
-      expect(spendQueue.length).toBe(0); // exactly one spend query was consumed
+      expect(result.message).toContain('1,000 credits/day');
+      expect(spendStatements).toHaveLength(2); // one daily-total probe + one log SUM for both budgets
     });
   });
 
@@ -342,6 +352,8 @@ describe('checkBudget spend measurement', () => {
   beforeEach(() => {
     spendQueue = [];
     spendExpressions = [];
+    spendStatements = [];
+    pendingDay = true;
     budgetRows = [];
     __resetBudgetReservationsForTests();
   });
@@ -383,5 +395,53 @@ describe('checkBudget spend measurement', () => {
 
     expect(result.exceeded).toBe(true);
     expect(result.message).toContain('1,260 credits used this month');
+  });
+});
+
+/**
+ * BILLING-CORRECTNESS: once no day of the window is pending, the admission
+ * gate decides on the running total gateway_spend_daily alone, in ONE
+ * statement for every budget of the action (no log SUM, no second round trip).
+ */
+describe('checkBudget on the running total', () => {
+  beforeEach(() => {
+    spendQueue = [];
+    spendExpressions = [];
+    spendStatements = [];
+    pendingDay = false;
+    budgetRows = [];
+    __resetBudgetReservationsForTests();
+  });
+
+  test('a block budget past its limit denies the request from one daily-total statement', async () => {
+    budgetRows = [
+      { scope: 'project', subjectUserId: null, limitUsd: '100', period: 'month', action: 'block' },
+      { scope: 'member', subjectUserId: 'user-1', limitUsd: '5', period: 'day', action: 'block' },
+    ];
+    spendQueue = [20, 6];
+    const result = await checkBudget(principal());
+    expect(spendStatements).toEqual(['daily']);
+    expect(result.exceeded).toBe(true);
+    expect(result.message).toContain('Your gateway budget (500 credits/day)');
+    expect(result.message).toContain('600 credits used this day');
+  });
+
+  test('under every limit → admitted, still one statement', async () => {
+    budgetRows = [
+      { scope: 'project', subjectUserId: null, limitUsd: '100', period: 'month', action: 'block' },
+      { scope: 'project', subjectUserId: null, limitUsd: '10', period: 'week', action: 'block' },
+    ];
+    spendQueue = [20, 2];
+    expect((await checkBudget(principal())).exceeded).toBe(false);
+    expect(spendStatements).toEqual(['daily']);
+  });
+
+  test('a pending day falls back to the log SUM for the decision', async () => {
+    pendingDay = true;
+    budgetRows = [{ scope: 'project', subjectUserId: null, limitUsd: '5', period: 'day', action: 'block' }];
+    spendQueue = [7];
+    const result = await checkBudget(principal());
+    expect(spendStatements).toEqual(['daily', 'logs']);
+    expect(result.exceeded).toBe(true);
   });
 });
