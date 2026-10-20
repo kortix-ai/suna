@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -66,5 +67,14 @@ describe('stylesheet coverage', () => {
     ]) {
       expect(dist).toContain(marker);
     }
+  });
+
+  test('the committed styles.css matches src (run: pnpm --filter @kortix/ui build:styles)', () => {
+    const run = spawnSync('node', [join(PKG, 'scripts', 'build-styles.mjs'), '--check'], {
+      cwd: PKG,
+      encoding: 'utf8',
+    });
+    if (run.status !== 0) throw new Error(`${run.stdout}${run.stderr}`);
+    expect(run.stdout).toContain('build-styles: no drift');
   });
 });
