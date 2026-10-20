@@ -10,6 +10,8 @@ import { ArrowsClockwiseIcon } from '@phosphor-icons/react';
 import { InlineError, type PatchDraft } from './composer-parts';
 import { type ComposerDraft, generateSigningKey } from './trigger-composer-logic';
 
+const SIGNING_KEY_ERROR_ID = 'trigger-signing-key-error';
+
 /** When: another app calls a private address. The signing key proves the caller. */
 export function WhenWebhook({
   draft,
@@ -32,7 +34,9 @@ export function WhenWebhook({
           value={draft.signingKey}
           onChange={(e) => patch({ signingKey: e.target.value })}
           placeholder={tI18nComplete.raw('text74414cb4f277')}
+          aria-required
           aria-invalid={error ? true : undefined}
+          aria-describedby={error ? SIGNING_KEY_ERROR_ID : undefined}
           className="font-mono text-sm"
         />
         <Button
@@ -46,7 +50,7 @@ export function WhenWebhook({
           {tI18nComplete.raw('text49e49bb4401e')}
         </Button>
       </div>
-      <InlineError message={error} />
+      <InlineError id={SIGNING_KEY_ERROR_ID} message={error} />
       <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
         {tI18nComplete.raw('textcbdd5dc3da21')}
       </p>
