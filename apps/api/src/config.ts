@@ -328,8 +328,12 @@ const envSchema = z.object({
   // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only. The pass resumes across leaders
   // (`kortix.session_log_backfill_state`). A dry pass runs once per build (KORTIX_COMMIT): a new
   // build runs it again; on the same build, `DELETE FROM kortix.session_log_backfill_state`.
-  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) is not converted (`too_large`).
+  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) converts in a
+  // Worker thread, only while the process has room for it (SESSION_LOG_BACKFILL_MEMORY_MB).
   SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('off'),
+  // The API task's memory in MiB (prod and dev ECS tasks: 4096). The backfill starts a conversion
+  // thread only while RSS plus its estimate stays under 75 % of this, or of cgroup memory.max when lower.
+  SESSION_LOG_BACKFILL_MEMORY_MB: optInt(4096),
   // The source commit the image was built from (Dockerfile ARG, kept across the prod retag). 'unknown' locally.
   KORTIX_COMMIT: optStrDefault('unknown'),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
@@ -1299,6 +1303,7 @@ export const config = {
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
+  SESSION_LOG_BACKFILL_MEMORY_MB: env.SESSION_LOG_BACKFILL_MEMORY_MB,
   KORTIX_COMMIT: env.KORTIX_COMMIT,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
