@@ -324,7 +324,9 @@ export function serializeProject(
     // them. SoT = ../../feature-flags/registry.
     // `apps` graduated (registry.ts) but stays here as `true`: CLIs before
     // v0.14.0 refuse every `kortix apps` command unless it reads true.
-    experimental: { ...resolveFeatureFlags(row.metadata), apps: true },
+    // `llm_gateway` graduated on 2026-10-20 and stays `true` too: mobile builds
+    // and SDKs from before then read false as the removed native model mode.
+    experimental: { ...resolveFeatureFlags(row.metadata), apps: true, llm_gateway: true },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);

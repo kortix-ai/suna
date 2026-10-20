@@ -1,4 +1,5 @@
 /** Session runtime: start (the unified open), restart, stop, and the current turn. */
+import { assertRepositoryConnected } from '../lib/git';
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
 import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
@@ -100,6 +101,9 @@ export function registerSessionRuntimeRoutes(): void {
       // default rather than being waved through unchecked.
       await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
       stl.mark('agent-authorized');
+      // Booting a box needs the repository; a running box keeps working (its
+      // keep-alive polls must not fail because GitHub went away under it).
+      if (visible.row.status !== 'running') await assertRepositoryConnected(loaded.row);
 
       // Adoption (JAY-599/T21): a still-warm row (pre-created, never prompted)
       // stops being speculative the instant a user's tab calls /start on it —

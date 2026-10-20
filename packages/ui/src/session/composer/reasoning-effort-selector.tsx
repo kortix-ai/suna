@@ -1,19 +1,13 @@
 'use client';
 
 /**
- * Thinking-effort control for the session chat composer — the ONE effort knob,
- * in both runtime modes.
+ * Thinking-effort control for the session chat composer — the ONE effort knob.
  *
  * It sets the session's model **variant** (`local.model.variant`, sent as
- * `variant` on every prompt), never a project setting:
- *
- *  - Native (llm_gateway off): OpenCode derives the variants from models.dev's
- *    `reasoning_options` and applies the provider-specific request overlay
- *    itself (`reasoningEffort`, `reasoningConfig.maxReasoningEffort`, …).
- *  - Gateway (llm_gateway on): the sandbox publishes the same variant ids on
- *    the `kortix` provider and OpenCode sends `reasoning_effort` in the body;
- *    the gateway forwards it per upstream family and REFUSES it (400) for a
- *    family it cannot map, instead of stripping it.
+ * `variant` on every prompt), never a project setting. The sandbox publishes
+ * the variant ids on the `kortix` provider and the harness sends
+ * `reasoning_effort` in the body; the gateway forwards it per upstream family
+ * and REFUSES it (400) for a family it cannot map, instead of stripping it.
  *
  * The list is `Object.keys(model.variants)` from the picker source the
  * composer already holds — the runtime's own list once the sandbox is up, the
@@ -21,8 +15,8 @@
  * `nativeProviderListFromCatalog` / `projectLlmCatalogToProviderList` in the
  * SDK). Never a hardcoded ladder, never the web's baked catalog seed.
  *
- * "Auto" clears the variant: the model's own default applies, and on-gateway
- * the project's Generation defaults (Customize → Gateway → Routing) fill the
+ * "Auto" clears the variant: the model's own default applies, and the
+ * project's Generation defaults (Customize → Gateway → Routing) fill the
  * field the request left unset.
  *
  * History: this used to write the project-level routing policy

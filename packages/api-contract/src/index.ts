@@ -53,7 +53,6 @@ export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
-  llm_gateway: z.boolean(),
   meta_agent: z.boolean(),
   monitors: z.boolean(),
   reminders: z.boolean(),
@@ -184,7 +183,11 @@ export const ProjectSchema = z.object({
   dashboard_url: z.string(),
   /** `apps` is not a flag (Apps graduated); it is always `true` so CLIs before
    *  v0.14.0, which gate `kortix apps` on it, keep working. */
-  experimental: FeatureFlagMapSchema.extend({ apps: z.literal(true).optional() }),
+  experimental: FeatureFlagMapSchema.extend({
+    apps: z.literal(true).optional(),
+    /** Not a flag (the gateway is the only model path); always `true` for older SDK and mobile clients. */
+    llm_gateway: z.literal(true).optional(),
+  }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
   default_sandbox_provider: SandboxProviderSchema.nullable(),
@@ -1989,6 +1992,7 @@ export const SessionSnapshotSchema = z.object({
     known: z.literal(true),
     base_ref: z.string().nullable(),
     agent_name: z.string().nullable(),
+    /** @deprecated Always true: the LLM gateway is the only model path. Kept for older clients. */
     llm_gateway_enabled: z.boolean(),
     /** The project's default reasoning effort, or null for automatic. */
     default_reasoning_effort: z.string().nullable(),

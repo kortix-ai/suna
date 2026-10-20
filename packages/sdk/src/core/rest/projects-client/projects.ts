@@ -25,13 +25,14 @@ import {
  * the same list, so other packages can assert the two have not drifted.
  *
  * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams`,
- * `config_releases` and `apps` are deprecated. `agent_tunnel` graduated like
+ * `config_releases`, `apps` and `llm_gateway` are deprecated. `agent_tunnel` graduated like
  * `review_center` below: a paired computer is a connector account and needs no
  * flag. So did `session_transcript_history`: every session saves its
  * transcript and shows it while its computer is off. And `teams`: every
  * project can connect Microsoft Teams. And `config_releases`: every session
  * runs its base branch's config release. And `apps`: Apps is generally
- * available — every project can create and deploy Apps.
+ * available — every project can create and deploy Apps. And `llm_gateway`:
+ * the LLM gateway is the only model path for every project.
  *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
@@ -48,6 +49,7 @@ export type FeatureFlagKey =
   | 'agentmail_email'
   /** @deprecated Graduated — every project can connect Microsoft Teams. Removed in the next major. */
   | 'teams'
+  /** @deprecated Graduated — the LLM gateway is the only model path for every project. Removed in the next major. */
   | 'llm_gateway'
   /** @deprecated Graduated — Review Center is on for every project. Removed in the next major. */
   | 'review_center'
@@ -97,6 +99,7 @@ type GraduatedFeatureFlagKey =
   | 'pi_worker'
   | 'config_releases'
   | 'apps'
+  | 'llm_gateway'
   | 'stateless_sessions'
   | 'ephemeral_sandboxes';
 /** The keys `KortixProject.experimental` carries on every response. */
@@ -111,7 +114,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'marketplace',
   'connectors_api_discover',
   'agentmail_email',
-  'llm_gateway',
   'meta_agent',
   'monitors',
   'reminders',
@@ -638,9 +640,8 @@ export interface ProjectLlmCatalogProvidersResponse {
 /**
  * The PROVIDER-level rows of the live runtime catalog — id/name/env/doc per
  * provider, the shape the connect modal (apps/web/src/lib/llm-providers.ts)
- * needs. Unlike `getProjectLlmCatalog`/`getProjectModelPicker`, works for
- * native (non-gateway) projects too — see the route's doc comment
- * (apps/api/src/projects/routes/models.ts, `/llm-catalog/providers`).
+ * needs. See the route's doc comment (apps/api/src/projects/routes/models.ts,
+ * `/llm-catalog/providers`).
  */
 export async function getProjectLlmCatalogProviders(projectId: string, options?: ApiClientOptions) {
   return unwrap(

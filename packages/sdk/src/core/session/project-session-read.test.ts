@@ -42,7 +42,7 @@ const bundleBody = {
     known: true,
     base_ref: null,
     agent_name: null,
-    llm_gateway_enabled: false,
+    llm_gateway_enabled: true,
     default_reasoning_effort: null,
   },
   models: { known: false, reason: 'x' },

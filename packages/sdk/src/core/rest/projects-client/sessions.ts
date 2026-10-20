@@ -1204,6 +1204,7 @@ export interface SessionOpenBundleConfig {
   known: true;
   base_ref: string | null;
   agent_name: string | null;
+  /** @deprecated Always true: the LLM gateway is the only model path. Removed in the next major. */
   llm_gateway_enabled: boolean;
   /** The project's default reasoning effort (a models.dev effort label), or
    *  null for automatic — what delivery injects as the prompt's `variant`
@@ -1211,8 +1212,7 @@ export interface SessionOpenBundleConfig {
   default_reasoning_effort?: string | null;
 }
 
-/** = `GET /projects/:id/model-defaults`. `known: false` with
- *  `reason: 'llm_gateway_disabled'` mirrors that route's own 404. */
+/** = `GET /projects/:id/model-defaults`. `known: false` when that read failed. */
 export type SessionOpenBundleModels =
   | {
       known: true;

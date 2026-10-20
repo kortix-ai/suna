@@ -8,6 +8,8 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { readJsonObject } from '../../shared/http-body';
 import { listRepoFiles, loadProjectConfig } from '../git';
+import { disconnectedProjectConfig } from '../git/config';
+import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { allowStaleMirrorReads } from '../git/mirror';
 import {
   assertAgentSessionWorkspaceAllowsRepository,
@@ -120,18 +122,28 @@ export function registerProjectDetailRoutes(): void {
       // A page view: serve the warm git mirror, refresh it behind the response.
       allowStaleMirrorReads();
 
-      const gitProject = await withProjectGitAuth(loaded.row);
+      // A disconnected repository still renders the project shell: no files,
+      // and a config whose `manifest_version.unknown_reason` names the cause.
+      // `git_connection` below carries the reason and the fix.
+      const gitProject = await withProjectGitAuth(loaded.row).catch((error) => {
+        if (isRepositoryDisconnectedError(error)) return null;
+        throw error;
+      });
       let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
-      try {
-        files = await listRepoFiles(gitProject, loaded.row.defaultBranch);
-      } catch (error) {
-        console.warn('[projects] repo detail listing unavailable', {
-          projectId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        c.header('X-Kortix-Repo-Status', 'unavailable');
+      if (!gitProject) {
+        c.header('X-Kortix-Repo-Status', 'disconnected');
+      } else {
+        try {
+          files = await listRepoFiles(gitProject, loaded.row.defaultBranch);
+        } catch (error) {
+          console.warn('[projects] repo detail listing unavailable', {
+            projectId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          c.header('X-Kortix-Repo-Status', 'unavailable');
+        }
       }
-      const rawConfig = await loadProjectConfig(gitProject, files);
+      const rawConfig = gitProject ? await loadProjectConfig(gitProject, files) : disconnectedProjectConfig();
       // Per-resource scoping: hide agents/skills this member isn't granted (owner/
       // admins/SAs see everything). No-op when the project has no resource grants.
       const denierCtx = {

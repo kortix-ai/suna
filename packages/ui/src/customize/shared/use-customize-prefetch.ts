@@ -60,8 +60,6 @@ export interface CustomizePrefetchGates {
   secretRead: boolean;
   reviewRead: boolean;
   membersManage: boolean;
-  /** The project's `llm_gateway` flag: Models reads gateway-only routes. */
-  llmGateway: boolean;
 }
 
 type CatalogQueries = Pick<
@@ -182,7 +180,7 @@ export async function prefetchCustomize(
       }),
     );
   }
-  if (gates.llmGateway && gates.modelRead) {
+  if (gates.modelRead) {
     // Models: the entries `useProjectModels` and `useModelDefaults` read.
     work.push(
       queryClient.prefetchQuery({
@@ -290,7 +288,6 @@ export function useCustomizePrefetch(projectId: string): void {
   const secretRead = allowed(PROJECT_ACTIONS.PROJECT_SECRET_READ);
   const reviewRead = allowed(PROJECT_ACTIONS.PROJECT_REVIEW_READ);
   const membersManage = allowed(PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
-  const llmGateway = detail.data?.project?.experimental?.llm_gateway === true;
   const gates = useMemo<CustomizePrefetchGates>(
     () => ({
       agentRead,
@@ -301,7 +298,6 @@ export function useCustomizePrefetch(projectId: string): void {
       secretRead,
       reviewRead,
       membersManage,
-      llmGateway,
     }),
     [
       agentRead,
@@ -312,7 +308,6 @@ export function useCustomizePrefetch(projectId: string): void {
       secretRead,
       reviewRead,
       membersManage,
-      llmGateway,
     ],
   );
 

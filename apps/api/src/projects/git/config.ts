@@ -18,7 +18,7 @@ import {
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
 import { listManagedSkills } from '../../skills/catalog';
-import { resolveManifestVerdict } from '../lib/manifest-verdict';
+import { disconnectedManifestVerdict, resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
@@ -437,6 +437,29 @@ async function scanCommands(
     },
     (a, b) => a.localeCompare(b),
   );
+}
+
+/**
+ * The config of a project whose repository cannot be reached: nothing was
+ * read, and `manifest_version.unknown_reason` says why instead of
+ * `unreadable` (KRTX-2955).
+ */
+export function disconnectedProjectConfig(): ProjectConfigSummary {
+  return {
+    is_kortix_repo: false,
+    signals: { manifest: false, openCodeConfig: false, openCodeAgent: false },
+    manifest_raw: null,
+    manifest: {},
+    manifest_version: disconnectedManifestVerdict(),
+    env: { required: [], optional: [] },
+    open_code_raw: null,
+    default_agent: null,
+    open_code_default_agent: null,
+    agent_discovery: 'declarative',
+    agents: [],
+    skills: [],
+    commands: [],
+  };
 }
 
 export async function loadProjectConfig(

@@ -33,14 +33,11 @@ import { Switch } from '../../../primitives/switch';
 import { Textarea } from '../../../primitives/textarea';
 import { ModelSelector } from '../../../session/models/model-selector';
 import { ReasoningEffortSelector } from '../../../session/composer/reasoning-effort-selector';
-import { storedModelRefToKey } from '../../../internal/lib/llm-gateway';
-import type { AgentConfigBlock, RuntimeAgentConfig } from '@kortix/sdk';
+import { type AgentConfigBlock, modelRefToKey, type RuntimeAgentConfig } from '@kortix/sdk';
 import {
   flattenModels,
   modelKeyToWire,
   modelProviderMode,
-  useFeatureFlag,
-  useKortixRouteProjectId,
   useRuntimeProviders,
 } from '@kortix/sdk/react';
 import { AGENT_MODE_HELP, AGENT_MODE_LABEL, AGENT_MODES } from './agent-editor-catalog';
@@ -166,14 +163,7 @@ export function ModelSection({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const { data: providers } = useRuntimeProviders();
   const models = flattenModels(providers, { providerMode: modelProviderMode(providers) });
-  // Mode-aware read-back: a native (gateway-off) agent model is
-  // `provider/model` — see storedModelRefToKey. This editor renders under
-  // /projects/[id], so the route supplies the project.
-  const projectId = useKortixRouteProjectId();
-  const llmGatewayFlag = useFeatureFlag(projectId, 'llm_gateway');
-  const selectedModelKey = oc.model
-    ? storedModelRefToKey(oc.model, llmGatewayFlag.enabled === true)
-    : null;
+  const selectedModelKey = oc.model ? modelRefToKey(oc.model) : null;
   // The pinned model's published variants — the same list the composer's
   // thinking-effort pill offers. With a list, the knob is that pill (Marko,
   // 2026-09-03: "look in chat input how we do it"); without one (no pin, or a

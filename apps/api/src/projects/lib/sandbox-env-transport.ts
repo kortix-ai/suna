@@ -98,7 +98,7 @@ export async function postEnvToDaemon(args: {
   refreshModels?: boolean;
   /** Runtime env the daemon applies to the OPENCODE process (allow-listed there). */
   opencodeEnv?: Record<string, string | null>;
-  llmGatewayEnabled?: boolean;
+  /** The gateway base the box's model provider points at. */
   llmGatewayBaseUrl?: string;
   requireAgentEnvProof?: boolean;
 }): Promise<{
@@ -145,12 +145,9 @@ export async function postEnvToDaemon(args: {
       runtimeEnv,
       // The same map under its pre-W3 name, for a daemon built before W3.
       opencodeEnv: runtimeEnv,
-      ...(typeof args.llmGatewayEnabled === 'boolean'
-        ? {
-            llmGatewayEnabled: args.llmGatewayEnabled,
-            ...(args.llmGatewayBaseUrl ? { llmGatewayBaseUrl: args.llmGatewayBaseUrl } : {}),
-          }
-        : {}),
+      // `llmGatewayEnabled: true` is what switches a box that booted with the
+      // gateway off (a mode that no longer exists) over to the gateway.
+      ...(args.llmGatewayBaseUrl ? { llmGatewayEnabled: true, llmGatewayBaseUrl: args.llmGatewayBaseUrl } : {}),
     }),
     signal: AbortSignal.timeout(ENV_PUSH_TIMEOUT_MS),
   });

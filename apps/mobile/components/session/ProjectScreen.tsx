@@ -898,8 +898,7 @@ export function ProjectScreen() {
         openSpringConfig={DRAWER_OPEN}
         closeSpringConfig={DRAWER_CLOSE}
         renderDrawerContent={renderDrawer}>
-        {/* The SDK's project scope: its runtime hooks read this project's model
-            mode from it (`useRuntimeProviders`). */}
+        {/* The SDK's project scope: its runtime hooks read this project from it. */}
         <KortixProjectProvider projectId={projectId}>
         <ProjectRouteProvider value={projectRoute}>
           {/* Native Stack: platform default push/pop. No iOS swipe-back: the
