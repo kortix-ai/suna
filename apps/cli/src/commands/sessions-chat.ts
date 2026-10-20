@@ -1206,9 +1206,8 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
         display_status: sessionListStatus(s),
         branch: s.branch_name,
         agent: s.agent_name,
-        // Stored resolved model pin; null = the row stores none and the
-        // session follows the default chain.
-        model: sessionModelPin(s),
+        // Prefer the conversation selection; preserve old-server compatibility.
+        model: s.model === undefined ? sessionModelPin(s) : s.model,
         updated_at: s.updated_at,
         activity: activity.get(s.session_id) ?? null,
       })),
