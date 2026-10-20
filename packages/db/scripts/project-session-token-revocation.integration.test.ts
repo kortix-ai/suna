@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import pg from 'pg';
-import { up } from '../migrations/20261020085001000_archived_project_session_tokens.concurrent';
+import { up } from '../migrations/20261020154501000_archived_project_session_tokens.concurrent';
 
 const url = process.env.TEST_DATABASE_URL;
 const account = crypto.randomUUID();
