@@ -1,4 +1,4 @@
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import type { UiTranslator } from '@/i18n/translator';
 import { WHITE_LABEL_TRANSLATION_KEYS } from '@/i18n/white-label-translation-keys.generated';
 

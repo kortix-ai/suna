@@ -2,15 +2,14 @@
 
 import { useId, useMemo, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
 import { useBillingReturnUrl } from '@/features/billing/billing-return';
-import { topUpBonusCredits } from '@/features/billing/compute-pricing';
-import { spring } from '@/lib/springs';
-import { cn } from '@/lib/utils';
-import { useBillingAccountId } from '@/stores/billing-account-context';
+import { topUpBonusCredits } from '@kortix/ui/internal/billing/compute-pricing';
+import { spring, cn } from '@kortix/ui';
+import { useBillingAccountId } from '@kortix/ui/internal/stores/billing-account-context';
 import { purchaseCredits } from '@kortix/sdk';
 import { dollarsToCredits, formatCredits } from '@kortix/shared';
 import { m } from 'motion/react';

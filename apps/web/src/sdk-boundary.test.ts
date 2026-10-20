@@ -12,6 +12,10 @@ describe('apps/web SDK boundary', () => {
     const actual = scanSdkBoundary(resolve(import.meta.dir)).map(violationKey);
     expect(actual).toEqual(baseline);
   }, 30_000);
+
+  test('@kortix/ui code (the session UI moved there) adds none either', () => {
+    expect(scanSdkBoundary(resolve(import.meta.dir, '../../../packages/ui/src')).map(violationKey)).toEqual([]);
+  }, 30_000);
 });
 
 /** Scan one planted source file and return `kind source` per violation. */

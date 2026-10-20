@@ -3,8 +3,8 @@ import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import en from '../../../../translations/en.json';
-import { QueuedPromptFailure, QueuedPromptProgress, queuedBubbleTone } from './queued-prompt-bubbles';
-import { BUBBLE_SURFACE } from './user-message';
+import { QueuedPromptFailure, QueuedPromptProgress, queuedBubbleTone } from '@kortix/ui/session/turn/queued-prompt-bubbles';
+import { BUBBLE_SURFACE } from '@kortix/ui/session';
 
 const renderFailure = () =>
   renderToStaticMarkup(

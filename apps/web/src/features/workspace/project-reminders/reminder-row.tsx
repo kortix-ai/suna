@@ -1,20 +1,20 @@
 'use client';
 
-import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import Hint from '@/components/ui/hint';
-import { InlineMeta } from '@/components/ui/inline-meta';
-import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
-import { TableCell, TableRow } from '@/components/ui/table';
+import { HoverPrefetchLink } from '@kortix/ui/internal/components/hover-prefetch-link';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import Hint from '@kortix/ui/hint';
+import { InlineMeta } from '@kortix/ui/inline-meta';
+import Loading from '@kortix/ui/loading';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { TableCell, TableRow } from '@kortix/ui/table';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { ProjectReminder } from '@kortix/sdk';
 import { AlarmIcon, PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 import { memo, useState, type ReactNode } from 'react';
-import { formatFireTime, reminderTitle, scheduleLabel } from './reminder-format';
+import { formatFireTime, reminderTitle, scheduleLabel } from '@kortix/ui/workspace';
 
 /** Status tile per the tinted-icon pattern: yellow = pending, green = done, red = stopped by an error. */
 export function tone(reminder: ProjectReminder) {

@@ -10,16 +10,16 @@
  * Renders nothing for an account with neither.
  */
 
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
 import { useBillingReturnUrl } from '@/features/billing/billing-return';
-import { formatWholeUsd } from '@/features/billing/compute-pricing';
+import { formatWholeUsd } from '@kortix/ui/internal/billing/compute-pricing';
 import { useTalkToSales } from '@/features/billing/use-enterprise-sales';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { isBillingEnabled } from '@/lib/config';
-import { useBillingAccountId } from '@/stores/billing-account-context';
+import { useBillingAccountId } from '@kortix/ui/internal/stores/billing-account-context';
 import { canManageBilling, type AccountState } from '@kortix/sdk';
 import { useAcceptEnterpriseOffer } from '@kortix/sdk/react';
 

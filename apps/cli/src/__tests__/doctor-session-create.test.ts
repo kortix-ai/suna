@@ -22,6 +22,7 @@ let tmp: string;
 let originalCwd: string;
 let saved: Record<string, string | undefined>;
 let createBodies: unknown[];
+let output: string;
 
 beforeEach(() => {
   saved = {};
@@ -55,6 +56,7 @@ beforeEach(() => {
   process.env.KORTIX_PROJECT_ID = PROJECT_ID;
 
   createBodies = [];
+  output = '';
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/v1/accounts/me')) {
@@ -86,7 +88,10 @@ beforeEach(() => {
     });
   }) as typeof fetch;
 
-  (process.stdout as { write: unknown }).write = () => true;
+  (process.stdout as { write: unknown }).write = (chunk: string) => {
+    output += chunk;
+    return true;
+  };
   (process.stderr as { write: unknown }).write = () => true;
 });
 
@@ -104,6 +109,23 @@ afterEach(() => {
 });
 
 describe('kortix doctor session create payload', () => {
+  test('discloses that UI-prepared warm sessions are left unchanged', async () => {
+    await runDoctor([]);
+    expect(output).toContain('UI-prepared warm sessions are left unchanged and may remain billed.');
+
+  });
+
+  test('keep-session still discloses warm sessions without claiming deletion', async () => {
+    await runDoctor(['--keep-session']);
+    expect(output).toContain('UI-prepared warm sessions are left unchanged and may remain billed.');
+    expect(output).not.toContain('cleaned up');
+  });
+
+  test('no-session creates nothing and does not claim cleanup', async () => {
+    expect(await runDoctor(['--no-session'])).toBe(0);
+    expect(createBodies).toHaveLength(0);
+    expect(output).not.toContain('may remain billed');
+  });
   test('never sends a null initial_prompt, which the API schema rejects with 400', async () => {
     await runDoctor([]);
     expect(createBodies).toHaveLength(1);

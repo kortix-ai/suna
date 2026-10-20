@@ -33,7 +33,7 @@ export function directSubsessions(session: SessionTree): ProjectRuntimeSession[]
   const root = rootRuntimeSession(session);
   if (!root) return [];
   return runtimeSessionsOf(session)
-    .filter((item) => item.parent_id === root.id && !item.archived_at)
+    .filter((item) => (item.parent_id === root.id || (!item.parent_id && item.fork_source_id)) && !item.archived_at)
     .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0) || a.id.localeCompare(b.id));
 }
 
