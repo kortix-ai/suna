@@ -841,7 +841,7 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
  * The seed prompt for the v1 → v2 manifest migration.
  *
  * VERBATIM COPY of `MIGRATE_TO_V2_PROMPT` in
- * `apps/web/src/features/workspace/customize/migrate-to-v2/migration-prompt.ts`,
+ * `packages/ui/src/customize/migrate-to-v2/migration-prompt.ts`,
  * which is the source of truth. The CLI cannot import from `apps/web` and the
  * prompt lives in no shared package, so both doors must be edited together —
  * `kortix projects upgrade` and the dashboard's Upgrades button must seed the

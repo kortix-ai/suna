@@ -15,8 +15,9 @@ import { disableSessionReminder, reminderPromptText } from './session-reminders'
 import { accountMemberRow } from '../../iam/membership-read';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
-import { alertTriggerThrottled, clearTriggerAlert } from './trigger-alerts';
-import { triggerRunCapReason } from './trigger-run-caps';
+import { alertTriggerAutoPaused, alertTriggerThrottled, clearTriggerAlert } from './trigger-alerts';
+import { autoPauseTrigger, readTriggerAutoPause, triggerAutoPauseReason, triggerRunCapVerdict } from './trigger-run-caps';
+import { triggerChecksOverlap, triggerOverlapReason } from './trigger-overlap';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -296,7 +297,7 @@ export async function fireGitTrigger(input: {
   /** A person fired it (manual fire, replay): the run caps do not apply. */
   deliberate?: boolean;
 }): Promise<{
-  /** `skipped`: a run cap (KRTX-1721) held it; `reason` names the cap. */
+  /** `skipped`: a run cap or an auto-pause (KRTX-1721) held it; `reason` says which. */
   status: 'fired' | 'queued' | 'failed' | 'skipped';
   sessionId?: string;
   commandId?: string;
@@ -317,10 +318,24 @@ export async function fireGitTrigger(input: {
   // prompt work. A person's fire is never held, but it counts toward the cap.
   if (!input.deliberate) {
     const now = new Date();
-    const throttled = await triggerRunCapReason({ projectId: project.projectId, slug: spec.slug, caps: spec, now });
-    if (throttled) {
-      alertTriggerThrottled({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, reason: throttled, now });
-      return { status: 'skipped', reason: throttled };
+    const { pausedReason, resumedAt } = await readTriggerAutoPause(project.projectId, spec.slug);
+    if (pausedReason) return { status: 'skipped', reason: pausedReason };
+    const held = await triggerRunCapVerdict({ projectId: project.projectId, slug: spec.slug, caps: spec, now, resumedAt });
+    if (held?.sustained) {
+      const reason = triggerAutoPauseReason(spec);
+      if (await autoPauseTrigger(project.projectId, spec.slug, reason, now)) {
+        alertTriggerAutoPaused({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, reason, pausedAt: now });
+        return { status: 'skipped', reason };
+      }
+    }
+    if (held) {
+      alertTriggerThrottled({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, reason: held.reason, now });
+      return { status: 'skipped', reason: held.reason };
+    }
+    // Overlap (KRTX-1721): a fresh run waits for the previous one to finish.
+    if (triggerChecksOverlap(spec)) {
+      const overlap = await triggerOverlapReason({ projectId: project.projectId, slug: spec.slug, now });
+      if (overlap) return { status: 'skipped', reason: overlap };
     }
   }
   // The session's owning identity (created_by / billing / audit). Automated runs
@@ -373,9 +388,9 @@ const CREATE_WAIT_ATTEMPTS = 15;
 const CREATE_WAIT_POLL_MS = 1_000;
 
 /**
- * A session reminder re-prompts its own session and nothing else. Unlike a pinned
- * trigger it never falls back to a fresh session: a check-in without the
- * session's context is noise. A gone session switches the reminder off instead.
+ * A session reminder re-prompts its own session. A deleted session switches
+ * the reminder off. A failed session hands the reminder to a successor session
+ * (fireReminderSuccessor), which picks up the work its predecessor kept in Files.
  */
 async function fireSessionReminder(
   input: Parameters<typeof fireGitTrigger>[0],
@@ -407,6 +422,9 @@ async function fireSessionReminder(
   if (outcome === 'queued' || outcome === 'deduped') {
     return { status: 'queued', sessionId: sessionId!, deduped: outcome === 'deduped', reason: 'prompt queued for delivery' };
   }
+  // A failed box is not a decision to stop; a deleted session is. The reminder
+  // carries on in a successor session, so work kept in Files outlives a box.
+  if (outcome === 'failed' && sessionId) return fireReminderSuccessor(input, author ?? actor, sessionId);
   await disableSessionReminder(project.projectId, spec.slug, new Date());
   return {
     status: 'failed',
@@ -414,6 +432,55 @@ async function fireSessionReminder(
     errorCode: 'reminder_session_gone',
     retryable: false,
   };
+}
+
+/**
+ * The reminder's session failed: start a successor that inherits its sharing
+ * (as its child), hand it the reminder text, pin the reminder to it, and move
+ * the failed session's chat threads to it so replies there reach it.
+ */
+async function fireReminderSuccessor(
+  input: Parameters<typeof fireGitTrigger>[0],
+  actor: string,
+  failedSessionId: string,
+): ReturnType<typeof fireGitTrigger> {
+  const { spec, project } = input;
+  const result = await createSession({
+    source: 'trigger:reminder',
+    project,
+    userId: actor,
+    requestingPrincipalType: 'human',
+    callerSessionId: failedSessionId,
+    request: input.request,
+    queuePolicy: 'on_backpressure',
+    idempotencyKey: input.idempotencyKey ?? null,
+    body: {
+      agent_name: spec.agent,
+      initial_prompt:
+        `${reminderPromptText(spec)}\n\n` +
+        `This reminder belonged to session ${failedSessionId}, which failed. You continue its work: ` +
+        'read what it kept in Files (/drives) before you act.',
+      metadata: { reminder_successor_of: failedSessionId },
+    },
+    metadata: { reminder_successor_of: failedSessionId, trigger_slug: spec.slug },
+    postCreate: [{ type: 'repin_reminder', reminderId: spec.slug }, { type: 'adopt_chat_threads', fromSessionId: failedSessionId }],
+  });
+  const successorId = result.sessionId ?? result.row?.sessionId;
+  if (result.error || (result.status !== 'queued' && result.status !== 'pending' && !successorId)) {
+    return {
+      status: 'failed',
+      error: String(result.error?.body.error ?? 'The reminder session failed and no successor session could start'),
+      errorCode: 'reminder_successor_failed',
+      retryable: result.retryable === true,
+    };
+  }
+  if (result.status === 'queued' || result.status === 'pending') {
+    // Paused until the queued create runs and its repin re-arms it: a fire in
+    // between would find the failed session again and start a second successor.
+    await disableSessionReminder(project.projectId, spec.slug, new Date());
+    return { status: 'queued', sessionId: successorId, commandId: result.commandId, reason: result.reason };
+  }
+  return { status: 'fired', sessionId: successorId, commandId: result.commandId };
 }
 
 async function queueExistingTriggerSession(

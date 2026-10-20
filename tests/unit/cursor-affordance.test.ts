@@ -6,13 +6,13 @@ import { describe, expect, it } from 'vitest';
 // A utility class beats `@layer base`, so one `cursor-default` silently removes
 // the pointer from an interactive element. The base rule in
 // @kortix/ui theme.css (packages/ui/src/styles) gives the pointer to every clickable element;
-// a `cursor-default` in components/ui (packages/ui/src/components/ui since the
+// a `cursor-default` in components/ui (packages/ui/src/primitives since the
 // @kortix/ui move, plus the app-specific ones left in apps/web) is an exception
 // and must say why, with an inline `// cursor-default: <reason>` comment on the
 // same line.
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
-const SCOPES = ['packages/ui/src/components/ui', 'apps/web/src/components/ui'];
+const SCOPES = ['packages/ui/src/primitives', 'apps/web/src/components/ui'];
 const REASON = 'cursor-default:';
 
 function trackedFiles(): string[] {

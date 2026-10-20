@@ -441,6 +441,13 @@
                   "type": "integer",
                   "minimum": 1
                 },
+                "overlap": {
+                  "type": "string",
+                  "enum": [
+                    "skip",
+                    "allow"
+                  ]
+                },
                 "secret_env": {
                   "type": "string",
                   "pattern": "^[A-Z_][A-Z0-9_]*$"
@@ -1353,6 +1360,8 @@
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
+                          "project.room.read",
+                          "project.room.write",
                           "project.credentials.issue",
                           "project.cr.open",
                           "project.cr.merge",
@@ -1449,6 +1458,8 @@
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
+                          "project.room.read",
+                          "project.room.write",
                           "project.credentials.issue",
                           "project.cr.open",
                           "project.cr.merge",
@@ -2103,6 +2114,8 @@
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
+                          "project.room.read",
+                          "project.room.write",
                           "project.credentials.issue",
                           "project.cr.open",
                           "project.cr.merge",
@@ -2189,6 +2202,8 @@
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
+                          "project.room.read",
+                          "project.room.write",
                           "project.credentials.issue",
                           "project.cr.open",
                           "project.cr.merge",
@@ -2875,6 +2890,13 @@
                 "max_runs_per_day": {
                   "type": "integer",
                   "minimum": 1
+                },
+                "overlap": {
+                  "type": "string",
+                  "enum": [
+                    "skip",
+                    "allow"
+                  ]
                 },
                 "secret_env": {
                   "type": "string",
@@ -4841,6 +4863,13 @@
                 "max_runs_per_day": {
                   "type": "integer",
                   "minimum": 1
+                },
+                "overlap": {
+                  "type": "string",
+                  "enum": [
+                    "skip",
+                    "allow"
+                  ]
                 },
                 "secret_env": {
                   "type": "string",
@@ -6890,6 +6919,8 @@
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
+                          "project.room.read",
+                          "project.room.write",
                           "project.credentials.issue",
                           "project.cr.open",
                           "project.cr.merge",

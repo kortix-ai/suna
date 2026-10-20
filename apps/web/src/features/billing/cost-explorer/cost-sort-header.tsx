@@ -1,8 +1,8 @@
 'use client';
 
-import { IconChevronDown, IconChevronUp, IconSort } from '@/components/ui/kortix-icons';
-import { TableHead } from '@/components/ui/table';
-import { cn } from '@/lib/utils';
+import { IconChevronDown, IconChevronUp, IconSort } from '@kortix/ui/kortix-icons';
+import { TableHead } from '@kortix/ui/table';
+import { cn } from '@kortix/ui';
 
 /** The two values `aria-sort` takes on the active column. The attribute is
  *  absent — not `"none"` — on every other column, which is what tells assistive

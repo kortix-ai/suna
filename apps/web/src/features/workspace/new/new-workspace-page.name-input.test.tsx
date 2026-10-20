@@ -29,7 +29,7 @@ mock.module('@/features/providers/auth-provider', () => ({
   }),
 }));
 mock.module('@/lib/auth/use-signed-out-redirect', () => ({ useSignedOutRedirect: () => {} }));
-mock.module('@/hooks/account/use-accounts-list', () => ({
+mock.module('@kortix/ui/internal/hooks/account/use-accounts-list', () => ({
   useAccountsList: () => ({
     data: [
       { account_id: 'user-1', name: 'Personal', account_role: 'owner', is_primary_owner: true },
@@ -37,15 +37,15 @@ mock.module('@/hooks/account/use-accounts-list', () => ({
     isLoading: false,
   }),
 }));
-mock.module('@/features/workspace/new/use-creatable-accounts', () => ({
+mock.module('@kortix/ui/workspace/new/use-creatable-accounts', () => ({
   useCreatableAccounts: (accounts: unknown[]) => accounts,
 }));
 // The quota pre-check is this file's sibling test's subject (`plan-cap.test.tsx`);
 // here it only has to stay out of the render — no data, no cap UI, no provider.
-mock.module('@/features/workspace/new/use-project-quota', () => ({
+mock.module('@kortix/ui/workspace/new/use-project-quota', () => ({
   useProjectQuota: () => ({ data: undefined }),
 }));
-mock.module('@/features/workspace/new/use-create-workspace', () => ({
+mock.module('@kortix/ui/workspace/new/use-create-workspace', () => ({
   useCreateWorkspace: () => ({
     create: () => {
       creates += 1;
@@ -63,7 +63,7 @@ mock.module('@/features/workspace/new/use-create-workspace', () => ({
 mock.module('@/features/workspace/account-top-bar', () => ({
   AccountTopBar: () => createElement('header'),
 }));
-mock.module('@/features/workspace/new/advanced-fields', () => ({
+mock.module('@kortix/ui/workspace/new/advanced-fields', () => ({
   AdvancedFields: () => createElement('div', { 'data-testid': 'advanced-stub' }),
 }));
 
@@ -107,6 +107,8 @@ const motionValue = (initial: number) => ({
 });
 mock.module('motion/react', () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
+  // @kortix/ui's UiProvider wraps its tree in LazyMotion.
+  LazyMotion: ({ children }: { children: ReactNode }) => <>{children}</>,
   m: motionComponents,
   animate: () => Promise.resolve(),
   useMotionValue: (initial: number) => motionValue(initial),

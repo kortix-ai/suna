@@ -42,10 +42,10 @@ import {
   sendWebNotification,
   setServerPushPreferences,
   showInAppNotification,
-} from '@/lib/web-notifications';
-import { projectIdFromPathname } from '@/stores/project-switch-store';
-import { useTurnAttentionStore } from '@/stores/turn-attention-store';
-import { useWebNotificationStore } from '@/stores/web-notification-store';
+} from '@kortix/ui/internal/lib/web-notifications';
+import { projectIdFromPathname } from '@kortix/ui/internal/stores/project-switch-store';
+import { useTurnAttentionStore } from '@kortix/ui/internal/stores/turn-attention-store';
+import { useWebNotificationStore } from '@kortix/ui/internal/stores/web-notification-store';
 import type { InboxNotification } from '@kortix/sdk';
 import { useNotificationInbox, useNotificationPreferences } from '@kortix/sdk/react';
 import { usePathname, useSearchParams } from 'next/navigation';
@@ -61,8 +61,8 @@ import {
   rowDestination,
   webNotificationType,
   withoutNotificationParam,
-} from './notification-rows';
-import { useNotificationHostGate } from './use-notification-center';
+} from '@kortix/ui/internal/notifications/notification-rows';
+import { useNotificationHostGate } from '@kortix/ui/internal/hooks/use-notification-center';
 import {
   detectWebPush,
   ensureWebPush,
@@ -71,12 +71,13 @@ import {
   syncWebPush,
   wantsWebPush,
   webPushSupported,
-} from './web-push';
+} from '@kortix/ui/internal/notifications/web-push';
 
 /** The inbox check of a hidden window, the SDK poll's interval. */
 const HIDDEN_POLL_MS = 60_000;
 
 const ARRIVAL_LABEL = {
+  room: 'arrival.openConversation',
   session: 'arrival.openSession',
   reminders: 'arrival.openReminders',
   triggers: 'arrival.openTriggers',

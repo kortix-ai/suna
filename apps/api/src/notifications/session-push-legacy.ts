@@ -181,7 +181,7 @@ export function liveLegacySessionPushDeps(overrides: Partial<LegacySessionPushDe
     isPresent: anyLiveLease,
     store: pushDeviceTokenStore(),
     send: (messages, store) =>
-      sendExpoPushMessages(messages, { accessToken: config.EXPO_ACCESS_TOKEN || undefined, store }),
+      sendExpoPushMessages(messages, { accessToken: config.EXPO_ACCESS_TOKEN || undefined, enabled: config.EXPO_PUSH_ENABLED, origin: config.KORTIX_URL, store }),
     ...overrides,
   };
 }

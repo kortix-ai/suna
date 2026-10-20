@@ -2,8 +2,8 @@
 
 import type { ReactNode } from 'react';
 
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { cn } from '@kortix/ui';
 
 /**
  * Tone for a stat's VALUE. Only ever a `kortix-*` accent, and only when the

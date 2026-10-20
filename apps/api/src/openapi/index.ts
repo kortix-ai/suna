@@ -134,7 +134,10 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
           'one session-scoped client — ' +
           'docs at https://kortix.com/docs/sdk.',
       },
-      servers: [{ url: new URL(c.req.url).origin }],
+      // Relative: it resolves against the URL the client fetched this document
+      // from. The request origin the API sees behind the edge router is an
+      // internal host, which the spec must not publish (KRTX-2949).
+      servers: [{ url: '/' }],
     });
     return c.json(filterSpecPaths(document));
   });

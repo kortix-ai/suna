@@ -1,3 +1,5 @@
+import { config } from '../../config';
+import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
 import {
   calculateCost,
   callUpstream,
@@ -236,7 +238,7 @@ export function registerGatewayPlaygroundRoutes(): void {
         }),
       );
 
-      return c.json({ results });
+      return c.json({ results, gateway_url: publicGatewayBaseUrl(config.LLM_GATEWAY_BASE_URL) });
     },
   );
 }

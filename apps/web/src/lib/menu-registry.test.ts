@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { resolveSettingsOverlayHref } from '@/features/workspace/settings/settings-tabs';
+import { resolveSettingsOverlayHref } from '@kortix/ui/customize/settings/settings-tabs';
 
 import { getItemsForSurface, type MenuItemDef } from './menu-registry';
-import { WALLPAPERS } from './wallpapers';
+import { WALLPAPERS } from '@kortix/ui/theme';
 
 function matchesPaletteQuery(item: MenuItemDef, query: string): boolean {
   const haystack = [item.label, item.id, item.group, item.keywords || ''].join(' ').toLowerCase();

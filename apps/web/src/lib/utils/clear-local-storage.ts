@@ -98,7 +98,7 @@ function sweepStorage(storage: Storage): void {
  * with no second commit required to remember it.
  *
  * Does NOT touch cookies. `kortix_last_project` survives sign-out on purpose
- * — see `lib/onboarding/last-project-cookie.ts` and the tripwire test at
+ * — see `packages/ui/src/internal/lib/onboarding/last-project-cookie.ts` and the tripwire test at
  * `lib/auth/sign-out-navigation.test.ts`.
  */
 export const clearUserLocalStorage = () => {

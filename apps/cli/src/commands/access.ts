@@ -27,7 +27,6 @@ import {
   roleRefBody,
   scopeLabel,
 } from '../iam.ts';
-import { resolveProjectId } from '../project-link.ts';
 import { C, help, pad, status } from '../style.ts';
 import {
   type ProjectRole,
@@ -135,31 +134,28 @@ interface Scope {
  * The assignment routes are account-scoped even for a grant that lands on one
  * project, so a `--project` from another account has to move the whole client
  * with it — otherwise the write would be authorized against the wrong account.
+ *
+ * The project and its credential come from `resolveProjectContext`, the same
+ * resolver the project-member form uses: a `.kortix/link.json` outranks the
+ * injected KORTIX_PROJECT_ID and travels with its own host's credential.
+ * Resolving them apart paired the sandbox's project with the link host's
+ * token, and the assignment form answered "Not found" where the
+ * project-member form worked (KRTX-2825).
  */
 async function resolveScope(
   f: Record<string, string | undefined>,
   wantsProject: boolean,
 ): Promise<Scope | null> {
-  const acct = resolveAccountContext({ accountArg: f.accountId, hostArg: f.host });
-  if (!acct) return null;
-  if (!wantsProject) return { client: acct.client, accountId: acct.accountId, projectId: null };
-
-  // No --host given: the credential is the stored active host, so the
-  // ambient project chain must not pair with it under a selection (KRTX-1705).
-  const projectId =
-    f.project ?? resolveProjectId(undefined, { hostScoped: !f.host, hostArg: f.host });
-  if (!projectId) {
-    process.stderr.write(
-      `${status.err('No project linked.')} Pass ${C.cyan}--project <id>${C.reset} for one project, ` +
-        `or ${C.cyan}--account${C.reset} for the whole account.\n`,
-    );
-    return null;
+  if (!wantsProject) {
+    const acct = resolveAccountContext({ accountArg: f.accountId, hostArg: f.host });
+    if (!acct) return null;
+    return { client: acct.client, accountId: acct.accountId, projectId: null };
   }
-  const project = await acct.client.get<ProjectSummary>(`/projects/${projectId}`);
-  const accountId = project.account_id || acct.accountId;
-  const client =
-    accountId === acct.accountId ? acct.client : clientFromAuth(acct.auth, { accountId });
-  return { client, accountId, projectId };
+  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  if (!ctx) return null;
+  const project = await ctx.client.get<ProjectSummary>(`/projects/${ctx.projectId}`);
+  const accountId = project.account_id || f.accountId || ctx.auth.account_id;
+  return { client: clientFromAuth(ctx.auth, { accountId }), accountId, projectId: ctx.projectId };
 }
 
 export async function runAccess(argv: string[]): Promise<number> {

@@ -1,7 +1,7 @@
 // KRTX-1950: the first signed-in click on "Add to a project" once replaced
 // the whole item page with the root error boundary — a commit-time
 // DOMException (`insertBefore`/`removeChild` NotFoundError, the external DOM
-// mutation class in `lib/browser-noise/rules/react.ts`) racing the dialog's
+// mutation class in `packages/ui/src/internal/lib/browser-noise/rules/react.ts`) racing the dialog's
 // first mount escalated past the marketplace page to `app/[locale]/error.tsx`.
 // The guard scopes the blast radius to the dialog and rides out the race with
 // one remount, so these tests run the real `ClientErrorBoundary` + guard

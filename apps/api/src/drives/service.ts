@@ -435,7 +435,7 @@ export interface SkippedDrive {
 
 export interface SessionDriveMounts {
   /** The Platinum create body's `volumes`, keyed by mount path. */
-  volumes: Record<string, { volume: string; read_only?: boolean; subdir?: string }>;
+  volumes: Record<string, { volume: string; read_only?: boolean; subdir?: string; share: 'node' }>;
   mounts: RecordedDriveMount[];
   slots: number;
   skipped: SkippedDrive[];
@@ -467,7 +467,7 @@ export class DriveMountError extends Error {
   }
 }
 
-interface SessionFacts {
+export interface SessionFacts {
   createdBy: string | null;
   visibility: string;
   origin: string;
@@ -504,6 +504,24 @@ export function isPersonalSession(session: SessionFacts | null, bootingUserId: s
   const source = (session.metadata as Record<string, unknown> | null)?.source;
   if (typeof source === 'string' && CHAT_SOURCES.has(source)) return false;
   return session.createdBy === bootingUserId;
+}
+
+/**
+ * Why a session token may not make this Files call, or null when it may. The
+ * token acts as the person who started the session, with that person's folder
+ * access, so only in that person's own private session: a shared, chat or
+ * unattended session gets none of their folders (as `planSessionDrives` mounts
+ * none), and a move or delete there could change who reaches a folder.
+ */
+export function sessionFilesRefusal(session: SessionFacts | null, tokenUserId: string | null): string | null {
+  if (!session?.createdBy || session.createdBy !== tokenUserId) return 'Only a session a person started can use Files';
+  if (!isPersonalSession(session, tokenUserId)) return 'Only your own private session can use Files';
+  return null;
+}
+
+/** {@link sessionFilesRefusal} for a session by id. */
+export async function sessionFilesRefusalFor(sessionId: string, tokenUserId: string | null): Promise<string | null> {
+  return sessionFilesRefusal(await sessionFacts(sessionId), tokenUserId);
 }
 
 /** Whether the session is the caller's own (its person's folder mounts in it). */
@@ -636,7 +654,7 @@ export async function sessionVolumeMounts(input: {
   }
   const out: SessionDriveMounts = { volumes: {}, mounts: [], skipped, slots };
   for (const p of plan.mounts) {
-    out.volumes[p.mountPath] = { volume, ...(p.readOnly ? { read_only: true } : {}), subdir: p.path };
+    out.volumes[p.mountPath] = { volume, ...(p.readOnly ? { read_only: true } : {}), subdir: p.path, share: 'node' };
     out.mounts.push(toRecorded(plan.drive, p));
   }
   return out;

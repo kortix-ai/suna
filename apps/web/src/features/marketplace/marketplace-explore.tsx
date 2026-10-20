@@ -4,20 +4,20 @@ import { useTranslations } from '@/i18n/use-translations';
 import { PlusIcon as Plus, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
+} from '@kortix/ui/input-group';
 import { MarketplaceAvatar } from '@/features/marketplace/marketplace-avatar';
 import { displayCompanyLabel } from '@/features/marketplace/marketplace-company-filter';
 import { MarketplacePagedGrid } from '@/features/marketplace/marketplace-paged-grid';
 import { MarketplaceProjectsGrid } from '@/features/marketplace/marketplace-projects-grid';
 import { type MarketplaceItem, type MarketplaceSummary } from '@/lib/marketplace-client';
 import { companyIdFromSlug, marketplaceSourceHref } from '@/lib/marketplace-slug';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { AddMarketplaceModal } from './add-marketplace-modal';
 import {
   MARKETPLACE_GRID_COLUMNS,
