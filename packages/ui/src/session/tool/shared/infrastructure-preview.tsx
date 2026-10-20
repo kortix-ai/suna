@@ -5,7 +5,7 @@ import Hint from '../../../primitives/hint';
 import Loading from '../../../primitives/loading';
 import { framePolicy, serviceFrameContent } from '../../../files/viewer/preview-policy';
 import { openSessionQuickView } from '../../panel/open-session-quick-view';
-import { useAuthenticatedPreviewUrl } from '@kortix/sdk/react';
+import { usePreviewFrameUrl } from '../../../internal/hooks/use-preview-frame-url';
 import { useSandboxProxy } from '../../../internal/hooks/use-sandbox-proxy';
 import { useTranslations } from '../../../i18n';
 import { openSafeExternalUrl } from '../../../internal/lib/safe-url';
@@ -104,8 +104,9 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
   const { enabled: navigationEnabled, openTab, openExternal } = useToolNavigation();
   const proxy = useProxyUrl(url);
   const externalUrl = proxy ? null : safeHttpUrl(url);
-  const authenticatedProxyUrl = useAuthenticatedPreviewUrl(proxy?.proxyUrl || '');
-  const previewUrl = proxy ? authenticatedProxyUrl : externalUrl;
+  // The host's URL (`UiProvider resolvePreviewUrl`) or the SDK token URL.
+  const framed = usePreviewFrameUrl(proxy ? url : '', proxy?.proxyUrl || '');
+  const previewUrl = proxy ? framed.url : externalUrl;
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -218,8 +219,8 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
     previewUrl,
     /** A static file the agent wrote (`document`) or a server it runs (`app`). */
     frameContent: serviceFrameContent(proxy?.port),
-    isLoading,
-    hasError,
+    isLoading: isLoading && !framed.failed,
+    hasError: hasError || framed.failed,
     /** Same condition as the viewport's "Loading preview…" overlay (no URL
      *  yet, or the frame has not loaded), plus the proxy page while the app
      *  is still building (`PREVIEW_BUILDING_STATES`). */
