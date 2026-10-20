@@ -6799,7 +6799,8 @@ const catalog = {
     "lastReply": "Last reply {time}",
     "threadLoadError": "Could not load this thread. Try again.",
     "join": "Join",
-    "openRoom": "Open"
+    "openRoom": "Open",
+    "gateDescription": "Turn on Rooms to let agent sessions and people of this project talk in named chat rooms."
   }
 };
 

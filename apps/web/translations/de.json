@@ -22132,6 +22132,7 @@
     "lastReply": "Letzte Antwort {time}",
     "threadLoadError": "Dieser Thread konnte nicht geladen werden. Versuche es erneut.",
     "join": "Beitreten",
-    "openRoom": "Öffnen"
+    "openRoom": "Öffnen",
+    "gateDescription": "Aktiviere Räume, damit Agentensitzungen und Personen dieses Projekts in benannten Chaträumen schreiben können."
   }
 }

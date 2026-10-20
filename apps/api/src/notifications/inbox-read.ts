@@ -10,6 +10,7 @@ import { notifications, projects, roomMembers, rooms } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { db } from '../shared/db';
 import { loadSessionAccessRows, mayReadProjectRooms, mayReadProjectTriggers, maySeeSessions, type SessionAccessRow } from './access';
+import { resolveFeatureFlag } from '../feature-flags/registry';
 import { notificationsEnabled } from './enabled';
 import { mfaWithheldAccounts } from './mfa-gate';
 import { inboxStore } from './inbox-store';
@@ -157,17 +158,21 @@ async function visible<T extends InboxRowForFilter>(
   return { rows: kept, sessions, projectNames };
 }
 
-/** The rooms among `rows` whose messages `userId` may still read: a person member, with project.room.read. */
+/**
+ * The rooms among `rows` whose messages `userId` may still read: a person member, with
+ * project.room.read, in a project whose `agent_rooms` flag is on (off, its room rows vanish).
+ */
 async function readableRoomsOf(userId: string, rows: readonly InboxRowForFilter[]): Promise<Set<string>> {
   const roomIds = [...new Set(rows.flatMap((row) => (row.roomId ? [row.roomId] : [])))];
   if (roomIds.length === 0) return new Set();
   const memberships = await db
-    .select({ roomId: roomMembers.roomId, projectId: rooms.projectId, accountId: rooms.accountId })
+    .select({ roomId: roomMembers.roomId, projectId: rooms.projectId, accountId: rooms.accountId, metadata: projects.metadata })
     .from(roomMembers)
     .innerJoin(rooms, eq(rooms.roomId, roomMembers.roomId))
+    .innerJoin(projects, eq(projects.projectId, rooms.projectId))
     .where(and(eq(roomMembers.userId, userId), inArray(roomMembers.roomId, roomIds)));
   const out = new Set<string>();
-  await Promise.all(memberships.map(async (row) => {
+  await Promise.all(memberships.filter((row) => resolveFeatureFlag(row.metadata, 'agent_rooms')).map(async (row) => {
     if ((await mayReadProjectRooms(userId, row.accountId, [row.projectId])).has(row.projectId)) out.add(row.roomId);
   }));
   return out;

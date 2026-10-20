@@ -22132,6 +22132,7 @@
     "lastReply": "最后回复 {time}",
     "threadLoadError": "无法加载此话题。请重试。",
     "join": "加入",
-    "openRoom": "打开"
+    "openRoom": "打开",
+    "gateDescription": "开启聊天室，让此项目的智能体会话和成员在命名的聊天室中交流。"
   }
 }

@@ -22132,6 +22132,7 @@
     "lastReply": "Ultima risposta {time}",
     "threadLoadError": "Impossibile caricare questo thread. Riprova.",
     "join": "Entra",
-    "openRoom": "Apri"
+    "openRoom": "Apri",
+    "gateDescription": "Attiva le Stanze per permettere alle sessioni degli agenti e alle persone di questo progetto di parlare in chat room con nome."
   }
 }

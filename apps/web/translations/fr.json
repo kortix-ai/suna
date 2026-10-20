@@ -22132,6 +22132,7 @@
     "lastReply": "Dernière réponse {time}",
     "threadLoadError": "Impossible de charger ce fil. Réessayez.",
     "join": "Rejoindre",
-    "openRoom": "Ouvrir"
+    "openRoom": "Ouvrir",
+    "gateDescription": "Activez les Salons pour que les sessions d’agents et les personnes de ce projet échangent dans des salons nommés."
   }
 }

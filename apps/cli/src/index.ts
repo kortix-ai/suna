@@ -2,7 +2,8 @@
 import { loadAuth } from './api/auth.ts';
 import { printBanner } from './banner.ts';
 import { liftLeadingGlobalFlags } from './command-argv.ts';
-import { type Command, TIERS } from './command-table.ts';
+import { type Command, commandFeatureFlag, TIERS } from './command-table.ts';
+import { featureKnownOff, featureOffMessage, featureShown } from './feature-flags.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
@@ -79,7 +80,8 @@ function tierBand(label: string): string {
 }
 
 function renderHelp(): string {
-  const visibleCommands = (commands: readonly Command[]) => commands;
+  // A flagged command is listed only where its flag is known on (feature-flags.ts).
+  const visibleCommands = (commands: readonly Command[]) => commands.filter((c) => featureShown(c.featureFlag));
   const allCommands = TIERS.flatMap((t) => t.sections.flatMap((s) => visibleCommands(s.commands)));
   const labelWidth = Math.max(
     ...allCommands.map((c) => (c.args ? `${c.name} ${c.args}` : c.name).length),
@@ -332,6 +334,11 @@ async function main(rawArgv: string[]): Promise<number> {
       return 0;
     }
     const topicHandler = COMMAND_HANDLERS[topic];
+    const topicFlag = commandFeatureFlag(topic);
+    if (topicFlag && featureKnownOff(topicFlag)) {
+      process.stderr.write(`${C.red}kortix:${C.reset} ${featureOffMessage(`\`kortix ${topic}\``, topicFlag)}\n`);
+      return 1;
+    }
     if (topicHandler) return topicHandler(['--help'], topic);
     const topicSuggestion = closestCommand(topic);
     const topicLines = [`${C.red}kortix:${C.reset} unknown help topic \`${topic}\``];
@@ -392,6 +399,11 @@ async function main(rawArgv: string[]): Promise<number> {
   // tie, so this order must match the old KNOWN_COMMANDS list exactly.
   const handler = COMMAND_HANDLERS[argv[0]];
   if (handler) {
+    const flag = commandFeatureFlag(argv[0]);
+    if (flag && featureKnownOff(flag)) {
+      process.stderr.write(`${C.red}kortix:${C.reset} ${featureOffMessage(`\`kortix ${argv[0]}\``, flag)}\n`);
+      return 1;
+    }
     return handler(argv.slice(1), argv[0]);
   }
   // Anything else is an unknown command. This must NEVER fall through to a

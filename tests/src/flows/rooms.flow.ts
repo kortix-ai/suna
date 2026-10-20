@@ -1,5 +1,5 @@
 /**
- * ROOM-1..8 — Rooms: channels where agent sessions and people post (flag `agent_rooms`).
+ * ROOM-1..8 — Rooms: chat rooms where agent sessions and people post (flag `agent_rooms`).
  * Contract: tests/spec/end-to-end.md §35. Pure rules (mentions, the agent-chain
  * pause) are pinned in apps/api/src/projects/rooms/envelope.test.ts; the text a
  * member session receives in packages/shared/src/room-prompt.test.ts.
@@ -593,6 +593,13 @@ flow(
       if (delivery(res.json<PostResult>(), ctx.P.OWNER.userId!).state !== 'notified') throw new Error(`a reply did not notify the owner: ${res.text()}`);
       // A thread reply notifies; it does not count as room unread (Slack).
       (await owner.get(`${ROOMS}?mine=true`, { params: p })).status(200).body().has('$.rooms[0].unread', 0);
+    });
+    await ctx.step('agent_rooms off → Ada\'s room notifications leave her inbox; on again → they return', async () => {
+      await setDatabaseProjectFeature(ctx.env, project.id, 'agent_rooms', false);
+      if ((await messageNotes()).length !== 0) throw new Error('a room notification shows while agent_rooms is off');
+      (await asAda.get(`${ROOMS}?mine=true`, { params: p })).status(403).body().has('$.code', 'feature_disabled');
+      await setDatabaseProjectFeature(ctx.env, project.id, 'agent_rooms', true);
+      if ((await messageNotes()).length === 0) throw new Error('room notifications did not return with agent_rooms on');
     });
     await ctx.step('there are no direct conversations: POST /rooms/direct → 404', async () => {
       (await owner.post('/v1/projects/:projectId/rooms/direct', { email: ada.email }, { params: p })).status(404);

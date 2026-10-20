@@ -22132,6 +22132,7 @@
     "lastReply": "Poslednji odgovor {time}",
     "threadLoadError": "Nije moguće učitati ovu nit. Pokušaj ponovo.",
     "join": "Pridruži se",
-    "openRoom": "Otvori"
+    "openRoom": "Otvori",
+    "gateDescription": "Uključite Sobe da bi sesije agenata i ljudi ovog projekta razgovarali u imenovanim sobama za ćaskanje."
   }
 }

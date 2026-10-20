@@ -22132,6 +22132,7 @@
     "lastReply": "Última respuesta {time}",
     "threadLoadError": "No se pudo cargar este hilo. Inténtalo de nuevo.",
     "join": "Unirse",
-    "openRoom": "Abrir"
+    "openRoom": "Abrir",
+    "gateDescription": "Activa Salas para que las sesiones de agentes y las personas de este proyecto hablen en salas de chat con nombre."
   }
 }
