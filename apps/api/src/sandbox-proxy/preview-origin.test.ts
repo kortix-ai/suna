@@ -688,6 +688,15 @@ describe('a public share on its own origin', () => {
 });
 
 describe('preview navigation tickets', () => {
+  test('a forged ticket cannot renew an existing authenticated cookie', async () => {
+    const response = await handlePreviewOriginRequest(...request('/?preview_ticket=forged', {
+      headers: { Cookie: mintCookieFor('sbx-known', 8081), 'sec-fetch-dest': 'document' },
+    }));
+    expect(response?.status).toBe(302);
+    expect(response?.headers.get('location')).toBe('/');
+    expect(response!.headers.getSetCookie()).toHaveLength(0);
+  });
+
   test('exchanges a header credential for a short-lived preview-only ticket', async () => {
     const { previewTicket } = await import('./routes/preview-ticket');
     const minted = await previewTicket.request('http://api.local/', {

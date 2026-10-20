@@ -418,8 +418,9 @@ export async function handlePreviewOriginRequest(
   // there, which is what keeps the local iframe preview working.
   const secure = proto === 'https' || target.local;
 
-  let session = sessionFromCookies(req, target) || verifyPreviewSession(url.searchParams.get('preview_ticket'), target);
-  let setCookies: string[] = session && url.searchParams.has('preview_ticket') ? cookiesForSession(session, secure) : [];
+  const ticketSession = verifyPreviewSession(url.searchParams.get('preview_ticket'), target);
+  let session = ticketSession || sessionFromCookies(req, target);
+  let setCookies: string[] = ticketSession ? cookiesForSession(ticketSession, secure) : [];
 
   if (!session) {
     const established = await establishPreviewSession(req, url, target);
