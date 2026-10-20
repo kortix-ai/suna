@@ -304,6 +304,28 @@ describe('sessions new CLI flow', () => {
     });
   }
 
+  test('reports intermediate readiness transitions only once', async () => {
+    let stderr = '';
+    let polls = 0;
+    const output = spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderr += String(chunk);
+      return true;
+    });
+    onStart = () => {
+      polls += 1;
+      readinessStage = polls < 3 ? 'provisioning' : 'ready';
+    };
+    try {
+      const { code, stdout } = await captureStdout(() => runSessions(['new', '--wait', '--json']));
+      expect(code).toBe(0);
+      expect(stderr.match(/: provisioning\n/g)).toHaveLength(1);
+      expect(stderr).toContain(': ready\n');
+      expect(JSON.parse(stdout)).toMatchObject({ status: 'running' });
+    } finally {
+      output.mockRestore();
+    }
+  });
+
   test("real CLI keeps progress off JSON stdout", async () => {
     const child = Bun.spawn(
       [
