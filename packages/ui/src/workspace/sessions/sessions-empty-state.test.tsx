@@ -43,7 +43,9 @@ describe('SessionsEmptyState', () => {
   test("a white-label host's icon replaces the Kortix mark", () => {
     const useBrand = () => ({ app_name: 'Acme', icon_url: 'data:image/svg+xml,acme' });
     const html = renderToStaticMarkup(
-      createElement(UiProvider, { useBrand, children: createElement(SessionsEmptyState) }),
+      <UiProvider useBrand={useBrand}>
+        <SessionsEmptyState />
+      </UiProvider>,
     );
     expect(html).toContain('src="data:image/svg+xml,acme"');
     expect(html).not.toContain('<rect');
