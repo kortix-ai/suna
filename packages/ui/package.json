@@ -425,6 +425,7 @@
     "./session/composer/composer-agent-access": "./src/session/composer/composer-agent-access.ts",
     "./session/composer/composer-chat-input": "./src/session/composer/composer-chat-input.tsx",
     "./session/composer/composer-draft-recovery": "./src/session/composer/composer-draft-recovery.ts",
+    "./session/composer/menus/menu-shell": "./src/session/composer/menus/menu-shell.tsx",
     "./session/composer/menus/slash-actions": "./src/session/composer/menus/slash-actions.ts",
     "./session/composer/queue-projection": "./src/session/composer/queue-projection.ts",
     "./session/composer/session-chat-input": "./src/session/composer/session-chat-input.tsx",
@@ -2146,6 +2147,10 @@
       "./session/composer/composer-draft-recovery": {
         "types": "./dist/session/composer/composer-draft-recovery.d.ts",
         "import": "./dist/session/composer/composer-draft-recovery.js"
+      },
+      "./session/composer/menus/menu-shell": {
+        "types": "./dist/session/composer/menus/menu-shell.d.ts",
+        "import": "./dist/session/composer/menus/menu-shell.js"
       },
       "./session/composer/menus/slash-actions": {
         "types": "./dist/session/composer/menus/slash-actions.d.ts",

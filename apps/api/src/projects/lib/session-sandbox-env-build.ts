@@ -61,7 +61,7 @@ import { sessionChannelEnvFromMetadata } from './session-channel-env';
 
 
 import { buildSessionRuntimeContextEnv } from './session-runtime-context';
-import { buildGenuiSandboxEnv } from './genui-env';
+import { buildFeatureFlagSandboxEnv } from './feature-flag-env';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
@@ -452,12 +452,12 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   }
   const channelEnv = await buildSessionChannelEnv(input.sessionId);
   const sessionContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
-  const genuiEnv = await buildGenuiSandboxEnv(input.projectId);
+  const featureFlagEnv = await buildFeatureFlagSandboxEnv(input.projectId);
   return {
     ...runtimeSecrets.env,
     ...channelEnv,
     ...sessionContextEnv,
-    ...genuiEnv,
+    ...featureFlagEnv,
     ...(configRelease ? { KORTIX_CONFIG_RELEASE: configRelease } : {}),
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,

@@ -1209,6 +1209,13 @@
     {
       "idx": 172,
       "version": "7",
+      "when": 1792510728100,
+      "tag": "20261020153848_agent_rooms",
+      "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
       "when": 1792510931000,
       "tag": "20261020154211_secret_request_rotation",
       "breakpoints": true
