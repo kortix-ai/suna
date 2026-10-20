@@ -3,6 +3,7 @@ import { createElement, type ReactNode } from 'react';
 import type { ReactTestInstance } from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, create } from 'react-test-renderer';
+import * as realModal from '@kortix/ui/modal';
 
 /**
  * The Delete-account dialog's own state contract (KRTX-1403): the
@@ -38,7 +39,7 @@ mock.module('@/lib/supabase/client', () => ({
     },
   }),
 }));
-mock.module('@/components/ui/toast', () => ({ successToast: () => {}, errorToast: () => {} }));
+mock.module('@kortix/ui/toast', () => ({ successToast: () => {}, errorToast: () => {} }));
 mock.module('@/lib/config', () => ({ isBillingEnabled: () => true }));
 /** The deletion-status hook's answer, mutable per test. The dialog test
  *  mounts with the supported answer; the fail-closed test swaps in the error
@@ -69,7 +70,10 @@ mock.module('./account-memberships', () => ({
   useAccountMemberships: () => ({ accounts: [], isLoading: false }),
   AccountMembershipsSection: () => null,
 }));
+// The real exports, so a new one (ModalClose, ModalContentInner, …) never breaks the mock;
+// only the portal-based parts are replaced.
 const uiModalMock = () => ({
+  ...realModal,
   Modal: ({ open, children }: { open: boolean; children: ReactNode }) =>
     open ? <div>{children}</div> : null,
   ModalBody: ({ children }: { children: ReactNode }) => <div>{children}</div>,
