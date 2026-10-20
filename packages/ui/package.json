@@ -187,7 +187,6 @@
     "./file-tree": "./src/primitives/file-tree.tsx",
     "./file-viewer": "./src/files/viewer/index.ts",
     "./files": "./src/files/index.ts",
-    "./files/file-preview-host": "./src/files/file-preview-host.tsx",
     "./files/project/components/change-request-detail-dialog": "./src/files/project/components/change-request-detail-dialog.tsx",
     "./files/project/components/file-content-renderer": "./src/files/project/components/file-content-renderer.tsx",
     "./files/project/components/file-thumbnail": "./src/files/project/components/file-thumbnail.tsx",
@@ -258,7 +257,6 @@
     "./internal/hooks/use-channel-bindings": "./src/internal/hooks/use-channel-bindings.ts",
     "./internal/hooks/use-copy": "./src/internal/hooks/use-copy.ts",
     "./internal/hooks/use-debounced-value": "./src/internal/hooks/use-debounced-value.ts",
-    "./internal/hooks/use-media-query": "./src/internal/hooks/use-media-query.ts",
     "./internal/hooks/use-notification-center": "./src/internal/hooks/use-notification-center.ts",
     "./internal/icons/claude": "./src/internal/icons/claude.tsx",
     "./internal/icons/download": "./src/internal/icons/download.tsx",
@@ -363,7 +361,6 @@
     "./label": "./src/primitives/label.tsx",
     "./lib/host-env": "./src/lib/host-env.ts",
     "./lib/icon-config": "./src/lib/icon-config.ts",
-    "./lib/lazy-client": "./src/lib/lazy-client.tsx",
     "./lib/telemetry": "./src/lib/telemetry.ts",
     "./lib/utils": "./src/lib/utils.ts",
     "./list": "./src/primitives/list.tsx",
@@ -1196,10 +1193,6 @@
         "types": "./dist/files/index.d.ts",
         "import": "./dist/files/index.js"
       },
-      "./files/file-preview-host": {
-        "types": "./dist/files/file-preview-host.d.ts",
-        "import": "./dist/files/file-preview-host.js"
-      },
       "./files/project/components/change-request-detail-dialog": {
         "types": "./dist/files/project/components/change-request-detail-dialog.d.ts",
         "import": "./dist/files/project/components/change-request-detail-dialog.js"
@@ -1476,10 +1469,6 @@
       "./internal/hooks/use-debounced-value": {
         "types": "./dist/internal/hooks/use-debounced-value.d.ts",
         "import": "./dist/internal/hooks/use-debounced-value.js"
-      },
-      "./internal/hooks/use-media-query": {
-        "types": "./dist/internal/hooks/use-media-query.d.ts",
-        "import": "./dist/internal/hooks/use-media-query.js"
       },
       "./internal/hooks/use-notification-center": {
         "types": "./dist/internal/hooks/use-notification-center.d.ts",
@@ -1896,10 +1885,6 @@
       "./lib/icon-config": {
         "types": "./dist/lib/icon-config.d.ts",
         "import": "./dist/lib/icon-config.js"
-      },
-      "./lib/lazy-client": {
-        "types": "./dist/lib/lazy-client.d.ts",
-        "import": "./dist/lib/lazy-client.js"
       },
       "./lib/telemetry": {
         "types": "./dist/lib/telemetry.d.ts",

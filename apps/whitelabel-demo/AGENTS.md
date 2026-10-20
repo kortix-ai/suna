@@ -75,7 +75,7 @@ not come back.
   `@kortix/ui/session`; never re-implement the transcript, composer or prompts.
 - Toasts: `successToast` / `errorToast` / `infoToast` / `warningToast` from
   `@kortix/ui/toast`. `providers.tsx` mounts its `<Toaster />` once.
-- `cn` comes from `@kortix/ui/lib/utils`.
+- `cn` comes from `@kortix/ui`.
 - Icons: `@phosphor-icons/react` (`<Name>Icon`), the set @kortix/ui renders.
 - Use `Loading` (`@kortix/ui/loading`) for pending actions and `Skeleton` for
   page-level loading.

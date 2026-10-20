@@ -2,7 +2,7 @@
 
 import { KortixAsterisk } from '@kortix/ui/kortix-asterisk';
 import { KortixLogo } from '@kortix/ui/kortix-logo';
-import { useMediaQuery } from '@kortix/ui/internal/hooks/use-media-query';
+import { useMediaQuery } from '@kortix/ui';
 import { cn } from '@kortix/ui';
 import { m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';

@@ -21,7 +21,7 @@ Outside it: tell the user, style with plain CSS over the section 6 variables, ne
 3. Mount once at the root: `QueryClientProvider`, `UiProvider` (`link`, `navigation`: your router; `components`:
    host slots, a missing slot hides its control; `config`: `managedModelsEnabled`, `billingEnabled`; `useBrand`: your
    marks; `i18n`, `strings`, `image`, `useViewerId`), `IconProvider` (`@kortix/ui/icon-provider`), one `<Toaster />`
-   (`@kortix/ui/toast`). `setUiTelemetry` (`@kortix/ui/lib/telemetry`) once at module load. Dark mode is `dark` on `<html>`.
+   (`@kortix/ui/toast`). `setUiTelemetry` (`@kortix/ui`) once at module load. Dark mode is `dark` on `<html>`.
 4. Ids, never route params. `SessionThread`, `SessionWorkspace` and `ProjectHome` mount `SessionIdsProvider` and the
    SDK project scope themselves. A block outside them: `KortixProjectProvider` (`@kortix/sdk/react`) and
    `SessionIdsProvider` (`projectId`, `sessionId`) around it. Session links are `/projects/<id>/sessions/<sessionId>`.

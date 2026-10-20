@@ -33,7 +33,7 @@ import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { cn } from '@kortix/ui/lib/utils';
+import { cn } from '@kortix/ui';
 import { CheckIcon, ShieldWarningIcon, XIcon } from '@phosphor-icons/react';
 
 /** Query key kept local: `lib/query-keys.ts` is shared by every panel and this

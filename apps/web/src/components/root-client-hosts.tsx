@@ -12,7 +12,7 @@
 
 // Not dynamic itself: one store subscription that loads the heavy dialog body
 // on the first open. A deep import, so the root chunk does not pull the files barrel.
-import { FilePreviewHost } from '@kortix/ui/files/file-preview-host';
+import { FilePreviewHost } from '@kortix/ui/files';
 import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 import dynamic from 'next/dynamic';
 import { useSyncExternalStore } from 'react';

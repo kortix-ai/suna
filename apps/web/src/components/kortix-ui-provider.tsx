@@ -1,12 +1,19 @@
 'use client';
 
-import { UiProvider, type UiLinkProps, type UiNavigation, type UiStringsInput } from '@kortix/ui';
-import { lazyClient } from '@kortix/ui/lib/lazy-client';
-import type { UiHostComponents, UiHostConfig, UiViewer } from '@kortix/ui/providers/ui-provider';
+import {
+  SessionIdsProvider,
+  UiProvider,
+  lazyClient,
+  setUiHostEnv,
+  setUiTelemetry,
+  type UiHostComponents,
+  type UiHostConfig,
+  type UiLinkProps,
+  type UiNavigation,
+  type UiStringsInput,
+  type UiViewer,
+} from '@kortix/ui';
 import type { UiI18nHost } from '@kortix/ui/i18n';
-import { SessionIdsProvider } from '@kortix/ui/providers/session-ids';
-import { setUiHostEnv } from '@kortix/ui/lib/host-env';
-import { setUiTelemetry } from '@kortix/ui/lib/telemetry';
 import { setSilentErrorToastFilter } from '@kortix/ui/toast';
 import * as Sentry from '@sentry/nextjs';
 import NextImage from 'next/image';
