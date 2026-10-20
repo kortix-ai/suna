@@ -55,9 +55,15 @@ const ACCOUNT_STATE = {
     billing_period: 'monthly',
     cancel_at_period_end: false,
     current_period_end: 1800000000,
-    has_scheduled_change: false,
+    scheduled_change: {
+      type: 'downgrade',
+      current_tier: { name: 'credits', display_name: 'Credits', monthly_credits: 2000, monthly_usd: 20 },
+      target_tier: { name: 'credits', display_name: 'Credits', monthly_credits: 1000, monthly_usd: 10 },
+      effective_date: '2026-11-01T00:00:00.000Z',
+    },
+    has_scheduled_change: true,
   },
-  tier: { name: 'credits', display_name: 'Credits' },
+  tier: { name: 'credits', display_name: 'Credits', monthly_credits: 20 },
   auto_topup: { enabled: true, threshold: 10, amount: 25 },
   usage_this_period: { total_usd: 0.0042 },
   can_manage_billing: true,
@@ -352,6 +358,20 @@ describe('kortix billing', () => {
         daily: 'credits',
       },
     });
+  });
+
+  test('JSON labels API tier grants in USD and scheduled grants in credits without conversion', async () => {
+    const result = await runCli(['billing', 'status', '--json'], writeConfig(startServer()));
+    expect(result.code).toBe(0);
+    const state = JSON.parse(result.stdout);
+    expect(state.tier.monthly_credits).toBe(20);
+    expect(state.tier.units).toEqual({ monthly_credits: 'USD' });
+    expect(state.subscription.scheduled_change.current_tier.monthly_credits).toBe(2000);
+    expect(state.subscription.scheduled_change.current_tier.monthly_usd).toBe(20);
+    expect(state.subscription.scheduled_change.current_tier.units).toEqual({ monthly_credits: 'credits', monthly_usd: 'USD' });
+    expect(state.subscription.scheduled_change.target_tier.monthly_credits).toBe(1000);
+    expect(state.subscription.scheduled_change.target_tier.monthly_usd).toBe(10);
+    expect(state.subscription.scheduled_change.target_tier.units).toEqual({ monthly_credits: 'credits', monthly_usd: 'USD' });
   });
 
   test('JSON labels credit fields separately from USD prices and usage', async () => {

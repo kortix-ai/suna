@@ -175,9 +175,13 @@ interface AccountStateView {
     billing_period?: string | null;
     cancel_at_period_end?: boolean;
     current_period_end?: number | null;
+    scheduled_change?: {
+      current_tier?: { name?: string; display_name?: string; monthly_credits?: number; monthly_usd?: number };
+      target_tier?: { name?: string; display_name?: string; monthly_credits?: number; monthly_usd?: number };
+    } | null;
     has_scheduled_change?: boolean;
   };
-  tier?: { name?: string; display_name?: string };
+  tier?: { name?: string; display_name?: string; monthly_credits?: number };
   can_manage_billing?: boolean;
   auto_topup?: { enabled?: boolean; threshold?: number; amount?: number };
   usage_this_period?: { compute_usd?: number; llm_usd?: number; total_usd?: number } | null;
@@ -217,6 +221,29 @@ async function statusCommand(ctx: AccountContext, f: Flags): Promise<number> {
   if (f.json) {
     emitJson({
       ...state,
+      ...(state.tier && {
+        tier: { ...state.tier, units: { monthly_credits: 'USD' } },
+      }),
+      ...(state.subscription?.scheduled_change && {
+        subscription: {
+          ...state.subscription,
+          scheduled_change: {
+            ...state.subscription.scheduled_change,
+            ...(state.subscription.scheduled_change.current_tier && {
+              current_tier: {
+                ...state.subscription.scheduled_change.current_tier,
+                units: { monthly_credits: 'credits', monthly_usd: 'USD' },
+              },
+            }),
+            ...(state.subscription.scheduled_change.target_tier && {
+              target_tier: {
+                ...state.subscription.scheduled_change.target_tier,
+                units: { monthly_credits: 'credits', monthly_usd: 'USD' },
+              },
+            }),
+          },
+        },
+      }),
       ...(state.credits && {
         credits: creditAmounts(state.credits, [
           'total',
