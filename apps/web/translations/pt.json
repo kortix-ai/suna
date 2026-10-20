@@ -170,7 +170,10 @@
       "deleteMine": "Excluir meu valor",
       "mineDeleted": "Valor excluído",
       "mineDeleteError": "Não foi possível excluir o seu valor. Tente novamente."
-    }
+    },
+    "agentAccess": "Agentes: {agents}",
+    "allAgents": "Todos os agentes",
+    "noAgents": "Nenhum agente"
   },
   "useCases": {
     "headline": "Os ciclos que mantêm uma empresa em funcionamento"

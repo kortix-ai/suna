@@ -170,7 +170,10 @@
       "deleteMine": "Meinen Wert löschen",
       "mineDeleted": "Wert gelöscht",
       "mineDeleteError": "Ihr Wert konnte nicht gelöscht werden. Versuchen Sie es erneut."
-    }
+    },
+    "agentAccess": "Agenten: {agents}",
+    "allAgents": "Alle Agenten",
+    "noAgents": "Keine Agenten"
   },
   "useCases": {
     "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"

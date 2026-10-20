@@ -170,7 +170,10 @@
       "deleteMine": "Supprimer ma valeur",
       "mineDeleted": "Valeur supprimée",
       "mineDeleteError": "Impossible de supprimer votre valeur. Réessayez."
-    }
+    },
+    "agentAccess": "Agents : {agents}",
+    "allAgents": "Tous les agents",
+    "noAgents": "Aucun agent"
   },
   "useCases": {
     "headline": "Les boucles qui font fonctionner une entreprise"

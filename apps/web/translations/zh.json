@@ -170,7 +170,10 @@
       "deleteMine": "删除我的值",
       "mineDeleted": "值已删除",
       "mineDeleteError": "无法删除您的值。请重试。"
-    }
+    },
+    "agentAccess": "代理：{agents}",
+    "allAgents": "所有代理",
+    "noAgents": "无代理"
   },
   "useCases": {
     "headline": "驱动公司运转的循环"

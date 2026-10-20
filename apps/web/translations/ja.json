@@ -170,7 +170,10 @@
       "deleteMine": "自分の値を削除",
       "mineDeleted": "値を削除しました",
       "mineDeleteError": "値を削除できませんでした。もう一度お試しください。"
-    }
+    },
+    "agentAccess": "エージェント: {agents}",
+    "allAgents": "すべてのエージェント",
+    "noAgents": "エージェントなし"
   },
   "useCases": {
     "headline": "会社を動かすループ"
