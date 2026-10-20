@@ -50,6 +50,7 @@ mock.module('@kortix/ui/internal/stores/first-chat-store', () => ({
 mock.module('@tanstack/react-query', () => ({
   ...realQuery,
   useQuery: () => ({ data: undefined }),
+  useQueryClient: () => new realQuery.QueryClient(),
 }));
 mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   ...realProjectCan,
