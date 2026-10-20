@@ -12,6 +12,8 @@ import {
   resolveComposerModel,
   resolveModelDefault,
   sessionModelCandidates,
+  sessionModelFallback,
+  sessionPickStands,
 } from './composer-model';
 import type { FlatModel } from './model-flatten';
 import { createModelVisibility, hasUsableModel, modelInDefaultView } from './model-visibility';
@@ -431,6 +433,53 @@ describe('sessionModelCandidates', () => {
         gatewayEnabled: false,
       }),
     ).toEqual([{ providerID: 'anthropic', modelID: 'claude-sonnet-4-6' }]);
+  });
+});
+
+describe('sessionModelFallback', () => {
+  const fallbackSession = (extra: Record<string, unknown> = {}) => ({
+    metadata: {
+      opencode_model: 'kortix/deepseek-v4.1-flash',
+      opencode_model_source: 'fallback',
+      opencode_model_fallback_from: 'kortix/codex/gpt-6.1-sol',
+      opencode_model_fallback_reason: 'provider_pool_rate_limited',
+      opencode_model_fallback_at: 1_000,
+      ...extra,
+    },
+  });
+
+  test('a session a fallback took over names the fallback, the model it stood in for, why and when', () => {
+    expect(sessionModelFallback(fallbackSession(), true)).toEqual({
+      model: { providerID: 'kortix', modelID: 'deepseek-v4.1-flash' },
+      from: { providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' },
+      reason: 'provider_pool_rate_limited',
+      atMs: 1_000,
+    });
+  });
+
+  test('any other source, or a half-written record, is no fallback', () => {
+    expect(sessionModelFallback(fallbackSession({ opencode_model_source: 'explicit' }), true)).toBeUndefined();
+    expect(sessionModelFallback(fallbackSession({ opencode_model_fallback_from: undefined }), true)).toBeUndefined();
+    expect(sessionModelFallback(fallbackSession({ opencode_model_fallback_at: 'soon' }), true)).toBeUndefined();
+    expect(sessionModelFallback(null, true)).toBeUndefined();
+  });
+
+  test('a fallback pin ranks before the last prompt, like a chosen one', () => {
+    expect(
+      sessionModelCandidates({
+        session: fallbackSession(),
+        lastPromptModel: { providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' },
+        gatewayEnabled: true,
+      })[0],
+    ).toEqual({ providerID: 'kortix', modelID: 'deepseek-v4.1-flash' });
+  });
+
+  test("this browser's pick stands only when it was made after the switch", () => {
+    const fallback = sessionModelFallback(fallbackSession(), true);
+    expect(sessionPickStands(500, fallback)).toBe(false);
+    expect(sessionPickStands(undefined, fallback)).toBe(false);
+    expect(sessionPickStands(1_500, fallback)).toBe(true);
+    expect(sessionPickStands(undefined, undefined)).toBe(true);
   });
 });
 

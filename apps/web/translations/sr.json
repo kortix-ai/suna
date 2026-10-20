@@ -20221,6 +20221,8 @@
       "servedModelTurnRow": "{requested} није успео ({reason}) — пребачено на {served}.",
       "servedModelTurnRowRepeated": "{requested} није успео ({reason}) у {count, number} захтева — пребачено на {served}.",
       "servedModelReason": "{reason, select, provider_pool_rate_limited {достигнуто ограничење} rate_limit_exceeded {ограничење брзине} model_busy {заузет} provider_reauth_required {потребно поновно повезивање} authentication_error {пријава одбијена} provider_not_connected {није повезан} model_unavailable {недоступан} context_length_exceeded {контекст је предугачак} upstream_timeout {истекло време} upstream_inactivity_timeout {истекло време} upstream_incomplete_stream {стрим прекинут} upstream_stream_error {стрим прекинут} other {грешка}}",
+      "servedModelFallbackNote": "{served} · пребачено са {requested}: {reason}",
+      "servedModelFallbackUse": "Користи {requested}",
       "text51e6bc656528": "Разговарајте са својим агентом преко Telegram бота.",
       "text00c7991f0490": "Повежите Telegram",
       "texta832efd235a7": "Направите бота помоћу @BotFather у Telegram-у, па овде налепите његов токен. Kortix региструје webhook и чува токен на серверу.",

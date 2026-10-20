@@ -50,8 +50,55 @@ export function latestPromptModel(
 }
 
 /** Pin sources that record a choice: a person's (CLI, SDK, Slack, `PUT /model`),
- *  or the platform's when it moved that choice off a retired model. */
-const CHOSEN_PIN_SOURCES = new Set(['explicit', 'repointed']);
+ *  or the platform's when it moved that choice off a retired model (`repointed`)
+ *  or off a model that could not serve (`fallback`). */
+const CHOSEN_PIN_SOURCES = new Set(['explicit', 'repointed', 'fallback']);
+
+/**
+ * The gateway moved this session to a fallback model because its own model
+ * could not serve (a resting ChatGPT pool, a login that needs reconnecting, a
+ * retired model). The server moves it back at a turn end once `from` serves.
+ */
+export interface SessionModelFallback {
+  /** The model that answered, which the session now runs on. */
+  model: ModelKey;
+  /** The model it stands in for. */
+  from: ModelKey;
+  /** The gateway failure code (`provider_pool_rate_limited`, …). */
+  reason: string;
+  /** When the switch was recorded, epoch milliseconds. */
+  atMs: number;
+}
+
+/** The session's fallback record (`metadata.opencode_model_source: 'fallback'`), if any. */
+export function sessionModelFallback(
+  session: { metadata?: Record<string, unknown> | null } | null | undefined,
+  gatewayEnabled: boolean,
+): SessionModelFallback | undefined {
+  const metadata = session?.metadata;
+  if (metadata?.opencode_model_source !== 'fallback') return undefined;
+  const { opencode_model: pin, opencode_model_fallback_from: from, opencode_model_fallback_at: atMs } = metadata;
+  if (typeof pin !== 'string' || typeof from !== 'string' || typeof atMs !== 'number') return undefined;
+  const reason = metadata.opencode_model_fallback_reason;
+  return {
+    model: modelRefToKey(pin, gatewayEnabled),
+    from: modelRefToKey(from, gatewayEnabled),
+    reason: typeof reason === 'string' ? reason : 'other',
+    atMs,
+  };
+}
+
+/**
+ * Does a pick this browser made for the session still outrank the server's
+ * record? A pick made before a fallback switch does not: sending it would
+ * name the model that cannot serve again. A pick made after it does.
+ */
+export function sessionPickStands(
+  pickedAtMs: number | undefined,
+  fallback: SessionModelFallback | undefined,
+): boolean {
+  return !fallback || (pickedAtMs ?? 0) > fallback.atMs;
+}
 
 /**
  * The models a session already runs on, as the server records them, most

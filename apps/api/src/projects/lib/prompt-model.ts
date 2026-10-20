@@ -26,8 +26,9 @@ export interface PromptModel {
 }
 
 /**
- * PURE. The caller's model always wins. Otherwise a `repointed` pin is sent,
- * and nothing else is.
+ * PURE. The caller's model always wins. Otherwise a `repointed` or `fallback`
+ * pin is sent, and nothing else is. `fallback` marks a pin the gateway moved
+ * because the session's model could not serve (session-model-fallback.ts).
  *
  * The scope is deliberately narrow and self-limiting. `repointed` marks a pin
  * the PLATFORM moved because the user's own choice stopped existing, so sending
@@ -46,7 +47,7 @@ export function promptModelOverride(
     return { providerID: callerModel.providerID, modelID: callerModel.modelID };
   }
   const metadata = sessionMetadata ?? {};
-  if (metadata.opencode_model_source !== 'repointed') return null;
+  if (metadata.opencode_model_source !== 'repointed' && metadata.opencode_model_source !== 'fallback') return null;
   if (typeof metadata.opencode_model !== 'string') return null;
   return triggerModelOverride(metadata.opencode_model)?.model ?? null;
 }

@@ -50,6 +50,8 @@ interface ModelStore {
   lastAgentName?: string;
   /** Per-session model selection — keyed by sessionId so each session remembers its own model across reloads */
   sessionModel?: Record<string, ModelKey | undefined>;
+  /** When each `sessionModel` pick was made, epoch ms. A server fallback switch outranks an older pick. */
+  sessionModelAt?: Record<string, number>;
   /**
    * User-chosen global default model (set during onboarding setup wizard).
    * Takes priority over agent.model but yields to per-session and per-agent selections.
@@ -102,6 +104,7 @@ export function sanitizeModelStore(raw: unknown): ModelStore {
   if (isObj(raw.sessionAgentName)) out.sessionAgentName = raw.sessionAgentName as ModelStore['sessionAgentName'];
   if (typeof raw.lastAgentName === 'string') out.lastAgentName = raw.lastAgentName;
   if (isObj(raw.sessionModel)) out.sessionModel = raw.sessionModel as ModelStore['sessionModel'];
+  if (isObj(raw.sessionModelAt)) out.sessionModelAt = raw.sessionModelAt as ModelStore['sessionModelAt'];
   if (isObj(raw.globalDefault)) out.globalDefault = raw.globalDefault as ModelStore['globalDefault'];
   return out;
 }
@@ -130,6 +133,7 @@ function setStore(next: ModelStore) {
   const capped = {
     ...next,
     sessionModel: capSessionMap(next.sessionModel),
+    sessionModelAt: capSessionMap(next.sessionModelAt),
     sessionAgentName: capSessionMap(next.sessionAgentName),
   };
   _store = capped;
@@ -360,15 +364,23 @@ export function useModelStore(
     [store.sessionModel],
   );
 
+  const getSessionModelPickedAt = useCallback(
+    (sessionId: string): number | undefined => store.sessionModelAt?.[sessionId],
+    [store.sessionModelAt],
+  );
+
   const setSessionModel = useCallback((sessionId: string, model: ModelKey | undefined) => {
     const s = getStore();
     const next = { ...s.sessionModel };
+    const at = { ...s.sessionModelAt };
     if (model) {
       next[sessionId] = model;
+      at[sessionId] = Date.now();
     } else {
       delete next[sessionId];
+      delete at[sessionId];
     }
-    setStore({ ...s, sessionModel: next });
+    setStore({ ...s, sessionModel: next, sessionModelAt: at });
   }, []);
 
   // Global default model (set during onboarding setup wizard)
@@ -385,6 +397,7 @@ export function useModelStore(
       globalDefault: model,
       selectedModel: {},
       sessionModel: {},
+      sessionModelAt: {},
     });
   }, []);
 
@@ -404,6 +417,7 @@ export function useModelStore(
     lastAgentName,
     setLastAgentName,
     getSessionModel,
+    getSessionModelPickedAt,
     setSessionModel,
     globalDefault,
     setGlobalDefault,

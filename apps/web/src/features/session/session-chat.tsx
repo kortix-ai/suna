@@ -63,6 +63,7 @@ import {
 import { stopRefusalMessage } from './stop-refusal';
 import { useAuth } from '@/features/providers/auth-provider';
 import { QueuedPromptList } from './composer/queued-prompt-list';
+import { ModelFallbackNote } from './composer/model-fallback-note';
 import { runtimePermissionLocksComposer } from './composer/send-blockers';
 import { SessionPrintHeader } from './print/session-print-header';
 import { useSessionPrint } from './print/use-session-print';
@@ -3794,6 +3795,9 @@ export function SessionChat({
   const chatInputSlot = useMemo(
     () => (
       <>
+        {/* The gateway moved this session off a model that cannot serve:
+            which model runs now, why, and the way back. Self-hides. */}
+        <ModelFallbackNote fallback={local.model.fallback} models={local.model.list} onUse={handleModelChange} />
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
         <SessionApprovalPrompt onDockedChange={setApprovalDocked} />
@@ -3837,6 +3841,9 @@ export function SessionChat({
       handleQuestionReject,
       handleQuestionActionChange,
       tHardcodedUi,
+      local.model.fallback,
+      local.model.list,
+      handleModelChange,
     ],
   );
 

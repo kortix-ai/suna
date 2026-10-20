@@ -58,4 +58,9 @@ describe('sanitizeModelStore', () => {
     expect(s.user).toHaveLength(1);
     expect(s.recent).toHaveLength(1);
   });
+
+  test('the time of each session pick survives a reload; a wrong-typed map is dropped', () => {
+    expect(sanitizeModelStore({ sessionModelAt: { 'gateway:s1': 1_000 } }).sessionModelAt).toEqual({ 'gateway:s1': 1_000 });
+    expect(sanitizeModelStore({ sessionModelAt: [1] }).sessionModelAt).toBeUndefined();
+  });
 });

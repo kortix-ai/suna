@@ -73,4 +73,10 @@ describe('promptModelOverride', () => {
       modelID: 'deepseek-v4.1-flash',
     });
   });
+
+  test('a FALLBACK pin rides a prompt that names no model: the gateway moved it off a model that cannot serve', () => {
+    expect(
+      promptModelOverride(null, { opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'fallback' }),
+    ).toEqual({ providerID: 'kortix', modelID: 'deepseek-v4.1-flash' });
+  });
 });

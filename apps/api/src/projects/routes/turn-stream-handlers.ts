@@ -38,6 +38,7 @@ import { confirmInboxPromptConsumed, steerTargetAtTurnEnd } from '../session-lif
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
+import { revertSessionModelFallback } from '../lib/session-model-fallback-revert';
 import {
   recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
@@ -354,6 +355,9 @@ async function promoteAfterTurnEnd(
   // turn end is the only moment its history is saved. Skipping it served
   // `available: false` and a loading bar to the first person who looked.
   void captureSessionTranscriptMirror(sessionId);
+  // The session is idle: a session a fallback took over moves back to its own
+  // model when that model can serve again (never throws).
+  if (!childSession && turnCompletion.outcome === 'closed') void revertSessionModelFallback(sessionId);
   // THE TURN ENDED — the session's next queued prompt is admissible NOW.
   // Await the durable promotion before acknowledging the terminal relay.
   // The targeted drain remains asynchronous and re-runs admission itself;
