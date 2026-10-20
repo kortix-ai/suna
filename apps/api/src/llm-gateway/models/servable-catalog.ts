@@ -1,4 +1,4 @@
-import { getProjectModelAccess } from '../../repositories/project-model-access';
+import { getProjectGatewayResolution } from '../../repositories/project-model-access';
 import { modelAccessAllows } from '../model-access';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { listProjectSecretNamesForConsumer } from '../../projects/secrets';
@@ -11,6 +11,7 @@ import { projectPickerCatalog } from './picker-catalog';
 import { platformDefaultModelId } from './served-managed-models';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { listGrantedGatewaySecretNames } from '../../secrets/account-resource';
+import { customProviderCatalog } from '../custom-providers';
 
 type GatewayModel = ReturnType<typeof gatewayModelCatalog>[string];
 
@@ -25,7 +26,8 @@ export interface ServableProjectCatalog {
 /**
  * The ONE composition of "which models can this project actually run right
  * now": the runtime catalog reduced to managed models the account may use,
- * the providers its secrets connect, and the ids its defaults/routing name —
+ * the providers its secrets connect, the project's custom providers, and the
+ * ids its defaults/routing name —
  * stamped with per-project enablement. Served to the web picker
  * (`GET /projects/:id/model-picker`, routes/models.ts) AND to the sandbox at boot
  * (`GET /v1/llm/models?scope=picker` → internal `/models` with
@@ -58,7 +60,7 @@ export async function servableProjectCatalog(input: {
   const { projectId, accountId, principalUserId } = input;
   const personalUserId = input.personalUserId === undefined ? (principalUserId ?? null) : input.personalUserId;
   const freeManagedOnly = !(await accountMayUseManagedModels(accountId));
-  const [secrets, defaults, routing, access, pooledEnabled] = await Promise.all([
+  const [secrets, defaults, routing, resolution, pooledEnabled] = await Promise.all([
     listProjectSecretNamesForConsumer({
       projectId,
       principalUserId: personalUserId,
@@ -66,7 +68,7 @@ export async function servableProjectCatalog(input: {
     }).catch(() => [] as string[]),
     getAccountModelDefaults(accountId, projectId),
     getProjectRoutingPolicy(projectId),
-    getProjectModelAccess(projectId),
+    getProjectGatewayResolution(projectId),
     projectFeatureFlagEnabled(projectId, 'pooled_provider_secrets'),
   ]);
   const pooledNames = pooledEnabled && principalUserId
@@ -85,12 +87,19 @@ export async function servableProjectCatalog(input: {
     ...(routing?.defaultFallback?.models ?? []),
     ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
   ].filter((model): model is string => !!model);
-  const models = projectPickerCatalog(
-    gatewayModelCatalog(projectId, { freeManagedOnly }),
-    new Set([...secrets, ...pooledNames]),
-    requiredModels,
-  );
-  const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, requiredModels);
+  const { access } = resolution;
+  // A custom endpoint is servable once defined (its key is optional) and on by
+  // default: it has no release date or family for the recency rule to rank.
+  const custom = customProviderCatalog(resolution.customProviders ?? []);
+  const models = {
+    ...projectPickerCatalog(
+      gatewayModelCatalog(projectId, { freeManagedOnly }),
+      new Set([...secrets, ...pooledNames]),
+      requiredModels,
+    ),
+    ...custom,
+  };
+  const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, [...requiredModels, ...Object.keys(custom)]);
   return {
     models: Object.fromEntries(
       Object.entries(models).map(([id, model]) => [

@@ -1,4 +1,4 @@
-import { genuiEnabled } from '@/lib/config/genui'
+import { genuiEnabled } from './genui'
 
 /**
  * Set by the API (projects/lib/session-sandbox-env-build.ts) at provisioning:

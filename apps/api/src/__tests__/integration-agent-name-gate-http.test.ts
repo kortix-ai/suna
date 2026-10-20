@@ -19,7 +19,6 @@
  * that has since been removed from the manifest is the cleanup path.
  */
 import { describe, expect, test, afterAll } from 'bun:test';
-process.env.LLM_GATEWAY_ENABLED = 'true';
 // deepseek-v4.1-flash, the model pinned below, is served by Morph direct; no
 // OpenRouter endpoint of it is a cleared subprocessor yet (#10286). A
 // placeholder key makes this deployment serve it, as prod does. Never reached.
@@ -88,7 +87,6 @@ async function seed(manifestFile: 'kortix.yaml' | 'kortix.toml', manifest: strin
     accountId,
     name: 'agent-name-gate-test-project',
     repoUrl: upstream.repoUrl,
-    metadata: { experimental: { llm_gateway: true } },
   });
   await insertIntoView(db, accountMembers, [
     { userId, accountId, accountRole: 'owner', isSuperAdmin: false },

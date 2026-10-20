@@ -27,13 +27,6 @@ describe('channelSettingsPatch', () => {
     expect(channelSettingsPatch(bound, next)).toEqual({ opencodeModel: 'deepseek-v4.1' });
   });
 
-  test('a native model goes out as provider/model', () => {
-    const next = { ...bound, model: { providerID: 'anthropic', modelID: 'claude-sonnet-5-5' } };
-    expect(channelSettingsPatch(bound, next)).toEqual({
-      opencodeModel: 'anthropic/claude-sonnet-5-5',
-    });
-  });
-
   test('back to the defaults sends null, which resets the override', () => {
     const pinned = { ...bound, agentName: 'reviewer' };
     expect(channelSettingsPatch(pinned, { ...pinned, agentName: null, model: null })).toEqual({

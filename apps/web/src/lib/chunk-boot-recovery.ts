@@ -1,4 +1,4 @@
-import { CHUNK_RELOAD_WINDOW_MS } from './chunk-load-recovery';
+import { CHUNK_RELOAD_WINDOW_MS } from '@kortix/ui/internal/lib/chunk-load-recovery';
 
 /** Inline in the document head: React boundaries cannot recover a chunk that prevents hydration. */
 export const CHUNK_BOOT_RECOVERY_SCRIPT = `

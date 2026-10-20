@@ -168,7 +168,6 @@ mock.module('../lib/session-connector-bindings', () => ({
 mock.module('../../feature-flags/registry', () => ({
   resolveFeatureFlag: () => true,
 }));
-mock.module('../../llm-gateway/enablement', () => ({ projectLlmGatewayEnabled: () => true }));
 const realEntitlements = await import('../../billing/services/entitlements');
 mock.module('../../billing/services/entitlements', () => ({
   ...realEntitlements,

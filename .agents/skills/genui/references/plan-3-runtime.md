@@ -622,7 +622,7 @@ Expected: PASS; lint clean; CLI suite (including `lint:sdk-boundary`) green.
 4. Send `Compare these two plans: Basic 10 USD with 3 projects; Pro 30 USD with unlimited projects.` Expected: the stored assistant text contains ```` ```openui ````.
 5. Send `hi`. Expected: no ```` ```openui ````.
 6. Turn the flag off, start a new session (an in-place restart keeps the old env). Expected: `/tmp/kortix/genui.md` does not exist; a comparison prompt returns markdown only.
-7. Repeat steps 3–5 once with the project on pi (`pi_harness` on, `llm_gateway` on).
+7. Repeat steps 3–5 once with the project on pi (`pi_harness` on).
 
 Record the commands and outputs in the PR body.
 
