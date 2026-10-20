@@ -85,7 +85,7 @@ function parseFlags(argv: string[]): MarketplaceFlags {
 }
 
 async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Promise<number> {
-  const itemId = argv[0];
+  let itemId = argv[0];
   if (!itemId || itemId.startsWith('-')) {
     process.stderr.write(
       `${status.err('pass an item id or name: kortix marketplace install kortix-starter:pdf')}\n`,
@@ -128,6 +128,11 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
     signal: controller.signal,
   });
   try {
+    if (!itemId.includes(':')) {
+      const item = await resolveMarketplaceItem(client, flags, itemId);
+      if (!item) return finish(1, 'failed', `No marketplace item matches "${itemId}".`);
+      itemId = item.id;
+    }
     const result = await client.post<{ session_id: string }>(
       `/projects/${ctx.projectId}/marketplace/install-session`,
       { id: itemId },
@@ -332,6 +337,40 @@ async function marketplaceSearch(argv: string[], flags: MarketplaceFlags): Promi
   return 0;
 }
 
+async function resolveMarketplaceItem(
+  client: ApiClient,
+  flags: MarketplaceFlags,
+  raw: string,
+): Promise<CatalogItem | null> {
+  let item: CatalogItem | null = null;
+  try {
+    item = await client.get<CatalogItem>(`/marketplace/items/${encodeURIComponent(raw)}`);
+  } catch {
+    const searched = await client
+      .get<CatalogResponse>(`/marketplace/items${queryString(flags, raw)}`)
+      .catch((error: unknown) => {
+        surfaceApiError(error);
+        return null;
+      });
+    item =
+      searched?.items.find((i) => i.id === raw) ??
+      searched?.items.find((i) => i.name === raw) ??
+      searched?.items.find((i) => i.id.endsWith(`:${raw}`)) ??
+      (searched?.items.length === 1 ? searched.items[0] : null);
+    if (item) {
+      try {
+        item = await client.get<CatalogItem>(
+          `/marketplace/items/${encodeURIComponent(item.id)}`,
+        );
+      } catch {
+        // The search result is still useful enough to show.
+      }
+    }
+  }
+
+  return item;
+}
+
 async function marketplaceShow(argv: string[], flags: MarketplaceFlags): Promise<number> {
   const raw = argv.find((a) => !a.startsWith('-'));
   if (!raw) {
@@ -341,26 +380,7 @@ async function marketplaceShow(argv: string[], flags: MarketplaceFlags): Promise
   const ctx = resolveMarketplaceClient(flags.host);
   if (!ctx) return 1;
 
-  let item: CatalogItem | null = null;
-  try {
-    item = await ctx.client.get<CatalogItem>(`/marketplace/items/${encodeURIComponent(raw)}`);
-  } catch {
-    const searched = await fetchItems(flags, raw);
-    item =
-      searched?.items.find((i) => i.id === raw) ??
-      searched?.items.find((i) => i.name === raw) ??
-      searched?.items.find((i) => i.id.endsWith(`:${raw}`)) ??
-      (searched?.items.length === 1 ? searched.items[0] : null);
-    if (item) {
-      try {
-        item = await ctx.client.get<CatalogItem>(
-          `/marketplace/items/${encodeURIComponent(item.id)}`,
-        );
-      } catch {
-        // The search result is still useful enough to show.
-      }
-    }
-  }
+  const item = await resolveMarketplaceItem(ctx.client, flags, raw);
 
   if (!item) {
     process.stderr.write(`${status.err(`No marketplace item matches "${raw}".`)}\n`);
