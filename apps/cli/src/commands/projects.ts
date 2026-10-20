@@ -49,6 +49,9 @@ export {
 const HELP = help`Usage: kortix projects <subcommand>
 
 Subcommands:
+  create <name>       Create a managed project; prints its id (--json).
+                       --host <name> and --account <id> select the destination.
+                       Then run projects use <id> to select it.
   ls [--all]           List projects in the active account (--all spans every
                        account, grouped). --query <text> filters by name, id
                        or repo. (--json)
@@ -118,6 +121,8 @@ export async function runProjects(argv: string[]): Promise<number> {
     return 0;
   }
   switch (sub) {
+    case 'create':
+      return projectsCreate(rest);
     case 'ls':
     case 'list': {
       const restCopy = [...rest];
@@ -1218,6 +1223,44 @@ function filterProjects(projects: ProjectSummary[], query?: string): ProjectSumm
   return projects.filter((p) =>
     [p.name, p.project_id, p.repo_url].some((f) => (f ?? '').toLowerCase().includes(q)),
   );
+}
+
+async function projectsCreate(argv: string[]): Promise<number> {
+  const rest = [...argv];
+  const json = takeFlagBool(rest, ['--json']);
+  let hostArg: string | undefined;
+  let accountArg: string | undefined;
+  try {
+    hostArg = takeFlagValue(rest, ['--host']);
+    accountArg = takeFlagValue(rest, ['--account']);
+  } catch (err) {
+    process.stderr.write(`${status.err(err instanceof Error ? err.message : String(err))}\n`);
+    return 2;
+  }
+  const name = rest[0]?.trim();
+  if (rest.length !== 1 || !name || name.startsWith('-') || hostArg === '' || accountArg === '') {
+    process.stderr.write('Usage: kortix projects create <name> [--host <name>] [--account <id>] [--json]\n');
+    return 2;
+  }
+  const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
+  if (!auth?.token) {
+    if (hostArg) process.stderr.write(`${status.err(`Host "${hostArg}" is not logged in.`)}\n`);
+    return 1;
+  }
+  const accountId = accountArg || (hostArg ? auth.account_id || undefined : scopeAccountId(auth));
+  try {
+    const project = await clientFromAuth(auth, { accountId }).post<ProjectSummary>('/projects/provision', {
+      name,
+      account_id: accountId,
+    });
+    if (!isDefaultProjectResponse(project)) return invalidDefaultProjectResponse(project);
+    // Provisioning also returns a one-time push credential. Never print it.
+    if (json) emitJson({ project_id: project.project_id, name: project.name, account_id: project.account_id });
+    else process.stdout.write(`${project.project_id}\n`);
+    return 0;
+  } catch (err) {
+    return surface(err);
+  }
 }
 
 async function projectsLs(
