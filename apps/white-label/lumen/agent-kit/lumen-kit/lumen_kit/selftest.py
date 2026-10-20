@@ -152,5 +152,25 @@ class Redline(unittest.TestCase):
             self.assertEqual((r["ok"], r["insertions"], r["deletions"]), (True, 1, 1))
 
 
+class Draft(unittest.TestCase):
+    def test_render_fills_fields_and_marks_the_rest(self):
+        from unittest import mock
+        from docx import Document
+        from lumen_kit import tools
+        with tempfile.TemporaryDirectory() as tmp:
+            tpl = os.path.join(tmp, "t.md")
+            with open(tpl, "w") as f:
+                f.write("# Mutual NDA\n\nMade on {{effective_date}} between {{party_a}} and {{party_b}}.\n\n## 1. Law\n1.1 Governed by {{governing_law}}.\n")
+            out = os.path.join(tmp, "out", "draft.docx")
+            # The image may lack pandoc: the python-docx renderer takes over.
+            with mock.patch.object(tools.subprocess, "run", side_effect=FileNotFoundError("pandoc")):
+                r = tools.draft_render(tpl, {"party_a": "Alpha Example Ltd", "party_b": "Beta Example Inc.", "effective_date": "2026-10-20"}, out)
+            self.assertEqual(r["unfilled"], ["governing_law"])
+            text = "\n".join(p.text for p in Document(out).paragraphs)
+            self.assertIn("Alpha Example Ltd", text)
+            self.assertIn("[[CONFIRM: governing_law]]", text)
+            self.assertEqual(Document(out).paragraphs[0].style.name, "Heading 1")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

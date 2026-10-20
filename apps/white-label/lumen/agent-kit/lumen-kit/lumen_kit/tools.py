@@ -88,8 +88,31 @@ def draft_render(template: str, fields: dict, out: str) -> dict:
     md = re.sub(r"\{\{\s*(\w+)\s*\}\}", fill, md)
     md_out = os.path.splitext(out)[0] + ".md"
     _atomic_write(md_out, md)
-    subprocess.run(["pandoc", md_out, "-o", out], check=True, capture_output=True)
+    try:
+        subprocess.run(["pandoc", md_out, "-o", out], check=True, capture_output=True)
+    except FileNotFoundError:
+        _docx_from_markdown(md, out)
     return {"ok": True, "docx": out, "markdown": md_out, "unfilled": unfilled}
+
+
+def _docx_from_markdown(md: str, out: str) -> None:
+    """Headings, numbered clauses and paragraphs, for an image without pandoc. **bold** spans stay bold."""
+    from docx import Document
+
+    doc = Document()
+    for block in re.split(r"\n\s*\n|\n(?=#)|\n(?=\d+(?:\.\d+)+\s)", md.strip()):
+        line = block.strip()
+        if not line:
+            continue
+        h = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if h:
+            doc.add_heading(h.group(2).strip(), level=min(len(h.group(1)), 4))
+            continue
+        p = doc.add_paragraph()
+        for i, part in enumerate(re.split(r"\*\*", line.replace("\n", " "))):
+            p.add_run(part).bold = i % 2 == 1
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    doc.save(out)
 
 
 def ocr(pdf: str, out: str, doc_id: str) -> dict:
