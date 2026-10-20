@@ -20594,6 +20594,12 @@
     "mcpNotChecked": "Aún sin comprobar",
     "runLimits": "Límites de ejecución",
     "runLimitsHint": "Un disparo por encima de un límite no inicia nada y aparece como una ejecución omitida. Ejecutarlo a mano nunca se retiene, pero cuenta.",
+    "overlap": "Superposición",
+    "overlapHint": "Si la ejecución anterior sigue en curso, un nuevo disparo espera o inicia una segunda ejecución. Una ejecución que inicias tú siempre se ejecuta.",
+    "overlapDefaultSkip": "Predeterminado: omitir mientras la última ejecución sigue en curso",
+    "overlapDefaultAllow": "Predeterminado: iniciar una nueva ejecución igualmente",
+    "overlapSkip": "Omitir mientras la última ejecución sigue en curso",
+    "overlapAllow": "Iniciar una nueva ejecución igualmente",
     "perHour": "Por hora",
     "perDay": "Por día",
     "noLimit": "Sin límite"
@@ -22000,5 +22006,9 @@
     "exists": "existe",
     "missing": "no existe",
     "listPlaceholder": "valor 1, valor 2"
+  },
+  "triggerAutoPause": {
+    "title": "Se pausó solo al llegar a su límite de ejecuciones",
+    "description": "Se ejecutó en su límite por hora durante 2 horas seguidas, así que dejó de iniciar ejecuciones. Averigua qué lo sigue activando y luego reanúdalo."
   }
 }
