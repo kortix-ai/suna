@@ -8,7 +8,7 @@ import { getLocalizedSecurityContent } from '@/features/marketing/security-page/
 import { CredentialFlow } from '@/features/marketing/security-page/credential-flow';
 import { SecurityHeroVisual } from '@/features/marketing/security-page/hero-visual';
 import { PermissionMatrix } from '@/features/marketing/security-page/permission-matrix';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 

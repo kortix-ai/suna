@@ -41,17 +41,17 @@ import {
   CommandPopoverContent,
   CommandPopoverTrigger,
   CommandSeparator,
-} from '@/components/ui/command';
-import { Separator } from '@/components/ui/separator';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Switch } from '@/components/ui/switch';
+} from '@kortix/ui/command';
+import { Separator } from '@kortix/ui/separator';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Switch } from '@kortix/ui/switch';
 import {
   TRIGGER_CARET_CLASS,
   TRIGGER_ICON_SIZE,
   triggerVariants,
-} from '@/components/ui/trigger-variants';
+} from '@kortix/ui/trigger-variants';
 import { WallpaperCard } from '@/features/accounts/settings/appearance-tab';
-import { useGenuiEnabled } from '@/features/genui/use-genui-enabled';
+import { useGenuiEnabled } from '@kortix/ui/genui';
 import {
   INTERFACE_THEME_OPTIONS,
   ThemeSwatch,
@@ -64,10 +64,10 @@ import {
   type InterfaceThemeId,
   type ThemeChoice,
 } from '@/lib/interface-themes';
-import { cn } from '@/lib/utils';
-import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@/lib/wallpapers';
-import { useUserPreferencesStore, type ConversationDensity } from '@/stores/user-preferences-store';
-import { SettingsTabHeader } from '../settings-tab-header';
+import { cn } from '@kortix/ui';
+import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@kortix/ui/theme';
+import { useUserPreferencesStore, type ConversationDensity } from '@kortix/ui/internal/stores/user-preferences-store';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 
 const DENSITY_OPTIONS: { id: ConversationDensity; label: string; description: string }[] = [
   {

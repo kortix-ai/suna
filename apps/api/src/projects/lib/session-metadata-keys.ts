@@ -17,6 +17,7 @@ import { WARM_SESSION_LOCATION_KEY } from './warm-sessions';
 
 export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Soft delete (`deleteSession`).
+  'forkedFromSessionId',
   'deletedAt',
   'deletedBy',
   // Model pin (`opencode_model` body field and `PUT …/model`). `_repointed_from`
@@ -66,6 +67,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // server stamps conversation activity; a client value would let it fake a
   // sidebar position.
   'last_activity_at',
+  // Server-confirmed runtime fork provenance and inventory.
+  'runtime_forks',
+  'opencode_sessions',
 ] as const;
 
 /**

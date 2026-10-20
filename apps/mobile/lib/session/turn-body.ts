@@ -87,7 +87,19 @@ export function turnHasSteps(blocks: ReadonlyArray<SessionLogBlock>): boolean {
  * reaches the screen.
  */
 export function busyStatusText(blocks: ReadonlyArray<SessionLogBlock>): string {
-  return sessionLogActivityText({ blocks: blocks.map((b) => (b.type === 'reasoning' ? { ...b, text: '' } : b)) });
+  return sessionLogActivityText({ blocks: blocks.map(blankedThought) });
+}
+
+/**
+ * One blanked copy per reasoning block: a fresh copy on every streamed frame
+ * made the SDK build a new v1 part for every thought of the live turn.
+ */
+const blankedThoughts = new WeakMap<SessionLogBlock, SessionLogBlock>();
+function blankedThought(block: SessionLogBlock): SessionLogBlock {
+  if (block.type !== 'reasoning') return block;
+  let blank = blankedThoughts.get(block);
+  if (!blank) blankedThoughts.set(block, (blank = { ...block, text: '' }));
+  return blank;
 }
 
 // ─── Answered questions ──────────────────────────────────────────────────────
@@ -257,6 +269,45 @@ export function lastTextBlockId(segments: ReadonlyArray<TurnSegment>): string | 
     if (segment.kind === 'text') return segment.block.id;
   }
   return undefined;
+}
+
+/** Block id -> message, built once per reply list: a scan per text block was O(texts x blocks) per streamed frame. */
+const blockMessages = new WeakMap<ReadonlyArray<SessionLogMessage>, Map<string, SessionLogMessage>>();
+function messageOfBlockId(assistant: ReadonlyArray<SessionLogMessage>, blockId: string) {
+  let index = blockMessages.get(assistant);
+  if (!index) {
+    index = new Map();
+    for (const m of assistant) for (const b of m.blocks) if (!index.has(b.id)) index.set(b.id, m);
+    blockMessages.set(assistant, index);
+  }
+  return index.get(blockId);
+}
+
+/**
+ * KRTX-2933: the text block that can still grow, by the part's own state, not
+ * only the turn's. It is the last text segment, its message still streams,
+ * and no later block of that message follows it. Call only while the turn is
+ * live: `turn.live` follows the session's busy flag, which can read busy
+ * after the reply ended.
+ */
+export function liveTextBlockId(
+  assistant: ReadonlyArray<SessionLogMessage>,
+  segments: ReadonlyArray<TurnSegment>,
+): string | undefined {
+  const id = lastTextBlockId(segments);
+  return id !== undefined && isOpenTextBlock(assistant, id) ? id : undefined;
+}
+
+/** The block's message still streams and the block is that message's last block. */
+export function isOpenTextBlock(assistant: ReadonlyArray<SessionLogMessage>, blockId: string): boolean {
+  const message = messageOfBlockId(assistant, blockId);
+  return message?.status === 'streaming' && message.blocks[message.blocks.length - 1]?.id === blockId;
+}
+
+/** `message_id:block_id`: the key the stream pacer remembers a part's revealed length under. */
+export function textBlockRevealKey(assistant: ReadonlyArray<SessionLogMessage>, blockId: string): string {
+  const message = messageOfBlockId(assistant, blockId);
+  return message ? `${message.message_id}:${blockId}` : blockId;
 }
 
 // ─── Settled-turn fold (KRTX-2113) ───────────────────────────────────────────

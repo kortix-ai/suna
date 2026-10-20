@@ -2,10 +2,10 @@ import type { Metadata } from 'next';
 import { getLocale, getTranslations } from '@/i18n/get-translations';
 
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { PUBLIC_METADATA_TRANSLATION_KEYS } from '@/i18n/public-metadata-translation-keys.generated';
 import { getMarketingRecord } from '@/lib/seo/public-content';
-import { CANONICAL_ORIGIN, siteMetadata } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN, siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 
 export const DEFAULT_OG_IMAGE = {
   url: '/banner.png',

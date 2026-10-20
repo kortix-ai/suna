@@ -1,13 +1,13 @@
 'use client';
 
-import { stopWebPush } from '@/features/notifications/web-push';
+import { stopWebPush } from '@kortix/ui/internal/notifications/web-push';
 import { finalizeServerSignOut } from '@/lib/auth/finalize-sign-out';
 import { stashSignOutNotice } from '@/lib/auth/sign-out-notice';
 import { runSignOut, SIGN_OUT_DESTINATION } from '@/lib/auth/sign-out-sequence';
 import { createClient } from '@/lib/supabase/client';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { resetClientState } from '@/lib/utils/reset-client-state';
-import { withTimeBudget } from '@/lib/utils/time-budget';
+import { withTimeBudget } from '@kortix/ui/internal/lib/utils/time-budget';
 
 export { SIGN_OUT_DESTINATION };
 

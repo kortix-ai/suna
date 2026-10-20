@@ -14,7 +14,7 @@ import {
   parseAuthBounceOwner,
   parseLastProjectForUser,
   projectPathFromId,
-} from '@/lib/onboarding/landing-destination';
+} from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import { ACTIVE_INSTANCE_COOKIE, fetchAccountStateWithToken } from '@kortix/sdk';

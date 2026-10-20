@@ -1,10 +1,10 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { Field, FieldLabel } from '@/components/ui/field';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { Field, FieldLabel } from '@kortix/ui/field';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -13,22 +13,22 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { UserAvatar } from '@/components/ui/user-avatar';
+} from '@kortix/ui/modal';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { UserAvatar } from '@kortix/ui/user-avatar';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useProjectAgentIdentities } from '@/features/workspace/shared/access/agent-principals';
+import { useProjectAgentIdentities } from '@kortix/ui/access/access/agent-principals';
 import {
   EMPTY_PRINCIPAL_SELECTION,
-  PrincipalPicker,
   type PrincipalSelection,
-} from '@/features/workspace/shared/access/principal-picker';
-import { useFolderAccess, useFolderPrincipals, useShareFolder, useUnshareFolder } from '@/hooks/drives/use-drives';
+} from '@kortix/ui/access/access/principal-picker';
+import { PrincipalPicker } from '@kortix/ui/access';
+import { useFolderAccess, useFolderPrincipals, useShareFolder, useUnshareFolder } from '@kortix/ui/files';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { FolderGrant, FolderLevel, FolderPrincipalType } from '@kortix/sdk';
 import { LockIcon, RobotIcon, UsersIcon, UsersThreeIcon, XIcon } from '@phosphor-icons/react';
 import { type ReactNode, useId, useMemo, useState } from 'react';

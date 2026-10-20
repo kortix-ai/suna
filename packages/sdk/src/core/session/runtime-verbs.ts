@@ -160,6 +160,14 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
         }
       }
       if (!chosen) throw new ApiError('Cannot compact: no model is set for this session', { code: 'MODEL_REQUIRED' });
+      const statuses = unwrap(await client.session.status(), 'Reading the session status failed');
+      const status = statuses?.[input.rootId];
+      if (status && status.type !== 'idle') {
+        throw new ApiError('This session is busy. Wait for the current turn to finish, then run compact again.', {
+          code: 'SESSION_BUSY',
+          status: 409,
+        });
+      }
       unwrap(
         await client.session.summarize({ sessionID: input.rootId, providerID: chosen.providerID, modelID: chosen.modelID }),
         'Compacting the session failed',

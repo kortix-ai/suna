@@ -3,7 +3,7 @@ import { expect, mock, spyOn, test } from 'bun:test';
 const endSession = mock(async () => ({ error: null }));
 mock.module('@/lib/supabase/client', () => ({ createClient: () => ({ auth: { signOut: endSession } }) }));
 mock.module('@/lib/utils/reset-client-state', () => ({ resetClientState: async () => {} }));
-mock.module('@/features/notifications/web-push', () => ({ stopWebPush: async () => {} }));
+mock.module('@kortix/ui/internal/notifications/web-push', () => ({ stopWebPush: async () => {} }));
 
 const { performSignOut } = await import('./perform-sign-out');
 

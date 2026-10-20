@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, setSystemTime, test } from 'bun:test';
-import { managedPricingRoutes, refreshManagedPricingRoutes } from './managed-pricing-routes';
+import { managedPricingRoutes, refreshManagedPricingRoutes, withManagedPricing } from './managed-pricing-routes';
 
 // The quoted OpenRouter members follow the subprocessor dates
 // (`inferenceHostCleared`): Fireworks is in effect, DeepInfra, Together,
@@ -56,4 +56,23 @@ test('omits an endpoint whose live price exceeds the cap, and keeps the table wh
     fetchImpl: async () => new Response(null, { status: 503 }),
   });
   expect(down['glm-5.3-flash']?.[0]?.input).toBe(0.18);
+});
+
+test('picker costs quote the same base rates as the web route prices, without changing BYOK', () => {
+  const models = {
+    managed: { name: 'Managed', cost: { input: 9, output: 10, cache_read: 8, cache_write: 11 } },
+    'own/model': { name: 'Own', cost: { input: 3, output: 4 } },
+    unavailable: { name: 'Unavailable', cost: { input: 5, output: 6 } },
+  };
+  const quoted = withManagedPricing(models, {
+    managed: [
+      { route: 'one', role: 'preferred', input: 0.2, output: 0.65, cacheRead: 0.03 },
+      { route: 'two', role: 'eligible', input: 0.15, output: 0.7, cacheRead: 0.02 },
+    ],
+    unavailable: [],
+  });
+  expect(quoted.managed.cost).toEqual({ input: 0.15, output: 0.65, cache_read: 0.02 });
+  expect(quoted['own/model']).toEqual(models['own/model']);
+  expect(quoted.unavailable).toEqual(models.unavailable);
+  expect(models.managed.cost.input).toBe(9);
 });

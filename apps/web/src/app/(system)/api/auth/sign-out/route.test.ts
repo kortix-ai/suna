@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test';
 import { NextRequest } from 'next/server';
-import { AUTH_BOUNCE_COOKIE } from '@/lib/onboarding/landing-destination';
+import { AUTH_BOUNCE_COOKIE } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { MAINTENANCE_BYPASS_COOKIE } from '@/lib/maintenance-bypass';
 
 const removed: string[] = [];

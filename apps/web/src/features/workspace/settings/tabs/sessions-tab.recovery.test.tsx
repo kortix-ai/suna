@@ -35,9 +35,9 @@ Object.defineProperty(globalThis, 'Audio', { value: TestAudio, configurable: tru
 mock.module('@/features/providers/auth-provider', () => ({ useAuth: () => ({ user: null }) }));
 
 const { SessionsTab } = await import('./sessions-tab');
-const { useSoundStore } = await import('@/stores/sound-store');
-const { useWebNotificationStore } = await import('@/stores/web-notification-store');
-const { sendWebNotification } = await import('@/lib/web-notifications');
+const { useSoundStore } = await import('@kortix/ui/internal/stores/sound-store');
+const { useWebNotificationStore } = await import('@kortix/ui/internal/stores/web-notification-store');
+const { sendWebNotification } = await import('@kortix/ui/internal/lib/web-notifications');
 const host = document.createElement('div');
 document.body.appendChild(host);
 const root = createRoot(host);
