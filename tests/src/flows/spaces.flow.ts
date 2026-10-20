@@ -610,16 +610,31 @@ flow('SPACE-11', meta([WARM_CLAIM_ROUTE, ROUTES.list, SESSION_ROUTES.list, FEATU
 
 flow('SPACE-12', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
   const { project, world } = await openWorld(ctx);
+  const params = { projectId: project.id };
   try {
     const canary = await insertSession(world, world.ownerUserId, 'private');
-    const generalId = await enableChannelsAndSettle(world, canary);
+    const firstGeneral = await enableChannelsAndSettle(world, canary);
 
-    await ctx.step('a session that lands in no space after the toggle is in #general as soon as GET /spaces returns', async () => {
+    // A toggle effect that failed before it created #general: no #general, sessions in no space.
+    await world.db.query('DELETE FROM kortix.project_spaces WHERE space_id = $1', [firstGeneral]);
+    const orphan = await insertSession(world, world.ownerUserId, 'project');
+    let general = '';
+
+    await ctx.step('the GET /spaces that creates #general files every session in no space into it', async () => {
+      if ((await sessionSpaceId(world, canary)) !== null) throw new Error('deleting #general did not clear the canary space');
+      general = await generalSpaceId(world, project.id);
+      if (general === firstGeneral) throw new Error('#general was not recreated');
+      for (const id of [canary, orphan]) {
+        const spaceId = await sessionSpaceId(world, id);
+        if (spaceId !== general) throw new Error(`session ${id} is in ${spaceId}, expected the new #general`);
+      }
+    });
+
+    await ctx.step('once #general exists, a later GET /spaces does not check again: a late session stays in no space', async () => {
       const late = await insertSession(world, world.ownerUserId, 'project');
-      if ((await sessionSpaceId(world, late)) !== null) throw new Error('the late session already has a space');
-      (await world.owner.get(SPACES, { params: { projectId: project.id } })).status(200);
+      (await world.owner.get(SPACES, { params })).status(200);
       const spaceId = await sessionSpaceId(world, late);
-      if (spaceId !== generalId) throw new Error(`after GET /spaces the late session is in ${spaceId}, expected #general`);
+      if (spaceId !== null) throw new Error(`the late session was filed into ${spaceId}`);
     });
   } finally {
     await world.close();

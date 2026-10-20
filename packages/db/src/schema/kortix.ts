@@ -1249,11 +1249,6 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_space')
       .on(table.spaceId, table.updatedAt.desc(), table.sessionId.desc())
       .where(sql`${table.spaceId} is not null`),
-    // A channel list's "is any top-level session in no space?" check
-    // (`listSpacesForUser`). Partial: once filed, a session leaves it.
-    index('idx_project_sessions_unassigned_root')
-      .on(table.projectId)
-      .where(sql`${table.spaceId} is null and ${table.parentSessionId} is null`),
     index('idx_project_sessions_account').on(table.accountId),
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),

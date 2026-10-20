@@ -53,40 +53,35 @@ async function findDefaultSpace(projectId: string): Promise<SpaceRow | null> {
   return row ?? null;
 }
 
-/** The project's `#general`, created on first call. Idempotent under concurrency. */
-export async function ensureDefaultSpace(projectId: string, accountId: string): Promise<SpaceRow> {
+/** The project's `#general`, and whether this call created it. Idempotent under concurrency. */
+async function ensureDefaultSpaceCreated(projectId: string, accountId: string): Promise<{ space: SpaceRow; created: boolean }> {
   const existing = await findDefaultSpace(projectId);
-  if (existing) return existing;
+  if (existing) return { space: existing, created: false };
   const [inserted] = await db
     .insert(projectSpaces)
     .values({ accountId, projectId, kind: 'channel', slug: DEFAULT_SLUG, name: DEFAULT_SLUG, isDefault: true })
     .onConflictDoNothing()
     .returning();
-  if (inserted) return inserted;
+  if (inserted) return { space: inserted, created: true };
   const raced = await findDefaultSpace(projectId);
   if (!raced) throw new Error(`project ${projectId} has no default space and '${DEFAULT_SLUG}' is taken`);
-  return raced;
+  return { space: raced, created: false };
 }
 
-/** Whether a top-level session of the project is in no space. Served by `idx_project_sessions_unassigned_root`. */
-async function hasUnassignedRootSession(projectId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ sessionId: projectSessions.sessionId })
-    .from(projectSessions)
-    .where(and(eq(projectSessions.projectId, projectId), isNull(projectSessions.spaceId), isNull(projectSessions.parentSessionId)))
-    .limit(1);
-  return Boolean(row);
+/** The project's `#general`, created on first call. Idempotent under concurrency. */
+export async function ensureDefaultSpace(projectId: string, accountId: string): Promise<SpaceRow> {
+  return (await ensureDefaultSpaceCreated(projectId, accountId)).space;
 }
 
 /**
  * Live channels (default first, then oldest first), then the user's DMs.
- * Also the convergence point of the toggle backfill: a session that is in no
- * space (the toggle effect failed, or a path created it outside any space) is
- * filed into `#general` before the list is read.
+ * The call that creates `#general` also files every session that is in no
+ * space into it: the toggle effect's backfill, for a project whose toggle
+ * effect failed before it created `#general`. No other read checks again.
  */
 export async function listSpacesForUser(projectId: string, accountId: string, userId: string): Promise<SpaceRow[]> {
-  const general = await ensureDefaultSpace(projectId, accountId);
-  if (await hasUnassignedRootSession(projectId)) await assignUnassignedSessions(projectId, general.spaceId);
+  const general = await ensureDefaultSpaceCreated(projectId, accountId);
+  if (general.created) await assignUnassignedSessions(projectId, general.space.spaceId);
   return db
     .select()
     .from(projectSpaces)

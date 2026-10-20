@@ -480,7 +480,7 @@ DB `project_spaces` (`kind channel|dm`). A thread is a `project_sessions` row wi
 `SPACE-9` Toggle backfill and list privacy — 4 sessions in no space (owner private ×2, member A private, member A project); flag off, `GET /sessions?space_id=<random>` and `?space_id=not-a-uuid` are the normal list; flag on → `#general` holds 4 (the count before); `?space_id=<#general>`: the owner lists their 2 and A's project session, A lists their 2, member B lists only A's project session (never A's private one); flag on, `?space_id=not-a-uuid` → 400; another channel lists none.
 `SPACE-10` Space list cursor — flag on; 5 project sessions in a channel and 5 in `#general`, interleaved by `updated_at`; walking `GET /sessions?space_id=<channel>&limit=2` by `X-Next-Cursor` returns the 5 channel sessions once each, newest first, no session of another space, and the last page has no cursor.
 `SPACE-11` Warm claim — `warm_sessions` on; flag off, `POST /sessions/warm/claim {session_id, pending_prompt: {text}}` → 200 `{space_id: null, first_prompt: null}`; flag on (toggle settled) → 200 `{space_id: <#general>, first_prompt: text}`, the row is in `#general`, and `?space_id=<#general>` lists it.
-`SPACE-12` List-read convergence — flag on (toggle settled); a session inserted later with no space is in `#general` as soon as `GET /spaces` returns.
+`SPACE-12` First-list convergence — flag on (toggle settled); `#general` deleted (a toggle effect that failed before creating it), so its sessions are in no space; the `GET /spaces` that recreates `#general` files every session in no space into it; once `#general` exists, a later `GET /spaces` does not check again and a late session stays in no space.
 
 ---
 

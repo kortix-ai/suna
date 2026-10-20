@@ -1,5 +1,5 @@
 {
-  "id": "8d240c38-d072-4f5c-bdec-96853e9a46e3",
+  "id": "1dd3d158-5e3e-4211-93fc-640a787bb5e5",
   "prevId": "62853af9-bb8e-482a-82fc-0a3ae4006f52",
   "version": "7",
   "dialect": "postgresql",
@@ -17831,22 +17831,6 @@
           ],
           "isUnique": false,
           "where": "\"kortix\".\"project_sessions\".\"space_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_project_sessions_unassigned_root": {
-          "name": "idx_project_sessions_unassigned_root",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"project_sessions\".\"space_id\" is null and \"kortix\".\"project_sessions\".\"parent_session_id\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
