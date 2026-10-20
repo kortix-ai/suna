@@ -2,24 +2,29 @@
 
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
 import { errorToast } from '@/components/ui/toast';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { MessageTimeLabel } from '@/features/session/turn/message-time-label';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
-import type { RoomMember, RoomMessage } from '@kortix/sdk';
-import { useRoom, useRoomConversations, useRoomMessages } from '@kortix/sdk/react';
-import { ArrowLeftIcon, PaperPlaneRightIcon } from '@phosphor-icons/react';
+import { cn } from '@/lib/utils';
+import { addRoomPerson, updateRoom, type RoomMember, type RoomMessage } from '@kortix/sdk';
+import { qk, useRoom, useRoomConversations, useRoomMessages } from '@kortix/sdk/react';
+import { ArrowLeftIcon, HashIcon } from '@phosphor-icons/react';
+import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { ParticipantAvatar, conversationTitle } from './room-identity';
+import { ParticipantAvatar } from './room-identity';
+import { RoomComposer } from './room-composer';
+import { RoomMembersPanel } from './room-members-panel';
+import { RoomMessageList } from './room-messages';
+import { useMentionTargets, useRoomPeople, useRoomSessions } from './use-room-directory';
 
-/** How close to the bottom (px) still counts as "reading the newest message". */
-const STICK_TO_BOTTOM_PX = 120;
+const EMPTY_MEMBERS: RoomMember[] = [];
+const EMPTY_MESSAGES: RoomMessage[] = [];
 
 function subscribeVisibility(onChange: () => void) {
   document.addEventListener('visibilitychange', onChange);
@@ -27,23 +32,41 @@ function subscribeVisibility(onChange: () => void) {
 }
 
 /**
- * /projects/[id]/rooms/[roomId] — one conversation: its members, the newest
- * messages (oldest on top), and a composer. A person member's read cursor
- * moves to the newest message whenever the page is visible.
+ * /projects/[id]/rooms/[roomId] — one channel, Slack-style: a header with the
+ * name, topic and members, the messages, and a composer. A person member's
+ * read cursor moves to the newest message whenever the page is visible. A
+ * viewer who is not in the channel reads it and can join it.
  */
 export function RoomPage({ projectId, roomId }: { projectId: string; roomId: string }) {
   const t = useTranslations('rooms');
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const viewerId = user?.id ?? null;
   const room = useRoom(projectId, roomId);
   const conversations = useRoomConversations(projectId);
   const messages = useRoomMessages(projectId, roomId);
+  const sessions = useRoomSessions(projectId);
+  const people = useRoomPeople(projectId);
   const conversation = conversations.data?.find((c) => c.room_id === roomId) ?? null;
   const isMember = conversation !== null;
+  const members = room.data?.members ?? EMPTY_MEMBERS;
   const lastSeq = messages.data?.last_seq ?? 0;
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [replyTo, setReplyTo] = useState<RoomMessage | null>(null);
+  const atBottomRef = useRef(true);
+  const targets = useMentionTargets(members, sessions.sessions, people.data ?? [], viewerId);
   const visible = useSyncExternalStore(
     subscribeVisibility,
     () => document.visibilityState === 'visible',
     () => false,
   );
+
+  // The "New" line: where the viewer's read cursor stood when the conversation opened.
+  const [newFromSeq, setNewFromSeq] = useState<number | null | undefined>(undefined);
+  if (newFromSeq === undefined && conversations.isSuccess && messages.isSuccess) {
+    const unread = conversation?.unread ?? 0;
+    setNewFromSeq(unread > 0 ? Math.max(1, messages.data.last_seq - unread + 1) : null);
+  }
 
   // Read cursor: once per new newest message, only while a person can see it.
   const markedRef = useRef(0);
@@ -53,27 +76,6 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
     markedRef.current = lastSeq;
     markRead(lastSeq);
   }, [isMember, visible, lastSeq, markRead]);
-
-  // Follow new messages while the reader is at the bottom; the first load lands there.
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const atBottomRef = useRef(true);
-  const count = messages.data?.messages.length ?? 0;
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight;
-  }, [count]);
-
-  const title = room.data
-    ? conversationTitle(
-        room.data.name,
-        conversation?.peer ?? null,
-        t('direct'),
-      )
-    : '';
-  const heading =
-    room.data?.kind === 'direct' && conversation?.peer
-      ? t('directWith', { name: conversation.peer.label })
-      : title;
 
   if (room.isError) {
     return (
@@ -91,47 +93,36 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
     );
   }
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="border-border border-b">
-        <div className="mx-auto flex w-full max-w-3xl items-start gap-3 px-4 py-4">
-          <Hint label={t('back')}>
-            <Button asChild variant="ghost" size="icon-sm" aria-label={t('back')}>
-              <Link href={`/projects/${projectId}/rooms`}>
-                <ArrowLeftIcon />
-              </Link>
-            </Button>
-          </Hint>
-          <div className="min-w-0 flex-1 space-y-1">
-            {room.isLoading ? (
-              <Skeleton className="h-6 w-48" />
-            ) : (
-              <h1 className="text-foreground truncate text-base font-medium">{heading}</h1>
-            )}
-            {room.data?.topic ? (
-              <p className="text-muted-foreground text-sm text-balance">{room.data.topic}</p>
-            ) : null}
-            {room.data ? <MemberLine members={room.data.members} /> : null}
-          </div>
-        </div>
-      </header>
+  const title = room.data?.name ?? '';
 
-      <div
-        ref={scrollRef}
-        onScroll={(event) => {
-          const el = event.currentTarget;
-          atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_TO_BOTTOM_PX;
-        }}
-        className="min-h-0 flex-1 overflow-y-auto"
-      >
-        <div className="mx-auto w-full max-w-3xl px-4 py-5">
-          {messages.isLoading ? (
-            <div className="space-y-4">
-              {[0, 1, 2].map((i) => (
-                <Skeleton key={i} className="h-12 w-full rounded-md" />
-              ))}
-            </div>
-          ) : messages.isError ? (
+  const join = async () => {
+    if (!viewerId) return;
+    try {
+      await addRoomPerson(projectId, roomId, viewerId);
+      await queryClient.invalidateQueries({ queryKey: qk.project.rooms(projectId) });
+    } catch (error) {
+      errorToast(error instanceof Error ? error.message : t('joinFailed'));
+    }
+  };
+
+  return (
+    <div className="relative flex min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <RoomHeader
+          projectId={projectId}
+          roomId={roomId}
+          loading={room.isLoading}
+          title={title}
+          topic={room.data?.topic ?? null}
+          members={members}
+          canEdit={isMember}
+          membersOpen={membersOpen}
+          onToggleMembers={() => setMembersOpen((v) => !v)}
+        />
+        {messages.isLoading || room.isLoading ? (
+          <MessageSkeletons />
+        ) : messages.isError ? (
+          <div className="flex min-h-0 flex-1 items-center justify-center px-4">
             <ErrorState
               size="sm"
               title={t('messagesLoadError')}
@@ -141,124 +132,256 @@ export function RoomPage({ projectId, roomId }: { projectId: string; roomId: str
                 </Button>
               }
             />
-          ) : count === 0 ? (
-            <EmptyState size="sm" title={t('emptyThread')} description={t('emptyThreadHint')} />
-          ) : (
-            <ol className="space-y-4">
-              {messages.data!.messages.map((message) => (
-                <MessageRow key={message.message_id} message={message} />
-              ))}
-            </ol>
-          )}
-        </div>
+          </div>
+        ) : (
+          <RoomMessageList
+            projectId={projectId}
+            messages={messages.data?.messages ?? EMPTY_MESSAGES}
+            intro={<ChannelIntro title={title} />}
+            newFromSeq={newFromSeq ?? null}
+            targets={targets}
+            atBottomRef={atBottomRef}
+            onReply={setReplyTo}
+          />
+        )}
+        {room.data && !isMember && !conversations.isLoading ? (
+          <JoinBar name={title} onJoin={join} />
+        ) : (
+          <RoomComposer
+            projectId={projectId}
+            placeholder={t('messageChannel', { name: title })}
+            roomName={title}
+            members={members}
+            sessions={sessions.sessions}
+            people={people.data ?? []}
+            viewerId={viewerId}
+            replyTo={replyTo}
+            onCancelReply={() => setReplyTo(null)}
+            onSend={async (text, reply) => {
+              atBottomRef.current = true;
+              await messages.post.mutateAsync({ text, reply_to: reply });
+            }}
+          />
+        )}
       </div>
-
-      <RoomComposer
-        onSend={async (text) => {
-          atBottomRef.current = true;
-          await messages.post.mutateAsync({ text });
-        }}
-      />
+      {membersOpen && room.data ? (
+        <RoomMembersPanel
+          projectId={projectId}
+          roomId={roomId}
+          members={members}
+          editable={isMember}
+          viewerId={viewerId}
+          onClose={() => setMembersOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
 
-function MemberLine({ members }: { members: RoomMember[] }) {
+function RoomHeader({
+  projectId,
+  roomId,
+  loading,
+  title,
+  topic,
+  members,
+  canEdit,
+  membersOpen,
+  onToggleMembers,
+}: {
+  projectId: string;
+  roomId: string;
+  loading: boolean;
+  title: string;
+  topic: string | null;
+  members: RoomMember[];
+  canEdit: boolean;
+  membersOpen: boolean;
+  onToggleMembers: () => void;
+}) {
   const t = useTranslations('rooms');
-  if (members.length === 0) return null;
-  // People first, then agents: the order every access surface uses.
-  const sorted = [...members].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'person' ? -1 : 1));
-  return (
-    <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1" aria-label={t('members')}>
-      {sorted.map((member) => (
-        <li key={member.member_id} className="flex min-w-0 items-center gap-1.5">
-          <ParticipantAvatar kind={member.kind} label={member.label} userId={member.user_id} size="xs" />
-          <span className="text-muted-foreground max-w-48 truncate text-xs">{member.label}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
+  const stack = [...members].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'person' ? -1 : 1)).slice(0, 3);
 
-function MessageRow({ message }: { message: RoomMessage }) {
-  const t = useTranslations('rooms');
-  const person = message.sender_kind === 'member';
   return (
-    <li className="flex gap-3" data-seq={message.seq}>
-      <ParticipantAvatar
-        kind={person ? 'person' : 'session'}
-        label={message.sender_label}
-        userId={message.sender_user_id}
-        size="md"
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className="text-foreground truncate text-sm font-medium">{message.sender_label}</span>
-          <span className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs tabular-nums">
-            {person ? null : <span>{t('agent')}</span>}
-            <MessageTimeLabel timestamp={Date.parse(message.created_at)} />
-            <span>#{message.seq}</span>
-            {message.reply_to_seq ? (
-              <span aria-label={t('replyTo', { seq: message.reply_to_seq })}>↳ #{message.reply_to_seq}</span>
-            ) : null}
-          </span>
+    <header className="border-border flex h-12 shrink-0 items-center gap-2 border-b px-4">
+      <Hint label={t('back')} side="bottom">
+        <Button asChild variant="ghost" size="icon-sm" aria-label={t('back')} className="@2xl:hidden">
+          <Link href={`/projects/${projectId}/rooms`}>
+            <ArrowLeftIcon />
+          </Link>
+        </Button>
+      </Hint>
+      {loading ? (
+        <Skeleton className="h-6 w-48" />
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <HashIcon className="text-foreground size-4 shrink-0" />
+          <h1 className="text-foreground min-w-0 shrink truncate text-lg font-semibold">{title}</h1>
+          <TopicEditor projectId={projectId} roomId={roomId} topic={topic} canEdit={canEdit} />
         </div>
-        {/* Plain text: a message is untrusted input, never HTML. */}
-        <p className="text-foreground text-sm break-words whitespace-pre-wrap">{message.text}</p>
-      </div>
-    </li>
+      )}
+      {members.length > 0 ? (
+        <Hint label={t('viewMembers')} side="bottom">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={t('viewMembersCount', { count: members.length })}
+            aria-pressed={membersOpen}
+            onClick={onToggleMembers}
+            className={cn('shrink-0 gap-1.5', membersOpen && 'bg-active')}
+          >
+            <span className="flex -space-x-1">
+              {stack.map((m) => (
+                <span key={m.member_id} className="ring-background rounded-sm ring-2">
+                  <ParticipantAvatar kind={m.kind} label={m.label} userId={m.user_id} size="xs" />
+                </span>
+              ))}
+            </span>
+            <span className="tabular-nums">{members.length}</span>
+          </Button>
+        </Hint>
+      ) : null}
+    </header>
   );
 }
 
-function RoomComposer({ onSend }: { onSend: (text: string) => Promise<void> }) {
+function TopicEditor({
+  projectId,
+  roomId,
+  topic,
+  canEdit,
+}: {
+  projectId: string;
+  roomId: string;
+  topic: string | null;
+  canEdit: boolean;
+}) {
   const t = useTranslations('rooms');
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const send = async () => {
-    const body = text.trim();
-    if (!body || sending) return;
-    setSending(true);
+  const save = async () => {
+    if (draft === null) return;
+    const next = draft.trim() || null;
+    if (next === topic) {
+      setDraft(null);
+      return;
+    }
+    setSaving(true);
     try {
-      await onSend(body);
-      setText('');
+      await updateRoom(projectId, roomId, { topic: next });
+      await queryClient.invalidateQueries({ queryKey: qk.project.rooms(projectId) });
+      setDraft(null);
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : t('sendFailed'));
+      errorToast(error instanceof Error ? error.message : t('topicFailed'));
     } finally {
-      setSending(false);
+      setSaving(false);
     }
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
-    event.preventDefault();
-    void send();
-  };
-
-  return (
-    <div className="border-border border-t">
+  if (draft !== null) {
+    return (
       <form
-        className="mx-auto flex w-full max-w-3xl items-end gap-2 px-4 py-4"
+        className="flex min-w-0 flex-1 items-center gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          void send();
+          void save();
         }}
       >
-        <Textarea
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={t('composerPlaceholder')}
-          aria-label={t('composerPlaceholder')}
-          minHeight={36}
-          maxHeight={200}
-          rows={1}
-          className="font-normal"
+        <Input
+          autoFocus
+          size="sm"
+          value={draft}
+          maxLength={500}
+          disabled={saving}
+          aria-label={t('topic')}
+          placeholder={t('topicPlaceholder')}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => void save()}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setDraft(null);
+          }}
         />
-        <Button type="submit" size="icon-md" disabled={!text.trim() || sending} aria-label={t('send')}>
-          {sending ? <Loading className="size-4 shrink-0" /> : <PaperPlaneRightIcon />}
-        </Button>
+        {saving ? <Loading className="size-4 shrink-0" /> : null}
       </form>
+    );
+  }
+
+  if (!topic && !canEdit) return null;
+  const label = topic ?? t('addTopic');
+  return (
+    <>
+      <span aria-hidden className="text-muted-foreground hidden shrink-0 text-xs @3xl:inline">
+        ·
+      </span>
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={() => setDraft(topic ?? '')}
+          title={t('editTopic')}
+          className="text-muted-foreground hover:text-foreground hidden min-w-0 truncate text-left text-xs @3xl:block"
+        >
+          {label}
+        </button>
+      ) : (
+        <span title={label} className="text-muted-foreground hidden min-w-0 truncate text-xs @3xl:block">
+          {label}
+        </span>
+      )}
+    </>
+  );
+}
+
+function ChannelIntro({ title }: { title: string }) {
+  const t = useTranslations('rooms');
+  return (
+    <div className="space-y-2">
+      <h2 className="text-foreground flex items-center gap-1 text-xl font-medium">
+        <HashIcon className="size-5 shrink-0" />
+        <span className="min-w-0 truncate">{title}</span>
+      </h2>
+      <p className="text-muted-foreground text-sm text-pretty">{t('introChannel', { name: title })}</p>
+    </div>
+  );
+}
+
+function JoinBar({ name, onJoin }: { name: string; onJoin: () => Promise<void> }) {
+  const t = useTranslations('rooms');
+  const [pending, setPending] = useState(false);
+  return (
+    <div className="shrink-0 px-5 pb-5">
+      <div className="bg-popover border-border flex flex-col items-center gap-2 rounded-md border px-4 py-3">
+        <p className="text-foreground text-sm">{t('viewingChannel', { name })}</p>
+        <Button
+          size="sm"
+          disabled={pending}
+          aria-busy={pending}
+          onClick={async () => {
+            setPending(true);
+            await onJoin();
+            setPending(false);
+          }}
+        >
+          {t('joinChannel')}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function MessageSkeletons() {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col justify-end gap-4 px-5 py-4">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="flex gap-2">
+          <Skeleton className="size-10 shrink-0 rounded-sm" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-4 w-full" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
