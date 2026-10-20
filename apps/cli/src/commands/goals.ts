@@ -88,14 +88,17 @@ export interface GoalItem {
   due?: string | null;
 }
 
+/**
+ * goal.json holds only what code reads (check, transition, ls, status).
+ * Everything else the agent keeps in notes.md: constraints, people's threads,
+ * what it learned. `check` reports any other key.
+ */
 export interface Goal {
   version: number;
   objective: string;
-  input?: string;
   status: string;
   summary?: string;
   success_criteria: Array<{ id: string; text: string; met: boolean; evidence: string | null }>;
-  constraints?: string[];
   items: GoalItem[];
   sessions: Array<{ id: string; role: string; since?: string }>;
   reminder_id: string | null;
@@ -103,8 +106,10 @@ export interface Goal {
   transitions?: Array<{ from: string | null; to: string; at: string; reason: string; by: string }>;
   verified_by?: string | null;
   next_wake_at?: string | null;
-  updated_at?: string;
 }
+
+const GOAL_KEYS = new Set(['version', 'objective', 'status', 'summary', 'success_criteria', 'items', 'sessions', 'reminder_id', 'transitions', 'verified_by', 'next_wake_at']);
+const ITEM_KEYS = new Set(['id', 'kind', 'title', 'status', 'owner', 'due']);
 
 /** What `check` sees about one goal besides goal.json. */
 export interface GoalFacts {
@@ -136,8 +141,12 @@ export function goalViolations(raw: unknown, facts: GoalFacts): string[] {
     for (const item of g.items) {
       if (!ITEM_KINDS.has(item?.kind)) out.push(`item ${item?.id ?? '?'}: "kind" must be task, ask or wait.`);
       if (!ITEM_STATUSES.has(item?.status)) out.push(`item ${item?.id ?? '?'}: "status" must be open, doing, done or dropped.`);
+      const extra = Object.keys(item ?? {}).filter((k) => !ITEM_KEYS.has(k));
+      if (extra.length) out.push(`item ${item?.id ?? '?'}: unknown field(s) ${extra.join(', ')}; keep notes in notes.md.`);
     }
   }
+  const unknown = Object.keys(g).filter((k) => !GOAL_KEYS.has(k));
+  if (unknown.length) out.push(`goal.json has unknown field(s) ${unknown.join(', ')}; keep them in notes.md.`);
   const coordinators = (g.sessions ?? []).filter((s) => s.role === 'coordinator').map((s) => s.id);
   if (OPEN.has(g.status as string)) {
     if (facts.activeHeartbeats.length === 0) {
@@ -214,6 +223,11 @@ export function transitionViolations(raw: unknown, to: string, reason: string, f
     }
   }
   return out;
+}
+
+/** The project features a goal needs that are off. */
+export function missingGoalFlags(experimental: Record<string, boolean> | undefined): string[] {
+  return ['goals', 'volumes', 'reminders'].filter((k) => !experimental?.[k]);
 }
 
 const drivesRoot = () => process.env.KORTIX_DRIVES_ROOT ?? '/drives';
@@ -316,8 +330,8 @@ export async function runGoals(argv: string[]): Promise<number> {
   if (!sub || !['new', 'check', 'transition', 'ls', 'list', 'status'].includes(sub)) {
     return fail(`Unknown subcommand "${sub ?? ''}". Run \`kortix goals --help\`.`);
   }
-  if (!existsSync(drivesRoot())) {
-    return fail('Files is not mounted here (no /drives). Run kortix goals inside a session of a project with Files on.');
+  if (sub !== 'new' && !existsSync(drivesRoot())) {
+    return fail('Files is not mounted here (no /drives). Run kortix goals inside a session of a project with Volumes on.');
   }
   if (sub === 'ls' || sub === 'list') return listGoals(json);
   if (sub === 'status') return goalStatus(rest[0], json);
@@ -333,6 +347,12 @@ export async function runGoals(argv: string[]): Promise<number> {
     if (sub === 'new') {
       const objective = rest.join(' ').trim();
       if (!objective) return missing('the objective, e.g. kortix goals new "Rho business account fully closed"');
+      const project = await client.get<{ experimental?: Record<string, boolean> }>(`/projects/${projectId}`);
+      const off = missingGoalFlags(project.experimental);
+      if (off.length) {
+        return fail(`Goals need these project features on: ${off.join(', ')}. Turn them on with ${off.map((f) => `kortix projects features enable ${f}`).join(' && ')} (a project admin), then run this again.`);
+      }
+      if (!existsSync(drivesRoot())) return fail('Files is not mounted in this session yet. Volumes is on: start a new session, then run this again.');
       const mount = join(drivesRoot(), shared ? 'company' : 'me');
       if (!existsSync(mount)) return fail(`${mount} is not mounted in this session; see /drives/README.md.`);
       const slug = slugFlag ?? slugify(objective);
@@ -351,22 +371,19 @@ export async function runGoals(argv: string[]): Promise<number> {
       const goal: Goal = {
         version: 1,
         objective,
-        input: objective,
         status: 'draft',
         summary: '',
         success_criteria: [],
-        constraints: [],
         items: [],
         sessions: [{ id: sessionId, role: 'coordinator', since: now }],
         reminder_id: reminder.id,
         verified_by: null,
         next_wake_at: reminder.next_fire_at,
-        updated_at: now,
         transitions: [{ from: null, to: 'draft', at: now, reason: 'goal created', by: sessionId }],
       };
-      writeFileSync(join(folder, 'goal.json'), `${JSON.stringify({ ...goal, threads: [] }, null, 2)}\n`);
+      writeFileSync(join(folder, 'goal.json'), `${JSON.stringify(goal, null, 2)}\n`);
       writeFileSync(join(folder, 'log.md'), `# Log\n\n- ${now} Goal created: ${objective}\n`);
-      writeFileSync(join(folder, 'notes.md'), '# Notes\n');
+      writeFileSync(join(folder, 'notes.md'), `# Notes\n\n## Request\n\n${objective}\n\n## Constraints\n\n## Threads\n\nOne bound thread per person: person, channel, thread.\n\n## Learned\n`);
       installOnIdleHook();
       if (json) emitJson({ folder, slug, reminder_id: reminder.id, next_wake_at: reminder.next_fire_at });
       else {
@@ -466,7 +483,6 @@ async function transitionGoal(
     ...g,
     status: to,
     ...(to === 'done' || to === 'abandoned' ? { reminder_id: null, next_wake_at: null } : {}),
-    updated_at: now,
     transitions: [...(g.transitions ?? []), { from: g.status, to, at: now, reason, by: sessionId }],
   };
   writeFileSync(join(folder, 'goal.json'), `${JSON.stringify(next, null, 2)}\n`);
@@ -504,7 +520,6 @@ function summarize(folder: string) {
     criteria_total: criteria.length,
     open_asks: asks.map((a) => ({ id: a.id, title: a.title, owner: a.owner ?? null, due: a.due ?? null })),
     next_wake_at: g?.next_wake_at ?? null,
-    updated_at: g?.updated_at ?? null,
   };
 }
 

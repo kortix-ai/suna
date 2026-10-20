@@ -116,3 +116,16 @@ describe('transitionViolations (the goal state machine)', () => {
     expect(goalViolations(edited, healthy).join('\n')).toContain('edited by hand');
   });
 });
+
+test('goals need goals, volumes and reminders on', () => {
+  const { missingGoalFlags } = require('./goals') as typeof import('./goals');
+  expect(missingGoalFlags({ goals: true, volumes: true, reminders: true })).toEqual([]);
+  expect(missingGoalFlags({ goals: false, volumes: true, reminders: true })).toEqual(['goals']);
+  expect(missingGoalFlags(undefined)).toEqual(['goals', 'volumes', 'reminders']);
+});
+
+test('check reports fields code does not read, in goal.json and in items', () => {
+  const v = goalViolations({ ...base, constraints: ['x'], items: [{ ...base.items[0], nag_every: '1d' }] }, healthy).join('\n');
+  expect(v).toContain('unknown field(s) constraints');
+  expect(v).toContain('item i1: unknown field(s) nag_every');
+});

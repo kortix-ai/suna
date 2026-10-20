@@ -52,8 +52,12 @@ session of an open goal.
 | `kortix goals ls` | Every goal in the mounted folders: status, criteria met, open asks, next wake. |
 | `kortix goals status [<slug>]` | One goal: objective, status, criteria met, summary, open asks, next wake. |
 
-Add `--json` to any of them for machine-readable output. They need `/drives`:
-without it, Files is off for the project; tell the user a goal needs it.
+Add `--json` to any of them for machine-readable output.
+
+`new` needs three project features on: `goals`, `volumes` (Files) and
+`reminders`. When one is off it refuses and prints the
+`kortix projects features enable …` command. Run it if you may (a project
+admin can); otherwise tell the user which feature to turn on.
 </commands>
 
 <lifecycle>
@@ -87,25 +91,21 @@ through `active`.
 {
   "version": 1,
   "objective": "Rho business account fully closed",
-  "input": "make sure my RHO account is fully canceled and then just walk away",
   "status": "active",
   "summary": "Closure requested 2026-10-19. Waiting for Rho's written confirmation (due 2026-10-24).",
   "success_criteria": [
     { "id": "c1", "text": "Rho confirms the closure in writing", "met": false, "evidence": null },
     { "id": "c2", "text": "No charge on any linked account for 30 days after closure", "met": false, "evidence": null }
   ],
-  "constraints": ["Send any remaining balance to the main operating account"],
   "items": [
     { "id": "i1", "kind": "task", "title": "Request closure in the Rho app", "status": "done", "owner": "agent", "due": null },
     { "id": "i2", "kind": "ask", "title": "Approve the 2FA prompt", "status": "open", "owner": "user", "due": "2026-10-20T09:00:00Z" },
     { "id": "i3", "kind": "wait", "title": "Rho written confirmation", "status": "open", "owner": "Rho support", "due": "2026-10-24T17:00:00Z" }
   ],
   "sessions": [{ "id": "<session_id>", "role": "coordinator", "since": "2026-10-19T19:00:00Z" }],
-  "threads": [{ "person": "user", "channel": "<channel id>", "thread": "<thread ts>" }],
   "reminder_id": "reminder.3f9a1c2e7b04",
   "verified_by": null,
   "next_wake_at": "2026-10-21T09:00:00Z",
-  "updated_at": "2026-10-20T08:10:00Z",
   "transitions": [{ "from": null, "to": "draft", "at": "2026-10-19T19:00:00Z", "reason": "goal created", "by": "<session_id>" }]
 }
 ```
@@ -114,16 +114,20 @@ through `active`.
 | --- | --- | --- |
 | `version` | CLI | always 1 |
 | `status`, `transitions` | **CLI only** (`transition`) | never edit by hand: `check` reports a status that differs from the last transition |
-| `objective`, `input` | CLI, then you | the objective is a true-or-false outcome |
+| `objective` | CLI, then you | a true-or-false outcome |
 | `success_criteria` | you | 2 to 6; `met: true` only with an `evidence` path (relative to the folder) to a file that exists |
 | `items` | you | `kind`: `task` (work), `ask` (something only a person can give), `wait` (an outside event). `status`: `open`, `doing`, `done`, `dropped`. Open asks need `owner` and `due`; open waits need `due` |
 | `sessions` | CLI adds the coordinator; you add workers and verifiers | roles: `coordinator`, `worker`, `verifier` |
 | `reminder_id`, `next_wake_at` | CLI, then you when you re-arm | `reminder_id` must be the one active heartbeat |
 | `verified_by` | you, after the verifier answers | the verifier's session id |
-| `summary`, `constraints`, `threads`, `updated_at` | you | |
+| `summary` | you | one paragraph: where the goal is now |
+
+`goal.json` holds only these fields, and items only `id`, `kind`, `title`,
+`status`, `owner`, `due`. `check` reports any other field. Everything else goes
+in `notes.md`: the user's original request, the constraints, one thread per
+person, and what you learned. `kortix goals new` creates those sections.
 
 Read the file just before you write it, and write it with valid JSON.
-`kortix goals check` validates it.
 </goal-json>
 
 <start>
@@ -133,9 +137,10 @@ When the user gives an objective:
    user's own folder unless they say team or company.
 2. Write 2 to 6 success criteria into `goal.json` that someone else can check.
    Each one names its proof.
-3. Write the constraints from the user's words, plus the obvious ones (no
-   spend above what the user named, nothing that harms their other accounts).
-   Ask only when a wrong guess is expensive or irreversible.
+3. Write the constraints under `## Constraints` in `notes.md`: the user's
+   words, plus the obvious ones (no spend above what the user named, nothing
+   that harms their other accounts). Ask only when a wrong guess is expensive
+   or irreversible.
 4. Add the first items, then `kortix goals transition active --reason "criteria written"`.
 5. Act on the first item in this turn.
 6. `kortix goals check`, then end the turn with three lines to the user: the
@@ -156,8 +161,8 @@ Every turn on a goal, whatever woke you:
 4. **Move.** When the situation changed, `kortix goals transition <to>
    --reason "…"`: waiting for a person, waiting for an event, back to active,
    or verifying.
-5. **Save.** Update `summary`, `items`, `updated_at`. Append one line per
-   action to `log.md`. Put durable facts in `notes.md`.
+5. **Save.** Update `summary` and `items`. Append one line per action to
+   `log.md`. Put durable facts in `notes.md`.
 6. **Re-arm when the next wake must be earlier than the heartbeat.** The
    heartbeat fires daily. For an earlier wake (a `due` today, a worker you
    started), replace it:
@@ -193,9 +198,9 @@ can answer". Write the question in plain text, send it on a channel, record the
 - **One thread per person per goal.** A reply reaches you only in a thread bound
   to this session. On Slack, the first `slack send --channel <DM or channel>`
   binds its thread; read `thread_binding` in the output (the `kortix-slack`
-  skill). Store `{"person", "channel", "thread"}` in `threads` and send every
-  later message to that person with `--thread`. Tell them once to reply in
-  that thread.
+  skill). Write the person, channel and thread under `## Threads` in
+  `notes.md`, and send every later message to that person with `--thread`.
+  Tell them once to reply in that thread.
 - Raise the pressure with each chase, recorded in `log.md`: first a reminder,
   then the consequence of the delay ("the EIC cut-off is 2026-11-04; without
   the financials I cannot submit"), then a short daily ping. Stay professional.
@@ -206,8 +211,8 @@ can answer". Write the question in plain text, send it on a channel, record the
 </chase>
 
 <autonomy>
-- Act on anything inside the goal's constraints without asking. Report it in
-  `log.md` and `summary`.
+- Act on anything inside the goal's constraints (`notes.md`) without asking.
+  Report it in `log.md` and `summary`.
 - A constraint is a hard limit. An action outside it becomes an `ask`.
 - Do not ask for what you can find: search Files, the connectors, the web and
   earlier goal folders first.

@@ -38,7 +38,6 @@ flow(
     // One wait for every API process to see the new member (≤45 s).
     timeoutMs: 300_000,
     routes: [
-      'GET /v1/projects/:projectId',
       'PATCH /v1/projects/:projectId/features',
       'GET /v1/drives',
       'GET /v1/drives/:driveId/files',
@@ -80,13 +79,7 @@ flow(
         (await ctx.client.as(ctx.P.ANON).get('/v1/drives', listFiles)).status(401);
       });
 
-      await ctx.step('Volumes is on by default; the project admin turns it off → Files → 403 feature_disabled', async () => {
-        (await owner.get('/v1/projects/:projectId', { params: { projectId: project.id } }))
-          .status(200)
-          .body()
-          .has('$.experimental.volumes', true)
-          .has('$.experimental.drives', true);
-        (await setVolumes(false)).status(200).body().has('$.experimental.drives', false);
+      await ctx.step('Volumes off for the project (the default): Files → 403 feature_disabled', async () => {
         (await owner.get('/v1/drives', listFiles))
           .status(403)
           .body()

@@ -384,8 +384,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    // On by default (2026-10-19): goals keep their state in Files (kortix-goals).
-    platformDefault: () => true,
+    // Explicit opt-in. A project with `goals` needs it on.
+    platformDefault: () => false,
     enforcement: 'behavioral',
     enforcementNote:
       'BEHAVIORAL only, through the flag derived from it: drives (Files routes and ' +
@@ -401,7 +401,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // store files in.
     available: () => Boolean(config.PLATINUM_API_KEY),
     // Follows the project's `volumes` flag; not a toggle of its own.
-    platformDefault: () => true,
+    platformDefault: () => false,
     derivedFrom: 'volumes',
     catalogHidden: true,
     enforcement: 'routes',
@@ -411,6 +411,21 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(drives/routes.ts). Reads by drive id stay open, so a file a session already ' +
       'wrote under /drives still opens. BEHAVIORAL: session provisioning mounts no ' +
       'folder when off (drives/service.ts sessionVolumeMounts).',
+  },
+  {
+    key: 'goals',
+    name: 'Goals',
+    description:
+      'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on.',
+    stability: 'experimental',
+    // A goal keeps its state in Files, and every drive is a Platinum volume.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    enforcement: 'ui-only',
+    enforcementNote:
+      'CLI only: `kortix goals new` refuses to create a goal while it is off (apps/cli/src/commands/goals.ts). ' +
+      'The server parts goals use (reminders, unattended question release, reminder successors) are generic ' +
+      'and stay on for every project; a goal that already exists keeps running when the flag is turned off.',
   },
   {
     key: 'session_log',
