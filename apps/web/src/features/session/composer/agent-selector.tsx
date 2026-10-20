@@ -55,7 +55,11 @@ export function AgentSelector({
   disabled = false,
   triggerLabelClassName,
   unavailableHint,
+  open: controlledOpen,
+  onOpenChange,
 }: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
@@ -72,7 +76,9 @@ export function AgentSelector({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('threads');
-  const [open, setOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const open = controlledOpen ?? localOpen;
+  const setOpen = onOpenChange ?? setLocalOpen;
   const [search, setSearch] = useState('');
 
   const primaryAgents = useMemo(() => composerSelectableAgents(agents), [agents]);

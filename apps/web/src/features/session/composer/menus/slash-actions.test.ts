@@ -78,11 +78,15 @@ describe('controlToOpenFor', () => {
     expect(controlToOpenFor('set-reasoning-effort')).toBe('reasoning');
   });
 
+  test('switch-agent opens the agent picker without selecting an agent', () => {
+    expect(controlToOpenFor('switch-agent')).toBe('agent');
+  });
+
   test('every other action opens nothing', () => {
     // `compact-session` and `show-context` open HOST-owned modals through
     // their own callbacks (`onCompactClick` / `onContextClick`), not composer
     // toolbar controls — so they must stay null here.
-    for (const id of ['switch-agent', 'attach-file', 'compact-session', 'show-context'] as const) {
+    for (const id of ['attach-file', 'compact-session', 'show-context'] as const) {
       expect(controlToOpenFor(id)).toBeNull();
     }
   });
@@ -91,6 +95,10 @@ describe('controlToOpenFor', () => {
     const opens = SLASH_ACTIONS.filter((a) => controlToOpenFor(a.id) !== null).map(
       (a) => `${a.id}:${controlToOpenFor(a.id)}`,
     );
-    expect(opens.sort()).toEqual(['set-reasoning-effort:reasoning', 'switch-model:model']);
+    expect(opens.sort()).toEqual([
+      'set-reasoning-effort:reasoning',
+      'switch-agent:agent',
+      'switch-model:model',
+    ]);
   });
 });

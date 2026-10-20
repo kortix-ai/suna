@@ -42,6 +42,8 @@ export interface ComposerUnderbarProps {
    *  composer.tsx) — this component does no further filtering. */
   agents: Agent[];
   selectedAgent: string | null;
+  agentMenuOpen?: boolean;
+  onAgentMenuOpenChange?: (open: boolean) => void;
   onAgentChange?: (agentName: string | null) => void;
   /**
    * The roster loaded and this user may run NOTHING here (deny-by-default
@@ -74,6 +76,8 @@ export function ComposerUnderbar({
   agents,
   selectedAgent,
   onAgentChange,
+  agentMenuOpen,
+  onAgentMenuOpenChange,
   noAccessibleAgents = false,
   messages,
   models,
@@ -142,6 +146,8 @@ export function ComposerUnderbar({
         </Hint>
 
         <AgentSelector
+          open={agentMenuOpen}
+          onOpenChange={onAgentMenuOpenChange}
           agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
           selectedAgent={selectedAgent}
           onSelect={onAgentChange ?? NO_AGENT_SELECT}

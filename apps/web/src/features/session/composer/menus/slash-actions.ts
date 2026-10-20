@@ -88,7 +88,7 @@ export function localizedSlashActions(tI18nComplete: UiTranslator): SlashAction[
  */
 
 /** A composer control a `/` row can open. */
-export type SlashActionControl = 'model' | 'reasoning';
+export type SlashActionControl = 'model' | 'reasoning' | 'agent';
 
 /**
  * Which toolbar control a `/` row opens, or `null` for the rows that open
@@ -106,6 +106,7 @@ export type SlashActionControl = 'model' | 'reasoning';
  * at all.
  */
 export function controlToOpenFor(id: SlashActionId): SlashActionControl | null {
+  if (id === 'switch-agent') return 'agent';
   if (id === 'switch-model') return 'model';
   if (id === 'set-reasoning-effort') return 'reasoning';
   return null;
