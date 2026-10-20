@@ -114,7 +114,7 @@ export function ComposerUnderbar({
   const inline = variant === 'inline';
 
   return (
-    // `kortix-composer-underbar` is not decoration — `globals.css` hangs the
+    // `kortix-composer-underbar` is not decoration — `styles/components.css` hangs the
     // coarse-pointer 40×40 minimum off it. Without the class this row's
     // buttons stayed 32px on touch while the identical controls inside
     // `.kortix-composer-toolbar` were 40px.

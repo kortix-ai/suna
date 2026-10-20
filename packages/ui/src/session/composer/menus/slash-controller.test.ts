@@ -379,7 +379,7 @@ describe('createSlashSuggestion — dockSelector reaches the plugin', () => {
 describe('createSlashSuggestion — the inline "/Type to search" hint', () => {
   test('the trigger decoration carries a class and the hint content', () => {
     // The plugin adds `is-empty` and copies `decorationContent` onto the
-    // decoration span itself; `globals.css`'s
+    // decoration span itself; `styles/components.css`'s
     // `.kortix-slash-trigger.is-empty::after` is what paints it. Both halves
     // have to agree on the class name, and nothing else in the codebase
     // would catch a rename of one without the other.

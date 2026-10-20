@@ -25,7 +25,8 @@
  * Paper is always light. The tokens are re-pinned to their light values for the
  * printed page rather than hand-writing colors per element, so the transcript
  * prints in the same palette it was designed in (the values are the `:root`
- * block of globals.css, which is the source of truth).
+ * block of tokens.css, which is the source of truth; a host re-pins its own
+ * light values in its own `@media print`).
  */
 
 @media print {

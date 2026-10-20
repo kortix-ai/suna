@@ -693,7 +693,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           // `text-base` (16px) on mobile, NOT 15px: iOS Safari force-zooms the
           // page on focus for any input under 16px, and the composer is the one
           // field on the screen. `sm:text-sm` above 640px, which is the size
-          // `globals.css`'s slash-trigger rule already documents.
+          // `styles/components.css`'s slash-trigger rule already documents.
           'kortix-composer-editor w-full text-sm',
           disabled && 'opacity-50',
         )}

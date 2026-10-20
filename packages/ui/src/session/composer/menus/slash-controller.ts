@@ -179,7 +179,7 @@ export function createSlashSuggestion(
      * The suggestion plugin already wraps the trigger range in a decoration
      * span and tags it `is-empty` while the query has no characters; it also
      * copies `decorationContent` onto the span as `data-decoration-content`.
-     * All that is missing is a rule to paint it, which lives in `globals.css`
+     * All that is missing is a rule to paint it, which lives in `styles/components.css`
      * beside the composer's own placeholder rule (same `content:
      * attr(...)`/`pointer-events: none` shape, for the same reason: it must
      * not be selectable and must not shift the caret).

@@ -26,6 +26,9 @@
 @source not "../i18n/en.ts";
 
 @import './dotmatrix-loader.css';
+@import './components.css';
+/* Cmd+P: the session transcript and a markdown file as a document. */
+@import './print.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
 

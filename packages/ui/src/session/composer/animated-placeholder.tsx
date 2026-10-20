@@ -126,7 +126,7 @@ export interface AnimatedComposerPlaceholderProps {
  * The rotating placeholder, drawn OVER the TipTap editor rather than in it.
  *
  * TipTap's Placeholder extension paints a `::before` pseudo-element
- * (`content: attr(data-placeholder)` — globals.css), and pseudo-element
+ * (`content: attr(data-placeholder)` — styles/components.css), and pseudo-element
  * content cannot animate between two strings. So while this overlay is
  * active the composer passes `''` to the editor — the `::before` renders
  * empty — and this absolutely-positioned sibling carries the visible text.

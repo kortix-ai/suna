@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react';
 
 import { isKatexClassName } from './katex-markdown';
 
-/** The class a streamed word carries; `globals.css` fades it in once, on mount. */
+/** The class a streamed word carries; `styles/components.css` fades it in once, on mount. */
 export const STREAM_WORD_CLASS = 'kx-stream-word';
 
 /** The slice of hast this plugin reads; `@types/hast` is not a dependency of the app. */

@@ -36,7 +36,7 @@ export const STREAM_END_LAG_MS = 120;
  */
 export const STREAM_COMMIT_MS = 32;
 /**
- * The per-word fade (`.kx-stream-word` in globals.css, 300 ms) plus the
+ * The per-word fade (`.kx-stream-word` in styles/components.css, 300 ms) plus the
  * widest stagger delay (`STREAM_STAGGER_WINDOW_MS`). The message stays in
  * its streaming render this long after the last word lands, so that word
  * finishes its fade instead of snapping to full opacity.
