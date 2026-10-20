@@ -354,6 +354,11 @@ export function isAccountGraduatedSection(rawSection: string | null | undefined)
   return !!rawSection && Object.hasOwn(ACCOUNT_GRADUATED, rawSection);
 }
 
+/** Whether a legacy section id graduated to a PROJECT page (`GRADUATED`). */
+export function isProjectGraduatedSection(rawSection: string | null | undefined): boolean {
+  return !!rawSection && Object.hasOwn(GRADUATED, rawSection);
+}
+
 /**
  * Resolve a legacy section/tab id (from any of the three old settings
  * surfaces) to where it lives now. Graduated ids leave the overlay entirely —

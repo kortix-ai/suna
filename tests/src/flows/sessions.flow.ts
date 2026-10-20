@@ -1965,6 +1965,7 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/sessions/warm',
       'POST /v1/projects/:projectId/sessions/warm/claim',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
       'GET /v1/projects/:projectId/sessions',
     ],
@@ -2034,6 +2035,25 @@ flow(
       if (!ids.includes(warmSessionId)) {
         throw new Error('A warm session is missing from the manager inventory');
       }
+    });
+
+    await ctx.step('the unused auto-session reports ready before its first prompt', async () => {
+      await waitFor(async () => {
+        const response = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
+          params: { projectId: p.id, sessionId: warmSessionId },
+        });
+        response.status(200);
+        const session = response.json<{ status: string; error: string | null }>();
+        if (session.status === 'failed') {
+          throw new Error(`Warm session failed provisioning: ${session.error}`);
+        }
+        return session.status;
+      }, {
+        until: (status) => status === 'running',
+        timeoutMs: 120_000,
+        intervalMs: 2_000,
+        description: 'unused warm session reaches running',
+      });
     });
 
     await ctx.step('using the session drops the marker', async () => {

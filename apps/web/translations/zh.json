@@ -820,7 +820,17 @@
       "email": "电子邮件",
       "channelSwitch": "{kind}：{channel}",
       "preferencesLoadError": "无法加载你的通知设置",
-      "retry": "重试"
+      "retry": "重试",
+      "recovery": {
+        "instructions": "如何解除浏览器通知的屏蔽",
+        "chrome": "Chrome：打开地址旁的网站控件 → 网站设置 → 通知 → 允许。",
+        "edge": "Edge：打开地址旁的网站控件 → 此站点的权限 → 通知 → 允许。",
+        "firefox": "Firefox：打开地址旁的权限图标，移除已被阻止的通知权限设置。在此启用通知，即可重新请求权限。",
+        "safari": "Mac 上的 Safari：打开 Safari → 设置 → 网站 → 通知，然后将此网站设为“允许”。在 iPhone 或 iPad 上，请将 Kortix 添加到主屏幕，并从该 App 中启用通知。",
+        "afterChange": "更改浏览器权限后，请重新加载此页面，然后启用通知。系统的通知设置也必须允许浏览器发送通知。",
+        "fallback": "只要 Kortix 标签页保持打开，完成提示音就有可能在没有浏览器通知权限的情况下提醒您。请勿将标签页或设备静音。启用此选项会开启通知声音，并播放完成提示音的预览。",
+        "enableSound": "启用完成提示音"
+      }
     },
     "git": {
       "updateFailed": "无法更新存储库",
