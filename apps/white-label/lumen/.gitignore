@@ -10,3 +10,6 @@
 public/pdfium/
 public/react-docx/
 public/react-xlsx/
+
+# The sample matter's documents, copied from demo-data/dist by the same script.
+public/sample/

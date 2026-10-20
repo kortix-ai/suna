@@ -3,6 +3,7 @@
 import { threadPath, useFirm } from '@/components/access';
 import { statusVariant } from '@/components/matters/matters-list';
 import { PageBody } from '@/components/page';
+import { HistoryList } from '@/components/runs/history-list';
 import { authClient } from '@/lib/auth-client';
 import { STATUS_LABEL } from '@/lib/roles';
 import { errorText, relativeTime } from '@/lib/utils';
@@ -32,6 +33,7 @@ export default function Home() {
   const { data: auth } = authClient.useSession();
   const router = useRouter();
   const matters = useQuery(api.matters.list, { firmId: firm._id, status: 'open' });
+  const recent = useQuery(api.workflows.firmHistory, { firmId: firm._id, limit: 5 });
   const createThread = useAction(api.kortix.createThread);
   const [matterId, setMatterId] = useState<string>('');
   const [prompt, setPrompt] = useState('');
@@ -55,7 +57,7 @@ export default function Home() {
 
   return (
     <PageBody className="max-w-3xl">
-      <h1 className="mt-6 font-display text-4xl tracking-tight">
+      <h1 className="mt-2 font-display text-3xl tracking-tight sm:mt-6 sm:text-4xl">
         {greeting()}
         {first ? `, ${first}` : ''}.
       </h1>
@@ -81,7 +83,7 @@ export default function Home() {
         />
         <div className="flex items-center gap-2 px-3 pb-3">
           <Select value={matterId} onValueChange={setMatterId}>
-            <SelectTrigger aria-label="Matter" className="h-8 w-60 text-sm">
+            <SelectTrigger aria-label="Matter" className="h-8 w-full max-w-60 min-w-0 text-sm">
               <BriefcaseIcon className="size-4 text-muted-foreground" />
               <SelectValue placeholder="Choose a matter" />
             </SelectTrigger>
@@ -142,6 +144,18 @@ export default function Home() {
           ))}
         </ul>
       </section>
+
+      {recent && recent.length > 0 && (
+        <section className="mt-10">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-medium">Recent work</h2>
+            <Button asChild size="sm" variant="ghost">
+              <Link href="/app/history">View all</Link>
+            </Button>
+          </div>
+          <HistoryList items={recent} showMatter empty="" />
+        </section>
+      )}
     </PageBody>
   );
 }

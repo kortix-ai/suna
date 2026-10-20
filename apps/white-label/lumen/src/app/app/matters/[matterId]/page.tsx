@@ -1,16 +1,16 @@
 'use client';
 
-import { threadPath, useFirm, useMatter } from '@/components/access';
+import { useFirm, useMatter } from '@/components/access';
+import { HistoryList } from '@/components/runs/history-list';
 import { PartiesField, VisibilityField } from '@/components/matters/matter-form';
 import { roleLabel } from '@/lib/roles';
-import { errorText, relativeTime } from '@/lib/utils';
+import { errorText } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
 import { Button } from '@kortix/ui/button';
 import { Input } from '@kortix/ui/input';
 import { Label } from '@kortix/ui/label';
 import Loading from '@kortix/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@kortix/ui/modal';
-import { Skeleton } from '@kortix/ui/skeleton';
 import { errorToast, successToast } from '@kortix/ui/toast';
 import { ChatCircleTextIcon, PencilSimpleIcon, UsersThreeIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery } from 'convex/react';
@@ -32,42 +32,31 @@ function Section({ title, action, children }: { title: string; action?: React.Re
 export default function MatterOverview() {
   const { matter, members, canManage } = useMatter();
   const firm = useFirm();
-  const threads = useQuery(api.threads.list, { matterId: matter._id });
+  const history = useQuery(api.workflows.history, { matterId: matter._id });
   const directory = useQuery(api.members.directory, { firmId: firm._id });
   const [editing, setEditing] = useState(false);
   const [access, setAccess] = useState(false);
   const who = (id: string) => directory?.find((d) => d.userId === id);
 
   return (
-    <div className="mx-auto grid w-full max-w-5xl gap-4 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+    <div className="mx-auto grid w-full max-w-5xl gap-4 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="space-y-4">
-        <Section
-          title="Recent activity"
-          action={
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-medium">Recent activity</h2>
             <Button asChild size="sm" variant="secondary">
               <Link href={`/app/matters/${matter._id}/assistant`}>
                 <ChatCircleTextIcon className="size-4" /> Ask Lumen
               </Link>
             </Button>
-          }
-        >
-          {threads === undefined && <Skeleton className="h-16 rounded-md" />}
-          {threads?.length === 0 && (
-            <p className="py-6 text-center text-sm text-muted-foreground">Conversations on this matter appear here.</p>
+          </div>
+          <HistoryList items={history?.slice(0, 8)} rows={3} empty="Questions, reviews and workflows on this matter appear here." />
+          {history && history.length > 8 && (
+            <Link href={`/app/matters/${matter._id}/history`} className="mt-2 inline-block text-xs text-muted-foreground hover:text-foreground">
+              All {history.length} in History
+            </Link>
           )}
-          <ul className="divide-y divide-border/60">
-            {threads?.slice(0, 10).map((t) => (
-              <li key={t._id}>
-                <Link href={threadPath(matter._id, t._id)} className="flex items-center gap-3 py-2.5 text-sm hover:text-foreground">
-                  <ChatCircleTextIcon className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                  <span className="truncate text-xs text-muted-foreground">{who(t.createdBy)?.name}</span>
-                  <span className="w-16 text-right text-xs text-muted-foreground">{relativeTime(new Date(t.lastMessageAt).toISOString())}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Section>
+        </section>
 
         <Section
           title="Details"

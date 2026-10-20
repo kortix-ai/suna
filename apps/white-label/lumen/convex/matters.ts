@@ -21,16 +21,25 @@ const matterView = v.object({
   createdBy: v.string(),
   updatedAt: v.number(),
   threadCount: v.number(),
+  documentCount: v.number(),
+  runCount: v.number(),
   lastActivityAt: v.number(),
 });
 
 async function view(ctx: QueryCtx, m: Doc<"matters">) {
   const threads = await ctx.db.query("threads").withIndex("by_matter", (q) => q.eq("matterId", m._id)).take(500);
-  const last = threads.reduce((t, th) => Math.max(t, th.lastMessageAt), m.updatedAt);
+  const docs = await ctx.db.query("documents").withIndex("by_matter", (q) => q.eq("matterId", m._id)).take(1000);
+  const runs = await ctx.db.query("runs").withIndex("by_matter", (q) => q.eq("matterId", m._id)).take(1000);
+  const last = Math.max(
+    m.updatedAt,
+    ...threads.map((t) => t.lastMessageAt),
+    ...runs.map((r) => r.finishedAt ?? r._creationTime),
+    ...docs.map((d) => d._creationTime),
+  );
   return {
     _id: m._id, _creationTime: m._creationTime, firmId: m.firmId, name: m.name, number: m.number, client: m.client, parties: m.parties,
     practiceArea: m.practiceArea, status: m.status, visibility: m.visibility, createdBy: m.createdBy, updatedAt: m.updatedAt,
-    threadCount: threads.length, lastActivityAt: last,
+    threadCount: threads.length, documentCount: docs.length, runCount: runs.length, lastActivityAt: last,
   };
 }
 

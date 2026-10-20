@@ -3,6 +3,7 @@
 import { SignedIn } from '@/components/access';
 import { BrandMark } from '@/components/brand-mark';
 import { SIZE_BANDS, TagsInput } from '@/components/firm-fields';
+import { useAddSampleMatter } from '@/components/matters/sample-matter';
 import { authClient } from '@/lib/auth-client';
 import { errorText } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
@@ -223,31 +224,17 @@ function Invite({ onDone }: { onDone: () => void }) {
   );
 }
 
-/** A fictional sample matter so the firm has something to open. */
+/** A fictional sample matter, with its six synthetic agreements, so the firm has something to open. */
 function Sample({ firmId }: { firmId: Id<'firms'> }) {
   const router = useRouter();
-  const create = useMutation(api.matters.create);
-  const [pending, setPending] = useState(false);
+  const sample = useAddSampleMatter();
+  const pending = sample.progress !== null;
 
   async function add() {
-    setPending(true);
     try {
-      const id = await create({
-        firmId,
-        name: 'Project Aster (sample)',
-        number: 'SAMPLE-001',
-        client: 'Brightwater Example Holdings Ltd',
-        practiceArea: 'M&A',
-        parties: [
-          { name: 'Brightwater Example Holdings Ltd', role: 'client' },
-          { name: 'Aster Example Systems Ltd', role: 'target' },
-          { name: 'Quillon Analytics Inc.', role: 'counterparty' },
-        ],
-        visibility: 'firm',
-      });
-      router.replace(`/app/matters/${id}`);
+      const id = await sample.add(firmId);
+      router.replace(`/app/matters/${id}/vault`);
     } catch (err) {
-      setPending(false);
       errorToast('Could not add the sample matter', { description: errorText(err) });
     }
   }
@@ -257,12 +244,12 @@ function Sample({ firmId }: { firmId: Id<'firms'> }) {
       <div>
         <h1 className="font-display text-3xl tracking-tight">Try it on a sample matter</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          A fictional acquisition with fictional parties, so you can look around before you add real work.
+          A fictional acquisition: six agreements with fictional parties, ready to search, ask about and review before you add real work.
         </p>
       </div>
       <div className="flex gap-2">
         <Button onClick={add} disabled={pending}>
-          {pending && <Loading className="size-4" />} Add the sample matter
+          {pending && <Loading className="size-4" />} {sample.progress ?? 'Add the sample matter'}
         </Button>
         <Button variant="ghost" onClick={() => router.replace('/app')}>
           Start empty

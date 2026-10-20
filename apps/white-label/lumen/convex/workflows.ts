@@ -9,7 +9,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { type MutationCtx, type QueryCtx, action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { requireMatterAccess } from "./access";
+import { canSeeMatter, requireFirm, requireMatterAccess } from "./access";
 import { audit } from "./audit";
 import { templateFields } from "./library";
 import { type Actor, DD_COLUMNS, asOwner, createReview, createRun, readyDocs, requireRun } from "./runs";
@@ -135,30 +135,54 @@ export const fileFor = internalQuery({
 });
 
 /** Every run and conversation on a matter, newest first: the matter's history. */
+const historyItem = v.object({
+  type: v.union(v.literal("run"), v.literal("thread")), _id: v.string(), kind: v.string(), title: v.string(), status: v.optional(v.string()),
+  at: v.number(), startedAt: v.optional(v.number()), finishedAt: v.optional(v.number()), createdBy: v.string(), reviewId: v.optional(v.id("reviews")),
+  matterId: v.id("matters"), matterName: v.string(),
+});
+
+async function historyOf(ctx: QueryCtx, matter: Doc<"matters">, take: number) {
+  const runs = await ctx.db.query("runs").withIndex("by_matter", (q) => q.eq("matterId", matter._id)).order("desc").take(take);
+  const threads = await ctx.db.query("threads").withIndex("by_matter", (q) => q.eq("matterId", matter._id)).order("desc").take(take);
+  const m = { matterId: matter._id, matterName: matter.name };
+  return [
+    ...runs.map((r) => ({
+      type: "run" as const, _id: r._id as string, kind: r.kind, title: r.title, status: r.status, at: r._creationTime,
+      startedAt: r.startedAt, finishedAt: r.finishedAt, createdBy: r.createdBy, reviewId: r.reviewId, ...m,
+    })),
+    ...threads.map((t) => ({
+      type: "thread" as const, _id: t._id as string, kind: "thread", title: t.title, status: undefined, at: t.lastMessageAt,
+      startedAt: undefined, finishedAt: undefined, createdBy: t.createdBy, reviewId: undefined, ...m,
+    })),
+  ].sort((a, b) => b.at - a.at);
+}
+
+/** Every run and conversation on one matter, newest first. null when the caller may not see the matter. */
 export const history = query({
   args: { matterId: v.id("matters") },
-  returns: v.union(v.null(), v.array(v.object({
-    type: v.union(v.literal("run"), v.literal("thread")), _id: v.string(), kind: v.string(), title: v.string(), status: v.optional(v.string()),
-    at: v.number(), startedAt: v.optional(v.number()), finishedAt: v.optional(v.number()), createdBy: v.string(), reviewId: v.optional(v.id("reviews")),
-  }))),
+  returns: v.union(v.null(), v.array(historyItem)),
   handler: async (ctx, { matterId }) => {
     try {
-      await requireMatterAccess(ctx, matterId);
+      const { matter } = await requireMatterAccess(ctx, matterId);
+      return await historyOf(ctx, matter, 100);
     } catch {
       return null;
     }
-    const runs = await ctx.db.query("runs").withIndex("by_matter", (q) => q.eq("matterId", matterId)).order("desc").take(100);
-    const threads = await ctx.db.query("threads").withIndex("by_matter", (q) => q.eq("matterId", matterId)).order("desc").take(100);
-    return [
-      ...runs.map((r) => ({
-        type: "run" as const, _id: r._id as string, kind: r.kind, title: r.title, status: r.status, at: r._creationTime,
-        startedAt: r.startedAt, finishedAt: r.finishedAt, createdBy: r.createdBy, reviewId: r.reviewId,
-      })),
-      ...threads.map((t) => ({
-        type: "thread" as const, _id: t._id as string, kind: "thread", title: t.title, status: undefined, at: t.lastMessageAt,
-        startedAt: undefined, finishedAt: undefined, createdBy: t.createdBy, reviewId: undefined,
-      })),
-    ].sort((a, b) => b.at - a.at);
+  },
+});
+
+/** The firm's history across every matter the caller may see (admins: all), newest first. */
+export const firmHistory = query({
+  args: { firmId: v.id("firms"), limit: v.optional(v.number()) },
+  returns: v.array(historyItem),
+  handler: async (ctx, { firmId, limit }) => {
+    const { userId, role } = await requireFirm(ctx, firmId);
+    const n = Math.min(limit ?? 100, 200);
+    // ponytail: per-matter scan, fine to a few hundred matters; add a by_firm index on runs if a firm outgrows it.
+    const matters = await ctx.db.query("matters").withIndex("by_firm_updatedAt", (q) => q.eq("firmId", firmId)).order("desc").take(300);
+    const out = [];
+    for (const m of matters) if (await canSeeMatter(ctx, m, userId, role)) out.push(...(await historyOf(ctx, m, n)));
+    return out.sort((a, b) => b.at - a.at).slice(0, n);
   },
 });
 

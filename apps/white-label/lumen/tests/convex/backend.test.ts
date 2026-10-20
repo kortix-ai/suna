@@ -175,6 +175,21 @@ describe('matters: visibility and roles', () => {
     expect(await bob.as.query(api.matters.get, { matterId: 'nope' })).toEqual({ access: 'missing' });
   });
 
+  test('firm history and matter counts: a lawyer never sees a run on a restricted matter', async () => {
+    const { t, alice, bob, mallory, firm, matter, walled } = await world();
+    for (const [m, title] of [[matter, 'Open review'], [walled, 'Walled review']] as const) {
+      await t.run((ctx) => ctx.db.insert('runs', {
+        firmId: firm, matterId: m, kind: 'review', title, status: 'succeeded', documentIds: [], createdBy: alice.userId,
+      }));
+    }
+    const titles = (rows: { title: string }[]) => rows.map((r) => r.title).sort();
+    expect(titles(await alice.as.query(api.workflows.firmHistory, { firmId: firm }))).toEqual(['Open review', 'Walled review']);
+    expect(titles(await bob.as.query(api.workflows.firmHistory, { firmId: firm }))).toEqual(['Open review']);
+    await expect(mallory.as.query(api.workflows.firmHistory, { firmId: firm })).rejects.toThrow();
+    const [row] = await bob.as.query(api.matters.list, { firmId: firm });
+    expect([row!.runCount, row!.documentCount]).toEqual([1, 0]);
+  });
+
   test('adding the lawyer to the matter grants access; a non-manager cannot change visibility', async () => {
     const { alice, bob, walled } = await world();
     await expect(bob.as.mutation(api.matters.update, { matterId: walled, visibility: 'firm' })).rejects.toThrow(/403/);

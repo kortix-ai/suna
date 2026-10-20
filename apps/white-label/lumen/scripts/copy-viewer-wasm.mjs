@@ -1,8 +1,10 @@
 // The @kortix/ui document viewers (PDF, DOCX, XLSX) load their WebAssembly
 // engines from this origin's public/ folder (/pdfium/, /react-docx/, /react-xlsx/),
 // because a blob: worker cannot resolve a bundler asset URL. Copy them there
-// before `next dev` / `next build`. The copies are gitignored.
-import { copyFileSync, mkdirSync, realpathSync } from 'node:fs';
+// before `next dev` / `next build`. It also copies the synthetic sample matter's
+// documents (demo-data/dist) to public/sample/, which onboarding uploads through
+// the normal Vault path. The copies are gitignored.
+import { copyFileSync, mkdirSync, readdirSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
@@ -22,3 +24,10 @@ for (const [from, to] of assets) {
   copyFileSync(from, join(publicDir, to));
 }
 console.log(`viewer wasm: ${assets.length} files in public/`);
+
+const sampleDir = join(publicDir, 'sample');
+mkdirSync(sampleDir, { recursive: true });
+const dist = new URL('../demo-data/dist/', import.meta.url).pathname;
+const samples = readdirSync(dist).filter((f) => /\.(pdf|docx|txt)$/.test(f));
+for (const f of samples) copyFileSync(join(dist, f), join(sampleDir, f));
+console.log(`sample matter: ${samples.length} files in public/sample/`);
