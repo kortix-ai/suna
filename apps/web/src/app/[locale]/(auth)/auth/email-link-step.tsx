@@ -113,7 +113,7 @@ export function EmailLinkStep({
                 type="button"
                 onClick={onResend}
                 disabled={pending}
-                className="text-foreground underline-offset-4 hover:underline disabled:opacity-50"
+                className="text-foreground disabled:opacity-50"
               >
                 {pendingAction === 'resend' ? t('sending') : t('link.resend')}
               </button>
@@ -124,7 +124,7 @@ export function EmailLinkStep({
               type="button"
               onClick={onChangeEmail}
               disabled={pending}
-              className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
+              className="hover:text-foreground -my-2 py-2 transition-colors"
             >
               {t('useDifferentEmail')}
             </button>
@@ -137,7 +137,7 @@ export function EmailLinkStep({
                   type="button"
                   onClick={onPassword}
                   disabled={pending}
-                  className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                  className="hover:text-foreground -my-2 py-2 transition-colors disabled:opacity-50"
                 >
                   {pendingAction === 'password' ? t('oneMoment') : t('usePasswordInstead')}
                 </button>
