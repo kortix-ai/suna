@@ -22034,5 +22034,9 @@
   "triggerAutoPause": {
     "title": "Si è messo in pausa al limite di esecuzioni",
     "description": "Ha girato al suo limite orario di esecuzioni per 2 ore di fila, quindi ha smesso di avviarne. Trova cosa continua ad attivarlo, poi riprendilo."
+  },
+  "featureGate": {
+    "enable": "Abilita {name}",
+    "enabling": "Attivazione…"
   }
 }
