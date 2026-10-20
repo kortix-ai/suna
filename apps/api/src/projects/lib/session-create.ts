@@ -89,7 +89,7 @@ import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
-import { ensureDefaultSpace, findSessionSpace } from './project-spaces';
+import { FIRST_PROMPT_MAX_CHARS, ensureDefaultSpace, findForkSourceSpace, findSessionSpace } from './project-spaces';
 
 import {
   resolveProjectSnapshotMode,
@@ -256,13 +256,12 @@ type ValidatedSessionConnectorBindings = Extract<
 type PendingPromptConversion = ReturnType<typeof convertPendingPromptToInboxRow>;
 type SessionCreateMetadata = ReturnType<typeof buildSessionCreateMetadata>['metadata'];
 
-/** `metadata.first_prompt`: what a channel timeline shows as the thread's top message. */
-const FIRST_PROMPT_MAX_CHARS = 500;
 
 /**
  * `project_channels` on: the space the body names, checked, and the sharing it
- * implies (a channel is project-visible, a DM private). A warm draft gets no
- * space until a real create. Flag off: `space_id` is ignored.
+ * implies (a channel is project-visible unless the caller chose otherwise; a
+ * DM is always private). A warm draft gets no space until a real create. Flag
+ * off: `space_id` is ignored.
  */
 async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): Promise<
   SessionCreateStep<{ filed: boolean; spaceId: string | null; visibility?: 'project' | 'private' }>
@@ -271,12 +270,20 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
   const warm =
     (input.metadata?.[WARM_SESSION_METADATA_KEY] ?? normalizeJsonObject(body.metadata)[WARM_SESSION_METADATA_KEY]) === true;
   if (!resolveFeatureFlag(project.metadata, 'project_channels') || warm) return { filed: false, spaceId: null };
-  if (body.space_id === undefined) return { filed: true, spaceId: null };
+  const filedIn = (space: { spaceId: string; kind: 'channel' | 'dm' }) =>
+    ({ filed: true, spaceId: space.spaceId, visibility: space.kind === 'dm' ? 'private' : 'project' }) as const;
+  if (body.space_id === undefined) {
+    // A fork lands in its source's space while the caller may still post there, else in `#general`.
+    const forkSpace = typeof body.fork_from_session_id === 'string'
+      ? await findForkSourceSpace(project.projectId, body.fork_from_session_id, userId)
+      : null;
+    return forkSpace ? filedIn(forkSpace) : { filed: true, spaceId: null };
+  }
   const space = typeof body.space_id === 'string' && isUuid(body.space_id)
     ? await findSessionSpace(project.projectId, body.space_id, userId)
     : null;
   if (!space) return { error: { status: 404, body: { error: 'Channel not found', code: 'space_not_found' } } };
-  return { filed: true, spaceId: space.spaceId, visibility: space.kind === 'dm' ? 'private' : 'project' };
+  return filedIn(space);
 }
 
 /** The session's sharing: explicit, or inherited from the spawning session. */
@@ -1601,9 +1608,9 @@ export async function createProjectSession(input: {
   const accountId = project.accountId;
   const requestedSpace = await resolveRequestedSessionSpace(input);
   if (requestedSpace.error) return { error: requestedSpace.error };
-  // A named space decides the sharing unless the caller set it explicitly.
+  // A named channel decides the sharing unless the caller set it explicitly; a DM always does.
   const { parentSession, visibility, inheritedGrants } = await resolveSessionSharing(
-    requestedSpace.visibility && input.visibility === undefined
+    requestedSpace.visibility && (input.visibility === undefined || requestedSpace.visibility === 'private')
       ? { ...input, visibility: requestedSpace.visibility }
       : input,
     accountId,

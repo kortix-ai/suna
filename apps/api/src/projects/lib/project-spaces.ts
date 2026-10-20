@@ -26,6 +26,8 @@ export type SpaceResult = { space: SpaceRow } | { error: SpaceError };
 const DEFAULT_SLUG = 'general';
 const SLUG_INDEX = 'uniq_project_spaces_channel_slug';
 const ASSIGN_BATCH = 1_000;
+/** `metadata.first_prompt`: what a channel timeline shows as the thread's top message. */
+export const FIRST_PROMPT_MAX_CHARS = 500;
 
 export function serializeSpace(row: SpaceRow): Space {
   return {
@@ -66,9 +68,25 @@ export async function ensureDefaultSpace(projectId: string, accountId: string): 
   return raced;
 }
 
-/** Live channels (default first, then oldest first), then the user's DMs. */
+/** Whether a top-level session of the project is in no space. Served by `idx_project_sessions_unassigned_root`. */
+async function hasUnassignedRootSession(projectId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ sessionId: projectSessions.sessionId })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.projectId, projectId), isNull(projectSessions.spaceId), isNull(projectSessions.parentSessionId)))
+    .limit(1);
+  return Boolean(row);
+}
+
+/**
+ * Live channels (default first, then oldest first), then the user's DMs.
+ * Also the convergence point of the toggle backfill: a session that is in no
+ * space (the toggle effect failed, or a path created it outside any space) is
+ * filed into `#general` before the list is read.
+ */
 export async function listSpacesForUser(projectId: string, accountId: string, userId: string): Promise<SpaceRow[]> {
-  await ensureDefaultSpace(projectId, accountId);
+  const general = await ensureDefaultSpace(projectId, accountId);
+  if (await hasUnassignedRootSession(projectId)) await assignUnassignedSessions(projectId, general.spaceId);
   return db
     .select()
     .from(projectSpaces)
@@ -162,6 +180,16 @@ export async function findSessionSpace(projectId: string, spaceId: string, userI
     )
     .limit(1);
   return row ?? null;
+}
+
+/** The space of a fork's source session, when it is one the caller may file a session into. */
+export async function findForkSourceSpace(projectId: string, sourceSessionId: string, userId: string): Promise<SpaceRow | null> {
+  const [source] = await db
+    .select({ spaceId: projectSessions.spaceId })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.sessionId, sourceSessionId)))
+    .limit(1);
+  return source?.spaceId ? findSessionSpace(projectId, source.spaceId, userId) : null;
 }
 
 export async function updateChannel(

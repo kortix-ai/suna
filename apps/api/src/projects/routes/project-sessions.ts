@@ -49,6 +49,7 @@ import { readSessionConversationModels } from '../session-log-read';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { findForkSourceSpace, findSessionSpace } from '../lib/project-spaces';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { admitSessionSharingChange } from '../lib/session-model-keys';
@@ -237,6 +238,21 @@ export function registerProjectSessionsRoutes(): void {
     // Per-RESOURCE scoping: a member/department can only launch agents they're
     // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
     // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
+    // A DM thread (named, or a fork of one) runs the DM's agent. It overrides
+    // any `agent_name` (a create with none already falls back to a default
+    // agent), so the gate below authorizes the agent that will actually run.
+    if (resolveFeatureFlag(loaded.row.metadata, 'project_channels')) {
+      const space =
+        typeof body.space_id === 'string' && isUuid(body.space_id)
+          ? await findSessionSpace(projectId, body.space_id, loaded.userId)
+          : body.space_id === undefined && typeof body.fork_from_session_id === 'string'
+            ? await findForkSourceSpace(projectId, body.fork_from_session_id, loaded.userId)
+            : null;
+      if (space?.kind === 'dm' && space.dmAgentName) {
+        body.agent_name = space.dmAgentName;
+        delete body.agentName;
+      }
+    }
     const launchAgent = normalizeString(body.agent_name ?? body.agentName);
     // Covers BOTH the named agent and — the case that was missing — the unnamed
     // one. No `agent_name` does not mean "no agent": the session core falls back
@@ -396,8 +412,9 @@ export function registerProjectSessionsRoutes(): void {
             // each with `restore_until`. Combines with no other view.
             deleted: z.literal('only').optional(),
             // `project_channels` on: only the sessions filed into this space
-            // that the caller may see. Ignored while the flag is off.
-            space_id: z.string().uuid().optional(),
+            // that the caller may see (400 unless a UUID). Ignored while the
+            // flag is off, whatever its value, as before the flag existed.
+            space_id: z.string().optional(),
           }),
         },
       responses: {
@@ -477,6 +494,7 @@ export function registerProjectSessionsRoutes(): void {
     const personId = personUserId(c, loaded);
 
     const spaceId = resolveFeatureFlag(loaded.row.metadata, 'project_channels') ? (query.space_id ?? null) : null;
+    if (spaceId !== null && !isUuid(spaceId)) return c.json({ error: 'space_id must be a UUID' }, 400);
     const inventory = await loadProjectSessionInventory({
       projectId,
       accountId: loaded.row.accountId,

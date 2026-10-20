@@ -9,7 +9,9 @@
  * Contract: effects are convergence work, not part of the toggle's success —
  * the API response does not wait for them. Every effect is retried once and
  * failures are logged at error level with the flag + project; the reconcilers
- * they call are themselves idempotent and re-run on their periodic sweeps.
+ * they call are themselves idempotent and re-run later: the connector and
+ * event-subscription ones on their periodic sweeps, the `project_channels`
+ * backfill on the project's next `GET /spaces` (`listSpacesForUser`).
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
@@ -86,7 +88,7 @@ export async function runFeatureFlagToggleEffects(ctx: FeatureFlagToggleContext)
     } catch (second) {
       console.error(
         `[feature-flags] toggle effect failed twice for '${ctx.key}' on project ${ctx.projectId}; ` +
-          'state converges on the next periodic reconcile',
+          'not retried here: connectors and event subscriptions converge on their periodic sweeps, project_channels on the next GET /spaces',
         second instanceof Error ? second.message : second,
         first instanceof Error ? `(first attempt: ${first.message})` : '',
       );

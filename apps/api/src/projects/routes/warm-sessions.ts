@@ -29,6 +29,8 @@ import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-pro
 import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { FIRST_PROMPT_MAX_CHARS, ensureDefaultSpace } from '../lib/project-spaces';
 import { GitOperationError } from '../git/mirror';
 import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
 
@@ -459,7 +461,15 @@ export function registerWarmSessionsRoutes(): void {
       if (conversion?.error) {
         return c.json({ error: `pending_prompt: ${conversion.error}` }, 400);
       }
-      const pendingPrompt = conversion ? { pending_prompt: conversion.metadataPicks } : {};
+      // `project_channels` on: the claimed session is a new `#general` thread, as a
+      // create without `space_id` is. A warm session is created outside any space.
+      const channels = resolveFeatureFlag(loaded.row.metadata, 'project_channels');
+      const defaultSpaceId = channels ? (await ensureDefaultSpace(projectId, loaded.row.accountId)).spaceId : null;
+      const firstPrompt = channels ? normalizeString(rawPendingPrompt?.text) : null;
+      const pendingPrompt = {
+        ...(conversion ? { pending_prompt: conversion.metadataPicks } : {}),
+        ...(firstPrompt ? { first_prompt: firstPrompt.slice(0, FIRST_PROMPT_MAX_CHARS) } : {}),
+      };
       const claimed = await db.transaction(async (tx) => {
         const [row] = await tx
           .update(projectSessions)
@@ -467,6 +477,7 @@ export function registerWarmSessionsRoutes(): void {
             metadata: sql`(${projectSessionMetadataMerge(
             pendingPrompt,
           )}) - ${WARM_SESSION_METADATA_KEY}::text`,
+            ...(defaultSpaceId ? { spaceId: sql`coalesce(${projectSessions.spaceId}, ${defaultSpaceId}::uuid)` } : {}),
             updatedAt: new Date(),
           })
           .where(and(eq(projectSessions.sessionId, sessionId), WARM_SESSION_MARKER))

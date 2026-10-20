@@ -93,6 +93,9 @@ export const LIST_OMITTED_SESSION_METADATA_KEYS = [
   'session_start_timeline',
   'audit_v2',
   'remote_branch',
+  // A channel thread's top message: the list already serves it as the
+  // top-level `first_prompt` field, so the metadata copy is a duplicate.
+  'first_prompt',
 ] as const;
 
 function trimSessionMetadataForList(

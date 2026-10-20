@@ -15,8 +15,13 @@
  *  - else the transcript mirror (`session_transcript_messages`, written at
  *    every turn end for both harnesses): rows under the mirror's root runtime
  *    session; answers by `parent_message_id`.
- * Both are aggregates on indexes that lead with `session_id`. No message body
- * is read. A session with neither store answers 0.
+ * Both are aggregates on indexes that lead with `session_id`. The mirror
+ * count reads only id columns. The session-log count reads three keys of each
+ * matching row's `record` jsonb (`origin`, `reply_to`, `hidden_reason`), so it
+ * detoasts every message record of the listed root threads: its cost grows
+ * with transcript size. Measure it on a long thread before `session_log`
+ * defaults on (a stored count or role-specific columns would remove the
+ * read). A session with neither store answers 0.
  */
 import type { Database } from '@kortix/db';
 import { sql } from 'drizzle-orm';

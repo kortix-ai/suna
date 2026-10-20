@@ -7,6 +7,11 @@
 // to one project, so project_id is not a key column. Partial on
 // space_id IS NOT NULL: sessions outside a space are never listed by it.
 //
+// Also builds idx_project_sessions_unassigned_root: listSpacesForUser asks
+// "is any top-level session of this project in no space?" on every channel
+// list read, and files those sessions into #general. Partial on that
+// predicate, so a project whose sessions are all filed has no entries.
+//
 // lock_timeout is 180s, not the 2-5s house value: CREATE INDEX CONCURRENTLY waits
 // for every transaction that began before it, and lock_timeout governs that wait.
 // IF NOT EXISTS keeps a re-run safe; an INVALID leftover from a failed build must
@@ -25,6 +30,11 @@ export const up = (pgm) => {
     create index concurrently if not exists idx_project_sessions_space
       on kortix.project_sessions using btree (space_id, updated_at desc, session_id desc)
       where space_id is not null
+  `);
+  pgm.sql(`
+    create index concurrently if not exists idx_project_sessions_unassigned_root
+      on kortix.project_sessions using btree (project_id)
+      where space_id is null and parent_session_id is null
   `);
 };
 
