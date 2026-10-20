@@ -6,18 +6,19 @@ let answer: () => Promise<unknown> = async () => ({});
 let jwt = 'jwt-alice';
 mock.module('../../src/server/auth-server', () => ({
   getToken: async () => jwt,
-  fetchAuthAction: async (_ref: unknown, args: { workspaceId: string }) => {
-    calls.push(args.workspaceId);
+  fetchAuthAction: async (_ref: unknown, args: { matterId: string }) => {
+    calls.push(args.matterId);
     await new Promise((r) => setTimeout(r, 5));
     return answer();
   },
   fetchAuthMutation: async () => null,
+  fetchAuthQuery: async () => null,
 }));
 const { resolveMember } = await import('../../src/server/member');
 
-const WS = 'k57abcdefghijklmnopqrstuvwxyz0123';
-const req = (ws = WS) => new Request('http://lumen.test/api/kortix/x', { headers: { authorization: `Bearer ws.${ws}` } });
-const minted = (expiresAt: number) => ({ token: 'kortix_pat_1', projectId: 'proj_1', expiresAt, userId: 'u1', orgId: 'o1' });
+const MATTER = 'k57abcdefghijklmnopqrstuvwxyz0123';
+const req = (m = MATTER) => new Request('http://lumen.test/api/kortix/x', { headers: { authorization: `Bearer matter.${m}` } });
+const minted = (expiresAt: number) => ({ token: 'kortix_pat_1', projectId: 'proj_1', expiresAt, userId: 'u1', orgId: 'o1', firmId: 'f1' });
 
 let n = 0;
 beforeEach(() => {
@@ -27,7 +28,7 @@ beforeEach(() => {
   jwt = `jwt-${++n}`;
 });
 
-describe('resolveMember: one Convex call per (user, workspace) at a time', () => {
+describe('resolveMember: one Convex call per (user, matter) at a time', () => {
   test('10 concurrent calls share one memberToken call', async () => {
     answer = async () => minted(Date.now() + 3_600_000);
     const out = await Promise.all(Array.from({ length: 10 }, () => resolveMember(req())));
@@ -59,20 +60,20 @@ describe('resolveMember: one Convex call per (user, workspace) at a time', () =>
 
   test('a shared refusal gives every concurrent caller its own readable body and status', async () => {
     answer = async () => {
-      throw new Error('[CONVEX A(kortix:memberToken)] Uncaught Error: 403: not a member of this organization');
+      throw new Error('[CONVEX A(kortix:memberToken)] Uncaught Error: 403: not a member of this firm');
     };
     const out = await Promise.all(Array.from({ length: 3 }, () => resolveMember(req())));
     expect(calls).toHaveLength(1);
     for (const r of out) {
       if (!('error' in r)) throw new Error('expected a refusal');
       expect(r.error.status).toBe(403);
-      expect(await r.error.json()).toEqual({ error: 'Workspace access denied' });
+      expect(await r.error.json()).toEqual({ error: 'Matter access denied' });
     }
   });
 
-  test('a provisioning workspace is a 409; a missing bearer, a 400', async () => {
+  test('a provisioning firm is a 409; a missing bearer, a 400', async () => {
     answer = async () => {
-      throw new Error('Uncaught Error: 409: workspace is still provisioning');
+      throw new Error('Uncaught Error: 409: the firm workspace is still being set up');
     };
     const r = await resolveMember(req());
     expect('error' in r && r.error.status).toBe(409);

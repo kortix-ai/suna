@@ -9,14 +9,20 @@
  */
 
 import type * as access from "../access.js";
+import type * as audit from "../audit.js";
 import type * as auth from "../auth.js";
+import type * as billing from "../billing.js";
+import type * as firms from "../firms.js";
 import type * as http from "../http.js";
 import type * as kortix from "../kortix.js";
+import type * as lumenAgent from "../lumenAgent.js";
+import type * as matters from "../matters.js";
 import type * as memberTokens from "../memberTokens.js";
+import type * as members from "../members.js";
+import type * as seats from "../seats.js";
 import type * as tags from "../tags.js";
-import type * as templates from "../templates.js";
 import type * as threads from "../threads.js";
-import type * as workspaces from "../workspaces.js";
+import type * as usage from "../usage.js";
 
 import type {
   ApiFromModules,
@@ -26,14 +32,20 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   access: typeof access;
+  audit: typeof audit;
   auth: typeof auth;
+  billing: typeof billing;
+  firms: typeof firms;
   http: typeof http;
   kortix: typeof kortix;
+  lumenAgent: typeof lumenAgent;
+  matters: typeof matters;
   memberTokens: typeof memberTokens;
+  members: typeof members;
+  seats: typeof seats;
   tags: typeof tags;
-  templates: typeof templates;
   threads: typeof threads;
-  workspaces: typeof workspaces;
+  usage: typeof usage;
 }>;
 
 /**

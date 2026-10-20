@@ -1476,11 +1476,31 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
       >;
     };
     membership: {
+      directory: FunctionReference<
+        "query",
+        "internal",
+        { organizationId: string },
+        Array<{
+          email: string;
+          joinedAt: number;
+          name: string;
+          role: string;
+          userId: string;
+        }>,
+        Name
+      >;
       role: FunctionReference<
         "query",
         "internal",
         { organizationId: string; userId: string },
         null | string,
+        Name
+      >;
+      seatUse: FunctionReference<
+        "query",
+        "internal",
+        { organizationId: string },
+        { members: number; pending: number },
         Name
       >;
     };

@@ -296,6 +296,11 @@ describe('proxy policy: account reads Lumen answers itself', () => {
     expect(localAnswer('POST', `${S}/audit`, none, null, member)).toBeNull();
   });
 
+  test("a session's mounted folders are empty: the firm Drive spans every matter", async () => {
+    const drives = localAnswer('GET', `${S}/drives`, none, null, member);
+    expect(await drives?.json()).toEqual({ drives: [], personal: false, skipped: [], skippedMessage: null });
+  });
+
   test('every other path is left to blockedReason', () => {
     expect(localAnswer('GET', 'accounts/tokens', none, null, member)).toBeNull();
     expect(localAnswer('POST', 'accounts/me', none, null, member)).toBeNull();
@@ -313,9 +318,9 @@ describe('proxy request headers: only what Kortix needs leaves Lumen', () => {
         'if-none-match': 'W/"1"',
         'x-kortix-client-version': '1.2.3',
         cookie: 'better-auth.session_token=secret',
-        authorization: 'Bearer ws.abc',
+        authorization: 'Bearer matter.abc',
         'user-agent': 'Mozilla/5.0',
-        referer: 'http://localhost:3020/w/1',
+        referer: 'http://localhost:3020/app/matters/1',
         origin: 'http://localhost:3020',
         'accept-language': 'en-GB',
         'sec-ch-ua': '"Chromium"',
@@ -427,9 +432,36 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
       { name: 'kortix-cli', description: 'Drive the platform', source: 'skill' },
       { name: 'customize-opencode', description: 'Tune the harness', source: 'skill' },
       { name: 'pdf', description: 'Read PDFs. Uses the Kortix file tools.', source: 'skill' },
-      { name: 'xlsx', description: 'Spreadsheets', source: 'skill' },
+      { name: 'xlsx', description: 'Spreadsheets', source: 'skill', template: 'Use the Kortix sandbox to open the file.' },
     ]);
     expect((out as { name: string }[]).map((c) => c.name)).toEqual(['review', 'xlsx']);
+    expect((out as { template?: string }[])[1].template).toBe('Use the Lumen sandbox to open the file.');
+  });
+
+  test('the open-session snapshot filters its command list the same way', () => {
+    const snap = redactIdentity(`${S}/snapshot`, {
+      session: { session_id: 's1' },
+      runtime: { state: { agents: { value: [{ name: 'general', description: 'Generic Kortix worker' }] }, commands: { value: [
+        { name: 'kortix-cli', description: 'Drive Kortix itself', source: 'skill' },
+        { name: 'pdf', description: 'PDFs', source: 'skill', template: 'Kortix tools' },
+      ] } } },
+    }) as { runtime: { state: { commands: { value: unknown[] } } } };
+    expect(snap.runtime.state.commands.value).toEqual([{ name: 'pdf', description: 'PDFs', source: 'skill', template: 'Lumen tools' }]);
+    expect(JSON.stringify(snap)).not.toContain('Kortix');
+  });
+
+  test('the project record and its detail name Lumen, not the platform', () => {
+    for (const path of [P, `${P}/detail`]) {
+      expect(redactsIdentity(path)).toBe(true);
+      const out = redactIdentity(path, {
+        project_id: 'p1',
+        manifest: { project: { description: 'A Kortix project.' } },
+        features: [{ key: 'llm_gateway', description: 'Route through the managed Kortix LLM gateway', enabled: true }],
+      });
+      expect(JSON.stringify(out)).not.toContain('Kortix');
+      expect(out).toMatchObject({ project_id: 'p1', features: [{ key: 'llm_gateway', enabled: true }] });
+    }
+    expect(redactsIdentity(`${P}/files`)).toBe(false);
   });
 
   test('other routes pass through unchanged', () => {

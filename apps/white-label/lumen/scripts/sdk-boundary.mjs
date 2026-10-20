@@ -179,6 +179,9 @@ function isFeatureClient(path) {
   );
 }
 
+// Third-party APIs a server file may call directly (never Kortix). A literal prefix is required.
+const ALLOWED_SERVER_THIRD_PARTY = ['https://api.stripe.com/'];
+
 function rawFetchViolations(source, client) {
   const violations = [];
   // `fetch(` and a tagged template `fetch`…`` (it sends a real GET).
@@ -186,13 +189,12 @@ function rawFetchViolations(source, client) {
   for (const match of source.matchAll(fetchPattern)) {
     const expression = source.slice((match.index ?? 0) + match[0].length).trimStart();
     const target = staticFetchTarget(expression);
-    const isAllowed =
-      client &&
-      target !== null &&
-      ALLOWED_CLIENT_BFF_ROUTES.some(
-        (route) =>
-          target === route || target.startsWith(`${route}/`) || target.startsWith(`${route}?`),
-      );
+    const isAllowed = client
+      ? target !== null &&
+        ALLOWED_CLIENT_BFF_ROUTES.some(
+          (route) => target === route || target.startsWith(`${route}/`) || target.startsWith(`${route}?`),
+        )
+      : target !== null && ALLOWED_SERVER_THIRD_PARTY.some((origin) => target.startsWith(origin));
     if (!isAllowed) {
       violations.push({
         rule: 'raw-kortix-fetch',

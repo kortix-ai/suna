@@ -230,7 +230,6 @@ const ACTIONS: Record<string, CallSnippetId | CallSnippetId[] | Reason> = {
   // ── Account administration ────────────────────────────────────────────────
 
   // ── Project administration + workspace (dashboard parity) ─────────────────
-  'kortix.project().files.archive()': 'dashboard-parity',
   'kortix.project().files.history()': 'dashboard-parity',
   'kortix.project().files.list()': 'dashboard-parity',
   'kortix.project().files.read()': 'dashboard-parity',

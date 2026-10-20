@@ -96,6 +96,8 @@ const PERMISSION_PROBE = /^accounts\/[^/]+\/iam\/members\/[^/]+\/effective(:batc
 // The session audit log and participant list name the operator's Kortix user.
 const SESSION_AUDIT = new RegExp(`^projects/${PROJECT}/sessions/(${SESSION})/audit$`);
 const SESSION_PARTICIPANTS = new RegExp(`^projects/${PROJECT}/sessions/${SESSION}/participants$`);
+// A session's mounted folders. The firm Drive holds every matter, so a member sees none of it here.
+const SESSION_DRIVES = new RegExp(`^projects/${PROJECT}/sessions/${SESSION}/drives$`);
 const DENIED = 'Managed by the Lumen operator';
 
 interface Probe {
@@ -142,6 +144,7 @@ export function localAnswer(
       return Response.json({ session_id: audit[1], audit_access: false, count: 0, events: [], next_cursor: null, actions: [] });
     }
     if (SESSION_PARTICIPANTS.test(path)) return Response.json({ participants: [], total: 0, multi_user: false });
+    if (SESSION_DRIVES.test(path)) return Response.json({ drives: [], personal: false, skipped: [], skippedMessage: null });
   }
   const probe = PERMISSION_PROBE.exec(path);
   if (!probe) return null;
@@ -191,6 +194,10 @@ const GIT_HISTORY = new RegExp(`^projects/${PROJECT}/(?:branches|commits|commits
 const RUNTIME_COMMANDS = new RegExp(`^${RT}/command$`);
 const PLATFORM_COMMAND = /kortix|opencode/i;
 
+// The project record and its detail: the feature catalog and the manifest
+// describe the platform by name ("A Kortix project.", "the Kortix LLM gateway").
+const PROJECT_RECORD = new RegExp(`^projects/${PROJECT}(?:/detail)?$`);
+
 // The session's turn state: a failed turn carries Kortix's own error copy
 // ("…did not reach Kortix", "…so Kortix closed it").
 const SESSION_TURN = new RegExp(`^${S}/turn$`);
@@ -203,7 +210,8 @@ export function redactsIdentity(path: string): boolean {
     MESSAGE_AUTHORS.test(path) ||
     GIT_HISTORY.test(path) ||
     SESSION_TURN.test(path) ||
-    RUNTIME_COMMANDS.test(path)
+    RUNTIME_COMMANDS.test(path) ||
+    PROJECT_RECORD.test(path)
   );
 }
 
@@ -241,6 +249,36 @@ function scrubGit(value: unknown): unknown {
   return out;
 }
 
+/** Every string in a value names the brand instead of Kortix. Keys and non-strings stay. */
+function scrubWord(value: unknown): unknown {
+  if (typeof value === 'string') return value.replace(KORTIX_WORD, BRAND.name);
+  if (Array.isArray(value)) return value.map(scrubWord);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrubWord(v)]));
+}
+
+/**
+ * The slash-command list: the platform's own commands go, and a kept
+ * command's template (it becomes the prompt text when picked) names the brand.
+ */
+function scrubCommands(list: unknown[]): unknown[] {
+  return list
+    .filter((c) => !(isObject(c) && PLATFORM_COMMAND.test(`${c.name ?? ''} ${c.description ?? ''}`)))
+    .map(scrubWord);
+}
+
+/**
+ * The open-session snapshot's runtime state: the same command list at
+ * `state.commands.value`, filtered, and every string (agent descriptions
+ * from the starter template) naming the brand.
+ */
+function scrubSnapshotRuntime(runtime: unknown): unknown {
+  if (!isObject(runtime) || !isObject(runtime.state) || !isObject(runtime.state.commands)) return scrubWord(runtime);
+  const commands = runtime.state.commands;
+  if (!Array.isArray(commands.value)) return scrubWord(runtime);
+  return scrubWord({ ...runtime, state: { ...runtime.state, commands: { ...commands, value: scrubCommands(commands.value) } } });
+}
+
 /** Every `message` string in a turn state names the brand instead of Kortix. */
 function scrubTurn(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(scrubTurn);
@@ -261,19 +299,24 @@ function scrubTurn(value: unknown): unknown {
  * ("Messages with no known sender are absent"), so the transcript draws no
  * "Sent by" or "Stopped by". Authors that are agent sessions stay. Git
  * history names Lumen as every author (`scrubGit`), a failed turn's error
- * copy names Lumen (`scrubTurn`), and the slash-command list leaves out the
- * platform's own commands.
+ * copy names Lumen (`scrubTurn`), the slash-command list leaves out the
+ * platform's own commands and names Lumen in the rest, and the project
+ * record names Lumen (`scrubWord`).
  */
 export function redactIdentity(path: string, body: unknown): unknown {
-  if (RUNTIME_COMMANDS.test(path) && Array.isArray(body)) {
-    return body.filter((c) => !(isObject(c) && PLATFORM_COMMAND.test(`${c.name ?? ''} ${c.description ?? ''}`)));
-  }
+  if (RUNTIME_COMMANDS.test(path) && Array.isArray(body)) return scrubCommands(body);
+  if (PROJECT_RECORD.test(path)) return scrubWord(body);
   if (!isObject(body)) return body;
   if (GIT_HISTORY.test(path)) return scrubGit(body);
   if (SESSION_TURN.test(path)) return scrubTurn(body);
   if (SESSION_RECORD.test(path)) return scrubSession(body);
   if (SESSION_SNAPSHOT.test(path)) {
-    return { ...body, session: scrubSession(body.session), ...('turn' in body ? { turn: scrubTurn(body.turn) } : {}) };
+    return {
+      ...body,
+      session: scrubSession(body.session),
+      ...('turn' in body ? { turn: scrubTurn(body.turn) } : {}),
+      ...('runtime' in body ? { runtime: scrubSnapshotRuntime(body.runtime) } : {}),
+    };
   }
   if (!MESSAGE_AUTHORS.test(path)) return body;
   const keep = (map: unknown) =>

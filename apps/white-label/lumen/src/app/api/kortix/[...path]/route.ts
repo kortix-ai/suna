@@ -1,8 +1,8 @@
 /**
  * The same-origin proxy: `${origin}/api/kortix/*` → `${KORTIX_UPSTREAM}/*`.
  *
- * 1. `resolveMember` turns the Better Auth cookie + `Bearer ws.<workspaceId>`
- *    into the member's project-scoped Kortix token (Convex checks membership).
+ * 1. `resolveMember` turns the Better Auth cookie + `Bearer matter.<matterId>`
+ *    into the member's project-scoped Kortix token (Convex checks matter access).
  * 2. The path must be literal segments (`buildUpstreamPath`).
  * 3. Account reads the session UI makes are answered here (`localAnswer`):
  *    the member's identity is Lumen's, not the operator's Kortix user.
@@ -14,7 +14,7 @@
  * 6. A new session gets Lumen's tags and becomes a Lumen thread
  *    (`createSession`), whichever screen created it. A session update keeps
  *    those tags (`patchSession`): a member cannot forge or erase them. A
- *    session delete needs the thread's creator or an org admin, and drops the
+ *    session delete needs the thread's creator or an firm admin, and drops the
  *    thread record (`deleteSession`).
  *
  * Kortix enforces the project boundary: the member token is rejected on
@@ -24,7 +24,7 @@
  * allowlists paths instead of trusting Kortix's scope check alone.
  */
 
-import { fetchAuthMutation } from '@/server/auth-server';
+import { fetchAuthMutation, fetchAuthQuery } from '@/server/auth-server';
 import { type Member, memberKortix, resolveMember } from '@/server/member';
 import {
   SESSION_CREATE,
@@ -66,6 +66,9 @@ async function route(req: NextRequest, built: ReturnType<typeof buildUpstreamPat
   const blocked = blockedReason(req.method, built.path, new URLSearchParams(search));
   if (blocked) return Response.json({ error: blocked }, { status: 403 });
 
+  const sid = SESSION_PATH.exec(built.path)?.[1];
+  if (sid && !(await sessionInMatter(resolved.member, sid))) return Response.json({ error: 'Not found' }, { status: 404 });
+
   const upstreamUrl = `${upstreamBase()}/${built.path}${search}`;
   if (req.method === 'POST' && SESSION_CREATE.test(built.path)) {
     return createSession(req, upstreamUrl, resolved.member);
@@ -76,6 +79,28 @@ async function route(req: NextRequest, built: ReturnType<typeof buildUpstreamPat
     return patchSession(req, upstreamUrl, resolved.member, one[1], one[2]);
   }
   return forwardKortixRequest({ request: await outbound(req), upstreamUrl, token: resolved.member.token });
+}
+
+// Every session route: `projects/<pid>/sessions/<sid>` and below.
+const SESSION_PATH = /^projects\/[^/]+\/sessions\/([0-9a-f-]{36})(?:\/|$)/i;
+const MATTER_CACHE_MS = 60_000;
+// replica-local: a cache miss costs one Convex query; the thread row in Convex is the source of truth.
+const sessionMatter = new Map<string, number>();
+
+/**
+ * A session belongs to the matter in the bearer. The member token reaches
+ * every session of the firm's project, so without this a lawyer with access
+ * to one matter could read or prompt a thread of a restricted matter.
+ */
+async function sessionInMatter(member: Member, kortixSessionId: string): Promise<boolean> {
+  const key = `${member.userId}:${member.matterId}:${kortixSessionId}`;
+  if ((sessionMatter.get(key) ?? 0) > Date.now()) return true;
+  const row = await fetchAuthQuery(api.threads.bySession, { kortixSessionId }).catch(() => null);
+  if (row?.matterId !== member.matterId) return false;
+  // Only a yes is cached: a session recorded a moment later is not refused for a minute.
+  if (sessionMatter.size > 5000) sessionMatter.clear();
+  sessionMatter.set(key, Date.now() + MATTER_CACHE_MS);
+  return true;
 }
 
 /** The request Kortix receives: the browser's method and body, only the allowed headers. */
@@ -113,7 +138,7 @@ function forwardJson(req: NextRequest, upstreamUrl: string, member: Member, body
 async function createSession(req: NextRequest, upstreamUrl: string, member: Member) {
   const body = await readJson(req);
   if (!body) return Response.json({ error: 'Invalid request body' }, { status: 400 });
-  const res = await forwardJson(req, upstreamUrl, member, tagSessionCreate(body, member, member.workspaceId));
+  const res = await forwardJson(req, upstreamUrl, member, tagSessionCreate(body, member));
   if (!res.ok) return res;
   const text = await res.text();
   // The session exists now. A failed thread record must not turn it into a
@@ -124,7 +149,7 @@ async function createSession(req: NextRequest, upstreamUrl: string, member: Memb
   for (let attempt = 1; session.session_id && attempt <= 3; attempt++) {
     try {
       await fetchAuthMutation(api.threads.recordFromProxy, {
-        workspaceId: member.workspaceId as Id<'workspaces'>,
+        matterId: member.matterId as Id<'matters'>,
         kortixSessionId: session.session_id,
         title: session.name ?? (typeof body.name === 'string' ? body.name : ''),
         proxySecret: process.env.LUMEN_PROXY_SECRET ?? '',
@@ -140,7 +165,7 @@ async function createSession(req: NextRequest, upstreamUrl: string, member: Memb
 
 function deleteCheck(member: Member, sessionId: string, remove: boolean) {
   return fetchAuthMutation(api.threads.deleteFromProxy, {
-    workspaceId: member.workspaceId as Id<'workspaces'>,
+    matterId: member.matterId as Id<'matters'>,
     kortixSessionId: sessionId,
     proxySecret: process.env.LUMEN_PROXY_SECRET ?? '',
     remove,
@@ -184,7 +209,7 @@ async function patchSession(req: NextRequest, upstreamUrl: string, member: Membe
   if (res.ok && typeof body.name === 'string') {
     // The thread list reads Lumen's own title. A failed update leaves the old title and is logged.
     await fetchAuthMutation(api.threads.renameFromProxy, {
-      workspaceId: member.workspaceId as Id<'workspaces'>,
+      matterId: member.matterId as Id<'matters'>,
       kortixSessionId: sessionId,
       title: body.name,
       proxySecret: process.env.LUMEN_PROXY_SECRET ?? '',

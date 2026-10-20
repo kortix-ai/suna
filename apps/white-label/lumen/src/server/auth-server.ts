@@ -24,10 +24,11 @@ export const handler = {
   POST: (request: Request) => auth().handler.POST(request),
 };
 /** Forward a call to the lazily built helper, keeping its exact (generic) type. */
-function lazy<K extends 'getToken' | 'fetchAuthAction' | 'fetchAuthMutation'>(key: K): Helpers[K] {
+function lazy<K extends 'getToken' | 'fetchAuthAction' | 'fetchAuthMutation' | 'fetchAuthQuery'>(key: K): Helpers[K] {
   return ((...args: unknown[]) => (auth()[key] as (...a: unknown[]) => unknown)(...args)) as Helpers[K];
 }
 
 export const getToken = lazy('getToken');
 export const fetchAuthAction = lazy('fetchAuthAction');
 export const fetchAuthMutation = lazy('fetchAuthMutation');
+export const fetchAuthQuery = lazy('fetchAuthQuery');

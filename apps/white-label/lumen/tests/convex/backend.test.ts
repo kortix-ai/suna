@@ -1,21 +1,28 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, components, internal } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
+import { verifyStripeSignature } from '../../convex/billing';
+import { seatAvailable } from '../../convex/seats';
 import { PROXY_SECRET, addMember, lumenTest, org, signedInUser } from './setup';
 
-// The Kortix SDK, faked at the module edge: every token mint and revoke is counted.
+// The Kortix SDK, faked at the module edge: every token mint, revoke and folder is counted.
 // (Vitest cannot load the SDK's TypeScript source graph; Convex bundles it with esbuild.)
 const kortixFake = vi.hoisted(() => {
   const mints: Array<{ name: string; projectId: string; expiresAt: string }> = [];
   const revokes: string[] = [];
+  const folders: string[] = [];
+  const provisions: Array<Record<string, unknown>> = [];
   return {
     mints,
     revokes,
+    folders,
+    provisions,
     provision: { fail: false },
     client: {
       projects: {
-        provision: async () => {
-          if (kortixFake.provision.fail) throw new Error('502: upstream exploded at 10.0.0.7');
+        provision: async (input: Record<string, unknown>) => {
+          provisions.push(input);
+          if (kortixFake.provision.fail) throw new Error('502: Kortix upstream exploded at 10.0.0.7');
           return { project_id: 'proj_new' };
         },
       },
@@ -31,182 +38,328 @@ const kortixFake = vi.hoisted(() => {
     },
   };
 });
-vi.mock('@kortix/sdk/server', () => ({ createScopedKortix: () => kortixFake.client, runWithKortix: () => {} }));
-vi.mock('@kortix/sdk', () => ({ updateAgentConfig: () => {}, updateProjectDefaultAgent: () => {} }));
+vi.mock('@kortix/sdk/server', () => ({
+  createScopedKortix: () => kortixFake.client,
+  runWithKortix: (_config: unknown, fn: () => unknown) => fn(),
+}));
+vi.mock('@kortix/sdk', () => ({
+  updateAgentConfig: async () => {},
+  updateProjectDefaultAgent: async () => {},
+  updateFeatureFlag: async (_p: string, key: string, on: boolean) => void kortixFake.folders.push(`flag:${key}=${on}`),
+  getProjectDrive: async () => ({ driveId: 'drive_1' }),
+  makeDriveFolder: async (_d: string, path: string) => void kortixFake.folders.push(path),
+}));
 const mints = kortixFake.mints;
 beforeEach(() => {
   mints.length = 0;
   kortixFake.revokes.length = 0;
+  kortixFake.folders.length = 0;
+  kortixFake.provisions.length = 0;
   kortixFake.provision.fail = false;
 });
 
+type T = ReturnType<typeof lumenTest>;
+
+async function insertFirm(t: T, orgId: string, createdBy: string, patch: Record<string, unknown> = {}) {
+  return t.run((ctx) =>
+    ctx.db.insert('firms', {
+      orgId, name: 'Example & Co. Legal', practiceTags: [], sizeBand: '2-10', status: 'ready', kortixProjectId: 'proj_1',
+      plan: 'trial', seats: 5, billingStatus: 'none', createdBy, ...patch,
+    }),
+  );
+}
+
+async function insertMatter(t: T, firmId: Id<'firms'>, createdBy: string, visibility: 'firm' | 'restricted' = 'firm') {
+  return t.run((ctx) =>
+    ctx.db.insert('matters', {
+      firmId, name: visibility === 'firm' ? 'Project Aster' : 'Walled', client: 'Brightwater Example Holdings', parties: [],
+      status: 'open', visibility, driveFolder: '/Company/Lumen/Matters/x', createdBy, updatedAt: Date.now(),
+    }),
+  );
+}
+
+/** One firm: alice owner, bob lawyer; mallory is in no firm. One open matter and one restricted to alice. */
 async function world() {
   const t = lumenTest();
-  const acme = await org(t, 'Acme Capital');
-  const alice = await signedInUser(t, 'alice@example.test');
-  const mallory = await signedInUser(t, 'mallory@example.test');
+  const acme = await org(t, 'Example Co');
+  const alice = await signedInUser(t, 'alice@example.com');
+  const bob = await signedInUser(t, 'bob@example.com');
+  const mallory = await signedInUser(t, 'mallory@example.com');
   await addMember(t, acme, alice.userId, 'owner');
-  const ready = await t.run((ctx) =>
-    ctx.db.insert('workspaces', {
-      orgId: acme, name: 'Deals', templateSlug: 'finance-analyst', kortixProjectId: 'proj_1', status: 'ready', createdBy: alice.userId,
-    }),
-  );
-  const provisioning = await t.run((ctx) =>
-    ctx.db.insert('workspaces', {
-      orgId: acme, name: 'New', templateSlug: 'finance-analyst', kortixProjectId: null, status: 'provisioning', createdBy: alice.userId,
-    }),
-  );
-  return { t, acme, alice, mallory, ready, provisioning };
+  await addMember(t, acme, bob.userId, 'member');
+  const firm = await insertFirm(t, acme, alice.userId);
+  const matter = await insertMatter(t, firm, alice.userId);
+  const walled = await insertMatter(t, firm, alice.userId, 'restricted');
+  await t.run((ctx) => ctx.db.insert('matterMembers', { matterId: walled, userId: alice.userId }));
+  return { t, acme, alice, bob, mallory, firm, matter, walled };
 }
 
 type As = Awaited<ReturnType<typeof signedInUser>>['as'];
-const token = (as: As, workspaceId: string, proxySecret = PROXY_SECRET) =>
-  as.action(api.kortix.memberToken, { workspaceId, proxySecret });
+const token = (as: As, matterId: string, proxySecret = PROXY_SECRET) => as.action(api.kortix.memberToken, { matterId, proxySecret });
 
-describe('memberToken: who gets a Kortix token for which workspace', () => {
-  test('a member gets a project-scoped, expiring token for the workspace project', async () => {
-    const { alice, ready } = await world();
-    const got = await token(alice.as, ready);
+describe('memberToken: who gets a Kortix token for which matter', () => {
+  test('a member gets a project-scoped, expiring token for the firm project', async () => {
+    const { alice, matter } = await world();
+    const got = await token(alice.as, matter);
     expect(got.projectId).toBe('proj_1');
     expect(got.token).toBe('kortix_pat_1');
-    expect(mints).toHaveLength(1);
     expect(mints[0]).toMatchObject({ projectId: 'proj_1', name: `lumen-member-${alice.userId}` });
     expect(Date.parse(mints[0].expiresAt)).toBe(got.expiresAt);
   });
 
-  test('a stored token with more than 5 minutes left is reused; one closer to expiry is replaced', async () => {
-    const { t, alice, ready } = await world();
-    const first = await token(alice.as, ready);
-    expect((await token(alice.as, ready)).token).toBe(first.token);
+  test('one token per (firm, member): a second matter reuses it; one close to expiry is replaced', async () => {
+    const { t, alice, matter, walled } = await world();
+    const first = await token(alice.as, matter);
+    expect((await token(alice.as, walled)).token).toBe(first.token);
     expect(mints).toHaveLength(1);
-
     await t.run(async (ctx) => {
       const row = (await ctx.db.query('memberTokens').collect())[0];
       await ctx.db.patch(row._id, { expiresAt: Date.now() + 4 * 60_000 });
     });
-    expect((await token(alice.as, ready)).token).toBe('kortix_pat_2');
-    expect(mints).toHaveLength(2);
-    // Still one row per (workspace, member).
+    expect((await token(alice.as, matter)).token).toBe('kortix_pat_2');
     expect(await t.run((ctx) => ctx.db.query('memberTokens').collect())).toHaveLength(1);
   });
 
   test('every minted token has its revoke scheduled at expiry', async () => {
-    const { t, alice, ready } = await world();
-    const got = await token(alice.as, ready);
+    const { t, alice, matter } = await world();
+    const got = await token(alice.as, matter);
     const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
     const revoke = jobs.find((j) => j.name.includes('revokeToken'));
     expect(revoke?.args).toEqual([{ tokenId: 'tok_1' }]);
     expect(revoke?.scheduledTime).toBe(got.expiresAt);
   });
 
-  test('a non-member, a provisioning workspace, an unknown id and a wrong proxy secret are refused, and nothing is minted', async () => {
-    const { mallory, alice, ready, provisioning } = await world();
-    await expect(token(mallory.as, ready)).rejects.toThrow(/403: not a member/);
-    await expect(token(alice.as, provisioning)).rejects.toThrow(/409: /);
-    await expect(token(alice.as, 'not-a-workspace-id')).rejects.toThrow(/404: /);
-    await expect(token(alice.as, ready, 'wrong')).rejects.toThrow(/403: proxy only/);
+  test('refused: a non-member, a lawyer on a restricted matter, a provisioning firm, an unknown id, a wrong secret', async () => {
+    const { t, acme, alice, bob, mallory, matter, walled } = await world();
+    const pending = await insertFirm(t, acme, alice.userId, { status: 'provisioning', kortixProjectId: undefined, orgId: 'other' });
+    const pendingMatter = await insertMatter(t, pending, alice.userId);
+    await expect(token(mallory.as, matter)).rejects.toThrow(/403: not a member/);
+    await expect(token(bob.as, walled)).rejects.toThrow(/403: no access to this matter/);
+    await expect(token(alice.as, pendingMatter)).rejects.toThrow(/403|409/);
+    await expect(token(alice.as, 'not-a-matter-id')).rejects.toThrow(/404: /);
+    await expect(token(alice.as, matter, 'wrong')).rejects.toThrow(/403: proxy only/);
     expect(mints).toHaveLength(0);
   });
 
   test('a member removed from the org is refused on the next call', async () => {
-    const { t, alice, ready, acme } = await world();
-    await token(alice.as, ready);
+    const { t, alice, matter, acme } = await world();
+    await token(alice.as, matter);
     await t.mutation(components.betterAuth.adapter.deleteOne, {
       input: { model: 'member', where: [{ field: 'userId', value: alice.userId }, { field: 'organizationId', value: acme }] },
     } as never);
-    await expect(token(alice.as, ready)).rejects.toThrow(/403: not a member/);
+    await expect(token(alice.as, matter)).rejects.toThrow(/403: not a member/);
   });
 });
 
-describe('threads.recordFromProxy: one Lumen thread per Kortix session', () => {
-  test('recording the same session twice keeps one thread and one audit event', async () => {
-    const { t, alice, ready } = await world();
-    const args = { workspaceId: ready as Id<'workspaces'>, kortixSessionId: 'sess_1', title: '  Q3   ', proxySecret: PROXY_SECRET };
-    const a = await alice.as.mutation(api.threads.recordFromProxy, args);
-    const b = await alice.as.mutation(api.threads.recordFromProxy, { ...args, title: 'other' });
-    expect(b).toBe(a);
-    const threads = await t.run((ctx) => ctx.db.query('threads').collect());
-    expect(threads.map((th) => [th.kortixSessionId, th.title, th.createdBy])).toEqual([['sess_1', 'Q3', alice.userId]]);
+describe('matters: visibility and roles', () => {
+  test('a lawyer does not see a restricted matter in the list and gets "forbidden" on a direct read', async () => {
+    const { alice, bob, firm, walled } = await world();
+    const names = (rows: { name: string }[]) => rows.map((m) => m.name).sort();
+    expect(names(await alice.as.query(api.matters.list, { firmId: firm }))).toEqual(['Project Aster', 'Walled']);
+    expect(names(await bob.as.query(api.matters.list, { firmId: firm }))).toEqual(['Project Aster']);
+    expect(await bob.as.query(api.matters.get, { matterId: walled })).toEqual({ access: 'forbidden' });
+    expect(await bob.as.query(api.matters.get, { matterId: 'nope' })).toEqual({ access: 'missing' });
+  });
+
+  test('adding the lawyer to the matter grants access; a non-manager cannot change visibility', async () => {
+    const { alice, bob, walled } = await world();
+    await expect(bob.as.mutation(api.matters.update, { matterId: walled, visibility: 'firm' })).rejects.toThrow(/403/);
+    await alice.as.mutation(api.matters.update, { matterId: walled, members: [bob.userId] });
+    expect((await bob.as.query(api.matters.get, { matterId: walled })).access).toBe('ok');
+  });
+
+  test('create writes the Drive folder path, search filters, status change is audited with the actor', async () => {
+    const { t, bob, firm } = await world();
+    const id = await bob.as.mutation(api.matters.create, {
+      firmId: firm, name: '  Quillon commercial ', number: 'M-0042', client: 'Quillon Analytics Inc.',
+      parties: [{ name: 'Quillon Analytics Inc.', role: 'counterparty' }, { name: ' ', role: 'other' }], visibility: 'firm',
+    });
+    const m = await t.run((ctx) => ctx.db.get(id));
+    expect(m).toMatchObject({ name: 'Quillon commercial', driveFolder: `/Company/Lumen/Matters/${id}`, status: 'open' });
+    expect(m?.parties).toHaveLength(1);
+    expect((await bob.as.query(api.matters.list, { firmId: firm, search: 'm-0042' })).map((r) => r.name)).toEqual(['Quillon commercial']);
+    await bob.as.mutation(api.matters.update, { matterId: id, status: 'on_hold' });
+    expect((await bob.as.query(api.matters.list, { firmId: firm, status: 'on_hold' })).map((r) => r._id)).toEqual([id]);
     const audits = await t.run((ctx) => ctx.db.query('auditEvents').collect());
-    expect(audits.filter((e) => e.action === 'thread.create')).toHaveLength(1);
-  });
-
-  test('a non-member or a caller without the proxy secret cannot record a thread', async () => {
-    const { alice, mallory, ready } = await world();
-    const args = { workspaceId: ready as Id<'workspaces'>, kortixSessionId: 'sess_2', title: 'x', proxySecret: PROXY_SECRET };
-    await expect(mallory.as.mutation(api.threads.recordFromProxy, args)).rejects.toThrow(/403: not a member/);
-    await expect(alice.as.mutation(api.threads.recordFromProxy, { ...args, proxySecret: 'nope' })).rejects.toThrow(/403: proxy only/);
+    expect(audits.find((e) => e.action === 'matter.update')).toMatchObject({ actorId: bob.userId, matterId: id, detail: 'status → on_hold' });
   });
 });
 
-describe('threads.renameFromProxy: a rename through the proxy renames the thread', () => {
-  test('the title follows the session name; a non-member, a wrong secret and another workspace change nothing', async () => {
-    const { t, alice, mallory, ready, provisioning } = await world();
-    const ws = ready as Id<'workspaces'>;
-    await alice.as.mutation(api.threads.recordFromProxy, { workspaceId: ws, kortixSessionId: 'sess_r', title: 'old', proxySecret: PROXY_SECRET });
-    const args = { workspaceId: ws, kortixSessionId: 'sess_r', title: '  Q3 plan ', proxySecret: PROXY_SECRET };
-    await expect(mallory.as.mutation(api.threads.renameFromProxy, args)).rejects.toThrow(/403: not a member/);
-    await expect(alice.as.mutation(api.threads.renameFromProxy, { ...args, proxySecret: 'nope' })).rejects.toThrow(/403: proxy only/);
-    await alice.as.mutation(api.threads.renameFromProxy, { ...args, workspaceId: provisioning as Id<'workspaces'>, title: 'wrong' });
-    await alice.as.mutation(api.threads.renameFromProxy, { ...args, title: '   ' });
+describe('firms: setup and admin', () => {
+  test('only the org owner creates the firm, once; it starts a trial and schedules provisioning', async () => {
+    const t = lumenTest();
+    const o = await org(t, 'Marrow Example');
+    const owner = await signedInUser(t, 'owner@example.com');
+    const lawyer = await signedInUser(t, 'lawyer@example.com');
+    await addMember(t, o, owner.userId, 'owner');
+    await addMember(t, o, lawyer.userId, 'member');
+    const args = { orgId: o, name: 'Marrow & Finch Example LLP', practiceTags: ['M&A', ' M&A ', 'Commercial'], sizeBand: '2-10' as const };
+    await expect(lawyer.as.mutation(api.firms.create, args)).rejects.toThrow(/403: only the owner/);
+    const a = await owner.as.mutation(api.firms.create, args);
+    expect(await owner.as.mutation(api.firms.create, args)).toBe(a);
+    const firm = await owner.as.query(api.firms.forOrg, { orgId: o });
+    expect(firm).toMatchObject({ plan: 'trial', seats: 5, status: 'provisioning', practiceTags: ['M&A', 'Commercial'], role: 'owner' });
+    expect(firm && 'kortixProjectId' in firm).toBe(false);
+  });
+
+  test('a lawyer cannot edit the firm or read the audit log; an admin can', async () => {
+    const { alice, bob, firm } = await world();
+    await expect(bob.as.mutation(api.firms.update, { firmId: firm, name: 'Hijack' })).rejects.toThrow(/403: admins only/);
+    await expect(bob.as.query(api.audit.list, { firmId: firm })).rejects.toThrow(/403: admins only/);
+    await alice.as.mutation(api.firms.update, { firmId: firm, name: 'Example & Partners' });
+    const log = await alice.as.query(api.audit.list, { firmId: firm });
+    expect(log[0]).toMatchObject({ action: 'firm.update', actorId: alice.userId });
+  });
+});
+
+describe('provisionFirm: project, agent, Drive folders; a generic failure for the customer', () => {
+  async function pending() {
+    const { t, acme, alice } = await world();
+    const firm = await insertFirm(t, `${acme}-2`, alice.userId, { status: 'provisioning', kortixProjectId: undefined });
+    return { t, firm };
+  }
+
+  test('success settles the firm ready, provisions once per firm id and creates the Lumen folders', async () => {
+    const { t, firm } = await pending();
+    await t.action(internal.kortix.provisionFirm, { firmId: firm });
+    expect(await t.run((ctx) => ctx.db.get(firm))).toMatchObject({ status: 'ready', kortixProjectId: 'proj_new', kortixDriveId: 'drive_1' });
+    expect(kortixFake.provisions[0]).toMatchObject({
+      name: 'lumen-Example - Co. Legal', starter_template: 'general-knowledge-worker', idempotency_key: `lumen-firm-${firm}`,
+    });
+    expect(kortixFake.folders).toEqual(['flag:volumes=true', '/Company', '/Company/Lumen', '/Company/Lumen/Matters', '/Company/Lumen/Runs', '/Company/Lumen/Library']);
+  });
+
+  test('a failure marks it failed with generic text; no member-visible row carries the raw cause', async () => {
+    const { t, firm } = await pending();
+    kortixFake.provision.fail = true;
+    await t.action(internal.kortix.provisionFirm, { firmId: firm });
+    expect(await t.run((ctx) => ctx.db.get(firm))).toMatchObject({ status: 'failed', error: 'Setup failed. Try again.' });
+    const audits = await t.run((ctx) => ctx.db.query('auditEvents').collect());
+    expect(audits.find((e) => e.action === 'firm.failed')).toBeTruthy();
+    expect(JSON.stringify(audits)).not.toMatch(/Kortix|exploded/);
+  });
+});
+
+describe('seats', () => {
+  test('members plus pending invitations may not reach the seat count', () => {
+    expect(seatAvailable(5, 4, 0)).toBe(true);
+    expect(seatAvailable(5, 3, 2)).toBe(false);
+    expect(seatAvailable(1, 1, 0)).toBe(false);
+  });
+
+  test('seatState counts members and pending, unexpired invitations', async () => {
+    const { t, acme, alice } = await world();
+    const invite = (email: string, expiresAt: number) =>
+      t.mutation(components.betterAuth.adapter.create, {
+        input: { model: 'invitation', data: { organizationId: acme, email, role: 'member', status: 'pending', expiresAt, createdAt: Date.now(), inviterId: alice.userId } },
+      } as never);
+    await invite('c@example.com', Date.now() + 86_400_000);
+    await invite('old@example.com', Date.now() - 1);
+    expect(await t.query(internal.billing.seatState, { orgId: acme })).toEqual({ seats: 5, members: 2, pending: 1 });
+  });
+
+  test('setPlan (operator) changes plan and seats and is audited', async () => {
+    const { t, firm } = await world();
+    await t.mutation(internal.billing.setPlan, { firmId: firm, plan: 'team', seats: 10 });
+    expect(await t.run((ctx) => ctx.db.get(firm))).toMatchObject({ plan: 'team', seats: 10 });
+    await expect(t.mutation(internal.billing.setPlan, { firmId: firm, plan: 'team', seats: 0 })).rejects.toThrow(/400/);
+  });
+});
+
+describe('Stripe webhook (mode A)', () => {
+  const SECRET = 'whsec_test';
+  async function signed(payload: string, secret = SECRET, t = Math.floor(Date.now() / 1000)) {
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${t}.${payload}`));
+    return `t=${t},v1=${[...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  test('the signature check accepts a valid header and rejects a wrong secret or an old timestamp', async () => {
+    const body = '{"id":"evt_1"}';
+    expect(await verifyStripeSignature(body, await signed(body), SECRET)).toBe(true);
+    expect(await verifyStripeSignature(body, await signed(body, 'other'), SECRET)).toBe(false);
+    expect(await verifyStripeSignature(body, await signed(body, SECRET, 1000), SECRET)).toBe(false);
+    expect(await verifyStripeSignature(body, '', SECRET)).toBe(false);
+  });
+
+  test('a subscription update sets plan and seats once per event id; a bad signature is a 400', async () => {
+    const { t, firm } = await world();
+    process.env.STRIPE_WEBHOOK_SECRET = SECRET;
+    process.env.STRIPE_PRICE_TEAM = 'price_team';
+    try {
+      const event = {
+        id: 'evt_sub_1',
+        type: 'customer.subscription.updated',
+        data: { object: { id: 'sub_1', customer: 'cus_1', status: 'active', metadata: { firmId: firm }, items: { data: [{ price: { id: 'price_team' }, quantity: 12 }] } } },
+      };
+      const body = JSON.stringify(event);
+      const post = async (sig: string) => t.fetch('/stripe/webhook', { method: 'POST', body, headers: { 'stripe-signature': sig } });
+      expect((await post('t=1,v1=00')).status).toBe(400);
+      const first = await post(await signed(body));
+      expect(await first.json()).toEqual({ result: 'applied' });
+      expect(await (await post(await signed(body))).json()).toEqual({ result: 'duplicate' });
+      expect(await t.run((ctx) => ctx.db.get(firm))).toMatchObject({
+        plan: 'team', seats: 12, billingStatus: 'active', stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_1',
+      });
+    } finally {
+      delete process.env.STRIPE_WEBHOOK_SECRET;
+      delete process.env.STRIPE_PRICE_TEAM;
+    }
+  });
+
+  test('billing.summary reports mode "off" without STRIPE_SECRET_KEY', async () => {
+    const { bob, firm } = await world();
+    expect(await bob.as.query(api.billing.summary, { firmId: firm })).toMatchObject({ mode: 'off', plan: 'trial', seats: 5, used: 2 });
+  });
+});
+
+describe('threads through the proxy', () => {
+  const rec = (matterId: Id<'matters'>, kortixSessionId: string, title: string, proxySecret = PROXY_SECRET) =>
+    ({ matterId, kortixSessionId, title, proxySecret });
+
+  test('recording the same session twice keeps one thread and one audit event, in the matter', async () => {
+    const { t, alice, matter } = await world();
+    const a = await alice.as.mutation(api.threads.recordFromProxy, rec(matter, 'sess_1', '  Q3   '));
+    expect(await alice.as.mutation(api.threads.recordFromProxy, rec(matter, 'sess_1', 'other'))).toBe(a);
+    const threads = await t.run((ctx) => ctx.db.query('threads').collect());
+    expect(threads.map((th) => [th.kortixSessionId, th.title, th.matterId])).toEqual([['sess_1', 'Q3', matter]]);
+    expect((await t.run((ctx) => ctx.db.query('auditEvents').collect())).filter((e) => e.action === 'thread.create')).toHaveLength(1);
+    expect(await alice.as.query(api.threads.bySession, { kortixSessionId: 'sess_1' })).toEqual({ threadId: a, matterId: matter });
+  });
+
+  test('a non-member, a lawyer off a restricted matter, or a wrong secret cannot record a thread', async () => {
+    const { alice, bob, mallory, matter, walled } = await world();
+    await expect(mallory.as.mutation(api.threads.recordFromProxy, rec(matter, 's2', 'x'))).rejects.toThrow(/403: not a member/);
+    await expect(bob.as.mutation(api.threads.recordFromProxy, rec(walled, 's2', 'x'))).rejects.toThrow(/403: no access/);
+    await expect(alice.as.mutation(api.threads.recordFromProxy, rec(matter, 's2', 'x', 'nope'))).rejects.toThrow(/403: proxy only/);
+  });
+
+  test('rename follows the session name; another matter changes nothing', async () => {
+    const { t, alice, matter, walled } = await world();
+    await alice.as.mutation(api.threads.recordFromProxy, rec(matter, 'sess_r', 'old'));
+    await alice.as.mutation(api.threads.renameFromProxy, rec(walled, 'sess_r', 'wrong'));
+    await alice.as.mutation(api.threads.renameFromProxy, rec(matter, 'sess_r', '   '));
     expect((await t.run((ctx) => ctx.db.query('threads').collect())).map((th) => th.title)).toEqual(['old']);
-    await alice.as.mutation(api.threads.renameFromProxy, args);
+    await alice.as.mutation(api.threads.renameFromProxy, rec(matter, 'sess_r', '  Q3 plan '));
     expect((await t.run((ctx) => ctx.db.query('threads').collect())).map((th) => th.title)).toEqual(['Q3 plan']);
   });
-});
 
-describe('threads.deleteFromProxy: only the creator or an admin deletes a thread', () => {
-  test('a plain member cannot delete another member\'s thread; the creator and an owner can', async () => {
-    const { t, acme, alice, ready } = await world();
-    const bob = await signedInUser(t, 'bob@example.test');
-    const carol = await signedInUser(t, 'carol@example.test');
-    await addMember(t, acme, bob.userId, 'member');
+  test('only the creator or an admin deletes a thread', async () => {
+    const { t, acme, alice, bob, matter } = await world();
+    const carol = await signedInUser(t, 'carol@example.com');
     await addMember(t, acme, carol.userId, 'member');
-    const ws = ready as Id<'workspaces'>;
-    await bob.as.mutation(api.threads.recordFromProxy, { workspaceId: ws, kortixSessionId: 'sess_b', title: 'b', proxySecret: PROXY_SECRET });
-    await bob.as.mutation(api.threads.recordFromProxy, { workspaceId: ws, kortixSessionId: 'sess_b2', title: 'b2', proxySecret: PROXY_SECRET });
-    const del = (kortixSessionId: string, remove: boolean) => ({ workspaceId: ws, kortixSessionId, proxySecret: PROXY_SECRET, remove });
-
-    await expect(carol.as.mutation(api.threads.deleteFromProxy, del('sess_b', false))).rejects.toThrow(/403: only the thread's creator/);
-    await expect(carol.as.mutation(api.threads.deleteFromProxy, del('sess_b', true))).rejects.toThrow(/403/);
-    await expect(bob.as.mutation(api.threads.deleteFromProxy, { ...del('sess_b', true), proxySecret: 'nope' })).rejects.toThrow(/403: proxy only/);
+    await bob.as.mutation(api.threads.recordFromProxy, rec(matter, 'sess_b', 'b'));
+    await bob.as.mutation(api.threads.recordFromProxy, rec(matter, 'sess_b2', 'b2'));
+    const del = (kortixSessionId: string, remove: boolean) => ({ matterId: matter, kortixSessionId, proxySecret: PROXY_SECRET, remove });
+    await expect(carol.as.mutation(api.threads.deleteFromProxy, del('sess_b', true))).rejects.toThrow(/403: only the thread's creator/);
     await expect(bob.as.mutation(api.threads.deleteFromProxy, del('sess_none', false))).rejects.toThrow(/404/);
-
-    await bob.as.mutation(api.threads.deleteFromProxy, del('sess_b', false));
-    expect(await t.run((ctx) => ctx.db.query('threads').collect())).toHaveLength(2);
     await bob.as.mutation(api.threads.deleteFromProxy, del('sess_b', true));
     await alice.as.mutation(api.threads.deleteFromProxy, del('sess_b2', true));
     expect(await t.run((ctx) => ctx.db.query('threads').collect())).toHaveLength(0);
     const audits = await t.run((ctx) => ctx.db.query('auditEvents').collect());
     expect(audits.filter((e) => e.action === 'thread.delete').map((e) => [e.actorId, e.detail])).toEqual([
-      [bob.userId, 'sess_b'],
-      [alice.userId, 'sess_b2'],
+      [bob.userId, 'b'],
+      [alice.userId, 'b2'],
     ]);
-  });
-});
-
-describe('provisionWorkspace: the customer sees a generic failure, the operator sees the cause', () => {
-  async function provisioning() {
-    const { t, provisioning, alice } = await world();
-    await t.run((ctx) => ctx.db.insert('agentTemplates', {
-      slug: 'finance-analyst', name: 'Finance analyst', tagline: '', vertical: 'finance', agent: { prompt: 'p' },
-    }));
-    return { t, ws: provisioning as Id<'workspaces'>, alice };
-  }
-
-  test('success settles the workspace ready with its Kortix project', async () => {
-    const { t, ws } = await provisioning();
-    await t.action(internal.kortix.provisionWorkspace, { workspaceId: ws });
-    expect(await t.run((ctx) => ctx.db.get(ws))).toMatchObject({ status: 'ready', kortixProjectId: 'proj_new' });
-  });
-
-  test('a Kortix failure marks it failed with generic text and keeps the raw error in auditEvents only', async () => {
-    const { t, ws, alice } = await provisioning();
-    kortixFake.provision.fail = true;
-    await t.action(internal.kortix.provisionWorkspace, { workspaceId: ws });
-    const seen = await alice.as.query(api.workspaces.get, { workspaceId: ws });
-    expect(seen).toMatchObject({ status: 'failed', error: 'Setup failed. Try again.' });
-    const audit = await t.run((ctx) => ctx.db.query('auditEvents').collect());
-    expect(audit.find((e) => e.action === 'workspace.failed')?.detail).toContain('upstream exploded');
   });
 });

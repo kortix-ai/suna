@@ -1,22 +1,22 @@
 'use client';
 
 /**
- * The browser's Kortix bearer: `ws.<workspaceId>`, the Lumen workspace the
+ * The browser's Kortix bearer: `matter.<matterId>`, the Lumen matter the
  * current page works in. It is not a secret. Identity is the Better Auth
- * cookie; the same-origin proxy (`/api/kortix`) checks membership and swaps
+ * cookie; the same-origin proxy (`/api/kortix`) checks matter access and swaps
  * this value for the member's project-scoped Kortix token. Every SDK path
  * (REST, SSE, session sync) sends `Authorization: Bearer <getToken()>`, so the
- * workspace rides on every request without a custom header.
+ * matter rides on every request without a custom header.
  */
 
-let activeWorkspaceId: string | null = null;
+let activeMatterId: string | null = null;
 
-export function setActiveWorkspace(workspaceId: string | null): void {
-  activeWorkspaceId = workspaceId;
+export function setActiveMatter(matterId: string | null): void {
+  activeMatterId = matterId;
 }
 
 export function getSessionToken(): string | null {
-  return activeWorkspaceId ? `ws.${activeWorkspaceId}` : null;
+  return activeMatterId ? `matter.${activeMatterId}` : null;
 }
 
 /** Authorization headers for the app's own server routes (preview, model, connections). */

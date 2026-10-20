@@ -1,11 +1,19 @@
 // Plain module (no "use node"): the Convex actions and the Next.js proxy both
 // tag sessions with it, so a thread carries the same ids whichever side created it.
 
+/** Lumen's ids, as a session carries them. */
+export interface LumenIds {
+  orgId: string;
+  userId: string;
+  firmId: string;
+  matterId: string;
+}
+
 /** The generic Kortix fields that carry Lumen's ids on a session (labels ≤ 64 chars). */
-export function lumenSessionTags(a: { orgId: string; userId: string }, workspaceId: string) {
+export function lumenSessionTags(a: LumenIds) {
   return {
-    labels: [`lumen-user:${a.userId}`.slice(0, 64), `lumen-workspace:${workspaceId}`.slice(0, 64)],
-    metadata: { lumen_org_id: a.orgId, lumen_workspace_id: workspaceId, lumen_user_id: a.userId },
+    labels: [`lumen-firm:${a.firmId}`, `lumen-matter:${a.matterId}`, `lumen-user:${a.userId}`].map((l) => l.slice(0, 64)),
+    metadata: { lumen_org_id: a.orgId, lumen_firm_id: a.firmId, lumen_matter_id: a.matterId, lumen_user_id: a.userId },
   };
 }
 
@@ -29,14 +37,13 @@ const mergeLabels = (lumen: string[], client: string[]) => [...new Set([...lumen
 /**
  * The body of a session create, with Lumen's tags applied. A client label in
  * the `lumen-` namespace or a `lumen_` metadata key is dropped, so a member
- * cannot attribute a session to another user or workspace.
+ * cannot attribute a session to another user, firm or matter.
  */
 export function tagSessionCreate(
   body: Record<string, unknown>,
-  a: { orgId: string; userId: string },
-  workspaceId: string,
+  a: LumenIds,
 ): Record<string, unknown> & { labels: string[]; metadata: Record<string, unknown> } {
-  const tags = lumenSessionTags(a, workspaceId);
+  const tags = lumenSessionTags(a);
   return {
     ...body,
     labels: mergeLabels(tags.labels, clientLabels(body.labels)),

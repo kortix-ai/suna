@@ -1,9 +1,10 @@
 /**
- * Who is calling, for which workspace, with which Kortix credential.
+ * Who is calling, for which matter, with which Kortix credential.
  *
- * The browser sends `Authorization: Bearer ws.<workspaceId>` (not a secret)
- * and the Better Auth cookie (identity). Convex checks org membership and
- * returns the member's project-scoped Kortix token for that workspace. This
+ * The browser sends `Authorization: Bearer matter.<matterId>` (not a secret)
+ * and the Better Auth cookie (identity). Convex checks firm membership and
+ * matter access (a restricted matter is refused to a lawyer who is not on it)
+ * and returns the member's project-scoped Kortix token for the firm. This
  * server never holds the operator credential.
  */
 
@@ -13,8 +14,9 @@ import { fetchAuthAction, getToken } from './auth-server';
 import { upstreamBase } from './upstream-path';
 
 export interface Member {
-  workspaceId: string;
-  /** The workspace's Kortix project, resolved by Convex. Never taken from the client. */
+  matterId: string;
+  firmId: string;
+  /** The firm's Kortix project, resolved by Convex. Never taken from the client. */
   projectId: string;
   /** The member's project-scoped Kortix token. Never sent to the browser. */
   token: string;
@@ -24,8 +26,8 @@ export interface Member {
 }
 
 // Convex ids: lowercase base32, 32 characters today.
-const WORKSPACE_BEARER = /^Bearer ws\.([a-z0-9]{16,64})$/;
-// One membership check per (user JWT, workspace) per minute. A removed member
+const MATTER_BEARER = /^Bearer matter\.([a-z0-9]{16,64})$/;
+// One access check per (user JWT, matter) per minute. A removed member
 // loses access within MEMBER_CACHE_MS.
 const MEMBER_CACHE_MS = 60_000;
 // replica-local: a cache miss costs one Convex action, the token itself is stored in Convex.
@@ -44,18 +46,18 @@ function convexStatus(err: unknown): number {
 }
 
 export async function resolveMember(req: Request): Promise<{ member: Member } | { error: Response }> {
-  const workspaceId = WORKSPACE_BEARER.exec(req.headers.get('authorization') ?? '')?.[1];
-  if (!workspaceId) return failure(400, 'A workspace bearer (ws.<id>) is required');
+  const matterId = MATTER_BEARER.exec(req.headers.get('authorization') ?? '')?.[1];
+  if (!matterId) return failure(400, 'A matter bearer (matter.<id>) is required');
   const jwt = await getToken();
   if (!jwt) return failure(401, 'Not authenticated');
 
-  const key = `${jwt}:${workspaceId}`;
+  const key = `${jwt}:${matterId}`;
   const hit = cache.get(key);
   if (hit && hit.until > Date.now()) return { member: hit.member };
 
   let pending = inflight.get(key);
   if (!pending) {
-    pending = mintMember(key, workspaceId).finally(() => inflight.delete(key));
+    pending = mintMember(key, matterId).finally(() => inflight.delete(key));
     inflight.set(key, pending);
   }
   const result = await pending;
@@ -63,22 +65,19 @@ export async function resolveMember(req: Request): Promise<{ member: Member } | 
   return 'error' in result ? { error: result.error.clone() } : result;
 }
 
-async function mintMember(key: string, workspaceId: string): Promise<{ member: Member } | { error: Response }> {
+async function mintMember(key: string, matterId: string): Promise<{ member: Member } | { error: Response }> {
   const proxySecret = process.env.LUMEN_PROXY_SECRET;
   if (!proxySecret) return failure(500, 'LUMEN_PROXY_SECRET is not set');
   try {
-    const minted = await fetchAuthAction(api.kortix.memberToken, {
-      workspaceId,
-      proxySecret,
-    });
-    const member = { workspaceId, ...minted };
+    const minted = await fetchAuthAction(api.kortix.memberToken, { matterId, proxySecret });
+    const member = { matterId, ...minted };
     const now = Date.now();
     if (cache.size > 1000) for (const [k, v] of cache) if (v.until < now) cache.delete(k);
     cache.set(key, { member, until: Math.min(now + MEMBER_CACHE_MS, minted.expiresAt - 60_000) });
     return { member };
   } catch (err) {
     const status = convexStatus(err);
-    return failure(status, status === 409 ? 'The workspace is still being set up' : 'Workspace access denied');
+    return failure(status, status === 409 ? 'The firm workspace is still being set up' : 'Matter access denied');
   }
 }
 
@@ -95,7 +94,7 @@ export function isValidSessionId(id: string): boolean {
 }
 
 /**
- * The member plus a check that the client's project id is the workspace's
+ * The member plus a check that the client's project id is the firm's
  * project. The id from the client is never used to pick a credential.
  */
 export async function resolveMemberFor(

@@ -99,6 +99,9 @@ describe('white-label SDK boundary', () => {
 
     expect(scanConvexSource(node)).toEqual([]);
     expect(scanConvexSource(plain).map((v) => v.rule)).toEqual(['convex-sdk-outside-node', 'raw-kortix-fetch']);
+    // A literal third-party prefix (Stripe) is allowed; a variable target is not.
+    expect(scanConvexSource('fetch(`https://api.stripe.com/v1/${p}`);')).toEqual([]);
+    expect(scanConvexSource('fetch(url);').map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
     expect(scanConvexBoundary()).toEqual([]);
   });
 

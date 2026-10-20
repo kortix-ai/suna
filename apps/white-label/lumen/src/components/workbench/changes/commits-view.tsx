@@ -145,10 +145,9 @@ export function CommitsView({
     queryKey: ['project-commits', projectId, sessionId, baseRef],
     enabled: hasBranch && !!baseRef,
     queryFn: async () => {
-      const project = kortix.project(projectId);
       const [thread, base] = await Promise.all([
-        project.git.commits({ ref: sessionId, limit: 50 }),
-        project.git.commits({ ref: baseRef, limit: 200 }),
+        kortix.project(projectId).git.commits({ ref: sessionId, limit: 50 }),
+        kortix.project(projectId).git.commits({ ref: baseRef, limit: 200 }),
       ]);
       const inBase = new Set(base.commits.map((c) => c.hash));
       return thread.commits.filter((c) => !inBase.has(c.hash));
