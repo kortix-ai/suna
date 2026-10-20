@@ -65,7 +65,7 @@ const BINDING = {
   effectiveModel: { model: null, source: 'platform' },
 };
 
-function startServer(opts: { emailEnabled?: boolean } = {}): string {
+function startServer(opts: { emailEnabled?: boolean; failTeams?: boolean; connected?: boolean } = {}): string {
   const emailEnabled = opts.emailEnabled ?? true;
   server = Bun.serve({
     port: 0,
@@ -77,6 +77,12 @@ function startServer(opts: { emailEnabled?: boolean } = {}): string {
 
       if (p === '' && req.method === 'GET') {
         return Response.json({ project_id: PROJECT, name: 'Channels', metadata: {} });
+      }
+      if ((p === '/channels/slack/installation' || p === '/channels/teams/installation') && req.method === 'GET') {
+        if (opts.failTeams && p.includes('/teams/')) {
+          return Response.json({ error: 'Teams unavailable' }, { status: 503 });
+        }
+        return Response.json(opts.connected ? { installedAt: '2026-01-01' } : null);
       }
       if (p === '/channels/teams/installation' && req.method === 'DELETE') {
         return Response.json({ status: 'disconnected' });
@@ -174,6 +180,53 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-channels-parity-'));
     process.env = { ...ORIGINAL_ENV };
     calls = [];
+  });
+
+  test('bare channels and status list Slack, Teams and disabled Email together', async () => {
+    const config = writeConfig(startServer({ emailEnabled: false }));
+    for (const sub of [[], ['status']]) {
+      const result = await runCli(['channels', ...sub, '--project', PROJECT], config);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toMatch(/slack\s+not connected/i);
+      expect(result.stdout).toMatch(/teams\s+not connected/i);
+      expect(result.stdout).toMatch(/email\s+off/i);
+    }
+  });
+
+  test('combined JSON reports all states; explicit platform preserves its JSON shape', async () => {
+    const config = writeConfig(startServer());
+    const result = await runCli(['channels', 'status', '--json', '--project', PROJECT], config);
+    expect(result.code).toBe(0);
+    const value = JSON.parse(result.stdout);
+    expect(value.slack).toEqual({ connected: false, installation: null });
+    expect(value.teams).toEqual({ connected: false, installation: null });
+    expect(value.email.connected).toBe(true);
+    expect(value.email.mode.enabled).toBe(true);
+    for (const platform of ['slack', 'teams']) {
+      calls = [];
+      const filtered = await runCli([
+        'channels', 'status', '--platform', platform, '--json', '--project', PROJECT,
+      ], config);
+      expect(filtered.code).toBe(0);
+      expect(JSON.parse(filtered.stdout)).toEqual({ connected: false, installation: null });
+      expect(calls.filter((call) => call.path.includes('/channels/')).map((call) => call.path))
+        .toEqual([`/v1/projects/${PROJECT}/channels/${platform}/installation`]);
+    }
+  });
+
+  test('connected chat channels render connected and a failed read never claims disconnected', async () => {
+    let config = writeConfig(startServer({ connected: true }));
+    const connected = await runCli(['channels', '--project', PROJECT], config);
+    expect(connected.code).toBe(0);
+    expect(connected.stdout).toMatch(/slack\s+connected/);
+    expect(connected.stdout).toMatch(/teams\s+connected/);
+    expect(connected.stdout).toMatch(/email\s+connected/);
+    server?.stop(true);
+    config = writeConfig(startServer({ failTeams: true }));
+    const failed = await runCli(['channels', '--project', PROJECT], config);
+    expect(failed.code).not.toBe(0);
+    expect(failed.stderr).toContain('Teams unavailable');
+    expect(failed.stdout).not.toContain('not connected');
   });
 
   afterEach(() => {

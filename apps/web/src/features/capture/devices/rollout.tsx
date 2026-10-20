@@ -19,13 +19,13 @@ import { ArrowSquareOutIcon, CheckIcon, CopyIcon, DesktopIcon } from '@phosphor-
 import Link from 'next/link';
 import { useId, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { CountBadge } from '@/components/ui/count-badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { CountBadge } from '@kortix/ui/count-badge';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -34,16 +34,16 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
+} from '@kortix/ui/modal';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
 import {
   Table,
   TableBody,
@@ -51,15 +51,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { useCopy } from '@/hooks/use-copy';
+} from '@kortix/ui/table';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { getEnv } from '@/lib/env-config';
-import { relativeTime } from '@/lib/relative-time';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
 
-import { useCaptureDirectory } from '../area/use-capture-area';
+import { useCaptureDirectory } from '@kortix/ui/internal/capture/use-capture-area';
 import {
   enrollmentUrl,
   EXPIRY_DAYS,

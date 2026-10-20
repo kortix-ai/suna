@@ -175,7 +175,7 @@ function hostsLs(json = false): number {
       row.name === effective.name &&
       row.host.url === effective.host.url &&
       row.host.token === effective.host.token,
-    credential_source: 'stored',
+    credential_source: row.host.token ? 'stored' : null,
   }));
   if (!rows.some((row) => row.active)) {
     rows.push({

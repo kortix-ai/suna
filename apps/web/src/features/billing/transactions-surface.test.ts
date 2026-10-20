@@ -1,10 +1,9 @@
-import { PANE_META } from '@/features/accounts/hub/sections';
+import { PANE_META } from '@kortix/ui/internal/account-hub/sections';
 import { readFileSync } from '@/i18n/test-source';
 import { describe, expect, test } from 'bun:test';
-import { join } from 'node:path';
+import { uiSourcePath } from '@/test-utils/read-source';
 
-const webSource = join(import.meta.dir, '../..');
-const hubAccessPath = join(webSource, 'features/accounts/hub/use-account-hub-access.ts');
+const hubAccessPath = uiSourcePath('internal/account-hub/use-account-hub-access.ts');
 
 describe('account credit transactions surface', () => {
   test('describes session costs and exposes them when internal billing is disabled', () => {

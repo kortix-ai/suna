@@ -1,7 +1,7 @@
 'use client';
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useHubSearchParams } from '@/features/accounts/hub/account-hub-location';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { useHubSearchParams } from '@kortix/ui/internal/account-hub/account-hub-location';
 import { AccountOverviewTab } from '@/features/billing/account-overview';
 import { CostExplorer } from '@/features/billing/cost-explorer/cost-explorer';
 import CreditTransactions from '@/features/billing/credit-transactions';

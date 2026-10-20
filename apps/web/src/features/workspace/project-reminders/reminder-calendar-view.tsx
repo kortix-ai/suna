@@ -1,11 +1,10 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { FLOATING_PANEL_SURFACE } from '@/components/ui/menu-recipe';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { useDebounce } from '@/hooks/use-debounce';
+import { Button } from '@kortix/ui/button';
+import { FLOATING_PANEL_SURFACE } from '@kortix/ui/menu-recipe';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { useDebounce, cn } from '@kortix/ui';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
 import type { ProjectReminder } from '@kortix/sdk';
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
@@ -26,7 +25,7 @@ import {
 import { CalendarMonth } from './reminder-calendar-month';
 import { CalendarWeek } from './reminder-calendar-week';
 import { CalendarActions, FirePopoverHost, type CalendarContext } from './reminder-fire-popover';
-import { nearestFire } from './reminder-format';
+import { nearestFire } from '@kortix/ui/workspace';
 import { useReminderActions, type RemindersQuery } from './reminder-list';
 import {
   TITLE_SETTLE_MS,

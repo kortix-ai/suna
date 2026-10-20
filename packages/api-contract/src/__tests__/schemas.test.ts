@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type SessionWorking,
   ConnectorAuthorizationStrategySchema,
   ConnectionSchema,
   ConnectionMetadataSchema,
@@ -152,6 +153,8 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       session_log: false,
       session_log_restore: false,
       connectors_v2: false,
+      agent_rooms: false,
+      goals: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -363,6 +366,15 @@ describe('ProjectSchema.icon_glyph', () => {
 });
 
 describe('ProjectSessionSchema', () => {
+  test('working is additive and survives parsing independently of lifecycle status', () => {
+    const working: SessionWorking = { state: 'idle', since: null, turn_token: null, pending_delivery: false };
+    const parsed = ProjectSessionSchema.parse(sessionFixture({ working }));
+    expect(parsed.working).toEqual(working);
+    expect(String(parsed.status)).toBe(sessionFixture().status);
+    expect(ProjectSessionSchema.parse(sessionFixture()).working).toBeUndefined();
+    expect(ProjectSessionSchema.safeParse(sessionFixture({ working: { ...working, state: 'running' } })).success).toBe(false);
+  });
+
   test('accepts a full serialized session', () => {
     expect(() => ProjectSessionSchema.strict().parse(sessionFixture())).not.toThrow();
   });
@@ -522,6 +534,14 @@ describe('ProjectSessionSandboxSchema', () => {
 });
 
 describe('TriggerSchema', () => {
+  test('keeps exact cron time distinct from jittered execution and accepts older APIs', () => {
+    const parsed = TriggerSchema.strict().parse(triggerFixture({
+      next_cron_at: '2026-10-10T09:00:00.000Z', next_fire_at: '2026-10-10T09:15:00.000Z',
+    }));
+    expect(parsed.next_cron_at).toBe('2026-10-10T09:00:00.000Z');
+    expect(parsed.next_fire_at).toBe('2026-10-10T09:15:00.000Z');
+    expect(TriggerSchema.strict().parse(triggerFixture()).next_cron_at).toBeUndefined();
+  });
   test('accepts a cron trigger and a webhook trigger', () => {
     expect(() => TriggerSchema.strict().parse(triggerFixture())).not.toThrow();
     expect(() =>
@@ -795,6 +815,8 @@ describe('envelopes', () => {
       'session_log',
       'session_log_restore',
       'connectors_v2',
+      'agent_rooms',
+      'goals',
     ]);
   });
 

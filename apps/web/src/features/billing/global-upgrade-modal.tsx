@@ -1,9 +1,9 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
-import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import Hint from '@kortix/ui/hint';
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@kortix/ui/item';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -12,9 +12,9 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Skeleton } from '@/components/ui/skeleton';
-import { DEFAULT_TIER_USD, formatWholeUsd, tierForMonthlyUsd } from '@/features/billing/compute-pricing';
+} from '@kortix/ui/modal';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { DEFAULT_TIER_USD, formatWholeUsd, tierForMonthlyUsd } from '@kortix/ui/internal/billing/compute-pricing';
 import { CreditTierSelect } from '@/features/billing/credit-tier-select';
 import { PlanChanger } from '@/features/billing/plan-card';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
@@ -24,17 +24,17 @@ import { useChangeCreditPlan } from '@/features/billing/use-change-credit-plan';
 import { useUpgradePlans } from '@/features/billing/use-pricing-plans';
 import { useUpgradeModalHost } from '@/features/billing/use-upgrade-modal-host';
 import { useTalkToSales } from '@/features/billing/use-enterprise-sales';
-import { invalidateAccountState, useAccountState, useCreatePortalSession } from '@/hooks/billing';
+import { invalidateAccountState, useAccountState, useCreatePortalSession } from '@kortix/ui/internal/billing/index';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
   accountHasLiveSubscription,
   billingModalCopy,
   billingStateNeedsTopUp,
   resolveBillingState,
-} from '@/lib/billing/billing-gate-state';
-import { cn } from '@/lib/utils';
-import { BillingAccountProvider, useBillingAccountId } from '@/stores/billing-account-context';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+} from '@kortix/ui/internal/lib/billing/billing-gate-state';
+import { cn } from '@kortix/ui';
+import { BillingAccountProvider, useBillingAccountId } from '@kortix/ui/internal/stores/billing-account-context';
+import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
 import { type AccountState, type BillingState, canManageBilling } from '@kortix/sdk';
 import { formatUsdAsCredits } from '@kortix/shared';
 import { ArrowRightIcon as ArrowRight, UserPlusIcon as UserPlus } from '@phosphor-icons/react';

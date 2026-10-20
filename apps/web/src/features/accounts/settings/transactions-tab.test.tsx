@@ -1,5 +1,5 @@
-import { legacySectionRedirect } from '@/features/workspace/settings/settings-tabs';
-import { hubParamsFromUrl } from '@/stores/account-panel-store';
+import { legacySectionRedirect } from '@kortix/ui/customize/settings/settings-tabs';
+import { hubParamsFromUrl } from '@kortix/ui/internal/stores/account-panel-store';
 import { expect, mock, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import { createElement } from 'react';
@@ -8,7 +8,7 @@ import en from '../../../../translations/en.json';
 
 let destination = legacySectionRedirect('', 'credits', 'synthetic') ?? '';
 
-mock.module('@/features/accounts/hub/account-hub-location', () => ({
+mock.module('@kortix/ui/internal/account-hub/account-hub-location', () => ({
   useHubSearchParams: () => hubParamsFromUrl(new URLSearchParams(destination.split('?')[1])),
 }));
 mock.module('@/features/billing/cost-explorer/cost-explorer', () => ({
