@@ -33,7 +33,13 @@ import {
   shouldUseNextLink,
 } from '@/components/markdown/unified-markdown-utils';
 import { remarkSetupLinkBlocks } from '@/components/markdown/setup-link-blocks';
-import { rehypeStreamWords, STREAM_WORD_CLASS, StreamWord } from '@/components/markdown/stream-words';
+import {
+  rehypeStreamWords,
+  STREAM_WORD_CLASS,
+  StreamFadeGateContext,
+  StreamWord,
+  createStreamFadeGate,
+} from '@/components/markdown/stream-words';
 import { SetupLinkButton, SetupLinkInlineContext } from '@/components/setup-links/setup-link-button';
 import { parsePendingSetupLinkHref, parseSetupLinkHref } from '@/components/setup-links/util';
 import { Button } from '@/components/ui/button';
@@ -540,6 +546,8 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
     // above. A message that mounts streaming keeps the block renderer for good;
     // one that mounts settled (history) is parsed as one document.
     const [streamedAtMount] = useState(isStreaming);
+    // Text present at mount shows without the per-word fade (see `StreamFadeGate`).
+    const [fadeGate] = useState(() => createStreamFadeGate(!isStreaming));
 
     const safeContent = typeof content === 'string' ? content : content ? String(content) : '';
 
@@ -590,31 +598,33 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
         data-streaming={isStreaming ? 'true' : 'false'}
       >
         <MarkdownRenderContext.Provider value={renderContext}>
-          <Streamdown
-            isAnimating={isStreaming}
-            mode={streamedAtMount || isStreaming ? 'streaming' : 'static'}
-            // Completing half-written markdown is for text that is still
-            // arriving. A settled message renders exactly as written.
-            parseIncompleteMarkdown={isStreaming}
-            parseMarkdownIntoBlocksFn={parseMarkdownBlocks}
-            components={MARKDOWN_COMPONENTS as any}
-            remarkPlugins={remarkPlugins}
-            // Module-level arrays for the same reason as MARKDOWN_COMPONENTS: a
-            // new array each render made every block re-parse on every token.
-            // While streaming, each word also fades in as it mounts. Dropping
-            // the plugin at the end re-renders every block once as plain text.
-            rehypePlugins={
-              isStreaming
-                ? policy.rawHtml
-                  ? STREAMING_REHYPE_PLUGINS
-                  : STREAMING_REHYPE_PLUGINS_NO_RAW
-                : policy.rawHtml
-                  ? katexRehypePlugins
-                  : katexRehypePluginsNoRaw
-            }
-          >
-            {finalContent}
-          </Streamdown>
+          <StreamFadeGateContext.Provider value={fadeGate}>
+            <Streamdown
+              isAnimating={isStreaming}
+              mode={streamedAtMount || isStreaming ? 'streaming' : 'static'}
+              // Completing half-written markdown is for text that is still
+              // arriving. A settled message renders exactly as written.
+              parseIncompleteMarkdown={isStreaming}
+              parseMarkdownIntoBlocksFn={parseMarkdownBlocks}
+              components={MARKDOWN_COMPONENTS as any}
+              remarkPlugins={remarkPlugins}
+              // Module-level arrays for the same reason as MARKDOWN_COMPONENTS: a
+              // new array each render made every block re-parse on every token.
+              // While streaming, each word also fades in as it mounts. Dropping
+              // the plugin at the end re-renders every block once as plain text.
+              rehypePlugins={
+                isStreaming
+                  ? policy.rawHtml
+                    ? STREAMING_REHYPE_PLUGINS
+                    : STREAMING_REHYPE_PLUGINS_NO_RAW
+                  : policy.rawHtml
+                    ? katexRehypePlugins
+                    : katexRehypePluginsNoRaw
+              }
+            >
+              {finalContent}
+            </Streamdown>
+          </StreamFadeGateContext.Provider>
         </MarkdownRenderContext.Provider>
       </div>
     );

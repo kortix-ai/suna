@@ -80,7 +80,8 @@ type PartDeltaEvent = Extract<RuntimeEvent, { type: 'message.part.delta' }> & {
 
 /**
  * Text-delta coalescing: `next` appended to `tail` as ONE event, when both are
- * deltas of the same part field. Else undefined.
+ * deltas of the same part field (`message.part.delta`) or of the same session-log
+ * block (`log.block.delta`). Else undefined.
  *
  * Only the queue's TAIL is ever merged into, so a run never crosses another
  * event and dispatch order stays the wire order. The merged event carries the
@@ -89,17 +90,22 @@ type PartDeltaEvent = Extract<RuntimeEvent, { type: 'message.part.delta' }> & {
  * sees each one.
  */
 function mergePartDelta(tail: RuntimeEvent | undefined, next: RuntimeEvent): RuntimeEvent | undefined {
-  if (tail?.type !== 'message.part.delta' || next.type !== 'message.part.delta') return undefined;
-  const a = tail.properties;
-  const b = next.properties;
-  if (
-    a.partID !== b.partID ||
-    a.field !== b.field ||
-    a.messageID !== b.messageID ||
-    a.sessionID !== b.sessionID
-  ) {
+  if (!tail || tail.type !== next.type) return undefined;
+  if (next.type === 'message.part.delta') {
+    const a = (tail as typeof next).properties;
+    const b = next.properties;
+    if (a.partID !== b.partID || a.field !== b.field || a.messageID !== b.messageID || a.sessionID !== b.sessionID) return undefined;
+  } else if ((next.type as string) === 'log.block.delta') {
+    // The session log's text delta (`kortix.session/2`): one block of one message of one thread.
+    const a = tail.properties as { thread_id?: unknown; message_id?: unknown; block_id?: unknown; delta?: unknown };
+    const b = next.properties as typeof a;
+    if (typeof a.delta !== 'string' || typeof b.delta !== 'string') return undefined;
+    if (a.thread_id !== b.thread_id || a.message_id !== b.message_id || a.block_id !== b.block_id) return undefined;
+  } else {
     return undefined;
   }
+  const a = tail.properties as { delta: string };
+  const b = next.properties as { delta: string };
   // The list is this module's own (made on a run's first merge), so it grows in place.
   const wire = (tail as PartDeltaEvent).coalesced ?? [tail];
   wire.push(next);
