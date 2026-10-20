@@ -260,6 +260,6 @@ test('KRTX-2058 exact display occurrence for a six-field daily UTC cron excludes
   const spec = schedule({ cron: '0 0 9 * * *', timezone: 'UTC' });
   const after = new Date('2026-10-10T08:59:59.000Z');
   expect(nextTriggerScheduleSlot(spec, after)?.toISOString()).toBe('2026-10-10T09:00:00.000Z');
-  expect(nextTriggerScheduleSlot(spec, after, { jitterKey: 'synthetic-project:daily' })!.getTime())
+  expect(nextTriggerScheduleSlot(spec, after, { jitterKey: 'synthetic-project:daily' })?.getTime())
     .toBeGreaterThan(new Date('2026-10-10T09:00:00.000Z').getTime());
 });

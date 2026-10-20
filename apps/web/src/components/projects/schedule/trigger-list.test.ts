@@ -16,10 +16,10 @@ const cron = (next: Date | null, enabled = true) =>
 
 describe('nextRunLabel (C09 trailing, line one)', () => {
   test('today: the time alone', () => {
-    expect(nextRunLabel(cron(new Date(2026, 9, 17, 14, 45)), t, 'en-GB', now)).toBe(`next ${new Date(2026, 9, 17, 14, 45).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' })}`);
+    expect(nextRunLabel(cron(new Date(2026, 9, 17, 14, 45)), t, 'en-GB', now)).toMatch(/^next 14:45:00 .+/);
   });
   test('this week: the weekday and time', () => {
-    expect(nextRunLabel(cron(new Date(2026, 9, 19, 9, 0)), t, 'en-GB', now)).toBe(`next Mon ${new Date(2026, 9, 19, 9, 0).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' })}`);
+    expect(nextRunLabel(cron(new Date(2026, 9, 19, 9, 0)), t, 'en-GB', now)).toMatch(/^next Mon 09:00:00 .+/);
   });
   test('webhooks and app events run on an event; paused reads Paused; unscheduled reads —', () => {
     expect(nextRunLabel({ type: 'webhook', enabled: true, next_fire_at: null }, t, 'en', now)).toBe(
