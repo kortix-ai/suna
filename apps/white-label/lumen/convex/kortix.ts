@@ -4,25 +4,18 @@
 // lives only in Convex env (KORTIX_OPERATOR_TOKEN); Next.js and the browser
 // never hold it. Members get short-lived project-scoped tokens minted here.
 
-import { getProjectDrive, makeDriveFolder, updateAgentConfig, updateFeatureFlag, updateProjectDefaultAgent } from "@kortix/sdk";
-import { createScopedKortix, runWithKortix } from "@kortix/sdk/server";
+import { getProjectDrive, makeDriveFolder, updateFeatureFlag } from "@kortix/sdk";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { type ActionCtx, action, internalAction } from "./_generated/server";
 import { requireProxy } from "./access";
-import { COUNSEL_AGENT, COUNSEL_PROMPT, FIRM_FOLDERS } from "./lumenAgent";
+import { ensureKit } from "./kitInstall";
+import { COUNSEL_AGENT, FIRM_FOLDERS } from "./lumenAgent";
+import { asOperator, operator } from "./operator";
 import { lumenSessionTags } from "./tags";
 
 const MEMBER_TOKEN_TTL_MS = 60 * 60_000;
-
-function operator() {
-  const backendUrl = process.env.KORTIX_UPSTREAM;
-  const token = process.env.KORTIX_OPERATOR_TOKEN;
-  if (!backendUrl || !token) throw new Error("500: KORTIX_UPSTREAM / KORTIX_OPERATOR_TOKEN unset");
-  const config = { backendUrl, getToken: async () => token };
-  return { config, kortix: createScopedKortix(config) };
-}
 
 /** Mint a project-scoped token that expires, and revoke it at expiry so it never piles up as "active". */
 async function mintScopedToken(ctx: ActionCtx, name: string, projectId: string, ttlMs: number) {
@@ -46,9 +39,9 @@ async function ensureFolder(driveId: string, path: string) {
 }
 
 /**
- * firm → one Kortix project (idempotent per firm), Lumen's counsel agent as
- * the project default, and the Drive folders Lumen keeps its files in.
- * Stage 2 replaces the single agent with the versioned agent kit.
+ * firm → one Kortix project (idempotent per firm), the Drive folders Lumen
+ * keeps its files in, then the versioned agent kit (agents, skills, tools).
+ * A kit install that fails leaves the firm ready: the next run installs it.
  */
 export const provisionFirm = internalAction({
   args: { firmId: v.id("firms") },
@@ -59,7 +52,7 @@ export const provisionFirm = internalAction({
     let kortixProjectId: string;
     let kortixDriveId: string;
     try {
-      const { config, kortix } = operator();
+      const { kortix } = operator();
       const project = await kortix.projects.provision({
         // Kortix project names allow letters, digits, spaces, `-`, `_` and `.` only ("Example & Co." has an `&`).
         name: `lumen-${row.name}`.replace(/[^A-Za-z0-9 _.-]+/g, "-").slice(0, 80),
@@ -67,13 +60,7 @@ export const provisionFirm = internalAction({
         idempotency_key: `lumen-firm-${firmId}`,
       });
       kortixProjectId = project.project_id;
-      // ponytail: agent config and Drive are not on the scoped facade yet (contract G1), so they run inside runWithKortix.
-      kortixDriveId = await runWithKortix(config, async () => {
-        await updateAgentConfig(kortixProjectId, COUNSEL_AGENT, {
-          enabled: true,
-          behavior: { mode: "primary", prompt: COUNSEL_PROMPT, ...(row.model ? { model: row.model } : {}) },
-        });
-        await updateProjectDefaultAgent(kortixProjectId, COUNSEL_AGENT);
+      kortixDriveId = await asOperator(async () => {
         // Files (Drive) is behind the project's `volumes` flag; Lumen keeps matter files there.
         await updateFeatureFlag(kortixProjectId, "volumes", true);
         const drive = await getProjectDrive(kortixProjectId);
@@ -101,6 +88,7 @@ export const provisionFirm = internalAction({
         await new Promise((r) => setTimeout(r, 500 * attempt));
       }
     }
+    await ensureKit(ctx, firmId);
     return null;
   },
 });

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, components, internal } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import { verifyStripeSignature } from '../../convex/billing';
+import { KIT } from '../../convex/kit/bundle.generated';
 import { seatAvailable } from '../../convex/seats';
 import { PROXY_SECRET, addMember, lumenTest, org, signedInUser } from './setup';
 
@@ -12,13 +13,20 @@ const kortixFake = vi.hoisted(() => {
   const revokes: string[] = [];
   const folders: string[] = [];
   const provisions: Array<Record<string, unknown>> = [];
+  const kit = { written: [] as string[], agents: [] as string[], merged: 0 };
   return {
+    kit,
     mints,
     revokes,
     folders,
     provisions,
     provision: { fail: false },
     client: {
+      session: () => ({
+        files: { list: async () => [], remove: async () => {}, write: async (path: string) => void kit.written.push(path) },
+        commit: async () => ({ committed: true, pushed: true, nothing_to_do: false, branch: 'kit-branch', head_sha: 'abc' }),
+        delete: async () => {},
+      }),
       projects: {
         provision: async (input: Record<string, unknown>) => {
           provisions.push(input);
@@ -43,7 +51,10 @@ vi.mock('@kortix/sdk/server', () => ({
   runWithKortix: (_config: unknown, fn: () => unknown) => fn(),
 }));
 vi.mock('@kortix/sdk', () => ({
-  updateAgentConfig: async () => {},
+  createProjectSession: async () => ({ session_id: 'kit_session' }),
+  openChangeRequest: async () => ({ cr_id: 'cr_1' }),
+  mergeChangeRequest: async () => void kortixFake.kit.merged++,
+  updateAgentConfig: async (_p: string, name: string) => void kortixFake.kit.agents.push(name),
   updateProjectDefaultAgent: async () => {},
   updateFeatureFlag: async (_p: string, key: string, on: boolean) => void kortixFake.folders.push(`flag:${key}=${on}`),
   getProjectDrive: async () => ({ driveId: 'drive_1' }),
@@ -56,6 +67,9 @@ beforeEach(() => {
   kortixFake.folders.length = 0;
   kortixFake.provisions.length = 0;
   kortixFake.provision.fail = false;
+  kortixFake.kit.written.length = 0;
+  kortixFake.kit.agents.length = 0;
+  kortixFake.kit.merged = 0;
 });
 
 type T = ReturnType<typeof lumenTest>;
@@ -212,7 +226,7 @@ describe('firms: setup and admin', () => {
   });
 });
 
-describe('provisionFirm: project, agent, Drive folders; a generic failure for the customer', () => {
+describe('provisionFirm: project, Drive folders, the agent kit; a generic failure for the customer', () => {
   async function pending() {
     const { t, acme, alice } = await world();
     const firm = await insertFirm(t, `${acme}-2`, alice.userId, { status: 'provisioning', kortixProjectId: undefined });
@@ -226,7 +240,19 @@ describe('provisionFirm: project, agent, Drive folders; a generic failure for th
     expect(kortixFake.provisions[0]).toMatchObject({
       name: 'lumen-Example - Co. Legal', starter_template: 'general-knowledge-worker', idempotency_key: `lumen-firm-${firm}`,
     });
-    expect(kortixFake.folders).toEqual(['flag:volumes=true', '/Company', '/Company/Lumen', '/Company/Lumen/Matters', '/Company/Lumen/Runs', '/Company/Lumen/Library']);
+    // arrayContaining: a firm created by an earlier test provisions on its own schedule and shares this fake.
+    expect(kortixFake.folders).toEqual(expect.arrayContaining(['flag:volumes=true', '/Company', '/Company/Lumen', '/Company/Lumen/Matters', '/Company/Lumen/Runs', '/Company/Lumen/Library']));
+    // The agent kit: skills + the tool CLI through one merged change request, then the four agents.
+    expect(await t.run((ctx) => ctx.db.get(firm))).toMatchObject({ kitVersion: KIT.version, kitHash: KIT.hash });
+    expect(kortixFake.kit.written).toContain('/workspace/skills/lumen-citations/SKILL.md');
+    expect(kortixFake.kit.written).toContain('/workspace/lumen-kit/bin/lumen');
+    expect(kortixFake.kit.written.some((p) => p.includes('selftest') || p.includes('fixtures'))).toBe(false);
+    expect(kortixFake.kit.merged).toBeGreaterThanOrEqual(1);
+    expect([...new Set(kortixFake.kit.agents)].sort()).toEqual(['lumen-counsel', 'lumen-drafter', 'lumen-extractor', 'lumen-reviewer']);
+    // A second ensure is a no-op: the kit is current.
+    const installs = await t.run((ctx) => ctx.db.query('kitInstalls').collect());
+    expect(await t.action(internal.kitInstall.ensure, { firmId: firm })).toBeNull();
+    expect(await t.run((ctx) => ctx.db.query('kitInstalls').collect())).toHaveLength(installs.length);
   });
 
   test('a failure marks it failed with generic text; no member-visible row carries the raw cause', async () => {

@@ -13,7 +13,11 @@
     "test:unit": "pnpm lint:sdk-boundary && bun test tests/unit",
     "test:convex": "vitest run",
     "typecheck": "pnpm lint:sdk-boundary && tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo && tsgo --noEmit -p convex",
-    "dev:convex": "CONVEX_AGENT_MODE=anonymous convex dev --local-cloud-port ${CONVEX_PORT:-3030} --local-site-port ${CONVEX_SITE_PORT:-3031}"
+    "dev:convex": "CONVEX_AGENT_MODE=anonymous convex dev --local-cloud-port ${CONVEX_PORT:-3030} --local-site-port ${CONVEX_SITE_PORT:-3031}",
+    "seed:demo": "bun scripts/seed-demo.ts",
+    "eval": "bun agent-kit/evals/run.ts",
+    "kit:bundle": "bun scripts/kit-bundle.ts",
+    "kit:selftest": "cd agent-kit/lumen-kit && python3 -m lumen_kit.selftest"
   },
   "dependencies": {
     "@convex-dev/better-auth": "0.12.5",
@@ -21,11 +25,14 @@
     "@kortix/ui": "workspace:*",
     "@phosphor-icons/react": "2.1.10",
     "@tanstack/react-query": "^5.75.2",
+    "ajv": "8.17.1",
     "better-auth": "1.6.33",
     "convex": "1.46.0",
+    "mammoth": "1.13.0",
     "next": "16.4.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "unpdf": "1.8.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.4",

@@ -9,9 +9,16 @@ export interface LumenIds {
   matterId: string;
 }
 
-/** The generic Kortix fields that carry Lumen's ids on a session (labels ≤ 64 chars). */
+/** The matter's folder inside every session (the Drive's /Company is mounted at /drives/company). */
+export const matterDir = (matterId: string) => `/drives/company/Lumen/Matters/${matterId}`;
+
+/**
+ * The generic Kortix fields that carry Lumen's ids on a session (labels ≤ 64 chars),
+ * and the runtime context the agent reads its matter folder from (KORTIX_SESSION_CONTEXT).
+ */
 export function lumenSessionTags(a: LumenIds) {
   return {
+    runtime_context: { lumen_matter_dir: matterDir(a.matterId) },
     labels: [`lumen-firm:${a.firmId}`, `lumen-matter:${a.matterId}`, `lumen-user:${a.userId}`].map((l) => l.slice(0, 64)),
     metadata: { lumen_org_id: a.orgId, lumen_firm_id: a.firmId, lumen_matter_id: a.matterId, lumen_user_id: a.userId },
   };
@@ -46,6 +53,7 @@ export function tagSessionCreate(
   const tags = lumenSessionTags(a);
   return {
     ...body,
+    runtime_context: tags.runtime_context,
     labels: mergeLabels(tags.labels, clientLabels(body.labels)),
     metadata: { ...clientMetadata(body.metadata), ...tags.metadata },
   };
