@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { act, create } from 'react-test-renderer';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
-let segment = 'connected';
+let segment = 'billing';
 let pending = false;
 let failed = false;
 let accounts: { account_id: string }[] = [];
@@ -49,8 +49,8 @@ mock.module('@/components/common/route-loading', () => ({
 }));
 const { default: SettingsTabPage } = await import('./page');
 
-test('connected waits for accounts, then opens the real account Git destination', async () => {
-  segment = 'connected';
+test('billing waits for accounts, then opens the account billing destination', async () => {
+  segment = 'billing';
   pending = true;
   failed = false;
   accounts = [];
@@ -68,7 +68,7 @@ test('connected waits for accounts, then opens the real account Git destination'
   await act(async () => {
     root?.update(createElement(SettingsTabPage));
   });
-  expect(replacements).toEqual(['/projects?accountId=synthetic&accountTab=git']);
+  expect(replacements).toEqual(['/projects?accountId=synthetic&accountTab=billing']);
   expect(JSON.stringify(root.toJSON())).not.toContain('profile');
   await act(async () => {
     root?.unmount();
@@ -76,7 +76,7 @@ test('connected waits for accounts, then opens the real account Git destination'
 });
 
 test('failed or empty account lookup shows a retryable error, never Profile', async () => {
-  segment = 'connected';
+  segment = 'billing';
   pending = false;
   retries = 0;
   for (const error of [true, false]) {
@@ -125,5 +125,21 @@ test('live, renamed, unknown and project-only segments open their standalone tab
     await act(async () => {
       root?.unmount();
     });
+  }
+});
+
+ test('connected opens personal identity details regardless of organization lookup state', async () => {
+  segment = 'connected';
+  for (const state of ['pending', 'empty', 'failed', 'loaded']) {
+    pending = state === 'pending';
+    failed = state === 'failed';
+    accounts = state === 'loaded' ? [{ account_id: 'synthetic' }] : [];
+    replacements.length = 0;
+    let root: ReturnType<typeof create> | undefined;
+    await act(async () => { root = create(createElement(SettingsTabPage)); });
+    if (!root) throw new Error('Settings route did not render');
+    expect(JSON.stringify(root.toJSON())).toContain('profile');
+    expect(replacements).toEqual([]);
+    await act(async () => { root?.unmount(); });
   }
 });
