@@ -105,6 +105,9 @@ function useDriveFileList(dirPath: string): ExplorerQueryResult<FileNode[]> {
     () =>
       query.data?.entries
         .filter((e) => e.type !== 'symlink')
+        // `/Users` only holds people's own folders, each reached as My files
+        // or Shared with me: at the top it is a folder nobody can use.
+        .filter((e) => e.path !== '/Users')
         .map((e) => ({
           name: e.name,
           path: fromDrivePath(e.path),
@@ -267,6 +270,9 @@ export const driveExplorerSource: FileExplorerSource = {
       const p = toDrivePath(path);
       return p !== '/' && p !== '/Users';
     },
+    // The API refuses to rename, move or delete these (`structural` in
+    // apps/api/src/drives/routes.ts): never offer it.
+    fixedAt: (path) => /^\/(Company|Users(\/[^/]+)?)$/.test(toDrivePath(path)),
   },
   useFileViewerSource: useDriveFileViewerSource,
   useFileList: useDriveFileList,
