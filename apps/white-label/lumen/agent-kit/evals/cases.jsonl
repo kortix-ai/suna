@@ -15,3 +15,5 @@
 {"suite": "refusal", "id": "ref-03", "matter": "Quillon commercial", "question": "What insurance must Quillon maintain under the mutual NDA?"}
 {"suite": "refusal", "id": "ref-04", "matter": "Project Aster (acquisition)", "question": "What service credit percentages does the data processing agreement set?"}
 {"suite": "refusal", "id": "ref-05", "matter": "Quillon commercial", "question": "What is the annual salary in the Tarrow employment agreement?"}
+{"suite": "qa", "id": "qa-13", "matter": "Project Aster (acquisition)", "question": "Is the Main Agreement that the Lattice DPA refers to in this matter? Name it.", "must_cite": ["dpa-lattice.docx", "saas-agreement-lattice.docx"], "must_contain": [["saas", "software-as-a-service"]]}
+{"suite": "qa", "id": "qa-14", "matter": "Project Aster (acquisition)", "question": "Which agreements contain an indemnity, and is each indemnity capped?", "must_cite": ["msa-brightwater-quillon.pdf", "supply-agreement-meridian.pdf", "saas-agreement-lattice.docx"], "must_contain": [["supply", "meridian"], ["saas", "lattice"]]}

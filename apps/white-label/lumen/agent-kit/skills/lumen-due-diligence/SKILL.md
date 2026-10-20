@@ -31,9 +31,22 @@ description: Due-diligence checklist per document type and the red-flag rubric, 
 | IP ownership | IP in work product stays with a contractor or consultant | high |
 | Escalation | Rent or price escalation above 5% per year | medium |
 | Repair | A tenant liable for structural repairs | medium |
-| Missing DPA | Personal data processed with no data processing terms attached | high |
+| Missing DPA | Personal data processed and no data processing terms anywhere in the data room | high; medium when a stand-alone DPA between the same parties is in the room but not attached as the schedule |
 
 Every red flag names the document and cites the clause. A flag you cannot cite is not a flag.
+
+## Cross-references: resolve before you call a document missing
+
+A contract often defines another agreement by name: "the Main Agreement", "Schedule 3", "the
+Disclosure Letter". Before a report says that agreement is missing:
+
+1. Read the definition (search for the defined name; read the defining clause).
+2. Match it against every document in the data room by type, parties and date.
+3. A match is in the data room: name it by filename and cite the definition. Example: a DPA that
+   defines "the Main Agreement" as the SaaS agreement between the same two parties points at the
+   SaaS agreement in the room.
+4. Only when nothing matches, list it under Gaps as "not in the data room", with the citation of
+   the clause that refers to it.
 
 ## The report (reduce run)
 
