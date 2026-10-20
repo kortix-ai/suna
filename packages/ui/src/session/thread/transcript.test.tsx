@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { sessionLogOfV1Rows, sessionLogTurns, type SessionLogTurn } from '@kortix/sdk';
 
+import { AfterFirstPromptContext } from './after-first-prompt';
 import { TranscriptTurnRow, openTextBlock } from './transcript';
 
 /**
@@ -101,5 +103,70 @@ describe('openTextBlock: only the text block still being written streams (KRTX-2
   test('a settled turn streams nothing', () => {
     expect(openTextBlock(false, reply([text('b1')], null))).toBeNull();
     expect(openTextBlock(true, undefined)).toBeNull();
+  });
+});
+
+describe('the slot under the first prompt (a channel thread\'s "N replies")', () => {
+  const [answered] = sessionLogTurns(
+    sessionLogOfV1Rows(
+      's',
+      'rs',
+      [
+        { info: { id: 'p0', role: 'user', time: { created: 1 } }, parts: [{ id: 'pt', type: 'text', text: 'the parent message' }] },
+        { info: { id: 'r0', role: 'assistant', parentID: 'p0', time: { created: 2 } }, parts: [{ id: 'rt', type: 'text', text: 'the first reply' }] },
+      ] as never[],
+    ).threads[0]!,
+  );
+  const render = (isFirstTurn: boolean) =>
+    renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client: new QueryClient() },
+        createElement(
+          AfterFirstPromptContext.Provider,
+          { value: createElement('hr', { 'data-probe': 'replies' }) },
+          createElement(TranscriptTurnRow, {
+            turnId: answered!.id,
+            viewportClassName: '',
+            suppressed: false,
+            showBusyRow: false,
+            turn: answered!,
+            turnOutcome: {},
+            isLast: true,
+            ownsPlan: false,
+            sessionId: 's',
+            sessionStatus: undefined,
+            permissions: [],
+            questions: [],
+            sessionWorking: false,
+            isWorkingTurn: false,
+            suppressBusyIndicator: false,
+            awaitingUser: false,
+            pending: false,
+            isFirstTurn,
+            onPermissionReply: () => Promise.resolve(),
+            onRewind: () => undefined,
+            rewindDisabled: false,
+            fullTextState: 'idle',
+            onLoadFullText: () => undefined,
+          }),
+        ),
+      ),
+    );
+
+  test('the first turn draws it between the parent message and the reply', () => {
+    const html = render(true);
+    const parent = html.indexOf('the parent message');
+    const slot = html.indexOf('data-probe="replies"');
+    const reply = html.indexOf('the first reply');
+    expect(parent).toBeGreaterThan(-1);
+    expect(slot).toBeGreaterThan(parent);
+    expect(reply).toBeGreaterThan(slot);
+  });
+
+  test('a later turn does not draw it', () => {
+    const html = render(false);
+    expect(html).toContain('the parent message');
+    expect(html).not.toContain('data-probe');
   });
 });

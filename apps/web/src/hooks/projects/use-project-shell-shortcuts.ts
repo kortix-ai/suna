@@ -33,8 +33,9 @@ function hrefForTab(projectId: string, id: string) {
  * | Mod+1 … Mod+8         | Switch to nth open tab              |
  * | Mod+9                 | Switch to LAST open tab             |
  *
- * Without `onNewSession` (channels on), Mod+T and the desktop `new-session`
- * command do nothing.
+ * Mod+T and the desktop `new-session` command call `onNewSession`. With the
+ * project's `project_channels` flag on, the shell passes "open the default
+ * channel" instead of "new session". Without `onNewSession` they do nothing.
  *
  * `Mod` follows the user's `tabSwitchModifier` preference (Ctrl by default).
  * Global shortcuts (Mod+J new session, Mod+K command palette, Mod+B sidebar
@@ -48,7 +49,7 @@ export function useProjectShellShortcuts({
   onNewSession,
 }: {
   projectId: string;
-  /** Omitted while the project's `project_channels` flag is on: no New session entry point. */
+  /** Mod+T and the desktop `new-session` command. Channels on: opens the default channel. */
   onNewSession?: () => void;
 }) {
   const router = useRouter();

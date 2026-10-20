@@ -246,3 +246,62 @@ describe('useProjectSessions spaceId', () => {
     await act(async () => root!.unmount());
   });
 });
+
+describe('useProjectSessions pollFirstPageOnly', () => {
+  // Page N answers cursor `C<N>` (page 0 the first read).
+  let pages: Array<{ ids: string[]; next: string | null }> = [];
+  const cursors: Array<string | null> = [];
+  let root: ReturnType<typeof create> | undefined;
+  let list: ReturnType<typeof useProjectSessions>;
+
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+    cursors.length = 0;
+    globalThis.fetch = mock(async (url: unknown) => {
+      const cursor = new URL(String(url)).searchParams.get('cursor');
+      cursors.push(cursor);
+      const page = pages[cursor ? Number(cursor.slice(1)) : 0]!;
+      return Response.json(
+        page.ids.map((id) => ({ session_id: id })),
+        { headers: page.next ? { 'x-next-cursor': page.next } : {} },
+      );
+    }) as unknown as typeof fetch;
+  });
+  afterEach(async () => {
+    if (root) await act(async () => root!.unmount());
+    root = undefined;
+  });
+
+  const wait = (ms: number) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
+
+  test('a poll re-reads page one only, and a loaded older page keeps its rows', async () => {
+    pages = [
+      { ids: ['B', 'A'], next: 'C1' },
+      { ids: ['Z'], next: null },
+    ];
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Probe() {
+      list = useProjectSessions('P1', { spaceId: 'SPACE-1', parent: 'root', refetchInterval: 40, pollFirstPageOnly: true });
+      return null;
+    }
+    await act(async () => {
+      root = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
+    });
+    await wait(20);
+    await act(async () => {
+      await list.fetchNextPage();
+    });
+    expect(cursors).toEqual([null, 'C1']);
+
+    // A new thread arrives and pushes A off page one.
+    pages[0] = { ids: ['N', 'B'], next: 'C1' };
+    await wait(150);
+
+    expect(cursors.slice(2).length).toBeGreaterThan(0);
+    expect(cursors.slice(2).every((cursor) => cursor === null)).toBe(true);
+    // N is new; A stays (its page-two cursor starts after it); Z stays loaded.
+    expect(list.sessions.map((s) => s.session_id)).toEqual(['N', 'B', 'A', 'Z']);
+    expect(list.hasNextPage).toBe(false);
+  });
+});

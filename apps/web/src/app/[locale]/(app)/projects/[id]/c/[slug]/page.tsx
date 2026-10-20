@@ -18,11 +18,22 @@ export default function ProjectChannelPage() {
 
   if (!channels.isLoading && !channels.enabled) notFound();
   if (!channels.enabled) return null;
+  // A malformed escape in a hand-typed URL names no channel.
+  const decoded = decodeSegment(slug);
+  if (decoded === null) notFound();
   return (
     <SpaceView
       projectId={id}
-      target={{ kind: 'channel', slug: decodeURIComponent(slug) }}
+      target={{ kind: 'channel', slug: decoded }}
       beforeSend={beforeSend}
     />
   );
+}
+
+function decodeSegment(segment: string): string | null {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
 }

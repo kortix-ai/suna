@@ -31,6 +31,7 @@ import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '.
 import { ComposerChatInput, type ComposerOptions } from '../../session/composer/composer-chat-input';
 import { ComposerDropZone } from '../../session/composer/composer-drop-zone';
 import type { DraftScope } from '../../session/composer/draft/composer-draft';
+import { AfterFirstPromptContext } from '../../session/thread/after-first-prompt';
 import { SessionThread } from '../../session/thread/session-thread';
 import { useProjectHomeSend } from '../layout/use-project-home-send';
 import { CreateChannelDialog } from './create-channel-dialog';
@@ -460,6 +461,17 @@ function SpaceComposer({
   );
 }
 
+/** "N replies" with a hairline to the right. */
+function RepliesDivider({ count, className }: { count: number; className?: string }) {
+  const t = useTranslations('spaces.view');
+  return (
+    <div className={cn('flex items-center gap-3', className)}>
+      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{t('replies', { count })}</span>
+      <div className="bg-border h-px flex-1" />
+    </div>
+  );
+}
+
 /** The open thread, beside the timeline: its header and the whole thread with its own reply composer. */
 function ThreadPanel({
   projectId,
@@ -477,6 +489,12 @@ function ThreadPanel({
 }) {
   const t = useTranslations('spaces.view');
   const session = useSession(projectId, sessionId);
+  const dividerOnTop = Boolean(replyCount) && session.hasOlder;
+  // Stable across stream frames: every memoized turn reads this context.
+  const afterFirstPrompt = useMemo(
+    () => (replyCount && !dividerOnTop ? <RepliesDivider count={replyCount} className="py-1" /> : null),
+    [replyCount, dividerOnTop],
+  );
   return (
     <aside
       aria-label={t('threadTitle')}
@@ -493,21 +511,18 @@ function ThreadPanel({
           </Button>
         </Hint>
       </div>
-      {replyCount ? (
-        // "N replies" with a hairline to the right: the transcript below holds the first prompt and its replies.
-        <div className="flex shrink-0 items-center gap-3 px-4 pt-3">
-          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-            {t('replies', { count: replyCount })}
-          </span>
-          <div className="bg-border h-px flex-1" />
-        </div>
-      ) : null}
-      <SessionThread
-        session={session}
-        hideHeader
-        composerPlaceholder={t('replyPlaceholder')}
-        className="min-h-0 flex-1"
-      />
+      {/* The parent message, then "N replies", then the replies. While older
+          history is not loaded, the first turn on screen is not the parent
+          message, so the divider heads the panel instead. */}
+      {replyCount && dividerOnTop ? <RepliesDivider count={replyCount} className="shrink-0 px-4 pt-3" /> : null}
+      <AfterFirstPromptContext.Provider value={afterFirstPrompt}>
+        <SessionThread
+          session={session}
+          hideHeader
+          composerPlaceholder={t('replyPlaceholder')}
+          className="min-h-0 flex-1"
+        />
+      </AfterFirstPromptContext.Provider>
     </aside>
   );
 }

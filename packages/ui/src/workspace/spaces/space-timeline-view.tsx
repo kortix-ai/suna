@@ -29,8 +29,10 @@ import {
 
 /**
  * The space's threads: top-level sessions only (`parent: 'root'`, a child
- * thread is part of its parent). Polls every 5 s while an agent works so the
- * "is working" line settles, else every 15 s so a member's new thread shows up.
+ * thread is part of its parent). Polls page one every 5 s while an agent works
+ * so the "is working" line settles, else every 15 s so a member's new thread
+ * shows up. Active threads sort first, so page one holds them; older pages the
+ * viewer loaded are not re-read on each tick.
  */
 export function useSpaceThreads(projectId: string, spaceId: string | undefined) {
   return useProjectSessions(projectId, {
@@ -38,6 +40,7 @@ export function useSpaceThreads(projectId: string, spaceId: string | undefined) 
     parent: 'root',
     enabled: !!spaceId,
     refetchInterval: (sessions) => (sessions.some(threadIsWorking) ? 5_000 : 15_000),
+    pollFirstPageOnly: true,
   });
 }
 

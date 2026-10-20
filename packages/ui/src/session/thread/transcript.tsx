@@ -49,7 +49,8 @@ import {
   StopCircleIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AfterFirstPromptContext } from './after-first-prompt';
 import {
   SystemNotificationCard,
   parseSystemNotifications,
@@ -2187,6 +2188,7 @@ function SessionTurnImpl(props: SessionTurnProps) {
     providers, commandMessages, commands,
   } = props;
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const afterFirstPrompt = useContext(AfterFirstPromptContext);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
   // `?? 'normal'` — legacy persisted preferences predate this key (same rule
   // as every `panelMode` read site).
@@ -2253,6 +2255,7 @@ function SessionTurnImpl(props: SessionTurnProps) {
   return (
     <div className="group/turn text-factor-[2] space-y-2.5">
       <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
+      {props.isFirstTurn ? afterFirstPrompt : null}
       {/* Model switches happened while the turn worked, so they sit above
           its work and its answer, not under the answer. */}
       <TurnFallbackRows working={model.working} events={props.servedModel?.fallbacks} />

@@ -18,11 +18,22 @@ export default function ProjectDmPage() {
 
   if (!channels.isLoading && !channels.enabled) notFound();
   if (!channels.enabled) return null;
+  // A malformed escape in a hand-typed URL names no agent.
+  const decoded = decodeSegment(agent);
+  if (decoded === null) notFound();
   return (
     <SpaceView
       projectId={id}
-      target={{ kind: 'dm', agentName: decodeURIComponent(agent) }}
+      target={{ kind: 'dm', agentName: decoded }}
       beforeSend={beforeSend}
     />
   );
+}
+
+function decodeSegment(segment: string): string | null {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
 }
