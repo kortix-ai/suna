@@ -31,6 +31,20 @@ const ACTIONS: Record<string, string> = {
   'billing.plan': 'Plan changed',
   'billing.checkout': 'Checkout started',
   'export.csv': 'Data exported',
+  'export.docx': 'Document downloaded',
+  'document.upload': 'Document uploaded',
+  'document.delete': 'Document deleted',
+  'run.start': 'Run started',
+  'run.finish': 'Run finished',
+  'run.cancel': 'Run canceled',
+  'kit.install': 'Legal agents updated',
+  'cell.verify': 'Cell verified',
+  'cell.flag': 'Cell flagged',
+  'cell.edit': 'Cell edited',
+  'issue.accept': 'Issue accepted',
+  'issue.dismiss': 'Issue dismissed',
+  'library.create': 'Library item created',
+  'library.update': 'Library item edited',
 };
 
 const SYSTEM: Record<string, string> = { system: 'Lumen', operator: 'Lumen operator', stripe: 'Billing' };

@@ -23,10 +23,15 @@ const base64 = (blob: Blob) =>
 
 export function useVaultFileSource(documentId: Id<'documents'> | null, mime: string): FileSource {
   const read = useAction(api.documents.bytes);
+  const fetchBlob = useMemo(() => async () => new Blob([await read({ documentId: documentId! })], { type: mime }), [read, documentId, mime]);
+  return useBlobFileSource(documentId && `lumen-vault:${documentId}`, mime, fetchBlob);
+}
+
+/** A read-only FileSource over any blob from Lumen's backend (a Vault document, a run's redline or draft). `key` null = nothing yet. */
+export function useBlobFileSource(key: string | null, mime: string, fetchBlob: () => Promise<Blob>): FileSource {
   return useMemo<FileSource>(() => {
-    const fetchBlob = async () => new Blob([await read({ documentId: documentId! })], { type: mime });
     const useBlobQuery = (path: string | null) =>
-      useQuery({ queryKey: ['vault-blob', documentId], queryFn: fetchBlob, enabled: !!documentId && !!path, staleTime: Infinity });
+      useQuery({ queryKey: ['lumen-blob', key], queryFn: fetchBlob, enabled: !!key && !!path, staleTime: Infinity });
 
     // Text files come back as text; binaries as base64 (the PDF renderer reads it from `content`).
     function useFileContent(path: string | null): FileContentResult {
@@ -69,7 +74,7 @@ export function useVaultFileSource(documentId: Id<'documents'> | null, mime: str
     }
 
     return {
-      id: `lumen-vault:${documentId}`,
+      id: key ?? 'lumen-none',
       useFileContent,
       useBinaryBlob,
       bytesOnly: true,
@@ -80,5 +85,5 @@ export function useVaultFileSource(documentId: Id<'documents'> | null, mime: str
       },
       upload: readOnly,
     };
-  }, [documentId, mime, read]);
+  }, [key, mime, fetchBlob]);
 }

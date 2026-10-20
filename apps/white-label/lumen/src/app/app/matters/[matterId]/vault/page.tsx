@@ -40,7 +40,6 @@ export default function VaultPage() {
   const listed = useQuery(api.documents.list, { matterId: matter._id });
   const docs = listed === null ? [] : listed;
   const uploadDoc = useAction(api.documents.upload);
-  const startReview = useMutation(api.runs.startReview);
   const [uploading, setUploading] = useState<Record<string, number>>({});
   // 0 = sending to Lumen, 1 = stored, extracting.
   const [dragging, setDragging] = useState(false);
@@ -79,16 +78,9 @@ export default function VaultPage() {
     }
   }
 
-  async function review() {
+  function review() {
     setStarting(true);
-    try {
-      const { runId } = await startReview({ matterId: matter._id });
-      successToast('Review started');
-      router.push(`/app/matters/${matter._id}/runs/${runId}`);
-    } catch (err) {
-      errorToast('Could not start the review', { description: errorText(err) });
-      setStarting(false);
-    }
+    router.push(`/app/matters/${matter._id}/reviews/new`);
   }
 
   const [toDelete, setToDelete] = useState<{ id: Id<'documents'>; filename: string } | null>(null);

@@ -33,7 +33,9 @@ const TABS = [
   { seg: '', label: 'Overview' },
   { seg: '/vault', label: 'Vault' },
   { seg: '/assistant', label: 'Assistant' },
-  { seg: '/runs', label: 'Runs' },
+  { seg: '/reviews', label: 'Reviews' },
+  { seg: '/workflows', label: 'Workflows' },
+  { seg: '/history', label: 'History' },
 ] as const;
 
 function MatterChrome({ children }: { children: React.ReactNode }) {
@@ -85,7 +87,8 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
         <nav aria-label="Matter" className="mt-3 flex gap-4">
           {TABS.map((t) => {
             const href = `${base}${t.seg}`;
-            const active = t.seg === '' ? path === base : path.startsWith(href);
+            // A run's detail page belongs to History.
+            const active = t.seg === '' ? path === base : path.startsWith(href) || (t.seg === '/history' && path.startsWith(`${base}/runs`));
             return (
               <Link
                 key={t.seg}

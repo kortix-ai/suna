@@ -2,6 +2,7 @@
 
 import { Notice, useMatter } from '@/components/access';
 import { BATCH_ICON, CitationCard, Elapsed, type RunView, RunStatusBadge, isActive } from '@/components/runs/run-parts';
+import { DraftView, IssuesView, ReportView } from '@/components/runs/workflow-results';
 import { errorText } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
@@ -11,7 +12,7 @@ import { Button } from '@kortix/ui/button';
 import { UnifiedMarkdown } from '@kortix/ui/markdown';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { errorToast } from '@kortix/ui/toast';
-import { ArrowClockwiseIcon, CaretLeftIcon, FileMagnifyingGlassIcon, StopIcon, XIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, CaretLeftIcon, FileMagnifyingGlassIcon, StopIcon, TableIcon, XIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery } from 'convex/react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -138,7 +139,8 @@ function Progress({ view }: { view: RunView }) {
               <s.icon className={cn('mt-0.5 size-4 shrink-0', s.className)} />
               <span className="min-w-0 flex-1">
                 <span className="block">
-                  Batch {b.index + 1} <span className="text-muted-foreground">· {b.documentCount} document{b.documentCount === 1 ? "" : "s"}</span>
+                  {b.phase === 'reduce' ? 'Report' : view.batches.length === 1 ? 'Workspace' : `Batch ${b.index + 1}`}{' '}
+                  <span className="text-muted-foreground">· {b.documentCount} document{b.documentCount === 1 ? '' : 's'}</span>
                 </span>
                 <span className="block text-xs text-muted-foreground">
                   {s.label}
@@ -203,14 +205,14 @@ export default function RunPage() {
   const base = `/app/matters/${matter._id}`;
 
   if (view === undefined) return <div className="mx-auto w-full max-w-6xl space-y-3 px-6 py-6">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-9 w-full" />)}</div>;
-  if (view === null) return <Notice icon={FileMagnifyingGlassIcon} title="Run not found" body="It may belong to another matter." href={`${base}/runs`} cta="Back to runs" />;
+  if (view === null) return <Notice icon={FileMagnifyingGlassIcon} title="Run not found" body="It may belong to another matter." href={`${base}/history`} cta="Back to history" />;
   const { run } = view;
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 px-6 py-6">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href={`${base}/runs`} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          <CaretLeftIcon className="size-3" /> Runs
+        <Link href={`${base}/history`} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <CaretLeftIcon className="size-3" /> History
         </Link>
         <h2 className="min-w-0 flex-1 truncate font-display text-xl tracking-tight" data-testid="run-title">{run.title}</h2>
         <span className="text-xs text-muted-foreground"><Elapsed from={run.startedAt} to={run.finishedAt} /></span>
@@ -230,10 +232,30 @@ export default function RunPage() {
       {view.error && <p className="text-sm text-destructive">{view.error}</p>}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-4">
-          {run.kind === 'review' ? <ReviewGrid view={view} selected={selected} onSelect={setSelected} /> : <AnswerView view={view} />}
+          {(run.kind === 'review' || run.kind === 'column' || run.kind === 'diligence') && run.reviewId && (
+            <Link
+              href={`${base}/reviews/${run.reviewId}`}
+              className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm hover:border-brand/40"
+              data-testid="open-review"
+            >
+              <TableIcon className="size-4 text-brand" />
+              <span className="flex-1">{run.kind === 'diligence' ? 'Open the checklist table' : 'Open the review table'}: verify, flag, edit, export</span>
+            </Link>
+          )}
+          {run.kind === 'review' || run.kind === 'column' ? (
+            <ReviewGrid view={view} selected={selected} onSelect={setSelected} />
+          ) : run.kind === 'contract_review' ? (
+            <IssuesView view={view} runId={runId} />
+          ) : run.kind === 'diligence' ? (
+            <ReportView view={view} matterId={matter._id} />
+          ) : run.kind === 'draft' ? (
+            <DraftView view={view} runId={runId} />
+          ) : (
+            <AnswerView view={view} />
+          )}
         </div>
         <div className="space-y-4">
-          {selected && run.kind === 'review' && <CellPanel view={view} k={selected} onClose={() => setSelected(null)} />}
+          {selected && (run.kind === 'review' || run.kind === 'column') && <CellPanel view={view} k={selected} onClose={() => setSelected(null)} />}
           <Progress view={view} />
         </div>
       </div>

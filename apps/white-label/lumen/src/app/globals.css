@@ -17,6 +17,8 @@
   --font-display: var(--font-lumen-display), "Iowan Old Style", Georgia, serif;
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
+  /* Flagged cells and medium-severity findings: the one warm signal next to the teal accent. */
+  --color-flag: oklch(0.69 0.14 72);
 }
 
 /* @kortix/ui/theme.css already paints body with --background / --foreground

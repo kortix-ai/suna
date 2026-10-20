@@ -32,6 +32,7 @@ import {
   CaretUpDownIcon,
   CheckIcon,
   GearSixIcon,
+  BooksIcon,
   HouseIcon,
   MagnifyingGlassIcon,
   PlusIcon,
@@ -49,6 +50,7 @@ const COLLAPSE_KEY = 'lumen:sidebar-collapsed';
 const NAV = [
   { href: '/app', label: 'Home', icon: HouseIcon, exact: true },
   { href: '/app/matters', label: 'Matters', icon: BriefcaseIcon },
+  { href: '/app/library', label: 'Library', icon: BooksIcon },
 ] as const;
 
 /** The signed-in app: sidebar, the provisioning banner, the command palette. */
