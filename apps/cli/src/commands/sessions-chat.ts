@@ -148,6 +148,14 @@ function logMessageText(message: SessionLogMessage): string {
 }
 
 /** A v1 message's text, as `sessions chat` prints it. */
+/** The turn error a v1 reply carries, worded as `sessions chat` prints it
+ *  (the gateway's own sentence), or null. */
+export function extractMessageError(msg: MessageWithParts): string | null {
+  const message = sessionLogOfV1Rows('', msg.info.sessionID, [msg]).threads[0]?.messages[0];
+  const error = message ? classifySessionLogMessage(message).error : null;
+  return error ? `${error.name}: ${error.message}` : null;
+}
+
 export function extractMessageText(msg: MessageWithParts): string {
   const message = sessionLogOfV1Rows('', msg.info.sessionID, [msg]).threads[0]?.messages[0];
   return message ? logMessageText(message) : '';
