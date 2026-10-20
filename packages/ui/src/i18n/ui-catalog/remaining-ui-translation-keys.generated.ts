@@ -574,7 +574,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Agent environment': 'text1774cca7f6a4',
   'Agent sections': 'text7be318295927',
   'Agent updated': 'textd24a95381c8e',
-  'Agents granted this connector cannot call it until a project admin authorizes a connection.':
+  'Agents granted this connector cannot call it until a project manager authorizes a connection.':
     'text6a05ddf8cca1',
   'Agents granted this connector cannot call it until a project connection is authorized.':
     'text7acd4ac590c6',
@@ -582,7 +582,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'All secrets': 'text0b38e3daeb93',
   'All skills': 'text78abcbbfb830',
   'An agent scaffolds it and opens a change request.': 'text31e3ed0f6798',
-  "Anyone whose project role includes the project.trigger.update permission — Project admin by default — plus account owners and admins. The trigger's own agent always can.":
+  "Anyone whose project role includes the project.trigger.update permission — Project manager by default — plus account owners and admins. The trigger's own agent always can.":
     'text77ff6343ff46',
   'Attach to a project — every member inherits the role.': 'text60cbc40cdfac',
   'Attached to project': 'text4c646014b529',
