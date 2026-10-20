@@ -40,7 +40,7 @@ import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import { FileXIcon as FileWarning, PresentationIcon as Presentation } from '@phosphor-icons/react';
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
-import { FileViewer, isSvg } from './file-viewer';
+import { FileViewer, isSvg } from '../../../files/viewer/file-viewer';
 import {
   PanelWidthButton,
   RefreshButton,
@@ -50,7 +50,7 @@ import {
   ViewerDownloadAction,
   ViewerPathPill,
   fileShareInput,
-} from './viewer-actions';
+} from '../../../files/viewer/viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR

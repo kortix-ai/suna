@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from '../../../i18n';
+import { useTranslations } from '../../i18n';
 /**
  * `FileViewer` — one file, shown the way that file wants to be read.
  *
@@ -22,20 +22,21 @@ import { useTranslations } from '../../../i18n';
  * toolbar cannot drift from `PreviewShell`'s.
  */
 
-import { HighlightedCode } from '../../../markdown/code';
-import { MarkdownWithFrontmatter } from '../../../markdown/markdown-frontmatter';
-import { ButtonGroup } from '../../../primitives/button-group';
-import { ImageRenderer } from '../../../files/renderers/image-renderer';
-import { MermaidDiagram } from '../../../files/renderers/mermaid/mermaid-diagram';
-import { isMermaidFile } from '../../../files/renderers/mermaid/mermaid-utils';
-import { HtmlPreview, SaveAsPdfButton } from '../../../files/viewer';
-import { getFileCategory, getLanguageFromExt } from '../../../files/viewer/preview-policy';
-import { getFileIcon } from '../../../files/project/components/file-icon';
-import { useIsMobile } from '../../../internal/hooks';
-import { cn } from '../../../lib/utils';
+import { HighlightedCode } from '../../markdown/code';
+import { MarkdownWithFrontmatter } from '../../markdown/markdown-frontmatter';
+import { ButtonGroup } from '../../primitives/button-group';
+import { ImageRenderer } from '../renderers/image-renderer';
+import { MermaidDiagram } from '../renderers/mermaid/mermaid-diagram';
+import { isMermaidFile } from '../renderers/mermaid/mermaid-utils';
+import { HtmlPreview } from './html-preview';
+import { SaveAsPdfButton } from './save-as-pdf-button';
+import { getFileCategory, getLanguageFromExt } from './preview-policy';
+import { getFileIcon } from '../project/components/file-icon';
+import { useIsMobile } from '../../internal/hooks';
+import { cn } from '../../lib/utils';
 import { CodeSimpleIcon as Code2, EyeIcon as Eye } from '@phosphor-icons/react';
 import { type ReactNode, useEffect, useState } from 'react';
-import { CloseButton, DetailSidebarToggle } from './detail-view';
+import { CloseButton, DetailSidebarToggle } from './viewer-chrome';
 import {
   PanelWidthButton,
   RefreshButton,

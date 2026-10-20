@@ -1,5 +1,5 @@
 import { getFileCategory, getLanguageFromExt } from '../../viewer/preview-policy';
-import { languageFor } from '../../../session/panel/easy/file-viewer';
+import { languageFor } from '../../viewer/file-viewer';
 import { fileIconFor } from '../../../internal/lib/utils/file-utils';
 import { TreeStructureIcon } from '@phosphor-icons/react';
 import { describe, expect, test } from 'bun:test';

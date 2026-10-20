@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 
-import { TooltipProvider } from '../../../primitives/tooltip';
-import { getFileCategory } from '../../../files/viewer';
+import { TooltipProvider } from '../../primitives/tooltip';
+import { getFileCategory } from './index';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { IntlTestProvider } from '../../../test-utils/intl';
-import { isRich, reportsIntrinsicSize } from './file-preview';
+import { IntlTestProvider } from '../../test-utils/intl';
+import { isRich, reportsIntrinsicSize } from '../../session/panel/easy/file-preview';
 import { FileViewer, isHtml, isMarkdown, isSvg, languageFor } from './file-viewer';
 
 const SHARE_CONTEXT = { projectId: 'p1', sessionId: 's1' };
@@ -383,7 +383,7 @@ describe('FileViewer — Save as PDF (markdown only)', () => {
 // through `ViewerActions` is what makes that structural rather than a habit —
 // so what is asserted is that neither file has grown its own copy again.
 
-const PREVIEW_SOURCE = readFileSync(new URL('./file-preview.tsx', import.meta.url), 'utf8');
+const PREVIEW_SOURCE = readFileSync(new URL('../../session/panel/easy/file-preview.tsx', import.meta.url), 'utf8');
 
 describe('shared toolbar contract', () => {
   test('both toolbars build their actions with ViewerActions', () => {

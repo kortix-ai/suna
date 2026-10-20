@@ -93,7 +93,7 @@ export function isMarkdownPath(path: string): boolean {
 
 /**
  * Extension -> the language Shiki should highlight a non-markdown file with.
- * Mirrors `packages/ui/src/session/panel/easy/file-viewer.tsx`'s
+ * Mirrors `packages/ui/src/files/viewer/file-viewer.tsx`'s
  * `LANGUAGE_BY_EXT` (the established convention for feeding `CodeBlockCode` a
  * raw file's language), extended with a direct `xml` entry — that file only
  * aliases `svg` to `xml` and has no bare `xml` key, but skill/command

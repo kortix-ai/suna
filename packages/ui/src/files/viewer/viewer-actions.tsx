@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from '../../../i18n';
+import { useTranslations } from '../../i18n';
 /**
  * Toolbar controls shared by the detail layer's three viewers — `FileViewer`
  * (text), `PreviewShell` (everything else) and `AppPreview` (a running port).
@@ -28,25 +28,25 @@ import { useTranslations } from '../../../i18n';
  * actions it cannot do.
  */
 
-import { Button } from '../../../primitives/button';
-import { ButtonGroup } from '../../../primitives/button-group';
-import Hint from '../../../primitives/hint';
-import Loading from '../../../primitives/loading';
-import { Popover, PopoverAnchor, PopoverContent } from '../../../primitives/popover';
-import { ViewerDownloadButton } from '../../../files/renderers/shared/viewer-download-button';
-import { downloadFile } from '../../../internal/files/runtime-files';
-import { Copy } from '../../../icons/copy';
-import { SolidCheckIcon } from '../../../internal/icons/solid-check-icon';
-import { usePublicShareLink } from '../../../internal/share/use-public-share-link';
+import { Button } from '../../primitives/button';
+import { ButtonGroup } from '../../primitives/button-group';
+import Hint from '../../primitives/hint';
+import Loading from '../../primitives/loading';
+import { Popover, PopoverAnchor, PopoverContent } from '../../primitives/popover';
+import { ViewerDownloadButton } from '../renderers/shared/viewer-download-button';
+import { downloadFile } from '../../internal/files/runtime-files';
+import { Copy } from '../../icons/copy';
+import { SolidCheckIcon } from '../../internal/icons/solid-check-icon';
+import { usePublicShareLink } from '../../internal/share/use-public-share-link';
 import {
   findLiveSharesFor,
   publicShareUrl,
   useRevokePublicShare,
   useSessionPublicShares,
-} from '../../../internal/share/use-session-public-shares';
-import { track } from '../../../lib/telemetry';
-import { cn } from '../../../lib/utils';
-import { useIsExpanded, useToggleExpanded } from '../../../internal/stores/kortix-computer-store';
+} from '../../internal/share/use-session-public-shares';
+import { track } from '../../lib/telemetry';
+import { cn } from '../../lib/utils';
+import { useIsExpanded, useToggleExpanded } from '../../internal/stores/kortix-computer-store';
 import type { CreateSessionPublicShareInput } from '@kortix/sdk';
 import {
   ArrowClockwiseIcon,

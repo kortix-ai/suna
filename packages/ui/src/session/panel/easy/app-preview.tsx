@@ -62,7 +62,7 @@ import {
   shouldArmLoadTimeout,
   shouldKeepProbingPort,
 } from './easy-panel-logic';
-import { PanelWidthButton, type ShareContext, ViewerActions } from './viewer-actions';
+import { PanelWidthButton, type ShareContext, ViewerActions } from '../../../files/viewer/viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR

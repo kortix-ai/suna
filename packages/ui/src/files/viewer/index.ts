@@ -23,5 +23,5 @@ export { PreviewFitProvider, isUsableIntrinsicSize } from './preview-fit';
 export { SaveAsPdfButton } from './save-as-pdf-button';
 export { framePolicy, getFileCategory, getLanguageFromExt } from './preview-policy';
 export type { FileCategory, FrameContent, FramePolicy } from './preview-policy';
-export { FileViewer } from '../../session/panel/easy/file-viewer';
+export { FileViewer } from './file-viewer';
 export { type ShowCarouselItem } from '../renderers/show-content-renderer';

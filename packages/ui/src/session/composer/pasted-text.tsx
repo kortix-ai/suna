@@ -12,7 +12,7 @@ import {
 } from '../../primitives/modal';
 import { useTranslations } from '../../i18n';
 
-import { CloseButton } from '../panel/easy/detail-view';
+import { CloseButton } from '../../files/viewer/viewer-chrome';
 
 /**
  * A paste's full text, in the side panel's detail view or `PastedTextModal`.
