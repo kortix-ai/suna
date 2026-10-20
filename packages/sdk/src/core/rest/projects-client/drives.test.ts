@@ -4,6 +4,7 @@ import { configureKortix } from '../../http/config';
 import {
   deleteDriveFile,
   downloadDriveFile,
+  getFolderAccess,
   getDriveFileUrl,
   listDriveFiles,
   listDriveVersions,
@@ -241,6 +242,23 @@ test('a failed folder listing does not reach the app-wide error handler', async 
     const error = await listDriveFiles(D, '/new').catch((e: unknown) => e);
     expect((error as ApiError).status).toBe(404);
     expect(seen).toHaveLength(0);
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError: undefined });
+  }
+});
+
+test('a refused folder write or sharing read leaves the error to the caller: no app-wide onError', async () => {
+  const reported: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError: (e) => void reported.push(e) });
+  try {
+    respond(400, { error: true, message: 'This folder cannot be moved or renamed' });
+    const moved = await moveDriveFile(D, '/Users', '/People').catch((e) => e);
+    expect((moved as ApiError).message).toBe('This folder cannot be moved or renamed');
+    await makeDriveFolder(D, '/Users/x').catch(() => undefined);
+    await deleteDriveFile(D, '/Company').catch(() => undefined);
+    respond(403, { error: true, message: 'You cannot open this folder' });
+    await getFolderAccess(D, '/a').catch(() => undefined);
+    expect(reported).toEqual([]);
   } finally {
     configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError: undefined });
   }

@@ -118,6 +118,29 @@ describe('fast-boot delta materialization', () => {
     expect(readFileSync(join(p.target, 'file-3.txt'), 'utf8')).toBe('change 3\n')
   })
 
+  // The session's changed-files list is the diff against origin/<base>. The
+  // scaffold clone leaves origin/main on the scaffold root, so a bundle that
+  // moves only the local base made the project's own setup commit look like
+  // this session's edits (KRTX-1862).
+  test.each(['inline', 'remote'] as const)('a bundle (%s) moves origin/main to the base tip', async (kind) => {
+    const p = seed(2)
+    globalThis.fetch = (async () => {
+      if (kind === 'inline') throw new Error('network must not be touched')
+      return new Response(p.bundle, { status: 200, headers: { 'content-type': 'application/x-git-bundle' } })
+    }) as unknown as typeof fetch
+    const cfg = loadConfig({
+      ...baseEnv(p, 'https://api.kortix.test/v1/git/11111111-1111-4111-8111-111111111111.git'),
+      ...(kind === 'inline'
+        ? { KORTIX_GIT_DELTA_BUNDLE_BASE64: p.bundle.toString('base64') }
+        : { KORTIX_GIT_DELTA_BUNDLE_REMOTE: '1' }),
+    })
+    await materializeRepo(cfg)
+    expect(git(p.target, 'rev-parse', 'HEAD')).toBe(p.baseSha)
+    expect(git(p.target, 'rev-parse', 'origin/main')).toBe(p.baseSha)
+    expect(git(p.target, 'rev-parse', 'origin/HEAD')).toBe(p.baseSha)
+    expect(git(p.target, 'diff', '--name-only', 'origin/main')).toBe('')
+  })
+
   test('falls back to a single-round-trip shallow fetch when the bundle route fails', async () => {
     const p = seed(4)
     let calls = 0

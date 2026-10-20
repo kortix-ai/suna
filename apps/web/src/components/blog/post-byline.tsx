@@ -1,10 +1,10 @@
 'use client';
 
 import { PostAuthorAvatar } from '@/components/blog/post-author-avatar';
-import { InlineMeta } from '@/components/ui/inline-meta';
+import { InlineMeta } from '@kortix/ui/inline-meta';
 import { useTranslations } from '@/i18n/use-translations';
 import { formatPostDate, type Author } from '@/lib/blog';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /**
  * Author + date + reading time. The full variant heads an article and gets a

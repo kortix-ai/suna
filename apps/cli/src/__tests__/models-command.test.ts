@@ -82,7 +82,7 @@ function picker(overrides: Record<string, boolean>, models?: Record<string, unkn
 
 function startServer(
   seed: Record<string, boolean> = {},
-  opts: { models?: Record<string, unknown> } = {},
+  opts: { models?: Record<string, unknown>; catalog?: Record<string, { provider: string; availability: string }> } = {},
 ): string {
   let overrides = { ...seed };
   let projectDefault: string | null = 'glm-5.3-flash';
@@ -95,7 +95,7 @@ function startServer(
       calls.push({ method: req.method, path: url.pathname, query: url.search, body });
       const p = url.pathname;
       if (p === `/v1/projects/${PROJECT}/model-picker` && req.method === 'GET') {
-        return Response.json(picker(overrides, opts.models));
+        return Response.json({ ...picker(overrides, opts.models), catalog: opts.catalog });
       }
       if (p === `/v1/projects/${PROJECT}/model-enablement` && req.method === 'PUT') {
         const next = (body as { modelOverrides: Record<string, boolean> }).modelOverrides;
@@ -226,6 +226,23 @@ describe('kortix models', () => {
     const payload = JSON.parse(j.stdout) as { defaultModel: string; modelOverrides: unknown };
     expect(payload.defaultModel).toBe('glm-5.3-flash');
     expect(payload.modelOverrides).toEqual({ 'openai/gpt-5.5': true });
+  });
+
+  test('ls shows unavailable catalog ids even when no model is served', async () => {
+    const catalog = {
+      'managed-example': { provider: 'kortix', availability: 'plan' },
+      'openai/example': { provider: 'openai', availability: 'provider' },
+      'codex/example': { provider: 'codex', availability: 'login' },
+    };
+    const config = writeConfig(startServer({}, { models: {}, catalog }));
+    const result = await runCli(['models', 'ls', '--project', PROJECT], config);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/managed-example.*plan/);
+    expect(result.stdout).toMatch(/openai\/example.*provider/);
+    expect(result.stdout).toMatch(/codex\/example.*login/);
+    expect(result.stdout).not.toContain('No models yet');
+    const json = await runCli(['models', 'ls', '--json', '--project', PROJECT], config);
+    expect(JSON.parse(json.stdout).catalog).toEqual(catalog);
   });
 
   test('enable MERGES into the stored overrides before the replace-whole-map PUT', async () => {

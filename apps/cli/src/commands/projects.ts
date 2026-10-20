@@ -254,9 +254,9 @@ Options:
 Requires project.settings.write. A flag the platform marks unavailable stays
 off regardless of the project override.
 
-Internal-only flags (session_log, session_log_restore) are listed only while
-they are on, with origin "kortix". Only Kortix changes them: enable, disable
-and reset answer feature_operator_only. Contact Kortix to change one.
+Internal-only flags are listed only while they are on, with origin "kortix".
+Only Kortix changes them: enable, disable and reset are refused. Contact
+Kortix to change one.
 `;
 
 interface FeatureFlagRow {
@@ -836,7 +836,7 @@ async function projectsUpgrade(argv: string[]): Promise<number> {
  * The seed prompt for the v1 → v2 manifest migration.
  *
  * VERBATIM COPY of `MIGRATE_TO_V2_PROMPT` in
- * `apps/web/src/features/workspace/customize/migrate-to-v2/migration-prompt.ts`,
+ * `packages/ui/src/customize/migrate-to-v2/migration-prompt.ts`,
  * which is the source of truth. The CLI cannot import from `apps/web` and the
  * prompt lives in no shared package, so both doors must be edited together —
  * `kortix projects upgrade` and the dashboard's Upgrades button must seed the
@@ -1405,8 +1405,8 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   process.stdout.write(`  ${C.dim}manifest   ${C.reset}${p.manifest_path}\n`);
   process.stdout.write(`  ${C.dim}status     ${C.reset}${p.status}\n`);
   process.stdout.write(`  ${C.dim}updated    ${C.reset}${formatRelative(p.updated_at)}\n`);
-  // Internal-only surfaces Kortix turned on (apps). Agents read this
-  // to know `kortix apps` works here.
+  // Internal-only flags Kortix turned on. Agents read this to know which
+  // Kortix-managed surfaces work here.
   const managed = featureRows(p as unknown as Record<string, unknown>)
     .filter((r) => r.operator_only && r.enabled)
     .map((r) => r.key);

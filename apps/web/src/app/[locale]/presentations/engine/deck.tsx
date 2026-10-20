@@ -16,7 +16,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { ThemeToggle } from '@/components/home/theme-toggle';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,

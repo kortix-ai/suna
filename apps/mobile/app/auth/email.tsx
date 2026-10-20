@@ -33,6 +33,7 @@ import * as Haptics from 'expo-haptics';
 import { checkAccessEmail } from '@kortix/sdk';
 
 import { PillInput } from '@/components/kortix/pill-input';
+import { useFieldRefocus } from '@/lib/ui/use-field-refocus';
 import { SettingsGroup } from '@/components/kortix/settings-list';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -115,6 +116,9 @@ export default function EmailAuthScreen() {
   const [verifying, setVerifying] = React.useState(false);
 
   const passwordRef = React.useRef<TextInput>(null);
+  // Back from Mail with the code: the keyboard comes back on a tap and on return.
+  const codeRef = React.useRef<TextInput>(null);
+  const refocusCode = useFieldRefocus(codeRef, !verifying);
   // Set when the user switches to a password, so the new field takes focus.
   const focusPasswordOnMount = React.useRef(false);
 
@@ -437,6 +441,8 @@ export default function EmailAuthScreen() {
               </Text>
 
               <PillInput
+                ref={codeRef}
+                onPressIn={refocusCode}
                 value={otpCode}
                 onChangeText={handleCodeChange}
                 placeholder="Code"

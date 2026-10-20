@@ -348,26 +348,26 @@ describe('warm sessions — compute placement', () => {
   });
 });
 
-// KORTIX_GENUI is boot-only env (projects/lib/genui-env.ts). A warm box
-// provisioned before a `genui` flag change carries the old value, so the
+// Every flag is boot-only env (KORTIX_FEATURE_FLAGS, KORTIX_GENUI; projects/lib/feature-flag-env.ts).
+// A warm box provisioned before a flag change carries the old value, so any
 // change retires every unclaimed warm session of the project.
-describe('genui flag change — retires warm sessions', () => {
+describe('a flag change — retires warm sessions', () => {
   async function sessionRow(sessionId: string) {
     const [row] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId));
     const [box] = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId));
     return { metadata: (row?.metadata ?? {}) as Record<string, unknown>, status: row?.status, boxStatus: box?.status };
   }
 
-  test('every unclaimed warm session of the project (all users) is deleted; a claimed one is kept', async () => {
+  test.each(['genui', 'agent_rooms'] as const)('%s: every unclaimed warm session of the project (all users) is deleted; a claimed one is kept', async (key) => {
     const mine = await seedWarmSession();
     const theirs = await seedWarmSession({ createdBy: OTHER_USER });
     const claimed = await seedWarmSession({ warm: false });
 
     await runFeatureFlagToggleEffects({
-      key: 'genui',
+      key,
       projectId: PROJECT,
       accountId: ACCOUNT,
-      metadata: { experimental: { genui: true } },
+      metadata: { experimental: { [key]: true } },
     });
 
     for (const sessionId of [mine, theirs]) {

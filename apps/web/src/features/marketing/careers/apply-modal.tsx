@@ -1,9 +1,9 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Select,
   SelectContent,
@@ -19,9 +19,9 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Textarea } from '@/components/ui/textarea';
-import { errorToast } from '@/components/ui/toast';
+} from '@kortix/ui/modal';
+import { Textarea } from '@kortix/ui/textarea';
+import { errorToast } from '@kortix/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { getLocalizedCareersContent } from './content';
