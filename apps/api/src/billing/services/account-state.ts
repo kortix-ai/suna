@@ -121,6 +121,10 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       lifetime_used: Number(sub?.lifetimeUsed ?? 0) || 0,
       daily_refresh: null,
     },
+    model_access: {
+      managed: isAdmin || resolved.entitlements.managedModels,
+      requires_provider_key: !isAdmin && !resolved.entitlements.managedModels,
+    },
     billing_state: isAdmin ? ('active' as const) : billingState,
     has_active_subscription: hasLiveSubscription(billingSnapshot),
     // The plan the account BEHAVES as, named the way the product names plans.
@@ -242,6 +246,7 @@ export function buildLocalAccountState(): AccountStateResponse {
       lifetime_used: 0,
       daily_refresh: null,
     },
+    model_access: { managed: true, requires_provider_key: false },
     billing_state: 'active',
     has_active_subscription: false,
     plan: {

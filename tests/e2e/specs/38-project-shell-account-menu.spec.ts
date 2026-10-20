@@ -73,6 +73,23 @@ test.describe('38 — The project shell knows who you are', () => {
       await dismissWelcomeCard(page);
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`));
 
+      await test.step('the mobile drawer has a reachable close control', async () => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        const toggle = page.getByRole('button', { name: 'Open sidebar' });
+        await toggle.click();
+        const drawer = page.getByRole('dialog', { name: 'Sidebar', exact: true });
+        await expect(drawer).toBeVisible();
+        await expect(drawer.getByRole('button', { name: 'Close', exact: true })).toBeVisible();
+        await drawer.getByRole('button', { name: 'Close', exact: true }).click();
+        await expect(drawer).not.toBeVisible();
+        await expect(toggle).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+        await toggle.click();
+        await drawer.getByRole('button', { name: 'Close', exact: true }).click();
+        await expect(drawer).not.toBeVisible();
+        await page.setViewportSize({ width: 1280, height: 900 });
+      });
+
       await test.step('the shell opens an account menu on the signed-in identity', async () => {
         await page.getByRole('button', { name: 'Switch project' }).click();
         const menu = page.getByRole('menu');

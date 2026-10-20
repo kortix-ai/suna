@@ -42,6 +42,7 @@ import { useTranslations } from '../../i18n';
 import { useSessionIds } from '../../providers/session-ids';
 import { useUiComponents } from '../../providers/ui-provider';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { ModelSearchEmpty } from './model-search-empty';
 import { resolveAvailableSelectedModel } from './model-availability';
 import {
   isPickerGroupOpen,
@@ -863,19 +864,12 @@ export function ModelSelector({
                    filtered by `search`, so the branch below could not tell the
                    two apart: typing "zzz" with 40 models connected showed
                    "No models available" and a Connect-provider CTA. */
-                <div className="px-3 py-5 text-center">
-                  <div className="text-foreground text-sm font-medium">
-                    {tModel('noMatch.title')}
-                  </div>
-                  <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
-                    {tModel('noMatch.description', { search: search.trim() })}
-                  </p>
-                  <div className="mt-4 flex items-center justify-center">
-                    <Button type="button" size="xs" variant="outline" onClick={() => setSearch('')}>
-                      {tModel('noMatch.clear')}
-                    </Button>
-                  </div>
-                </div>
+                <ModelSearchEmpty
+                  search={search}
+                  modelCount={baseModels.filter((model) => model.enabled !== false).length}
+                  onClear={() => setSearch('')}
+                  onUpgrade={showUpgradeOption ? handleUpgrade : undefined}
+                />
               ) : (
                 <div className="px-3 py-5 text-center">
                   <div className="text-foreground text-sm font-medium">{tModel('empty.title')}</div>

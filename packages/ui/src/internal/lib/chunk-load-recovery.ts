@@ -21,7 +21,7 @@
  */
 
 /** How long one reload mark suppresses further automatic reloads. */
-export const CHUNK_RELOAD_WINDOW_MS = 10_000;
+export const CHUNK_RELOAD_WINDOW_MS = 45_000;
 
 const CHUNK_RELOAD_MARK = 'kortix:chunk-reload-at';
 
@@ -49,7 +49,8 @@ export function isChunkLoadError(error: unknown): boolean {
   const name = typeof err.name === 'string' ? err.name : '';
   const message = typeof err.message === 'string' ? err.message : '';
   if (name === 'ChunkLoadError' || message.includes('ChunkLoadError')) return true;
-  if (/Loading chunk [\s\S]* failed\./.test(message)) return true;
+  const loading = message.indexOf('Loading chunk ');
+  if (loading >= 0 && message.indexOf(' failed.', loading + 'Loading chunk '.length) >= 0) return true;
   if (DYNAMIC_IMPORT_PATTERNS.some((pattern) => message.includes(pattern))) return true;
   // The stale runtime TypeError is only a chunk-load failure when the throwing
   // frame is the webpack runtime chunk; the error object carries that in its
@@ -82,7 +83,11 @@ function browserSessionStorage(): Pick<Storage, 'getItem' | 'setItem'> | null {
  * returns false.
  */
 export function reloadForChunkLoadError(error: unknown, deps: ChunkReloadDeps = {}): boolean {
-  if (!isChunkLoadError(error)) return false;
+  return isChunkLoadError(error) && reloadForStaleChunk(deps);
+}
+
+/** Shared tab budget for bootstrap, lazy imports and React boundaries. */
+export function reloadForStaleChunk(deps: ChunkReloadDeps = {}): boolean {
   const now = deps.now ?? (() => Date.now());
   const storage = deps.storage !== undefined ? deps.storage : browserSessionStorage();
   if (!storage) return false;

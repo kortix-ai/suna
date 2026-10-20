@@ -2100,6 +2100,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     opencodeSessionId: rootSessionId ?? null,
     runtimeTransport: 'rest' as const,
     runtimeSessions: canonicalSession.sessions,
+    /** The runtime session list has not answered yet (fetching, or not enabled
+     *  before this session owns the runtime). Empty `runtimeSessions` then means
+     *  "not asked", not "no child sessions". */
     runtimeSessionsLoading: canonicalSession.isLoading,
     runtimeSessionsListed: canonicalSession.listed,
     runtimeError: runtimeSessionError,

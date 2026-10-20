@@ -11,7 +11,7 @@ import type { OAuth2ClientRegistrationInput, OAuth2ResourceDiscovery } from '@ko
 
 import type { OAuth2ApplicationForm } from './connector-oauth2';
 
-export type AutoConnectPlan =
+type AutoConnectPlan =
   /** Discovery has not run yet. */
   | { kind: 'unknown' }
   /** The server answered without credentials — it needs no OAuth connection. */

@@ -173,3 +173,13 @@ reset timestamp, or null for an unknown legacy schedule. Balance cards show
 that date beside remaining plan credits. The ledger shows each grant's own
 `expires_at` when recorded, never a current account schedule substituted for
 a historical grant. New free welcome grants record their scheduled reset date.
+
+## Wallet admission and model access
+
+`credits.can_run` and `billing_state` describe wallet admission, not model
+readiness. A funded Free account can pay for compute while it uses BYOK.
+`model_access.managed` reports resolved managed-model access;
+`model_access.requires_provider_key` is true when that access is absent.
+The project/principal-scoped `/model-picker` catalog is the source of truth
+for executable models. A gateway trigger with no enabled model returns
+`402 no_usable_model`; credits alone never unlock managed inference.

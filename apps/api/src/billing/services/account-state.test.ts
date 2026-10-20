@@ -141,6 +141,13 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     expect(maxInFlight).toBeGreaterThan(1);
   });
 
+  test('funded Free reports wallet admission separately from managed model access', async () => {
+    account = creditAccount({ tier: 'free', balance: '5.00' });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.credits.can_run).toBe(true);
+    expect(state.model_access).toEqual({ managed: false, requires_provider_key: true });
+  });
+
   test('response shape — credits, subscription, tier, auto_topup present; no legacy machine fields', async () => {
     getCreditAccountCalls = 0;
     account = creditAccount();

@@ -43,6 +43,9 @@ export interface ExplorerCapabilities {
   /** False for a folder that holds folders only (Files' top level and `/Users`):
    *  the New menu offers just "New folder" there. Absent means every folder. */
   filesAllowedAt?: (path: string) => boolean;
+  /** True for a folder that holds the tree together (Files' `Company`, `Users`,
+   *  a person's own folder): no rename, cut or delete. Absent means none. */
+  fixedAt?: (path: string) => boolean;
 }
 
 export interface ExplorerQueryResult<T> {

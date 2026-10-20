@@ -17,7 +17,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { type AppInstance, createTestKortix, startApp } from './harness';
+import { APP_SETUP_TIMEOUT_MS, type AppInstance, createTestKortix, startApp } from './harness';
 import { wrapperEnv } from './env';
 
 describe('mode bootstrap', () => {
@@ -29,7 +29,7 @@ describe('mode bootstrap', () => {
       startApp(wrapperEnv()),
       startApp({ KORTIX_API_KEY: undefined, NEXT_PUBLIC_KORTIX_API_URL: 'https://direct.example/v1' }),
     ]);
-  }, 120_000);
+  }, APP_SETUP_TIMEOUT_MS);
 
   afterAll(async () => {
     await Promise.all([wrapperApp?.stop(), directApp?.stop()]);

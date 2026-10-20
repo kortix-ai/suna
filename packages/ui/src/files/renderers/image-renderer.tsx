@@ -137,12 +137,20 @@ export function ImageRenderer({
     return ext || 'Image';
   })();
 
-  // When the parent passes a new URL, reset everything
-  useEffect(() => {
+  // When the parent passes a new URL, reset everything. The reset runs during
+  // render, not in an effect: an effect also ran on mount, after a cached
+  // image had already fired `load`, and set `imgLoaded` back to false. The
+  // `src` never changed again, so no second `load` came and the spinner
+  // stayed forever (a Drive card whose file opened instantly).
+  const [shownUrl, setShownUrl] = useState(url);
+  if (url !== shownUrl) {
+    setShownUrl(url);
     setImgSrc(url);
     setImgLoaded(false);
     setImgError(false);
     setRetryCount(0);
+  }
+  useEffect(() => {
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
       retryTimerRef.current = null;

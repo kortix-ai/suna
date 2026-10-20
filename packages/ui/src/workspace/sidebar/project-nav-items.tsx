@@ -1,6 +1,7 @@
 'use client';
 
 import { ProjectAppsNavItem } from './footer/project-apps-nav';
+import { ProjectRoomsNavItem } from './footer/project-rooms-nav';
 import { ProjectFilesNavItem } from './footer/project-files-nav';
 import { ProjectCustomizeNavItem } from '../../internal/layout/project-settings-nav';
 import {
@@ -166,5 +167,7 @@ function NavItem({ entry, projectId }: { entry: SidebarNavEntry; projectId: stri
       return <ProjectAppsNavItem projectId={projectId} />;
     case 'files':
       return <ProjectFilesNavItem projectId={projectId} />;
+    case 'rooms':
+      return <ProjectRoomsNavItem projectId={projectId} />;
   }
 }

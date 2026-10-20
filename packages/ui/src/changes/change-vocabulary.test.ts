@@ -377,6 +377,18 @@ describe('splitting a whole-change patch', () => {
       expect(chunk).not.toContain('"b/');
     });
 
+    test('a quoted mode-change header keys by its b-side, escaped quotes included', () => {
+      const patch = ['diff --git "a/say \\"hi\\".txt" "b/say \\"hi\\".txt"', 'old mode 100644', 'new mode 100755'].join('\n');
+      expect([...splitUnifiedPatch(patch).keys()]).toEqual(['say "hi".txt']);
+    });
+
+    test('a header with a quote left open is read in linear time', () => {
+      const patch = `diff --git "a/x" "b/${'\\"'.repeat(100_000)}\nold mode 100644`;
+      const start = performance.now();
+      expect(splitUnifiedPatch(patch).size).toBe(0);
+      expect(performance.now() - start).toBeLessThan(500);
+    });
+
     test('unquoted chunks pass through untouched', () => {
       const byPath = splitUnifiedPatch(patch);
       expect(byPath.get('src/a.ts')).toStartWith('diff --git a/src/a.ts b/src/a.ts');
