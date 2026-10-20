@@ -316,4 +316,13 @@ describe('reviewArgsSummary', () => {
     expect(reviewArgsSummary({}, { draft_id: 'd-1' })).toBe('draft_id: d-1');
     expect(reviewArgsSummary(null, { draft_id: 'd-1' })).toBe('draft_id: d-1');
   });
+
+  test('an email reads to · subject, never the loaded sender', () => {
+    expect(
+      reviewArgsSummary({ from: 'ops@example.test' }, { to: ['sam@example.test'], subject: 'Q3', body: 'x' }),
+    ).toBe('sam@example.test · Q3');
+    expect(
+      reviewArgsSummary({ from: 'ops@example.test', to: 'sam@example.test', subject: 'Draft' }, { draft_id: 'd-1' }),
+    ).toBe('sam@example.test · Draft');
+  });
 });

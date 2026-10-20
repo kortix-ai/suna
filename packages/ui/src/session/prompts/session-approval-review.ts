@@ -80,11 +80,21 @@ export function previewArgsSummary(
 }
 
 /** The summary of the content Kortix resolved, else of the call's own
- *  arguments. An empty resolved preview (`{}`) falls through. */
+ *  arguments. An empty resolved preview (`{}`) falls through. An email (the
+ *  resolved content merged over the arguments has a recipient) reads
+ *  `to · subject`, never the sender the server loaded. */
 export function reviewArgsSummary(
   resolvedPreview: Record<string, unknown> | null | undefined,
   argsPreview: Record<string, unknown> | null | undefined,
 ): string | null {
+  const merged = { ...argsPreview, ...resolvedPreview };
+  const to = merged.to ?? merged.recipient_email ?? merged.recipients;
+  if (to !== undefined) {
+    const text = (value: unknown) =>
+      Array.isArray(value) ? value.join(', ') : value === null || value === undefined ? '' : String(value);
+    const parts = [text(to), text(merged.subject)].filter(Boolean);
+    if (parts.length > 0) return parts.join(' · ');
+  }
   return previewArgsSummary(resolvedPreview) ?? previewArgsSummary(argsPreview);
 }
 

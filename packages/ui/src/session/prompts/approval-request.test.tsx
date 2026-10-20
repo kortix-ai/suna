@@ -34,7 +34,6 @@ describe('ApprovalRequest', () => {
     expect(html).toContain('audit@example.test');
     expect(html).toContain('Review this exact email');
     expect(html).toContain('The approver must see the complete email content.');
-    expect(html).toContain('Hidden credential');
     expect(html).toContain('Approve this call');
     expect(html).toContain('Deny');
     expect(html).not.toContain('Allow for session');
@@ -108,8 +107,9 @@ describe('ApprovalRequest', () => {
       <ApprovalRequest
         request={{
           ...request,
+          action: 'drive.upload',
           reviewComplete: false,
-          argsPreview: { ...request.argsPreview, attachment: '[204800 chars omitted]' },
+          argsPreview: { folder: 'reports', attachment: '[204800 chars omitted]' },
         }}
         onDecision={() => undefined}
       />,
@@ -169,26 +169,24 @@ describe('approvalReviewable', () => {
 });
 
 describe('ApprovalParameters', () => {
-  test('shows the same redacted values in the dense in-session rendering', () => {
+  test('shows the same values in the dense in-session rendering', () => {
     const html = renderToStaticMarkup(
       <ApprovalParameters dense argsPreview={request.argsPreview} reviewComplete />,
     );
 
-    expect(html).toContain('Parameters');
     expect(html).toContain('sam@example.test');
     expect(html).toContain('audit@example.test');
     expect(html).toContain('The approver must see the complete email content.');
-    expect(html).toContain('Hidden credential');
+    const list = renderToStaticMarkup(
+      <ApprovalParameters dense argsPreview={{ repo: 'acme/web', token: '[redacted]' }} reviewComplete />,
+    );
+    expect(list).toContain('Parameters');
+    expect(list).toContain('Hidden credential');
   });
 
-  test('says so when the row carries no preview — and does not tell you to approve it', () => {
-    const html = renderToStaticMarkup(<ApprovalParameters dense argsPreview={null} />);
-
-    expect(html).toContain('No parameters were recorded for this call.');
-    // The old empty state said "Review the session context before you approve
-    // it", next to an Approve button that could not be clicked.
-    expect(html).not.toContain('before you approve');
-    expect(html).not.toContain('the redacted values the connector will receive');
+  test('renders nothing when the row carries no preview and nothing was loaded', () => {
+    expect(renderToStaticMarkup(<ApprovalParameters dense argsPreview={null} />)).toBe('');
+    expect(renderToStaticMarkup(<ApprovalParameters argsPreview={{}} resolvedPreview={{}} />)).toBe('');
   });
 });
 
@@ -239,13 +237,6 @@ describe('ApprovalParameters with Slack channel names', () => {
 // shows its parameters, an email reads as an email, and content the server
 // loads for the reviewer sits above the call's own arguments.
 describe('ApprovalParameters rendering', () => {
-  test('an empty preview still shows the parameters section', () => {
-    const html = renderToStaticMarkup(<ApprovalParameters argsPreview={{}} />);
-    expect(html).toContain('Parameters');
-    expect(html).toContain('No parameters were recorded for this call.');
-    expect(html).toContain('Any description from the agent is unverified.');
-  });
-
   test('a call that names its target only by id says the content is not shown', () => {
     const html = renderToStaticMarkup(<ApprovalParameters argsPreview={{ draft_id: 'r-1' }} />);
     expect(html).toContain('r-1');
@@ -256,7 +247,7 @@ describe('ApprovalParameters rendering', () => {
     expect(named).toContain('Any description from the agent is unverified.');
   });
 
-  test('an email-shaped preview renders To, Cc, Subject and the body as a message', () => {
+  test('an email reads as ONE email: From, To, Cc, Bcc, Subject, then the body', () => {
     const html = renderToStaticMarkup(
       <ApprovalParameters
         argsPreview={{
@@ -268,28 +259,41 @@ describe('ApprovalParameters rendering', () => {
         }}
       />,
     );
-    expect(html).toContain('>To<');
-    expect(html).toContain('>Cc<');
-    expect(html).toContain('>Subject<');
-    expect(html).not.toContain('>Bcc<');
+    const order = ['>From<', '>To<', '>Cc<', '>Bcc<', '>Subject<', 'Hi Sam,'].map((needle) => html.indexOf(needle));
+    expect(order.every((index) => index > -1)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // Every row is present; an empty one reads None.
+    expect(html.match(/>None</g)?.length).toBe(2); // From, Bcc
     expect(html).toContain('sam@example.test');
     expect(html).toContain('Q3 numbers');
-    expect(html).toContain('Hi Sam,\nThe numbers are attached.');
-    // Header keys leave the key/value list; the rest stays in it.
+    // One card: no section header, no raw keys, no arguments outside the email.
+    expect(html).not.toContain('>Parameters<');
     expect(html).not.toContain('>recipient_email<');
-    expect(html).not.toContain('>message_body<');
-    expect(html).toContain('>is_html<');
+    expect(html).not.toContain('>is_html<');
     expect(html).not.toContain('Any description from the agent is unverified.');
+    expect(html).not.toContain('Loaded from');
   });
 
-  test('an email without a subject still renders as a message', () => {
+  test('an email without a subject or body still shows those rows as None', () => {
+    const html = renderToStaticMarkup(<ApprovalParameters argsPreview={{ to: 'sam@example.test', subject: '' }} />);
+    expect(html).toContain('>Subject<');
+    expect(html.match(/>None</g)?.length).toBe(5); // From, Cc, Bcc, Subject, body
+  });
+
+  test('send_email: From comes from the resolved preview, the rest from the arguments', () => {
     const html = renderToStaticMarkup(
-      <ApprovalParameters argsPreview={{ to: 'sam@example.test', body: 'No subject here' }} />,
+      <ApprovalParameters
+        argsPreview={{ to: 'sam@example.test', subject: 'Hi', body: 'Text', user_id: 'me' }}
+        resolvedPreview={{ from: 'ops@example.test' }}
+        resolvedFrom="gmail"
+      />,
     );
-    expect(html).toContain('>To<');
-    expect(html).not.toContain('>Subject<');
-    expect(html).not.toContain('>body<');
-    expect(html).toContain('No subject here');
+    expect(html.indexOf('ops@example.test')).toBeGreaterThan(html.indexOf('>From<'));
+    expect(html.indexOf('ops@example.test')).toBeLessThan(html.indexOf('>To<'));
+    // The caption names the connector, capitalised, below the body.
+    expect(html.indexOf('Loaded from Gmail')).toBeGreaterThan(html.indexOf('Text'));
+    expect(html).not.toContain('>from<');
+    expect(html).not.toContain('>user_id<');
   });
 
   test('an empty resolved preview counts as absent', () => {
@@ -332,20 +336,34 @@ describe('ApprovalParameters rendering', () => {
     expect(html).not.toContain('[redacted]');
   });
 
-  test('a resolved preview renders above the call arguments, labelled by connector', () => {
+  test('send_draft: the loaded draft is the email, and the draft id stays out of it', () => {
     const html = renderToStaticMarkup(
       <ApprovalParameters
         argsPreview={{ draft_id: 'r-1' }}
-        resolvedPreview={{ to: 'sam@example.test', subject: 'Q3 numbers', body: 'Draft body' }}
+        resolvedPreview={{
+          from: 'ops@example.test',
+          to: 'sam@example.test',
+          cc: '',
+          bcc: 'audit@example.test',
+          subject: 'Q3 numbers',
+          body: 'Draft body',
+          attachments: ['q3.pdf'],
+        }}
         resolvedFrom="Gmail"
       />,
     );
-    const loaded = html.indexOf('Loaded from Gmail');
-    expect(loaded).toBeGreaterThan(-1);
-    expect(html.indexOf('Draft body')).toBeGreaterThan(loaded);
-    expect(html.indexOf('r-1')).toBeGreaterThan(html.indexOf('Draft body'));
+    const order = ['>From<', '>To<', '>Cc<', '>Bcc<', '>Subject<', 'Draft body', 'Loaded from Gmail'].map((n) =>
+      html.indexOf(n),
+    );
+    expect(order.every((index) => index > -1)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(html).toContain('q3.pdf');
+    expect(html.match(/>None</g)?.length).toBe(1); // Cc
+    expect(html).not.toContain('r-1');
+    expect(html).not.toContain('>Parameters<');
     // The content is shown, so the blind-approval hint is not.
     expect(html).not.toContain('Any description from the agent is unverified.');
+    expect(html).not.toContain('This call shows no content to check');
   });
 
   test('ApprovalRequest passes the resolved preview through', () => {

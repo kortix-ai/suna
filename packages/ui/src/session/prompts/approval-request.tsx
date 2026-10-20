@@ -187,8 +187,9 @@ export function resolvedTone(label: string): 'success' | 'destructive' | 'muted'
   return 'muted';
 }
 
-/** Header rows of an email-shaped preview: label key → the arg keys that fill it. */
+/** Header rows of an email: label key → the keys that fill it, first match wins. */
 const EMAIL_HEADERS = [
+  ['from', ['from', 'sender']],
   ['to', ['to', 'recipient_email', 'recipients']],
   ['cc', ['cc']],
   ['bcc', ['bcc']],
@@ -196,22 +197,29 @@ const EMAIL_HEADERS = [
 ] as const;
 const EMAIL_BODY_KEYS = ['body', 'message_body', 'html'];
 
+function emptyValue(value: unknown): boolean {
+  return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
+}
+
 /**
- * Splits a preview that reads as an email (a recipient and a body; the subject
- * is optional) into header rows, the body key and the remaining args. Null for
- * any other preview, which then renders as the plain key/value list.
+ * One email built from the content Kortix loaded (`loaded`, the draft) merged
+ * over the call's own arguments: every header row and the body, each present
+ * even when empty. Null when neither reads as an email: a recipient plus a
+ * body, a subject or a loaded sender.
  */
-function emailParts(preview: Record<string, unknown>) {
-  const pick = (keys: readonly string[]) => keys.find((key) => key in preview);
-  const body = pick(EMAIL_BODY_KEYS);
-  if (!body || !pick(EMAIL_HEADERS[0][1])) return null;
-  const header = EMAIL_HEADERS.flatMap(([label, keys]) => {
+function emailView(args: Record<string, unknown> | null, loaded: Record<string, unknown> | null) {
+  const merged = { ...args, ...loaded };
+  const pick = (keys: readonly string[]) => keys.find((key) => key in merged);
+  const recipient = pick(EMAIL_HEADERS[1][1]);
+  if (!recipient || !(pick(EMAIL_BODY_KEYS) || 'subject' in merged || loaded?.from)) return null;
+  const valueOf = (keys: readonly string[]) => {
     const key = pick(keys);
-    return key ? [{ label, key }] : [];
-  });
-  const used = new Set([body, ...header.map((row) => row.key)]);
-  const rest = Object.fromEntries(Object.entries(preview).filter(([key]) => !used.has(key)));
-  return { header, body, rest };
+    return key === undefined ? undefined : merged[key];
+  };
+  const header = EMAIL_HEADERS.map(([label, keys]) => ({ label, value: valueOf(keys) }));
+  const body = valueOf(EMAIL_BODY_KEYS);
+  const attachments = loaded?.attachments;
+  return { header, body, attachments };
 }
 
 /** The call names its target only by id (`draft_id`), or names nothing at all. */
@@ -227,6 +235,8 @@ function ArgValue({
   channelNames?: ReadonlyMap<string, string>;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('hardcodedUi.approvalParameters');
+  if (emptyValue(value)) return <span className="text-muted-foreground">{t('none')}</span>;
   if (value === '[redacted]') {
     return (
       <span className="text-muted-foreground italic">{tI18nComplete.raw('text1c57f31d6315')}</span>
@@ -265,10 +275,7 @@ function ParametersStrip({
   );
 }
 
-/**
- * One preview's values. An email-shaped preview reads as a message: To / Cc /
- * Bcc / Subject, then the body. Every other key stays in the key/value list.
- */
+/** One preview's values as a key/value list. */
 function PreviewValues({
   preview,
   dense = false,
@@ -277,66 +284,86 @@ function PreviewValues({
   preview: Record<string, unknown>;
   channelNames?: ReadonlyMap<string, string>;
 }) {
-  const t = useTranslations('hardcodedUi.approvalParameters');
-  const email = emailParts(preview);
-  const entries = orderedArgEntries(email ? email.rest : preview);
+  const entries = orderedArgEntries(preview);
   const valueSize = dense ? 'text-xs' : 'text-sm';
+  if (entries.length === 0) return null;
   return (
-    <>
-      {email ? (
-        <div className={dense ? 'px-3 py-2' : 'px-4 py-3'}>
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1">
-            {email.header.map(({ label, key }) => (
-              <Fragment key={key}>
-                <dt className="text-muted-foreground text-xs">{t(label)}</dt>
-                <dd
-                  className={cn(
-                    'text-foreground min-w-0 wrap-break-word',
-                    valueSize,
-                    label === 'subject' && 'font-medium',
-                  )}
-                >
-                  <ArgValue value={preview[key]} channelNames={channelNames} />
-                </dd>
-              </Fragment>
-            ))}
-          </dl>
-          <div className="border-border mt-3 border-t pt-3">
+    <dl>
+      {entries.map(([key, value]) => (
+        <div
+          key={key}
+          className={cn(
+            'border-border grid gap-1 border-b last:border-b-0 sm:gap-3',
+            dense
+              ? 'px-3 py-2 sm:grid-cols-[6rem_minmax(0,1fr)]'
+              : 'px-4 py-2 sm:grid-cols-[8rem_minmax(0,1fr)]',
+          )}
+        >
+          <dt className="text-muted-foreground font-mono text-xs tracking-normal break-all">{key}</dt>
+          <dd className="min-w-0">
             <ClampedValue
               className={cn('text-foreground wrap-break-word whitespace-pre-wrap', valueSize)}
             >
-              <ArgValue value={preview[email.body]} />
+              <ArgValue value={value} channelNames={channelNames} />
             </ClampedValue>
-          </div>
+          </dd>
         </div>
-      ) : null}
-      {entries.length > 0 && (
-        <dl>
-          {entries.map(([key, value]) => (
-            <div
-              key={key}
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * The email a send call delivers: From, To, Cc, Bcc and Subject rows (each
+ * always present; an empty one reads "None"), a divider, then the body.
+ * `caption` names where loaded content came from ("Loaded from Gmail").
+ */
+function EmailCard({
+  email,
+  caption,
+  dense = false,
+  channelNames,
+}: DenseProp & {
+  email: NonNullable<ReturnType<typeof emailView>>;
+  caption?: string | null;
+  channelNames?: ReadonlyMap<string, string>;
+}) {
+  const t = useTranslations('hardcodedUi.approvalParameters');
+  const valueSize = dense ? 'text-xs' : 'text-sm';
+  const attachments = Array.isArray(email.attachments) && email.attachments.length > 0 ? email.attachments : null;
+  return (
+    <div className={dense ? 'px-3 py-2' : 'px-4 py-3'}>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1">
+        {email.header.map(({ label, value }) => (
+          <Fragment key={label}>
+            <dt className="text-muted-foreground text-xs">{t(label)}</dt>
+            <dd
               className={cn(
-                'border-border grid gap-1 border-b last:border-b-0 sm:gap-3',
-                dense
-                  ? 'px-3 py-2 sm:grid-cols-[6rem_minmax(0,1fr)]'
-                  : 'px-4 py-2 sm:grid-cols-[8rem_minmax(0,1fr)]',
+                'text-foreground min-w-0 wrap-break-word',
+                valueSize,
+                label === 'subject' && !emptyValue(value) && 'font-medium',
               )}
             >
-              <dt className="text-muted-foreground font-mono text-xs tracking-normal break-all">
-                {key}
-              </dt>
-              <dd className="min-w-0">
-                <ClampedValue
-                  className={cn('text-foreground wrap-break-word whitespace-pre-wrap', valueSize)}
-                >
-                  <ArgValue value={value} channelNames={channelNames} />
-                </ClampedValue>
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
-    </>
+              <ArgValue value={value} channelNames={channelNames} />
+            </dd>
+          </Fragment>
+        ))}
+        {attachments ? (
+          <>
+            <dt className="text-muted-foreground text-xs">{t('attachments')}</dt>
+            <dd className={cn('text-foreground min-w-0 wrap-break-word', valueSize)}>
+              <ArgValue value={attachments} />
+            </dd>
+          </>
+        ) : null}
+      </dl>
+      <div className="border-border mt-3 border-t pt-3">
+        <ClampedValue className={cn('text-foreground wrap-break-word whitespace-pre-wrap', valueSize)}>
+          <ArgValue value={email.body} />
+        </ClampedValue>
+      </div>
+      {caption ? <p className="text-muted-foreground mt-3 text-xs">{caption}</p> : null}
+    </div>
   );
 }
 
@@ -344,13 +371,17 @@ function PreviewValues({
  * The redacted parameters the connector would receive — the whole reason an
  * approval is decidable rather than a guess. Shared by the standalone page, the
  * Review Center, the Audit panel, and the in-session notice so all show the
- * same values. Always rendered: an empty box says so, instead of vanishing.
+ * same values. Renders nothing when the call recorded no arguments and the
+ * server loaded nothing: the decision surface says it cannot be reviewed.
  *
  * `resolvedPreview`: content the server loaded for the reviewer (the draft a
- * `draft_id` points at). It renders above the call's own arguments, labelled
- * with the connector it came from (`resolvedFrom`). An empty record counts as
- * absent. `resolvedError`: the server could not load it, so the strip warns
- * that the agent's description is all there is.
+ * `draft_id` points at). An email send renders as ONE email (`EmailCard`):
+ * the loaded content merged over the arguments, captioned with the connector
+ * it came from (`resolvedFrom`), with no other section; arguments that are
+ * not part of the email are not shown. Other loaded content renders above the
+ * arguments. An empty record counts as absent. `resolvedError`: the server
+ * could not load it, so the strip warns that the agent's description is all
+ * there is.
  *
  * `channelNames`: a value that is a bound Slack conversation id shows its name
  * beside it. The id stays, because it is the exact parameter.
@@ -376,45 +407,59 @@ export function ApprovalParameters({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('hardcodedUi.approvalParameters');
   const empty = !argsPreview || Object.keys(argsPreview).length === 0;
-  // Nothing to check and nothing loaded: the agent's words are all there is.
-  // A withheld preview already carries its own warning beside the decision.
   const loaded = resolvedPreview && Object.keys(resolvedPreview).length > 0 ? resolvedPreview : null;
+  // Nothing recorded and nothing loaded: no section at all. The decision
+  // surface says the call cannot be reviewed.
+  if (empty && !loaded) return null;
+  const email = emailView(argsPreview, loaded);
+  // A display name, never the bare slug: `gmail` reads "Gmail".
+  const connector = resolvedFrom ? resolvedFrom.charAt(0).toUpperCase() + resolvedFrom.slice(1) : null;
+  const caption = loaded
+    ? connector
+      ? t('loadedFrom', { connector })
+      : t('loadedFromConnector')
+    : null;
+  const frame = cn(
+    'divide-border divide-y',
+    dense ? 'border-border overflow-hidden rounded-sm border' : 'border-border border-t',
+    className,
+  );
+  // An email send is ONE email: no section headers, and the arguments that
+  // are not part of the email (`draft_id`, `is_html`) stay out of it.
+  if (email) {
+    return (
+      <div className={frame}>
+        <EmailCard email={email} caption={caption} dense={dense} channelNames={channelNames} />
+      </div>
+    );
+  }
+  // The agent's words are all there is: a call that names its target only by
+  // id, or content the server could not load.
   const blind = !loaded && argsOnlyIds(argsPreview) && !(empty && !reviewComplete);
   const hint = !loaded && resolvedError ? t('resolvedUnavailable') : blind ? t('idsOnlyHint') : null;
 
   return (
-    <div
-      className={cn(
-        'divide-border divide-y',
-        dense ? 'border-border overflow-hidden rounded-sm border' : 'border-border border-t',
-        className,
-      )}
-    >
+    <div className={frame}>
       {loaded ? (
         <>
-          <ParametersStrip
-            dense={dense}
-            title={
-              resolvedFrom ? t('loadedFrom', { connector: resolvedFrom }) : t('loadedFromConnector')
-            }
-          />
+          <ParametersStrip dense={dense} title={caption ?? ''} />
           <PreviewValues preview={loaded} dense={dense} channelNames={channelNames} />
         </>
       ) : null}
-      <ParametersStrip
-        dense={dense}
-        title={tI18nComplete.raw('texte68b36b17cbd')}
-        description={
-          empty
-            ? tI18nComplete.raw('textf126c0b0d185')
-            : reviewComplete
-              ? tI18nComplete.raw('textc5a9e0731890')
-              : tI18nComplete.raw('text877c39a121a9')
-        }
-        hint={hint}
-      />
-      {argsPreview && !empty ? (
-        <PreviewValues preview={argsPreview} dense={dense} channelNames={channelNames} />
+      {!empty ? (
+        <>
+          <ParametersStrip
+            dense={dense}
+            title={tI18nComplete.raw('texte68b36b17cbd')}
+            description={
+              reviewComplete
+                ? tI18nComplete.raw('textc5a9e0731890')
+                : tI18nComplete.raw('text877c39a121a9')
+            }
+            hint={hint}
+          />
+          <PreviewValues preview={argsPreview} dense={dense} channelNames={channelNames} />
+        </>
       ) : null}
     </div>
   );
