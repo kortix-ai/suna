@@ -85,7 +85,7 @@ export async function consumeApprovedExecution(input: {
   connectorId: string;
   actionPath: string;
   requestDigest: string;
-}): Promise<boolean> {
+}): Promise<false | { resolvedDigest: string | null }> {
   const cutoff = new Date(Date.now() - APPROVAL_CARRYOVER_WINDOW_MS);
   const candidates = await db
     .select({
@@ -114,13 +114,15 @@ export async function consumeApprovedExecution(input: {
     .orderBy(desc(connectorCalls.resolvedAt))
     .limit(3);
   for (const candidate of candidates) {
+    const summary =
+      typeof candidate.resultSummary === 'object' && candidate.resultSummary
+        ? (candidate.resultSummary as Record<string, unknown>)
+        : {};
     const claimed = await db
       .update(connectorCalls)
       .set({
         resultSummary: {
-          ...(typeof candidate.resultSummary === 'object' && candidate.resultSummary
-            ? candidate.resultSummary
-            : {}),
+          ...summary,
           consumed_at: new Date().toISOString(),
         },
       })
@@ -131,7 +133,11 @@ export async function consumeApprovedExecution(input: {
         ),
       )
       .returning({ id: connectorCalls.executionId });
-    if (claimed.length > 0) return true;
+    if (claimed.length > 0) {
+      // The content the human approved (approval-enrichers.ts); the gateway
+      // re-reads it before the call runs.
+      return { resolvedDigest: typeof summary.resolved_digest === 'string' ? summary.resolved_digest : null };
+    }
   }
   return false;
 }

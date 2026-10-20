@@ -88,6 +88,11 @@ export interface ReviewApprovalAction {
   /** The agent's own description of the call's effect. Unverified: the
    *  arguments remain the evidence. */
   approvalContext?: string;
+  /** Content Kortix read from the provider for a call whose arguments only
+   *  name a target (a draft id → the draft), redacted. Absent when none. */
+  resolvedPreview?: Record<string, unknown>;
+  /** `unavailable` when Kortix could not read that content. */
+  resolvedError?: string;
   connectorRisk?: string | null;
   policySource: string;
   decided?: 'approved' | 'denied';
@@ -356,6 +361,10 @@ function approvalDetail(detail: AnyRecord, row: ApiReviewItem): ReviewApprovalDe
             : detail.args_preview_authorized !== false,
         ...(row.resolvers ? { resolvers: row.resolvers } : {}),
         approvalContext: asString(detail.approval_context),
+        ...(Object.keys(asRecord(detail.resolved_preview)).length > 0
+          ? { resolvedPreview: asRecord(detail.resolved_preview) }
+          : {}),
+        ...(asString(detail.resolved_error) ? { resolvedError: asString(detail.resolved_error) } : {}),
         connectorRisk: asString(detail.risk) ?? null,
         policySource: 'Requires approval',
       },

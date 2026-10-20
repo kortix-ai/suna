@@ -53,6 +53,10 @@ export interface ApprovalCardInput {
   risk: string | null;
   argsPreview: Record<string, unknown> | null;
   approvalContext: string | null;
+  /** Content Kortix read from the provider (approval-enrichers.ts), redacted. */
+  resolvedPreview?: Record<string, unknown> | null;
+  /** Set when that read failed: the approver relies on the description. */
+  resolvedError?: string | null;
   approvalUrl: string | null;
   /** False when the call recorded nothing to review — Approve is not offered. */
   approvable: boolean;
@@ -124,6 +128,21 @@ export function buildApprovalCardBlocks(card: ApprovalCardInput, names?: Readonl
         type: 'mrkdwn',
         text: `*Agent's description* _(written by the agent, not verified)_\n${quote(card.approvalContext)}`,
       },
+    });
+  }
+  if (card.resolvedPreview && Object.keys(card.resolvedPreview).length > 0) {
+    const connector = card.actionPath.split('.')[0] ?? card.actionPath;
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Loaded from ${escapeMrkdwn(connector)}*\n${parameterLines(card.resolvedPreview, names)}`,
+      },
+    });
+  } else if (card.resolvedError) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: ":warning: Couldn't load the draft. Review the agent's description carefully." }],
     });
   }
   blocks.push({

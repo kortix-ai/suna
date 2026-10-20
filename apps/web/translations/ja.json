@@ -20381,7 +20381,8 @@
       "subject": "件名",
       "loadedFrom": "{connector} から読み込み",
       "loadedFromConnector": "コネクタから読み込み",
-      "idsOnlyHint": "この呼び出しには確認できる内容がありません。エージェントによる説明は検証されていません。"
+      "idsOnlyHint": "この呼び出しには確認できる内容がありません。エージェントによる説明は検証されていません。",
+      "resolvedUnavailable": "下書きを読み込めませんでした。エージェントの説明を慎重に確認してください。"
     }
   },
   "projectOnboarding": {

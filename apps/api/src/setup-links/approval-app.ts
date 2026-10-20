@@ -63,6 +63,11 @@ const ApprovalLinkSchema = z.object({
   review_complete: z.boolean(),
   args_summary: z.string().nullable(),
   approval_context: z.string().nullable(),
+  /** Content Kortix read from the provider for a reference-only call
+   *  (`gmail.send_draft {draft_id}` → the draft), redacted. */
+  resolved_preview: z.record(z.string(), z.unknown()).nullable(),
+  /** `unavailable` when that read failed or timed out. */
+  resolved_error: z.string().nullable(),
   policy_source: z.string().nullable(),
   requested_at: z.string(),
   resolved_at: z.string().nullable(),
@@ -200,6 +205,11 @@ approvalLinksApp.openapi(createRoute({
     args_summary: summarizeArgsPreview(argsPreview),
     approval_context:
       typeof summary.approval_context === 'string' ? summary.approval_context : null,
+    resolved_preview:
+      summary.resolved_preview && typeof summary.resolved_preview === 'object' && !Array.isArray(summary.resolved_preview)
+        ? (summary.resolved_preview as Record<string, unknown>)
+        : null,
+    resolved_error: typeof summary.resolved_error === 'string' ? summary.resolved_error : null,
     policy_source: typeof summary.policy_source === 'string' ? summary.policy_source : null,
     requested_at: row.createdAt.toISOString(),
     resolved_at: row.resolvedAt?.toISOString() ?? null,

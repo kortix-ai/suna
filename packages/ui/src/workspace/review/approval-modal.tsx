@@ -39,6 +39,8 @@ export function reviewApprovalDetails(item: ReviewItem): ApprovalLinkDetails | n
     review_complete: call.reviewComplete === true,
     args_summary: null,
     approval_context: call.approvalContext ?? null,
+    resolved_preview: call.resolvedPreview ?? null,
+    resolved_error: call.resolvedError ?? null,
     policy_source: call.policySource,
     requested_at: item.createdAt,
     resolved_at: null,

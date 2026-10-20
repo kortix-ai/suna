@@ -48,6 +48,10 @@ const CALL_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']>
  * the decision is someone else's (KRTX-1724). Absent means false (fail closed).
  * `resolvers` names who decides (`approvalResolvers`); null when unknown.
  */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 export function connectorCallToReviewItem(
   ex: ConnectorCallRow,
   options: { canResolve?: boolean; resolvers?: ApprovalResolvers } = {},
@@ -86,6 +90,14 @@ export function connectorCallToReviewItem(
       // Same gate as the args: the agent's description can quote the payload.
       ...(includeArgsPreview && typeof summary.approval_context === 'string'
         ? { approval_context: summary.approval_context }
+        : {}),
+      // Content Kortix read from the provider (approval-enrichers.ts): the
+      // same gate as the args, because it is the payload.
+      ...(includeArgsPreview && isRecord(summary.resolved_preview)
+        ? { resolved_preview: summary.resolved_preview }
+        : {}),
+      ...(includeArgsPreview && typeof summary.resolved_error === 'string'
+        ? { resolved_error: summary.resolved_error }
         : {}),
       args_preview_complete: includeArgsPreview && summary.args_preview_complete === true,
       args_preview_authorized: includeArgsPreview,

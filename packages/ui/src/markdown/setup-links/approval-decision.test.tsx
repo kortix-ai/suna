@@ -212,6 +212,20 @@ describe('ApprovalDecisionView', () => {
     expect(html).toContain('Any description from the agent is unverified.');
   });
 
+  test('a send-draft call shows the draft the server loaded, or warns that it could not', () => {
+    const draftCall = { ...pending, action: 'gmail.send_draft', connector: 'gmail', connector_name: 'Gmail', args_preview: { draft_id: 'r-1' } };
+    const loaded = render({
+      details: { ...draftCall, resolved_preview: { to: 'sam@example.test', body: 'Draft body' }, resolved_error: null },
+    });
+    expect(loaded).toContain('Loaded from Gmail');
+    expect(loaded).toContain('Draft body');
+    expect(loaded).not.toContain('Any description from the agent is unverified.');
+
+    const failed = render({ details: { ...draftCall, resolved_preview: null, resolved_error: 'unavailable' } });
+    expect(failed).toContain('Couldn&#x27;t load the draft.');
+    expect(failed).not.toContain('Loaded from');
+  });
+
   test('an email-shaped call reads as a message', () => {
     const html = render({
       details: {

@@ -56,6 +56,22 @@ describe('reviewApprovalDetails', () => {
     });
   });
 
+  test('carries the loaded content and its failure to the approve panel', () => {
+    const [call] = connectorCall.kind === 'approval' ? connectorCall.detail.actions : [];
+    const withContent = (extra: object): ReviewItem => ({
+      ...connectorCall,
+      detail: { actions: [{ ...call!, ...extra }] },
+    } as ReviewItem);
+    expect(reviewApprovalDetails(withContent({ resolvedPreview: { to: 'a@example.test', body: 'Hi' } }))).toMatchObject({
+      resolved_preview: { to: 'a@example.test', body: 'Hi' },
+      resolved_error: null,
+    });
+    expect(reviewApprovalDetails(withContent({ resolvedError: 'unavailable' }))).toMatchObject({
+      resolved_preview: null,
+      resolved_error: 'unavailable',
+    });
+  });
+
   test('a call waiting on someone else is still pending (KRTX-1724)', () => {
     expect(reviewApprovalDetails({ ...connectorCall, status: 'waiting' })).toMatchObject({
       pending: true,

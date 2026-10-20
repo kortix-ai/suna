@@ -152,6 +152,26 @@ describe('mapApiReviewItem', () => {
     expect(approvalDetailOf(item).actions[0].approvalContext).toBe('Sends the reply to a@b.co');
   });
 
+  test('an adapted connector call carries the content Kortix loaded from the provider', () => {
+    const detail = { execution_id: 'e', action_path: 'gmail.send_draft', args_preview: { draft_id: 'd1' } };
+    const loaded = mapApiReviewItem({
+      ...row,
+      kind: 'approval',
+      detail: { ...detail, resolved_preview: { to: ['a@b.co'], body: 'Hi' } },
+    });
+    expect(approvalDetailOf(loaded).actions[0]).toMatchObject({
+      resolvedPreview: { to: ['a@b.co'], body: 'Hi' },
+    });
+    expect(approvalDetailOf(loaded).actions[0].resolvedError).toBeUndefined();
+
+    const failed = mapApiReviewItem({ ...row, kind: 'approval', detail: { ...detail, resolved_error: 'unavailable' } });
+    expect(approvalDetailOf(failed).actions[0].resolvedError).toBe('unavailable');
+    expect(approvalDetailOf(failed).actions[0].resolvedPreview).toBeUndefined();
+
+    const empty = mapApiReviewItem({ ...row, kind: 'approval', detail: { ...detail, resolved_preview: {} } });
+    expect(approvalDetailOf(empty).actions[0].resolvedPreview).toBeUndefined();
+  });
+
   test('a viewer without argument visibility gets previewAuthorized false', () => {
     const item = mapApiReviewItem({
       ...row,

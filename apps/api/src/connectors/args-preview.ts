@@ -291,6 +291,10 @@ export function approvalPreviewReviewable(summary: unknown): boolean {
   if (!isPlainRecord(summary)) return false;
   const preview = summary.args_preview;
   if (isPlainRecord(preview) && Object.keys(preview).length > 0) return true;
+  // Content Kortix read from the provider (approval-enrichers.ts) is
+  // reviewable on its own.
+  const resolved = summary.resolved_preview;
+  if (isPlainRecord(resolved) && Object.keys(resolved).length > 0) return true;
   // No preview is still reviewable when the builder confirmed there was
   // nothing to show — an argument-less call withholds nothing.
   return summary.args_preview_complete === true;

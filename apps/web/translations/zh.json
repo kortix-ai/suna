@@ -20381,7 +20381,8 @@
       "subject": "主题",
       "loadedFrom": "从 {connector} 加载",
       "loadedFromConnector": "从连接器加载",
-      "idsOnlyHint": "此次调用没有可检查的内容。代理的任何描述均未经验证。"
+      "idsOnlyHint": "此次调用没有可检查的内容。代理的任何描述均未经验证。",
+      "resolvedUnavailable": "无法加载草稿。请仔细核对代理的描述。"
     }
   },
   "projectOnboarding": {

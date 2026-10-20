@@ -1,4 +1,11 @@
 import { logger } from '../lib/logger';
+import {
+  APPROVAL_ENRICHERS,
+  type ApprovalEnricher,
+  enricherKey,
+  type ResolvedPreview,
+  resolveApprovalPreview,
+} from './approval-enrichers';
 import { buildArgsPreviewDetails, summarizeArgsPreview } from './args-preview';
 import {
   emailChannelAttachmentArgs,
@@ -261,7 +268,12 @@ export interface GatewayDeps {
     connectorId: string;
     actionPath: string;
     requestDigest: string;
-  }): Promise<boolean>;
+    /** An object when claimed: `resolvedDigest` is the approved row's
+     *  `result_summary.resolved_digest`, the content the human saw. */
+  }): Promise<boolean | { resolvedDigest: string | null }>;
+  /** Approval enrichers by `enricherKey` (approval-enrichers.ts). Absent =
+   *  the production registry. */
+  approvalEnrichers?: Readonly<Record<string, ApprovalEnricher>>;
   /** Reuse a legacy client's pending row only when it identifies this exact
    *  session-bound request. Prevents a caller from relabeling another approval. */
   isPendingApprovalExecution?(input: {
@@ -1013,7 +1025,25 @@ async function enforceCallPolicies(
           requestDigest,
         })
       : false;
-    if (carriedOver) {
+    // Content binding: an approval given for enriched content (a draft's
+    // recipients and body) covers that content only. Re-read it; a change or
+    // a failed read asks again instead of running. The claim above already
+    // consumed the approval.
+    const enricher = (deps.approvalEnrichers ?? APPROVAL_ENRICHERS)[
+      enricherKey(connector, action.binding, input.actionPath)
+    ];
+    const enrich = async (): Promise<ResolvedPreview | null> =>
+      enricher
+        ? resolveApprovalPreview(enricher, { deps, input, connector, binding: action.binding, args: executionArgs })
+        : null;
+    const approvedDigest = typeof carriedOver === 'object' ? carriedOver.resolvedDigest : null;
+    let resolved: ResolvedPreview | null = null;
+    let contentChanged = false;
+    if (approvedDigest) {
+      resolved = await enrich();
+      contentChanged = !resolved || !('resolved_digest' in resolved) || resolved.resolved_digest !== approvedDigest;
+    }
+    if (carriedOver && !contentChanged) {
       await audit(deps, input, connector, 'ok', action.risk, {
         reason: 'approval_carryover',
         policy_source: decision.source,
@@ -1022,8 +1052,12 @@ async function enforceCallPolicies(
       // Older clients can pass an existing id. Preserve that row instead of
       // stacking another one, but never poll it. New clients make one request
       // and wait for the server-side session callback.
+      const reason = contentChanged ? 'content_changed' : 'policy_require_approval';
+      // Never blocks or fails the hold: a slow or failed read is recorded as
+      // `resolved_error`. Only an action with an enricher carries these keys.
+      resolved ??= await enrich();
       const reuseExisting =
-        input.approvalExecutionId && deps.isPendingApprovalExecution
+        !contentChanged && input.approvalExecutionId && deps.isPendingApprovalExecution
           ? await deps.isPendingApprovalExecution({
               executionId: input.approvalExecutionId,
               projectId: input.projectId,
@@ -1043,7 +1077,7 @@ async function enforceCallPolicies(
           'pending_approval',
           action.risk,
           {
-            reason: 'policy_require_approval',
+            reason,
             policy_source: decision.source,
             args_preview_complete: argsPreviewDetails.complete,
             // WITHOUT THIS the approval prompt can name the tool but not its
@@ -1054,6 +1088,7 @@ async function enforceCallPolicies(
             // Reference args (`{draft_id}`) name a target without showing it,
             // so the agent may describe the effect. Unverified by design.
             ...(approvalContext ? { approval_context: approvalContext } : {}),
+            ...resolved,
           },
           requestDigest,
         ));
@@ -1071,6 +1106,7 @@ async function enforceCallPolicies(
                   args_preview: argsPreview,
                   args_preview_complete: argsPreviewDetails.complete,
                   ...(approvalContext ? { approval_context: approvalContext } : {}),
+                  ...resolved,
                 },
                 approvalUrl: extras.approvalUrl ?? null,
               }),
@@ -1078,7 +1114,7 @@ async function enforceCallPolicies(
           : false;
       return {
         status: 'pending_approval',
-        reason: 'policy_require_approval',
+        reason,
         executionId,
         retryable: false,
         ...extras,

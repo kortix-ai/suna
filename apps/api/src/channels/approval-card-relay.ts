@@ -67,18 +67,21 @@ async function slackThreadOf(
  * card went up — the gateway then tells the agent not to repost the link.
  * Sessions with no chat thread (web, CLI, triggers) post nothing.
  */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 export async function postApprovalCard(input: PostApprovalCardInput): Promise<{ posted: boolean }> {
   const summary = input.resultSummary;
-  const argsPreview =
-    summary.args_preview && typeof summary.args_preview === 'object' && !Array.isArray(summary.args_preview)
-      ? (summary.args_preview as Record<string, unknown>)
-      : null;
+  const argsPreview = isRecord(summary.args_preview) ? summary.args_preview : null;
   const cardInput = {
     executionId: input.executionId,
     actionPath: input.actionPath,
     risk: input.risk,
     argsPreview,
     approvalContext: typeof summary.approval_context === 'string' ? summary.approval_context : null,
+    resolvedPreview: isRecord(summary.resolved_preview) ? summary.resolved_preview : null,
+    resolvedError: typeof summary.resolved_error === 'string' ? summary.resolved_error : null,
     approvalUrl: input.approvalUrl,
     approvable: approvalPreviewReviewable(summary),
   };

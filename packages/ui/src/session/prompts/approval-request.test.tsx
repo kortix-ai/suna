@@ -282,6 +282,39 @@ describe('ApprovalParameters rendering', () => {
     expect(html).not.toContain('Any description from the agent is unverified.');
   });
 
+  test('an email without a subject still renders as a message', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalParameters argsPreview={{ to: 'sam@example.test', body: 'No subject here' }} />,
+    );
+    expect(html).toContain('>To<');
+    expect(html).not.toContain('>Subject<');
+    expect(html).not.toContain('>body<');
+    expect(html).toContain('No subject here');
+  });
+
+  test('an empty resolved preview counts as absent', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalParameters argsPreview={{ draft_id: 'r-1' }} resolvedPreview={{}} resolvedFrom="Gmail" />,
+    );
+    expect(html).not.toContain('Loaded from');
+    expect(html).toContain('Any description from the agent is unverified.');
+  });
+
+  test('a failed load warns that the agent description is all there is', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalParameters argsPreview={{ draft_id: 'r-1' }} resolvedError="unavailable" />,
+    );
+    expect(html).toContain('Couldn&#x27;t load the draft. Review the agent&#x27;s description carefully.');
+    expect(html).not.toContain('Any description from the agent is unverified.');
+    const passed = renderToStaticMarkup(
+      <ApprovalRequest
+        request={{ ...request, argsPreview: { draft_id: 'r-1' }, resolvedError: 'unavailable' }}
+        onDecision={() => undefined}
+      />,
+    );
+    expect(passed).toContain('Couldn&#x27;t load the draft.');
+  });
+
   test('a preview that is not an email renders as a key/value list', () => {
     const html = renderToStaticMarkup(
       <ApprovalParameters argsPreview={{ repo: 'acme/web', subject: 'not mail' }} />,

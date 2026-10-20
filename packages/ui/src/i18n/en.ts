@@ -5636,7 +5636,8 @@ const catalog = {
       "subject": "Subject",
       "loadedFrom": "Loaded from {connector}",
       "loadedFromConnector": "Loaded from the connector",
-      "idsOnlyHint": "This call shows no content to check. Any description from the agent is unverified."
+      "idsOnlyHint": "This call shows no content to check. Any description from the agent is unverified.",
+      "resolvedUnavailable": "Couldn't load the draft. Review the agent's description carefully."
     }
   },
   "commandPalette": {

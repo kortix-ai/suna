@@ -130,6 +130,28 @@ describe('connectorCallToReviewItem', () => {
     });
   });
 
+  test('loaded provider content follows the args gate', () => {
+    const resultSummary = {
+      args_preview: { draft_id: 'r-1' },
+      resolved_preview: { to: ['buyer@example.test'], body: 'Hello' },
+      resolved_digest: 'd'.repeat(64),
+    };
+    const resolver = connectorCallToReviewItem({ ...baseCall, resultSummary }, { canResolve: true });
+    expect(resolver.detail).toMatchObject({ resolved_preview: resultSummary.resolved_preview });
+    expect(resolver.detail).not.toHaveProperty('resolved_digest');
+    const other = connectorCallToReviewItem({ ...baseCall, resultSummary });
+    expect(other.detail).not.toHaveProperty('resolved_preview');
+
+    const failed = connectorCallToReviewItem(
+      { ...baseCall, resultSummary: { args_preview: { draft_id: 'r-1' }, resolved_error: 'unavailable' } },
+      { canResolve: true },
+    );
+    expect(failed.detail).toMatchObject({ resolved_error: 'unavailable' });
+    expect(connectorCallToReviewItem({ ...baseCall, resultSummary: { resolved_error: 'unavailable' } }).detail).not.toHaveProperty(
+      'resolved_error',
+    );
+  });
+
   test('a caller who may not resolve the call reads it as waiting, not needs_you (KRTX-1724)', () => {
     const item = connectorCallToReviewItem(baseCall);
     expect(item.status).toBe('waiting');

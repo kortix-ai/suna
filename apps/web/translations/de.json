@@ -20381,7 +20381,8 @@
       "subject": "Betreff",
       "loadedFrom": "Geladen aus {connector}",
       "loadedFromConnector": "Aus dem Connector geladen",
-      "idsOnlyHint": "Dieser Aufruf zeigt keinen prüfbaren Inhalt. Eine Beschreibung des Agenten ist nicht geprüft."
+      "idsOnlyHint": "Dieser Aufruf zeigt keinen prüfbaren Inhalt. Eine Beschreibung des Agenten ist nicht geprüft.",
+      "resolvedUnavailable": "Der Entwurf konnte nicht geladen werden. Prüfe die Beschreibung des Agenten sorgfältig."
     }
   },
   "projectOnboarding": {

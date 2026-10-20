@@ -20381,7 +20381,8 @@
       "subject": "Oggetto",
       "loadedFrom": "Caricato da {connector}",
       "loadedFromConnector": "Caricato dal connettore",
-      "idsOnlyHint": "Questa chiamata non mostra contenuti da verificare. Qualsiasi descrizione dell’agente non è verificata."
+      "idsOnlyHint": "Questa chiamata non mostra contenuti da verificare. Qualsiasi descrizione dell’agente non è verificata.",
+      "resolvedUnavailable": "Impossibile caricare la bozza. Controlla con attenzione la descrizione dell’agente."
     }
   },
   "projectOnboarding": {

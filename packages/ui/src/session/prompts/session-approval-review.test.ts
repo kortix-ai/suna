@@ -90,6 +90,9 @@ describe('approvalRequestFromAction', () => {
       requestedAt: '2026-08-09T10:00:00.000Z',
       argsPreview: { subject: 'Weekly report', to: ['sam@example.test'] },
       approvalContext: null,
+      resolvedPreview: null,
+      resolvedFrom: 'gmail',
+      resolvedError: null,
       reviewComplete: true,
       resolution: null,
       pending: true,
@@ -109,6 +112,24 @@ describe('approvalRequestFromAction', () => {
       },
     });
     expect(approvalRequestFromAction(row).approvalContext).toBe('Sends draft r-1 to a@example.test');
+  });
+
+  test('carries the content the server loaded, labelled by connector, or its failure', () => {
+    const loaded = approvalRequestFromAction(
+      action({
+        action: 'gmail.send_draft',
+        result_summary: { args_preview: { draft_id: 'r-1' }, resolved_preview: { to: 'a@example.test', body: 'Hi' } },
+      }),
+    );
+    expect(loaded).toMatchObject({
+      resolvedPreview: { to: 'a@example.test', body: 'Hi' },
+      resolvedFrom: 'gmail',
+      resolvedError: null,
+    });
+    const failed = approvalRequestFromAction(
+      action({ result_summary: { args_preview: { draft_id: 'r-1' }, resolved_error: 'unavailable' } }),
+    );
+    expect(failed).toMatchObject({ resolvedPreview: null, resolvedError: 'unavailable' });
   });
 
   test('reports a shortened preview as incomplete — which no longer blocks it', () => {

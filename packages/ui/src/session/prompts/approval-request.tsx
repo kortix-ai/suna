@@ -55,6 +55,8 @@ export interface ApprovalRequestData {
   resolvedPreview?: Record<string, unknown> | null;
   /** The connector name `resolvedPreview` was loaded from. */
   resolvedFrom?: string | null;
+  /** Set when the server could not load that content (`unavailable`). */
+  resolvedError?: string | null;
   resolution?: ApprovalDecisionValue | null;
   pending: boolean;
   status?: string | null;
@@ -218,14 +220,14 @@ const EMAIL_HEADERS = [
 const EMAIL_BODY_KEYS = ['body', 'message_body', 'html'];
 
 /**
- * Splits a preview that reads as an email (a recipient, a subject and a body)
- * into header rows, the body key and the remaining args. Null for any other
- * preview, which then renders as the plain key/value list.
+ * Splits a preview that reads as an email (a recipient and a body; the subject
+ * is optional) into header rows, the body key and the remaining args. Null for
+ * any other preview, which then renders as the plain key/value list.
  */
 function emailParts(preview: Record<string, unknown>) {
   const pick = (keys: readonly string[]) => keys.find((key) => key in preview);
   const body = pick(EMAIL_BODY_KEYS);
-  if (!body || !pick(EMAIL_HEADERS[0][1]) || !('subject' in preview)) return null;
+  if (!body || !pick(EMAIL_HEADERS[0][1])) return null;
   const header = EMAIL_HEADERS.flatMap(([label, keys]) => {
     const key = pick(keys);
     return key ? [{ label, key }] : [];
@@ -369,7 +371,9 @@ function PreviewValues({
  *
  * `resolvedPreview`: content the server loaded for the reviewer (the draft a
  * `draft_id` points at). It renders above the call's own arguments, labelled
- * with the connector it came from (`resolvedFrom`).
+ * with the connector it came from (`resolvedFrom`). An empty record counts as
+ * absent. `resolvedError`: the server could not load it, so the strip warns
+ * that the agent's description is all there is.
  *
  * `channelNames`: a value that is a bound Slack conversation id shows its name
  * beside it. The id stays, because it is the exact parameter.
@@ -379,6 +383,7 @@ export function ApprovalParameters({
   reviewComplete = true,
   resolvedPreview = null,
   resolvedFrom = null,
+  resolvedError = null,
   dense = false,
   channelNames,
   className,
@@ -387,6 +392,7 @@ export function ApprovalParameters({
   reviewComplete?: boolean;
   resolvedPreview?: Record<string, unknown> | null;
   resolvedFrom?: string | null;
+  resolvedError?: string | null;
   channelNames?: ReadonlyMap<string, string>;
   className?: string;
 }) {
@@ -395,7 +401,9 @@ export function ApprovalParameters({
   const empty = !argsPreview || Object.keys(argsPreview).length === 0;
   // Nothing to check and nothing loaded: the agent's words are all there is.
   // A withheld preview already carries its own warning beside the decision.
-  const blind = !resolvedPreview && argsOnlyIds(argsPreview) && !(empty && !reviewComplete);
+  const loaded = resolvedPreview && Object.keys(resolvedPreview).length > 0 ? resolvedPreview : null;
+  const blind = !loaded && argsOnlyIds(argsPreview) && !(empty && !reviewComplete);
+  const hint = !loaded && resolvedError ? t('resolvedUnavailable') : blind ? t('idsOnlyHint') : null;
 
   return (
     <div
@@ -405,7 +413,7 @@ export function ApprovalParameters({
         className,
       )}
     >
-      {resolvedPreview ? (
+      {loaded ? (
         <>
           <ParametersStrip
             dense={dense}
@@ -413,7 +421,7 @@ export function ApprovalParameters({
               resolvedFrom ? t('loadedFrom', { connector: resolvedFrom }) : t('loadedFromConnector')
             }
           />
-          <PreviewValues preview={resolvedPreview} dense={dense} channelNames={channelNames} />
+          <PreviewValues preview={loaded} dense={dense} channelNames={channelNames} />
         </>
       ) : null}
       <ParametersStrip
@@ -426,7 +434,7 @@ export function ApprovalParameters({
               ? tI18nComplete.raw('textc5a9e0731890')
               : tI18nComplete.raw('text877c39a121a9')
         }
-        hint={blind ? t('idsOnlyHint') : null}
+        hint={hint}
       />
       {argsPreview && !empty ? (
         <PreviewValues preview={argsPreview} dense={dense} channelNames={channelNames} />
@@ -698,6 +706,7 @@ export function ApprovalRequest({
         reviewComplete={reviewComplete}
         resolvedPreview={request.resolvedPreview}
         resolvedFrom={request.resolvedFrom}
+        resolvedError={request.resolvedError}
       />
 
       {error ? (

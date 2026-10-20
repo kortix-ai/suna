@@ -391,6 +391,9 @@ export function ApprovalDecisionPanel({
             <ApprovalParameters
               argsPreview={details.args_preview}
               reviewComplete={details.review_complete !== false}
+              resolvedPreview={details.resolved_preview}
+              resolvedFrom={details.connector_name ?? details.connector}
+              resolvedError={details.resolved_error}
               className="overflow-hidden rounded-md border"
             />
           ) : null}

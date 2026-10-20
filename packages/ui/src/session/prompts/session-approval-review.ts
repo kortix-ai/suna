@@ -82,6 +82,14 @@ export function approvalRequestFromAction(
     argsPreview: approvalArgsPreview(action),
     approvalContext:
       typeof summary?.approval_context === 'string' ? summary.approval_context : null,
+    // Content the server loaded for a reference-only call (the draft behind a
+    // `draft_id`), labelled with the connector part of the action path.
+    resolvedPreview:
+      summary?.resolved_preview && typeof summary.resolved_preview === 'object' && !Array.isArray(summary.resolved_preview)
+        ? (summary.resolved_preview as Record<string, unknown>)
+        : null,
+    resolvedFrom: action.action.split('.')[0] || null,
+    resolvedError: typeof summary?.resolved_error === 'string' ? summary.resolved_error : null,
     // `!summary` used to count as complete, so a pending row that recorded
     // NOTHING offered an Approve button the server answers with 409
     // (`APPROVAL_PREVIEW_UNAVAILABLE`) — the client and the gate disagreed. A

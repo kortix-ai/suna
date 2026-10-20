@@ -716,6 +716,109 @@ describe('handleCall — policy layer', () => {
   });
 });
 
+describe('handleCall — approval enrichment and content binding', () => {
+  // Key for STRIPE + CREATE_CHARGE (openapi binding): provider + slug + path.
+  const KEY = 'openapi:stripe.charges.create';
+  const gated = () =>
+    makeDeps({ policies: [{ match: '*', action: 'require_approval' }], enforcePolicies: true });
+  const content = { to: ['buyer@example.test'], subject: 'Quote', body: 'Hello', api_key: 'k-synthetic' };
+
+  async function digestOf(value: Record<string, unknown>): Promise<string> {
+    const { deps, records } = gated();
+    deps.approvalEnrichers = { [KEY]: async () => value };
+    await handleCall(deps, baseInput);
+    return records.at(-1)!.resultSummary!.resolved_digest as string;
+  }
+
+  test('a held call stores the redacted content and its digest', async () => {
+    const { deps, records } = gated();
+    const seen: Array<Record<string, unknown>> = [];
+    deps.approvalEnrichers = {
+      [KEY]: async (ctx) => {
+        seen.push(ctx.args);
+        return content;
+      },
+    };
+    const res = await handleCall(deps, baseInput);
+    expect(res).toMatchObject({ status: 'pending_approval', reason: 'policy_require_approval' });
+    expect(seen).toEqual([{ amount: 500 }]);
+    expect(records.at(-1)).toMatchObject({
+      status: 'pending_approval',
+      resultSummary: {
+        reason: 'policy_require_approval',
+        resolved_preview: { ...content, api_key: '[redacted]' },
+        resolved_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+    });
+  });
+
+  test('a failed read records resolved_error and still holds the call', async () => {
+    const { deps, records } = gated();
+    deps.approvalEnrichers = { [KEY]: async () => { throw new Error('upstream 503'); } };
+    expect((await handleCall(deps, baseInput)).status).toBe('pending_approval');
+    expect(records.at(-1)!.resultSummary).toMatchObject({ resolved_error: 'unavailable' });
+    expect(records.at(-1)!.resultSummary).not.toHaveProperty('resolved_preview');
+  });
+
+  test('an action with no enricher records no resolved keys', async () => {
+    const { deps, records } = gated();
+    deps.approvalEnrichers = {};
+    await handleCall(deps, baseInput);
+    expect(Object.keys(records.at(-1)!.resultSummary!).filter((k) => k.startsWith('resolved_'))).toEqual([]);
+  });
+
+  test('carry-over with unchanged content runs the call', async () => {
+    const approved = await digestOf(content);
+    const { deps, fetchCalls } = gated();
+    deps.approvalEnrichers = { [KEY]: async () => ({ ...content }) };
+    deps.consumeApprovedExecution = async () => ({ resolvedDigest: approved });
+    expect((await handleCall(deps, baseInput)).status).toBe('ok');
+    expect(fetchCalls).toHaveLength(1);
+  });
+
+  test('carry-over with changed content asks again with content_changed', async () => {
+    const approved = await digestOf(content);
+    const { deps, records, fetchCalls } = gated();
+    deps.recordExecution = async (r) => {
+      records.push(r);
+      return 'exec-fresh';
+    };
+    deps.approvalEnrichers = { [KEY]: async () => ({ ...content, to: ['someone-else@example.test'] }) };
+    deps.consumeApprovedExecution = async () => ({ resolvedDigest: approved });
+    deps.isPendingApprovalExecution = async () => true;
+    const res = await handleCall(deps, { ...baseInput, approvalExecutionId: 'exec-old' });
+    expect(res).toMatchObject({ status: 'pending_approval', reason: 'content_changed', executionId: 'exec-fresh' });
+    expect(fetchCalls).toHaveLength(0);
+    expect(records.at(-1)).toMatchObject({
+      status: 'pending_approval',
+      resultSummary: {
+        reason: 'content_changed',
+        resolved_preview: { to: ['someone-else@example.test'] },
+        resolved_digest: expect.not.stringMatching(approved),
+      },
+    });
+  });
+
+  test('carry-over whose content can no longer be read asks again', async () => {
+    const { deps, records, fetchCalls } = gated();
+    deps.approvalEnrichers = { [KEY]: async () => null };
+    deps.consumeApprovedExecution = async () => ({ resolvedDigest: 'a'.repeat(64) });
+    expect(await handleCall(deps, baseInput)).toMatchObject({ status: 'pending_approval', reason: 'content_changed' });
+    expect(fetchCalls).toHaveLength(0);
+    expect(records.at(-1)!.resultSummary).toMatchObject({ reason: 'content_changed', resolved_error: 'unavailable' });
+  });
+
+  test('carry-over of an approval with no bound content runs without a read', async () => {
+    const { deps, fetchCalls } = gated();
+    let reads = 0;
+    deps.approvalEnrichers = { [KEY]: async () => { reads += 1; return content; } };
+    deps.consumeApprovedExecution = async () => ({ resolvedDigest: null });
+    expect((await handleCall(deps, baseInput)).status).toBe('ok');
+    expect(reads).toBe(0);
+    expect(fetchCalls).toHaveLength(1);
+  });
+});
+
 describe('handleCall — layered policies (project → connector → default)', () => {
   test('project [[policies]] block wins even when connector allows', async () => {
     // Connector says "always_run *" — but project says "*.delete*" → block.
