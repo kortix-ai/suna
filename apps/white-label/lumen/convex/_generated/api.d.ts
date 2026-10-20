@@ -12,6 +12,7 @@ import type * as access from "../access.js";
 import type * as audit from "../audit.js";
 import type * as auth from "../auth.js";
 import type * as billing from "../billing.js";
+import type * as citations from "../citations.js";
 import type * as documents from "../documents.js";
 import type * as engine from "../engine.js";
 import type * as firms from "../firms.js";
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   audit: typeof audit;
   auth: typeof auth;
   billing: typeof billing;
+  citations: typeof citations;
   documents: typeof documents;
   engine: typeof engine;
   firms: typeof firms;

@@ -246,3 +246,115 @@ export const parasOf = internalQuery({
   },
 });
 
+
+// ── Vault reads: search, preview, delete ──
+
+/** `text` around the first hit of any query term, ≤ ~200 chars. */
+export function snippetOf(text: string, q: string): string {
+  const flat = text.replace(/\s+/g, " ");
+  const lower = flat.toLowerCase();
+  const at = Math.min(...q.toLowerCase().split(/\s+/).filter(Boolean).map((t) => {
+    const i = lower.indexOf(t);
+    return i < 0 ? Infinity : i;
+  }));
+  if (!Number.isFinite(at)) return flat.slice(0, 200);
+  const from = Math.max(0, at - 80);
+  return `${from > 0 ? "…" : ""}${flat.slice(from, at + 120)}${at + 120 < flat.length ? "…" : ""}`;
+}
+
+/** Full-text search over the matter's pages (Convex search index). Null when the caller may not see the matter. */
+export const search = query({
+  args: { matterId: v.id("matters"), q: v.string() },
+  returns: v.union(v.null(), v.array(v.object({
+    documentId: v.id("documents"), filename: v.string(), page: v.number(), snippet: v.string(),
+  }))),
+  handler: async (ctx, { matterId, q }) => {
+    try {
+      await requireMatterAccess(ctx, matterId);
+    } catch {
+      return null;
+    }
+    const term = q.trim().slice(0, 200);
+    if (!term) return [];
+    const pages = await ctx.db
+      .query("documentPages")
+      .withSearchIndex("search_text", (s) => s.search("text", term).eq("matterId", matterId))
+      .take(20);
+    const names = new Map<Id<"documents">, string>();
+    const out = [];
+    for (const p of pages) {
+      if (!names.has(p.documentId)) names.set(p.documentId, (await ctx.db.get(p.documentId))?.filename ?? "");
+      const filename = names.get(p.documentId)!;
+      if (filename) out.push({ documentId: p.documentId, filename, page: p.page, snippet: snippetOf(p.text, term) });
+    }
+    return out;
+  },
+});
+
+/** One document for the preview panel: its metadata and anchored paragraphs. */
+export const detail = query({
+  args: { documentId: v.string() },
+  returns: v.union(v.null(), v.object({
+    _id: v.id("documents"), matterId: v.id("matters"), filename: v.string(), mime: v.string(), pages: v.optional(v.number()),
+    paras: v.array(v.object({ page: v.number(), para: v.number(), text: v.string(), heading: v.optional(v.string()) })),
+  })),
+  handler: async (ctx, { documentId }) => {
+    const id = ctx.db.normalizeId("documents", documentId);
+    const d = id ? await ctx.db.get(id) : null;
+    if (!d) return null;
+    try {
+      await requireMatterAccess(ctx, d.matterId);
+    } catch {
+      return null;
+    }
+    const paras = await ctx.db.query("documentParas").withIndex("by_doc_para", (q) => q.eq("documentId", d._id)).collect();
+    return {
+      _id: d._id, matterId: d.matterId, filename: d.filename, mime: d.mime, pages: d.pages,       paras: paras.map((p) => ({ page: p.page, para: p.para, text: p.text, heading: p.heading })),
+    };
+  },
+});
+
+/** Delete a document: its rows and blob now, its Drive copies and the matter index right after. */
+export const remove = mutation({
+  args: { documentId: v.id("documents") },
+  returns: v.null(),
+  handler: async (ctx, { documentId }) => {
+    const d = await ctx.db.get(documentId);
+    if (!d) return null;
+    const { firm, userId } = await requireMatterAccess(ctx, d.matterId);
+    for (const r of await ctx.db.query("documentPages").withIndex("by_doc", (q) => q.eq("documentId", documentId)).collect()) await ctx.db.delete(r._id);
+    for (const r of await ctx.db.query("documentParas").withIndex("by_doc_para", (q) => q.eq("documentId", documentId)).collect()) await ctx.db.delete(r._id);
+    await ctx.db.delete(documentId);
+    await ctx.storage.delete(d.storageId);
+    await audit(ctx, { firm, actorId: userId, action: "document.delete", matterId: d.matterId, detail: d.filename });
+    if (firm.kortixDriveId) {
+      const paths = [d.driveFile, d.textFile].filter((p): p is string => !!p);
+      await ctx.scheduler.runAfter(0, internal.ingest.removeFromDrive, { matterId: d.matterId, driveId: firm.kortixDriveId, paths });
+    }
+    return null;
+  },
+});
+
+/** The original's bytes for the preview, through Lumen's backend (≤ 15 MiB, the browser upload cap). */
+export const bytes = action({
+  args: { documentId: v.id("documents") },
+  returns: v.bytes(),
+  handler: async (ctx, { documentId }): Promise<ArrayBuffer> => {
+    const storageId = await ctx.runQuery(internal.documents.storageFor, { documentId });
+    const blob = await ctx.storage.get(storageId);
+    if (!blob) throw new Error("404: file not found");
+    if (blob.size > MAX_UPLOAD_BYTES) throw new Error("413: too large to preview; download it instead");
+    return await blob.arrayBuffer();
+  },
+});
+
+export const storageFor = internalQuery({
+  args: { documentId: v.id("documents") },
+  returns: v.id("_storage"),
+  handler: async (ctx, { documentId }) => {
+    const d = await ctx.db.get(documentId);
+    if (!d) throw new Error("404: document not found");
+    await requireMatterAccess(ctx, d.matterId);
+    return d.storageId;
+  },
+});

@@ -389,3 +389,75 @@ describe('threads through the proxy', () => {
     ]);
   });
 });
+
+describe('vault reads: search, preview, citation check, delete', () => {
+  /** One ready document in `matter`, with two anchored paragraphs on page 3. */
+  async function withDoc(t: T, firm: Id<'firms'>, matter: Id<'matters'>, uploadedBy: string) {
+    return t.run(async (ctx) => {
+      const storageId = await ctx.storage.store(new Blob(['x'], { type: 'application/pdf' }));
+      const documentId = await ctx.db.insert('documents', {
+        firmId: firm, matterId: matter, storageId, filename: 'msa.pdf', mime: 'application/pdf', bytes: 1, status: 'ready', pages: 3, paras: 2,
+        uploadedBy, driveFile: '/Company/Lumen/Matters/x/Docs/msa.pdf', textFile: '/Company/Lumen/Matters/x/Text/msa.md',
+      });
+      const p1 = '12.1 Neither party’s liability under this Agreement shall be limited.';
+      const p2 = '12.2 Each party shall indemnify the other against third-party claims.';
+      await ctx.db.insert('documentPages', { documentId, matterId: matter, page: 3, text: `${p1}\n\n${p2}` });
+      await ctx.db.insert('documentParas', { documentId, matterId: matter, page: 3, para: 1, text: p1 });
+      await ctx.db.insert('documentParas', { documentId, matterId: matter, page: 3, para: 2, text: p2 });
+      return documentId;
+    });
+  }
+
+  test('search finds the page with a snippet; a lawyer off a restricted matter gets null', async () => {
+    const { t, alice, bob, firm, matter, walled } = await world();
+    const doc = await withDoc(t, firm, matter, alice.userId);
+    const hits = await bob.as.query(api.documents.search, { matterId: matter, q: 'indemnify' });
+    expect(hits).toEqual([{ documentId: doc, filename: 'msa.pdf', page: 3, snippet: expect.stringContaining('indemnify') }]);
+    expect(await bob.as.query(api.documents.search, { matterId: walled, q: 'indemnify' })).toBeNull();
+  });
+
+  test('detail and bytes return the anchored paragraphs and the original, only to someone who sees the matter', async () => {
+    const { t, alice, mallory, firm, matter } = await world();
+    const doc = await withDoc(t, firm, matter, alice.userId);
+    const d = await alice.as.query(api.documents.detail, { documentId: doc });
+    expect(new TextDecoder().decode(await alice.as.action(api.documents.bytes, { documentId: doc }))).toBe('x');
+    await expect(mallory.as.action(api.documents.bytes, { documentId: doc })).rejects.toThrow(/403/);
+    expect(d?.paras.map((p) => `p${p.page}.${p.para}`)).toEqual(['p3.1', 'p3.2']);
+    expect(await mallory.as.query(api.documents.detail, { documentId: doc })).toBeNull();
+    expect(await alice.as.query(api.documents.detail, { documentId: 'not-an-id' })).toBeNull();
+  });
+
+  test('citations.resolve: verified, relocated, unverified, and a document from another matter', async () => {
+    const { t, alice, firm, matter, walled } = await world();
+    const doc = await withDoc(t, firm, matter, alice.userId);
+    const other = await withDoc(t, firm, walled, alice.userId);
+    const r = await alice.as.query(api.citations.resolve, {
+      matterId: matter,
+      cites: [
+        { d: doc, a: 'p3.1', q: "Neither party's liability" },
+        { d: doc, a: 'p3.1', q: 'shall indemnify the other' },
+        { d: doc, a: 'p3.2', q: 'liability is capped at fees paid' },
+        { d: other, a: 'p3.1', q: 'Neither party' },
+      ],
+    });
+    expect(r?.map((c) => [c.status, c.a])).toEqual([['verified', 'p3.1'], ['relocated', 'p3.2'], ['unverified', 'p3.2'], ['unverified', 'p3.1']]);
+    expect(r?.[3].documentId).toBeNull();
+  });
+
+  test('remove deletes the rows and blob, writes document.delete, and schedules the Drive cleanup', async () => {
+    const { t, alice, bob, firm, matter } = await world();
+    await t.run((ctx) => ctx.db.patch(firm, { kortixDriveId: 'drive_1' }));
+    const doc = await withDoc(t, firm, matter, alice.userId);
+    await bob.as.mutation(api.documents.remove, { documentId: doc });
+    const left = await t.run(async (ctx) => [
+      await ctx.db.get(doc),
+      (await ctx.db.query('documentParas').collect()).length,
+      (await ctx.db.query('documentPages').collect()).length,
+    ]);
+    expect(left).toEqual([null, 0, 0]);
+    const audits = await t.run((ctx) => ctx.db.query('auditEvents').collect());
+    expect(audits.filter((e) => e.action === 'document.delete').map((e) => [e.actorId, e.detail])).toEqual([[bob.userId, 'msa.pdf']]);
+    const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    expect(jobs.map((j) => j.name)).toContain('ingest:removeFromDrive');
+  });
+});

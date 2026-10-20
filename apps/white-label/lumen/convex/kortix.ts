@@ -12,7 +12,7 @@ import { type ActionCtx, action, internalAction } from "./_generated/server";
 import { requireProxy } from "./access";
 import { ensureKit } from "./kitInstall";
 import { COUNSEL_AGENT, FIRM_FOLDERS } from "./lumenAgent";
-import { asOperator, operator } from "./operator";
+import { asOperator, operator, sandboxProvider } from "./operator";
 import { lumenSessionTags } from "./tags";
 
 const MEMBER_TOKEN_TTL_MS = 60 * 60_000;
@@ -103,9 +103,12 @@ export const createThread = action({
   ): Promise<{ threadId: Id<"threads">; kortixProjectId: string; kortixSessionId: string }> => {
     const a = await ctx.runQuery(internal.matters.access, { matterId });
     const clean = title.trim().replace(/\s+/g, " ").slice(0, 120) || "New thread";
+    // A firm whose agent kit is behind upgrades in the background; this thread starts on the installed version.
+    await ctx.scheduler.runAfter(0, internal.kitInstall.ensure, { firmId: a.firmId });
     const session = await operator().kortix.projects.createSession(a.kortixProjectId, {
       name: clean,
       agent_name: COUNSEL_AGENT,
+      ...sandboxProvider(),
       ...lumenSessionTags(a),
     });
     // The session exists now: retry the record (idempotent per session) so a

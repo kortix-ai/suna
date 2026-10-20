@@ -5,7 +5,7 @@
 // the original + Text/<docId>.md + the matter's index.json in the firm's Drive.
 
 import { createHash } from "node:crypto";
-import { makeDriveFolder, uploadDriveFile } from "@kortix/sdk";
+import { deleteDriveFile, makeDriveFolder, uploadDriveFile } from "@kortix/sdk";
 import mammoth from "mammoth";
 import { extractText, getDocumentProxy } from "unpdf";
 import { v } from "convex/values";
@@ -99,6 +99,23 @@ export const ingest = internalAction({
     } catch (err) {
       await ctx.runMutation(internal.documents.settle, { documentId, error: errorText(err) });
     }
+    return null;
+  },
+});
+
+/** Drop a deleted document's Drive copies, then rewrite the matter's index.json. */
+export const removeFromDrive = internalAction({
+  args: { matterId: v.id("matters"), driveId: v.string(), paths: v.array(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, { matterId, driveId, paths }) => {
+    for (const p of paths) {
+      try {
+        await asOperator(() => withRetry(() => deleteDriveFile(driveId, p)));
+      } catch (err) {
+        console.error(`[lumen] drive delete ${p}: ${errorText(err)}`);
+      }
+    }
+    await ctx.runMutation(internal.documents.requestIndex, { matterId });
     return null;
   },
 });
