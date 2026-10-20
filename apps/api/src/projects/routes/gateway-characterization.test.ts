@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
+import { gatewayBudgets, gatewayRequestLogs, gatewaySpendPendingDays } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 
@@ -38,8 +38,10 @@ const databaseMock = {
     from: (table: unknown) => ({
       where: (_w: unknown) => {
         if (table === gatewayBudgets) return Promise.resolve(exhaustedBudget ? [{ scope: 'project', action: 'block', period: 'month', limitUsd: '1' }] : []);
+        // No pending day: `budgetSpends` reads the running total.
+        if (table === gatewaySpendPendingDays) return { limit: () => Promise.resolve([]) };
         // `budgetSpends` selects one `b<index>` sum per budget.
-        if (table === gatewayRequestLogs && cols && 'b0' in cols) return Promise.resolve([{ b0: 1 }]);
+        if (cols && 'b0' in cols) return Promise.resolve([{ b0: 1 }]);
         // `GET /gateway/overview`'s aggregate select ends at `.where()`.
         if (cols && 'totalCost' in cols) return Promise.resolve(aggRow ? [aggRow] : []);
         return {

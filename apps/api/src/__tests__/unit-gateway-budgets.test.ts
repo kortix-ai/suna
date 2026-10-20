@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
+import { gatewayBudgets, gatewayRequestLogs, gatewaySpendPendingDays } from '@kortix/db';
 import type { AuthedPrincipal } from '@kortix/llm-gateway';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
@@ -38,7 +38,10 @@ mock.module('../shared/db', () => ({
   db: {
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
-        where: async () => {
+        // A pending day keeps budgetSpends on the log SUM this mock serves.
+        // The running-total path runs against real PostgreSQL in
+        // llm-gateway/gateway-spend-daily.integration.test.ts.
+        where: table === gatewaySpendPendingDays ? () => ({ limit: async () => [{ day: '2026-10-20' }] }) : async () => {
           if (table === gatewayBudgets) return budgetRows;
           if (table === gatewayRequestLogs) {
             // The gate measures one budget per statement: one selected field.
