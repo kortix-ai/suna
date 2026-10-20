@@ -17,9 +17,9 @@
  * `connections-scope-chip.tsx`, the shared primitives in `chip.tsx`.
  */
 
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { useOpenSession } from '@/components/access';
 import { ScopeChip, StartWithScope } from '@/components/chat/scope-bar/chip';
 import { ConnectionsScopeChip } from '@/components/chat/scope-bar/connections-scope-chip';
 import { SecretsScopeChip } from '@/components/chat/scope-bar/secrets-scope-chip';
@@ -56,7 +56,7 @@ export function ScopeBar({
   /** The composer's model pick (`useSession(...).picks.model`). Every send uses it, so the chip shows it first. */
   pickedModel?: UseSessionResult['picks']['model'];
 }) {
-  const router = useRouter();
+  const openSession = useOpenSession();
   const qc = useQueryClient();
 
   const session = useQuery({
@@ -122,7 +122,7 @@ export function ScopeBar({
       },
     }),
     onCreated: (nextId) => {
-      router.push(`/projects/${projectId}/sessions/${nextId}`);
+      void openSession(nextId);
     },
   });
 

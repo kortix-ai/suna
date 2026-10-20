@@ -1,7 +1,7 @@
 'use client';
 
 import { CallSnippet } from '@/components/dev/call-snippet';
-import { useWorkspace } from '@/components/workspace-access';
+import { useMatter } from '@/components/access';
 import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
@@ -92,7 +92,7 @@ function SessionActions({
 }) {
   const qc = useQueryClient();
   const router = useRouter();
-  const workspaceId = useWorkspace()._id;
+  const matterId = useMatter().matter._id;
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
   // Delete used to fire straight off the menu item. It now confirms, because
@@ -123,7 +123,7 @@ function SessionActions({
     onSuccess: () => {
       // Leave first: the session page would refetch a session that is gone
       // and show its error state. `replace`, so Back does not return to it.
-      router.replace(`/w/${workspaceId}`);
+      router.replace(`/app/matters/${matterId}/assistant`);
       setConfirmingDelete(false);
       successToast('Thread deleted');
     },

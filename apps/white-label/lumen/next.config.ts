@@ -13,6 +13,11 @@ const config: NextConfig = {
   devIndicators: false,
   // `next dev` would append its agent-rules block to the tracked AGENTS.md.
   agentRules: false,
+  // The v2 routes (workspaces, Kortix-id session URLs) are gone; old links land in the app.
+  redirects: async () => [
+    { source: '/w/:path*', destination: '/app', permanent: true },
+    { source: '/projects/:path*', destination: '/app', permanent: true },
+  ],
 };
 
 export default config;

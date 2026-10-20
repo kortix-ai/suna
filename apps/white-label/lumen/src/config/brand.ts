@@ -7,7 +7,9 @@ export const BRAND = {
   /** Product name shown in the UI. */
   name: 'Lumen',
   /** One-line tagline on the auth/landing screen. */
-  tagline: 'AI agents for finance, legal and research teams.',
+  tagline: 'AI for legal teams.',
+  /** The marketing subline. */
+  subline: 'Review a data room in an afternoon. Every answer cites the clause.',
 } as const;
 
 export type Brand = typeof BRAND;

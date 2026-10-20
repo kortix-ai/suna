@@ -27,14 +27,14 @@ AI for legal teams, sold by a partner to law firms. Lumen owns the customers,
 accounts, firms, matters, plans, seats, audit log and data. Each firm maps to
 one Kortix project; Kortix runs the agents, sandboxes and sessions behind it.
 
-<p align="center"><img src="lumen/public/screenshots/tour.gif" width="820" alt="Lumen: a matter workspace on Kortix" /></p>
+<p align="center"><img src="lumen/public/screenshots/matters.png" width="820" alt="Lumen: the firm's matters, light theme" /></p>
 
 ### Id mapping
 
 ```
 Lumen (Convex)                     Kortix
 ───────────────                    ──────
-firms.kortixProjectId      ──────▶ project      (provisioned with idempotency_key = firmId)
+firms.kortixProjectId      ──────▶ project      (provisioned with idempotency_key = lumen-firm-<firmId>)
 matters.driveFolder        ──────▶ Drive folder /Company/Lumen/Matters/<matterId>/
 threads.kortixSessionId    ──────▶ session      (labels lumen-firm:<id>, lumen-matter:<id>)
 memberTokens               ──────▶ 1 h project-scoped token, held on Lumen's server

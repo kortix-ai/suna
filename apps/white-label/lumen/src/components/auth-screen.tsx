@@ -8,6 +8,8 @@ import { Input } from '@kortix/ui/input';
 import { Label } from '@kortix/ui/label';
 import Loading from '@kortix/ui/loading';
 import { SignInIcon, UserPlusIcon } from '@phosphor-icons/react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { BrandMark } from './brand-mark';
 
@@ -19,11 +21,15 @@ export function AuthScreen({
   initialMode = 'sign-in',
   email: presetEmail = '',
   subtitle,
+  redirectTo,
 }: {
   initialMode?: 'sign-in' | 'sign-up';
   email?: string;
   subtitle?: string;
+  /** Where to go after success, per mode. Omitted: stay (the parent re-renders signed in). */
+  redirectTo?: { 'sign-in': string; 'sign-up': string };
 }) {
+  const router = useRouter();
   const [mode, setMode] = useState(initialMode);
   const [name, setName] = useState('');
   const [email, setEmail] = useState(presetEmail);
@@ -39,14 +45,21 @@ export function AuthScreen({
     const result = signUp
       ? await authClient.signUp.email({ name: name.trim(), email: email.trim(), password })
       : await authClient.signIn.email({ email: email.trim(), password });
-    setPending(false);
-    if (result.error) setError(result.error.message ?? 'Could not sign in');
+    if (result.error) {
+      setPending(false);
+      setError(result.error.message ?? 'Could not sign in');
+      return;
+    }
+    if (redirectTo) router.replace(redirectTo[mode]);
+    else setPending(false);
   }
 
   return (
     <div className="grid min-h-dvh place-items-center bg-background px-4">
       <Card className="w-full max-w-sm p-6">
-        <BrandMark className="mb-5" />
+        <Link href="/" aria-label={`${BRAND.name} home`} className="mb-5 self-start">
+          <BrandMark />
+        </Link>
         <h1 className="font-display text-2xl tracking-tight">
           {signUp ? `Create your ${BRAND.name} account` : `Sign in to ${BRAND.name}`}
         </h1>
@@ -67,7 +80,7 @@ export function AuthScreen({
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@company.com"
+              placeholder="you@example.com"
             />
           </div>
           <div className="space-y-1.5">

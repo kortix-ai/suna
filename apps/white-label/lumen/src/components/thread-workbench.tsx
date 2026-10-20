@@ -1,26 +1,14 @@
 'use client';
 
-import { ProjectShell } from '@/components/project-shell';
 import { ApplicationUserBadge } from '@/components/project-access-panel';
 import { SessionApprovals } from '@/components/workbench/approvals-panel';
 import { BootScreen } from '@/components/workbench/boot-screen';
 import { SessionHeader } from '@/components/workbench/session-header';
 import { WorkbenchTabs } from '@/components/workbench/workbench-tabs';
 import { useSession } from '@kortix/sdk/react';
-import { useParams } from 'next/navigation';
 
-export default function SessionWorkbenchPage() {
-  return (
-    <ProjectShell>
-      <Workbench />
-    </ProjectShell>
-  );
-}
-
-function Workbench() {
-  const params = useParams();
-  const projectId = String(params.id);
-  const sessionId = String(params.sessionId);
+/** One thread: the Kortix session behind it, streamed through Lumen's proxy. */
+export function ThreadWorkbench({ projectId, sessionId }: { projectId: string; sessionId: string }) {
 
   // One hook owns readiness, transport selection, streaming, transcript
   // projection, interactive requests, and message synchronization.

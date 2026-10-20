@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react';
 type Invitation = { organizationName: string; inviterEmail: string; email: string };
 
 /**
- * Accept an organization invitation. The recipient signs in (or signs up)
+ * Accept a firm invitation. The recipient signs in (or signs up)
  * with the invited email and verifies it; Better Auth refuses any other
  * account and any unverified one.
  */
@@ -28,7 +28,7 @@ export default function InvitePage() {
     );
   }
   if (!isAuthenticated) {
-    return <AuthScreen initialMode="sign-up" subtitle="Sign in with the invited email to join the organization." />;
+    return <AuthScreen initialMode="sign-up" subtitle="Sign in with the invited email to join the firm." />;
   }
   return <Accept invitationId={id} />;
 }
@@ -59,7 +59,7 @@ function Accept({ invitationId }: { invitationId: string }) {
       return setError(error?.message ?? 'Could not accept the invitation.');
     }
     await authClient.organization.setActive({ organizationId: data.invitation.organizationId });
-    router.push('/');
+    router.push('/app');
   }
 
   return (
@@ -72,7 +72,7 @@ function Accept({ invitationId }: { invitationId: string }) {
             <p role="alert" className="text-sm text-muted-foreground">
               {error}
             </p>
-            <Button variant="secondary" onClick={() => router.push('/')}>
+            <Button variant="secondary" onClick={() => router.push('/app')}>
               Go to Lumen
             </Button>
           </>
