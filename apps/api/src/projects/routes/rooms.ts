@@ -69,6 +69,7 @@ import {
   type RoomRow,
   type RoomSender,
 } from '../rooms/service';
+import { isUuid } from '../../shared/validate';
 
 type Loaded = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
 
@@ -165,7 +166,6 @@ const PostBody = z.object({
   reply_to: z.number().int().positive().nullable().optional().openapi({ description: 'Reply in the thread of this message (a reply to a reply joins the same thread).' }),
 });
 const JoinBody = z.object({ notify: Notify.optional() });
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IdleBody = z.object({ room: z.string().min(1).max(128).openapi({ description: 'The room to post the notice in: its name or room_id.' }) });
 const ReadBody = z.object({ seq: z.number().int().min(0).optional() });
 
@@ -736,7 +736,7 @@ export function registerRoomsRoutes(): void {
     if (me.kind === 'session' && me.sessionId === sessionId) return c.json({ error: 'A session cannot watch itself' }, 400);
     const target = await authorizeMemberSession(c, { accountId: loaded.row.accountId, projectId }, loaded, sessionId);
     if (!target.ok) return target.response;
-    const room = (UUID.test(body.room) ? await getRoom(projectId, body.room) : null)
+    const room = (isUuid(body.room) ? await getRoom(projectId, body.room) : null)
       ?? (await listRooms(projectId, { name: body.room }))[0]?.row
       ?? null;
     if (!room) return c.json({ error: `No room "${body.room}" in this project` }, 404);
