@@ -1184,6 +1184,20 @@
       "when": 1792450743208,
       "tag": "20261019225903_session_lifecycle_claimable_index",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1792480772144,
+      "tag": "20261020071932_trigger_auto_pause",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1792481755915,
+      "tag": "20261020073555_krtx_2763_spend_audit_indexes",
+      "breakpoints": true
     }
   ]
 }

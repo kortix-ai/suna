@@ -22,12 +22,13 @@ const DAY = 24 * 60 * 60 * 1000;
 
 /** "next Mon 09:00", "next 08:45" today, "On event" for webhooks and app events, "Paused" while paused. */
 export function nextRunLabel(
-  trigger: Pick<ProjectTrigger, 'type' | 'enabled' | 'next_fire_at' | 'next_cron_at'>,
+  trigger: Pick<ProjectTrigger, 'type' | 'enabled' | 'next_fire_at' | 'next_cron_at' | 'auto_paused_at'>,
   t: UiTranslator,
   locale: string,
   now: number = Date.now(),
 ): string {
-  if (!trigger.enabled) return t.raw('texte159b06187d3');
+  // An auto-pause (KRTX-1721) is runtime state: the manifest still says enabled.
+  if (!trigger.enabled || trigger.auto_paused_at) return t.raw('texte159b06187d3');
   if (trigger.type !== 'cron') return t.raw('text84b05fbb7f76');
   const iso = trigger.next_cron_at ?? trigger.next_fire_at;
   const at = iso ? Date.parse(iso) : Number.NaN;
@@ -189,7 +190,7 @@ function TriggerRow({
           title={projectPaused ? undefined : describeNextRun(trigger) ?? undefined}
           className={cn(
             'whitespace-nowrap',
-            trigger.enabled && !projectPaused ? 'text-foreground' : 'text-muted-foreground',
+            trigger.enabled && !trigger.auto_paused_at && !projectPaused ? 'text-foreground' : 'text-muted-foreground',
           )}
         >
           {/* The project switch stops every schedule: never show a next run it will not make. */}

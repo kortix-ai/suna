@@ -1,9 +1,8 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { CodeInput } from '@/features/auth/auth-primitives';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { CodeInput, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
 import type { EmailFlowMode } from '@/lib/auth/unified-auth-flow';
 import { m, useReducedMotion } from 'motion/react';
@@ -45,6 +44,7 @@ export function EmailLinkStep({
   onVerify?: () => void;
 }) {
   const t = useTranslations('auth.unified');
+  const tAuth = useTranslations('auth');
   // The copy must name the email the mailbox receives (KRTX-2195): a signup
   // gets the confirmation email, so "a link" read the mail as the wrong
   // message. Unknown mode keeps the generic link copy.
@@ -74,18 +74,33 @@ export function EmailLinkStep({
         {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
         {onCodeChange && onVerify && (
-          <form
-            className="space-y-5"
-            onSubmit={(event) => {
-              event.preventDefault();
-              onVerify();
-            }}
-          >
-            <CodeInput value={code ?? ''} onChange={onCodeChange} disabled={pending} invalid={!!errorMessage} />
-            <Button type="submit" size="lg" className="w-full" disabled={pending || !/^\d{6}$/.test(code ?? '')}>
-              {pendingAction === 'continue' ? t('oneMoment') : t('continue')}
-            </Button>
-          </form>
+          <details>
+            <summary className="text-muted-foreground cursor-pointer text-sm">
+              {tAuth('enterCode')}
+            </summary>
+            <form
+              className="mt-4 space-y-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                onVerify();
+              }}
+            >
+              <CodeInput
+                value={code ?? ''}
+                onChange={onCodeChange}
+                disabled={pending}
+                invalid={!!errorMessage}
+              />
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full"
+                disabled={pending || !/^\d{6}$/.test(code ?? '')}
+              >
+                {pendingAction === 'continue' ? t('oneMoment') : t('continue')}
+              </Button>
+            </form>
+          </details>
         )}
 
         <div className="text-muted-foreground mt-6 space-y-2 text-sm">

@@ -92,10 +92,13 @@ export function holdBackTableHeader(text: string): string {
 function ThrottledMarkdownImpl({
   content,
   isStreaming,
+  revealKey,
   response = false,
 }: {
   content: string;
   isStreaming: boolean;
+  /** `message_id:block_id` of a streaming segment, so a remount resumes its reveal (see `useStreamingCadence`). */
+  revealKey?: string;
   /**
    * The turn's answer text. Settled, it renders as `SandboxUrlDetector` does (system tags stripped,
    * no table-row trim), so the transcript keeps this one component across the turn's end and the
@@ -113,7 +116,7 @@ function ThrottledMarkdownImpl({
   // appends closing backticks) and hold back a table header until its
   // separator lands. Do NOT trim table rows — that strips real content
   // mid-stream and causes garbled text until completion.
-  const { text: pacedContent, streaming } = useStreamingCadence(content, isStreaming);
+  const { text: pacedContent, streaming } = useStreamingCadence(content, isStreaming, revealKey);
   const displayContent = useMemo(
     () =>
       streaming
@@ -130,7 +133,7 @@ function ThrottledMarkdownImpl({
 }
 
 /**
- * Both props are primitives, so this memo bites immediately: a settled
+ * Every prop is a primitive, so this memo bites immediately: a settled
  * segment never re-renders while another one streams. The streaming segment
  * is paced by `useStreamingCadence` above.
  */

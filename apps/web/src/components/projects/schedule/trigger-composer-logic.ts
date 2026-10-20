@@ -72,6 +72,8 @@ export interface ComposerDraft {
   /** Run limits (KRTX-1721) as typed. Empty = unset: 60 an hour, no daily cap. */
   maxRunsPerHour: string;
   maxRunsPerDay: string;
+  /** Overlap (KRTX-1721), fresh mode only. `default`: skip for a schedule, allow for the others. */
+  overlap: 'default' | 'skip' | 'allow';
 }
 
 /** A run-limit input as the API wants it: empty → null (unset), else the number. */
@@ -113,6 +115,7 @@ export function initialDraft(init: {
     sessionAccess: { mode: 'private', memberIds: [], groupIds: [] },
     maxRunsPerHour: '',
     maxRunsPerDay: '',
+    overlap: 'default',
   };
 }
 
