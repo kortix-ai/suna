@@ -253,6 +253,24 @@ describe('ShowTool drives its inline surface with a plain card; panel stays visu
     }
   });
 
+  // KRTX-2941: the renderer is the only writer of `contentStatus`. Swapping it
+  // out for the note on 'error' left nothing to report 'ready' after Refresh
+  // refetched the file, so the note stuck until a hard reload.
+  test('an unavailable file show keeps its content renderer mounted, hidden, so it can recover', () => {
+    forceShowContentUnavailable = true;
+    try {
+      const part = makePart({ type: 'file', path: '/workspace/report.pdf', title: 'Report' });
+      const html = renderToStaticMarkup(withProviders(<ShowTool call={toolCallBlock(part)} />));
+
+      // The note, then the renderer (its loading state) inside a hidden wrapper.
+      expect(html).toMatch(
+        /Preview unavailable[\s\S]*<div class="hidden"><div class="flex items-center justify-center h-\[420px\]">/,
+      );
+    } finally {
+      forceShowContentUnavailable = false;
+    }
+  });
+
   test('file-backed inline show places toolbar actions in the card header', () => {
     const part = makePart({
       type: 'file',

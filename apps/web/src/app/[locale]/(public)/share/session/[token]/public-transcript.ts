@@ -1,8 +1,10 @@
 import type { UiTranslator } from '@/i18n/translator';
 import {
   PublicSessionShareError,
+  stepLabel,
   type PublicSessionTranscript,
   type PublicSessionTranscriptMessage,
+  type StepLabel,
 } from '@kortix/sdk';
 
 /**
@@ -66,13 +68,29 @@ export function describeShareError(
 /**
  * The messages the page renders. The API returns them in conversation order,
  * so this does not re-sort: a message without a timestamp must not jump to the
- * top. Messages with no text (tool-only steps) carry nothing a reader can use.
+ * top. A tool-only step is kept: its tool rows are part of the conversation.
  */
 export function visibleTranscriptMessages(
   transcript: PublicSessionTranscript,
 ): PublicSessionTranscriptMessage[] {
   if (!transcript.available) return [];
-  return transcript.messages.filter((message) => message.text.trim().length > 0);
+  return transcript.messages.filter(
+    (message) => message.text.trim().length > 0 || message.tools.length > 0,
+  );
+}
+
+/**
+ * One row per tool call, labelled by the session's own `stepLabel`. The public
+ * digest carries the tool name and status only (no input), so a row reads
+ * "Ran" or "Searched" without its object, and never shows private arguments.
+ * The page is a saved copy, so no row is drawn as still running.
+ */
+export function transcriptToolSteps(
+  message: PublicSessionTranscriptMessage,
+): StepLabel[] {
+  return message.tools.map(({ tool, status }) =>
+    stepLabel({ type: 'tool', tool, state: { status } } as Parameters<typeof stepLabel>[0]),
+  );
 }
 
 /**

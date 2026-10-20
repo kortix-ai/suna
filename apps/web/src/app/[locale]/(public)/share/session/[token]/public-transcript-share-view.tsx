@@ -6,6 +6,7 @@ import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { StepLabelRow } from '@/features/session/turn/activity-step';
 import { UserMessageBubble } from '@/features/session/turn/user-message';
 import { getPublicSessionShareMessages, type PublicSessionTranscriptMessage } from '@kortix/sdk';
 import { ChatTextIcon } from '@phosphor-icons/react';
@@ -16,6 +17,7 @@ import {
   describeShareError,
   savedCopyTimestamp,
   toShareLoadError,
+  transcriptToolSteps,
   visibleTranscriptMessages,
 } from './public-transcript';
 
@@ -119,13 +121,25 @@ export function PublicTranscriptShareView({ token }: { token: string }) {
 
 function TranscriptMessage({ message }: { message: PublicSessionTranscriptMessage }) {
   if (message.role === 'user') return <SharedUserMessage text={message.text} />;
+  const steps = transcriptToolSteps(message);
   return (
-    <div className="min-w-0 wrap-break-word">
+    <div className="min-w-0 space-y-3 wrap-break-word">
+      {/* The digest has no tool input or output, so each call is the session's
+          label row (`StepLabelRow`), not its expandable tool card. */}
+      {steps.length > 0 ? (
+        <div className="space-y-2">
+          {steps.map((step, index) => (
+            <StepLabelRow key={index} label={step} running={false} />
+          ))}
+        </div>
+      ) : null}
       {/* `untrusted`: an anonymous visitor reads this. Remote images wait
           for a click, so opening the link sends no request to a host the
           conversation chose, and agent setup links stay plain links. The
           agent's replies render generative UI, as in the session. */}
-      <UnifiedMarkdown content={message.text} trust="untrusted" genui />
+      {message.text.trim() ? (
+        <UnifiedMarkdown content={message.text} trust="untrusted" genui />
+      ) : null}
     </div>
   );
 }

@@ -46,7 +46,7 @@ import {
   listManagedGitRepositories,
 } from '@kortix/sdk';
 import { GithubLogoIcon as Github, PlusIcon } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
@@ -444,8 +444,13 @@ function ImportRepositoryField({
  * mounts it only when GET /projects/git/backend flags the caller as a self-host
  * operator — the listing route is operator-only, which is a reason to keep the
  * call off the wire entirely, not an error to report (KRTX-1892).
+ *
+ * The field hides only until the unfiltered list first loads. A search never
+ * unmounts it: the route searches through GitHub, which rejects some queries
+ * (502), and unmounting the picker on that error took its search input with it,
+ * so the operator could not correct the query (KRTX-2942).
  */
-function ManagedImportField({
+export function ManagedImportField({
   state,
   onChange,
 }: {
@@ -461,10 +466,12 @@ function ManagedImportField({
     queryFn: () => listManagedGitRepositories({ search: debouncedSearch || undefined }),
     staleTime: 30_000,
     retry: false,
+    // A new search keeps the previous list on screen instead of going pending.
+    placeholderData: keepPreviousData,
   });
 
-  if (!managedReposQuery.isSuccess) return null;
-  const repos = managedReposQuery.data.repositories;
+  if (!search.trim() && !managedReposQuery.isSuccess) return null;
+  const repos = managedReposQuery.data?.repositories ?? [];
 
   return (
     <div className="flex flex-col space-y-3">
@@ -484,6 +491,9 @@ function ManagedImportField({
           });
         }}
       />
+      {managedReposQuery.isError ? (
+        <p className="text-destructive text-xs">{t('repository.loadRepositoriesError')}</p>
+      ) : null}
       <p className="text-muted-foreground text-xs">{t('repository.managedImportHint')}</p>
     </div>
   );
