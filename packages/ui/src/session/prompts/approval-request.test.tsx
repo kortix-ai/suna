@@ -271,11 +271,12 @@ describe('ApprovalParameters rendering', () => {
         }}
       />,
     );
-    const order = ['>From<', '>To<', '>Cc<', '>Bcc<', '>Subject<', 'Hi Sam,'].map((needle) => html.indexOf(needle));
+    const order = ['>From<', '>To<', '>Cc<', '>Subject<', 'Hi Sam,'].map((needle) => html.indexOf(needle));
     expect(order.every((index) => index > -1)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
-    // Every row is present; an empty one reads None.
-    expect(html.match(/>None</g)?.length).toBe(2); // From, Bcc
+    // Cc shows because it is set; an unset Bcc has no row. An empty From reads None.
+    expect(html).not.toContain('>Bcc<');
+    expect(html.match(/>None</g)?.length).toBe(1); // From
     expect(html).toContain('sam@example.test');
     expect(html).toContain('Q3 numbers');
     // One card: no section header, no raw keys, no arguments outside the email.
@@ -286,10 +287,12 @@ describe('ApprovalParameters rendering', () => {
     expect(html).not.toContain('Loaded from');
   });
 
-  test('an email without a subject or body still shows those rows as None', () => {
+  test('an email without a subject or body still shows those rows as None; no Cc or Bcc rows', () => {
     const html = renderToStaticMarkup(<ApprovalParameters argsPreview={{ to: 'sam@example.test', subject: '' }} />);
     expect(html).toContain('>Subject<');
-    expect(html.match(/>None</g)?.length).toBe(5); // From, Cc, Bcc, Subject, body
+    expect(html).not.toContain('>Cc<');
+    expect(html).not.toContain('>Bcc<');
+    expect(html.match(/>None</g)?.length).toBe(3); // From, Subject, body
   });
 
   test('send_email: From comes from the resolved preview, the rest from the arguments', () => {
@@ -364,13 +367,15 @@ describe('ApprovalParameters rendering', () => {
         resolvedFrom="Gmail"
       />,
     );
-    const order = ['>From<', '>To<', '>Cc<', '>Bcc<', '>Subject<', 'Draft body', 'Loaded from Gmail'].map((n) =>
+    const order = ['>From<', '>To<', '>Bcc<', '>Subject<', 'Draft body', 'Loaded from Gmail'].map((n) =>
       html.indexOf(n),
     );
     expect(order.every((index) => index > -1)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(html).toContain('q3.pdf');
-    expect(html.match(/>None</g)?.length).toBe(1); // Cc
+    // The empty Cc has no row.
+    expect(html).not.toContain('>Cc<');
+    expect(html).not.toContain('>None<');
     expect(html).not.toContain('r-1');
     expect(html).not.toContain('>Parameters<');
     // The content is shown, so the blind-approval hint is not.

@@ -316,8 +316,9 @@ function PreviewValues({
 }
 
 /**
- * The email a send call delivers: From, To, Cc, Bcc and Subject rows (each
- * always present; an empty one reads "None"), a divider, then the body.
+ * The email a send call delivers: From, To, Cc, Bcc and Subject rows (From,
+ * To and Subject always present, an empty one reads "None"; Cc and Bcc only
+ * when set), a divider, then the body.
  * `caption` names where loaded content came from ("Loaded from Gmail").
  */
 function EmailCard({
@@ -336,7 +337,10 @@ function EmailCard({
   return (
     <div className={dense ? 'px-3 py-2' : 'px-4 py-3'}>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1">
-        {email.header.map(({ label, value }) => (
+        {email.header
+          // Cc and Bcc show only when set; the other rows always show.
+          .filter(({ label, value }) => !((label === 'cc' || label === 'bcc') && emptyValue(value)))
+          .map(({ label, value }) => (
           <Fragment key={label}>
             <dt className="text-muted-foreground text-xs">{t(label)}</dt>
             <dd
