@@ -1089,16 +1089,24 @@ export function saveClonedProjectLink(
   host: string | undefined,
   hostUrl: string,
 ): void {
-  saveLink(
-    {
-      project_id: project.project_id,
-      account_id: project.account_id,
-      host,
-      host_url: hostUrl,
-      linked_at: new Date().toISOString(),
-    },
-    repoRoot,
-  );
+  const existing = loadLink(repoRoot);
+  if (
+    existing?.project_id !== project.project_id ||
+    existing.account_id !== project.account_id ||
+    existing.host !== host ||
+    existing.host_url !== hostUrl
+  ) {
+    saveLink(
+      {
+        project_id: project.project_id,
+        account_id: project.account_id,
+        host,
+        host_url: hostUrl,
+        linked_at: new Date().toISOString(),
+      },
+      repoRoot,
+    );
+  }
 
   appendGitExcludeEntries(repoRoot, ['/.kortix/link.json'], 'Kortix local project binding');
 }
