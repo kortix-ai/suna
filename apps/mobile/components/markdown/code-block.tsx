@@ -175,42 +175,58 @@ export const CodeBlock = memo(function CodeBlock({
 
 type CodeTokenLines = ReturnType<typeof useCodeTokens>['lines'];
 
-/** The highlighted lines, scrolling sideways: the block's body and the sheet's. */
-function CodeLines({ lines, color }: { lines: CodeTokenLines; color: string }) {
+/**
+ * The highlighted lines. In the block they scroll sideways; `wrap` (the full
+ * screen sheet) wraps them instead, so the sheet has one vertical scroll and
+ * no sideways one (Jay, 2026-10-20).
+ */
+function CodeLines({
+  lines,
+  color,
+  wrap = false,
+}: {
+  lines: CodeTokenLines;
+  color: string;
+  wrap?: boolean;
+}) {
+  const text = (
+    <RNText
+      selectable
+      style={{
+        fontFamily: MONO_FONT,
+        fontSize: CODE_BLOCK.fontSize,
+        lineHeight: CODE_BLOCK.lineHeight,
+        letterSpacing: CODE_BLOCK.letterSpacing,
+        color,
+      }}>
+      {lines.map((line, lineIndex) => (
+        <React.Fragment key={lineIndex}>
+          {lineIndex > 0 ? '\n' : null}
+          {line.map((token, tokenIndex) => (
+            <RNText key={tokenIndex} style={{ color: token.color }}>
+              {token.content}
+            </RNText>
+          ))}
+        </React.Fragment>
+      ))}
+    </RNText>
+  );
+  if (wrap) return <View style={SHEET_CODE_PADDING}>{text}</View>;
   return (
     <ScrollView
       horizontal
       nestedScrollEnabled
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{
-        paddingHorizontal: CODE_BLOCK.bodyPaddingX,
-        paddingVertical: CODE_BLOCK.bodyPaddingY,
-      }}
+      contentContainerStyle={CODE_PADDING}
     >
-      <RNText
-        selectable
-        style={{
-          fontFamily: MONO_FONT,
-          fontSize: CODE_BLOCK.fontSize,
-          lineHeight: CODE_BLOCK.lineHeight,
-          letterSpacing: CODE_BLOCK.letterSpacing,
-          color,
-        }}
-      >
-        {lines.map((line, lineIndex) => (
-          <React.Fragment key={lineIndex}>
-            {lineIndex > 0 ? '\n' : null}
-            {line.map((token, tokenIndex) => (
-              <RNText key={tokenIndex} style={{ color: token.color }}>
-                {token.content}
-              </RNText>
-            ))}
-          </React.Fragment>
-        ))}
-      </RNText>
+      {text}
     </ScrollView>
   );
 }
+
+const CODE_PADDING = { paddingHorizontal: CODE_BLOCK.bodyPaddingX, paddingVertical: CODE_BLOCK.bodyPaddingY } as const;
+/** The full-screen sheet: 20pt sides, wider than the block's 14.72pt (Jay, 2026-10-20). */
+const SHEET_CODE_PADDING = { paddingHorizontal: 20, paddingVertical: CODE_BLOCK.bodyPaddingY } as const;
 
 /** Spread to the 44pt minimum touch target around the 32pt visible button. */
 const EXPAND_HIT_SLOP = (44 - CODE_BLOCK.copyButtonSize) / 2;
@@ -237,8 +253,8 @@ const FULL_SCREEN = ['100%'];
 /**
  * The whole block in the app's bottom sheet: the language as the title, Copy
  * at the far right (`CopyContentButton`), the code below on the sheet itself
- * (no card, no border: Jay, 2026-10-20), scrolling vertically at full height
- * and sideways per line. Presents on mount; swipe down closes.
+ * (no card, no border: Jay, 2026-10-20), wrapped, in one vertical scroll.
+ * Presents on mount; swipe down closes.
  */
 function CodeSheet({
   code,
@@ -270,7 +286,7 @@ function CodeSheet({
     >
       {/* The lines' own 14.72pt side padding keeps the code off the sheet's edges. */}
       <BottomSheetScrollView contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 16 }}>
-        <CodeLines lines={lines} color={color} />
+        <CodeLines lines={lines} color={color} wrap />
       </BottomSheetScrollView>
     </KortixBottomSheetModal>
   );
