@@ -21,7 +21,7 @@ import { openExternalLink } from '@/lib/utils/open-link';
 import type { MarkdownPalette } from '@/components/markdown/markdown-theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
 import { withAlpha } from '@/lib/utils/theme';
-import { RADIUS, TYPE } from '@/lib/markdown/markdown-layout';
+import { MARKDOWN_BORDER_WIDTH, RADIUS, TYPE } from '@/lib/markdown/markdown-layout';
 import {
   nodeText,
   TABLE_CELL_PADDING_X,
@@ -109,7 +109,7 @@ function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPale
 
 /** Width of the fade at a table edge that has more columns past it. */
 const TABLE_FADE_WIDTH = 24;
-const TABLE_BORDER_WIDTH = 0.5;
+const TABLE_BORDER_WIDTH = MARKDOWN_BORDER_WIDTH;
 const TABLE_CONTENT = { minWidth: '100%' } as const;
 
 export function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: MarkdownPalette; isDark: boolean }) {

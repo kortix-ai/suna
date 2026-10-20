@@ -14,8 +14,7 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Platform, Pressable, TextInput, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
-import { requireOptionalNativeModule } from 'expo';
+import { Keyboard, Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
@@ -83,16 +82,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { useToast } from '@/components/kortix/toast-provider';
-
-/**
- * iOS: the long-press menu is the system context menu (SwiftUI `contextMenu`
- * through `@expo/ui`), as in Messages and the Claude app: the bubble lifts,
- * the rest of the thread blurs, and iOS 26 draws the menu in Liquid Glass.
- * Android and a binary without `ExpoUI` keep the RNR menu. Required lazily so
- * bun tests and Android never load the SwiftUI views.
- */
-const NATIVE_MESSAGE_MENU = Platform.OS === 'ios' && requireOptionalNativeModule('ExpoUI') != null;
-const swiftUI: typeof import('@expo/ui/swift-ui') | null = NATIVE_MESSAGE_MENU ? require('@expo/ui/swift-ui') : null;
+import { NativeContextMenu, type NativeContextMenuAction } from '@/modules/kortix-context-menu';
 
 // ─── Values (web → rendered px) ──────────────────────────────────────────────
 
@@ -102,14 +92,22 @@ const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 13, lineHeig
 /** The full-message sheet opens full screen (Jay, 2026-10-07). A module constant: gorhom wants a stable array. */
 const FULL_SCREEN = ['100%'];
 const SHEET_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 15, lineHeight: 23 } as const;
-/** `px-3.5 py-2.5 rounded-lg`. */
-const BUBBLE_PADDING_X = webSpace(3.5);
-const BUBBLE_PADDING_Y = webSpace(2.5);
-const BUBBLE_RADIUS = 10;
+/** 12pt on every side (Jay, 2026-10-20), not web's `px-3.5 py-2.5`. */
+const BUBBLE_PADDING_X = 12;
+const BUBBLE_PADDING_Y = 12;
+/**
+ * 20pt, rounder than web's `rounded-lg` (Jay, 2026-10-20): a one-line bubble
+ * (19pt line + 2 × 12pt padding = 43pt) reads as a near pill, as in Messages
+ * and the Claude app. The edit card shares it.
+ */
+const BUBBLE_RADIUS = 20;
 /** Web's 4px top-right corner under the sender's avatar (`--radius` 10 minus 6). */
 const BUBBLE_TAIL_RADIUS = 4;
 /** `max-h-[200px]`. */
 const CLAMP_HEIGHT = 200;
+/** A message clamps (fade + "Show more") only above this many characters (Jay, 2026-10-20). */
+const SHOW_MORE_MIN_CHARS = 300;
+const CLAMP_STYLE = { maxHeight: CLAMP_HEIGHT, overflow: 'scroll' } as const;
 /** `h-10` fade. */
 const FADE_HEIGHT = webSpace(10);
 /** `text-xs` = 0.8125rem with a 1rem line. */
@@ -390,9 +388,9 @@ function UserMessageImpl({
     Keyboard.dismiss();
     menuRef.current?.open();
   }, [copyText]);
-  // The native menu owns the long press: the bubble's own Pressable must not
-  // also fire it.
-  const longPress = NATIVE_MESSAGE_MENU ? undefined : openMenu;
+  // iOS: the system menu owns the long press (`NativeContextMenu`); the
+  // bubble's own Pressable must not also fire it.
+  const longPress = NativeContextMenu ? undefined : openMenu;
   const menuProps = {
     menuRef,
     text: copyText,
@@ -562,8 +560,15 @@ function UserMessageImpl({
  * The message menu, anchored under its bubble (`relativeTo="trigger"`, bottom,
  * end-aligned like the bubble): the time it was sent, then Copy · Select text
  * · Edit. The components are the RNR `context-menu`; `ContextMenuContent`
- * portals over the thread and closes on a tap outside or an item. On iOS the
- * same items render in the system menu instead (`NativeMessageMenu`).
+ * portals over the thread and closes on a tap outside or an item.
+ *
+ * iOS (a binary with the `KortixContextMenu` module): the system context menu
+ * instead, as in Messages and the Claude app. `NativeContextMenu` is a plain
+ * UIKit container with `UIContextMenuInteraction`: React Native still lays the
+ * bubble out, a long press lifts the real bubble (clipped to its corners),
+ * blurs the thread and opens a `UIMenu`, Liquid Glass on iOS 26. Not SwiftUI
+ * (`@expo/ui` `ContextMenu` + `RNHostView`): that sized the row a pass late and
+ * broke the thread's layout twice (2026-10-20).
  */
 function MessageMenu({
   menuRef,
@@ -592,12 +597,35 @@ function MessageMenu({
     toast.success('Copied');
   }, [text, toast]);
 
-  if (NATIVE_MESSAGE_MENU) {
-    if (selecting || !text) return <>{children}</>;
+  const nativeActions = useMemo<NativeContextMenuAction[]>(
+    () => [
+      { id: 'copy', title: 'Copy', systemImage: 'doc.on.doc' },
+      ...(onSelectText ? [{ id: 'select', title: 'Select text', systemImage: 'character.cursor.ibeam' }] : []),
+      ...(onEdit ? [{ id: 'edit', title: 'Edit', systemImage: 'pencil' }] : []),
+    ],
+    [onSelectText, onEdit],
+  );
+  const onNativeAction = useCallback(
+    ({ nativeEvent }: { nativeEvent: { id: string } }) => {
+      if (nativeEvent.id === 'copy') void copy();
+      else if (nativeEvent.id === 'select') onSelectText?.();
+      else if (nativeEvent.id === 'edit') onEdit?.();
+    },
+    [copy, onSelectText, onEdit],
+  );
+
+  if (NativeContextMenu) {
+    // Always the same wrapper: Select text toggles `enabled`, so the bubble
+    // never remounts.
     return (
-      <NativeMessageMenu sentLabel={sentLabel} onCopy={() => void copy()} onSelectText={onSelectText} onEdit={onEdit}>
+      <NativeContextMenu
+        menuTitle={sentLabel ?? ''}
+        actions={nativeActions}
+        previewCornerRadius={BUBBLE_RADIUS}
+        enabled={!selecting && !!text}
+        onPressAction={onNativeAction}>
         {children}
-      </NativeMessageMenu>
+      </NativeContextMenu>
     );
   }
 
@@ -633,53 +661,6 @@ function MessageMenu({
         ) : null}
       </ContextMenuContent>
     </ContextMenu>
-  );
-}
-
-/**
- * The iOS system context menu around a message: SwiftUI `contextMenu` on a
- * `Host` that hosts the React Native bubble (`RNHostView`). A long press lifts
- * the bubble as the preview and opens the menu (Liquid Glass on iOS 26); the
- * system plays the haptic and closes the keyboard. Taps inside the bubble
- * (Show more, mentions) still reach React Native.
- *
- * The hosted view lays out in its own root, so it gets the column's width cap
- * in points: 80% of the thread's width inside its 16pt edges (`px-4`).
- */
-function NativeMessageMenu({
-  sentLabel,
-  onCopy,
-  onSelectText,
-  onEdit,
-  children,
-}: {
-  sentLabel: string | null;
-  onCopy: () => void;
-  onSelectText?: () => void;
-  onEdit?: () => void;
-  children: React.ReactNode;
-}) {
-  const { colorScheme } = useColorScheme();
-  const { width } = useWindowDimensions();
-  const { Host, ContextMenu: SystemContextMenu, RNHostView, Button: MenuItem, Section } = swiftUI!;
-  const items = [
-    <MenuItem key="copy" label="Copy" systemImage="doc.on.doc" onPress={onCopy} />,
-    onSelectText ? (
-      <MenuItem key="select" label="Select text" systemImage="character.cursor.ibeam" onPress={onSelectText} />
-    ) : null,
-    onEdit ? <MenuItem key="edit" label="Edit" systemImage="pencil" onPress={onEdit} /> : null,
-  ];
-  return (
-    <Host matchContents colorScheme={colorScheme === 'dark' ? 'dark' : 'light'}>
-      <SystemContextMenu>
-        <SystemContextMenu.Items>{sentLabel ? <Section title={sentLabel}>{items}</Section> : items}</SystemContextMenu.Items>
-        <SystemContextMenu.Trigger>
-          <RNHostView matchContents>
-            <View style={{ maxWidth: (width - 32) * 0.8 }}>{children}</View>
-          </RNHostView>
-        </SystemContextMenu.Trigger>
-      </SystemContextMenu>
-    </Host>
   );
 }
 
@@ -797,8 +778,9 @@ export function MessageBody({
 // ─── Bubble ──────────────────────────────────────────────────────────────────
 
 /**
- * `bg-sidebar dark:bg-muted px-3.5 py-2.5 rounded-lg`, hugging its text. Long
- * text clamps at 200px under a 36.8px fade in the bubble colour, with a
+ * `bg-sidebar dark:bg-muted`, 12pt padding, 20pt corners, hugging its text. A
+ * message over 300 characters that is taller than 200px clamps under a 36.8px
+ * fade in the bubble colour, with a
  * "Show more" label (a label, not a control) at the bottom left. A tap on a
  * clamped bubble opens the whole message in a sheet with selectable text
  * (`FullMessageSheet`); it never expands in place. Long press still opens the
@@ -826,7 +808,9 @@ export function UserMessageBubble({
   const palette = paletteFor(isDark);
   const surface = isDark ? palette.muted : palette.sidebar;
   const [contentHeight, setContentHeight] = useState(0);
-  const clamped = contentHeight > CLAMP_HEIGHT + 2;
+  // Only a long message clamps: a short one with many lines shows whole.
+  const long = (fullText?.length ?? 0) > SHOW_MORE_MIN_CHARS;
+  const clamped = long && contentHeight > CLAMP_HEIGHT + 2;
   const sheetRef = useRef<BottomSheetModal>(null);
   const opensSheet = clamped && !!fullText;
 
@@ -885,7 +869,7 @@ export function UserMessageBubble({
                 under 'hidden' the text measured 200pt and never read as long.
                 'scroll' measures the full text and still clips it (no
                 ScrollView, nothing scrolls). */}
-            <View style={{ maxHeight: CLAMP_HEIGHT, overflow: 'scroll' }}>
+            <View style={long ? CLAMP_STYLE : undefined}>
               <View onLayout={onContentLayout}>{children}</View>
             </View>
 
