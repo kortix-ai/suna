@@ -263,6 +263,57 @@ describe('the inbox row', () => {
   });
 });
 
+describe('a head that leaves without a turn wakes the next row', () => {
+  // The follower sits on the stale-wait minute (64 refusals, due in 60 s).
+  // Only a kick makes it due before that.
+  async function staleFollower() {
+    const head = await enqueue('q_head', { clientSentAtMs: Date.now() });
+    const next = await enqueue('q_next', {
+      wireMessageId: 'msg_000000000002SecondPromptWir',
+      clientSentAtMs: Date.now() + 1,
+    });
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET available_at = now() + interval '60 seconds',
+             result = '{"admission_reason":"older_prompt_pending","admission_refusals":64}'::jsonb
+       WHERE command_id = ${next.commandId}::uuid`);
+    return { head, next };
+  }
+  async function isDue(commandId: string): Promise<boolean> {
+    const result = await db.execute(sql`
+      SELECT available_at <= now() AS due FROM kortix.session_lifecycle_commands
+       WHERE command_id = ${commandId}::uuid`);
+    return (((result as { rows?: Array<{ due: boolean }> }).rows ?? result) as Array<{ due: boolean }>)[0].due;
+  }
+
+  test('removing the head makes the follower due now', async () => {
+    const { head, next } = await staleFollower();
+    expect(await isDue(next.commandId)).toBe(false);
+    expect((await deleteInboxPrompt(SESSION_ID, head.commandId, AS_AUTHOR)).outcome).toBe('deleted');
+    expect(await isDue(next.commandId)).toBe(true);
+    expect((await readRow(next.commandId)).result).toEqual({ admission_reason: 'older_prompt_pending' });
+  });
+
+  test('a dead-lettered head makes the follower due now', async () => {
+    const { head, next } = await staleFollower();
+    await markCommandFailed(await hold(head), 'delivery outcome: failed', {
+      retryable: false,
+      attempts: 5,
+      sessionId: SESSION_ID,
+    });
+    expect((await readRow(head.commandId)).status).toBe('dead_lettered');
+    expect(await isDue(next.commandId)).toBe(true);
+  });
+
+  test('a retried head does not wake the follower or cut its own backoff', async () => {
+    const { head, next } = await staleFollower();
+    await markCommandFailed(await hold(head), 'transient', { retryable: true, attempts: 1, sessionId: SESSION_ID });
+    expect((await readRow(head.commandId)).status).toBe('queued');
+    expect(await isDue(head.commandId)).toBe(false);
+    expect(await isDue(next.commandId)).toBe(false);
+  });
+});
+
 describe('requeueForAdmission against real Postgres', () => {
   test('gives the claim back and stamps WHY the prompt is waiting', async () => {
     const row = await enqueue('q_wait');

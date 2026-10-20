@@ -457,6 +457,13 @@ export async function markCommandFailed(
   if (triggerSlug && !lease.lockedBy?.startsWith(INLINE_CREATE_LOCK_PREFIX)) {
     await raiseTriggerAlert({ projectId: row.projectId, accountId: row.accountId, slug: triggerSlug, source: 'fire', error });
   }
+
+  // A dead-lettered head opens no turn, so no turn end wakes the prompt behind
+  // it. Make that row due now; the worker tick drains it within ~1 s.
+  if (row.commandType === 'continue_session' && row.sessionId) {
+    await promoteNextInboxRow(row.sessionId).catch((err) =>
+      logger.warn('[session-lifecycle] wake after dead-letter failed', { sessionId: row.sessionId, error: err }));
+  }
   return 'dead_lettered';
 }
 

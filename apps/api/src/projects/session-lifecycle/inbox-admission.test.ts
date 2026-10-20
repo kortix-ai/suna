@@ -114,14 +114,13 @@ describe('admitInboxPrompt', () => {
     });
   });
 
-  test('a row stuck behind an older prompt for ~2 min re-polls once a minute, not every 2s', async () => {
+  test('a row stuck behind an older prompt on a parked box re-polls once a minute, not every 2s', async () => {
     // Prod 2026-10-20: ~200 rows queued behind heads that never delivered
     // (failed or stopped sessions) were refused 28 times a second, ~0.6 of a
-    // database core in claims and sibling reads. Their next prompt is made due
-    // by `promoteNextInboxRow` when the head goes out, so the clock is only the
-    // lost-kick fallback.
+    // database core in claims and sibling reads. Every one sat on a box that
+    // was not running.
     const deps = (older: boolean, inFlight: boolean) => ({
-      readSandbox: async () => null,
+      readSandbox: async () => ({ status: 'stopped', metadata: {} }),
       hasInFlightPrompt: async () => inFlight,
       hasOlderPendingPrompt: async () => older,
     });
@@ -142,6 +141,25 @@ describe('admitInboxPrompt', () => {
       { ...deps(false, false), readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }) },
     );
     expect(live).toMatchObject({ reason: 'turn_active', retryAfterMs: INBOX_ORDER_MAX_BACKOFF_MS });
+  });
+
+  test('a long wait on a RUNNING box keeps the 2s cap, whatever reason the refusals had', async () => {
+    // `admission_refusals` counts every reason. A row that waited 64 refusals
+    // behind a live turn must not get the minute at its first
+    // `older_prompt_pending` while the head is still moving.
+    const crossing = await admitInboxPrompt(
+      row({ result: { admission_reason: 'turn_active', admission_refusals: INBOX_STALE_ORDER_REFUSALS } }),
+      {
+        readSandbox: async () => ({ status: 'active', metadata: {} }),
+        hasInFlightPrompt: async () => true,
+        hasOlderPendingPrompt: async () => true,
+      },
+    );
+    expect(crossing).toEqual({
+      admit: false,
+      reason: 'older_prompt_pending',
+      retryAfterMs: INBOX_ORDER_MAX_BACKOFF_MS,
+    });
   });
 
   test('a command with no session id is admitted — the drain fails it honestly', async () => {

@@ -7,7 +7,7 @@ import { isPgBroadcastListening, waitForLifecycleCommandSettle } from '../../sha
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 import { compareInboxSendOrder, inboxOrderBy } from './inbox-order';
-import { type EnqueuedContinueSessionCommand, type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
+import { type EnqueuedContinueSessionCommand, type SessionLifecycleCommandRow, promoteNextInboxRow, withNextDeliveryAttempt } from './store';
 import { forwardedSql, heldSql, isStopPaused, notHeldSql, stopPausedOnDeliverySql, stopPausedSql, stoppedByUserSql } from './delivery-state';
 
 /**
@@ -490,10 +490,17 @@ async function acrossDrainClaim<T>(
 
 const notTaken = (out: { outcome: string }) => out.outcome === 'delivering' || out.outcome === 'missing';
 
-export function deleteInboxPrompt(sessionId: string, promptId: string, actor: InboxActor): Promise<InboxPromptDeletion> {
-  return acrossDrainClaim(promptId, notTaken, () => deleteInboxPromptOnce(sessionId, promptId, actor), {
+export async function deleteInboxPrompt(sessionId: string, promptId: string, actor: InboxActor): Promise<InboxPromptDeletion> {
+  const out = await acrossDrainClaim(promptId, notTaken, () => deleteInboxPromptOnce(sessionId, promptId, actor), {
     waitOutClaim: false,
   });
+  // A removed head opens no turn, so no turn end wakes the prompt behind it.
+  // Make that row due now; the worker tick drains it within ~1 s.
+  if (out.outcome === 'deleted') {
+    await promoteNextInboxRow(sessionId).catch((error) =>
+      logger.warn('[inbox] wake after remove failed', { session_id: sessionId, error }));
+  }
+  return out;
 }
 
 export function editInboxPrompt(
