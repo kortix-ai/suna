@@ -859,7 +859,6 @@ function ProjectAccessPanel({
       description: projectName,
       body: (
         <AccessDialog
-          presentation="split-sheet"
           open
           onOpenChange={(next) => {
             if (!next) sheet.close();
@@ -884,7 +883,6 @@ function ProjectAccessPanel({
       body: (
         <AccessDialog
           key={`${target.principal.type}:${target.principal.id}`}
-          presentation="split-sheet"
           open
           onOpenChange={(next) => {
             if (!next) sheet.close();

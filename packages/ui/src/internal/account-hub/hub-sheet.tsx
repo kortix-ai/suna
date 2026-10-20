@@ -16,8 +16,8 @@
  * `body` renders inside `SplitSheetBody` (it scrolls), `footer` inside
  * `SplitSheetFooter` (it stays put). The content is a snapshot: call `open`
  * again to replace it. A form that keeps its own state across body and
- * footer (`AccessDialog presentation="split-sheet"`) goes in `body` alone and
- * draws its own sticky footer.
+ * footer (`AccessDialog`) goes in `body` alone and draws its own sticky
+ * footer: it reads `useInAccountHubSheetBody()`.
  */
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
@@ -46,6 +46,12 @@ export interface AccountHubSheet {
 }
 
 const AccountHubSheetContext = createContext<AccountHubSheet | null>(null);
+const SheetBodyContext = createContext(false);
+
+/** True inside the hub sheet's body: a form there draws the sheet layout, not a modal. */
+export function useInAccountHubSheetBody(): boolean {
+  return useContext(SheetBodyContext);
+}
 
 /** Opens and closes the hub's split sheet. Throws outside the hub shell. */
 export function useAccountHubSheet(): AccountHubSheet {
@@ -78,7 +84,9 @@ export function AccountHubSheetProvider({ children }: { children: ReactNode }) {
                 <SplitSheetDescription>{content.description}</SplitSheetDescription>
               ) : null}
             </SplitSheetHeader>
-            <SplitSheetBody>{content.body}</SplitSheetBody>
+            <SplitSheetBody>
+              <SheetBodyContext.Provider value>{content.body}</SheetBodyContext.Provider>
+            </SplitSheetBody>
             {content.footer ? <SplitSheetFooter>{content.footer}</SplitSheetFooter> : null}
           </SplitSheetContent>
         ) : null}

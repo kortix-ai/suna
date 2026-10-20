@@ -299,7 +299,6 @@ export function AccountHubContent() {
       title: tI18nComplete.raw('text8693768c7e08'),
       body: (
         <AccessDialog
-          presentation="split-sheet"
           open
           onOpenChange={(next) => {
             if (!next) hubSheet.close();

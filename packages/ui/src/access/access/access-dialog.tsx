@@ -96,6 +96,7 @@ import {
   principalSelectionCount,
   type PrincipalSelection,
 } from './principal-picker';
+import { useInAccountHubSheetBody } from '../../internal/account-hub/hub-sheet';
 import { ProjectSelect } from './project-select';
 import {
   RoleSelect,
@@ -204,12 +205,6 @@ export interface AccessDialogProps {
    * Ignored in every other mode, which seeds from `current`.
    */
   initialAgentIds?: string[];
-  /**
-   * `split-sheet`: render as the body of the account hub's sheet
-   * (`useAccountHubSheet`, which draws the title) instead of a modal: fields
-   * plus a sticky footer. Principal modes only; `share` is always a modal.
-   */
-  presentation?: 'modal' | 'split-sheet';
   onDone?: (result: AccessDialogResult) => void;
 }
 
@@ -526,10 +521,11 @@ function PrincipalAccessDialog({
   excludeUserIds,
   inheritedFrom,
   initialAgentIds,
-  presentation = 'modal',
   onDone,
 }: AccessDialogProps & { mode: PrincipalAccessMode }) {
-  const chrome = presentation === 'split-sheet' ? SHEET_CHROME : MODAL_CHROME;
+  // Inside the account hub's sheet body the sheet draws the title and owns open
+  // and close: fields plus a sticky footer. Everywhere else, a modal.
+  const chrome = useInAccountHubSheetBody() ? SHEET_CHROME : MODAL_CHROME;
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tCommon = useI18nTranslations('common');
   const tSharing = useI18nTranslations('accessSharing');
@@ -1764,11 +1760,6 @@ function ProjectAccessRows({
   );
 }
 
-/**
- * The two shells `PrincipalAccessDialog` renders its one body in. The modal
- * blocks a close while a save is in flight; the sheet is the body of the
- * account hub's `useAccountHubSheet`, which owns open and close.
- */
 /** `YYYY-MM-DD` (the draft's storage) → a local Date, or undefined. */
 function parseDateValue(value: string): Date | undefined {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -1843,6 +1834,11 @@ function ExpiryPicker({
   );
 }
 
+/**
+ * The two shells `PrincipalAccessDialog` renders its one body in. The modal
+ * blocks a close while a save is in flight; the sheet is the body of the
+ * account hub's `useAccountHubSheet`, which owns open and close.
+ */
 interface AccessChrome {
   Root: ComponentType<{ open: boolean; onOpenChange: (open: boolean) => void; children?: ReactNode }>;
   Content: ComponentType<{ children?: ReactNode }>;
