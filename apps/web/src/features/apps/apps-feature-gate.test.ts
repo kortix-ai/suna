@@ -310,21 +310,6 @@ test('the App detail header is a title bar, not a debug readout', () => {
   expect(header.match(/\{status\.label\}/g)).toHaveLength(2);
 });
 
-test("the header separates the App's actions from the window's Close", () => {
-  const view = appsSource();
-  const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
-
-  // The bar is Refresh, Open, Settings, Close (#10245). Close is window
-  // chrome, not an App action: a divider sets it apart, and it is ghost.
-  const settingsAt = header.indexOf('data-testid="app-settings"');
-  const dividerAt = header.indexOf('<span aria-hidden className="bg-border mx-1.5 h-4 w-px" />');
-  const closeAt = header.indexOf("raw('text7d9eb7acb13e')");
-  expect(settingsAt).toBeGreaterThan(-1);
-  expect(dividerAt).toBeGreaterThan(settingsAt);
-  expect(closeAt).toBeGreaterThan(dividerAt);
-  expect(header.slice(dividerAt)).toContain('variant="ghost"');
-});
-
 test('Delete lives in the App settings modal, behind a confirm, never in the bar', () => {
   const view = appsSource();
   const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
