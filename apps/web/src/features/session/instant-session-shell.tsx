@@ -26,7 +26,7 @@ import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/proj
 import { useAuth } from '@/features/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { SESSION_NOTICE, type SessionPromptOverrides, type SessionStartStage } from '@kortix/sdk';
+import type { SessionPromptOverrides, SessionStartStage } from '@kortix/sdk';
 import type { Command } from '@kortix/sdk/react';
 import {
   useProjectSession,
@@ -248,10 +248,6 @@ export function InstantSessionShell({
       // typed mid-turn gets, rather than racing the boot.
       sessionWorking={!!submitted}
       stopDisabled={!!submitted}
-      // The notice the real chat's composer shows for the same state
-      // (`sessionComposerReadiness`, `pendingPrompt`), so the docked composer
-      // keeps its height across the crossfade (KRTX-2931).
-      notice={submitted && !ready && firstPromptRow?.state !== 'failed' ? SESSION_NOTICE.starting : null}
       // What was typed while the box boots — see `shellQueueRows`.
       aboveSlot={
         submitted ? (
