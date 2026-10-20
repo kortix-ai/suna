@@ -534,8 +534,6 @@ const BULK_STATUS: Record<BulkVerb, ReviewStatus> = {
   dismiss: 'dismissed',
 };
 const BULK_PROGRESS = { approve: 'approving', deny: 'denying', dismiss: 'dismissing' } as const;
-/** Deny and Dismiss confirm only above this many items; Approve always confirms. */
-const BULK_CONFIRM_ABOVE = 5;
 const RISK_BADGE: Record<
   ReviewRisk,
   {
@@ -1029,13 +1027,8 @@ export function ReviewCenter({
     else if (okIds.size > 0) infoToast(message);
     else errorToast(message);
   };
-  const startBulk = (verb: BulkVerb) => {
-    if (verb === 'approve' || bulkIds[verb].length > BULK_CONFIRM_ABOVE) {
-      setConfirm({ verb, open: true });
-    } else {
-      void runBulk(verb);
-    }
-  };
+  // Every bulk verb confirms first, listing what it will decide.
+  const startBulk = (verb: BulkVerb) => setConfirm({ verb, open: true });
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
   useEffect(() => {
@@ -1221,61 +1214,59 @@ export function ReviewCenter({
   ];
 
   const confirmCount = bulkIds[confirm.verb].length;
+  // Every item the verb will decide: which app, what it does, to what, how risky.
+  const confirmList = (
+    <ul className="border-border divide-border max-h-72 w-full min-w-0 divide-y overflow-y-auto rounded-lg border">
+      {selectedItems
+        .filter((i) => bulkIds[confirm.verb].includes(i.id))
+        .map((i) => {
+          const risk = RISK_BADGE[i.risk];
+          // The arguments, as the approval modal reads them: the content
+          // Kortix resolved, else the call's own preview.
+          const details = reviewApprovalDetails(i);
+          const args = reviewArgsSummary(details?.resolved_preview, details?.args_preview);
+          const who = details ? approvalIdentity(details) : null;
+          return (
+            <li key={i.id} className="flex min-w-0 items-center gap-3 px-3 py-2.5" title={details?.action}>
+              {/* md tile (32px) spans the two text lines beside it. */}
+              {who ? <ConnectorAppMark name={who.connector ?? i.title} iconUrl={who.iconUrl} size="md" /> : null}
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="text-foreground truncate text-sm leading-5">
+                  {who?.connector && who.action ? `${who.connector} · ${who.action}` : i.title}
+                </span>
+                {args ? <span className="text-muted-foreground truncate text-xs leading-4">{args}</span> : null}
+              </span>
+              <Badge variant={risk.variant} size="xs" className="shrink-0">
+                {tBulk(risk.key)}
+              </Badge>
+            </li>
+          );
+        })}
+    </ul>
+  );
+  const withList = (text: string) => (
+    <div className="space-y-3">
+      <p>{text}</p>
+      {confirmList}
+    </div>
+  );
   const confirmCopy =
     confirm.verb === 'approve'
       ? {
           title: tBulk('approveTitle', { count: confirmCount }),
           confirm: tBulk('approveConfirm', { count: confirmCount }),
-          description: (
-            <div className="space-y-3">
-              <p>{tBulk('approveDescription')}</p>
-              {/* Every approval it will decide: which app, what it does, to what, how risky. */}
-              <ul className="border-border divide-border max-h-72 w-full min-w-0 divide-y overflow-y-auto rounded-lg border">
-                {selectedItems
-                  .filter((i) => bulkIds.approve.includes(i.id))
-                  .map((i) => {
-                    const risk = RISK_BADGE[i.risk];
-                    // The arguments, as the approval modal reads them: the
-                    // content Kortix resolved, else the call's own preview.
-                    const details = reviewApprovalDetails(i);
-                    const args = reviewArgsSummary(
-                      details?.resolved_preview,
-                      details?.args_preview,
-                    );
-                    const who = details ? approvalIdentity(details) : null;
-                    return (
-                      <li
-                        key={i.id}
-                        className="flex min-w-0 items-center gap-3 px-3 py-2.5"
-                        title={details?.action}
-                      >
-                        {who ? <ConnectorAppMark name={who.connector ?? i.title} iconUrl={who.iconUrl} size="xs" /> : null}
-                        <span className="flex min-w-0 flex-1 flex-col">
-                          <span className="text-foreground truncate text-sm">
-                            {who?.connector && who.action ? `${who.connector} · ${who.action}` : i.title}
-                          </span>
-                          {args ? <span className="text-muted-foreground truncate text-xs">{args}</span> : null}
-                        </span>
-                        <Badge variant={risk.variant} size="xs" className="shrink-0">
-                          {tBulk(risk.key)}
-                        </Badge>
-                      </li>
-                    );
-                  })}
-              </ul>
-            </div>
-          ),
+          description: withList(tBulk('approveDescription')),
         }
       : confirm.verb === 'deny'
         ? {
             title: tBulk('denyTitle', { count: confirmCount }),
             confirm: tBulk('denyConfirm', { count: confirmCount }),
-            description: tBulk('denyDescription'),
+            description: withList(tBulk('denyDescription')),
           }
         : {
             title: tBulk('dismissTitle', { count: confirmCount }),
             confirm: tBulk('dismissConfirm', { count: confirmCount }),
-            description: tBulk('dismissDescription'),
+            description: withList(tBulk('dismissDescription')),
           };
 
   // A `?id=` we cannot resolve yet: hold the row skeleton until the list has

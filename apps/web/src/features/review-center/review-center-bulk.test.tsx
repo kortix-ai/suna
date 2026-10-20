@@ -295,14 +295,19 @@ describe('bulk Approve', () => {
 });
 
 describe('bulk Deny', () => {
-  test('five or fewer: no confirm, sent as reject', async () => {
+  test('always confirms, listing each item, then sends as reject', async () => {
     mount([call(1), call(2)]);
     press('x');
     press('j');
     press('x');
     click(barButton('Deny')!);
+    const dialog = document.querySelector('[role="alertdialog"]')!;
+    expect(dialog.textContent).toContain('Deny 2 actions?');
+    expect(dialog.textContent).toContain('Send email 1');
+    expect(dialog.textContent).toContain('Send email 2');
+    expect(bulkCalls).toEqual([]);
+    click([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Deny 2')!);
     await flush();
-    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     expect(bulkCalls).toEqual(['reject call:e1,call:e2']);
   });
 
