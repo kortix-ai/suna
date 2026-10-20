@@ -502,6 +502,7 @@ flow(
   {
     domain: 'llm-gateway',
     routes: [
+      'POST /internal/gateway/admit',
       'POST /internal/gateway/authenticate',
       'POST /internal/gateway/billing',
       'POST /internal/gateway/budget-check',
@@ -515,6 +516,7 @@ flow(
   },
   async (ctx) => {
     for (const route of [
+      '/internal/gateway/admit',
       '/internal/gateway/authenticate',
       '/internal/gateway/billing',
       '/internal/gateway/budget-check',

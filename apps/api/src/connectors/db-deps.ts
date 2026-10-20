@@ -30,6 +30,7 @@ import {
 } from './credentials';
 import {
   connectedAsOf,
+  credentialRejectedAt,
   relabelToIdentity,
   resolveConnectedAs,
   rowMetadata,
@@ -366,6 +367,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       owner_type: connection.ownerType,
       is_default: connection.isDefault,
       connected_as: connectedAsOf(connection.metadata),
+      credential_rejected_at: credentialRejectedAt(connection.metadata),
     }));
   },
   mintConnectorConnectLink: async ({ projectId, slug, userId, sessionId }) => {

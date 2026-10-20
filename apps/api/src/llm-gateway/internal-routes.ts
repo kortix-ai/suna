@@ -8,10 +8,10 @@ import { GatewayResolutionError } from '@kortix/llm-gateway';
 import { Hono } from 'hono';
 import { z } from '@hono/zod-openapi';
 import { logger } from '../lib/logger';
+import { admitGatewayRequest, billingVerdict, resolutionErrorBody } from './admit';
 import { checkBudget } from './budgets';
 import {
   authenticatePrincipal,
-  assertLlmBillingActive,
   authorizeRequest,
   persistGatewayTrace,
   recordGatewayUsage,
@@ -102,7 +102,7 @@ export function createInternalGatewayRoutes() {
         logger.warn(`[gateway-internal] resolution failed for "${model}": ${err.code} — ${err.message}`);
         return c.json({
           candidates: [],
-          resolutionError: { code: err.code, message: err.message, suggestion: err.suggestion, retryAfterSeconds: err.retryAfterSeconds },
+          resolutionError: resolutionErrorBody(err),
         });
       }
       throw err;
@@ -152,6 +152,13 @@ export function createInternalGatewayRoutes() {
     return c.json({ descriptor: { apiKey, headers: { ...headers, ...codexConversationHeaders({ ...principal, sessionId: principal.sessionId ?? undefined }) } } });
   });
 
+  // One round trip for /authorize, /resolve-route, /resolve-upstream and
+  // /billing. The separate routes stay for older gateways and fallbacks.
+  app.post('/admit', async (c) => {
+    const { token, input } = await c.req.json();
+    return c.json(await admitGatewayRequest(token, input));
+  });
+
   app.post('/resolve-route', async (c) => {
     const { principal, input } = await c.req.json();
     const route = await resolveGatewayRoute(principal as AuthedPrincipal, input as ModelRouteInput);
@@ -193,21 +200,7 @@ export function createInternalGatewayRoutes() {
 
   app.post('/billing', async (c) => {
     const { accountId } = await c.req.json();
-    try {
-      // The pod calls this only for a Kortix-billed request it already
-      // resolved (`simple-handler.ts` gates admitCharge on billingMode), so
-      // the wallet floor applies to every account here.
-      const result = await assertLlmBillingActive(accountId as string, { creditsRequest: true });
-      return c.json({ active: true, holdUsd: result?.holdUsd });
-    } catch (err) {
-      return c.json({
-        active: false,
-        reason: typeof (err as { reason?: unknown })?.reason === 'string'
-          ? (err as { reason: string }).reason
-          : 'subscription_required',
-        message: err instanceof Error ? err.message : 'subscription required',
-      });
-    }
+    return c.json(await billingVerdict(accountId as string));
   });
 
   app.post('/usage', async (c) => {

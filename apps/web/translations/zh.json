@@ -20863,6 +20863,7 @@
     "noticeSignInAction": "登录",
     "connectAccount": "连接",
     "notSignedIn": "未登录",
+    "credentialRejected": "凭据被拒绝：请替换",
     "infoRunsOver": "运行方式",
     "waysToConnect": "连接方式",
     "recommended": "推荐",
