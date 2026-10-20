@@ -20,7 +20,7 @@ import { timeStage } from '../../lib/server-timing';
 
 export const execFileAsync = promisify(execFile);
 
-const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean }>();
+const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean; epoch: number }>();
 const lastRefreshAt = new Map<string, number>();
 /** projectId → branch → when that branch was last proven to be at the remote's tip. */
 // replica-local: each API replica refreshes its own bare mirror on local disk
@@ -861,7 +861,15 @@ export async function refreshMirror(
       return warm;
     }
   }
-  return lockedRefreshMirror(project, force, opts);
+  const epoch = invalidations.get(project.projectId) ?? 0;
+  const repoPath = await lockedRefreshMirror(project, force, opts);
+  // A base move can land while a fetch (including one shared with another
+  // reader) is finishing. Dropping its proof is not enough: this reader must
+  // not ground a new session on the checkout that the move invalidated.
+  if (epoch !== (invalidations.get(project.projectId) ?? 0)) {
+    return refreshMirror(project, force, opts);
+  }
+  return repoPath;
 }
 
 /** The mirror path when it already holds `commit`, else null. */
@@ -886,7 +894,12 @@ async function lockedRefreshMirror(
   const lockForced = !!force && !opts?.freshRef;
   const current = refreshLocks.get(project.projectId);
   if (current) {
-    if (!force || current.forced) return current.promise;
+    if (!force || current.forced) {
+      const repoPath = await current.promise;
+      return current.epoch === (invalidations.get(project.projectId) ?? 0)
+        ? repoPath
+        : refreshMirror(project, force, opts);
+    }
     // The in-flight refresh belongs to another caller, often with another
     // credential: create-repo's template prebuild clones with the token it
     // held. Its failure is not this caller's. Wait for it to settle, then run
@@ -895,6 +908,7 @@ async function lockedRefreshMirror(
     await current.promise.catch(() => {});
     return refreshMirror(project, force, opts);
   }
+  const epoch = invalidations.get(project.projectId) ?? 0;
   const next = doRefreshMirror(project, force, opts?.freshRef)
     .then(async (repoPath) => {
       // Bump the mirror dir's mtime on EVERY access (warm hits included) — the
@@ -909,7 +923,7 @@ async function lockedRefreshMirror(
         refreshLocks.delete(project.projectId);
       }
     });
-  refreshLocks.set(project.projectId, { promise: next, forced: lockForced });
+  refreshLocks.set(project.projectId, { promise: next, forced: lockForced, epoch });
   return next;
 }
 
