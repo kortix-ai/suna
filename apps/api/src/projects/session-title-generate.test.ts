@@ -462,6 +462,29 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     expect(h.revoked).toEqual(['key-1']);
   });
 
+  // KRTX-2651: "Say a" carries no topic, so the model titled the message
+  // itself ("Incomplete Request To Say A"). A few-word prompt is its own title.
+  it('titles a few-word prompt with the prompt itself: no key, no model call', async () => {
+    const h = harness({
+      generate: async () => {
+        throw new Error('a few-word prompt must not reach the model');
+      },
+    });
+    await generateSessionTitleFromFirstPrompt({ ...input, firstPromptText: 'Say a' }, h.options);
+    expect(h.persisted).toEqual(['Say a']);
+    expect(h.minted).toEqual([]);
+  });
+
+  it.each([
+    { name: 'four words', text: 'Fix the login bug' },
+    { name: 'a long prompt with no spaces', text: '请帮我设置微软图形的连接器并测试它是否可以正常工作以及记录结果' },
+  ])('still titles $name with the model', async ({ text }) => {
+    const h = harness();
+    await generateSessionTitleFromFirstPrompt({ ...input, firstPromptText: text }, h.options);
+    expect(h.generateCalls()).toBe(1);
+    expect(h.persisted).toEqual(['Set Up MS Graph']);
+  });
+
   it('does not persist an empty prompt', async () => {
     const h = harness();
     await generateSessionTitleFromFirstPrompt({ ...input, firstPromptText: '   ' }, h.options);
