@@ -1,5 +1,6 @@
 import argparse
 import json
+import urllib.parse
 import sys
 
 from . import core, redline, search, tools
@@ -94,7 +95,14 @@ def run(a) -> dict:
     if a.cmd == "cite":
         data = _json_arg(a.json, a.file)
         cites = data["citations"] if isinstance(data, dict) else data
-        results = [{"i": i, **core.check_citation(c)} for i, c in enumerate(cites)]
+        results = []
+        for i, c in enumerate(cites):
+            r = {"i": i, **core.check_citation(c)}
+            if r["ok"]:
+                # The exact chat link for this citation: paste it, never hand-encode one.
+                q = urllib.parse.quote(str(c["quote"]), safe="")
+                r["link"] = f"[{i + 1}](/cite?d={c['doc_id']}&a={c['a']}&q={q})"
+            results.append(r)
         return {"ok": all(r["ok"] for r in results), "results": results}
     if a.cmd == "result":
         if a.action == "done":

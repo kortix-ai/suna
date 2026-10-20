@@ -9,7 +9,6 @@ import { STATUS_LABEL } from '@/lib/roles';
 import { errorText, relativeTime } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
-import { writeStartStash } from '@kortix/sdk/react';
 import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
 import Loading from '@kortix/ui/loading';
@@ -46,8 +45,7 @@ export default function Home() {
     if (!text || !matterId || pending) return;
     setPending(true);
     try {
-      const t = await createThread({ matterId: matterId as Id<'matters'>, title: text.slice(0, 80) });
-      writeStartStash(t.kortixSessionId, { prompt: text, model: null, agent: null });
+      const t = await createThread({ matterId: matterId as Id<'matters'>, title: text.slice(0, 80), prompt: text });
       router.push(threadPath(matterId, t.threadId));
     } catch (err) {
       setPending(false);

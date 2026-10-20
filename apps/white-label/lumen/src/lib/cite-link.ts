@@ -21,3 +21,10 @@ export function parseCite(href: string | null): Cite | null {
     return null;
   }
 }
+
+/** A finished answer block (`.kortix-markdown`, not streaming) that cites "[n]" with no citation link in it. */
+export function hasUnlinkedCitations(root: ParentNode): boolean {
+  return [...root.querySelectorAll<HTMLElement>('.kortix-markdown[data-streaming="false"]')].some(
+    (el) => !el.querySelector(CITE_SELECTOR) && /\[\d{1,3}\]/.test(el.textContent ?? ''),
+  );
+}

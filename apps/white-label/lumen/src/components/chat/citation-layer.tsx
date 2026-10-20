@@ -3,7 +3,9 @@
 // Citations in an Assistant answer are Markdown links `/cite?d=<docId>&a=p3.12&q=<quote>`
 // (the lumen-citations skill). This layer, host code only, checks every link it sees
 // against the matter's paragraphs, marks each chip verified or "Not found in source",
-// and opens the Source panel on click instead of navigating.
+// and opens the Source panel on click instead of navigating. A finished answer that
+// cites with a bare "[1]" (no link) cannot be checked: the layer says so above the
+// thread, so an unchecked citation never reads as a checked one.
 
 import { CitationCard } from '@/components/runs/run-parts';
 import { DocumentPanel } from '@/components/vault/document-panel';
@@ -13,13 +15,14 @@ import { Button } from '@kortix/ui/button';
 import { XIcon } from '@phosphor-icons/react';
 import { useQuery } from 'convex/react';
 import { useEffect, useRef, useState } from 'react';
-import { type Cite, CITE_SELECTOR as SELECTOR, parseCite } from '@/lib/cite-link';
+import { type Cite, CITE_SELECTOR as SELECTOR, hasUnlinkedCitations, parseCite } from '@/lib/cite-link';
 
 const keyOf = (c: Cite) => `${c.d}|${c.a}|${c.q}`;
 
 export function CitationLayer({ matterId, children }: { matterId: Id<'matters'>; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [cites, setCites] = useState<Cite[]>([]);
+  const [unlinked, setUnlinked] = useState(false);
   const [active, setActive] = useState<{ cite: Cite; n: number } | null>(null);
   useEffect(() => {
     if (!active) return;
@@ -58,6 +61,7 @@ export function CitationLayer({ matterId, children }: { matterId: Id<'matters'>;
       }
       const next = [...seen.values()];
       setCites((prev) => (prev.map(keyOf).join('\n') === next.map(keyOf).join('\n') ? prev : next));
+      setUnlinked(hasUnlinkedCitations(el));
       paint();
     };
     const observer = new MutationObserver(() => {
@@ -88,8 +92,15 @@ export function CitationLayer({ matterId, children }: { matterId: Id<'matters'>;
 
   return (
     <div className="flex min-h-0 flex-1">
-      <div ref={ref} className="lumen-cites flex min-h-0 min-w-0 flex-1 flex-col">
-        {children}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {unlinked && (
+          <p role="status" data-testid="citations-unchecked" className="border-b border-border bg-muted px-4 py-2 text-xs text-muted-foreground">
+            Some citations in this conversation are not linked to a source, so Lumen could not check them. Treat them as unverified, or ask Lumen to cite the passages.
+          </p>
+        )}
+        <div ref={ref} className="lumen-cites flex min-h-0 min-w-0 flex-1 flex-col">
+          {children}
+        </div>
       </div>
       {active && (
         <aside

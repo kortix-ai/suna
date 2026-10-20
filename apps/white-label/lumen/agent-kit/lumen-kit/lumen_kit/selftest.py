@@ -53,6 +53,14 @@ class Cite(unittest.TestCase):
         self.assertEqual(core.check_citation({**ok, "quote": "x" * 301})["code"], "too_long")
 
 
+    def test_check_prints_the_chat_link(self):
+        ok = {"doc_id": "docA", "a": "p2.3", "quote": "Neither party's liability under this Agreement shall be limited"}
+        code, out = cli("cite", "check", stdin=json.dumps({"citations": [ok, {**ok, "quote": "liability is unlimited"}]}))
+        self.assertEqual(out["results"][0]["link"],
+                         "[1](/cite?d=docA&a=p2.3&q=Neither%20party%27s%20liability%20under%20this%20Agreement%20shall%20be%20limited)")
+        self.assertNotIn("link", out["results"][1])
+
+
 class Matter(unittest.TestCase):
     def test_session_context(self):
         os.environ["X_SESSION_CONTEXT"] = json.dumps({"lumen_matter_dir": MATTER})

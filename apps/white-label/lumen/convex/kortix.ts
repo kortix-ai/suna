@@ -95,11 +95,14 @@ export const provisionFirm = internalAction({
 
 /** A member opens a thread in a matter: one Kortix session on Lumen's counsel agent, tagged with Lumen's ids. */
 export const createThread = action({
-  args: { matterId: v.id("matters"), title: v.string() },
+  // `prompt`: the opening question. Kortix queues it with the session (create
+  // `pending_prompt`), so it runs as the first turn and never shows in the
+  // composer's queued list.
+  args: { matterId: v.id("matters"), title: v.string(), prompt: v.optional(v.string()) },
   returns: v.object({ threadId: v.id("threads"), kortixProjectId: v.string(), kortixSessionId: v.string() }),
   handler: async (
     ctx,
-    { matterId, title },
+    { matterId, title, prompt },
   ): Promise<{ threadId: Id<"threads">; kortixProjectId: string; kortixSessionId: string }> => {
     const a = await ctx.runQuery(internal.matters.access, { matterId });
     const clean = title.trim().replace(/\s+/g, " ").slice(0, 120) || "New thread";
@@ -108,6 +111,7 @@ export const createThread = action({
     const session = await operator().kortix.projects.createSession(a.kortixProjectId, {
       name: clean,
       agent_name: COUNSEL_AGENT,
+      ...(prompt?.trim() ? { pending_prompt: { text: prompt.trim(), agent: COUNSEL_AGENT } } : {}),
       ...sandboxProvider(),
       ...lumenSessionTags(a),
     });

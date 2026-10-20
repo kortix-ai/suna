@@ -3,7 +3,6 @@
 import { threadPath, useFirm, useMatter } from '@/components/access';
 import { errorText } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
-import { writeStartStash } from '@kortix/sdk/react';
 import { Button } from '@kortix/ui/button';
 import Loading from '@kortix/ui/loading';
 import { Textarea } from '@kortix/ui/textarea';
@@ -33,9 +32,7 @@ export default function NewQuestion() {
     if (!text || pending || !ready) return;
     setPending(true);
     try {
-      const t = await createThread({ matterId: matter._id, title: text.slice(0, 80) });
-      // useSession on the thread page sends the stashed prompt once the runtime is ready.
-      writeStartStash(t.kortixSessionId, { prompt: text, model: null, agent: null });
+      const t = await createThread({ matterId: matter._id, title: text.slice(0, 80), prompt: text });
       router.push(threadPath(matter._id, t.threadId));
     } catch (err) {
       setPending(false);
