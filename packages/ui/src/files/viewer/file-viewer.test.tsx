@@ -21,8 +21,8 @@ function Wrapped({ children }: { children: React.ReactNode }) {
   );
 }
 
-// `ViewerActions` reads `usePublicShareLink`, which is a react-query hook — so
-// even the no-share-context case needs a QueryClientProvider around it.
+// With a share context `ViewerActions` mounts `usePublicShareLink`, a
+// react-query hook, so these helpers wrap a QueryClientProvider.
 function render(fileName: string, content = 'x'): string {
   return renderToStaticMarkup(
     <Wrapped>
@@ -48,6 +48,15 @@ function renderShareable(fileName: string, content = 'x'): string {
 function count(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
+
+test('text the host holds renders with no QueryClientProvider and no SDK (no share context)', () => {
+  const html = renderToStaticMarkup(
+    <TooltipProvider>
+      <FileViewer content={'# Notes'} fileName="notes.md" />
+    </TooltipProvider>,
+  );
+  expect(html).toContain('notes.md');
+});
 
 describe('file kind predicates', () => {
   test('source viewer retains its extension language and rendered-kind contract', () => {

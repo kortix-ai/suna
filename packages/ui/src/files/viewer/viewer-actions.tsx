@@ -222,12 +222,6 @@ export function ViewerActions({
    *  reason `shareContext` does. */
   shareInput: CreateSessionPublicShareInput | null;
 }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const share = usePublicShareLink({
-    projectId: shareContext?.projectId,
-    sessionId: shareContext?.sessionId,
-    input: shareInput,
-  });
   const [copied, flashCopied] = useFlash();
 
   const runCopy = useCallback(async () => {
@@ -241,8 +235,6 @@ export function ViewerActions({
     flashCopied();
   }, [copy, flashCopied]);
 
-  if (!copy && !share.canShare) return null;
-
   return (
     <>
       {copy && (
@@ -250,11 +242,29 @@ export function ViewerActions({
           <Copy className="size-3.5" />
         </PillIconButton>
       )}
-      {share.canShare && (
-        <PublicLinkPopover share={share} shareContext={shareContext} shareInput={shareInput} />
+      {/* The share hooks query the session: mounted only when there is one,
+          so a viewer of text the host holds needs no SDK and sends no request. */}
+      {shareContext && shareInput && (
+        <ViewerShareAction shareContext={shareContext} shareInput={shareInput} />
       )}
     </>
   );
+}
+
+function ViewerShareAction({
+  shareContext,
+  shareInput,
+}: {
+  shareContext: ShareContext;
+  shareInput: CreateSessionPublicShareInput;
+}) {
+  const share = usePublicShareLink({
+    projectId: shareContext.projectId,
+    sessionId: shareContext.sessionId,
+    input: shareInput,
+  });
+  if (!share.canShare) return null;
+  return <PublicLinkPopover share={share} shareContext={shareContext} shareInput={shareInput} />;
 }
 
 const EXPIRY_OPTIONS = [
