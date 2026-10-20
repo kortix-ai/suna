@@ -313,7 +313,6 @@
     "./internal/lib/sandbox-providers": "./src/internal/lib/sandbox-providers.ts",
     "./internal/lib/security/iframe-sandbox": "./src/internal/lib/security/iframe-sandbox.ts",
     "./internal/lib/settings-tab-id": "./src/internal/lib/settings-tab-id.ts",
-    "./internal/lib/shaders-react": "./src/internal/lib/shaders-react.ts",
     "./internal/lib/site-metadata": "./src/internal/lib/site-metadata.ts",
     "./internal/lib/sounds": "./src/internal/lib/sounds.ts",
     "./internal/lib/storage/managed-storage": "./src/internal/lib/storage/managed-storage.ts",
@@ -1705,10 +1704,6 @@
         "types": "./dist/internal/lib/settings-tab-id.d.ts",
         "import": "./dist/internal/lib/settings-tab-id.js"
       },
-      "./internal/lib/shaders-react": {
-        "types": "./dist/internal/lib/shaders-react.d.ts",
-        "import": "./dist/internal/lib/shaders-react.js"
-      },
       "./internal/lib/site-metadata": {
         "types": "./dist/internal/lib/site-metadata.d.ts",
         "import": "./dist/internal/lib/site-metadata.js"
@@ -2754,7 +2749,6 @@
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
-    "shaders": "^2.5.94",
     "shiki": "^3.12.0",
     "sonner": "^2.0.3",
     "sql.js": "^1.14.1",

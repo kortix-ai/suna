@@ -170,7 +170,6 @@
     "./internal/lib/sandbox-providers",
     "./internal/lib/security/iframe-sandbox",
     "./internal/lib/settings-tab-id",
-    "./internal/lib/shaders-react",
     "./internal/lib/site-metadata",
     "./internal/lib/sounds",
     "./internal/lib/storage/managed-storage",
