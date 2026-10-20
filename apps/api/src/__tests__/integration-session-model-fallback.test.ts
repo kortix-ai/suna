@@ -1,7 +1,7 @@
 /**
  * Real-PostgreSQL integration test: a session whose model cannot serve moves to
- * the fallback that answered, once, and moves back at a turn end when the
- * original model can serve again.
+ * the fallback that answered, once, and moves back at a turn end or from the
+ * idle sweep when the original model can serve again.
  *
  * The servability probe is mocked (it resolves real provider credentials);
  * the session writes, the compare-and-set guards and the audit events run
@@ -9,7 +9,7 @@
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
-import { auditEvents, projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { auditEvents, projectSessions, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 
@@ -25,8 +25,8 @@ mock.module('../llm-gateway/resolution/default-model', () => ({
   invalidateAccountModelDefaults: () => {},
 }));
 
-const { switchSessionToFallback, forgetFallbackSwitch } = await import('../llm-gateway/resolution/session-model-fallback');
-const { revertSessionModelFallback } = await import('../projects/lib/session-model-fallback-revert');
+const { switchSessionToFallback } = await import('../llm-gateway/resolution/session-model-fallback');
+const { revertSessionModelFallback, revertIdleSessionFallbacks } = await import('../projects/lib/session-model-fallback-revert');
 
 const SOL = 'kortix/codex/gpt-6.1-sol';
 const DEEPSEEK = 'kortix/deepseek-v4.1-flash';
@@ -34,10 +34,15 @@ const GLM = 'kortix/glm-5.3-flash';
 
 let project: SeededProject;
 
-async function seedSession(metadata: Record<string, unknown>, promptModel?: string): Promise<string> {
+async function seedSession(
+  metadata: Record<string, unknown>,
+  promptModel?: string,
+  status: 'running' | 'stopped' = 'stopped',
+): Promise<string> {
   const sessionId = crypto.randomUUID();
   await db.insert(projectSessions).values({
     sessionId,
+    status,
     accountId: project.account_id,
     projectId: project.project_id,
     branchName: `session/${sessionId}`,
@@ -72,13 +77,13 @@ async function auditCount(sessionId: string, action: string): Promise<number> {
   return rows.length;
 }
 
-const change = (sessionId: string, from = SOL, to = DEEPSEEK) => ({
+const change = (sessionId: string, from = SOL, to = DEEPSEEK, reason = 'provider_pool_rate_limited') => ({
   sessionId,
   projectId: project.project_id,
   accountId: project.account_id,
   from,
   to,
-  reason: 'provider_pool_rate_limited',
+  reason,
 });
 
 beforeAll(async () => {
@@ -106,11 +111,15 @@ describe('session model fallback', () => {
       opencode_model_fallback_at: 1_000,
     });
 
-    // Every later request of the held route: no second write, no second audit.
+    // A later `resolve` failure (another gateway task's own hold): no second
+    // switch and no second audit, but `at` moves so the revert waits for it.
     expect(await switchSessionToFallback(change(sessionId), 2_000)).toBe(false);
-    forgetFallbackSwitch(sessionId);
-    expect(await switchSessionToFallback(change(sessionId), 3_000)).toBe(false);
-    expect((await metadataOf(sessionId)).opencode_model_fallback_at).toBe(1_000);
+    expect(await metadataOf(sessionId)).toMatchObject({
+      opencode_model: DEEPSEEK,
+      opencode_model_fallback_from: SOL,
+      opencode_model_fallback_from_source: 'default',
+      opencode_model_fallback_at: 2_000,
+    });
     expect(await auditCount(sessionId, 'SESSION_MODEL_FALLBACK')).toBe(1);
   });
 
@@ -185,7 +194,18 @@ describe('session model fallback', () => {
     probes.length = 0;
     expect(await revertSessionModelFallback(sessionId, 1_000_000 + 599_000)).toBeNull();
     expect(probes).toEqual([]);
-    expect(await revertSessionModelFallback(sessionId, 1_000_000 + 600_000)).toBe(SOL);
+    // Another gateway task holds the route from its own failure: the wait restarts.
+    await switchSessionToFallback(change(sessionId), 1_300_000);
+    expect(await revertSessionModelFallback(sessionId, 1_000_000 + 600_000)).toBeNull();
+    expect(await revertSessionModelFallback(sessionId, 1_300_000 + 600_000)).toBe(SOL);
+  });
+
+  test('a login that needs reconnecting moves back after its 60 s hold, not the 10 min one', async () => {
+    const sessionId = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL);
+    await switchSessionToFallback(change(sessionId, SOL, DEEPSEEK, 'provider_reauth_required'), 1_000_000);
+    servable = true;
+    expect(await revertSessionModelFallback(sessionId, 1_000_000 + 59_000)).toBeNull();
+    expect(await revertSessionModelFallback(sessionId, 1_000_000 + 60_000)).toBe(SOL);
   });
 
   test('a session no fallback took over is left alone', async () => {
@@ -194,5 +214,24 @@ describe('session model fallback', () => {
     probes.length = 0;
     expect(await revertSessionModelFallback(sessionId)).toBeNull();
     expect(probes).toEqual([]);
+  });
+
+  test('the idle sweep moves back a live idle session, never a busy or a stopped one', async () => {
+    const idle = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL, 'running');
+    const busy = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL, 'running');
+    const stopped = await seedSession({ opencode_model: SOL, opencode_model_source: 'explicit' }, SOL, 'stopped');
+    for (const sessionId of [idle, busy, stopped]) await switchSessionToFallback(change(sessionId), 1_000);
+    await db.insert(sessionSandboxes).values({
+      sandboxId: crypto.randomUUID(),
+      sessionId: busy,
+      accountId: project.account_id,
+      projectId: project.project_id,
+      metadata: { activeTurns: { t1: { token: 't1', state: 'active' } } },
+    });
+    servable = true;
+    await revertIdleSessionFallbacks();
+    expect((await metadataOf(idle)).opencode_model).toBe(SOL);
+    expect((await metadataOf(busy)).opencode_model).toBe(DEEPSEEK);
+    expect((await metadataOf(stopped)).opencode_model).toBe(DEEPSEEK);
   });
 });

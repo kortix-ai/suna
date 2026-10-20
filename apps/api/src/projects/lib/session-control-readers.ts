@@ -225,8 +225,9 @@ export interface SessionControlState {
    * provider list on change instead of polling. Never a name or a value.
    */
   secrets_rev: string;
-  /** The session's model pin and its source. It changes when a fallback takes
-   *  the session over or hands it back, so a client re-reads the session row. */
+  /** The session's model pin, its source and the fallback switch time. It
+   *  changes when a fallback takes the session over, records a newer failure,
+   *  or hands it back, so a client re-reads the session row. */
   model_rev: string;
 }
 
@@ -257,6 +258,6 @@ export async function readSessionControlState(sessionId: string): Promise<Sessio
     known: true,
     title: named(metadata.custom_name) ?? named(metadata.name),
     secrets_rev: secretsRev,
-    model_rev: `${String(metadata.opencode_model ?? '')}:${String(metadata.opencode_model_source ?? '')}`,
+    model_rev: `${String(metadata.opencode_model ?? '')}:${String(metadata.opencode_model_source ?? '')}:${String(metadata.opencode_model_fallback_at ?? '')}`,
   };
 }

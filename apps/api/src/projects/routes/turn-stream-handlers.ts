@@ -356,8 +356,9 @@ async function promoteAfterTurnEnd(
   // `available: false` and a loading bar to the first person who looked.
   void captureSessionTranscriptMirror(sessionId);
   // The session is idle: a session a fallback took over moves back to its own
-  // model when that model can serve again (never throws).
-  if (!childSession && turnCompletion.outcome === 'closed') void revertSessionModelFallback(sessionId);
+  // model when that model can serve again (never throws). Child sessions too:
+  // the switch writes them, and their prompts then send the fallback pin.
+  if (turnCompletion.outcome === 'closed') void revertSessionModelFallback(sessionId);
   // THE TURN ENDED — the session's next queued prompt is admissible NOW.
   // Await the durable promotion before acknowledging the terminal relay.
   // The targeted drain remains asynchronous and re-runs admission itself;

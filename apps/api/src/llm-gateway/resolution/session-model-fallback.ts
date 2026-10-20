@@ -18,8 +18,9 @@
  * original model served again (measured on a local session). The session's
  * first request for a resting model resolves fresh, because the hold is per
  * session, so a `resolve` failure always comes first.
- * When a turn ends, `projects/lib/session-model-fallback-revert.ts` moves the
- * session back once the original model can serve again.
+ * `projects/lib/session-model-fallback-revert.ts` moves the session back once
+ * the original model can serve again: at a turn end, and on an idle session
+ * from `workers/session-model-fallback-worker.ts`.
  *
  * No push to the box: each prompt carries its model, so the next one runs on
  * the fallback without an OpenCode restart.
@@ -81,13 +82,6 @@ export function fallbackSwitchOf(
   };
 }
 
-// replica-local: a memo of switches this replica already wrote, so a held
-// route's every request does not re-read the session. A miss costs one read
-// and a no-op UPDATE; the TTL bounds a memo that another replica's revert made stale.
-const written = new Map<string, { memo: string; untilMs: number }>();
-const MAX_WRITTEN = 5_000;
-const WRITTEN_TTL_MS = 5 * 60_000;
-
 /** The model of the session's newest prompt, as an opencode ref, or null when it named none. */
 async function latestPromptModelRef(sessionId: string): Promise<string | null> {
   const [row] = await db
@@ -106,16 +100,32 @@ async function latestPromptModelRef(sessionId: string): Promise<string | null> {
  * Records the switch on the session row. Idempotent, never throws. Only the
  * session's own model switches: a request for another model (a subagent's,
  * say) is not the one the composer sends.
+ *
+ * A session already on this fallback gets a fresh `at` only: each gateway
+ * task holds the route on its own first failure (pipeline/route-memory.ts),
+ * so the revert waits for the latest hold. That write audits nothing. It runs
+ * at most once per gateway task per session per hold, so no memo saves it.
  */
 export async function switchSessionToFallback(change: FallbackSwitch, nowMs = Date.now()): Promise<boolean> {
-  const memo = `${change.from}>${change.to}`;
-  const seen = written.get(change.sessionId);
-  if (seen?.memo === memo && seen.untilMs > nowMs) return false;
   try {
     const promptRef = await latestPromptModelRef(change.sessionId);
     if (promptRef !== null && promptRef !== change.from) return false;
     const metadata = projectSessions.metadata;
     const wasFallback = sql`${metadata}->>'opencode_model_source' = 'fallback'`;
+    // Never NULL: `NOT already` must hold for a row with no pin or no source.
+    const already = sql`(${metadata}->>'opencode_model' IS NOT DISTINCT FROM ${change.to}::text AND ${metadata}->>'opencode_model_source' IS NOT DISTINCT FROM 'fallback')`;
+    const session = and(eq(projectSessions.sessionId, change.sessionId), eq(projectSessions.projectId, change.projectId));
+    const notify = { notified: sql`pg_notify(${SESSION_CHANGED_CHANNEL}, ${projectSessions.sessionId}::text)` };
+
+    const refreshed = await db
+      .update(projectSessions)
+      .set({
+        metadata: sql`${metadata} || jsonb_build_object(${FALLBACK_KEYS.reason}::text, ${change.reason}::text, ${FALLBACK_KEYS.at}::text, ${nowMs}::bigint)`,
+      })
+      .where(and(session, already))
+      .returning(notify);
+    if (refreshed.length > 0) return false;
+
     const updated = await db
       .update(projectSessions)
       .set({
@@ -130,18 +140,13 @@ export async function switchSessionToFallback(change: FallbackSwitch, nowMs = Da
       })
       .where(
         and(
-          eq(projectSessions.sessionId, change.sessionId),
-          eq(projectSessions.projectId, change.projectId),
-          // Already switched to this model: nothing to write.
-          sql`(${metadata}->>'opencode_model' IS DISTINCT FROM ${change.to}::text OR ${metadata}->>'opencode_model_source' IS DISTINCT FROM 'fallback')`,
+          session,
+          sql`NOT ${already}`,
           // A prompt that named no model runs on the pin: switch only from it.
           promptRef === null ? sql`${metadata}->>'opencode_model' = ${change.from}::text` : undefined,
         ),
       )
-      .returning({ notified: sql`pg_notify(${SESSION_CHANGED_CHANNEL}, ${projectSessions.sessionId}::text)` });
-    written.delete(change.sessionId);
-    if (written.size >= MAX_WRITTEN) written.delete(written.keys().next().value!);
-    written.set(change.sessionId, { memo, untilMs: nowMs + WRITTEN_TTL_MS });
+      .returning(notify);
     if (updated.length === 0) return false;
     await recordAuditEvent({
       accountId: change.accountId,
@@ -168,9 +173,4 @@ export async function switchSessionToFallback(change: FallbackSwitch, nowMs = Da
     });
     return false;
   }
-}
-
-/** Forget this replica's memo for a session: its model moved back. */
-export function forgetFallbackSwitch(sessionId: string): void {
-  written.delete(sessionId);
 }

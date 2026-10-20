@@ -39,6 +39,7 @@ import { startProviderTransitionWorker, stopProviderTransitionWorker } from './w
 import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
 import { startSessionLogBackfillWorker, stopSessionLogBackfillWorker } from './workers/session-log-backfill-worker';
 import { startSessionLogPurgeWorker, stopSessionLogPurgeWorker } from './workers/session-log-purge-worker';
+import { startSessionModelFallbackWorker, stopSessionModelFallbackWorker } from './workers/session-model-fallback-worker';
 import { handBackClaims } from './projects/surface';
 import { startSlackTurnGc, stopSlackTurnGc } from './workers/slack-turn-gc-worker';
 import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './workers/teams-bot-token-refresh-worker';
@@ -266,6 +267,8 @@ async function startSingletonWorkers() {
   startNotificationWorker();
   // Retention purge of session content: rows after the D6 windows, files 7 days later.
   startSessionLogPurgeWorker();
+  // Idle sessions off a fallback model once their own model serves again.
+  startSessionModelFallbackWorker();
   // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=off (default) runs nothing.
   startSessionLogBackfillWorker();
 }
@@ -294,6 +297,7 @@ async function stopSingletonWorkers() {
   drains.push(stopAccountDeletionSchedule());
   stopNotificationWorker();
   stopSessionLogPurgeWorker();
+  stopSessionModelFallbackWorker();
   stopSessionLogBackfillWorker();
   await Promise.all(drains);
 }
