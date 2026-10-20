@@ -28,6 +28,7 @@ import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-c
 import { runSessionsConnect } from './sessions-connect.ts';
 import { runSessionsForward } from './sessions-forward.ts';
 import type { Auth } from '../api/auth.ts';
+import { ApiError } from '../api/client.ts';
 import { confirm } from '../prompts.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth, sdkBackendUrl, withKortixScope } from '../api/sdk.ts';
@@ -558,6 +559,10 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
       `/projects/${ctx.projectId}/sessions${sessionListQuery(flags, parentId)}`,
     );
   } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      process.stderr.write(`${status.err(`Project "${ctx.projectId}" was not found or is no longer accessible.`)} Run \`kortix projects ls\`, then \`kortix projects use <id>\` to select an available project.\n`);
+      return 1;
+    }
     return surfaceApiError(err);
   }
 
