@@ -183,8 +183,7 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   scheduledForDeletionOn: 'Scheduled for deletion on {date}.',
   scheduledForDeletion: 'Scheduled for deletion.',
   cancelBeforeDeletion: 'You can cancel any time before then.',
-  deletionDescription:
-    'This deletes every agent, thread, credential, and subscription tied to your account. This cannot be undone.',
+  deletionDescription: 'Schedule account deletion. You can cancel before the scheduled date.',
   unavailable: 'Unavailable',
   retry: 'Retry',
   keepMyAccount: 'Keep my account',
@@ -196,7 +195,7 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   // (KRTX-1403: "is scheduled" read as an already-scheduled deletion while
   // GET /v1/account/deletion-status reported none).
   gracePeriodWarning:
-    'Your account will be scheduled for deletion after a 30-day grace period, during which you can cancel.',
+    'Your account will be scheduled for deletion after a grace period. You can cancel before the scheduled date.',
   whenDeleted: 'When your account is deleted:',
   agentsDeleted: 'Every agent you own is deleted',
   threadsDeleted: 'Every thread and message is deleted',
@@ -204,9 +203,8 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   subscriptionCancelled: 'Your subscription is cancelled',
   billingHistoryRemoved: 'Your billing history is removed',
   chooseWhen: 'Choose when',
-  gracePeriodLabel: '30-day grace period',
-  gracePeriodDescription:
-    'Deletion happens automatically after 30 days. Cancel any time before then.',
+  gracePeriodLabel: 'Grace period',
+  gracePeriodDescription: 'Deletion happens on the scheduled date. Cancel any time before then.',
   immediateLabel: 'Delete immediately',
   immediateDescription: 'Your account and its data are deleted right away. This cannot be undone.',
   typeDeleteToConfirm: 'Type "delete" to confirm',
@@ -248,6 +246,7 @@ export interface ProfileTabViewProps {
   accountDeletionSupported?: boolean;
   hasPendingDeletion?: boolean;
   deletionScheduledForLabel?: string | null;
+  deletionPreviewDateLabel?: string | null;
   isDeletionStatusError?: boolean;
   onRetryDeletionStatus?: () => void;
   showDeleteDialog?: boolean;
@@ -297,6 +296,7 @@ export function ProfileTabView({
   accountDeletionSupported = true,
   hasPendingDeletion = false,
   deletionScheduledForLabel = null,
+  deletionPreviewDateLabel = null,
   isDeletionStatusError = false,
   onRetryDeletionStatus = () => {},
   showDeleteDialog = false,
@@ -491,7 +491,14 @@ export function ProfileTabView({
                 </ModalHeader>
                 <ModalBody className="space-y-4">
                   <InfoBanner tone="warning">
-                    {deletionType === 'immediate' ? copy.immediateWarning : copy.gracePeriodWarning}
+                    {deletionType === 'immediate' ? (
+                      copy.immediateWarning
+                    ) : (
+                      <>
+                        {copy.gracePeriodWarning}
+                        {deletionPreviewDateLabel && <p>{deletionPreviewDateLabel}</p>}
+                      </>
+                    )}
                   </InfoBanner>
                   <div className="space-y-2">
                     <p className="text-sm font-medium">{copy.whenDeleted}</p>
@@ -772,6 +779,7 @@ export function ProfileTab() {
     (isDeletionStatusError ||
       (deletionStatusFetchStatus !== 'idle' && deletionStatusFailedAt > deletionStatusAnsweredAt));
 
+  const [deletionPreviewDate, setDeletionPreviewDate] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCancelDeletionDialog, setShowCancelDeletionDialog] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -783,6 +791,8 @@ export function ProfileTab() {
   // invariant `TypeToConfirmDialog` buys by mounting its body inside the
   // portal (KRTX-1403).
   const openDeleteDialog = () => {
+    // Match the API's fourteen-day elapsed-time grace period.
+    setDeletionPreviewDate(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString());
     setDeleteConfirmText('');
     setDeletionType('grace-period');
     setShowDeleteDialog(true);
@@ -848,6 +858,7 @@ export function ProfileTab() {
       accountDeletionSupported={accountDeletionSupported}
       hasPendingDeletion={deletionStatus?.has_pending_deletion ?? false}
       deletionScheduledForLabel={formatDate(deletionStatus?.deletion_scheduled_for)}
+      deletionPreviewDateLabel={formatDate(deletionPreviewDate)}
       isDeletionStatusError={isDeletionStatusFailed}
       onRetryDeletionStatus={() => retryDeletionStatus()}
       showDeleteDialog={showDeleteDialog}

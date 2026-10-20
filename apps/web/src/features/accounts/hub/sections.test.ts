@@ -25,6 +25,12 @@ describe('parseAccountSection', () => {
     for (const tab of VALID_TABS) expect(parseAccountSection(tab)).toBe(tab);
   });
 
+  test('the usage deep link opens the existing Usage section', () => {
+    const section = parseAccountSection('usage');
+    expect(section).toBe('transactions');
+    expect(sectionLabel(section ?? 'members')).toBe('Usage');
+  });
+
   test('the legacy overview deep link folds into billing', () => {
     expect(parseAccountSection('overview')).toBe('billing');
   });
