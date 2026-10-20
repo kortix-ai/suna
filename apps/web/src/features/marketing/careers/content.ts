@@ -221,6 +221,6 @@ export function getLocalizedCareersContent(tI18nComplete: UiTranslator) {
     MARKETING_SECONDARY_TRANSLATION_KEYS,
   );
 }
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { MARKETING_SECONDARY_TRANSLATION_KEYS } from '@/i18n/marketing-secondary-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';

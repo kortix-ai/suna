@@ -1,6 +1,6 @@
 /**
  * Safe URL helpers: allow-list http(s) URLs and pick link-only document
- * previews. Moved verbatim from apps/web `lib/safe-url.ts` +
+ * previews. Moved verbatim from apps/web `packages/ui/src/internal/lib/safe-url.ts` +
  * `features/session/preview-url-fallback.ts` (KRTX-365 phases 2–3; the hosts
  * import this module since phase 3). `openSafeExternalUrl` stays in the web
  * app: it opens `window`.

@@ -349,7 +349,7 @@ describe('kortix channels connect — manual (self-host)', () => {
 
 describe('kortix channels status', () => {
   test('not connected → points at `kortix channels connect`', async () => {
-    const code = await runChannels(['status']);
+    const code = await runChannels(['status', '--platform', 'slack']);
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
     expect(out).toContain('not connected');
@@ -358,7 +358,7 @@ describe('kortix channels status', () => {
 
   test('--json reports connected + installation', async () => {
     state.installation = INSTALLATION;
-    const code = await runChannels(['status', '--json']);
+    const code = await runChannels(['status', '--platform', 'slack', '--json']);
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout);
     expect(parsed.connected).toBe(true);
@@ -369,7 +369,7 @@ describe('kortix channels status', () => {
     writeConfig('https://api.test/v1');
     state.installation = INSTALLATION;
 
-    const code = await runChannels(['status']);
+    const code = await runChannels(['status', '--platform', 'slack']);
 
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
@@ -645,8 +645,8 @@ describe('kortix channels --platform teams', () => {
     expect(stripAnsi(stdout)).toContain('Disconnected');
   });
 
-  test('default (no --platform) still routes to Slack', async () => {
-    const code = await runChannels(['status']);
+  test('explicit Slack status only requests Slack', async () => {
+    const code = await runChannels(['status', '--platform', 'slack']);
     expect(code).toBe(0);
     expect(requests.some((r) => r.url.includes('/channels/slack/installation'))).toBe(true);
     expect(requests.some((r) => r.url.includes('/channels/teams/'))).toBe(false);

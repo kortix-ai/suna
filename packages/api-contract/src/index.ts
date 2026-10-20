@@ -984,6 +984,8 @@ export const SESSION_INITIAL_CONTEXT_MAX_CHARS = 8_192;
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
+    /** Copy the authorized platform session history into a new independent session. */
+    fork_from_session_id: z.string().min(1).max(255).optional(),
     base_ref: z.string().min(1).optional(),
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
@@ -1084,6 +1086,7 @@ export type SessionUpdateInput = z.input<typeof SessionUpdateInputSchema>;
  *  (`apps/api/src/projects/opencode-session-snapshot.ts`). Times are epoch ms. */
 export const RuntimeSessionSnapshotSchema = z.object({
   id: z.string(),
+  fork_source_id: z.string().optional(),
   title: z.string().nullable(),
   parent_id: z.string().nullable(),
   project_id: z.string().nullable(),
@@ -1093,7 +1096,28 @@ export const RuntimeSessionSnapshotSchema = z.object({
 });
 export type RuntimeSessionSnapshot = z.infer<typeof RuntimeSessionSnapshotSchema>;
 
+/**
+ * Is the session working, decided ONCE by the server (R5.2). Clients show this
+ * instead of combining their own signals. `working` while a live turn runs that
+ * the runtime has not reported ended, or while a prompt is on its way to the
+ * runtime (`pending_delivery`). Ordered by the control frame's `cseq`.
+ */
+export const SessionWorkingSchema = z.object({
+  state: z.enum(['working', 'idle']),
+  /** When this state began (ISO), or null when the server does not know. */
+  since: z.string().nullable(),
+  /** The newest live turn, or null. */
+  turn_token: z.string().nullable(),
+  /** No live turn yet, but a prompt is queued for or being handed to the runtime. */
+  pending_delivery: z.boolean(),
+});
+export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
+
 export const ProjectSessionSchema = z.object({
+  /** Durable conversation selection, falling back to the creation pin before a log exists. */
+  model: z.string().nullable().optional(),
+  /** Work activity, independent of the computer lifecycle status. Older servers may omit it. */
+  working: SessionWorkingSchema.optional(),
   session_id: z.string(),
   account_id: z.string(),
   project_id: z.string(),
@@ -1565,6 +1589,8 @@ export const TriggerSchema = z.object({
   last_attempt_at: z.string().nullable(),
   /** When an enabled cron trigger runs next: the slot the scheduler claims, jitter included. Null for a webhook trigger. */
   next_fire_at: z.string().nullable().optional(),
+  /** Next exact cron occurrence, without scheduler jitter. */
+  next_cron_at: z.string().nullable().optional(),
   webhook_url: z.string().nullable(),
 });
 export type Trigger = z.infer<typeof TriggerSchema>;
@@ -1780,23 +1806,6 @@ export const SessionTurnFailureSchema = z.object({
   error: SessionTurnEndErrorSchema.nullable(),
 });
 export type SessionTurnFailure = z.infer<typeof SessionTurnFailureSchema>;
-
-/**
- * Is the session working, decided ONCE by the server (R5.2). Clients show this
- * instead of combining their own signals. `working` while a live turn runs that
- * the runtime has not reported ended, or while a prompt is on its way to the
- * runtime (`pending_delivery`). Ordered by the control frame's `cseq`.
- */
-export const SessionWorkingSchema = z.object({
-  state: z.enum(['working', 'idle']),
-  /** When this state began (ISO), or null when the server does not know. */
-  since: z.string().nullable(),
-  /** The newest live turn, or null. */
-  turn_token: z.string().nullable(),
-  /** No live turn yet, but a prompt is queued for or being handed to the runtime. */
-  pending_delivery: z.boolean(),
-});
-export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
 
 /** `GET .../turn`. `turns` empty means idle; it is a list because a session
  *  can hold more than one open turn. */

@@ -403,9 +403,9 @@ When an agent session merges and Kortix cannot read the manifest, the merge answ
 
 ## Harnesses: OpenCode and pi
 
-A harness is the agent runtime inside a session's sandbox. It runs the model loop, calls tools and writes the transcript. Kortix has two: **OpenCode**, the default, and **pi**. Both read the same `agents/`, `skills/`, root `AGENTS.md` and `kortix.yaml`, and every client reads both through the same session API.
+A harness is the agent runtime inside a session's sandbox. It runs the model loop, calls tools and writes the transcript. Kortix has two: **pi**, the default, and **OpenCode**. Both read the same `agents/`, `skills/`, root `AGENTS.md` and `kortix.yaml`, and every client reads both through the same session API.
 
-Kortix picks the harness when a session starts, restarts or resumes. A running session keeps its harness until then.
+Kortix picks the harness when a session is created. A restart keeps the session's sandbox, so a session keeps its harness and its history. A flag change applies to new sessions.
 
 | Rule, in order | Harness |
 | --- | --- |
@@ -415,7 +415,7 @@ Kortix picks the harness when a session starts, restarts or resumes. A running s
 | Anything else | OpenCode |
 
 - pi calls models only through the Kortix [LLM gateway](/docs/project/models), so row 1 overrides the flag and the manifest.
-- `pi_harness` is off by default. See [Feature flags](/docs/project#feature-flags).
+- `pi_harness` is on by default. Turn it off to start new sessions on OpenCode. See [Feature flags](/docs/project#feature-flags).
 - The session daemon's `GET /kortix/health` reports `harness.id` (`opencode` or `pi`) and the `capabilities` the session serves. From the SDK, call `kortix.session(projectId, sessionId).health()`. A client hides a control whose capability is missing: `runtimeSupports` in the SDK, `useRuntimeSupports` in React.
 
 ### What each harness supports

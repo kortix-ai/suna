@@ -3,9 +3,9 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { EmptyState } from '@kortix/ui/empty-state';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { MarketplaceExploreCard } from './marketplace-explore-card';
 
 function matches(item: MarketplaceItem, q: string): boolean {

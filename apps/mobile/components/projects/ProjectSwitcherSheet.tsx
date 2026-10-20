@@ -71,6 +71,7 @@ import { filterProjectsByQuery, projectHref, shouldShowProjectSearch } from '@/l
 import { newAccountWebUrl, newProjectWebUrl } from '@/lib/projects/web-project-links';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCloseThen } from '@/components/kortix/sheet';
+import { useSheetRowLimit } from '@/components/kortix/sheet-settled';
 import type { KortixAccount, KortixProject } from '@/lib/projects/projects-client';
 
 type Handoff = 'project' | 'account';
@@ -283,6 +284,9 @@ function ProjectsTab({
   openNewProject: () => void;
   newProjectPending: boolean;
 }) {
+  // While the sheet opens only the rows that fill it mount; the rest once it
+  // is at rest (KRTX-2929). The sheet is fixed at 100%, so it never resizes.
+  const rowLimit = useSheetRowLimit(filtered.length);
   if (projectsQuery.isPending) {
     // No account picked yet (selectedAccountId still loading) or
     // its projects have not loaded — in flight, or paused offline
@@ -323,7 +327,7 @@ function ProjectsTab({
   }
   return (
     <SettingsGroup>
-      {filtered.map((project) => (
+      {filtered.slice(0, rowLimit).map((project) => (
         <SettingsRow
           key={project.project_id}
           leading={<Avatar chalk size={28} fallbackText={project.name} />}
@@ -544,6 +548,7 @@ export function ProjectSwitcherSheet({
               pinned at the bottom, floating over a fade of the sheet. */}
           <PinnedBar controlHeight={FLOATING_BAR_HEIGHT} background={sheetBackground} className="justify-center px-4">
             <FloatingTabCapsule
+              glass
               items={SWITCHER_TABS}
               activeIndex={tab === 'account' ? 0 : 1}
               onSelect={(index) => {

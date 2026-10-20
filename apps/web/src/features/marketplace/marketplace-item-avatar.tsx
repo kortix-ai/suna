@@ -23,9 +23,9 @@ import {
   type Icon as LucideIcon,
 } from '@phosphor-icons/react';
 
-import { EntityAvatar, type EntityAvatarSize } from '@/components/ui/entity-avatar';
+import { EntityAvatar, type EntityAvatarSize } from '@kortix/ui/entity-avatar';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { MarketplaceAvatar } from './marketplace-avatar';
 
 // A curated, "capability"-flavored icon pool. Every skill is assigned one mark

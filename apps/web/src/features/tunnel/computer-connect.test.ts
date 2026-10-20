@@ -2,7 +2,7 @@ import type { Connection } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import type { TunnelConnection } from '@/hooks/tunnel/use-tunnel';
-import type { DesktopComputerStatus } from '@/lib/desktop';
+import type { DesktopComputerStatus } from '@kortix/ui/internal/lib/desktop';
 import {
   computerDisplayName,
   computerState,
@@ -10,7 +10,7 @@ import {
   platformName,
   projectComputerAccounts,
   yourComputerMenu,
-} from './computer-connect';
+} from '@kortix/ui/internal/tunnel/computer-connect';
 import { activeGrant, capabilitiesNeedingSetup, setupMissing } from './local-computer-modal';
 
 const ME = '00000000-0000-4000-8000-000000000001';
