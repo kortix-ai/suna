@@ -434,10 +434,16 @@ rows[0].first_prompt; // the thread's top message
 rows[0].reply_count; // messages after it; a space list only, null elsewhere
 ```
 
-- A channel thread is visible to every project member. A DM thread is private
-  and runs the DM's agent (an `agent_name` in the same create is overridden).
-- A create without `space_id` lands in `#general`; a fork lands in its source's
-  space; a spawned session in its parent's.
+- A create with a channel `space_id` is project-visible. A create in a DM is
+  private and runs the DM's agent (an `agent_name` in the same create is
+  overridden).
+- A create without `space_id` lands in `#general`, private (only its creator
+  sees it). A spawned session lands in its parent's space.
+- A fork lands in its source's space and keeps its source's sharing:
+  project-visible only when the source is, else private. Never wider.
+- A `visibility` a server-side caller sets (a trigger, a chat integration) wins,
+  except in a DM. From the SDK, change sharing after a create with
+  `session(pid, sid).setSharing(...)`.
 - `sessions.list({ spaceId })` pages inside the space; a non-UUID returns `400`.
 - `ProjectSession.space_id`, `first_prompt` and `reply_count` are optional:
   older APIs omit them.

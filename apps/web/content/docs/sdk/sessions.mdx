@@ -120,9 +120,12 @@ threads[0].reply_count; // the messages after it; set on a space list only
 | `spaces.create({ name, description? })` | A channel. `name` is 1 to 80 characters, `description` at most 500. The slug (`a-z0-9-`) is unique in the project, archived channels included: a taken slug rejects with `ApiError` `409` `slug_taken`, and `data.space_id` and `data.archived` name the channel that holds it. A name with no letter or digit returns `400` `invalid_name`. |
 | `spaces.update(spaceId, { name?, description?, archived? })` | Rename, describe, archive (`true`) or unarchive (`false`) a channel. `#general` cannot be archived (`400` `default_channel`). A DM cannot be edited (`400` `dm_not_editable`). |
 | `spaces.dm(agentName)` | The caller's DM with the agent. Only the caller sees it. An agent the project does not declare returns `404` `agent_not_found`; an agent the caller may not run returns `403`. |
-| `sessions.create({ space_id })` | A thread in a channel is visible to every project member. A thread in a DM is private and runs the DM's agent: an `agent_name` in the same call is overridden. Another member's DM, an archived channel and an unknown id return `404` `space_not_found`. |
-| `sessions.create()` without `space_id` | Files the session into `#general`. A fork (`fork_from_session_id`) goes to its source's space, and a session that another session starts goes to its parent's space. |
+| `sessions.create({ space_id })` | A create with a channel `space_id` is project-visible. A create in a DM is private and runs the DM's agent: an `agent_name` in the same call is overridden. Another member's DM, an archived channel and an unknown id return `404` `space_not_found`. |
+| `sessions.create()` without `space_id` | Files the session into `#general`, private: only its creator sees it. A session that another session starts goes to its parent's space. |
+| `sessions.create({ fork_from_session_id })` | The fork goes to its source's space and keeps its source's sharing: project-visible only when the source is, else private. A fork is never wider than its source. |
 | `sessions.list({ spaceId })`, `listPage({ spaceId })` | One space's sessions that the caller may open, newest activity first. Each row carries `first_prompt` and `reply_count`. The cursor stays inside the space. A `spaceId` that is not a UUID returns `400`. |
+
+A `visibility` that a server-side caller sets (a trigger, a chat integration) wins, except in a DM. From the SDK, change a thread's sharing after the create with `session(projectId, sessionId).setSharing(...)`.
 
 Turning `project_channels` on files every session that is in no space into `#general`. Turning it off deletes nothing: the spaces and every `space_id` stay, and come back when the flag is on again. In React, use `useProjectSpaces` and `useProjectSessions(projectId, { spaceId })` ([Hooks](/docs/sdk/react#hooks)).
 
