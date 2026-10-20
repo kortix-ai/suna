@@ -1,7 +1,7 @@
 /**
  * The white-label seam: name, tagline, and which Kortix deployment to point
- * at. Colors are the other half of a rebrand and live in `src/app/globals.css`
- * as @kortix/ui token overrides. Everything else is generic and flows through
+ * at. Colors, radius and fonts are the other half of a rebrand and live in
+ * `src/config/theme.ts` as a typed @kortix/ui theme. Everything else is generic and flows through
  * `@kortix/sdk` and `@kortix/ui`.
  */
 export const BRAND = {

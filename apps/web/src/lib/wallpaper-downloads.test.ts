@@ -3,7 +3,7 @@ import { statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { WALLPAPER_DOWNLOADS } from './wallpaper-downloads';
-import { WALLPAPERS } from './wallpapers';
+import { WALLPAPERS } from '@kortix/ui/theme';
 
 const PUBLIC_DIR = join(import.meta.dir, '../../public');
 

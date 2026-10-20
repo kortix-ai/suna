@@ -1,7 +1,7 @@
 import { emitJson, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
 
-interface TeamsInstallation {
+export interface TeamsInstallation {
   tenantId: string | null;
   catalogAppId: string | null;
   orgInstalled: boolean;

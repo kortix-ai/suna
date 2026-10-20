@@ -1,10 +1,8 @@
 import type { ToolPart } from '@/ui';
 import { toolCallBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import { collectAllToolCalls } from './collect-tool-parts';
+import { collectAllToolCalls, latestRunMessages, deriveRunOutcome } from '@kortix/ui/session-panel';
 import { groupSteps } from './group-steps';
-import { latestRunMessages } from './latest-run';
-import { deriveRunOutcome } from './run-outcome';
 
 function assistant(
   outcome?: { status: SessionLogMessage['status']; code?: string; message?: string },

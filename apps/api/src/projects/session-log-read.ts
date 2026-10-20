@@ -33,6 +33,7 @@
  */
 import {
   toV1,
+  ModelRefSchema,
   type SessionLog,
   type SessionLogBlock,
   type SessionLogMessage,
@@ -41,7 +42,7 @@ import {
 } from '@kortix/api-contract/session-log';
 import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript';
 import { projectSessions, projects, sessionLogMessages, sessionLogs, sessionLogThreads } from '@kortix/db';
-import { and, asc, desc, eq, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
@@ -198,12 +199,12 @@ export async function readStoredTranscriptWindow(input: {
 /** The project flag `session_log` of the session's project. False for an unknown session. */
 export async function sessionLogEnabled(sessionId: string): Promise<boolean> {
   const [row] = await db
-    .select({ projectMetadata: projects.metadata })
+    .select({ projectMetadata: projects.metadata, sessionMetadata: projectSessions.metadata })
     .from(projectSessions)
     .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
-  return !!row && resolveFeatureFlag(row.projectMetadata, 'session_log');
+  return !!row && (typeof row.sessionMetadata?.forkedFromSessionId === 'string' || resolveFeatureFlag(row.projectMetadata, 'session_log'));
 }
 
 /** The mirror order: `created` (missing first), then id. */
@@ -230,6 +231,7 @@ async function readLogTranscriptWindow(input: {
       updatedAt: sessionLogs.updatedAt,
       projectId: sessionLogs.projectId,
       metadata: projects.metadata,
+      sessionMetadata: projectSessions.metadata,
       threads: sql<ThreadRow[] | null>`(SELECT json_agg(json_build_object('threadId', ${sessionLogThreads.threadId}, 'parentThreadId', ${sessionLogThreads.parentThreadId}, 'record', ${sessionLogThreads.record}) ORDER BY ${sessionLogThreads.createdAt}, ${sessionLogThreads.threadId}) FROM ${sessionLogThreads} WHERE ${sessionLogThreads.sessionId} = ${qualifiedColumn(projectSessions.sessionId)})`,
     })
     .from(projectSessions)
@@ -237,7 +239,7 @@ async function readLogTranscriptWindow(input: {
     .leftJoin(sessionLogs, eq(sessionLogs.sessionId, projectSessions.sessionId))
     .where(eq(projectSessions.sessionId, input.sessionId))
     .limit(1);
-  if (!row || !resolveFeatureFlag(row.metadata, 'session_log')) return 'mirror';
+  if (!row || (typeof row.sessionMetadata?.forkedFromSessionId !== 'string' && !resolveFeatureFlag(row.metadata, 'session_log'))) return 'mirror';
   // No log yet: pre-journal history the backfill has not converted (until P8.2 drops the mirror).
   if (row.record === null || row.updatedAt === null || row.projectId === null) return 'mirror';
   const log = { record: row.record, updatedAt: row.updatedAt, projectId: row.projectId };
@@ -345,4 +347,21 @@ async function anchorOf(tx: Tx, scope: SQL, before: string, toRows: (records: J[
     if (summary) return { seq: c.seq, inclusive: true, key: keyOf(summary) };
   }
   throw new UnknownTranscriptCursorError(before);
+}
+
+/** Bounded inventory read: no sandbox wake and no per-session log requests. */
+export async function readSessionConversationModels(sessionIds: string[]): Promise<Map<string, string>> {
+  if (sessionIds.length === 0) return new Map();
+  const rows = await db.select({
+    sessionId: sessionLogs.sessionId,
+    model: sql<unknown>`${sessionLogs.record}->'selection'->'model'`,
+  }).from(sessionLogs).where(inArray(sessionLogs.sessionId, sessionIds));
+  const models = new Map<string, string>();
+  for (const row of rows) {
+    const parsed = ModelRefSchema.safeParse(row.model);
+    if (parsed.success && parsed.data.provider.trim() && parsed.data.model.trim()) {
+      models.set(row.sessionId, `${parsed.data.provider}/${parsed.data.model}`);
+    }
+  }
+  return models;
 }

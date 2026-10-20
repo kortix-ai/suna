@@ -4,8 +4,8 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
-import { Button } from '@/components/ui/button';
-import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
+import { Button } from '@kortix/ui/button';
+import { projectSettingsSectionHref } from '@kortix/ui/customize/project-settings/project-settings-sections';
 import { FlagIcon } from '@phosphor-icons/react';
 
 /**

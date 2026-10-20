@@ -7,22 +7,21 @@ import { AnimatePresence, m, useReducedMotion, type Variants } from 'motion/reac
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 
 import { DesktopCloseButton } from '@/components/desktop/desktop-close-button';
-import { Button } from '@/components/ui/button';
-import { Modal, ModalContent } from '@/components/ui/modal';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { Button } from '@kortix/ui/button';
+import { Modal, ModalContent } from '@kortix/ui/modal';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
-import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
+import { connectorConnectionQueryKeys } from '@kortix/ui/customize/sections/connector-connection-form';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { isBillingEnabled, isConnectorsEnabled } from '@/lib/config';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectPageCans } from '@/lib/use-project-can';
-import { useFirstChatStore } from '@/stores/first-chat-store';
+import { PROJECT_ACTIONS, useProjectPageCans } from '@kortix/ui/workspace';
+import { useFirstChatStore } from '@kortix/ui/internal/stores/first-chat-store';
 import { listConnectors, type OnboardingUseCase } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
 import { completeThenNotify } from './onboarding/complete-then';
-import { connectApp, connectionSlugFor, type CatalogApp } from './onboarding/connect-app';
+import { connectApp, connectionSlugFor, type CatalogApp } from '@kortix/ui/workspace/projects/onboarding/connect-app';
 import { slideVariants } from './onboarding/motion';
 import { buildSteps, deriveCompanyDomain } from './onboarding/onboarding-profile';
 import { StepIdentityProvider, StepProgress } from './onboarding/step-shell';

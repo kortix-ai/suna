@@ -1,11 +1,11 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { AccountOverviewTab } from '@/features/billing/account-overview';
 import { PlanCard, PlanChanger } from '@/features/billing/plan-card';
 import { EnterpriseAccessRow } from '@/features/billing/enterprise-access-row';
@@ -19,10 +19,10 @@ import {
   useCancelSubscription,
   useCreatePortalSession,
   useReactivateSubscription,
-} from '@/hooks/billing';
+} from '@kortix/ui/internal/billing/index';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { isBillingEnabled } from '@/lib/config';
-import { useBillingAccountId } from '@/stores/billing-account-context';
+import { useBillingAccountId } from '@kortix/ui/internal/stores/billing-account-context';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { getAccountState, type AccountState } from '@kortix/sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
