@@ -176,8 +176,10 @@ export function registerMemberInviteRoute(): void {
       // on every call — the caller resubmits the complete desired
       // project-access set each time, same "what you see is what you get"
       // contract project_grants above documents; a re-invite that no longer
-      // lists a project drops it. The `{group_id}` entries SCIM parked on the
-      // invite stay: only the IdP adds or removes those (KRTX-2329).
+      // lists a project drops it. The `{group_id}` entries SCIM parked on a
+      // still-pending invite stay: only the IdP adds or removes those
+      // (KRTX-2329). An accepted invite already applied its groups, and
+      // offboarding removed them, so a refresh never hands them back.
       const bootstrapGrants = projectGrants.map((g) => ({
         project_id: g.project_id,
         role: g.role,
@@ -205,6 +207,7 @@ export function registerMemberInviteRoute(): void {
               SELECT jsonb_agg(entry)
               FROM jsonb_array_elements(${accountInvitations.bootstrapGrants}) AS entry
               WHERE entry->>'group_id' IS NOT NULL
+                AND ${accountInvitations.acceptedAt} IS NULL
             ), '[]'::jsonb) || excluded.bootstrap_grants`,
           },
         })
