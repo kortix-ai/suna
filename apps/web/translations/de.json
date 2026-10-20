@@ -21560,7 +21560,10 @@
       "dictationDescription": "Diktiere einen Prompt, statt ihn zu tippen."
     },
     "appStore": "App Store",
-    "googlePlay": "Google Play"
+    "googlePlay": "Google Play",
+    "scanTitle": "Scannen und App laden",
+    "scanDescription": "Richte die Kamera deines Handys auf den Code. Er öffnet den App Store oder Google Play.",
+    "qrLabel": "QR-Code für die Kortix-App"
   },
   "capture": {
     "authorize": {

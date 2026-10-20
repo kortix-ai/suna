@@ -27,6 +27,7 @@ import { ErrorState } from '@kortix/ui/error-state';
 import { useNotificationCenter } from '@kortix/ui/internal/hooks/use-notification-center';
 import { useOpenSessionRead } from '@/features/notifications/use-open-session-read';
 import { useAuth } from '@/features/providers/auth-provider';
+import { MissingSessionBoundary } from '@/features/session/missing-session-boundary';
 import {
   InstantSessionShell,
   SavedSessionSkeleton,
@@ -160,13 +161,29 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
  */
 export default function ProjectSessionPage() {
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
+  const tSessionPage = useTranslations('sessionPage');
   if (!projectId || !sessionId) return null;
   return (
-    <ProjectSessionView
+    <MissingSessionBoundary
       key={`${projectId}/${sessionId}`}
       projectId={projectId}
       sessionId={sessionId}
-    />
+      fallback={
+        <InlineSessionError
+          title={tSessionPage('missing.title')}
+          message={tSessionPage('missing.message')}
+          action={
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/projects/${projectId}`} prefetch>
+                {tSessionPage('backToProject')}
+              </Link>
+            </Button>
+          }
+        />
+      }
+    >
+      <ProjectSessionView projectId={projectId} sessionId={sessionId} />
+    </MissingSessionBoundary>
   );
 }
 

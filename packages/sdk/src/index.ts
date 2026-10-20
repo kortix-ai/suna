@@ -618,5 +618,8 @@ export {
   resolveComposerModel,
   resolveModelDefault,
   sessionModelCandidates,
+  sessionModelFallback,
+  sessionPickStands,
   type ComposerModelResolution,
+  type SessionModelFallback,
 } from './core/models/composer-model';

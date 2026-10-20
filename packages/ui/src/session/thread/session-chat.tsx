@@ -3841,6 +3841,9 @@ export function SessionChat({
       handleQuestionReject,
       handleQuestionActionChange,
       tHardcodedUi,
+      local.model.fallback,
+      local.model.list,
+      handleModelChange,
     ],
   );
 
