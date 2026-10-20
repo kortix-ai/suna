@@ -75,7 +75,6 @@
     "./customize/migrate-to-v2/upgrade-view": "./src/customize/migrate-to-v2/upgrade-view.tsx",
     "./customize/models/models-page": "./src/customize/models/models-page.tsx",
     "./customize/project-settings/project-settings-page": "./src/customize/project-settings/project-settings-page.tsx",
-    "./customize/project-settings/project-settings-sections": "./src/customize/project-settings/project-settings-sections.ts",
     "./customize/secrets/secrets-page": "./src/customize/secrets/secrets-page.tsx",
     "./customize/sections/add-account-fields": "./src/customize/sections/add-account-fields.tsx",
     "./customize/sections/component/manifest-copy-block": "./src/customize/sections/component/manifest-copy-block.tsx",
@@ -425,6 +424,7 @@
     "./session/composer/composer-agent-access": "./src/session/composer/composer-agent-access.ts",
     "./session/composer/composer-chat-input": "./src/session/composer/composer-chat-input.tsx",
     "./session/composer/composer-draft-recovery": "./src/session/composer/composer-draft-recovery.ts",
+    "./session/composer/menus/menu-shell": "./src/session/composer/menus/menu-shell.tsx",
     "./session/composer/menus/slash-actions": "./src/session/composer/menus/slash-actions.ts",
     "./session/composer/queue-projection": "./src/session/composer/queue-projection.ts",
     "./session/composer/session-chat-input": "./src/session/composer/session-chat-input.tsx",
@@ -530,6 +530,7 @@
     "./workspace/projects/onboarding/connect-app": "./src/workspace/projects/onboarding/connect-app.ts",
     "./workspace/projects/policies-panel": "./src/workspace/projects/policies-panel.tsx",
     "./workspace/projects/session-shared-icon": "./src/workspace/projects/session-shared-icon.tsx",
+    "./workspace/repository-disconnected": "./src/workspace/repository-disconnected.tsx",
     "./workspace/review/map": "./src/workspace/review/map.ts",
     "./workspace/review/mock-data": "./src/workspace/review/mock-data.ts",
     "./workspace/review/review-center": "./src/workspace/review/review-center.tsx",
@@ -758,10 +759,6 @@
       "./customize/project-settings/project-settings-page": {
         "types": "./dist/customize/project-settings/project-settings-page.d.ts",
         "import": "./dist/customize/project-settings/project-settings-page.js"
-      },
-      "./customize/project-settings/project-settings-sections": {
-        "types": "./dist/customize/project-settings/project-settings-sections.d.ts",
-        "import": "./dist/customize/project-settings/project-settings-sections.js"
       },
       "./customize/secrets/secrets-page": {
         "types": "./dist/customize/secrets/secrets-page.d.ts",
@@ -2147,6 +2144,10 @@
         "types": "./dist/session/composer/composer-draft-recovery.d.ts",
         "import": "./dist/session/composer/composer-draft-recovery.js"
       },
+      "./session/composer/menus/menu-shell": {
+        "types": "./dist/session/composer/menus/menu-shell.d.ts",
+        "import": "./dist/session/composer/menus/menu-shell.js"
+      },
       "./session/composer/menus/slash-actions": {
         "types": "./dist/session/composer/menus/slash-actions.d.ts",
         "import": "./dist/session/composer/menus/slash-actions.js"
@@ -2554,6 +2555,10 @@
       "./workspace/projects/session-shared-icon": {
         "types": "./dist/workspace/projects/session-shared-icon.d.ts",
         "import": "./dist/workspace/projects/session-shared-icon.js"
+      },
+      "./workspace/repository-disconnected": {
+        "types": "./dist/workspace/repository-disconnected.d.ts",
+        "import": "./dist/workspace/repository-disconnected.js"
       },
       "./workspace/review/map": {
         "types": "./dist/workspace/review/map.d.ts",

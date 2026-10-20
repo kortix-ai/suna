@@ -50,12 +50,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../primitives/ta
 import { errorToast, successToast } from '../../../primitives/toast';
 import { agentDisplayLabel } from '../../../session/composer/session-chat-input';
 import { useTranslations as useI18nTranslations } from '../../../i18n';
-import { storedModelRefToKey } from '../../../internal/lib/llm-gateway';
 import { cn } from '../../../internal/lib/utils';
-import { type ProjectTrigger, updateProjectTrigger } from '@kortix/sdk';
+import { modelRefToKey, type ProjectTrigger, updateProjectTrigger } from '@kortix/sdk';
 import {
   type Agent,
-  useFeatureFlag,
   useProjectTriggerEventApps,
   useProjectTriggerEventTypes,
   useVisibleAgents,
@@ -261,10 +259,7 @@ function SheetPanel({
     () => new Map((eventTypes.data?.event_types ?? []).map((e) => [e.type, e.name] as const)),
     [eventTypes.data],
   );
-  const gateway = useFeatureFlag(projectId, 'llm_gateway');
-  const savedModel = trigger.model
-    ? storedModelRefToKey(trigger.model, gateway.enabled === true)
-    : null;
+  const savedModel = trigger.model ? modelRefToKey(trigger.model) : null;
   const savedEventType = useMemo(
     () => eventTypes.data?.event_types.find((e) => e.type === event?.type) ?? null,
     [eventTypes.data, event?.type],

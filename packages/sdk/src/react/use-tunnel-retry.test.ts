@@ -17,7 +17,8 @@ let pickerFetches = 0;
 let tunnelFetches = 0;
 let listFetches = 0;
 let runtimeListResult: unknown = null;
-let projectRow: unknown = { experimental: { llm_gateway: true } };
+let projectRow: unknown = { experimental: {} };
+let routeProjectId: string | null = 'P1';
 
 mock.module('react', () => ({
   useMemo: (fn: () => unknown) => fn(),
@@ -40,7 +41,7 @@ mock.module('@tanstack/react-query', () => ({
 }));
 
 mock.module('./route-project', () => ({
-  useKortixRouteProjectId: () => 'P1',
+  useKortixRouteProjectId: () => routeProjectId,
 }));
 
 mock.module('./use-opencode-sessions/keys', () => ({
@@ -107,7 +108,8 @@ beforeEach(() => {
   pickerFetches = 0;
   tunnelFetches = 0;
   listFetches = 0;
-  projectRow = { experimental: { llm_gateway: true } };
+  projectRow = { experimental: {} };
+  routeProjectId = 'P1';
   runtimeListResult = null;
 });
 
@@ -137,17 +139,17 @@ describe('dead-token 401 runs one fetch, not a retry storm', () => {
     expect(tunnelFetches).toBe(1);
   });
 
-  test('native provider query: a dead-token 401 on the runtime proxy runs one fetch', async () => {
+  test('runtime provider query (no project route): a dead-token 401 on the runtime proxy runs one fetch', async () => {
     // The runtime REST client NEVER throws for an HTTP error — it resolves
-    // `{ error, response }` — so before the unwrap fix the native queryFn threw
+    // `{ error, response }` — so before the unwrap fix the runtime queryFn threw
     // a status-less Error and this 401 stormed 11 fetches through `retry: 10`.
-    projectRow = { experimental: { llm_gateway: false } };
+    routeProjectId = null;
     runtimeListResult = { error: { detail: 'Invalid or expired token' }, request: {}, response: { status: 401 } };
     const config = providers.useRuntimeProviders();
     const client = new QueryClient();
     await client
       .fetchQuery({
-        queryKey: ['engine-test', 'native-providers-401'],
+        queryKey: ['engine-test', 'runtime-providers-401'],
         queryFn: config.queryFn,
         retry: config.retry,
         retryDelay: 5,
@@ -156,14 +158,14 @@ describe('dead-token 401 runs one fetch, not a retry storm', () => {
     expect(listFetches).toBe(1);
   });
 
-  test('native provider query: the boot race (empty provider list) still retries', async () => {
-    projectRow = { experimental: { llm_gateway: false } };
+  test('runtime provider query (no project route): the boot race (empty provider list) still retries', async () => {
+    routeProjectId = null;
     runtimeListResult = { data: {} };
     const config = providers.useRuntimeProviders();
     const client = new QueryClient();
     await client
       .fetchQuery({
-        queryKey: ['engine-test', 'native-providers-boot'],
+        queryKey: ['engine-test', 'runtime-providers-boot'],
         queryFn: config.queryFn,
         retry: config.retry,
         retryDelay: 5,

@@ -44,6 +44,22 @@ export interface ProjectSummary {
   dashboard_url?: string;
 }
 
+// ── Custom LLM providers (`GET /projects/:id/custom-providers`) ───────────
+
+/** An OpenAI-compatible endpoint the LLM gateway serves as `<id>/<model>`. */
+export interface CustomLlmProvider {
+  id: string;
+  name: string;
+  /** Null only when `configured` is false. */
+  base_url: string | null;
+  models: { id: string; name: string }[];
+  /** The project secret that holds the key: `CUSTOM_<ID>_API_KEY`. */
+  secret_name: string;
+  has_key: boolean;
+  /** False: a `CUSTOM_*_API_KEY` secret with no endpoint saved yet. */
+  configured: boolean;
+}
+
 // ── Secrets ───────────────────────────────────────────────────────────────
 
 export interface ProjectSecret {

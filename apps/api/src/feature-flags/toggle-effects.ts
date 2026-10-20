@@ -13,8 +13,6 @@
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
-import { propagateLlmGatewayModeToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
 import { reconcileEventSubscriptionsFromCatalog, releaseProjectEventSubscriptions, retireWarmProjectSessions } from '../projects/surface';
 import { resolveFeatureFlag } from './registry';
 
@@ -51,13 +49,6 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
     if (resolveFeatureFlag(metadata, 'event_triggers')) await reconcileEventSubscriptionsFromCatalog(projectId, accountId);
     else await releaseProjectEventSubscriptions(projectId);
   },
-  // KORTIX_GENUI is boot-only: a warm box from before the change must not be adopted.
-  genui: async ({ projectId }) => {
-    await retireWarmProjectSessions(projectId);
-  },
-  llm_gateway: async ({ projectId, metadata }) => {
-    await propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(metadata));
-  },
 };
 
 /**
@@ -66,8 +57,13 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
  * findable instead of a silent console.warn.
  */
 export async function runFeatureFlagToggleEffects(ctx: FeatureFlagToggleContext): Promise<void> {
-  const effect = TOGGLE_EFFECTS[ctx.key];
-  if (!effect) return;
+  // Every flag reaches the box as boot-only env (KORTIX_FEATURE_FLAGS, KORTIX_GENUI): a warm box
+  // from before the change must not be adopted, or its skills and CLI keep the old flag.
+  const own = TOGGLE_EFFECTS[ctx.key];
+  const effect: ToggleEffect = async (c) => {
+    await retireWarmProjectSessions(c.projectId);
+    if (own) await own(c);
+  };
   try {
     await effect(ctx);
     return;
