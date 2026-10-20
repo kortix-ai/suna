@@ -281,6 +281,15 @@ flow(
       'repository_access',
       'sandbox_slug',
       'warmSandboxLocation',
+      // The gateway fallback record. The turn-end revert writes `_from` into
+      // the model pin, so a client value would pick the session's model.
+      'opencode_model_fallback_from',
+      'opencode_model_fallback_from_source',
+      'opencode_model_fallback_reason',
+      'opencode_model_fallback_at',
+      'opencode_model_fallback_until',
+      'opencode_model_picked_at',
+      'opencode_model_restored',
     ]) {
       await ctx.step(`PATCH metadata.${key} → 400 (server-managed)`, async () => {
         (
@@ -1066,6 +1075,54 @@ flow(
       if (mintedTokenId) {
         await owner.del('/v1/accounts/tokens/:tokenId', { params: { tokenId: mintedTokenId } }).catch(() => {});
       }
+      await db.end();
+    }
+  },
+);
+
+flow(
+  'SCOPE-11',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: ['PUT /v1/projects/:projectId/sessions/:sessionId/sharing', 'PATCH /v1/projects/:projectId/sessions/:sessionId'],
+  },
+  async (ctx) => {
+    const db = await openDb(ctx);
+    // A team account: the owner plus an account admin who can see shared sessions.
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const admin = ctx.client.as(await team.addMember('admin'));
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let seeded: Awaited<ReturnType<typeof seedBoundSession>> | null = null;
+    try {
+      seeded = await seedBoundSession(ctx, db, project, 'SCOPE-11');
+      const params = { projectId: project.id, sessionId: seeded.sessionId };
+      const patch = (as: ReturnType<typeof ctx.client.as>, metadata: Record<string, unknown>) =>
+        as.patch('/v1/projects/:projectId/sessions/:sessionId', { metadata }, { params });
+
+      await ctx.step("the owner shares the session with the project; an account admin can see and edit its free-form metadata", async () => {
+        (await owner.put('/v1/projects/:projectId/sessions/:sessionId/sharing', { mode: 'project' }, { params })).status(200);
+        (await patch(admin, { scope11_note: 'seen' })).status(200).body().has('$.metadata.scope11_note', 'seen');
+      });
+
+      await ctx.step('the admin setting metadata.unattended on a session it does not own → 403, the session stays attended', async () => {
+        (await patch(admin, { unattended: 'true' }))
+          .status(403)
+          .body()
+          .has('$.error', "metadata key unattended can be set only by the session's owner or the session itself");
+        (await owner.get('/v1/projects/:projectId/sessions/:sessionId', { params })).status(200).body().has('$.metadata.unattended', undefined);
+      });
+
+      await ctx.step("the session's own token marks itself unattended → 200; the owner clears it → 200", async () => {
+        (await patch(ctx.client.withBearer(seeded!.token, 'SESSION_TOKEN'), { unattended: 'true' }))
+          .status(200)
+          .body()
+          .has('$.metadata.unattended', 'true');
+        (await patch(owner, { unattended: null })).status(200).body().has('$.metadata.unattended', undefined);
+      });
+    } finally {
+      await dropBoundSession(db, seeded);
       await db.end();
     }
   },

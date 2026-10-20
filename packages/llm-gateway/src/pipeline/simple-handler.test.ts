@@ -1388,6 +1388,8 @@ describe('model fallback chains (route.fallbackModels)', () => {
       routeModel: 'primary-model',
       code,
       status: code === 'provider_pool_rate_limited' ? 429 : 401,
+      // The route hold this failure took: the pool's reset (42 s here), else 60 s.
+      holdSeconds: code === 'provider_pool_rate_limited' ? 42 : 60,
     })]);
   });
 

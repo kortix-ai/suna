@@ -3,6 +3,7 @@
  * Invariant: session_id == sandbox_id == git branch name.
  */
 
+import { assertRepositoryConnected } from '../lib/git';
 import {
   SESSION_SHARING_OWNER_ONLY_ERROR,
   SHARING_SELF_LOCKOUT_ERROR,
@@ -51,7 +52,6 @@ import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { admitSessionSharingChange } from '../lib/session-model-keys';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { getImpersonationContext } from '../../shared/impersonation';
 import { peekSessionListPollEtag, storeSessionListPollEtag } from '../lib/session-list-poll-memo';
@@ -59,6 +59,7 @@ import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
 import {
+  OWNER_MANAGED_SESSION_METADATA_KEYS,
   PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
   SERVER_MANAGED_SESSION_METADATA_KEYS,
 } from '../lib/session-metadata-keys';
@@ -245,6 +246,9 @@ export function registerProjectSessionsRoutes(): void {
     // Runs BEFORE the leaf assert below so its message wins. Both refuse the same
     // requests; only this one can say WHICH agents the caller could pick instead.
     const agentAccess = await resolveAndAuthorizeAgent(c, loaded, projectId, launchAgent);
+    // A disconnected repository: 409 `repository_disconnected` with the fix,
+    // before a session row or a sandbox exists.
+    await assertRepositoryConnected(loaded.row);
     if (launchAgent) {
       await assertProjectCapability(
         c,
@@ -266,9 +270,6 @@ export function registerProjectSessionsRoutes(): void {
     if (body.provider_secret_pools !== undefined) {
       const gate = requireFeatureFlag(c, loaded.row.metadata, 'pooled_provider_secrets');
       if (gate) return gate;
-      if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
-        return c.json({ error: 'Provider pools require the LLM gateway' }, 409);
-      }
       for (const [providerId, ids] of Object.entries(body.provider_secret_pools as Record<string, string[]>)) {
         const invalid = await validateProviderSecretPool({
           accountId: loaded.row.accountId, projectId, repoUrl: loaded.row.repoUrl,
@@ -692,7 +693,7 @@ export function registerProjectSessionsRoutes(): void {
     // Sharing takes the owner's personal keys away from the session (spec
     // 2026-09-22 §2.3). A model that ran only on them switches to the keys shared
     // with the whole project, or the share is refused (lib/session-model-keys.ts).
-    if (intent.mode !== 'private' && projectLlmGatewayEnabled(loaded.row.metadata)) {
+    if (intent.mode !== 'private') {
       // The session model lives in metadata, not a column (routes/session-scope.ts).
       const metadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
       const admitted = await admitSessionSharingChange({
@@ -800,7 +801,7 @@ export function registerProjectSessionsRoutes(): void {
         },
       responses: {
           200: json(SessionSchema, 'The updated session'),
-          ...errors(400, 404),
+          ...errors(400, 403, 404),
       },
     }),
     async (c) => {
@@ -874,6 +875,13 @@ export function registerProjectSessionsRoutes(): void {
 
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    // Seeing a session is not owning it: an owner-managed key changes what the
+    // server decides for this session, so only its creator or its own token may set it.
+    const ownerKey = metadata && OWNER_MANAGED_SESSION_METADATA_KEYS.find((key) => hasOwn(metadata, key));
+    if (ownerKey && loaded.userId !== visible.row.createdBy && callerKortixSessionId(c) !== sessionId) {
+      return c.json({ error: `metadata key ${ownerKey} can be set only by the session's owner or the session itself` }, 403);
+    }
 
     const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
 

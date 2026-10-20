@@ -38,9 +38,7 @@ const upstream = Bun.serve({
 });
 
 // `proxyBase` is captured at mount time — configure the target first.
-const previousEnabled = config.LLM_GATEWAY_ENABLED;
 const previousTarget = config.LLM_GATEWAY_PROXY_TARGET;
-config.LLM_GATEWAY_ENABLED = true;
 config.LLM_GATEWAY_PROXY_TARGET = `http://127.0.0.1:${upstream.port}`;
 
 const app = makeOpenApiApp();
@@ -48,7 +46,6 @@ mountLlmGateway(app);
 
 afterAll(() => {
   upstream.stop(true);
-  config.LLM_GATEWAY_ENABLED = previousEnabled;
   config.LLM_GATEWAY_PROXY_TARGET = previousTarget;
 });
 

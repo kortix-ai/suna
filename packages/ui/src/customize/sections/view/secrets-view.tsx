@@ -86,13 +86,11 @@ import { ErrorState } from '../../../primitives/error-state';
 import { CapabilityPageShell } from '../../shared/capability-page-shell';
 import { AudienceFields } from '../add-account-fields';
 import { NewEntityMenu } from '../../shared/new-entity-menu';
-import { ProjectProviderModal } from '../llm-provider/llm-provider-modal';
 import {
   newConfigPrompt,
   useConfigureThread,
 } from '../../use-configure-thread';
 import { useSettingsNav } from '../../../internal/layout/settings-nav-context';
-import { isLlmGatewayEnabled } from '../../../internal/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '../../../internal/lib/project-actions';
 import { useProjectCan } from '../../../internal/lib/use-project-can';
 import { cn } from '../../../internal/lib/utils';
@@ -241,12 +239,6 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const { navigate } = useSettingsNav();
   const queryKey = useMemo(() => qk.project.secrets(projectId), [projectId]);
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-  });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
   // Network-Enforced Secrets (`secrets_egress`) is experimental and off by
   // default. When off, the picker offers only Environment variable and
   // Disabled — a new secret loads its real value into the sandbox.
@@ -281,7 +273,6 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const missingRequired = allRows.filter((r) => r.requirement === 'required' && !r.configured);
 
   const [query, setQuery] = useState('');
-  const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogRow, setDialogRow] = useState<SecretRow | null>(null);
   // The editor reports its in-flight save so the sheet cannot close mid-write,
@@ -327,13 +318,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
     setDialogRow(row);
     setDialogOpen(true);
   };
-  const openProviderManagement = () => {
-    if (llmGatewayEnabled) {
-      navigate('llm-providers');
-    } else {
-      setProviderModalOpen(true);
-    }
-  };
+  const openProviderManagement = () => navigate('llm-providers');
 
   /** The list resolved. Neither header control means anything before it does. */
   const showContent = !secretsQuery.isLoading && !secretsQuery.isError;
@@ -467,7 +452,6 @@ export function SecretsView({ projectId }: { projectId: string }) {
                     <SecretTableRow
                       key={row.identifier}
                       row={row}
-                      llmGatewayEnabled={llmGatewayEnabled}
                       canManage={canManage}
                       viewerId={viewerId}
                       busy={removeShared.isPending && removeShared.variables === row.identifier}
@@ -484,12 +468,6 @@ export function SecretsView({ projectId }: { projectId: string }) {
           </>
         )}
       </div>
-      <ProjectProviderModal
-        projectId={projectId}
-        open={providerModalOpen}
-        onOpenChange={setProviderModalOpen}
-        canWrite={canManage}
-      />
       <ConfirmDialog
         open={deleteRow !== null}
         onOpenChange={(open) => {
@@ -527,7 +505,6 @@ export function SecretsView({ projectId }: { projectId: string }) {
         onOpenChange={setDialogOpen}
         projectId={projectId}
         row={dialogRow}
-        llmGatewayEnabled={llmGatewayEnabled}
         connectors={connectorsQuery.data?.connectors ?? []}
         connectorsLoading={connectorsQuery.isLoading}
         egressEnabled={egressEnabled}
@@ -793,7 +770,6 @@ function SecretMarks({ row }: { row: SecretRow }) {
 
 function SecretTableRow({
   row,
-  llmGatewayEnabled,
   canManage,
   viewerId,
   busy,
@@ -803,7 +779,6 @@ function SecretTableRow({
   onDeleteMine,
 }: {
   row: SecretRow;
-  llmGatewayEnabled: boolean;
   canManage: boolean;
   viewerId: string | null;
   busy: boolean;
@@ -818,7 +793,7 @@ function SecretTableRow({
   const tSecrets = useI18nTranslations('secrets');
   const canManageShared = canManage && !row.system;
   const distinctKey = row.identifier !== row.key;
-  const delivery = secretDeliveryPresentation(row.strategy, row.consumer, { llmGatewayEnabled });
+  const delivery = secretDeliveryPresentation(row.strategy, row.consumer);
 
   // No row tint for an unset required secret: the orange asterisk carries that
   // state, and a status hue belongs on the mark (color.md, Accents and status).
@@ -949,12 +924,6 @@ export function ProjectSecretDialog({
   onSaved?: () => void;
 }) {
   const queryClient = useQueryClient();
-  const projectDetailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-    enabled: open,
-  });
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId, { includeSchemas: false }),
@@ -969,7 +938,6 @@ export function ProjectSecretDialog({
       onOpenChange={onOpenChange}
       projectId={projectId}
       row={row}
-      llmGatewayEnabled={isLlmGatewayEnabled(projectDetailQuery.data?.project)}
       connectors={connectorsQuery.data?.connectors ?? []}
       connectorsLoading={connectorsQuery.isLoading}
       egressEnabled={egressEnabled}
@@ -987,7 +955,6 @@ function SecretDialog({
   onOpenChange,
   projectId,
   row,
-  llmGatewayEnabled,
   connectors,
   connectorsLoading,
   egressEnabled,
@@ -1004,7 +971,6 @@ function SecretDialog({
   presentation?: 'modal' | 'sheet';
   /** Told when a save starts and ends, so a sheet host can refuse to close. */
   onSavingChange?: (saving: boolean) => void;
-  llmGatewayEnabled: boolean;
   connectors: Awaited<ReturnType<typeof listConnectors>>['connectors'];
   connectorsLoading: boolean;
   egressEnabled: boolean;
@@ -1333,10 +1299,7 @@ function SecretDialog({
     : row.configured
       ? `Edit ${row.identifier}`
       : `Set ${row.identifier}`;
-  const selectedDelivery = secretDeliveryPresentation(strategy, nextConsumer, {
-    llmGatewayEnabled,
-    tI18nComplete,
-  });
+  const selectedDelivery = secretDeliveryPresentation(strategy, nextConsumer, { tI18nComplete });
   const bindingIdentifier = (row?.identifier ?? identifier).trim() || key.trim().toUpperCase();
   const connectorOptions = connectorBindingOptions(connectors, bindingIdentifier, tI18nComplete);
   // Offer "Enforce at the network" only when the experimental flag is on, or

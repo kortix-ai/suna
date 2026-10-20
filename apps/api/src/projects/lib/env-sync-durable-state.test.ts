@@ -1,12 +1,11 @@
 // `env-sync-durable-state.ts` persists the "last applied env-sync signature"
-// on `session_sandboxes.config`, the same jsonb bag `markSandboxLlmGatewayMode`
-// already writes atomically (sandbox-env-sync.ts) — so a DIFFERENT API replica
-// can read what THIS replica last applied. See `env-sync-skip-decision.ts` for
+// on `session_sandboxes.config`, the same jsonb bag provisioning writes
+// `serviceKey` into — so a DIFFERENT API replica can read what THIS replica
+// last applied. See `env-sync-skip-decision.ts` for
 // why that durability is load-bearing.
 //
 // The write uses an atomic SQL jsonb merge (COALESCE(...) || jsonb_build_object(...)),
-// same pattern as `markSandboxLlmGatewayMode`, so a concurrent writer of a
-// DIFFERENT `config` key (llmGatewayEnabled, serviceKey) can never be
+// so a concurrent writer of a DIFFERENT `config` key (serviceKey) can never be
 // clobbered by a read-modify-write race. This suite asserts on the actual
 // bound values inside the built `SQL` fragment (drizzle's `queryChunks`)
 // rather than re-implementing a fake SQL engine.

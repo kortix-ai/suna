@@ -32,6 +32,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   PencilSimpleIcon,
   AlarmIcon,
+  ChatsTeardropIcon,
   LightningIcon,
 } from '@phosphor-icons/react';
 
@@ -91,6 +92,10 @@ import {
   parseSystemNotifications,
   parseReminderPrompt,
   type ReminderPromptInfo,
+  parseRoomDigest,
+  parseRoomPrompt,
+  type RoomDigestInfo,
+  type RoomPromptInfo,
   parseTriggerEvent,
   type TriggerEventInfo,
   QUOTE_MARKER_RE,
@@ -285,6 +290,78 @@ function ReminderMessage({ info, actions }: { info: ReminderPromptInfo; actions?
                   )}
                 </div>
               }
+            />
+          }
+        />
+      }
+    />
+  );
+}
+
+/**
+ * A room message (`[room dev · #42 · from …]`, `[direct message · #3 · from …]`).
+ * The pill names the room and the sender; the card carries the seq. The bubble
+ * shows the message text only: the reply instructions in the footer are for
+ * the agent, not the reader. The parsed text has no room id, so there is no link.
+ */
+function RoomMessage({ info, actions }: { info: RoomPromptInfo; actions?: React.ReactNode }) {
+  const t = useTranslations('rooms');
+  const source = info.room;
+  const sender = info.senderKind === 'session' ? t('agentSender', { name: info.sender }) : info.sender;
+  return (
+    <PlatformPromptMessage
+      data-testid="room-turn"
+      data-room-seq={String(info.seq)}
+      text={info.text}
+      actions={actions}
+      pill={
+        <SourcePill
+          mark={<ChatsTeardropIcon className="size-3 shrink-0" aria-hidden />}
+          source={source}
+          sender={sender}
+          card={
+            <SourceCard
+              mark={<ChatsTeardropIcon className="size-3.5 shrink-0" aria-hidden />}
+              title={t('cardRoom', { name: source })}
+              rows={[
+                { label: t('cardFrom'), value: sender },
+                { label: t('cardMessage'), value: `#${info.seq}` },
+                { label: t('cardReplyTo'), value: info.replyTo ? `#${info.replyTo}` : null },
+              ]}
+            />
+          }
+        />
+      }
+    />
+  );
+}
+
+/**
+ * A room digest: room traffic not addressed to this agent, batched into one
+ * turn. The pill names the room and the count; the bubble lists each message's
+ * sender and first line.
+ */
+function RoomDigestMessage({ info, actions }: { info: RoomDigestInfo; actions?: React.ReactNode }) {
+  const t = useTranslations('rooms');
+  const range = info.fromSeq === info.toSeq ? `#${info.toSeq}` : `#${info.fromSeq}–#${info.toSeq}`;
+  const count = t('digestCount', { count: info.count });
+  const lines = info.lines.map((line) => `#${line.seq} ${line.sender}: ${line.text}`);
+  if (info.more) lines.push(t('digestMore', { count: info.more }));
+  return (
+    <PlatformPromptMessage
+      data-testid="room-digest-turn"
+      text={lines.join('\n')}
+      actions={actions}
+      pill={
+        <SourcePill
+          mark={<ChatsTeardropIcon className="size-3 shrink-0" aria-hidden />}
+          source={info.room}
+          sender={count}
+          card={
+            <SourceCard
+              mark={<ChatsTeardropIcon className="size-3.5 shrink-0" aria-hidden />}
+              title={t('cardRoom', { name: info.room })}
+              rows={[{ label: t('cardMessage'), value: range }]}
             />
           }
         />
@@ -1658,6 +1735,11 @@ export function UserMessage({
   // A reminder fire: platform-written `[REMINDER …]` header + the reminder text.
   const reminderInfo = useMemo(() => parseReminderPrompt(rawText), [rawText]);
 
+  // A room message (flag `agent_rooms`): `[room <name> · #<seq> · from …]` or `[direct message · …]`.
+  const roomInfo = useMemo(() => parseRoomPrompt(rawText), [rawText]);
+  // A batched digest of room traffic: `[room <name> · #a–#b · N new messages]`.
+  const roomDigestInfo = useMemo(() => parseRoomDigest(rawText), [rawText]);
+
   // `messageCreatedAt`'s rule on the record's ISO time: a missing or non-positive time is no time.
   const createdAt = Date.parse(message.created_at);
 
@@ -1889,6 +1971,14 @@ export function UserMessage({
 
   if (reminderInfo) {
     return <ReminderMessage info={reminderInfo} actions={actions} />;
+  }
+
+  if (roomInfo) {
+    return <RoomMessage info={roomInfo} actions={actions} />;
+  }
+
+  if (roomDigestInfo) {
+    return <RoomDigestMessage info={roomDigestInfo} actions={actions} />;
   }
 
   if (triggerEventInfo) {

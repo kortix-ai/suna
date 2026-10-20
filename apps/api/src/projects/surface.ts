@@ -16,6 +16,9 @@ export {
   type GitProxyAuth,
 } from './lib/git';
 
+// Idle sessions off a fallback model (consumed by workers/session-model-fallback-worker).
+export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert';
+
 // A person's pins and archive (consumed by account erasure and offboarding).
 export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';
 

@@ -2500,6 +2500,8 @@
                     "project.review.read",
                     "project.review.submit",
                     "project.review.act",
+                    "project.room.read",
+                    "project.room.write",
                     "project.credentials.issue",
                     "project.cr.open",
                     "project.cr.merge",

@@ -95,7 +95,7 @@ function bundle(
     turn: legs.turn ?? { known: false, reason: 'test' },
     queue: legs.queue ?? { known: false, reason: 'test' },
     transcript: { known: true, requested: true, ...(legs.transcript ?? envelope(saved)) },
-    config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: false },
+    config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: true },
     models: { known: false, reason: 'test' },
   };
 }

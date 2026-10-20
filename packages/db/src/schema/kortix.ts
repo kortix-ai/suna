@@ -4273,6 +4273,39 @@ export const gatewayBudgets = kortixSchema.table(
 );
 
 /**
+ * Running spend per project, UTC day and actor: the gateway budgets read this
+ * instead of summing month-to-date gateway_request_logs (1.18M rows, ~1-4 s on
+ * the largest project). The AFTER INSERT trigger
+ * `kortix.gateway_spend_daily_add` adds every inserted log row in the same
+ * statement, so the two cannot drift. `actor_user_id` is the all-zero uuid for
+ * a row without an actor. `total_cost` uses the rule of shared/llm-spend.ts.
+ */
+export const gatewaySpendDaily = kortixSchema.table(
+  'gateway_spend_daily',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    day: date('day', { mode: 'string' }).notNull(),
+    actorUserId: uuid('actor_user_id').notNull(),
+    requests: integer('requests').default(0).notNull(),
+    totalCost: numeric('total_cost').default('0').notNull(),
+    tokens: bigint('tokens', { mode: 'number' }).default(0).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.day, table.actorUserId] })],
+);
+
+/**
+ * UTC days whose gateway_spend_daily rows are not complete yet: the days
+ * before the trigger existed, and the day it was installed. While a budget
+ * period overlaps one, its readers sum gateway_request_logs as before. The
+ * gateway-spend-backfill worker recomputes each closed day and deletes it here.
+ */
+export const gatewaySpendPendingDays = kortixSchema.table('gateway_spend_pending_days', {
+  day: date('day', { mode: 'string' }).primaryKey(),
+});
+
+/**
  * Per-project OTLP trace-export config — "connect any tool" for the gateway's
  * gen_ai.* spans (Langfuse/Datadog/Honeycomb/Braintrust/etc, anything OTLP).
  * One row per project (PK = project_id, upsert-only, mirrors
@@ -7953,6 +7986,11 @@ export const notifications = kortixSchema.table('notifications', {
   // No FK: a soft-deleted session keeps its row; the read filter hides it.
   sessionId: text('session_id'),
   triggerSlug: text('trigger_slug'),
+  // A conversation message (`kind = 'message'`): the room it was posted in.
+  // No FK, like session_id: the read filter hides a row whose room is gone.
+  roomId: uuid('room_id'),
+  // A thread reply: the thread's root seq, so the link opens the thread.
+  roomThreadSeq: bigint('room_thread_seq', { mode: 'number' }),
   kind: text('kind').notNull(),
   title: text('title').notNull(),
   body: text('body').default('').notNull(),
@@ -7975,7 +8013,7 @@ export const notifications = kortixSchema.table('notifications', {
   index('idx_notifications_account').on(table.accountId),
   index('idx_notifications_project').on(table.projectId),
   index('idx_notifications_created').on(table.createdAt),
-  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered')`),
+  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered', 'capture_device_down', 'capture_device_recovered', 'message')`),
 ]);
 
 /** One record per user: partial overrides of the default notification preferences. */
@@ -8020,6 +8058,116 @@ export const triggerWatchers = kortixSchema.table('trigger_watchers', {
   primaryKey({ columns: [table.projectId, table.slug, table.userId] }),
   foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'trigger_watchers_project_fk' }).onDelete('cascade'),
   index('idx_trigger_watchers_user').on(table.userId),
+]);
+
+/**
+ * A room: a named, durable chat room of a project (`dev`, `platinum/dev`) that
+ * agent sessions and people post in; anyone with `project.room.read` can find
+ * it. `last_seq` numbers the messages; a post takes the next value under the
+ * row lock, so `seq` is gap-free per room.
+ */
+export const rooms = kortixSchema.table('rooms', {
+  roomId: uuid('room_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  name: varchar('name', { length: 64 }).notNull(),
+  topic: text('topic'),
+  lastSeq: bigint('last_seq', { mode: 'number' }).default(0).notNull(),
+  createdByUserId: uuid('created_by_user_id'),
+  createdBySessionId: text('created_by_session_id'),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'rooms_project_fk' }).onDelete('cascade'),
+  uniqueIndex('idx_rooms_project_name').on(table.projectId, table.name),
+  check('rooms_name_check', sql`${table.name} ~ '^[a-z0-9][a-z0-9._/-]{0,63}$'`),
+]);
+
+/** One message. `sender_kind`: `member` (a person) or `session` (an agent). */
+export const roomMessages = kortixSchema.table('room_messages', {
+  messageId: uuid('message_id').defaultRandom().primaryKey(),
+  roomId: uuid('room_id').notNull(),
+  seq: bigint('seq', { mode: 'number' }).notNull(),
+  senderKind: varchar('sender_kind', { length: 16 }).notNull(),
+  senderUserId: uuid('sender_user_id'),
+  senderSessionId: text('sender_session_id'),
+  senderLabel: text('sender_label').notNull(),
+  text: text('text').notNull(),
+  replyToSeq: bigint('reply_to_seq', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.roomId], foreignColumns: [rooms.roomId], name: 'room_messages_room_fk' }).onDelete('cascade'),
+  uniqueIndex('idx_room_messages_room_seq').on(table.roomId, table.seq),
+  // A thread: its replies by root.
+  index('idx_room_messages_room_thread').on(table.roomId, table.replyToSeq).where(sql`${table.replyToSeq} is not null`),
+  check('room_messages_sender_kind_check', sql`${table.senderKind} in ('member', 'session')`),
+]);
+
+/**
+ * A member of a room: an agent session or a person.
+ *   session: a message addressed to it steers its turn; other traffic arrives
+ *            as one digest at its turn boundary (a stopped session wakes),
+ *            acting as `added_by_user_id` — the person who added it, never
+ *            the sender.
+ *   person:  every message from anyone else raises their unread count
+ *            (`last_read_seq`); one addressed to them also notifies them, with
+ *            the notification center on. A person may be a member only while
+ *            they may read rooms in the project; delivery re-checks it.
+ * `notify`: `all`, `mentions` or `none`.
+ */
+export const roomMembers = kortixSchema.table('room_members', {
+  memberId: uuid('member_id').defaultRandom().primaryKey(),
+  roomId: uuid('room_id').notNull(),
+  memberKind: varchar('member_kind', { length: 16 }).notNull(),
+  sessionId: text('session_id'),
+  userId: uuid('user_id'),
+  projectId: uuid('project_id').notNull(),
+  notify: varchar('notify', { length: 16 }).default('all').notNull(),
+  addedByUserId: uuid('added_by_user_id').notNull(),
+  lastReadSeq: bigint('last_read_seq', { mode: 'number' }).default(0).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.roomId], foreignColumns: [rooms.roomId], name: 'room_members_room_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.sessionId], foreignColumns: [projectSessions.sessionId], name: 'room_members_session_fk' }).onDelete('cascade'),
+  uniqueIndex('idx_room_members_room_session').on(table.roomId, table.sessionId).where(sql`${table.sessionId} is not null`),
+  uniqueIndex('idx_room_members_room_user').on(table.roomId, table.userId).where(sql`${table.userId} is not null`),
+  index('idx_room_members_session').on(table.sessionId),
+  index('idx_room_members_user').on(table.userId),
+  check('room_members_notify_check', sql`${table.notify} in ('all', 'mentions', 'none')`),
+  check(
+    'room_members_kind_check',
+    sql`(${table.memberKind} = 'session' and ${table.sessionId} is not null and ${table.userId} is null) or (${table.memberKind} = 'person' and ${table.userId} is not null and ${table.sessionId} is null)`,
+  ),
+]);
+
+/**
+ * A one-shot "tell me when this session goes idle" (flag `agent_rooms`).
+ * When the target session's turn ends, it posts one message in `room_id`
+ * @-mentioning the watcher with the outcome, and the row is deleted. A row past
+ * `expires_at` is dropped unanswered.
+ */
+export const sessionIdleWatches = kortixSchema.table('session_idle_watches', {
+  watchId: uuid('watch_id').defaultRandom().primaryKey(),
+  targetSessionId: text('target_session_id').notNull(),
+  roomId: uuid('room_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  watcherKind: varchar('watcher_kind', { length: 16 }).notNull(),
+  watcherSessionId: text('watcher_session_id'),
+  watcherUserId: uuid('watcher_user_id'),
+  addedByUserId: uuid('added_by_user_id').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.targetSessionId], foreignColumns: [projectSessions.sessionId], name: 'session_idle_watches_target_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'session_idle_watches_project_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.roomId], foreignColumns: [rooms.roomId], name: 'session_idle_watches_room_fk' }).onDelete('cascade'),
+  index('idx_session_idle_watches_target').on(table.targetSessionId),
+  check(
+    'session_idle_watches_kind_check',
+    sql`(${table.watcherKind} = 'session' and ${table.watcherSessionId} is not null and ${table.watcherUserId} is null) or (${table.watcherKind} = 'person' and ${table.watcherUserId} is not null and ${table.watcherSessionId} is null)`,
+  ),
 ]);
 
 /**
