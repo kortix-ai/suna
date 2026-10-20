@@ -200,7 +200,6 @@ function providerKeysRow(
   drafts: Record<string, string[] | null>,
   isError: boolean,
   isLoading: boolean,
-  gatewayEnabled: boolean,
   saving: boolean,
   onDraftChange: (provider: string, selection: string[] | null) => void,
   onSelectionChange: SessionOverridesToolbarProps['onProviderSecretPoolsChange'],
@@ -213,11 +212,9 @@ function providerKeysRow(
     hint: t('chooseSharedKeys'),
     summary: providerPoolSummary(sessionId, isError, isLoading, poolCount, selectedCount, t),
     overridden: poolCount > 0, description: t('rateLimitDescription'),
-    editor: !gatewayEnabled
-      ? <p className="text-muted-foreground text-xs">{t('enableGateway')}</p>
-      : sessionId
-        ? <ProviderSecretPoolEditor projectId={projectId} sessionId={sessionId} drafts={drafts} onChange={onDraftChange} saving={saving} />
-        : <NewProviderSecretPoolEditor projectId={projectId} selection={selection} onChange={onSelectionChange ?? (() => {})} />,
+    editor: sessionId
+      ? <ProviderSecretPoolEditor projectId={projectId} sessionId={sessionId} drafts={drafts} onChange={onDraftChange} saving={saving} />
+      : <NewProviderSecretPoolEditor projectId={projectId} selection={selection} onChange={onSelectionChange ?? (() => {})} />,
   };
 }
 
@@ -251,13 +248,12 @@ export function SessionOverridesToolbar({
   const tPooled = useTranslations('pooledSecrets');
   const tScope = useTranslations('sessionScope');
   const pooledSecretsEnabled = useFeatureFlag(projectId, 'pooled_provider_secrets').enabled;
-  const llmGatewayEnabled = useFeatureFlag(projectId, 'llm_gateway').enabled;
   const drivesEnabled = useFeatureFlag(projectId, 'drives').enabled;
   const tDrives = useTranslations('drives');
   // Drives mount when the sandbox is created: an unsent session has none.
   const sessionDrives = useSessionDrives(projectId, drivesEnabled ? sessionId : undefined);
   const providerPools = useSessionProviderSecretPools(
-    pooledSecretsEnabled && llmGatewayEnabled ? projectId : null, sessionId,
+    pooledSecretsEnabled ? projectId : null, sessionId,
   );
   // `project.secret.read` is a manager-tier leaf. Without it the catalog reads
   // `unavailable`, and the row only ever said "Secret access is unavailable" —
@@ -408,7 +404,7 @@ export function SessionOverridesToolbar({
     // (`kortix connectors call --account`, `accounts` to see them).
     if (pooledSecretsEnabled && managesSession) list.push(providerKeysRow(projectId, sessionId,
       providerPoolDraft, providerDrafts, providerPools.isError, providerPools.isLoading,
-      llmGatewayEnabled, saving, onProviderDraftChange, onProviderSecretPoolsChange, tPooled));
+      saving, onProviderDraftChange, onProviderSecretPoolsChange, tPooled));
     list.push(sandboxRow(sandboxSlot, sandbox, tI18nComplete));
     if (sessionId && drivesEnabled) {
       list.push({
@@ -432,7 +428,6 @@ export function SessionOverridesToolbar({
     onChange,
     pooledSecretsEnabled,
     managesSession,
-    llmGatewayEnabled,
     providerPoolDraft,
     providerDrafts,
     onProviderDraftChange,

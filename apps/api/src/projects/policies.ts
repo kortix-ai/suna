@@ -20,6 +20,7 @@ import {
   areValidConditions,
   normalizeConditions,
 } from '../connectors/policy';
+import { parseApprovalTtl } from '../connectors/approval-expiry';
 import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 
 type ProjectPolicyAction = 'always_run' | 'require_approval' | 'block';
@@ -67,6 +68,8 @@ interface ProjectPolicyParseError {
 export interface LoadedProjectPolicies {
   policies: ProjectPolicySpec[];
   settings: ProjectPolicySettings;
+  /** `approvals.ttl` in seconds; null = the 24 h default. */
+  approvalTtlSeconds: number | null;
   errors: ProjectPolicyParseError[];
 }
 
@@ -158,7 +161,13 @@ export function extractProjectPolicies(manifest: ParsedManifest): LoadedProjectP
     }
   }
 
-  return { policies, settings, errors };
+  const approvals = manifest.raw.approvals;
+  const approvalTtlSeconds =
+    approvals && typeof approvals === 'object' && !Array.isArray(approvals)
+      ? parseApprovalTtl((approvals as Record<string, unknown>).ttl)
+      : null;
+
+  return { policies, settings, approvalTtlSeconds, errors };
 }
 
 /**

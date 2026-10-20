@@ -1,16 +1,22 @@
 import { describe, expect, test } from 'bun:test';
+import { createTranslator, defaultUiMessages } from '../../i18n';
+import { MOCK_ITEMS } from './mock-data';
 import {
+  bulkResultMessage,
+  bulkSelectable,
   bulkSkipMessage,
+  bulkSupports,
   connectorCallId,
   crChangeRequestId,
+  formatExpiresIn,
   formatItemAge,
+  isApprovalExpiredError,
   formatItemAgeLong,
   isQuickDecidableApproval,
   itemDeepLink,
-  planBulkAction,
   resolveBulkOutcome,
 } from './review-actions';
-import type { ReviewRisk } from './types';
+import type { ApprovalAction, ReviewItem, ReviewRisk } from './types';
 
 describe('connectorCallId', () => {
   test('strips the call: prefix', () => {
@@ -47,19 +53,99 @@ describe('itemDeepLink', () => {
   });
 });
 
-describe('planBulkAction', () => {
-  test('buckets ids by how the inbox can act on them', () => {
-    const plan = planBulkAction(['rv-1', 'call:e1', 'cr:c1', 'rv-2', 'call:e2']);
-    expect(plan.native).toEqual(['rv-1', 'rv-2']);
-    expect(plan.resolvable).toEqual(['call:e1', 'call:e2']);
-    expect(plan.unsupported).toEqual(['cr:c1']);
+const approvalItem = (
+  id: string,
+  call: Partial<ApprovalAction> = {},
+  extra: Partial<ReviewItem> = {},
+): ReviewItem =>
+  ({
+    ...MOCK_ITEMS.find((i) => i.kind === 'approval')!,
+    id,
+    status: 'needs_you',
+    expiresAt: undefined,
+    detail: { actions: [{ ...call }] },
+    ...extra,
+  }) as ReviewItem;
+const output = MOCK_ITEMS.find((i) => i.kind === 'output')!;
+const all = () => true;
+
+describe('bulkSupports: which bar verb acts on which row', () => {
+  test('a connector approval takes Approve and Deny, never Dismiss', () => {
+    const item = approvalItem('call:e1');
+    expect(bulkSupports(item, 'approve', all)).toBe(true);
+    expect(bulkSupports(item, 'deny', all)).toBe(true);
+    expect(bulkSupports(item, 'dismiss', all)).toBe(false);
   });
-  test('accepts a Set and handles an all-native selection', () => {
-    const plan = planBulkAction(new Set(['rv-1', 'rv-2']));
-    expect(plan).toEqual({ native: ['rv-1', 'rv-2'], resolvable: [], unsupported: [] });
+  test('a native output takes Dismiss only', () => {
+    expect(bulkSupports(output, 'approve', all)).toBe(false);
+    expect(bulkSupports(output, 'deny', all)).toBe(false);
+    expect(bulkSupports(output, 'dismiss', all)).toBe(true);
   });
-  test('empty selection yields empty buckets', () => {
-    expect(planBulkAction([])).toEqual({ native: [], resolvable: [], unsupported: [] });
+  test('a change request takes no verb', () => {
+    const cr = { ...output, id: 'cr:c1' } as ReviewItem;
+    expect(bulkSelectable(cr, all)).toBe(false);
+  });
+  test('an approval whose content the viewer cannot read takes Deny, not Approve', () => {
+    for (const call of [{ previewAuthorized: false }, { reviewComplete: false }]) {
+      const item = approvalItem('call:e2', call);
+      expect(bulkSupports(item, 'approve', all)).toBe(false);
+      expect(bulkSupports(item, 'deny', all)).toBe(true);
+    }
+    // Arguments in view: reviewable even when the server marks it incomplete.
+    const shown = approvalItem('call:e3', { reviewComplete: false, rawArgsPreview: { to: 'x' } });
+    expect(bulkSupports(shown, 'approve', all)).toBe(true);
+  });
+  test('an expired, undecidable or finished approval takes nothing', () => {
+    const now = Date.parse('2026-10-20T12:00:00Z');
+    const expired = approvalItem('call:e4', {}, { expiresAt: '2026-10-20T11:59:00Z' });
+    expect(bulkSupports(expired, 'approve', all, now)).toBe(false);
+    expect(bulkSupports(expired, 'deny', all, now)).toBe(false);
+    expect(bulkSelectable(approvalItem('call:e5', { canResolve: false }), all)).toBe(false);
+    expect(bulkSelectable(approvalItem('call:e6', {}, { status: 'approved' }), all)).toBe(false);
+  });
+  test('a verdict the viewer may not give is not offered', () => {
+    expect(bulkSelectable(approvalItem('call:e7'), () => false)).toBe(false);
+    const approveOnly = (_: ReviewItem, verdict: string) => verdict === 'approve';
+    expect(bulkSupports(approvalItem('call:e8'), 'deny', approveOnly)).toBe(false);
+  });
+});
+
+describe('bulkResultMessage', () => {
+  const t = createTranslator({
+    locale: 'en',
+    messages: defaultUiMessages,
+    namespace: 'hardcodedUi.reviewBulk',
+  });
+  test('all ok', () => {
+    expect(
+      bulkResultMessage(t, 'approve', [
+        { id: 'a', ok: true },
+        { id: 'b', ok: true },
+      ]),
+    ).toBe('Approved 2');
+  });
+  test('ok plus skipped names each distinct reason once', () => {
+    expect(
+      bulkResultMessage(t, 'approve', [
+        { id: 'a', ok: true },
+        { id: 'b', ok: true },
+        { id: 'c', ok: true },
+        { id: 'd', ok: true },
+        { id: 'e', ok: false, code: 'expired' },
+      ]),
+    ).toBe('Approved 4 · 1 skipped (expired)');
+    expect(
+      bulkResultMessage(t, 'deny', [
+        { id: 'a', ok: false, code: 'expired' },
+        { id: 'b', ok: false, code: 'already_resolved' },
+        { id: 'c', ok: false, code: 'expired' },
+      ]),
+    ).toBe('3 skipped (expired, already decided)');
+  });
+  test('an unknown code reads as itself', () => {
+    expect(bulkResultMessage(t, 'dismiss', [{ id: 'a', ok: false, code: 'new_code' }])).toBe(
+      '1 skipped (new_code)',
+    );
   });
 });
 
@@ -176,5 +262,33 @@ describe('bulkSkipMessage', () => {
     expect(msg).toContain('2 approvals kept');
     expect(msg).toContain('1 risky approval skipped');
     expect(msg).toContain('1 change skipped');
+  });
+});
+
+describe('formatExpiresIn', () => {
+  const now = Date.parse('2026-07-01T10:00:00.000Z');
+  test('time left in the row idiom; soon under one hour', () => {
+    expect(formatExpiresIn('2026-07-01T13:00:00.000Z', now)).toEqual({ time: '3h', soon: false });
+    expect(formatExpiresIn('2026-07-01T10:59:00.000Z', now)).toEqual({ time: '59m', soon: true });
+    expect(formatExpiresIn('2026-07-03T10:00:00.000Z', now)).toEqual({ time: '2d', soon: false });
+    // Floored: 59.6 min is "59m", never "1h" beside the under-one-hour glyph.
+    expect(formatExpiresIn(new Date(now + 59.6 * 60_000).toISOString(), now)).toEqual({
+      time: '59m',
+      soon: true,
+    });
+    expect(formatExpiresIn(new Date(now + 150 * 60_000).toISOString(), now)?.time).toBe('2h');
+  });
+  test('no expiry, an unparseable value, or a past time has no label', () => {
+    expect(formatExpiresIn(undefined, now)).toBeNull();
+    expect(formatExpiresIn('not a date', now)).toBeNull();
+    expect(formatExpiresIn('2026-07-01T09:59:00.000Z', now)).toBeNull();
+  });
+});
+
+describe('isApprovalExpiredError', () => {
+  test('only the APPROVAL_EXPIRED code counts', () => {
+    expect(isApprovalExpiredError(Object.assign(new Error('x'), { code: 'APPROVAL_EXPIRED' }))).toBe(true);
+    expect(isApprovalExpiredError(new Error('x'))).toBe(false);
+    expect(isApprovalExpiredError(null)).toBe(false);
   });
 });

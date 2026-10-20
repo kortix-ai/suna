@@ -112,6 +112,8 @@ export interface ProjectSecret {
    *  when the manifest's agent roster admits no agent for it. Null when some
    *  agent admits it, or when the project has published no roster at all. */
   delivery_blocked_reason?: SecretDeliveryBlockedReason | null;
+  /** Manifest agent grants; null or absent means the roster is unknown. */
+  agents?: string[] | 'all' | null;
   /** Whether this project can enforce a secret at the network boundary at all.
    *  Current servers always report true — one mechanism serves every sandbox
    *  provider. Older servers could report false, which made every `egress`

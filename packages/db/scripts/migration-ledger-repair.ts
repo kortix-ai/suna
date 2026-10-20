@@ -1,7 +1,9 @@
+import { ledgerExists } from '../src/ledger-exists';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import pg from 'pg';
+import type pg from 'pg';
+import { withClient } from '../src/with-client';
 
 const CONNECTOR_POLICY_MIGRATION = {
   // Historical migration identity. The cutover migration runs later and must
@@ -117,10 +119,7 @@ function verifyRepairArtifacts(migrationsDir: string): void {
 }
 
 async function readRepairRows(client: pg.Client): Promise<MigrationLedgerRow[]> {
-  const tableResult = await client.query<{ exists: boolean }>(
-    "select to_regclass('kortix_migrations.pgmigrations') is not null as exists",
-  );
-  if (!tableResult.rows[0]?.exists) return [];
+  if (!(await ledgerExists(client))) return [];
 
   const result = await client.query<{ name: string; run_on: Date }>(
     `select name, run_on
@@ -133,18 +132,13 @@ async function readRepairRows(client: pg.Client): Promise<MigrationLedgerRow[]> 
 }
 
 async function inspectRepairPlan(databaseUrl: string): Promise<MigrationLedgerRepairPlan | null> {
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
-  try {
+  return withClient(databaseUrl, async (client) => {
     return planMigrationLedgerRepair(await readRepairRows(client));
-  } finally {
-    await client.end();
-  }
+  });
 }
 
 async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
+  return withClient(databaseUrl, async (client) => {
   try {
     await client.query('begin');
     await client.query('lock table kortix_migrations.pgmigrations in exclusive mode');
@@ -195,9 +189,8 @@ async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
   } catch (error) {
     await client.query('rollback');
     throw error;
-  } finally {
-    await client.end();
   }
+  });
 }
 
 export async function repairMigrationLedger(options: {

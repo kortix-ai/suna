@@ -44,6 +44,7 @@ import { registerChannelTeamsRoutes } from './routes/channel-teams';
 import { registerChannelEmailRoutes } from './routes/channel-email';
 import { registerTurnStreamRoutes } from './routes/turn-stream';
 import { registerModelsRoutes } from './routes/models';
+import { registerCustomProvidersRoutes } from './routes/custom-providers';
 import { registerTurnQuestionsRoutes } from './routes/turn-questions';
 import { registerTurnPermissionsRoutes } from './routes/turn-permissions';
 import { registerOauth2ConnectorsRoutes } from './routes/oauth2-connectors';
@@ -132,6 +133,7 @@ export function registerAllProjectRoutes(): void {
   registerChannelEmailRoutes();
   registerTurnStreamRoutes();
   registerModelsRoutes();
+  registerCustomProvidersRoutes();
   registerTurnQuestionsRoutes();
   registerTurnPermissionsRoutes();
   registerOauth2ConnectorsRoutes();

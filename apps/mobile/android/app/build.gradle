@@ -93,7 +93,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.5.2"
+        versionName "1.5.3"
 
         // `APP_VARIANT=dev` (the dev-* EAS profiles) installs the build next to the
         // store app as `com.kortix.application.dev`, labelled "Kortix (dev)" with the

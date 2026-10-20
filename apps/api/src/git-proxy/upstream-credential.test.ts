@@ -22,6 +22,7 @@
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import { RepositoryDisconnectedError } from '../shared/repository-health';
 
 const PROJECT_ID = 'b06a70f1-be0a-4fd0-b052-26fffb92713f';
 
@@ -45,7 +46,10 @@ mock.module('../projects', () => ({
       metadata: {},
     },
   }),
-  resolveProjectUpstream: async () => upstreamResult,
+  resolveProjectUpstream: async () => {
+    if (upstreamResult instanceof Error) throw upstreamResult;
+    return upstreamResult;
+  },
 }));
 
 const { gitProxyApp, __resetGitProxyMemosForTests } = await import('./index');
@@ -151,6 +155,28 @@ describe('an upstream whose credential could not be produced', () => {
     const res = await discover();
     expect(res.status).toBe(200);
     expect(upstreamHits.map((h) => h.authorization)).toEqual(['Basic dGVzdA==']);
+  });
+});
+
+describe('a disconnected repository (KRTX-2955)', () => {
+  test('answers 409 text/plain with the cause and the fix, and is never forwarded', async () => {
+    __resetGitProxyMemosForTests();
+    upstreamHits = [];
+    upstreamResult = new RepositoryDisconnectedError({
+      reason: 'app_uninstalled',
+      repository: 'acme/app',
+      installationId: '7',
+    });
+
+    const res = await discover();
+    expect(res.status).toBe(409);
+    // git prints a text/plain error body as `remote: <line>`.
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    expect(res.headers.get('x-kortix-error-code')).toBe('repository_disconnected');
+    const text = await res.text();
+    expect(text).toContain('Kortix GitHub App was uninstalled from acme');
+    expect(text).toContain('Reconnect GitHub');
+    expect(upstreamHits).toEqual([]);
   });
 });
 

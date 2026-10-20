@@ -1,4 +1,4 @@
-import pg from 'pg';
+import { withClient } from '../src/with-client';
 
 function quoteIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
@@ -10,9 +10,7 @@ function quoteIdentifier(value: string): string {
  * invalid relation through IF NOT EXISTS.
  */
 export async function dropLocalInvalidIndexes(databaseUrl: string): Promise<string[]> {
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
-  try {
+  return withClient(databaseUrl, async (client) => {
     // The view lists builds in every database of the cluster. Only a build in
     // THIS database can be one of the indexes dropped below; the local cluster
     // also builds indexes in the db-suites lane's per-file databases.
@@ -48,7 +46,5 @@ export async function dropLocalInvalidIndexes(databaseUrl: string): Promise<stri
       await client.query('rollback');
       throw error;
     }
-  } finally {
-    await client.end();
-  }
+  });
 }

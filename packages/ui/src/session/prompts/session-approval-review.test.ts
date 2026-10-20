@@ -9,6 +9,8 @@ import {
   approvalNoticeRows,
   approvalLauncherName,
   approvalRequestFromAction,
+  previewArgsSummary,
+  reviewArgsSummary,
 } from './session-approval-review';
 
 function action(overrides: Partial<SessionAuditAction> = {}): SessionAuditAction {
@@ -90,6 +92,8 @@ describe('approvalRequestFromAction', () => {
       requestedAt: '2026-08-09T10:00:00.000Z',
       argsPreview: { subject: 'Weekly report', to: ['sam@example.test'] },
       approvalContext: null,
+      resolvedPreview: null,
+      resolvedError: null,
       reviewComplete: true,
       resolution: null,
       pending: true,
@@ -109,6 +113,23 @@ describe('approvalRequestFromAction', () => {
       },
     });
     expect(approvalRequestFromAction(row).approvalContext).toBe('Sends draft r-1 to a@example.test');
+  });
+
+  test('carries the content the server loaded, labelled by connector, or its failure', () => {
+    const loaded = approvalRequestFromAction(
+      action({
+        action: 'gmail.send_draft',
+        result_summary: { args_preview: { draft_id: 'r-1' }, resolved_preview: { to: 'a@example.test', body: 'Hi' } },
+      }),
+    );
+    expect(loaded).toMatchObject({
+      resolvedPreview: { to: 'a@example.test', body: 'Hi' },
+      resolvedError: null,
+    });
+    const failed = approvalRequestFromAction(
+      action({ result_summary: { args_preview: { draft_id: 'r-1' }, resolved_error: 'unavailable' } }),
+    );
+    expect(failed).toMatchObject({ resolvedPreview: null, resolvedError: 'unavailable' });
   });
 
   test('reports a shortened preview as incomplete — which no longer blocks it', () => {
@@ -251,5 +272,55 @@ describe('approvalArgsSummary with Slack channel names', () => {
     };
     expect(approvalArgsSummary(slackAction, new Map([['C0TEST1', '#general']]))).toBe('channel: #general · text: Deploy done');
     expect(approvalArgsSummary(slackAction)).toBe('channel: C0TEST1 · text: Deploy done');
+  });
+});
+
+describe('approvalReviewable with resolved content', () => {
+  test('a non-empty resolved preview alone is reviewable, like the server gate', () => {
+    expect(approvalReviewable(null, false, { body: 'Draft text' })).toBe(true);
+    expect(approvalReviewable({}, false, { body: 'Draft text' })).toBe(true);
+  });
+
+  test('an empty resolved preview adds nothing', () => {
+    expect(approvalReviewable(null, false, {})).toBe(false);
+    expect(approvalReviewable(null, false, null)).toBe(false);
+  });
+});
+
+describe('previewArgsSummary nested values', () => {
+  test('renders a nested object as compact JSON', () => {
+    expect(previewArgsSummary({ to: 'a@example.test', meta: { cc: ['b@example.test'] } })).toBe(
+      'to: a@example.test · meta: {"cc":["b@example.test"]}',
+    );
+  });
+
+  test('renders objects inside an array as compact JSON', () => {
+    expect(previewArgsSummary({ items: [{ id: 1 }, 'x'] })).toBe('items: {"id":1}, x');
+  });
+
+  test('still drops a redacted field', () => {
+    expect(previewArgsSummary({ token: '[redacted]', to: 'a@example.test' })).toBe(
+      'to: a@example.test',
+    );
+  });
+});
+
+describe('reviewArgsSummary', () => {
+  test('prefers the resolved content', () => {
+    expect(reviewArgsSummary({ subject: 'Hi' }, { draft_id: 'd-1' })).toBe('subject: Hi');
+  });
+
+  test('an empty resolved preview falls back to the call arguments', () => {
+    expect(reviewArgsSummary({}, { draft_id: 'd-1' })).toBe('draft_id: d-1');
+    expect(reviewArgsSummary(null, { draft_id: 'd-1' })).toBe('draft_id: d-1');
+  });
+
+  test('an email reads to · subject, never the loaded sender', () => {
+    expect(
+      reviewArgsSummary({ from: 'ops@example.test' }, { to: ['sam@example.test'], subject: 'Q3', body: 'x' }),
+    ).toBe('sam@example.test · Q3');
+    expect(
+      reviewArgsSummary({ from: 'ops@example.test', to: 'sam@example.test', subject: 'Draft' }, { draft_id: 'd-1' }),
+    ).toBe('sam@example.test · Draft');
   });
 });

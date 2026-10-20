@@ -15,6 +15,8 @@ project floor at the repo root (`kortix.yaml`, `README.md`, `agents/`,
 ```sh
 kortix init                  # interactive flow: pick a name and wire local coding agents
 kortix init my-project       # use the given name
+kortix projects create my-project # create a remote project and print its id
+kortix projects use <project_id>  # select it without a local scaffold
 kortix ship                  # push to linked/default project; create when neither exists
 kortix self-host start       # run your own Kortix Cloud from Docker images
 ```

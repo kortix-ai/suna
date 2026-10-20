@@ -7,6 +7,7 @@ export const REVIEW_META_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Changes requested': 'text10a92a8ad3ee',
   Dismissed: 'text9d74727714db',
   Done: 'text11a6767d5674',
+  Expired: 'text424a2551d356',
   Finished: 'text7804f7a79a9e',
   'Needs you': 'text74b6abdf5969',
   Open: 'texted077f3d8125',

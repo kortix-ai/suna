@@ -129,6 +129,7 @@ describe('collectInboxItems connector-call preview authorization', () => {
     approvedBy: null,
     createdAt: new Date('2026-06-30T10:00:00.000Z'),
     resolvedAt: null,
+    expiresAt: null,
   };
   const sources = {
     native: async () => [],

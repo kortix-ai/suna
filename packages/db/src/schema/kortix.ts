@@ -6628,6 +6628,7 @@ export const connectorCallStatusEnum = kortixSchema.enum('connector_call_status'
   'error',
   'denied',
   'pending_approval',
+  'expired',
 ]);
 
 /**
@@ -7144,6 +7145,8 @@ export const connectorProjectSettings = kortixSchema.table('connector_project_se
     .primaryKey()
     .references(() => projects.projectId, { onDelete: 'cascade' }),
   defaultMode: connectorDefaultModeEnum('default_mode').default('allow_all').notNull(),
+  /** `approvals.ttl` from kortix.yaml in seconds; null = the 24 h default. */
+  approvalTtlSeconds: integer('approval_ttl_seconds'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -7200,9 +7203,14 @@ export const connectorCalls = kortixSchema.table(
     approvedBy: uuid('approved_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    /** When a `pending_approval` row stops being decidable; null = never. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
   },
   (table) => [
     index('idx_connector_calls_project').on(table.projectId),
+    index('idx_connector_calls_pending_expiry')
+      .on(table.expiresAt)
+      .where(sql`${table.status} = 'pending_approval'`),
     index('idx_connector_calls_project_session_created').on(
       table.projectId,
       table.sessionId,
