@@ -10,7 +10,7 @@ import { log } from '@/lib/logger';
 import { CODE_BLOCK } from '@/lib/markdown/markdown-layout';
 import { MOTION } from '@/lib/utils/theme';
 
-/** Spread to the 44pt minimum touch target around the 25.76pt visible button. */
+/** Spread to the 44pt minimum touch target around the 32pt visible button. */
 const HIT_SLOP = (44 - CODE_BLOCK.copyButtonSize) / 2;
 
 /**
@@ -68,7 +68,7 @@ export function CopyButton({ code, color }: { code: string; color: string }) {
       hitSlop={HIT_SLOP}
       accessibilityRole="button"
       accessibilityLabel={copied ? 'Copied' : 'Copy code'}
-      className="items-center justify-center rounded-md active:bg-accent"
+      className="items-center justify-center rounded-full active:bg-accent"
       style={{ width: CODE_BLOCK.copyButtonSize, height: CODE_BLOCK.copyButtonSize }}
     >
       {/* Absolute, so the outgoing and incoming glyphs overlap instead of stacking.

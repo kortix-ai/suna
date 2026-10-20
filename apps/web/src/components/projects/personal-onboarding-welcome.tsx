@@ -7,7 +7,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   Card,
   CardAction,
@@ -16,15 +16,15 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import Hint from '@/components/ui/hint';
-import { successToast } from '@/components/ui/toast';
+} from '@kortix/ui/card';
+import Hint from '@kortix/ui/hint';
+import { successToast } from '@kortix/ui/toast';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { WhatsApp } from '@/features/icon/icons/whats-app';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 const MARKO_CAL_LINK = 'team/kortix/demo';
 const MARKO_CAL_NAMESPACE = 'kortix-onboarding';

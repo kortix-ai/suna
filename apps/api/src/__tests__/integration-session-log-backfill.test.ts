@@ -33,7 +33,7 @@ const bucket = fakeSessionStorage();
 const realSupabase = await import('../shared/supabase');
 mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => ({ storage: bucket.storage }) }));
 
-const { backfillSessionLogs, roundTripMismatches, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
+const { backfillSessionLogs, roundTripMismatches, newBackfillState, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
 const { writeSessionLogFromMirror } = await import('../projects/session-log-capture');
 const { ingestSessionLogJournal } = await import('../projects/session-log-ingest');
 const { claimSessionLog } = await import('../projects/session-log-restore');
@@ -121,6 +121,8 @@ async function deleteLog(sessionId: string) {
 
 const hasLog = async (sessionId: string) => (await db.select({ id: sessionLogs.sessionId }).from(sessionLogs).where(eq(sessionLogs.sessionId, sessionId))).length > 0;
 const logCount = async () => (await db.execute<{ n: number }>(sql`select count(*)::int as n from kortix.session_logs`))[0]!.n;
+
+const stateRow = async () => (await db.execute<{ state: Record<string, unknown>; rev: number }>(sql`select state, rev from kortix.session_log_backfill_state`))[0];
 
 /** The sum of one count over the ticks of a pass. */
 const total = (ticks: Array<{ counts: Record<string, number> }>, key: string) => ticks.reduce((n, t) => n + t.counts[key]!, 0);
@@ -400,6 +402,8 @@ describe('size cap: a mirror over the capture cap is converted by the backfill i
       const write = await pass('write');
       expect(keys.map((k) => total(write, k))).toEqual([2, 1, 2, 0, 0]);
       expect([await hasLog(large), await hasLog(small)]).toEqual([true, true]);
+      // A thread that answered leaves no session in progress and no crash behind.
+      expect((await stateRow())?.state).toMatchObject({ threadStarted: null, threadCrashes: {} });
       const viaThread = await snapshot(large);
       expect(viaThread.log).toMatchObject({ grade: expected.restore_grade, counts: expected.grade_counts });
       await deleteLog(large);
@@ -408,6 +412,83 @@ describe('size cap: a mirror over the capture cap is converted by the backfill i
     } finally {
       config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
     }
+  });
+
+  describe('the conversion thread can never take the leader down twice', () => {
+    const withCap = async (f: () => Promise<void>) => {
+      const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
+      config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000;
+      try {
+        await f();
+      } finally {
+        config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
+      }
+    };
+    const createdAtOf = async (id: string) =>
+      (await db.execute<{ c: string }>(sql`select created_at::text as c from kortix.project_sessions where session_id = ${id}`))[0]!.c;
+    /** The row a write tick saves right before it starts `sessionId`'s thread (its cursor on that session). */
+    const savedBeforeThread = async (sessionId: string | null, threadCrashes: Record<string, number>, after: string | null) => {
+      const state = { ...newBackfillState('write'), after: after ? { createdAt: await createdAtOf(after), sessionId: after } : null, threadStarted: sessionId, threadCrashes };
+      await db.execute(sql`insert into kortix.session_log_backfill_state (id, state, rev) values ('pass', ${JSON.stringify(state)}::jsonb, 1)`);
+    };
+
+    test('a thread whose process died: its session counts failed once (warn, no id), the cursor is past it; the next pass tries it once more', async () => {
+      const large = await oldSession([plain(0), plain(1, incompressible(6_000))], { createdAt: new Date(T0 + 1000) });
+      const next = await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + 2000) });
+      await savedBeforeThread(large, {}, large);
+      const warn = spyOn(logger, 'warn');
+      await withCap(async () => {
+        try {
+          const crashed = await pass('write');
+          expect(['sessions', 'logs', 'failed', 'too_large'].map((k) => total(crashed, k))).toEqual([1, 1, 1, 0]);
+          expect([await hasLog(large), await hasLog(next)]).toEqual([false, true]);
+          const lines = warn.mock.calls.filter(([msg]) => String(msg).includes('conversion thread'));
+          expect(lines).toHaveLength(1);
+          expect(JSON.stringify(lines)).not.toContain(large);
+          expect((await stateRow())?.state).toMatchObject({ threadStarted: null, threadCrashes: { [large]: 1 } });
+          // Attempt 2, in the next pass: it answers.
+          const retry = await pass('write');
+          expect(['sessions', 'logs', 'failed', 'too_large'].map((k) => total(retry, k))).toEqual([1, 1, 0, 1]);
+          expect(await hasLog(large)).toBe(true);
+        } finally {
+          warn.mockRestore();
+        }
+      });
+    });
+
+    test('a session whose thread died twice is never started again: failed, no log', async () => {
+      const large = await oldSession([plain(0), plain(1, incompressible(6_000))]);
+      await savedBeforeThread(null, { [large]: 2 }, null);
+      await withCap(async () => {
+        const write = await pass('write');
+        expect(['sessions', 'logs', 'failed', 'too_large'].map((k) => total(write, k))).toEqual([1, 0, 1, 1]);
+        expect(await hasLog(large)).toBe(false);
+        expect((await stateRow())?.state).toMatchObject({ threadStarted: null, threadCrashes: { [large]: 2 } });
+      });
+    });
+
+    test('the memory guard: no room for the thread under 75 % of the memory limit defers the session (too_large, deferred), not converted, not failed', async () => {
+      const large = await oldSession([plain(0), plain(1, incompressible(6_000))]);
+      const limit = config.SESSION_LOG_BACKFILL_MEMORY_MB;
+      config.SESSION_LOG_BACKFILL_MEMORY_MB = 1;
+      try {
+        await withCap(async () => {
+          const dry = await pass('dry');
+          expect(['sessions', 'logs', 'failed', 'too_large', 'deferred'].map((k) => total(dry, k))).toEqual([1, 0, 0, 1, 1]);
+          const write = await pass('write');
+          expect(['sessions', 'logs', 'failed', 'too_large', 'deferred'].map((k) => total(write, k))).toEqual([1, 0, 0, 1, 1]);
+          expect(await hasLog(large)).toBe(false);
+          expect((await stateRow())?.state).toMatchObject({ threadStarted: null, threadCrashes: {} });
+        });
+      } finally {
+        config.SESSION_LOG_BACKFILL_MEMORY_MB = limit;
+      }
+      // With room again, the next pass converts it.
+      await withCap(async () => {
+        expect(total(await pass('write'), 'logs')).toBe(1);
+      });
+      expect(await hasLog(large)).toBe(true);
+    });
   });
 
   test('a session that already has a log keeps its captures past the cap: its log never goes stale', async () => {
@@ -538,6 +619,7 @@ describe('dry: converts in memory, writes nothing, reports the counts', () => {
         skipped: 0,
         failed: 0,
         too_large: 0,
+        deferred: 0,
         messages: messages.length,
         ...grades,
         tool_input: sum('tool_input'),

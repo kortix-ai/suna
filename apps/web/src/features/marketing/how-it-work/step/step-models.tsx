@@ -1,15 +1,15 @@
 'use client';
 
 import { ChatGPT } from '@/features/icon/icons/chat-gpt';
-import { Claude } from '@/features/icon/icons/claude';
+import { Claude } from '@kortix/ui/internal/icons/claude';
 import { Gemini } from '@/features/icon/icons/gemini';
-import { Kortix } from '@/features/icon/icons/kortix';
-import { OpenAI } from '@/features/icon/icons/open-ai';
-import { cn } from '@/lib/utils';
+import { Kortix } from '@kortix/ui/internal/icons/kortix';
+import { OpenAI } from '@kortix/ui/internal/icons/open-ai';
+import { cn } from '@kortix/ui';
 import { GlobeIcon, KeyIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 /**

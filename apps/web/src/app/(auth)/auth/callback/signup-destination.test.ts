@@ -49,7 +49,7 @@ mock.module('@/lib/public-env-server', () => ({
 }));
 
 const { GET } = await import('./route');
-const { PROJECT_LANDING_PATH } = await import('@/lib/onboarding/landing-destination');
+const { PROJECT_LANDING_PATH } = await import('@kortix/ui/internal/lib/onboarding/landing-destination');
 
 /** The three things the handler actually reads off a NextRequest. */
 function callbackRequest(returnUrl: string) {

@@ -3,7 +3,7 @@ import { diagnosticBlocks, diagnosticLine, parseDiagnosticsFromToolOutput } from
 import { chooser, within } from './testing';
 
 // The mobile diagnostics parser (tool-output-parsers.ts; web
-// stores/diagnostics-store.ts and the SDK's browser store hold the same code),
+// packages/ui/src/internal/stores/diagnostics-store.ts and the SDK's browser store hold the same code),
 // verbatim, kept ONLY as the parity oracle.
 type LegacySeverity = 1 | 2 | 3 | 4;
 

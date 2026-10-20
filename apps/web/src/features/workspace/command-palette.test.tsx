@@ -10,7 +10,7 @@ import {
   SETTINGS_TABS,
   resolveSettingsOverlayHref,
   type SettingsTab,
-} from '@/features/workspace/settings/settings-tabs';
+} from '@kortix/ui/customize/settings/settings-tabs';
 import { STANDALONE_DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/standalone-settings-route';
 import { getItemsForSurface } from '@/lib/menu-registry';
 import { LEGACY_SETTINGS_TAB_MAP, sessionMatchesPaletteQuery } from './command-palette';

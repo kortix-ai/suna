@@ -19,17 +19,17 @@ echo "${KORTIX_HARNESS:-opencode}"
 
 `pi` means pi. `opencode`, or an unset variable, means OpenCode.
 
-Kortix selects the harness when a session starts, restarts or resumes:
+Kortix selects the harness when a session is created:
 
 | Rule, in order | Harness |
 | --- | --- |
 | The project's `llm_gateway` flag is off | OpenCode |
-| The project's `pi_harness` flag is on | pi |
+| The project's `pi_harness` flag is on (the default) | pi |
 | `kortix.yaml` sets `runtime: pi` | pi |
 | Anything else | OpenCode |
 
-A running session keeps its harness until it restarts. pi calls models only
-through the Kortix LLM gateway.
+A session keeps its harness across restarts, so a flag change applies to new
+sessions only. pi calls models only through the Kortix LLM gateway.
 
 ## What pi reads from the repository
 

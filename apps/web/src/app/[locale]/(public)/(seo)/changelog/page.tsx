@@ -1,6 +1,6 @@
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 import type { Metadata } from 'next';
 import { getTranslations } from '@/i18n/get-translations';
 

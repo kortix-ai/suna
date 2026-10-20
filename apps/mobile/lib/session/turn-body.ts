@@ -87,7 +87,19 @@ export function turnHasSteps(blocks: ReadonlyArray<SessionLogBlock>): boolean {
  * reaches the screen.
  */
 export function busyStatusText(blocks: ReadonlyArray<SessionLogBlock>): string {
-  return sessionLogActivityText({ blocks: blocks.map((b) => (b.type === 'reasoning' ? { ...b, text: '' } : b)) });
+  return sessionLogActivityText({ blocks: blocks.map(blankedThought) });
+}
+
+/**
+ * One blanked copy per reasoning block: a fresh copy on every streamed frame
+ * made the SDK build a new v1 part for every thought of the live turn.
+ */
+const blankedThoughts = new WeakMap<SessionLogBlock, SessionLogBlock>();
+function blankedThought(block: SessionLogBlock): SessionLogBlock {
+  if (block.type !== 'reasoning') return block;
+  let blank = blankedThoughts.get(block);
+  if (!blank) blankedThoughts.set(block, (blank = { ...block, text: '' }));
+  return blank;
 }
 
 // ─── Answered questions ──────────────────────────────────────────────────────
@@ -259,8 +271,16 @@ export function lastTextBlockId(segments: ReadonlyArray<TurnSegment>): string | 
   return undefined;
 }
 
+/** Block id -> message, built once per reply list: a scan per text block was O(texts x blocks) per streamed frame. */
+const blockMessages = new WeakMap<ReadonlyArray<SessionLogMessage>, Map<string, SessionLogMessage>>();
 function messageOfBlockId(assistant: ReadonlyArray<SessionLogMessage>, blockId: string) {
-  return assistant.find((m) => m.blocks.some((b) => b.id === blockId));
+  let index = blockMessages.get(assistant);
+  if (!index) {
+    index = new Map();
+    for (const m of assistant) for (const b of m.blocks) if (!index.has(b.id)) index.set(b.id, m);
+    blockMessages.set(assistant, index);
+  }
+  return index.get(blockId);
 }
 
 /**
