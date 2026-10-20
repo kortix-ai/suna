@@ -170,7 +170,10 @@
       "deleteMine": "自分の値を削除",
       "mineDeleted": "値を削除しました",
       "mineDeleteError": "値を削除できませんでした。もう一度お試しください。"
-    }
+    },
+    "agentAccess": "エージェント: {agents}",
+    "allAgents": "すべてのエージェント",
+    "noAgents": "エージェントなし"
   },
   "useCases": {
     "headline": "会社を動かすループ"
@@ -1217,10 +1220,6 @@
           "name": "AgentMail メール",
           "description": "AgentMail の受信箱を割り当て、受信メールから Kortix セッションを開始・継続できるようにします。"
         },
-        "llm_gateway": {
-          "name": "LLM ゲートウェイ",
-          "description": "管理モデル、計測、予算のために、Kortix の管理対象 LLM ゲートウェイ経由でこのプロジェクトを処理します。"
-        },
         "meta_agent": {
           "name": "メタエージェント",
           "description": "専門セッションとプロジェクト内の複数手順の作業を管理するコーディネーターを追加します。"
@@ -1284,6 +1283,14 @@
         "connectors_v2": {
           "name": "コネクター v2",
           "description": "カスタマイズ → コネクターの MCP アプリカタログ（サインインは Kortix が管理）。「アプリイベントのトリガー」をオンにすると、Kortix がこれらのアプリで新しいメール、ファイル、アイテムを確認してエージェントを起動します。Telegram もチャネルとして追加されます。新しいコネクターのアカウントはデフォルトでプロジェクト全体に共有されなくなります。"
+        },
+        "agent_rooms": {
+          "name": "ルーム",
+          "description": "エージェントのセッションとユーザーが投稿し、スレッドで返信できる名前付きチャットルーム。メッセージが宛てられたセッションは再開します。ルームページ、`kortix rooms`、`kortix peers` が追加されます。"
+        },
+        "goals": {
+          "name": "目標",
+          "description": "エージェントに目標を与えると、独立したチェックが結果を確認するまでエージェントが責任を持ちます。計画し、作業し、待機し、人にフォローアップし、状態をファイルの Goals フォルダーに保存します。ボリュームとリマインダーを有効にする必要があります。"
         }
       }
     },
@@ -1933,6 +1940,7 @@
     "upgrade": "アップグレード",
     "noMatch": {
       "title": "一致するモデルがありません",
+      "singleModelDescription": "このプロジェクトで使用できるモデルは 1 つだけです。使用できるモデルはプランと接続済みのプロバイダーによって異なります。",
       "description": "「{search}」に一致するものはありません。別のキーワードで検索してください。",
       "clear": "検索をクリア"
     },
@@ -20357,7 +20365,84 @@
       "sessionExpired": "セッションの有効期限が切れました。もう一度サインインして、プレビューを開き直してください。"
     },
     "approvalPage": {
-      "title": "{connector} のアクションを承認"
+      "title": "{connector} のアクションを承認",
+      "expires": "有効期限",
+      "expiresIn": "{time}後に期限切れ",
+      "expiredHint": "この承認は期限切れです。エージェントにもう一度リクエストするよう依頼してください。",
+      "anAgent": "エージェント",
+      "anAgentLower": "エージェント",
+      "wantsEmail": "{agent} が {recipient} にメールを送信しようとしています",
+      "wantsEmailOthers": "{agent} が {recipient} ほか {count} 名にメールを送信しようとしています",
+      "wantsMerge": "{agent} が PR #{number} を {base} にマージしようとしています",
+      "wantsMergePr": "{agent} が PR #{number} をマージしようとしています",
+      "wantsIssue": "{agent} が {team} に優先度 {priority} の課題を作成しようとしています",
+      "wantsCreateIssue": "{agent} が課題を作成しようとしています",
+      "wantsAction": "{agent} が次を実行しようとしています: {action}",
+      "wantsCall": "{agent} が {action} を実行しようとしています",
+      "leftMinutes": "残り {minutes} 分",
+      "leftHoursMinutes": "残り {hours} 時間 {minutes} 分",
+      "leftHours": "残り {hours} 時間",
+      "leftDays": "残り {days} 日",
+      "riskDestructive": "破壊的 · Kortix から元に戻せません",
+      "riskWrite": "書き込みアクセス · {action}",
+      "riskRead": "読み取りアクセス",
+      "askedBy": "{agent} からの依頼",
+      "askedByIn": "<session>{title}</session> で {agent} からの依頼",
+      "expiresAt": "期限 {when}",
+      "today": "今日 {time}",
+      "tomorrow": "明日 {time}",
+      "thisSession": "セッション",
+      "notePlaceholder": "{agent} へのメモ（任意）",
+      "notePlaceholderAgent": "エージェントへのメモ（任意）",
+      "approve": "承認",
+      "approveSend": "承認して送信",
+      "approveMerge": "承認してマージ",
+      "approveCreate": "承認して作成",
+      "pullRequest": "プルリクエスト #{number}",
+      "mergeMethod": "{method, select, squash {Squash and merge} rebase {Rebase and merge} merge {マージコミットを作成} other {{method} でマージ}}",
+      "newIssue": "新しい課題",
+      "priority1": "緊急",
+      "priority2": "高",
+      "priority3": "中",
+      "priority4": "低",
+      "canOnlyBeDenied": "拒否のみ可能",
+      "prFiles": "{count} 個のファイル",
+      "prCommits": "{count} 件のコミット",
+      "prCommitsBy": "{author} による {count} 件のコミット",
+      "prDraft": "ドラフトのプルリクエスト"
+    },
+    "reviewBulk": {
+      "approve": "承認",
+      "deny": "拒否",
+      "dismiss": "閉じる",
+      "selectRow": "{title} を選択",
+      "limitNote": "一度に最大 {count} 件",
+      "approving": "{count} 件を承認中…",
+      "denying": "{count} 件を拒否中…",
+      "dismissing": "{count} 件を閉じています…",
+      "approveTitle": "{count} 件のアクションを承認しますか？",
+      "approveDescription": "承認する前に各アクションの詳細を確認してください。",
+      "approveConfirm": "{count} 件を承認",
+      "denyTitle": "{count} 件のアクションを拒否しますか？",
+      "denyDescription": "エージェントはこれらのアクションを実行しません。",
+      "denyConfirm": "{count} 件を拒否",
+      "dismissTitle": "{count} 件の項目を閉じますか？",
+      "dismissDescription": "完了に移動します。",
+      "dismissConfirm": "{count} 件を閉じる",
+      "riskNone": "リスクなし",
+      "riskLow": "低リスク",
+      "riskMedium": "中リスク",
+      "riskHigh": "高リスク",
+      "approved": "{count} 件を承認しました",
+      "denied": "{count} 件を拒否しました",
+      "dismissed": "{count} 件を閉じました",
+      "skipped": "{count} 件をスキップ（{reasons}）",
+      "reasonExpired": "期限切れ",
+      "reasonAlreadyResolved": "決定済み",
+      "reasonPreviewUnavailable": "内容を読み込めません",
+      "reasonForbidden": "権限がありません",
+      "reasonNotFound": "見つかりません",
+      "reasonNotBulkActionable": "個別に決定してください"
     },
     "approvalWaiting": {
       "byManager": "このプロジェクトを管理する人が、この呼び出しを承認または拒否するのを待っています。",
@@ -20374,7 +20459,21 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "配信: connector — サーバー側のみ。値がサンドボックス環境に入ることはありません。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "配信スコープを取得できません。保存する前に、この値がどこで使われるかエージェントに確認してください。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "保存時は暗号化されます。配信は上に表示されたスコープに従います。",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "要求された値を下に入力してください。保存する前に、その配信スコープを確認してください。値は保存時に暗号化されます。"
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "要求された値を下に入力してください。保存する前に、その配信スコープを確認してください。値は保存時に暗号化されます。",
+    "approvalParameters": {
+      "to": "宛先",
+      "cc": "CC",
+      "bcc": "BCC",
+      "subject": "件名",
+      "from": "差出人",
+      "none": "なし",
+      "attachments": "添付ファイル",
+      "idsOnlyHint": "この呼び出しには確認できる内容がありません。エージェントによる説明は検証されていません。",
+      "resolvedUnavailable": "下書きを読み込めませんでした。エージェントの説明を慎重に確認してください。",
+      "aboutDescription": "この説明について",
+      "senderUnavailable": "送信アカウントを読み込めませんでした。差出人の行を確認してください。",
+      "quoted": "「{text}」"
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "オンボーディングのリセット",

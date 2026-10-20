@@ -13,7 +13,7 @@ function writtenManifest() {
   if (!file) throw new Error('Missing manifest write');
   return parse(file.content);
 }
-mock.module('../triggers', () => ({ manifestWrites: (manifest: ParsedManifest) => ({ files: [{ path: manifest.path, content: stringify(manifest.raw) }], alsoExpect: [] }) }));
+mock.module('../manifest-io', () => ({ readManifest: async () => null, manifestWrites: (manifest: ParsedManifest) => ({ files: [{ path: manifest.path, content: stringify(manifest.raw) }], alsoExpect: [] }) }));
 
 let denied = false;
 let workspaceDenied = false;
@@ -23,6 +23,8 @@ let paths: string[];
 let writes: CommitOptions[];
 let failure: Error | null;
 const project = { projectId: 'test-project', accountId: 'test-account', defaultBranch: 'dev', manifestPath: 'kortix.yaml' };
+mock.module('../lib/project-resources', () => ({ invalidateProjectResourceConfig: () => {} }));
+mock.module('../git/commits', () => ({ resolveBranchTip: async () => 'snapshot' }));
 mock.module('../lib/access', () => ({
   loadProjectForUser: async () => ({ row: project, userId: 'test-user' }),
   assertAgentSessionWorkspaceAllowsRepository: async () => { if (workspaceDenied) throw new Error('workspace denied'); },
@@ -202,3 +204,11 @@ test('ordinary skill reference markdown does not count as native configuration',
   expect((await remove()).status).toBe(200);
   expect(firstWrite().deletes).toContain('skills/research/commands/report.md');
 });
+for (const file of ['settings.json', 'extensions/shared.ts', 'prompts/report.md']) {
+  test(`refuses deletion of pi-native resource ${file} without writing`, async () => {
+    raw = { kortix_version: 2, pi: { config_dir: 'skills/research' } };
+    paths.push(`skills/research/${file}`);
+    expect((await remove()).status).toBe(409);
+    expect(writes).toHaveLength(0);
+  });
+}

@@ -17,6 +17,8 @@ export function bindProjectCore(projectId: string) {
       /** Delete by exact catalog name, including assets and assignments. */
       delete: (...a: DropFirst<Parameters<typeof P.deleteProjectSkill>>) =>
         P.deleteProjectSkill(projectId, ...a),
+      remove: (...a: DropFirst<Parameters<typeof P.removeProjectSkill>>) =>
+        P.removeProjectSkill(projectId, ...a),
       /** Create a skill file on the default branch — no model needed. */
       create: (...a: DropFirst<Parameters<typeof P.createProjectSkill>>) =>
         P.createProjectSkill(projectId, ...a),

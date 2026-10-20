@@ -769,6 +769,8 @@ describe('R5.2: the server owns session state', () => {
     expect(frame!.payload).toEqual({
       known: true,
       title: 'Mine',
+      // #10487: the frame names the session's model state (model:source:fallback_at).
+      model_rev: '::',
       secrets_rev: '2:2026-10-06T10:00:00.000Z',
     });
     handle.release();

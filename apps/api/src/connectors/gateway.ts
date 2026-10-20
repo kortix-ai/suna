@@ -1,4 +1,11 @@
 import { logger } from '../lib/logger';
+import {
+  APPROVAL_ENRICHERS,
+  type ApprovalEnricher,
+  enricherKey,
+  type ResolvedPreview,
+  resolveApprovalPreview,
+} from './approval-enrichers';
 import { buildArgsPreviewDetails, summarizeArgsPreview } from './args-preview';
 import {
   emailChannelAttachmentArgs,
@@ -261,7 +268,13 @@ export interface GatewayDeps {
     connectorId: string;
     actionPath: string;
     requestDigest: string;
-  }): Promise<boolean>;
+    /** An object when claimed: `resolvedDigest` is the approved row's
+     *  `result_summary.resolved_digest`, the content the human saw;
+     *  `resolvedError` is true when that content could not be read. */
+  }): Promise<boolean | { resolvedDigest: string | null; resolvedError?: boolean }>;
+  /** Approval enrichers by `enricherKey` (approval-enrichers.ts). Absent =
+   *  the production registry. */
+  approvalEnrichers?: Readonly<Record<string, ApprovalEnricher>>;
   /** Reuse a legacy client's pending row only when it identifies this exact
    *  session-bound request. Prevents a caller from relabeling another approval. */
   isPendingApprovalExecution?(input: {
@@ -282,7 +295,7 @@ export interface GatewayDeps {
     projectId: string;
     executionId: string;
     sessionId: string | null;
-  }): string | null;
+  }): string | null | Promise<string | null>;
   /**
    * Post an approval card into the chat thread of the session that made a
    * gated call (Slack). Resolves `posted: false` for sessions with no thread.
@@ -929,10 +942,10 @@ async function enforceCallPolicies(
   // Keys are OMITTED when empty rather than set to null: the pending_approval
   // result is a wire shape other code compares against, and a key that carries
   // no information shouldn't change it.
-  const approvalExtras = (executionId: string | null | undefined) => {
+  const approvalExtras = async (executionId: string | null | undefined) => {
     const url =
       executionId && deps.mintApprovalLink
-        ? deps.mintApprovalLink({
+        ? await deps.mintApprovalLink({
             projectId: input.projectId,
             executionId,
             sessionId: input.sessionId ?? null,
@@ -1013,7 +1026,31 @@ async function enforceCallPolicies(
           requestDigest,
         })
       : false;
-    if (carriedOver) {
+    // Content binding: an approval given for enriched content (a draft's
+    // recipients and body) covers that content only. Re-read it; a change or
+    // a failed read asks again instead of running. An approval given while the
+    // content could not be read is re-read too: content that is now readable
+    // asks again so a human sees it; still unreadable, the approver's informed
+    // decision stands. The claim above already consumed the approval.
+    const enricher = (deps.approvalEnrichers ?? APPROVAL_ENRICHERS)[
+      enricherKey(connector, action.binding, input.actionPath)
+    ] as ApprovalEnricher | undefined;
+    const enrich = async (): Promise<ResolvedPreview | null> =>
+      enricher
+        ? resolveApprovalPreview(enricher, { deps, input, connector, binding: action.binding, args: executionArgs })
+        : null;
+    const approved = typeof carriedOver === 'object' ? carriedOver : null;
+    let resolved: ResolvedPreview | null = null;
+    let contentChanged = false;
+    if (approved?.resolvedDigest) {
+      resolved = await enrich();
+      contentChanged =
+        !resolved || !('resolved_digest' in resolved) || resolved.resolved_digest !== approved.resolvedDigest;
+    } else if (approved?.resolvedError && enricher) {
+      resolved = await enrich();
+      contentChanged = resolved !== null && 'resolved_digest' in resolved;
+    }
+    if (carriedOver && !contentChanged) {
       await audit(deps, input, connector, 'ok', action.risk, {
         reason: 'approval_carryover',
         policy_source: decision.source,
@@ -1022,8 +1059,9 @@ async function enforceCallPolicies(
       // Older clients can pass an existing id. Preserve that row instead of
       // stacking another one, but never poll it. New clients make one request
       // and wait for the server-side session callback.
+      const reason = contentChanged ? 'content_changed' : 'policy_require_approval';
       const reuseExisting =
-        input.approvalExecutionId && deps.isPendingApprovalExecution
+        !contentChanged && input.approvalExecutionId && deps.isPendingApprovalExecution
           ? await deps.isPendingApprovalExecution({
               executionId: input.approvalExecutionId,
               projectId: input.projectId,
@@ -1034,6 +1072,10 @@ async function enforceCallPolicies(
               requestDigest,
             })
           : false;
+      // Only a new row reads the content. Never blocks or fails the hold: a
+      // slow or failed read is recorded as `resolved_error`. Only an action
+      // with an enricher carries these keys.
+      if (!reuseExisting) resolved ??= await enrich();
       const executionId =
         (reuseExisting ? input.approvalExecutionId : null) ??
         (await audit(
@@ -1043,7 +1085,7 @@ async function enforceCallPolicies(
           'pending_approval',
           action.risk,
           {
-            reason: 'policy_require_approval',
+            reason,
             policy_source: decision.source,
             args_preview_complete: argsPreviewDetails.complete,
             // WITHOUT THIS the approval prompt can name the tool but not its
@@ -1054,10 +1096,11 @@ async function enforceCallPolicies(
             // Reference args (`{draft_id}`) name a target without showing it,
             // so the agent may describe the effect. Unverified by design.
             ...(approvalContext ? { approval_context: approvalContext } : {}),
+            ...resolved,
           },
           requestDigest,
         ));
-      const extras = approvalExtras(executionId);
+      const extras = await approvalExtras(executionId);
       const cardPosted =
         !reuseExisting && executionId && input.sessionId && deps.postApprovalCard
           ? await postCardWithin(CARD_POST_BUDGET_MS, () =>
@@ -1071,6 +1114,7 @@ async function enforceCallPolicies(
                   args_preview: argsPreview,
                   args_preview_complete: argsPreviewDetails.complete,
                   ...(approvalContext ? { approval_context: approvalContext } : {}),
+                  ...resolved,
                 },
                 approvalUrl: extras.approvalUrl ?? null,
               }),
@@ -1078,7 +1122,7 @@ async function enforceCallPolicies(
           : false;
       return {
         status: 'pending_approval',
-        reason: 'policy_require_approval',
+        reason,
         executionId,
         retryable: false,
         ...extras,
@@ -1424,7 +1468,7 @@ async function runPipedreamAction(
 }
 
 /** A Composio tool call on the connection's server-owned account and session. */
-async function runComposioAction(
+export async function runComposioAction(
   deps: GatewayDeps,
   input: CallInput,
   connector: GatewayConnector,

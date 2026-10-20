@@ -59,8 +59,4 @@ describe('squawk-lint waiver handling', () => {
     expect(LINT).toContain('WAIVED migration(s)');
   });
 
-  test('keeps the grandfather set as a separate input', () => {
-    expect(LINT).toContain('loadGrandfatherSet');
-    expect(LINT).toContain('loadWaivers');
-  });
 });

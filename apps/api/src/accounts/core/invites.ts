@@ -13,6 +13,7 @@ import { buildInviteUrl, sendAccountInviteEmail } from '../email';
 import { AccountIdParam, AccountInviteSchema, type AccountRole, OkSchema, accountsRouter, getMembership, normalizeEmail, parseRole } from './app';
 import { grantAccountRole } from './member-role-write';
 import { logger } from '../../lib/logger';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 
 export function registerMemberInviteRoute(): void {
   // POST /v1/accounts/:accountId/members — invite a user by email. If the user
@@ -205,9 +206,9 @@ export function registerMemberInviteRoute(): void {
             acceptedAt: null,
             bootstrapGrants: sql`COALESCE((
               SELECT jsonb_agg(entry)
-              FROM jsonb_array_elements(${accountInvitations.bootstrapGrants}) AS entry
+              FROM jsonb_array_elements(${qualifiedColumn(accountInvitations.bootstrapGrants)}) AS entry
               WHERE entry->>'group_id' IS NOT NULL
-                AND ${accountInvitations.acceptedAt} IS NULL
+                AND ${qualifiedColumn(accountInvitations.acceptedAt)} IS NULL
             ), '[]'::jsonb) || excluded.bootstrap_grants`,
           },
         })

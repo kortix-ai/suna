@@ -363,7 +363,7 @@ async function buildCommit(
 /** Options for {@link commitMultipleFilesToBranch}: what to write, where, and
  *  the revisions the caller read it from. */
 interface CommitFilesOptions {
-  /** Require the exact snapshot used to enumerate destructive edits. */
+  /** Pin a destructive operation to the exact tree it inspected. */
   expectedCommit?: string;
   files?: Array<{ path: string; content: string }>;
   /** Repo-relative paths to remove from the tree in the same commit. */

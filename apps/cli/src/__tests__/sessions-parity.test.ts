@@ -1042,12 +1042,10 @@ describe('kortix sessions approvals', () => {
     expect(r.stdout).not.toContain('other');
   });
 
-  test('ls prints the /approve decision link and both CLI hints per pending row', async () => {
+  test('ls prints both CLI hints without the bearer decision link', async () => {
     const r = await runCli(['sessions', 'approvals', SESSION, 'ls', ...P], config);
     expect(r.code).toBe(0);
-    // The decision surface a PAT holder can actually use: the CLI approve
-    // command is refused for every automated principal (APPROVAL_REQUIRES_HUMAN).
-    expect(r.stdout).toContain('https://kortix.example.test/approve/ksl_pending');
+    expect(r.stdout).not.toContain('https://kortix.example.test/approve/ksl_pending');
     expect(r.stdout).toContain(`approve: kortix sessions approvals ${SESSION} approve ${EXECUTION}`);
     expect(r.stdout).toContain(`deny: kortix sessions approvals ${SESSION} deny ${EXECUTION}`);
   });

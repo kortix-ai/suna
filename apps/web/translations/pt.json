@@ -170,7 +170,10 @@
       "deleteMine": "Excluir meu valor",
       "mineDeleted": "Valor excluído",
       "mineDeleteError": "Não foi possível excluir o seu valor. Tente novamente."
-    }
+    },
+    "agentAccess": "Agentes: {agents}",
+    "allAgents": "Todos os agentes",
+    "noAgents": "Nenhum agente"
   },
   "useCases": {
     "headline": "Os ciclos que mantêm uma empresa em funcionamento"
@@ -1217,10 +1220,6 @@
           "name": "E-mail AgentMail",
           "description": "Atribua caixas do AgentMail para que e-mails recebidos possam iniciar e continuar sessões da Kortix."
         },
-        "llm_gateway": {
-          "name": "Gateway LLM",
-          "description": "Encaminhe este projeto pelo gateway LLM gerenciado da Kortix para modelos, medição e orçamentos."
-        },
         "meta_agent": {
           "name": "Meta-agente",
           "description": "Adicione um coordenador que gerencia sessões especializadas e trabalhos de várias etapas no projeto."
@@ -1284,6 +1283,14 @@
         "connectors_v2": {
           "name": "Conectores v2",
           "description": "O catálogo de apps MCP em Personalizar → Conectores, com login gerenciado pelo Kortix. Com “Gatilhos de eventos do app” ativado, o Kortix verifica esses apps em busca de novos e-mails, arquivos e itens e inicia um agente. Também adiciona o Telegram como canal. As novas contas de conectores deixam de ser compartilhadas com todo o projeto por padrão."
+        },
+        "agent_rooms": {
+          "name": "Salas",
+          "description": "Salas de chat com nome onde sessões de agentes e pessoas publicam e respondem em threads. Uma sessão é retomada quando uma mensagem é dirigida a ela. Adiciona a página Salas, `kortix rooms` e `kortix peers`."
+        },
+        "goals": {
+          "name": "Objetivos",
+          "description": "Dê a um agente um objetivo pelo qual ele responde até que uma verificação independente confirme o resultado. Ele planeja, trabalha, espera, cobra as pessoas e guarda seu estado em uma pasta Goals em Arquivos. Requer Volumes e Lembretes ativados."
         }
       }
     },
@@ -1933,6 +1940,7 @@
     "upgrade": "Fazer upgrade",
     "noMatch": {
       "title": "Nenhum modelo encontrado",
+      "singleModelDescription": "Só 1 modelo está disponível neste projeto. A disponibilidade de modelos depende do seu plano e dos provedores conectados.",
       "description": "Nada corresponde a “{search}”. Tente outra busca.",
       "clear": "Limpar busca"
     },
@@ -20357,7 +20365,84 @@
       "sessionExpired": "Sua sessão expirou. Entre novamente e reabra a pré-visualização."
     },
     "approvalPage": {
-      "title": "Aprovar uma ação do {connector}"
+      "title": "Aprovar uma ação do {connector}",
+      "expires": "Expira",
+      "expiresIn": "Expira em {time}",
+      "expiredHint": "Esta aprovação expirou. Peça ao agente para solicitá-la novamente.",
+      "anAgent": "Um agente",
+      "anAgentLower": "um agente",
+      "wantsEmail": "{agent} quer enviar um e-mail para {recipient}",
+      "wantsEmailOthers": "{agent} quer enviar um e-mail para {recipient} e {count, plural, one {# outra pessoa} other {# outras pessoas}}",
+      "wantsMerge": "{agent} quer mesclar o PR #{number} em {base}",
+      "wantsMergePr": "{agent} quer mesclar o PR #{number}",
+      "wantsIssue": "{agent} quer criar uma issue de prioridade {priority} para {team}",
+      "wantsCreateIssue": "{agent} quer criar uma issue",
+      "wantsAction": "{agent} quer: {action}",
+      "wantsCall": "{agent} quer executar {action}",
+      "leftMinutes": "{minutes} min restantes",
+      "leftHoursMinutes": "{hours} h {minutes} min restantes",
+      "leftHours": "{hours} h restantes",
+      "leftDays": "{days} d restantes",
+      "riskDestructive": "Destrutiva · não pode ser desfeita pelo Kortix",
+      "riskWrite": "Acesso de escrita · {action}",
+      "riskRead": "Acesso de leitura",
+      "askedBy": "Solicitado por {agent}",
+      "askedByIn": "Solicitado por {agent} em <session>{title}</session>",
+      "expiresAt": "expira {when}",
+      "today": "Hoje {time}",
+      "tomorrow": "Amanhã {time}",
+      "thisSession": "uma sessão",
+      "notePlaceholder": "Adicione uma nota para {agent} (opcional)",
+      "notePlaceholderAgent": "Adicione uma nota para o agente (opcional)",
+      "approve": "Aprovar",
+      "approveSend": "Aprovar e enviar",
+      "approveMerge": "Aprovar e mesclar",
+      "approveCreate": "Aprovar e criar",
+      "pullRequest": "Pull request #{number}",
+      "mergeMethod": "{method, select, squash {Squash and merge} rebase {Rebase and merge} merge {Criar um commit de merge} other {{method} e mesclar}}",
+      "newIssue": "Nova issue",
+      "priority1": "Urgente",
+      "priority2": "Alta",
+      "priority3": "Média",
+      "priority4": "Baixa",
+      "canOnlyBeDenied": "Só pode ser negada",
+      "prFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
+      "prCommits": "{count, plural, one {# commit} other {# commits}}",
+      "prCommitsBy": "{count, plural, one {# commit} other {# commits}} de {author}",
+      "prDraft": "Pull request em rascunho"
+    },
+    "reviewBulk": {
+      "approve": "Aprovar",
+      "deny": "Negar",
+      "dismiss": "Dispensar",
+      "selectRow": "Selecionar {title}",
+      "limitNote": "Até {count} de cada vez",
+      "approving": "Aprovando {count}…",
+      "denying": "Negando {count}…",
+      "dismissing": "Dispensando {count}…",
+      "approveTitle": "Aprovar {count, plural, one {# ação} other {# ações}}?",
+      "approveDescription": "Verifique os detalhes de cada ação antes de aprovar.",
+      "approveConfirm": "Aprovar {count}",
+      "denyTitle": "Negar {count, plural, one {# ação} other {# ações}}?",
+      "denyDescription": "Os agentes não executam estas ações.",
+      "denyConfirm": "Negar {count}",
+      "dismissTitle": "Dispensar {count, plural, one {# item} other {# itens}}?",
+      "dismissDescription": "Passam para Concluído.",
+      "dismissConfirm": "Dispensar {count}",
+      "riskNone": "Sem risco",
+      "riskLow": "Risco baixo",
+      "riskMedium": "Risco médio",
+      "riskHigh": "Risco alto",
+      "approved": "{count} aprovadas",
+      "denied": "{count} negadas",
+      "dismissed": "{count} dispensados",
+      "skipped": "{count} ignorados ({reasons})",
+      "reasonExpired": "expirada",
+      "reasonAlreadyResolved": "já decidida",
+      "reasonPreviewUnavailable": "conteúdo indisponível",
+      "reasonForbidden": "não permitido",
+      "reasonNotFound": "não encontrado",
+      "reasonNotBulkActionable": "decidir individualmente"
     },
     "approvalWaiting": {
       "byManager": "Aguardando alguém que gerencia este projeto aprovar ou negar a chamada.",
@@ -20374,7 +20459,21 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Entrega: connector — apenas no servidor. O valor nunca entra no ambiente do sandbox.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "O escopo de entrega não está disponível. Peça ao agente para confirmar onde este valor será usado antes de salvá-lo.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Criptografado em repouso. A entrega segue o escopo mostrado acima.",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Insira o valor solicitado abaixo. Verifique o seu escopo de entrega antes de salvá-lo. O valor é criptografado em repouso."
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Insira o valor solicitado abaixo. Verifique o seu escopo de entrega antes de salvá-lo. O valor é criptografado em repouso.",
+    "approvalParameters": {
+      "to": "Para",
+      "cc": "Cc",
+      "bcc": "Cco",
+      "subject": "Assunto",
+      "from": "De",
+      "none": "Nenhum",
+      "attachments": "Anexos",
+      "idsOnlyHint": "Esta chamada não mostra conteúdo para verificar. Qualquer descrição do agente não foi verificada.",
+      "resolvedUnavailable": "Não foi possível carregar o rascunho. Revise com atenção a descrição do agente.",
+      "aboutDescription": "Sobre esta descrição",
+      "senderUnavailable": "Não foi possível carregar a conta de envio. Verifique a linha De.",
+      "quoted": "“{text}”"
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "Redefinição de integração",
