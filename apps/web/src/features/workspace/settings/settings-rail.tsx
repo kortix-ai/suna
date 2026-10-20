@@ -4,6 +4,7 @@ import { BackPillBody, backPillClass } from '@kortix/ui/back-pill';
 import { Button } from '@kortix/ui/button';
 import { ModalClose } from '@kortix/ui/modal';
 import { TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { useTranslations } from '@/i18n/use-translations';
 import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
 import { workspaceAccountLabel } from '@kortix/ui/workspace/sidebar/workspace-grouping';
 import { cn } from '@kortix/ui';
@@ -32,6 +33,7 @@ export function RailNav({
   onPick?: () => void;
   className?: string;
 }) {
+  const t = useTranslations('hardcodedUi.i18nComplete');
   return (
     <nav
       aria-label={chrome.settings}
@@ -109,6 +111,12 @@ export function RailNav({
                     </span>
                   </HubLink>
                 </ModalClose>
+                <HubLink
+                  to={hubTarget(account.account_id, { tab: 'audit' })}
+                  className="text-muted-foreground hover:text-foreground block rounded-md px-2.5 py-1 text-xs"
+                >
+                  {t('texte4d36f9a4e22')}
+                </HubLink>
               </li>
             ))}
           </ul>

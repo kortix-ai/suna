@@ -151,6 +151,14 @@ describe('SettingsPanelShell — desktop rail', () => {
     });
   });
 
+  test('each organization exposes a shareable Audit log link from settings', () => {
+    const html = render({
+      organizations: [{ account_id: 'synthetic-account', name: 'Example organization', account_role: 'owner' }],
+    });
+    expect(html).toContain('href="?accountId=synthetic-account&amp;accountTab=audit"');
+    expect(html).toMatch(/>Audit log<\/a>/);
+  });
+
   /**
    * The rail's "Search settings" field is gone with the full-screen shell.
    *
