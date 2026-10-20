@@ -6769,7 +6769,9 @@ const catalog = {
       "archiveFailed": "Could not archive the channel. Try again.",
       "threadTitle": "Thread",
       "closeThread": "Close thread",
-      "sendFailed": "Could not start the thread. Try again."
+      "sendFailed": "Could not start the thread. Try again.",
+      "replies": "{count, plural, one {# reply} other {# replies}}",
+      "replyPlaceholder": "Reply…"
     }
   }
 };

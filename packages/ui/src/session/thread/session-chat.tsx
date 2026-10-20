@@ -386,6 +386,8 @@ interface SessionChatProps {
   hideHeader?: boolean;
   /** Read-only mode — hides the chat input bar (used for sub-session modal viewer) */
   readOnly?: boolean;
+  /** The composer's placeholder (a channel thread says "Reply…"). Default: the composer's own. */
+  composerPlaceholder?: string;
   /**
    * Drawn in the composer's slot, in flow, when `readOnly`: a terminal
    * session state (stopped with no computer, lost computer, failed start)
@@ -453,6 +455,7 @@ export function SessionChat({
   headerLeadingAction,
   hideHeader,
   readOnly,
+  composerPlaceholder,
   inputReplacement,
   initialScrollTop,
   savedHistoryScope,
@@ -4714,6 +4717,7 @@ export function SessionChat({
                 // viewport rule (>= 640px) still decides, so this never forces
                 // focus onto a phone keyboard.
                 autoFocus={deferComposerFocus ? false : undefined}
+                placeholder={composerPlaceholder}
                 onSend={async (text, files, mentions, attachments, placement) => {
                   if (await queueEdit.save(text)) return;
                   // Enter while a turn runs steers it (D9.1); Cmd/Ctrl+Enter is Queue List.

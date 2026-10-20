@@ -22106,7 +22106,9 @@
       "archiveFailed": "チャンネルをアーカイブできませんでした。もう一度お試しください。",
       "threadTitle": "スレッド",
       "closeThread": "スレッドを閉じる",
-      "sendFailed": "スレッドを開始できませんでした。もう一度お試しください。"
+      "sendFailed": "スレッドを開始できませんでした。もう一度お試しください。",
+      "replies": "{count, plural, other {#件の返信}}",
+      "replyPlaceholder": "返信…"
     }
   }
 }

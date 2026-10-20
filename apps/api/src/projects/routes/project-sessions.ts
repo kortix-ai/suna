@@ -67,6 +67,7 @@ import { personUserId } from './session-watch';
 import { sessionCreateSurface } from '../lib/session-surface';
 
 import { readSessionsWorking } from '../lib/session-working-read';
+import { readSessionReplyCounts } from '../lib/session-reply-counts';
 
 const NO_USER_STATE = { pinnedAt: null, archivedAt: null };
 
@@ -471,6 +472,7 @@ export function registerProjectSessionsRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
     const personId = personUserId(c, loaded);
 
+    const spaceId = resolveFeatureFlag(loaded.row.metadata, 'project_channels') ? (query.space_id ?? null) : null;
     const inventory = await loadProjectSessionInventory({
       projectId,
       accountId: loaded.row.accountId,
@@ -487,7 +489,7 @@ export function registerProjectSessionsRoutes(): void {
         personId,
         view: query.pinned ? 'pinned' : query.archived ? 'archived' : null,
         deleted: query.deleted === 'only',
-        spaceId: resolveFeatureFlag(loaded.row.metadata, 'project_channels') ? (query.space_id ?? null) : null,
+        spaceId,
       },
       boundCredentialSessionId: callerKortixSessionId(c),
       agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
@@ -507,7 +509,12 @@ export function registerProjectSessionsRoutes(): void {
     const conversationModels = await readSessionConversationModels(
       inventory.items.filter((item) => item.canAccess).map((item) => item.row.sessionId),
     );
-    const working = await readSessionsWorking(inventory.items.filter(item => item.canAccess).map(item => item.row.sessionId));
+    const accessibleIds = inventory.items.filter((item) => item.canAccess).map((item) => item.row.sessionId);
+    // A space list draws "N replies" under each thread; no other list pays for the count.
+    const [working, replyCounts] = await Promise.all([
+      readSessionsWorking(accessibleIds),
+      spaceId ? readSessionReplyCounts(accessibleIds) : Promise.resolve(null),
+    ]);
     const body = inventory.items.map((item) => {
       const row = item.row;
       const owner = row.createdBy ? inventory.ownerIdentities.get(row.createdBy) : null;
@@ -532,6 +539,7 @@ export function registerProjectSessionsRoutes(): void {
         // single-session read below still returns metadata whole.
         trimListMetadata: true,
         conversationModel: conversationModels.get(row.sessionId),
+        replyCount: replyCounts?.get(row.sessionId) ?? null,
       }), working: working.get(row.sessionId) };
       if (query.parent !== 'root') return serialized;
       return {

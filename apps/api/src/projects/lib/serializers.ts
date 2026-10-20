@@ -114,6 +114,8 @@ export function serializeSession(
     grants?: SecretGrant[];
     /** Model selected by the durable conversation log, not the creation pin. */
     conversationModel?: string | null;
+    /** `reply_count`: set by a channel or DM thread list only. */
+    replyCount?: number | null;
     /** The viewing user, to compute is_owner / can_manage_*. */
     viewerId?: string;
     /** Viewer can manage the project (account owner/admin, or a project manager). */
@@ -225,6 +227,7 @@ export function serializeSession(
     parent_session_id: row.parentSessionId ?? null,
     space_id: row.spaceId ?? null,
     first_prompt: canAccess && typeof row.metadata?.first_prompt === 'string' ? row.metadata.first_prompt : null,
+    reply_count: canAccess ? (ctx?.replyCount ?? null) : null,
     initiator: row.initiatorType
       ? {
           type: row.initiatorType,

@@ -96,6 +96,7 @@ function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
     openDmMutate(dmAgent);
   }, [dmAgent, spaces.data, listedDm, openDmMutate]);
 
+  const threads = useSpaceThreads(projectId, space?.space_id);
   const threadId = searchParams.get(THREAD_PARAM);
   const setParams = useCallback(
     (change: (params: URLSearchParams) => void) => {
@@ -195,6 +196,7 @@ function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
           <SpaceTabs
             projectId={projectId}
             space={space}
+            threads={threads}
             threadId={threadId}
             onOpenThread={openThread}
             beforeSend={beforeSend}
@@ -207,6 +209,7 @@ function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
           projectId={projectId}
           sessionId={threadId}
           context={space.kind === 'channel' ? `#${space.slug}` : title}
+          replyCount={threads.sessions.find((session) => session.session_id === threadId)?.reply_count ?? null}
           onClose={closeThread}
         />
       ) : null}
@@ -218,17 +221,18 @@ function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
 function SpaceTabs({
   projectId,
   space,
+  threads,
   threadId,
   onOpenThread,
   beforeSend,
 }: {
   projectId: string;
   space: ProjectSpace;
+  threads: ReturnType<typeof useSpaceThreads>;
   threadId: string | null;
   onOpenThread: (sessionId: string) => void;
   beforeSend?: () => Promise<void>;
 }) {
-  const threads = useSpaceThreads(projectId, space.space_id);
   return (
     <>
       <TabsContent value="chat" className="flex min-h-0 flex-col">
@@ -461,11 +465,14 @@ function ThreadPanel({
   projectId,
   sessionId,
   context,
+  replyCount,
   onClose,
 }: {
   projectId: string;
   sessionId: string;
   context: string;
+  /** From the thread's list row; null when the API does not count (an older API). */
+  replyCount: number | null;
   onClose: () => void;
 }) {
   const t = useTranslations('spaces.view');
@@ -486,7 +493,21 @@ function ThreadPanel({
           </Button>
         </Hint>
       </div>
-      <SessionThread session={session} hideHeader className="min-h-0 flex-1" />
+      {replyCount ? (
+        // "N replies" with a hairline to the right: the transcript below holds the first prompt and its replies.
+        <div className="flex shrink-0 items-center gap-3 px-4 pt-3">
+          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+            {t('replies', { count: replyCount })}
+          </span>
+          <div className="bg-border h-px flex-1" />
+        </div>
+      ) : null}
+      <SessionThread
+        session={session}
+        hideHeader
+        composerPlaceholder={t('replyPlaceholder')}
+        className="min-h-0 flex-1"
+      />
     </aside>
   );
 }

@@ -189,6 +189,7 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     origin: 'user',
     space_id: null,
     first_prompt: null,
+    reply_count: null,
     secrets_allowlist: null,
     sharing: { mode: 'private', ownerId: '' },
     is_owner: true,

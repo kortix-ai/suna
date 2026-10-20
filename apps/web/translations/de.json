@@ -22106,7 +22106,9 @@
       "archiveFailed": "Der Kanal konnte nicht archiviert werden. Versuche es erneut.",
       "threadTitle": "Thread",
       "closeThread": "Thread schließen",
-      "sendFailed": "Der Thread konnte nicht gestartet werden. Versuche es erneut."
+      "sendFailed": "Der Thread konnte nicht gestartet werden. Versuche es erneut.",
+      "replies": "{count, plural, one {# Antwort} other {# Antworten}}",
+      "replyPlaceholder": "Antworten…"
     }
   }
 }

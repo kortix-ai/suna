@@ -32,10 +32,11 @@ import {
  * thread is part of its parent). Polls every 5 s while an agent works so the
  * "is working" line settles, else every 15 s so a member's new thread shows up.
  */
-export function useSpaceThreads(projectId: string, spaceId: string) {
+export function useSpaceThreads(projectId: string, spaceId: string | undefined) {
   return useProjectSessions(projectId, {
     spaceId,
     parent: 'root',
+    enabled: !!spaceId,
     refetchInterval: (sessions) => (sessions.some(threadIsWorking) ? 5_000 : 15_000),
   });
 }
@@ -238,10 +239,13 @@ function ThreadRow({
         <button
           type="button"
           onClick={onOpen}
-          className="hover:bg-background hover:border-border focus-visible:ring-ring duration-fast -mx-1 mt-1 flex max-w-full items-center gap-2 rounded-md border border-transparent px-1 py-0.5 text-xs transition-colors outline-none focus-visible:ring-2"
+          className="group/summary hover:bg-background hover:border-border focus-visible:ring-ring duration-fast -mx-1 mt-1 flex max-w-full items-center gap-2 rounded-md border border-transparent px-1 py-0.5 text-xs transition-colors outline-none focus-visible:ring-2"
         >
           <EntityAvatar icon={RobotIcon} label={agent} size="xs" />
-          <span className="text-kortix-base shrink-0 font-medium">{t('openThread')}</span>
+          {/* Ink, underlined on hover: the inline-link recipe. An accent fails AA as text. */}
+          <span className="text-foreground shrink-0 font-medium tabular-nums underline-offset-4 group-hover/summary:underline">
+            {session.reply_count ? t('replies', { count: session.reply_count }) : t('openThread')}
+          </span>
           {working ? (
             <span className="text-muted-foreground flex min-w-0 items-center gap-1.5">
               <SessionDotMatrix sessionId={session.session_id} size={14} className="shrink-0" />

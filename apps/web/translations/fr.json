@@ -22106,7 +22106,9 @@
       "archiveFailed": "Impossible d'archiver le canal. Réessayez.",
       "threadTitle": "Fil",
       "closeThread": "Fermer le fil",
-      "sendFailed": "Impossible de lancer le fil. Réessayez."
+      "sendFailed": "Impossible de lancer le fil. Réessayez.",
+      "replies": "{count, plural, one {# réponse} other {# réponses}}",
+      "replyPlaceholder": "Répondre…"
     }
   }
 }

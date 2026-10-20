@@ -1173,6 +1173,12 @@ export const ProjectSessionSchema = z.object({
     })
     .nullable()
     .optional(),
+  /**
+   * A channel or DM thread list (`space_id`) only: the messages after the
+   * first prompt in the root conversation, from the stored transcript. Null on
+   * every other read.
+   */
+  reply_count: z.number().int().nullable(),
   /** List with `parent=root` only: the session's non-deleted children. */
   child_count: z.number().int().optional(),
   /** List with `parent=root&q=` only: the session matched itself, or only a child matched. */

@@ -22106,7 +22106,9 @@
       "archiveFailed": "Não foi possível arquivar o canal. Tente de novo.",
       "threadTitle": "Thread",
       "closeThread": "Fechar thread",
-      "sendFailed": "Não foi possível começar o thread. Tente de novo."
+      "sendFailed": "Não foi possível começar o thread. Tente de novo.",
+      "replies": "{count, plural, one {# resposta} other {# respostas}}",
+      "replyPlaceholder": "Responder…"
     }
   }
 }

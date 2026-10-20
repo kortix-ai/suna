@@ -32,10 +32,18 @@ export interface SessionThreadProps {
   hideHeader?: boolean;
   /** Hide the composer: a transcript to read, not to answer. */
   readOnly?: boolean;
+  /** The reply composer's placeholder. Default: the composer's own. */
+  composerPlaceholder?: string;
   className?: string;
 }
 
-export function SessionThread({ session, hideHeader = false, readOnly = false, className }: SessionThreadProps) {
+export function SessionThread({
+  session,
+  hideHeader = false,
+  readOnly = false,
+  composerPlaceholder,
+  className,
+}: SessionThreadProps) {
   const { projectId, sessionId, runtimeSessionId } = session;
   return (
     <ProjectScope projectId={projectId} sessionId={sessionId}>
@@ -50,6 +58,7 @@ export function SessionThread({ session, hideHeader = false, readOnly = false, c
               sessionState={session}
               hideHeader={hideHeader}
               readOnly={readOnly}
+              composerPlaceholder={composerPlaceholder}
             />
           ) : (
             <SessionStartingLoader

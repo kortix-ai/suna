@@ -29,7 +29,13 @@ const MANIFEST =
   'kortix_version: 2\nproject:\n  name: ke2e-spaces\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
 
 type Space = { space_id: string; kind: string; slug: string | null; name: string; is_default: boolean; archived_at: string | null };
-type Session = { session_id: string; space_id: string | null; visibility: string; first_prompt: string | null };
+type Session = {
+  session_id: string;
+  space_id: string | null;
+  visibility: string;
+  first_prompt: string | null;
+  reply_count?: number | null;
+};
 
 async function openWorld(ctx: FlowContext, opts: { manifest?: boolean } = {}) {
   const team = await ctx.fixtures.team();
@@ -320,6 +326,8 @@ flow('SPACE-5', createMeta([ROUTES.create, SESSION_ROUTES.create, SESSION_ROUTES
       const row = rows.find((s) => s.session_id === sessionId);
       if (!row) throw new Error('the session is not in its channel list');
       if (row.first_prompt !== text) throw new Error(`list first_prompt is ${row.first_prompt}`);
+      // A space list counts the replies under each thread (a number, 0 before any answer).
+      if (typeof row.reply_count !== 'number') throw new Error(`list reply_count is ${row.reply_count}`);
       if (rows.some((s) => s.space_id !== channelId)) throw new Error('the space filter returned a session of another space');
     });
 

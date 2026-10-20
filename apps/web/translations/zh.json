@@ -22106,7 +22106,9 @@
       "archiveFailed": "无法归档频道。请重试。",
       "threadTitle": "话题",
       "closeThread": "关闭话题",
-      "sendFailed": "无法开始话题。请重试。"
+      "sendFailed": "无法开始话题。请重试。",
+      "replies": "{count, plural, other {# 条回复}}",
+      "replyPlaceholder": "回复…"
     }
   }
 }

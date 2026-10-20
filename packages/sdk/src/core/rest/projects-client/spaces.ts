@@ -75,7 +75,13 @@ export async function updateProjectSpace(projectId: string, spaceId: string, inp
   );
 }
 
-/** The caller's DM with `agentName`, created on the first call. An agent the project does not declare rejects with 404. */
+/**
+ * The caller's DM with `agentName`, created on the first call. An agent the
+ * project does not declare rejects with 404 `agent_not_found`. The caller
+ * shows the error, so it never reaches the host error handler.
+ */
 export async function getOrCreateProjectDm(projectId: string, agentName: string) {
-  return unwrap(await backendApi.post<ProjectSpace>(`/projects/${projectId}/spaces/dm`, { agent_name: agentName }));
+  return unwrap(
+    await backendApi.post<ProjectSpace>(`/projects/${projectId}/spaces/dm`, { agent_name: agentName }, { showErrors: false }),
+  );
 }

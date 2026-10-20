@@ -71,6 +71,11 @@ export interface ProjectSession {
   space_id?: string | null;
   /** The text of the session's first prompt, or null before one is sent. Absent on older APIs. */
   first_prompt?: string | null;
+  /**
+   * A channel or DM thread list only (`listProjectSessions({ spaceId })`): the
+   * messages after the first prompt. Null on every other read. Absent on older APIs.
+   */
+  reply_count?: number | null;
   session_id: string;
   account_id: string;
   project_id: string;

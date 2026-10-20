@@ -22106,7 +22106,9 @@
       "archiveFailed": "No se pudo archivar el canal. Inténtalo de nuevo.",
       "threadTitle": "Hilo",
       "closeThread": "Cerrar hilo",
-      "sendFailed": "No se pudo empezar el hilo. Inténtalo de nuevo."
+      "sendFailed": "No se pudo empezar el hilo. Inténtalo de nuevo.",
+      "replies": "{count, plural, one {# respuesta} other {# respuestas}}",
+      "replyPlaceholder": "Responder…"
     }
   }
 }

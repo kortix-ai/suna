@@ -22106,7 +22106,9 @@
       "archiveFailed": "Impossibile archiviare il canale. Riprova.",
       "threadTitle": "Thread",
       "closeThread": "Chiudi thread",
-      "sendFailed": "Impossibile avviare il thread. Riprova."
+      "sendFailed": "Impossibile avviare il thread. Riprova.",
+      "replies": "{count, plural, one {# risposta} other {# risposte}}",
+      "replyPlaceholder": "Rispondi…"
     }
   }
 }

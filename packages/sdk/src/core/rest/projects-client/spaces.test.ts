@@ -114,3 +114,14 @@ test('getOrCreateProjectDm POSTs the agent name to the DM route', async () => {
   expect(dm.kind).toBe('dm');
   expect(dm.dm_agent_name).toBe('kortix');
 });
+
+test('getOrCreateProjectDm rejects an unknown agent with agent_not_found and never reaches the host error handler', async () => {
+  const errors: unknown[] = [];
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok', onError: (e: unknown) => errors.push(e) });
+  nextResponse = { status: 404, body: { error: 'Agent not found', code: 'agent_not_found' } };
+  const error = await getOrCreateProjectDm('P1', 'ghost').catch((e: unknown) => e);
+  configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
+  expect(error).toBeInstanceOf(ApiError);
+  expect(error).toMatchObject({ status: 404, code: 'agent_not_found' });
+  expect(errors).toEqual([]);
+});
