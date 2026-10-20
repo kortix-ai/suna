@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { uiSourcePath } from '@/test-utils/read-source';
+import { defaultUiRoutes } from '../../../../../packages/ui/src/lib/routes';
 
 /**
  * The nav contract: clicking an in-app menu item must never reload the page.
@@ -199,6 +200,8 @@ describe('nav contract — every URL written to history is a real route', () => 
       'utf8',
     );
     expect(source).toContain('export function projectSessionHref');
-    expect(source).toContain('`/projects/${projectId}/sessions/${sessionId}`');
+    expect(source).toContain('uiRoutes().session(projectId, sessionId)');
+    // apps/web serves the default route table: the session URL is project-scoped.
+    expect(defaultUiRoutes.session('p1', 's1')).toBe('/projects/p1/sessions/s1');
   });
 });

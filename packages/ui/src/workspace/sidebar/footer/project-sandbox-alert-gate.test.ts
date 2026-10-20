@@ -41,7 +41,7 @@ describe('sandbox alert — controls are IAM-gated, the message is not', () => {
     // a cold `router.push` can degrade into
     // (fetch-server-response.js:148/177/181).
     expect(code).not.toContain('onClick={openSandboxSection}');
-    expect(code).toContain('const detailsButton = canOpenDetails ? (');
+    expect(code).toContain('const detailsButton = canOpenDetails && sandboxSectionHref ? (');
     // Recovery gates on project.write and never renders while building.
     expect(code).toContain("severity !== 'building' && canRecover");
     expect(code).toContain('fix: canFixWithAgent,');
