@@ -823,6 +823,8 @@ describe('SessionChat agent roster source', () => {
         </IntlTestProvider>
       </QueryClientProvider>,
     );
-    expect(runtimeAgentsArgs?.projectId).toBe('project-fixture');
+    // Assigned inside the mocked hook: TS cannot see that write from here.
+    const args = runtimeAgentsArgs as { projectId?: string | null } | undefined;
+    expect(args?.projectId).toBe('project-fixture');
   });
 });
