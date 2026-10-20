@@ -302,7 +302,8 @@ const citationView = v.object({
 
 /** One run: batches, the event log, and its results (review cells or the answer), citations with their source paragraph. */
 export const get = query({
-  args: { runId: v.id("runs") },
+  // A string, not v.id: a malformed link must show "not found", not throw.
+  args: { runId: v.string() },
   returns: v.union(
     v.null(),
     v.object({
@@ -341,7 +342,9 @@ export const get = query({
       perspective: v.optional(v.string()),
     }),
   ),
-  handler: async (ctx, { runId }) => {
+  handler: async (ctx, { runId: raw }) => {
+    const runId = ctx.db.normalizeId("runs", raw);
+    if (!runId) return null;
     let run: Doc<"runs">;
     try {
       run = (await requireRun(ctx, runId)).run;

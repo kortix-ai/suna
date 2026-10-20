@@ -53,7 +53,8 @@ export const listForMatter = query({
 
 /** One review: the grid (effective values: edited ?? AI), each cell's review state, and the run that is filling it now. */
 export const get = query({
-  args: { reviewId: v.id("reviews") },
+  // A string, not v.id: a malformed link must show "not found", not throw.
+  args: { reviewId: v.string() },
   returns: v.union(v.null(), v.object({
     review: v.object({ _id: v.id("reviews"), title: v.string(), matterId: v.id("matters"), createdBy: v.string(), _creationTime: v.number() }),
     columns: v.array(column),
@@ -70,7 +71,9 @@ export const get = query({
     runs: v.array(v.object({ _id: v.id("runs"), kind: v.string(), status: runStatus, title: v.string(), columnKeys: v.optional(v.array(v.string())),
       startedAt: v.optional(v.number()), finishedAt: v.optional(v.number()), _creationTime: v.number() })),
   })),
-  handler: async (ctx, { reviewId }) => {
+  handler: async (ctx, { reviewId: raw }) => {
+    const reviewId = ctx.db.normalizeId("reviews", raw);
+    if (!reviewId) return null;
     let review: Doc<"reviews">;
     try {
       review = (await requireReview(ctx, reviewId)).review;
