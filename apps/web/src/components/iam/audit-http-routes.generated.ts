@@ -412,6 +412,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|p|share",
   "POST|v1|p|share",
   "DELETE|v1|p|share|:token",
+  "POST|v1|p|ticket",
   "GET|v1|platform",
   "POST|v1|platform|boot-timeline",
   "DELETE|v1|platform|github-app",

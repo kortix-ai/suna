@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 853,
+  "count": 854,
   "routes": [
     {
       "method": "GET",
@@ -1641,6 +1641,10 @@
     {
       "method": "DELETE",
       "path": "/v1/p/share/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/p/ticket"
     },
     {
       "method": "GET",

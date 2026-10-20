@@ -261,6 +261,43 @@ describe('walletSeverity — the ONLY place a balance becomes an alert', () => {
     );
   });
 
+  test.each([5, 4.989])('a fresh free grant with %s dollars remaining is silent', (total) => {
+    expect(walletSeverity(accountState({
+      billing_state: 'active',
+      tier: { can_purchase_credits: true, monthly_credits: 5 },
+      credits: { total },
+    }))).toBeNull();
+  });
+
+  test.each([0.49, 0])('a nearly exhausted free grant with %s dollars remaining warns', (total) => {
+    expect(walletSeverity(accountState({
+      billing_state: 'active',
+      tier: { can_purchase_credits: true, monthly_credits: 5 },
+      credits: { total },
+    }))).toBe('low');
+  });
+
+  test('a free grant at ten percent remaining is silent', () => {
+    expect(walletSeverity(accountState({
+      billing_state: 'active',
+      tier: { can_purchase_credits: true, monthly_credits: 5 },
+      credits: { total: 0.5 },
+    }))).toBeNull();
+  });
+
+  test.each([null, 0, -5, 50, 100])('a grant of %s keeps the five-dollar warning ceiling', (grant) => {
+    expect(walletSeverity(accountState({
+      billing_state: 'active',
+      tier: { monthly_credits: grant },
+      credits: { total: 4.99 },
+    }))).toBe('low');
+    expect(walletSeverity(accountState({
+      billing_state: 'active',
+      tier: { monthly_credits: grant },
+      credits: { total: 5 },
+    }))).toBeNull();
+  });
+
   test('a running account below the low-balance line gets the soft nudge', () => {
     expect(
       walletSeverity(accountState({ billing_state: 'active', credits: { total: 4.99 } })),

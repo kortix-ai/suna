@@ -23,6 +23,7 @@ beforeEach(() => {
     if (url.endsWith('/p/config')) {
       return Response.json({ preview_url_template: 'https://dev-p{port}-{sandbox}.p.kortix.com' });
     }
+    if (url.endsWith('/p/ticket')) return Response.json({ ticket: 'preview-only-ticket' });
     return new Response(null, { status: 204 });
   }) as unknown as typeof fetch;
 });
@@ -42,9 +43,9 @@ async function render(previewUrl: string): Promise<string | null> {
   return value;
 }
 
-test('an advertised preview origin gets the one-shot token', async () => {
+test('an advertised preview origin gets a scoped preview ticket', async () => {
   expect(await render('https://dev-p3000-sbx-a1.p.kortix.com/')).toBe(
-    'https://dev-p3000-sbx-a1.p.kortix.com/?token=jwt-token',
+    'https://dev-p3000-sbx-a1.p.kortix.com/?preview_ticket=preview-only-ticket',
   );
 });
 
