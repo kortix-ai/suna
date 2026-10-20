@@ -105,7 +105,7 @@ import {
   type ProjectConfigSummary,
   readProjectFile,
 } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import {
   BookOpenTextIcon,
@@ -116,6 +116,7 @@ import {
   DotsThreeIcon,
   FileTextIcon,
   GlobeIcon,
+  HardDriveIcon,
   type Icon,
   KeyIcon,
   PlayIcon,
@@ -142,6 +143,8 @@ import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capa
 import { useIsMobile } from '@/hooks/utils';
 
 import { EditorSectionStyleProvider } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
+
+import { AgentDrivesSection } from '@/features/drives/agent-drives-section';
 
 import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentModel, AgentScope } from './agent-detail-aside';
@@ -171,6 +174,7 @@ const SECTION_ICON: Record<AgentConfigSectionKey, Icon> = {
   connectors: PlugsConnectedIcon,
   secrets: KeyIcon,
   apps: GlobeIcon,
+  drives: HardDriveIcon,
   actions: TerminalWindowIcon,
   model: CpuIcon,
   tools: WrenchIcon,
@@ -683,7 +687,12 @@ function EditableAgentPage({
     description: skill.description ?? undefined,
   }));
   const pathname = usePathname();
-  const sections = useMemo(() => agentConfigSectionKeys(schemaVersion), [schemaVersion]);
+  // Drives exists only with Volumes on (the project's derived `drives` flag).
+  const drivesOn = useFeatureFlag(projectId, 'drives').enabled;
+  const sections = useMemo(
+    () => agentConfigSectionKeys(schemaVersion).filter((k) => drivesOn || k !== 'drives'),
+    [schemaVersion, drivesOn],
+  );
   const registryOptions = useMemo(
     () => registryGrantOptions({ manifest_raw: config.manifest_raw, agents: toArray(config.agents) }, agent.name),
     [config.manifest_raw, config.agents, agent.name],
@@ -724,6 +733,7 @@ function EditableAgentPage({
           connectors={<ConnectorsGrantPage projectId={projectId} editor={editor} />}
           secrets={<SecretsGrantPage projectId={projectId} editor={editor} />}
           apps={<AppsGrantPage projectId={projectId} editor={editor} />}
+          drives={<AgentDrivesSection projectId={projectId} agentName={agent.name} />}
           overview={
             <OverviewPane
               description={editor.oc.description ?? ''}

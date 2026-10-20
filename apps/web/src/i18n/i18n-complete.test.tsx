@@ -5,6 +5,7 @@ import { localizedSlashActions } from '@/features/session/composer/menus/slash-a
 import { getProviderGuide, getScimGuide } from '@/features/sso-setup/guides';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import { IntlMessageFormat } from 'intl-messageformat';
 import { createTranslator } from 'next-intl';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -30,8 +31,50 @@ const srTranslator = createTranslator({
 
 const localeCatalogs = { en, de, it, zh, ja, pt, fr, es, sr } as const;
 
+// Argument names and select keys from the real ICU parse. A one-word select
+// branch body such as `model_busy {busy}` is copy, not an argument, and a
+// regex cannot tell the two apart.
+type IcuElement = {
+  type: number;
+  value?: unknown;
+  options?: Record<string, { value: IcuElement[] }>;
+  children?: IcuElement[];
+};
+// TYPE.argument .. TYPE.plural in @formatjs/icu-messageformat-parser.
+const ARGUMENT_TYPES = new Set([1, 2, 3, 4, 5, 6]);
+
+function collectArguments(elements: IcuElement[], names: string[]): string[] {
+  for (const element of elements) {
+    if (ARGUMENT_TYPES.has(element.type) && typeof element.value === 'string') {
+      names.push(element.value);
+    }
+    // Select keys are code values, never copy: a translated key never matches.
+    // Plural keys stay out, because each locale has its own plural categories.
+    if (element.type === 5) {
+      for (const key of Object.keys(element.options ?? {})) names.push(`${element.value}=${key}`);
+    }
+    for (const option of Object.values(element.options ?? {}))
+      collectArguments(option.value, names);
+    if (element.children) collectArguments(element.children, names);
+  }
+  return names;
+}
+
 function placeholders(value: string): string[] {
-  return [...value.matchAll(/\{\s*([A-Za-z_][\w.-]*)\s*(?=[,}])/g)].map((match) => match[1]).sort();
+  try {
+    const ast = new IntlMessageFormat(value, 'en', undefined, { ignoreTag: true }).getAst();
+    return collectArguments(ast as IcuElement[], []).sort();
+  } catch {
+    // Raw copy that is not ICU (code samples, `{{ body.* }}` templates): fall
+    // back to a brace scan that skips plural branch bodies.
+    return [
+      ...value.matchAll(
+        /(?<!(?:\b(?:zero|one|two|few|many|other)|=\d+)\s*)\{\s*([A-Za-z_][\w.-]*)\s*(?=[,}])/g,
+      ),
+    ]
+      .map((match) => match[1])
+      .sort();
+  }
 }
 
 describe('complete UI localization', () => {
@@ -52,11 +95,9 @@ describe('complete UI localization', () => {
   });
 
   test('preserves an empty catalog value without requesting an empty translation key', () => {
-    const localized = localizeUiCatalog(
-      { description: '' },
-      srTranslator,
-      { '': 'texte3b0c44298fc' },
-    );
+    const localized = localizeUiCatalog({ description: '' }, srTranslator, {
+      '': 'texte3b0c44298fc',
+    });
 
     expect(localized.description).toBe('');
   });

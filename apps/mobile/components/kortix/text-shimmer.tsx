@@ -60,7 +60,7 @@ type TextShimmerTone = 'default' | 'muted';
 
 type TextVariant = ComponentProps<typeof Text>['variant'];
 
-export interface TextShimmerProps {
+interface TextShimmerProps {
   children: string;
   /** The closest `Text` variant; `style` overrides size, leading, and weight. */
   variant?: TextVariant;

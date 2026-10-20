@@ -745,8 +745,10 @@ pub fn run(cli: Cli) -> Result<()> {
         }
         Command::Storage(c) => storage(&paths, c, json_out),
         Command::Sync(c) => sync_cmd(&paths, c, json_out),
-        Command::Ui(a) => ui::run(&paths, a),
-        Command::Open { url } => ui::open_url(&paths, &url),
+        Command::Ui(a) => ui::run(&paths, a).inspect_err(|e| ui::report_failure(&paths, e)),
+        Command::Open { url } => {
+            ui::open_url(&paths, &url).inspect_err(|e| ui::report_failure(&paths, e))
+        }
         Command::Ask(a) => ask_cmd(&paths, a, json_out),
         Command::Login(a) => login(&paths, a, json_out),
         Command::Start(a) => {
@@ -818,7 +820,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     .spawn()?;
                 return Ok(());
             }
-            app(&paths)
+            app(&paths).inspect_err(|e| ui::report_failure(&paths, e))
         }
     }
 }

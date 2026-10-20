@@ -52,10 +52,11 @@ function ComposerEditorFallback() {
 export interface ComposerCardDerived {
   tHardcodedUi: ReturnType<typeof useTranslations>;
   isDragOver: boolean;
-  handleDragEnter: DragEventHandler<HTMLElement>;
-  handleDragOver: DragEventHandler<HTMLElement>;
-  handleDragLeave: DragEventHandler<HTMLElement>;
-  handleDropFiles: DragEventHandler<HTMLElement>;
+  /** Unset inside a `ComposerDropZone`: the zone owns every file drag. */
+  handleDragEnter?: DragEventHandler<HTMLElement>;
+  handleDragOver?: DragEventHandler<HTMLElement>;
+  handleDragLeave?: DragEventHandler<HTMLElement>;
+  handleDropFiles?: DragEventHandler<HTMLElement>;
   attachedFiles: AttachedFile[];
   promptAttachmentItems: UsePromptAttachmentsResult['attachments'];
   removeAttachedFile: (index: number) => void;

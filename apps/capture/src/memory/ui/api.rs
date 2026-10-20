@@ -1908,7 +1908,6 @@ mod tests {
         "storage.cap_action",
         "storage.retention_days",
         "storage.retention_action",
-        "launch_at_login",
         "interval_ms",
         "max_width",
         "max_height",

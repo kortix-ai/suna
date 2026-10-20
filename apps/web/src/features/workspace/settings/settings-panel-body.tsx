@@ -26,7 +26,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
-import { getProjectDetail, type KortixProject } from '@kortix/sdk';
+import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -224,7 +224,6 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
         onTabChange={setTab}
         onOpenChange={(next) => (next ? undefined : close())}
         isMobile={isMobile}
-        project={project}
         projectId={projectId}
         accountId={resolvedAccountId}
         groups={groups}
@@ -233,9 +232,11 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
         organizationCopy={organizationCopy}
         chrome={chrome}
         startOnPane={paneRequested}
-        modalTitle={
-          project ? tSettingsRail('projectTitle', { projectName: project.name }) : chrome.settings
-        }
+        // The dialog is the personal settings shell wherever it opens from —
+        // inside a project too, where only the `workspace` pane knows the
+        // project exists (KRTX-1975): the accessible title stays "Settings",
+        // never "Settings — <project>".
+        modalTitle={chrome.settings}
       />
     </SettingsNavProvider>
   );
@@ -247,7 +248,6 @@ export interface SettingsPanelViewProps {
   onTabChange: (tab: SettingsTab) => void;
   onOpenChange: (open: boolean) => void;
   isMobile: boolean;
-  project: KortixProject | undefined;
   /** Required by the `workspace` pane, and by nothing else — see
    *  `SettingsPanelShellProps`. `undefined` outside a project, which is the
    *  same condition that filters that pane out. */
@@ -270,7 +270,6 @@ export function SettingsPanelView({
   onTabChange,
   onOpenChange,
   isMobile,
-  project,
   projectId,
   accountId,
   groups,
@@ -330,7 +329,7 @@ export function SettingsPanelView({
 
 export type SettingsPanelShellProps = Omit<
   SettingsPanelViewProps,
-  'open' | 'onOpenChange' | 'project' | 'modalTitle' | 'organizationCopy'
+  'open' | 'onOpenChange' | 'modalTitle' | 'organizationCopy'
 > & {
   organizationCopy?: AccountMembershipsCopy;
 };
@@ -352,10 +351,7 @@ export function SettingsPanelShell({
   // dialog's own title already says Settings. It comes back the moment a
   // second group does — or the Organizations block, which is a second list
   // under the same rail — which is the only case where the label does work.
-  // The footer group (Connect) is a block at the foot of the rail, not a
-  // second list, so it does not count.
-  const showGroupLabels =
-    groups.filter((group) => !group.footer).length > 1 || organizations.length > 0;
+  const showGroupLabels = groups.length > 1 || organizations.length > 0;
   const activeItem = allItems.find((item) => isRailItemActive(item, tab));
   // Mobile only: the list screen, or the pane screen. A caller that opened
   // settings on a named tab lands on that pane.

@@ -625,7 +625,7 @@ async function probeConcurrently<Item, Result>(
  * structurally here, and the status is deliberately NOT checked, so a future
  * status carrying the same code still surfaces the same message.
  */
-function featureDisabledMessage(err: unknown): string | null {
+export function featureDisabledMessage(err: unknown): string | null {
   if (!err || typeof err !== 'object') return null;
   const carrier = err as {
     code?: unknown;
@@ -698,6 +698,13 @@ export function surfaceApiError(err: unknown): number {
       process.stderr.write(`${status.err(err.message || 'Not found.')}\n`);
     } else {
       process.stderr.write(`${status.err(`HTTP ${err.status}: ${err.message}`)}\n`);
+      // A remediation-bearing body (the webhook-secret 409s, e.g.) names the
+      // fix — print it, or the status line is all the reader gets and the
+      // actual command hides in `--help` prose.
+      const remediation = (err.body as { remediation?: unknown } | null)?.remediation;
+      if (typeof remediation === 'string' && remediation) {
+        process.stderr.write(`  ${C.dim}${remediation}${C.reset}\n`);
+      }
     }
     return 1;
   }

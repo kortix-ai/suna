@@ -72,17 +72,21 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     if (isMobile) setOpenMobile(false);
   }, [isMobile, setOpenMobile]);
   // Shared by the row's anchor and its creating-session state, which stays a
-  // real <button> so `disabled` still holds.
+  // real <button> so `disabled` still holds. The shortcut hint is desktop
+  // only: a phone has no keyboard, and the tap's sticky hover revealed the
+  // hint anyway (KRTX-2005).
   const newSessionRowBody = (
     <>
         <span className="shrink-0">
           <NavigationArrowIcon className="rotate-90" />
         </span>
         <span>{t('newSession')}</span>
-        <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-hover/menu-button:opacity-100">
-          <Kbd>{modSymbol}</Kbd>
-          <Kbd>J</Kbd>
-        </KbdGroup>
+        {!isMobile && (
+          <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-hover/menu-button:opacity-100">
+            <Kbd>{modSymbol}</Kbd>
+            <Kbd>J</Kbd>
+          </KbdGroup>
+        )}
     </>
   );
 
@@ -157,22 +161,27 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 of the three icon buttons, so the row fits the 208px floor. */}
             <NotificationBell
               projectId={projectId}
+              surface="bg-sidebar"
               onNavigate={() => {
                 if (isMobile) setOpenMobile(false);
               }}
             />
             {/* Search is the palette's only pointer-reachable entry point —
                 ⌘K is otherwise the whole discovery story. Renders on mobile
-                too: there is no keystroke to fall back on there. */}
+                too: there is no keystroke to fall back on there. The ⌘K
+                keycaps stay desktop-only: on a phone the press's sticky hover
+                showed a shortcut that cannot exist there (KRTX-2005). */}
             <Hint
               side="bottom"
               label={
                 <span className="flex items-center gap-1.5">
                   {t('search')}
-                  <KbdGroup>
-                    <Kbd className="font-mono">{modSymbol}</Kbd>
-                    <Kbd className="font-mono">K</Kbd>
-                  </KbdGroup>
+                  {!isMobile && (
+                    <KbdGroup>
+                      <Kbd className="font-mono">{modSymbol}</Kbd>
+                      <Kbd className="font-mono">K</Kbd>
+                    </KbdGroup>
+                  )}
                 </span>
               }
             >
@@ -182,7 +191,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 variant="ghost"
                 size="icon"
                 onClick={handleOpenSearch}
-                className="shrink-0"
+                // The palette's only pointer-reachable entry: the ≈26px ghost
+                // box clears the 44px floor with the vertical-only extension —
+                // vertical-only because this titlebar row packs several
+                // controls side by side (KRTX-2004).
+                className="shrink-0 hit-area-y-3"
               >
                 <MagnifyingGlassIcon className="size-4" />
               </Button>
@@ -252,7 +265,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 )}
               </SidebarMenuItem>
 
-              {/* Customize, Apps, Review, Reminders, Files: order and
+              {/* Customize, Apps, Files: order and
                   visibility come from "Customize sidebar". They moved up here
                   from the footer (Jay, 2026-10-12) to keep the footer short. */}
               <ProjectNavItems projectId={projectId} />

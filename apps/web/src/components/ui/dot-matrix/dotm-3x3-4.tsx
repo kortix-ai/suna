@@ -1,6 +1,3 @@
 'use client';
 
-import { createDiagonalWave3Component } from '@/lib/dotmatrix-core';
-
-
-export const Dotm3x3_4 = createDiagonalWave3Component('Dotm3x3_4', 'br-tl');
+export * from '@kortix/ui/dot-matrix/dotm-3x3-4';

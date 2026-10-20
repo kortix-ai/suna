@@ -78,8 +78,13 @@ function collectRoutes(dir: string, segments: string[] = [], out: string[][] = [
 }
 
 // Every page lives under app/[locale]; its URL is the path below that segment.
+// A bare catch-all page (`[locale]/[...rest]`, which renders `notFound()`) is
+// not a destination: it matched every href and made the reachability loop
+// vacuous (KRTX-2587), so routes containing a catch-all segment are dropped.
+// Concrete dynamic pages (`[id]`, `[[...slug]]` is also dropped) still match
+// through `routeMatches` below.
 const APP_DIR = join(import.meta.dir, '..', 'app', '[locale]');
-const ROUTES = collectRoutes(APP_DIR);
+const ROUTES = collectRoutes(APP_DIR).filter((route) => !route.some((s) => s.includes('...')));
 
 /**
  * One href's path against one route's segments.
@@ -87,21 +92,15 @@ const ROUTES = collectRoutes(APP_DIR);
  * A literal segment must match exactly. A dynamic one (`[id]`) matches any
  * single segment, which is what lets the registry's own `{projectId}` and
  * `{accountId}` tokens stand in for the ids they are replaced by at render.
- * A catch-all (`[...slug]`) swallows the remainder; the optional form
- * (`[[...slug]]`) also matches a path that stops before it.
+ * (`ROUTES` no longer contains catch-all routes, so no other form needs
+ * handling here.)
  */
 function routeMatches(route: string[], path: string[]): boolean {
-  let r = 0;
-  for (const actual of path) {
-    const segment = route[r];
-    if (segment === undefined) return false;
-    if (segment.startsWith('[[...') || segment.startsWith('[...')) return true;
-    const isDynamic = segment.startsWith('[') && segment.endsWith(']');
-    if (!isDynamic && segment !== actual) return false;
-    r++;
-  }
-  if (r === route.length) return true;
-  return route.length === r + 1 && route[r]!.startsWith('[[...');
+  if (route.length !== path.length) return false;
+  return route.every((segment, i) => {
+    if (segment.startsWith('[') && segment.endsWith(']')) return true;
+    return segment === path[i];
+  });
 }
 
 /** Whether any route in `src/app` serves this href. */

@@ -3,7 +3,7 @@ import type { Catalog } from '@kortix/llm-catalog';
 
 import { gatewayCodexModels, gatewayModelCatalog, gatewayModelsAll } from './catalog-models';
 import { CODEX_SEED_MODEL_IDS } from './codex-models';
-import { platformDefaultModelId, SERVED_MANAGED_MODELS } from './served-managed-models';
+import { SERVED_MANAGED_MODELS } from './served-managed-models';
 
 // The sandbox agent server injects this catalog into OpenCode verbatim and does NO
 // client-side limit backfill — so the gateway MUST guarantee a usable context window
@@ -227,24 +227,20 @@ describe('served catalog field passthrough', () => {
 
 describe('gatewayModelCatalog — free-tier visibility', () => {
   const freeFull = gatewayModelCatalog('proj', { freeManagedOnly: true });
-  const defaultId = platformDefaultModelId();
 
   // Managed ids are bare; every BYOK and codex id carries a provider prefix.
-  // The ONE managed model free tier sees is the platform default — the model
-  // /model-defaults already advertises as free-tier eligible. Hiding it left
-  // every fresh free account with an empty picker and a dead composer.
-  test('free tier sees only the platform default managed model', () => {
-    expect(defaultId).not.toBe('');
-    expect(Object.keys(freeFull).filter((id) => !id.includes('/'))).toEqual([defaultId]);
+  // Free tier sees no managed model, the platform default included.
+  test('free tier sees no managed model', () => {
+    expect(Object.keys(freeFull).filter((id) => !id.includes('/'))).toEqual([]);
   });
 
   test('free tier still sees BYOK catalog models (own connected keys work)', () => {
     expect(freeFull['anthropic/claude-opus-4-8']).toBeDefined();
   });
 
-  test('anonymous + free-only = the platform default alone', () => {
+  test('anonymous + free-only = nothing', () => {
     const freeOnly = gatewayModelCatalog(undefined, { freeManagedOnly: true });
-    expect(Object.keys(freeOnly)).toEqual([defaultId]);
+    expect(Object.keys(freeOnly)).toEqual([]);
   });
 });
 

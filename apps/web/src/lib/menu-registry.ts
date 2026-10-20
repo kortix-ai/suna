@@ -47,6 +47,7 @@ import {
   FolderOpenIcon as FolderOpen,
   GitDiffIcon as GitCompareArrows,
   GlobeIcon as Globe,
+  HardDrivesIcon as HardDrives,
   KeyIcon as KeyRound,
   StackIcon as Layers,
   SquaresFourIcon as LayoutDashboard,
@@ -689,6 +690,19 @@ export const menuRegistry: MenuItemDef[] = [
       'schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring',
   },
   {
+    // The Customize Reminders tab (`remindersHref`, #10261). Gated in
+    // `command-palette.tsx` on the tab's own verdict (flag + trigger rule).
+    id: 'proj-reminders',
+    label: 'Reminders',
+    icon: Calendar,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/reminders',
+    requiresProject: true,
+    keywords: 'reminders reminder remind follow up later nudge calendar',
+  },
+  {
     id: 'proj-secrets',
     label: 'Secrets',
     icon: LockKey,
@@ -732,18 +746,33 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'files repository drive browser explorer',
   },
   {
-    // The project's shared folders: the Files tab under Customize. Only for
-    // projects with the `drives` flag on, like the tab itself.
+    // The project's shared folders: the sidebar Drive row (`filesRow`). Only
+    // for projects with the `drives` flag on, like the row itself. The id
+    // predates the move from `/customize/files` to `/drive` (#10258).
     id: 'proj-shared-files',
-    label: 'Shared files',
-    icon: FolderOpen,
+    label: 'Drive',
+    icon: HardDrives,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/customize/files',
+    href: '/projects/{projectId}/drive',
     requiresProject: true,
     requiresFlag: 'drives',
     keywords: 'files folders drive shared company my folder access share',
+  },
+  {
+    // The repo browser under Customize → Repo, where it moves when the
+    // `drives` flag is on (#10258). `command-palette.tsx` gates the row on
+    // the tab's own verdict, so it shows exactly when the tab does.
+    id: 'proj-repo',
+    label: 'Repo',
+    icon: FolderGit2,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/repo',
+    requiresProject: true,
+    keywords: 'repo repository git files browser explorer code',
   },
   {
     id: 'proj-apps',
@@ -832,18 +861,6 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['rightSidebar'],
     kind: 'action',
     actionId: 'newTerminal',
-  },
-  {
-    id: 'workspace',
-    label: 'Workspace',
-    icon: Blocks,
-    group: 'quickActions',
-    subGroup: 'tools',
-    showIn: ['commandPalette', 'rightSidebar'],
-    kind: 'navigate',
-    href: '/workspace',
-    activePathPrefixes: ['/workspace', '/agents', '/commands', '/tools'],
-    keywords: 'workspace agents skills commands tools build create',
   },
   {
     id: 'providers-quick',

@@ -42,7 +42,8 @@ export function bindAccountCapture(accountId: string) {
     },
     search: (query: C.CaptureSearchQuery) => C.searchCapture(accountId, query),
     frame: (frameId: string, opts?: { userId?: string }) => C.getCaptureFrame(accountId, frameId, opts),
-    media: (chunkId: string, opts?: { userId?: string }) => C.getCaptureChunkMedia(accountId, chunkId, opts),
+    media: (chunkId: string, opts?: { userId?: string; deviceId?: string }) =>
+      C.getCaptureChunkMedia(accountId, chunkId, opts),
   };
 }
 

@@ -2039,7 +2039,7 @@ function renderSettings() {
 
       <h3 id="sec-about">About</h3>
       ${row('Version', '', `<span class="mono">${esc(appData?.version || '')}</span>`)}
-      ${managed ? '' : row('Launch at login', 'Start Kortix Capture when you log in, and restart it if it quits unexpectedly.', sw('launch_at_login', s.launch_at_login !== false))}
+      ${row('Starts at login', managed ? 'Always. Your organization runs Kortix Capture on this computer.' : 'Always. Recording runs around the clock and comes back after a restart or a crash. To stop it until the next login, use Quit in the menu bar.', '<span>On</span>')}
       ${row('Logs', '', '<button class="btn" id="open-logs">Open logs</button>')}
 
       <details class="adv"${draft.adv ? ' open' : ''}><summary>Advanced</summary>

@@ -29,7 +29,7 @@ function Workbench() {
 
   return (
     <>
-      <SessionHeader projectId={projectId} sessionId={sessionId} />
+      <SessionHeader projectId={projectId} sessionId={sessionId} runtimeReady={session.phase === 'ready'} />
       {/* Who this browser is acting as, above the conversation rather than in a
           settings page: in wrapper mode it is the ONLY thing separating this
           session from another signed-in person's. */}
@@ -39,7 +39,11 @@ function Workbench() {
           the person who can decide is already looking. Rendered before the boot
           check on purpose: a gate raised earlier is still pending while the
           runtime is coming back up. */}
-      <SessionApprovals projectId={projectId} sessionId={sessionId} />
+      <SessionApprovals
+        projectId={projectId}
+        sessionId={sessionId}
+        waitingInChat={session.questions.length + session.permissions.length}
+      />
       {session.phase !== 'ready' ? (
         <BootScreen
           stage={session.stage ?? undefined}

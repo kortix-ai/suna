@@ -23,29 +23,13 @@ type SavedMessage = {
  * stored-transcript read serves the log (`readStoredTranscriptWindow`). No mirror row is
  * written then, so a read that passes proves the log answered.
  */
-export async function seedSessionTranscript(
-  env: Env,
-  input: {
-    projectId: string;
-    accountId: string;
-    sessionId: string;
-    ensureSandbox?: boolean;
-    /**
-     * The saved transcript to write, in place of the default prompt and reply.
-     * A message is stored under its own `info.sessionID` when it names one, so
-     * a sub-agent's messages land in their own OpenCode session, as a capture
-     * stores them. `defaults` is the default prompt and reply.
-     */
-    messages?: (root: string, defaults: SavedMessage[]) => SavedMessage[];
-    /** Store the history in the session log. `bearer`: the session owner's JWT or PAT, which mints the journal credential. */
-    log?: { bearer: string };
-  },
-) {
-  if (!env.databaseUrl || env.target === 'prod')
-    throw new Error('A non-production database is required');
-  const root = `ses_${input.sessionId.replaceAll('-', '')}`;
-  const created = Date.now() - 60_000;
-  const defaults: SavedMessage[] = [
+/**
+ * The default prompt and reply a seeded transcript stores when the caller does
+ * not bring its own: one user message and one assistant reply, ids fixed so a
+ * test can address them.
+ */
+function defaultSavedMessages(root: string, created: number): SavedMessage[] {
+  return [
     {
       info: {
         id: 'msg_000000000000000000000001',
@@ -92,6 +76,30 @@ export async function seedSessionTranscript(
       ],
     },
   ];
+}
+
+export async function seedSessionTranscript(
+  env: Env,
+  input: {
+    projectId: string;
+    accountId: string;
+    sessionId: string;
+    ensureSandbox?: boolean;
+    /**
+     * The saved transcript to write, in place of the default prompt and reply.
+     * A message is stored under its own `info.sessionID` when it names one, so
+     * a sub-agent's messages land in their own OpenCode session, as a capture
+     * stores them. `defaults` is the default prompt and reply.
+     */
+    messages?: (root: string, defaults: SavedMessage[]) => SavedMessage[];
+    /** Store the history in the session log. `bearer`: the session owner's JWT or PAT, which mints the journal credential. */
+    log?: { bearer: string };
+  },
+) {
+  if (!env.databaseUrl || env.target === 'prod')
+    throw new Error('A non-production database is required');
+  const root = `ses_${input.sessionId.replaceAll('-', '')}`;
+  const defaults = defaultSavedMessages(root, Date.now() - 60_000);
   const messages = input.messages?.(root, defaults) ?? defaults;
   const db = new Client({ connectionString: env.databaseUrl });
   // A dropped connection must fail the next query, not crash the runner.

@@ -344,7 +344,10 @@ function PooledFrame({
   useLayoutEffect(() => {
     if (!slot) return;
     ensureFrame(key, url, { title, sandbox: framePolicy('app', url).sandbox, allow: CLIPBOARD_IFRAME_ALLOW });
-    return claimFrame(key, slot, framePlacement(interactive, null));
+    const release = claimFrame(key, slot, framePlacement(interactive, null));
+    // The big view is the App: it takes the wheel and keys without a click first.
+    if (interactive) slot.querySelector('iframe')?.focus({ preventScroll: true });
+    return release;
     // The URL is read once: a refetched session must not reload a live App.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, slot, interactive]);

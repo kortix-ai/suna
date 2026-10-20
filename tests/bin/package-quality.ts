@@ -226,6 +226,7 @@ if (repoChecks) {
     run(['node', 'scripts/publish-npm-package.test.mjs']),
     run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
     run(['node', '--test', 'scripts/dev-local.test.mjs']),
+    run(['node', '--test', 'scripts/dev-local-cleanup.test.mjs']),
     run(['node', '--test', 'scripts/test-guard.test.mjs']),
   ]);
   await rejectFocusedTests();
@@ -239,6 +240,7 @@ await when('apps/web', () => run(['pnpm', '--dir', 'tests', 'run', 'playwright:i
 await runAll([
   when('packages/sdk', () => run(['pnpm', '--filter', '@kortix/sdk', 'typecheck'])),
   when('packages/sdk', () => run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install'])),
+  when('packages/ui', () => run(['pnpm', '--filter', '@kortix/ui', 'typecheck'])),
   // Frozen counts (apps/api/eslint.config.mjs): new violations fail, fixed ones must be pruned.
   when('apps/api', () => run(['pnpm', '--filter', 'kortix-api', 'lint'])),
   // The migration file lint (backfill-safe sign-off, CONCURRENTLY, safety header).
@@ -250,8 +252,14 @@ await runAll([
   ...['llm-catalog', 'sdk'].map((directory) =>
     when(`packages/${directory}`, () => verifyPublishablePackage(directory, false)),
   ),
+  // @kortix/ui has no earlier build in this lane: build it, stage, dry-pack.
+  when('packages/ui', () => verifyPublishablePackage('ui')),
   when('packages/agent-tunnel', verifyAgentTunnelCli),
 ]);
+// @kortix/ui's install smoke stages and packs @kortix/sdk and @kortix/llm-catalog
+// too, so it runs alone: concurrent with the SDK smoke or the stage above, two
+// processes would rewrite and restore the same package.json.
+await when('packages/ui', () => run(['pnpm', '--filter', '@kortix/ui', 'run', 'smoke:install']));
 
 // Run two explicit bounded waves. This avoids a generic workspace fan-out while
 // removing idle CPU time between independent load classes. Keep the CLI and

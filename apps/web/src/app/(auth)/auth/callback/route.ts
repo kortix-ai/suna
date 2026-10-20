@@ -85,7 +85,9 @@ export async function GET(request: NextRequest) {
 
   // Handle errors FIRST - before any Supabase operations that might affect session
   if (error) {
-    console.error('Auth callback error:', error, errorCode, errorDescription);
+    // Query values are attacker-controlled: JSON.stringify escapes CR/LF so
+    // a crafted link cannot forge extra log lines.
+    console.error('Auth callback error:', JSON.stringify({ error, errorCode, errorDescription }));
 
     // Check if the error is due to expired/invalid link
     const isExpiredOrInvalid =

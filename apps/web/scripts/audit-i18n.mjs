@@ -134,6 +134,8 @@ function designSystemTokens(key, sourceValue) {
 const ignoredPathParts = [
   '/.next/',
   '/node_modules/',
+  // Re-export shims of @kortix/ui (packages/ui/src, outside this walk). Package
+  // copy is English defaults in UiStrings, translated through KortixUiProvider.
   '/src/components/ui/',
   '/src/app/fonts/',
   '/src/app/[locale]/(system)/debug/',

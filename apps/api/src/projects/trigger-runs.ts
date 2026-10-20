@@ -9,6 +9,7 @@ import { and, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { isSecretKey } from '../connectors/args-preview';
 import { db } from '../shared/db';
 import { totalSpendSql } from '../shared/llm-spend';
+import { isUuid } from '../shared/validate';
 import { loadVisibleSessionsForList } from './lib/session-visibility';
 
 export const TRIGGER_RUN_STATUSES = ['queued', 'running', 'fired', 'failed', 'skipped', 'rejected'] as const;
@@ -68,8 +69,6 @@ function encodeCursor(row: RunRow | { createdAt: string; executionId: string }):
 /** `created_at::text` as Postgres prints it: `2026-10-16 18:03:54.382+00`. */
 const PG_TIMESTAMPTZ_TEXT = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(\.\d{1,6})?[+-](\d{2})(?::(\d{2}))?$/;
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * True when the fields name a real instant. The fields are round-tripped
  * through `Date.UTC`, because `Date.parse` accepts 2026-02-30 and Postgres
@@ -92,7 +91,7 @@ export function decodeTriggerRunCursor(cursor: string): { createdAt: string; exe
     if (!Array.isArray(parsed) || parsed.length !== 2) return null;
     const [createdAt, executionId] = parsed;
     if (typeof createdAt !== 'string' || !isRealTimestamp(createdAt)) return null;
-    if (typeof executionId !== 'string' || !UUID.test(executionId)) return null;
+    if (!isUuid(executionId)) return null;
     return { createdAt, executionId };
   } catch {
     return null;
@@ -191,7 +190,7 @@ export async function listVisibleTriggerRuns(input: {
 
 /** One run of one trigger, unredacted, for replay. Null when it is not that trigger's. */
 export async function loadTriggerRunForReplay(projectId: string, slug: string, runId: string) {
-  if (!UUID.test(runId)) return null;
+  if (!isUuid(runId)) return null;
   const [row] = await db
     .select()
     .from(t)

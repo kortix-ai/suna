@@ -140,9 +140,6 @@ interface ProjectDetailPageProps {
   projectId: string;
   onBack: () => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -151,9 +148,6 @@ export function ProjectDetailPage({
   projectId,
   onBack,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: ProjectDetailPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -645,9 +639,6 @@ export function ProjectDetailPage({
           </Pressable>
         }
         onOpenDrawer={onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
           <Pressable
             onPress={handleDelete}

@@ -2,9 +2,9 @@
 
 /** Copy and the warning marker shared by every secret surface in the tab. */
 
-import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
-import { AlertTriangle } from 'lucide-react';
+import { Marker, MarkerContent, MarkerIcon } from '@kortix/ui/marker';
 import type { ReactNode } from 'react';
+import { WarningIcon } from '@phosphor-icons/react';
 
 /** Said wherever someone would otherwise expect this tab to affect a live run. */
 export const ALLOWLIST_IS_CREATE_ONLY =
@@ -29,7 +29,7 @@ export function Notice({
   return (
     <Marker className={tone === 'destructive' ? 'items-start text-destructive' : 'items-start'}>
       <MarkerIcon className="mt-0.5">
-        <AlertTriangle />
+        <WarningIcon />
       </MarkerIcon>
       <MarkerContent className="whitespace-normal">{children}</MarkerContent>
     </Marker>

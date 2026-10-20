@@ -46,7 +46,7 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 // spaces, then splits arguments on commas — so THEME's `hsl(0 0% 100%)` parses
 // to an empty color. `withAlpha(token, 1)` emits `hsla(0, 0%, 100%, 1)`, which
 // it reads correctly.
-export type CurrentsTone = 'dark' | 'light';
+type CurrentsTone = 'dark' | 'light';
 
 type Palette = {
   ink: string;
@@ -407,7 +407,7 @@ function StaticField({
   );
 }
 
-export type KortixCurrentsProps = {
+type KortixCurrentsProps = {
   style?: React.ComponentProps<typeof View>['style'];
   /** Mark's centre as a fraction of frame height. `0.5` centres it; lower sits higher. */
   markCenterY?: number;

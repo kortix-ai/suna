@@ -11,6 +11,7 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import {
   Select,
   SelectContent,
@@ -22,7 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import type { ProjectTriggerEventApps, ProjectTriggerEventType } from '@kortix/sdk';
 import { useProjectTriggerEventTypes } from '@kortix/sdk/react';
-import { CaretRightIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, LinkIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -31,10 +32,12 @@ import { EventAccountRows } from './event-account-picker';
 import {
   type ConfigDraft,
   type EventApp,
+  type EventAppTarget,
   type SchemaField,
   appConnectors,
   defaultConfigDraft,
   describePollHint,
+  eventAppTarget,
   eventSourceName,
   groupEventApps,
   humanizeEventType,
@@ -45,6 +48,7 @@ import {
 import { EventConfigForm, matchesEventQuery } from './event-trigger-fields';
 import {
   type ComposerDraft,
+  eventAppSource,
   findDraftApp,
   resolveProfile,
   withAppPicked,
@@ -52,6 +56,8 @@ import {
   withEventPicked,
   withProfilePicked,
 } from './trigger-composer-logic';
+import { EventCount } from './event-count';
+import { useEventAppConnect } from './use-event-app-connect';
 
 function Skeletons() {
   return (
@@ -103,7 +109,7 @@ function AppTile({ app, onPick }: { app: EventApp; onPick: () => void }) {
         <span className="min-w-0 flex-1">
           <span className="text-foreground block truncate text-sm font-medium">{app.name}</span>
           <span className="text-muted-foreground block text-xs">
-            {tI18nComplete('text6e4a170bdf81', { count: app.event_count })}
+            <EventCount app={app} />
           </span>
         </span>
         {app.connected ? (
@@ -166,7 +172,7 @@ function AppBrowser({
         {heading ? <h3 className="text-muted-foreground text-xs font-medium">{heading}</h3> : null}
         <ul className="grid gap-1.5 sm:grid-cols-2">
           {rows.map((app) => (
-            <AppTile key={app.app} app={app} onPick={() => onPick(app)} />
+            <AppTile key={`${eventAppSource(app)}:${app.app}`} app={app} onPick={() => onPick(app)} />
           ))}
         </ul>
       </section>
@@ -212,7 +218,7 @@ function AppHeader({ app, onChange }: { app: EventApp; onChange: () => void }) {
       <span className="min-w-0 flex-1">
         <span className="text-foreground block truncate text-sm font-medium">{app.name}</span>
         <span className="text-muted-foreground block text-xs">
-          {tI18nComplete('text6e4a170bdf81', { count: app.event_count })}
+          <EventCount app={app} />
         </span>
       </span>
       <Button type="button" variant="ghost" size="sm" onClick={onChange}>
@@ -222,15 +228,55 @@ function AppHeader({ app, onChange }: { app: EventApp; onChange: () => void }) {
   );
 }
 
+/**
+ * "Connect {app}": signs in the project's shared account in a popup, adding the
+ * app's connector first when the project has none. A person who may not do
+ * that reads who can.
+ */
+function ConnectAppButton({ projectId, target }: { projectId: string; target: EventAppTarget }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tComposer = useI18nTranslations('triggerComposer');
+  const { connect, connecting, canConnect, canAdd } = useEventAppConnect(projectId);
+  if (!canConnect || !(target.connector || canAdd)) {
+    return (
+      <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
+        {tComposer('mcpConnectAsk', { name: target.name })}
+      </p>
+    );
+  }
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="w-fit gap-1.5"
+      disabled={Boolean(connecting)}
+      onClick={() => connect(target)}
+    >
+      {connecting ? (
+        <Loading className="size-3.5 shrink-0" />
+      ) : (
+        <LinkIcon className="size-3.5 shrink-0" />
+      )}
+      {connecting
+        ? tI18nComplete.raw('textd403c686f6a1')
+        : tI18nComplete('text4c012b6f97ca', { app: target.name })}
+    </Button>
+  );
+}
+
 function EventList({
+  projectId,
   app,
   events,
   onPick,
 }: {
+  projectId: string;
   app: EventApp;
   events: ReturnType<typeof useProjectTriggerEventTypes>;
   onPick: (eventType: ProjectTriggerEventType) => void;
 }) {
+  const tComposer = useI18nTranslations('triggerComposer');
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState(false);
@@ -247,6 +293,17 @@ function EventList({
         {tI18nComplete.raw('texta9cb192dbee2')}{' '}
         {events.error instanceof Error ? events.error.message : ''}
       </InfoBanner>
+    );
+  }
+  // An MCP app's events are its list and search tools, which its server shows only after sign-in.
+  if (all.length === 0 && app.source === 'mcp' && !app.connected) {
+    return (
+      <div className="space-y-2">
+        <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
+          {tComposer('mcpEventsAfterConnect', { name: app.name })}
+        </p>
+        <ConnectAppButton projectId={projectId} target={eventAppTarget(app)} />
+      </div>
     );
   }
   if (all.length === 0) {
@@ -364,6 +421,7 @@ function Connection({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const profiles = appConnectors(app);
+  const mcp = app.source === 'mcp';
   const activeSlug = resolveProfile(app, draft);
   const active = profiles.find((p) => p.slug === activeSlug) ?? null;
   const heading = (
@@ -422,9 +480,16 @@ function Connection({
           projectId={projectId}
           connector={active}
           value={draft.account}
-          canConnect={canConnect}
+          // Its "Connect another account" runs the Composio/Pipedream link, which an MCP server has not.
+          canConnect={canConnect && !mcp}
           onChange={(account) => patch({ profile: active.slug, account })}
         />
+        {mcp && canConnect && !profileConnected(app, active.slug) ? (
+          <ConnectAppButton
+            projectId={projectId}
+            target={{ ...eventAppTarget(app), connector: active.slug }}
+          />
+        ) : null}
         {!canConnect && !profileConnected(app, active.slug) ? (
           <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
             {tI18nComplete('text5550bcf169d6', { name: app.name })}
@@ -506,7 +571,7 @@ export function WhenEvent({
   if (!app) {
     return (
       <div className="space-y-2">
-        <AppBrowser apps={apps} onPick={(next) => setDraft((d) => withAppPicked(d, next.app))} />
+        <AppBrowser apps={apps} onPick={(next) => setDraft((d) => withAppPicked(d, next.app, eventAppSource(next)))} />
         <InlineError message={error} />
       </div>
     );
@@ -545,6 +610,7 @@ export function WhenEvent({
       ) : (
         <div className="space-y-2">
           <EventList
+            projectId={projectId}
             app={app}
             events={events}
             onPick={(next) =>

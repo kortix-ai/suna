@@ -326,6 +326,14 @@ describe('filtered list caches (KRTX-639)', () => {
     expect(ids(qc, archived)).toEqual([]);
   });
 
+  test('a new or updated live session never lands in the Recently deleted view (KRTX-2853)', () => {
+    const qc = new QueryClient();
+    const deleted = qk.project.sessionsPaged('P1', 'visible', { view: 'deleted' });
+    qc.setQueryData(deleted, pagedOf([]));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('NEW', { initiator: { type: 'member', id: 'u1', label: 'Ann' } }));
+    expect(ids(qc, deleted)).toEqual([]);
+  });
+
   test('a pinned session still lands in the pinned view', () => {
     const qc = new QueryClient();
     const pinned = qk.project.sessionsPaged('P1', 'visible', { view: 'pinned' });

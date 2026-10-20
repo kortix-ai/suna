@@ -55,6 +55,8 @@ storeFlow(
       "GET /v1/projects/:projectId/sessions/:sessionId",
       "GET /v1/projects/:projectId/sessions/:sessionId/log",
       "GET /v1/projects/:projectId/sessions/:sessionId/snapshot",
+      // The CLI reads the `session_log` flag: on, the stored log is the only saved copy.
+      "GET /v1/projects/:projectId/detail",
     ],
   },
   async (ctx, store) => {
@@ -293,10 +295,13 @@ storeFlow(
             throw new Error(
               `stopped session reported no transcript: ${JSON.stringify(digest.transcript)}`,
             );
-          if (digest.transcript.source !== "mirror")
-            throw new Error(`expected source 'mirror', got '${digest.transcript.source}'`);
+          // Log: with `session_log` on the CLI reads the stored session log (`GET …/log`), never
+          // the v1 transcript route, and says so.
+          const source = store === "log" ? "log" : "mirror";
+          if (digest.transcript.source !== source)
+            throw new Error(`expected source '${source}', got '${digest.transcript.source}'`);
           if (digest.transcript.complete !== true)
-            throw new Error("a head-complete mirror must report complete");
+            throw new Error("a head-complete saved copy must report complete");
           if (digest.transcript.message_count !== 2)
             throw new Error(`expected 2 messages, got ${digest.transcript.message_count}`);
           const reply = digest.transcript.messages.find((m) => m.role === "assistant");
@@ -354,14 +359,20 @@ storeFlow(
           if (!run.stderr.includes(expected.stderr))
             throw new Error(`log did not say where the messages came from: ${run.stderr}`);
           // The old v1 JSON, for one release: the message array, and a deprecation note on stderr.
+          // Log: with `session_log` on the v1 transcript is not served: exit 1, and the way out.
           const old = await cli.run(["sessions", "log", sessionId, "--project", project.id, "--json", "--schema", "v1"]);
           throwIfCliInfraFailure(old, "kortix sessions log --schema v1");
-          if (old.exitCode !== 0) throw new Error(`--schema v1 exited ${old.exitCode}: ${old.all}`);
-          const array = JSON.parse(old.stdout) as Array<{ role: string; text: string }>;
-          if (array.length !== 2 || !array[1]!.text.includes("stored in the database"))
-            throw new Error(`--schema v1 lost the old shape: ${old.stdout}`);
-          if (!old.stderr.includes("deprecated"))
-            throw new Error(`--schema v1 did not say it is deprecated: ${old.stderr}`);
+          if (store === "log") {
+            if (old.exitCode !== 1 || !old.stderr.includes("Drop --schema v1"))
+              throw new Error(`--schema v1 with session_log on: expected exit 1 naming the way out, got ${old.exitCode}: ${old.all}`);
+          } else {
+            if (old.exitCode !== 0) throw new Error(`--schema v1 exited ${old.exitCode}: ${old.all}`);
+            const array = JSON.parse(old.stdout) as Array<{ role: string; text: string }>;
+            if (array.length !== 2 || !array[1]!.text.includes("stored in the database"))
+              throw new Error(`--schema v1 lost the old shape: ${old.stdout}`);
+            if (!old.stderr.includes("deprecated"))
+              throw new Error(`--schema v1 did not say it is deprecated: ${old.stderr}`);
+          }
           const status = (await owner.get("/v1/projects/:projectId/sessions/:sessionId", {
             params: { projectId: project.id, sessionId },
           })).status(200).json<{ status: string }>();
@@ -429,6 +440,9 @@ storeFlow(
       "GET /v1/accounts/me",
       "GET /v1/projects/:projectId/sessions/:sessionId",
       "GET /v1/projects/:projectId/sessions/:sessionId/transcript",
+      // The `session_log` flag decides which saved copy the index is: the stored log or the v1 transcript.
+      "GET /v1/projects/:projectId/detail",
+      "GET /v1/projects/:projectId/sessions/:sessionId/log",
     ],
   },
   async (ctx, store) => {
@@ -597,7 +611,9 @@ storeFlow(
             source: string;
             attachments: Array<{ attachment_id: string; filename: string; url: string; role: string }>;
           };
-          if (list.source !== "saved") throw new Error(`expected source 'saved', got '${list.source}'`);
+          // Log: with `session_log` on the index is the stored session log, never the v1 transcript route.
+          const source = store === "log" ? "log" : "saved";
+          if (list.source !== source) throw new Error(`expected source '${source}', got '${list.source}'`);
           if (list.attachments.length !== 1)
             throw new Error(`expected 1 stored file, got ${list.attachments.length}: ${listed.stdout}`);
           const [only] = list.attachments;

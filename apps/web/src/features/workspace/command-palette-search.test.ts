@@ -191,7 +191,7 @@ describe('only user-visible text is searchable', () => {
   test('no internal id is smuggled into the text of the row it identifies', () => {
     for (const item of menuRegistry) {
       const text = buildPaletteSearchText(item).toLowerCase();
-      // Some ids are just the label lowercased (`files`, `workspace`,
+      // Some ids are just the label lowercased (`files`,
       // `logout`). Those are fine — the word is on screen. The test is that no
       // id is present as an id, i.e. as a string the visible text does not
       // already contain in its own right.

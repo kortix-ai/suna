@@ -26,10 +26,12 @@ mock.module('./session-overrides-control', () => ({
     return null;
   },
 }));
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   successToast: (message: string) => { toasts.push(message); },
   errorToast: () => {},
-}));
+});
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => Object.assign((key: string, values?: { count: number }) =>
     values ? `${key}:${values.count}` : key, { raw: (key: string) => key }),

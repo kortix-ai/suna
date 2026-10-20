@@ -169,7 +169,7 @@ setupApp.openapi(
 
   return c.json({
     providers: available,
-    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'daytona'),
+    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'platinum'),
     capabilities,
   });
   },

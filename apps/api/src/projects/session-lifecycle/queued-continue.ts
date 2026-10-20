@@ -173,6 +173,7 @@ export async function executeQueuedContinue(
         { status: 'skipped', reason: 'consumed_in_band' },
         row.sessionId,
       );
+      await wakeAfterAdmission(row);
       return 'succeeded';
     }
   }
@@ -201,7 +202,11 @@ export async function executeQueuedContinue(
   }
   // If the batch's LAST row then fails for good, the rows already posted
   // noReply stay unanswered until the user retries it or sends again.
-  if (noReply && outcome === 'succeeded') await wakeAfterAdmission(row);
+  // A skipped placement (staged revert, already answered) posted nothing, so
+  // no turn end wakes the next row either. A failure wakes it in
+  // `markCommandFailed` when it dead-letters.
+  const skipped = 'outcome' in placement && placement.outcome === 'succeeded';
+  if (skipped || (noReply && outcome === 'succeeded')) await wakeAfterAdmission(row);
   return outcome;
 }
 

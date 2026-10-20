@@ -1,6 +1,6 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
 /**
  * The "Change requests" tab of the workbench changes panel — Kortix's native PR
@@ -10,29 +10,30 @@ import Loading from '@/components/ui/loading';
  * `@kortix/sdk` facade — no raw HTTP.
  */
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Card, CardContent } from '@kortix/ui/card';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+  ModalTrigger,
+} from '@kortix/ui/modal';
+import { Input } from '@kortix/ui/input';
+import { ScrollArea } from '@kortix/ui/scroll-area';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Textarea } from '@kortix/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import type { ChangeRequest } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, GitMerge, GitPullRequest, Plus, RotateCcw, X } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
 import { DiffStat, DiffView } from './diff-view';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { ArrowCounterClockwiseIcon, ArrowLeftIcon, GitMergeIcon, GitPullRequestIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
 
 const CR_STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
   open: 'default',
@@ -71,7 +72,7 @@ export function ChangeRequestsView({
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex shrink-0 items-center justify-between">
         <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-          <GitPullRequest className="size-3.5" />
+          <GitPullRequestIcon className="size-3.5" />
           Change requests
         </div>
         <OpenChangeRequestDialog
@@ -103,14 +104,14 @@ export function ChangeRequestsView({
                 onClick={() => setSelectedCrId(cr.cr_id)}
                 className="h-auto w-full items-start justify-start gap-2 whitespace-normal rounded-lg bg-card/50 px-2.5 py-2 text-left hover:bg-card"
               >
-                <GitPullRequest className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                <GitPullRequestIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-xs font-medium text-foreground">
                     <span className="text-muted-foreground">#{cr.number}</span> {cr.title}
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[0.7rem] text-muted-foreground">
                     <span>{cr.head_ref}</span>
-                    <ArrowLeft className="size-3 rotate-180" />
+                    <ArrowLeftIcon className="size-3 rotate-180" />
                     <span>{cr.base_ref}</span>
                   </div>
                 </div>
@@ -189,10 +190,10 @@ function ChangeRequestDetail({
         await ACTIONS[action].run();
       },
       onSuccess: () => {
-        toast.success(ACTIONS[action].done);
+        successToast(ACTIONS[action].done);
         invalidate();
       },
-      onError: () => toast.error(ACTIONS[action].failed),
+      onError: () => errorToast(ACTIONS[action].failed),
     });
   }
 
@@ -211,7 +212,7 @@ function ChangeRequestDetail({
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex shrink-0 items-center gap-2">
         <Button variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back">
-          <ArrowLeft className="size-4" />
+          <ArrowLeftIcon className="size-4" />
         </Button>
         <div className="min-w-0 flex-1">
           {detail.isLoading ? (
@@ -263,12 +264,12 @@ function ChangeRequestDetail({
                   {merge.isPending ? (
                     <Loading className="size-3.5" />
                   ) : (
-                    <GitMerge className="size-3.5" />
+                    <GitMergeIcon className="size-3.5" />
                   )}
                   Merge
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => close.mutate()} disabled={busy}>
-                  {close.isPending ? <Loading className="size-3.5" /> : <X className="size-3.5" />}
+                  {close.isPending ? <Loading className="size-3.5" /> : <XIcon className="size-3.5" />}
                   Close
                 </Button>
               </>
@@ -278,7 +279,7 @@ function ChangeRequestDetail({
                 {reopen.isPending ? (
                   <Loading className="size-3.5" />
                 ) : (
-                  <RotateCcw className="size-3.5" />
+                  <ArrowCounterClockwiseIcon className="size-3.5" />
                 )}
                 Reopen
               </Button>
@@ -363,7 +364,7 @@ function OpenChangeRequestDialog({
         session_id: sessionId,
       }),
     onSuccess: () => {
-      toast.success('Change request opened');
+      successToast('Change request opened');
       onOpened();
       setOpen(false);
       setTitle('');
@@ -371,41 +372,43 @@ function OpenChangeRequestDialog({
       setHeadRef(sessionId);
       setBaseRef('');
     },
-    onError: () => toast.error('Could not open change request'),
+    onError: () => errorToast('Could not open change request'),
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <Modal open={open} onOpenChange={setOpen}>
+      <ModalTrigger asChild>
         <Button size="sm">
-          <Plus className="size-3.5" />
+          <PlusIcon className="size-3.5" />
           Open
         </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Open change request</DialogTitle>
-          <DialogDescription>
+      </ModalTrigger>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>Open change request</ModalTitle>
+          <ModalDescription>
             Propose merging the session branch back into the base.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
-          <Textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Description (optional)"
-            rows={3}
-            className="resize-none"
-          />
-          <OpenCrRefs
-            headRef={headRef}
-            baseRef={baseRef}
-            setHeadRef={setHeadRef}
-            setBaseRef={setBaseRef}
-          />
-        </div>
-        <DialogFooter>
+          </ModalDescription>
+        </ModalHeader>
+        <ModalBody>
+          <div className="space-y-3">
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Description (optional)"
+              rows={3}
+              className="resize-none"
+            />
+            <OpenCrRefs
+              headRef={headRef}
+              baseRef={baseRef}
+              setHeadRef={setHeadRef}
+              setBaseRef={setBaseRef}
+            />
+          </div>
+        </ModalBody>
+        <ModalFooter>
           <Button
             onClick={() => openCr.mutate()}
             disabled={!title.trim() || !headRef.trim() || openCr.isPending}
@@ -413,12 +416,12 @@ function OpenChangeRequestDialog({
             {openCr.isPending ? (
               <Loading className="size-3.5" />
             ) : (
-              <GitPullRequest className="size-3.5" />
+              <GitPullRequestIcon className="size-3.5" />
             )}
             Open change request
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }

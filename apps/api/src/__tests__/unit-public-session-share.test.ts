@@ -69,7 +69,7 @@ mock.module('../sandbox-proxy/backend', () => ({
     ingressResolves += 1;
     return {
       url: 'https://preview.test',
-      headers: { 'e2b-traffic-access-token': 'preview-token' },
+      headers: { 'x-provider-traffic-token': 'preview-token' },
       effectivePort: 3000,
     };
   },

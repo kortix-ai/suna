@@ -61,6 +61,7 @@ import { Composer } from '@/components/kortix/composer';
 import type { SheetRef } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
+import { NotificationsButton } from '@/components/session/NotificationsButton';
 import { ConnectProviderSheet } from '@/components/session/ConnectProviderSheet';
 import { ModelPickerSheet } from '@/components/session/ModelPickerSheet';
 import { ProjectHero } from '@/components/session/ProjectHero';
@@ -131,6 +132,12 @@ export interface ProjectHomeProps {
   onSubmitNewSession: (input: ProjectHomeSubmit) => Promise<boolean>;
   onOpenDrawer: () => void;
   /**
+   * The bell at the top right (KRTX-1742): the caller's unread count and the
+   * move to the Notifications page. Omitted while the project's
+   * `notification_center` flag is off: no bell.
+   */
+  notifications?: { unreadCount: number; onOpen: () => void };
+  /**
    * Read-and-clear the draft text and files to seed the composer with, if any
    * — e.g. a project-home send the user cancelled from `SessionConnecting`
    * before it connected (COR-146: `ProjectScreen.handleCancelConnect`). Called
@@ -147,6 +154,7 @@ export function ProjectHome({
   sending = false,
   onSubmitNewSession,
   onOpenDrawer,
+  notifications,
   takeInitialDraft,
 }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
@@ -402,15 +410,18 @@ export function ProjectHome({
 
   return (
     <View className="flex-1 bg-background">
-      {/* Floating menu button — opens the left drawer. */}
-      {/* No header controls: the agent is picked in the model sheet's Agent
-          tab (Jay, 2026-09-23). */}
+      {/* Floating menu button — opens the left drawer. The one header control
+          is the Notifications bell, top right (Jay, 2026-10-16); the agent is
+          picked in the model sheet's Agent tab (Jay, 2026-09-23). */}
       <FloatingMenuButton onPress={onOpenDrawer}>
         {/* Dev builds only: Metro folds `__DEV__` to false, so a release build has no button. */}
         {__DEV__ ? (
           <Button variant="secondary" size="sm" className="rounded-full" onPress={() => router.push('/genui-debug')}>
             <Text>Debug GenUI</Text>
           </Button>
+        ) : null}
+        {notifications ? (
+          <NotificationsButton unreadCount={notifications.unreadCount} onPress={notifications.onOpen} />
         ) : null}
       </FloatingMenuButton>
 

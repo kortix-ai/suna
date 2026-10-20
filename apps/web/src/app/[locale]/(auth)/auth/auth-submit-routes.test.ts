@@ -195,6 +195,8 @@ test('a hung reset-email provider returns a retryable error within the bound', a
   await new Promise((resolve) => setImmediate(resolve));
   jest.advanceTimersByTime(AUTH_ROUTE_TIMEOUT_MS);
   const res = await pending;
-  expect(res.status).toBe(200);
+  // The route relays the action's status instead of answering every outcome
+  // 200 (KRTX-2049): the deadline fallback is an explicit 503.
+  expect(res.status).toBe(503);
   expect((await res.json()).message).toContain('try again');
 });

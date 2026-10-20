@@ -209,14 +209,13 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
               freeModelsOnly: freeTier,
             });
             return {
-              platformDefault: platformDefaultModelId(),
+              platformDefault: freeTier ? null : platformDefaultModelId(),
               accountDefault: defaults.account,
               agentDefaults: defaults.agents,
               projectDefault: defaults.projects[projectId] ?? null,
-              // Same answer as GET /model-defaults (KRTX-1067): the platform
-              // default is servable for every tier, so the fallback is the
-              // same for free and paid callers.
-              resolvedForCaller: resolved.model ?? platformDefaultModelId(),
+              // Same answer as GET /model-defaults: an account without
+              // managed models has no platform default.
+              resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
               resolvedSource: resolved.source,
               freeTier,
             };
@@ -318,7 +317,9 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           : failed(queue.reason),
 
       // = GET .../transcript?shape=sync — the durable mirror, attachment bytes
-      // already stripped by the capture. `null` when `?transcript=0` asked for
+      // already stripped by the capture; with `session_log` on, `toV1` of the
+      // session log, never the mirror (an SDK that does not know the flag yet
+      // still asks `transcript=40` and paints this window). `null` when `?transcript=0` asked for
       // the pointer only; the session projection above still names the OpenCode
       // root, which is the identity a client needs to trust its own store.
       transcript:

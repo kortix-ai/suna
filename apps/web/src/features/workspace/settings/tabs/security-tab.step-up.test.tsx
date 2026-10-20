@@ -123,14 +123,16 @@ mock.module('@/i18n/use-translations', () => ({
       })[key] ?? key,
 }));
 
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   successToast: () => {},
   errorToast: () => {},
-}));
+});
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 
 // The real ConfirmDialog is a Radix portal; the wiring under test is what
 // SecurityTab passes as onConfirm. A bare button keeps the tree assertable.
-mock.module('@/components/ui/confirm-dialog', () => ({
+const uiConfirmDialogMock = () => ({
   ConfirmDialog: ({
     open,
     onConfirm,
@@ -147,7 +149,9 @@ mock.module('@/components/ui/confirm-dialog', () => ({
           confirmLabel ?? 'confirm',
         )
       : null,
-}));
+});
+mock.module('@/components/ui/confirm-dialog', uiConfirmDialogMock);
+mock.module('@kortix/ui/confirm-dialog', uiConfirmDialogMock);
 
 const { SecurityTab } = await import('./security-tab');
 

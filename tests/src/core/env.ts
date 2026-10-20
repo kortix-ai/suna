@@ -11,8 +11,8 @@
 export type TargetName = 'local' | 'dev' | 'staging' | 'prod' | 'custom';
 
 export interface Capabilities {
-  /** Real Daytona sandbox provisioning available. */
-  daytona: boolean;
+  /** Real cloud sandbox provisioning available (Platinum, the reference provider). */
+  sandbox: boolean;
   /** Managed GitHub repository provisioning available. */
   managedGit: boolean;
   /** Managed repo-scoped push-token export available for CLI ship flows. */
@@ -175,7 +175,7 @@ export function loadEnv(): Env {
   const gatewayUrl = stripTrailingSlash(pick('KE2E_GATEWAY_URL') || defaultGatewayUrl(target));
 
   const capabilities: Capabilities = {
-    daytona: pick('KE2E_CAP_DAYTONA') !== '0',
+    sandbox: pick('KE2E_CAP_SANDBOX') !== '0',
     managedGit: pick('KE2E_CAP_MANAGED_GIT') !== '0',
     managedGitPush: pick('KE2E_CAP_MANAGED_GIT_PUSH') === '1',
     stripe: stripeSecretKey != null,

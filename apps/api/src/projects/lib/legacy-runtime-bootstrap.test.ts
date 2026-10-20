@@ -276,10 +276,10 @@ describe('classifyDaemonHealth', () => {
 });
 
 describe('relaunchStrategyFor', () => {
-  test('platinum relaunches in place; daytona/e2b converge at next start; unknown unsupported', () => {
+  test('platinum relaunches in place; daytona converges at next start; legacy e2b and unknown unsupported', () => {
     expect(relaunchStrategyFor('platinum')).toBe('pt-app');
     expect(relaunchStrategyFor('daytona')).toBe('next-start');
-    expect(relaunchStrategyFor('e2b')).toBe('next-start');
+    expect(relaunchStrategyFor('e2b')).toBeNull();
     expect(relaunchStrategyFor('local')).toBeNull();
   });
 });
@@ -316,7 +316,6 @@ describe('decideDeadDaemonOnOpen', () => {
 
   test('providers that relaunch on their own start keep parking', () => {
     expect(decideDeadDaemonOnOpen({ provider: 'daytona', metadata: {}, unreachableSinceMs: since, nowMs: now })).toBe('park');
-    expect(decideDeadDaemonOnOpen({ provider: 'e2b', metadata: {}, unreachableSinceMs: since, nowMs: now })).toBe('park');
   });
 });
 
