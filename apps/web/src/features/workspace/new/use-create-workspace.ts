@@ -805,18 +805,15 @@ export async function runCreate(
   userId: string | null | undefined,
   client: CreateOrchestrationClient,
 ): Promise<CreateResult> {
-  const fingerprint = fingerprintOf(state);
-  // The key belongs to `POST /projects/provision` and nothing else — it is the
-  // only one of the three routes that accepts an `idempotency_key`. Minting one
-  // for a GitHub source would persist a key that is never sent and never
-  // cleared, so `usesIdempotencyKey` gates BOTH the mint and the clear rather
-  // than only the field in the payload.
-  const usesIdempotencyKey = state.source === 'managed' && !isManagedImport(state);
-  const idempotencyKey = usesIdempotencyKey
-    ? client.attemptKeyFor(fingerprint, client.now())
-    : null;
-
   try {
+    const fingerprint = fingerprintOf(state);
+    // Only managed provisioning accepts an idempotency key. Setup failures
+    // must reach the same error result as a rejected provisioning request.
+    const usesIdempotencyKey = state.source === 'managed' && !isManagedImport(state);
+    const idempotencyKey = usesIdempotencyKey
+      ? client.attemptKeyFor(fingerprint, client.now())
+      : null;
+
     const project = await runSourceAttempt(
       state,
       creatableAccounts,
