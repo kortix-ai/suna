@@ -65,6 +65,8 @@ import { loadSessionUserStates } from '../lib/session-user-state';
 import { personUserId } from './session-watch';
 import { sessionCreateSurface } from '../lib/session-surface';
 
+import { readSessionsWorking } from '../lib/session-working-read';
+
 const NO_USER_STATE = { pinnedAt: null, archivedAt: null };
 
 function serverManagedSessionMetadataKey(
@@ -101,14 +103,15 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
   // The same owner resolution the list uses: without it a read-by-id reported
   // owner_type 'unknown' and no owner name for the very session the list named.
   const personId = personUserId(c, loaded);
-  const [owners, userStates] = await Promise.all([
+  const [owners, userStates, working] = await Promise.all([
     visible.row.createdBy
       ? resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)
       : undefined,
     personId ? loadSessionUserStates([sessionId], personId) : undefined,
+    readSessionsWorking([sessionId]),
   ]);
   const owner = visible.row.createdBy ? owners?.get(visible.row.createdBy) : undefined;
-  return c.json(serializeSession(visible.row, {
+  return c.json({ ...serializeSession(visible.row, {
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
@@ -118,7 +121,7 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
     ownerAvatarUrl: owner?.avatarUrl ?? null,
     ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
     userState: personId ? (userStates?.get(sessionId) ?? NO_USER_STATE) : undefined,
-  }), 200);
+  }), working: working.get(sessionId) }, 200);
 }
 
 /**
@@ -486,10 +489,11 @@ export function registerProjectSessionsRoutes(): void {
       return c.json({ error: 'Project manager access is required to list every session' }, 403);
     }
 
+    const working = await readSessionsWorking(inventory.items.filter(item => item.canAccess).map(item => item.row.sessionId));
     const body = inventory.items.map((item) => {
       const row = item.row;
       const owner = row.createdBy ? inventory.ownerIdentities.get(row.createdBy) : null;
-      const serialized = serializeSession(row, {
+      const serialized = { ...serializeSession(row, {
         initiatorName: row.initiatorId ? (inventory.initiatorNames.get(row.initiatorId) ?? null) : null,
         grants: inventory.grantsBySession.get(row.sessionId) ?? [],
         viewerId: loaded.userId,
@@ -509,7 +513,7 @@ export function registerProjectSessionsRoutes(): void {
         // The inventory listing drops the write-only heavy metadata keys. The
         // single-session read below still returns metadata whole.
         trimListMetadata: true,
-      });
+      }), working: working.get(row.sessionId) };
       if (query.parent !== 'root') return serialized;
       return {
         ...serialized,
