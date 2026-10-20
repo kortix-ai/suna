@@ -336,6 +336,16 @@ describe('liveTextBlockId and textBlockRevealKey (KRTX-2933)', () => {
     expect(textBlockRevealKey([msg('m1', 'complete', ['a']), msg('m2', 'streaming', ['b'])], 'b')).toBe('m2:b');
     expect(textBlockRevealKey([msg('m1', 'complete', ['a'])], 'zz')).toBe('zz');
   });
+
+  test('each reply list answers from its own blocks, the first message holding an id wins', () => {
+    const first = [msg('m1', 'complete', ['a', 'b']), msg('m2', 'streaming', ['b'])];
+    expect(textBlockRevealKey(first, 'b')).toBe('m1:b');
+    // The next streamed frame is a new list: an index built for `first` must not answer for it.
+    const next = [msg('m1', 'complete', ['a']), msg('m2', 'streaming', ['b'])];
+    expect(textBlockRevealKey(next, 'b')).toBe('m2:b');
+    expect(textBlockRevealKey(first, 'b')).toBe('m1:b');
+  });
+
 });
 
 describe('turnWorkSplit (KRTX-2113, web TurnToolBlocks fold)', () => {

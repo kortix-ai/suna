@@ -151,9 +151,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'tokens',
   'mcp',
   'computer',
-  // `connected` is still in the type but NOT here: it listed the ACCOUNT's
-  // GitHub App installations — the account page's Git tab — under a
-  // person's own settings (Marko, 2026-09-03). It redirects there.
+  // `connected` is a legacy alias for the person's Profile tab in RENAMED.
   // `credits` and `plan` are still in the type but NOT here: the overlay's
   // Account group was removed on 2026-09-03 (Marko) — a wallet and a
   // subscription belong to the account page, `/accounts/[id]`, and both ids
@@ -295,8 +293,6 @@ export const ACCOUNT_GRADUATED: Record<string, string> = {
   // account page already owns both.
   credits: 'transactions',
   plan: 'billing',
-  // Connected accounts = the account's GitHub App installations = the Git tab.
-  connected: 'git',
   groups: 'groups',
   roles: 'roles',
   identity: 'identity',
@@ -327,6 +323,8 @@ export const ACCOUNT_GRADUATED: Record<string, string> = {
  * the caller happened to have resolved an account id yet.
  */
 export const RENAMED: Record<string, SettingsTab> = {
+  // Personal sign-in details live on Profile, not the organization's Git pane.
+  connected: 'profile',
   'api-keys': 'tokens',
   // Every project-configuration spelling (`general`, `git`, `snapshots`,
   // `experimental`, `upgrade`, …) is in `GRADUATED` above: they name the

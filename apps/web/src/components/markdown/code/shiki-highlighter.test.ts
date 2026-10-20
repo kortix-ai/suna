@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
   __testing,
-  clampCode,
   PRELOAD_LANGS,
   highlightAsync,
   highlightSync,
@@ -12,7 +11,6 @@ import {
 } from './shiki-highlighter';
 
 const MAX = 50_000;
-const MARKER = '\n// ... (truncated for highlighting)';
 
 const { shikiCache, SHIKI_CACHE_MAX, cacheHtml, loadedLangs } = __testing;
 
@@ -21,42 +19,27 @@ afterEach(() => {
   shikiCache.clear();
 });
 
-describe('clampCode', () => {
-  test('passes code under the ceiling through byte-identical', () => {
-    const code = 'const a = 1;\nexport default a;\n';
-    expect(clampCode(code)).toBe(code);
-
-    const long = 'x'.repeat(MAX - 1);
-    expect(clampCode(long)).toBe(long);
+describe('the length limit', () => {
+  test('exactly 50,000 characters still highlights', async () => {
+    expect(await highlightAsync('x'.repeat(MAX), 'text', SHIKI_THEME_DARK)).toContain('<pre');
   });
 
-  test('exactly 50,000 characters is not truncated', () => {
-    const code = 'x'.repeat(MAX);
+  test('50,001 characters is not highlighted at all, sync or async', async () => {
+    const code = 'x'.repeat(MAX + 1);
+    // Warm first, so the sync null proves the limit rather than a cold highlighter.
+    await highlightAsync('warm', 'text', SHIKI_THEME_DARK);
 
-    expect(clampCode(code)).toBe(code);
-    expect(clampCode(code)).not.toContain(MARKER);
+    expect(await highlightAsync(code, 'text', SHIKI_THEME_DARK)).toBeNull();
+    expect(highlightSync(code, 'text', SHIKI_THEME_DARK)).toBeNull();
+    expect(shikiCache.size).toBe(1);
   });
 
-  test('50,001 characters is truncated and carries the marker', () => {
-    const clamped = clampCode('x'.repeat(MAX + 1));
+  test('unbounded highlights past the limit, through the last line', async () => {
+    const code = 'x'.repeat(MAX + 1) + '\nLAST_LINE';
 
-    expect(clamped.endsWith(MARKER)).toBe(true);
-    expect(clamped.length).toBe(MAX + MARKER.length);
-  });
-
-  test('the overflowing tail is dropped, not merely annotated', () => {
-    const clamped = clampCode('x'.repeat(MAX) + 'DROP_ME');
-
-    expect(clamped).toBe('x'.repeat(MAX) + MARKER);
-    expect(clamped).not.toContain('DROP_ME');
-  });
-
-  test('unbounded skips the clamp regardless of length', () => {
-    const huge = 'x'.repeat(MAX * 5) + 'KEEP_ME';
-
-    expect(clampCode(huge, true)).toBe(huge);
-    expect(clampCode(huge, true)).toContain('KEEP_ME');
-    expect(clampCode(huge, true)).not.toContain(MARKER);
+    expect(await highlightAsync(code, 'text', SHIKI_THEME_DARK, { unbounded: true })).toContain(
+      'LAST_LINE',
+    );
   });
 });
 
@@ -120,17 +103,16 @@ describe('shikiKey', () => {
 });
 
 describe('rendering mode isolation', () => {
-  test('omitted and false modes share pending work, true stays separate', async () => {
+  test('omitted and false modes both skip oversized code, true highlights it', async () => {
     const code = '// normalization\n'.repeat(3000) + '// NORMALIZED_TAIL';
-    const bounded = highlightAsync(code, 'javascript', SHIKI_THEME_DARK);
-    expect(highlightAsync(code, 'javascript', SHIKI_THEME_DARK, { unbounded: false })).toBe(
-      bounded,
-    );
-    const full = highlightAsync(code, 'javascript', SHIKI_THEME_DARK, { unbounded: true });
-    expect(full).not.toBe(bounded);
-    const [boundedHtml, fullHtml] = await Promise.all([bounded, full]);
-    expect(boundedHtml?.includes('NORMALIZED_TAIL')).toBe(false);
-    expect(fullHtml?.includes('NORMALIZED_TAIL')).toBe(true);
+    const [omitted, bounded, full] = await Promise.all([
+      highlightAsync(code, 'javascript', SHIKI_THEME_DARK),
+      highlightAsync(code, 'javascript', SHIKI_THEME_DARK, { unbounded: false }),
+      highlightAsync(code, 'javascript', SHIKI_THEME_DARK, { unbounded: true }),
+    ]);
+    expect(omitted).toBeNull();
+    expect(bounded).toBeNull();
+    expect(full?.includes('NORMALIZED_TAIL')).toBe(true);
   });
 
   for (const firstUnbounded of [false, true]) {
@@ -138,12 +120,12 @@ describe('rendering mode isolation', () => {
       const code = '// padding\n'.repeat(5001) + '// UNIQUE_TAIL';
       for (const unbounded of [firstUnbounded, !firstUnbounded, firstUnbounded]) {
         const html = await highlightAsync(code, 'javascript', SHIKI_THEME_DARK, { unbounded });
-        expect(html).toContain('<pre');
-        expect(html?.includes('UNIQUE_TAIL')).toBe(unbounded);
-        expect(html?.includes('truncated for highlighting')).toBe(!unbounded);
+        if (unbounded) expect(html).toContain('UNIQUE_TAIL');
+        else expect(html).toBeNull();
         expect(highlightSync(code, 'javascript', SHIKI_THEME_DARK, { unbounded })).toBe(html);
       }
-      expect(shikiCache.size).toBe(2);
+      // Only the unbounded HTML is cached; oversized bounded code never reaches it.
+      expect(shikiCache.size).toBe(1);
     });
 
     test(`concurrent requests respect mode, starting unbounded=${firstUnbounded}`, async () => {
@@ -155,9 +137,8 @@ describe('rendering mode isolation', () => {
         ),
       );
       results.forEach((html, index) => {
-        expect(html).toContain('<pre');
-        expect(html?.includes('CONCURRENT_TAIL')).toBe(modes[index]);
-        expect(html?.includes('truncated for highlighting')).toBe(!modes[index]);
+        if (modes[index]) expect(html).toContain('CONCURRENT_TAIL');
+        else expect(html).toBeNull();
       });
     });
   }
