@@ -82,6 +82,8 @@ export const SESSION_TOKEN_DEAD_PROBE_MS = 5 * 60_000
 let consecutiveDeadTokenSignals = 0
 let tripped = false
 let lastProbeAt = 0
+/** The credential the API refused when the breaker tripped. */
+let trippedOnToken: string | undefined
 
 /**
  * Has the API told this box, repeatedly and without contradiction, that its
@@ -92,6 +94,15 @@ let lastProbeAt = 0
  */
 export function sessionTokenPresumedDead(): boolean {
   if (!tripped) return false
+  // A wake can install a new credential right after the old one was refused
+  // (KRTX-2545). The verdict was about that old token, so the next call carries
+  // the new one instead of waiting out the probe window.
+  if (process.env.KORTIX_TOKEN !== trippedOnToken) {
+    tripped = false
+    consecutiveDeadTokenSignals = 0
+    logger.warn('[session-token-health] a new session credential arrived; calling the control plane again')
+    return false
+  }
   const now = Date.now()
   if (now - lastProbeAt < SESSION_TOKEN_DEAD_PROBE_MS) return true
   lastProbeAt = now
@@ -120,6 +131,7 @@ export function noteControlPlaneResponse(status: number, bodyText: string | null
   consecutiveDeadTokenSignals += 1
   if (consecutiveDeadTokenSignals < SESSION_TOKEN_DEAD_TRIP_THRESHOLD || tripped) return
   tripped = true
+  trippedOnToken = process.env.KORTIX_TOKEN
   lastProbeAt = Date.now()
   // Loud, once. NEVER a shutdown: see the header. The daemon keeps serving and
   // keeps asking, so a rotated credential is picked up on the next call.
@@ -132,4 +144,5 @@ export function resetSessionTokenHealthForTests(): void {
   consecutiveDeadTokenSignals = 0
   tripped = false
   lastProbeAt = 0
+  trippedOnToken = undefined
 }
