@@ -143,7 +143,7 @@ export function registerProjectSpacesRoutes(): void {
       if (gate) return gate;
       const spaceId = c.req.param('spaceId');
       if (!isUuid(spaceId)) return c.json({ error: 'Channel not found', code: 'space_not_found' }, 404);
-      const result = await updateChannel(loaded.row.projectId, spaceId, c.req.valid('json'));
+      const result = await updateChannel(loaded.row.projectId, loaded.userId, spaceId, c.req.valid('json'));
       if ('error' in result) return c.json(result.error.body, result.error.status);
       return c.json(serializeSpace(result.space), 200);
     },

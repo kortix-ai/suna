@@ -1013,6 +1013,12 @@ export const SessionCreateInputSchema = z
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     labels: SessionLabelsSchema.optional(),
+    /**
+     * The space (channel or the caller's own DM) the session belongs to.
+     * Read only while the project's `project_channels` flag is on; ignored
+     * otherwise. Absent: the parent session's space, else `#general`.
+     */
+    space_id: z.string().uuid().optional(),
     session_id: z
       .string()
       .regex(
@@ -1154,6 +1160,10 @@ export const ProjectSessionSchema = z.object({
   origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
   /** The session that spawned this one (a coordinator's worker); null for a top-level session. */
   parent_session_id: z.string().nullable().optional(),
+  /** The space (channel or DM) the session is filed in; null for a session in no space. */
+  space_id: z.string().uuid().nullable(),
+  /** The first 500 characters of the first prompt; stored for sessions created while `project_channels` is on, else null. */
+  first_prompt: z.string().nullable(),
   /** Who started the run this session belongs to (a child carries its parent's). Derived, never client-set. */
   initiator: z
     .object({

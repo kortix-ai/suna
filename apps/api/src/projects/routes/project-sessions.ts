@@ -390,6 +390,9 @@ export function registerProjectSessionsRoutes(): void {
             // restore (its owner or a project manager), inside their window,
             // each with `restore_until`. Combines with no other view.
             deleted: z.literal('only').optional(),
+            // `project_channels` on: only the sessions filed into this space
+            // that the caller may see. Ignored while the flag is off.
+            space_id: z.string().uuid().optional(),
           }),
         },
       responses: {
@@ -484,6 +487,7 @@ export function registerProjectSessionsRoutes(): void {
         personId,
         view: query.pinned ? 'pinned' : query.archived ? 'archived' : null,
         deleted: query.deleted === 'only',
+        spaceId: resolveFeatureFlag(loaded.row.metadata, 'project_channels') ? (query.space_id ?? null) : null,
       },
       boundCredentialSessionId: callerKortixSessionId(c),
       agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,

@@ -91,6 +91,7 @@ import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
+import { ensureDefaultSpace, findSessionSpace } from './project-spaces';
 
 import {
   resolveProjectSnapshotMode,
@@ -209,10 +210,12 @@ async function loadParentSession(
   visibility: SessionVisibility;
   origin: string;
   initiator: SessionInitiator | null;
+  spaceId: string | null;
 } | null> {
   const [parent] = await db
     .select({
       visibility: projectSessions.visibility,
+      spaceId: projectSessions.spaceId,
       projectId: projectSessions.projectId,
       origin: projectSessions.origin,
       initiatorType: projectSessions.initiatorType,
@@ -227,6 +230,7 @@ async function loadParentSession(
     visibility: parent.visibility as SessionVisibility,
     origin: parent.origin,
     initiator: parent.initiatorType ? { type: parent.initiatorType, id: parent.initiatorId } : null,
+    spaceId: parent.spaceId,
   };
 }
 
@@ -253,6 +257,29 @@ type ValidatedSessionConnectorBindings = Extract<
 >['bindings'];
 type PendingPromptConversion = ReturnType<typeof convertPendingPromptToInboxRow>;
 type SessionCreateMetadata = ReturnType<typeof buildSessionCreateMetadata>['metadata'];
+
+/** `metadata.first_prompt`: what a channel timeline shows as the thread's top message. */
+const FIRST_PROMPT_MAX_CHARS = 500;
+
+/**
+ * `project_channels` on: the space the body names, checked, and the sharing it
+ * implies (a channel is project-visible, a DM private). A warm draft gets no
+ * space until a real create. Flag off: `space_id` is ignored.
+ */
+async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): Promise<
+  SessionCreateStep<{ filed: boolean; spaceId: string | null; visibility?: 'project' | 'private' }>
+> {
+  const { project, body, userId } = input;
+  const warm =
+    (input.metadata?.[WARM_SESSION_METADATA_KEY] ?? normalizeJsonObject(body.metadata)[WARM_SESSION_METADATA_KEY]) === true;
+  if (!resolveFeatureFlag(project.metadata, 'project_channels') || warm) return { filed: false, spaceId: null };
+  if (body.space_id === undefined) return { filed: true, spaceId: null };
+  const space = typeof body.space_id === 'string' && isUuid(body.space_id)
+    ? await findSessionSpace(project.projectId, body.space_id, userId)
+    : null;
+  if (!space) return { error: { status: 404, body: { error: 'Channel not found', code: 'space_not_found' } } };
+  return { filed: true, spaceId: space.spaceId, visibility: space.kind === 'dm' ? 'private' : 'project' };
+}
 
 /** The session's sharing: explicit, or inherited from the spawning session. */
 async function resolveSessionSharing(
@@ -975,6 +1002,8 @@ function buildSessionCreateMetadata(params: {
   parentSession: ParentSession;
   repositoryAccess: boolean;
   sandboxSlug: string;
+  /** Filed into a space: the first prompt is stored for the channel timeline. */
+  filed: boolean;
 }) {
   const {
     input,
@@ -995,6 +1024,7 @@ function buildSessionCreateMetadata(params: {
     parentSession,
     repositoryAccess,
     sandboxSlug,
+    filed,
   } = params;
   const { project, userId, body } = input;
   // A name supplied at create is an EXPLICIT, user-chosen name — the same thing
@@ -1057,9 +1087,16 @@ function buildSessionCreateMetadata(params: {
             : false,
     });
   const requestMetadata = normalizeJsonObject(body.metadata);
+  // The user's words: the clean title source of an envelope, else the prompt.
+  const firstPrompt = filed
+    ? (explicitTitleSource ??
+      normalizeString((body.pending_prompt as Record<string, unknown> | undefined)?.text) ??
+      initialPrompt)
+    : null;
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { custom_name: sessionName } : {}),
+    ...(firstPrompt ? { first_prompt: firstPrompt.slice(0, FIRST_PROMPT_MAX_CHARS) } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
     // Harness context beside the prompt; server-read by the initial-turn claim.
     ...(initialContext ? { initial_context: initialContext } : {}),
@@ -1119,6 +1156,7 @@ async function insertSessionAndBindings(
     providerSecretPools: Record<string, string[]> | undefined;
     pendingPromptConversion: PendingPromptConversion | null;
     inheritedGrants: SecretGrant[];
+    spaceId: string | null;
   },
   runtimeContext: SessionRuntimeContextValue,
   connectorBindings: ValidatedSessionConnectorBindings,
@@ -1142,6 +1180,7 @@ async function insertSessionAndBindings(
     providerSecretPools,
     pendingPromptConversion,
     inheritedGrants,
+    spaceId,
   } = params;
   const { userId, body } = input;
   return db.transaction(async (tx) => {
@@ -1165,6 +1204,7 @@ async function insertSessionAndBindings(
       visibility,
       origin,
       parentSessionId: parentSession?.sessionId ?? null,
+      spaceId,
       initiatorType: initiator.type,
       initiatorId: initiator.id,
       secretsAllowlist,
@@ -1590,8 +1630,13 @@ export async function createProjectSession(input: {
   const { project, userId, body } = input;
   const projectId = project.projectId;
   const accountId = project.accountId;
+  const requestedSpace = await resolveRequestedSessionSpace(input);
+  if (requestedSpace.error) return { error: requestedSpace.error };
+  // A named space decides the sharing unless the caller set it explicitly.
   const { parentSession, visibility, inheritedGrants } = await resolveSessionSharing(
-    input,
+    requestedSpace.visibility && input.visibility === undefined
+      ? { ...input, visibility: requestedSpace.visibility }
+      : input,
     accountId,
     projectId,
   );
@@ -1721,6 +1766,10 @@ export async function createProjectSession(input: {
   const identity = resolveSessionIdentity({ input, projectId, accountId });
   if (identity.error) return { error: identity.error };
   const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;
+  // No space named: the spawning session's, else `#general`.
+  const spaceId = requestedSpace.filed
+    ? (requestedSpace.spaceId ?? parentSession?.spaceId ?? (await ensureDefaultSpace(projectId, accountId)).spaceId)
+    : null;
   const { initiator, metadata } = buildSessionCreateMetadata({
     input,
     projectId,
@@ -1740,6 +1789,7 @@ export async function createProjectSession(input: {
     parentSession,
     repositoryAccess,
     sandboxSlug,
+    filed: requestedSpace.filed,
   });
 
   let sessionRow: ProjectSessionRow | null = null;
@@ -1764,6 +1814,7 @@ export async function createProjectSession(input: {
         providerSecretPools,
         pendingPromptConversion,
         inheritedGrants,
+        spaceId,
       },
       parsedRuntimeContext.context,
       validatedConnectorBindings.bindings,

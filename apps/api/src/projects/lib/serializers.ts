@@ -223,6 +223,8 @@ export function serializeSession(
     visibility: row.visibility,
     origin: row.origin,
     parent_session_id: row.parentSessionId ?? null,
+    space_id: row.spaceId ?? null,
+    first_prompt: canAccess && typeof row.metadata?.first_prompt === 'string' ? row.metadata.first_prompt : null,
     initiator: row.initiatorType
       ? {
           type: row.initiatorType,

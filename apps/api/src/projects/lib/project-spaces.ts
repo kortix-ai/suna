@@ -151,13 +151,44 @@ export async function createChannel(
   }
 }
 
-export async function updateChannel(projectId: string, spaceId: string, input: SpaceUpdateInput): Promise<SpaceResult> {
+function spaceNotFound(): { error: SpaceError } {
+  return { error: { status: 404, body: { error: 'Channel not found', code: 'space_not_found' } } };
+}
+
+/**
+ * The space a new session may be filed into: a live channel of the project or
+ * the caller's own live DM. Anything else, including another member's DM,
+ * reads as not found so a DM's existence is never disclosed.
+ */
+export async function findSessionSpace(projectId: string, spaceId: string, userId: string): Promise<SpaceRow | null> {
+  const [row] = await db
+    .select()
+    .from(projectSpaces)
+    .where(
+      and(
+        eq(projectSpaces.projectId, projectId),
+        eq(projectSpaces.spaceId, spaceId),
+        isNull(projectSpaces.archivedAt),
+        or(eq(projectSpaces.kind, 'channel'), eq(projectSpaces.dmUserId, userId)),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+export async function updateChannel(
+  projectId: string,
+  userId: string,
+  spaceId: string,
+  input: SpaceUpdateInput,
+): Promise<SpaceResult> {
   const [row] = await db
     .select()
     .from(projectSpaces)
     .where(and(eq(projectSpaces.projectId, projectId), eq(projectSpaces.spaceId, spaceId)))
     .limit(1);
-  if (!row) return { error: { status: 404, body: { error: 'Channel not found', code: 'space_not_found' } } };
+  // Another member's DM is not found, never "not editable".
+  if (!row || (row.kind === 'dm' && row.dmUserId !== userId)) return spaceNotFound();
   if (row.kind !== 'channel') {
     return { error: { status: 400, body: { error: 'A direct message cannot be edited.', code: 'dm_not_editable' } } };
   }
@@ -214,7 +245,8 @@ export async function getOrCreateDm(
 
 /**
  * File every session that has no space into `defaultSpaceId`, 1,000 rows per
- * statement so no statement holds row locks for long. Returns the row count.
+ * statement so no statement holds row locks for long, until a statement files
+ * none (a short batch can come from a concurrent writer). Returns the row count.
  */
 export async function assignUnassignedSessions(projectId: string, defaultSpaceId: string): Promise<number> {
   const unassigned = and(eq(projectSessions.projectId, projectId), isNull(projectSessions.spaceId));
@@ -231,7 +263,7 @@ export async function assignUnassignedSessions(projectId: string, defaultSpaceId
       // `unassigned` again on the outer row: a session filed concurrently keeps its space.
       .where(and(unassigned, inArray(projectSessions.sessionId, batch)))
       .returning({ sessionId: projectSessions.sessionId });
+    if (updated.length === 0) return total;
     total += updated.length;
-    if (updated.length < ASSIGN_BATCH) return total;
   }
 }
