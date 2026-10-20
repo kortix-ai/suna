@@ -113,7 +113,7 @@ export interface ThemeCssVars {
 
 const EASING_VARS: Record<ThemeEasing, string> = {
   default: '--ease-default',
-  in: '--ease-in',
+  in: '--ease-in', // audit:allow token-name map for KortixTheme easing, not a usage
   out: '--ease-out',
   inOut: '--ease-in-out',
 };

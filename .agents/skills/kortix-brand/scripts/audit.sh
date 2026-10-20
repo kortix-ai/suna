@@ -20,7 +20,8 @@
 #   - a line that carries `audit:allow <reason>`: a data row or a prose line that
 #     NAMES a banned token (the /design-system/ page), or the token block of a
 #     standalone page that cannot load tokens.css. Give the reason in the comment.
-#   - tests, stories, *.generated.*, lib/browser-noise.
+#   - tests, stories, *.generated.*, lib/browser-noise, and the generated
+#     packages/ui/src/i18n/en.ts catalog (translation strings, not components).
 #   - named art modules (art layer, D4d) and third-party logo files (escape hatch).
 #
 # grep -a is mandatory: some sources in this repo are classified as binary by
@@ -46,7 +47,7 @@ fi
 TARGETS=("${ARGS[@]}")
 FOUND=0
 
-EXCLUDE_RE='(globals\.css|packages/ui/src/styles/|\.test\.|\.stories\.|\.generated\.|/browser-noise/|/lib/blog-posts|node_modules|\.next)'
+EXCLUDE_RE='(globals\.css|packages/ui/src/styles/|\.test\.|\.stories\.|\.generated\.|packages/ui/src/i18n/en\.ts|/browser-noise/|/lib/blog-posts|node_modules|\.next)'
 
 # Art layer (D4d): raw hex, gradients and WebGL live here and only here.
 ART_RE='(/paper-wallpaper-shaders\.|/wallpaper-shaders\.|/wallpaper-background\.|/shader-wallpaper\.|/shader-safe\.|/pixel-kortix-mark\.|/dot-matrix/|/kortix-hyper-logo\.|/prismatic-burst\.|/animated-bg\.|/dotmatrix-loader\.|/kortix-logo\.tsx|/components/brand/brand-logos\.)'
