@@ -68,6 +68,7 @@ import { UiLink as Link, useUiHostConfig } from '../../../providers/ui-provider'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { CopyButton } from '../../../markdown/copy-button';
+import { RepositoryDisconnectedBanner, repositoryDisconnectOf } from '../../../workspace/repository-disconnected';
 import {
   filterBranchNames,
   connectionStatusLabel,
@@ -537,7 +538,9 @@ function RepositoryGroup({
 
   return (
     <section className="space-y-3">
-      {connection?.last_error_message ? (
+      {repositoryDisconnectOf(connection) ? (
+        <RepositoryDisconnectedBanner projectId={project.project_id} disconnect={repositoryDisconnectOf(connection)} />
+      ) : connection?.last_error_message ? (
         <InfoBanner tone="warning" icon={WarningIcon} title={tI18nComplete.raw('textcb25ff313d81')}>
           {connection.last_error_message}
         </InfoBanner>

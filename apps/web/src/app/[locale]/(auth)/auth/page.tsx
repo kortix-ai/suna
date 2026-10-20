@@ -34,7 +34,6 @@ import { Button } from '@kortix/ui/button';
 import { Input } from '@kortix/ui/input';
 import Loading from '@kortix/ui/loading';
 import { errorToast } from '@kortix/ui/toast';
-import { InfoBanner } from '@kortix/ui/info-banner';
 import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import { FieldError, FieldLabel, InfoStrip, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -402,11 +401,10 @@ function AuthCardForm({
     setInfo(null);
   };
 
-  // Keep sign-in failures visible after the toast expires. Clearing the
-  // message before each attempt lets the field shake replay.
+  // Sign-in failures render inline under the field, never as a banner or
+  // toast. Clearing the message before each attempt lets the field shake replay.
   const failWith = (msg: string) => {
     setErrorMessage(msg);
-    errorToast(msg);
   };
 
   // The bounded layers answer with submit-auth's English sentinel messages
@@ -987,7 +985,6 @@ function AuthCardForm({
 
         <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
-          {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
           <Button
             type="button"
@@ -1000,6 +997,11 @@ function AuthCardForm({
           >
             {t('sso.continue')}
           </Button>
+          {errorMessage && (
+            <div className="mt-3">
+              <FieldError id="sso-error" message={errorMessage} />
+            </div>
+          )}
 
           <div className="text-muted-foreground mt-6 space-y-2 text-sm">
             <p className="flex flex-wrap items-center gap-2">
@@ -1178,7 +1180,6 @@ function AuthCardForm({
 
       <m.div {...rise(0.06)}>
         {info && <InfoStrip message={info} />}
-        {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
         {googleEnabled && (
           <div className="mb-8">
@@ -1221,7 +1222,9 @@ function AuthCardForm({
               autoComplete="email"
               autoFocus
               aria-invalid={!!errorMessage || undefined}
+              aria-describedby={errorMessage ? 'email-error' : undefined}
             />
+            {errorMessage && <FieldError id="email-error" message={errorMessage} />}
           </div>
           <Button type="submit" size="lg" disabled={pending} className="w-full">
             {pendingAction === 'continue' ? <Loading className="size-4 shrink-0" /> : null}

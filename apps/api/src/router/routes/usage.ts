@@ -635,8 +635,10 @@ usageApp.openapi(
       'Groups LLM and billed compute spend by project. LLM is windowed on request time ' +
       '(created_at); compute is windowed on the billing window start (started_at). Bounds ' +
       'are half-open [from, to) and always UTC; an absent from/to defaults to the trailing ' +
-      '30 days. Paging happens in memory: an account has tens to hundreds of projects, not ' +
-      'the tens of thousands a session list can reach.',
+      '30 days. A project_id narrows the rollup to that project and needs ' +
+      'project.gateway.spend.read on it (project.usage.read for a project token). Paging ' +
+      'happens in memory: an account has tens to hundreds of projects, not the tens of ' +
+      'thousands a session list can reach.',
     ...auth,
     request: {
       query: z
@@ -681,7 +683,9 @@ usageApp.openapi(
       // surface as 400 instead of 403 — telling an unauthorized caller which
       // of their parameters was malformed. Authorization must be decided
       // before input validation, not after.
-      projectId = c.get('tokenProjectId') || undefined;
+      // A project token names its own project; any other caller may name one
+      // with `project_id`, checked exactly as /session-costs checks it.
+      projectId = c.get('tokenProjectId') || c.req.query('project_id') || undefined;
       accountId = projectId
         ? await resolveSessionCostAccountId(c, c.req.query('project_id'))
         : await resolveAccountWideUsageAccountId(c);
@@ -700,7 +704,7 @@ usageApp.openapi(
 
     // billing.read shows the account's spend, not every project's name: a
     // caller sees the rows of the projects they can read (owners and admins:
-    // all of them). A project-scoped token already names its one project.
+    // all of them). A named project was already checked above.
     const accessible = projectId
       ? null
       : await listAccessible(await actorOf(c, accountId), PROJECT_ACTIONS.PROJECT_READ, 'project');

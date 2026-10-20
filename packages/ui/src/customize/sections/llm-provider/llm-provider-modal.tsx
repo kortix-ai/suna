@@ -51,21 +51,15 @@ import {
   ModalTitle,
 } from '../../../primitives/modal';
 import {
-  isNativeLlmTab,
   isQuickLlmTab,
   LlmSections,
   LlmTabStrip,
   MODELS_PAGE_DESCRIPTION,
   MODELS_PAGE_TITLE,
-  NATIVE_LLM_TABS,
   ProjectDefaultPicker,
   ProviderSheetSplit,
   QUICK_LLM_TABS,
 } from '../gateway-view';
-import { isLlmGatewayEnabled } from '../../../internal/lib/llm-gateway';
-import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
-import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { ActiveTab, ProjectProviderModalProps } from './types';
 import { pickInitialTab } from './utils';
@@ -96,7 +90,7 @@ export function ProjectProviderModal({
         // `h-full`, which needs a DEFINITE height — with `lg:h-auto` from the
         // modal base it grew to its content and nothing could scroll.
         closeButtonChildren={
-          canWrite && open ? <HeaderDefaultPicker projectId={projectId} /> : null
+          canWrite && open ? <ProjectDefaultPicker projectId={projectId} /> : null
         }
         className="bg-background flex h-(--provider-modal-h) w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 [--provider-modal-h:min(680px,calc(100dvh-2rem))] lg:h-(--provider-modal-h) lg:max-h-(--provider-modal-h) lg:min-h-(--provider-modal-h) lg:max-w-4xl">
         <ProviderModalBody
@@ -109,18 +103,6 @@ export function ProjectProviderModal({
       </ModalContent>
     </Modal>
   );
-}
-
-/** The project-default picker, only where the gateway's defaults chain exists. */
-function HeaderDefaultPicker({ projectId }: { projectId: string }) {
-  const detailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-  });
-  return isLlmGatewayEnabled(detailQuery.data?.project) ? (
-    <ProjectDefaultPicker projectId={projectId} />
-  ) : null;
 }
 
 /**
@@ -149,20 +131,6 @@ function ProviderModalBody({
 }) {
   const [tab, setTab] = useState<ActiveTab>(() => pickInitialTab(defaultTab));
 
-  // Mode fork: a NATIVE project (llm_gateway off) gets key intake only —
-  // Providers + Custom, no Models tab (the /model-picker catalog behind it
-  // 404s off-gateway) and no project-default picker (the model-defaults chain
-  // is a gateway concept; OpenCode resolves the default in the sandbox).
-  // Shares qk.project.detail with the shell, so no extra request.
-  const detailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    enabled: open,
-    ...contract('config'),
-  });
-  const llmGatewayEnabled = isLlmGatewayEnabled(detailQuery.data?.project);
-  const effectiveTab: ActiveTab = llmGatewayEnabled || isNativeLlmTab(tab) ? tab : 'providers';
-
   return (
     <>
       {/* The page's header, in a dialog: heading and description on the left,
@@ -176,8 +144,8 @@ function ProviderModalBody({
 
       <div className="shrink-0 px-5">
         <LlmTabStrip
-          value={effectiveTab}
-          tabs={llmGatewayEnabled ? QUICK_LLM_TABS : NATIVE_LLM_TABS}
+          value={tab}
+          tabs={QUICK_LLM_TABS}
           onValueChange={(next) => {
             if (isQuickLlmTab(next)) setTab(next);
           }}
@@ -199,7 +167,7 @@ function ProviderModalBody({
         <div className="h-full min-h-0 overflow-y-auto px-5 pt-4 pb-5">
           <LlmSections
             projectId={projectId}
-            tab={effectiveTab}
+            tab={tab}
             onTabChange={(next) => {
               if (isQuickLlmTab(next)) setTab(next);
             }}

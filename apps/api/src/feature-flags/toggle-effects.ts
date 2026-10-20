@@ -13,8 +13,6 @@
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
-import { propagateLlmGatewayModeToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
 import { reconcileEventSubscriptionsFromCatalog, releaseProjectEventSubscriptions, retireWarmProjectSessions } from '../projects/surface';
 import { resolveFeatureFlag } from './registry';
 
@@ -50,9 +48,6 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
   event_triggers: async ({ projectId, accountId, metadata }) => {
     if (resolveFeatureFlag(metadata, 'event_triggers')) await reconcileEventSubscriptionsFromCatalog(projectId, accountId);
     else await releaseProjectEventSubscriptions(projectId);
-  },
-  llm_gateway: async ({ projectId, metadata }) => {
-    await propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(metadata));
   },
 };
 

@@ -165,3 +165,13 @@ Every timestamp is ISO 8601. `plan` is the billing plan.
 is absent from the current Stripe account. It leaves the local plan, credits,
 and subscription mapping unchanged. A missing remote object does not prove
 that the account lost its paid entitlement. Transient Stripe failures propagate.
+
+## Wallet admission and model access
+
+`credits.can_run` and `billing_state` describe wallet admission, not model
+readiness. A funded Free account can pay for compute while it uses BYOK.
+`model_access.managed` reports resolved managed-model access;
+`model_access.requires_provider_key` is true when that access is absent.
+The project/principal-scoped `/model-picker` catalog is the source of truth
+for executable models. A gateway trigger with no enabled model returns
+`402 no_usable_model`; credits alone never unlock managed inference.

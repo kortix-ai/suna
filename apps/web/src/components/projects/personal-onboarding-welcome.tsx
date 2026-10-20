@@ -34,6 +34,9 @@ const STORAGE_KEY = 'kortix:marko-welcome-dismissed';
 
 const enterTransition = { type: 'spring' as const, duration: 0.3, bounce: 0 };
 
+/** Hidden everywhere (Marko, 2026-10-20). The card stays in code; flip to show it again. */
+const SHOW_FOUNDER_WELCOME = false;
+
 export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } = {}) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const t = useTranslations('personalWelcome');
@@ -52,7 +55,7 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
     setHydrated(true);
   }, []);
 
-  if (tier !== 'personal') return null;
+  if (!SHOW_FOUNDER_WELCOME || tier !== 'personal') return null;
   if (!hydrated || dismissed) return null;
   if (wizardPending) return null;
 

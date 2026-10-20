@@ -351,7 +351,7 @@ await kortix.project(pid).secrets.upsert({
   strategy: "broker",
   consumer: "llm_gateway",
 });
-// When pooled_provider_secrets and llm_gateway are enabled for the project,
+// When pooled_provider_secrets is enabled for the project,
 // a new account secret is available to this project's members by default.
 const shared = await kortix.accounts.secretResources.create(accountId, {
   project_id: pid,
@@ -965,14 +965,14 @@ the root import — offers the same agents and models and sends the same pick.
 | `projectConfigAgentsToRuntimeAgents(config)` | `/projects/:id/detail` config → agent roster, project default first |
 | `composerSelectableAgents(agents, { enableProjects?, includeSubagents? })` | roster → picker list (no hidden agents, no subagents, `project-manager` only with `enableProjects`) |
 | `resolveComposerAgent({ agents, boundAgent, defaultAgent, selectedAgent })` | → the agent to send, and `disabled` when none is accessible |
-| `pickerProviderList({ gatewayEnabled, modelPicker, runtimeProviders, llmCatalogProviders, secretNames })` | raw sources → provider list |
-| `flattenModels(providers, { providerMode })` | provider list → `ModelOption[]` (a `FlatModel` plus `id`, the ref a pick stores) |
-| `modelRefToKey(ref, gatewayEnabled)` | a stored ref (session pin, channel binding, trigger, agent `model`) → `ModelKey`; `kortix/x` and `x` are one gateway model |
+| `pickerProviderList({ modelPicker })` | `/model-picker` catalog → provider list (the single `kortix` provider). `gatewayEnabled`, `runtimeProviders`, `llmCatalogProviders` and `secretNames` are deprecated and ignored |
+| `flattenModels(providers)` | provider list → `ModelOption[]` (a `FlatModel` plus `id`, the ref a pick stores). Only the `kortix` provider flattens; the `providerMode` option is deprecated and ignored |
+| `modelRefToKey(ref)` | a stored ref (session pin, channel binding, trigger, agent `model`) → `ModelKey`; `kortix/x` and `x` are one gateway model. The second argument is deprecated and ignored |
 | `createModelVisibility({ catalogModels, pins?, connectedProviderIds?, freeTier? })` | → default-visibility predicate |
 | `modelInDefaultView(model, { search, isStoreVisible, selected })` | → whether the empty-search picker shows the model |
 | `resolveModelDefault(modelDefaults, agentName)` | `/model-defaults` → agent → project → account → platform default |
 | `resolveComposerModel({ models, picks, serverDefault, globalDefault, agentModel, configModel, recent, providers })` | → `{ model, explicit, fallback }` |
-| `sessionModelCandidates({ session, lastPromptModel, gatewayEnabled })` | session row + last prompt's model → the models the session already runs, most trusted first: a chosen pin (`explicit`, `repointed`), the last prompt's model, a default pin. Put them in `picks` after this composer's own pick for the session |
+| `sessionModelCandidates({ session, lastPromptModel })` | session row + last prompt's model → the models the session already runs, most trusted first: a chosen pin (`explicit`, `repointed`), the last prompt's model, a default pin. Put them in `picks` after this composer's own pick for the session |
 | `latestPromptModel(messages)` | transcript → the model of the newest user message that records one |
 
 The root barrel reads catalog helpers from `@kortix/llm-catalog/lite`, which
@@ -1315,11 +1315,30 @@ await kortix.projects.setModelAccess(projectId, {
 
 `kortix` identifies Kortix Managed Models. Other provider IDs identify BYOK, Codex, or custom providers. Provider disable takes precedence over individual model choices. Each write changes one target and preserves credentials. Disabling the current project default or its provider returns `409 cannot_disable_default`; select another default first.
 
-`useModelAccess(projectId)` from `@kortix/sdk/react` exposes the policy, write state, and `setEnabled(change)`. Successful writes refresh both picker caches. Rejected writes leave the displayed policy unchanged. The policy blocks gateway inference; legacy `setProjectModelEnablement` remains display-only. Native runtimes that bypass the gateway return `enforced: false`.
+`useModelAccess(projectId)` from `@kortix/sdk/react` exposes the policy, write state, and `setEnabled(change)`. Successful writes refresh both picker caches. Rejected writes leave the displayed policy unchanged. The policy blocks gateway inference; legacy `setProjectModelEnablement` remains display-only. The LLM gateway is the only model path, so `enforced` is always `true`.
+
+### Custom LLM providers
+
+A project can add OpenAI-compatible endpoints. The gateway serves their models as `<providerId>/<modelId>` in the model picker, bills them as BYOK (no Kortix credits), and calls `<base_url>/chat/completions` from the gateway, never from the sandbox. The key is the optional project secret `CUSTOM_<ID>_API_KEY` (`secret_name`).
+
+```ts
+const providers = await kortix.project(projectId).customLlmProviders();
+await kortix.project(projectId).setCustomLlmProvider('my-llm', {
+  name: 'My LLM',
+  base_url: 'https://llm.example.com/v1',
+  models: [{ id: 'my-model', name: 'My Model' }],
+});
+// Deletes the definition and its CUSTOM_MY_LLM_API_KEY secret.
+await kortix.project(projectId).deleteCustomLlmProvider('my-llm');
+```
+
+The root entry exports the same calls as `listCustomLlmProviders`, `putCustomLlmProvider` and `deleteCustomLlmProvider`. A row with `configured: false` is a `CUSTOM_*_API_KEY` secret with no endpoint saved yet. A reserved id (a catalog provider, `kortix`, `codex`, `opencode`) returns `400 reserved_provider_id`.
+
+`useCustomLlmProviders(projectId)` from `@kortix/sdk/react` returns `{ providers, isLoading, error, save, remove, isSaving }`. `save` and `remove` refresh the list and both model-picker caches; `remove` also refreshes the secrets list.
 
 ### Pooled ChatGPT connections
 
-With the `pooled_provider_secrets` and `llm_gateway` project flags enabled, a
+With the `pooled_provider_secrets` project flag enabled, a
 member can create a named ChatGPT OAuth account resource:
 
 ```ts

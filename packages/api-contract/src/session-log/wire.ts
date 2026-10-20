@@ -175,8 +175,8 @@ export const SessionLogSwitchPreflightSchema = z.object({
   to: SessionLogHarnessSchema,
   /** False when the switch cannot happen; `reason` says why. */
   available: z.boolean(),
-  /** `same_harness`: the log already runs on `to`. `llm_gateway_off`: pi needs the project's `llm_gateway` flag. */
-  reason: z.enum(['same_harness', 'llm_gateway_off']).nullable(),
+  /** `same_harness`: the log already runs on `to`. */
+  reason: z.enum(['same_harness']).nullable(),
   /** The new box restores the log (`session_log_restore` on, the log under the restore cap). False: it starts without the conversation (`losses` begins with `history`). */
   restores: z.boolean(),
   /** What the session uses that `to` handles worse, with counts. */

@@ -21,10 +21,10 @@ import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import { assertAgentScope } from '../../iam/agent-scope';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush, modelChangeResult, validateModelChangeShape, validateNativeOpencodeModelRef } from '../lib/session-model-change';
+import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush, modelChangeResult, validateModelChangeShape } from '../lib/session-model-change';
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
+import { pickedModelMetadata } from '../../llm-gateway/resolution/session-model-fallback';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { admitSessionModelChange } from '../lib/session-model-keys';
 import { validateProviderSecretPool } from './provider-secret-pools';
@@ -398,61 +398,50 @@ export function registerSessionScopeRoutes(): void {
         return c.json({ error: stateError.message, code: stateError.code }, 409);
       }
 
-      // Same two-path gate as create — otherwise this endpoint becomes the very
-      // back door the PATCH guard just closed. Gateway ON: the gateway resolver
-      // validates servability and the pin is stored as `kortix/<wire>`. Gateway
-      // OFF: OpenCode owns the catalog, so only the native `provider/model`
-      // shape is enforced and the pin is stored verbatim.
+      // Same gate as create — otherwise this endpoint becomes the very back
+      // door the PATCH guard just closed. The gateway resolver validates
+      // servability and the pin is stored as `kortix/<wire>`.
       const trimmed = requested.trim();
-      const llmGatewayEnabled = projectLlmGatewayEnabled(loaded.row.metadata);
       let nextModel: string;
-      if (!llmGatewayEnabled) {
-        const nativeShapeError = validateNativeOpencodeModelRef(trimmed);
-        if (nativeShapeError) {
-          return c.json({ error: nativeShapeError.message, code: nativeShapeError.code }, 400);
-        }
-        nextModel = trimmed;
-      } else {
-        const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
-        const owner = visible.row.createdBy ?? loaded.userId;
-        // Checked in the key scope the gateway uses for this session; stores the
-        // pooled keys it selects (lib/session-model-keys.ts).
-        const servable = await admitSessionModelChange({
-          accountId: loaded.row.accountId,
-          projectId,
-          sessionId,
-          owner,
-          caller: loaded.userId,
-          freeModelsOnly,
-          model: trimmed,
-          mayPool:
-            resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
-            !visible.ownerIsMachine &&
-            Boolean(visible.row.createdBy),
-          callerMaySelect: async (providerId, secretIds) =>
-            !(await validateProviderSecretPool({
-              accountId: loaded.row.accountId,
-              projectId,
-              repoUrl: loaded.row.repoUrl,
-              defaultBranch: loaded.row.defaultBranch,
-              manifestPath: loaded.row.manifestPath,
-              agentName: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
-              userId: loaded.userId,
-              providerId,
-              ids: secretIds,
-            })),
-        });
-        if (!servable) {
-          return c.json(
-            {
-              error: `Model "${trimmed}" is not available for this account`,
-              code: 'INVALID_SESSION_MODEL',
-            },
-            400,
-          );
-        }
-        nextModel = toOpencodeModelRef(trimmed);
+      const freeModelsOnly = !(await accountMayUseManagedModels(loaded.row.accountId));
+      const owner = visible.row.createdBy ?? loaded.userId;
+      // Checked in the key scope the gateway uses for this session; stores the
+      // pooled keys it selects (lib/session-model-keys.ts).
+      const servable = await admitSessionModelChange({
+        accountId: loaded.row.accountId,
+        projectId,
+        sessionId,
+        owner,
+        caller: loaded.userId,
+        freeModelsOnly,
+        model: trimmed,
+        mayPool:
+          resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') &&
+          !visible.ownerIsMachine &&
+          Boolean(visible.row.createdBy),
+        callerMaySelect: async (providerId, secretIds) =>
+          !(await validateProviderSecretPool({
+            accountId: loaded.row.accountId,
+            projectId,
+            repoUrl: loaded.row.repoUrl,
+            defaultBranch: loaded.row.defaultBranch,
+            manifestPath: loaded.row.manifestPath,
+            agentName: visible.row.agentName ?? DEFAULT_AGENT_SENTINEL,
+            userId: loaded.userId,
+            providerId,
+            ids: secretIds,
+          })),
+      });
+      if (!servable) {
+        return c.json(
+          {
+            error: `Model "${trimmed}" is not available for this account`,
+            code: 'INVALID_SESSION_MODEL',
+          },
+          400,
+        );
       }
+      nextModel = toOpencodeModelRef(trimmed);
       // The session model lives in metadata, not a column (sessions.ts:1102) —
       // which is precisely why the PATCH metadata back door was dangerous.
       const currentMetadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
@@ -467,11 +456,8 @@ export function registerSessionScopeRoutes(): void {
       await db
         .update(projectSessions)
         .set({
-          metadata: {
-            ...currentMetadata,
-            opencode_model: nextModel,
-            opencode_model_source: 'explicit',
-          },
+          // A pick ends any fallback; a late fallback trace skips it.
+          metadata: pickedModelMetadata(currentMetadata, nextModel),
           updatedAt: new Date(),
         })
         .where(eq(projectSessions.sessionId, sessionId));
