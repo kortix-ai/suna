@@ -14,8 +14,8 @@ if (!databaseUrl) throw new Error('TEST_DATABASE_URL is required');
 const client = new pg.Client({ connectionString: databaseUrl });
 const directory = mkdtempSync(join(tmpdir(), 'device-tokens-drop-'));
 const migrations = [
-  '20261020133909541_drop_device_tokens_account_id_index.concurrent.ts',
-  '20261020133909553_drop_device_tokens_active_index.concurrent.ts',
+  '20261020174500000_drop_device_tokens_account_id_index.concurrent.ts',
+  '20261020174500001_drop_device_tokens_active_index.concurrent.ts',
 ];
 for (const name of migrations)
   copyFileSync(join(import.meta.dir, '../migrations', name), join(directory, name));
