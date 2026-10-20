@@ -41,6 +41,7 @@ import {
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
 import { queueSessionPrompt, type CreateSessionPromptResult } from './sessions-queue.ts';
+import { requireConnectedModel } from './session-model-access.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -76,6 +77,14 @@ export async function loadSessionForChat(
   if (!found) return null;
   const { client, projectId, auth, session, projectName, hostName } = found.located;
   const ctx = { client, projectId, auth };
+  if (cliCommand === 'sessions chat') {
+    try {
+      await requireConnectedModel(client, projectId);
+    } catch (error) {
+      surfaceApiError(error);
+      return null;
+    }
+  }
   if (found.switched) {
     process.stderr.write(
       `${status.ok(`Found in ${C.bold}${projectName ?? projectId}${C.reset}`)} ` +
@@ -400,6 +409,7 @@ async function queuePrompt(
   const { client, projectId, session } = located.located;
   let result: CreateSessionPromptResult;
   try {
+    await requireConnectedModel(client, projectId);
     result = await queueSessionPrompt(client, projectId, session, text, delivery);
   } catch (err) {
     return surfaceApiError(err);
@@ -476,6 +486,12 @@ async function resolveChatSessionId(
   if (!ctx) return null;
 
   if (wantNew) {
+    try {
+      await requireConnectedModel(ctx.client, ctx.projectId);
+    } catch (error) {
+      surfaceApiError(error);
+      return null;
+    }
     const body: Record<string, unknown> = {};
     if (initialPrompt) body.initial_prompt = initialPrompt;
     if (agent) body.agent_name = agent;

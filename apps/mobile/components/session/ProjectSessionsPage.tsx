@@ -60,6 +60,7 @@
  * lib/session/session-list (unit-tested).
  */
 
+import { HEADER_BUTTON_SIZE, HEADER_ICON_SIZE } from '@/components/kortix/header-button';
 import * as React from 'react';
 import { FlatList, RefreshControl, View, type ListRenderItem } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -635,7 +636,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
         rightActions={
           <Button
             variant="ghost"
-            size="icon"
+            size={HEADER_BUTTON_SIZE}
             className="rounded-full"
             onPress={() => {
               haptics.tap();
@@ -645,7 +646,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
             accessibilityHint="Opens the session status filter">
             <Icon
               as={Funnel}
-              size={20}
+              size={HEADER_ICON_SIZE}
               className={sheetFilterActive ? 'text-primary' : 'text-foreground'}
               weight={sheetFilterActive ? 'fill' : undefined}
             />

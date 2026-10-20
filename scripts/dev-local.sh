@@ -673,7 +673,7 @@ EOF
     # values); the sandbox `.env.local` is already exported above (relative
     # NEXT_PUBLIC_BACKEND_URL=/v1, in-sandbox Supabase).
     echo "[dev] Starting frontend (next dev, hot reload) on :${WEB_PORT:-3000}"
-    (cd "$ROOT_DIR/apps/web" && pnpm exec next dev --turbopack --port "${WEB_PORT:-3000}") &
+    (cd "$ROOT_DIR/apps/web" && pnpm exec next dev --webpack --port "${WEB_PORT:-3000}") &
   fi
 
   echo "[dev] Starting API (dev) on :8008"

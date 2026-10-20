@@ -72,6 +72,7 @@ import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
 import { runSessionsShell } from './sessions-shell.ts';
 import { parseMetaPair, runSessionsUpdate } from './sessions-update.ts';
 import { runSessionsWaitFor } from './sessions-wait.ts';
+import { requireConnectedModel } from './session-model-access.ts';
 
 const HELP = help`Usage: kortix sessions <subcommand> [options]
 
@@ -665,6 +666,12 @@ async function sessionsNew(
 ): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
+
+  try {
+    await requireConnectedModel(ctx.client, ctx.projectId);
+  } catch (error) {
+    return surfaceApiError(error);
+  }
 
   // --with-file: uploads need a live sandbox, and the prompt must go out AFTER
   // the files land (an initial_prompt would race the uploads). So validate the
