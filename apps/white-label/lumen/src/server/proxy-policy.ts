@@ -234,15 +234,20 @@ const KORTIX_WORD = /\bKortix\b/g;
  */
 const OPERATOR_ID_KEYS = new Set(['account_id', 'created_by', 'owner_id', 'owner_user_id', 'user_id', 'updated_by', 'merged_by', 'closed_by', 'deleted_by', 'author_id']);
 // Platform plumbing on the project record: the managed repository and the manifest file.
-const PLATFORM_KEYS = new Set(['repo_url', 'manifest_path', 'git_url', 'clone_url', 'git_origin_url', 'dashboard_url']);
+// The raw manifest and the feature catalog's descriptions name the platform's own env vars and daemon.
+const PLATFORM_KEYS = new Set(['repo_url', 'manifest_path', 'git_url', 'clone_url', 'git_origin_url', 'dashboard_url', 'manifest_raw']);
 
 function dropOperatorIds(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(dropOperatorIds);
   if (!isObject(value)) return value;
   return Object.fromEntries(
-    Object.entries(value).filter(([k]) => !OPERATOR_ID_KEYS.has(k) && !PLATFORM_KEYS.has(k)).map(([k, v]) => [k, dropOperatorIds(v)]),
+    Object.entries(value)
+      .filter(([k]) => !OPERATOR_ID_KEYS.has(k) && !PLATFORM_KEYS.has(k))
+      .map(([k, v]) => [k, k === 'experimental_features' && Array.isArray(v) ? v.map(withoutDescription) : dropOperatorIds(v)]),
   );
 }
+
+const withoutDescription = (f: unknown) => (isObject(f) ? Object.fromEntries(Object.entries(f).filter(([k]) => k !== 'description')) : f);
 
 /**
  * An upstream error body as the browser sees it: the brand instead of the
