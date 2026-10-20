@@ -10,6 +10,7 @@ import { PROMO_GRADIENT } from '../../internal/lib/promo-art';
 import { BellIcon, ChatCircleIcon, MicrophoneIcon, type Icon } from '@phosphor-icons/react';
 import { UiLink as Link, UiImage as Image } from '../../providers/ui-provider';
 import { useSyncExternalStore } from 'react';
+import { useIsMobile } from '../../hooks/use-mobile';
 
 const FEATURES: readonly { key: 'sessions' | 'notifications' | 'dictation'; icon: Icon }[] = [
   { key: 'sessions', icon: ChatCircleIcon },
@@ -41,13 +42,14 @@ const STORES = [
 const subscribeToNothing = () => () => { };
 
 /**
- * Introduces the Kortix mobile app on the project page, once per browser.
+ * Introduces the Kortix mobile app on mobile project pages, once per browser.
  * Same frame as "Connect your computer" (`packages/ui/src/internal/tunnel/computer-connect.tsx`),
  * mirrored: the copy and the two store buttons first, the app shot beside
  * them. Every way out closes it for good (`mobile-app-promo-store.ts`).
  */
 export function MobileAppPromo() {
   const t = useTranslations('mobileAppPromo');
+  const isMobile = useIsMobile();
   const closed = useMobileAppPromoStore((state) => state.closed);
   const close = useMobileAppPromoStore((state) => state.close);
   // The closed flag lives in localStorage, which the server cannot read: open
@@ -60,7 +62,7 @@ export function MobileAppPromo() {
 
   return (
     <Modal
-      open={mounted && !closed}
+      open={mounted && isMobile && !closed}
       onOpenChange={(open) => {
         if (!open) close();
       }}
