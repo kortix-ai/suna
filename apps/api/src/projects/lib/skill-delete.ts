@@ -36,6 +36,16 @@ export function prepareSkillDeletion(
   if (skills.some(skill => skill !== matches[0] && (inside(skill.path) || folder.startsWith(`${skill.path.slice(0, -'/SKILL.md'.length)}/`)))) return conflict;
   if (Object.entries(registry).some(([key, value]) => key !== name && typeof value === 'string'
     && (inside(value) || folder.startsWith(`${value}/`)))) return conflict;
+  const moduleSources = [
+    ...Object.values(record(manifest.raw.tools)),
+    ...Object.values(record(manifest.raw.extensions)).flatMap(value => {
+      const extension = record(value);
+      return [extension.opencode, typeof extension.pi === 'string'
+        ? extension.pi : record(extension.pi).source];
+    }),
+  ].filter((source): source is string => typeof source === 'string')
+    .map(source => source.replace(/^\.\//, '').replace(/\/$/, ''));
+  if (moduleSources.some(source => inside(source) || folder.startsWith(`${source}/`))) return conflict;
   const protectedPaths = [manifest.path, ...(manifest.candidatePaths ?? []),
     ...Object.values(record(manifest.raw.agents)).flatMap(value => {
       const agent = record(value);

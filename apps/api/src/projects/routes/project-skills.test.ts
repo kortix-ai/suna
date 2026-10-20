@@ -151,3 +151,14 @@ test('refuses a registered source subtree without its own skill entrypoint', asy
   expect((await remove()).status).toBe(409);
   expect(writes).toHaveLength(0);
 });
+for (const resource of ['tool', 'opencode', 'pi', 'pi-package'] as const) {
+  test(`refuses skill assets shared with a ${resource} module without writing`, async () => {
+    if (resource === 'tool') raw.tools = { shared: 'skills/research/tool.ts' };
+    else raw.extensions = { shared: resource === 'pi-package'
+      ? { pi: { source: './skills/research', extensions: ['*.ts'] } }
+      : { [resource]: 'skills/research/extension.ts' } };
+    raw.agents = { worker: { tools: ['shared'], extensions: ['shared'] } };
+    expect((await remove()).status).toBe(409);
+    expect(writes).toHaveLength(0);
+  });
+}
