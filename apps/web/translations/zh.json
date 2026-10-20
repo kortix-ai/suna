@@ -1760,7 +1760,13 @@
     "underMore": "更多",
     "sidebarEmpty": "将项目拖到这里以在侧边栏中显示。",
     "moreEmpty": "将项目拖到这里以移入“更多”。",
-    "moreCaption": "“更多”中的项目可从导航下方的“更多”菜单打开。"
+    "moreCaption": "“更多”中的项目可从导航下方的“更多”菜单打开。",
+    "spaces": {
+      "channels": "频道",
+      "directMessages": "私信",
+      "addChannel": "添加频道",
+      "loadError": "无法加载频道。"
+    }
   },
   "dashboard": {
     "title": "仪表板",
@@ -22038,5 +22044,22 @@
   "triggerAutoPause": {
     "title": "已在运行上限处自动暂停",
     "description": "它连续 2 小时达到每小时运行上限，因此已停止启动运行。找出持续触发它的原因，然后恢复它。"
+  },
+  "spaces": {
+    "create": {
+      "title": "创建频道",
+      "description": "此项目中的所有人都可以查看和使用该频道。",
+      "nameLabel": "名称",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "channel-name",
+      "descriptionLabel": "描述（可选）",
+      "descriptionPlaceholder": "这个频道的用途",
+      "submit": "创建频道",
+      "created": "频道已创建",
+      "nameRequired": "请添加名称。",
+      "invalidName": "名称中至少要有一个字母或数字。",
+      "slugTaken": "<link>#{slug}</link> 已存在。",
+      "failed": "无法创建频道。请重试。"
+    }
   }
 }

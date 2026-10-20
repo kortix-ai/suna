@@ -1760,7 +1760,13 @@
     "underMore": "Plus",
     "sidebarEmpty": "Déposez un élément ici pour l'afficher dans la barre latérale.",
     "moreEmpty": "Déposez un élément ici pour le placer dans Plus.",
-    "moreCaption": "Les éléments dans Plus s'ouvrent depuis le menu Plus, sous la navigation."
+    "moreCaption": "Les éléments dans Plus s'ouvrent depuis le menu Plus, sous la navigation.",
+    "spaces": {
+      "channels": "Canaux",
+      "directMessages": "Messages directs",
+      "addChannel": "Ajouter un canal",
+      "loadError": "Impossible de charger les canaux."
+    }
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -22038,5 +22044,22 @@
   "triggerAutoPause": {
     "title": "S’est mis en pause à sa limite d’exécutions",
     "description": "Il a tourné à sa limite d’exécutions horaire pendant 2 heures d’affilée, il ne lance donc plus d’exécutions. Trouvez ce qui le déclenche sans cesse, puis reprenez-le."
+  },
+  "spaces": {
+    "create": {
+      "title": "Créer un canal",
+      "description": "Tout le monde dans ce projet peut voir et utiliser le canal.",
+      "nameLabel": "Nom",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "nom-du-canal",
+      "descriptionLabel": "Description (facultative)",
+      "descriptionPlaceholder": "À quoi sert ce canal",
+      "submit": "Créer le canal",
+      "created": "Canal créé",
+      "nameRequired": "Ajoutez un nom.",
+      "invalidName": "Utilisez au moins une lettre ou un chiffre dans le nom.",
+      "slugTaken": "<link>#{slug}</link> existe déjà.",
+      "failed": "Impossible de créer le canal. Réessayez."
+    }
   }
 }

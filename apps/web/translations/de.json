@@ -1760,7 +1760,13 @@
     "underMore": "Mehr",
     "sidebarEmpty": "Ziehe ein Element hierher, um es in der Seitenleiste anzuzeigen.",
     "moreEmpty": "Ziehe ein Element hierher, um es unter Mehr zu verschieben.",
-    "moreCaption": "Elemente unter Mehr öffnen sich über das Menü Mehr unter der Navigation."
+    "moreCaption": "Elemente unter Mehr öffnen sich über das Menü Mehr unter der Navigation.",
+    "spaces": {
+      "channels": "Kanäle",
+      "directMessages": "Direktnachrichten",
+      "addChannel": "Kanal hinzufügen",
+      "loadError": "Kanäle konnten nicht geladen werden."
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -22038,5 +22044,22 @@
   "triggerAutoPause": {
     "title": "Hat sich an seinem Ausführungslimit selbst pausiert",
     "description": "Er lief 2 Stunden in Folge an seinem stündlichen Ausführungslimit und startet daher keine Ausführungen mehr. Finde heraus, was ihn ständig auslöst, und setze ihn dann fort."
+  },
+  "spaces": {
+    "create": {
+      "title": "Kanal erstellen",
+      "description": "Alle in diesem Projekt können den Kanal sehen und nutzen.",
+      "nameLabel": "Name",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "kanalname",
+      "descriptionLabel": "Beschreibung (optional)",
+      "descriptionPlaceholder": "Wofür dieser Kanal da ist",
+      "submit": "Kanal erstellen",
+      "created": "Kanal erstellt",
+      "nameRequired": "Gib einen Namen ein.",
+      "invalidName": "Der Name braucht mindestens einen Buchstaben oder eine Ziffer.",
+      "slugTaken": "<link>#{slug}</link> gibt es schon.",
+      "failed": "Der Kanal konnte nicht erstellt werden. Versuche es erneut."
+    }
   }
 }

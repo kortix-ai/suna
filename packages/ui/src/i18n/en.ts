@@ -1095,7 +1095,13 @@ const catalog = {
     "underMore": "More",
     "sidebarEmpty": "Drag a row here to show it in the sidebar.",
     "moreEmpty": "Drag a row here to move it under More.",
-    "moreCaption": "Rows under More open from the More menu, below the nav."
+    "moreCaption": "Rows under More open from the More menu, below the nav.",
+    "spaces": {
+      "channels": "Channels",
+      "directMessages": "Direct messages",
+      "addChannel": "Add channel",
+      "loadError": "Could not load channels."
+    }
   },
   "sessionPage": {
     "backToProject": "Back to project",
@@ -6701,6 +6707,23 @@ const catalog = {
     "exists": "exists",
     "missing": "does not exist",
     "listPlaceholder": "value 1, value 2"
+  },
+  "spaces": {
+    "create": {
+      "title": "Create a channel",
+      "description": "Everyone in this project can see and use the channel.",
+      "nameLabel": "Name",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "channel-name",
+      "descriptionLabel": "Description (optional)",
+      "descriptionPlaceholder": "What this channel is for",
+      "submit": "Create channel",
+      "created": "Channel created",
+      "nameRequired": "Add a name.",
+      "invalidName": "Use at least one letter or number in the name.",
+      "slugTaken": "<link>#{slug}</link> already exists.",
+      "failed": "Could not create the channel. Try again."
+    }
   }
 };
 

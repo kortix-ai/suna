@@ -1760,7 +1760,13 @@
     "underMore": "Mais",
     "sidebarEmpty": "Arraste um item para cá para mostrá-lo na barra lateral.",
     "moreEmpty": "Arraste um item para cá para movê-lo para Mais.",
-    "moreCaption": "Os itens em Mais abrem pelo menu Mais, abaixo da navegação."
+    "moreCaption": "Os itens em Mais abrem pelo menu Mais, abaixo da navegação.",
+    "spaces": {
+      "channels": "Canais",
+      "directMessages": "Mensagens diretas",
+      "addChannel": "Adicionar canal",
+      "loadError": "Não foi possível carregar os canais."
+    }
   },
   "dashboard": {
     "title": "Painel",
@@ -22038,5 +22044,22 @@
   "triggerAutoPause": {
     "title": "Pausou-se ao atingir o limite de execuções",
     "description": "Rodou no limite de execuções por hora por 2 horas seguidas, então parou de iniciar execuções. Descubra o que continua acionando-o e depois retome-o."
+  },
+  "spaces": {
+    "create": {
+      "title": "Criar um canal",
+      "description": "Todos neste projeto podem ver e usar o canal.",
+      "nameLabel": "Nome",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "nome-do-canal",
+      "descriptionLabel": "Descrição (opcional)",
+      "descriptionPlaceholder": "Para que serve este canal",
+      "submit": "Criar canal",
+      "created": "Canal criado",
+      "nameRequired": "Adicione um nome.",
+      "invalidName": "Use pelo menos uma letra ou um número no nome.",
+      "slugTaken": "<link>#{slug}</link> já existe.",
+      "failed": "Não foi possível criar o canal. Tente de novo."
+    }
   }
 }

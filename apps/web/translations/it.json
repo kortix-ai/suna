@@ -1760,7 +1760,13 @@
     "underMore": "Altro",
     "sidebarEmpty": "Trascina qui un elemento per mostrarlo nella barra laterale.",
     "moreEmpty": "Trascina qui un elemento per spostarlo in Altro.",
-    "moreCaption": "Gli elementi in Altro si aprono dal menu Altro, sotto la navigazione."
+    "moreCaption": "Gli elementi in Altro si aprono dal menu Altro, sotto la navigazione.",
+    "spaces": {
+      "channels": "Canali",
+      "directMessages": "Messaggi diretti",
+      "addChannel": "Aggiungi canale",
+      "loadError": "Impossibile caricare i canali."
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -22038,5 +22044,22 @@
   "triggerAutoPause": {
     "title": "Si è messo in pausa al limite di esecuzioni",
     "description": "Ha girato al suo limite orario di esecuzioni per 2 ore di fila, quindi ha smesso di avviarne. Trova cosa continua ad attivarlo, poi riprendilo."
+  },
+  "spaces": {
+    "create": {
+      "title": "Crea un canale",
+      "description": "Tutti in questo progetto possono vedere e usare il canale.",
+      "nameLabel": "Nome",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "nome-canale",
+      "descriptionLabel": "Descrizione (facoltativa)",
+      "descriptionPlaceholder": "A cosa serve questo canale",
+      "submit": "Crea canale",
+      "created": "Canale creato",
+      "nameRequired": "Aggiungi un nome.",
+      "invalidName": "Usa almeno una lettera o un numero nel nome.",
+      "slugTaken": "<link>#{slug}</link> esiste già.",
+      "failed": "Impossibile creare il canale. Riprova."
+    }
   }
 }

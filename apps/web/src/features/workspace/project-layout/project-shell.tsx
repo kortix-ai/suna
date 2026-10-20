@@ -223,7 +223,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     newSession();
   }, [newSession]);
 
-  useProjectShellShortcuts({ projectId, onNewSession: handleNewSession });
+  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
+  useProjectShellShortcuts({ projectId, onNewSession: channels ? undefined : handleNewSession });
 
   const params = useParams<{ sessionId?: string }>();
   const activeSessionId = params?.sessionId ?? null;

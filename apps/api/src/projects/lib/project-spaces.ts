@@ -10,6 +10,7 @@
  */
 import type { Space, SpaceCreateInput, SpaceUpdateInput } from '@kortix/api-contract';
 import { projectSessions, projectSpaces } from '@kortix/db';
+import { spaceSlug } from '@kortix/shared';
 import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { uniqueViolationConstraint } from '../../shared/postgres-errors';
@@ -23,21 +24,8 @@ export type SpaceError = {
 export type SpaceResult = { space: SpaceRow } | { error: SpaceError };
 
 const DEFAULT_SLUG = 'general';
-const SLUG_MAX = 40;
 const SLUG_INDEX = 'uniq_project_spaces_channel_slug';
 const ASSIGN_BATCH = 1_000;
-
-/** Lowercase, spaces → `-`, other characters dropped, `-` trimmed, at most 40 chars. */
-export function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-    .replace(/-+/g, '-')
-    .slice(0, SLUG_MAX)
-    .replace(/^-+|-+$/g, '');
-}
 
 export function serializeSpace(row: SpaceRow): Space {
   return {
@@ -127,7 +115,7 @@ export async function createChannel(
   userId: string,
   input: SpaceCreateInput,
 ): Promise<SpaceResult> {
-  const slug = slugify(input.name);
+  const slug = spaceSlug(input.name);
   if (!slug) return invalidName();
   // `#general` first, so a new channel can never take its slug before it exists.
   await ensureDefaultSpace(projectId, accountId);
@@ -199,7 +187,7 @@ export async function updateChannel(
   }
   const patch: Partial<typeof projectSpaces.$inferInsert> = {};
   if (input.name !== undefined) {
-    const slug = slugify(input.name);
+    const slug = spaceSlug(input.name);
     if (!slug) return invalidName();
     patch.name = input.name;
     patch.slug = slug;

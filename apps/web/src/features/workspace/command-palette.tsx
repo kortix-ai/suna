@@ -1228,6 +1228,8 @@ export function CommandPalette() {
       if (item.requiresRuntime && !runtimeSupports(runtimeCapabilities, item.requiresRuntime)) continue;
       if (item.requiresProject && !projectId) continue;
       if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
+      // Channels replace New session: a thread starts from a channel's composer.
+      if (item.id === 'new-session' && projectFlags.project_channels) continue;
       // Token substitution. An href that still holds an UNRESOLVED token after
       // this is dropped, not offered: navigating to a literal
       // `/accounts/{accountId}?tab=billing` is a 404, and offering a row that

@@ -33,6 +33,9 @@ function hrefForTab(projectId: string, id: string) {
  * | Mod+1 … Mod+8         | Switch to nth open tab              |
  * | Mod+9                 | Switch to LAST open tab             |
  *
+ * Without `onNewSession` (channels on), Mod+T and the desktop `new-session`
+ * command do nothing.
+ *
  * `Mod` follows the user's `tabSwitchModifier` preference (Ctrl by default).
  * Global shortcuts (Mod+J new session, Mod+K command palette, Mod+B sidebar
  * toggles) live in their own components and aren't duplicated here.
@@ -45,7 +48,8 @@ export function useProjectShellShortcuts({
   onNewSession,
 }: {
   projectId: string;
-  onNewSession: () => void;
+  /** Omitted while the project's `project_channels` flag is on: no New session entry point. */
+  onNewSession?: () => void;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -75,7 +79,7 @@ export function useProjectShellShortcuts({
     const onCommand = (event: Event) => {
       const command = (event as CustomEvent<string>).detail;
       if (command === 'new-session') {
-        onNewSession();
+        onNewSession?.();
         return;
       }
       if (command !== 'close-tab') return;
@@ -106,7 +110,7 @@ export function useProjectShellShortcuts({
       const goToTab = (id: string) => router.push(hrefForTab(projectId, id));
 
       // New tab — Mod+T
-      if (modHeld && !modOther && !e.shiftKey && !e.altKey && e.code === 'KeyT') {
+      if (onNewSession && modHeld && !modOther && !e.shiftKey && !e.altKey && e.code === 'KeyT') {
         e.preventDefault();
         onNewSession();
         return;

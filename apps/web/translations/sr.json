@@ -1760,7 +1760,13 @@
     "underMore": "Više",
     "sidebarEmpty": "Prevuci stavku ovde da bi se prikazala u bočnoj traci.",
     "moreEmpty": "Prevuci stavku ovde da bi je premestio u Više.",
-    "moreCaption": "Stavke u Više otvaraju se iz menija Više, ispod navigacije."
+    "moreCaption": "Stavke u Više otvaraju se iz menija Više, ispod navigacije.",
+    "spaces": {
+      "channels": "Канали",
+      "directMessages": "Директне поруке",
+      "addChannel": "Додај канал",
+      "loadError": "Учитавање канала није успело."
+    }
   },
   "dashboard": {
     "title": "Контролна табла",
@@ -22038,5 +22044,22 @@
   "triggerAutoPause": {
     "title": "Сам се паузирао на ограничењу покретања",
     "description": "Радио је на свом ограничењу покретања по сату 2 сата заредом, па више не покреће извршавања. Пронађи шта га стално покреће, па га настави."
+  },
+  "spaces": {
+    "create": {
+      "title": "Направи канал",
+      "description": "Сви у овом пројекту могу да виде и користе канал.",
+      "nameLabel": "Назив",
+      "namePlaceholder": "marketing",
+      "slugPlaceholder": "naziv-kanala",
+      "descriptionLabel": "Опис (опционо)",
+      "descriptionPlaceholder": "За шта служи овај канал",
+      "submit": "Направи канал",
+      "created": "Канал је направљен",
+      "nameRequired": "Додај назив.",
+      "invalidName": "Користи бар једно слово или цифру у називу.",
+      "slugTaken": "<link>#{slug}</link> већ постоји.",
+      "failed": "Прављење канала није успело. Покушај поново."
+    }
   }
 }
