@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  approvalReviewable,
   type ApprovalDecisionValue,
   type ApprovalResolvers,
   useApprovalWaitingText,
@@ -56,6 +57,17 @@ export function reviewApprovalDetails(item: ReviewItem): ApprovalLinkDetails | n
 }
 
 /**
+ * A pending connector call that shows nothing to review: the decision panel
+ * offers only Deny. The same rule the panel applies (`approvalReviewable`) on
+ * the same details, so the list row and the modal never disagree.
+ */
+export function reviewApprovalDenyOnly(item: ReviewItem): boolean {
+  const details = reviewApprovalDetails(item);
+  if (!details || !details.pending) return false;
+  return !approvalReviewable(details.args_preview, details.review_complete, details.resolved_preview);
+}
+
+/**
  * Who asked for the call, as the decision panel names them. The SDK labels a
  * row with no agent "Agent", and an approval's summary is its session's title
  * only when that title is known; anything else names nobody.
@@ -108,8 +120,19 @@ export function ApprovalDecisionModal({
   return (
     <Modal open={details !== null} onOpenChange={(open) => !open && onClose()}>
       {/* The panel's header carries the expiry chip where the close button
-          sits; Escape and a click outside close the dialog. */}
-      <ModalContent showCloseButton={false} className="lg:h-auto lg:max-h-[85svh] lg:max-w-md">
+          sits; Escape and a click outside close the dialog. `space-y-0`: the
+          modal's own `space-y-4` puts a 16 px bottom margin on the panel (the
+          close-button row renders after it), a blank band under the decisions. */}
+      <ModalContent
+        showCloseButton={false}
+        // Focus the dialog itself, not its first control: that is the
+        // description's info trigger, and focus would open its hover card.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          (event.currentTarget as HTMLElement | null)?.focus();
+        }}
+        className="space-y-0 lg:h-auto lg:max-h-[85svh] lg:max-w-md"
+      >
         <ModalTitle className="sr-only">
           {waiting ? tI18nComplete.raw('textdb0e960b68b5') : tI18nComplete.raw('text1862f81ed9d6')}
         </ModalTitle>

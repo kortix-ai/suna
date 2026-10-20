@@ -193,7 +193,8 @@ describe('ApprovalDecisionPanel headline', () => {
 describe('ApprovalDecisionPanel header', () => {
   test('the connector and action, with the tool id as the tooltip', () => {
     const html = panel({ details: call({ connector_name: 'GitHub' }) });
-    expect(html).toContain('GitHub · Merge pull request');
+    // Two lines: the connector in ink, the action muted under it.
+    expect(html).toMatch(/font-medium">GitHub<\/p><p class="[^"]*text-muted-foreground[^"]*">Merge pull request<\/p>/);
     expect(html).toContain('title="github.merge_pull_request"');
   });
 

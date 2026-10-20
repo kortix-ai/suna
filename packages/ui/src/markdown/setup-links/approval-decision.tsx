@@ -400,6 +400,10 @@ export function ApprovalDecisionPanel({
   );
   const readable = actionLabel(details.action);
   const hasParameters = !!details.args_preview && Object.keys(details.args_preview).length > 0;
+  const hasLoaded = !!details.resolved_preview && Object.keys(details.resolved_preview).length > 0;
+  // `ApprovalParameters` renders nothing for a call that recorded nothing and
+  // loaded nothing; the facts then follow the header with no second gap.
+  const showsPreview = hasParameters || (hasLoaded && previewAuthorized);
   // A display name, never the bare slug: `gmail` reads "Gmail".
   const connectorName =
     details.connector_name ??
@@ -566,15 +570,22 @@ export function ApprovalDecisionPanel({
     <Rise>
       <div className="flex flex-col gap-3 px-5 pt-5 pb-4">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2" title={details.action}>
+          <div className="flex min-w-0 items-center gap-3" title={details.action}>
             <ConnectorAppMark
               name={connectorName ?? details.action}
               iconUrl={connectorLogoUrl(details)}
               size="md"
             />
-            <p className="text-muted-foreground min-w-0 truncate text-xs">
-              {[connectorName, readable ?? details.action].filter(Boolean).join(' · ')}
-            </p>
+            <div className="flex min-w-0 flex-col">
+              <p className="text-foreground truncate text-sm leading-5 font-medium">
+                {connectorName ?? readable ?? details.action}
+              </p>
+              {connectorName ? (
+                <p className="text-muted-foreground truncate text-xs leading-4">
+                  {readable ?? details.action}
+                </p>
+              ) : null}
+            </div>
           </div>
           {chip}
         </div>
@@ -587,7 +598,7 @@ export function ApprovalDecisionPanel({
       {/* Renders nothing when the call recorded nothing and nothing was
           loaded: the warning below then says it cannot be reviewed. A
           viewer who may not see arguments gets that warning too. */}
-      {hasParameters || previewAuthorized ? (
+      {showsPreview ? (
         <div className="px-5">
           <ApprovalParameters
             native
@@ -602,7 +613,7 @@ export function ApprovalDecisionPanel({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-2 px-5 py-4">
+      <div className={cn('flex flex-col gap-2 px-5 pb-4', showsPreview && 'pt-4')}>
         {risk}
         <FactRow muted icon={<UserIcon aria-hidden className="text-muted-foreground size-4" />}>
           {asked}
@@ -631,6 +642,7 @@ export function ApprovalDecisionPanel({
                     agent ? t('notePlaceholder', { agent }) : t('notePlaceholderAgent')
                   }
                   approveLabel={approveLabel}
+                noteMinHeight={80}
                   className="border-0 p-0"
                 />
               ) : null}
@@ -655,6 +667,7 @@ export function ApprovalDecisionPanel({
                   agent ? t('notePlaceholder', { agent }) : t('notePlaceholderAgent')
                 }
                 approveLabel={approveLabel}
+                noteMinHeight={80}
                 className="border-0 p-0"
               />
             </>

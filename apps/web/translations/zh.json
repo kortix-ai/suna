@@ -20396,7 +20396,8 @@
       "priority1": "紧急",
       "priority2": "高",
       "priority3": "中",
-      "priority4": "低"
+      "priority4": "低",
+      "canOnlyBeDenied": "只能拒绝"
     },
     "reviewBulk": {
       "approve": "批准",

@@ -67,6 +67,7 @@ import {
   ClockIcon as Clock,
   DotsThreeIcon as DotsThree,
   MagnifyingGlassIcon as Search,
+  WarningIcon,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
@@ -88,7 +89,12 @@ import {
   resolveBulkOutcome,
 } from './review-actions';
 import { reviewArgsSummary } from '../../session/prompts/session-approval-review';
-import { ApprovalDecisionModal, reviewApprovalAsker, reviewApprovalDetails } from './approval-modal';
+import {
+  ApprovalDecisionModal,
+  reviewApprovalAsker,
+  reviewApprovalDenyOnly,
+  reviewApprovalDetails,
+} from './approval-modal';
 import { type ReviewActions, ReviewDetail } from './review-detail';
 import {
   KIND_META,
@@ -243,6 +249,10 @@ function ItemRow({
   // Meta line: when · who · where. The session stands in for the repo; when
   // the group already names it, the row's own summary fills the slot.
   const where = sessionLabel ?? item.summary;
+  // Nothing to review: the modal offers only Deny, so the row says so in
+  // place of "awaiting approval". Nothing is denied automatically.
+  const denyOnly = pending && reviewApprovalDenyOnly(item);
+  const tReview = useTranslations('hardcodedUi.approvalPage');
   const selecting = selection?.selecting ?? false;
   const selectable = !!selection && !selection.disabled;
 
@@ -318,12 +328,20 @@ function ItemRow({
         ) : null}
         <Dot />
         <span className="truncate">{item.agent}</span>
-        {where && (
+        {denyOnly ? (
+          <>
+            <Dot />
+            <span className="flex min-w-0 items-center gap-1">
+              <WarningIcon aria-hidden className="text-kortix-orange size-3.5 shrink-0" />
+              <span className="truncate">{tReview('canOnlyBeDenied')}</span>
+            </span>
+          </>
+        ) : where ? (
           <>
             <Dot />
             <span className="truncate">{where}</span>
           </>
-        )}
+        ) : null}
       </span>
     </>
   );

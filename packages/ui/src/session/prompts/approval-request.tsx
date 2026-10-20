@@ -1067,8 +1067,11 @@ export function ApprovalDecisionActions({
   sessionId,
   notePlaceholder,
   approveLabel,
+  noteMinHeight = 36,
   className,
 }: DenseProp & {
+  /** The note's minimum height in px. Default: one line. */
+  noteMinHeight?: number;
   /** The note's label and placeholder. Default: "Message to the agent (optional)". */
   notePlaceholder?: string;
   /** The Approve button's words. Default: "Approve this call". */
@@ -1102,7 +1105,7 @@ export function ApprovalDecisionActions({
         value={note}
         onChange={(event) => setNote(event.target.value)}
         disabled={disabled || busyDecision !== null}
-        minHeight={36}
+        minHeight={noteMinHeight}
         maxHeight={160}
         className={cn('font-normal', dense ? 'text-xs' : 'text-sm')}
       />

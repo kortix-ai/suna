@@ -20396,7 +20396,8 @@
       "priority1": "Hitno",
       "priority2": "Visok",
       "priority3": "Srednji",
-      "priority4": "Nizak"
+      "priority4": "Nizak",
+      "canOnlyBeDenied": "Može se samo odbiti"
     },
     "reviewBulk": {
       "approve": "Одобри",

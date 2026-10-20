@@ -5652,7 +5652,8 @@ const catalog = {
       "priority1": "Urgent",
       "priority2": "High",
       "priority3": "Medium",
-      "priority4": "Low"
+      "priority4": "Low",
+      "canOnlyBeDenied": "Can only be denied"
     },
     "reviewBulk": {
       "approve": "Approve",

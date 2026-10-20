@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { reviewApprovalAsker, reviewApprovalDetails } from './approval-modal';
+import { reviewApprovalAsker, reviewApprovalDenyOnly, reviewApprovalDetails } from './approval-modal';
 import type { ReviewItem } from './types';
 
 const connectorCall: ReviewItem = {
@@ -120,5 +120,29 @@ describe('reviewApprovalAsker', () => {
       agentName: null,
       sessionTitle: null,
     });
+  });
+});
+
+describe('reviewApprovalDenyOnly', () => {
+  const call = connectorCall.kind === 'approval' ? connectorCall.detail.actions[0] : null;
+  const withCall = (patch: Record<string, unknown>, status: ReviewItem['status'] = 'needs_you') =>
+    ({ ...connectorCall, status, detail: { actions: [{ ...call, ...patch }] } }) as ReviewItem;
+
+  test('a call that recorded nothing and withheld some of it can only be denied', () => {
+    expect(reviewApprovalDenyOnly(withCall({ rawArgsPreview: null, reviewComplete: false }))).toBe(true);
+  });
+
+  test('a call with arguments, or loaded content, or nothing withheld is reviewable', () => {
+    expect(reviewApprovalDenyOnly(connectorCall)).toBe(false);
+    expect(
+      reviewApprovalDenyOnly(
+        withCall({ rawArgsPreview: null, reviewComplete: false, resolvedPreview: { to: 'a@example.test' } }),
+      ),
+    ).toBe(false);
+    expect(reviewApprovalDenyOnly(withCall({ rawArgsPreview: null, reviewComplete: true }))).toBe(false);
+  });
+
+  test('a decided call is no longer flagged', () => {
+    expect(reviewApprovalDenyOnly(withCall({ rawArgsPreview: null, reviewComplete: false }, 'rejected'))).toBe(false);
   });
 });

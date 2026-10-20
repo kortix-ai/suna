@@ -20396,7 +20396,8 @@
       "priority1": "Urgente",
       "priority2": "Alta",
       "priority3": "Média",
-      "priority4": "Baixa"
+      "priority4": "Baixa",
+      "canOnlyBeDenied": "Só pode ser negada"
     },
     "reviewBulk": {
       "approve": "Aprovar",
