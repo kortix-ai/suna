@@ -26,6 +26,12 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'opencode_model',
   'opencode_model_source',
   'opencode_model_repointed_from',
+  // The gateway fallback record (`llm-gateway/resolution/session-model-fallback.ts`).
+  // The turn-end revert writes `_from` into the pin: a client value would pick it.
+  'opencode_model_fallback_from',
+  'opencode_model_fallback_from_source',
+  'opencode_model_fallback_reason',
+  'opencode_model_fallback_at',
   // Invocation and trigger attribution. `on_behalf_of` minting, the audit
   // origin, and keyed-trigger routing (`trigger_session_key`) read these.
   'source',
