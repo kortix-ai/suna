@@ -576,6 +576,16 @@ triggers:
     max_runs_per_day: 100
 ```
 
+### Auto-pause
+
+A trigger that keeps hitting its hourly limit is a runaway, not a burst. When `max_runs_per_hour` holds a fire and the trigger also ran at that limit through the hour before, the trigger pauses itself. Two full hours at the limit is the threshold. `max_runs_per_day` never pauses a trigger: holding the rest of the day is that limit's purpose.
+
+- While auto-paused, no schedule slot, webhook, app event or monitor event starts a run. Each fire is a skipped run with the reason `auto-paused: ran at max_runs_per_hour <n> for 2 hours in a row`. A webhook answers `200` with `status: skipped` and that reason. A manual fire still runs.
+- The trigger's watchers get one alert per pause. The alert needs the project's notification center.
+- The trigger shows **Paused** on the Triggers page. Its sheet says why, and its `GET …/triggers` entry carries `auto_paused_at` and `auto_paused_reason`. `kortix triggers ls` marks it `auto-paused`, and `kortix triggers info` prints the reason.
+- To resume it, find what keeps firing it, then press **Resume** in the trigger's sheet, run `kortix triggers enable <slug> --apply`, or send `PATCH …/triggers/<slug>` with `{ "enabled": true }`. The pause is runtime state, not a `kortix.yaml` change, so editing the file does not resume it.
+- For 2 hours after a resume, the trigger cannot pause itself again. The runs from before the resume still count against `max_runs_per_hour`, so it may be held until its hour has room.
+
 ### Platform limits
 
 - At most 3 trigger-created sessions provision at once in a project. A fire past that answers `queued` and runs when a slot frees.

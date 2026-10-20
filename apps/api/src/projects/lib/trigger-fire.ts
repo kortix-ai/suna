@@ -15,8 +15,8 @@ import { disableSessionReminder, reminderPromptText } from './session-reminders'
 import { accountMemberRow } from '../../iam/membership-read';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
-import { alertTriggerThrottled, clearTriggerAlert } from './trigger-alerts';
-import { triggerRunCapReason } from './trigger-run-caps';
+import { alertTriggerAutoPaused, alertTriggerThrottled, clearTriggerAlert } from './trigger-alerts';
+import { autoPauseTrigger, readTriggerAutoPause, triggerAutoPauseReason, triggerRunCapVerdict } from './trigger-run-caps';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -296,7 +296,7 @@ export async function fireGitTrigger(input: {
   /** A person fired it (manual fire, replay): the run caps do not apply. */
   deliberate?: boolean;
 }): Promise<{
-  /** `skipped`: a run cap (KRTX-1721) held it; `reason` names the cap. */
+  /** `skipped`: a run cap or an auto-pause (KRTX-1721) held it; `reason` says which. */
   status: 'fired' | 'queued' | 'failed' | 'skipped';
   sessionId?: string;
   commandId?: string;
@@ -317,10 +317,19 @@ export async function fireGitTrigger(input: {
   // prompt work. A person's fire is never held, but it counts toward the cap.
   if (!input.deliberate) {
     const now = new Date();
-    const throttled = await triggerRunCapReason({ projectId: project.projectId, slug: spec.slug, caps: spec, now });
-    if (throttled) {
-      alertTriggerThrottled({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, reason: throttled, now });
-      return { status: 'skipped', reason: throttled };
+    const { pausedReason, resumedAt } = await readTriggerAutoPause(project.projectId, spec.slug);
+    if (pausedReason) return { status: 'skipped', reason: pausedReason };
+    const held = await triggerRunCapVerdict({ projectId: project.projectId, slug: spec.slug, caps: spec, now, resumedAt });
+    if (held?.sustained) {
+      const reason = triggerAutoPauseReason(spec);
+      if (await autoPauseTrigger(project.projectId, spec.slug, reason, now)) {
+        alertTriggerAutoPaused({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, reason, pausedAt: now });
+        return { status: 'skipped', reason };
+      }
+    }
+    if (held) {
+      alertTriggerThrottled({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, reason: held.reason, now });
+      return { status: 'skipped', reason: held.reason };
     }
   }
   // The session's owning identity (created_by / billing / audit). Automated runs
