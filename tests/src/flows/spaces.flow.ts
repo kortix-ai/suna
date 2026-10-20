@@ -283,16 +283,52 @@ async function insertSession(
   world: AgentPrincipalsWorld,
   createdBy: string,
   visibility: 'private' | 'project',
+  opts: { spaceId?: string; updatedAt?: Date; metadata?: Record<string, unknown> } = {},
 ): Promise<string> {
   const sessionId = randomUUID();
   world.sessions.push(sessionId);
   await world.db.query(
     `INSERT INTO kortix.project_sessions
-       (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, metadata)
-     VALUES ($1, $2, $3, $1, 'kortix', 'stopped', $4, $5, '{}'::jsonb)`,
-    [sessionId, world.accountId, world.projectId, createdBy, visibility],
+       (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, metadata, space_id, updated_at)
+     VALUES ($1, $2, $3, $1, 'kortix', 'stopped', $4, $5, $6::jsonb, $7, coalesce($8::timestamptz, now()))`,
+    [
+      sessionId,
+      world.accountId,
+      world.projectId,
+      createdBy,
+      visibility,
+      JSON.stringify(opts.metadata ?? {}),
+      opts.spaceId ?? null,
+      opts.updatedAt?.toISOString() ?? null,
+    ],
   );
   return sessionId;
+}
+
+/** The space a session is filed into, read from the row. */
+async function sessionSpaceId(world: AgentPrincipalsWorld, sessionId: string): Promise<string | null> {
+  const { rows } = await world.db.query<{ space_id: string | null }>(
+    'SELECT space_id FROM kortix.project_sessions WHERE session_id = $1',
+    [sessionId],
+  );
+  return rows[0]?.space_id ?? null;
+}
+
+/**
+ * Turn `project_channels` on and wait for its toggle effect to finish: it
+ * retires warm sessions first, then files `canary` (a session in no space)
+ * into `#general`. Returns `#general`'s id.
+ */
+async function enableChannelsAndSettle(world: AgentPrincipalsWorld, canary: string): Promise<string> {
+  await world.setFeature('project_channels', true);
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if (await sessionSpaceId(world, canary)) break;
+    await Bun.sleep(250);
+  }
+  const generalId = await generalSpaceId(world, world.projectId);
+  if ((await sessionSpaceId(world, canary)) !== generalId) throw new Error('the toggle effect did not file the canary into #general');
+  return generalId;
 }
 
 // SPACE-5, -6 and -8 need a 201 from the session create route, which needs a
@@ -384,12 +420,13 @@ flow('SPACE-7', meta([ROUTES.create, ROUTES.update, ROUTES.dm, SESSION_ROUTES.cr
       if (rows.length !== 0) throw new Error(`a refused create stored ${rows.length} session(s)`);
     });
 
-    await ctx.step('the caller’s own DM passes the space check (201, or the local profile’s no-sandbox 503)', async () => {
+    await ctx.step('the caller’s own DM passes the space check and runs the DM’s agent over a different agent_name (201, or the local profile’s no-sandbox 503)', async () => {
       const ownDmId = (await world.owner.post(DM, { agent_name: 'kortix' }, { params })).status(200).json<Space>().space_id;
-      const r = await world.owner.post(SESSIONS, { space_id: ownDmId }, { params });
+      // The manifest declares no such agent: without the DM override the agent gate refuses it.
+      const r = await world.owner.post(SESSIONS, { space_id: ownDmId, agent_name: 'ke2e-not-the-dm-agent' }, { params });
       if (r.statusCode === 201) {
         ctx.track('session', r.json<Session>().session_id, { projectId: project.id });
-        r.body().has('$.space_id', ownDmId).has('$.visibility', 'private');
+        r.body().has('$.space_id', ownDmId).has('$.visibility', 'private').has('$.agent_name', 'kortix');
       } else {
         r.status(503).body().has('$.code', 'KORTIX_URL_UNREACHABLE');
       }
@@ -439,6 +476,11 @@ flow('SPACE-9', meta([ROUTES.list, SESSION_ROUTES.list, FEATURES_ROUTE]), async 
       for (const id of [...ownerPrivate, aShared]) if (!ids.includes(id)) throw new Error('flag off: the space filter was applied');
     });
 
+    await ctx.step('flag off: a space_id that is not a UUID is ignored too → 200, the owner’s normal list', async () => {
+      const ids = (await world.owner.get(`${SESSIONS}?space_id=not-a-uuid`, { params })).status(200).json<Session[]>().map((s) => s.session_id);
+      for (const id of [...ownerPrivate, aShared]) if (!ids.includes(id)) throw new Error('flag off: a non-UUID space filter changed the list');
+    });
+
     let generalId = '';
     await ctx.step('turn the flag on → every one of them lands in #general (count before = count in #general after)', async () => {
       await world.setFeature('project_channels', true);
@@ -468,10 +510,116 @@ flow('SPACE-9', meta([ROUTES.list, SESSION_ROUTES.list, FEATURES_ROUTE]), async 
       if (sorted(b) !== sorted([aShared])) throw new Error(`member B lists ${b.join(',')}`);
     });
 
+    await ctx.step('flag on: a space_id that is not a UUID → 400', async () => {
+      (await world.owner.get(`${SESSIONS}?space_id=not-a-uuid`, { params })).status(400);
+    });
+
     await ctx.step('another space lists none of them', async () => {
       const other = (await world.owner.post(SPACES, { name: 'Elsewhere' }, { params })).status(201).json<Space>().space_id;
       const ids = await listedInSpace(world.owner, project.id, other);
       if (ids.length !== 0) throw new Error(`an empty channel lists ${ids.length} session(s)`);
+    });
+  } finally {
+    await world.close();
+  }
+});
+
+flow('SPACE-10', meta([ROUTES.list, ROUTES.create, SESSION_ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
+  const { project, world } = await openWorld(ctx);
+  const params = { projectId: project.id };
+  try {
+    await world.setFeature('project_channels', true);
+    const generalId = await generalSpaceId(world, project.id);
+    const channelId = (await world.owner.post(SPACES, { name: 'Paging' }, { params })).status(201).json<Space>().space_id;
+    // 5 threads in the channel and 5 in #general, interleaved in time, so every
+    // page boundary of the channel list has a #general row next to it.
+    const now = Date.now();
+    const inChannel: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const spaceId = i % 2 === 0 ? channelId : generalId;
+      const id = await insertSession(world, world.ownerUserId, 'project', { spaceId, updatedAt: new Date(now - i * 1_000) });
+      if (spaceId === channelId) inChannel.push(id);
+    }
+
+    await ctx.step('walking ?space_id=<channel>&limit=2 by X-Next-Cursor returns the 5 channel threads once each, newest first, and nothing else', async () => {
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 10; page++) {
+        const query: string = `space_id=${channelId}&limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+        const r = await world.owner.get(`${SESSIONS}?${query}`, { params });
+        const rows = r.status(200).json<Session[]>();
+        for (const row of rows) {
+          if (row.space_id !== channelId) throw new Error(`page ${page} returned a session of space ${row.space_id}`);
+          seen.push(row.session_id);
+        }
+        cursor = r.header('x-next-cursor') ?? null;
+        if (!cursor) break;
+      }
+      if (cursor) throw new Error('the cursor never ran out');
+      if (seen.join(',') !== inChannel.join(',')) throw new Error(`walked ${seen.join(',')}, expected ${inChannel.join(',')}`);
+    });
+  } finally {
+    await world.close();
+  }
+});
+
+const WARM_CLAIM_ROUTE = 'POST /v1/projects/:projectId/sessions/warm/claim';
+const WARM_CLAIM = '/v1/projects/:projectId/sessions/warm/claim';
+
+flow('SPACE-11', meta([WARM_CLAIM_ROUTE, ROUTES.list, SESSION_ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
+  const { project, world } = await openWorld(ctx, { manifest: true });
+  const params = { projectId: project.id };
+  /** An unclaimed warm session with a placed sandbox, as the warm pool leaves it. */
+  const warmSession = async (): Promise<string> => {
+    const sessionId = await insertSession(world, world.ownerUserId, 'private', { metadata: { warm: true } });
+    await world.db.query(`UPDATE kortix.project_sessions SET status = 'running' WHERE session_id = $1`, [sessionId]);
+    await world.db.query(
+      `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, provider, status, config, metadata)
+       VALUES ($1::uuid, $1, $2::uuid, $3::uuid, 'platinum', 'provisioning', '{}'::jsonb, '{"platinumRegion":"eu-west"}'::jsonb)`,
+      [sessionId, world.accountId, world.projectId],
+    );
+    return sessionId;
+  };
+  try {
+    await world.fund();
+    await world.setFeature('warm_sessions', true);
+
+    await ctx.step('flag off: a claimed warm session stays in no space and stores no first_prompt', async () => {
+      const sessionId = await warmSession();
+      const r = await world.owner.post(WARM_CLAIM, { session_id: sessionId, pending_prompt: { text: 'ke2e: flag off' } }, { params });
+      r.status(200).body().has('$.space_id', null).has('$.first_prompt', null);
+      if ((await sessionSpaceId(world, sessionId)) !== null) throw new Error('flag off: the claim filed the session');
+    });
+
+    const canary = await insertSession(world, world.ownerUserId, 'private');
+    const generalId = await enableChannelsAndSettle(world, canary);
+
+    await ctx.step('flag on: a claimed warm session becomes a #general thread whose first_prompt is the claimed prompt', async () => {
+      const sessionId = await warmSession();
+      const text = 'ke2e: a thread from the mobile composer';
+      const r = await world.owner.post(WARM_CLAIM, { session_id: sessionId, pending_prompt: { text } }, { params });
+      r.status(200).body().has('$.space_id', generalId).has('$.first_prompt', text);
+      if ((await sessionSpaceId(world, sessionId)) !== generalId) throw new Error('the claimed row is not in #general');
+      const ids = await listedInSpace(world.owner, project.id, generalId);
+      if (!ids.includes(sessionId)) throw new Error('the claimed thread is not listed in #general');
+    });
+  } finally {
+    await world.close();
+  }
+});
+
+flow('SPACE-12', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
+  const { project, world } = await openWorld(ctx);
+  try {
+    const canary = await insertSession(world, world.ownerUserId, 'private');
+    const generalId = await enableChannelsAndSettle(world, canary);
+
+    await ctx.step('a session that lands in no space after the toggle is in #general as soon as GET /spaces returns', async () => {
+      const late = await insertSession(world, world.ownerUserId, 'project');
+      if ((await sessionSpaceId(world, late)) !== null) throw new Error('the late session already has a space');
+      (await world.owner.get(SPACES, { params: { projectId: project.id } })).status(200);
+      const spaceId = await sessionSpaceId(world, late);
+      if (spaceId !== generalId) throw new Error(`after GET /spaces the late session is in ${spaceId}, expected #general`);
     });
   } finally {
     await world.close();
