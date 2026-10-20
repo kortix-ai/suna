@@ -82,7 +82,7 @@ overwrites a verified or edited cell. **Export CSV** carries the citations.
 | Workflow | What the firm gets |
 |---|---|
 | **Contract review** | The document against a firm playbook: one finding per rule (aligned, deviates, missing) with severity, the quoted clause and the smallest redline, plus clauses no rule covers. Accept or dismiss each. **Download redline (.docx)** has real tracked changes and a comment per edit. |
-| **Due diligence** | A checklist row per document, then one report: red flags with severity and quote, and cited sections a buyer's counsel reads. |
+| **Due diligence** | A checklist row per document, then one report: red flags with severity and quote, and cited sections a buyer's counsel reads. Before it calls an agreement missing, the report resolves every defined reference ("the Main Agreement", "Schedule 3") against the data room. **Download report (.docx)** (built by the agent from the checked report) and **Markdown** (citations as "(filename, p. N)"). |
 | **Draft from template** | A firm template filled from the matter. Fields Lumen cannot source stay as `[[CONFIRM: field]]`. Download as .docx. |
 | **Ask across the vault** | One cited answer over every document, or "The documents in this matter do not address this." |
 
@@ -181,6 +181,9 @@ run    queued → preparing (kit current, input.json per batch in Drive) → run
 batch  pending → starting → working → succeeded | failed                                                  (any → canceled)
        working: invalid result → repair prompt (≤ 2) · idle without done.json → nudge (≤ 2)
                 failed session → new session (≤ 1) · 20 min without a new file, or 60 min per run → failed
+watchdog (convex/crons.ts, every 5 min): a run that a deploy or restart interrupted is settled:
+       queued/preparing 10 min with no event → failed (Retry runs it) · starting 10 min → batch failed
+       working past 25 min with no new file → batch failed · running past 65 min → failed
 ```
 
 - Fan-out: a review of N documents is ⌈N/4⌉ batches. At most 4 run at once per run and 8 per firm;
@@ -312,7 +315,9 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
    One token serves all of a member's matters in a firm (one per firm and
    member). Every `projects/<id>/sessions/<sid>/…` call also checks that the
    session is a thread of the bearer's matter (`threads.bySession`), else
-   `404`. The runtime routes (`p/<sandbox>/8000/…`) are not tied to a matter:
+   `404`. The two side routes that take a session id, `/api/session-model`
+   and `/api/preview-url`, run the same check (`resolveMemberForSession` in
+   `src/server/member.ts`). The runtime routes (`p/<sandbox>/8000/…`) are not tied to a matter:
    restricted visibility is an application rule, not a wall inside the firm's
    project (see Limits).
 4. The member token is project-scoped. Kortix refuses it on every other
@@ -323,8 +328,7 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
 5. A project-scoped token carries its minter's role on that project (owner).
    `src/server/proxy-policy.ts` therefore names each route the session UI
    calls, by method, measured from the customer journey: the project card,
-   model picker, connection and secret names, change requests; the project
-   repository read only (Files and Changes tabs, one commit and its patch);
+   model picker, connection and secret names, change requests;
    session start and restart,
    rename and delete, the session's live stream, transcript, turn, prompt
    queue, attachments, scope and previews. On the session runtime (port 8000
@@ -338,7 +342,10 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
    drives and drive sync, the session log and config, provider credential
    pools, the runtime's shell, command, terminal (`pty`), git, environment,
    tool and file routes outside the search, the runtime config, and every
-   other sandbox port. The proxy refuses a path segment that decodes to
+   other sandbox port. The project repository is refused too (files,
+   branches, commits, history, diffs): Lumen's thread reads none of it, and
+   Kortix names each session's branch after its session id, so a branch list
+   would hand a lawyer the session ids of matters they cannot open. The proxy refuses a path segment that decodes to
    `/`, `\`, `.`, `..`, `?`, `#`, `%` or a control character
    (`src/server/upstream-path.ts`), so the path the policy checks is the path
    Kortix receives.
@@ -382,15 +389,21 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
     `x-kortix-client-version`. Cookies, user agent, referer, `Origin`, client
     hints and forwarded-for headers stay in Lumen; the proxy sets
     `authorization` to the member token.
-13. The Files and Changes tabs read the thread's branch (Kortix names it after
-    the session id; `useSessionRef` in `src/lib/session-ref.ts`), so a file
-    appears there once the agent commits and pushes it. The sandbox's
-    live files are not read: the proxy refuses the runtime's file content
-    route, because the sandbox daemon follows symlinks out of `/workspace`.
+13. Responses lose the operator's Kortix identity and plumbing
+    (`redactIdentity`): the session, snapshot, project and change-request
+    records drop `account_id`, `created_by`, owner ids, the managed repository
+    URL, the git origin and the dashboard URL; the project record's prose names
+    Lumen in any case. A non-2xx body loses Kortix's `[check=… principal=…]`
+    diagnostics and names Lumen (`redactError`). Model ids keep their
+    `kortix/` prefix: the UI sends them back, and Lumen hides the model picker.
 14. A rename through the proxy also renames the Lumen thread
-    (`threads.renameFromProxy`), so the thread list shows the new title. The
-    Changes tab is read only: Lumen refuses commits, pushes and change
-    requests, so it draws no control for them.
+    (`threads.renameFromProxy`), so the thread list shows the new title.
+15. The Assistant shows no infrastructure. `UiProvider` turns off the model
+    and effort pickers, the context ring and the session-overrides gear, and
+    offers one agent, `lumen-counsel`, as "Counsel" (`modelPickerEnabled`,
+    `contextMeterEnabled`, `sessionOverridesEnabled`, `offeredAgents`,
+    `agentLabels` in `src/app/providers.tsx`). The reviewer, extractor and
+    drafter take an `input.json` from the engine, not a conversation.
 
 ## Run it
 
