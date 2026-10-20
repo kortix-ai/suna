@@ -279,19 +279,23 @@ export function registerProjectSettingsRoutes(): void {
       return c.json({ error: 'Failed to purge project connectors' }, 500);
     }
 
-    // Commit the tombstone before revoking: a concurrent late mint must see
-    // the archive even if it inserts after the revocation UPDATE's snapshot.
-    const [row] = await db.update(projects)
-      .set({ status: 'archived', updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId)).returning();
+    // The archive UPDATE locks the project against concurrent token mints.
+    // Roll back both writes on failure so cleanup remains retryable.
+    const row = await db.transaction(async (tx) => {
+      const [archived] = await tx.update(projects)
+        .set({ status: 'archived', updatedAt: new Date() })
+        .where(eq(projects.projectId, projectId)).returning();
+      if (!archived) return undefined;
+      await tx.update(accountTokens)
+        .set({ status: 'revoked', revokedAt: new Date() })
+        .where(and(
+          eq(accountTokens.projectId, projectId),
+          eq(accountTokens.accountId, loaded.row.accountId),
+          eq(accountTokens.status, 'active'),
+        ));
+      return archived;
+    });
     if (!row) return c.json({ error: 'Not found' }, 404);
-    await db.update(accountTokens)
-      .set({ status: 'revoked', revokedAt: new Date() })
-      .where(and(
-        eq(accountTokens.projectId, projectId),
-        eq(accountTokens.accountId, loaded.row.accountId),
-        eq(accountTokens.status, 'active'),
-      ));
     // An archived project fires nothing: release its app-event provider instances.
     await releaseProjectEventSubscriptions(projectId);
     return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });

@@ -180,6 +180,30 @@ async function loadPatPolicy(accountId: string): Promise<{
 export async function createAccountToken(
   params: CreateAccountTokenParams,
 ): Promise<CreateAccountTokenResult> {
+  if (!params.projectId) return insertAccountToken(params);
+  const projectId = params.projectId;
+  return db.transaction(async (tx) => {
+    // Serialize project-bound mints with archive/revocation. The lock lasts
+    // through insert and owner validation; DELETE either sees this token or
+    // the mint sees the committed archive.
+    const [project] = await tx.select({ status: projects.status }).from(projects)
+      .where(and(eq(projects.projectId, projectId), eq(projects.accountId, params.accountId)))
+      .for('share');
+    if (project?.status === 'archived') throw new Error('Project is archived');
+    if (params.sessionId) {
+      // Keep the session tombstone UPDATE from passing an uncommitted mint.
+      await tx.select({ sessionId: projectSessions.sessionId }).from(projectSessions)
+        .where(and(eq(projectSessions.sessionId, params.sessionId), eq(projectSessions.accountId, params.accountId)))
+        .for('share');
+    }
+    return insertAccountToken(params, tx);
+  });
+}
+
+async function insertAccountToken(
+  params: CreateAccountTokenParams,
+  database: Pick<typeof db, 'insert' | 'select' | 'update'> = db,
+): Promise<CreateAccountTokenResult> {
   if (!isApiKeySecretConfigured()) {
     throw new Error('API_KEY_SECRET not configured');
   }
@@ -208,7 +232,7 @@ export async function createAccountToken(
   const { publicKey, secretKey } = generateAccountTokenPair();
   const secretKeyHash = hashSecretKey(secretKey);
 
-  const [row] = await db
+  const [row] = await database
     .insert(accountTokens)
     .values({
       accountId: params.accountId,
@@ -233,14 +257,14 @@ export async function createAccountToken(
   // tokens. Either its revocation sees this row or this read sees the tombstone.
   if (params.sessionId && params.projectId) {
     try {
-      const [project] = await db.select({ status: projects.status }).from(projects)
+      const [project] = await database.select({ status: projects.status }).from(projects)
         .where(and(eq(projects.projectId, params.projectId), eq(projects.accountId, params.accountId)));
       if (project?.status === 'archived') throw new Error('Project is archived');
-      const [session] = await db.select({ metadata: projectSessions.metadata }).from(projectSessions)
+      const [session] = await database.select({ metadata: projectSessions.metadata }).from(projectSessions)
         .where(and(eq(projectSessions.sessionId, params.sessionId), eq(projectSessions.accountId, params.accountId)));
       if (typeof session?.metadata?.deletedAt === 'string') throw new Error('Session is deleted');
     } catch (error) {
-      await db.update(accountTokens).set({ status: 'revoked', revokedAt: new Date() })
+      await database.update(accountTokens).set({ status: 'revoked', revokedAt: new Date() })
         .where(eq(accountTokens.tokenId, row.tokenId));
       throw error;
     }

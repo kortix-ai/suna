@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { accountMembers, accounts } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { app } from '../index';
 import { db } from '../shared/db';
 import { createAccountToken } from '../repositories/account-tokens';
@@ -39,4 +39,30 @@ test('project DELETE removes existing session and project credentials from the l
   expect(ids).not.toContain(session.tokenId);
   expect(ids).not.toContain(scoped.tokenId);
   expect(ids.length).toBe(1); // account-scoped caller remains usable
+});
+
+ test('a revocation failure rolls back archive so DELETE can be retried', async () => {
+  const retryProject = await seedProject('retry-delete-token', { accountId: project.account_id });
+  const token = await createAccountToken({ accountId: project.account_id, userId,
+    projectId: retryProject.project_id, name: 'retry-project-token' });
+  await db.execute(sql.raw(`CREATE FUNCTION kortix.refuse_test_token_revoke() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN RAISE EXCEPTION 'synthetic revoke failure'; END $$`));
+  await db.execute(sql.raw(`CREATE TRIGGER refuse_test_token_revoke BEFORE UPDATE ON kortix.account_tokens
+    FOR EACH ROW WHEN (NEW.status = 'revoked') EXECUTE FUNCTION kortix.refuse_test_token_revoke()`));
+  try {
+    const failed = await app.request(`/v1/projects/${retryProject.project_id}`, {
+      method: 'DELETE', headers: { Authorization: bearer },
+    });
+    expect(failed.status).toBe(500);
+  } finally {
+    await db.execute(sql.raw('DROP TRIGGER refuse_test_token_revoke ON kortix.account_tokens'));
+    await db.execute(sql.raw('DROP FUNCTION kortix.refuse_test_token_revoke()'));
+  }
+  const retried = await app.request(`/v1/projects/${retryProject.project_id}`, {
+    method: 'DELETE', headers: { Authorization: bearer },
+  });
+  expect(retried.status).toBe(200);
+  const listed = await app.request('/v1/accounts/tokens', { headers: { Authorization: bearer } });
+  const tokens = await listed.json() as Array<{ token_id: string }>;
+  expect(tokens.map(row => row.token_id)).not.toContain(token.tokenId);
 });

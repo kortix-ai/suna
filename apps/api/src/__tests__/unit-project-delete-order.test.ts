@@ -60,6 +60,7 @@ const realDb = await import('../shared/db');
 mock.module('../shared/db', () => ({
   ...realDb,
   db: {
+    transaction: async (action: (tx: typeof realDb.db) => Promise<unknown>) => action((await import('../shared/db')).db),
     update: (table: unknown) => ({
       set: (values: { status?: string }) => {
         if (table === accountTokens) steps.push('revoke-tokens');
