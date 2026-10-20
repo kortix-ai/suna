@@ -27,7 +27,6 @@ import { useSettingsPanelStore } from '../../../internal/stores/settings-panel-s
 import {
   type ReviewSegment,
   type ReviewVerdict,
-  getReviewItem,
   listProjectSessions,
   PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   REVIEW_CONTROL_ACTIONS,
@@ -42,7 +41,9 @@ import {
   useActReviewItem,
   useBulkActReviewItems,
   useResolveReviewApproval,
+  useReviewItemById,
   useReviewItems,
+  withFreshApprovalDetail,
 } from '../../../workspace/review/hooks/use-review-items';
 import { mapApiReviewItem } from '../../../workspace/review/map';
 import {
@@ -98,13 +99,11 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
   const linkedMissing = Boolean(
     idParam && isFetched && !rows.some((row) => row.review_item_id === idParam),
   );
-  const linked = useQuery({
-    queryKey: [...qk.project.reviewItemsScope(projectId), 'item', idParam ?? ''],
-    queryFn: async () => (await getReviewItem(projectId, idParam!)).review_item,
-    enabled: Boolean(projectId) && linkedMissing,
-    staleTime: 5_000,
-    retry: false,
-  });
+  // An opened connector approval is read by id too, even when it is on the
+  // page: that read loads its content once (a legacy row's draft or pull
+  // request). The list item shows until it answers, then its detail swaps in.
+  const openedCall = Boolean(idParam?.startsWith('call:'));
+  const linked = useReviewItemById(projectId, idParam, linkedMissing || openedCall);
   const linkedRow = linkedMissing ? linked.data : undefined;
   const act = useActReviewItem();
   const bulk = useBulkActReviewItems();
@@ -132,10 +131,10 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
 
   const items = useMemo(
     () =>
-      (linkedRow ? [...rows, linkedRow] : rows).map((row) =>
+      withFreshApprovalDetail(linkedRow ? [...rows, linkedRow] : rows, linked.data).map((row) =>
         mapApiReviewItem(row, projectName, sessionLabels),
       ),
-    [rows, linkedRow, projectName, sessionLabels],
+    [rows, linkedRow, linked.data, projectName, sessionLabels],
   );
 
   // The inbox's "Open session" and "See it in the session" controls are buttons
