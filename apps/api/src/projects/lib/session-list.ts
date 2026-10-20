@@ -286,7 +286,7 @@ export function sessionListViewerSql(viewer: SessionListViewer): SQL {
   // the project. The tombstone detoasts `metadata` (~6 KB a row) and the
   // planner evaluates it first, so a 16k-session project spent ~600 ms there
   // for the 11% of rows the viewer may open. The CASE checks the plain-column
-  // access rules first: the same rows, 670 -> 153 ms on prod. The manager
+  // access rules first: the same rows, 670 -> 161 ms on prod. The manager
   // inventory and the `visible` scope keep the AND, which the partial index
   // `idx_project_sessions_project_live` and the keyset pages need.
   if (access && viewer.scope === 'project' && !viewer.deleted && !viewer.canManageProject) {
