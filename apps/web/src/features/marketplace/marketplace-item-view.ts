@@ -1,5 +1,5 @@
-import type { FileTreeNode } from '@/components/ui/file-tree';
-import { buildFileTree } from '@/features/workspace/capabilities/shared/entity/entity-files';
+import type { FileTreeNode } from '@kortix/ui/file-tree';
+import { buildFileTree } from '@kortix/ui/customize/shared/entity/entity-files';
 import type { UiTranslator } from '@/i18n/translator';
 import type { DependencyItem, ItemCapabilities, MarketplaceItem } from '@/lib/marketplace-client';
 import { typeMeta } from './marketplace-meta';

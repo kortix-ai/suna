@@ -187,6 +187,8 @@ export interface ProjectTrigger {
   /** ISO time an enabled cron trigger runs next: the slot the scheduler
    *  claims, jitter included. Null for a webhook trigger, and from an older API. */
   next_fire_at?: string | null;
+  /** Next exact cron occurrence, without scheduler jitter. Absent from older APIs. */
+  next_cron_at?: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
 }

@@ -17,6 +17,7 @@ import { WARM_SESSION_LOCATION_KEY } from './warm-sessions';
 
 export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Soft delete (`deleteSession`).
+  'forkedFromSessionId',
   'deletedAt',
   'deletedBy',
   // Model pin (`opencode_model` body field and `PUT …/model`). `_repointed_from`
@@ -66,6 +67,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // server stamps conversation activity; a client value would let it fake a
   // sidebar position.
   'last_activity_at',
+  // Server-confirmed runtime fork provenance and inventory.
+  'runtime_forks',
+  'opencode_sessions',
 ] as const;
 
 /**
@@ -73,6 +77,18 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
  * spread, so on create a client value is overwritten and on update it would
  * persist.
  */
+/**
+ * Keys a client may write, but only on a session it owns: the session's
+ * creator, or the session itself through its own session-bound token.
+ * Server code trusts them for a decision, so a member who can merely SEE a
+ * session must not set them. `POST /sessions` accepts them (the caller owns
+ * the session it creates).
+ *
+ * - `unattended`: the server answers the session's blocking questions at once
+ *   (`channels/question-release.ts`), removing the owner's confirmation step.
+ */
+export const OWNER_MANAGED_SESSION_METADATA_KEYS = ['unattended'] as const;
+
 export const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
   ...SERVER_MANAGED_SESSION_METADATA_KEYS,
   'workspace_mode',

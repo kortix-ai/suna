@@ -23,6 +23,7 @@ import { sandboxRelayContext, sessionChannel } from '@/lib/kortix-api/relay-cont
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { InitialTurnClaim } from '@/types/control-plane'
 import { flushSessionLogJournal } from './session-log-journal'
+import { runOnIdleHook } from './on-idle-hook'
 
 export type TurnStreamFrame = Omit<TurnStreamRelayBody, 'session_id' | 'kind'> & { kind: DaemonTurnStreamKind }
 
@@ -344,6 +345,8 @@ export async function relayTurnEnd(
         const settled = outcome === undefined || outcome === 'closed' || outcome === 'already_closed' || outcome === 'no_active_turn'
         if (settled) {
           if (data?.ok) logger.info('[turn-relay] turn end relayed', { status: current.status, errorName: current.error?.name, runtimeSessionId: current.runtimeSessionId, attempt })
+          // pi ends its turns here; OpenCode's own relay (open-code/turn-relay.ts) runs the hook too.
+          runOnIdleHook(current)
           return true
         }
         logger.warn('[turn-relay] turn-end relay was not settled', {

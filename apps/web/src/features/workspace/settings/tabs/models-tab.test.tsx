@@ -9,7 +9,8 @@ import {
   MODELS_PAGE_DESCRIPTION,
   MODELS_PAGE_TITLE,
   QUICK_LLM_TABS,
-} from '../../customize/sections/gateway-view';
+} from '@kortix/ui/customize/sections/gateway-view';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 /**
  * `LlmTabStrip` is the pure, props-only half of the Models page — no hooks, so
@@ -76,19 +77,19 @@ function code(path: string): string {
     .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '');
 }
 
-const tabSource = code(join(import.meta.dir, 'models-tab.tsx'));
-const gatewaySource = code(join(import.meta.dir, '../../customize/sections/gateway-view.tsx'));
+const tabSource = code(uiSourcePath('customize/settings/tabs/models-tab.tsx'));
+const gatewaySource = code(uiSourcePath('customize/sections/gateway-view.tsx'));
 const gatewayAccessSource = code(
-  join(import.meta.dir, '../../customize/sections/gateway-access-tab.tsx'),
+  uiSourcePath('customize/sections/gateway-access-tab.tsx'),
 );
 const connectorsSource = code(
-  join(import.meta.dir, '../../capabilities/connectors/connectors-page.tsx'),
+  uiSourcePath('customize/connectors/connectors-page.tsx'),
 );
 const overviewSource = code(
-  join(import.meta.dir, '../../customize/sections/view/gateway/gateway-overview.tsx'),
+  uiSourcePath('customize/sections/view/gateway/gateway-overview.tsx'),
 );
 const routingSource = code(
-  join(import.meta.dir, '../../customize/sections/view/gateway/gateway-routing.tsx'),
+  uiSourcePath('customize/sections/view/gateway/gateway-routing.tsx'),
 );
 const playgroundPath = '../../customize/sections/view/gateway/gateway-playground.tsx';
 const deletedKeysTabPath = '../../customize/sections/llm-api-keys-tab.tsx';

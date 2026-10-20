@@ -2,7 +2,7 @@
 
 import { useId } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /** Firefox brand mark, full colour. Source: gilbarbara/logos (CC0), `logos:firefox`. */
 export const Firefox = ({ className }: { className?: string }) => {

@@ -21,7 +21,7 @@
  * open) wins when present — it is the most specific signal. Falls back to
  * `useCurrentAccountStore`'s `selectedAccountId` — the app-wide "currently
  * active account", set by the account switcher / project switcher and
- * persisted across sessions (`stores/current-account-store.ts`) — so
+ * persisted across sessions (`packages/ui/src/internal/stores/current-account-store.ts`) — so
  * resolution still works with no project open.
  *
  * Two alternatives were considered and rejected (JAY-497); do not
@@ -32,7 +32,7 @@
  * re-derive the same project-scoped value, not an independent one.
  */
 
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 
 /**
  * Pure resolver — exported so the fallback logic is unit-testable without a

@@ -14,7 +14,7 @@
  * lives in `app/admin/accounts/ledger-rows.ts`.
  */
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import {
   Table,
   TableBody,
@@ -22,10 +22,10 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/table';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
 import { formatUsdAsCredits } from '@kortix/shared';
 import { useTranslations } from '@/i18n/use-translations';
 

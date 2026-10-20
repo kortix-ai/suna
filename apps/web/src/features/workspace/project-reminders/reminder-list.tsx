@@ -1,14 +1,14 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import Hint from '@/components/ui/hint';
-import Loading from '@/components/ui/loading';
-import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import Hint from '@kortix/ui/hint';
+import Loading from '@kortix/ui/loading';
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '@kortix/ui/table';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
-import { hasOpenFloatingLayer } from '@/lib/z-stack';
+import { hasOpenFloatingLayer } from '@kortix/ui';
 import type {
   ProjectReminder,
   SessionReminderBatchResult,
@@ -17,7 +17,7 @@ import type {
 import type { useProjectReminders } from '@kortix/sdk/react';
 import { PauseIcon, PlayIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { reminderTitle } from './reminder-format';
+import { reminderTitle } from '@kortix/ui/workspace';
 import { selectionState, toggleSelection } from './reminder-list-model';
 import { ReminderRow, ReminderRowSkeleton, type RowPending } from './reminder-row';
 

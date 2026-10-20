@@ -8,7 +8,12 @@ import {
   SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
 } from './api-client';
 import type { ApiResponse, ErrorContext } from './api-client';
-import { ApiError, RequestTooLargeError, parseBillingError } from './api/errors';
+import {
+  ApiError,
+  FEATURE_DISABLED_CODE,
+  RequestTooLargeError,
+  parseBillingError,
+} from './api/errors';
 import { platformConfig } from './config';
 
 const REQUEST_DEADLINE_CODE = 'request_deadline';
@@ -120,6 +125,8 @@ function isExpectedResponse(status: number, data: any, message: string): boolean
     isRequestDeadlineResponse(status, data, message) ||
     isGitMirrorUnavailableResponse(status, data, message) ||
     isConnectorsProviderUnavailableResponse(status, data) ||
+    // Flag gates are expected disabled states; callers still receive the ApiError.
+    (status === 403 && data?.code === FEATURE_DISABLED_CODE) ||
     (status === 501 && data?.code === FEATURE_NOT_SUPPORTED_CODE) ||
     (status === 409 &&
       (data?.code === MODEL_NOT_SERVABLE_CODE ||

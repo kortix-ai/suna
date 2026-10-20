@@ -54,13 +54,20 @@ mock.module('next/navigation', () => ({
   usePathname: () => '/projects/p/review',
   useRouter: () => ({ push() {}, replace() {}, prefetch() {} }),
 }));
+const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
+mock.module('@kortix/ui/providers/ui-provider', () => ({
+  ...realUiProvider,
+  useUiSearchParams: () => new URLSearchParams(search),
+  useUiPathname: () => '/projects/p/review',
+  useUiRouter: () => ({ push() {}, replace() {}, prefetch() {}, back() {} }),
+}));
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 const { NextIntlClientProvider } = await import('@/i18n/use-translations');
 const { PROJECT_ACTIONS, reviewVerdictAllowed } = await import('@kortix/sdk');
 const messages = (await import('../../../translations/en.json')).default;
-const { MOCK_ITEMS } = await import('./mock-data');
-const { ReviewCenter } = await import('./review-center');
+const { MOCK_ITEMS } = await import('@kortix/ui/workspace/review/mock-data');
+const { ReviewCenter } = await import('@kortix/ui/workspace/review/review-center');
 type ReviewItem = (typeof MOCK_ITEMS)[number];
 
 const mockItem = (id: string) => MOCK_ITEMS.find((item) => item.id === id)!;

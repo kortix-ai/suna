@@ -1,6 +1,6 @@
 'use client';
 
-import { KortixLogo } from '@/components/ui/kortix-logo';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
 import { IconFrame } from '@/components/ui/marketing/icon-frame';
 import { ChatCircleIcon, LockSimpleIcon } from '@phosphor-icons/react';
 import { useFrame } from '../../engine/film';

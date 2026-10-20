@@ -1,10 +1,10 @@
 'use client';
 
-import { formatWholeUsd } from '@/features/billing/compute-pricing';
+import { formatWholeUsd } from '@kortix/ui/internal/billing/compute-pricing';
 import type { UiTranslator } from '@/i18n/translator';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useLocale, useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { ACCOUNT_PANEL_PARAM } from '@/stores/account-panel-store';
+import { ACCOUNT_PANEL_PARAM } from '@kortix/ui/internal/stores/account-panel-store';
 import { creditsToDollars, dollarsToCredits, formatUsdAsCredits } from '@kortix/shared';
 import {
   ArrowDownRightIcon as ArrowDownRight,
@@ -30,31 +30,31 @@ import {
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
-import { IconInbox } from '@/components/ui/kortix-icons';
-import Loading from '@/components/ui/loading';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import Hint from '@kortix/ui/hint';
+import { Input } from '@kortix/ui/input';
+import { IconInbox } from '@kortix/ui/kortix-icons';
+import Loading from '@kortix/ui/loading';
+import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@kortix/ui/select';
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
+} from '@kortix/ui/sheet';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
 import {
   Table,
   TableBody,
@@ -62,11 +62,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { CreditTransactionsTable } from '@/features/billing/transactions-table';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { EmptyState } from '@kortix/ui/empty-state';
 import {
   useAdminAccount,
   useAdminAccountLedger,
@@ -85,9 +85,9 @@ import {
   type AdminAccountsSortBy,
   type AdminAccountsSortDir,
 } from '@/hooks/admin/use-admin-accounts';
-import { useDebounce } from '@/hooks/use-debounced-value';
-import { clearLastProjectId } from '@/lib/onboarding/last-project-cookie';
-import { cn } from '@/lib/utils';
+import { useDebounce } from '@kortix/ui/internal/hooks/use-debounced-value';
+import { clearLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { cn } from '@kortix/ui';
 
 import { AdminPageShell, AdminRefreshButton } from '../_components/admin-page-shell';
 import { AdminEmptyFrame, AdminTableFrame } from '../_components/admin-panel';
