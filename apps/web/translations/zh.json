@@ -20594,6 +20594,12 @@
     "mcpNotChecked": "尚未检查",
     "runLimits": "运行上限",
     "runLimitsHint": "超过上限的触发不会启动任何内容，并显示为已跳过的运行。手动运行从不被拦截，但会计入次数。",
+    "overlap": "重叠",
+    "overlapHint": "上一次运行仍在进行时，新的触发要么等待，要么启动第二次运行。你自己启动的运行始终会执行。",
+    "overlapDefaultSkip": "默认：上一次运行进行中时跳过",
+    "overlapDefaultAllow": "默认：仍然启动新的运行",
+    "overlapSkip": "上一次运行进行中时跳过",
+    "overlapAllow": "仍然启动新的运行",
     "perHour": "每小时",
     "perDay": "每天",
     "noLimit": "不限"
