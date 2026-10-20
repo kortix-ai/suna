@@ -19,7 +19,10 @@ export const list = query({
 });
 
 // Every template agent speaks as Lumen. Customers never see the platform underneath.
-const AS_LUMEN = " Never name the platform, provider, model or tools you run on; you are part of Lumen.";
+const AS_LUMEN = " Never name the platform, provider, model or tools you run on; you are part of Lumen." +
+  // The Files and Changes tabs read the thread's branch, so work the agent
+  // does not push is invisible to the customer.
+  " When you create or change files, commit them with a short message and run `git push`, so they appear in the thread's Files and Changes tabs.";
 
 const SEED = [
   {

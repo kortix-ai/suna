@@ -38,7 +38,7 @@ export function WorkbenchTabs({
         <Thread session={session} />
       </TabsContent>
       <TabsContent value="files" className="min-h-0 flex-1 overflow-hidden p-4">
-        <FilesPanel projectId={projectId} />
+        <FilesPanel projectId={projectId} sessionId={sessionId} />
       </TabsContent>
       {/* What this session can still change. Shown as a first-class tab rather
           than a settings footnote: 'can I switch the agent / secrets now?' is a

@@ -24,6 +24,7 @@ describe('proxy policy: what a member token may do', () => {
     ['GET', `${P}/detail`],
     ['GET', `${P}/change-requests`],
     ['GET', `${P}/model-picker`],
+    ['GET', `${P}/model-defaults`],
     ['GET', `${P}/connections`],
     ['GET', `${P}/secrets`],
     ['GET', `${P}/files`],
@@ -364,6 +365,71 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
       stops: { m1: member },
     });
     expect(out).toEqual({ authors: { m2: agent }, initial_author: null, stops: {} });
+  });
+
+  test('git history names Lumen as every author and committer, with no email and no Kortix in a message', () => {
+    const seed = {
+      hash: 'a'.repeat(40),
+      short_hash: 'aaaaaaa',
+      parents: [],
+      author_name: 'Kortix',
+      author_email: 'noreply@kortix.ai',
+      authored_at: '2026-10-20T00:00:00Z',
+      committer_name: 'Kortix',
+      committer_email: 'noreply@kortix.ai',
+      committed_at: '2026-10-20T00:00:00Z',
+      subject: 'chore: scaffold Kortix project',
+      body: '',
+    };
+    const agent = { ...seed, hash: 'b'.repeat(40), author_name: 'Operator', author_email: OPERATOR, committer_name: 'Operator', committer_email: OPERATOR, subject: 'Add the Q3 memo' };
+    const lumen = { author_name: 'Lumen', author_email: '', committer_name: 'Lumen', committer_email: '' };
+    for (const path of [`${P}/commits`, `${P}/files/history`]) {
+      expect(redactsIdentity(path)).toBe(true);
+      const out = redactIdentity(path, { ref: 'main', commits: [seed, agent], hasMore: false });
+      expect(JSON.stringify(out)).not.toMatch(/kortix|operator/i);
+      expect(out).toEqual({
+        ref: 'main',
+        hasMore: false,
+        commits: [
+          { ...seed, ...lumen, subject: 'chore: scaffold Lumen project' },
+          { ...agent, ...lumen },
+        ],
+      });
+    }
+    const one = `${P}/commits/${'a'.repeat(40)}`;
+    expect(redactsIdentity(one)).toBe(true);
+    expect(redactIdentity(one, { ...seed, files: [{ path: 'README.md' }] })).toMatchObject({ ...lumen, files: [{ path: 'README.md' }] });
+    const branches = redactIdentity(`${P}/branches`, { default_branch: 'main', branches: [{ name: 'main', subject: 'chore: scaffold Kortix project', committer_name: 'Kortix', committer_email: 'noreply@kortix.ai' }] });
+    expect(JSON.stringify(branches)).not.toMatch(/kortix/i);
+    // The patch carries no author; it passes through.
+    expect(redactsIdentity(`${one}/diff`)).toBe(false);
+  });
+
+  test("a failed turn's error copy names Lumen, not Kortix", () => {
+    const error = { name: 'RuntimeTurnFailed', message: 'The sandbox reported that this turn failed, but the error did not reach Kortix.' };
+    const path = `${S}/turn`;
+    expect(redactsIdentity(path)).toBe(true);
+    const out = redactIdentity(path, { turns: [], last_ended: { end_reason: 'failed', error }, recent_failures: [{ error }], can_stop: true });
+    expect(JSON.stringify(out)).not.toContain('Kortix');
+    expect(out).toMatchObject({
+      last_ended: { end_reason: 'failed', error: { name: 'RuntimeTurnFailed', message: 'The sandbox reported that this turn failed, but the error did not reach Lumen.' } },
+      can_stop: true,
+    });
+    const snap = redactIdentity(`${S}/snapshot`, { session: { session_id: 's1' }, turn: { last_ended: { error } } });
+    expect(JSON.stringify(snap)).not.toContain('Kortix');
+  });
+
+  test("the slash-command list leaves out the platform's own commands", () => {
+    const path = 'p/sbx_1/8000/command';
+    expect(redactsIdentity(path)).toBe(true);
+    const out = redactIdentity(path, [
+      { name: 'review', description: 'Review changes', source: 'command' },
+      { name: 'kortix-cli', description: 'Drive the platform', source: 'skill' },
+      { name: 'customize-opencode', description: 'Tune the harness', source: 'skill' },
+      { name: 'pdf', description: 'Read PDFs. Uses the Kortix file tools.', source: 'skill' },
+      { name: 'xlsx', description: 'Spreadsheets', source: 'skill' },
+    ]);
+    expect((out as { name: string }[]).map((c) => c.name)).toEqual(['review', 'xlsx']);
   });
 
   test('other routes pass through unchanged', () => {

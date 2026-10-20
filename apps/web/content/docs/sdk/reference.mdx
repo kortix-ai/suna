@@ -263,7 +263,7 @@ These methods read the project repository. To read and write files in a running 
 | `files.read(path, ref?)` · `files.history(path, { ref?, limit?, skip? })` | A file at a ref · its commits. |
 | `files.search(query, { content?, ref?, limit? })` | Search file names, or contents with `content: true`. A content match carries `line_number` and `line_text`. |
 | `files.archive(options?)` · `files.archiveRequest(options?)` | Download a tarball · the same as a request your host streams to disk. |
-| `git.commits()` · `git.commit(sha)` · `git.commitDiff(sha)` | The log · one commit · its diff. |
+| `git.commits({ ref?, path?, limit?, skip? })` · `git.commit(sha)` · `git.commitDiff(sha)` | The log of a ref (default: the default branch) · one commit · its diff. |
 | `git.branches()` · `git.versionDiff(…)` | Branches · the diff between two refs. |
 | `git.inviteCollaborator(…)` | Invite a GitHub user to a Kortix-managed repository. |
 | `gitToken()` | A fresh scoped push token for a Kortix-managed repository. A bring-your-own repository returns `409`. |

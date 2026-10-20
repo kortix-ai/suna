@@ -127,8 +127,8 @@ export function sessionScopeRows(input: SessionScopeRowsInput): SessionScopeRow[
       badge: scopeBadge('agent'),
       value: agentLabel,
       detail: agent
-        ? `Messages run as ${agent} unless another agent is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.`
-        : "Messages run as the project's default agent unless another is picked in the composer. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.",
+        ? `Messages run as ${agent} unless another agent is picked in the composer. A switch re-scopes future secret delivery and connector access to the selected agent.`
+        : "Messages run as the project's default agent unless another is picked in the composer. A switch re-scopes future secret delivery and connector access to the selected agent.",
       control: null,
     },
     {

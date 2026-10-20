@@ -38,7 +38,7 @@ export function NotAvailable() {
         <div className="grid size-12 place-items-center rounded-full border border-border bg-card">
           <FolderDashedIcon className="size-5 text-muted-foreground" />
         </div>
-        <h1 className="mt-4 text-lg font-medium">Workspace not available</h1>
+        <h1 className="mt-4 font-display text-2xl tracking-tight">Workspace not available</h1>
         <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
           This workspace does not exist, or it belongs to an organization you are not a member of.
         </p>

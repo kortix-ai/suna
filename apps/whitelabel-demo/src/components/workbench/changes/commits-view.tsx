@@ -1,18 +1,15 @@
 'use client';
 
-import Loading from '@kortix/ui/loading';
-
 /**
- * The workbench changes panel, read only: branches (`git.branches`), the commit list
- * (`git.commits`) with a detail dialog (`git.commit`, `git.commitDiff`), and the
- * compare-to-base summary (`git.versionDiff`). Everything routes through the
- * `@kortix/sdk` facade — no raw HTTP. Commits and change requests are the
- * Lumen operator's: the proxy refuses them, so the panel offers none.
+ * The workbench changes panel, read only: what this thread changed
+ * (`git.versionDiff` of its branch against the default branch), the thread's
+ * own commits (`git.commits({ ref })`) and a detail dialog (`git.commit`,
+ * `git.commitDiff`). Everything routes through the `@kortix/sdk` facade — no
+ * raw HTTP. Committing and change requests are the Lumen operator's: the proxy
+ * refuses them, so the panel offers none.
  */
 
-import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@kortix/ui/card';
 import {
   Modal,
   ModalBody,
@@ -22,127 +19,57 @@ import {
   ModalTitle,
 } from '@kortix/ui/modal';
 import { ScrollArea } from '@kortix/ui/scroll-area';
-import { Separator } from '@kortix/ui/separator';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { kortix } from '@/lib/kortix';
+import { useSessionRef } from '@/lib/session-ref';
 import { relativeTime } from '@/lib/utils';
-import type { ProjectBranch, ProjectCommit } from '@kortix/sdk';
+import type { ProjectCommit } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { DiffStat, DiffView } from './diff-view';
-import { GitBranchIcon, GitCommitIcon, ScalesIcon } from '@phosphor-icons/react';
+import { GitCommitIcon, GitDiffIcon } from '@phosphor-icons/react';
 
-function CompareToBaseCard({
+/**
+ * What this thread changed on top of the workspace: the session branch
+ * against the default branch (`git.versionDiff`). Before the agent pushes,
+ * the thread has no branch of its own and nothing to compare.
+ */
+function ThreadSummary({
   projectId,
   sessionId,
+  baseRef,
+  hasBranch,
 }: {
   projectId: string;
   sessionId: string;
+  baseRef: string | undefined;
+  hasBranch: boolean;
 }) {
-  const [comparing, setComparing] = useState(false);
-
-  const branches = useQuery({
-    queryKey: ['project-branches', projectId],
-    queryFn: () => kortix.project(projectId).git.branches(),
+  const diff = useQuery({
+    queryKey: ['project-version-diff', projectId, baseRef, sessionId],
+    enabled: hasBranch && !!baseRef,
+    // What merging the thread's branch into the workspace would bring.
+    queryFn: () => kortix.project(projectId).git.versionDiff({ from: sessionId, into: baseRef as string }),
   });
-  const defaultBranch = branches.data?.default_branch;
-
-  // "Compare to base": summarize the session branch against the default branch.
-  const versionDiff = useQuery({
-    queryKey: ['project-version-diff', projectId, defaultBranch, sessionId],
-    enabled: comparing && !!defaultBranch,
-    queryFn: () => {
-      if (!defaultBranch) throw new Error('No base branch');
-      return kortix.project(projectId).git.versionDiff({
-        from: defaultBranch,
-        into: sessionId,
-      });
-    },
-  });
-
-  const vd = versionDiff.data;
-
+  const d = diff.data;
   return (
-    <Card className="shrink-0">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center justify-between gap-2 text-sm">
-          <span className="flex items-center gap-2">
-            <ScalesIcon className="size-4 text-muted-foreground" />
-            Compare to base
-          </span>
-          <Button
-            size="xs"
-            variant="outline"
-            onClick={() => setComparing(true)}
-            disabled={!defaultBranch || versionDiff.isFetching}
-          >
-            {versionDiff.isFetching ? <Loading className="size-3" /> : null}
-            Compare
-          </Button>
-        </CardTitle>
-      </CardHeader>
-      {comparing && (
-        <CardContent className="text-xs text-muted-foreground">
-          {versionDiff.isLoading ? (
-            <Skeleton className="h-4 w-40" />
-          ) : vd ? (
-            vd.is_same_ref ? (
-              <span>Session is on the base branch.</span>
-            ) : vd.is_up_to_date ? (
-              <span>Up to date with base.</span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <span className="font-mono text-foreground/80">
-                  {vd.from} → {vd.into}
-                </span>
-                <span>{vd.files_changed} files</span>
-                <DiffStat additions={vd.additions} deletions={vd.deletions} />
-              </span>
-            )
-          ) : (
-            <span>No diff available.</span>
-          )}
-        </CardContent>
-      )}
-    </Card>
-  );
-}
-
-function BranchBadges({
-  items,
-  isLoading,
-}: {
-  items: ProjectBranch[];
-  isLoading: boolean;
-}) {
-  return (
-    <div className="shrink-0">
-      {/* Branches */}
-      <div className="mb-1.5 flex items-center gap-1.5 px-0.5 text-xs font-medium text-muted-foreground">
-        <GitBranchIcon className="size-3.5" />
-        Branches
+    <div className="flex shrink-0 items-center gap-3 rounded-lg border border-border bg-background/40 px-3.5 py-3">
+      <div className="grid size-8 shrink-0 place-items-center rounded-md bg-brand/10">
+        <GitDiffIcon className="size-4 text-brand" />
       </div>
-      {isLoading ? (
-        <Skeleton className="h-8 w-full" />
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {items.map((b) => (
-            <Badge
-              key={b.name}
-              variant={b.is_default ? 'default' : 'outline'}
-              className="gap-1 font-mono"
-              title={`${b.subject ?? ''} · ${b.committer_name ?? ''}`}
-            >
-              <GitBranchIcon className="size-3" />
-              {b.name}
-              {b.is_default && <span className="opacity-70">(default)</span>}
-            </Badge>
-          ))}
-          {items.length === 0 && (
-            <span className="text-xs text-muted-foreground">No branches.</span>
-          )}
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium">This thread&apos;s changes</div>
+        <div className="text-xs text-muted-foreground">
+          {!hasBranch || (d && (d.is_same_ref || d.files_changed === 0))
+            ? 'Nothing committed yet. Files the agent commits in this thread appear here.'
+            : diff.isLoading
+              ? 'Comparing with the workspace…'
+              : d
+                ? `${d.files_changed} ${d.files_changed === 1 ? 'file' : 'files'} changed on top of the workspace`
+                : 'Could not compare with the workspace.'}
         </div>
-      )}
+      </div>
+      {d && !d.is_same_ref && d.files_changed > 0 && <DiffStat additions={d.additions} deletions={d.deletions} />}
     </div>
   );
 }
@@ -166,7 +93,7 @@ function CommitList({
             <Skeleton className="h-12 w-full" />
           </>
         ) : items.length === 0 ? (
-          <div className="px-2 py-6 text-center text-xs text-muted-foreground">No commits yet.</div>
+          <div className="px-2 py-6 text-center text-xs text-muted-foreground">No commits in this thread yet.</div>
         ) : (
           items.map((c) => (
             <Button
@@ -203,34 +130,44 @@ export function CommitsView({
   sessionId: string;
 }) {
   const [openSha, setOpenSha] = useState<string | null>(null);
+  const ref = useSessionRef(projectId, sessionId);
+  const hasBranch = ref === sessionId;
 
   const branches = useQuery({
     queryKey: ['project-branches', projectId],
     queryFn: () => kortix.project(projectId).git.branches(),
   });
+  const baseRef = branches.data?.default_branch;
 
+  // The thread's own commits: its branch minus the workspace's history (the
+  // operator's setup commits stay out of a customer's view).
   const commits = useQuery({
-    queryKey: ['project-commits', projectId],
-    queryFn: () => kortix.project(projectId).git.commits(),
+    queryKey: ['project-commits', projectId, sessionId, baseRef],
+    enabled: hasBranch && !!baseRef,
+    queryFn: async () => {
+      const project = kortix.project(projectId);
+      const [thread, base] = await Promise.all([
+        project.git.commits({ ref: sessionId, limit: 50 }),
+        project.git.commits({ ref: baseRef, limit: 200 }),
+      ]);
+      const inBase = new Set(base.commits.map((c) => c.hash));
+      return thread.commits.filter((c) => !inBase.has(c.hash));
+    },
   });
-
-  const branchItems: ProjectBranch[] = branches.data?.branches ?? [];
-  const commitItems: ProjectCommit[] = commits.data?.commits ?? [];
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <CompareToBaseCard projectId={projectId} sessionId={sessionId} />
+      <ThreadSummary projectId={projectId} sessionId={sessionId} baseRef={baseRef} hasBranch={hasBranch} />
 
-      <BranchBadges items={branchItems} isLoading={branches.isLoading} />
-
-      <Separator />
-
-      {/* Commit list */}
-      <div className="mb-1.5 flex items-center gap-1.5 px-0.5 text-xs font-medium text-muted-foreground">
+      <div className="flex items-center gap-1.5 px-0.5 text-xs font-medium text-muted-foreground">
         <GitCommitIcon className="size-3.5" />
         Commits
       </div>
-      <CommitList items={commitItems} isLoading={commits.isLoading} onOpen={setOpenSha} />
+      <CommitList
+        items={commits.data ?? []}
+        isLoading={ref === undefined || (hasBranch && commits.isLoading)}
+        onOpen={setOpenSha}
+      />
 
       <CommitDetailDialog projectId={projectId} sha={openSha} onClose={() => setOpenSha(null)} />
     </div>

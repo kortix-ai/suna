@@ -2,3 +2,6 @@
 .convex/
 
 .env.local
+
+# Extra dev servers (next.config.ts distDir).
+.next-*/

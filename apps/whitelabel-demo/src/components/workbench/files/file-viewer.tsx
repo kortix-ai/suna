@@ -10,6 +10,7 @@ import { Badge } from '@kortix/ui/badge';
 import { ScrollArea } from '@kortix/ui/scroll-area';
 import { Separator } from '@kortix/ui/separator';
 import { Skeleton } from '@kortix/ui/skeleton';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
 import { kortix } from '@/lib/kortix';
 import type { ProjectFileEntry } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
@@ -22,20 +23,24 @@ function fmtSize(size: unknown): string | null {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const MARKDOWN = /\.(md|markdown|mdx)$/i;
+
 export function FileViewer({
   projectId,
   path,
+  gitRef,
   files,
 }: {
   projectId: string;
   path: string;
+  gitRef: string | undefined;
   files: ProjectFileEntry[];
 }) {
-  // .files.read — content for the selected file.
+  // .files.read — content for the selected file, at the thread's ref.
   const content = useQuery({
-    queryKey: ['project-files', projectId, 'content', path],
-    queryFn: () => kortix.project(projectId).files.read(path),
-    enabled: !!path,
+    queryKey: ['project-files', projectId, gitRef, 'content', path],
+    queryFn: () => kortix.project(projectId).files.read(path, gitRef),
+    enabled: !!path && !!gitRef,
   });
 
   const match = files.find((f) => f?.path === path);
@@ -67,7 +72,18 @@ export function FileViewer({
         {content.isError && (
           <div className="p-4 text-xs text-destructive">Could not read file.</div>
         )}
-        {content.isSuccess && (
+        {content.isSuccess && MARKDOWN.test(path) && (
+          // A markdown file reads as a document: the agent wrote it, so it is
+          // `agent` trust, and `document` drops embedded HTML.
+          <UnifiedMarkdown
+            content={content.data?.content ?? ''}
+            trust="agent"
+            variant="document"
+            documentPath={path}
+            className="max-w-3xl p-6"
+          />
+        )}
+        {content.isSuccess && !MARKDOWN.test(path) && (
           <pre className="whitespace-pre-wrap break-words p-4 font-mono text-[0.7rem] leading-relaxed text-foreground/80">
             {content.data?.content ?? ''}
           </pre>

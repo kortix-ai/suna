@@ -6,6 +6,7 @@
  * rows in Convex; each points at one Kortix session.
  */
 
+import { ThemeMenu } from '@/components/theme';
 import { threadPath, useWorkspace } from '@/components/workspace-access';
 import { relativeTime } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
@@ -37,6 +38,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
             </Link>
           </Button>
           <div className="min-w-0 flex-1 truncate text-sm font-medium">{ws.name}</div>
+          <ThemeMenu />
         </div>
 
         <div className="px-3 pb-2">
@@ -85,6 +87,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
             </Link>
           </Button>
           <span className="min-w-0 flex-1 truncate text-sm font-medium">{ws.name}</span>
+          <ThemeMenu />
         </div>
         {children}
       </main>

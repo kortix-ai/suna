@@ -1,6 +1,6 @@
 'use client';
 
-import { UiProvider, type UiNavigation } from '@kortix/ui';
+import { setUiRoutes, UiProvider, type UiHostConfig, type UiNavigation } from '@kortix/ui';
 import { IconProvider } from '@kortix/ui/icon-provider';
 import { TooltipProvider } from '@kortix/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -8,7 +8,9 @@ import NextLink from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
+import { LUMEN_UI_BRAND } from '@/components/brand-mark';
 import { authClient } from '@/lib/auth-client';
+import { resolveLumenPreviewUrl } from '@/lib/preview-url';
 import { type AuthClient, ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
 import { ConvexReactClient } from 'convex/react';
 // The toast host. @kortix/ui/toast draws every toast (successToast,
@@ -18,6 +20,40 @@ import { Toaster } from '@kortix/ui/toast';
 
 // Client-side navigation for @kortix/ui (useUiRouter().push), not full page loads.
 const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
+// Lumen's mark wherever @kortix/ui would draw the Kortix symbol.
+const useLumenBrand = () => LUMEN_UI_BRAND;
+
+// Lumen serves two of the pages @kortix/ui links to: a project (it redirects
+// to its workspace) and a session (a thread). Every other route is null, so
+// the components hide the link instead of opening a page Lumen does not have.
+setUiRoutes({
+  sessions: () => null,
+  files: () => null,
+  drive: () => null,
+  apps: () => null,
+  members: () => null,
+  sandboxSettings: () => null,
+  customize: () => null,
+});
+
+// The controls a customer-facing app shows. Members reach Kortix only through
+// the proxy allowlist (src/server/proxy-policy.ts), so a control whose route it
+// refuses is off: no CLI "connect from your machine" bar, no public share links
+// (Kortix would serve them under its own brand) and no terminal (a Next.js
+// route handler cannot upgrade its WebSocket). Kortix-managed models stay on.
+//
+// `accountApiEnabled` stays on, on purpose. With it off, @kortix/ui treats
+// every permission as allowed ("host enforced") and fires the configuration
+// reads behind those controls (agent config, connectors, model defaults), which
+// the proxy refuses with 403. With it on, the UI asks the permission probes,
+// the proxy answers them itself with "denied" (`localAnswer`), and the UI
+// hides those controls and sends none of those reads.
+const config: Partial<UiHostConfig> = {
+  cliConnectEnabled: false,
+  publicSharesEnabled: false,
+  terminalEnabled: false,
+  managedModelsEnabled: true,
+};
 
 // Lumen's own backend: orgs, workspaces, threads. Better Auth runs inside it.
 // The fallback is the `convex dev` local default, so a build without env still compiles.
@@ -50,9 +86,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
         {/* @kortix/ui's host adapters: links and router calls navigate with
             next/link and next/navigation; copy keeps the English defaults; images
             stay plain <img> (next/image would need images.remotePatterns for
-            organization logos). IconProvider gives every Phosphor icon the house
+            organization logos); the brand is Lumen's mark; sandbox previews resolve
+            through Lumen's server. IconProvider gives every Phosphor icon the house
             weight. Mounted once. */}
-        <UiProvider link={NextLink} navigation={navigation}>
+        <UiProvider
+          link={NextLink}
+          navigation={navigation}
+          config={config}
+          useBrand={useLumenBrand}
+          resolvePreviewUrl={resolveLumenPreviewUrl}
+        >
           <IconProvider>
             <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
             <Toaster />

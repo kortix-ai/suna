@@ -101,19 +101,29 @@ not come back.
 - Use `Loading` (`@kortix/ui/loading`) for pending actions and `Skeleton` for
   page-level loading.
 - Add accessible names to icon-only controls. Preserve keyboard actions.
-- `providers.tsx` mounts `<UiProvider link={NextLink}>` once. Do not mount
-  another.
+- `providers.tsx` mounts `<UiProvider>` once. Do not mount another.
 
-Theming happens only in `src/app/globals.css`: it imports `tailwindcss` and
-`@kortix/ui/tailwind.css` (tokens, component layer, `tw-animate-css` and the
-scrollbar plugins), then overrides token variables in `:root` (light) and
-`.dark` (dark). Lumen's brand is `--brand`; `--kortix-blue` (the accent of
-switches, checkboxes, radios, the brand Button and Badge variants and info
-alerts), `--ring`, `--sidebar-primary`, `--sidebar-ring` and `--selection`
-point at it. Never fork
-or wrap a component to change a color, radius or font. Never import
-`@kortix/ui/fonts.css`: Lumen's fonts are its own, loaded with `next/font` in
-`src/app/layout.tsx` (stacks in `src/config/theme.ts`).
+Theming happens through one typed theme, `src/config/theme.ts`
+(`KortixTheme` from `@kortix/ui/theme`). `src/app/layout.tsx` compiles it with
+`themeToCss` into one `<style>` in `<head>`, so the first paint is on brand.
+It sets the colors per mode, the radius (`0.875rem`), the spacing step
+(`0.25rem`), the shadows, the durations and easing, and the fonts. Lumen's
+brand is `--brand`; `blue` (switches, checkboxes, radios, the brand Button and
+Badge variants, info alerts), `action` and `actionForeground` (the default
+Button fill), `ring`, `primary`, `sidebarPrimary` and `selection` point at it.
+`src/app/globals.css` only imports `tailwindcss` and `@kortix/ui/tailwind.css`
+and maps `--brand` to `bg-brand` / `text-brand` and the heading serif to
+`font-display`. Never fork or wrap a component to change a color, radius or
+font. Never import `@kortix/ui/fonts.css`: Lumen's fonts are its own
+(Instrument Sans, Instrument Serif for headings, JetBrains Mono), loaded with
+`next/font` in `src/app/layout.tsx`.
+
+`src/app/providers.tsx` mounts `UiProvider` once with Lumen's mark
+(`useBrand` → `LUMEN_UI_BRAND`), the host config (no CLI bar, no public share
+links, no terminal; `accountApiEnabled` stays on so the proxy's local "denied"
+probe answers hide the configuration controls), `resolvePreviewUrl` (sandbox
+previews resolve through `POST /api/preview-url`) and `setUiRoutes` (every
+page Lumen does not serve is `null`, so its links are hidden).
 
 A missing primitive or chat slot is added to `packages/ui`, not to this app.
 
@@ -129,7 +139,9 @@ feature controls (`<button>`, `<input>`, …) and feature-level spinners.
 - `src/app/globals.css`: `@kortix/ui` tokens + theme, and the white-label overrides.
 - `src/components/chat/scope-bar*`: Lumen's session-scope chips (the
   `SessionThread` composer footer).
-- `src/components/workbench/`: Session workbench.
+- `src/components/workbench/`: Session workbench. Files and Changes read the
+  thread's branch (`useSessionRef`, `src/lib/session-ref.ts`) and leave out the
+  workspace configuration (`isCustomerFile`).
 - `src/app/**`: Route components.
 - `src/app/api/**`: Same-origin server endpoints.
 - `src/server/**`: Better Auth helpers, member token resolution, and the proxy policy.

@@ -11,6 +11,7 @@ import { classifyModelChange } from '@/lib/mid-session-change';
 import { qk } from '@/lib/query-keys';
 import { authHeaders } from '@/lib/session';
 import { getSessionToken } from '@/lib/session';
+import { brandModelId } from '@/config/brand';
 import { sessionModelKey, useSessionModel } from '@/lib/session-model';
 import { useProjectModels } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -88,7 +89,7 @@ export function ModelSwitcher({ projectId, sessionId }: { projectId: string; ses
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-1.5" disabled={change.isPending}>
           <CpuIcon className="size-3.5 shrink-0" />
-          <span className="max-w-40 truncate text-xs">{currentModel ?? 'Model'}</span>
+          <span className="max-w-40 truncate text-xs">{currentModel ? brandModelId(currentModel) : 'Model'}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-56">
@@ -107,7 +108,7 @@ export function ModelSwitcher({ projectId, sessionId }: { projectId: string; ses
               ) : (
                 <span className="size-3.5 shrink-0" />
               )}
-              <span className="truncate text-xs">{model.modelName || id}</span>
+              <span className="truncate text-xs">{model.modelName || brandModelId(id)}</span>
             </DropdownMenuItem>
           );
         })}

@@ -53,7 +53,7 @@ describe('sessionScopeRows', () => {
     expect(scoped.value).toBe('support');
     expect(scoped.detail).toContain('re-scopes future secret delivery');
     expect(scoped.detail).toContain('connector access');
-    expect(scoped.detail).toContain('Kortix CLI access');
+    expect(scoped.detail).not.toContain('Kortix');
     expect(scoped.detail).toContain('support');
     expect(row('agent').value).toBe('The project default agent');
   });

@@ -106,7 +106,7 @@ function SessionActions({
       qc.invalidateQueries({ queryKey: qk.session(projectId, sessionId) });
       invalidateSessions(qc, projectId);
       setRenaming(false);
-      successToast('Session renamed');
+      successToast('Thread renamed');
     },
     onError: () => errorToast('Could not rename'),
   });
@@ -114,7 +114,7 @@ function SessionActions({
     mutationFn: () => kortix.session(projectId, sessionId).restart(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.sessionStart(projectId, sessionId) });
-      successToast('Restarting the session…');
+      successToast('Restarting the thread…');
     },
     onError: () => errorToast('Could not restart'),
   });
@@ -125,7 +125,7 @@ function SessionActions({
       // and show its error state. `replace`, so Back does not return to it.
       router.replace(`/w/${workspaceId}`);
       setConfirmingDelete(false);
-      successToast('Session deleted');
+      successToast('Thread deleted');
     },
     onError: () => errorToast('Could not delete'),
   });
@@ -134,7 +134,7 @@ function SessionActions({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="size-8" aria-label="Session actions">
+          <Button variant="ghost" size="icon" className="size-8" aria-label="Thread actions">
             <DotsThreeVerticalIcon className="size-4" />
           </Button>
         </DropdownMenuTrigger>
@@ -164,7 +164,7 @@ function SessionActions({
       <Modal open={renaming} onOpenChange={setRenaming}>
         <ModalContent>
           <ModalHeader>
-            <ModalTitle>Rename session</ModalTitle>
+            <ModalTitle>Rename thread</ModalTitle>
           </ModalHeader>
           <ModalBody>
             <Input
@@ -185,12 +185,12 @@ function SessionActions({
       <ConfirmDialog
         open={confirmingDelete}
         onOpenChange={setConfirmingDelete}
-        title="Delete this session?"
+        title="Delete this thread?"
         description={
           <div className="space-y-3">
             <p>
-              The session and the sandbox behind it are destroyed. Restart instead if the runtime
-              is just misbehaving — that keeps the sandbox and the transcript.
+              The thread, its conversation and its sandbox are deleted. If the agent is stuck,
+              restart the thread instead: that keeps the conversation and the files.
             </p>
             {/* Both lifecycle calls, on the step where one of them is about to
                 happen: the restart this dialog is recommending, and the delete
@@ -198,7 +198,7 @@ function SessionActions({
             <CallSnippet id="session.delete" context={{ projectId, sessionId }} />
           </div>
         }
-        confirmLabel="Delete session"
+        confirmLabel="Delete thread"
         confirmVariant="destructive"
         isPending={remove.isPending}
         onConfirm={() => remove.mutate()}

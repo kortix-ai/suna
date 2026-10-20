@@ -16,3 +16,8 @@ export type Brand = typeof BRAND;
 export function brandProviderLabel(model: { providerID: string; providerName: string }): string {
   return model.providerID === 'kortix' ? BRAND.name : model.providerName;
 }
+
+/** A `<provider>/<model>` id as Lumen shows it: Kortix-managed models drop their provider prefix. */
+export function brandModelId(id: string): string {
+  return id.startsWith('kortix/') ? id.slice('kortix/'.length) : id;
+}

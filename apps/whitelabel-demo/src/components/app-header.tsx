@@ -22,6 +22,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { BrandMark } from './brand-mark';
+import { ThemeMenu } from './theme';
 
 const NEW_ORG = '__new__';
 
@@ -63,6 +64,7 @@ export function AppHeader({ onCreateOrg }: { onCreateOrg: () => void }) {
         <div className="flex-1" />
         {active.data && <MembersDialog />}
         <span className="hidden text-xs text-muted-foreground sm:inline">{auth?.user.email}</span>
+        <ThemeMenu />
         <Button
           variant="ghost"
           size="sm"

@@ -14,6 +14,8 @@
  * (contract proposal G2) would make it unnecessary.
  */
 
+import { BRAND } from '@/config/brand';
+
 const PROJECT = '[^/]+';
 // A session id is a UUID. A literal segment such as `warm` is a different route.
 const SESSION = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
@@ -41,8 +43,8 @@ const RT = `p/${SEG}/8000`;
 // edit and rewind, attachment, @-mention, every tab, rename, restart, delete,
 // reload mid-stream). A route the UI never calls is refused.
 const RULES: readonly Rule[] = [
-  // The project: its card, agents and models, connection and secret names, change requests.
-  rule('GET', `projects/${PROJECT}(?:/(?:detail|change-requests|model-picker|connections|secrets))?`),
+  // The project: its card, agents and models (the picker and its defaults), connection and secret names, change requests.
+  rule('GET', `projects/${PROJECT}(?:/(?:detail|change-requests|model-picker|model-defaults|connections|secrets))?`),
   // The Files and Changes tabs: the project repository, read only.
   rule('GET', `projects/${PROJECT}/(?:files|files/content|files/search|files/history|branches|commits|version-diff)`),
   // One commit and its patch: the Changes tab's commit dialog.
@@ -180,9 +182,29 @@ const SESSION_RECORD = new RegExp(`^projects/${PROJECT}/sessions(?:/${SESSION})?
 const SESSION_SNAPSHOT = new RegExp(`^${S}/snapshot$`);
 const MESSAGE_AUTHORS = new RegExp(`^${S}/message-authors$`);
 
+// Responses that carry git authors and commit messages: the Changes tab's
+// branches and commits, one commit, and a file's history.
+const GIT_HISTORY = new RegExp(`^projects/${PROJECT}/(?:branches|commits|commits/[0-9a-f]{7,40}|files/history)$`);
+
+// The runtime's slash-command list: the platform's own skills (kortix-cli,
+// kortix-apps, …) are not a customer's commands.
+const RUNTIME_COMMANDS = new RegExp(`^${RT}/command$`);
+const PLATFORM_COMMAND = /kortix|opencode/i;
+
+// The session's turn state: a failed turn carries Kortix's own error copy
+// ("…did not reach Kortix", "…so Kortix closed it").
+const SESSION_TURN = new RegExp(`^${S}/turn$`);
+
 /** True when `redactIdentity` rewrites this path's JSON response. */
 export function redactsIdentity(path: string): boolean {
-  return SESSION_RECORD.test(path) || SESSION_SNAPSHOT.test(path) || MESSAGE_AUTHORS.test(path);
+  return (
+    SESSION_RECORD.test(path) ||
+    SESSION_SNAPSHOT.test(path) ||
+    MESSAGE_AUTHORS.test(path) ||
+    GIT_HISTORY.test(path) ||
+    SESSION_TURN.test(path) ||
+    RUNTIME_COMMANDS.test(path)
+  );
 }
 
 type Json = Record<string, unknown>;
@@ -197,18 +219,62 @@ function scrubSession(session: unknown): unknown {
 
 const notMember = (a: unknown) => !(isObject(a) && a.kind === 'member');
 
+const KORTIX_WORD = /\bKortix\b/g;
+
+/**
+ * A branch or commit, as Lumen shows it. Every commit in a workspace is made
+ * by Lumen: the seed commit Kortix writes (author `Kortix`, `noreply@kortix.ai`,
+ * "chore: scaffold Kortix project") and the agent's commits, made under the
+ * operator's Kortix user. So every author and committer is the brand with no
+ * email, and the word Kortix in a message becomes the brand.
+ */
+function scrubGit(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(scrubGit);
+  if (!isObject(value)) return value;
+  const out: Json = {};
+  for (const [key, v] of Object.entries(value)) {
+    if (key === 'author_name' || key === 'committer_name') out[key] = BRAND.name;
+    else if (key === 'author_email' || key === 'committer_email') out[key] = '';
+    else if ((key === 'subject' || key === 'body') && typeof v === 'string') out[key] = v.replace(KORTIX_WORD, BRAND.name);
+    else out[key] = scrubGit(v);
+  }
+  return out;
+}
+
+/** Every `message` string in a turn state names the brand instead of Kortix. */
+function scrubTurn(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(scrubTurn);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, v]) => [
+      key,
+      key === 'message' && typeof v === 'string' ? v.replace(KORTIX_WORD, BRAND.name) : scrubTurn(v),
+    ]),
+  );
+}
+
 /**
  * Every member token is the operator's Kortix user, so every name and email
  * Kortix returns for a person is the operator's. Lumen shows none of them:
  * the session record loses its owner name, email and avatar and its
  * initiator label; message authors and stops lose their `member` entries
  * ("Messages with no known sender are absent"), so the transcript draws no
- * "Sent by" or "Stopped by". Authors that are agent sessions stay.
+ * "Sent by" or "Stopped by". Authors that are agent sessions stay. Git
+ * history names Lumen as every author (`scrubGit`), a failed turn's error
+ * copy names Lumen (`scrubTurn`), and the slash-command list leaves out the
+ * platform's own commands.
  */
 export function redactIdentity(path: string, body: unknown): unknown {
+  if (RUNTIME_COMMANDS.test(path) && Array.isArray(body)) {
+    return body.filter((c) => !(isObject(c) && PLATFORM_COMMAND.test(`${c.name ?? ''} ${c.description ?? ''}`)));
+  }
   if (!isObject(body)) return body;
+  if (GIT_HISTORY.test(path)) return scrubGit(body);
+  if (SESSION_TURN.test(path)) return scrubTurn(body);
   if (SESSION_RECORD.test(path)) return scrubSession(body);
-  if (SESSION_SNAPSHOT.test(path)) return { ...body, session: scrubSession(body.session) };
+  if (SESSION_SNAPSHOT.test(path)) {
+    return { ...body, session: scrubSession(body.session), ...('turn' in body ? { turn: scrubTurn(body.turn) } : {}) };
+  }
   if (!MESSAGE_AUTHORS.test(path)) return body;
   const keep = (map: unknown) =>
     isObject(map) ? Object.fromEntries(Object.entries(map).filter(([, a]) => notMember(a))) : map;

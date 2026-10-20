@@ -100,6 +100,8 @@ function ScopeRescopeNote({
   projectId: string;
   sessionId: string;
 }) {
+  // A developer note, like the snippet in it: off unless the dev panels are on.
+  if (process.env.NEXT_PUBLIC_LUMEN_DEV_PANELS !== '1') return null;
   return (
     <>
       <div className="rounded-md border border-dashed border-border px-3 py-2.5">

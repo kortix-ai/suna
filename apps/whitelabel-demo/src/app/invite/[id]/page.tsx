@@ -68,7 +68,7 @@ function Accept({ invitationId }: { invitationId: string }) {
         <BrandMark className="mb-2" />
         {error ? (
           <>
-            <h1 className="text-lg font-semibold tracking-tight">Invitation not available</h1>
+            <h1 className="font-display text-2xl tracking-tight">Invitation not available</h1>
             <p role="alert" className="text-sm text-muted-foreground">
               {error}
             </p>
@@ -80,7 +80,7 @@ function Accept({ invitationId }: { invitationId: string }) {
           <Loading className="size-5 text-muted-foreground" />
         ) : (
           <>
-            <h1 className="text-lg font-semibold tracking-tight">Join {invitation.organizationName}</h1>
+            <h1 className="font-display text-2xl tracking-tight">Join {invitation.organizationName}</h1>
             <p className="text-sm text-muted-foreground">
               {invitation.inviterEmail} invited {invitation.email}.
             </p>
@@ -111,7 +111,7 @@ function VerifyEmail({ invitationId }: { invitationId: string }) {
     <div className="grid min-h-dvh place-items-center bg-background px-4">
       <Card className="w-full max-w-sm gap-3 p-6">
         <BrandMark className="mb-2" />
-        <h1 className="text-lg font-semibold tracking-tight">Verify your email</h1>
+        <h1 className="font-display text-2xl tracking-tight">Verify your email</h1>
         <p className="text-sm text-muted-foreground">
           {state === 'sent'
             ? `We sent a link to ${email}. Open it to see the invitation.`

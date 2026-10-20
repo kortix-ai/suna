@@ -31,6 +31,15 @@ test('project(id).files.archiveRequest names the archive download', async () => 
   expect(request.url).toBe('http://test.local/projects/P1/files/archive?ref=main');
 });
 
+test('project(id).git.commits lists one ref (a session branch) and pages it', async () => {
+  await kortix.project('P1').git.commits({ ref: 'S1', limit: 20, skip: 20 });
+  await kortix.project('P1').git.commits();
+  expect(calls.map((c) => c.url)).toEqual([
+    'http://test.local/projects/P1/commits?ref=S1&limit=20&skip=20',
+    'http://test.local/projects/P1/commits',
+  ]);
+});
+
 test('session(pid, sid).startOrThrow POSTs /start', async () => {
   await kortix.session('P1', 'S1').startOrThrow();
   expect(calls[0]).toMatchObject({ method: 'POST', url: 'http://test.local/projects/P1/sessions/S1/start' });

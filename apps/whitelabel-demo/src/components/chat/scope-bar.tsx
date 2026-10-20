@@ -28,6 +28,7 @@ import { ModelSwitcher } from '@/components/workbench/model-switcher';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { useSessionModel } from '@/lib/session-model';
+import { brandModelId } from '@/config/brand';
 import {
   buildCompleteSessionScopeReplacement,
   readScopeBindingIds,
@@ -229,8 +230,10 @@ export function ScopeBar({
         label="Model"
         value={
           pickedModel
-            ? `${pickedModel.providerID}/${pickedModel.modelID}`
-            : (model.data?.model ?? 'Project default')
+            ? brandModelId(`${pickedModel.providerID}/${pickedModel.modelID}`)
+            : model.data?.model
+              ? brandModelId(model.data.model)
+              : 'Project default'
         }
         title="Model"
         badge={scopeControl('model').badge}

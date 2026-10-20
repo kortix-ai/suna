@@ -47,7 +47,7 @@ function Dashboard() {
         {noOrg ? (
           <Card className="items-center gap-3 p-10 text-center">
             <BuildingsIcon className="size-6 text-muted-foreground" />
-            <h1 className="text-lg font-semibold tracking-tight">Create your organization</h1>
+            <h1 className="font-display text-3xl tracking-tight">Create your organization</h1>
             <p className="max-w-sm text-sm text-muted-foreground">
               Workspaces, threads and members belong to an organization. Got an invitation? Open its link.
             </p>
@@ -89,7 +89,7 @@ function Workspaces({ orgId, orgName }: { orgId: string; orgName: string }) {
     <>
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Workspaces</h1>
+          <h1 className="font-display text-3xl tracking-tight">Workspaces</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Each workspace runs one specialist agent for {orgName}.
           </p>
@@ -114,8 +114,8 @@ function WorkspaceCard({ workspace: w }: { workspace: Doc<'workspaces'> }) {
   const Icon = templateIcon(w.templateSlug);
   return (
     <Card href={`/w/${w._id}`} label={w.name} className="flex-row items-center gap-3 border border-border/60 p-4">
-      <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">
-        <Icon className="size-4 text-muted-foreground" />
+      <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand/10">
+        <Icon className="size-4 text-brand" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{w.name}</div>
@@ -183,7 +183,7 @@ function NewWorkspaceDialog({ orgId }: { orgId: string }) {
                       if (!name.trim()) setName(t.name);
                     }}
                     className={cn(
-                      'h-auto flex-col items-start gap-1.5 whitespace-normal p-3 text-left',
+                      'h-auto flex-col items-start justify-start gap-1.5 whitespace-normal p-3 text-left',
                       selected && 'border-brand bg-brand/5',
                     )}
                   >

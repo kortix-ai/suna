@@ -47,7 +47,7 @@ export function AuthScreen({
     <div className="grid min-h-dvh place-items-center bg-background px-4">
       <Card className="w-full max-w-sm p-6">
         <BrandMark className="mb-5" />
-        <h1 className="text-lg font-semibold tracking-tight">
+        <h1 className="font-display text-2xl tracking-tight">
           {signUp ? `Create your ${BRAND.name} account` : `Sign in to ${BRAND.name}`}
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">{subtitle ?? BRAND.tagline}</p>
@@ -98,12 +98,12 @@ export function AuthScreen({
             {signUp ? 'Create account' : 'Sign in'}
           </Button>
         </form>
-        <p className="mt-4 text-center text-sm text-muted-foreground">
-          {signUp ? 'Already have an account?' : 'New to Lumen?'}{' '}
+        <p className="mt-4 flex items-center justify-center gap-1 text-sm text-muted-foreground">
+          {signUp ? 'Already have an account?' : `New to ${BRAND.name}?`}
           <Button
             variant="link"
             size="sm"
-            className="h-auto p-0 align-baseline"
+            className="h-auto p-0"
             onClick={() => {
               setError(null);
               setMode(signUp ? 'sign-in' : 'sign-up');

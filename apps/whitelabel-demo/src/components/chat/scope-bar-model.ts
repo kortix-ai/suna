@@ -43,7 +43,7 @@ const COPY: Record<ScopeControlKey, { badge: string; note: string }> = {
   },
   agent: {
     badge: scopeBadge('agent'),
-    note: 'Each message names the agent that runs it, and the composer above picks it. A switch re-scopes future secret delivery, connector access, and Kortix CLI access to the selected agent.',
+    note: 'Each message names the agent that runs it, and the composer above picks it. A switch re-scopes future secret delivery and connector access to the selected agent.',
   },
   secrets: {
     badge: scopeBadge('secrets'),

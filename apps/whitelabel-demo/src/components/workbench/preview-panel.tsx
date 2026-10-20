@@ -27,7 +27,7 @@ import { Separator } from '@kortix/ui/separator';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
-import { authHeaders, getSessionToken } from '@/lib/session';
+import { resolvePreviewUrl } from '@/lib/preview-url';
 import type { SessionPreviewCandidate } from '@kortix/sdk';
 import { type UseQueryResult, useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -38,44 +38,6 @@ function statusVariant(status?: string) {
   if (status === 'online') return 'default' as const;
   if (status === 'offline') return 'destructive' as const;
   return 'secondary' as const;
-}
-
-interface PreviewUrlResponse {
-  url: string;
-}
-
-async function resolvePreviewUrl({
-  projectId,
-  sessionId,
-  preview,
-  targetUrl,
-}: {
-  projectId: string;
-  sessionId: string;
-  preview?: { port: number; path: string };
-  targetUrl?: string;
-}): Promise<PreviewUrlResponse> {
-  const response = await fetch('/api/preview-url', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...authHeaders(getSessionToken()),
-    },
-    body: JSON.stringify({
-      projectId,
-      sessionId,
-      ...(preview ? { preview } : {}),
-      ...(targetUrl ? { targetUrl } : {}),
-    }),
-  });
-  const body = (await response.json().catch(() => ({}))) as {
-    url?: string;
-    error?: string;
-  };
-  if (!response.ok || !body.url) {
-    throw new Error(body.error || 'Could not resolve preview URL');
-  }
-  return { url: body.url };
 }
 
 export function PreviewPanel({
@@ -282,7 +244,7 @@ function PreviewSurface({
   reloadNonce,
 }: {
   loadingPreviews: boolean;
-  previewUrlQuery: UseQueryResult<PreviewUrlResponse, Error>;
+  previewUrlQuery: UseQueryResult<{ url: string }, Error>;
   previewSrc: string | null;
   selected: SessionPreviewCandidate | null;
   reloadNonce: number;

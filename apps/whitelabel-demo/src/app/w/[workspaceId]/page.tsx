@@ -1,6 +1,7 @@
 'use client';
 
 import { templateIcon } from '@/components/template-icon';
+import { ThemeMenu } from '@/components/theme';
 import { NotAvailable, SignedIn, threadPath } from '@/components/workspace-access';
 import { relativeTime } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
@@ -48,6 +49,8 @@ function Workspace({ workspaceId: raw }: { workspaceId: string }) {
           ) : (
             <Skeleton className="h-4 w-40" />
           )}
+          <div className="flex-1" />
+          <ThemeMenu />
         </div>
       </header>
       <div className="mx-auto max-w-3xl px-5 py-8">
@@ -61,6 +64,10 @@ function Workspace({ workspaceId: raw }: { workspaceId: string }) {
         {ws?.status === 'failed' && <ProvisionFailed workspaceId={workspaceId} />}
         {ws?.status === 'ready' && ws.kortixProjectId && (
           <>
+            <h2 className="font-display text-3xl tracking-tight">What should we work on?</h2>
+            <p className="mt-1 mb-5 text-sm text-muted-foreground">
+              Each question starts a thread. The agent works in a sandbox of its own.
+            </p>
             <NewThread workspaceId={workspaceId} />
             <Threads workspaceId={workspaceId} projectId={ws.kortixProjectId} />
           </>

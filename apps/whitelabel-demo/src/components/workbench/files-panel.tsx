@@ -1,7 +1,5 @@
 'use client';
 
-import Loading from '@kortix/ui/loading';
-
 /**
  * FilesPanel — a compact two-pane workspace file browser for the white-label
  * app, driven entirely through the `@kortix/sdk` project facade. It exercises
@@ -11,10 +9,11 @@ import Loading from '@kortix/ui/loading';
  *   kortix.project(id).files.search(query, …) → the search input (left list)
  *   kortix.project(id).files.read(path, ref?) → the monospace viewer (right pane)
  *   kortix.project(id).files.history(path, …) → the per-file "History" popover
- *   kortix.project(id).files.archive(ref, …)  → the "Download" button
  *
- * The right pane (`FileViewer`) and the archive download (`useProjectArchive`)
- * live under `files/`.
+ * Every read is at the thread's ref (`useSessionRef`), and the list leaves out
+ * the workspace configuration (`isCustomerFile`). There is no archive
+ * download: a zip of the repository would carry the operator's agent prompts,
+ * and the proxy refuses it. The right pane (`FileViewer`) lives under `files/`.
  */
 
 import { Badge } from '@kortix/ui/badge';
@@ -26,20 +25,21 @@ import { ScrollArea } from '@kortix/ui/scroll-area';
 import { Separator } from '@kortix/ui/separator';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { FileViewer } from '@/components/workbench/files/file-viewer';
-import { useProjectArchive } from '@/components/workbench/files/use-project-archive';
 import { kortix } from '@/lib/kortix';
+import { isCustomerFile, useSessionRef } from '@/lib/session-ref';
 import { fmtDate } from '@/lib/utils';
 import { cn } from '@kortix/ui';
 import type { ProjectCommit, ProjectFileEntry, ProjectFileSearchMatch } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
 import { useDeferredValue, useState } from 'react';
-import { ClockCounterClockwiseIcon, DownloadSimpleIcon, FileIcon, FileTextIcon, GitCommitIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
+import { ClockCounterClockwiseIcon, FileIcon, FileTextIcon, GitCommitIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 
 function basename(p: string): string {
   return p.split('/').filter(Boolean).pop() ?? p;
 }
 
-export function FilesPanel({ projectId }: { projectId: string }) {
+export function FilesPanel({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const ref = useSessionRef(projectId, sessionId);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query.trim());
@@ -47,18 +47,20 @@ export function FilesPanel({ projectId }: { projectId: string }) {
 
   // .files.list — the workspace tree (shown when not searching).
   const list = useQuery({
-    queryKey: ['project-files', projectId, 'list'],
-    queryFn: () => kortix.project(projectId).files.list(),
+    queryKey: ['project-files', projectId, ref, 'list'],
+    queryFn: () => kortix.project(projectId).files.list({ ref }),
+    enabled: !!ref,
+    select: (files) => files.filter((f) => isCustomerFile(f.path)),
   });
 
   // .files.search — filename search, live as you type.
   const search = useQuery({
-    queryKey: ['project-files', projectId, 'search', deferredQuery],
-    queryFn: () => kortix.project(projectId).files.search(deferredQuery, { limit: 50 }),
-    enabled: searching,
+    queryKey: ['project-files', projectId, ref, 'search', deferredQuery],
+    queryFn: () => kortix.project(projectId).files.search(deferredQuery, { limit: 50, ref }),
+    enabled: searching && !!ref,
+    select: (data) => ({ ...data, results: data.results.filter((m) => isCustomerFile(m.path)) }),
   });
 
-  const download = useProjectArchive(projectId);
 
   const listItems: ProjectFileEntry[] = list.data ?? [];
   const searchItems: ProjectFileSearchMatch[] = search.data?.results ?? [];
@@ -68,30 +70,17 @@ export function FilesPanel({ projectId }: { projectId: string }) {
   const rows: Array<{ path: string; lineText?: string }> = searching
     ? searchItems.map((m) => ({ path: m.path, lineText: m.line_text }))
     : listItems.map((f) => ({ path: f.path }));
-  const rowsLoading = searching ? search.isLoading : list.isLoading;
+  const rowsLoading = !ref || (searching ? search.isLoading : list.isLoading);
   const rowsReady = searching ? search.isSuccess : list.isSuccess;
 
   return (
     <Card className="flex h-full min-h-0 flex-col gap-0 overflow-hidden p-0">
-      {/* Header — title + download */}
+      {/* Header */}
       <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2">
         <div className="flex items-center gap-2">
           <FileTextIcon className="size-4 text-muted-foreground" />
           <span className="text-sm font-medium text-foreground">Files</span>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={download.isPending}
-          onClick={() => download.mutate()}
-        >
-          {download.isPending ? (
-            <Loading className="size-3.5" />
-          ) : (
-            <DownloadSimpleIcon className="size-3.5" />
-          )}
-          Download
-        </Button>
       </div>
       <Separator />
 
@@ -100,6 +89,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
         {/* Left — search + list */}
         <FileListPane
           projectId={projectId}
+          gitRef={ref}
           query={query}
           onQueryChange={setQuery}
           searching={searching}
@@ -113,7 +103,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
         {/* Right — content viewer */}
         <div className="flex min-h-0 flex-1 flex-col">
           {selected ? (
-            <FileViewer projectId={projectId} path={selected} files={listItems} />
+            <FileViewer projectId={projectId} path={selected} gitRef={ref} files={listItems} />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
               <FileTextIcon className="size-6 text-muted-foreground" />
@@ -128,6 +118,7 @@ export function FilesPanel({ projectId }: { projectId: string }) {
 
 function FileListPane({
   projectId,
+  gitRef,
   query,
   onQueryChange,
   searching,
@@ -138,6 +129,7 @@ function FileListPane({
   onSelect,
 }: {
   projectId: string;
+  gitRef: string | undefined;
   query: string;
   onQueryChange: (value: string) => void;
   searching: boolean;
@@ -181,6 +173,7 @@ function FileListPane({
 
           <FileRows
             projectId={projectId}
+            gitRef={gitRef}
             rows={rows}
             searching={searching}
             selected={selected}
@@ -195,12 +188,14 @@ function FileListPane({
 /** The normalized file rows (workspace tree entries or search matches). */
 function FileRows({
   projectId,
+  gitRef,
   rows,
   searching,
   selected,
   onSelect,
 }: {
   projectId: string;
+  gitRef: string | undefined;
   rows: Array<{ path: string; lineText?: string }>;
   searching: boolean;
   selected: string | null;
@@ -230,6 +225,9 @@ function FileRows({
               <FileIcon className="size-3.5 shrink-0 opacity-70" />
               <span className="flex min-w-0 flex-col">
                 <span className="truncate font-mono">{basename(path)}</span>
+                {path.includes('/') && (
+                  <span className="truncate font-mono text-[0.65rem] opacity-60">{path.slice(0, path.lastIndexOf('/'))}</span>
+                )}
                 {searching && lineText && (
                   <span className="truncate font-mono text-[0.65rem] opacity-60">
                     {lineText.trim()}
@@ -237,7 +235,7 @@ function FileRows({
                 )}
               </span>
             </Button>
-            <FileHistory projectId={projectId} path={path} />
+            <FileHistory projectId={projectId} gitRef={gitRef} path={path} />
           </div>
         );
       })}
@@ -246,12 +244,12 @@ function FileRows({
 }
 
 /** Per-file git history, lazily loaded via `.files.history` when opened. */
-function FileHistory({ projectId, path }: { projectId: string; path: string }) {
+function FileHistory({ projectId, gitRef, path }: { projectId: string; gitRef: string | undefined; path: string }) {
   const [open, setOpen] = useState(false);
 
   const history = useQuery({
-    queryKey: ['project-files', projectId, 'history', path],
-    queryFn: () => kortix.project(projectId).files.history(path, { limit: 20 }),
+    queryKey: ['project-files', projectId, gitRef, 'history', path],
+    queryFn: () => kortix.project(projectId).files.history(path, { limit: 20, ref: gitRef }),
     enabled: open,
   });
 
