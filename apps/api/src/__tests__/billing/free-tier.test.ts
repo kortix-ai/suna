@@ -58,8 +58,10 @@ describe('free tier account setup', () => {
       kind: 'free_tier_grant',
       description: 'Free tier welcome credits',
       expiring: true,
+      expiresAt: expect.any(String),
       key: { event: 'free_tier_signup:acc_free_1' },
     });
+    expect(upsertCreditAccountCalls[0].data.nextCreditGrant).toBe(walletGrants[0].expiresAt);
   });
 
   test('repairs a missing credit account before billing gates run', async () => {

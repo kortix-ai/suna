@@ -1291,6 +1291,7 @@
     },
     "credits": {
       "loadFailed": "Impossible de charger ce compte.",
+      "resetAt": "Les crédits du forfait sont réinitialisés le",
       "availableBalance": "Solde disponible",
       "creditCount": "{count, plural, one {{formatted} crédit} other {{formatted} crédits}}",
       "owed": "dus",

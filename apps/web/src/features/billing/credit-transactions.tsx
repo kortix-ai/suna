@@ -161,6 +161,7 @@ export default function CreditTransactions({ accountId }: Props) {
               type: tx.type,
               description: tx.description ?? null,
               isExpiring: tx.is_expiring ?? undefined,
+              expiresAt: tx.expires_at,
               amount: tx.amount,
               balanceAfter: tx.balance_after,
             }))}

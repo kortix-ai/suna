@@ -1291,6 +1291,7 @@
     },
     "credits": {
       "loadFailed": "无法加载此帐户。",
+      "resetAt": "套餐积分重置时间",
       "availableBalance": "可用余额",
       "creditCount": "{count, plural, one {{formatted} 个积分} other {{formatted} 个积分}}",
       "owed": "欠款",

@@ -1113,6 +1113,7 @@
     },
     "credits": {
       "loadFailed": "Could not load this account.",
+      "resetAt": "Plan credits reset on",
       "availableBalance": "Available balance",
       "creditCount": "{count, plural, one {{formatted} credit} other {{formatted} credits}}",
       "owed": "owed",

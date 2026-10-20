@@ -156,3 +156,11 @@ Every timestamp is ISO 8601. `plan` is the billing plan.
 is absent from the current Stripe account. It leaves the local plan, credits,
 and subscription mapping unchanged. A missing remote object does not prove
 that the account lost its paid entitlement. Transient Stripe failures propagate.
+
+### Credit reset visibility
+
+Account state exposes `credits.expires_at`, the scheduled `next_credit_grant`
+reset timestamp, or null for an unknown legacy schedule. Balance cards show
+that date beside remaining plan credits. The ledger shows each grant's own
+`expires_at` when recorded, never a current account schedule substituted for
+a historical grant. New free welcome grants record their scheduled reset date.

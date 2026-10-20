@@ -39,6 +39,7 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatWholeUsd } from '@/features/billing/compute-pricing';
+import { CreditExpiry } from '@/features/billing/credit-expiry';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { cn } from '@/lib/utils';
 import { resolvedPlan, type AccountState } from '@kortix/sdk';
@@ -128,6 +129,7 @@ export function AccountOverviewView({ state }: { state: AccountState }) {
               ≈ {formatUsd(Math.abs(wallet), locale)}
               {isNegative ? ` ${tI18nComplete.raw('text4fef65587333')}` : ''}
             </p>
+            {state.credits.monthly > 0 && <CreditExpiry expiresAt={state.credits.expires_at} />}
           </div>
           <PlanSummary state={state} />
         </div>

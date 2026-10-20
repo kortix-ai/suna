@@ -1291,6 +1291,7 @@
     },
     "credits": {
       "loadFailed": "No se pudo cargar esta cuenta.",
+      "resetAt": "Los créditos del plan se restablecen el",
       "availableBalance": "Saldo disponible",
       "creditCount": "{count, plural, one {{formatted} crédito} other {{formatted} créditos}}",
       "owed": "adeudados",

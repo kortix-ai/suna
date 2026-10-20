@@ -1291,6 +1291,7 @@
     },
     "credits": {
       "loadFailed": "Dieses Konto konnte nicht geladen werden.",
+      "resetAt": "Planguthaben wird zurückgesetzt am",
       "availableBalance": "Verfügbares Guthaben",
       "creditCount": "{count, plural, one {{formatted} Credit} other {{formatted} Credits}}",
       "owed": "offen",

@@ -1291,6 +1291,7 @@
     },
     "credits": {
       "loadFailed": "Impossibile caricare questo account.",
+      "resetAt": "I crediti del piano si azzerano il",
       "availableBalance": "Saldo disponibile",
       "creditCount": "{count, plural, one {{formatted} credito} other {{formatted} crediti}}",
       "owed": "dovuti",

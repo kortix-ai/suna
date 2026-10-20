@@ -167,6 +167,8 @@ export interface AccountStateResponse {
     total: number;
     daily: number;
     monthly: number;
+    /** Next scheduled reset of the expiring credit bucket. */
+    expires_at?: string | null;
     extra: number;
     can_run: boolean;
     /** Lifetime rollups derived from credit_ledger (see the

@@ -39,6 +39,7 @@ export interface CreditTransactionRow {
   description: string | null;
   /** Absent = the source does not say, and the Credit type cell stays empty. */
   isExpiring?: boolean;
+  expiresAt?: string | null;
   amount: number;
   balanceAfter: number;
 }
@@ -143,6 +144,11 @@ export function CreditTransactionsTable({ rows }: { rows: CreditTransactionRow[]
                 {row.isExpiring !== undefined && (
                   <span className="text-muted-foreground text-xs">
                     {row.isExpiring ? 'Expiring' : 'Permanent'}
+                    {row.isExpiring && row.expiresAt && Number.isFinite(Date.parse(row.expiresAt)) && (
+                      <time dateTime={row.expiresAt} className="block">
+                        {formatDate(row.expiresAt)}
+                      </time>
+                    )}
                   </span>
                 )}
               </TableCell>

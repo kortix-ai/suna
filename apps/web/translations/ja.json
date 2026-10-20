@@ -1291,6 +1291,7 @@
     },
     "credits": {
       "loadFailed": "このアカウントを読み込めませんでした。",
+      "resetAt": "プランのクレジットのリセット日時",
       "availableBalance": "利用可能残高",
       "creditCount": "{count, plural, one {{formatted} クレジット} other {{formatted} クレジット}}",
       "owed": "未払い",

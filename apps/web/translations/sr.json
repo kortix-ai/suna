@@ -1291,6 +1291,7 @@
     },
     "credits": {
       "loadFailed": "Овај налог није могао да се учита.",
+      "resetAt": "Кредити плана се ресетују",
       "availableBalance": "Расположиво стање",
       "creditCount": "{count, plural, one {{formatted} кредит} other {{formatted} кредита}}",
       "owed": "дуговање",
