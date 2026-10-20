@@ -124,6 +124,10 @@ export function ConnectMcpModal({
               <ModalTitle className="text-lg font-medium text-balance">{t('title')}</ModalTitle>
               <ModalDescription className="text-pretty">{t('description')}</ModalDescription>
             </header>
+            <div className="bg-muted flex min-w-0 items-center gap-3 rounded-md border p-3">
+              <code className="min-w-0 flex-1 text-xs break-all select-text">{url}</code>
+              <ClientAction client={CLIENTS[0]} url={url} />
+            </div>
             <ul className="divide-border divide-y">
               {CLIENTS.map((client) => (
                 <li key={client.id} className="flex items-center gap-3 py-2.5">
