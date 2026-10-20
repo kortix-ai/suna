@@ -1274,6 +1274,10 @@
         "connectors_v2": {
           "name": "Conectores v2",
           "description": "El catálogo de apps MCP en Personalizar → Conectores, con inicio de sesión gestionado por Kortix. Con «Disparadores de eventos de app» activado, Kortix revisa estas apps en busca de correos, archivos y elementos nuevos e inicia un agente. También añade Telegram como canal. Las nuevas cuentas de conectores ya no se comparten con todo el proyecto por defecto."
+        },
+        "project_channels": {
+          "name": "Canales",
+          "description": "Organiza el trabajo en canales. Cada mensaje nuevo en un canal o en un mensaje directo con un agente inicia un hilo. Sustituye la lista de sesiones en la barra lateral."
         }
       }
     },

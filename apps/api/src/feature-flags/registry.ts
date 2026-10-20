@@ -471,6 +471,18 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'while on (projects/trigger-events/registry.ts); turning it off moves those triggers to error ' +
       'and drops their poll streams (feature-flags/toggle-effects.ts).',
   },
+  {
+    key: 'project_channels',
+    name: 'Channels',
+    description:
+      'Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Every /projects/:id/spaces route returns 403 feature_disabled while off. Session create/list ignore space_id while off.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

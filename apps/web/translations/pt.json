@@ -1274,6 +1274,10 @@
         "connectors_v2": {
           "name": "Conectores v2",
           "description": "O catálogo de apps MCP em Personalizar → Conectores, com login gerenciado pelo Kortix. Com “Gatilhos de eventos do app” ativado, o Kortix verifica esses apps em busca de novos e-mails, arquivos e itens e inicia um agente. Também adiciona o Telegram como canal. As novas contas de conectores deixam de ser compartilhadas com todo o projeto por padrão."
+        },
+        "project_channels": {
+          "name": "Canais",
+          "description": "Organize o trabalho em canais. Cada nova mensagem em um canal ou em uma mensagem direta com um agente inicia uma thread. Substitui a lista de sessões na barra lateral."
         }
       }
     },

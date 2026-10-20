@@ -1274,6 +1274,10 @@
         "connectors_v2": {
           "name": "Connettori v2",
           "description": "Il catalogo di app MCP in Personalizza → Connettori, con accesso gestito da Kortix. Con «Trigger di eventi dell'app» attivo, Kortix controlla queste app per nuove email, file ed elementi e avvia un agente. Aggiunge anche Telegram come canale. I nuovi account dei connettori non sono più condivisi con l'intero progetto per impostazione predefinita."
+        },
+        "project_channels": {
+          "name": "Canali",
+          "description": "Organizza il lavoro in canali. Ogni nuovo messaggio in un canale o in un messaggio diretto con un agente avvia un thread. Sostituisce l'elenco delle sessioni nella barra laterale."
         }
       }
     },
