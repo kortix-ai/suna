@@ -65,6 +65,7 @@ import {
 import { Skeleton } from '@kortix/ui/skeleton';
 import { accountCreated } from '@/features/accounts/account-created';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
+import { DownloadModal } from '@/features/marketing/download/download-modal';
 import { Download } from '@kortix/ui/internal/icons/download';
 import { useAuth } from '@/features/providers/auth-provider';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
@@ -125,6 +126,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const { setSelectedAccountId } = useCurrentAccountStore();
   // The exact key the account list reads, for the create-account seed below.
   const accountsQueryKey = useAccountsQueryKey();
+  const [downloadOpen, setDownloadOpen] = useState(false);
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [computerSetupOpen, setComputerSetupOpen] = useState(false);
   // Right after this desktop pairs, setup opens on the spot (see COMPUTER_SETUP_EVENT).
@@ -333,14 +335,16 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
               </DropdownMenuItem>
 
-              {/* `prefetch` explicitly: `(marketing)/download/page.tsx` awaits
-                  `headers()`, so the default `auto` intent would cache nothing
-                  for a dynamic route. */}
-              <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                <Link href="/download" prefetch data-desktop-hidden>
-                  <Download />
-                  {t('workspace.downloadApp')}
-                </Link>
+              {/* A modal, not a route: the user stays in the workspace. It
+                  renders the same `DownloadOptions` as the public /download
+                  page, so the two surfaces never drift apart. */}
+              <DropdownMenuItem
+                onSelect={() => deferAfterClose(() => setDownloadOpen(true))}
+                size="sm"
+                data-desktop-hidden
+              >
+                <Download />
+                {t('workspace.downloadApp')}
               </DropdownMenuItem>
 
               <ThemeSubmenu />
@@ -363,6 +367,8 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
 
       {/* Sibling of the dropdown, never a child — see `useLogoutFlow`. */}
       {logoutDialog}
+
+      <DownloadModal open={downloadOpen} onOpenChange={setDownloadOpen} />
 
       <LocalComputerModal
         projectId={projectId}

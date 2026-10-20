@@ -170,7 +170,10 @@
       "deleteMine": "Delete my value",
       "mineDeleted": "Value deleted",
       "mineDeleteError": "Could not delete your value. Try again."
-    }
+    },
+    "agentAccess": "Agents: {agents}",
+    "allAgents": "All agents",
+    "noAgents": "No agents"
   },
   "useCases": {
     "headline": "The loops that run a company"
@@ -1039,10 +1042,6 @@
           "name": "AgentMail Email",
           "description": "Assign AgentMail inboxes so incoming email threads can start and continue Kortix sessions."
         },
-        "llm_gateway": {
-          "name": "LLM Gateway",
-          "description": "Route this project through the managed Kortix LLM gateway for managed models, metering, and budgets."
-        },
         "meta_agent": {
           "name": "Meta Agent",
           "description": "Add a coordinator agent that manages specialized sessions and multi-step work across the project."
@@ -1106,6 +1105,14 @@
         "connectors_v2": {
           "name": "Connectors v2",
           "description": "The MCP app catalog in Customize → Connectors, with sign-in that Kortix runs. With App event triggers on, Kortix checks these apps for new emails, files and items and starts an agent. Also adds Telegram as a channel. New connector accounts are no longer shared with the whole project by default."
+        },
+        "agent_rooms": {
+          "name": "Rooms",
+          "description": "Named chat rooms where agent sessions and people post and reply in threads. A session wakes when a message is addressed to it. Adds the Rooms page, `kortix rooms`, and `kortix peers`."
+        },
+        "goals": {
+          "name": "Goals",
+          "description": "Give an agent an objective it owns until an independent check confirms the outcome. It plans, works, waits, follows up with people, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on."
         }
       }
     },
@@ -10456,7 +10463,7 @@
       "text0e498a7ede47": "Enabled {value0}",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "Save as PDF",
-      "text926597a39cb3": "Project admins",
+      "text926597a39cb3": "Project managers",
       "text9bf06a86c934": "New skill",
       "texta38668224f1a": "Create with a form",
       "textb25ab5d5e2a5": "Skill created",
@@ -13617,7 +13624,7 @@
       "text69fe3e7c4d5a": "Try again in a moment.",
       "text6a00736dae3c": "Approved, rejected and finished items land here.",
       "text6a034c1a3651": "Or bring any MCP, OpenAPI, GraphQL or HTTP endpoint — same interface",
-      "text6a05ddf8cca1": "Agents granted this connector cannot call it until a project admin authorizes a connection.",
+      "text6a05ddf8cca1": "Agents granted this connector cannot call it until a project manager authorizes a connection.",
       "text6a16ef7af323": "Brand accent color for the new dashboard",
       "text6a1c727bfe1b": "Updated audit webhook",
       "text6a1d566e085f": "Three answers to “who may start a session here”",
@@ -14092,7 +14099,7 @@
       "text77e2bc11f6ab": "Required. This is how other agents decide to call it.",
       "text77f3d2bcb376": "enterpriseCtaPrimary",
       "text77fe4eba38d8": "All repositories",
-      "text77ff6343ff46": "Anyone whose project role includes the project.trigger.update permission — Project admin by default — plus account owners and admins. The trigger's own agent always can.",
+      "text77ff6343ff46": "Anyone whose project role includes the project.trigger.update permission — Project manager by default — plus account owners and admins. The trigger's own agent always can.",
       "text7804f7a79a9e": "Finished",
       "text7812d84e3512": "Used a connector",
       "text781fbdd4840f": "- Each entry: context, decision, date",
@@ -19848,8 +19855,8 @@
       "textf82a179f9235": "More apps with events",
       "text3d6f73990a72": "No apps match.",
       "textf287f4494f4b": "It goes live when the {name} account is connected. You can connect it now or after you create the trigger.",
-      "text5550bcf169d6": "You cannot connect shared accounts. Ask a project admin to connect {name}. The trigger goes live when they do.",
-      "textf665dfe82646": "You cannot connect shared accounts. Ask a project admin to connect {app}. This trigger goes live when they do.",
+      "text5550bcf169d6": "You cannot connect shared accounts. Ask a project manager to connect {name}. The trigger goes live when they do.",
+      "textf665dfe82646": "You cannot connect shared accounts. Ask a project manager to connect {app}. This trigger goes live when they do.",
       "text50a06ae2ec9e": "This app cannot send events here",
       "texta9cb192dbee2": "The event source for this app is not available on this deployment, so its events cannot be listed yet.",
       "text901abe952186": "Search events",
@@ -19875,7 +19882,7 @@
       "text03b08ce05c4f": "Restore this snapshot?",
       "text3026d54f70df": "The machine that mounts {value0} stops, the volume returns to this snapshot, and the machine starts again on it. Nothing is lost: the current contents stay in the volume's history.",
       "texte37a10b4757e": "Restoring {value0}",
-      "textce1d48e5a23f": "Project admins only",
+      "textce1d48e5a23f": "Project managers only",
       "textbfc580646bea": "Same access as the App",
       "text1a6f7cae06cc": "Releases",
       "textc061da196eae": "Machines",
@@ -20357,7 +20364,84 @@
       "sessionExpired": "Your session expired. Sign in again and reopen the preview."
     },
     "approvalPage": {
-      "title": "Approve this {connector} action"
+      "title": "Approve this {connector} action",
+      "expires": "Expires",
+      "expiresIn": "Expires in {time}",
+      "expiredHint": "This approval expired. Ask the agent to request it again.",
+      "anAgent": "An agent",
+      "anAgentLower": "an agent",
+      "wantsEmail": "{agent} wants to email {recipient}",
+      "wantsEmailOthers": "{agent} wants to email {recipient} and {count, plural, one {# other} other {# others}}",
+      "wantsMerge": "{agent} wants to merge PR #{number} into {base}",
+      "wantsMergePr": "{agent} wants to merge PR #{number}",
+      "wantsIssue": "{agent} wants to file {article, select, an {an} other {a}} {priority}-priority issue for {team}",
+      "wantsCreateIssue": "{agent} wants to create an issue",
+      "wantsAction": "{agent} wants to {action}",
+      "wantsCall": "{agent} wants to run {action}",
+      "leftMinutes": "{minutes}m left",
+      "leftHoursMinutes": "{hours}h {minutes}m left",
+      "leftHours": "{hours}h left",
+      "leftDays": "{days}d left",
+      "riskDestructive": "Destructive · cannot be undone from Kortix",
+      "riskWrite": "Write access · {action}",
+      "riskRead": "Read access",
+      "askedBy": "Asked by {agent}",
+      "askedByIn": "Asked by {agent} in <session>{title}</session>",
+      "expiresAt": "expires {when}",
+      "today": "Today {time}",
+      "tomorrow": "Tomorrow {time}",
+      "thisSession": "a session",
+      "notePlaceholder": "Add a note for {agent} (optional)",
+      "notePlaceholderAgent": "Add a note for the agent (optional)",
+      "approve": "Approve",
+      "approveSend": "Approve and send",
+      "approveMerge": "Approve and merge",
+      "approveCreate": "Approve and create",
+      "pullRequest": "Pull request #{number}",
+      "mergeMethod": "{method, select, squash {Squash and merge} rebase {Rebase and merge} merge {Create a merge commit} other {{method} and merge}}",
+      "newIssue": "New issue",
+      "priority1": "Urgent",
+      "priority2": "High",
+      "priority3": "Medium",
+      "priority4": "Low",
+      "canOnlyBeDenied": "Can only be denied",
+      "prFiles": "{count, plural, one {# file} other {# files}}",
+      "prCommits": "{count, plural, one {# commit} other {# commits}}",
+      "prCommitsBy": "{count, plural, one {# commit} other {# commits}} by {author}",
+      "prDraft": "Draft pull request"
+    },
+    "reviewBulk": {
+      "approve": "Approve",
+      "deny": "Deny",
+      "dismiss": "Dismiss",
+      "selectRow": "Select {title}",
+      "limitNote": "Up to {count} at a time",
+      "approving": "Approving {count}…",
+      "denying": "Denying {count}…",
+      "dismissing": "Dismissing {count}…",
+      "approveTitle": "Approve {count, plural, one {# action} other {# actions}}?",
+      "approveDescription": "Check each action's details before you approve.",
+      "approveConfirm": "Approve {count}",
+      "denyTitle": "Deny {count, plural, one {# action} other {# actions}}?",
+      "denyDescription": "The agents do not run these actions.",
+      "denyConfirm": "Deny {count}",
+      "dismissTitle": "Dismiss {count, plural, one {# item} other {# items}}?",
+      "dismissDescription": "They move to Done.",
+      "dismissConfirm": "Dismiss {count}",
+      "riskNone": "No risk",
+      "riskLow": "Low risk",
+      "riskMedium": "Medium risk",
+      "riskHigh": "High risk",
+      "approved": "Approved {count}",
+      "denied": "Denied {count}",
+      "dismissed": "Dismissed {count}",
+      "skipped": "{count} skipped ({reasons})",
+      "reasonExpired": "expired",
+      "reasonAlreadyResolved": "already decided",
+      "reasonPreviewUnavailable": "content unavailable",
+      "reasonForbidden": "not allowed",
+      "reasonNotFound": "not found",
+      "reasonNotBulkActionable": "decide individually"
     },
     "approvalWaiting": {
       "byManager": "Waiting for anyone who manages this project to approve or deny it.",
@@ -20380,7 +20464,21 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Delivery: connector — server-side only. The value never enters the sandbox environment.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "Delivery scope is unavailable. Ask the agent to confirm where this value will be used before saving.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Encrypted at rest. Delivery follows the scope shown above.",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Enter the requested value below. Check its delivery scope before saving. The value is encrypted at rest."
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Enter the requested value below. Check its delivery scope before saving. The value is encrypted at rest.",
+    "approvalParameters": {
+      "to": "To",
+      "cc": "Cc",
+      "bcc": "Bcc",
+      "subject": "Subject",
+      "from": "From",
+      "none": "None",
+      "attachments": "Attachments",
+      "idsOnlyHint": "This call shows no content to check. Any description from the agent is unverified.",
+      "resolvedUnavailable": "Couldn't load the draft. Review the agent's description carefully.",
+      "aboutDescription": "About this description",
+      "senderUnavailable": "Couldn't load the sending account. Check the From row.",
+      "quoted": "“{text}”"
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "Onboarding reset",
@@ -21381,7 +21479,7 @@
     "readOnly": "Read only",
     "openDrive": "Open Files",
     "unavailableTitle": "Files is off for this project",
-    "unavailableDescription": "A project admin can turn it on in Settings → Feature flags.",
+    "unavailableDescription": "A project manager can turn it on in Settings → Feature flags.",
     "grantAdminOnly": "Only an account owner or admin can change this.",
     "mountedAtPrivate": "Your private sessions see it at {path}",
     "sharedWithMe": "Shared with me",
@@ -21458,7 +21556,7 @@
     "addAccess": "Add a person, team or agent",
     "notGrantable": "This folder holds the tree together and can't be shared. Share a folder inside it.",
     "viewOnlyAccess": "Only people who can share this folder can change who has access.",
-    "noGrants": "Nobody has been given access here yet. Project admins can open every folder except people's own.",
+    "noGrants": "Nobody has been given access here yet. Project managers can open every folder except people's own.",
     "myFolder": "My folder",
     "myFolderHint": "Your own folder: private until you share it, and your desktop in your sessions",
     "sharedWithMeHint": "Folders other people shared with you",
@@ -21470,13 +21568,13 @@
     "accessPanelRoot": "Open a folder to choose who can access it. Company is shared with everyone in the project; each person's own folder is private until they share it.",
     "audienceEveryoneDescription": "Everyone who works in this project, and every session in it.",
     "audienceAdmins": "Admins only",
-    "audienceAdminsShort": "Project admins can open and share it",
-    "audienceAdminsDescription": "Project admins can open and share it. No session gets it until you share it.",
+    "audienceAdminsShort": "Project managers can open and share it",
+    "audienceAdminsDescription": "Project managers can open and share it. No session gets it until you share it.",
     "audienceOnlyYou": "Only you",
     "audienceOnlyOwner": "Only {name}",
     "audienceOwnerDescription": "A person's own folder stays private until they share it. Admins can't open it either.",
     "audienceSpecific": "Specific people, teams or agents",
-    "audienceSpecificDescription": "Only the people, teams and agents you pick, plus project admins. An agent gets the folder in every one of its sessions.",
+    "audienceSpecificDescription": "Only the people, teams and agents you pick, plus project managers. An agent gets the folder in every one of its sessions.",
     "inheritedEveryoneNote": "Everyone in this project already has access through {path}. Change it there to narrow it.",
     "everyoneCan": "Everyone in this project",
     "alsoNamed": "Also give access to",
@@ -21486,8 +21584,8 @@
     "levelFor": "Access for {name}",
     "inheritedTitle": "Has access from a folder above",
     "resultEveryone": "Everyone in this project can open this folder.",
-    "resultAdmins": "Only project admins can open this folder.",
-    "resultSpecific": "{count, plural, one {Only project admins and the one you picked can open this folder.} other {Only project admins and the # you picked can open this folder.}}",
+    "resultAdmins": "Only project managers can open this folder.",
+    "resultSpecific": "{count, plural, one {Only project managers and the one you picked can open this folder.} other {Only project managers and the # you picked can open this folder.}}",
     "you": "You",
     "manageFolderAccess": "Manage access",
     "viewFolderAccess": "See access",
@@ -21542,7 +21640,10 @@
       "dictationDescription": "Dictate a prompt instead of typing it."
     },
     "appStore": "App Store",
-    "googlePlay": "Google Play"
+    "googlePlay": "Google Play",
+    "scanTitle": "Scan to get the app",
+    "scanDescription": "Point your phone's camera at the code. It opens the App Store or Google Play.",
+    "qrLabel": "QR code for the Kortix mobile app"
   },
   "capture": {
     "authorize": {

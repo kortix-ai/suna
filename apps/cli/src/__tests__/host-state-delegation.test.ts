@@ -223,6 +223,7 @@ test('projects info --host resolves the named host own default, not the ambient 
   expect(JSON.parse(result.stdout).id).toBe('proj_other');
   expect(other.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
     'GET /v1/projects/proj_other',
+    'GET /v1/projects/proj_other/git/connection',
   ]);
 });
 
@@ -275,7 +276,7 @@ test('without --host the ambient session project still resolves (guard)', async 
   const result = await run(['projects', 'info', '--json']);
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout).id).toBe('proj_env');
-  expect(delegated.requests.map((r) => r.path)).toEqual(['/v1/projects/proj_env']);
+  expect(delegated.requests.map((r) => r.path)).toEqual(['/v1/projects/proj_env', '/v1/projects/proj_env/git/connection']);
 });
 
 // ── resolveProjectId unit contract (the shared resolver the four project

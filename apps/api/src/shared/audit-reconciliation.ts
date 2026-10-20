@@ -209,8 +209,9 @@ function auditCandidatesSql(accountId: string, newer: (...columns: string[]) => 
              NULL::text AS initiator_actor_id, 0::integer AS delegation_depth,
              CASE WHEN c.session_id IS NULL THEN 'api' ELSE 'agent' END AS authoritative_source,
              NULL::text AS client_reported_source,
+             -- Same mapping as the kortix.audit_connector_call trigger.
              CASE c.status::text WHEN 'pending_approval' THEN 'pending' WHEN 'ok' THEN 'success'
-                  WHEN 'denied' THEN 'denied' ELSE 'failure' END AS outcome,
+                  WHEN 'denied' THEN 'denied' WHEN 'expired' THEN 'expired' ELSE 'failure' END AS outcome,
              'connector.' || c.action_path AS action,
              CASE c.status::text WHEN 'pending_approval' THEN 'pending' WHEN 'ok' THEN 'completed'
                   WHEN 'error' THEN 'failed' WHEN 'denied' THEN 'denied' ELSE c.status::text END AS phase,

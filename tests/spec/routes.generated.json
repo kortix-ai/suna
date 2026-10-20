@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 874,
+  "count": 875,
   "routes": [
     {
       "method": "GET",
@@ -3013,6 +3013,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/skills"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/skills/remove"
     },
     {
       "method": "GET",

@@ -207,6 +207,8 @@ export interface SecretRow {
   deliveryBlockedReason: SecretDeliveryBlockedReason | null;
   /** Who can use the shared value. Empty = everyone in the project. */
   sharedWith: ConnectionShare[];
+  /** Enabled manifest agents admitted by identifier; unknown on older servers. */
+  agents?: string[] | 'all' | null;
   /** False when it is shared with specific people and the viewer is not one of them. */
   usable: boolean;
   /** Kortix can no longer decrypt the shared value (`status: 'undecryptable'`). */
@@ -235,7 +237,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tSecrets = useI18nTranslations('secrets');
+  const tSecrets = useTranslations('secrets');
   const queryClient = useQueryClient();
   const { navigate } = useSettingsNav();
   const queryKey = useMemo(() => qk.project.secrets(projectId), [projectId]);
@@ -665,6 +667,7 @@ export function buildRows(
     requiresRotation: Boolean(item.requires_rotation),
     deliveryBlockedReason: secretDeliveryBlockedReason(item),
     sharedWith: item.shared_with ?? [],
+    agents: item.agents,
     usable: item.usable ?? true,
     undecryptable: item.status === 'undecryptable',
     mineUndecryptable: Boolean(item.mine?.active && item.mine.status === 'undecryptable'),
@@ -790,7 +793,7 @@ function SecretTableRow({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tSharing = useI18nTranslations('accessSharing');
-  const tSecrets = useI18nTranslations('secrets');
+  const tSecrets = useTranslations('secrets');
   const canManageShared = canManage && !row.system;
   const distinctKey = row.identifier !== row.key;
   const delivery = secretDeliveryPresentation(row.strategy, row.consumer);
@@ -854,6 +857,12 @@ function SecretTableRow({
               visibility={audienceVisibility(row.sharedWith, viewerId)}
               labels={row.sharedWith.map((share) => share.label)}
             />
+            {row.agents != null && (
+              <span className="text-muted-foreground text-xs">
+                {tSecrets('agentAccess', { agents: row.agents === 'all'
+                  ? tSecrets('allAgents') : row.agents.join(', ') || tSecrets('noAgents') })}
+              </span>
+            )}
             {row.usable ? null : (
               <span className="text-muted-foreground text-xs">{tSharing('notSharedWithYou')}</span>
             )}
@@ -990,7 +999,7 @@ function SecretDialog({
   const viewerId = useUiViewerId() ?? null;
   const accountId = useProjectAccountId(projectId);
   const tSharing = useI18nTranslations('accessSharing');
-  const tSecrets = useI18nTranslations('secrets');
+  const tSecrets = useTranslations('secrets');
   const projectName =
     useQuery({ queryKey: qk.project.detail(projectId), queryFn: () => getProjectDetail(projectId), ...contract('config') })
       .data?.project?.name ?? '';

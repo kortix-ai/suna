@@ -244,6 +244,8 @@ export interface ProjectConfigSummary {
     path: string;
     description: string | null;
     mode: string | null;
+    /** Internal automation remains registered but is not offered by agent pickers. */
+    hidden?: boolean;
     /** The agent's `model:` frontmatter (`provider/model`); absent on older
      *  servers, null when it follows the project default. */
     model?: string | null;

@@ -170,7 +170,10 @@
       "deleteMine": "Eliminar mi valor",
       "mineDeleted": "Valor eliminado",
       "mineDeleteError": "No se pudo eliminar tu valor. Inténtalo de nuevo."
-    }
+    },
+    "agentAccess": "Agentes: {agents}",
+    "allAgents": "Todos los agentes",
+    "noAgents": "Ningún agente"
   },
   "useCases": {
     "headline": "Los ciclos que hacen funcionar una empresa"
@@ -1217,10 +1220,6 @@
           "name": "Correo de AgentMail",
           "description": "Asigna buzones de AgentMail para que los correos entrantes puedan iniciar y continuar sesiones de Kortix."
         },
-        "llm_gateway": {
-          "name": "Puerta de enlace LLM",
-          "description": "Dirige este proyecto mediante la puerta de enlace LLM administrada de Kortix para modelos, medición y presupuestos."
-        },
         "meta_agent": {
           "name": "Metaagente",
           "description": "Añade un coordinador que gestione sesiones especializadas y trabajos de varios pasos dentro del proyecto."
@@ -1284,6 +1283,14 @@
         "connectors_v2": {
           "name": "Conectores v2",
           "description": "El catálogo de apps MCP en Personalizar → Conectores, con inicio de sesión gestionado por Kortix. Con «Disparadores de eventos de app» activado, Kortix revisa estas apps en busca de correos, archivos y elementos nuevos e inicia un agente. También añade Telegram como canal. Las nuevas cuentas de conectores ya no se comparten con todo el proyecto por defecto."
+        },
+        "agent_rooms": {
+          "name": "Salas",
+          "description": "Salas de chat con nombre donde las sesiones de agentes y las personas publican y responden en hilos. Una sesión se reactiva cuando un mensaje va dirigido a ella. Añade la página Salas, `kortix rooms` y `kortix peers`."
+        },
+        "goals": {
+          "name": "Objetivos",
+          "description": "Asigna a un agente un objetivo del que se encarga hasta que una comprobación independiente confirme el resultado. Planifica, trabaja, espera, hace seguimiento con las personas y guarda su estado en una carpeta Goals en Archivos. Requiere Volúmenes y Recordatorios activados."
         }
       }
     },
@@ -1933,6 +1940,7 @@
     "upgrade": "Mejorar plan",
     "noMatch": {
       "title": "No hay modelos coincidentes",
+      "singleModelDescription": "Solo hay 1 modelo disponible en este proyecto. Los modelos disponibles dependen de tu plan y de los proveedores conectados.",
       "description": "Nada coincide con «{search}». Prueba con otra búsqueda.",
       "clear": "Borrar búsqueda"
     },
@@ -20345,7 +20353,84 @@
       "sessionExpired": "Tu sesión ha caducado. Inicia sesión de nuevo y vuelve a abrir la vista previa."
     },
     "approvalPage": {
-      "title": "Aprobar una acción de {connector}"
+      "title": "Aprobar una acción de {connector}",
+      "expires": "Caduca",
+      "expiresIn": "Caduca en {time}",
+      "expiredHint": "Esta aprobación caducó. Pide al agente que la vuelva a solicitar.",
+      "anAgent": "Un agente",
+      "anAgentLower": "un agente",
+      "wantsEmail": "{agent} quiere enviar un correo a {recipient}",
+      "wantsEmailOthers": "{agent} quiere enviar un correo a {recipient} y {count, plural, one {# persona más} other {# personas más}}",
+      "wantsMerge": "{agent} quiere fusionar el PR #{number} en {base}",
+      "wantsMergePr": "{agent} quiere fusionar el PR #{number}",
+      "wantsIssue": "{agent} quiere crear una incidencia de prioridad {priority} para {team}",
+      "wantsCreateIssue": "{agent} quiere crear una incidencia",
+      "wantsAction": "{agent} quiere: {action}",
+      "wantsCall": "{agent} quiere ejecutar {action}",
+      "leftMinutes": "Quedan {minutes} min",
+      "leftHoursMinutes": "Quedan {hours} h {minutes} min",
+      "leftHours": "Quedan {hours} h",
+      "leftDays": "Quedan {days} d",
+      "riskDestructive": "Destructiva · no se puede deshacer desde Kortix",
+      "riskWrite": "Acceso de escritura · {action}",
+      "riskRead": "Acceso de lectura",
+      "askedBy": "Solicitado por {agent}",
+      "askedByIn": "Solicitado por {agent} en <session>{title}</session>",
+      "expiresAt": "caduca {when}",
+      "today": "Hoy {time}",
+      "tomorrow": "Mañana {time}",
+      "thisSession": "una sesión",
+      "notePlaceholder": "Añade una nota para {agent} (opcional)",
+      "notePlaceholderAgent": "Añade una nota para el agente (opcional)",
+      "approve": "Aprobar",
+      "approveSend": "Aprobar y enviar",
+      "approveMerge": "Aprobar y fusionar",
+      "approveCreate": "Aprobar y crear",
+      "pullRequest": "Pull request #{number}",
+      "mergeMethod": "{method, select, squash {Squash and merge} rebase {Rebase and merge} merge {Crear un commit de fusión} other {{method} y fusionar}}",
+      "newIssue": "Nueva incidencia",
+      "priority1": "Urgente",
+      "priority2": "Alta",
+      "priority3": "Media",
+      "priority4": "Baja",
+      "canOnlyBeDenied": "Solo se puede rechazar",
+      "prFiles": "{count, plural, one {# archivo} other {# archivos}}",
+      "prCommits": "{count, plural, one {# commit} other {# commits}}",
+      "prCommitsBy": "{count, plural, one {# commit} other {# commits}} de {author}",
+      "prDraft": "Pull request en borrador"
+    },
+    "reviewBulk": {
+      "approve": "Aprobar",
+      "deny": "Denegar",
+      "dismiss": "Descartar",
+      "selectRow": "Seleccionar {title}",
+      "limitNote": "Hasta {count} a la vez",
+      "approving": "Aprobando {count}…",
+      "denying": "Denegando {count}…",
+      "dismissing": "Descartando {count}…",
+      "approveTitle": "¿Aprobar {count, plural, one {# acción} other {# acciones}}?",
+      "approveDescription": "Revisa los detalles de cada acción antes de aprobar.",
+      "approveConfirm": "Aprobar {count}",
+      "denyTitle": "¿Denegar {count, plural, one {# acción} other {# acciones}}?",
+      "denyDescription": "Los agentes no ejecutan estas acciones.",
+      "denyConfirm": "Denegar {count}",
+      "dismissTitle": "¿Descartar {count, plural, one {# elemento} other {# elementos}}?",
+      "dismissDescription": "Pasan a Hecho.",
+      "dismissConfirm": "Descartar {count}",
+      "riskNone": "Sin riesgo",
+      "riskLow": "Riesgo bajo",
+      "riskMedium": "Riesgo medio",
+      "riskHigh": "Riesgo alto",
+      "approved": "{count} aprobadas",
+      "denied": "{count} denegadas",
+      "dismissed": "{count} descartados",
+      "skipped": "{count} omitidos ({reasons})",
+      "reasonExpired": "caducada",
+      "reasonAlreadyResolved": "ya decidida",
+      "reasonPreviewUnavailable": "contenido no disponible",
+      "reasonForbidden": "no permitido",
+      "reasonNotFound": "no encontrado",
+      "reasonNotBulkActionable": "decidir una a una"
     },
     "approvalWaiting": {
       "byManager": "Esperando a que alguien que gestione este proyecto apruebe o rechace la llamada.",
@@ -20368,7 +20453,21 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Entrega: connector — solo en el servidor. El valor nunca entra en el entorno del sandbox.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "El ámbito de entrega no está disponible. Pide al agente que confirme dónde se usará este valor antes de guardarlo.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Cifrado en reposo. La entrega sigue el ámbito mostrado arriba.",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Introduce el valor solicitado abajo. Comprueba su ámbito de entrega antes de guardarlo. El valor está cifrado en reposo."
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Introduce el valor solicitado abajo. Comprueba su ámbito de entrega antes de guardarlo. El valor está cifrado en reposo.",
+    "approvalParameters": {
+      "to": "Para",
+      "cc": "CC",
+      "bcc": "CCO",
+      "subject": "Asunto",
+      "from": "De",
+      "none": "Ninguno",
+      "attachments": "Adjuntos",
+      "idsOnlyHint": "Esta llamada no muestra contenido que revisar. Cualquier descripción del agente no está verificada.",
+      "resolvedUnavailable": "No se pudo cargar el borrador. Revisa con cuidado la descripción del agente.",
+      "aboutDescription": "Acerca de esta descripción",
+      "senderUnavailable": "No se pudo cargar la cuenta de envío. Revisa la fila De.",
+      "quoted": "«{text}»"
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "Reinicio de incorporación",
@@ -21541,7 +21640,10 @@
       "dictationDescription": "Dicta un prompt en lugar de escribirlo."
     },
     "appStore": "App Store",
-    "googlePlay": "Google Play"
+    "googlePlay": "Google Play",
+    "scanTitle": "Escanea para obtener la app",
+    "scanDescription": "Apunta la cámara del móvil al código. Abre la App Store o Google Play.",
+    "qrLabel": "Código QR de la app móvil de Kortix"
   },
   "capture": {
     "authorize": {

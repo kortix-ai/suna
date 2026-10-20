@@ -115,6 +115,11 @@ function renderHelp(): string {
     '  --debug  Print resolved host, account and credential source to stderr (also KORTIX_DEBUG=1).',
   );
   lines.push('');
+  lines.push('  Inside a Kortix sandbox, plain commands use the delegated session identity,');
+  lines.push('  not stored host credentials. KORTIX_DISABLE_SANDBOX_ENV_FILE=1 disables the');
+  lines.push('  sandbox env-file fallback. To use stored credentials, also unset exported KORTIX_TOKEN,');
+  lines.push('  KORTIX_API_URL, KORTIX_FRONTEND_URL and KORTIX_PROJECT_ID for that invocation.');
+  lines.push('');
   return lines.join('\n');
 }
 

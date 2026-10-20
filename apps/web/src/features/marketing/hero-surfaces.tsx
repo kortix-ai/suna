@@ -17,6 +17,7 @@ import {
   DeviceMobileIcon as Smartphone,
   TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
+import { MOBILE_SHOTS } from '@/features/marketing/download/card-images';
 import { useTranslations } from '@/i18n/use-translations';
 import { useTheme } from 'next-themes';
 import Image from 'next/image';
@@ -313,12 +314,6 @@ function EmailSurface() {
   );
 }
 
-const MOBILE_SHOTS = [
-  '/images/mobile-app/app-1.png',
-  '/images/mobile-app/app-2.png',
-  '/images/mobile-app/app-3.png',
-];
-
 function MobileSurface() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
@@ -334,7 +329,7 @@ function MobileSurface() {
 
       {/* Which axis binds flips at sm. On a phone the row is 344px wide, so the
           binding constraint is width: each card takes a third of it and derives
-          its height from the shots' real 1080x2337 aspect, which is why the
+          its height from the shots' real 640x1385 aspect, which is why the
           ratio is written out rather than rounded. Height-bound (the desktop
           rule) measured 386px of phones inside 344px and sliced the outer two in
           half. From sm up there is width to spare and height is the binding
@@ -347,7 +342,7 @@ function MobileSurface() {
             key={src}
             className={cn(
               'border-border bg-background flex justify-center overflow-hidden rounded-2xl border shadow-md',
-              'aspect-[1080/2337] max-h-full min-w-0 flex-1',
+              'aspect-[640/1385] max-h-full min-w-0 flex-1',
               'sm:aspect-auto sm:h-full sm:max-h-[460px] sm:w-auto sm:flex-none',
               i === 1 ? 'sm:-translate-y-3' : 'sm:translate-y-3',
             )}
