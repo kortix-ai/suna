@@ -144,6 +144,7 @@ git -c http.extraHeader="$AUTH" push origin HEAD:refs/heads/ci-update
 | `403` | `token is scoped to a different project` | The token is bound to another project. |
 | `404` | `Not found` | The project does not exist or was deleted. |
 | `409` | `Repository changed during authorization; retry the request` | Someone replaced the repository while you connected. Retry. |
+| `409` | `Kortix cannot reach <owner>/<repo>: …`, printed as `remote: …` | The repository is disconnected. See [Repository disconnected](#repository-disconnected). |
 | `502` | `No git upstream is configured for this project` or `git upstream unreachable` | Kortix cannot reach the upstream repository. Check the connection under **Git repo**. |
 | `503` | `git_credential_unavailable` | Kortix could not get a credential for the upstream. Retry when the body says `retry: true`. Otherwise check the connection. |
 
@@ -443,6 +444,26 @@ datasets/raw export-ignore
 | `reconnect_required` | The Kortix GitHub App installation is missing, unusable, or does not match the repository. Open the `install_url` in the response to install the App again. |
 | `unavailable` | Kortix cannot reach the repository for a reason you cannot fix with the App. |
 | `not_connected` | The project has no repository. |
+
+### Repository disconnected
+
+Kortix reaches a GitHub repository through the Kortix GitHub App installed on the repository's owner. When that access goes away, the project is **disconnected**. `GET /v1/projects/<project_id>/git/connection` then returns `state: reconnect_required`, `reason: repository_disconnected`, a `disconnected_reason`, a `message` with the cause and the fix, and an `install_url`.
+
+| `disconnected_reason` | Cause | Fix |
+| --- | --- | --- |
+| `app_uninstalled` | The Kortix GitHub App was uninstalled from the owner, or its connection was removed from your Kortix account. | A GitHub owner of the organization reinstalls the App: **Customize → Settings → Git repo → Reconnect GitHub**. |
+| `app_suspended` | An owner suspended the App on GitHub. | A GitHub owner unsuspends it under GitHub **Settings → GitHub Apps**. |
+| `repo_not_accessible` | The repository was deleted, renamed, or removed from the App's repository access. | A GitHub owner adds the repository again under GitHub **Settings → GitHub Apps → Kortix → Repository access**, or you replace the repository. |
+
+While a project is disconnected:
+
+- Every API route that reads the repository answers `409` with `code: repository_disconnected`, the `reason`, and the same message. The project detail still loads: its `config.manifest_version.unknown_reason` is `repository_disconnected` and `git_connection.status` is `error`.
+- Session create and start fail at once with that `409`. A session that is already running keeps running.
+- Scheduled triggers skip each run and record the message as the trigger's last error. They do not retry.
+- `git clone`, `fetch` and `push` through the Kortix git origin print the message as `remote: …`.
+- The web app shows **GitHub disconnected** in the sidebar, in **Git repo** and on a session that cannot start. `kortix projects info` prints the reason and the reconnect link.
+
+Kortix checks GitHub again at most every 5 minutes. After the fix on GitHub, the project reconnects on the next check. Reconnecting through **Reconnect GitHub** checks at once, and a project that stored the old installation moves to the new one.
 
 ### Replace the repository
 

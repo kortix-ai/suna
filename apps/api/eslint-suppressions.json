@@ -1696,7 +1696,7 @@
       "count": 1
     },
     "no-console": {
-      "count": 3
+      "count": 2
     }
   },
   "src/projects/lib/legacy-runtime-bootstrap-wiring.ts": {

@@ -1,4 +1,15 @@
 {
+  "repositoryDisconnected": {
+    "title": "GitHub je isključen",
+    "reconnect": "Ponovo poveži GitHub",
+    "openSettings": "Otvori Git podešavanja",
+    "reconnectError": "Stranica za instalaciju GitHub-a nije otvorena. Pokušaj ponovo.",
+    "reasons": {
+      "app_uninstalled": "Kortix GitHub App je deinstaliran sa {owner}, pa Kortix ne može da pristupi {repository}. GitHub vlasnik za {owner} mora ponovo da ga instalira.",
+      "app_suspended": "Kortix GitHub App je suspendovan na {owner}, pa Kortix ne može da pristupi {repository}. GitHub vlasnik za {owner} mora da ukine suspenziju u GitHub podešavanjima.",
+      "repo_not_accessible": "Kortix ne može da pristupi {repository}. Repozitorijum je obrisan, preimenovan ili uklonjen iz Kortix GitHub App-a. GitHub vlasnik za {owner} mora ponovo da ga doda."
+    }
+  },
   "repositoryChange": {
     "changedToast": "Репозиторијум је промењен. Нове сесије ће користити нови репозиторијум.",
     "verifyError": "Није могуће проверити приступ GitHub-у.",

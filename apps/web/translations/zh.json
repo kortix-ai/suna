@@ -1,4 +1,15 @@
 {
+  "repositoryDisconnected": {
+    "title": "GitHub 已断开",
+    "reconnect": "重新连接 GitHub",
+    "openSettings": "打开 Git 设置",
+    "reconnectError": "无法打开 GitHub 安装页面。请重试。",
+    "reasons": {
+      "app_uninstalled": "Kortix GitHub App 已从 {owner} 卸载，Kortix 无法访问 {repository}。{owner} 的 GitHub 所有者必须重新安装它。",
+      "app_suspended": "Kortix GitHub App 在 {owner} 上已被暂停，Kortix 无法访问 {repository}。{owner} 的 GitHub 所有者必须在 GitHub 设置中解除暂停。",
+      "repo_not_accessible": "Kortix 无法访问 {repository}。该仓库已被删除、重命名或从 Kortix GitHub App 中移除。{owner} 的 GitHub 所有者必须重新添加它。"
+    }
+  },
   "repositoryChange": {
     "changedToast": "仓库已更改。新会话将使用新仓库。",
     "verifyError": "无法验证 GitHub 访问权限。",

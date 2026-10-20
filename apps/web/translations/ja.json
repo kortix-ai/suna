@@ -1,4 +1,15 @@
 {
+  "repositoryDisconnected": {
+    "title": "GitHub の接続が切れています",
+    "reconnect": "GitHub を再接続",
+    "openSettings": "Git 設定を開く",
+    "reconnectError": "GitHub のインストールページを開けませんでした。もう一度お試しください。",
+    "reasons": {
+      "app_uninstalled": "Kortix GitHub App が {owner} からアンインストールされたため、Kortix は {repository} にアクセスできません。{owner} の GitHub オーナーが再インストールする必要があります。",
+      "app_suspended": "Kortix GitHub App が {owner} で停止されているため、Kortix は {repository} にアクセスできません。{owner} の GitHub オーナーが GitHub の設定で停止を解除する必要があります。",
+      "repo_not_accessible": "Kortix は {repository} にアクセスできません。リポジトリが削除、名前変更、または Kortix GitHub App から外されました。{owner} の GitHub オーナーがもう一度追加する必要があります。"
+    }
+  },
   "repositoryChange": {
     "changedToast": "リポジトリを変更しました。新しいセッションでは新しいリポジトリを使用します。",
     "verifyError": "GitHub へのアクセスを確認できませんでした。",

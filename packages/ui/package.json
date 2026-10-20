@@ -530,6 +530,7 @@
     "./workspace/projects/onboarding/connect-app": "./src/workspace/projects/onboarding/connect-app.ts",
     "./workspace/projects/policies-panel": "./src/workspace/projects/policies-panel.tsx",
     "./workspace/projects/session-shared-icon": "./src/workspace/projects/session-shared-icon.tsx",
+    "./workspace/repository-disconnected": "./src/workspace/repository-disconnected.tsx",
     "./workspace/review/map": "./src/workspace/review/map.ts",
     "./workspace/review/mock-data": "./src/workspace/review/mock-data.ts",
     "./workspace/review/review-center": "./src/workspace/review/review-center.tsx",
@@ -2554,6 +2555,10 @@
       "./workspace/projects/session-shared-icon": {
         "types": "./dist/workspace/projects/session-shared-icon.d.ts",
         "import": "./dist/workspace/projects/session-shared-icon.js"
+      },
+      "./workspace/repository-disconnected": {
+        "types": "./dist/workspace/repository-disconnected.d.ts",
+        "import": "./dist/workspace/repository-disconnected.js"
       },
       "./workspace/review/map": {
         "types": "./dist/workspace/review/map.d.ts",
