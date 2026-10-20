@@ -7,7 +7,7 @@ import {
   DocRail,
   docRailItem,
 } from '@/features/marketing/doc-rail';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { ArrowLeftIcon, ArrowRightIcon, ArrowUpRightIcon, type Icon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';

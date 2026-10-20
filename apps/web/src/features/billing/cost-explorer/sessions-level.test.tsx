@@ -14,13 +14,13 @@ import {
   QueryObserver,
 } from '@tanstack/react-query';
 
-import { TableRow } from '@/components/ui/table';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { TableRow } from '@kortix/ui/table';
+import { TooltipProvider } from '@kortix/ui/tooltip';
 import {
   buildSessionCostsListQuery,
   SESSION_COST_PAGE_SIZE,
-} from '@/hooks/billing/use-session-costs';
-import { BillingAccountProvider } from '@/stores/billing-account-context';
+} from '@kortix/ui/internal/billing/use-session-costs';
+import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 
 import { CostSortHeader } from './cost-sort-header';
 import { collectElementsByType } from './react-element-tree';

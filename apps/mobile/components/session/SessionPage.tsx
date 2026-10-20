@@ -77,6 +77,7 @@ import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import { ComposerBottomFade, composerSafeAreaPadding } from '@/components/session/composer-bottom-fade';
+import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
 
 import {
   addOptimisticMessage,
@@ -305,9 +306,20 @@ const KEYBOARD_MOTION_MAX_MS = 1000;
 /** How long a pull-to-refresh shows its spinner: the re-read is one bounded tail page. */
 const PULL_REFRESH_SPINNER_MS = 800;
 
-/** Keeps the first visible turn in place while older turns prepend (COR-144). */
+/**
+ * Keeps the first visible turn in place while older turns prepend (COR-144).
+ * Never always on: iOS anchors the first cell whose top is on screen, so a
+ * fold opened in a taller turn above it ("Worked for", a burst) moved the
+ * whole thread on every tap (2026-10-20).
+ */
 const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 } as const;
+/**
+ * Clear space between the last line of the thread and the composer's top edge.
+ * The composer is translucent (Liquid Glass on iOS): without it the last line
+ * rests flush on the card and reads as text under the input.
+ */
+const LIST_END_GAP = 12;
 /**
  * iOS: the list draws past its bottom edge. The keyboard is Liquid Glass and
  * shows what lies under it; the list ends at the keyboard, so without this
@@ -399,11 +411,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const bottomInsetRef = useRef(bottomInset);
   bottomInsetRef.current = bottomInset;
   const endPaddingStyle = useAnimatedStyle(() => ({
-    height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value),
+    height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value) + LIST_END_GAP,
   }));
   /** The end padding as the room reads it (the UI thread's last value). */
   const endPaddingNow = useCallback(
-    () => composerAreaHeightRef.current + bottomInsetRef.current * (1 - keyboardProgress.value),
+    () => composerAreaHeightRef.current + bottomInsetRef.current * (1 - keyboardProgress.value) + LIST_END_GAP,
     [keyboardProgress],
   );
   const { sandboxUrl } = useSandboxContext();
@@ -2463,9 +2475,12 @@ const SCROLL_BUTTON_EASING = ReanimatedEasing.bezier(0.23, 1, 0.32, 1);
  * of content away from the end. Opacity + scale 0.97 → 1, `duration-normal`
  * in, `duration-fast` out. Tapping glides to the end and follows from there.
  *
- * The `secondary` round button with a 1pt `border-border` ring on every
- * platform (Jay, 2026-09-22), so it separates from the prose scrolling under
- * it. No native Liquid Glass: SwiftUI glass cannot carry the border.
+ * iOS 26+: a glass circle (`LiquidGlassCapsule`, 40pt) behind the ghost
+ * button and caret, the same recipe as every hamburger (`MenuButton`) and the
+ * composer card it sits above (Jay, 2026-10-20). Android, older iOS and a
+ * binary without `ExpoUI` keep the `secondary` round button with a 1pt
+ * `border-border` ring (Jay, 2026-09-22), so it separates from the prose
+ * scrolling under it.
  */
 function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress: () => void }) {
   const progress = useSharedValue(visible ? 1 : 0);
@@ -2493,13 +2508,14 @@ function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress:
       style={[{ position: 'absolute', right: 16, bottom: 10, zIndex: 20 }, style]}
     >
       <Button
-        variant="secondary"
+        variant={LIQUID_GLASS_AVAILABLE ? 'ghost' : 'secondary'}
         size="icon"
-        className="rounded-full border border-border"
+        className={LIQUID_GLASS_AVAILABLE ? 'rounded-full' : 'rounded-full border border-border'}
         accessibilityLabel="Scroll to bottom"
         onPress={onPress}
       >
-        <Icon as={CaretDownIcon} size={20} />
+        {LIQUID_GLASS_AVAILABLE ? <LiquidGlassCapsule /> : null}
+        <Icon as={CaretDownIcon} size={20} className="text-foreground" />
       </Button>
     </Reanimated.View>
   );

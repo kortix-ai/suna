@@ -3,11 +3,11 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { PhoneInput as PhoneInputComponent } from '@/components/ui/phone-input';
-import { errorToast } from '@/components/ui/toast';
-import { FieldLabel } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { PhoneInput as PhoneInputComponent } from '@kortix/ui/phone-input';
+import { errorToast } from '@kortix/ui/toast';
+import { FieldLabel } from '@kortix/ui/internal/auth/auth-primitives';
 
 function getUserCountryCode(): string {
   if (typeof window === 'undefined') return 'US';

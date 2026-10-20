@@ -1,6 +1,6 @@
 import { testUiTranslator } from '@/i18n/test-translator';
 import { expect, test } from 'bun:test';
-import { assembleCatalogEntries } from './use-catalog';
+import { assembleCatalogEntries } from '@kortix/ui/customize/connectors/catalog/use-catalog';
 test('empty provider pages stay empty and native computer search is local', () => {
   const input = {
     source: 'discover',

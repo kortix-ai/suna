@@ -562,9 +562,8 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   }
 
   if (json) {
-    // `model`: the stored resolved model pin, read through the SDK, never
-    // from `metadata` directly (the server bakes the resolution at create).
-    emitJson(sessions.map((s) => ({ ...s, model: sessionModelPin(s) })));
+    // New APIs report the durable conversation selection. Keep old servers compatible.
+    emitJson(sessions.map((s) => ({ ...s, model: s.model === undefined ? sessionModelPin(s) : s.model })));
     return 0;
   }
 
@@ -589,7 +588,7 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   const byW = Math.min(Math.max(...sessions.map((s) => startedByLabel(s, viewer).length), 10), 24);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('NAME', labelW)}   ${pad('STARTED BY', byW)}   ${showChildren ? 'CHILDREN  ' : ''}STATUS         BRANCH                                    UPDATED${showLabels ? '     LABELS' : ''}${C.reset}\n`,
+    `  ${C.dim}${pad('NAME', labelW)}   ${pad('STARTED BY', byW)}   ${showChildren ? 'CHILDREN  ' : ''}COMPUTER       BRANCH                                    UPDATED${showLabels ? '     LABELS' : ''}${C.reset}\n`,
   );
   for (const s of sessions) {
     process.stdout.write(
@@ -719,9 +718,8 @@ async function sessionsNew(
   // Shared by --wait (readiness before returning) and the post-create connect
   // path (attach needs a live runtime).
   const awaitReadiness = async (): Promise<boolean> => {
-    if (!json) {
-      process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
-    }
+    process.stderr.write(`Session ${created.session_id}: created (${created.status}); waiting for readiness…\n`);
+    let previousStage = '';
     let ready = false;
     for (let i = 0; i < 75; i += 1) {
       if (i > 0) await new Promise((r) => setTimeout(r, 4000));
@@ -730,6 +728,10 @@ async function sessionsNew(
           stage: 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
           reason?: string;
         }>(`/projects/${ctx.projectId}/sessions/${created.session_id}/start`, {});
+        if (start.stage !== previousStage) {
+          process.stderr.write(`Session ${created.session_id}: ${start.stage}\n`);
+          previousStage = start.stage;
+        }
         created = await ctx.client.get<ProjectSession>(
           `/projects/${ctx.projectId}/sessions/${created.session_id}`,
         );
@@ -967,8 +969,9 @@ async function sessionsInfo(
   process.stdout.write(`  ${C.bold}${s.name ?? shortId(s.session_id)}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}session_id ${C.reset}${s.session_id}\n`);
   process.stdout.write(
-    `  ${C.dim}status     ${C.reset}${statusColor(s.status)}${s.status}${C.reset}\n`,
+    `  ${C.dim}computer   ${C.reset}${statusColor(s.status)}${s.status}${C.reset}\n`,
   );
+  if (s.working) process.stdout.write(`  ${C.dim}activity   ${C.reset}${s.working.state}\n`);
   process.stdout.write(`  ${C.dim}branch     ${C.reset}${s.branch_name}\n`);
   process.stdout.write(`  ${C.dim}base_ref   ${C.reset}${s.base_ref}\n`);
   process.stdout.write(`  ${C.dim}agent      ${C.reset}${s.agent_name}\n`);

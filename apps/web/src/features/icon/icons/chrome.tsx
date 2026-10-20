@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /** Chrome brand mark, full colour. Source: gilbarbara/logos (CC0), `logos:chrome`. */
 export const Chrome = ({ className }: { className?: string }) => {

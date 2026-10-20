@@ -36,17 +36,17 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@kortix/ui/toast';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import Hint from '@/components/ui/hint';
-import { InlineMeta } from '@/components/ui/inline-meta';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import Hint from '@kortix/ui/hint';
+import { InlineMeta } from '@kortix/ui/inline-meta';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -55,26 +55,26 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
+} from '@kortix/ui/modal';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Textarea } from '@kortix/ui/textarea';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   AccessList,
-  AccessRow,
   type KebabItem,
   RBAC_UPSELL_MESSAGE,
   builtinRoleDescriptor,
   pluralize,
-} from '@/features/workspace/shared/access';
+} from '@kortix/ui/access/access/index';
+import { AccessRow } from '@kortix/ui/access';
 import {
   type IamRole,
   type ResourceType,

@@ -5,7 +5,7 @@ const DEFAULT_SOURCE_URL = 'https://models.dev/api.json';
 // Was 24h — a full day for a new model launch (or a provider's own metadata
 // fix) to reach every deployment is a bad user experience once the web
 // connect modal reads this SAME live catalog instead of a baked snapshot
-// (see apps/web/src/lib/llm-providers.ts). 1h is a large freshness win (24x)
+// (see packages/ui/src/internal/lib/llm-providers.ts). 1h is a large freshness win (24x)
 // while staying trivially light on models.dev — one small JSON GET/hour per
 // deployment, no auth, no burst — and the existing atomic last-known-good
 // swap (see `refresh` below) makes ANY interval safe: a failed/slow fetch

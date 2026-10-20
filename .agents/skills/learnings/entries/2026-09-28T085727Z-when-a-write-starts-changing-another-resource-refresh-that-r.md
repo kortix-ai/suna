@@ -10,4 +10,4 @@ incident_date: 2026-09-28
 
 **Incident:** dev, 2026-09-28, after PR #7657. A share switched the session's ChatGPT selection on the server. The web share dialog refreshed only `qk.project.sessionsScope`, so the Provider keys panel showed the pre-share selection as "1 selected key is unavailable". Its **Remove unavailable keys** and **Save changes** would have stored an empty selection and stopped the model. Caught during dev verification. PR #7958.
 
-**Enforcement:** `apps/web/src/features/workspace/project-sidebar/modal/share-session-cache.test.ts` (a share invalidates exactly the shared session's pool query).
+**Enforcement:** `packages/ui/src/workspace/sidebar/modal/share-session-cache.test.ts` (a share invalidates exactly the shared session's pool query).

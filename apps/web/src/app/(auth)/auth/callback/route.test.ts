@@ -13,7 +13,7 @@ mock.module('@/lib/supabase/server', () => ({ createClient: async () => ({ auth:
   getSession: async () => ({ data: { session: null } }),
 } }) }));
 const { GET } = await import('./route');
-const { AUTH_BOUNCE_COOKIE } = await import('@/lib/onboarding/landing-destination');
+const { AUTH_BOUNCE_COOKIE } = await import('@kortix/ui/internal/lib/onboarding/landing-destination');
 const request = (query: string, cookie = '') => new NextRequest(`http://localhost:13000/auth/callback?${query}`, { headers: { cookie } });
 const location = (response: Response) => {
   const url = response.headers.get('location');

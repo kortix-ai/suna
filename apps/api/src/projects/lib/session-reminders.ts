@@ -355,8 +355,8 @@ export async function insertSessionReminder(input: {
 
 /**
  * Turn a reminder on or off. On re-arms from now: a recurring reminder fires one period
- * (or the next cron slot) later; a one-shot reminder that never fired fires at its
- * `at`, or at once when `at` already passed; a one-shot reminder that fired stays done.
+ * (or the next cron slot) later; an unfired one-shot restarts its original delay
+ * from creation to `at`. A one-shot reminder that fired stays done.
  */
 export async function setSessionReminderEnabled(row: RuntimeRow, enabled: boolean, now: Date): Promise<RuntimeRow> {
   const spec = row.scheduleSpec as unknown as GitTriggerSpec;
@@ -364,7 +364,9 @@ export async function setSessionReminderEnabled(row: RuntimeRow, enabled: boolea
     ? null
     : spec.runAt && row.lastScheduledFor
       ? null
-      : nextTriggerScheduleSlot(spec, now, { includePastOneOff: true });
+      : spec.runAt && spec.reminder
+        ? new Date(now.getTime() + Date.parse(spec.runAt) - Date.parse(spec.reminder.createdAt))
+        : nextTriggerScheduleSlot(spec, now, { includePastOneOff: true });
   const [updated] = await db
     .update(projectTriggerRuntime)
     .set({ enabled, nextFireAt, updatedAt: now })
