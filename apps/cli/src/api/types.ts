@@ -145,6 +145,8 @@ export type OauthPollResponse =
 // ── Sessions ──────────────────────────────────────────────────────────────
 
 export interface ProjectSession {
+  /** Durable conversation model; absent on older APIs. */
+  model?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;

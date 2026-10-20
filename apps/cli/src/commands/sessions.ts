@@ -562,9 +562,8 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   }
 
   if (json) {
-    // `model`: the stored resolved model pin, read through the SDK, never
-    // from `metadata` directly (the server bakes the resolution at create).
-    emitJson(sessions.map((s) => ({ ...s, model: sessionModelPin(s) })));
+    // New APIs report the durable conversation selection. Keep old servers compatible.
+    emitJson(sessions.map((s) => ({ ...s, model: s.model === undefined ? sessionModelPin(s) : s.model })));
     return 0;
   }
 

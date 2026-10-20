@@ -44,6 +44,7 @@ import { notifySessionShared } from '../lib/notification-recipients';
 import { notificationsEnabled } from '../../notifications/enabled';
 import { createSession, deleteSession, restoreSession } from '../session-lifecycle';
 import { sessionRestoreUntil } from '../session-log-purge';
+import { readSessionConversationModels } from '../session-log-read';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
@@ -101,15 +102,17 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
   // The same owner resolution the list uses: without it a read-by-id reported
   // owner_type 'unknown' and no owner name for the very session the list named.
   const personId = personUserId(c, loaded);
-  const [owners, userStates] = await Promise.all([
+  const [owners, userStates, conversationModels] = await Promise.all([
     visible.row.createdBy
       ? resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)
       : undefined,
     personId ? loadSessionUserStates([sessionId], personId) : undefined,
+    readSessionConversationModels([sessionId]),
   ]);
   const owner = visible.row.createdBy ? owners?.get(visible.row.createdBy) : undefined;
   return c.json(serializeSession(visible.row, {
     grants: visible.grants,
+    conversationModel: conversationModels.get(sessionId),
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
     ownerIsMachine: visible.ownerIsMachine,
@@ -486,6 +489,9 @@ export function registerProjectSessionsRoutes(): void {
       return c.json({ error: 'Project manager access is required to list every session' }, 403);
     }
 
+    const conversationModels = await readSessionConversationModels(
+      inventory.items.filter((item) => item.canAccess).map((item) => item.row.sessionId),
+    );
     const body = inventory.items.map((item) => {
       const row = item.row;
       const owner = row.createdBy ? inventory.ownerIdentities.get(row.createdBy) : null;
@@ -509,6 +515,7 @@ export function registerProjectSessionsRoutes(): void {
         // The inventory listing drops the write-only heavy metadata keys. The
         // single-session read below still returns metadata whole.
         trimListMetadata: true,
+        conversationModel: conversationModels.get(row.sessionId),
       });
       if (query.parent !== 'root') return serialized;
       return {
