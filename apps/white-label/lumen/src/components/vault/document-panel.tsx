@@ -50,8 +50,13 @@ export function DocumentPanel({ documentId, focus, onClose }: { documentId: stri
   useEffect(() => setTab(focusKey ? 'text' : 'preview'), [documentId, focusKey]);
   useEffect(() => {
     if (tab !== 'text' || !doc || !focus) return;
-    const sel = focus.a ? `[data-anchor="${focus.a}"]` : focus.page ? `[data-page="${focus.page}"]` : null;
-    const el = sel ? textRef.current?.querySelector(sel) : null;
+    const root = textRef.current;
+    // An anchor wins; a search hit (page + terms) scrolls to the first marked term on that page.
+    const el = focus.a
+      ? root?.querySelector(`[data-anchor="${focus.a}"]`)
+      : focus.page
+        ? (root?.querySelector(`[data-on-page="${focus.page}"] mark`) ?? root?.querySelector(`[data-page="${focus.page}"]`))
+        : null;
     el?.scrollIntoView({ block: 'center' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, doc?._id, focusKey]);
@@ -109,7 +114,7 @@ export function DocumentPanel({ documentId, focus, onClose }: { documentId: stri
                           Page {p.page}
                         </p>
                       )}
-                      <p data-anchor={a} className={cn('rounded-md', hit && 'bg-brand/8 -mx-2 px-2 py-1 ring-1 ring-brand/30')}>
+                      <p data-anchor={a} data-on-page={p.page} className={cn('rounded-md', hit && 'bg-brand/8 -mx-2 px-2 py-1 ring-1 ring-brand/30')}>
                         <Marked text={p.text} mark={hit || !focus?.a ? focus?.mark : undefined} />
                       </p>
                     </Fragment>

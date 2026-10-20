@@ -108,6 +108,7 @@ function Grid({ view, selected, onSelect, onRerun, busy }: {
                       data-review={cell?.reviewStatus}
                       data-col={col.key}
                       onClick={() => onSelect(k)}
+                      ref={selected === k ? (el) => el?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) : undefined}
                       className={cn(
                         'flex h-auto min-h-11 w-52 flex-col items-start justify-start gap-1 whitespace-normal rounded-none px-3 py-2 text-left text-[13px] font-normal hover:bg-muted/40',
                         selected === k && 'bg-brand/5 ring-1 ring-inset ring-brand/40',
@@ -128,7 +129,7 @@ function Grid({ view, selected, onSelect, onRerun, busy }: {
   );
 }
 
-function CellPanel({ view, k, onClose }: { view: View; k: string; onClose: () => void }) {
+function CellPanel({ view, k, onClose, onMove }: { view: View; k: string; onClose: () => void; onMove: (k: string) => void }) {
   const [docId, key] = k.split(':') as [Id<'documents'>, string];
   const cell = view.cells.find((c) => c.documentId === docId && c.columnKey === key);
   const col = view.columns.find((c) => c.key === key)!;
@@ -141,6 +142,36 @@ function CellPanel({ view, k, onClose }: { view: View; k: string; onClose: () =>
       errorToast('Could not save', { description: errorText(e) }),
     );
   const done = cell && cell.state !== 'pending';
+  const startEdit = () => cell && setEditing(cellText(cell, col.format as CellFormat) === 'Not addressed' ? '' : cellText(cell, col.format as CellFormat));
+
+  // The grid's keyboard: arrows move, V verifies, F flags, E edits, Esc closes. Typing in a field is left alone.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || (e.target as HTMLElement).closest('input, textarea, [contenteditable="true"], [role="dialog"]')) return;
+      const docs = view.documents.map((d) => d._id as string);
+      const cols = view.columns.map((c) => c.key);
+      const [r, c] = [docs.indexOf(docId), cols.indexOf(key)];
+      const go = (rr: number, cc: number) => {
+        if (!docs[rr] || !cols[cc]) return;
+        e.preventDefault();
+        onMove(`${docs[rr]}:${cols[cc]}`);
+      };
+      const k = e.key.toLowerCase();
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowUp') go(r - 1, c);
+      else if (e.key === 'ArrowDown') go(r + 1, c);
+      else if (e.key === 'ArrowLeft') go(r, c - 1);
+      else if (e.key === 'ArrowRight') go(r, c + 1);
+      else if (done && k === 'v') void act(cell.reviewStatus === 'verified' ? 'clear' : 'verify');
+      else if (done && k === 'f') void act(cell.reviewStatus === 'flagged' ? 'clear' : 'flag');
+      else if (done && k === 'e') {
+        e.preventDefault();
+        startEdit();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   return (
     <aside className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4" data-testid="cell-panel">
@@ -182,7 +213,7 @@ function CellPanel({ view, k, onClose }: { view: View; k: string; onClose: () =>
         </div>
       )}
       {cell?.note && <p className="text-xs leading-relaxed text-muted-foreground">{cell.note}</p>}
-      {done && (
+      {done && editing === null && (
         <div className="flex flex-wrap gap-1.5">
           <Button size="sm" variant={cell.reviewStatus === 'verified' ? 'default' : 'outline'} className="h-7" onClick={() => act(cell.reviewStatus === 'verified' ? 'clear' : 'verify')}>
             <CheckCircleIcon className="size-4" /> {cell.reviewStatus === 'verified' ? 'Verified' : 'Verify'}
@@ -190,13 +221,18 @@ function CellPanel({ view, k, onClose }: { view: View; k: string; onClose: () =>
           <Button size="sm" variant={cell.reviewStatus === 'flagged' ? 'default' : 'outline'} className="h-7" onClick={() => act(cell.reviewStatus === 'flagged' ? 'clear' : 'flag')}>
             <FlagIcon className="size-4" /> {cell.reviewStatus === 'flagged' ? 'Flagged' : 'Flag'}
           </Button>
-          <Button size="sm" variant="outline" className="h-7" onClick={() => setEditing(cellText(cell, col.format as CellFormat) === 'Not addressed' ? '' : cellText(cell, col.format as CellFormat))}>
+          <Button size="sm" variant="outline" className="h-7" onClick={startEdit}>
             <PencilSimpleIcon className="size-4" /> Edit
           </Button>
           {cell.edited && (
             <Button size="sm" variant="ghost" className="h-7" onClick={() => act('revert')}>Back to the AI answer</Button>
           )}
         </div>
+      )}
+      {done && editing === null && (
+        <p className="hidden font-mono text-[11px] text-muted-foreground md:block" aria-hidden>
+          ←↑↓→ move · V verify · F flag · E edit · Esc close
+        </p>
       )}
       <div className="space-y-2">
         {cell?.citations.map((c, i) => <CitationCard key={i} c={c} n={i + 1} />)}
@@ -325,7 +361,7 @@ export default function ReviewPage() {
             onRerun={(key) => rerun({ reviewId, columnKey: key }).catch((e) => errorToast('Could not re-run the column', { description: errorText(e) }))}
           />
         </div>
-        {selected && <CellPanel view={view} k={selected} onClose={() => setSelected(null)} />}
+        {selected && <CellPanel view={view} k={selected} onClose={() => setSelected(null)} onMove={setSelected} />}
       </div>
       {adding && <AddColumns view={view} onClose={() => setAdding(false)} />}
     </div>
