@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test';
 import type { ReactNode } from 'react';
+import messages from '../../../../../translations/en.json';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 // The app's Bun tests have no DOM and Radix's portal renders nothing under
@@ -115,7 +116,7 @@ describe('ProfileTabView', () => {
   });
 
   test('the deletion entry point explains the cancellable default before confirmation', () => {
-    const out = html();
+    const out = renderToStaticMarkup(<ProfileTabView copy={messages.settings.profile} />);
     expect(out).toContain('Schedule account deletion. You can cancel before the scheduled date.');
     expect(out).not.toContain('This cannot be undone.');
   });
