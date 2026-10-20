@@ -112,7 +112,9 @@ function mount(items: ReviewItem[], cans: Leaves) {
             isFetched
             recoveringCrId={null}
             onAct={(id, verdict) => calls.push(`act ${id} ${verdict}`)}
-            onBulkAct={(ids, verdict) => calls.push(`bulk ${ids.join(',')} ${verdict}`)}
+            onBulkAct={(ids, verdict) => {
+              calls.push(`bulk ${ids.join(',')} ${verdict}`);
+            }}
             verdictAllowed={(item, verdict) => reviewVerdictAllowed(item, verdict, cans)}
           />
         </NextIntlClientProvider>

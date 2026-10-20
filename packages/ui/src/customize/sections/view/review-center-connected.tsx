@@ -50,7 +50,6 @@ import {
   crChangeRequestId,
   isApprovalExpiredError,
   itemDeepLink,
-  planBulkAction,
 } from '../../../workspace/review/review-actions';
 import { ReviewCenter } from '../../../workspace/review/review-center';
 
@@ -282,46 +281,12 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
     act.mutate({ id, verdict, feedback }, { onError: (e) => errorToast(e.message) });
   }
 
-  // Bulk (multi-select) verdicts: the presentational layer pre-filters the
-  // selection through `resolveBulkOutcome` (same pure helper), so what
-  // arrives here is already actionable. Only native ids can reach the bulk
-  // mutation. The
-  // guards below are defense in depth, not the primary filter:
-  //  - an connector approval is a live question to the agent; a bulk
-  //    "dismiss" must NEVER answer it with a deny, so exec ids resolve only
-  //    from a bulk action. Each exact call needs its own parameter review.
-  //  - Change Requests have no bulk path (merging needs the diff in view).
-  function handleBulkAct(ids: string[], verdict: ReviewVerdict) {
-    const { native, resolvable, unsupported } = planBulkAction(ids);
-    if (native.length > 0) {
-      bulk.mutate({ ids: native, verdict }, { onError: (e) => errorToast(e.message) });
-    }
-    if (resolvable.length > 0) {
-      infoToast(
-        tI18nComplete('text869cc2438ce5', {
-          value0: resolvable.length,
-          value1:
-            resolvable.length === 1
-              ? tI18nComplete.raw('texte07615d6ccf5')
-              : tI18nComplete.raw('text15506f3e0de0'),
-        }),
-      );
-    }
-    if (unsupported.length > 0) {
-      infoToast(
-        tI18nComplete('textda39954e705a', {
-          value0: unsupported.length,
-          value1:
-            unsupported.length === 1
-              ? tI18nComplete.raw('text274a70ce834d')
-              : tI18nComplete.raw('textb9ad2f00fba7'),
-          value2:
-            unsupported.length === 1
-              ? tI18nComplete.raw('text2ad8a7049d7c')
-              : tI18nComplete.raw('textc9a8dc336964'),
-        }),
-      );
-    }
+  // Bulk verdicts send every id the inbox chose: native, and `call:` for
+  // Approve and Deny. The server decides each one and answers one result per
+  // id, which the inbox reads for its optimistic update and its toast.
+  async function handleBulkAct(ids: string[], verdict: ReviewVerdict) {
+    const res = await bulk.mutateAsync({ ids, verdict });
+    return res.results;
   }
 
   return (

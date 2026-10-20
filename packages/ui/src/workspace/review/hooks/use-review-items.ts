@@ -68,12 +68,16 @@ export function useBulkActReviewItems() {
   const projectId = ctx?.projectId ?? '';
   const invalidate = useInvalidate(projectId);
   return useMutation<
-    { updated: number; review_items: ApiReviewItem[] },
+    Awaited<ReturnType<typeof bulkActReviewItems>>,
     Error,
     { ids: string[]; verdict: ReviewVerdict }
   >({
     mutationFn: ({ ids, verdict }) => bulkActReviewItems(projectId, { ids, verdict }),
-    onSuccess: invalidate,
+    // A refused id can leave the inbox (expired, decided elsewhere): refetch on
+    // failure too. The caller toasts the error; the no-op keeps the client's
+    // default mutation toast from adding a second one (see the resolve hook).
+    onSettled: invalidate,
+    onError: () => {},
   });
 }
 

@@ -48,6 +48,7 @@ export function SelectionBar({
   actions,
   progress = null,
   animateIn = true,
+  note,
 }: {
   selectedCount: number;
   allSelected: boolean;
@@ -64,6 +65,8 @@ export function SelectionBar({
   progress?: { label: string; done: number; total: number } | null;
   /** False skips the enter animation (select mode opened from the keyboard). */
   animateIn?: boolean;
+  /** A muted line after the count, such as a selection limit. */
+  note?: string;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const reduceMotion = useReducedMotion();
@@ -108,6 +111,9 @@ export function SelectionBar({
         <span className="truncate">
           {progress ? progress.label : t('text1cc5b0d9628f', { count: selectedCount })}
         </span>
+        {note && !progress ? (
+          <span className="text-muted-foreground truncate font-normal">{note}</span>
+        ) : null}
       </span>
       <ButtonGroup className="shrink-0">
         {action({
