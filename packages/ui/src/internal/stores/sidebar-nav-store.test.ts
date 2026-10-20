@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   SIDEBAR_NAV_DEFAULTS,
   type SidebarNavEntry,
+  migrateSidebarNav,
   moveSidebarNavItem,
   normalizeSidebarNav,
   resolveSidebarNav,
@@ -22,6 +23,7 @@ describe('normalizeSidebarNav', () => {
       { id: 'files', visibility: 'never' },
       { id: 'customize', visibility: 'always' },
       { id: 'apps', visibility: 'always' },
+      { id: 'rooms', visibility: 'never' },
     ];
     expect(normalizeSidebarNav(saved)).toEqual(saved);
   });
@@ -32,7 +34,7 @@ describe('normalizeSidebarNav', () => {
       { id: 'settings', visibility: 'always' },
       { id: 'files', visibility: 'never' },
     ]);
-    expect(ids(out)).toEqual(['customize', 'files', 'apps']);
+    expect(ids(out)).toEqual(['customize', 'files', 'apps', 'rooms']);
     expect(out.find((e) => e.id === 'files')?.visibility).toBe('always');
   });
 
@@ -46,7 +48,15 @@ describe('normalizeSidebarNav', () => {
       { id: 'customize', visibility: 'always' },
       { id: 'files', visibility: 'always' },
       { id: 'apps', visibility: 'never' },
+      { id: 'rooms', visibility: 'never' },
     ]);
+  });
+
+  test('Rooms sits in the More menu until the person pins it', () => {
+    expect(normalizeSidebarNav(null).find((e) => e.id === 'rooms')?.visibility).toBe('never');
+    expect(
+      normalizeSidebarNav([{ id: 'rooms', visibility: 'always' }]).find((e) => e.id === 'rooms')?.visibility,
+    ).toBe('always');
   });
 
   test('the retired "active" visibility falls back to the default', () => {
@@ -55,12 +65,26 @@ describe('normalizeSidebarNav', () => {
   });
 });
 
+describe('migrateSidebarNav', () => {
+  test('a v1 layout moves Rooms into More and keeps every other choice', () => {
+    const v1 = { items: [{ id: 'files', visibility: 'never' }, { id: 'rooms', visibility: 'always' }] };
+    const out = migrateSidebarNav(v1, 1).items;
+    expect(out.find((e) => e.id === 'rooms')?.visibility).toBe('never');
+    expect(out.find((e) => e.id === 'files')?.visibility).toBe('never');
+  });
+
+  test('a v2 layout keeps a pinned Rooms row', () => {
+    const v2 = { items: [{ id: 'rooms', visibility: 'always' }] };
+    expect(migrateSidebarNav(v2, 2).items.find((e) => e.id === 'rooms')?.visibility).toBe('always');
+  });
+});
+
 describe('moveSidebarNavItem', () => {
   test('moves a row one step and stops at the edges', () => {
     const items = normalizeSidebarNav(null);
     expect(ids(moveSidebarNavItem(items, 'files', -1)).slice(0, 2)).toEqual(['files', 'customize']);
     expect(ids(moveSidebarNavItem(items, 'customize', -1))).toEqual(ids(items));
-    expect(ids(moveSidebarNavItem(items, 'apps', 1))).toEqual(ids(items));
+    expect(ids(moveSidebarNavItem(items, 'rooms', 1))).toEqual(ids(items));
   });
 });
 
@@ -68,12 +92,12 @@ describe('useSidebarNavStore', () => {
   test('setItems, setVisibility and reset', () => {
     const store = useSidebarNavStore.getState();
     store.setItems(
-      (['files', 'apps', 'customize'] as const).map((id) => ({
+      (['files', 'apps', 'customize', 'rooms'] as const).map((id) => ({
         id,
         visibility: 'always' as const,
       })),
     );
-    expect(ids(useSidebarNavStore.getState().items)).toEqual(['files', 'apps', 'customize']);
+    expect(ids(useSidebarNavStore.getState().items)).toEqual(['files', 'apps', 'customize', 'rooms']);
     store.setVisibility('apps', 'never');
     store.setVisibility('files', 'active' as never); // ignored: not a visibility
     const items = useSidebarNavStore.getState().items;

@@ -1209,8 +1209,15 @@
     {
       "idx": 172,
       "version": "7",
-      "when": 1792503112423,
-      "tag": "20261020133152_cli_device_grants",
+      "when": 1792510728100,
+      "tag": "20261020153848_agent_rooms",
+      "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1792512000000,
+      "tag": "20261020160000_cli_device_grants",
       "breakpoints": true
     }
   ]

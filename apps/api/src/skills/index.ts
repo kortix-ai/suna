@@ -44,6 +44,7 @@ const SkillSummarySchema = z
     description: z.string(),
     referenceCount: z.number().int(),
     bytes: z.number().int(),
+    featureFlag: z.string().nullable().openapi({ description: 'The project feature flag the skill exists behind; a session box without it does not have the skill.' }),
   })
   .openapi('ManagedSkillSummary');
 
@@ -61,6 +62,7 @@ const SkillDetailSchema = z
     description: z.string(),
     body: z.string(),
     references: z.array(SkillReferenceSchema),
+    featureFlag: z.string().nullable(),
   })
   .openapi('ManagedSkill');
 
@@ -158,6 +160,7 @@ skillsApp.openapi(
       name: skill.name,
       description: skill.description,
       body: skill.body,
+      featureFlag: skill.featureFlag,
       references: skill.references.map((f) => ({
         path: f.path,
         bytes: f.content.length,
