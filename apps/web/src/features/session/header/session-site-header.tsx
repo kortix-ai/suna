@@ -423,6 +423,7 @@ export function SessionSiteHeader({
                   { sessionId: projectSessionId! },
                   {
                     onSuccess: (fork) => {
+                      successToast('Conversation forked');
                       if (projectId && projectSessionId) {
                         const href = `/projects/${projectId}/sessions/${fork.session_id}`;
                         router.prefetch(href);

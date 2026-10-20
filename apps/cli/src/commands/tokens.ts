@@ -96,7 +96,9 @@ Personal API keys — act as YOU, and die with your membership:
   new <name> [--expires <when>]     Mint a key. The secret prints ONCE.
       [--project <id>]              Bind the key to one project (it can never
                                     reach another).
-  rm <token-id> [-y]                Revoke a key; delete it if already revoked.
+  rm <token-id> [-y] [--force]      Revoke a key; delete it if already revoked.
+                                    Refuses the key this CLI is signed in
+                                    with unless --force.
 
 Service accounts — act as THEMSELVES, with no inherited access:
   service-accounts ls [--json]              List service accounts.
@@ -150,6 +152,7 @@ export async function runTokens(argv: string[]): Promise<number> {
   let mine = false;
   let all = false;
   let yes = false;
+  let force = false;
   try {
     f.account = takeFlagValue(rest, ['--account']);
     f.host = takeFlagValue(rest, ['--host']);
@@ -160,6 +163,7 @@ export async function runTokens(argv: string[]): Promise<number> {
     mine = takeFlagBool(rest, ['--mine']);
     all = takeFlagBool(rest, ['--all']);
     yes = takeFlagBool(rest, ['-y', '--yes']);
+    force = takeFlagBool(rest, ['--force']);
   } catch (err) {
     return fail((err as Error).message);
   }
@@ -281,7 +285,7 @@ export async function runTokens(argv: string[]): Promise<number> {
       case 'rm':
       case 'revoke':
       case 'delete':
-        return await revokeToken(ctx.client, positional, { yes });
+        return await revokeToken(ctx.client, positional, { yes, force });
 
       case 'service-accounts':
       case 'sa':
@@ -305,10 +309,25 @@ export async function runTokens(argv: string[]): Promise<number> {
 async function revokeToken(
   client: NonNullable<ReturnType<typeof resolveAccountContext>>['client'],
   positional: string[],
-  opts: { yes: boolean },
+  opts: { yes: boolean; force: boolean },
 ): Promise<number> {
   const tokenId = positional[0];
   if (!tokenId) return missing('a token id (see `kortix tokens ls`)');
+  // Revoking the key this CLI signs in with locks the host out: every next
+  // command answers "token rejected" (KRTX-1842). `/accounts/me` names the
+  // calling token; a failed probe never blocks the revoke.
+  if (!opts.force) {
+    const me = await client
+      .get<{ token_context?: { token_id?: string | null } }>('/accounts/me')
+      .catch(() => null);
+    if (me?.token_context?.token_id === tokenId) {
+      process.stderr.write(
+        `${status.err(`${tokenId} is the key this CLI is signed in with.`)} Revoking it signs this host out. ` +
+          `Sign in with another key first (${C.cyan}kortix login${C.reset}), or pass ${C.cyan}--force${C.reset} to revoke it anyway.\n`,
+      );
+      return 2;
+    }
+  }
   if (!opts.yes) {
     const ok = await confirm(
       `Revoke API key ${C.bold}${tokenId}${C.reset}, or permanently delete it if already revoked?`,

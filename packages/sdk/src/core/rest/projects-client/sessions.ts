@@ -316,6 +316,8 @@ export interface ClaimWarmProjectSessionInput {
 /** One conversation in the session runtime's tree (the root and its subagent children). */
 export interface ProjectRuntimeSession {
   id: string;
+  /** Explicit server-registered fork provenance, never inferred from titles. */
+  fork_source_id?: string;
   title: string | null;
   parent_id: string | null;
   project_id: string | null;

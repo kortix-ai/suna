@@ -67,6 +67,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // server stamps conversation activity; a client value would let it fake a
   // sidebar position.
   'last_activity_at',
+  // Server-confirmed runtime fork provenance and inventory.
+  'runtime_forks',
+  'opencode_sessions',
 ] as const;
 
 /**

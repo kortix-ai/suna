@@ -112,3 +112,31 @@ test('failed fork transaction removes destination uploads but leaves source byte
   expect(await bucket.objects.get(key)?.text()).toBe('independent history');
   expect(await db.select().from(sessionLogs).where(eq(sessionLogs.sessionId, target))).toHaveLength(0);
 });
+
+test('HTTP fork requires the session read leaf in addition to start', async () => {
+  const { app } = await import('../index');
+  const { createAccountToken } = await import('../repositories/account-tokens');
+  const member = crypto.randomUUID();
+  await insertIntoView(db, accountMembers, { userId: member, accountId: project.account_id, accountRole: 'member' });
+  await insertIntoView(db, projectMembers, { userId: member, accountId: project.account_id, projectId: project.project_id, projectRole: 'member' });
+  const missingSource = crypto.randomUUID();
+  const permissions = ['project.session.start', 'project.agent.read'];
+  try {
+    for (const canRead of [false, true]) {
+      const token = await createAccountToken({
+        accountId: project.account_id, userId: member, projectId: project.project_id,
+        name: 'synthetic-fork-leaf',
+        agentGrant: { agent: 'synthetic-fork-agent', permissions: canRead ? [...permissions, 'project.session.read'] : permissions, connectors: [] },
+      });
+      const response = await app.request(`/v1/projects/${project.project_id}/sessions`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token.secretKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fork_from_session_id: missingSource }),
+      });
+      // A readable caller reaches source visibility; an unreadable caller must
+      // be denied before even loading it, with the identical fork payload.
+      expect(response.status).toBe(canRead ? 404 : 403);
+    }
+  } finally {
+    await db.execute(sql`delete from kortix.account_tokens where account_id = ${project.account_id}`);
+  }
+});

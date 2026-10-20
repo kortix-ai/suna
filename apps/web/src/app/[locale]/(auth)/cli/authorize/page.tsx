@@ -209,7 +209,7 @@ function CliAuthorizeInner() {
           <p>
             <Link
               href="/"
-              className="hover:text-foreground -my-2 inline-block py-2 underline-offset-4 transition-colors hover:underline"
+              className="hover:text-foreground -my-2 inline-block py-2 transition-colors"
             >
               {tI18nComplete.raw('text19766ed6ccb2')}
             </Link>

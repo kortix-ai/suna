@@ -657,6 +657,7 @@ const activeAssistantMessage = useMemo(() => {
   }
   return turn.assistant[turn.assistant.length - 1];
 }, [turn.assistant]);
+const openText = useMemo(() => openTextBlock(working, activeAssistantMessage), [working, activeAssistantMessage]);
 const streamingResponseRaw = useMemo(() => {
   if (!activeAssistantMessage) return '';
   let text = '';
@@ -696,11 +697,27 @@ const response = working
   return {
     working,
     agentWorking,
+    openText,
     blocks,
     hasSteps,
     hasReasoning,
     response,
   };
+}
+
+/**
+ * The one text block still being written: the last block of a reply with no
+ * completion stamp. Only it streams (KRTX-2932). An earlier block ended when
+ * the next block began, and a completed reply ended with it, even while the
+ * turn still works. Exported for its test.
+ */
+export function openTextBlock(
+  working: boolean,
+  message: SessionLogTurn['assistant'][number] | undefined,
+): { block: TextBlock; messageId: string } | null {
+  if (!working || !message || message.completed_at !== null) return null;
+  const last = message.blocks[message.blocks.length - 1];
+  return last?.type === 'text' ? { block: last, messageId: message.message_id } : null;
 }
 
 /** The turn's reply blocks, each call in its open shape (`sessionLogOpenCall`). One array per turn object. */
@@ -1606,6 +1623,7 @@ function TurnToolBlocks(
         segment={segment}
         isTrailing={segment === segments[segments.length - 1]}
         working={working}
+        openText={model.openText}
         hasSteps={hasSteps}
         sessionId={sessionId}
         permissions={permissions}
@@ -1689,6 +1707,7 @@ function TurnSegment({
   segment,
   isTrailing,
   working,
+  openText,
   hasSteps,
   sessionId,
   permissions,
@@ -1699,6 +1718,7 @@ function TurnSegment({
   segment: SessionLogSegment;
   isTrailing: boolean;
   working: boolean;
+  openText: TurnModelState['openText'];
   hasSteps: boolean;
   sessionId: string;
   permissions: PermissionRequest[];
@@ -1742,9 +1762,14 @@ function TurnSegment({
   if (!hasSteps) return null;
   const text = segment.block.text.trim();
   if (!text) return null;
+  const open = openText?.block === segment.block;
   return (
     <div className="min-w-0 text-sm">
-      <ThrottledMarkdown content={text} isStreaming={working} />
+      <ThrottledMarkdown
+        content={text}
+        isStreaming={open}
+        revealKey={open ? `${openText.messageId}:${segment.block.id}` : undefined}
+      />
     </div>
   );
 }
@@ -1774,10 +1799,11 @@ export function TurnAssistantBlock(
     {/* Inline content: text and answered questions rendered in natural order.
 			    Works both during streaming and after completion. */}
       {shouldUseInlineContent ? (
-        <TurnInlineContent working={working} parts={inlineContentParts!} />
+        <TurnInlineContent openText={model.openText} parts={inlineContentParts!} />
       ) : (
         <TurnSettledResponse
           working={working}
+          openText={model.openText}
           hasSteps={hasSteps}
           hasReasoning={hasReasoning}
           response={response}
@@ -1792,39 +1818,32 @@ export function TurnAssistantBlock(
 /** Inline content: text and answered questions in natural order, while the
  *  turn streams around them. */
 function TurnInlineContent({
-  working,
+  openText,
   parts,
 }: {
-  working: boolean;
+  openText: TurnModelState['openText'];
   parts: NonNullable<TurnAnsweredState['inlineContentParts']>;
 }) {
   return (
       <div className="space-y-3">
-        {(() => {
-          // Find the last text item index — it might still be streaming
-          let lastTextIdx = -1;
-          if (working) {
-            for (let i = parts.length - 1; i >= 0; i--) {
-              if (parts[i].type === 'text') {
-                lastTextIdx = i;
-                break;
-              }
-            }
+        {parts.map((item) => {
+          if (item.type === 'text') {
+            const isStreaming = item.block === openText?.block;
+            const text = isStreaming ? item.block.text : item.block.text.trim();
+            // One component across the turn's end, so the generative UI blocks in the text keep their state.
+            return (
+              <div key={item.id} className="min-w-0 text-sm">
+                <ThrottledMarkdown
+                  content={text}
+                  isStreaming={isStreaming}
+                  revealKey={isStreaming ? `${openText!.messageId}:${item.block.id}` : undefined}
+                  response
+                />
+              </div>
+            );
           }
-          return parts.map((item, idx) => {
-            if (item.type === 'text') {
-              const isStreaming = idx === lastTextIdx;
-              const text = isStreaming ? item.block.text : item.block.text.trim();
-              // One component across the turn's end, so the generative UI blocks in the text keep their state.
-              return (
-                <div key={item.id} className="min-w-0 text-sm">
-                  <ThrottledMarkdown content={text} isStreaming={isStreaming} response />
-                </div>
-              );
-            }
-            return <AnsweredQuestionCard key={item.id} call={item.call} />;
-          });
-        })()}
+          return <AnsweredQuestionCard key={item.id} call={item.call} />;
+        })}
       </div>
   );
 }
@@ -1833,6 +1852,7 @@ function TurnInlineContent({
  *  question cards that no upstream renderer has already shown. */
 function TurnSettledResponse({
   working,
+  openText,
   hasSteps,
   hasReasoning,
   response,
@@ -1840,6 +1860,7 @@ function TurnSettledResponse({
   answeredQuestionCalls,
 }: {
   working: boolean;
+  openText: TurnModelState['openText'];
   hasSteps: boolean;
   hasReasoning: boolean;
   response: string;
@@ -1852,7 +1873,12 @@ function TurnSettledResponse({
             word to the settled turn, so the generative UI blocks in it do not remount when the turn ends. */}
         {!hasSteps && response && (working || !commandForTurn) ? (
           <div className={working ? 'min-w-0 text-sm' : 'text-sm'}>
-            <ThrottledMarkdown content={response} isStreaming={working} response />
+            <ThrottledMarkdown
+              content={response}
+              isStreaming={openText !== null}
+              revealKey={openText ? `${openText.messageId}:response` : undefined}
+              response
+            />
           </div>
         ) : null}
         {/* A command's output settles into its card. */}

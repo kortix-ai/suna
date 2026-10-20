@@ -129,3 +129,5 @@ export type { GitBackedProject } from './git/types';
 // Who may stop a running turn (consumed by channels/core/turn-stop.ts and
 // sandbox-proxy/forward/abort-authority.ts).
 export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';
+
+export { registerRuntimeFork } from './lib/runtime-session-snapshot';

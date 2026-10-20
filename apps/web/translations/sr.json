@@ -820,7 +820,17 @@
       "email": "Имејл",
       "channelSwitch": "{kind}: {channel}",
       "preferencesLoadError": "Учитавање подешавања обавештења није успело",
-      "retry": "Покушај поново"
+      "retry": "Покушај поново",
+      "recovery": {
+        "instructions": "Како да одблокирате обавештења прегледача",
+        "chrome": "Chrome: отворите контроле сајта поред адресе → Подешавања сајта → Обавештења → Дозволи.",
+        "edge": "Edge: отворите контроле сајта поред адресе → Дозволе за овај сајт → Обавештења → Дозволи.",
+        "firefox": "Firefox: отворите икону дозвола поред адресе и уклоните блокирану дозволу за обавештења. Омогућите обавештења овде да бисте поново затражили дозволу.",
+        "safari": "Safari на Mac рачунару: отворите Safari → Подешавања → Веб-сајтови → Обавештења, па изаберите Дозволи за овај сајт. На iPhone или iPad уређају додајте Kortix на почетни екран и омогућите обавештења из те апликације.",
+        "afterChange": "Поново учитајте ову страницу након промене дозвола прегледача, па омогућите обавештења. Системска подешавања обавештења такође морају да дозвољавају обавештења вашег прегледача.",
+        "fallback": "Док је картица Kortix отворена, звуци завршетка могу да вас обавесте и без дозволе за обавештења прегледача. Не искључујте звук картице и уређаја. Ова опција омогућава звукове обавештења и пушта пробни звук завршетка.",
+        "enableSound": "Омогући звук завршетка"
+      }
     },
     "git": {
       "updateFailed": "Складиште није могло да се ажурира",
@@ -21470,6 +21480,18 @@
     "myDrive": "My drive",
     "allFiles": "All files",
     "volumeHint": "A separate volume. Sessions mount each one on its own under /drives.",
+    "teamFolders": "Team folders",
+    "adminSection": "Admin",
+    "newTeamFolder": "New team folder",
+    "audienceQuestion": "Who can open it?",
+    "badgeEveryone": "Everyone",
+    "badgePeople": "{count, plural, one {# person} other {# people}}",
+    "privateNote": "Your files stay private, even from admins. Share a folder to give someone access.",
+    "noTeamFolders": "No team folders yet.",
+    "sessionFilesName": "Files",
+    "sessionFilesHint": "Folders it can open",
+    "sessionFilesDescription": "The Drive folders this session mounts, and where the agent sees them. Share a folder in Drive to add it; stop sharing to take it away.",
+    "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
     "driveLabel": "Drive"
   },

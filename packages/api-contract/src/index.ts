@@ -1086,6 +1086,7 @@ export type SessionUpdateInput = z.input<typeof SessionUpdateInputSchema>;
  *  (`apps/api/src/projects/opencode-session-snapshot.ts`). Times are epoch ms. */
 export const RuntimeSessionSnapshotSchema = z.object({
   id: z.string(),
+  fork_source_id: z.string().optional(),
   title: z.string().nullable(),
   parent_id: z.string().nullable(),
   project_id: z.string().nullable(),
@@ -1567,6 +1568,8 @@ export const TriggerSchema = z.object({
   last_attempt_at: z.string().nullable(),
   /** When an enabled cron trigger runs next: the slot the scheduler claims, jitter included. Null for a webhook trigger. */
   next_fire_at: z.string().nullable().optional(),
+  /** Next exact cron occurrence, without scheduler jitter. */
+  next_cron_at: z.string().nullable().optional(),
   webhook_url: z.string().nullable(),
 });
 export type Trigger = z.infer<typeof TriggerSchema>;
