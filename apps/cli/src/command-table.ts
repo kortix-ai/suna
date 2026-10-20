@@ -233,6 +233,11 @@ export const TIERS: readonly CommandTier[] = [
             args: '<subcommand>',
             blurb: 'Browse repo files, commits, branches, diffs; download a zip',
           },
+          {
+            name: 'drive',
+            args: '<subcommand>',
+            blurb: "The project's Files: list, read, upload, move, delete, share folders",
+          },
           { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
           {
             name: 'review',
@@ -244,6 +249,11 @@ export const TIERS: readonly CommandTier[] = [
             name: 'reminders',
             args: '<subcommand>',
             blurb: 'Re-prompt one session later or on repeat (kortix remind "…" --in 24h)',
+          },
+          {
+            name: 'goals',
+            args: '<subcommand>',
+            blurb: 'Own an outcome until verified done: new, check, ls, status (in a session)',
           },
           {
             name: 'capture',

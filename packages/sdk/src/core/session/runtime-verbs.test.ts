@@ -126,8 +126,40 @@ describe('session runtime verbs', () => {
     await expect(verbs.answerPermission('per_x', 'once')).rejects.toThrow('no such request');
   });
 
+  test.each(['busy', 'retry'])('compact() refuses a %s root before submitting compaction', async (type) => {
+    const { fetch, requests } = fakeRuntime({
+      'GET /session/status': { body: { ses_root: { type } } },
+      'POST /session/ses_root/summarize': { body: true },
+    });
+    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
+    await expect(verbs.compact({ providerID: 'kortix', modelID: 'test-model' }))
+      .rejects.toThrow('This session is busy. Wait for the current turn to finish, then run compact again.');
+    expect(requests.map((request) => request.path)).toEqual(['/session/status']);
+  });
+
+  test('compact() accepts an omitted idle root status', async () => {
+    const { fetch } = fakeRuntime({
+      'GET /session/status': { body: {} },
+      'POST /session/ses_root/summarize': { body: true },
+    });
+    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
+    expect(await verbs.compact({ providerID: 'kortix', modelID: 'test-model' }))
+      .toEqual({ providerID: 'kortix', modelID: 'test-model' });
+  });
+
+  test('compact() does not submit when reading status fails', async () => {
+    const { fetch, requests } = fakeRuntime({
+      'GET /session/status': { status: 503, body: { error: 'runtime unavailable' } },
+    });
+    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
+    await expect(verbs.compact({ providerID: 'kortix', modelID: 'test-model' }))
+      .rejects.toThrow('Reading the session status failed: runtime unavailable');
+    expect(requests.map((request) => request.path)).toEqual(['/session/status']);
+  });
+
   test('compact() summarizes the root with the given model, else the runtime default model', async () => {
     const { fetch, requests } = fakeRuntime({
+      'GET /session/status': { body: { ses_root: { type: 'idle' }, ses_child: { type: 'busy' } } },
       'POST /session/ses_root/summarize': { body: true },
       'GET /global/config': { body: { model: 'kortix/claude-sonnet' } },
     });
@@ -135,15 +167,17 @@ describe('session runtime verbs', () => {
     expect(await verbs.compact({ providerID: 'anthropic', modelID: 'claude' })).toEqual({ providerID: 'anthropic', modelID: 'claude' });
     expect(await verbs.compact()).toEqual({ providerID: 'kortix', modelID: 'claude-sonnet' });
     expect(requests.map((r) => [r.method, r.path, r.body])).toEqual([
+      ['GET', '/session/status', null],
       ['POST', '/session/ses_root/summarize', { providerID: 'anthropic', modelID: 'claude' }],
       ['GET', '/global/config', null],
+      ['GET', '/session/status', null],
       ['POST', '/session/ses_root/summarize', { providerID: 'kortix', modelID: 'claude-sonnet' }],
     ]);
   });
 
   test('compact() without a model anywhere throws MODEL_REQUIRED instead of guessing', async () => {
     for (const config of [{ body: {} }, { status: 404, body: { error: 'not found' } }]) {
-      const { fetch, requests } = fakeRuntime({ 'GET /global/config': config });
+      const { fetch, requests } = fakeRuntime({ 'GET /session/status': { body: {} }, 'GET /global/config': config });
       const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
       const error = await verbs.compact().catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ApiError);

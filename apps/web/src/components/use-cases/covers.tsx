@@ -65,7 +65,7 @@ import {
 import type { ComponentType, ReactNode } from 'react';
 
 import type { Post } from '@/lib/blog';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 export type UseCaseCoverProps = { post: Post; featured?: boolean };
 

@@ -24,7 +24,7 @@ import { chooser, within } from './testing';
 /**
  * Parsers for Kortix orchestrator tool outputs (projects, connectors).
  *
- * Port of apps/web `lib/utils/kortix-tool-output.ts`, same names and
+ * Port of apps/web `packages/ui/src/internal/lib/utils/kortix-tool-output.ts`, same names and
  * semantics, for the project and connector tool renderers.
  */
 

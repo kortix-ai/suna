@@ -2,11 +2,11 @@
 
 import { useCaptureWorkspace, useSetCaptureEnabled } from '@kortix/sdk/react';
 
-import Loading from '@/components/ui/loading';
-import { SettingsRow } from '@/components/ui/settings-row';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { errorToast } from '@/components/ui/toast';
+import Loading from '@kortix/ui/loading';
+import { SettingsRow } from '@kortix/ui/settings-row';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
+import { errorToast } from '@kortix/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 
 /**

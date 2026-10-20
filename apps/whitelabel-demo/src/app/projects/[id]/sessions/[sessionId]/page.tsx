@@ -1,62 +1,53 @@
 'use client';
 
 import { ProjectShell } from '@/components/project-shell';
-import { ApplicationUserBadge } from '@/components/project-access-panel';
 import { SessionApprovals } from '@/components/workbench/approvals-panel';
 import { BootScreen } from '@/components/workbench/boot-screen';
-import { SessionHeader } from '@/components/workbench/session-header';
-import { WorkbenchTabs } from '@/components/workbench/workbench-tabs';
+import { useRuntimeRecovery } from '@/components/workbench/use-runtime-recovery';
 import { useSession } from '@kortix/sdk/react';
+import { SessionWorkspace } from '@kortix/ui/workspace';
 import { useParams } from 'next/navigation';
 
 export default function SessionWorkbenchPage() {
   return (
-    <ProjectShell>
+    <ProjectShell pageHasSidebarOpener>
       <Workbench />
     </ProjectShell>
   );
 }
 
+/**
+ * The session screen is Kortix's own: `SessionWorkspace` renders the thread
+ * (header, transcript, tool rows, prompts, composer with the model and agent
+ * pickers) and the resizable side panel its actions open (files, the viewer,
+ * the browser, the terminal, changes). Lumen adds two things around it: the
+ * approval gates the agent is blocked on, and the one-shot reconnect when a
+ * connected runtime drops.
+ */
 function Workbench() {
   const params = useParams();
   const projectId = String(params.id);
   const sessionId = String(params.sessionId);
 
-  // One hook owns readiness, transport selection, streaming, transcript
-  // projection, interactive requests, and message synchronization.
-  // The host reads the provider-neutral session state and renders it.
+  // One hook owns readiness, transport, streaming, the transcript, prompts and
+  // message sync. Everything below reads it.
   const session = useSession(projectId, sessionId);
+  useRuntimeRecovery(session);
 
   return (
     <>
-      <SessionHeader projectId={projectId} sessionId={sessionId} runtimeReady={session.phase === 'ready'} />
-      {/* Who this browser is acting as, above the conversation rather than in a
-          settings page: in wrapper mode it is the ONLY thing separating this
-          session from another signed-in person's. */}
-      <ApplicationUserBadge projectId={projectId} />
-      {/* A `require_approval` gate ends the agent's turn and nothing says so in
-          the transcript — the session just goes quiet. Poll for it here, where
-          the person who can decide is already looking. Rendered before the boot
-          check on purpose: a gate raised earlier is still pending while the
-          runtime is coming back up. */}
-      <SessionApprovals
-        projectId={projectId}
-        sessionId={sessionId}
-        waitingInChat={session.questions.length + session.permissions.length}
-      />
-      {session.phase !== 'ready' ? (
+      {/* A `require_approval` gate ends the agent's turn and the transcript
+          does not say so. Shown only while one is pending. */}
+      <SessionApprovals projectId={projectId} sessionId={sessionId} />
+      {session.isError ? (
         <BootScreen
           stage={session.stage ?? undefined}
           reason={session.reason ?? undefined}
-          failed={session.isError}
+          failed
           onRetry={session.retry}
         />
       ) : (
-        <WorkbenchTabs
-          session={session}
-          projectId={projectId}
-          sessionId={sessionId}
-        />
+        <SessionWorkspace session={session} className="min-h-0 flex-1" />
       )}
     </>
   );

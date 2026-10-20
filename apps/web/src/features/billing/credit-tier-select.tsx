@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import {
   Select,
   SelectContent,
@@ -9,7 +9,7 @@ import {
   SelectLabel,
   SelectSeparator,
   SelectTrigger,
-} from '@/components/ui/select';
+} from '@kortix/ui/select';
 import {
   agentHoursForCredits,
   CREDIT_TIER_GROUPS,
@@ -17,9 +17,9 @@ import {
   formatWholeUsd,
   monthlyCreditsForUsd,
   tierForMonthlyUsd,
-} from '@/features/billing/compute-pricing';
+} from '@kortix/ui/internal/billing/compute-pricing';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { formatCredits } from '@kortix/shared';
 import { Fragment } from 'react';
 

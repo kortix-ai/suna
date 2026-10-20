@@ -19,11 +19,11 @@
  *     Play. The rows link the store listings — see MOBILE_ROWS.
  */
 
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
 import type { DesktopOs, MobileOs } from './detect-os';
-import { APP_STORE_URL, GOOGLE_PLAY_URL } from './mobile-store-urls';
+import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@kortix/ui/internal/lib/mobile-store-urls';
 
 export const hero = {
   title: 'Download Kortix',

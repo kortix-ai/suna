@@ -231,8 +231,16 @@ function safeWrite(manifest) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    refreshContentTimestamps();
-  } catch {
+    if (process.argv.includes('--strict')) {
+      if (!gitAvailable()) throw new Error('Content timestamps require full git history');
+      const manifest = collectContentTimestampManifest();
+      mkdirSync(dirname(MANIFEST_PATH), { recursive: true });
+      writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
+    } else {
+      refreshContentTimestamps();
+    }
+  } catch (error) {
+    if (process.argv.includes('--strict')) throw error;
     // The manifest is an optimization. Direct generation must not block a build.
   }
 }

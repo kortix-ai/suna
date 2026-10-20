@@ -16,6 +16,7 @@ import { runCr } from './commands/cr.ts';
 import { runDoctor } from './commands/doctor.ts';
 import { runEnv } from './commands/env.ts';
 import { runFeedback } from './commands/feedback.ts';
+import { runDrive } from './commands/drive.ts';
 import { runFiles } from './commands/files.ts';
 import { runGateway } from './commands/gateway.ts';
 import { runGitCredential } from './commands/git-credential.ts';
@@ -34,6 +35,7 @@ import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runReminders } from './commands/reminders.ts';
+import { runGoals } from './commands/goals.ts';
 import { runReview } from './commands/review.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
@@ -232,10 +234,12 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   tui: (rest) => runTui(rest),
   t: (rest) => runTui(rest),
   files: (rest) => runFiles(rest),
+  drive: (rest) => runDrive(rest),
   cr: (rest) => runCr(rest),
   review: (rest) => runReview(rest),
   triggers: (rest) => runTriggers(rest),
   reminders: (rest) => runReminders(rest),
+  goals: (rest) => runGoals(rest),
   capture: (rest) => runCapture(rest),
   remind: (rest) => runReminders(rest, true),
   connectors: (rest) => runConnectors(rest),

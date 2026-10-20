@@ -1,6 +1,6 @@
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import { BeamsShader } from '@/components/ui/paper-wallpaper-shaders';
-import { cn } from '@/lib/utils';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
+import { BeamsShader } from '@kortix/ui/paper-wallpaper-shaders';
+import { cn } from '@kortix/ui';
 import Image from 'next/image';
 
 const SLOT = 'aspect-[16/10] w-full overflow-hidden border-b bg-muted';

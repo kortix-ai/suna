@@ -227,6 +227,18 @@ async function initNewProject(flags: InitFlags): Promise<number> {
     projectName = normalizeProjectName(await prompt(`Project name`, 'my-kortix-project'));
   }
 
+  // The coding-agent picker needs a terminal. Without one it would read EOF
+  // after the directory exists, and the process ended 0 with an empty folder
+  // (KRTX-2921). Refuse first, like the nameless path, and create nothing.
+  const needsPicker = !(flags.primary || flags.agents || flags.yes);
+  if (needsPicker && !(process.stdin.isTTY === true && process.stdout.isTTY === true)) {
+    process.stderr.write(
+      'kortix init: stdin is not a TTY, so the coding-agent picker cannot run.\n' +
+        `Run \`kortix init ${projectName} --yes\` to accept the defaults, or pass --primary <agent>.\n`,
+    );
+    return 1;
+  }
+
   // Create the project in a fresh directory next to the shell's cwd. Refuse to
   // scaffold into an existing non-empty folder — a Kortix project is standalone.
   const cwd = resolve(process.cwd(), projectName);

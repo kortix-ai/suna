@@ -5,7 +5,7 @@ import { motion, useAnimation } from 'motion/react';
 import type { HTMLAttributes } from 'react';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /** Put this on the hover target that wraps the icon (Button, Link, etc.). */
 export const ARROW_RIGHT_GROUP_CLASS = 'group/arrow-right';

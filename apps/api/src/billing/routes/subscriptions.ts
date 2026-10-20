@@ -209,7 +209,7 @@ subscriptionsRouter.openapi(
     summary: 'Sync subscription state from Stripe',
     ...auth,
     request: { body: { required: false, content: { 'application/json': { schema: AnyBody } } } },
-    responses: { 200: json(OpaqueSchema, 'Sync result') },
+    responses: { 200: json(OpaqueSchema, 'Sync result'), ...errors(404) },
   }),
   async (c) => {
     const accountId = await resolveBillingWriteAccountId(c, 'body');

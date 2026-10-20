@@ -1643,6 +1643,10 @@
       "path": "/v1/p/share/:token"
     },
     {
+      "method": "POST",
+      "path": "/v1/p/ticket"
+    },
+    {
       "method": "GET",
       "path": "/v1/platform"
     },

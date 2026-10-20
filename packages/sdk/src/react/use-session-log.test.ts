@@ -106,6 +106,40 @@ describe('useSessionLogThread on v2: throttleMs paces the thread', () => {
     expect(seen.at(-1)!.messages.at(-1)).toEqual(put(20));
   });
 
+  test('KRTX-2880: N streamed deltas inside one window run the transcript selector once per flush, not once per event', async () => {
+    act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
+    const root = log.threads[0]!;
+    const target = root.messages.find((m) => m.blocks.some((b) => b.type === 'text'))!;
+    const block = target.blocks.find((b) => b.type === 'text')!;
+    const seen: Array<ReturnType<typeof useSessionLogThread>> = [];
+    render(() => {
+      seen.push(useSessionLogThread({ projectId: PROJECT, sessionId: SESSION }, undefined, { throttleMs: 200 }));
+      return null;
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 250));
+    });
+    // Every run of the transcript selector reads the v1 rows once.
+    const build = useSyncStore.getState().buildSessionMessages;
+    let selects = 0;
+    useSyncStore.setState({ buildSessionMessages: ((...args: Parameters<typeof build>) => { selects++; return build(...args); }) as typeof build });
+    const delta = (i: number) => useSyncStore.getState().applySessionLogEvent(SESSION, {
+      type: 'log.block.delta', id: `evt_paced_${i}`,
+      properties: { thread_id: root.thread_id, message_id: target.message_id, block_id: block.id, delta: `d${i}` },
+    });
+    selects = 0;
+    // Each frame is two store changes (the activity stamp, then the log). The quiet window's
+    // leading edge reads at most twice; the other 49 frames only arm the trailing timer.
+    for (let i = 0; i < 50; i++) act(() => delta(i));
+    expect(selects).toBeLessThanOrEqual(2);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 300));
+    });
+    expect(selects).toBeLessThanOrEqual(3);
+    const text = (seen.at(-1)!.messages.find((m) => m.message_id === target.message_id)!.blocks.find((b) => b.id === block.id) as { text: string }).text;
+    expect(text).toBe((block as { text: string }).text + Array.from({ length: 50 }, (_, i) => `d${i}`).join(''));
+  });
+
   test('identity: a re-render between ticks, with no store change, returns the same thread', () => {
     act(() => useSyncStore.getState().applySessionLogPage(SESSION, page()));
     const seen: Array<ReturnType<typeof useSessionLogThread>> = [];

@@ -50,7 +50,7 @@ function errorText(error: unknown): string {
  * Where checkout actually lives.
  *
  * The account hub is a modal over whatever page you are on, addressed by query
- * params (`apps/web/src/stores/account-panel-store.ts`), so the URL is a real
+ * params (`packages/ui/src/internal/stores/account-panel-store.ts`), so the URL is a real
  * page plus `?accountId=…&accountTab=billing`. `webDashboardUrl` maps the API
  * origin to the frontend origin — never string-munged here, because that guess
  * is wrong for a self-host stack on non-default ports.
