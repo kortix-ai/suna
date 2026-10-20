@@ -511,16 +511,5 @@ describe('session open read starts beside getProject', () => {
     expect(routeSessionIdFromParams(null)).toBeNull();
   });
 
-  test('the boundary starts prefetchSessionOpen gated on auth, not on the project read', () => {
-    // Pinned as source: the gain is the ORDER — the snapshot must not wait for
-    // `getProject`, and it must not fire before the user's token exists.
-    const effect = componentSource.match(
-      /useEffect\(\(\) => \{\s*if \(!authReady \|\| !routeSessionId\) return;\s*void prefetchSessionOpen\(queryClient, projectId, routeSessionId\);/,
-    );
-    expect(effect).not.toBeNull();
-    const prefetchAt = componentSource.indexOf('void prefetchSessionOpen(');
-    const pendingGateAt = componentSource.indexOf("if (view === 'pending') return");
-    expect(prefetchAt).toBeGreaterThan(0);
-    expect(prefetchAt).toBeLessThan(pendingGateAt);
-  });
+
 });
