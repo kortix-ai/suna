@@ -3061,7 +3061,7 @@
       "automation_recovered": "失敗していたトリガーまたはリマインダーが再び動作します。",
       "capture_device_down": "Kortix Capture のコンピューターが記録していません。Capture の管理者に送られます。",
       "capture_device_recovered": "停止していた Kortix Capture のコンピューターが再び記録しています。",
-      "message": "会話、または参加したルームで誰かがあなたにメッセージを送ったとき。"
+      "message": "ルームで誰かがあなたを @ でメンションするか、あなたが投稿したスレッドに返信したとき。"
     },
     "bell": {
       "label": "通知",

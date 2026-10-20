@@ -3061,7 +3061,7 @@
       "automation_recovered": "失败的触发器或提醒恢复正常。",
       "capture_device_down": "有一台 Kortix Capture 电脑未在录制。发送给管理 Capture 的人员。",
       "capture_device_recovered": "停止的 Kortix Capture 电脑已重新录制。",
-      "message": "有人在对话中或你加入的房间里给你发消息。"
+      "message": "有人在聊天室中 @ 提及你，或在你发过言的话题中回复。"
     },
     "bell": {
       "label": "通知",

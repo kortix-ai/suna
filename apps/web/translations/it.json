@@ -3061,7 +3061,7 @@
       "automation_recovered": "Un trigger o un promemoria che falliva torna a funzionare.",
       "capture_device_down": "Un computer Kortix Capture non registra. Inviato a chi gestisce Capture.",
       "capture_device_recovered": "Un computer Kortix Capture che si era fermato registra di nuovo.",
-      "message": "Qualcuno ti scrive in una conversazione o in una stanza a cui ti sei unito."
+      "message": "Qualcuno ti menziona con @, o risponde in un thread in cui hai scritto, in una stanza."
     },
     "bell": {
       "label": "Notifiche",
