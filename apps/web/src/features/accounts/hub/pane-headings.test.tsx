@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AccountPane } from './account-pane';
-import { localizedAccountPaneMeta } from './sections';
+import { localizedAccountPaneMeta } from '@kortix/ui/internal/account-hub/sections';
 
 const noop = () => {};
 
