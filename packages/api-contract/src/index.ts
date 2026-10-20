@@ -1094,7 +1094,26 @@ export const RuntimeSessionSnapshotSchema = z.object({
 });
 export type RuntimeSessionSnapshot = z.infer<typeof RuntimeSessionSnapshotSchema>;
 
+/**
+ * Is the session working, decided ONCE by the server (R5.2). Clients show this
+ * instead of combining their own signals. `working` while a live turn runs that
+ * the runtime has not reported ended, or while a prompt is on its way to the
+ * runtime (`pending_delivery`). Ordered by the control frame's `cseq`.
+ */
+export const SessionWorkingSchema = z.object({
+  state: z.enum(['working', 'idle']),
+  /** When this state began (ISO), or null when the server does not know. */
+  since: z.string().nullable(),
+  /** The newest live turn, or null. */
+  turn_token: z.string().nullable(),
+  /** No live turn yet, but a prompt is queued for or being handed to the runtime. */
+  pending_delivery: z.boolean(),
+});
+export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
+
 export const ProjectSessionSchema = z.object({
+  /** Work activity, independent of the computer lifecycle status. Older servers may omit it. */
+  working: SessionWorkingSchema.optional(),
   session_id: z.string(),
   account_id: z.string(),
   project_id: z.string(),
@@ -1783,23 +1802,6 @@ export const SessionTurnFailureSchema = z.object({
   error: SessionTurnEndErrorSchema.nullable(),
 });
 export type SessionTurnFailure = z.infer<typeof SessionTurnFailureSchema>;
-
-/**
- * Is the session working, decided ONCE by the server (R5.2). Clients show this
- * instead of combining their own signals. `working` while a live turn runs that
- * the runtime has not reported ended, or while a prompt is on its way to the
- * runtime (`pending_delivery`). Ordered by the control frame's `cseq`.
- */
-export const SessionWorkingSchema = z.object({
-  state: z.enum(['working', 'idle']),
-  /** When this state began (ISO), or null when the server does not know. */
-  since: z.string().nullable(),
-  /** The newest live turn, or null. */
-  turn_token: z.string().nullable(),
-  /** No live turn yet, but a prompt is queued for or being handed to the runtime. */
-  pending_delivery: z.boolean(),
-});
-export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
 
 /** `GET .../turn`. `turns` empty means idle; it is a list because a session
  *  can hold more than one open turn. */

@@ -205,10 +205,14 @@ function ComposerForm({
     if (at.top >= view.top && at.bottom <= view.bottom) return;
     scroller.scrollTop += at.top - view.top - scroller.clientHeight / 4;
   };
+  // A blocked Create moves focus to the first field that needs input, so the
+  // click visibly lands somewhere instead of reading as a dead control
+  // (KRTX-2816). Only the submit path calls this.
   const scrollTo = (block: ComposerBlock) =>
     requestAnimationFrame(() => {
       const section = bodyRef.current?.querySelector(`[data-block="${block}"]`);
       reveal(section?.querySelector('[role="alert"]') ?? section);
+      section?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus({ preventScroll: true });
     });
   useEffect(() => {
     if (error) reveal(errorRef.current);

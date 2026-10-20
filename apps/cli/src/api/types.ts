@@ -145,6 +145,8 @@ export type OauthPollResponse =
 // ── Sessions ──────────────────────────────────────────────────────────────
 
 export interface ProjectSession {
+  /** Canonical work activity; missing on older servers. */
+  working?: import('@kortix/sdk').ProjectSession['working'];
   session_id: string;
   account_id: string;
   project_id: string;

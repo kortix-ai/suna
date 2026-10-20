@@ -12,10 +12,10 @@ import type { ComposerDraft } from './trigger-composer-logic';
 export type PatchDraft = (next: Partial<ComposerDraft>) => void;
 
 /** A problem shown at its field, in the colour of a refusal. */
-export function InlineError({ message }: { message?: string | null }) {
+export function InlineError({ message, id }: { message?: string | null; id?: string }) {
   if (!message) return null;
   return (
-    <p role="alert" className="text-destructive text-xs leading-relaxed text-pretty">
+    <p id={id} role="alert" className="text-destructive text-xs leading-relaxed text-pretty">
       {message}
     </p>
   );

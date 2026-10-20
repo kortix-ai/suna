@@ -129,7 +129,7 @@ export { stripChatMentionMarkup } from '@kortix/shared';
 export type SessionDisplayStatus = SessionListStatus;
 
 /** Tooltip + section copy. Never "Active": `running` means the sandbox is up,
- *  not that the agent is working, and the payload carries no signal for that. */
+ *  not that the agent is working. Canonical working activity settles it to Done. */
 export const SESSION_DISPLAY_STATUS_LABELS: Record<SessionDisplayStatus, string> = {
   'needs-you': SESSION_LIST_STATUS['needs-you'].label,
   starting: SESSION_LIST_STATUS.starting.label,
