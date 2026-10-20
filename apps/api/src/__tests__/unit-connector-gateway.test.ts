@@ -808,6 +808,40 @@ describe('handleCall — approval enrichment and content binding', () => {
     expect(records.at(-1)!.resultSummary).toMatchObject({ reason: 'content_changed', resolved_error: 'unavailable' });
   });
 
+  test('carry-over of an approval given while the content was unreadable asks again once it is readable', async () => {
+    const { deps, records, fetchCalls } = gated();
+    deps.approvalEnrichers = { [KEY]: async () => content };
+    deps.consumeApprovedExecution = async () => ({ resolvedDigest: null, resolvedError: true });
+    expect(await handleCall(deps, baseInput)).toMatchObject({ status: 'pending_approval', reason: 'content_changed' });
+    expect(fetchCalls).toHaveLength(0);
+    expect(records.at(-1)!.resultSummary).toMatchObject({
+      reason: 'content_changed',
+      resolved_preview: { to: ['buyer@example.test'] },
+    });
+  });
+
+  test('carry-over of an approval given while unreadable, still unreadable, runs on that decision', async () => {
+    const { deps, fetchCalls } = gated();
+    let reads = 0;
+    deps.approvalEnrichers = { [KEY]: async () => { reads += 1; throw new Error('upstream 503'); } };
+    deps.consumeApprovedExecution = async () => ({ resolvedDigest: null, resolvedError: true });
+    expect((await handleCall(deps, baseInput)).status).toBe('ok');
+    expect(reads).toBe(1);
+    expect(fetchCalls).toHaveLength(1);
+  });
+
+  test('a legacy retry that reuses its pending row reads no content', async () => {
+    const { deps, records } = gated();
+    let reads = 0;
+    deps.approvalEnrichers = { [KEY]: async () => { reads += 1; return content; } };
+    deps.consumeApprovedExecution = async () => false;
+    deps.isPendingApprovalExecution = async () => true;
+    const res = await handleCall(deps, { ...baseInput, approvalExecutionId: 'exec-held' });
+    expect(res).toMatchObject({ status: 'pending_approval', executionId: 'exec-held' });
+    expect(reads).toBe(0);
+    expect(records).toHaveLength(0);
+  });
+
   test('carry-over of an approval with no bound content runs without a read', async () => {
     const { deps, fetchCalls } = gated();
     let reads = 0;

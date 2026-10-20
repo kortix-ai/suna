@@ -29,7 +29,7 @@ import { composioToolkitLogo } from '../connectors/composio';
 import { and, eq } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import { summarizeArgsPreview } from '../connectors/args-preview';
+import { isPlainRecord, summarizeArgsPreview } from '../connectors/args-preview';
 import {
   approvalCallerOf,
   approvalTargetSession,
@@ -205,10 +205,7 @@ approvalLinksApp.openapi(createRoute({
     args_summary: summarizeArgsPreview(argsPreview),
     approval_context:
       typeof summary.approval_context === 'string' ? summary.approval_context : null,
-    resolved_preview:
-      summary.resolved_preview && typeof summary.resolved_preview === 'object' && !Array.isArray(summary.resolved_preview)
-        ? (summary.resolved_preview as Record<string, unknown>)
-        : null,
+    resolved_preview: isPlainRecord(summary.resolved_preview) ? summary.resolved_preview : null,
     resolved_error: typeof summary.resolved_error === 'string' ? summary.resolved_error : null,
     policy_source: typeof summary.policy_source === 'string' ? summary.policy_source : null,
     requested_at: row.createdAt.toISOString(),

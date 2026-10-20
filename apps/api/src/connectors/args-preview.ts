@@ -153,7 +153,7 @@ function previewString(value: string, state: PreviewState): string {
   return `${value.slice(0, MAX_STRING)}… [+${value.length - MAX_STRING} chars]`;
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
+export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object') return false;
   if (Array.isArray(value)) return false;
   const proto = Object.getPrototypeOf(value);

@@ -9,7 +9,7 @@
  */
 import { chatUserIdentities, connectorCalls, projectSessions } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { approvalPreviewReviewable } from '../connectors/args-preview';
+import { approvalPreviewReviewable, isPlainRecord } from '../connectors/args-preview';
 import type { ApprovalDecision, PendingApprovalRow } from '../projects/lib/connector-approval-decision';
 import { db } from '../shared/db';
 import { loadSlackTokenForProject } from './install-store';
@@ -67,20 +67,16 @@ async function slackThreadOf(
  * card went up — the gateway then tells the agent not to repost the link.
  * Sessions with no chat thread (web, CLI, triggers) post nothing.
  */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
 export async function postApprovalCard(input: PostApprovalCardInput): Promise<{ posted: boolean }> {
   const summary = input.resultSummary;
-  const argsPreview = isRecord(summary.args_preview) ? summary.args_preview : null;
+  const argsPreview = isPlainRecord(summary.args_preview) ? summary.args_preview : null;
   const cardInput = {
     executionId: input.executionId,
     actionPath: input.actionPath,
     risk: input.risk,
     argsPreview,
     approvalContext: typeof summary.approval_context === 'string' ? summary.approval_context : null,
-    resolvedPreview: isRecord(summary.resolved_preview) ? summary.resolved_preview : null,
+    resolvedPreview: isPlainRecord(summary.resolved_preview) ? summary.resolved_preview : null,
     resolvedError: typeof summary.resolved_error === 'string' ? summary.resolved_error : null,
     approvalUrl: input.approvalUrl,
     approvable: approvalPreviewReviewable(summary),

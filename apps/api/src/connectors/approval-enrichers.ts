@@ -27,6 +27,14 @@ export type ApprovalEnricher = (ctx: ApprovalEnricherContext) => Promise<Record<
 
 /**
  * Keyed by `enricherKey`. Ships empty.
+ *
+ * An enricher must return deterministic content: no timestamps, etags, read
+ * markers or other volatile fields. The digest covers every field, so a
+ * volatile one makes every carry-over a `content_changed` re-prompt.
+ * The binding re-reads just before the provider call; a change in the window
+ * between that read and the call is not caught (no provider offers a
+ * conditional send).
+ *
  * ponytail: no enricher registered yet. Follow-up: a Gmail send-draft fetcher
  * (`composio:GMAIL_SEND_DRAFT` via `GMAIL_LIST_DRAFTS` filtered by `draft_id`,
  * and/or the Gmail MCP server's get-draft tool), mapped to

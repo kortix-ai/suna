@@ -269,8 +269,9 @@ export interface GatewayDeps {
     actionPath: string;
     requestDigest: string;
     /** An object when claimed: `resolvedDigest` is the approved row's
-     *  `result_summary.resolved_digest`, the content the human saw. */
-  }): Promise<boolean | { resolvedDigest: string | null }>;
+     *  `result_summary.resolved_digest`, the content the human saw;
+     *  `resolvedError` is true when that content could not be read. */
+  }): Promise<boolean | { resolvedDigest: string | null; resolvedError?: boolean }>;
   /** Approval enrichers by `enricherKey` (approval-enrichers.ts). Absent =
    *  the production registry. */
   approvalEnrichers?: Readonly<Record<string, ApprovalEnricher>>;
@@ -1027,21 +1028,27 @@ async function enforceCallPolicies(
       : false;
     // Content binding: an approval given for enriched content (a draft's
     // recipients and body) covers that content only. Re-read it; a change or
-    // a failed read asks again instead of running. The claim above already
-    // consumed the approval.
+    // a failed read asks again instead of running. An approval given while the
+    // content could not be read is re-read too: content that is now readable
+    // asks again so a human sees it; still unreadable, the approver's informed
+    // decision stands. The claim above already consumed the approval.
     const enricher = (deps.approvalEnrichers ?? APPROVAL_ENRICHERS)[
       enricherKey(connector, action.binding, input.actionPath)
-    ];
+    ] as ApprovalEnricher | undefined;
     const enrich = async (): Promise<ResolvedPreview | null> =>
       enricher
         ? resolveApprovalPreview(enricher, { deps, input, connector, binding: action.binding, args: executionArgs })
         : null;
-    const approvedDigest = typeof carriedOver === 'object' ? carriedOver.resolvedDigest : null;
+    const approved = typeof carriedOver === 'object' ? carriedOver : null;
     let resolved: ResolvedPreview | null = null;
     let contentChanged = false;
-    if (approvedDigest) {
+    if (approved?.resolvedDigest) {
       resolved = await enrich();
-      contentChanged = !resolved || !('resolved_digest' in resolved) || resolved.resolved_digest !== approvedDigest;
+      contentChanged =
+        !resolved || !('resolved_digest' in resolved) || resolved.resolved_digest !== approved.resolvedDigest;
+    } else if (approved?.resolvedError && enricher) {
+      resolved = await enrich();
+      contentChanged = resolved !== null && 'resolved_digest' in resolved;
     }
     if (carriedOver && !contentChanged) {
       await audit(deps, input, connector, 'ok', action.risk, {
@@ -1053,9 +1060,6 @@ async function enforceCallPolicies(
       // stacking another one, but never poll it. New clients make one request
       // and wait for the server-side session callback.
       const reason = contentChanged ? 'content_changed' : 'policy_require_approval';
-      // Never blocks or fails the hold: a slow or failed read is recorded as
-      // `resolved_error`. Only an action with an enricher carries these keys.
-      resolved ??= await enrich();
       const reuseExisting =
         !contentChanged && input.approvalExecutionId && deps.isPendingApprovalExecution
           ? await deps.isPendingApprovalExecution({
@@ -1068,6 +1072,10 @@ async function enforceCallPolicies(
               requestDigest,
             })
           : false;
+      // Only a new row reads the content. Never blocks or fails the hold: a
+      // slow or failed read is recorded as `resolved_error`. Only an action
+      // with an enricher carries these keys.
+      if (!reuseExisting) resolved ??= await enrich();
       const executionId =
         (reuseExisting ? input.approvalExecutionId : null) ??
         (await audit(

@@ -9,6 +9,7 @@
  */
 
 import type { changeRequests, connectorCalls } from '@kortix/db';
+import { isPlainRecord } from '../connectors/args-preview';
 import type { serializeReviewItem } from './review-items';
 import type { ApprovalResolvers } from './lib/approval-authority';
 
@@ -48,10 +49,6 @@ const CALL_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']>
  * the decision is someone else's (KRTX-1724). Absent means false (fail closed).
  * `resolvers` names who decides (`approvalResolvers`); null when unknown.
  */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
 export function connectorCallToReviewItem(
   ex: ConnectorCallRow,
   options: { canResolve?: boolean; resolvers?: ApprovalResolvers } = {},
@@ -93,7 +90,7 @@ export function connectorCallToReviewItem(
         : {}),
       // Content Kortix read from the provider (approval-enrichers.ts): the
       // same gate as the args, because it is the payload.
-      ...(includeArgsPreview && isRecord(summary.resolved_preview)
+      ...(includeArgsPreview && isPlainRecord(summary.resolved_preview)
         ? { resolved_preview: summary.resolved_preview }
         : {}),
       ...(includeArgsPreview && typeof summary.resolved_error === 'string'

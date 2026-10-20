@@ -704,7 +704,7 @@ describe('approvals inbox + resolution', () => {
       .returning({ id: connectorCalls.executionId });
     execIds.push(row!.id);
 
-    expect(await consumeApprovedExecution(claim)).toEqual({ resolvedDigest: 'd'.repeat(64) });
+    expect(await consumeApprovedExecution(claim)).toEqual({ resolvedDigest: 'd'.repeat(64), resolvedError: false });
     expect(await consumeApprovedExecution(claim)).toBe(false);
     await db.delete(connectorCalls).where(eq(connectorCalls.executionId, row!.id));
     await db.delete(connectors).where(eq(connectors.connectorId, claim.connectorId));
