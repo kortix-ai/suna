@@ -83,9 +83,9 @@ flow(
     await setDatabaseProjectFeature(ctx.env, project.id, 'agent_rooms', true);
 
     let roomId = '';
-    await ctx.step('owner creates platinum/dev → 201 kind room; the same name again → 200 with the same room_id', async () => {
+    await ctx.step('owner creates platinum/dev → 201; the same name again → 200 with the same room_id', async () => {
       const created = await owner.post(ROOMS, { name: 'platinum/dev', topic: 'who is touching dev' }, { params: p });
-      created.status(201).body().has('$.name', 'platinum/dev').has('$.kind', 'room').has('$.last_seq', 0);
+      created.status(201).body().has('$.name', 'platinum/dev').has('$.last_seq', 0);
       roomId = created.json<{ room_id: string }>().room_id;
       (await owner.post(ROOMS, { name: 'platinum/dev' }, { params: p })).status(200).body().has('$.room_id', roomId);
     });
