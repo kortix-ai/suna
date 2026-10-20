@@ -12,7 +12,7 @@ import { streamSchedules } from '../trigger-events/poll-store';
 import { eventSourceAvailable } from '../trigger-events/registry';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
-import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseRunCaps, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
+import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from '../trigger-session-access';
 import { withProjectGitAuth } from './git';
 import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from './serializers';
@@ -124,6 +124,8 @@ export async function loadTriggersForResponse(
       // Run caps (KRTX-1721); null = unset (the hourly default, 60, applies).
       max_runs_per_hour: spec.maxRunsPerHour ?? null,
       max_runs_per_day: spec.maxRunsPerDay ?? null,
+      // Overlap (KRTX-1721); null = unset (`skip` for cron, `allow` otherwise).
+      overlap: spec.overlap ?? null,
       session_access: sessionAccessBySlug.get(spec.slug) ?? PRIVATE_TRIGGER_SESSION_ACCESS,
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
@@ -131,6 +133,10 @@ export async function loadTriggersForResponse(
       last_attempt_at: runtimeBySlug.get(spec.slug)?.lastAttemptAt?.toISOString() ?? null,
       // The slot the scheduler claims next, jitter included (KRTX-1743).
       next_fire_at: runtimeBySlug.get(spec.slug)?.nextFireAt?.toISOString() ?? null,
+      // Auto-pause (KRTX-1721): set while the trigger paused itself after a
+      // sustained run-limit breach. `PATCH enabled: true` resumes it.
+      auto_paused_at: runtimeBySlug.get(spec.slug)?.autoPausedAt?.toISOString() ?? null,
+      auto_paused_reason: runtimeBySlug.get(spec.slug)?.autoPausedAt ? (runtimeBySlug.get(spec.slug)?.autoPausedReason ?? null) : null,
       webhook_url: spec.type === 'webhook' ? buildPublicWebhookUrl(projectId, spec.slug) : null,
     })),
     // Server-side activation state for this project's whole trigger set. When
@@ -232,6 +238,8 @@ export interface TriggerDraft {
   /** Any type — the run caps (`max_runs_per_hour`, `max_runs_per_day`, KRTX-1721). Omitted when unset. */
   maxRunsPerHour?: number;
   maxRunsPerDay?: number;
+  /** Fresh session mode only — `overlap` (KRTX-1721). Omitted when unset: the type's default applies. */
+  overlap?: 'skip' | 'allow';
   /** For type=event only — connector, optional source adapter, the adapter's event type and event config. */
   event?: GitTriggerEventFields | null;
   sessionMode: GitTriggerSessionMode;
@@ -289,6 +297,8 @@ export function parseTriggerDraft(
   if ('error' in lateness) return lateness;
   const caps = parseRunCaps(body);
   if ('error' in caps) return caps;
+  const overlap = parseOverlap(body);
+  if ('error' in overlap) return overlap;
   const draft =
     type === 'event'
       ? parseEventDraft(body, common)
@@ -298,7 +308,7 @@ export function parseTriggerDraft(
           ? parseCronDraft(body, common)
           : parseWebhookDraft(body, common);
   if ('error' in draft) return draft;
-  return { ...draft, ...(type === 'cron' ? lateness : {}), ...caps };
+  return { ...draft, ...(type === 'cron' ? lateness : {}), ...caps, ...overlap };
 }
 
 function parseDraftSession(body: Record<string, unknown>, type: GitTriggerType):
@@ -476,6 +486,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     // Kept on PATCH, like max_lateness: an edit of any other field keeps the caps.
     max_runs_per_hour: spec.maxRunsPerHour ?? null,
     max_runs_per_day: spec.maxRunsPerDay ?? null,
+    overlap: spec.overlap ?? null,
     session_mode: spec.sessionMode,
     session_id: spec.pinnedSessionId,
     session_key: spec.sessionKey,
@@ -524,6 +535,7 @@ export function draftToSpec(
     ...(draft.maxLatenessSeconds ? { maxLatenessSeconds: draft.maxLatenessSeconds } : {}),
     ...(draft.maxRunsPerHour ? { maxRunsPerHour: draft.maxRunsPerHour } : {}),
     ...(draft.maxRunsPerDay ? { maxRunsPerDay: draft.maxRunsPerDay } : {}),
+    ...(draft.overlap ? { overlap: draft.overlap } : {}),
     event: draft.event,
     sessionMode: draft.sessionMode,
     pinnedSessionId: draft.pinnedSessionId,
