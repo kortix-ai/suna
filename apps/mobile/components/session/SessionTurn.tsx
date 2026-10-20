@@ -54,7 +54,8 @@ import {
   commandPromptText,
   compactionTurnView,
   inlineContentItems,
-  lastTextBlockId,
+  isOpenTextBlock,
+  liveTextBlockId,
   segmentInputBlocks,
   showTurnActions,
   showTurnBusyIndicator,
@@ -66,6 +67,7 @@ import {
   turnHasSteps,
   turnBodyLayout,
   turnResponse,
+  textBlockRevealKey,
   turnSegments,
   turnWorkSplit,
   type TurnSegment,
@@ -226,7 +228,12 @@ function SessionTurnImpl({
     () => turnSegments(segmentInputBlocks(blocks, answeredById, showInlineContent), standaloneCallIds),
     [blocks, answeredById, showInlineContent, standaloneCallIds],
   );
-  const streamingTextId = useMemo(() => (working ? lastTextBlockId(segments) : undefined), [working, segments]);
+  // KRTX-2933: only the part that can still grow streams. A reply that ended
+  // while the session still reads busy renders at once.
+  const streamingTextId = useMemo(
+    () => (working ? liveTextBlockId(turn.assistant, segments) : undefined),
+    [working, turn.assistant, segments],
+  );
   // KRTX-2113: settled, the work folds behind one "Worked for" row; `null` while working.
   const workSplit = useMemo(() => turnWorkSplit(segments, working), [segments, working]);
   const durationMs = useMemo(() => (workSplit ? turnDurationMs(turn) : null), [workSplit, turn]);
@@ -400,6 +407,7 @@ function SessionTurnImpl({
           text={text}
           isDark={isDark}
           isStreaming={segment.block.id === streamingTextId}
+          revealKey={textBlockRevealKey(turn.assistant, segment.block.id)}
         />
       );
     };
@@ -432,7 +440,7 @@ function SessionTurnImpl({
   if (layout.text === 'response' && commandForTurn && response) {
     body.push(
       <CommandOutputCard key="response" name={commandForTurn.name} chrome={!working}>
-        <TextPartBlock text={response} isDark={isDark} isStreaming={working} />
+        <TextPartBlock text={response} isDark={isDark} isStreaming={working} revealKey={`${turn.id}:response`} />
       </CommandOutputCard>,
     );
   }
@@ -453,9 +461,17 @@ function SessionTurnImpl({
         <View style={{ gap: SEGMENT_STACK_GAP }}>
           {inlineItems.map((item, index) => {
             if (item.type === 'text') {
-              const streaming = index === lastTextIndex;
+              const streaming = index === lastTextIndex && isOpenTextBlock(turn.assistant, item.block.id);
               const text = streaming ? item.block.text : item.block.text.trim();
-              return <TextPartBlock key={item.id} text={text} isDark={isDark} isStreaming={streaming} />;
+              return (
+                <TextPartBlock
+                  key={item.id}
+                  text={text}
+                  isDark={isDark}
+                  isStreaming={streaming}
+                  revealKey={textBlockRevealKey(turn.assistant, item.block.id)}
+                />
+              );
             }
             return <ToolPartRenderer key={item.id} call={item.call} sessionId={sessionId} turnLive={working} />;
           })}

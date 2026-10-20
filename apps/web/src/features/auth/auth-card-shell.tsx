@@ -34,7 +34,7 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFo
     <Link
       href="/legal/terms"
       onClick={(event) => onLegalClick(event, '/legal/terms')}
-      className="hover:text-muted-foreground underline-offset-4 transition-colors hover:underline"
+      className="hover:text-muted-foreground transition-colors"
     >
       {t('termsOfService')}
     </Link>
@@ -43,7 +43,7 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFo
     <Link
       href="/legal?tab=privacy"
       onClick={(event) => onLegalClick(event, '/legal?tab=privacy')}
-      className="hover:text-muted-foreground underline-offset-4 transition-colors hover:underline"
+      className="hover:text-muted-foreground transition-colors"
     >
       {t('privacyPolicy')}
     </Link>

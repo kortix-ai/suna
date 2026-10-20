@@ -51,7 +51,7 @@ or not (`unsupported`). The contract is `switchPreflight` in
 | `open-code/background.ts`, `open-code/resource-diagnostics.ts`, `open-code/quick-queue-interrupt.ts` | Native offload, turn guard, tool-boundary queue interrupt and diagnostic projection |
 | Other `open-code/` modules | Native database, projections, pins, attachments, audit and recovery |
 | `pi/service.ts` | Composition; loads pi lazily so an OpenCode boot never pays for it |
-| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, turns, transcript, durability |
+| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, today's date (each turn, OpenCode's `Today's date` line), turns, transcript, durability |
 | `pi/boot.ts` | Session boot: the same host steps as OpenCode, then `pi-ready` |
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
 | `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |

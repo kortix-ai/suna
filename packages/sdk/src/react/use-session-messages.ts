@@ -111,15 +111,14 @@ export function usePacedStoreValue<T>(
     const initial = current();
     shown = initial;
     setState((prev) => (prev.key === key && prev.value === initial ? prev : { key, value: initial }));
+    // A store change only arms the window: `read` runs in `flush`, once per window,
+    // never once per event (KRTX-2880: a streaming turn changes the store per delta,
+    // and `read` costs the transcript's length). An unchanged value sets no state.
     const unsubscribe = useSyncStore.subscribe(() => {
-      if (current() === shown) return;
+      if (timer !== null) return;
       const wait = throttleMs - (now() - lastShownAt);
-      if (wait <= 0) {
-        if (timer !== null) clearTimeout(timer);
-        flush();
-      } else if (timer === null) {
-        timer = setTimeout(flush, wait);
-      }
+      if (wait <= 0) flush();
+      else timer = setTimeout(flush, wait);
     });
     return () => {
       unsubscribe();

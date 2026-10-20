@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { sessionLogOfV1Rows, sessionLogTurns, type SessionLogTurn } from '@kortix/sdk';
 
-import { TranscriptTurnRow } from './transcript';
+import { TranscriptTurnRow, openTextBlock } from './transcript';
 
 /**
  * `TranscriptTurnRow` is the only production site that decides WHICH turns
@@ -76,5 +76,30 @@ describe('the transcript row marks the turns auto-scroll must never anchor on', 
     expect(turnBy('u0').compaction).toBeNull();
     expect(turnBy('u0').continues).toBeNull();
     expect(renderRow(turnBy('u0'))).not.toContain('data-turn-continues');
+  });
+});
+
+describe('openTextBlock: only the text block still being written streams (KRTX-2932)', () => {
+  const text = (id: string) => ({ type: 'text' as const, id, text: `${id} text` });
+  const tool = { type: 'tool_call', id: 't1' };
+  const reply = (blocks: unknown[], completed_at: string | null) =>
+    ({ message_id: 'm1', completed_at, blocks }) as unknown as SessionLogTurn['assistant'][number];
+
+  test('the last text block of an open reply is open', () => {
+    const last = text('b2');
+    expect(openTextBlock(true, reply([text('b1'), tool, last], null))).toEqual({ block: last, messageId: 'm1' });
+  });
+
+  test('a text block followed by another block has ended', () => {
+    expect(openTextBlock(true, reply([text('b1'), tool], null))).toBeNull();
+  });
+
+  test('a completed reply streams nothing while the turn still reads as working', () => {
+    expect(openTextBlock(true, reply([text('b1')], '2026-10-20T00:00:00Z'))).toBeNull();
+  });
+
+  test('a settled turn streams nothing', () => {
+    expect(openTextBlock(false, reply([text('b1')], null))).toBeNull();
+    expect(openTextBlock(true, undefined)).toBeNull();
   });
 });
