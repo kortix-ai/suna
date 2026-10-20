@@ -6,9 +6,15 @@ import { SessionDotMatrix } from '../../primitives/dot-matrix/session-dot-matrix
 import { Textarea } from '../../primitives/textarea';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
-import { CheckCircleIcon, ClockIcon, ShieldWarningIcon, XCircleIcon } from '@phosphor-icons/react';
+import {
+  CheckCircleIcon,
+  ClockIcon,
+  ShieldWarningIcon,
+  WarningIcon,
+  XCircleIcon,
+} from '@phosphor-icons/react';
 import type { SessionAuditAction } from '@kortix/sdk';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 
 /** Matches `Date#toLocaleString()` with no options — date + time, default locale. */
 const requestedAtFormat = new Intl.DateTimeFormat(undefined, {
@@ -44,6 +50,11 @@ export interface ApprovalRequestData {
   /** The agent's own description of the call's effect (`--reason`). Shown as
    *  unverified: the parameters stay the evidence. */
   approvalContext?: string | null;
+  /** Content the server loaded for the reviewer (the draft behind a
+   *  `draft_id`). Shown above the call's own arguments. */
+  resolvedPreview?: Record<string, unknown> | null;
+  /** The connector name `resolvedPreview` was loaded from. */
+  resolvedFrom?: string | null;
   resolution?: ApprovalDecisionValue | null;
   pending: boolean;
   status?: string | null;
@@ -197,56 +208,129 @@ export function resolvedTone(label: string): 'success' | 'destructive' | 'muted'
   return 'muted';
 }
 
+/** Header rows of an email-shaped preview: label key → the arg keys that fill it. */
+const EMAIL_HEADERS = [
+  ['to', ['to', 'recipient_email', 'recipients']],
+  ['cc', ['cc']],
+  ['bcc', ['bcc']],
+  ['subject', ['subject']],
+] as const;
+const EMAIL_BODY_KEYS = ['body', 'message_body', 'html'];
+
 /**
- * The redacted parameters the connector would receive — the whole reason an
- * approval is decidable rather than a guess. Shared by the standalone page, the
- * Audit panel, and the in-session notice so all three show the same values.
- *
- * `channelNames`: a value that is a bound Slack conversation id shows its name
- * beside it. The id stays, because it is the exact parameter.
+ * Splits a preview that reads as an email (a recipient, a subject and a body)
+ * into header rows, the body key and the remaining args. Null for any other
+ * preview, which then renders as the plain key/value list.
  */
-export function ApprovalParameters({
-  argsPreview,
-  reviewComplete = true,
-  dense = false,
+function emailParts(preview: Record<string, unknown>) {
+  const pick = (keys: readonly string[]) => keys.find((key) => key in preview);
+  const body = pick(EMAIL_BODY_KEYS);
+  if (!body || !pick(EMAIL_HEADERS[0][1]) || !('subject' in preview)) return null;
+  const header = EMAIL_HEADERS.flatMap(([label, keys]) => {
+    const key = pick(keys);
+    return key ? [{ label, key }] : [];
+  });
+  const used = new Set([body, ...header.map((row) => row.key)]);
+  const rest = Object.fromEntries(Object.entries(preview).filter(([key]) => !used.has(key)));
+  return { header, body, rest };
+}
+
+/** The call names its target only by id (`draft_id`), or names nothing at all. */
+function argsOnlyIds(preview: Record<string, unknown> | null): boolean {
+  return Object.keys(preview ?? {}).every((key) => /^id$|_id$|Id$/.test(key));
+}
+
+function ArgValue({
+  value,
   channelNames,
-  className,
-}: DenseProp & {
-  argsPreview: Record<string, unknown> | null;
-  reviewComplete?: boolean;
+}: {
+  value: unknown;
   channelNames?: ReadonlyMap<string, string>;
-  className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const entries = argsPreview ? orderedArgEntries(argsPreview) : [];
-
+  if (value === '[redacted]') {
+    return (
+      <span className="text-muted-foreground italic">{tI18nComplete.raw('text1c57f31d6315')}</span>
+    );
+  }
   return (
-    <div
-      className={cn(
-        dense ? 'border-border overflow-hidden rounded-sm border' : 'border-border border-t',
-        className,
-      )}
-    >
-      <div
-        className={cn(
-          'bg-primary/[0.03] border-border',
-          // No list under it means no divider — otherwise the empty case draws
-          // a rule along the bottom of the box for nothing.
-          entries.length > 0 && 'border-b',
-          dense ? 'px-3 py-1.5' : 'px-4 py-2',
-        )}
-      >
-        <p className="text-foreground text-xs font-medium">
-          {tI18nComplete.raw('texte68b36b17cbd')}
+    <>
+      {renderArgValue(value)}
+      {typeof value === 'string' && channelNames?.has(value) ? (
+        <span className="text-muted-foreground"> · {channelNames.get(value)}</span>
+      ) : null}
+    </>
+  );
+}
+
+/** The section label strip: a title and one muted line under it. */
+function ParametersStrip({
+  title,
+  description,
+  hint,
+  dense,
+}: DenseProp & { title: string; description?: string; hint?: string | null }) {
+  return (
+    <div className={cn('bg-primary/[0.03]', dense ? 'px-3 py-1.5' : 'px-4 py-2')}>
+      <p className="text-foreground text-xs font-medium">{title}</p>
+      {description ? (
+        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{description}</p>
+      ) : null}
+      {hint ? (
+        <p className="text-muted-foreground mt-1 flex items-start gap-1.5 text-xs text-pretty">
+          <WarningIcon className="text-kortix-orange mt-px size-3.5 shrink-0" />
+          {hint}
         </p>
-        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-          {entries.length === 0
-            ? tI18nComplete.raw('textf126c0b0d185')
-            : reviewComplete
-              ? tI18nComplete.raw('textc5a9e0731890')
-              : tI18nComplete.raw('text877c39a121a9')}
-        </p>
-      </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * One preview's values. An email-shaped preview reads as a message: To / Cc /
+ * Bcc / Subject, then the body. Every other key stays in the key/value list.
+ */
+function PreviewValues({
+  preview,
+  dense = false,
+  channelNames,
+}: DenseProp & {
+  preview: Record<string, unknown>;
+  channelNames?: ReadonlyMap<string, string>;
+}) {
+  const t = useTranslations('hardcodedUi.approvalParameters');
+  const email = emailParts(preview);
+  const entries = orderedArgEntries(email ? email.rest : preview);
+  const valueSize = dense ? 'text-xs' : 'text-sm';
+  return (
+    <>
+      {email ? (
+        <div className={dense ? 'px-3 py-2' : 'px-4 py-3'}>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1">
+            {email.header.map(({ label, key }) => (
+              <Fragment key={key}>
+                <dt className="text-muted-foreground text-xs">{t(label)}</dt>
+                <dd
+                  className={cn(
+                    'text-foreground min-w-0 wrap-break-word',
+                    valueSize,
+                    label === 'subject' && 'font-medium',
+                  )}
+                >
+                  <ArgValue value={preview[key]} channelNames={channelNames} />
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+          <div className="border-border mt-3 border-t pt-3">
+            <ClampedValue
+              className={cn('text-foreground wrap-break-word whitespace-pre-wrap', valueSize)}
+            >
+              <ArgValue value={preview[email.body]} />
+            </ClampedValue>
+          </div>
+        </div>
+      ) : null}
       {entries.length > 0 && (
         <dl>
           {entries.map(([key, value]) => (
@@ -264,29 +348,89 @@ export function ApprovalParameters({
               </dt>
               <dd className="min-w-0">
                 <ClampedValue
-                  className={cn(
-                    'text-foreground wrap-break-word whitespace-pre-wrap',
-                    dense ? 'text-xs' : 'text-sm',
-                  )}
+                  className={cn('text-foreground wrap-break-word whitespace-pre-wrap', valueSize)}
                 >
-                  {value === '[redacted]' ? (
-                    <span className="text-muted-foreground italic">
-                      {tI18nComplete.raw('text1c57f31d6315')}
-                    </span>
-                  ) : (
-                    <>
-                      {renderArgValue(value)}
-                      {typeof value === 'string' && channelNames?.has(value) ? (
-                        <span className="text-muted-foreground"> · {channelNames.get(value)}</span>
-                      ) : null}
-                    </>
-                  )}
+                  <ArgValue value={value} channelNames={channelNames} />
                 </ClampedValue>
               </dd>
             </div>
           ))}
         </dl>
       )}
+    </>
+  );
+}
+
+/**
+ * The redacted parameters the connector would receive — the whole reason an
+ * approval is decidable rather than a guess. Shared by the standalone page, the
+ * Review Center, the Audit panel, and the in-session notice so all show the
+ * same values. Always rendered: an empty box says so, instead of vanishing.
+ *
+ * `resolvedPreview`: content the server loaded for the reviewer (the draft a
+ * `draft_id` points at). It renders above the call's own arguments, labelled
+ * with the connector it came from (`resolvedFrom`).
+ *
+ * `channelNames`: a value that is a bound Slack conversation id shows its name
+ * beside it. The id stays, because it is the exact parameter.
+ */
+export function ApprovalParameters({
+  argsPreview,
+  reviewComplete = true,
+  resolvedPreview = null,
+  resolvedFrom = null,
+  dense = false,
+  channelNames,
+  className,
+}: DenseProp & {
+  argsPreview: Record<string, unknown> | null;
+  reviewComplete?: boolean;
+  resolvedPreview?: Record<string, unknown> | null;
+  resolvedFrom?: string | null;
+  channelNames?: ReadonlyMap<string, string>;
+  className?: string;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('hardcodedUi.approvalParameters');
+  const empty = !argsPreview || Object.keys(argsPreview).length === 0;
+  // Nothing to check and nothing loaded: the agent's words are all there is.
+  // A withheld preview already carries its own warning beside the decision.
+  const blind = !resolvedPreview && argsOnlyIds(argsPreview) && !(empty && !reviewComplete);
+
+  return (
+    <div
+      className={cn(
+        'divide-border divide-y',
+        dense ? 'border-border overflow-hidden rounded-sm border' : 'border-border border-t',
+        className,
+      )}
+    >
+      {resolvedPreview ? (
+        <>
+          <ParametersStrip
+            dense={dense}
+            title={
+              resolvedFrom ? t('loadedFrom', { connector: resolvedFrom }) : t('loadedFromConnector')
+            }
+          />
+          <PreviewValues preview={resolvedPreview} dense={dense} channelNames={channelNames} />
+        </>
+      ) : null}
+      <ParametersStrip
+        dense={dense}
+        title={tI18nComplete.raw('texte68b36b17cbd')}
+        description={
+          empty
+            ? tI18nComplete.raw('textf126c0b0d185')
+            : reviewComplete
+              ? tI18nComplete.raw('textc5a9e0731890')
+              : tI18nComplete.raw('text877c39a121a9')
+        }
+        hint={blind ? t('idsOnlyHint') : null}
+      />
+      {argsPreview && !empty ? (
+        <PreviewValues preview={argsPreview} dense={dense} channelNames={channelNames} />
+      ) : null}
     </div>
   );
 }
@@ -549,7 +693,12 @@ export function ApprovalRequest({
 
       <ApprovalAgentContext context={request.approvalContext} />
 
-      <ApprovalParameters argsPreview={request.argsPreview} reviewComplete={reviewComplete} />
+      <ApprovalParameters
+        argsPreview={request.argsPreview}
+        reviewComplete={reviewComplete}
+        resolvedPreview={request.resolvedPreview}
+        resolvedFrom={request.resolvedFrom}
+      />
 
       {error ? (
         <p className="text-destructive border-border border-t px-4 py-3 text-xs">{error}</p>

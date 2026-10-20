@@ -20373,7 +20373,16 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Zustellung: Connector – nur serverseitig. Der Wert gelangt nie in die Sandbox-Umgebung.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "Der Zustellungsbereich ist nicht verfügbar. Fragen Sie den Agenten, wo dieser Wert verwendet wird, bevor Sie ihn speichern.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Im Ruhezustand verschlüsselt. Die Zustellung folgt dem oben angezeigten Bereich.",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Geben Sie den angeforderten Wert unten ein. Prüfen Sie seinen Zustellungsbereich, bevor Sie ihn speichern. Der Wert ist im Ruhezustand verschlüsselt."
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Geben Sie den angeforderten Wert unten ein. Prüfen Sie seinen Zustellungsbereich, bevor Sie ihn speichern. Der Wert ist im Ruhezustand verschlüsselt.",
+    "approvalParameters": {
+      "to": "An",
+      "cc": "Cc",
+      "bcc": "Bcc",
+      "subject": "Betreff",
+      "loadedFrom": "Geladen aus {connector}",
+      "loadedFromConnector": "Aus dem Connector geladen",
+      "idsOnlyHint": "Dieser Aufruf zeigt keinen prüfbaren Inhalt. Eine Beschreibung des Agenten ist nicht geprüft."
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "Onboarding-Reset",

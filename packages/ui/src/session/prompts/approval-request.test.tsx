@@ -233,3 +233,96 @@ describe('ApprovalParameters with Slack channel names', () => {
     expect(html).not.toContain('#general');
   });
 });
+
+// A Gmail "send draft" approval showed the reviewer nothing: the call carried
+// only `draft_id`, and the panel hid an empty parameters box. Every call now
+// shows its parameters, an email reads as an email, and content the server
+// loads for the reviewer sits above the call's own arguments.
+describe('ApprovalParameters rendering', () => {
+  test('an empty preview still shows the parameters section', () => {
+    const html = renderToStaticMarkup(<ApprovalParameters argsPreview={{}} />);
+    expect(html).toContain('Parameters');
+    expect(html).toContain('No parameters were recorded for this call.');
+    expect(html).toContain('Any description from the agent is unverified.');
+  });
+
+  test('a call that names its target only by id says the content is not shown', () => {
+    const html = renderToStaticMarkup(<ApprovalParameters argsPreview={{ draft_id: 'r-1' }} />);
+    expect(html).toContain('r-1');
+    expect(html).toContain('Any description from the agent is unverified.');
+    const named = renderToStaticMarkup(
+      <ApprovalParameters argsPreview={{ threadId: 't-1', id: 'x', user_id: 'u' }} />,
+    );
+    expect(named).toContain('Any description from the agent is unverified.');
+  });
+
+  test('an email-shaped preview renders To, Cc, Subject and the body as a message', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalParameters
+        argsPreview={{
+          recipient_email: 'sam@example.test',
+          cc: ['audit@example.test'],
+          subject: 'Q3 numbers',
+          message_body: 'Hi Sam,\nThe numbers are attached.',
+          is_html: false,
+        }}
+      />,
+    );
+    expect(html).toContain('>To<');
+    expect(html).toContain('>Cc<');
+    expect(html).toContain('>Subject<');
+    expect(html).not.toContain('>Bcc<');
+    expect(html).toContain('sam@example.test');
+    expect(html).toContain('Q3 numbers');
+    expect(html).toContain('Hi Sam,\nThe numbers are attached.');
+    // Header keys leave the key/value list; the rest stays in it.
+    expect(html).not.toContain('>recipient_email<');
+    expect(html).not.toContain('>message_body<');
+    expect(html).toContain('>is_html<');
+    expect(html).not.toContain('Any description from the agent is unverified.');
+  });
+
+  test('a preview that is not an email renders as a key/value list', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalParameters argsPreview={{ repo: 'acme/web', subject: 'not mail' }} />,
+    );
+    expect(html).toContain('>repo<');
+    expect(html).toContain('>subject<');
+    expect(html).not.toContain('>Subject<');
+  });
+
+  test('a redacted email body stays hidden', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalParameters argsPreview={{ to: 'a@example.test', subject: 's', body: '[redacted]' }} />,
+    );
+    expect(html).toContain('Hidden credential');
+    expect(html).not.toContain('[redacted]');
+  });
+
+  test('a resolved preview renders above the call arguments, labelled by connector', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalParameters
+        argsPreview={{ draft_id: 'r-1' }}
+        resolvedPreview={{ to: 'sam@example.test', subject: 'Q3 numbers', body: 'Draft body' }}
+        resolvedFrom="Gmail"
+      />,
+    );
+    const loaded = html.indexOf('Loaded from Gmail');
+    expect(loaded).toBeGreaterThan(-1);
+    expect(html.indexOf('Draft body')).toBeGreaterThan(loaded);
+    expect(html.indexOf('r-1')).toBeGreaterThan(html.indexOf('Draft body'));
+    // The content is shown, so the blind-approval hint is not.
+    expect(html).not.toContain('Any description from the agent is unverified.');
+  });
+
+  test('ApprovalRequest passes the resolved preview through', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalRequest
+        request={{ ...request, argsPreview: { draft_id: 'r-1' }, resolvedPreview: { subject: 'Loaded' } }}
+        onDecision={() => undefined}
+      />,
+    );
+    expect(html).toContain('Loaded from the connector');
+    expect(html).toContain('Loaded');
+  });
+});

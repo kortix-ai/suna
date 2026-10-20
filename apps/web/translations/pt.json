@@ -20373,7 +20373,16 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Entrega: connector — apenas no servidor. O valor nunca entra no ambiente do sandbox.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "O escopo de entrega não está disponível. Peça ao agente para confirmar onde este valor será usado antes de salvá-lo.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Criptografado em repouso. A entrega segue o escopo mostrado acima.",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Insira o valor solicitado abaixo. Verifique o seu escopo de entrega antes de salvá-lo. O valor é criptografado em repouso."
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Insira o valor solicitado abaixo. Verifique o seu escopo de entrega antes de salvá-lo. O valor é criptografado em repouso.",
+    "approvalParameters": {
+      "to": "Para",
+      "cc": "Cc",
+      "bcc": "Cco",
+      "subject": "Assunto",
+      "loadedFrom": "Carregado de {connector}",
+      "loadedFromConnector": "Carregado do conector",
+      "idsOnlyHint": "Esta chamada não mostra conteúdo para verificar. Qualquer descrição do agente não foi verificada."
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "Redefinição de integração",

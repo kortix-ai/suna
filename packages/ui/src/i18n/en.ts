@@ -5628,7 +5628,16 @@ const catalog = {
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Delivery: runtime — the real value loads into the sandbox environment. Agent code can read it.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Delivery: connector — server-side only. The value never enters the sandbox environment.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "Delivery scope is unavailable. Ask the agent to confirm where this value will be used before saving.",
-    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Encrypted at rest. Delivery follows the scope shown above."
+    "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Encrypted at rest. Delivery follows the scope shown above.",
+    "approvalParameters": {
+      "to": "To",
+      "cc": "Cc",
+      "bcc": "Bcc",
+      "subject": "Subject",
+      "loadedFrom": "Loaded from {connector}",
+      "loadedFromConnector": "Loaded from the connector",
+      "idsOnlyHint": "This call shows no content to check. Any description from the agent is unverified."
+    }
   },
   "commandPalette": {
     "title": "Command Palette",

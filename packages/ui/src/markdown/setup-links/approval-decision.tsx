@@ -67,10 +67,9 @@ const RISK_LABEL_KEY: Record<string, string> = {
  * One layout for every connector. The handshake names the connector by its
  * logo. The first panel is one fact per row: what runs, the tool path, the
  * access level, the project, the time. The agent's description follows when
- * there is one, then the parameters when there are any
- * (`ApprovalParameters`, shared with the session notice and the Review Center,
- * so all three show the same redacted values). A call with no parameters shows
- * no empty parameters box.
+ * there is one, then the parameters (`ApprovalParameters`, shared with the
+ * session notice and the Review Center, so all three show the same redacted
+ * values). A call with no parameters says so in the same box.
  *
  * A decided call leads with its outcome: the words at the leading edge and a
  * filled mark at the trailing edge, in the outcome's colour. Never colour alone.
@@ -385,7 +384,10 @@ export function ApprovalDecisionPanel({
 
           <ApprovalAgentContext context={details.approval_context} className="rounded-md border" />
 
-          {hasParameters ? (
+          {/* Always shown, empty or not: a hidden box let a `draft_id`-only
+              call be approved blind. A viewer who may not see arguments gets
+              the warning below instead of "nothing was recorded". */}
+          {hasParameters || previewAuthorized ? (
             <ApprovalParameters
               argsPreview={details.args_preview}
               reviewComplete={details.review_complete !== false}

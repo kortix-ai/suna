@@ -20373,7 +20373,16 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Livraison : connector — côté serveur uniquement. La valeur n’entre jamais dans l’environnement du sandbox.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "Le périmètre de livraison est indisponible. Demandez à l’agent de confirmer où cette valeur sera utilisée avant de l’enregistrer.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Chiffré au repos. La livraison suit le périmètre affiché ci-dessus.",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Saisissez la valeur demandée ci-dessous. Vérifiez son périmètre de livraison avant de l’enregistrer. La valeur est chiffrée au repos."
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Saisissez la valeur demandée ci-dessous. Vérifiez son périmètre de livraison avant de l’enregistrer. La valeur est chiffrée au repos.",
+    "approvalParameters": {
+      "to": "À",
+      "cc": "Cc",
+      "bcc": "Cci",
+      "subject": "Objet",
+      "loadedFrom": "Chargé depuis {connector}",
+      "loadedFromConnector": "Chargé depuis le connecteur",
+      "idsOnlyHint": "Cet appel ne montre aucun contenu à vérifier. Toute description de l’agent n’est pas vérifiée."
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "Réinitialisation de l'intégration",

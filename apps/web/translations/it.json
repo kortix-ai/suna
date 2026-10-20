@@ -20373,7 +20373,16 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Consegna: connector — solo lato server. Il valore non entra mai nell’ambiente sandbox.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "L’ambito di consegna non è disponibile. Chiedi all’agente di confermare dove verrà usato questo valore prima di salvarlo.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Crittografato a riposo. La consegna segue l’ambito mostrato sopra.",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Inserisci il valore richiesto qui sotto. Controlla il suo ambito di consegna prima di salvarlo. Il valore è crittografato a riposo."
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Inserisci il valore richiesto qui sotto. Controlla il suo ambito di consegna prima di salvarlo. Il valore è crittografato a riposo.",
+    "approvalParameters": {
+      "to": "A",
+      "cc": "Cc",
+      "bcc": "Ccn",
+      "subject": "Oggetto",
+      "loadedFrom": "Caricato da {connector}",
+      "loadedFromConnector": "Caricato dal connettore",
+      "idsOnlyHint": "Questa chiamata non mostra contenuti da verificare. Qualsiasi descrizione dell’agente non è verificata."
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "Reimpostazione dell'onboarding",

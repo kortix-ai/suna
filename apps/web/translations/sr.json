@@ -20373,7 +20373,16 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Испорука: connector — само на серверу. Вредност никада не улази у sandbox окружење.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "Обим испоруке није доступан. Питајте агента где ће се ова вредност користити пре чувања.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Шифровано у мировању. Испорука следи обим приказан изнад.",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Унесите тражену вредност испод. Проверите њен обим испоруке пре чувања. Вредност је шифрована у мировању."
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Унесите тражену вредност испод. Проверите њен обим испоруке пре чувања. Вредност је шифрована у мировању.",
+    "approvalParameters": {
+      "to": "За",
+      "cc": "Копија",
+      "bcc": "Скривена копија",
+      "subject": "Тема",
+      "loadedFrom": "Учитано из {connector}",
+      "loadedFromConnector": "Учитано из конектора",
+      "idsOnlyHint": "Овај позив не приказује садржај за проверу. Опис агента није проверен."
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "Уводно подешавање је враћено",

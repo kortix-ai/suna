@@ -187,21 +187,59 @@ describe('ApprovalDecisionView', () => {
     expect(html).toContain('>Write<');
   });
 
-  test('a call with no parameters shows no parameters box, and keeps the agent description', () => {
+  // A Gmail "send draft" call carried only `draft_id`; the hidden empty box
+  // left the reviewer approving blind. The section always renders now.
+  test('a call with no parameters still shows the parameters section, and keeps the agent description', () => {
     const html = render({ details: { ...pending, args_preview: null } });
-    expect(html).not.toContain('>Parameters<');
-    expect(html).not.toContain('No parameters were recorded');
+    expect(html).toContain('>Parameters<');
+    expect(html).toContain('No parameters were recorded for this call.');
+    expect(html).toContain('Any description from the agent is unverified.');
     expect(html).toContain('Merge pull request #482 into main');
     // Nothing was withheld, so the call is still decidable.
     expect(html).toContain('Approve this call');
   });
 
-  test('no agent description and no parameters shows neither box', () => {
+  test('a send-draft call with only an id says the agent description is unverified', () => {
+    const html = render({
+      details: {
+        ...pending,
+        action: 'gmail.send_draft',
+        args_preview: { draft_id: 'r-1' },
+        approval_context: 'Sends the Q3 draft',
+      },
+    });
+    expect(html).toContain('r-1');
+    expect(html).toContain('Any description from the agent is unverified.');
+  });
+
+  test('an email-shaped call reads as a message', () => {
+    const html = render({
+      details: {
+        ...pending,
+        action: 'gmail.send_email',
+        args_preview: { to: 'sam@example.test', subject: 'Q3 numbers', body: 'Draft body' },
+      },
+    });
+    expect(html).toContain('>To<');
+    expect(html).toContain('>Subject<');
+    expect(html).toContain('Draft body');
+    expect(html).not.toContain('>body<');
+  });
+
+  test('a call that is not an email keeps the key/value list, and no unverified hint', () => {
+    const html = render({});
+    expect(html).toContain('>repo<');
+    expect(html).toContain('acme/web');
+    expect(html).not.toContain('>Subject<');
+    expect(html).not.toContain('Any description from the agent is unverified.');
+  });
+
+  test('no agent description: the parameters section still shows', () => {
     const html = render({
       details: { ...pending, args_preview: null, approval_context: null },
     });
     expect(html).not.toContain('Agent&#x27;s description');
-    expect(html).not.toContain('>Parameters<');
+    expect(html).toContain('>Parameters<');
   });
 });
 
@@ -268,5 +306,6 @@ describe('ApprovalDecisionPanel', () => {
     });
     expect(html).not.toContain('Approve this call');
     expect(html).toContain('text-kortix-orange');
+    expect(html).not.toContain('No parameters were recorded');
   });
 });

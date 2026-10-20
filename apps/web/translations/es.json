@@ -20373,7 +20373,16 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Entrega: connector — solo en el servidor. El valor nunca entra en el entorno del sandbox.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "El ámbito de entrega no está disponible. Pide al agente que confirme dónde se usará este valor antes de guardarlo.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Cifrado en reposo. La entrega sigue el ámbito mostrado arriba.",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Introduce el valor solicitado abajo. Comprueba su ámbito de entrega antes de guardarlo. El valor está cifrado en reposo."
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Introduce el valor solicitado abajo. Comprueba su ámbito de entrega antes de guardarlo. El valor está cifrado en reposo.",
+    "approvalParameters": {
+      "to": "Para",
+      "cc": "CC",
+      "bcc": "CCO",
+      "subject": "Asunto",
+      "loadedFrom": "Cargado desde {connector}",
+      "loadedFromConnector": "Cargado desde el conector",
+      "idsOnlyHint": "Esta llamada no muestra contenido que revisar. Cualquier descripción del agente no está verificada."
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "Reinicio de incorporación",

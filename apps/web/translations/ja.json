@@ -20373,7 +20373,16 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "配信: connector — サーバー側のみ。値がサンドボックス環境に入ることはありません。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "配信スコープを取得できません。保存する前に、この値がどこで使われるかエージェントに確認してください。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "保存時は暗号化されます。配信は上に表示されたスコープに従います。",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "要求された値を下に入力してください。保存する前に、その配信スコープを確認してください。値は保存時に暗号化されます。"
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "要求された値を下に入力してください。保存する前に、その配信スコープを確認してください。値は保存時に暗号化されます。",
+    "approvalParameters": {
+      "to": "宛先",
+      "cc": "CC",
+      "bcc": "BCC",
+      "subject": "件名",
+      "loadedFrom": "{connector} から読み込み",
+      "loadedFromConnector": "コネクタから読み込み",
+      "idsOnlyHint": "この呼び出しには確認できる内容がありません。エージェントによる説明は検証されていません。"
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "オンボーディングのリセット",

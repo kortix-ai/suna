@@ -1,7 +1,7 @@
 'use client';
 
 import { Composer } from '@kortix/ui/composer';
-import { SessionApprovalNotice } from '@kortix/ui/session';
+import { ApprovalParameters, SessionApprovalNotice } from '@kortix/ui/session';
 import { approvalNoticeRows, type DecidedApproval } from '@kortix/ui/session/prompts/session-approval-review';
 import { SESSION_NOTICE, type SessionAuditAction } from '@kortix/sdk';
 import { useState } from 'react';
@@ -67,6 +67,23 @@ const SLACK_LONG = row('exec-slack-2', {
   },
 });
 
+const SEND_DRAFT = row('exec-draft', {
+  action: 'gmail.send_draft',
+  result_summary: {
+    args_preview: { draft_id: 'r-draft-1' },
+    args_preview_complete: true,
+    approval_context: 'Sends the weekly report draft to ops.',
+  },
+});
+
+/** The draft the server loads for `SEND_DRAFT` (Task 2 fills it for real). */
+const RESOLVED_DRAFT = {
+  to: ['ops@example.test'],
+  cc: ['lead@example.test'],
+  subject: 'Weekly report',
+  body: 'Hi team,\n\nThis week: two releases, one incident, zero open blockers.\n\nThanks',
+};
+
 const SCENARIOS: Record<string, SessionAuditAction[]> = {
   'Two pending (the screenshot)': [SLACK_TEST, SLACK_LONG],
   'One pending': [BASE],
@@ -93,6 +110,7 @@ const SCENARIOS: Record<string, SessionAuditAction[]> = {
       },
     }),
   ],
+  'Send draft (id only)': [SEND_DRAFT],
   'Nothing recorded (deny only)': [
     row('exec-blind', {
       action: 'github.repos.delete',
@@ -158,6 +176,21 @@ export default function DebugApprovalsPage() {
             Reset decisions
           </button>
         </div>
+      </div>
+
+      {/* The parameters renderer on its own: an id-only call, and the same call
+          with the draft the server loaded for the reviewer. */}
+      <div className="mx-auto grid w-full max-w-210 gap-3 px-4 pt-6 sm:grid-cols-2">
+        <ApprovalParameters
+          argsPreview={{ draft_id: 'r-draft-1' }}
+          className="overflow-hidden rounded-md border"
+        />
+        <ApprovalParameters
+          argsPreview={{ draft_id: 'r-draft-1' }}
+          resolvedPreview={RESOLVED_DRAFT}
+          resolvedFrom="Gmail"
+          className="overflow-hidden rounded-md border"
+        />
       </div>
 
       {/* Transcript stand-in, so the docked card reads against real height. */}

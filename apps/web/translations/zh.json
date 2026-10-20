@@ -20373,7 +20373,16 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "交付：connector — 仅在服务器端。该值绝不会进入沙箱环境。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "交付范围不可用。保存前，请让代理确认该值将在何处使用。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "静态时加密。交付遵循上方显示的范围。",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "在下方输入所需的值。保存前，请检查它的交付范围。该值在静态时加密。"
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "在下方输入所需的值。保存前，请检查它的交付范围。该值在静态时加密。",
+    "approvalParameters": {
+      "to": "收件人",
+      "cc": "抄送",
+      "bcc": "密送",
+      "subject": "主题",
+      "loadedFrom": "从 {connector} 加载",
+      "loadedFromConnector": "从连接器加载",
+      "idsOnlyHint": "此次调用没有可检查的内容。代理的任何描述均未经验证。"
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "入职重置",
