@@ -1,4 +1,4 @@
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@kortix/ui/tooltip';
 import { AuthProvider } from '@/features/providers/auth-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { expect, mock, test } from 'bun:test';
@@ -6,9 +6,7 @@ import { Window } from 'happy-dom';
 import { NextIntlClientProvider } from 'next-intl';
 import type { ComponentProps } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { ComposerCard } from './ComposerCard';
-import { AgentSelector } from './agent-selector';
-import { Composer } from './composer';
+import { AgentSelector, Composer, ComposerCard } from '@kortix/ui/composer';
 const win = new Window();
 const globals = globalThis as Record<string, unknown>;
 for (const key of [
