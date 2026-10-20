@@ -929,15 +929,11 @@ kortix apps access crm --mode project
 Never use `public` for internal data. A `public` App has no signed-in member, so
 every function that requires one refuses the call.
 
-[Kortix UI](/docs/sdk/ui) (`@kortix/ui`) is the component library for App UIs,
-but it is not on npm yet: today it installs only inside the
-[kortix-ai/suna](https://github.com/kortix-ai/suna) repository
-(`"@kortix/ui": "workspace:*"`). An App in a project repository cannot install
-it until the first npm release. Until then, style the App with plain CSS that
-reads the same variable names (`--background`, `--foreground`, `--border`,
-`--radius`), and never copy component source into the App.
+[Kortix UI](/docs/sdk/ui) (`@kortix/ui`) is the component library for App UIs.
+Install it from npm with `npm i @kortix/ui @kortix/sdk`, the same version of
+each. Never copy component source into the App.
 
-Inside kortix-ai/suna, a Vite App without Tailwind imports
+A Vite App without Tailwind imports
 `@kortix/ui/styles.css` once in `src/main.tsx`. A Tailwind v4 App imports
 `@import 'tailwindcss'; @import '@kortix/ui/tailwind.css';` in its main CSS.
 Compose `Card`, `Table`, `Modal`, `Badge` and `InfoBanner` before you write a
