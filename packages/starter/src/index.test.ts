@@ -311,6 +311,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       'kortix-marketplace',
       'kortix-memory',
       'kortix-onboarding',
+      'kortix-rooms',
       'kortix-slack',
       'kortix-system',
       'kortix-teams',

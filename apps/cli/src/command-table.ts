@@ -2,6 +2,8 @@ export interface Command {
   name: string;
   args?: string;
   blurb: string;
+  /** The project feature flag the command exists behind (see feature-flags.ts). */
+  featureFlag?: string;
 }
 
 export interface CommandSection {
@@ -131,6 +133,18 @@ export const TIERS: readonly CommandTier[] = [
             blurb: "Talk to a session's agent (REPL or --prompt)",
           },
           {
+            name: 'rooms',
+            args: '<subcommand>',
+            blurb: 'Chat rooms where sessions and people talk (join, send, read, next)',
+            featureFlag: 'agent_rooms',
+          },
+          {
+            name: 'peers',
+            args: '',
+            blurb: 'Sessions and people you can @-mention in a room, with session status',
+            featureFlag: 'agent_rooms',
+          },
+          {
             name: 'tui',
             args: '[options]',
             blurb: 'Experimental: the whole Kortix product as a terminal app (alias: kortix t)',
@@ -254,6 +268,7 @@ export const TIERS: readonly CommandTier[] = [
             name: 'goals',
             args: '<subcommand>',
             blurb: 'Own an outcome until verified done: new, check, ls, status (in a session)',
+            featureFlag: 'goals',
           },
           {
             name: 'capture',
@@ -315,3 +330,14 @@ export const TIERS: readonly CommandTier[] = [
     ],
   },
 ];
+
+/** The feature flag of a root command, or undefined for an unflagged one. */
+export function commandFeatureFlag(name: string): string | undefined {
+  for (const tier of TIERS) {
+    for (const section of tier.sections) {
+      const command = section.commands.find((c) => c.name === name);
+      if (command) return command.featureFlag;
+    }
+  }
+  return undefined;
+}

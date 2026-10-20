@@ -1,6 +1,8 @@
 ---
 name: kortix-goals
 description: "Own an outcome until it is verifiably done, across days or months: a goal folder in Files (`goal.json`, `log.md`, `notes.md`, `docs/`, `evidence/`) run with the `kortix goals` CLI, a daily heartbeat reminder, chasing people for what only they can give, worker sessions, and an independent verifier before done. Load when the user gives an objective rather than a task (\"make sure X\", \"get me Y\", \"keep at it until\", \"/goal\"), when a prompt names a goal folder or `goal.json`, when a reminder says \"Goal wake\", when you receive a `[GOAL CHECK]` message, or when the user asks how a goal is going."
+metadata:
+  kortix-feature-flag: goals
 ---
 
 <skill name="kortix-goals">
