@@ -360,7 +360,7 @@ flow(
       },
     );
     await ctx.step(
-      'cost-by-project lists only the projects the caller can read: a plain member sees their project and not one they are not in; the owner sees both',
+      'cost-by-project lists only the projects the caller can read: a plain member sees their project and not one they are not in; the owner sees both; project_id narrows the owner to that one project; a member naming a project they cannot read gets 403',
       async () => {
         const theirs = await team.project();
         const notTheirs = await team.project();
@@ -396,6 +396,19 @@ flow(
         if (!ownerIds.includes(theirs.id) || !ownerIds.includes(notTheirs.id)) {
           throw new Error(`the owner must see every project: ${JSON.stringify(ownerIds)}`);
         }
+        // KRTX-2801: the declared project_id filter applies to an account-wide caller too.
+        const narrowed = (await ctx.client.as(ctx.P.OWNER).get('/v1/usage/cost-by-project', {
+          query: { account_id: team.id, project_id: theirs.id },
+        }))
+          .status(200)
+          .json<Page>();
+        if (narrowed.total !== 1 || narrowed.projects.map((r) => r.project_id).join() !== theirs.id) {
+          throw new Error(`project_id must narrow the rollup to ${theirs.id}: ${JSON.stringify(narrowed)}`);
+        }
+        (await ctx.client.as(member).get('/v1/usage/cost-by-project', { query: { account_id: team.id, project_id: notTheirs.id } }))
+          .status(403)
+          .body()
+          .has('$.code', 'no_project_membership');
       },
     );
     await ctx.step('OWNER JWT still reads account usage → 200', async () => {

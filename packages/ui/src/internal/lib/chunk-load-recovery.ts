@@ -49,7 +49,8 @@ export function isChunkLoadError(error: unknown): boolean {
   const name = typeof err.name === 'string' ? err.name : '';
   const message = typeof err.message === 'string' ? err.message : '';
   if (name === 'ChunkLoadError' || message.includes('ChunkLoadError')) return true;
-  if (/Loading chunk [\s\S]* failed\./.test(message)) return true;
+  const loading = message.indexOf('Loading chunk ');
+  if (loading >= 0 && message.indexOf(' failed.', loading + 'Loading chunk '.length) >= 0) return true;
   if (DYNAMIC_IMPORT_PATTERNS.some((pattern) => message.includes(pattern))) return true;
   // The stale runtime TypeError is only a chunk-load failure when the throwing
   // frame is the webpack runtime chunk; the error object carries that in its

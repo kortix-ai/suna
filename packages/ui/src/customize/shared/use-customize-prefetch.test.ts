@@ -20,7 +20,6 @@ const ALL: CustomizePrefetchGates = {
   secretRead: true,
   reviewRead: true,
   membersManage: true,
-  llmGateway: true,
 };
 
 function fakeApi(calls: string[]): CustomizePrefetchApi {
@@ -122,7 +121,6 @@ describe('prefetchCustomize', () => {
         secretRead: false,
         reviewRead: false,
         membersManage: false,
-        llmGateway: false,
       },
       fakeApi(calls),
     );

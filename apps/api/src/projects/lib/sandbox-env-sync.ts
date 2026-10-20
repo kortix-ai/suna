@@ -14,7 +14,6 @@ export {
   __backgroundRefreshBackoffForTests,
   __pendingEnvChecksForTests,
   __resetPromptModelSignatureCacheForTests,
-  propagateLlmGatewayModeToActiveSandboxes,
   syncSandboxEnvForPrompt,
 } from './sandbox-env-push';
 export {

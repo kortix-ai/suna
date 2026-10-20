@@ -62,6 +62,16 @@ describe('the plan access notice', () => {
     expect(markup).not.toContain('>Upgrade<');
   });
 
+  test('wallet admission does not advertise managed inference on Free', () => {
+    const markup = render({ model_access: { managed: false, requires_provider_key: true } });
+    expect(markup).toContain('Kortix Managed Models');
+    expect(markup).toContain('or connect your own provider.');
+  });
+
+  test('managed access does not show the provider requirement', () => {
+    expect(render({ model_access: { managed: true, requires_provider_key: false } })).not.toContain('Kortix Managed Models');
+  });
+
   test('an account with neither renders nothing', () => {
     expect(render({})).toBe('<div class="space-y-3 empty:hidden"></div>');
   });

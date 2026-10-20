@@ -942,16 +942,6 @@ async function startSessionRuntime(
 }
 
 
-/** Concrete session model from KORTIX_OPENCODE_MODEL.
- *
- * Gateway mode exposes one OpenCode provider (`kortix`). Its model ids are the
- * complete gateway wire refs, including nested refs such as
- * `codex/gpt-5.6-sol` and `anthropic/claude-sonnet-4-6`. Gateway overrides must
- * therefore keep the complete wire ref as `modelID` instead of treating its
- * first segment as an OpenCode provider.
- *
- * Gateway-disabled sessions keep the native `provider/model` split. Bare
- * legacy Zen ids remain normalized onto the native OpenCode provider. */
 /** Claim warm-seed boot before the host considers monitor or session mode. */
 export async function runOpenCodeWarmSeed(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<boolean> {
   if ((process.env.KORTIX_WARM_SEED ?? '').trim() !== '1') return false
