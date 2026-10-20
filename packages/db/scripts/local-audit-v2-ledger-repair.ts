@@ -1,7 +1,9 @@
+import { ledgerExists } from '../src/ledger-exists';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import pg from 'pg';
+import type pg from 'pg';
+import { withClient } from '../src/with-client';
 
 const MIGRATION_NAME = '20260807221200000_centralized_audit_v2';
 const MIGRATION_FILE = `${MIGRATION_NAME}.sql`;
@@ -174,13 +176,8 @@ export async function repairLocalAuditV2Ledger(
     );
   }
 
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
-  try {
-    const ledgerExists = await client.query<{ exists: boolean }>(
-      "select to_regclass('kortix_migrations.pgmigrations') is not null as exists",
-    );
-    if (!ledgerExists.rows[0]?.exists) return false;
+  return withClient(databaseUrl, async (client) => {
+    if (!(await ledgerExists(client))) return false;
 
     await client.query('begin');
     try {
@@ -211,7 +208,5 @@ export async function repairLocalAuditV2Ledger(
       await client.query('rollback');
       throw error;
     }
-  } finally {
-    await client.end();
-  }
+  });
 }

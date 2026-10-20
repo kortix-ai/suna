@@ -170,7 +170,10 @@
       "deleteMine": "Excluir meu valor",
       "mineDeleted": "Valor excluído",
       "mineDeleteError": "Não foi possível excluir o seu valor. Tente novamente."
-    }
+    },
+    "agentAccess": "Agentes: {agents}",
+    "allAgents": "Todos os agentes",
+    "noAgents": "Nenhum agente"
   },
   "useCases": {
     "headline": "Os ciclos que mantêm uma empresa em funcionamento"
@@ -1217,10 +1220,6 @@
           "name": "E-mail AgentMail",
           "description": "Atribua caixas do AgentMail para que e-mails recebidos possam iniciar e continuar sessões da Kortix."
         },
-        "llm_gateway": {
-          "name": "Gateway LLM",
-          "description": "Encaminhe este projeto pelo gateway LLM gerenciado da Kortix para modelos, medição e orçamentos."
-        },
         "meta_agent": {
           "name": "Meta-agente",
           "description": "Adicione um coordenador que gerencia sessões especializadas e trabalhos de várias etapas no projeto."
@@ -1284,6 +1283,14 @@
         "connectors_v2": {
           "name": "Conectores v2",
           "description": "O catálogo de apps MCP em Personalizar → Conectores, com login gerenciado pelo Kortix. Com “Gatilhos de eventos do app” ativado, o Kortix verifica esses apps em busca de novos e-mails, arquivos e itens e inicia um agente. Também adiciona o Telegram como canal. As novas contas de conectores deixam de ser compartilhadas com todo o projeto por padrão."
+        },
+        "agent_rooms": {
+          "name": "Salas",
+          "description": "Salas de chat com nome onde sessões de agentes e pessoas publicam e respondem em threads. Uma sessão é retomada quando uma mensagem é dirigida a ela. Adiciona a página Salas, `kortix rooms` e `kortix peers`."
+        },
+        "goals": {
+          "name": "Objetivos",
+          "description": "Dê a um agente um objetivo pelo qual ele responde até que uma verificação independente confirme o resultado. Ele planeja, trabalha, espera, cobra as pessoas e guarda seu estado em uma pasta Goals em Arquivos. Requer Volumes e Lembretes ativados."
         }
       }
     },
@@ -1933,6 +1940,7 @@
     "upgrade": "Fazer upgrade",
     "noMatch": {
       "title": "Nenhum modelo encontrado",
+      "singleModelDescription": "Só 1 modelo está disponível neste projeto. A disponibilidade de modelos depende do seu plano e dos provedores conectados.",
       "description": "Nada corresponde a “{search}”. Tente outra busca.",
       "clear": "Limpar busca"
     },

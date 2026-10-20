@@ -149,7 +149,10 @@ const catalog = {
       "deleteMine": "Delete my value",
       "mineDeleted": "Value deleted",
       "mineDeleteError": "Could not delete your value. Try again."
-    }
+    },
+    "agentAccess": "Agents: {agents}",
+    "allAgents": "All agents",
+    "noAgents": "No agents"
   },
   "common": {
     "cancel": "Cancel",

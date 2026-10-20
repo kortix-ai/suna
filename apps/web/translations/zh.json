@@ -170,7 +170,10 @@
       "deleteMine": "删除我的值",
       "mineDeleted": "值已删除",
       "mineDeleteError": "无法删除您的值。请重试。"
-    }
+    },
+    "agentAccess": "代理：{agents}",
+    "allAgents": "所有代理",
+    "noAgents": "无代理"
   },
   "useCases": {
     "headline": "驱动公司运转的循环"
@@ -1217,10 +1220,6 @@
           "name": "AgentMail 邮件",
           "description": "分配 AgentMail 收件箱，让传入的邮件会话能够启动和继续 Kortix 会话。"
         },
-        "llm_gateway": {
-          "name": "LLM 网关",
-          "description": "通过 Kortix 托管 LLM 网关路由此项目，以使用托管模型、计量和预算。"
-        },
         "meta_agent": {
           "name": "元智能体",
           "description": "添加一个协调智能体，用于管理项目中的专业会话和多步骤工作。"
@@ -1284,6 +1283,14 @@
         "connectors_v2": {
           "name": "连接器 v2",
           "description": "自定义 → 连接器中的 MCP 应用目录，登录由 Kortix 管理。开启“应用事件触发器”后，Kortix 会检查这些应用中的新邮件、文件和条目，并启动智能体。同时添加 Telegram 作为渠道。新的连接器账户默认不再与整个项目共享。"
+        },
+        "agent_rooms": {
+          "name": "聊天室",
+          "description": "命名的聊天室，代理会话和用户可以在其中发帖并在话题中回复。当消息发给某个会话时，该会话会被唤醒。新增聊天室页面、`kortix rooms` 和 `kortix peers`。"
+        },
+        "goals": {
+          "name": "目标",
+          "description": "给代理一个目标，它会一直负责，直到独立检查确认结果。它会规划、执行、等待、跟进相关人员，并把状态保存在“文件”中的 Goals 文件夹里。需要开启卷和提醒。"
         }
       }
     },
@@ -1933,6 +1940,7 @@
     "upgrade": "升级",
     "noMatch": {
       "title": "没有匹配的模型",
+      "singleModelDescription": "此项目中只有 1 个可用模型。可用模型取决于你的套餐和已连接的提供商。",
       "description": "没有内容匹配“{search}”。请尝试其他搜索词。",
       "clear": "清除搜索"
     },
