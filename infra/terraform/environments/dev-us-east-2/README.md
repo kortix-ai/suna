@@ -34,7 +34,20 @@ group can open port 8008 on tasks in `kortix-dev-use2-api-internal`.
   `GATEWAY_INTERNAL_TOKEN` and `KORTIX_INTERNAL_EDGE_KEY` on every call.
 - When a call to the private URL throws (refused, reset, DNS, timeout), the
   gateway uses `KORTIX_API_URL` (Cloudflare → Worker → ALB) for 60 s.
-- Unset `KORTIX_API_INTERNAL_URL` and every call uses `KORTIX_API_URL`.
+- A refused or reset connection costs one failed attempt. A private path that
+  hangs (a stale task IP, a dropped SYN) costs each call in flight on that
+  gateway task its full attempt budget before the switch: ~5 s on
+  authenticate/authorize/resolve (then the public URL), ~10 s on `/admit`
+  (then the separate calls). `recordUsage`/`recordTrace` do not retry a
+  timeout, so a write that hangs is dropped. The `/health` ping tries the
+  private URL for 1 s, then the public URL on a new 3 s signal.
+- The private hop skips the api-router Worker (its blocking-maintenance write
+  gate) and the ALB WAF for `/internal/*`.
+- Roll back: set `KORTIX_API_INTERNAL_URL` to `""` in `deploy-gateway-ecs`'s
+  `KORTIX_ECS_ENV_OVERRIDES` and redeploy. Do not delete the key:
+  `infra/scripts/ecs-deploy.sh` copies every variable of the running task
+  definition that the overrides do not name, so the old URL stays set.
+  `config.ts` maps `""` to unset, and every call uses `KORTIX_API_URL`.
 - Check it: `curl -s https://gateway-dev.kortix.com/health | jq .checks.api`.
   `latency_ms` was 15 ms min / 27 ms p50 / 54 ms p90 through Cloudflare
   (2026-10-20, 40 samples).

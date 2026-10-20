@@ -77,6 +77,9 @@ const ADMIT_MISSING_MS = 60_000;
 /** How long a private URL that did not answer is skipped for the public one. */
 const INTERNAL_DOWN_MS = 60_000;
 
+/** The ping's private attempt: a VPC hop that has not answered /health in 1 s is down. */
+const PRIVATE_PING_MS = 1_000;
+
 interface ResolutionErrorBody {
   code: NoUpstreamReasonCode;
   message: string;
@@ -111,18 +114,16 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
   const rawFetch: FetchLike = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   // ponytail: one per-process switch; a broken private path costs one failed attempt per minute.
   let internalDownUntil = 0;
+  const privateUp = () => !!internalBaseUrl && Date.now() >= internalDownUntil;
   // A thrown fetch (refused, reset, DNS, timeout) on the private URL sends the
   // next minute of calls to the public one. A response, even a 5xx, is the
   // API answering, so it keeps the private URL.
   const fetchImpl = async (path: string, init: RequestInit): Promise<Response> => {
-    const base = internalBaseUrl && Date.now() >= internalDownUntil ? internalBaseUrl : baseUrl;
+    if (!internalBaseUrl || !privateUp()) return rawFetch(`${baseUrl}${path}`, init);
     try {
-      return await rawFetch(`${base}${path}`, init);
+      return await rawFetch(`${internalBaseUrl}${path}`, init);
     } catch (err) {
-      if (base === baseUrl) throw err;
       internalDownUntil = Date.now() + INTERNAL_DOWN_MS;
-      // A GET (the ping) repeats safely, so it does not report the API down.
-      if (init.method === 'GET') return rawFetch(`${baseUrl}${path}`, init);
       throw err;
     }
   };
@@ -329,13 +330,22 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       );
       return result.models ?? {};
     },
+    // The ping owns both attempts, each on its own signal: a private path that
+    // hangs costs PRIVATE_PING_MS, trips the switch, and the public URL answers.
     ping: async () => {
       const started = Date.now();
+      const health = (base: string, ms: number) =>
+        rawFetch(`${base}/health`, { method: 'GET', signal: AbortSignal.timeout(ms) });
       try {
-        const res = await fetchImpl('/health', {
-          method: 'GET',
-          signal: AbortSignal.timeout(3_000),
-        });
+        let res: Response | undefined;
+        if (internalBaseUrl && privateUp()) {
+          try {
+            res = await health(internalBaseUrl, PRIVATE_PING_MS);
+          } catch {
+            internalDownUntil = Date.now() + INTERNAL_DOWN_MS;
+          }
+        }
+        res ??= await health(baseUrl, 3_000);
         return { ok: res.ok, latencyMs: Date.now() - started, status: res.status };
       } catch (err) {
         return {

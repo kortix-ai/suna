@@ -452,6 +452,31 @@ describe('ApiClient private path', () => {
     expect(seen).toEqual(['http://api.internal:8008/health', 'https://api.test/health']);
   });
 
+  // A private path that drops packets: no error, the request hangs until its
+  // signal aborts. Real fetch also rejects at once on an aborted signal, so
+  // the public retry needs a signal of its own.
+  test('a hanging private ping answers from the public URL on a fresh signal', async () => {
+    const seen: string[] = [];
+    const api = privateClient((url, init) => {
+      seen.push(url);
+      const signal = init.signal as AbortSignal;
+      if (signal.aborted) return Promise.reject(signal.reason);
+      if (url.startsWith('http://api.internal')) {
+        return new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
+      }
+      return Promise.resolve(jsonResponse({ status: 'ok' }));
+    });
+    const result = await api.ping();
+    expect(result.ok).toBe(true);
+    // The private attempt has a short budget: a blackholed path costs ~1 s, not 3 s.
+    expect(result.latencyMs).toBeLessThan(2_000);
+    expect(seen).toEqual(['http://api.internal:8008/health', 'https://api.test/health']);
+    // The trip holds: the next ping goes straight to the public URL.
+    await api.ping();
+    expect(seen.at(-1)).toBe('https://api.test/health');
+    expect(seen).toHaveLength(3);
+  });
+
   // /admit may have debited the hold before the connection broke, so it is
   // still never repeated: it answers null, and the next call goes public.
   test('a reset private /admit is not repeated, and the next call uses the public URL', async () => {
