@@ -1581,7 +1581,7 @@ flow(
 
     await ctx.step('detail reads report the persisted runtime status, including after a restart', async () => {
       const { Client } = await import('pg');
-      const database = new Client({ connectionString: ctx.env.databaseUrl });
+      const database = new Client({ connectionString: ctx.env.databaseUrl ?? undefined });
       await database.connect();
       try {
         await database.query(

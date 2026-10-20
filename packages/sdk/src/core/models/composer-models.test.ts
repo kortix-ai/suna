@@ -12,6 +12,8 @@ import {
   resolveComposerModel,
   resolveModelDefault,
   sessionModelCandidates,
+  sessionModelFallback,
+  sessionPickStands,
 } from './composer-model';
 import type { FlatModel } from './model-flatten';
 import { createModelVisibility, hasUsableModel, modelInDefaultView } from './model-visibility';
@@ -372,6 +374,75 @@ describe('sessionModelCandidates', () => {
       sessionModelCandidates({ session: session('anthropic/claude-sonnet-4-6', 'explicit'), gatewayEnabled: false }),
     ).toEqual(expected);
     expect(sessionModelCandidates({ session: session('anthropic/claude-sonnet-4-6', 'explicit') })).toEqual(expected);
+  });
+});
+
+describe('sessionModelFallback', () => {
+  const fallbackSession = (extra: Record<string, unknown> = {}) => ({
+    metadata: {
+      opencode_model: 'kortix/deepseek-v4.1-flash',
+      opencode_model_source: 'fallback',
+      opencode_model_fallback_from: 'kortix/codex/gpt-6.1-sol',
+      opencode_model_fallback_reason: 'provider_pool_rate_limited',
+      opencode_model_fallback_at: 1_000,
+      ...extra,
+    },
+  });
+
+  test('a session a fallback took over names the fallback, the model it stood in for, why and when', () => {
+    expect(sessionModelFallback(fallbackSession())).toEqual({
+      model: { providerID: 'kortix', modelID: 'deepseek-v4.1-flash' },
+      from: { providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' },
+      reason: 'provider_pool_rate_limited',
+      atMs: 1_000,
+    });
+  });
+
+  test('any other source, or a half-written record, is no fallback', () => {
+    expect(sessionModelFallback(fallbackSession({ opencode_model_source: 'explicit' }))).toBeUndefined();
+    expect(sessionModelFallback(fallbackSession({ opencode_model_fallback_from: undefined }))).toBeUndefined();
+    expect(sessionModelFallback(fallbackSession({ opencode_model_fallback_at: 'soon' }))).toBeUndefined();
+    expect(sessionModelFallback(null)).toBeUndefined();
+  });
+
+  test('a fallback pin ranks before the last prompt, like a chosen one', () => {
+    expect(
+      sessionModelCandidates({
+        session: fallbackSession(),
+        lastPromptModel: { providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' },
+        gatewayEnabled: true,
+      })[0],
+    ).toEqual({ providerID: 'kortix', modelID: 'deepseek-v4.1-flash' });
+  });
+
+  test('a pin moved back off a fallback ranks before the fallback prompts, whatever its source', () => {
+    for (const source of ['project', 'account', 'platform', undefined]) {
+      expect(
+        sessionModelCandidates({
+          session: {
+            metadata: {
+              opencode_model: 'kortix/codex/gpt-6.1-sol',
+              ...(source ? { opencode_model_source: source } : {}),
+              opencode_model_restored: true,
+            },
+          },
+          lastPromptModel: { providerID: 'kortix', modelID: 'deepseek-v4.1-flash' },
+          gatewayEnabled: true,
+        })[0],
+      ).toEqual({ providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' });
+    }
+  });
+
+  test("this browser's pick stands only when it was made against this switch, whatever the browser clock says", () => {
+    const fallback = sessionModelFallback(fallbackSession());
+    // Made before any switch (or a seed): it records no switch, so it loses.
+    expect(sessionPickStands(undefined, fallback)).toBe(false);
+    // Made while an OLDER switch was shown: a newer switch outranks it.
+    expect(sessionPickStands(500, fallback)).toBe(false);
+    // Made while this switch was shown ('Use Sol', or any pick): it stands,
+    // even when the browser clock runs minutes behind the API's.
+    expect(sessionPickStands(1_000, fallback)).toBe(true);
+    expect(sessionPickStands(undefined, undefined)).toBe(true);
   });
 });
 

@@ -1,3 +1,4 @@
+import { ApiError } from '../api/client.ts';
 import {
   describeConfigStatus,
   describeReloadOutcome,
@@ -558,6 +559,11 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
       `/projects/${ctx.projectId}/sessions${sessionListQuery(flags, parentId)}`,
     );
   } catch (err) {
+    if (err instanceof ApiError && err.status === 404 && ctx.defaultProject) {
+      process.stderr.write(`${status.err('Default project not found or no longer accessible.')} Run ` +
+        `kortix projects use <id>${opts.hostArg ? ` --host ${opts.hostArg}` : ''} to select another project.\n`);
+      return 1;
+    }
     return surfaceApiError(err);
   }
 

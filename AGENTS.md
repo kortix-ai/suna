@@ -109,7 +109,7 @@ corner to make sure the output is good.
 Every repo skill is a directory in `.agents/skills/<name>/`. `.claude/skills/<name>` is a
 symlink to it. Add a skill in `.agents/skills/`, then add the symlink. Third-party skills come
 from `npx skills add` and are pinned in `skills-lock.json`. The PR procedure is the
-**contributing** skill. Browser work is the **agent-browser** skill.
+**contributing** skill; the PR title and body are the **create-pr** skill. Browser work is the **agent-browser** skill.
 
 The repository has no `docs/` tree. Put a runbook or spec in the skill that owns the
 surface (`.agents/skills/<name>/references/`). Put an incident rule in the learnings
@@ -348,9 +348,10 @@ turns red on your change, you fix forward on `dev` the same day.
    (`pnpm worktree start <slug>`) and drive the changed behavior through it: the
    HTTP route, the real CLI process, or the page with agent-browser. Nothing
    before the release suite at Promote to Production catches what you skip.
-3. Open the PR against `dev` and follow the **contributing** skill: it fills
-   the PR template and attaches the demo video you recorded against your local
-   stack. Do not add `test` or `preview` unless you need that one explicit run.
+3. Open the PR against `dev` and follow the **contributing** skill: it attaches
+   the demo video you recorded against your local stack. Write the title and
+   body with the **create-pr** skill: English only, for a human reviewer who
+   decides "merge or iterate" without reading the diff. Do not add `test` or `preview` unless you need that one explicit run.
 4. Merge `dev` into the canonical branch daily. A branch that diverges for weeks
    detonates on merge exactly like a 1,500-line PR does.
 5. **Self-merge to `dev` when the change is verified. Do not wait for the
