@@ -360,13 +360,12 @@ export const drivesApp = makeOpenApiApp<AppEnv>();
 drivesApp.use('*', combinedAuth);
 // A sandbox token names no person, so it has no folder access to act with.
 drivesApp.use('*', rejectSandboxTokens);
-// A session token acts as the person who started the session; sharing needs
+// A session token acts as the person who started the session, and only in
 // their own private session (`sessionFilesRefusal`).
 drivesApp.use('*', async (c, next) => {
   const sessionId = c.get('sessionId');
   if (c.get('authType') === 'pat' && sessionId) {
-    const changesAccess = c.req.method !== 'GET' && /\/access(\/|$)/.test(c.req.path);
-    const refusal = await sessionFilesRefusalFor(sessionId, c.get('userId') ?? null, changesAccess);
+    const refusal = await sessionFilesRefusalFor(sessionId, c.get('userId') ?? null);
     if (refusal) fail(403, refusal);
   }
   await next();

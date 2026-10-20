@@ -509,20 +509,19 @@ export function isPersonalSession(session: SessionFacts | null, bootingUserId: s
 /**
  * Why a session token may not make this Files call, or null when it may. The
  * token acts as the person who started the session, with that person's folder
- * access. Changing who has access to a folder needs that person's own private
- * session: a shared or unattended session must not re-share their folders.
+ * access, so only in that person's own private session: a shared, chat or
+ * unattended session gets none of their folders (as `planSessionDrives` mounts
+ * none), and a move or delete there could change who reaches a folder.
  */
-export function sessionFilesRefusal(session: SessionFacts | null, tokenUserId: string | null, changesAccess: boolean): string | null {
+export function sessionFilesRefusal(session: SessionFacts | null, tokenUserId: string | null): string | null {
   if (!session?.createdBy || session.createdBy !== tokenUserId) return 'Only a session a person started can use Files';
-  if (changesAccess && !isPersonalSession(session, tokenUserId)) {
-    return 'Only your own private session can change who has access to a folder';
-  }
+  if (!isPersonalSession(session, tokenUserId)) return 'Only your own private session can use Files';
   return null;
 }
 
 /** {@link sessionFilesRefusal} for a session by id. */
-export async function sessionFilesRefusalFor(sessionId: string, tokenUserId: string | null, changesAccess: boolean): Promise<string | null> {
-  return sessionFilesRefusal(await sessionFacts(sessionId), tokenUserId, changesAccess);
+export async function sessionFilesRefusalFor(sessionId: string, tokenUserId: string | null): Promise<string | null> {
+  return sessionFilesRefusal(await sessionFacts(sessionId), tokenUserId);
 }
 
 /** Whether the session is the caller's own (its person's folder mounts in it). */

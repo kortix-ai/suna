@@ -66,8 +66,9 @@ Paths are Files paths (`/Company/plan.md`), not `/drives` paths.
 | `kortix drive unshare <path> <grantId>` | Stop one share |
 
 - Every command takes `--json`.
-- `share` and `unshare` work only in the user's own private session. Elsewhere
-  they answer 403: ask the user to share the folder in Files.
+- `kortix drive` works only in the user's own private session. In a shared,
+  chat or scheduled session it answers 403: use the folders mounted in the
+  session, or ask the user to make the change in Files.
 </commands>
 
 <limits>

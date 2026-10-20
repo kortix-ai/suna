@@ -31,7 +31,8 @@ const HELP = help`Usage: kortix drive <subcommand> [options]
 
 The project's Files: one drive of folders (/Company, /Users/<name>, team
 folders). Every command acts as you, with your folder access. Inside a
-session it acts as the person who started the session.
+session it acts as the person who started the session, and works only in
+their own private session.
 
 Subcommands:
   ls [<path>]                       List a folder (default: the top of Files).
