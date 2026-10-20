@@ -20604,6 +20604,12 @@
     "mcpNotChecked": "Pas encore vérifié",
     "runLimits": "Limites d'exécution",
     "runLimitsHint": "Un déclenchement au-delà d'une limite ne lance rien et apparaît comme une exécution ignorée. Un lancement manuel n'est jamais retenu, mais il compte.",
+    "overlap": "Chevauchement",
+    "overlapHint": "Si l’exécution précédente est encore en cours, un nouveau déclenchement attend ou lance une seconde exécution. Une exécution que vous lancez vous-même s’exécute toujours.",
+    "overlapDefaultSkip": "Par défaut : ignorer tant que la dernière exécution est en cours",
+    "overlapDefaultAllow": "Par défaut : lancer quand même une nouvelle exécution",
+    "overlapSkip": "Ignorer tant que la dernière exécution est en cours",
+    "overlapAllow": "Lancer quand même une nouvelle exécution",
     "perHour": "Par heure",
     "perDay": "Par jour",
     "noLimit": "Sans limite"

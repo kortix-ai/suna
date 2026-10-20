@@ -20604,6 +20604,12 @@
     "mcpNotChecked": "Non ancora controllato",
     "runLimits": "Limiti di esecuzione",
     "runLimitsHint": "Un'attivazione oltre un limite non avvia nulla e compare come esecuzione saltata. Un avvio manuale non viene mai trattenuto, ma conta.",
+    "overlap": "Sovrapposizione",
+    "overlapHint": "Se l’esecuzione precedente è ancora in corso, un nuovo avvio aspetta oppure avvia una seconda esecuzione. Un’esecuzione che avvii tu parte sempre.",
+    "overlapDefaultSkip": "Predefinito: salta finché l’ultima esecuzione è in corso",
+    "overlapDefaultAllow": "Predefinito: avvia comunque una nuova esecuzione",
+    "overlapSkip": "Salta finché l’ultima esecuzione è in corso",
+    "overlapAllow": "Avvia comunque una nuova esecuzione",
     "perHour": "Per ora",
     "perDay": "Per giorno",
     "noLimit": "Nessun limite"

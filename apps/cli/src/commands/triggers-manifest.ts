@@ -154,8 +154,8 @@ interface MonitorFields {
 export function parseRunCapFlags(
   tf: Record<string, string | undefined>,
   allowClear: boolean,
-): { caps: Record<string, number | null> } | { error: string } {
-  const out: Record<string, number | null> = {};
+): { caps: Record<string, number | string | null> } | { error: string } {
+  const out: Record<string, number | string | null> = {};
   for (const [flag, key, field] of [
     ['--max-runs-per-hour', 'maxRunsPerHour', 'max_runs_per_hour'],
     ['--max-runs-per-day', 'maxRunsPerDay', 'max_runs_per_day'],
@@ -171,6 +171,13 @@ export function parseRunCapFlags(
       return { error: `${flag} must be a whole number of at least 1${allowClear ? ', or none to remove it' : ''} (got "${raw}").` };
     }
     out[field] = value;
+  }
+  // --overlap (KRTX-1721): skip | allow; on `set`, default resets it.
+  const overlap = tf.overlap?.trim();
+  if (overlap !== undefined) {
+    if (overlap === 'skip' || overlap === 'allow') out.overlap = overlap;
+    else if (allowClear && overlap === 'default') out.overlap = null;
+    else return { error: `--overlap must be skip or allow${allowClear ? ', or default to reset it' : ''} (got "${overlap}").` };
   }
   return { caps: out };
 }

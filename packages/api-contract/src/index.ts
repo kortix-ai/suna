@@ -1551,6 +1551,12 @@ export const TriggerSchema = z.object({
   auto_paused_at: z.string().nullable().optional(),
   /** Why it paused, e.g. `auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row`. */
   auto_paused_reason: z.string().nullable().optional(),
+  /**
+   * Fresh session mode only (KRTX-1721): `skip` holds a fire while the
+   * trigger's previous run is still active. Null when unset: `skip` for a
+   * cron trigger, `allow` otherwise. Absent on older servers.
+   */
+  overlap: z.enum(['skip', 'allow']).nullable().optional(),
   /** Account-local policy for sessions this trigger creates. */
   session_access: TriggerSessionAccessSchema,
   last_fired_at: z.string().nullable(),

@@ -17,6 +17,7 @@ import type { TriggerFireSource } from './trigger-webhook-auth';
 import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
 import { alertTriggerAutoPaused, alertTriggerThrottled, clearTriggerAlert } from './trigger-alerts';
 import { autoPauseTrigger, readTriggerAutoPause, triggerAutoPauseReason, triggerRunCapVerdict } from './trigger-run-caps';
+import { triggerChecksOverlap, triggerOverlapReason } from './trigger-overlap';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -330,6 +331,11 @@ export async function fireGitTrigger(input: {
     if (held) {
       alertTriggerThrottled({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, reason: held.reason, now });
       return { status: 'skipped', reason: held.reason };
+    }
+    // Overlap (KRTX-1721): a fresh run waits for the previous one to finish.
+    if (triggerChecksOverlap(spec)) {
+      const overlap = await triggerOverlapReason({ projectId: project.projectId, slug: spec.slug, now });
+      if (overlap) return { status: 'skipped', reason: overlap };
     }
   }
   // The session's owning identity (created_by / billing / audit). Automated runs

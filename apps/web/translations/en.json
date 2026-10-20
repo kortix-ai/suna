@@ -20615,6 +20615,12 @@
     "mcpNotChecked": "Not checked yet",
     "runLimits": "Run limits",
     "runLimitsHint": "A fire past a limit starts nothing and shows as a skipped run. Running it by hand is never held, but it counts.",
+    "overlap": "Overlap",
+    "overlapHint": "When the previous run is still going, a new fire either waits it out or starts a second run. A run you start yourself always runs.",
+    "overlapDefaultSkip": "Default: skip while the last run is still going",
+    "overlapDefaultAllow": "Default: start a new run anyway",
+    "overlapSkip": "Skip while the last run is still going",
+    "overlapAllow": "Start a new run anyway",
     "perHour": "Per hour",
     "perDay": "Per day",
     "noLimit": "No limit"
