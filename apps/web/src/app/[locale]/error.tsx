@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import {
   isRuntimeNotReadyExhausted,

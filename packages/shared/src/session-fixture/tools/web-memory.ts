@@ -11,7 +11,7 @@
  * - image/video/presentation: `parseImageOutput`, `parseVideoOutput` (mobile),
  *   `parsePresentationOutput` (`@kortix/sdk`).
  * - memory: `parseMemoryView` (`@kortix/sdk`), `parseMemorySearchOutput`,
- *   `parseMemoryEntryOutput` (web `lib/utils`, mobile `lib/session/tools` ports).
+ *   `parseMemoryEntryOutput` (web `packages/ui/src/internal/lib/utils`, mobile `lib/session/tools` ports).
  *
  * No output carries a top-level `error` field or `success: false` unless the
  * spec is the embedded-failure case: `detectEmbeddedFailure`

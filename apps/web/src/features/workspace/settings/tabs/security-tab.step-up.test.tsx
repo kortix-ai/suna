@@ -127,7 +127,6 @@ const uiToastMock = () => ({
   successToast: () => {},
   errorToast: () => {},
 });
-mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 
 // The real ConfirmDialog is a Radix portal; the wiring under test is what
@@ -150,7 +149,6 @@ const uiConfirmDialogMock = () => ({
         )
       : null,
 });
-mock.module('@/components/ui/confirm-dialog', uiConfirmDialogMock);
 mock.module('@kortix/ui/confirm-dialog', uiConfirmDialogMock);
 
 const { SecurityTab } = await import('./security-tab');

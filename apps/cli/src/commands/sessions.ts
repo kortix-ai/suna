@@ -111,9 +111,14 @@ Subcommands:
                                     subscription runs on every key you may
                                     use for it, and they rotate (see
                                     \`kortix models ls\`).
-                                    --wait blocks until it's running; --json
-                                    prints the session object (capture
-                                    session_id to orchestrate).
+                                    --wait blocks until the runtime is
+                                    ready, not until the prompt's turn
+                                    ends, and exits 1 when that turn has
+                                    already failed. To wait for the turn,
+                                    run kortix sessions wait-for <id> (exit
+                                    1 when the turn fails). --json prints
+                                    the session object (capture session_id
+                                    to orchestrate).
                                     --connect attaches the OpenCode TUI as
                                     soon as it's ready (implies --wait); on an
                                     interactive terminal without it, you're
@@ -557,9 +562,8 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   }
 
   if (json) {
-    // `model`: the stored resolved model pin, read through the SDK, never
-    // from `metadata` directly (the server bakes the resolution at create).
-    emitJson(sessions.map((s) => ({ ...s, model: sessionModelPin(s) })));
+    // New APIs report the durable conversation selection. Keep old servers compatible.
+    emitJson(sessions.map((s) => ({ ...s, model: s.model === undefined ? sessionModelPin(s) : s.model })));
     return 0;
   }
 
@@ -584,7 +588,7 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   const byW = Math.min(Math.max(...sessions.map((s) => startedByLabel(s, viewer).length), 10), 24);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('NAME', labelW)}   ${pad('STARTED BY', byW)}   ${showChildren ? 'CHILDREN  ' : ''}STATUS         BRANCH                                    UPDATED${showLabels ? '     LABELS' : ''}${C.reset}\n`,
+    `  ${C.dim}${pad('NAME', labelW)}   ${pad('STARTED BY', byW)}   ${showChildren ? 'CHILDREN  ' : ''}COMPUTER       BRANCH                                    UPDATED${showLabels ? '     LABELS' : ''}${C.reset}\n`,
   );
   for (const s of sessions) {
     process.stdout.write(
@@ -808,11 +812,14 @@ async function sessionsNew(
     }
   }
 
+  // Readiness can come after the first turn already failed (KRTX-2913): a
+  // failure the record already shows is not a success.
+  const turnFailed = waited && Boolean(created.error);
   if (json) {
     emitJson(
       uploads.length > 0 ? { ...created, uploaded_files: uploads.map((u) => u.target) } : created,
     );
-    return 0;
+    return turnFailed ? 1 : 0;
   }
 
   process.stdout.write(
@@ -825,6 +832,12 @@ async function sessionsNew(
     process.stdout.write(`  ${C.dim}sandbox    ${C.reset}${created.sandbox_url}\n`);
   }
   process.stdout.write('\n');
+  if (turnFailed) {
+    process.stderr.write(
+      `${status.err(`Agent turn failed: ${created.error}`)}\n` +
+        `  ${C.dim}Inspect: \`kortix sessions log ${created.session_id}\`.${C.reset}\n`,
+    );
+  }
 
   const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
   const decision = resolveConnectAfterCreate({ connect: connectAfter, json, tty });
@@ -844,7 +857,7 @@ async function sessionsNew(
       `  ${C.dim}Later: ${C.reset}${C.cyan}kortix connect ${shortId(created.session_id)}${C.reset}\n`,
     );
   }
-  return 0;
+  return turnFailed ? 1 : 0;
 }
 
 /**
@@ -953,8 +966,9 @@ async function sessionsInfo(
   process.stdout.write(`  ${C.bold}${s.name ?? shortId(s.session_id)}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}session_id ${C.reset}${s.session_id}\n`);
   process.stdout.write(
-    `  ${C.dim}status     ${C.reset}${statusColor(s.status)}${s.status}${C.reset}\n`,
+    `  ${C.dim}computer   ${C.reset}${statusColor(s.status)}${s.status}${C.reset}\n`,
   );
+  if (s.working) process.stdout.write(`  ${C.dim}activity   ${C.reset}${s.working.state}\n`);
   process.stdout.write(`  ${C.dim}branch     ${C.reset}${s.branch_name}\n`);
   process.stdout.write(`  ${C.dim}base_ref   ${C.reset}${s.base_ref}\n`);
   process.stdout.write(`  ${C.dim}agent      ${C.reset}${s.agent_name}\n`);

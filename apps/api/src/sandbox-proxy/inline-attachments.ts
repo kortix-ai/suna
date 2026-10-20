@@ -3,7 +3,7 @@
  *
  * OpenCode's wire shape for an attachment is a file part whose `url` is a
  * `data:<mime>;base64,…` URI — our own shape too, see
- * `apps/web/src/features/session/uploaded-file-refs.ts`. That is fine for ONE
+ * `packages/ui/src/session/composer/uploaded-file-refs.ts`. That is fine for ONE
  * message on the way in. It is ruinous on the way out, because every read of
  * the transcript re-ships every byte of every attachment that session ever
  * touched.

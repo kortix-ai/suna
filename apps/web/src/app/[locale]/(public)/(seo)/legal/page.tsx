@@ -3,9 +3,9 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import Link from '@/components/site-link';
-import { Separator } from '@/components/ui/separator';
+import { Separator } from '@kortix/ui/separator';
 import { DOC_BODY, DOC_GRID, DocRail, docRailItem } from '@/features/marketing/doc-rail';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { m } from 'motion/react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Fragment, Suspense, useState, type ReactNode } from 'react';

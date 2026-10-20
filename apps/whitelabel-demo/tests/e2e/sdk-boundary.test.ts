@@ -52,7 +52,7 @@ describe('white-label SDK boundary', () => {
   test('permits @kortix/ui imports and the sonner toast host', () => {
     const fixture = `
       import { Button } from '@kortix/ui/button';
-      import { SessionThread } from '@kortix/ui/chat';
+      import { SessionThread } from '@kortix/ui/session';
       import { errorToast } from '@kortix/ui/toast';
       import { Toaster } from 'sonner';
       import { XIcon } from '@phosphor-icons/react';

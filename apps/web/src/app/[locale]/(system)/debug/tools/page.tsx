@@ -2,15 +2,17 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { AdvancedPanel } from '@/features/session/action-panel/advanced/advanced-panel';
-import { ToolParts } from '@/features/session/action-panel/easy/detail-view';
-import { EasyPanel } from '@/features/session/action-panel/easy/easy-panel';
-import { FileViewer } from '@/features/session/action-panel/easy/file-viewer';
-import { SessionPanelProvider } from '@/features/session/action-panel/session-panel-provider';
-import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
-import { SessionFilesPanel } from '@/features/session/session-files-panel';
-import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import {
+  AdvancedPanel,
+  EasyPanel,
+  SessionPanelProvider,
+  SessionFiles as SessionFilesExplorer,
+  SessionChanges as SessionFilesPanel,
+} from '@kortix/ui/session-panel';
+import { ToolParts } from '@kortix/ui/session/panel/easy/detail-view';
+import { FileViewer } from '@kortix/ui/file-viewer';
+import { ToolActivateContext, ToolPartRenderer } from '@kortix/ui/session';
+import { useKortixComputerStore } from '@kortix/ui/internal/stores/kortix-computer-store';
 import { useEffect, useState } from 'react';
 import { sessionLogOfV1Rows, type ToolCallBlock } from '@kortix/sdk';
 import { useSessionLogThread, useSessionStateStore } from '@kortix/sdk/react';

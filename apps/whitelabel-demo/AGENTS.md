@@ -69,13 +69,13 @@ not come back.
 
 - Import every primitive from `@kortix/ui/<name>` (`button`, `input`,
   `textarea`, `select`, `switch`, `dialog`, `card`, `badge`, `tabs`, …).
-- The session chat is `<SessionThread>` from `@kortix/ui/chat`. Lumen passes
-  only its own slot (`composerFooter={<ScopeBar …/>}`). Reuse `ModelPicker`,
-  `AgentPicker` and `sendFailureTitle` from `@kortix/ui/chat`; never re-implement
-  the transcript, composer or prompts.
+- The session chat is `<SessionThread>` from `@kortix/ui/session`, the same
+  thread apps/web renders. Lumen adds only its scope bar under it. The
+  new-session form reuses `ModelPicker` and `AgentPicker` from
+  `@kortix/ui/session`; never re-implement the transcript, composer or prompts.
 - Toasts: `successToast` / `errorToast` / `infoToast` / `warningToast` from
   `@kortix/ui/toast`. `providers.tsx` mounts its `<Toaster />` once.
-- `cn` comes from `@kortix/ui/lib/utils`.
+- `cn` comes from `@kortix/ui`.
 - Icons: `@phosphor-icons/react` (`<Name>Icon`), the set @kortix/ui renders.
 - Use `Loading` (`@kortix/ui/loading`) for pending actions and `Skeleton` for
   page-level loading.
@@ -88,8 +88,8 @@ Theming happens only in `src/app/globals.css`: it imports `tailwindcss` and
 scrollbar plugins), then overrides token variables in `:root` (light) and
 `.dark` (dark). Lumen's brand is `--brand`; `--kortix-blue` (the accent of
 switches, checkboxes, radios, the brand Button and Badge variants and info
-alerts), `--ring`, `--sidebar-primary`, `--sidebar-ring` and `--selection`
-point at it. Never fork
+alerts), `--action` (the default Button fill), `--ring`, `--sidebar-primary`,
+`--sidebar-ring` and `--selection` point at it. Never fork
 or wrap a component to change a color, radius or font. Never import
 `@kortix/ui/fonts.css`: white-label surfaces use the system font stack.
 
@@ -105,9 +105,12 @@ feature-level spinners.
 
 - `src/lib/kortix.ts`: One browser SDK client.
 - `src/app/globals.css`: `@kortix/ui` tokens + theme, and the white-label overrides.
-- `src/components/chat/scope-bar*`: Lumen's session-scope chips (the
-  `SessionThread` composer footer).
-- `src/components/workbench/`: Session workbench.
+- `src/components/project-shell.tsx` + `project-sidebar.tsx`: Kortix's layout
+  (`@kortix/ui/sidebar`, `ProjectSessionList`) with Lumen's header, nav and footer.
+- `src/app/projects/[id]/sessions/[sessionId]/page.tsx`: `SessionWorkspace`
+  (thread + side panel) from one `useSession` result.
+- `src/components/workbench/`: What Lumen adds around the session (approval
+  gates, runtime reconnect, the boot error).
 - `src/app/**`: Route components.
 - `src/app/api/**`: Same-origin server endpoints.
 - `src/server/**`: Wrapper authentication, authorization, policy, and limits.

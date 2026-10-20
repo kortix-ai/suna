@@ -20,7 +20,7 @@ mock.module('next/link', () => ({
   },
 }));
 
-const { AuthMobileLogo } = await import('./auth-primitives');
+const { AuthMobileLogo } = await import('@kortix/ui/internal/auth/auth-primitives');
 
 describe('auth corner brand', () => {
   test('is a named home link, not a bare glyph', () => {

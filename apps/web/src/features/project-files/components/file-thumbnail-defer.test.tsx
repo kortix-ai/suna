@@ -10,14 +10,14 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const rendered: string[] = [];
-mock.module('./file-content-renderer', () => ({
+mock.module('@kortix/ui/files/project/components/file-content-renderer', () => ({
   FileContentRenderer: ({ filePath }: { filePath: string }) => {
     rendered.push(filePath);
     return <pre>{filePath}</pre>;
   },
   getFileCategory: () => 'code',
 }));
-const { FileThumbnail, THUMBNAIL_NEAR_MARGIN } = await import('./file-thumbnail');
+const { FileThumbnail, THUMBNAIL_NEAR_MARGIN } = await import('@kortix/ui/files/project/components/file-thumbnail');
 
 type Callback = (entries: Array<{ isIntersecting: boolean }>) => void;
 let observers: Array<{

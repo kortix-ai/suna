@@ -161,7 +161,7 @@ turn it back into a direct upload.
 React hooks are still web-local (`features/files/`, + duplicated in `features/project-files/` — collapsing that twin remains open). **`useWorkspaceSearch` is alive and consumed (`features/workspace/command-palette.tsx`) — not dead.** `useLssSearch` / `useTextSearch` are already gone.
 
 ### 11. Git / versions / change-requests  🟡
-Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`useChangeRequests` in `@kortix/sdk/react` ✅; the rest of `features/project-files` is still web-local):
+Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`useChangeRequests` in `@kortix/sdk/react` ✅; the rest of `packages/ui/src/files/project` is still web-local):
 | op | REST |
 |---|---|
 | commits / commit / diff | `GET /v1/projects/:id/commits[/:sha][/diff]` |
@@ -237,7 +237,7 @@ Two small project-scoped mutations, added to `projects-client/projects.ts`:
 Read surface — `kortix.billing.{accountState, accountStateMinimal,
 transactions, transactionsSummary, creditBreakdown, usageHistory, usageRollup,
 sessionCosts, tierConfigurations}` ✅. Hooks still web-local
-(`hooks/billing`) 🟡.
+(`packages/ui/src/internal/billing`) 🟡.
 | op | REST |
 |---|---|
 | account state (full / minimal) | `GET /v1/billing/account-state[/minimal]` |
@@ -338,7 +338,7 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | ⚠️ **Deprecated**: the sandbox daemon serves none of these routes, so every call answers 404. Client in SDK (`opencode/kortix-master.ts`, re-exported via `@kortix/sdk/opencode-client`) + hooks in `@kortix/sdk/react` (`use-kortix-master.ts`); web's `hooks/kortix/*` files are now thin re-export wrappers over them. Reachable from the root barrel like the rest of the runtime client; `@kortix/sdk/opencode-client` is a deprecated alias for the same names |
 
 ### To make the SDK the whole data layer
-1. ~~Add a `files` client to the SDK~~ — **done**: `@kortix/sdk/files` wraps the daemon `/file` + `/find` endpoints (12 ops). Remaining: move `features/files` hooks in; **collapse the `features/project-files` twin** into it (backend-parameterized).
+1. ~~Add a `files` client to the SDK~~ — **done**: `@kortix/sdk/files` wraps the daemon `/file` + `/find` endpoints (12 ops). Remaining: move `packages/ui/src/files/runtime` hooks in; **collapse the `packages/ui/src/files/project` twin** into it (backend-parameterized).
 2. **Wrap the existing client fns as hooks** in the SDK: git/versions/change-requests (`useChangeRequests` ✅ done; commits/branches/diff still web-local), triggers (`useProjectTriggers` ✅ done), gateway-observability, sandbox-admin, billing/account-state.
 3. ~~Framework-free event stream~~ — **done**: `openEventStream` (`@kortix/sdk` root barrel / `@kortix/sdk/event-stream`) is a framework-free connect/reconnect/heartbeat/coalescing primitive with zero React deps, and `session.stream()` is a thin facade over it (`ensureReady()` + the session's own runtime client). `@kortix/sdk/react`'s `useOpenCodeEventStream` is now just a React wrapper around the same primitive — a non-React host (server wrapper, worker, CLI) subscribes directly via `session.stream()` or `openEventStream()`.
 4. ~~Land + export the kortix-master daemon client~~ — **done**: the client (`opencode/kortix-master.ts`) is re-exported from `@kortix/sdk/opencode-client`, and its React Query layer lives in `@kortix/sdk/react` (`use-kortix-master.ts`, with the injectable `KortixMasterIdentity` seam); apps/web's six former hook files (`hooks/kortix/*` + `hooks/use-sandbox-services.ts`) are thin wrappers over it.
