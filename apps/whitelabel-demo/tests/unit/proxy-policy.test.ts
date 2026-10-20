@@ -13,7 +13,14 @@ describe('proxy policy: what a member token may do', () => {
       ['PATCH', S],
       ['POST', `${P}/attachments`],
       ['POST', `${P}/turn-permission`],
-      ['POST', 'p/sbx-1/8000/kortix/runtime/session/abort'],
+      ['POST', 'p/sbx-1/8000/kortix/runtime/sessions/ses_1/prompt'],
+      ['POST', 'p/sbx-1/8000/kortix/runtime/sessions/ses_1/abort'],
+      ['POST', 'p/sbx-1/8000/session/ses_1/prompt_async'],
+      ['POST', 'p/sbx-1/8000/permission/per_1/reply'],
+      ['POST', 'p/sbx-1/8000/question/que_1/reply'],
+      ['POST', `${S}/restart`],
+      ['PUT', `${S}/archive`],
+      ['DELETE', `${S}/prompts/pr_1`],
     ]) {
       expect([method, path, blockedReason(method, path)]).toEqual([method, path, null]);
     }
@@ -31,7 +38,15 @@ describe('proxy policy: what a member token may do', () => {
       `${P}/connections`,
       `${P}/secrets`,
       'p/sbx-1/8000/kortix/health',
+      'p/sbx-1/8000/kortix/runtime/messages/ses_1',
+      'p/sbx-1/8000/global/event',
+      'p/sbx-1/8000/lsp/diagnostics',
+      'p/sbx-1/8000/session/ses_1/message',
+      'p/sbx-1/8000/file/content',
       'p/config',
+      `${S}`,
+      `${S}/transcript`,
+      `${S}/previews`,
     ]) {
       expect([path, blockedReason('GET', path)]).toEqual([path, null]);
     }
@@ -72,6 +87,71 @@ describe('proxy policy: what a member token may do', () => {
     expect(blockedReason('POST', `${P}/sessions/warm`)).not.toBeNull();
     expect(blockedReason('POST', `${P}/sessions/warm/claim`)).not.toBeNull();
     expect(blockedReason('GET', `${P}/sessions/warm`)).not.toBeNull();
+  });
+
+  test('session runtime: process, terminal, git, environment and file writes are refused', () => {
+    const RT = 'p/sbx_1/8000';
+    for (const [method, path] of [
+      ['POST', `${RT}/session/ses_1/shell`],
+      ['POST', `${RT}/session/ses_1/command`],
+      ['POST', `${RT}/session/ses_1/init`],
+      ['POST', `${RT}/pty`],
+      ['GET', `${RT}/pty/pty_1/connect`],
+      ['POST', `${RT}/kortix/pty`],
+      ['POST', `${RT}/kortix/env-rpc`],
+      ['GET', `${RT}/kortix/env`],
+      ['POST', `${RT}/kortix/git/commit`],
+      ['POST', `${RT}/kortix/tools/run`],
+      ['POST', `${RT}/kortix/drive-sync/push`],
+      ['POST', `${RT}/kortix/refresh`],
+      ['POST', `${RT}/file/upload`],
+      ['DELETE', `${RT}/file`],
+      ['GET', `${RT}/global/config`],
+      ['PATCH', `${RT}/global/config`],
+      ['PUT', `${RT}/auth/openai`],
+      ['POST', `${RT}/mcp`],
+      ['GET', 'p/sbx_1/5173/'],
+      ['POST', 'p/share'],
+      ['GET', 'p/share'],
+      ['POST', 'p/auth'],
+    ]) {
+      expect([method, path, blockedReason(method, path)]).not.toEqual([method, path, null]);
+    }
+  });
+
+  test('runtime file reads stay inside the workspace', () => {
+    const q = (path: string) => new URLSearchParams({ path });
+    const RT = 'p/sbx_1/8000';
+    expect(blockedReason('GET', `${RT}/file/content`, q('src/app.ts'))).toBeNull();
+    expect(blockedReason('GET', `${RT}/file/content`, q('/workspace/src/app.ts'))).toBeNull();
+    for (const path of ['/tmp/.t', '/home/kortix/.bashrc', '/dev/shm/kortix/agent-env.sh', '../etc/passwd', '/workspace/../tmp/x', '~/.ssh/id']) {
+      expect([path, blockedReason('GET', `${RT}/file/content`, q(path))]).not.toEqual([path, null]);
+    }
+  });
+
+  test('public links, visibility, reminders and credential pools are refused', () => {
+    for (const [method, path] of [
+      ['POST', `${S}/public-shares`],
+      ['GET', `${S}/public-shares`],
+      ['DELETE', `${S}/public-shares/kps_1`],
+      ['PUT', `${S}/sharing`],
+      ['POST', `${S}/reminders`],
+      ['PATCH', `${S}/reminders/rem_1`],
+      ['PUT', `${S}/scope`],
+      ['GET', `${S}/provider-secret-pools`],
+      ['PUT', `${S}/provider-secret-pools/openai`],
+      ['POST', `${S}/commit-push`],
+      ['POST', `${S}/config-release`],
+      ['POST', `${S}/log/restore`],
+      ['PUT', `${S}/drive-sync/d1/files/content`],
+    ]) {
+      expect([method, path, blockedReason(method, path)]).not.toEqual([method, path, null]);
+    }
+  });
+
+  test('a session delete is routed through the thread check (SESSION_ONE)', () => {
+    expect(blockedReason('DELETE', S)).toBeNull();
+    expect(SESSION_ONE.test(S)).toBe(true);
   });
 
   test('project configuration and deletion are refused', () => {

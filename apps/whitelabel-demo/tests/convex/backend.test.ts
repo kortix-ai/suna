@@ -139,6 +139,36 @@ describe('threads.recordFromProxy: one Lumen thread per Kortix session', () => {
   });
 });
 
+describe('threads.deleteFromProxy: only the creator or an admin deletes a thread', () => {
+  test('a plain member cannot delete another member\'s thread; the creator and an owner can', async () => {
+    const { t, acme, alice, ready } = await world();
+    const bob = await signedInUser(t, 'bob@example.test');
+    const carol = await signedInUser(t, 'carol@example.test');
+    await addMember(t, acme, bob.userId, 'member');
+    await addMember(t, acme, carol.userId, 'member');
+    const ws = ready as Id<'workspaces'>;
+    await bob.as.mutation(api.threads.recordFromProxy, { workspaceId: ws, kortixSessionId: 'sess_b', title: 'b', proxySecret: PROXY_SECRET });
+    await bob.as.mutation(api.threads.recordFromProxy, { workspaceId: ws, kortixSessionId: 'sess_b2', title: 'b2', proxySecret: PROXY_SECRET });
+    const del = (kortixSessionId: string, remove: boolean) => ({ workspaceId: ws, kortixSessionId, proxySecret: PROXY_SECRET, remove });
+
+    await expect(carol.as.mutation(api.threads.deleteFromProxy, del('sess_b', false))).rejects.toThrow(/403: only the thread's creator/);
+    await expect(carol.as.mutation(api.threads.deleteFromProxy, del('sess_b', true))).rejects.toThrow(/403/);
+    await expect(bob.as.mutation(api.threads.deleteFromProxy, { ...del('sess_b', true), proxySecret: 'nope' })).rejects.toThrow(/403: proxy only/);
+    await expect(bob.as.mutation(api.threads.deleteFromProxy, del('sess_none', false))).rejects.toThrow(/404/);
+
+    await bob.as.mutation(api.threads.deleteFromProxy, del('sess_b', false));
+    expect(await t.run((ctx) => ctx.db.query('threads').collect())).toHaveLength(2);
+    await bob.as.mutation(api.threads.deleteFromProxy, del('sess_b', true));
+    await alice.as.mutation(api.threads.deleteFromProxy, del('sess_b2', true));
+    expect(await t.run((ctx) => ctx.db.query('threads').collect())).toHaveLength(0);
+    const audits = await t.run((ctx) => ctx.db.query('auditEvents').collect());
+    expect(audits.filter((e) => e.action === 'thread.delete').map((e) => [e.actorId, e.detail])).toEqual([
+      [bob.userId, 'sess_b'],
+      [alice.userId, 'sess_b2'],
+    ]);
+  });
+});
+
 describe('provisionWorkspace: the customer sees a generic failure, the operator sees the cause', () => {
   async function provisioning() {
     const { t, provisioning, alice } = await world();

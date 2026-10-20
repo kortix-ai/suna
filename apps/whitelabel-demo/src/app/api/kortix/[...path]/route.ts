@@ -11,7 +11,9 @@
  *    response (REST, SSE, runtime routes alike).
  * 6. A new session gets Lumen's tags and becomes a Lumen thread
  *    (`createSession`), whichever screen created it. A session update keeps
- *    those tags (`patchSession`): a member cannot forge or erase them.
+ *    those tags (`patchSession`): a member cannot forge or erase them. A
+ *    session delete needs the thread's creator or an org admin, and drops the
+ *    thread record (`deleteSession`).
  *
  * Kortix enforces the project boundary: the member token is rejected on
  * every other project, on `GET /projects` and on most account routes. It is
@@ -46,7 +48,7 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   const local = localAnswer(req.method, built.path, new URLSearchParams(search), body, resolved.member);
   if (local) return local;
 
-  const blocked = blockedReason(req.method, built.path);
+  const blocked = blockedReason(req.method, built.path, new URLSearchParams(search));
   if (blocked) return Response.json({ error: blocked }, { status: 403 });
 
   const upstreamUrl = `${upstreamBase()}/${built.path}${search}`;
@@ -54,7 +56,8 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
     return createSession(req, upstreamUrl, resolved.member);
   }
   const one = SESSION_ONE.exec(built.path);
-  if (one && req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'DELETE') {
+  if (one && req.method === 'DELETE') return deleteSession(req, upstreamUrl, resolved.member, one[2]);
+  if (one && req.method !== 'GET' && req.method !== 'HEAD') {
     return patchSession(req, upstreamUrl, resolved.member, one[1], one[2]);
   }
   return forwardKortixRequest({ request: req, upstreamUrl, token: resolved.member.token });
@@ -99,6 +102,38 @@ async function createSession(req: NextRequest, upstreamUrl: string, member: Memb
     }
   }
   return new Response(text, { status: res.status, headers: res.headers });
+}
+
+function deleteCheck(member: Member, sessionId: string, remove: boolean) {
+  return fetchAuthMutation(api.threads.deleteFromProxy, {
+    workspaceId: member.workspaceId as Id<'workspaces'>,
+    kortixSessionId: sessionId,
+    proxySecret: process.env.LUMEN_PROXY_SECRET ?? '',
+    remove,
+  });
+}
+
+/** Convex errors carry their status as a `403:` / `404:` prefix. */
+function convexStatus(err: unknown): number {
+  const m = /\b(40[134])\b:/.exec(String(err));
+  return m ? Number(m[1]) : 500;
+}
+
+async function deleteSession(req: NextRequest, upstreamUrl: string, member: Member, sessionId: string) {
+  try {
+    await deleteCheck(member, sessionId, false);
+  } catch (err) {
+    const status = convexStatus(err);
+    return Response.json({ error: status === 403 ? "Only the thread's creator or an admin may delete it" : 'Not found' }, { status });
+  }
+  const res = await forwardKortixRequest({ request: req, upstreamUrl, token: member.token });
+  if (!res.ok && res.status !== 404) return res;
+  // The session is gone on Kortix. A failed record delete leaves a thread row
+  // that points at a deleted session, and is logged.
+  await deleteCheck(member, sessionId, true).catch((err) =>
+    process.stderr.write(`lumen: thread for session ${sessionId} not removed: ${String(err)}\n`),
+  );
+  return res;
 }
 
 async function patchSession(req: NextRequest, upstreamUrl: string, member: Member, projectId: string, sessionId: string) {

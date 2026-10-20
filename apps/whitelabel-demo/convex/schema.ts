@@ -51,6 +51,7 @@ export default defineSchema({
       v.literal("workspace.ready"),
       v.literal("workspace.failed"),
       v.literal("thread.create"),
+      v.literal("thread.delete"),
       v.literal("token.mint"),
     ),
     workspaceId: v.optional(v.id("workspaces")),

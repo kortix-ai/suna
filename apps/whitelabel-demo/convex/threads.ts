@@ -69,3 +69,32 @@ export const recordFromProxy = mutation({
     });
   },
 });
+
+/**
+ * A member deletes a thread's Kortix session through the proxy. Only the
+ * thread's creator or an org owner/admin may. `remove: false` checks, and the
+ * proxy then deletes the session on Kortix; `remove: true` drops the thread
+ * record and writes the audit event. Only the Next.js proxy calls this.
+ */
+export const deleteFromProxy = mutation({
+  args: { workspaceId: v.id("workspaces"), kortixSessionId: v.string(), proxySecret: v.string(), remove: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, a) => {
+    requireProxy(a.proxySecret);
+    const { ws, userId, role } = await requireWorkspace(ctx, a.workspaceId);
+    const row = await ctx.db
+      .query("threads")
+      .withIndex("by_kortixSessionId", (q) => q.eq("kortixSessionId", a.kortixSessionId))
+      .unique();
+    if (!row || row.workspaceId !== a.workspaceId) throw new Error("404: thread not found");
+    if (row.createdBy !== userId && role !== "owner" && role !== "admin") {
+      throw new Error("403: only the thread's creator or an admin may delete it");
+    }
+    if (!a.remove) return null;
+    await ctx.db.delete(row._id);
+    await ctx.db.insert("auditEvents", {
+      orgId: ws.orgId, actorId: userId, action: "thread.delete", workspaceId: a.workspaceId, detail: a.kortixSessionId,
+    });
+    return null;
+  },
+});

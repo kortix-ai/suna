@@ -102,12 +102,18 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
    `GET /accounts/me` (the operator's user id, email and accounts) or the
    project's member and access lists.
 5. A project-scoped token carries its minter's role on that project (owner).
-   `src/server/proxy-policy.ts` therefore allowlists, for reads and writes,
-   the session surface: the project and its sessions, attachments, approvals,
-   turns, change requests, model picker, connection and secret names, and the
-   runtime. Everything else returns `403`: agent config, secret writes,
-   members, access, triggers, tokens, credentials, project deletion, warm
-   sessions, billing and every account route.
+   `src/server/proxy-policy.ts` therefore names each route the session UI
+   calls, by method: the project and its sessions, session start/stop/restart,
+   prompts, attachments, approvals, turns, change requests, model picker,
+   connection and secret names. On the session runtime (port 8000 of the
+   sandbox) it allows the transcript, events, status, permission and question
+   replies, prompts and aborts, and file reads inside `/workspace`. Everything
+   else returns `403`: agent config, secret writes, members, access, triggers,
+   tokens, credentials, project deletion, warm sessions, billing, every account
+   route, public shares and session visibility (`public-shares`, `sharing`,
+   `p/share`), reminders, provider credential pools, the runtime's shell,
+   command, terminal (`pty`), git, environment, tool, drive-sync and file-write
+   routes, the runtime config, and every other sandbox port.
 6. Two account reads the session UI makes are answered by Lumen itself
    (`localAnswer`): `GET accounts/me` returns the Lumen user id with no email
    and no accounts, and the permission probes (`…/iam/members/…/effective`
@@ -117,14 +123,26 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
 7. A new session gets Lumen's labels first; a client label in the `lumen-`
    namespace is dropped (`tagSessionCreate`, `convex/tags.ts`).
 8. Every token Lumen mints is revoked at its expiry by a scheduled Convex
-   action (`kortix.revokeToken`). No token reaches the browser. A preview
-   iframe gets a Kortix public preview share instead (`/api/preview-url`): it
-   opens one port of one session's sandbox, expires after 15 minutes and
-   grants nothing on the Kortix API. Kortix refuses shares of the runtime
-   ports (8000 and the harness ports).
+   action (`kortix.revokeToken`). No token Lumen mints reaches the browser. A
+   preview iframe gets a Kortix public preview share instead
+   (`/api/preview-url`): it opens one port of one session's sandbox, expires
+   after 15 minutes and grants nothing on the Kortix API. Kortix refuses shares
+   of the runtime ports (8000 and the harness ports). Lumen offers no other
+   public link: Kortix would serve it under the Kortix brand with no expiry.
 9. A member removed from an organization is refused within 60 s (the proxy's
    membership cache). Their stored member token stays valid until its expiry
    (at most 1 h), but it never left the server.
+10. A session delete needs the thread's creator or an org owner/admin
+    (`threads.deleteFromProxy`, checked before the Kortix call). It drops the
+    thread record and writes a `thread.delete` audit event.
+11. Known gap, in Kortix: the agent runs with the sandbox's own Kortix token
+    (`KORTIX_TOKEN`, a project-scoped token with the owner role) in its
+    environment. A member who prompts the agent to print it gets a credential
+    that works on the Kortix API for that project, outside Lumen. Lumen did
+    not mint it and cannot revoke it; its expiry is not verified. The proxy closes the direct routes (shell, terminal, file reads
+    outside `/workspace`); it cannot stop the agent from reading its own
+    environment. The fix belongs in Kortix: keep the sandbox token out of the
+    agent's tool environment, or narrow it to what the agent needs.
 
 ## Setup
 

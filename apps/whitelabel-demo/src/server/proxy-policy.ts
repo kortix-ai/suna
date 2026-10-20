@@ -2,51 +2,86 @@
  * What a Lumen member may do through the proxy with their project-scoped
  * Kortix token. The token carries its minter's role on the project (owner)
  * and the minter's identity (the Lumen operator's Kortix user), so the proxy
- * narrows it to the session surface: an allowlist for reads and one for
- * writes. Everything else is refused. Project configuration (agents, secrets,
- * members, triggers, connectors, tokens, deletion) belongs to Lumen's
- * operator, and the operator's Kortix identity (accounts, members, access
+ * narrows it to the calls the session UI makes: each allowed route is named,
+ * by method. Everything else is refused. Project configuration (agents,
+ * secrets, members, triggers, connectors, tokens, deletion), public links and
+ * the sandbox's process, terminal, git and environment routes belong to
+ * Lumen's operator. The operator's Kortix identity (accounts, members, access
  * lists) is not the member's to read.
  *
- * ponytail: a path allowlist here; Kortix narrowing a token's permissions
+ * ponytail: a route allowlist here; Kortix narrowing a token's permissions
  * (contract proposal G2) would make it unnecessary.
  */
 
 const PROJECT = '[^/]+';
 // A session id is a UUID. A literal segment such as `warm` is a different route.
 const SESSION = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const SEG = '[^/]+';
 
 /** A new session: the proxy tags it and records it as a Lumen thread. */
 export const SESSION_CREATE = new RegExp(`^projects/${PROJECT}/sessions$`);
 
-/** One session (PATCH renames it, relabels it, merges metadata): the proxy keeps Lumen's tags on it. */
+/**
+ * One session. PATCH renames it, relabels it or merges metadata: the proxy
+ * keeps Lumen's tags on it. DELETE goes through the thread record: only the
+ * thread's creator or an org owner/admin may delete it.
+ */
 export const SESSION_ONE = new RegExp(`^projects/(${PROJECT})/sessions/(${SESSION})$`);
 
-/** Calls the session UI makes either way: one session, its uploads, approvals and turns, and the runtime. */
-const SESSION_SURFACE = [
-  new RegExp(`^projects/${PROJECT}/sessions/${SESSION}(?:/.*)?$`),
-  new RegExp(`^projects/${PROJECT}/(?:attachments|approvals)(?:/.*)?$`),
-  new RegExp(`^projects/${PROJECT}/(?:turn-permission|turn-question|turn-stream)$`),
-  // The session runtime (sandbox proxy).
-  /^p\/.+$/,
+type Rule = readonly [methods: string, path: RegExp];
+const rule = (methods: string, path: string): Rule => [methods, new RegExp(`^${path}$`)];
+
+const S = `projects/${PROJECT}/sessions/${SESSION}`;
+/** The session runtime: the daemon on port 8000 of the session's sandbox. */
+const RT = `p/${SEG}/8000`;
+
+const RULES: readonly Rule[] = [
+  rule('GET', `projects/${PROJECT}(?:/(?:detail|sessions|change-requests|model-picker|connections|secrets|agents))?`),
+  rule('POST', `projects/${PROJECT}/sessions`),
+  // One session: every read except its public links and provider credential pools.
+  rule('GET', `${S}(?:/(?!public-shares|provider-secret-pools)[^/].*)?`),
+  rule('PATCH DELETE', S),
+  rule('POST', `${S}/(?:start|stop|restart|recover|reload|reload-stream|prompts|prompts/hold|prompts/${SEG}/retry|attachments|question)`),
+  rule('PATCH DELETE', `${S}/prompts/${SEG}`),
+  rule('PUT', `${S}/(?:model|presence|watch|pin|archive)`),
+  rule('GET POST', `projects/${PROJECT}/(?:attachments|approvals)(?:/.*)?`),
+  rule('GET POST', `projects/${PROJECT}/(?:turn-permission|turn-question|turn-stream)`),
+  // How this deployment addresses previews.
+  rule('GET', 'p/config'),
+  // Runtime reads: the transcript, events, status, the agent and command lists, workspace files.
+  rule('GET', `${RT}/kortix/(?:runtime(?:/.*)?|health)`),
+  rule('GET', `${RT}/(?:global/health|global/event|event|session|session/status|permission|question|provider|agent|skill|command|path|project/current|vcs/diff|lsp/diagnostics)`),
+  rule('GET', `${RT}/session/${SEG}(?:/(?:message|message/${SEG}|diff|todo|children))?`),
+  rule('GET', `${RT}/(?:file|file/content|file/status|find|find/file|find/symbol)`),
+  // Runtime writes: a turn, its abort and steer, permission and question replies.
+  rule('POST', `${RT}/kortix/runtime/.+`),
+  rule('DELETE', `${RT}/kortix/runtime/messages/${SEG}/${SEG}`),
+  rule('POST', `${RT}/kortix/abort(?:/after-tool)?`),
+  rule('POST', `${RT}/session/${SEG}/(?:message|prompt_async|abort|revert|unrevert|summarize)`),
+  rule('POST', `${RT}/(?:permission|question)/${SEG}/(?:reply|reject)`),
 ];
 
-/** Reads the session UI makes. Secrets, connections and models are lists of names. */
-const ALLOWED_READS = [
-  ...SESSION_SURFACE,
-  new RegExp(`^projects/${PROJECT}(?:/(?:detail|sessions|change-requests|model-picker|connections|secrets|agents))?$`),
-];
+const RUNTIME_FILE = new RegExp(`^${RT}/(?:file|find)(?:/|$)`);
 
-/** Writes the session UI makes. */
-const ALLOWED_WRITES = [SESSION_CREATE, ...SESSION_SURFACE];
+/** A runtime file read stays inside the workspace: a relative path, or one under /workspace. */
+function workspacePath(query: URLSearchParams | undefined): boolean {
+  for (const key of ['path', 'directory', 'dirs']) {
+    for (const value of query?.getAll(key) ?? []) {
+      if (value.split('/').includes('..')) return false;
+      if (value.startsWith('/') && value !== '/workspace' && !value.startsWith('/workspace/')) return false;
+      if (value.startsWith('~')) return false;
+    }
+  }
+  return true;
+}
 
 /** Null when allowed, else the reason for a 403. */
-export function blockedReason(method: string, path: string): string | null {
-  const read = method === 'GET' || method === 'HEAD';
-  if (read) return ALLOWED_READS.some((re) => re.test(path)) ? null : 'Not available in Lumen';
-  return ALLOWED_WRITES.some((re) => re.test(path))
-    ? null
-    : 'This workspace setting is managed by the Lumen operator';
+export function blockedReason(method: string, path: string, query?: URLSearchParams): string | null {
+  const m = method === 'HEAD' ? 'GET' : method;
+  const allowed = RULES.some(([methods, re]) => methods.split(' ').includes(m) && re.test(path));
+  if (allowed && RUNTIME_FILE.test(path) && !workspacePath(query)) return 'Only workspace files are available';
+  if (allowed) return null;
+  return m === 'GET' ? 'Not available in Lumen' : 'This workspace setting is managed by the Lumen operator';
 }
 
 const PERMISSION_PROBE = /^accounts\/[^/]+\/iam\/members\/[^/]+\/effective(:batch)?$/;

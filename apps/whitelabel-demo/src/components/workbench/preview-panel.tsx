@@ -6,9 +6,10 @@ import Loading from '@kortix/ui/loading';
  * The live-preview surface for a session.
  *
  * Session data uses the shared SDK client. The same-origin preview BFF resolves
- * readiness, the final URL, and scoped authentication on the server. The
- * sharing controls and the public-shares list live beside it in
- * `session-sharing.tsx`.
+ * readiness, the final URL, and a 15-minute preview share on the server.
+ * Lumen has no public-link controls: the proxy refuses public shares and
+ * session visibility changes, because Kortix would serve them under its own
+ * brand with no expiry.
  */
 
 import { Badge } from '@kortix/ui/badge';
@@ -24,7 +25,6 @@ import {
 } from '@kortix/ui/select';
 import { Separator } from '@kortix/ui/separator';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { PublicSharesList, SessionSharing } from '@/components/workbench/session-sharing';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { authHeaders, getSessionToken } from '@/lib/session';
@@ -225,9 +225,6 @@ export function PreviewPanel({
         </div>
       </div>
 
-      {/* Sharing controls */}
-      <SessionSharing projectId={projectId} sessionId={sessionId} selected={selected} />
-
       {/* Preview surface */}
       <PreviewSurface
         loadingPreviews={loadingPreviews}
@@ -236,9 +233,6 @@ export function PreviewPanel({
         selected={selected}
         reloadNonce={reloadNonce}
       />
-
-      {/* Public shares */}
-      <PublicSharesList projectId={projectId} sessionId={sessionId} />
 
       {/* Open a localhost link — proxy a URL the agent printed */}
       <div className="shrink-0 space-y-2">
