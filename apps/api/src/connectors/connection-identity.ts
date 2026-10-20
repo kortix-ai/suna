@@ -165,3 +165,9 @@ export async function relabelToIdentity(input: {
     throw error;
   }
 }
+
+/** `metadata.credential_rejected_at` (set by the gateway on an upstream 401), or null. */
+export function credentialRejectedAt(metadata: unknown): string | null {
+  const value = (metadata as Record<string, unknown> | null)?.credential_rejected_at;
+  return typeof value === 'string' ? value : null;
+}

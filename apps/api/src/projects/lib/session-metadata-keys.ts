@@ -47,6 +47,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Lost-session recovery (KRTX-2419): its boxes restore
   // from the session log at boot (`recover-lost-session.ts`).
   'lostRecoveredAt',
+  // A restored deleted session (`restore-session.ts`): its boxes restore from
+  // the session log at boot too.
+  'restoredAt',
   // Legacy migration restore. Selects the archive that session open and
   // restart copy into the sandbox (`legacy-migration-rehydrate.ts`).
   'legacy_migration',

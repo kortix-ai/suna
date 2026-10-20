@@ -1,14 +1,6 @@
 'use client';
 
-import {
-  createConnector,
-  deleteConnector,
-  getProjectDetail,
-  listConnections,
-  reconcileConnection,
-  reconcileMemberConnection,
-  setConnectorCredential,
-} from '@kortix/sdk';
+import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
@@ -31,20 +23,17 @@ import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { connectorHref } from '@/features/workspace/capabilities/connectors/connector-routes';
 import { AudienceFields } from '@/features/workspace/customize/sections/add-account-fields';
 import { isAuthChallenge } from '@/features/workspace/customize/sections/connector-connection-form';
-import { createConnectorWithOptionalOAuth2 } from '@/features/workspace/customize/sections/connector-oauth2';
-import { startDiscoveredSignIn } from '@/features/workspace/customize/sections/connector-oauth2-start';
 import {
-  connectorConnectionRows,
   newAccountGrantees,
   type NewAccountDraft,
 } from '@/features/workspace/customize/sections/view/connector-connections';
-import { grantConnectionAccess } from '@/features/workspace/shared/access/access-dialog-share';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 
 import type { McpServerApp } from '../install/mcp-first';
-import { addMcpServer, mcpServerIdentity } from './add-mcp-server';
+import { addMcpServer, mcpAppIdentity, mcpServerIdentity } from './add-mcp-server';
+import { sdkAddMcpServerDeps } from './add-mcp-server-deps';
 
 type Audience = Pick<NewAccountDraft, 'audience' | 'picked'>;
 
@@ -97,7 +86,14 @@ export function AddMcpServerDialog({
 
   const [url, setUrl] = useState(app?.url ?? '');
   const [audience, setAudience] = useState<Audience>({ audience: 'private', picked: NO_PICKS });
-  const identity = url.trim() ? mcpServerIdentity(url, takenSlugs) : null;
+  // The catalogue app's own server, unchanged: named after the app, and its
+  // sign-in is known to be one click (`mcpServerFor`).
+  const appServer = app !== null && url.trim() === app.url;
+  const identity = !url.trim()
+    ? null
+    : appServer
+      ? mcpAppIdentity(app.name, takenSlugs)
+      : mcpServerIdentity(url, takenSlugs);
   const urlInvalid = url.trim() !== '' && identity === null;
 
   const add = useMutation({
@@ -106,35 +102,13 @@ export function AddMcpServerDialog({
         projectId,
         {
           url,
+          ...(appServer ? { appName: app.name, signIn: true } : {}),
           audience: audience.audience,
           grantees: newAccountGrantees(audience.picked),
           takenSlugs,
           returnUrl: (slug) => `${window.location.origin}${connectorHref(projectId, slug)}`,
         },
-        {
-          createConnector: (pid, draft) =>
-            createConnectorWithOptionalOAuth2(pid, draft, null, {
-              createConnector,
-              deleteConnector,
-              setConnectorCredential,
-            }),
-          createMemberAccount: reconcileMemberConnection,
-          projectAccount: async (pid, slug, label) => {
-            // The connector's own shared account, made with it: sign that one
-            // in, so it stays the connector's default.
-            const { connections } = await listConnections(pid);
-            const made = connectorConnectionRows(connections, slug).find(
-              (row) => row.owner_type === 'project',
-            );
-            return (
-              made ??
-              reconcileConnection(pid, { connector_alias: slug, owner_type: 'project', label })
-            );
-          },
-          grantAccess: (pid, connectionId, grantees) =>
-            grantConnectionAccess(accountId ?? '', pid, connectionId, grantees),
-          startSignIn: startDiscoveredSignIn,
-        },
+        sdkAddMcpServerDeps(accountId),
       ),
     onSuccess: (result) => {
       onAdded();

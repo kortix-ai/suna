@@ -4,6 +4,7 @@ import { catalogModelForWireModel, gatewayModelCatalog } from '../models/catalog
 import { platformDefaultModelId } from '../models/served-managed-models';
 import { createGatewayRouteResolver } from './resolve-route';
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
+import { toWireModel } from '../resolution/effective';
 
 const routingCatalog = () => gatewayModelCatalog('gateway-routing');
 
@@ -19,6 +20,7 @@ const resolver = createGatewayRouteResolver({
   },
   getProjectPolicy: getProjectRoutingPolicy,
   catalogModelFor: (model) => catalogModelForWireModel(model),
+  canonicalModel: toWireModel,
 });
 
 export function resolveGatewayRoute(

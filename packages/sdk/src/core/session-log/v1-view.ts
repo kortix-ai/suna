@@ -51,6 +51,18 @@ const nativeOf = (head: SessionLogThreadHead) => {
   return e ? (e.native_id ?? null) : head.thread_id;
 };
 
+/**
+ * The root thread of `state` (a page or the saved copy is in): the runtime session id its v1
+ * rows are keyed by, whether it holds a message, and whether a page proved it empty (no
+ * message, nothing older). Null before any page, or when the log names no root thread.
+ */
+export function sessionLogRoot(state: SessionLogState | undefined): { runtimeSessionId: string | null; hasMessages: boolean; empty: boolean } | null {
+  const head = state && Object.values(state.threads).find((h) => h.parent_thread_id === null);
+  if (!state || !head) return null;
+  const hasMessages = (state.messages[head.thread_id]?.length ?? 0) > 0;
+  return { runtimeSessionId: nativeOf(head), hasMessages, empty: !hasMessages && state.older[head.thread_id] === false };
+}
+
 /** Rows per message, valid for one runtime session id: a `log.thread` upsert keeps them. */
 const messageRows = new WeakMap<SessionLogMessage, { native: string | null; rows: V1MessageRow[] }>();
 
@@ -80,6 +92,9 @@ function indexOf(state: SessionLogState): Map<string, string> {
   }
   return index;
 }
+
+/** The id of the thread whose runtime session id is `runtimeSessionId`. Internal. */
+export const sessionLogThreadIdOf = (state: SessionLogState, runtimeSessionId: string): string | undefined => indexOf(state).get(runtimeSessionId);
 
 /**
  * The thread whose runtime session id is `runtimeSessionId`. A native thread (pi) reads

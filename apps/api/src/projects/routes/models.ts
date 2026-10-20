@@ -425,13 +425,12 @@ export function registerModelsRoutes(): void {
         freeModelsOnly: freeTier,
       });
       return c.json({
-        platformDefault: platformDefaultModelId(),
+        platformDefault: freeTier ? null : platformDefaultModelId(),
         accountDefault: defaults.account,
         agentDefaults: defaults.agents,
         projectDefault: defaults.projects[projectId] ?? null,
-        // The platform default is servable for every tier (KRTX-1067), so the
-        // honest fallback is the same for free and paid callers.
-        resolvedForCaller: resolved.model ?? platformDefaultModelId(),
+        // An account without managed models has no platform default.
+        resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
         resolvedSource: resolved.source,
         freeTier,
       });

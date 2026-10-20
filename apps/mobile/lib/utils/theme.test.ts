@@ -578,6 +578,10 @@ describe('toHexColor matches the real parser for every THEME colour', () => {
 
 const WEB_CSS_PATH = join(__dirname, '../../../web/src/app/globals.css');
 const webCss = readFileSync(WEB_CSS_PATH, 'utf8');
+// Web imports its `@theme inline` aliases (`--color-ring: var(--ring)`) from
+// @kortix/ui since #10257.
+const WEB_THEME_PATH = join(__dirname, '../../../../packages/ui/src/styles/theme.css');
+const webThemeCss = readFileSync(WEB_THEME_PATH, 'utf8');
 
 /** Max allowed difference per HSL component (degrees for H, points for S/L). */
 const HSL_TOLERANCE = 0.2;
@@ -626,7 +630,7 @@ function resolveWeb(scope: Map<string, string>, name: string, depth = 0): string
   if (depth > 8) throw new Error(`var() cycle resolving --${name}`);
   let raw = scope.get(name);
   if (raw === undefined) {
-    const alias = stripComments(webCss).match(
+    const alias = stripComments(`${webCss}\n${webThemeCss}`).match(
       new RegExp(`--${name}:\\s*var\\(--([a-z0-9-]+)\\)`)
     );
     if (!alias) throw new Error(`web token --${name} not found`);

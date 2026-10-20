@@ -20,7 +20,6 @@ import {
 } from '../../connectors/share';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import {
   isModelServableForAccount,
   resolveEffectiveModel,
@@ -97,6 +96,8 @@ import {
 
 import { buildSessionSandboxEnvVars } from './session-sandbox-env-build';
 import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } from './session-callback-probe';
+import { HUMAN_SESSION_SURFACES } from './session-surface';
+import type { SessionInvocationSource } from '../session-lifecycle/types';
 /** Every status a failed create answers with. Routes that create a session
  *  declare these, so the published spec lists them. */
 export const SESSION_CREATE_ERROR_STATUSES = [400, 402, 403, 404, 409, 429, 500, 503] as const;
@@ -653,14 +654,9 @@ async function resolveSessionModel(params: {
         freeModelsOnly,
         providerSecretPools,
       });
-      // The platform default is servable for every tier (KRTX-1067), so a
-      // fresh free account boots pinned to it instead of to nothing — an
-      // unpinned session was exactly the dead composer of the bug report.
-      const concreteModel =
-        resolved.model ??
-        (freeModelsOnly
-          ? platformDefaultModelId() || null
-          : config.LLM_GATEWAY_DEFAULT_MODEL);
+      // An account without managed models gets no platform default: it runs
+      // its own connected model (already in `resolved`) or none.
+      const concreteModel = resolved.model ?? (freeModelsOnly ? null : config.LLM_GATEWAY_DEFAULT_MODEL);
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';
@@ -1042,7 +1038,7 @@ function buildSessionCreateMetadata(params: {
   // the authenticated credential, never a client header. Informational only:
   // no policy reads these values (origin keys on `trigger:`/`system:` and channels).
   const sessionSource =
-    invocationSource === 'ui' && input.callerSessionId ? 'agent' : invocationSource;
+    HUMAN_SESSION_SURFACES.has(invocationSource as SessionInvocationSource) && input.callerSessionId ? 'agent' : invocationSource;
   const initiator: SessionInitiator =
     parentSession?.initiator ??
     resolveRootSessionInitiator({

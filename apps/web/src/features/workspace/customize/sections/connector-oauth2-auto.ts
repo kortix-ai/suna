@@ -16,11 +16,13 @@ export type AutoConnectPlan =
   | { kind: 'unknown' }
   /** The server answered without credentials — it needs no OAuth connection. */
   | { kind: 'no_authorization' }
-  /** Everything is discoverable: register dynamically, then authorize. */
+  /** Everything is discoverable: register dynamically (or take Kortix's own
+   *  client, `kortix_client`), then authorize. */
   | {
       kind: 'register';
       label: string;
-      registrationEndpoint: string;
+      /** Absent when Kortix signs in with its own OAuth client. */
+      registrationEndpoint?: string;
       scopes: string[];
     }
   /** Endpoints are known but the server has no dynamic registration. */
@@ -51,6 +53,7 @@ export function autoConnectPlan(
     };
   }
   const label = resourceLabel(discovery);
+  if (discovery.kortix_client) return { kind: 'register', label, scopes: discovery.scopes };
   if (!discovery.registration_endpoint) {
     return { kind: 'client_id_required', label, scopes: discovery.scopes };
   }
@@ -65,12 +68,15 @@ export function autoConnectPlan(
 export function buildClientRegistrationInput(
   discovery: OAuth2ResourceDiscovery,
 ): OAuth2ClientRegistrationInput {
-  if (!discovery.registration_endpoint) {
+  if (!discovery.registration_endpoint && !discovery.kortix_client) {
     throw new Error('This authorization server does not support dynamic client registration');
   }
   const metadata = discovery.metadata ?? {};
   return {
-    registration_endpoint: discovery.registration_endpoint,
+    // Without it the API signs in with Kortix's own client for this server.
+    ...(discovery.registration_endpoint
+      ? { registration_endpoint: discovery.registration_endpoint }
+      : {}),
     // Bind the issued client to the server that issued it, so the callback can
     // validate RFC 9207 `iss` (MCP SEP-2468 / SEP-2352).
     ...(discovery.authorization_server ? { issuer: discovery.authorization_server } : {}),

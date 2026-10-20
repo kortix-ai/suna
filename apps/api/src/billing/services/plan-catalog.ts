@@ -88,15 +88,16 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
     displayName: 'No Plan',
   },
 
-  // $5 (500 credits) a month, managed models and top-ups. Paid plans add
-  // monthly credit volume and the paid rate budget, not features.
+  // $5 (500 credits) a month and top-ups, for compute and the user's own
+  // provider keys or ChatGPT subscription. Never the Kortix-managed models:
+  // the gateway refuses them for every account without `managedModels`.
   free: {
     key: 'free',
     family: 'free',
     status: 'current',
     shape: 'none',
     rank: 1,
-    entitlements: { ...NO_ENTERPRISE, managedModels: true, canPurchaseCredits: true, byokFee: true },
+    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: true, byokFee: true },
     limits: { llmRateMultiplier: 0 },
     displayName: 'Free',
   },

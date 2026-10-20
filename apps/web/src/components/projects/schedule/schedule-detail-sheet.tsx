@@ -16,6 +16,7 @@
  * as one read-only list.
  */
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
@@ -73,6 +74,7 @@ import { FoldTrigger, InlineError, type PatchDraft } from './composer-parts';
 import {
   accountToWrite,
   appConnectors,
+  eventAppTarget,
   indexEventApps,
   parseConfigErrors,
   schemaFields,
@@ -80,6 +82,7 @@ import {
 import { describeLastRun, describeWhen, triggerName, triggerSubtitle } from './schedule-copy';
 import { PropertyList } from './schedule-fields';
 import { ThenFields } from './then-fields';
+import { EventCheckTimes } from './event-check-times';
 import { TriggerCallouts } from './trigger-callouts';
 import {
   type ComposerBlock,
@@ -228,6 +231,7 @@ function SheetPanel({
   // The sticky header and SaveBar paint the host's own surface, so content passes behind them.
   const surface = split ? 'bg-surface' : 'bg-sidebar';
   const t = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAutoPause = useI18nTranslations('triggerAutoPause');
   const [tab, setTab] = useState<SheetTab>(initialTab);
   const [testOpen, setTestOpen] = useState(false);
   const event = trigger.type === 'event' ? trigger.event : null;
@@ -267,7 +271,9 @@ function SheetPanel({
   );
 
   const canWrite = controls.canUpdate;
-  const active = trigger.enabled;
+  // An auto-paused trigger (KRTX-1721) is not active: the toggle offers Resume,
+  // which sends `enabled: true` and clears the pause.
+  const active = trigger.enabled && !trigger.auto_paused_at;
   // Never the name twice: a trigger named after its schedule shows its prompt's first line.
   const subtitle = triggerSubtitle(
     triggerName(trigger),
@@ -443,6 +449,15 @@ function SheetPanel({
           The content element above owns scrolling; a second scroller here
           would send the wheel to whichever surface the cursor is over. */}
       <SheetBody className="flex-none items-stretch gap-0 space-y-6 !overflow-visible px-4 pt-5 pb-0">
+        {trigger.auto_paused_at ? (
+          <Alert variant="warning">
+            <AlertTitle>{tAutoPause('title')}</AlertTitle>
+            <AlertDescription>
+              <p>{tAutoPause('description')}</p>
+              {trigger.auto_paused_reason ? <p className="font-mono text-xs">{trigger.auto_paused_reason}</p> : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {/* `forceMount`: switching to Runs keeps an unsaved draft. */}
         <TabsContent value="settings" forceMount className="data-[state=inactive]:hidden">
           {loading ? (
@@ -467,7 +482,8 @@ function SheetPanel({
             />
           )}
         </TabsContent>
-        <TabsContent value="runs" className="pb-8">
+        <TabsContent value="runs" className="space-y-3 pb-8">
+          <EventCheckTimes trigger={trigger} />
           <TriggerRunsPanel
             projectId={projectId}
             trigger={trigger}
@@ -562,7 +578,7 @@ function SheetForm({
   const needsConnector =
     draft.kind === 'event' &&
     app !== null &&
-    draft.appSlug !== base.appSlug &&
+    (draft.appSlug !== base.appSlug || draft.appSource !== base.appSource) &&
     appConnectors(app).length === 0;
   const dirty = JSON.stringify(draft) !== JSON.stringify(base) || needsConnector;
 
@@ -589,12 +605,7 @@ function SheetForm({
     mutationFn: async () => {
       const body = { ...changes };
       if (needsConnector && app) {
-        body.connector = await add({
-          app: app.app,
-          name: app.name,
-          connector: null,
-          newConnectorSlug: app.new_connector_slug,
-        });
+        body.connector = await add(eventAppTarget(app));
       }
       return updateProjectTrigger(projectId, trigger.slug, body);
     },
@@ -652,6 +663,7 @@ function SheetForm({
         apps={appIndex}
         onEditEvent={editEvent}
       />
+      <EventCheckTimes trigger={trigger} />
 
       {canWrite ? (
         <>

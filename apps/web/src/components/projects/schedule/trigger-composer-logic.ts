@@ -27,7 +27,7 @@ import {
   describeCadence,
   describeOneOff,
 } from './schedule-copy';
-import type { ConditionRow } from './schedule-fields';
+import { type ConditionRow, conditionNeedsValue } from './schedule-fields';
 
 /** A block of the composer. Problems point at one, in the order a person meets them. */
 export type ComposerBlock = 'when' | 'then' | 'name' | 'options';
@@ -43,6 +43,11 @@ export interface ComposerDraft {
   // When: app event
   /** Provider app slug (`gmail`). Null until an app is picked. */
   appSlug: string | null;
+  /**
+   * Event source of the picked app (`composio`, `mcp`): one app slug can be
+   * listed by both. Null: match the slug alone (a trigger saved by an older API).
+   */
+  appSource: string | null;
   /** The project's connector (profile) the trigger runs on. Null = the app's first. */
   profile: string | null;
   /** Label of a shared account on that profile. Null = the profile's default. */
@@ -64,12 +69,24 @@ export interface ComposerDraft {
   secretName: string;
   startActive: boolean;
   sessionAccess: SharingSelection;
+  /** Run limits (KRTX-1721) as typed. Empty = unset: 60 an hour, no daily cap. */
+  maxRunsPerHour: string;
+  maxRunsPerDay: string;
+  /** Overlap (KRTX-1721), fresh mode only. `default`: skip for a schedule, allow for the others. */
+  overlap: 'default' | 'skip' | 'allow';
+}
+
+/** A run-limit input as the API wants it: empty → null (unset), else the number. */
+export function runCapFromInput(raw: string): number | null {
+  const value = raw.trim();
+  return value ? Number(value) : null;
 }
 
 export function initialDraft(init: {
   kind?: TriggerKind | null;
   agent?: string | null;
   appSlug?: string | null;
+  appSource?: string | null;
   profile?: string | null;
 }): ComposerDraft {
   return {
@@ -79,6 +96,7 @@ export function initialDraft(init: {
     timezone: 'UTC',
     signingKey: '',
     appSlug: init.appSlug ?? null,
+    appSource: init.appSource ?? null,
     profile: init.profile ?? null,
     account: null,
     eventType: null,
@@ -95,6 +113,9 @@ export function initialDraft(init: {
     secretName: '',
     startActive: true,
     sessionAccess: { mode: 'private', memberIds: [], groupIds: [] },
+    maxRunsPerHour: '',
+    maxRunsPerDay: '',
+    overlap: 'default',
   };
 }
 
@@ -154,9 +175,14 @@ export function triggerName(draft: ComposerDraft, tI18nComplete: UiTranslator): 
   return draft.nameOverride ?? autoName(draft, tI18nComplete);
 }
 
-/** The app the draft points at: by slug, else the one that owns the chosen connector. */
+/** An event app's source: `source`, or the deprecated `provider` of an older API. */
+export const eventAppSource = (app: EventApp): string => app.source ?? app.provider;
+
+/** The app the draft points at: by source and slug, else the one that owns the chosen connector. */
 export function findDraftApp(apps: EventApp[], draft: ComposerDraft): EventApp | null {
-  if (draft.appSlug) return apps.find((a) => a.app === draft.appSlug) ?? null;
+  if (draft.appSlug) {
+    return apps.find((a) => a.app === draft.appSlug && (!draft.appSource || eventAppSource(a) === draft.appSource)) ?? null;
+  }
   if (draft.profile) {
     return apps.find((a) => appConnectors(a).some((c) => c.slug === draft.profile)) ?? null;
   }
@@ -249,9 +275,12 @@ export function validate(
   if (draft.mode === 'keyed' && !draft.sessionKey.trim())
     add('options', tI18nComplete.raw('text473d5c3c6169'));
   // A half-filled condition is a silent no-op otherwise — say so instead.
+  // An exists/missing row has no value field, so its path alone completes it.
   if (
     draft.kind !== 'cron' &&
-    draft.conditions.some((row) => Boolean(row.path.trim()) !== Boolean(row.value.trim()))
+    draft.conditions.some(
+      (row) => Boolean(row.path.trim()) !== (!conditionNeedsValue(row.operator) || Boolean(row.value.trim())),
+    )
   )
     add('options', tI18nComplete.raw('text8f4597a69c3c'));
   return problems;
@@ -316,8 +345,8 @@ export function withEventCleared(draft: ComposerDraft): ComposerDraft {
 }
 
 /** A different app (or none): its events, connector and account no longer apply. */
-export function withAppPicked(draft: ComposerDraft, appSlug: string | null): ComposerDraft {
-  return { ...withEventCleared(draft), appSlug, profile: null, account: null };
+export function withAppPicked(draft: ComposerDraft, appSlug: string | null, appSource: string | null = null): ComposerDraft {
+  return { ...withEventCleared(draft), appSlug, appSource, profile: null, account: null };
 }
 
 /* ─── Connection: connector first, then its account ─────────────────────── */

@@ -241,11 +241,14 @@ async function resolveSessionHarness(
     .limit(1);
   // The same decision provisionSessionSandbox makes for KORTIX_LLM_BASE_URL.
   const llmGateway = projectLlmGatewayEnabled(projectRow?.metadata);
-  // A lost session continued on a new computer restores from its log whatever
-  // the project flag says (KRTX-2419, `recover-lost-session.ts`).
+  // A lost session continued on a new computer (KRTX-2419,
+  // `recover-lost-session.ts`) and a restored deleted session
+  // (`restore-session.ts`) restore from their log whatever the project flag says.
+  const sessionMetadata = (projectRow?.sessionMetadata ?? null) as Record<string, unknown> | null;
   const sessionLogRestore =
     resolveFeatureFlag(projectRow?.metadata, 'session_log_restore') ||
-    typeof (projectRow?.sessionMetadata as Record<string, unknown> | null)?.lostRecoveredAt === 'string';
+    typeof sessionMetadata?.lostRecoveredAt === 'string' ||
+    typeof sessionMetadata?.restoredAt === 'string';
   if (input.platformMetaAgent) {
     // SUNA runs on the pi harness (the pi coding-agent path), not OpenCode,
     // whenever the LLM gateway is on — pi has no other model path, so a

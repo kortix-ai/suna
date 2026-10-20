@@ -19,7 +19,7 @@ import {
 } from './event-trigger-copy';
 import { conditionsToRows, rowsToConditions, sameConditions } from './schedule-fields';
 import type { ComposerDraft } from './trigger-composer-logic';
-import { initialDraft } from './trigger-composer-logic';
+import { initialDraft, runCapFromInput } from './trigger-composer-logic';
 
 /** The event type the catalog has no entry for: enough to name it and keep its saved config. */
 function stubEventType(event: NonNullable<ProjectTrigger['event']>): ProjectTriggerEventType {
@@ -47,6 +47,7 @@ export function draftFromTrigger(
     runAt: trigger.run_at,
     timezone: trigger.timezone,
     appSlug: event?.app ?? null,
+    appSource: event?.source ?? event?.provider ?? null,
     profile: event?.connector ?? null,
     account: event?.account ?? null,
     eventType,
@@ -63,6 +64,9 @@ export function draftFromTrigger(
     secretName: trigger.secret_env ?? '',
     startActive: trigger.enabled,
     sessionAccess: trigger.session_access,
+    maxRunsPerHour: trigger.max_runs_per_hour ? String(trigger.max_runs_per_hour) : '',
+    maxRunsPerDay: trigger.max_runs_per_day ? String(trigger.max_runs_per_day) : '',
+    overlap: trigger.overlap ?? 'default',
   };
 }
 
@@ -142,5 +146,14 @@ export function triggerPatch(
     Object.assign(out, sessionPatch(draft));
   }
   if (!same(draft.sessionAccess, saved.sessionAccess)) out.session_access = draft.sessionAccess;
+  // An emptied run limit sends null: the hourly default (60) or no daily cap.
+  if (draft.maxRunsPerHour.trim() !== saved.maxRunsPerHour.trim()) {
+    out.max_runs_per_hour = runCapFromInput(draft.maxRunsPerHour);
+  }
+  if (draft.maxRunsPerDay.trim() !== saved.maxRunsPerDay.trim()) {
+    out.max_runs_per_day = runCapFromInput(draft.maxRunsPerDay);
+  }
+  // Default sends null: skip for a schedule, allow for the others.
+  if (draft.overlap !== saved.overlap) out.overlap = draft.overlap === 'default' ? null : draft.overlap;
   return out;
 }

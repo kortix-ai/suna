@@ -433,6 +433,39 @@ function sandboxSchema(): JsonSchemaFragment {
 }
 
 /** One `[[triggers]]` entry — cron, webhook, monitor, or event (`validateTriggers`). */
+/**
+ * A trigger `filter` (KRTX-1721): payload path → a value (equals) or an object
+ * with exactly one operator. Mirrors `parseTriggerFilter` in `./trigger-filter`.
+ */
+function triggerFilterSchema(): JsonSchemaFragment {
+  const scalar: JsonSchemaFragment = { type: ['string', 'number', 'boolean'] };
+  const list = (item: JsonSchemaFragment): JsonSchemaFragment => ({
+    oneOf: [item, { type: 'array', minItems: 1, items: item }],
+  });
+  const prefix: JsonSchemaFragment = { type: ['string', 'number', 'boolean'], minLength: 1 };
+  return {
+    type: 'object',
+    additionalProperties: {
+      oneOf: [
+        scalar,
+        {
+          type: 'object',
+          minProperties: 1,
+          maxProperties: 1,
+          additionalProperties: false,
+          properties: {
+            not: list(scalar),
+            in: list(scalar),
+            exists: { type: 'boolean' },
+            prefix: list(prefix),
+            not_prefix: list(prefix),
+          },
+        },
+      ],
+    },
+  };
+}
+
 function triggerSchema(version: 1 | 2): JsonSchemaFragment {
   const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
@@ -450,7 +483,7 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       session_mode: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
       session_key: { type: 'string' },
       sessionKey: { type: 'string' },
-      filter: { type: 'object', additionalProperties: { type: 'string' } },
+      filter: triggerFilterSchema(),
       sessionMode: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
       session_id: { type: 'string' },
       sessionId: { type: 'string' },
@@ -464,6 +497,12 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       // `type: cron` only — the misfire bound. Its 60s floor is the imperative
       // validator's, like the monitor duration floors below.
       max_lateness: durationSchema,
+      // Any trigger type: runs started in any 60 minutes (60 when unset) and
+      // in a UTC day (KRTX-1721).
+      max_runs_per_hour: { type: 'integer', minimum: 1 },
+      max_runs_per_day: { type: 'integer', minimum: 1 },
+      // Fresh session mode only: skip holds a fire while the previous run is active (KRTX-1721).
+      overlap: { type: 'string', enum: ['skip', 'allow'] },
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
       // `type: monitor` only — the repo command the platform supervises 24/7,

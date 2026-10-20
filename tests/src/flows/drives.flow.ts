@@ -241,7 +241,7 @@ flow(
   'DRIVE-2',
   {
     domain: 'drives',
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: ['GET /v1/projects/:projectId/sessions/:sessionId/drives'],
   },

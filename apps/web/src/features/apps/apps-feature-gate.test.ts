@@ -105,14 +105,15 @@ test('Apps sits with Customize in the sidebar, not in the bottom alert group', (
   // It is a project surface you configure and operate, so it belongs with the
   // Customize row in the top nav group — not among the bottom-anchored alerts,
   // which shift as late-arriving billing and sandbox state lands. The rows are
-  // customizable now; this pins the default order and the group they render in.
+  // customizable now; this pins the default order and the group they render in:
+  // Customize, then Files/Drive (#10258), then Apps.
   const defaults = navStore.slice(navStore.indexOf('SIDEBAR_NAV_DEFAULTS'));
   const customizeAt = defaults.indexOf("id: 'customize'");
   const appsAt = defaults.indexOf("id: 'apps'");
   const filesAt = defaults.indexOf("id: 'files'");
   expect(customizeAt).toBeGreaterThan(-1);
-  expect(appsAt).toBeGreaterThan(customizeAt);
-  expect(appsAt).toBeLessThan(filesAt);
+  expect(filesAt).toBeGreaterThan(customizeAt);
+  expect(appsAt).toBeGreaterThan(filesAt);
   expect(sidebar.indexOf('<ProjectNavItems')).toBeLessThan(sidebar.indexOf('<ProjectSessionList'));
 });
 

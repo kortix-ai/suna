@@ -1,16 +1,16 @@
 /**
  * Sandbox provider adapters.
  *
- * A provider builds and hosts the actual sandbox image. Daytona, Platinum, and
- * E2B implement the `SandboxProviderAdapter` interface and slot in here.
+ * A provider builds and hosts the actual sandbox image. Platinum (the
+ * reference) and Daytona (legacy fallback, removal scheduled) implement the
+ * `SandboxProviderAdapter` interface and slot in here.
  *
- * The provider is identified by a stable string (`daytona`, `platinum`, or
- * `e2b`) that lives on the template row. The session boot path resolves the
+ * The provider is identified by a stable string (`platinum` or `daytona`) that
+ * lives on the template row. The session boot path resolves the
  * adapter by that string and delegates the actual snapshot build / state check.
  */
 
 import { daytonaProvider } from './daytona';
-import { e2bProvider } from './e2b';
 import { platinumProvider } from './platinum';
 
 interface SandboxResourceSpec {
@@ -47,7 +47,7 @@ export interface BuildableTemplate {
   /**
    * kortix.yaml `container_runtime: true`: the sandbox runs Docker with bridge
    * + overlay networking. Platinum bakes the full guest kernel module tree;
-   * Daytona runs nested Docker without it; E2B rejects it.
+   * Daytona runs nested Docker without it.
    */
   containerRuntime?: boolean;
   /**
@@ -88,7 +88,7 @@ export interface BuildLogTap {
  * the id the build PROVED (Platinum's `requireExternalTemplateId` — the id
  * already in hand at registration) instead of re-deriving it via a fragile,
  * truncation-prone name-list lookup. `externalTemplateId` is absent on providers
- * with no external-id concept (Daytona and E2B return void).
+ * with no external-id concept (Daytona returns void).
  */
 export interface BuildSnapshotResult {
   externalTemplateId?: string;
@@ -159,7 +159,6 @@ export interface SandboxProviderAdapter {
 const ADAPTERS = new Map<string, SandboxProviderAdapter>();
 ADAPTERS.set(daytonaProvider.id, daytonaProvider);
 ADAPTERS.set(platinumProvider.id, platinumProvider);
-ADAPTERS.set(e2bProvider.id, e2bProvider);
 
 export function getSandboxProvider(id: string): SandboxProviderAdapter {
   const adapter = ADAPTERS.get(id);

@@ -89,7 +89,7 @@ export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
 ]);
 
 /** Chat platforms a `channel` connector can target. */
-export type ChannelPlatform = 'slack' | 'teams' | 'email';
+export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'telegram';
 
 type ConnectorAuthType =
   | 'bearer'

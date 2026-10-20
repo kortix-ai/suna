@@ -3,6 +3,7 @@
 import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { SharingPicker } from '@/features/workspace/shared/sharing-picker';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
@@ -57,6 +58,7 @@ export function TriggerOptions({
   edit?: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tComposer = useI18nTranslations('triggerComposer');
   const sessions = useQuery({
     queryKey: qk.project.sessions(projectId),
     queryFn: () => listProjectSessions(projectId, { limit: PROJECT_SESSION_NAME_LOOKUP_LIMIT }),
@@ -104,6 +106,68 @@ export function TriggerOptions({
               copy={triggerSessionAccessCopy(tI18nComplete)}
             />
           </OptionField>
+
+          <OptionField label={tComposer('runLimits')} hint={tComposer('runLimitsHint')}>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="trigger-max-runs-per-hour" className="text-muted-foreground text-xs font-normal">
+                  {tComposer('perHour')}
+                </Label>
+                <Input
+                  id="trigger-max-runs-per-hour"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  value={draft.maxRunsPerHour}
+                  onChange={(e) => patch({ maxRunsPerHour: e.target.value })}
+                  placeholder="60"
+                  className="text-sm tabular-nums"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="trigger-max-runs-per-day" className="text-muted-foreground text-xs font-normal">
+                  {tComposer('perDay')}
+                </Label>
+                <Input
+                  id="trigger-max-runs-per-day"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  value={draft.maxRunsPerDay}
+                  onChange={(e) => patch({ maxRunsPerDay: e.target.value })}
+                  placeholder={tComposer('noLimit')}
+                  className="text-sm tabular-nums"
+                />
+              </div>
+            </div>
+          </OptionField>
+
+          {/* Overlap (KRTX-1721): the other modes queue into one session already. */}
+          {draft.mode === 'fresh' && (
+            <OptionField label={tComposer('overlap')} hint={tComposer('overlapHint')}>
+              <Select
+                value={draft.overlap}
+                onValueChange={(v) => patch({ overlap: v as ComposerDraft['overlap'] })}
+              >
+                <SelectTrigger className="w-full cursor-pointer text-sm" aria-label={tComposer('overlap')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default" className="cursor-pointer">
+                    {isCron ? tComposer('overlapDefaultSkip') : tComposer('overlapDefaultAllow')}
+                  </SelectItem>
+                  <SelectItem value="skip" className="cursor-pointer">
+                    {tComposer('overlapSkip')}
+                  </SelectItem>
+                  <SelectItem value="allow" className="cursor-pointer">
+                    {tComposer('overlapAllow')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </OptionField>
+          )}
 
           {!isCron && (
             <OptionField

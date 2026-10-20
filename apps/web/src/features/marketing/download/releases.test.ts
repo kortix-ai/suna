@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 
-import { formatSize, getLatestCaptureRelease, pickCliAsset, pickDesktopAsset, type ReleaseAsset } from './releases';
+import {
+  deploymentChannel,
+  desktopReleasesPage,
+  formatSize,
+  getLatestCaptureRelease,
+  pickCliAsset,
+  pickDesktopAsset,
+  type ReleaseAsset,
+} from './releases';
 
 /** Mirrors the real v0.11.0 asset list, including the decoys. */
 const ASSETS: ReleaseAsset[] = [
@@ -43,6 +51,24 @@ describe('pickDesktopAsset', () => {
       { name: 'Kortix-9.0.0-arm64.dmg', url: 'u/arm', size: 3 },
     ];
     expect(pickDesktopAsset(perArch, 'macos')?.url).toBe('u/universal');
+  });
+
+  test('picks the newest build from a channel prerelease that keeps every old one', () => {
+    // desktop-dev-latest lists Kortix-0.9.83 first and keeps every later build.
+    const channel: ReleaseAsset[] = [
+      { name: 'Kortix-0.9.83-universal.dmg', url: 'u/old-dmg', size: 1 },
+      { name: 'Kortix-Setup-0.9.83.exe', url: 'u/old-exe', size: 1 },
+      { name: 'Kortix.Dev-0.14.3-universal.dmg', url: 'u/dmg', size: 1 },
+      { name: 'Kortix.Dev-0.14.3-universal-mac.zip', url: 'u/zip', size: 1 },
+      { name: 'Kortix.Dev-0.9.109-universal.dmg', url: 'u/dmg-109', size: 1 },
+      { name: 'Kortix.Dev-Setup-0.14.3.exe', url: 'u/exe', size: 1 },
+      { name: 'Kortix.Dev-Setup-0.13.51.exe', url: 'u/exe-51', size: 1 },
+      { name: 'Kortix.Dev-0.13.34-x86_64.AppImage', url: 'u/appimage-34', size: 1 },
+      { name: 'Kortix.Dev-0.14.3-x86_64.AppImage', url: 'u/appimage', size: 1 },
+    ];
+    expect(pickDesktopAsset(channel, 'macos')?.url).toBe('u/dmg');
+    expect(pickDesktopAsset(channel, 'windows')?.url).toBe('u/exe');
+    expect(pickDesktopAsset(channel, 'linux')?.url).toBe('u/appimage');
   });
 
   test('returns undefined when the platform has no installer', () => {
@@ -119,5 +145,22 @@ describe('getLatestCaptureRelease', () => {
     await withReleases({ message: 'API rate limit exceeded' } as never, async () => {
       expect(await getLatestCaptureRelease()).toBeNull();
     });
+  });
+});
+
+describe('deploymentChannel', () => {
+  test('keys the channel on the backend host', () => {
+    expect(deploymentChannel('https://dev-api.kortix.com/v1')).toBe('dev');
+    expect(deploymentChannel('https://staging-api.kortix.com/v1')).toBe('staging');
+    expect(deploymentChannel('https://api.kortix.com/v1')).toBe('stable');
+    expect(deploymentChannel('https://kortix.example.com/v1')).toBe('stable');
+    expect(deploymentChannel('/v1')).toBe('stable');
+    expect(deploymentChannel(undefined)).toBe('stable');
+  });
+
+  test('a channel falls back to its own prerelease, never to the production release', () => {
+    expect(desktopReleasesPage('dev')).toBe('https://github.com/kortix-ai/suna/releases/tag/desktop-dev-latest');
+    expect(desktopReleasesPage('staging')).toBe('https://github.com/kortix-ai/suna/releases/tag/desktop-staging-latest');
+    expect(desktopReleasesPage('stable')).toBe('https://github.com/kortix-ai/suna/releases/latest');
   });
 });

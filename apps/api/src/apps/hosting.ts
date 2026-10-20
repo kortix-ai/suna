@@ -2,7 +2,6 @@ import { createHash, createHmac } from 'node:crypto';
 import { config, type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 import {
-  effectiveAppMachine,
   getProvider,
   type ProvisionResult,
   type ResolvedSandboxIngress,
@@ -32,7 +31,7 @@ export interface AppMachineSpec {
 /**
  * A Platinum App template carries these minimal defaults; each machine passes
  * its own size at create (Platinum enforces the template's as a floor), so a
- * resize never rebuilds the image. Daytona and E2B size the box from the
+ * resize never rebuilds the image. Daytona sizes the box from the
  * template, so there the template keeps the App's size.
  */
 export const APP_TEMPLATE_MACHINE: AppMachineSpec = { cpuCores: 1, memoryGb: 1, diskGb: 1 };
@@ -172,7 +171,7 @@ export class AppHostingProvider {
       ...(input.volumes && Object.keys(input.volumes).length > 0 ? { volumes: input.volumes, volumesRequired: true } : {}),
       // On-demand Apps keep the provider's idle backstop. An always-on App opts
       // out of it on Platinum, where 0 means persistent. Daytona clamps 0 to a
-      // 1-minute stop and E2B ignores it, so there it keeps the backstop and
+      // 1-minute stop, so there it keeps the backstop and
       // the keep-alive pass renews it every 5 minutes (`renewLifecycle`).
       ...(input.alwaysOn && input.provider === 'platinum' ? { autoStopInterval: 0 } : {}),
     });
@@ -188,14 +187,6 @@ export class AppHostingProvider {
       runtimeId: input.runtimeId,
       controlTokenHash: appControlTokenHash(token),
     };
-  }
-
-  /**
-   * The machine this provider will really allocate. Billing meters this, not
-   * the requested specification — see effectiveAppMachine.
-   */
-  effectiveMachine(provider: SandboxProviderName, machine: AppMachineSpec): AppMachineSpec {
-    return effectiveAppMachine(this.dependencies.runtimeProvider(provider), machine);
   }
 
   async start(provider: SandboxProviderName, externalId: string): Promise<void> {

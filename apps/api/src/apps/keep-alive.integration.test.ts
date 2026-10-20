@@ -224,7 +224,7 @@ withDb('always-on Apps: the provider is the truth, and liveness is stamped', () 
     expect(renewals).toEqual([]);
   });
 
-  test('on Daytona and E2B the provider idle timer is renewed every pass', async () => {
+  test('on Daytona the provider idle timer is renewed every pass', async () => {
     await seed(ALWAYS, { alwaysOn: true, status: 'running', provider: 'daytona' });
 
     await runAppKeepAlive(new Date(), true);

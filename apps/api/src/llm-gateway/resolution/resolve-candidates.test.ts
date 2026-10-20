@@ -580,25 +580,29 @@ describe('resolveCandidates — managed model tier gating', () => {
     expect(getAccountTier).not.toHaveBeenCalled();
   });
 
-  // KRTX-1067: the platform default is the ONE managed model every tier may
-  // use — the fresh free-tier account must be able to send its first message.
-  test('a free-tier account resolves the platform default', async () => {
+  test('a free-tier account is refused the platform default too', async () => {
     config.LLM_GATEWAY_DEFAULT_MODEL = 'deepseek-v4.1-flash';
     runtimeManagedModel = { id: 'deepseek-v4.1-flash' };
 
-    const candidates = await resolveCandidates(principal({ freeModelsOnly: true }), 'deepseek-v4.1-flash');
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]).toMatchObject({ provider: 'kortix-managed', resolvedModel: 'deepseek-v4.1-flash' });
+    await expect(
+      resolveCandidates(principal({ freeModelsOnly: true }), 'deepseek-v4.1-flash'),
+    ).rejects.toMatchObject({ code: 'plan_upgrade_required' });
   });
 
   // Both refusals keep the machine-readable `plan_upgrade_required`; clients
   // branch on the code. The copy differs: an account with no plan is told to
   // upgrade, a paid plan without managed models is told to bring a key, never
-  // to upgrade. Free has managed models since #10147, so it is never refused.
+  // to upgrade. Free gets no managed model.
   test.each([
     [
       'an account with no plan is told to upgrade',
       'none',
+      '"glm-5.3-flash" requires a paid plan.',
+      'Upgrade your plan to use this model, or choose a model available on your current plan.',
+    ],
+    [
+      'a Free account is told to upgrade',
+      'free',
       '"glm-5.3-flash" requires a paid plan.',
       'Upgrade your plan to use this model, or choose a model available on your current plan.',
     ],
@@ -620,7 +624,8 @@ describe('resolveCandidates — managed model tier gating', () => {
     });
   });
 
-  test.each(['pro', 'free'])('a %s account gets the managed candidates', async (tier) => {
+  test('a pro account gets the managed candidates', async () => {
+    const tier = 'pro';
     runtimeManagedModel = { id: 'glm-5.3-flash' };
     const p = principal();
     tierByAccount[p.accountId] = tier;
@@ -742,6 +747,7 @@ describe('resolveCandidates — codex + unknown provider', () => {
       provider: 'openai-codex', kind: 'openai-responses', baseUrl: 'https://codex.test',
       apiKey: 'oauth-token', billingMode: 'none', markup: 0, resolvedModel: 'codex/gpt-6.1-sol',
       credentialRef: 'selected', poolSecretId: 'selected', refreshableCredential: true,
+      headers: { session_id: 'session-1', conversation_id: 'session-1' },
     }]);
   });
 
