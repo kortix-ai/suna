@@ -154,7 +154,8 @@ export interface MonthToDateGatewaySpend {
 
 /**
  * Month-to-date requests and total spend of a project, and per member. With
- * `onlyUserId`, `members` holds that member only. Reads gateway_spend_daily,
+ * `onlyUserId`, `members` holds that member only; only `null` means every
+ * member, so an empty id matches no row (fails closed). Reads gateway_spend_daily,
  * or the log rows while a day of the month is pending.
  */
 export async function monthToDateGatewaySpend(
@@ -180,7 +181,7 @@ export async function monthToDateGatewaySpend(
       .groupBy(d.actorUserId);
     const project = { requests: rows[0]?.projectRequests ?? 0, cost: rows[0]?.projectCost ?? 0 };
     const members = rows
-      .filter((r) => r.userId !== NO_ACTOR && (!onlyUserId || r.userId === onlyUserId))
+      .filter((r) => r.userId !== NO_ACTOR && (onlyUserId === null || r.userId === onlyUserId))
       .map(({ userId, requests, cost, tokens }) => ({ userId, requests, cost, tokens }))
       .sort((a, b) => b.cost - a.cost);
     return { project, members };
@@ -201,7 +202,7 @@ export async function monthToDateGatewaySpend(
     .where(
       and(
         inMonth,
-        onlyUserId
+        onlyUserId !== null
           ? eq(gatewayRequestLogs.actorUserId, onlyUserId)
           : sql`${gatewayRequestLogs.actorUserId} is not null`,
       ),
