@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React, { act } from 'react';
 import { create, type ReactTestRenderer } from 'react-test-renderer';
 import { TestUiHost } from '../../test-utils/ui-host';
@@ -13,7 +14,9 @@ const replace = mock(() => {});
 mock.module('../../internal/layout/project-settings-nav', () => ({
   useCapabilityAccess: () => ({ settled, tabs }),
 }));
+const sdkReact = await import('@kortix/sdk/react');
 mock.module('@kortix/sdk/react', () => ({
+  ...sdkReact,
   useFeatureFlag: () => ({ enabled: reminders, isLoading: false }),
 }));
 const { CapabilityAccessGate } = await import('./capability-access-gate');
@@ -30,12 +33,12 @@ afterEach(() => {
 function render() {
   act(() => {
     mounted = create(
-      <IntlTestProvider>
+      <QueryClientProvider client={new QueryClient()}><IntlTestProvider>
         <TestUiHost params={{ id: 'example' }} pathname={pathname}
           router={{ replace, push() {}, prefetch() {}, back() {} }}>
           <CapabilityAccessGate projectId="example"><p>Reminder inventory</p></CapabilityAccessGate>
         </TestUiHost>
-      </IntlTestProvider>,
+      </IntlTestProvider></QueryClientProvider>,
     );
   });
   return JSON.stringify(mounted?.toJSON());

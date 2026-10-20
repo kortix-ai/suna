@@ -12,7 +12,7 @@
  * - `branch` (default): the same, against the merge base of HEAD and the
  *   project's default branch, so committed work stays listed.
  */
-import { runGit } from '../../lib/git/git'
+import { runGit } from '@/lib/git/git'
 
 export interface VcsFileDiff {
   file: string
