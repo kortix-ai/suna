@@ -1,4 +1,15 @@
 {
+  "repositoryDisconnected": {
+    "title": "GitHub getrennt",
+    "reconnect": "GitHub erneut verbinden",
+    "openSettings": "Git-Einstellungen öffnen",
+    "reconnectError": "Die GitHub-Installationsseite konnte nicht geöffnet werden. Versuche es erneut.",
+    "reasons": {
+      "app_uninstalled": "Die Kortix GitHub App wurde von {owner} deinstalliert, daher erreicht Kortix {repository} nicht. Ein GitHub-Owner von {owner} muss sie neu installieren.",
+      "app_suspended": "Die Kortix GitHub App ist auf {owner} gesperrt, daher erreicht Kortix {repository} nicht. Ein GitHub-Owner von {owner} muss die Sperre in den GitHub-Einstellungen aufheben.",
+      "repo_not_accessible": "Kortix erreicht {repository} nicht. Das Repository wurde gelöscht, umbenannt oder aus der Kortix GitHub App entfernt. Ein GitHub-Owner von {owner} muss es wieder hinzufügen."
+    }
+  },
   "repositoryChange": {
     "changedToast": "Repository geändert. Neue Sitzungen verwenden das neue Repository.",
     "verifyError": "GitHub-Zugriff konnte nicht überprüft werden.",

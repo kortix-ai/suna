@@ -1,4 +1,15 @@
 {
+  "repositoryDisconnected": {
+    "title": "GitHub déconnecté",
+    "reconnect": "Reconnecter GitHub",
+    "openSettings": "Ouvrir les paramètres Git",
+    "reconnectError": "Impossible d’ouvrir la page d’installation GitHub. Réessayez.",
+    "reasons": {
+      "app_uninstalled": "La GitHub App Kortix a été désinstallée de {owner} : Kortix ne peut plus accéder à {repository}. Un propriétaire GitHub de {owner} doit la réinstaller.",
+      "app_suspended": "La GitHub App Kortix est suspendue sur {owner} : Kortix ne peut plus accéder à {repository}. Un propriétaire GitHub de {owner} doit la réactiver dans les paramètres GitHub.",
+      "repo_not_accessible": "Kortix ne peut plus accéder à {repository}. Le dépôt a été supprimé, renommé ou retiré de la GitHub App Kortix. Un propriétaire GitHub de {owner} doit l’ajouter à nouveau."
+    }
+  },
   "repositoryChange": {
     "changedToast": "Dépôt modifié. Les nouvelles sessions utiliseront le nouveau dépôt.",
     "verifyError": "Impossible de vérifier l’accès à GitHub.",
