@@ -43,6 +43,7 @@ import {
   recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
 } from '../session-turn-ledger';
+import { fireIdleWatches } from '../rooms/service';
 
 /** The relay request body, shape only — the route parses JSON into this. */
 export type TurnStreamBody = Partial<TurnStreamRelayBody>;
@@ -543,6 +544,11 @@ export async function settleTurnEnd(
         err: err instanceof Error ? err.message : String(err),
       }),
     );
+  }
+  // THE TURN ENDED, SO "TELL ME WHEN IT IS IDLE" IS DUE (flag agent_rooms).
+  // Fire-and-forget: a notice never holds the daemon's relay, and it never throws.
+  if (settled.turnCompletion.outcome === 'closed' && !ctx.childSession) {
+    void fireIdleWatches(ctx.sessionId, settled.status, settled.errorInfo?.name ?? null);
   }
   // Started beside the promotion, awaited before the acknowledgement.
   const sessionList = refreshSessionListAtTurnEnd(ctx);

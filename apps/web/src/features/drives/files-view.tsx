@@ -200,10 +200,18 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
   const { locate } = useDriveLocation(drive);
   const here = locate(path);
   const HereGlyph = here.icon;
-  // The drive's name, then the full path from the top of Drive.
+  // My files or a shared folder reads as its own root: `Users/<name>` and the
+  // folders above a share are storage paths, not places people go.
+  const base = here.base ? { path: here.base, label: here.label, icon: <HereGlyph /> } : undefined;
   const location = {
     icon: <HereGlyph />,
-    crumbs: [here.label, ...path.split('/').filter(Boolean)],
+    crumbs: [
+      here.label,
+      ...path
+        .split('/')
+        .filter(Boolean)
+        .slice(here.base ? here.base.split('/').filter(Boolean).length : 0),
+    ],
   };
 
   // The rail picks where to look; small screens keep the switcher.
@@ -213,8 +221,10 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
     </div>
   );
   // Share closes the action group, after New and the view menu.
+  // A folder the caller only passes through (on the way to a share) has no
+  // sharing they may see.
   const trailing =
-    path !== '/' ? (
+    path !== '/' && access !== 'none' ? (
       <Popover open={accessOpen} onOpenChange={setAccessOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -251,6 +261,7 @@ function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }
             rootLabel={t('driveLabel')}
             rootIcon={<HardDriveIcon className="text-muted-foreground" />}
             location={location}
+            pathBase={base}
             onTeamFolderCreated={(p, audience) => {
               // Specific people: open the new folder and pick them there.
               if (audience !== 'specific') return;
@@ -302,14 +313,17 @@ type DriveGlyph = ComponentType<{ className?: string }>;
 function useDriveLocation(drive: Drive) {
   const t = useTranslations('drives');
   const root = useDriveFolder(drive.driveId, '/');
+  // A team folder is one the caller can open: a folder they only pass
+  // through on the way to a share (no access of its own) is not theirs.
   const companyDrives = (root.data?.entries ?? [])
-    .filter((e) => e.type === 'dir' && !isUnder(absolute(e.path), PEOPLE_ROOT))
+    .filter((e) => e.type === 'dir' && e.access !== 'none' && !isUnder(absolute(e.path), PEOPLE_ROOT))
     .map((e) => ({ name: e.name, path: absolute(e.path) }));
   const personal = drive.personalFolder;
   const shared = drive.sharedWithMe ?? [];
 
-  const locate = (path: string): { icon: DriveGlyph; label: string } => {
-    if (personal && isUnder(path, personal)) return { icon: Home, label: t('myDrive') };
+  /** `base`: the folder that reads as the root there (My files, a shared folder). */
+  const locate = (path: string): { icon: DriveGlyph; label: string; base?: string } => {
+    if (personal && isUnder(path, personal)) return { icon: Home, label: t('myDrive'), base: personal };
     const company = companyDrives.find((d) => isUnder(path, d.path));
     if (company) return { icon: FolderSimpleIcon, label: company.name };
     const sharedHere = shared.find((f) => isUnder(path, f.path));
@@ -317,6 +331,7 @@ function useDriveLocation(drive: Drive) {
       return {
         icon: FolderSimpleIcon,
         label: sharedHere.path.split('/').filter(Boolean).pop() ?? sharedHere.path,
+        base: sharedHere.path,
       };
     return { icon: SquaresFourIcon, label: t('allFiles') };
   };

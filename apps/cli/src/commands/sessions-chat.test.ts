@@ -303,3 +303,24 @@ describe('logHeaderState — the `sessions log` header names the sandbox and, wh
     expect(logHeaderState('running', null)).toBe('sandbox running');
   });
 });
+
+describe('roomMessageHeader', () => {
+  test('a delivered room message prints where it came from and who sent it, never the reply footer', async () => {
+    const { roomMessageHeader } = await import('./sessions-chat.ts');
+    const { roomPromptText } = await import('@kortix/shared');
+    const text = roomPromptText({
+      room: 'dev', seq: 4, senderKind: 'session', sender: '3f2a1b9c (builder)', replyTo: 2, text: 'dev is clear',
+    });
+    expect(roomMessageHeader(text)).toEqual({ header: 'room dev #4 · from agent session 3f2a1b9c (builder) ↳#2', body: 'dev is clear' });
+    expect(roomMessageHeader('hello')).toBeNull();
+  });
+});
+
+describe('roomMessageHeader digest', () => {
+  test('a batched digest prints the room, the range and one line per message', async () => {
+    const { roomMessageHeader } = await import('./sessions-chat.ts');
+    const { roomDigestText } = await import('@kortix/shared');
+    const text = roomDigestText({ room: 'dev', fromSeq: 4, toSeq: 5, more: 0, lines: [{ seq: 4, sender: 'Ada', text: 'deploy at 5' }, { seq: 5, sender: 'Bob', text: 'ok' }] });
+    expect(roomMessageHeader(text)).toEqual({ header: 'room dev #4–#5 · 2 new messages', body: '#4 Ada: deploy at 5\n#5 Bob: ok' });
+  });
+});

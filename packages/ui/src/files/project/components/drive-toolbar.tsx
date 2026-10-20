@@ -94,6 +94,12 @@ interface DrivePathBarProps {
    * root crumb is its page title, does not.
    */
   as?: 'inline' | 'row';
+  /**
+   * A folder that reads as its own root while the view is inside it (Drive's
+   * My files, a folder shared with the caller): its crumb replaces the chain
+   * above it, so `Users/<name>` never shows.
+   */
+  base?: { path: string; label: string; icon?: ReactNode };
   className?: string;
 }
 
@@ -103,11 +109,24 @@ interface DrivePathBarProps {
  * Double-clicking swaps the chain for a raw path input — the one power
  * affordance kept from the old toolbar, because it costs no pixels.
  */
-export function DrivePathBar({ rootLabel, rootIcon, as = 'inline', className }: DrivePathBarProps) {
+export function DrivePathBar({
+  rootLabel: hostRootLabel,
+  rootIcon: hostRootIcon,
+  as = 'inline',
+  base,
+  className,
+}: DrivePathBarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
-  const rootPath = useFilesStore((s) => s.rootPath);
+  const storeRootPath = useFilesStore((s) => s.rootPath);
+  const baseSegments = base?.path.split('/').filter(Boolean) ?? [];
+  const inBase =
+    baseSegments.length > 0 &&
+    baseSegments.every((segment, i) => currentPath.split('/').filter(Boolean)[i] === segment);
+  const rootPath = inBase ? `/${baseSegments.join('/')}` : storeRootPath;
+  const rootLabel = inBase ? base!.label : hostRootLabel;
+  const rootIcon = inBase ? base!.icon : hostRootIcon;
 
   const homePath = rootPath || '/workspace';
   const homeLabel =

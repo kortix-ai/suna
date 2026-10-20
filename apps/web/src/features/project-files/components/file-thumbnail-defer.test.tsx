@@ -92,3 +92,26 @@ describe('FileThumbnail near the viewport', () => {
     expect(rendered).toEqual(['a/f0001.txt']);
   });
 });
+
+describe('markdown thumbnail expansion affordance', () => {
+  test('renders a readable Show more control outside the scaled preview', () => {
+    const open = mock(() => {});
+    act(() => {
+      renderer = create(
+        <FileThumbnail filePath="agents/example.md" fileName="example.md" onOpen={open} />,
+        { createNodeMock: () => ({}) },
+      );
+    });
+    act(() => observers[0]!.callback([{ isIntersecting: true }]));
+    const button = renderer!.root.findByType('button');
+    expect(button.children).toEqual(['Show more']);
+    const stopPropagation = mock(() => {});
+    act(() => button.props.onClick({ stopPropagation }));
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(stopPropagation).toHaveBeenCalledTimes(1);
+    for (let parent = button.parent; parent; parent = parent.parent) {
+      expect(parent.props.style?.transform).toBeUndefined();
+      expect(parent.props['aria-hidden']).not.toBe(true);
+    }
+  });
+});

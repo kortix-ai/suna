@@ -1,5 +1,4 @@
 export function isProviderStateLoading(input: {
-  projectDetailLoading: boolean;
   secretsLoading: boolean;
   /**
    * The secrets read has answered at least once, with data or an error. A later
@@ -9,5 +8,5 @@ export function isProviderStateLoading(input: {
    */
   secretsSettledOnce?: boolean;
 }): boolean {
-  return input.projectDetailLoading || (input.secretsLoading && !input.secretsSettledOnce);
+  return input.secretsLoading && !input.secretsSettledOnce;
 }

@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { contract, qk } from '@kortix/sdk/react';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import {
   errorStatus,
   gateAction,
@@ -11,6 +13,7 @@ import {
   gateStateForError,
   gateStateForRequestResult,
   isForbiddenState,
+  projectGateQuery,
   resolveBoundaryView,
   resolveGateState,
   routeSessionIdFromParams,
@@ -41,11 +44,10 @@ function copyBlock(locale: string): Record<string, string> {
 const en = copyBlock('en');
 
 describe('project access waits for the authenticated identity', () => {
-  test('the query waits for auth hydration and is isolated by user', () => {
+  test('the query waits for auth hydration', () => {
     expect(componentSource).toContain('const { user, isLoading: isAuthLoading } = useAuth();');
     expect(componentSource).toContain('const authReady = !isAuthLoading && !!user?.id;');
     expect(componentSource).toContain('enabled: authReady && !!projectId');
-    expect(componentSource).toContain('queryKey: [QUERY_KEY, projectId, user?.id]');
   });
 
   test('the boundary renders what resolveBoundaryView decides', () => {
@@ -522,5 +524,51 @@ describe('session open read starts beside getProject', () => {
     const pendingGateAt = componentSource.indexOf("if (view === 'pending') return");
     expect(prefetchAt).toBeGreaterThan(0);
     expect(prefetchAt).toBeLessThan(pendingGateAt);
+  });
+});
+
+// One page load: the gate fetches, then the shell mounts its own
+// `qk.project.summary` observer (`project-shell.tsx`, `contract('config')`).
+// Two keys sent `GET /projects/:id` twice per load.
+describe('one GET /projects/:id per project page load', () => {
+  const PROJECT = 'project-1';
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  async function loadPage(seed?: (client: QueryClient) => Promise<void>) {
+    // The web client's default staleTime (`react-query-provider.tsx`).
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60_000 } } });
+    await seed?.(client);
+    let gets = 0;
+    const getProject = async () => {
+      gets += 1;
+      return { project_id: PROJECT };
+    };
+    const gate = new QueryObserver(client, { ...projectGateQuery(PROJECT), queryFn: getProject });
+    const stopGate = gate.subscribe(() => {});
+    await settle();
+    expect(gate.getCurrentResult().isSuccess).toBe(true);
+    const shell = new QueryObserver(client, {
+      queryKey: qk.project.summary(PROJECT),
+      queryFn: getProject,
+      ...contract('config'),
+    });
+    const stopShell = shell.subscribe(() => {});
+    await settle();
+    stopGate();
+    stopShell();
+    client.clear();
+    return gets;
+  }
+
+  test('a cold load sends one GET', async () => {
+    expect(await loadPage()).toBe(1);
+  });
+
+  test('a reload from the persisted cache (restored, then invalidated) sends one GET', async () => {
+    const gets = await loadPage(async (client) => {
+      client.setQueryData(qk.project.summary(PROJECT), { project_id: PROJECT });
+      await client.invalidateQueries({ queryKey: qk.project.summary(PROJECT), refetchType: 'none' });
+    });
+    expect(gets).toBe(1);
   });
 });

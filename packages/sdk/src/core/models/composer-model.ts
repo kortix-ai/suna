@@ -3,7 +3,6 @@ import type { ProviderListResponse } from '../runtime/runtime-types';
 
 import type { ModelDefaultsResponse } from '../rest/projects-client/model-defaults';
 import { sessionModelPin } from '../rest/projects-client/sessions';
-import { healBedrockModelKey } from './bedrock-invokable';
 import { isOfferedModel, type FlatModel } from './model-flatten';
 import { type ModelKey, modelRefToKey, wireToModelKey } from './model-key';
 
@@ -73,7 +72,6 @@ export interface SessionModelFallback {
 /** The session's fallback record (`metadata.opencode_model_source: 'fallback'`), if any. */
 export function sessionModelFallback(
   session: { metadata?: Record<string, unknown> | null } | null | undefined,
-  gatewayEnabled: boolean,
 ): SessionModelFallback | undefined {
   const metadata = session?.metadata;
   if (metadata?.opencode_model_source !== 'fallback') return undefined;
@@ -81,8 +79,8 @@ export function sessionModelFallback(
   if (typeof pin !== 'string' || typeof from !== 'string' || typeof atMs !== 'number') return undefined;
   const reason = metadata.opencode_model_fallback_reason;
   return {
-    model: modelRefToKey(pin, gatewayEnabled),
-    from: modelRefToKey(from, gatewayEnabled),
+    model: modelRefToKey(pin),
+    from: modelRefToKey(from),
     reason: typeof reason === 'string' ? reason : 'other',
     atMs,
   };
@@ -124,11 +122,11 @@ export function sessionModelCandidates(input: {
   session?: { metadata?: Record<string, unknown> | null } | null;
   /** The model of the session's newest user message. */
   lastPromptModel?: ModelKey;
-  /** The project's gateway mode: it decides how a stored pin parses. */
-  gatewayEnabled: boolean;
+  /** @deprecated Ignored: the LLM gateway is the only model path. Removed in the next major. */
+  gatewayEnabled?: boolean;
 }): ModelKey[] {
   const pin = input.session ? sessionModelPin(input.session) : null;
-  const pinKey = pin ? modelRefToKey(pin, input.gatewayEnabled) : undefined;
+  const pinKey = pin ? modelRefToKey(pin) : undefined;
   const metadata = input.session?.metadata;
   // `opencode_model_restored`: the server moved the pin back off a fallback
   // and no prompt has run on it yet, so the last prompt names the fallback.
@@ -140,7 +138,7 @@ export function sessionModelCandidates(input: {
 }
 
 export interface ComposerModelResolution {
-  /** The model to display and send. Bare Bedrock ids healed to an inference profile. */
+  /** The model to display and send. */
   model: ModelKey | undefined;
   /** The first valid explicit pick. `undefined` = the composer is on its default. */
   explicit: ModelKey | undefined;
@@ -230,12 +228,8 @@ export function resolveComposerModel(input: {
   })();
 
   const explicit = firstValid(input.picks ?? []);
-  const resolved =
+  const model =
     explicit ??
     firstValid([input.serverDefault, input.globalDefault, input.agentModel, fallback]);
-  // EVERY source above can hand back a bare Bedrock in-region id — the
-  // explicit slot most of all. Bedrock answers a hard 400 for those and
-  // OpenCode retries forever, so heal here, at the single seam every source
-  // funnels through. No-op off Bedrock.
-  return { model: healBedrockModelKey(resolved, models), explicit, fallback };
+  return { model, explicit, fallback };
 }

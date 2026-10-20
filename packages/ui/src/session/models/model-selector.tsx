@@ -13,15 +13,11 @@ import {
 } from '../../primitives/command';
 import Loading from '../../primitives/loading';
 import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '../../internal/lib/provider-branding';
-import { isLlmGatewayEnabled } from '../../internal/lib/llm-gateway';
 import { cn } from '../../lib/utils';
 import type { ProviderModalTab } from '../../internal/stores/provider-modal-store';
 import { useProviderModalStore } from '../../internal/stores/provider-modal-store';
-import { getProject } from '@kortix/sdk';
 import {
-  contract,
   type FlatModel,
-  qk,
   type ProviderListResponse,
   useFeatureFlag,
   useModelAccess,
@@ -37,11 +33,11 @@ import {
   SlidersHorizontalIcon as SlidersHorizontal,
   StarIcon as Star,
 } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from '../../i18n';
 import { useSessionIds } from '../../providers/session-ids';
 import { useUiComponents } from '../../providers/ui-provider';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { ModelSearchEmpty } from './model-search-empty';
 import { resolveAvailableSelectedModel } from './model-availability';
 import {
   isPickerGroupOpen,
@@ -433,13 +429,6 @@ export function ModelSelector({
   } = useModelConnectionGate(models);
 
   const projectId = useSessionIds().projectId ?? null;
-  const projectRowQuery = useQuery({
-    queryKey: qk.project.summary(projectId ?? ''),
-    queryFn: () => getProject(projectId as string),
-    enabled: !!projectId,
-    ...contract('config'),
-  });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectRowQuery.data);
   // Bring your own ChatGPT subscription (pooled provider secrets). Any member
   // connects their own account from here; Customize is not needed. Hidden when
   // a manager disabled the ChatGPT provider for the project.
@@ -447,7 +436,7 @@ export function ModelSelector({
   const pooledSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
   const { ProviderAccountsModal } = useUiComponents();
   const chatGptPossible =
-    !!ProviderAccountsModal && offerProviderAccounts && !!projectId && pooledSecrets.enabled && llmGatewayEnabled;
+    !!ProviderAccountsModal && offerProviderAccounts && !!projectId && pooledSecrets.enabled;
   const modelAccess = useModelAccess(chatGptPossible ? projectId : null);
   const chatGptAvailable =
     chatGptPossible && !(modelAccess.data?.disabledProviders ?? []).includes('codex');
@@ -461,14 +450,11 @@ export function ModelSelector({
   const canManageModels =
     !projectId || caps[PROJECT_ACTIONS.PROJECT_MODEL_WRITE]?.allowed === true;
   const rowDefaultControls = canManageModels ? defaultControls : undefined;
-  const baseModels = useMemo(() => {
-    return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
-  }, [models, llmGatewayEnabled]);
 
   const availableSelectedModel = entitlementsPending
     ? selectedModel
     : resolveAvailableSelectedModel(selectedModel, isSelectableModel);
-  const current = baseModels.find(
+  const current = models.find(
     (m) =>
       m.providerID === availableSelectedModel?.providerID &&
       m.modelID === availableSelectedModel?.modelID,
@@ -489,10 +475,10 @@ export function ModelSelector({
   // curates the NO-SEARCH view for native providers — the client twin of the
   // `enabled` stamping `/model-picker` gives gateway catalogs. See
   // modelInDefaultView.
-  const pickerModelStore = useModelStore(baseModels);
+  const pickerModelStore = useModelStore(models);
   const visibleModels = useMemo(() => {
     const q = search.toLowerCase();
-    return baseModels
+    return models
       .filter(
         (m) =>
           m.enabled !== false &&
@@ -507,17 +493,17 @@ export function ModelSelector({
           }),
       )
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
-  }, [baseModels, search, pickerModelStore.isVisible, selectedModel]);
+  }, [models, search, pickerModelStore.isVisible, selectedModel]);
 
   /** Is there anything to pick AT ALL, ignoring the search box? The empty
    *  state below branches on this: "no models match your search" and "you have
    *  no models" are different problems with different ways out. */
-  const hasAnyModel = useMemo(() => baseModels.some((m) => m.enabled !== false), [baseModels]);
+  const hasAnyModel = useMemo(() => models.some((m) => m.enabled !== false), [models]);
   /** Does this member already have ChatGPT subscription models? Then the row
    *  manages their accounts instead of offering to connect one. */
   const hasChatGptModels = useMemo(
-    () => baseModels.some((m) => m.enabled !== false && pickerGroupId(m) === 'codex'),
-    [baseModels],
+    () => models.some((m) => m.enabled !== false && pickerGroupId(m) === 'codex'),
+    [models],
   );
 
   const grouped = useMemo(() => {
@@ -526,7 +512,7 @@ export function ModelSelector({
       { providerName: string; providerID: string; models: FlatModel[] }
     >();
     for (const m of visibleModels) {
-      const groupID = llmGatewayEnabled ? pickerGroupId(m) : m.providerID;
+      const groupID = pickerGroupId(m);
       const existing = groups.get(groupID);
       if (existing) {
         existing.models.push(m);
@@ -537,7 +523,7 @@ export function ModelSelector({
           // "Kortix" (opencode's raw provider name), which is exactly the
           // "every provider shows as Kortix" bug. Label by the resolved real
           // provider id instead. See pickerGroupLabel's doc comment.
-          providerName: llmGatewayEnabled ? pickerGroupLabel(groupID, m) : m.providerName,
+          providerName: pickerGroupLabel(groupID, m),
           models: [m],
         });
       }
@@ -552,7 +538,7 @@ export function ModelSelector({
       return a.providerName.localeCompare(b.providerName);
     });
     return entries;
-  }, [visibleModels, llmGatewayEnabled]);
+  }, [visibleModels]);
 
   /** Provider groups, with any multi-credential provider split per account. */
   const searching = search.trim().length > 0;
@@ -583,13 +569,13 @@ export function ModelSelector({
       (m) => m.providerID === ref.providerID && m.modelID === ref.modelID,
     );
     if (!model) return null;
-    const groupID = llmGatewayEnabled ? pickerGroupId(model) : model.providerID;
+    const groupID = pickerGroupId(model);
     return {
       model,
       providerID: groupID,
-      providerName: llmGatewayEnabled ? pickerGroupLabel(groupID, model) : model.providerName,
+      providerName: pickerGroupLabel(groupID, model),
     };
-  }, [defaultControls?.accountDefault, llmGatewayEnabled, visibleModels]);
+  }, [defaultControls?.accountDefault, visibleModels]);
 
   const handleSelect = useCallback(
     (model: FlatModel) => {
@@ -863,19 +849,12 @@ export function ModelSelector({
                    filtered by `search`, so the branch below could not tell the
                    two apart: typing "zzz" with 40 models connected showed
                    "No models available" and a Connect-provider CTA. */
-                <div className="px-3 py-5 text-center">
-                  <div className="text-foreground text-sm font-medium">
-                    {tModel('noMatch.title')}
-                  </div>
-                  <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
-                    {tModel('noMatch.description', { search: search.trim() })}
-                  </p>
-                  <div className="mt-4 flex items-center justify-center">
-                    <Button type="button" size="xs" variant="outline" onClick={() => setSearch('')}>
-                      {tModel('noMatch.clear')}
-                    </Button>
-                  </div>
-                </div>
+                <ModelSearchEmpty
+                  search={search}
+                  modelCount={models.filter((model) => model.enabled !== false).length}
+                  onClear={() => setSearch('')}
+                  onUpgrade={showUpgradeOption ? handleUpgrade : undefined}
+                />
               ) : (
                 <div className="px-3 py-5 text-center">
                   <div className="text-foreground text-sm font-medium">{tModel('empty.title')}</div>

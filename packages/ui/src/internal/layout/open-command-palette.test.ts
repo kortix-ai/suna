@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
   consumePendingCommandPalette,
+  hasPendingCommandPalette,
   OPEN_COMMAND_PALETTE_EVENT,
   openCommandPalette,
 } from './open-command-palette';
@@ -37,6 +38,14 @@ describe('openCommandPalette', () => {
   test('buffers a request made while nothing is listening', () => {
     openCommandPalette();
     expect(consumePendingCommandPalette()).toBe(true);
+  });
+
+  test('reading pending state does not consume the handoff request', () => {
+    openCommandPalette();
+    expect(hasPendingCommandPalette()).toBe(true);
+    expect(hasPendingCommandPalette()).toBe(true);
+    expect(consumePendingCommandPalette()).toBe(true);
+    expect(hasPendingCommandPalette()).toBe(false);
   });
 
   test('the buffered request is consumed exactly once', () => {

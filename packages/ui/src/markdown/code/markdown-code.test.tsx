@@ -1,7 +1,7 @@
 import { KATEX_FENCE_LANGUAGES } from '../katex-markdown';
 import { probeFileAvailability, resetFileAvailability } from '../../internal/files/file-availability';
 import { UiProvider } from '../../providers/ui-provider';
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { isHexColor } from './inline-chip';
@@ -39,16 +39,25 @@ const labelOf = (html: string) => {
 /** `not-prose` sits on the card root and nowhere else in this subtree. */
 const CARD = 'not-prose';
 const COPY = 'aria-label="Copy code"';
+/** The server render of MermaidRenderer: its loading placeholder (effects never run in SSR). */
+const DIAGRAM = 'Rendering Mermaid diagram...';
+
+// MermaidRenderer is a lazy() chunk. Before the chunk resolves, a server render
+// emits the Suspense fallback (`null`); after it resolves, it emits the diagram
+// placeholder. Which one a test saw used to depend on whether an earlier test
+// file had already loaded the chunk. Resolve it once here, so every mermaid
+// test asserts the diagram itself, in any file order.
+beforeAll(async () => {
+  render({ className: 'language-mermaid', children: 'graph TD;\n  A-->B;' });
+  await import('../../primitives/mermaid-renderer');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
 
 describe('MarkdownCode — fenced blocks', () => {
   test('a mermaid fence takes the diagram path, not the code card', () => {
-    // MermaidRenderer is lazy() inside a Suspense with a null fallback, and a
-    // server render emits the fallback for anything that suspends — so the
-    // diagram's SSR footprint is the empty string. Asserting emptiness is what
-    // proves the card was skipped; a diagram cannot appear here at all.
     const markup = render({ className: 'language-mermaid', children: 'graph TD;\n  A-->B;' });
 
-    expect(markup).toBe('');
+    expect(markup).toContain(DIAGRAM);
     expect(markup).not.toContain(CARD);
     expect(markup).not.toContain(COPY);
   });
@@ -56,7 +65,8 @@ describe('MarkdownCode — fenced blocks', () => {
   test('mermaid-looking content with no language hint also skips the card', () => {
     const markup = render({ children: 'sequenceDiagram\n  A->>B: hi' });
 
-    expect(markup).toBe('');
+    expect(markup).toContain(DIAGRAM);
+    expect(markup).not.toContain(CARD);
   });
 
   test('every KaTeX fence language renders the math block', () => {
@@ -361,7 +371,8 @@ describe('MarkdownCode with wrapped children', () => {
   test('still recognises mermaid content behind a wrapping element', () => {
     const markup = render({ children: <span>{'sequenceDiagram\n  A->>B: hi'}</span> });
 
-    expect(markup).toBe('');
+    expect(markup).toContain(DIAGRAM);
+    expect(markup).not.toContain(CARD);
   });
 
   test('still detects a fenced block by its newline behind a wrapping element', () => {

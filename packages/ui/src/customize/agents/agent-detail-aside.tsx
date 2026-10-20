@@ -24,13 +24,11 @@ import { Label } from '../../primitives/label';
 import Loading from '../../primitives/loading';
 import { errorToast, successToast } from '../../primitives/toast';
 import { ModelSelector } from '../../session/models/model-selector';
-import { isLlmGatewayEnabled } from '../../internal/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectCan } from '../../internal/lib/use-project-can';
 import { cn } from '../../internal/lib/utils';
 import {
   type AgentGrantSet,
-  getProjectDetail,
   listConnectors,
   listProjectSecrets,
   type ProjectConfigSummary,
@@ -55,23 +53,12 @@ export function AgentModel({ projectId, agentName }: { projectId: string; agentN
   // project.model.write — what the route asserts, not "is this a manager".
   const canManage =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MODEL_WRITE).allowed === true;
-  // Per-agent model pins live in the GATEWAY model-defaults chain. A native
-  // project (llm_gateway off) has no such chain — the agent's model comes
-  // from its own frontmatter/manifest and OpenCode resolves it in the
-  // sandbox — and the write route 404s, so the card hides entirely.
-  const detailQuery = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
-    ...contract('config'),
-  });
-  const llmGatewayEnabled = isLlmGatewayEnabled(detailQuery.data?.project);
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(
     () => flattenModels(providers, { providerMode: modelProviderMode(providers) }),
     [providers],
   );
   const defaults = useModelDefaults(projectId);
-  if (!llmGatewayEnabled) return null;
   const explicit = defaults.agentDefaults[agentName] ?? null;
   const resolved = defaults.resolveDefaultFor(agentName) ?? null;
 

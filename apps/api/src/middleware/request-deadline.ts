@@ -106,6 +106,9 @@ const EXEMPT_METHOD_PATHS: Array<{ method: string; path: string }> = [
 ];
 
 const EXEMPT_METHOD_PATH_PATTERNS: Array<{ method: string; path: RegExp }> = [
+  // Create commits the session and initial prompt together. Racing that write
+  // returns a retryable 503 while the session continues provisioning unseen.
+  { method: 'POST', path: /^\/v1\/projects\/[^/]+\/sessions$/ },
   // The streaming secret relay. An SSE or long-body relay legitimately outlives
   // any fixed deadline, and `/v1/projects` is not an exempt PREFIX, so without
   // this every relay over 25s dies with a 503 `request_deadline`.

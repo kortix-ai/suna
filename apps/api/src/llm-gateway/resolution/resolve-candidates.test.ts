@@ -175,7 +175,6 @@ beforeEach(() => {
   modelAccess = { disabledProviders: [], disabledModels: [] };
   for (const key of Object.keys(config)) delete config[key];
   Object.assign(config, {
-    LLM_GATEWAY_ENABLED: true,
     KORTIX_MANAGED_PROVIDER_ENABLED: true,
     KORTIX_BILLING_INTERNAL_ENABLED: true,
     LLM_GATEWAY_BYOK_FALLBACK_MODEL: 'anthropic/claude-sonnet-4.6',

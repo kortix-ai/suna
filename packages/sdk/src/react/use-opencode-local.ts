@@ -24,8 +24,6 @@ import type { Agent, Config, ProviderListResponse } from '../core/runtime/runtim
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAgentSelectionScope } from './agent-selection-scope';
 import { useKortixRouteProjectId } from './route-project';
-import { healBedrockModelKey } from './bedrock-invokable';
-import { normalizeProviderList } from './provider-selection';
 import { useModelStore, type ModelKey } from './use-model-store';
 
 export type { ModelKey };
@@ -202,12 +200,15 @@ export function resolveHiddenAutoModel(
   return resolvePromptModel(resolved, undefined);
 }
 
+/** The persisted model-selection scope. `'native'` is deprecated: the LLM gateway is the only model path. */
 export type ModelProviderMode = 'native' | 'gateway';
 
-export function modelProviderMode(providers: ProviderListResponse | undefined): ModelProviderMode {
-  if (!providers) return 'native';
-  const normalized = normalizeProviderList(providers);
-  return normalized.connected?.includes('kortix') ? 'gateway' : 'native';
+/**
+ * @deprecated Always `'gateway'`: the LLM gateway is the only model path for
+ * every project. Removed in the next major.
+ */
+export function modelProviderMode(_providers?: ProviderListResponse): ModelProviderMode {
+  return 'gateway';
 }
 
 export function scopedModelSelectionKey(
@@ -287,16 +288,10 @@ export function useRuntimeLocal({
   projectSession,
   lastPromptModel,
 }: UseRuntimeLocalOptions): RuntimeLocal {
-  // ---- Flatten models from providers (shared with the chat input). The
-  // filter follows the provider MODE: gateway mode keeps the kortix-only
-  // allowlist (native bypass providers never leak in); native mode
-  // (llm_gateway off) flattens OpenCode's own connected providers — that IS
-  // the catalog off-gateway. ----
-  const providerMode = useMemo(() => modelProviderMode(providers), [providers]);
-  const flatModels = useMemo<FlatModel[]>(
-    () => flattenModels(providers, { providerMode }),
-    [providers, providerMode],
-  );
+  // ---- Flatten models from providers (shared with the chat input): the
+  // kortix-only allowlist, so a native bypass provider never leaks in. ----
+  const providerMode = modelProviderMode();
+  const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
   const projectId = useKortixRouteProjectId();
 
   // ---- Model store (persisted: recent, variant, per-agent/session selection) ----
@@ -412,11 +407,7 @@ export function useRuntimeLocal({
   // the caller must not recompute the resolution, so key it by value.
   const sessionModels = useMemo(
     () =>
-      sessionModelCandidates({
-        session: projectSession,
-        lastPromptModel,
-        gatewayEnabled: providerMode === 'gateway',
-      }),
+      sessionModelCandidates({ session: projectSession, lastPromptModel }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       projectSession?.metadata?.opencode_model,
@@ -424,14 +415,13 @@ export function useRuntimeLocal({
       projectSession?.metadata?.opencode_model_restored,
       lastPromptModel?.providerID,
       lastPromptModel?.modelID,
-      providerMode,
     ],
   );
 
   // A gateway fallback switch outranks this browser's session picks made
   // before it: sending one would name the model that cannot serve again.
   const sessionFallback = useMemo(
-    () => sessionModelFallback(projectSession, providerMode === 'gateway'),
+    () => sessionModelFallback(projectSession),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       projectSession?.metadata?.opencode_model,
@@ -502,12 +492,9 @@ export function useRuntimeLocal({
   // True when the user has not made an explicit pick.
   const onDefaultModel = !explicitModelKey;
 
-  // Healed as well as `currentModelKey`: `resolvePromptModel` can prefer the
-  // RAW explicit slot, and a chip that reads "Claude Opus 5" while the request
-  // carries `xai.grok-4.6` would be a lie that still wedges the turn.
   const sendModelKey = useMemo<ModelKey | undefined>(
-    () => healBedrockModelKey(resolvePromptModel(explicitModelKey, currentModelKey), flatModels),
-    [explicitModelKey, currentModelKey, flatModels],
+    () => resolvePromptModel(explicitModelKey, currentModelKey),
+    [explicitModelKey, currentModelKey],
   );
 
   const currentModel = useMemo<FlatModel | undefined>(

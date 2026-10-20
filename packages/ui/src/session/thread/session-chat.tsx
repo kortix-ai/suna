@@ -733,9 +733,14 @@ export function SessionChat({
   // prompt: every author shows, the viewer included. Same cache as the header.
   const { data: sessionParticipants } = useSessionParticipants(projectId, projectSessionId);
   const groupChat = transcriptAuthors.multiAuthor || !!sessionParticipants?.multi_user;
-  // Project sessions use the server-side project agent roster. Non-project
-  // sessions fall back to OpenCode's directory-scoped runtime discovery.
-  const { data: agents } = useRuntimeAgents({ directory: session?.directory, projectId });
+  // Project sessions use the server-side project agent roster. A sub-agent's
+  // chat has no projectId, but runs inside the parent scope's project: its
+  // roster is that project's. Only a chat with neither falls back to the
+  // runtime's own agent list, which a pi box does not serve (KRTX-2887).
+  const { data: agents } = useRuntimeAgents({
+    directory: session?.directory,
+    projectId: projectId ?? (scopeProjectId || undefined),
+  });
   const { data: commands } = useRuntimeCommands();
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
   const { data: allSessions } = useRuntimeSessions();
@@ -1034,10 +1039,9 @@ export function SessionChat({
     pendingPromptHandled.current = true;
     clearStartStash(sessionId);
     if (stash.agent) localAgentSet(stash.agent);
-    // The seed and the legacy replay share ONE validity check. A stash written
-    // under the other provider mode (e.g. a `kortix` pick from before the
-    // project's llm_gateway flag flipped off) must neither seed the store nor
-    // ride the legacy prompt — it names a provider this session does not have.
+    // The seed and the legacy replay share ONE validity check. A stash that
+    // names a model this session's catalog does not list must neither seed
+    // the store nor ride the legacy prompt.
     const stashModelValid =
       !!stash.model &&
       localModelList.some(
@@ -3605,18 +3609,13 @@ export function SessionChat({
   // scope with no screen of its own. The project default lives in the provider
   // modal's Models tab and the agent default on the agent's detail page, both
   // of which also SHOW and can CLEAR what is set. See ModelDefaultControls.
-  // Native mode (llm_gateway off) has NO model-defaults chain: the star's
-  // write 404s llm_gateway_disabled, so the affordance disappears entirely.
-  const chatModelDefaultControls: ModelDefaultControls | undefined = useMemo(
-    () =>
-      local.model.defaults.llmGatewayEnabled
-        ? {
-            accountDefault: local.model.defaults.accountDefault ?? null,
-            onSetAccountDefault: (m) => {
-              void local.model.defaults.setAccountDefault(m);
-            },
-          }
-        : undefined,
+  const chatModelDefaultControls: ModelDefaultControls = useMemo(
+    () => ({
+      accountDefault: local.model.defaults.accountDefault ?? null,
+      onSetAccountDefault: (m) => {
+        void local.model.defaults.setAccountDefault(m);
+      },
+    }),
     [local.model.defaults],
   );
 

@@ -11,24 +11,19 @@ import {
   InputGroupInput,
 } from '../../../primitives/input-group';
 import Loading from '../../../primitives/loading';
-import { Copy } from '../../../icons/copy';
-import { useCopy } from '../../../internal/hooks/use-copy';
+import { successToast } from '../../../primitives/toast';
 import { useTranslations } from '../../../i18n';
-import { upsertProjectSecret } from '@kortix/sdk';
-import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import { type CustomLlmProvider, upsertProjectSecret } from '@kortix/sdk';
+import { qk, useCustomLlmProviders } from '@kortix/sdk/react';
 import {
-  CheckIcon as Check,
   EyeIcon as Eye,
   EyeSlashIcon as EyeSlash,
-  InfoIcon as Info,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, m } from 'motion/react';
 import { type FormEvent, type ReactNode, useState } from 'react';
 
 import type { CustomFormState } from './types';
-import { buildCustomProviderSnippet } from './utils';
 
 /** One stacked field: label (and optional hint) above the control. */
 function FormField({
@@ -58,18 +53,33 @@ export function customProviderSecretName(providerId: string): string {
   return `CUSTOM_${providerId.trim().toUpperCase().replace(/-/g, '_')}_API_KEY`;
 }
 
+/** The API's provider id rule (`^[a-z0-9][a-z0-9_-]{0,63}$`). */
+const PROVIDER_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/**
+ * The endpoint, models and optional key of one custom provider.
+ *
+ * The provider is stored in Kortix (`PUT /custom-providers/:id`) and the
+ * gateway serves its models; the key is the project secret
+ * `CUSTOM_<ID>_API_KEY`. The PUT replaces the whole model list, so saving an
+ * id that already exists keeps its other models and adds or renames this one.
+ */
 export function CustomProviderForm({
   projectId,
-  onDone,
+  initialId = '',
+  onSaved,
 }: {
   projectId: string;
-  onDone: () => void;
+  /** Pre-fills the provider id: a legacy key that has no endpoint yet. */
+  initialId?: string;
+  onSaved?: (providerId: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('customProvider');
   const queryClient = useQueryClient();
+  const custom = useCustomLlmProviders(projectId);
   const [form, setForm] = useState<CustomFormState>({
-    providerId: '',
+    providerId: initialId,
     name: '',
     baseURL: '',
     apiKey: '',
@@ -78,65 +88,59 @@ export function CustomProviderForm({
   });
   const [error, setError] = useState<string | null>(null);
   const [revealKey, setRevealKey] = useState(false);
-  const [savedSnippet, setSavedSnippet] = useState<{
-    snippet: string;
-    secretName: string | null;
-  } | null>(null);
 
   const save = useMutation({
     mutationFn: async () => {
-      const trimmed: CustomFormState = {
-        providerId: form.providerId.trim().toLowerCase(),
-        name: form.name.trim(),
-        baseURL: form.baseURL.trim(),
-        apiKey: form.apiKey.trim(),
-        modelId: form.modelId.trim(),
-        modelName: form.modelName.trim(),
-      };
+      const providerId = form.providerId.trim().toLowerCase();
+      const name = form.name.trim();
+      const baseUrl = form.baseURL.trim();
+      const apiKey = form.apiKey.trim();
+      const model = { id: form.modelId.trim(), name: form.modelName.trim() };
 
-      if (!trimmed.providerId || !trimmed.name || !trimmed.baseURL) {
+      if (!providerId || !name || !baseUrl) {
         throw new Error('Provider ID, name, and base URL are required');
       }
-      if (!/^[a-z0-9][a-z0-9_-]*$/.test(trimmed.providerId)) {
+      if (!PROVIDER_ID_PATTERN.test(providerId)) {
         throw new Error('Provider ID can only use letters, numbers, dashes, underscores');
       }
-      if (!/^https?:\/\//.test(trimmed.baseURL)) {
+      if (!/^https?:\/\//.test(baseUrl)) {
         throw new Error('Base URL must start with http:// or https://');
       }
-      if (!trimmed.modelId || !trimmed.modelName) {
+      if (!model.id || !model.name) {
         throw new Error('At least one model (ID + name) is required');
       }
+      if (/\s/.test(model.id)) {
+        throw new Error('Model ID cannot contain spaces');
+      }
 
-      const secretName = trimmed.apiKey ? customProviderSecretName(trimmed.providerId) : null;
-      if (secretName) {
+      const existing: CustomLlmProvider | undefined = custom.providers.find(
+        (p) => p.id === providerId && p.configured,
+      );
+      await custom.save(providerId, {
+        name,
+        base_url: baseUrl,
+        models: [...(existing?.models ?? []).filter((m) => m.id !== model.id), model],
+      });
+      if (apiKey) {
         // LLM provider credentials are always project-wide (see
         // api-key-connect-form.tsx) — a per-user key is invisible to the
         // gateway's shared-row resolution and breaks every model turn.
         await upsertProjectSecret(projectId, {
-          name: secretName,
-          value: trimmed.apiKey,
+          name: customProviderSecretName(providerId),
+          value: apiKey,
           strategy: 'broker',
           consumer: 'llm_gateway',
         });
       }
-
-      const snippet = buildCustomProviderSnippet({
-        providerId: trimmed.providerId,
-        name: trimmed.name,
-        baseURL: trimmed.baseURL,
-        secretName,
-        modelId: trimmed.modelId,
-        modelName: trimmed.modelName,
-      });
-
-      return { snippet, secretName };
+      return providerId;
     },
-    onSuccess: (result) => {
-      setSavedSnippet(result);
+    onSuccess: (providerId) => {
+      successToast(t('saved'));
       queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
-      refreshProjectProviderState(queryClient, projectId);
+      queryClient.invalidateQueries({ queryKey: qk.project.customLlmProviders(projectId) });
+      onSaved?.(providerId);
     },
-    onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save'),
+    onError: (err) => setError(err instanceof Error ? err.message : t('saveFailed')),
   });
 
   function setField<K extends keyof CustomFormState>(key: K, value: CustomFormState[K]) {
@@ -148,16 +152,6 @@ export function CustomProviderForm({
     event.preventDefault();
     setError(null);
     save.mutate();
-  }
-
-  if (savedSnippet) {
-    return (
-      <CustomProviderSnippetView
-        snippet={savedSnippet.snippet}
-        secretName={savedSnippet.secretName}
-        onDone={onDone}
-      />
-    );
   }
 
   return (
@@ -172,6 +166,7 @@ export function CustomProviderForm({
               {tI18nComplete.raw('text3880a3aae4e6')}
             </h2>
             <p className="text-muted-foreground text-sm text-pretty">{t('formIntro')}</p>
+            <p className="text-muted-foreground text-sm text-pretty">{t('gatewayNote')}</p>
           </div>
 
           <div className="flex gap-3">
@@ -304,108 +299,14 @@ export function CustomProviderForm({
               {save.isPending ? (
                 <>
                   <Loading className="size-3.5 shrink-0" />
-                  {tI18nComplete.raw('textd20a4476a0a8')}
+                  {t('saving')}
                 </>
               ) : (
-                t('saveAndGenerate')
+                t('saveProvider')
               )}
             </Button>
           </div>
         </form>
-      </div>
-    </div>
-  );
-}
-
-function CustomProviderSnippetView({
-  snippet,
-  secretName,
-  onDone,
-}: {
-  snippet: string;
-  secretName: string | null;
-  onDone: () => void;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { copied, copy } = useCopy({
-    duration: 1500,
-    successMessage: tI18nComplete.raw('texte957fd04449d'),
-    errorMessage: tI18nComplete.raw('text94f69e8f103e'),
-  });
-
-  return (
-    <div className="flex max-w-2xl flex-col gap-4">
-      <InfoBanner
-        tone="success"
-        icon={Check}
-        title={
-          secretName ? tI18nComplete.raw('text934b6af41253') : tI18nComplete.raw('textcbddb15211ca')
-        }
-      >
-        {secretName ? (
-          <>
-            {tI18nComplete.raw('text58ec60140867')}{' '}
-            <code className="bg-muted rounded-sm px-1 py-0.5 font-mono text-xs">{secretName}</code>{' '}
-            {tI18nComplete.raw('textdf1db3412b9d')}
-          </>
-        ) : (
-          tI18nComplete.raw('text4c99583a807e')
-        )}
-      </InfoBanner>
-
-      <InfoBanner tone="warning" icon={Info}>
-        {tI18nComplete.raw('text3915df4b6200')}
-      </InfoBanner>
-
-      <div className="bg-popover overflow-hidden rounded-md border">
-        <div className="border-border/60 flex items-center justify-between gap-3 border-b px-4 py-2.5">
-          <span className="text-muted-foreground text-xs">
-            {tI18nComplete.raw('text82b9ffd3cec8')}{' '}
-            <code className="font-mono">provider configuration</code>
-          </span>
-          <button
-            type="button"
-            onClick={() => copy(snippet)}
-            aria-label={copied ? 'Copied' : tI18nComplete.raw('text968d0a9d24a6')}
-            className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[background-color,color,scale] duration-(--duration-normal) active:scale-[0.96]"
-          >
-            <span className="relative inline-flex size-3.5 items-center justify-center">
-              <AnimatePresence initial={false} mode="popLayout">
-                <m.span
-                  key={copied ? 'check' : 'copy'}
-                  initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                  animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                  exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                  className="absolute inset-0 inline-flex items-center justify-center"
-                >
-                  {copied ? (
-                    <Check className="text-kortix-green size-3.5" />
-                  ) : (
-                    <Copy className="size-3.5" />
-                  )}
-                </m.span>
-              </AnimatePresence>
-            </span>
-          </button>
-        </div>
-        <pre className="text-foreground max-h-[280px] overflow-auto px-4 py-3 font-mono text-xs leading-relaxed">
-          {snippet}
-        </pre>
-      </div>
-
-      <p className="text-muted-foreground px-0.5 text-xs text-pretty">
-        {tI18nComplete.raw('textb81bc1d32189')}{' '}
-        <code className="bg-muted rounded-sm px-1 py-0.5 font-mono text-xs">
-          provider configuration
-        </code>{' '}
-        {tI18nComplete.raw('textd833da5b9497')}
-      </p>
-
-      <div className="flex justify-start">
-        <Button size="sm" onClick={onDone}>
-          {tI18nComplete.raw('text11a6767d5674')}
-        </Button>
       </div>
     </div>
   );

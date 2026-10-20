@@ -328,41 +328,12 @@ export function secretDeliveryLegend(
  * `disabled`, and rendering "Disabled" beside a working provider key would be
  * a lie. Everything else shows its exposure.
  */
-/**
- * Same stored row, opposite delivery: with the project's LLM Gateway flag OFF
- * the platform injects a `llm_gateway`-consumer key into the sandbox env so
- * OpenCode's native provider management can use it. The badge must never
- * claim "never enters the sandbox" about a value that just did.
- */
-const NATIVE_MODEL_KEY_PRESENTATION: SecretDeliveryPresentation = {
-  label: 'Model provider',
-  description:
-    'A model provider key. The LLM Gateway is off for this project, so it loads into the sandbox environment and OpenCode connects the provider natively.',
-  tone: 'secondary',
-};
-
 export function secretDeliveryPresentation(
   strategy: SecretDeliveryStrategy,
   consumer?: SecretConsumer | null,
-  opts?: {
-    /** The project's `llm_gateway` flag — forks the copy for model-provider
-     *  keys (`consumer: 'llm_gateway'`). Defaults to on (the historical
-     *  wording) so callers that cannot know stay accurate for gateway
-     *  projects. */
-    llmGatewayEnabled?: boolean;
-    tI18nComplete?: UiTranslator;
-  },
+  opts?: { tI18nComplete?: UiTranslator },
 ): SecretDeliveryPresentation {
   const usage = secretUsage(strategy, consumer);
-  if (usage === 'llm_gateway' && opts?.llmGatewayEnabled === false) {
-    return opts.tI18nComplete
-      ? localizeUiCatalog(
-          NATIVE_MODEL_KEY_PRESENTATION,
-          opts.tI18nComplete,
-          PRODUCT_CATALOG_TRANSLATION_KEYS,
-        )
-      : NATIVE_MODEL_KEY_PRESENTATION;
-  }
   const presentation =
     usage && usage !== 'agent'
       ? ASSIGNED_USAGE_PRESENTATIONS[usage]

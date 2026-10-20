@@ -1,13 +1,6 @@
 import { relayTurnAbandoned, relayTurnAccepted } from '../shared/turn-relay'
-import { hasKortixLlmGateway, type Opencode } from './lifecycle'
+import type { Opencode } from './lifecycle'
 import { observeOpencodeDelivery } from './opencode-turn-state'
-
-const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
-  'deepseek-v4-flash-free',
-  'mimo-v2.5-free',
-  'nemotron-3-ultra-free',
-  'north-mini-code-free',
-])
 
 export async function createInitialOpenCodeSession(
   opencode: Opencode,
@@ -151,23 +144,15 @@ export async function waitForInitialSessionCreate(baseUrl: string, workspace: st
   throw new Error(lastError)
 }
 
-
-
+/**
+ * The session model from KORTIX_OPENCODE_MODEL on the one OpenCode provider,
+ * `kortix`. The model id is the complete gateway wire ref (`codex/gpt-5.6-sol`),
+ * never split into an OpenCode provider and model.
+ */
 export function resolveOpencodeModel(): { providerID: string; modelID: string } | undefined {
   const raw = (process.env.KORTIX_OPENCODE_MODEL ?? '').trim()
-  if (!raw) return undefined
-  if (hasKortixLlmGateway(process.env)) {
-    const modelID = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
-    return modelID ? { providerID: 'kortix', modelID } : undefined
-  }
-  if (LEGACY_OPENCODE_ZEN_FREE_MODELS.has(raw)) return { providerID: 'opencode', modelID: raw }
-  // A pin stored while the gateway was ON can survive a live toggle to native
-  const ref = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
-  const slash = ref.indexOf('/')
-  if (slash <= 0 || slash === ref.length - 1) return undefined
-  const providerID = ref.slice(0, slash)
-  const modelID = ref.slice(slash + 1)
-  return { providerID, modelID }
+  const modelID = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
+  return modelID ? { providerID: 'kortix', modelID } : undefined
 }
 
 /** Build the first-turn request from the session-bound runtime environment. */

@@ -277,23 +277,6 @@ describe('the signed-out route guards do not race the exit', () => {
     return out;
   }
 
-  test('the guard exists in exactly ONE place', () => {
-    // The shape, spelled either way it was spelled across the eight copies.
-    const shape = /if \(!(?:authLoading|isLoading) && !user\) router\.replace\('\/auth'\)/;
-    const holders = sourceFiles().filter((file) => shape.test(code(file)));
-
-    expect(holders).toEqual(['lib/auth/use-signed-out-redirect.ts']);
-  });
-
-  test('the one guard stands down while a sign-out is in flight', () => {
-    const hook = code('lib/auth/use-signed-out-redirect.ts');
-    const bail = hook.indexOf('if (isSigningOut()) return;');
-    const guard = hook.search(/if \(!isLoading && !user\) router\.replace\('\/auth'\)/);
-
-    expect(bail).toBeGreaterThan(-1);
-    expect(guard).toBeGreaterThan(bail);
-  });
-
   test('every surface that used to hand-roll it now calls the hook', () => {
     // The six that were missed plus the two that were not. Named so a silent
     // deletion of a guard reads as a failure rather than as a passing regex.

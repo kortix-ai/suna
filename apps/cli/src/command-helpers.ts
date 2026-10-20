@@ -669,7 +669,21 @@ function issueLines(err: unknown): string {
   return issues.map((issue: { path?: string; message?: string }) => `    ${issue.path ? `${issue.path}: ` : ''}${issue.message ?? ''}\n`).join('');
 }
 
+/** True for the API's 409 `repository_disconnected`, from the CLI client (`.body`) or an SDK handle (`.code`). */
+function repositoryDisconnectedCode(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: unknown; body?: { code?: unknown } | null; details?: { code?: unknown } | null };
+  return [e.code, e.body?.code, e.details?.code].includes('repository_disconnected');
+}
+
 export function surfaceApiError(err: unknown): number {
+  // The project's GitHub repository cannot be reached (KRTX-2955). The
+  // server's sentence names the cause and who fixes it; add where to look.
+  if (repositoryDisconnectedCode(err)) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    process.stderr.write(`  Run ${C.cyan}kortix projects info${C.reset} for the reconnect link.\n`);
+    return 1;
+  }
   // The feature-flag gate is actionable on its own — never let it fall through
   // to the generic 403 "you may not have permission" prose, which sends the
   // user hunting for a role problem that does not exist.
