@@ -208,6 +208,20 @@ export function routeSessionIdFromParams(params: Record<string, unknown> | null 
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+/**
+ * The gate's read. It uses the shell's canonical `getProject` slot, so the
+ * shell, ⌘K and settings read this answer instead of asking again (2 GETs per
+ * load before). A user switch empties the cache before the new user is
+ * published (`resetClientState`).
+ */
+export function projectGateQuery(projectId: string) {
+  return {
+    queryKey: qk.project.summary(projectId),
+    queryFn: () => getProject(projectId, { showErrors: false }),
+    retry: false,
+  } as const;
+}
+
 // ─── Boundary ────────────────────────────────────────────────────────────────
 
 interface ProjectAccessBoundaryProps {
@@ -229,14 +243,9 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   // user a fresh request form for a request they already sent.
   const [waiting, setWaiting] = useState<WaitingGateState | null>(null);
 
-  // The shell's canonical `getProject` slot, so the shell, ⌘K and settings read
-  // this answer instead of asking again (2 GETs per load before). A user switch
-  // empties the cache before the new user is published (`resetClientState`).
   const query = useQuery({
-    queryKey: qk.project.summary(projectId),
-    queryFn: () => getProject(projectId, { showErrors: false }),
+    ...projectGateQuery(projectId),
     enabled: authReady && !!projectId,
-    retry: false,
   });
 
   // A session route's open read needs only the two route ids, so it starts

@@ -41,7 +41,11 @@ const indexedStorage = {
   setItem: async (key: string, value: string) => void indexed.set(key, value),
   removeItem: async (key: string) => void indexed.delete(key),
 };
+// A bun module mock is process-wide: keep the real exports, or a file that runs
+// after this one in the same `bun test` process imports a module with holes.
+const idbSyncCache = await import('@kortix/sdk/internal/idb-sync-cache');
 mock.module('@kortix/sdk/internal/idb-sync-cache', () => ({
+  ...idbSyncCache,
   indexedDBKeyValueStorage: () => indexedStorage,
 }));
 const { adoptDeviceCaches, clearDeviceCaches, sweepRetiredDeviceCaches, WEB_QUERY_CACHE_MAX_BYTES } =
