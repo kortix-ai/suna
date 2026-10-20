@@ -29,7 +29,7 @@ import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
+import { Switch } from '@/components/kortix/switch';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

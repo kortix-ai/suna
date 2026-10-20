@@ -8,7 +8,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from '@kortix/ui/table';
 import {
   formatSubprocessorDate,
   subprocessorEffectiveDate,

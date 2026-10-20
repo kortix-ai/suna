@@ -1286,13 +1286,24 @@ function takeDeltaEventId(sessionID: string, tailKey: string, id: string): boole
 function applySessionLogFrame(sessionId: string, event: SessionLogEventInput): void {
 	const state = useSyncStore.getState();
 	const current = state.sessionLogs[sessionId] ?? EMPTY_SESSION_LOG_STATE;
-	const next = applySessionLogEvent(current, event);
-	if (next === current) return;
-	if (event.type === "log.block.delta") {
-		const p = event.properties as { thread_id: string; message_id: string; block_id: string };
-		if (event.id && !takeDeltaEventId(p.thread_id, `${p.message_id}:${p.block_id}:log`, event.id)) return;
-		state.noteSessionActivity(p.thread_id);
+	// A coalesced `log.block.delta` (`core/stream/event-attempt.ts`) lists the wire frames it
+	// replaced: each one is applied and deduped by its own id, as if it came alone, and the
+	// run lands in one store update.
+	const wire = event.type === "log.block.delta" ? ((event as { coalesced?: SessionLogEventInput[] }).coalesced ?? [event]) : [event];
+	let next = current;
+	let delta: { thread_id: string } | undefined;
+	for (const frame of wire) {
+		const applied = applySessionLogEvent(next, frame);
+		if (applied === next) continue;
+		if (frame.type === "log.block.delta") {
+			const p = frame.properties as { thread_id: string; message_id: string; block_id: string };
+			if (frame.id && !takeDeltaEventId(p.thread_id, `${p.message_id}:${p.block_id}:log`, frame.id)) continue;
+			delta = p;
+		}
+		next = applied;
 	}
+	if (next === current) return;
+	if (delta) state.noteSessionActivity(delta.thread_id);
 	useSyncStore.setState((s) => ({ sessionLogs: { ...s.sessionLogs, [sessionId]: next } }));
 }
 

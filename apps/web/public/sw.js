@@ -34,7 +34,7 @@ function windowClients() {
  * silently unless `renotify` is set. An older one is an earlier event, such as
  * the last turn of this session: alert. One from the last 30 s is this event's
  * other copy (an open tab raised it, or the push did): replace it quietly.
- * `alertsAgain` in src/lib/web-notifications.ts applies the same rule.
+ * `alertsAgain` in packages/ui/src/internal/lib/web-notifications.ts applies the same rule.
  */
 function alertsAgain(existing) {
   const now = Date.now();

@@ -42,6 +42,15 @@ resolve to `credits`). Stripe owns it. `tier='enterprise'` no longer exists.
 Compute is billed at Platinum's list rates at 1× on every plan
 (`platform/providers/compute-rates.ts`).
 
+## Wallet warning
+
+The sidebar warns while an account can run when its USD wallet falls below
+the smaller of $5 and 10% of its positive recurring monthly grant. The
+account-state API exposes that grant in USD as `tier.monthly_credits`.
+Responses without a positive recurring grant use the existing lifetime-funded
+threshold (20% of grants plus purchases, capped at $5); absent funding uses $5. Blocked wallets
+continue to use `billing_state`, independently of this soft warning.
+
 ## Enterprise
 
 | State | Stored as | How it starts | Features | Limits | BYOK fee |
@@ -149,3 +158,20 @@ trial: null; // deprecated: trials are removed
 ```
 
 Every timestamp is ISO 8601. `plan` is the billing plan.
+
+## Subscription reconciliation
+
+`POST /v1/billing/sync-subscription` returns 404 when the stored subscription
+is absent from the current Stripe account. It leaves the local plan, credits,
+and subscription mapping unchanged. A missing remote object does not prove
+that the account lost its paid entitlement. Transient Stripe failures propagate.
+
+## Wallet admission and model access
+
+`credits.can_run` and `billing_state` describe wallet admission, not model
+readiness. A funded Free account can pay for compute while it uses BYOK.
+`model_access.managed` reports resolved managed-model access;
+`model_access.requires_provider_key` is true when that access is absent.
+The project/principal-scoped `/model-picker` catalog is the source of truth
+for executable models. A gateway trigger with no enabled model returns
+`402 no_usable_model`; credits alone never unlock managed inference.

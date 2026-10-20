@@ -14,7 +14,7 @@
  */
 
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 

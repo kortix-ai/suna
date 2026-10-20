@@ -73,6 +73,7 @@ const InboxNotificationSchema = z
     project_name: z.string().nullable(),
     session_id: z.string().nullable(),
     trigger_slug: z.string().nullable(),
+    room_id: z.string().nullable().openapi({ description: 'The conversation, for `message`.' }),
     actor_user_id: z.string().uuid().nullable().openapi({ description: 'Who caused it: the sharer or the prompter.' }),
     url: z.string().openapi({ description: 'Web path that opens the subject and marks the row read.' }),
     read: z.boolean(),

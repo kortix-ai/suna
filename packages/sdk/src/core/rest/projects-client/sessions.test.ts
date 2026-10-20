@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { type SavedCopyStore, setSavedCopyStore } from '../../session-sync/saved-copy-store';
 import { clearSessionFresh, isSessionFresh } from '../../http/fresh-sessions';
-import { onSessionStopped } from '../../http/session-stopped';
+import { onSessionDeleted, onSessionStopped } from '../../http/session-stopped';
 import type {
   CreateProjectSessionInput,
   ProjectSession,
@@ -1311,6 +1311,21 @@ test('stopProjectSession tells the open session hook, but only when the stop suc
   }
 });
 
+test('deleteProjectSession tells the open session hook, but only when the delete succeeded', async () => {
+  const heard: string[] = [];
+  const off = onSessionDeleted((id) => heard.push(id));
+  try {
+    nextResponse = { status: 404, body: { error: 'Session not found' } };
+    await deleteProjectSession('P1', 'S-fail').catch(() => {});
+    expect(heard).toEqual([]);
+    nextResponse = { status: 200, body: { ok: true } };
+    await deleteProjectSession('P1', 'S-ok');
+    expect(heard).toEqual(['S-ok']);
+  } finally {
+    off();
+  }
+});
+
 test('getProjectSessionScope reads canonical session scope', async () => {
   const scope = {
     secrets_allowlist: ['GMAIL_TOKEN'],
@@ -1771,8 +1786,8 @@ test('getSessionOpenBundle throws when the response is unsuccessful', async () =
 // deliberately kept on the LIST payload — see LIST_OMITTED_SESSION_METADATA_KEYS
 // in apps/api/src/projects/lib/serializers.ts:84). `metadata` was
 // `Record<string, unknown>`, so every host re-derived the same `typeof … ===
-// 'string'` cast: apps/web/src/components/projects/session-label.ts:61,
-// apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359,
+// 'string'` cast: packages/ui/src/session/actions/session-label.ts:61,
+// packages/ui/src/session/actions/project-session-list-helpers.ts:359,
 // apps/tui/src/lib/session-groups.ts:145.
 
 const child = (metadata: Record<string, unknown>, sessionId = 'child') =>
@@ -2052,4 +2067,11 @@ describe('getSessionLogPage', () => {
     nextResponse = { status: 200, body: { messages: 'no' } };
     await expect(getSessionLogPage('P1', 'S1')).rejects.toThrow('not a session log page');
   });
+});
+
+test('fork create retains saved history instead of mounting the empty fresh shell', async () => {
+  nextResponse.body = { session_id: 'synthetic-fork' };
+  await createProjectSession('synthetic-project', { fork_from_session_id: 'synthetic-source' });
+  expect(calls[0]?.body).toEqual({ fork_from_session_id: 'synthetic-source' });
+  expect(isSessionFresh('synthetic-fork')).toBe(false);
 });

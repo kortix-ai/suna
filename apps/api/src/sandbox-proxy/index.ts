@@ -1,6 +1,7 @@
 import { combinedAuth } from '../middleware/auth';
 import { preview } from './routes/preview';
 import { getAuthToken } from './routes/auth';
+import { previewTicket } from './routes/preview-ticket';
 import { previewConfig } from './routes/preview-config';
 import { publicShareApp } from './routes/public-share';
 import { shareApp } from './routes/share';
@@ -23,6 +24,7 @@ sandboxProxyApp.route('/auth', getAuthToken);
 // ── Preview addressing ──────────────────────────────────────────────────────
 // GET /v1/p/config — the origin template clients use to build preview URLs.
 sandboxProxyApp.route('/config', previewConfig);
+sandboxProxyApp.route('/ticket', previewTicket);
 
 // ── Public URL share endpoint ───────────────────────────────────────────────
 // POST /v1/p/share — returns a shareable URL for a sandbox port.

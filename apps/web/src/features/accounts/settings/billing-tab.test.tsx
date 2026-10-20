@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const reactQuery = await import('@tanstack/react-query');
-const billingHooks = await import('@/hooks/billing');
+const billingHooks = await import('@kortix/ui/internal/billing/index');
 let total = 2;
 let billingEnabled = true;
 // The account-state the Plan pane renders. The free-account cases below never
@@ -20,7 +20,7 @@ mock.module('@tanstack/react-query', () => ({
   }),
   useQueryClient: () => ({}),
 }));
-mock.module('@/hooks/billing', () => ({
+mock.module('@kortix/ui/internal/billing/index', () => ({
   ...billingHooks,
   accountStateKeys: { state: () => ['billing'] },
   accountStateSelectors: { totalCredits: () => total },
@@ -37,7 +37,7 @@ mock.module('@/features/billing/use-enterprise-sales', () => ({
   useTalkToSales: () => ({ talk: () => {}, isPending: false }),
   useEnterpriseDemo: () => ({ set: () => {}, isPending: false }),
 }));
-mock.module('@/stores/billing-account-context', () => ({
+mock.module('@kortix/ui/internal/stores/billing-account-context', () => ({
   useBillingAccountId: () => 'synthetic-account',
   useBillingAccountResolved: () => true,
 }));

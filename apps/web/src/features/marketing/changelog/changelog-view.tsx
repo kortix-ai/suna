@@ -1,12 +1,12 @@
 import { getTranslations } from '@/i18n/get-translations';
 
-import { Badge } from '@/components/ui/badge';
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { LocalTime } from '@/components/ui/local-time';
+import { Badge } from '@kortix/ui/badge';
+import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
+import { LocalTime } from '@kortix/ui/local-time';
 import { Button } from '@/components/ui/marketing/button';
-import { Separator } from '@/components/ui/separator';
+import { Separator } from '@kortix/ui/separator';
 import { ArrowRightIcon } from '@/features/icon/arrow-right';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import Link from 'next/link';
 
 import { CopyLinkButton } from './copy-link-button';

@@ -23,8 +23,8 @@ import {
   type InterfaceThemeId,
   type ThemeChoice,
 } from '@/lib/interface-themes';
-import { cn } from '@/lib/utils';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { cn } from '@kortix/ui';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import { useTheme } from 'next-themes';
 import { useCallback, useMemo, useRef } from 'react';
 

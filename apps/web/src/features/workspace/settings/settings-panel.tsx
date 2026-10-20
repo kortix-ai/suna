@@ -26,8 +26,8 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 
-import { withStaleChunkRecovery } from '@/lib/chunk-reload';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { withStaleChunkRecovery } from '@kortix/ui/internal/lib/chunk-reload';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import { useSettingsKeyboardShortcut } from './use-settings-shortcut';
 
 const SettingsPanelBody = dynamic(

@@ -7,7 +7,7 @@ import { FileTree } from '@/features/marketing/agent-computer/file-tree';
 import { AgentComputerHeroVisual } from '@/features/marketing/agent-computer/hero-visual';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { getTranslations } from '@/i18n/get-translations';
 import type { ReactNode } from 'react';
 

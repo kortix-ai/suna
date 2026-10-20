@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
 const WEB_SRC = resolve(import.meta.dir, '../../..');
 

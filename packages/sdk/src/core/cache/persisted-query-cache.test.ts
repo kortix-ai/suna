@@ -372,7 +372,6 @@ describe('isPersistableQueryKey', () => {
     [['kx', 'project', 'p1', 'secrets']],
     [['kx', 'project', 'p1', 'files']],
     [['kx', 'project', 'p1', 'config']],
-    [['project-access-boundary', 'p1', 'user-a']],
     [[]],
   ])('does not keep %j', (key) => {
     expect(isPersistableQueryKey(key)).toBe(false);

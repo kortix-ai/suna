@@ -1,0 +1,60 @@
+import { PreviewFitProvider } from '../viewer/preview-fit';
+import { describe, expect, test } from 'bun:test';
+import { IntlTestProvider } from '../../test-utils/intl';
+import type { ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { VideoRenderer, requestVideoFullscreen } from './video-renderer';
+
+// VideoRenderer calls `useTranslations('hardcodedUi')` unconditionally for
+// its error copy (see show-tool.test.tsx for the same requirement), so it
+// needs a IntlTestProvider ancestor even though this render never
+// reaches the error branch.
+function withIntl(node: ReactNode) {
+  return (
+    <IntlTestProvider locale="en" onError={() => {}}>
+      {node}
+    </IntlTestProvider>
+  );
+}
+
+describe('VideoRenderer — inert outside a PreviewFitProvider (Global Constraint 2)', () => {
+  // `usePreviewFit()`'s report only fires from the <video>'s
+  // `loadedmetadata` handler. `renderToStaticMarkup` performs a single,
+  // effect- and event-free render pass (no DOM exists in this test runner —
+  // see test-setup.ts), so `loadedmetadata` never dispatches and the report
+  // call itself cannot be exercised here. What IS verifiable statically:
+  // wiring `usePreviewFit()` into the component must not change what gets
+  // rendered, with or without a provider ancestor — the render-time half of
+  // "inert outside a PreviewFitProvider".
+  test('renders the video, byte-identically with or without a PreviewFitProvider ancestor', () => {
+    const bare = renderToStaticMarkup(
+      withIntl(<VideoRenderer url="https://example.com/clip.mp4" />),
+    );
+    const wrapped = renderToStaticMarkup(
+      withIntl(
+        <PreviewFitProvider onMeasure={() => {}}>
+          <VideoRenderer url="https://example.com/clip.mp4" />
+        </PreviewFitProvider>,
+      ),
+    );
+
+    expect(bare).toContain('src="https://example.com/clip.mp4"');
+    expect(wrapped).toBe(bare);
+  });
+});
+
+describe('video fullscreen on browsers without the standard API', () => {
+  test('does not throw when the element has no requestFullscreen method', async () => {
+    await expect(requestVideoFullscreen({})).resolves.toBeUndefined();
+  });
+
+  test('requests fullscreen when supported', async () => {
+    let calls = 0;
+    await requestVideoFullscreen({
+      requestFullscreen: async () => {
+        calls++;
+      },
+    });
+    expect(calls).toBe(1);
+  });
+});
