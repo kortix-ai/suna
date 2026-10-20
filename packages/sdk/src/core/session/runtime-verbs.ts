@@ -21,7 +21,6 @@ import {
   type TranscriptPage,
   type TranscriptReaderInput,
   createTranscriptReader,
-  errorMessage,
 } from './runtime-transcript';
 
 export type { TranscriptPage } from './runtime-transcript';
