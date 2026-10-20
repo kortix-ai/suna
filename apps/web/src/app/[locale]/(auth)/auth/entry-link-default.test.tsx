@@ -76,7 +76,6 @@ mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'magic,password', AUTH_PROVIDERS: '' }),
 }));
 const uiToastMock = () => ({ errorToast: () => {} });
-mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 const { default: AuthPage } = await import('./page');
 
@@ -324,6 +323,29 @@ test('a rate-limited send cools the password form link button down', async () =>
     await act(async () => linkButton().props.onClick());
     expect(emailCodeSends).toBe(3);
     expect(JSON.stringify(root.toJSON())).toContain('Open it to continue');
+  } finally {
+    emailFailure = null;
+    emailFailureStatus = null;
+    jest.useRealTimers();
+    await act(async () => root.unmount());
+  }
+});
+
+// KRTX-2812: the first Continue on the entry step answered 429 (the shared
+// email budget), and a few seconds later the form looked untouched: the only
+// signal was a toast. The refusal must stay on the form as an alert.
+test('a rate-limited first send on the entry step leaves a lasting alert on the form', async () => {
+  jest.useFakeTimers();
+  resolvedMode = 'signin';
+  emailCodeSends = 0;
+  emailFailure = 'Email rate limit exceeded. Try again later.';
+  emailFailureStatus = 429;
+  const root = await continueWithEmail('returning@example.test');
+  try {
+    await cooldownElapsed(root, 5);
+    const alerts = root.root.findAllByProps({ role: 'alert' });
+    expect(alerts).toHaveLength(1);
+    expect(JSON.stringify(root.toJSON())).toContain('Email rate limit exceeded');
   } finally {
     emailFailure = null;
     emailFailureStatus = null;

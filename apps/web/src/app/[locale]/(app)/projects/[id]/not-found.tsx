@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation';
 import { useMemo } from 'react';
 
 import { NotFoundCard, NotFoundNoise } from '@/components/common/not-found-state';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
 /**
  * Dashboard 404 — the not-found boundary for `/projects/[id]/*`.

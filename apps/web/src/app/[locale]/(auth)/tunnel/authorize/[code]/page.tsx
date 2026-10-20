@@ -5,16 +5,16 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useParams, useRouter } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { AuthPendingScreen, AuthStatusScreen } from '@/features/auth/auth-consent';
-import { ErrorStrip, FieldLabel, Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { AuthPendingScreen, AuthStatusScreen } from '@kortix/ui/internal/auth/auth-consent';
+import { ErrorStrip, FieldLabel, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
-import { ComputerCapabilities } from '@/features/tunnel/computer-connect';
+import { ComputerCapabilities } from '@kortix/ui/internal/tunnel/computer-connect';
 import { localizedCapabilityRegistry } from '@/features/tunnel/types';
 import { useProjectSelectorData } from '@/features/workspace/project-selector/use-project-selector-data';
 import {
@@ -22,8 +22,7 @@ import {
   useDenyDeviceAuth,
   useDeviceAuthInfo,
 } from '@/hooks/tunnel/use-tunnel';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { PROJECT_ACTIONS, useProjectCan } from '@kortix/ui/workspace';
 
 type Share = 'me' | 'project';
 

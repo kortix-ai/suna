@@ -25,20 +25,20 @@ import { FormEvent, useMemo, useState } from 'react';
 
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GroupAccessPanel } from '@/components/iam/group-access-panel';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import Hint from '@kortix/ui/hint';
+import { Input } from '@kortix/ui/input';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/input-group';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -47,12 +47,13 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { AccessRow, RBAC_UPSELL_MESSAGE, pluralize } from '@/features/workspace/shared/access';
+} from '@kortix/ui/modal';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
+import { AccessRow } from '@kortix/ui/access';
+import { RBAC_UPSELL_MESSAGE, pluralize } from '@kortix/ui/access/access/index';
 import { type AccountGroup, createGroup, deleteGroup, listGroups } from '@/lib/iam-client';
 
 /** A Linear list row: flat on the page, a hover fill, no border or card.

@@ -5,7 +5,7 @@ import { accessVia, agentsMetaPart } from './access-projects-tab';
 /**
  * Replaces `member-access-label.test.ts`, which covered the deleted
  * `memberAccessLabel`. The ROLE half of that helper is now
- * `roleValueLabel('project', …)` in `features/workspace/shared/access`
+ * `roleValueLabel('project', …)` in `packages/ui/src/access/access`
  * (covered by `role-select.test.ts`); what is left here — and still this
  * file's own logic — is the row's meta line: the "via …" attribution and the
  * "Agents: …" summary that replaced the popover columns.

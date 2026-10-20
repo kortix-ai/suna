@@ -30,16 +30,13 @@ const uiDialogMock = () => ({
   DialogHeader: host('header'),
   DialogTitle: host('h2'),
 });
-mock.module('@/components/ui/dialog', uiDialogMock);
 mock.module('@kortix/ui/dialog', uiDialogMock);
 const uiButtonMock = () => ({
   Button: ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) =>
     createElement('button', props, children),
 });
-mock.module('@/components/ui/button', uiButtonMock);
 mock.module('@kortix/ui/button', uiButtonMock);
 const uiLoadingMock = () => ({ default: () => createElement('span', null, 'loading') });
-mock.module('@/components/ui/loading', uiLoadingMock);
 mock.module('@kortix/ui/loading', uiLoadingMock);
 
 const { SsoRequiredProvider } = await import('./sso-required');

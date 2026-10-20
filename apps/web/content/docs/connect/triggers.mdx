@@ -445,6 +445,7 @@ await reminders.remove(reminder.id);
 | `filter` | all | no | — | Map of dotted path to a value it must equal, or to one operator: `not`, `in`, `exists`, `prefix`, `not_prefix`. See [Templates and filters](#templates-and-filters). |
 | `max_runs_per_hour` | all | no | `60` | Whole number, at least 1. Runs the trigger may start in any 60 minutes. See [Pause and limits](#pause-and-limits). |
 | `max_runs_per_day` | all | no | no cap | Whole number, at least 1. Runs the trigger may start in a UTC day. |
+| `overlap` | all, fresh session mode | no | `skip` for cron, `allow` otherwise | `skip` or `allow`. See [Overlap](#overlap). |
 | `cron` | `cron` | one of `cron`, `run_at` | — | 6-field expression, at most once a minute. |
 | `run_at` | `cron` | one of `cron`, `run_at` | — | ISO-8601 instant. Fires once. |
 | `timezone` | `cron` | no | `UTC` | IANA name. |
@@ -574,6 +575,25 @@ triggers:
     prompt: "Review {{ body.pull_request.html_url }}"
     max_runs_per_hour: 20
     max_runs_per_day: 100
+```
+
+### Overlap
+
+A schedule that fires faster than its runs finish would stack sessions. With `overlap: skip`, a fire waits out the previous run: it starts nothing and is a skipped run with the reason `overlap: the previous run is still active (session <id>)`, or `… still queued (command <id>)` while its create waits in the queue. With `overlap: allow`, every fire starts a run.
+
+- `skip` is the default for a cron trigger and `allow` for webhook, app event and monitor triggers, where each delivery is separate work. Set it per trigger.
+- Overlap applies to session mode `fresh` only. The other modes send each fire into one session, which runs one prompt at a time.
+- The previous run counts as still active while a session this trigger started in the last 24 hours is still being set up, or is running a turn, or while its create is still queued. A turn that never ends stops counting when the platform ends it, within 24 hours.
+- A manual fire and a replay are never held.
+- Set it in `kortix.yaml`, with `kortix triggers add|set --overlap skip|allow` (`set … --overlap default` restores the default), in the API body, or under **Options → Overlap** on the trigger.
+
+```yaml
+triggers:
+  - slug: hourly-report
+    type: cron
+    cron: "0 0 * * * *"
+    prompt: "Write the hourly report."
+    overlap: allow   # start a new run even while the last one is still going
 ```
 
 ### Auto-pause

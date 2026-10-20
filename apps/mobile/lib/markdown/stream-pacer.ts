@@ -6,8 +6,9 @@ import { AppState } from 'react-native';
  * Same algorithm and the same tests; keep the two in step. Differences, all
  * for native: renders at ~20 Hz instead of ~30 (each render re-parses the
  * tail block through markdown-it and rebuilds its native views), no wait for
- * a per-word fade at the end (native text spans cannot fade), and a
- * backgrounded app counts as a hidden tab.
+ * a per-word fade at the end (native text spans cannot fade), a
+ * backgrounded app counts as a hidden tab, and a part never types the text it
+ * mounts with (KRTX-2933, `initialReveal`).
  *
  * Streamed text reaches the client in network chunks of any size and at any
  * spacing: one token every 16 ms, or a paragraph after a 300 ms stall.
@@ -44,11 +45,14 @@ export const STREAM_COMMIT_MS = 48;
 /** Mobile has no per-word fade (see the header), so the end settles as soon as the text is complete. */
 export const STREAM_FADE_MS = 0;
 /**
- * A segment that mounts while streaming with at most this much text is typed
- * from the start: it is the first delta batch of a new answer. More than this
- * is a refresh or a tab switch mid-answer, and shows at once.
+ * KRTX-2933: text present when a part mounts shows at once; only text that
+ * arrives after the mount is typed. A remount (a session switch, list
+ * windowing) resumes from the length the part had revealed, unless more than
+ * this many chars wait: then it snaps to the received text.
  */
-export const RETYPE_MAX_CHARS = 400;
+export const RESUME_MAX_BACKLOG = 400;
+/** Parts whose revealed length is remembered across remounts, most recent kept. */
+export const REVEAL_MEMORY_SIZE = 200;
 /** A frame gap longer than this (a stalled main thread) is not budget. */
 const MAX_FRAME_MS = 100;
 
@@ -241,28 +245,57 @@ export function createStreamPacer(
 }
 
 /**
+ * Revealed length per part (`message_id:block_id`), outside React, so a
+ * remount resumes instead of typing the reply again. Insertion order is
+ * recency: a write moves the key to the end, the oldest key goes first.
+ */
+const revealed = new Map<string, number>();
+
+export function rememberReveal(key: string, length: number): void {
+  revealed.delete(key);
+  revealed.set(key, length);
+  if (revealed.size > REVEAL_MEMORY_SIZE) revealed.delete(revealed.keys().next().value as string);
+}
+
+/**
+ * The text a part shows on its first frame. All of `value`, except a live
+ * part this client was already revealing (`key` remembered): it resumes from
+ * the remembered length when at most `RESUME_MAX_BACKLOG` chars wait.
+ */
+export function initialReveal(value: string, active: boolean, key?: string): string {
+  const length = key === undefined ? undefined : revealed.get(key);
+  if (!active || length === undefined || length > value.length) return value;
+  return value.length - length > RESUME_MAX_BACKLOG ? value : value.slice(0, length);
+}
+
+/**
  * `value`, revealed at a steady pace while `active`, and whether the message
  * must still render as streaming. That stays true after `active` turns false
  * while the last of the text drains and its last word fades in (a few
  * hundred ms), so the switch to the settled render changes nothing visible.
+ *
+ * `revealKey` (`message_id:block_id`) remembers the revealed length across
+ * remounts (`initialReveal`).
  */
 export function useStreamingCadence(
   rawValue: string,
   active: boolean,
+  revealKey?: string,
 ): { text: string; streaming: boolean } {
   // A part's text is typed as a string but arrives from the wire; anything
   // else renders as its string form instead of throwing in `startsWith`.
   const value = typeof rawValue === 'string' ? rawValue : String(rawValue ?? '');
-  const [state, setState] = useState(() => ({
-    text: active && value.length <= RETYPE_MAX_CHARS ? '' : value,
-    streaming: active,
-  }));
+  const [state, setState] = useState(() => {
+    const text = initialReveal(value, active, revealKey);
+    if (revealKey !== undefined) rememberReveal(revealKey, text.length);
+    return { text, streaming: active };
+  });
   const pacerRef = useRef<ReturnType<typeof createStreamPacer> | null>(null);
   if (pacerRef.current === null) {
-    pacerRef.current = createStreamPacer(
-      (text, streaming) => setState({ text, streaming }),
-      state.text,
-    );
+    pacerRef.current = createStreamPacer((text, streaming) => {
+      if (revealKey !== undefined) rememberReveal(revealKey, text.length);
+      setState({ text, streaming });
+    }, state.text);
   }
 
   useEffect(() => {

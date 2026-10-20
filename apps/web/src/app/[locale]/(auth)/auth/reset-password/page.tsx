@@ -8,10 +8,10 @@ import { useSearchParams } from 'next/navigation';
 import { FormEvent, Suspense, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { errorToast } from '@/components/ui/toast';
-import { AuthCardShell, BackToSignIn } from '@/features/auth/auth-card-shell';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import { errorToast } from '@kortix/ui/toast';
+import { AuthCardShell, BackToSignIn } from '@kortix/ui/internal/auth/auth-card-shell';
 import { resetPassword } from '../actions';
 
 function ResetPasswordContent() {

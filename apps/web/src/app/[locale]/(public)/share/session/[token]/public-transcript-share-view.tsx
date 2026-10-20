@@ -1,12 +1,12 @@
 'use client';
 
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { UserMessageBubble } from '@/features/session/turn/user-message';
+import { UserMessageBubble } from '@kortix/ui/session';
 import { getPublicSessionShareMessages, type PublicSessionTranscriptMessage } from '@kortix/sdk';
 import { ChatTextIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';

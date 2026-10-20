@@ -21,7 +21,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *                                         `approveProjectAccessRequest` / `rejectProjectAccessRequest`
  *
  * **Everything visual comes from the shared access primitives**
- * (`features/workspace/shared/access`): `AccessRow` for every list row (flattened
+ * (`packages/ui/src/access/access`): `AccessRow` for every list row (flattened
  * to a Linear list row by `FLAT_ROW_CLASS`), and `AccessDialog` for
  * every "give / edit access" interaction. This file owns NO picker, role
  * select, list row, modal, or destructive-confirm copy of its own — the
@@ -72,27 +72,29 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { isInheritedFromGroupOnly } from '@/components/iam/iam-display-helpers';
-import { useAccountHubSheet } from '@/features/accounts/hub/hub-sheet';
+import { useAccountHubSheet } from '@kortix/ui/internal/account-hub/hub-sheet';
 import { ProjectAgentAccessList } from '@/components/iam/project-agent-access-list';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import Hint from '@/components/ui/hint';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import Hint from '@kortix/ui/hint';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@kortix/ui/hover-card';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast, warningToast } from '@/components/ui/toast';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/input-group';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast, warningToast } from '@kortix/ui/toast';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   AccessDialog,
   AccessRow,
+} from '@kortix/ui/access';
+import {
   ROLE_NONE,
   builtinRole,
   customRole,
@@ -106,17 +108,16 @@ import {
   type AccessDialogPrincipal,
   type KebabItem,
   type RoleValue,
-} from '@/features/workspace/shared/access';
-import { useCopy } from '@/hooks/use-copy';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/access/access/index';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
+import { PROJECT_ACTIONS, useProjectCan } from '@kortix/ui/workspace';
+import { cn } from '@kortix/ui';
 import {
   agentIdentitiesQueryKey,
   agentRolesQueryKey,
   fetchProjectAgentAssignments,
   projectAgentAssignmentsQueryKey,
-} from '@/features/workspace/shared/access/agent-principals';
+} from '@kortix/ui/access/access/agent-principals';
 import {
   approveProjectAccessRequest,
   detachGroupFromProject,
@@ -860,7 +861,6 @@ function ProjectAccessPanel({
       description: projectName,
       body: (
         <AccessDialog
-          presentation="split-sheet"
           open
           onOpenChange={(next) => {
             if (!next) sheet.close();
@@ -885,7 +885,6 @@ function ProjectAccessPanel({
       body: (
         <AccessDialog
           key={`${target.principal.type}:${target.principal.id}`}
-          presentation="split-sheet"
           open
           onOpenChange={(next) => {
             if (!next) sheet.close();

@@ -1,11 +1,11 @@
 'use client';
 
-import { GrainShader, NeuroShader } from '@/components/ui/paper-wallpaper-shaders';
+import { GrainShader, NeuroShader } from '@kortix/ui/paper-wallpaper-shaders';
 import { ShaderWallpaper } from '@/components/ui/shader-wallpaper';
-import { DitherShader, SilkShader } from '@/components/ui/wallpaper-shaders';
-import { cn } from '@/lib/utils';
-import { DEFAULT_WALLPAPER_ID, getWallpaperById, Wallpaper } from '@/lib/wallpapers';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { DitherShader, SilkShader } from '@kortix/ui/wallpaper-shaders';
+import { cn } from '@kortix/ui';
+import { DEFAULT_WALLPAPER_ID, getWallpaperById, Wallpaper } from '@kortix/ui/theme';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import Image from 'next/image';
 import { memo, type ComponentType } from 'react';
 
