@@ -1,5 +1,5 @@
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/product-catalog-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
 import {
   HardDriveIcon as HardDrive,

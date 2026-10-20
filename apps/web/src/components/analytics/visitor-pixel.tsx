@@ -4,7 +4,7 @@ import Script from 'next/script';
 import { useEffect, useState } from 'react';
 
 import { isAnalyticsExcludedPath } from '@/lib/analytics/gtm';
-import { isDesktop } from '@/lib/desktop';
+import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 
 const VISITOR_PIXEL_SRC =
   'https://d2mvefebd70kbz.cloudfront.net/scripts/019e82ba-9ec3-733e-8a8e-9ff5cc2e1d35.js';

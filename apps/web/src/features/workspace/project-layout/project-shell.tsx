@@ -1,45 +1,42 @@
 'use client';
 
-import { DriveUploadTray } from '@/features/project-files/components/drive-upload-tray';
+import { DriveUploadTray } from '@kortix/ui/files';
 import { AppPreviewPoolLoader } from '@/features/apps/app-preview-pool-loader';
 import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect } from 'react';
 
-import { TITLEBAR_CONTROL_CLASS } from '@/components/desktop/titlebar-control';
+import { TITLEBAR_CONTROL_CLASS } from '@kortix/ui/internal/desktop/titlebar-control';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
-import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
-import { useBrandingScope } from '@/features/branding/branding-provider';
+import { Button } from '@kortix/ui/button';
+import Hint from '@kortix/ui/hint';
+import { SidebarEdgePeek, useSidebar } from '@kortix/ui/sidebar';
+import { useBrandingScope } from '@kortix/ui/internal/branding/branding-provider';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useCustomizePrefetch } from '@/features/workspace/capabilities/shared/use-customize-prefetch';
-import { parseSidebarStateCookie } from '@/features/workspace/project-layout/sidebar-cookie';
-import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
-import { ProjectSidebar } from '@/features/workspace/project-sidebar/project-sidebar';
+import { useCustomizePrefetch } from '@kortix/ui/customize/shared/use-customize-prefetch';
+import { parseSidebarStateCookie } from '@kortix/ui/workspace/layout/sidebar-cookie';
+import { useDesktopShell } from '@kortix/ui/internal/layout/sidebar-opener';
+import { openCommandPalette } from '@kortix/ui/internal/layout/open-command-palette';
+import { ProjectSidebar } from '@kortix/ui/workspace';
+import { WorkspaceSwitcher } from '@/features/workspace/project-sidebar/workspace-switcher';
 import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
 import {
   isAccountGraduatedSection,
   legacySectionRedirect,
-} from '@/features/workspace/settings/settings-tabs';
+} from '@kortix/ui/customize/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
+import { useNewProjectSession } from '@kortix/ui/internal/hooks/projects/use-new-project-session';
+import { useProjectCanRun } from '@kortix/ui/internal/hooks/projects/use-project-can-run';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import { useWarmProjectSession } from '@/hooks/projects/use-warm-project-session';
+import { useWarmProjectSession } from '@kortix/ui/internal/hooks/projects/use-warm-project-session';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import {
-  clearLastProjectId,
-  readLastProjectId,
-  writeLastProjectId,
-} from '@/lib/onboarding/last-project-cookie';
-import { cn } from '@/lib/utils';
-import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { cn } from '@kortix/ui';
+import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { getProject, getProjectDetail } from '@kortix/sdk';
 import {
@@ -47,9 +44,8 @@ import {
   qk,
   useFeatureFlag,
   useGatewayCatalogSync,
-  useSessionsNeedingInput,
 } from '@kortix/sdk/react';
-import { SidebarToggle as PanelLeft } from '@/features/icon/icons/sidebar-toggle';
+import { SidebarGlyph as PanelLeft } from '@kortix/ui/icons';
 
 const CommandPalette = lazy(() =>
   import('@/features/workspace/command-palette').then((mod) => ({
@@ -58,7 +54,7 @@ const CommandPalette = lazy(() =>
 );
 
 const PresentationViewerWrapper = lazy(() =>
-  import('@/stores/presentation-viewer-store').then((mod) => ({
+  import('@kortix/ui/files/renderers/presentation/presentation-viewer-store').then((mod) => ({
     default: mod.PresentationViewerWrapper,
   })),
 );
@@ -107,10 +103,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // Fill every Customize tab's cache on the first idle slot, so opening
   // Customize renders from memory instead of waiting on the API.
   useCustomizePrefetch(projectId);
-  // The one 30 s poll of GET needs-input for this project (KRTX-1739). The
-  // sidebar and the Sessions page read its cache (`useSessionNeedsYouCounts`):
-  // a poll in each would read up to twice per 30 s.
-  useSessionsNeedingInput(projectId);
+  // GET needs-input is polled by the session lists (`useSessionNeedsYouCounts`), once per project.
 
   // Presence: this shell is mounted for EVERY /projects/[id] route and survives
   // in-project navigation, so mounting the warm hook here means "one ensure
@@ -138,26 +131,12 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // detail read the server confirmed: recording a project the user cannot
   // actually read would send them into a 404 bounce loop on their next visit.
   // A copy restored from this device's cache is stale until it refetches, and
-  // it outlives a deleted project: remembering it would let the self-heal below
-  // leave the "This project is gone." screen for another project.
+  // it outlives a deleted project: never remember that stale copy again.
+  // ProjectAccessBoundary owns terminal errors and forgetting unreadable projects.
   useEffect(() => {
     if (!projectDetail || projectDetailError || projectDetailStale) return;
     writeLastProjectId(user?.id, projectId);
   }, [projectDetail, projectDetailError, projectDetailStale, projectId, user?.id]);
-
-  // Self-heal a stale remembered project. The cookie outlives the project it
-  // names (deleted project, signed into a different account on the same
-  // browser), and it drives the `/` and post-auth redirects — so left alone it
-  // would send the user to an unreadable project on every single visit. Drop it
-  // and re-resolve through the landing door.
-  useEffect(() => {
-    if (!projectDetailError) return;
-    const status = (projectDetailError as { status?: number }).status;
-    if (status !== 403 && status !== 404) return;
-    if (readLastProjectId(user?.id) !== projectId) return;
-    clearLastProjectId();
-    router.replace(PROJECT_LANDING_PATH);
-  }, [projectDetailError, projectId, router, user?.id]);
 
   // The project's owning account, falling back to the app-wide selected one
   // — the same resolution every account-scoped surface uses. Feeds the
@@ -201,7 +180,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     // the component every `/projects/*` page mounts. Next patches
     // `replaceState` and updates its own canonical URL, so `useSearchParams`
     // still reports the stripped URL. Same mechanism as `openTabAndNavigate` in
-    // `stores/tab-store.ts`.
+    // `packages/ui/src/internal/stores/tab-store.ts`.
     //
     // The path comes from `window.location.pathname`, never a hardcoded
     // `/projects/<id>`. This shell is mounted by
@@ -273,7 +252,13 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         showSidebar
         showGlobalUserSettingsModal={false}
         defaultSidebarOpen={resolvedSidebarOpen}
-        sidebarContent={<ProjectSidebar projectId={projectId} />}
+        sidebarContent={
+          <ProjectSidebar
+            projectId={projectId}
+            menu={<WorkspaceSwitcher projectId={projectId} />}
+            onOpenSearch={openCommandPalette}
+          />
+        }
       >
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <Suspense fallback={null}>

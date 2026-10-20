@@ -8,7 +8,7 @@
 // deleted 2026-08-18 — written, never rendered), and neither is Groups: both
 // carry free content server-side, so they always mount and gate only their
 // own write controls on `rbacEnabled`.
-import { NAV_GROUPS } from '@/features/accounts/hub/sections';
+import { NAV_GROUPS } from '@kortix/ui/internal/account-hub/sections';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';

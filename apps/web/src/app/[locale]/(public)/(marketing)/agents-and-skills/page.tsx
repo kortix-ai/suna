@@ -8,7 +8,7 @@ import { MdPanel } from '@/features/marketing/agents-and-skills/md-panel';
 import { RepoTree } from '@/features/marketing/agents-and-skills/repo-tree';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { getTranslations } from '@/i18n/get-translations';
 import Link from '@/components/site-link';
 import type { ReactNode } from 'react';

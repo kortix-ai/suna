@@ -79,7 +79,7 @@ export function AccountDetailCard({
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h2 className="truncate text-lg font-semibold tracking-tight">
+              <h2 className="truncate font-display text-2xl tracking-tight">
                 {data?.name ?? 'Account'}
               </h2>
               {role && (

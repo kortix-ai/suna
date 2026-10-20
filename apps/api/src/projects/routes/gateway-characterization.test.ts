@@ -77,6 +77,10 @@ mock.module('../lib/access', () => ({
   assertProjectCapability: async () => {},
 }));
 
+mock.module('../../llm-gateway/resolution/resolve-candidates', () => ({
+  resolveCandidates: async () => [],
+}));
+
 // The caller is a manager: the read view filters nothing.
 mock.module('../lib/project-read-view', () => ({
   projectReadView: async () => ({ full: true, where: () => undefined, allows: async () => true }),
@@ -146,6 +150,16 @@ test('playground returns a typed 402 before dispatch when the project budget is 
   });
   expect(res.status).toBe(402);
   expect(await res.json()).toMatchObject({ code: 'budget_exceeded' });
+});
+
+test('playground reports the public gateway URL even when a model is unavailable', async () => {
+  const res = await buildApp().request(`/v1/projects/${PROJECT_ID}/gateway/playground`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ prompt: 'pong', models: ['synthetic-unavailable-model'] }),
+  });
+  expect(res.status).toBe(200);
+  expect(await res.json()).toMatchObject({ gateway_url: null, results: [{ ok: false }] });
 });
 
 describe('GET /gateway/logs pagination (characterization)', () => {

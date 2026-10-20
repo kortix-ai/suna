@@ -248,7 +248,8 @@ async function resolveSessionHarness(
   const sessionLogRestore =
     resolveFeatureFlag(projectRow?.metadata, 'session_log_restore') ||
     typeof sessionMetadata?.lostRecoveredAt === 'string' ||
-    typeof sessionMetadata?.restoredAt === 'string';
+    typeof sessionMetadata?.restoredAt === 'string' ||
+    typeof sessionMetadata?.forkedFromSessionId === 'string';
   if (input.platformMetaAgent) {
     // SUNA runs on the pi harness (the pi coding-agent path), not OpenCode,
     // whenever the LLM gateway is on — pi has no other model path, so a

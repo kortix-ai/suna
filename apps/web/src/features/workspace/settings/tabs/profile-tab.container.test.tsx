@@ -63,13 +63,11 @@ const uiModalMock = () => ({
   ModalHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ModalTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 });
-mock.module('@/components/ui/modal', uiModalMock);
 mock.module('@kortix/ui/modal', uiModalMock);
 const uiRadioGroupMock = () => ({
   RadioGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   RadioGroupItem: () => <div />,
 });
-mock.module('@/components/ui/radio-group', uiRadioGroupMock);
 mock.module('@kortix/ui/radio-group', uiRadioGroupMock);
 
 // The container reads `t('key')` and `t.raw('key')`. Returning the key's last
