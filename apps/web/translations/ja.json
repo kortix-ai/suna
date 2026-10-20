@@ -2193,6 +2193,11 @@
   },
   "billing": {
     "plan": {
+      "members": "メンバー",
+      "unlimitedMembers": "メンバー数は無制限",
+      "loadingMembers": "メンバーを読み込み中…",
+      "membersUnavailable": "メンバー数を取得できません",
+      "memberCount": "{count}人のメンバー",
       "cancels": "{date} に解約",
       "cancelsAtPeriodEnd": "期間終了時に解約",
       "renews": "{date} に更新",

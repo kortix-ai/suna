@@ -2193,6 +2193,11 @@
   },
   "billing": {
     "plan": {
+      "members": "成员",
+      "unlimitedMembers": "成员数量不限",
+      "loadingMembers": "正在加载成员…",
+      "membersUnavailable": "成员数量不可用",
+      "memberCount": "{count} 位成员",
       "cancels": "将于 {date} 取消",
       "cancelsAtPeriodEnd": "将在周期结束时取消",
       "renews": "将于 {date} 续订",

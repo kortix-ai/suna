@@ -6,6 +6,9 @@ const reactQuery = await import('@tanstack/react-query');
 const billingHooks = await import('@kortix/ui/internal/billing/index');
 let total = 2;
 let billingEnabled = true;
+let memberCount: number | undefined = 3;
+let memberCountError = false;
+let memberCountLoading = false;
 // The account-state the Plan pane renders. The free-account cases below never
 // touch it; the subscription cases set it directly.
 let accountStateData: Record<string, unknown> | null = null;
@@ -14,7 +17,11 @@ mock.module('@/features/providers/auth-provider', () => ({
 }));
 mock.module('@tanstack/react-query', () => ({
   ...reactQuery,
-  useQuery: () => ({
+  useQuery: (options: { queryKey: string[] }) => options.queryKey[0] === 'account' ? ({
+    data: memberCount === undefined ? undefined : { member_count: memberCount },
+    isLoading: memberCountLoading,
+    isError: memberCountError,
+  }) : ({
     data: accountStateData ?? { credits: { total }, subscription: { status: 'none' } },
     isLoading: false,
   }),
@@ -66,6 +73,30 @@ describe('BillingTab — plan pane without a paid subscription', () => {
       createElement(BillingTab, { returnUrl: '/settings/plan', isActive: true, showWallet: false }),
     );
   }
+
+  test('shows account membership with an unlimited allowance, not paid seats', () => {
+    accountStateData = freeState();
+    expect(renderPlan()).toContain('Unlimited members');
+    expect(renderPlan()).toContain('3 members');
+    memberCount = 1;
+    expect(renderPlan()).toContain('1 member');
+    memberCount = 0;
+    expect(renderPlan()).toContain('0 members');
+    memberCount = 3;
+  });
+
+  test('does not invent a zero while membership is loading or unavailable', () => {
+    accountStateData = freeState();
+    memberCount = undefined;
+    memberCountLoading = true;
+    expect(renderPlan()).toContain('Loading members');
+    expect(renderPlan()).not.toContain('0 members');
+    memberCountLoading = false;
+    memberCountError = true;
+    expect(renderPlan()).toContain('Member count unavailable');
+    memberCountError = false;
+    memberCount = 3;
+  });
 
   test('shows the Free plan with its monthly credits and the tier select on the $200 tier', () => {
     billingEnabled = true;

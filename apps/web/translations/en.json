@@ -2194,6 +2194,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Members",
+      "unlimitedMembers": "Unlimited members",
+      "loadingMembers": "Loading members…",
+      "membersUnavailable": "Member count unavailable",
+      "memberCount": "{count, plural, one {# member} other {# members}}",
       "cancels": "Cancels {date}",
       "cancelsAtPeriodEnd": "Cancels at period end",
       "renews": "Renews {date}",

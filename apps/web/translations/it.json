@@ -2193,6 +2193,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Membri",
+      "unlimitedMembers": "Membri illimitati",
+      "loadingMembers": "Caricamento membri…",
+      "membersUnavailable": "Numero di membri non disponibile",
+      "memberCount": "{count, plural, one {# membro} other {# membri}}",
       "cancels": "Termina il {date}",
       "cancelsAtPeriodEnd": "Termina alla fine del periodo",
       "renews": "Si rinnova il {date}",

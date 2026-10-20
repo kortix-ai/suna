@@ -2193,6 +2193,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Članovi",
+      "unlimitedMembers": "Neograničen broj članova",
+      "loadingMembers": "Učitavanje članova…",
+      "membersUnavailable": "Broj članova nije dostupan",
+      "memberCount": "{count, plural, one {# član} few {# člana} other {# članova}}",
       "cancels": "Отказује се {date}",
       "cancelsAtPeriodEnd": "Отказује се на крају периода",
       "renews": "Обнавља се {date}",

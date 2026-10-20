@@ -1,5 +1,6 @@
 'use client';
 
+import { useAccountDetail } from '@kortix/ui/internal/account-hub/use-account-detail';
 import { Button } from '@kortix/ui/button';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import { InfoBanner } from '@kortix/ui/info-banner';
@@ -73,6 +74,8 @@ export function BillingTab({
   const highlight = useUserSettingsModalStore((s) => s.highlight);
   const queryClient = useQueryClient();
   const billingAccountId = useBillingAccountId();
+
+  const members = useAccountDetail(billingAccountId);
 
   const {
     data: accountState,
@@ -181,6 +184,18 @@ export function BillingTab({
       ) : accountState ? (
         <PlanCard state={accountState} />
       ) : null}
+
+      <SettingsRowGroup>
+        <SettingsRow label={t('members')} description={t('unlimitedMembers')}>
+          <span className="text-sm tabular-nums" aria-live="polite">
+            {members.isLoading
+              ? t('loadingMembers')
+              : members.isError || members.data?.member_count === undefined
+                ? t('membersUnavailable')
+                : t('memberCount', { count: members.data.member_count })}
+          </span>
+        </SettingsRow>
+      </SettingsRowGroup>
 
       {/* Add credits and Auto top-up share one card, matching the settings
               pane. Both components carry their own heading and no chrome
