@@ -2926,3 +2926,105 @@ flow(
     });
   },
 );
+
+/**
+ * TRG-38 — auto-pause (KRTX-1721). A trigger the hourly limit holds after it
+ * ran at that limit through the previous hour pauses itself: every automatic
+ * fire is skipped with the reason until someone resumes it with
+ * `enabled: true`. For 2 hours after a resume it cannot pause itself again.
+ * Local only: the runs inside the two windows are seeded in the database.
+ */
+flow(
+  'TRG-38',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/secrets',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'POST /v1/webhooks/projects/:projectId/:slug',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') return;
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const slugParams = { ...params, slug: 'runaway' };
+    const secret = `ke2e-runaway-${crypto.randomUUID()}`;
+    const paused = 'auto-paused: ran at max_runs_per_hour 1 for 2 hours in a row';
+    const listed = async () => {
+      const t = (await owner.get('/v1/projects/:projectId/triggers', { params })).status(200)
+        .json<{ triggers: Array<{ slug: string; enabled: boolean; auto_paused_at?: string | null; auto_paused_reason?: string | null }> }>()
+        .triggers.find((row) => row.slug === 'runaway');
+      if (!t) throw new Error('runaway is not listed');
+      return t;
+    };
+    const deliver = async () => {
+      const rawBody = JSON.stringify({ action: 'opened' });
+      return ctx.client.as(ctx.P.ANON).post('/v1/webhooks/projects/:projectId/:slug', rawBody, {
+        params: slugParams,
+        raw: true,
+        headers: {
+          'content-type': 'application/json',
+          'x-kortix-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+          'x-kortix-delivery-id': crypto.randomUUID(),
+        },
+      });
+    };
+
+    await ctx.step('a webhook trigger with max_runs_per_hour 1 → 201; it is not auto-paused', async () => {
+      (await owner.post('/v1/projects/:projectId/secrets', { name: 'HOOK_SECRET', value: secret, strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+      (await owner.post('/v1/projects/:projectId/triggers', { name: 'runaway', slug: 'runaway', type: 'webhook', secret_env: 'HOOK_SECRET', prompt_template: 'Run {{ body.action }}', max_runs_per_hour: 1 }, { params })).status(201);
+      const t = await listed();
+      if (t.auto_paused_at !== null || t.auto_paused_reason !== null) throw new Error(`expected auto_paused_at: null and auto_paused_reason: null, got ${JSON.stringify({ auto_paused_at: t.auto_paused_at, auto_paused_reason: t.auto_paused_reason })}`);
+    });
+
+    await ctx.step('with a run 90 minutes ago and one 5 minutes ago, a signed delivery → 200 skipped "auto-paused: …", and the listing carries the pause', async () => {
+      await withDb(ctx, (db) =>
+        db.query(
+          `INSERT INTO kortix.project_trigger_executions (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, source, created_at)
+           VALUES ($1, 'runaway', 'webhook:' || gen_random_uuid(), now(), 'succeeded', '{}'::jsonb, '{"body":{}}'::jsonb, 'webhook', now() - interval '90 minutes'),
+                  ($1, 'runaway', 'webhook:' || gen_random_uuid(), now(), 'succeeded', '{}'::jsonb, '{"body":{}}'::jsonb, 'webhook', now() - interval '5 minutes')`,
+          [p.id],
+        ),
+      );
+      (await deliver()).status(200).body().has('$.status', 'skipped').has('$.reason', paused);
+      const t = await listed();
+      if (!t.auto_paused_at || t.auto_paused_reason !== paused || t.enabled !== true) throw new Error(`listing after the pause: ${JSON.stringify(t)}`);
+    });
+
+    await ctx.step('while auto-paused another delivery is skipped with the same reason; a manual fire still reaches the fire path (402 locally)', async () => {
+      (await deliver()).status(200).body().has('$.status', 'skipped').has('$.reason', paused);
+      (await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: slugParams })).status(402);
+    });
+
+    await ctx.step('CLI: `kortix triggers ls` marks it auto-paused; `kortix triggers info runaway` prints the reason and the resume command', async () => {
+      const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('cli-trg38') });
+      const sb = new CliSandbox('trg38');
+      try {
+        const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
+        if (login.exitCode !== 0) throw new Error(`login failed: ${login.all}`);
+        const ls = await sb.run(['triggers', 'ls', '--project', p.id]);
+        throwIfCliInfraFailure(ls, 'triggers ls');
+        if (ls.exitCode !== 0 || !/runaway[\s\S]*auto-paused/.test(ls.stdout)) throw new Error(`ls: exit ${ls.exitCode}: ${ls.all}`);
+        const info = await sb.run(['triggers', 'info', 'runaway', '--project', p.id]);
+        if (info.exitCode !== 0 || !info.stdout.includes(paused) || !info.stdout.includes('kortix triggers enable runaway --apply')) {
+          throw new Error(`info: exit ${info.exitCode}: ${info.all}`);
+        }
+      } finally {
+        sb.dispose();
+      }
+    });
+
+    await ctx.step('PATCH { enabled: true } resumes it; for 2 hours a held delivery is a plain throttle, not a new pause', async () => {
+      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { enabled: true }, { params: slugParams })).status(200);
+      const resumed = await listed();
+      if (resumed.auto_paused_at !== null || resumed.auto_paused_reason !== null) throw new Error(`still auto-paused after resume: ${JSON.stringify(resumed)}`);
+      (await deliver()).status(200).body().has('$.status', 'skipped').has('$.reason', 'throttled: 1 runs in the last hour (max_runs_per_hour 1)');
+      if ((await listed()).auto_paused_at !== null) throw new Error('a held delivery right after the resume paused it again');
+    });
+  },
+);

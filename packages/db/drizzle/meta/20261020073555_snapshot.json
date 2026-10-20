@@ -1,6 +1,6 @@
 {
-  "id": "d700f28e-02f0-4c60-a667-a6086672c1b2",
-  "prevId": "237b4845-2462-4290-896b-ae02dafcc0bd",
+  "id": "1b70322d-6086-4c20-b401-570717e305b5",
+  "prevId": "e42ca761-5974-4539-ad5c-15029dda6020",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -19350,6 +19350,24 @@
           "primaryKey": false,
           "notNull": false,
           "default": 0
+        },
+        "auto_paused_at": {
+          "name": "auto_paused_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_paused_reason": {
+          "name": "auto_paused_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_pause_resumed_at": {
+          "name": "auto_pause_resumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",

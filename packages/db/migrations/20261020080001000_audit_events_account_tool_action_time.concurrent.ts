@@ -101,7 +101,7 @@
 // attached child (auto-created by a post-step-1 ATTACH, or attached by a
 // previous run) is detected by DEFINITION -- not by name -- and skipped, so
 // no duplicate child is ever built. The gateway-logs sibling migration
-// (20261020070000000) is one statement because gateway_request_logs is not
+// (20261020080000000) is one statement because gateway_request_logs is not
 // partitioned; this file is its partitioned-table counterpart.
 
 export const shorthands = undefined;

@@ -1658,6 +1658,15 @@ export const projectTriggerRuntime = kortixSchema.table(
     // Suppression episodes in the trailing 24 h. Three ⇒ the monitor is
     // auto-disabled with a `last_error` (spec bounds table).
     suppressionCount: integer('suppression_count').default(0),
+    // Auto-pause (KRTX-1721): set when the trigger ran at its hourly run limit
+    // through the previous hour and is still being held. While set, no
+    // automatic fire starts a run; a manual fire still does. `PATCH enabled:
+    // true` clears both and stamps `auto_pause_resumed_at`: for 2 hours after
+    // a resume the trigger cannot pause itself again, so its old runs do not
+    // re-pause a trigger whose cause was fixed. Runtime state, not a manifest edit.
+    autoPausedAt: timestamp('auto_paused_at', { withTimezone: true }),
+    autoPausedReason: text('auto_paused_reason'),
+    autoPauseResumedAt: timestamp('auto_pause_resumed_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -3996,7 +4005,7 @@ export const auditEvents = kortixSchema.table(
     // Scanned backward for the `order by occurred_at desc, event_id desc` —
     // declared ascending because drizzle-orm 0.45's index builder cannot
     // express DESC — by
-    // 20261020070001000_audit_events_account_tool_action_time.concurrent.ts.
+    // 20261020080001000_audit_events_account_tool_action_time.concurrent.ts.
     index('idx_audit_events_account_tool_action_time')
       .on(table.accountId, table.occurredAt, table.eventId)
       .where(sql`${table.action} like 'connector.%' or ${table.action} like 'computer.%'`),
@@ -4195,7 +4204,7 @@ export const gatewayRequestLogs = kortixSchema.table(
     // output_tokens, latency_ms, actor_user_id) — not expressible in
     // drizzle-orm 0.45's index builder; the schema contract checks relation
     // + uniqueness only, same pattern as idx_gateway_logs_account_time_covering
-    // — by 20261020070000000_gateway_logs_project_time_covering.concurrent.ts.
+    // — by 20261020080000000_gateway_logs_project_time_covering.concurrent.ts.
     index('idx_gateway_logs_project_time_covering').on(table.projectId, table.createdAt),
   ],
 );

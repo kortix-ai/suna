@@ -43,6 +43,7 @@ import {
   type TriggerFireSource,
   upsertTriggerInManifest,
 } from '../lib/triggers';
+import { clearTriggerAutoPause } from '../lib/trigger-run-caps';
 // From the leaf, not the barrel: suites that stub '../lib/triggers' by listing
 // its exports would otherwise lose this name.
 import { ACCOUNT_STATE_FIRE_CODES, markGitTriggerAttemptFailed } from '../lib/trigger-fire';
@@ -728,6 +729,9 @@ export function registerTriggersRoutes(): void {
           pinnedSessionId: effectivePinnedSessionId,
         });
       }
+      // Turning a trigger on also resumes it from an auto-pause (KRTX-1721):
+      // the same Resume control and `kortix triggers enable` clear both.
+      if (body.enabled === true) await clearTriggerAutoPause(projectId, slug);
       await followTrigger(c, loaded.row, projectId, slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row));

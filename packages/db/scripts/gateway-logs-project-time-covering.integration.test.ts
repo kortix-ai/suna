@@ -7,7 +7,7 @@
  * 15-minute budgets poll of a busy project crossed the 25 s statement timeout
  * (503 + error page) while its neighbors ran 2-14 s every poll — the latency
  * is heap I/O. idx_gateway_logs_project_time_covering
- * (20261020070000000) carries every column those aggregates read, so the
+ * (20261020080000000) carries every column those aggregates read, so the
  * plans become index-only.
  *
  * The assertion reads the live catalog and the live planner (EXPLAIN), never
