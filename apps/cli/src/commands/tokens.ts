@@ -128,7 +128,8 @@ Options:
   --description <t>   service-accounts new: what this identity is for.
   --account <id>      Operate on this account (default: the active account).
   --host <name>       Operate against a non-default Kortix host.
-  --json              Machine-readable output.
+  --json              Machine-readable output. List rows of both kinds
+                      carry a shared \`id\`.
   -y, --yes           Skip the confirmation prompt.
   -h, --help          Show this help.
 
@@ -209,7 +210,8 @@ export async function runTokens(argv: string[]): Promise<number> {
             : tokens;
         const hidden = tokens.length - visible.length;
         if (json) {
-          emitJson(visible);
+          // `id` is the key every token kind shares (KRTX-2829); `token_id` stays.
+          emitJson(visible.map((t) => ({ id: t.token_id, ...t })));
           return 0;
         }
         if (visible.length === 0) {
@@ -441,7 +443,8 @@ async function serviceAccounts(
         base,
       );
       if (opts.json) {
-        emitJson(rows);
+        // The same shared `id` as `tokens ls --json`; `service_account_id` stays.
+        emitJson(rows.map((r) => ({ id: r.service_account_id, ...r })));
         return 0;
       }
       if (rows.length === 0) {

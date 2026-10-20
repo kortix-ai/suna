@@ -437,6 +437,25 @@ describe('kortix tokens', () => {
     expect(api!.requests.find((q) => q.method === 'DELETE')).toMatchObject({ path: '/v1/accounts/tokens/tok_a' });
   });
 
+  // KRTX-2829: `tokens ls --json` keyed a row by `token_id`, `tokens
+  // service-accounts ls --json` by `service_account_id`, so one script loop
+  // over both kinds had to special-case the key. Both carry `id` now; the
+  // original keys stay.
+  test('ls --json and service-accounts ls --json both carry a shared id key', async () => {
+    const config = boot();
+    const tokens = await runCommand(runner, ['ls', '--json'], { cwd: tmp, configFile: config });
+    expect(tokens.code).toBe(0);
+    const tokenRows = JSON.parse(tokens.stdout) as Array<{ id: string; token_id: string }>;
+    expect(tokenRows.length).toBeGreaterThan(0);
+    for (const row of tokenRows) expect(row.id).toBe(row.token_id);
+
+    const accounts = await runCommand(runner, ['service-accounts', 'ls', '--json'], { cwd: tmp, configFile: config });
+    expect(accounts.code).toBe(0);
+    const saRows = JSON.parse(accounts.stdout) as Array<{ id: string; service_account_id: string }>;
+    expect(saRows.length).toBeGreaterThan(0);
+    for (const row of saRows) expect(row.id).toBe(row.service_account_id);
+  });
+
   test('service-accounts ls/new/disable/rm hit the IAM routes', async () => {
     const config = boot();
     const ls = await runCommand(runner, ['service-accounts', 'ls'], {
