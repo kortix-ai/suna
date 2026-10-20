@@ -640,3 +640,60 @@ flow('SPACE-12', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
     await world.close();
   }
 });
+
+/** A stored, journaled session log with a root thread: what a fork copies. */
+async function seedSessionLog(world: AgentPrincipalsWorld, sessionId: string): Promise<void> {
+  await world.db.query(
+    `INSERT INTO kortix.session_logs (session_id, project_id, account_id, v, harness_current, restore_grade, record, journal_seen_at)
+     VALUES ($1, $2, $3, 1, 'pi', 'full', '{}'::jsonb, now())`,
+    [sessionId, world.projectId, world.accountId],
+  );
+  await world.db.query(
+    `INSERT INTO kortix.session_log_threads (session_id, thread_id, parent_thread_id, v, record) VALUES ($1, 'root', NULL, 1, '{}'::jsonb)`,
+    [sessionId],
+  );
+}
+
+flow('SPACE-13', createMeta([ROUTES.list, SESSION_ROUTES.create, SESSION_ROUTES.list, 'GET /v1/projects/:projectId/sessions/:sessionId', FEATURES_ROUTE]), async (ctx) => {
+  const { team, project, world } = await openWorld(ctx, { manifest: true });
+  const params = { projectId: project.id };
+  try {
+    await world.setFeature('project_channels', true);
+    await world.fund();
+    const general = await generalSpaceId(world, project.id);
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const fork = async (sourceId: string) => {
+      const r = await world.owner.post(SESSIONS, { fork_from_session_id: sourceId }, { params });
+      r.status(201);
+      const forked = r.json<Session>();
+      world.sessions.push(forked.session_id);
+      return forked;
+    };
+
+    await ctx.step('a fork of a private #general session is private and in #general; another member cannot read it', async () => {
+      const source = await insertSession(world, world.ownerUserId, 'private', { spaceId: general });
+      await seedSessionLog(world, source);
+      const forked = await fork(source);
+      if (forked.space_id !== general) throw new Error(`the fork is in ${forked.space_id}, expected #general`);
+      if (forked.visibility !== 'private') throw new Error(`the fork is ${forked.visibility}, expected private`);
+      const asMember = ctx.client.as(member);
+      (await asMember.get(`${SESSIONS}/:sessionId`, { params: { ...params, sessionId: forked.session_id } })).status(404);
+      if ((await listedInSpace(asMember, project.id, general)).includes(forked.session_id)) {
+        throw new Error('another member lists the private fork in #general');
+      }
+    });
+
+    await ctx.step('a fork of a project-visible channel thread is project-visible in that channel', async () => {
+      const channel = (await world.owner.post(SPACES, { name: 'Forks' }, { params })).status(201).json<Space>().space_id;
+      const source = await insertSession(world, world.ownerUserId, 'project', { spaceId: channel });
+      await seedSessionLog(world, source);
+      const forked = await fork(source);
+      if (forked.space_id !== channel || forked.visibility !== 'project') {
+        throw new Error(`the fork is ${forked.visibility} in ${forked.space_id}, expected project in the channel`);
+      }
+    });
+  } finally {
+    await world.close();
+  }
+});

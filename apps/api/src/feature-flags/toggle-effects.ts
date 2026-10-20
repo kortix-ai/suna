@@ -11,8 +11,9 @@
  * failures are logged at error level with the flag + project; the reconcilers
  * they call are themselves idempotent. The connector and event-subscription
  * ones re-run on their periodic sweeps. The `project_channels` backfill re-runs
- * only from the `GET /spaces` that creates `#general` (`listSpacesForUser`): a
- * failure after `#general` exists is not retried until the flag is toggled again.
+ * only from the call that creates `#general` (`ensureDefaultSpace`: a channel
+ * list, a session create or a warm claim): a failure after `#general` exists is
+ * not retried until the flag is toggled again.
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
@@ -89,7 +90,7 @@ export async function runFeatureFlagToggleEffects(ctx: FeatureFlagToggleContext)
     } catch (second) {
       console.error(
         `[feature-flags] toggle effect failed twice for '${ctx.key}' on project ${ctx.projectId}; ` +
-          'not retried here: connectors and event subscriptions converge on their periodic sweeps; project_channels converges only if #general did not exist yet (the GET /spaces that creates it files unassigned sessions), else on the next toggle',
+          'not retried here: connectors and event subscriptions converge on their periodic sweeps; project_channels converges only if #general did not exist yet (the call that creates it files unassigned sessions), else on the next toggle',
         second instanceof Error ? second.message : second,
         first instanceof Error ? `(first attempt: ${first.message})` : '',
       );

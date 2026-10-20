@@ -89,7 +89,7 @@ import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
-import { FIRST_PROMPT_MAX_CHARS, ensureDefaultSpace, findForkSourceSpace, findSessionSpace } from './project-spaces';
+import { FIRST_PROMPT_MAX_CHARS, ensureDefaultSpace, findForkSourceSpace, findSessionSpace, spaceSessionVisibility } from './project-spaces';
 
 import {
   resolveProjectSnapshotMode,
@@ -259,31 +259,32 @@ type SessionCreateMetadata = ReturnType<typeof buildSessionCreateMetadata>['meta
 
 /**
  * `project_channels` on: the space the body names, checked, and the sharing it
- * implies (a channel is project-visible unless the caller chose otherwise; a
- * DM is always private). A warm draft gets no space until a real create. Flag
- * off: `space_id` is ignored.
+ * implies (`spaceSessionVisibility`: a channel thread is project-visible
+ * unless the caller chose otherwise, a DM thread is private, a fork keeps its
+ * source's sharing). A warm draft gets no space until a real create. Flag off:
+ * `space_id` is ignored.
  */
 async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): Promise<
-  SessionCreateStep<{ filed: boolean; spaceId: string | null; visibility?: 'project' | 'private' }>
+  SessionCreateStep<{ filed: boolean; spaceId: string | null; visibility?: 'project' | 'private' | 'restricted' }>
 > {
   const { project, body, userId } = input;
   const warm =
     (input.metadata?.[WARM_SESSION_METADATA_KEY] ?? normalizeJsonObject(body.metadata)[WARM_SESSION_METADATA_KEY]) === true;
   if (!resolveFeatureFlag(project.metadata, 'project_channels') || warm) return { filed: false, spaceId: null };
-  const filedIn = (space: { spaceId: string; kind: 'channel' | 'dm' }) =>
-    ({ filed: true, spaceId: space.spaceId, visibility: space.kind === 'dm' ? 'private' : 'project' }) as const;
   if (body.space_id === undefined) {
-    // A fork lands in its source's space while the caller may still post there, else in `#general`.
-    const forkSpace = typeof body.fork_from_session_id === 'string'
+    // A fork lands in its source's space while the caller may still post there,
+    // with its source's sharing (never wider); else in `#general`.
+    const fork = typeof body.fork_from_session_id === 'string'
       ? await findForkSourceSpace(project.projectId, body.fork_from_session_id, userId)
       : null;
-    return forkSpace ? filedIn(forkSpace) : { filed: true, spaceId: null };
+    if (!fork) return { filed: true, spaceId: null };
+    return { filed: true, spaceId: fork.space.spaceId, visibility: spaceSessionVisibility(fork.space.kind, fork.visibility) };
   }
   const space = typeof body.space_id === 'string' && isUuid(body.space_id)
     ? await findSessionSpace(project.projectId, body.space_id, userId)
     : null;
   if (!space) return { error: { status: 404, body: { error: 'Channel not found', code: 'space_not_found' } } };
-  return filedIn(space);
+  return { filed: true, spaceId: space.spaceId, visibility: spaceSessionVisibility(space.kind) };
 }
 
 /** The session's sharing: explicit, or inherited from the spawning session. */
@@ -1608,7 +1609,7 @@ export async function createProjectSession(input: {
   const accountId = project.accountId;
   const requestedSpace = await resolveRequestedSessionSpace(input);
   if (requestedSpace.error) return { error: requestedSpace.error };
-  // A named channel decides the sharing unless the caller set it explicitly; a DM always does.
+  // A space decides the sharing unless the caller set it explicitly; a private one (a DM, a fork of a private session) always does.
   const { parentSession, visibility, inheritedGrants } = await resolveSessionSharing(
     requestedSpace.visibility && (input.visibility === undefined || requestedSpace.visibility === 'private')
       ? { ...input, visibility: requestedSpace.visibility }

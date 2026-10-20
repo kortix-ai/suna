@@ -68,20 +68,22 @@ async function ensureDefaultSpaceCreated(projectId: string, accountId: string): 
   return { space: raced, created: false };
 }
 
-/** The project's `#general`, created on first call. Idempotent under concurrency. */
-export async function ensureDefaultSpace(projectId: string, accountId: string): Promise<SpaceRow> {
-  return (await ensureDefaultSpaceCreated(projectId, accountId)).space;
-}
-
 /**
- * Live channels (default first, then oldest first), then the user's DMs.
- * The call that creates `#general` also files every session that is in no
- * space into it: the toggle effect's backfill, for a project whose toggle
- * effect failed before it created `#general`. No other read checks again.
+ * The project's `#general`, created on first call. Idempotent under
+ * concurrency. The call that creates it also files every session that is in
+ * no space into it, so every path that needs `#general` (the toggle effect, a
+ * channel list, a session create, a warm claim) converges a project whose
+ * toggle effect failed before `#general` existed. No later call checks again.
  */
-export async function listSpacesForUser(projectId: string, accountId: string, userId: string): Promise<SpaceRow[]> {
+export async function ensureDefaultSpace(projectId: string, accountId: string): Promise<SpaceRow> {
   const general = await ensureDefaultSpaceCreated(projectId, accountId);
   if (general.created) await assignUnassignedSessions(projectId, general.space.spaceId);
+  return general.space;
+}
+
+/** Live channels (default first, then oldest first), then the user's DMs. */
+export async function listSpacesForUser(projectId: string, accountId: string, userId: string): Promise<SpaceRow[]> {
+  await ensureDefaultSpace(projectId, accountId);
   return db
     .select()
     .from(projectSpaces)
@@ -177,14 +179,33 @@ export async function findSessionSpace(projectId: string, spaceId: string, userI
   return row ?? null;
 }
 
-/** The space of a fork's source session, when it is one the caller may file a session into. */
-export async function findForkSourceSpace(projectId: string, sourceSessionId: string, userId: string): Promise<SpaceRow | null> {
+type SessionVisibility = 'private' | 'project' | 'restricted';
+
+/**
+ * The sharing of a session filed into a space. A DM thread is private. A fork
+ * keeps its source's sharing and never widens it: project-visible only when
+ * its source is (a restricted source's grants are not copied, so its fork is
+ * private). A new channel thread is project-visible.
+ */
+export function spaceSessionVisibility(kind: 'channel' | 'dm', forkSourceVisibility?: SessionVisibility | null): SessionVisibility {
+  if (kind === 'dm') return 'private';
+  if (forkSourceVisibility == null) return 'project';
+  return forkSourceVisibility === 'project' ? 'project' : 'private';
+}
+
+/** A fork source's space, when the caller may file a session into it, and the source's sharing. */
+export async function findForkSourceSpace(
+  projectId: string,
+  sourceSessionId: string,
+  userId: string,
+): Promise<{ space: SpaceRow; visibility: SessionVisibility } | null> {
   const [source] = await db
-    .select({ spaceId: projectSessions.spaceId })
+    .select({ spaceId: projectSessions.spaceId, visibility: projectSessions.visibility })
     .from(projectSessions)
     .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.sessionId, sourceSessionId)))
     .limit(1);
-  return source?.spaceId ? findSessionSpace(projectId, source.spaceId, userId) : null;
+  const space = source?.spaceId ? await findSessionSpace(projectId, source.spaceId, userId) : null;
+  return space ? { space, visibility: source!.visibility as SessionVisibility } : null;
 }
 
 export async function updateChannel(

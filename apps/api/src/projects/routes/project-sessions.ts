@@ -246,7 +246,7 @@ export function registerProjectSessionsRoutes(): void {
         typeof body.space_id === 'string' && isUuid(body.space_id)
           ? await findSessionSpace(projectId, body.space_id, loaded.userId)
           : body.space_id === undefined && typeof body.fork_from_session_id === 'string'
-            ? await findForkSourceSpace(projectId, body.fork_from_session_id, loaded.userId)
+            ? (await findForkSourceSpace(projectId, body.fork_from_session_id, loaded.userId))?.space ?? null
             : null;
       if (space?.kind === 'dm' && space.dmAgentName) {
         body.agent_name = space.dmAgentName;
