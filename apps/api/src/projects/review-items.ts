@@ -16,6 +16,12 @@ import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
 import type { ProjectReadView } from './lib/project-read-view';
 import {
+  type ApprovalDecision,
+  type PendingApprovalRow,
+  resolveApprovalAs,
+} from './lib/connector-approval-decision';
+import {
+  CALL_ID_PREFIX,
   CR_REVIEW_STATUS,
   adapterSourceForId,
   changeRequestToReviewItem,
@@ -682,4 +688,75 @@ export async function bulkApplyVerdict(
       and(eq(reviewItems.projectId, projectId), inArray(reviewItems.reviewItemId, ids)),
     )
     .returning();
+}
+
+export const BULK_MAX_IDS = 50;
+
+export type BulkResultCode =
+  | 'expired'
+  | 'already_resolved'
+  | 'preview_unavailable'
+  | 'forbidden'
+  | 'not_found'
+  | 'not_bulk_actionable';
+
+export interface BulkResult {
+  id: string;
+  ok: boolean;
+  code?: BulkResultCode;
+}
+
+/**
+ * Bulk act across sources. Native ids update in one statement; each `call:` id
+ * goes through `resolveApprovalAs`, one at a time, so one refusal never stops
+ * the rest. `cr:` ids, and a call under a verdict other than approve/reject,
+ * are `not_bulk_actionable`. One result per requested id, in request order.
+ */
+export async function bulkActReview(
+  ids: string[],
+  projectId: string,
+  opts: {
+    verdict: ReviewVerdict;
+    accountId: string;
+    caller: ApprovalCaller;
+    auditSource: string;
+    updateStaleCard?: (row: PendingApprovalRow, decision: ApprovalDecision) => Promise<void>;
+  },
+): Promise<{ rows: ReviewItemRow[]; results: BulkResult[] }> {
+  const nativeIds = ids.filter((id) => adapterSourceForId(id) === null);
+  const rows = nativeIds.length
+    ? await bulkApplyVerdict(nativeIds, projectId, { verdict: opts.verdict, actingUserId: opts.caller.callerUserId })
+    : [];
+  const updated = new Set(rows.map((row) => row.reviewItemId));
+  const decision: ApprovalDecision | null =
+    opts.verdict === 'approve' ? 'approve' : opts.verdict === 'reject' ? 'deny' : null;
+  const results: BulkResult[] = [];
+  for (const id of ids) {
+    const source = adapterSourceForId(id);
+    if (source === null) {
+      results.push(updated.has(id) ? { id, ok: true } : { id, ok: false, code: 'not_found' });
+      continue;
+    }
+    if (source === 'cr' || !decision) {
+      results.push({ id, ok: false, code: 'not_bulk_actionable' });
+      continue;
+    }
+    const executionId = id.slice(CALL_ID_PREFIX.length);
+    if (!isUuid(executionId)) {
+      results.push({ id, ok: false, code: 'not_found' });
+      continue;
+    }
+    const { outcome } = await resolveApprovalAs({
+      projectId,
+      accountId: opts.accountId,
+      executionId,
+      decision,
+      note: '',
+      caller: opts.caller,
+      auditSource: opts.auditSource,
+      updateStaleCard: opts.updateStaleCard && ((row) => opts.updateStaleCard!(row, decision)),
+    });
+    results.push(outcome === 'resolved' ? { id, ok: true } : { id, ok: false, code: outcome });
+  }
+  return { rows, results };
 }

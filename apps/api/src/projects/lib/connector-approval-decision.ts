@@ -13,7 +13,13 @@ import { logger } from '../../lib/logger';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
-import { type ApprovalTarget, approvalTargetOf } from './approval-authority';
+import {
+  type ApprovalCaller,
+  type ApprovalRefusal,
+  type ApprovalTarget,
+  approvalTargetOf,
+  mayResolveApproval,
+} from './approval-authority';
 
 export type ApprovalDecision = 'approve' | 'deny';
 
@@ -213,6 +219,50 @@ export async function decideConnectorApproval(input: {
   );
 
   return 'resolved';
+}
+
+export type ResolveApprovalResult =
+  | { outcome: DecideOutcome | 'not_found' }
+  | { outcome: 'forbidden'; reason: ApprovalRefusal };
+
+/**
+ * Load, gate and decide one pending call for a human caller: the checks every
+ * HTTP surface runs before `decideConnectorApproval`, in the order the single
+ * resolve route reports them (404, 409 expired, 409 resolved, 403).
+ */
+export async function resolveApprovalAs(input: {
+  projectId: string;
+  accountId: string;
+  executionId: string;
+  decision: ApprovalDecision;
+  note: string;
+  caller: ApprovalCaller;
+  auditSource: string;
+  updateStaleCard?: (row: PendingApprovalRow) => Promise<void>;
+}): Promise<ResolveApprovalResult> {
+  const row = await loadApprovalRow(input.projectId, input.executionId);
+  if (!row) return { outcome: 'not_found' };
+  if (isApprovalExpired(row)) return { outcome: 'expired' };
+  if (!isPendingApproval(row)) return { outcome: 'already_resolved' };
+  const target = await approvalTargetSession(input.projectId, row);
+  const verdict = mayResolveApproval({
+    ...input.caller,
+    targetSessionOrigin: target.origin,
+    targetSessionCreatedBy: target.createdBy,
+  });
+  if (!verdict.allowed) return { outcome: 'forbidden', reason: verdict.reason };
+  const outcome = await decideConnectorApproval({
+    projectId: input.projectId,
+    accountId: input.accountId,
+    row,
+    decision: input.decision,
+    note: input.note,
+    actorUserId: input.caller.callerUserId,
+    auditSource: input.auditSource,
+    resume: 'queue',
+    updateStaleCard: input.updateStaleCard && (() => input.updateStaleCard!(row)),
+  });
+  return { outcome };
 }
 
 const EXPIRY_BATCH = 200;

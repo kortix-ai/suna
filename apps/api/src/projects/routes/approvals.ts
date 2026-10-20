@@ -10,10 +10,7 @@ import { inferAuditSource } from '../../shared/audit';
 import { createRoute, z } from '@hono/zod-openapi';
 import { connectorCalls, projectSessions, sessionPendingQuestions } from '@kortix/db';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
-import {
-  mayResolveApproval,
-  maySeeSessionApprovals,
-} from '../lib/approval-authority';
+import { maySeeSessionApprovals } from '../lib/approval-authority';
 import { loadProjectForUser, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
 import { isUuid } from '../../shared/validate';
 import { AnyObject, OkSchema, projectsApp } from '../lib/app';
@@ -23,14 +20,11 @@ import {
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import {
-  approvalTargetSession,
-  decideConnectorApproval,
-  isPendingApproval,
-  loadApprovalRow,
   normalizeApprovalNote,
+  resolveApprovalAs,
 } from '../lib/connector-approval-decision';
 import { markApprovalCardDecided } from '../../channels/approval-card-relay';
-import { approvalNotExpired, isApprovalExpired } from '../../connectors/approval-expiry';
+import { approvalNotExpired } from '../../connectors/approval-expiry';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { approvalCallerOf } from '../lib/http-approval-caller';
 
@@ -305,31 +299,30 @@ export function registerApprovalsRoutes(): void {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-      const row = await loadApprovalRow(projectId, executionId);
-      if (!row) return c.json({ error: 'Not found' }, 404);
-      if (isApprovalExpired(row)) return c.json(APPROVAL_EXPIRED_BODY, 409);
-      if (!isPendingApproval(row)) {
-        return c.json({ error: 'Approval already resolved' }, 409);
-      }
-
       // Who may resolve: a project MANAGER, OR the human who launched the
       // session the gated action belongs to. (Founder decision: managers +
       // launcher.) The session audit and the Review Center report this same
       // verdict as `can_resolve`, from the same `approvalCallerOf`.
-      const target = await approvalTargetSession(projectId, row);
-      const verdict = mayResolveApproval({
-        ...(await approvalCallerOf(c, loaded, projectId)),
-        targetSessionOrigin: target.origin,
-        targetSessionCreatedBy: target.createdBy,
+      const result = await resolveApprovalAs({
+        projectId,
+        accountId: loaded.row.accountId,
+        executionId,
+        decision,
+        note,
+        caller: await approvalCallerOf(c, loaded, projectId),
+        auditSource: inferAuditSource(c.get('authType'), 'human'),
+        updateStaleCard: (row) =>
+          markApprovalCardDecided({ projectId, row, decision, note, actorUserId: loaded.userId }),
       });
-      if (!verdict.allowed) {
+      if (result.outcome === 'not_found') return c.json({ error: 'Not found' }, 404);
+      if (result.outcome === 'forbidden') {
         return c.json(
-          verdict.reason === 'session_bound_caller'
+          result.reason === 'session_bound_caller'
             ? {
                 error: 'An agent cannot resolve its own approval — a human must approve or deny this',
                 code: 'APPROVAL_REQUIRES_HUMAN',
               }
-            : verdict.reason === 'non_human_caller'
+            : result.reason === 'non_human_caller'
               ? {
                   error: 'Sign in with a Kortix account to resolve this approval',
                   code: 'APPROVAL_REQUIRES_HUMAN',
@@ -338,20 +331,7 @@ export function registerApprovalsRoutes(): void {
           403,
         );
       }
-
-      const outcome = await decideConnectorApproval({
-        projectId,
-        accountId: loaded.row.accountId,
-        row,
-        decision,
-        note,
-        actorUserId: loaded.userId,
-        auditSource: inferAuditSource(c.get('authType'), 'human'),
-        resume: 'queue',
-        updateStaleCard: () =>
-          markApprovalCardDecided({ projectId, row, decision, note, actorUserId: loaded.userId }),
-      });
-      if (outcome === 'preview_unavailable') {
+      if (result.outcome === 'preview_unavailable') {
         return c.json(
           {
             error: 'This call recorded no parameters to review, so it cannot be approved',
@@ -360,8 +340,8 @@ export function registerApprovalsRoutes(): void {
           409,
         );
       }
-      if (outcome === 'expired') return c.json(APPROVAL_EXPIRED_BODY, 409);
-      if (outcome === 'already_resolved') {
+      if (result.outcome === 'expired') return c.json(APPROVAL_EXPIRED_BODY, 409);
+      if (result.outcome === 'already_resolved') {
         return c.json({ error: 'Approval already resolved' }, 409);
       }
 
