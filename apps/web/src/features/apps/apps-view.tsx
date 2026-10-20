@@ -1,20 +1,17 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast } from '@/components/ui/toast';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast } from '@kortix/ui/toast';
 
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
+import { ProjectPageHeader, PROJECT_ACTIONS, useProjectCan } from '@kortix/ui/workspace';
 import { useTranslations } from '@/i18n/use-translations';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
 
-import { useDebounce } from '@/hooks/use-debounce';
-import { useProjectCan } from '@/lib/use-project-can';
-import { cn } from '@/lib/utils';
+import { useDebounce, cn } from '@kortix/ui';
 import { createAppAccessSession, type App } from '@kortix/sdk';
 import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
 import { ArrowUpRightIcon, HardDrivesIcon, PlusIcon } from '@phosphor-icons/react';
@@ -23,13 +20,19 @@ import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { AppPreview, PREVIEW_TILE_ASPECT } from './app-preview';
+import {
+  AppPreview,
+  PREVIEW_TILE_ASPECT,
+  appCan,
+  appStatus,
+  cardPreviewApp,
+  gridApps,
+} from '@kortix/ui/apps';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
 import { AddExternalAppDialog } from './app-add-external';
-import { appCan, appStatus, cardPreviewApp, gridApps } from './app-shared';
-export { DEPLOYMENT_COPY, deployNotice, appHost } from './app-shared';
-export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from './app-preview';
+export { DEPLOYMENT_COPY, deployNotice, appHost } from '@kortix/ui/apps';
+export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from '@kortix/ui/apps';
 export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
 
 function AppsHeader({

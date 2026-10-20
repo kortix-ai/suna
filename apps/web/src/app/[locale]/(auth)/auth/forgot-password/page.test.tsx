@@ -12,7 +12,6 @@ mock.module('next/navigation', () => ({
   useRouter: () => ({ push() {}, replace() {} }), useParams: () => ({}),
 }));
 const uiToastMock = () => ({ errorToast: () => {} });
-mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 const submits: { path: string; body: FormData }[] = [];
 let succeed = false;

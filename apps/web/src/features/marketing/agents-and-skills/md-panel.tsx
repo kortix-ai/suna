@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { ReactNode } from 'react';
 
 /* Sibling of `agent-computer/code-panel.tsx`, for the one language that page

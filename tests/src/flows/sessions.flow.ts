@@ -1963,6 +1963,7 @@ flow(
     requires: ['sandbox', 'funded'],
     timeoutMs: 300_000,
     routes: [
+      'PATCH /v1/projects/:projectId/experimental',
       'POST /v1/projects/:projectId/sessions/warm',
       'POST /v1/projects/:projectId/sessions/warm/claim',
       'GET /v1/projects/:projectId/sessions/:sessionId',
@@ -1982,6 +1983,18 @@ flow(
     let warmSessionId = '';
     let replacementId = '';
     let replacementInsertedAt = '';
+
+    await ctx.step('warming is disabled until the project explicitly opts in', async () => {
+      const params = { projectId: p.id };
+      const denied = await owner.post('/v1/projects/:projectId/sessions/warm', {}, { params });
+      denied.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'warm_sessions');
+      const enabled = await owner.patch(
+        '/v1/projects/:projectId/experimental',
+        { feature: 'warm_sessions', enabled: true },
+        { params },
+      );
+      enabled.status(200);
+    });
 
     await ctx.step('warming creates an ordinary session marked unused, in the contract shape', async () => {
       const r = await owner.post(

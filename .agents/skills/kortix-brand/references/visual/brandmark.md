@@ -30,7 +30,7 @@ Canonical files live in `apps/web/public/brandkit/` (D6). Verified to exist at t
 | bundle | `apps/web/public/brandkit/kortix-brand-assets.zip` | | Download for partners. No script regenerates it. It can drift from the loose files. |
 | symbol (app copy) | `apps/web/public/kortix-symbol.svg` | black | Provider branding, docs, tray source. **Off-master proportion**, see below. |
 | symbol (docs) | `apps/web/blume-public/kortix-symbol.svg`, `kortix-symbol-white.svg` | black / white | Docs site. Intentional copies. The white symbol exists nowhere else in `public/`. |
-| favicon (master) | `apps/web/public/favicon.svg`, `favicon.png` | dark mark (`#121215`) on a light tile (`#F8F8F8`), 20/270 corner radius | **The source of every app icon and favicon** (Q39). Also the JSON-LD `logo` in `[locale]/layout.tsx`, the blog and use-case pages and `lib/web-notifications.ts`. |
+| favicon (master) | `apps/web/public/favicon.svg`, `favicon.png` | dark mark (`#121215`) on a light tile (`#F8F8F8`), 20/270 corner radius | **The source of every app icon and favicon** (Q39). Also the JSON-LD `logo` in `[locale]/layout.tsx`, the blog and use-case pages and `packages/ui/src/internal/lib/web-notifications.ts`. |
 | brandmark-bg | `apps/web/public/kortix-brandmark-bg.svg` | white outline, fading | Wallpaper `brandmark`. |
 | OG banner | `apps/web/public/banner.png` | | The one static share image. |
 | wordmark (mobile) | `apps/mobile/assets/brand/Logomark-Text-Black.svg`, `Logomark-Text-White.svg` | black / white | Mobile auth. Not in the brand kit. |
@@ -44,9 +44,9 @@ Duplicate files to delete in a cleanup change (not an agent decision): `apps/web
 
 | Component | File | Variants | Notes |
 | --- | --- | --- | --- |
-| `KortixLogo` | `apps/web/src/components/ui/kortix-logo.tsx` | `icon` (symbol), `brandmark` (logo) | Canonical. Renders `currentColor`. **Naming conflict:** its `brandmark` variant is the logo, but the brand kit and D6 use "brandmark" for the symbol and the wallpaper. OPEN: rename the variants to `symbol` and `logo` and migrate importers. Organization branding replaces the mark through `useBranding()` (Enterprise entitlement). |
+| `KortixLogo` | `packages/ui/src/primitives/kortix-logo.tsx` | `icon` (symbol), `brandmark` (logo) | Canonical. Renders `currentColor`. **Naming conflict:** its `brandmark` variant is the logo, but the brand kit and D6 use "brandmark" for the symbol and the wallpaper. OPEN: rename the variants to `symbol` and `logo` and migrate importers. Organization branding replaces the mark through `useBranding()` (Enterprise entitlement). |
 | `KortixLogo` shim | `apps/web/src/components/sidebar/kortix-logo.tsx` | `symbol`, `logomark` | Legacy re-export. New code imports the canonical file. |
-| `Kortix` glyph | `apps/web/src/features/icon/icons/kortix.tsx` | size-4 symbol | A house glyph, `currentColor`. |
+| `Kortix` glyph | `packages/ui/src/internal/icons/kortix.tsx` | size-4 symbol | A house glyph, `currentColor`. |
 | `KortixHyperLogo` | `apps/web/src/components/ui/marketing/kortix-hyper-logo.tsx` | animated dissolve of the symbol | Marketing art. |
 | Mobile `KortixLogo` | `apps/mobile/components/kortix/KortixLogo.tsx` | `symbol`, `logomark`, `text` | `color="dark"` renders the white file: the prop names the surface, not the ink. |
 | `MetalKortixLogo` | `apps/mobile/components/kortix/MetalKortixLogo.tsx` | Skia metal symbol | Mobile hero art. |

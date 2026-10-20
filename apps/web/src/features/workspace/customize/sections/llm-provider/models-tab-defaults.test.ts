@@ -3,12 +3,13 @@ import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 import { wireToModelKey } from '@kortix/sdk/react';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 /**
  * The two default SCOPES this tab owns.
  *
  * Both used to be buttons stacked under the session model picker
- * (`features/session/model-selector.tsx`), which could SET a default at three
+ * (`packages/ui/src/session/models/model-selector.tsx`), which could SET a default at three
  * scopes while showing which model held none of them. They moved onto the row
  * they apply to, where each one also badges its current holder. The picker
  * keeps a one-click star for the account default only.
@@ -30,7 +31,7 @@ function code(path: string): string {
     .replace(/^\s*\/\/.*$/gm, '');
 }
 
-const tabSource = code(join(import.meta.dir, 'models-tab.tsx'));
+const tabSource = code(uiSourcePath('customize/sections/llm-provider/models-tab.tsx'));
 
 describe('the identity a badged row is decided by', () => {
   /**
