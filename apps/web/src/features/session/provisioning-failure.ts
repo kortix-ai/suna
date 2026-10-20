@@ -2,7 +2,7 @@ import type { UiTranslator } from '@/i18n/translator';
 import type { PendingSessionPrompt } from '@kortix/sdk';
 import { readStartStash } from '@kortix/sdk/react';
 
-export interface ProvisioningFailurePresentation {
+interface ProvisioningFailurePresentation {
   title: string;
   message: string;
   retryable: boolean;

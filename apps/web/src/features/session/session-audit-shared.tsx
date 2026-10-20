@@ -35,7 +35,7 @@ import {
 /** One poll cadence for the shared session-audit query, so both surfaces (panel
  *  + header nudge) agree regardless of which mounts first. Pauses in background
  *  tabs (react-query's refetchIntervalInBackground defaults to false). */
-export const SESSION_AUDIT_REFETCH_MS = 15_000;
+const SESSION_AUDIT_REFETCH_MS = 15_000;
 
 export function sessionAuditKey(projectId: string | undefined, sessionId: string | undefined) {
   return ['session-audit', projectId ?? '', sessionId ?? ''] as const;

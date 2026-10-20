@@ -3,7 +3,7 @@ export interface ClipboardItemLike {
   getAsFile(): File | null;
 }
 
-export interface ClipboardPayload {
+interface ClipboardPayload {
   readonly files: ArrayLike<File>;
   readonly items: ArrayLike<ClipboardItemLike>;
 }

@@ -48,7 +48,7 @@ export function isFirstPromptRow(prompt: Pick<SessionPrompt, 'client_message_id'
  *   refuses removal.
  * - `failed`: delivery gave up; retry or remove.
  */
-export type QueueRowState = 'sending' | 'queued' | 'delivering' | 'failed';
+type QueueRowState = 'sending' | 'queued' | 'delivering' | 'failed';
 
 export interface QueueRow {
   /** The inbox `prompt_id`, or `draft:<clientMessageId>` before the POST. */
@@ -85,7 +85,7 @@ export interface QueueRow {
   editText: string | null;
 }
 
-export interface QueueProjection {
+interface QueueProjection {
   /** In delivery order: the server's rows first, then this tab's unsent drafts. */
   rows: QueueRow[];
   /** Rows the Stop hold is pausing — counted even when the row is on screen in

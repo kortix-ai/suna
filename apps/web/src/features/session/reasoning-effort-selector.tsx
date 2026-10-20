@@ -116,7 +116,7 @@ function EffortIcon({ value, className }: { value: string | null; className?: st
   }
 }
 
-export interface ReasoningEffortSelectorProps {
+interface ReasoningEffortSelectorProps {
   /** The selected model's variant ids (`Object.keys(model.variants)`). */
   variants: readonly string[] | undefined;
   /** The session's current variant, or null = model default. */
