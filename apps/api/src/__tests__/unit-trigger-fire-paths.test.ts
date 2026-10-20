@@ -933,6 +933,7 @@ function cronEntry(opts: {
   model?: string;
   enabled?: boolean;
   prompt: string;
+  overlap?: 'skip' | 'allow';
 }): string {
   const lines = [`  - slug: ${JSON.stringify(opts.slug)}`];
   if (opts.name !== undefined) lines.push(`    name: ${JSON.stringify(opts.name)}`);
@@ -943,6 +944,7 @@ function cronEntry(opts: {
   lines.push(`    cron: ${JSON.stringify(opts.cron)}`);
   if (opts.timezone !== undefined) lines.push(`    timezone: ${JSON.stringify(opts.timezone)}`);
   lines.push(`    prompt: ${JSON.stringify(opts.prompt)}`);
+  if (opts.overlap !== undefined) lines.push(`    overlap: ${opts.overlap}`);
   return lines.join('\n');
 }
 
@@ -951,6 +953,7 @@ function seedRuntimeCron(opts: {
   prompt: string;
   nextFireAt: Date;
   sessionMode?: string;
+  overlap?: 'skip' | 'allow';
 }) {
   runtimeRows.push({
     projectId: PROJECT_ID,
@@ -982,6 +985,7 @@ function seedRuntimeCron(opts: {
       model: null,
       enabled: true,
       promptTemplate: opts.prompt,
+      ...(opts.overlap ? { overlap: opts.overlap } : {}),
       cron: '* * * * * *',
       runAt: null,
       timezone: 'UTC',
@@ -1076,14 +1080,18 @@ describe('git-backed triggers — runtime fire paths', () => {
   });
 
   test('cron sweep under backpressure queues and records accepted fire', async () => {
+    // overlap: allow — this test is about backpressure. With the cron default
+    // (skip), the second slot would wait for the first slot's queued create
+    // (KRTX-1721; integration-trigger-overlap.test.ts covers that).
     seedManifest(cronEntry({
       slug: 'sweep',
       name: 'Sweep',
       cron: '* * * * * *',
       prompt: 'Sweep run',
+      overlap: 'allow',
     }));
     const firstSlot = new Date('2026-01-01T00:00:30Z');
-    seedRuntimeCron({ slug: 'sweep', prompt: 'Sweep run', nextFireAt: firstSlot });
+    seedRuntimeCron({ slug: 'sweep', prompt: 'Sweep run', nextFireAt: firstSlot, overlap: 'allow' });
     provisioningSessionCount = 3;
 
     const result = await runProjectTriggerSweep(firstSlot);
