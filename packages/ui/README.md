@@ -304,6 +304,7 @@ How it stays themable:
 
 ## Known issues
 
+- Server rendering: the entries that render sessions or files (`session`, `composer`, `session-panel`, `workspace`, `files`, `file-viewer`, `markdown`, `genui`, `customize`) import CSS (KaTeX and others) from JS, so plain Node cannot evaluate them (`ERR_UNKNOWN_FILE_EXTENSION ".css"`). A Vite SSR host adds `ssr: { noExternal: ['@kortix/ui'] }`. A Next.js host lists `@kortix/ui` in `transpilePackages`. Or load those blocks on the client only (`lazyClient`). The root, `theme`, `i18n`, `icons`, `diff`, `changes`, `terminal`, `browser`, `apps` and `access` entries evaluate in Node.
 - `cmdk@0.2.1` declares a React 18 peer and nests `@radix-ui/react-dialog@1.0.0`.
   `Command` works on React 19. A host with `strict-peer-dependencies` must allow
   `cmdk`'s React peer. `cmdk` 1.x

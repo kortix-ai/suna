@@ -34,6 +34,13 @@ after `node ../../scripts/stage-npm-publish.mjs` (what `packages/ui/scripts/smok
 Without `@openuidev/lang-core`, `vite build` fails with `Missing export` in `@kortix/sdk/dist/genui`.
 Name `react@19 react-dom@19`: with an unversioned `react`, npm picks React 18 for `cmdk`'s peer and the install never finishes.
 
+Server rendering: the entries that render sessions or files (`session`, `composer`, `session-panel`,
+`workspace`, `files`, `file-viewer`, `markdown`, `genui`, `customize`) import CSS (KaTeX and others)
+from JS, so plain Node cannot evaluate them (`ERR_UNKNOWN_FILE_EXTENSION ".css"`). A Vite SSR host adds
+`ssr: { noExternal: ['@kortix/ui'] }`. A Next.js host lists `@kortix/ui` in `transpilePackages`. Or
+load those blocks on the client only (`lazyClient`). The root, `theme`, `i18n`, `icons`, `diff`,
+`changes`, `terminal`, `browser`, `apps` and `access` entries evaluate in Node.
+
 ## 2. Styles
 
 ```css
