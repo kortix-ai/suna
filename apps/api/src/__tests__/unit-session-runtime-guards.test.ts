@@ -47,7 +47,7 @@ const ORIGINAL_ALLOWED_SANDBOX_PROVIDERS = process.env.ALLOWED_SANDBOX_PROVIDERS
 process.env.KORTIX_GITHUB_OWNER = TEST_GITHUB_OWNER;
 process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 process.env.KORTIX_URL = 'https://api.test.kortix.local';
-process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
+process.env.ALLOWED_SANDBOX_PROVIDERS = 'platinum,daytona';
 
 const { config } = await import('../config');
 
@@ -406,7 +406,7 @@ mock.module('../snapshots/builder', () => ({
   resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickRoutedPreBuild: () => {},
-  templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
+  templateBuildProviders: () => ['platinum', 'daytona'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => undefined,
@@ -781,6 +781,7 @@ mock.module('../shared/db', () => ({
     // matching the auth admin mock above.
     execute: async (query: unknown) =>
       authUsersRows(query, () => ({ email: 'contract@example.test' })) ?? [],
+    selectDistinctOn: () => ({ from: () => ({ where: () => ({ orderBy: async () => [] }) }) }),
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => {
         // The `/start` prologue and every long-poll tick read session + sandbox
@@ -806,7 +807,7 @@ mock.module('../shared/db', () => ({
           }),
           where: (predicate?: unknown) => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
-            Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
+            Promise.resolve(table === projectSecrets ? secretRows : table === sessionSandboxes ? sessionSandboxRows : []).then(resolve, reject);
           },
           orderBy: () => {
             if (table === sessionLifecycleCommands) {
@@ -2802,6 +2803,7 @@ describe('project session runtime guards', () => {
   // The warm create runs `createProjectSession` with an empty body: no prompt,
   // so no title source. The first real prompt titles the session later.
   test('a warm session is created without a prompt or a title source', async () => {
+    projectRow.metadata = { ...projectRow.metadata, experimental: { warm_sessions: true } };
     const app = createApp();
     sessionRow = null;
 

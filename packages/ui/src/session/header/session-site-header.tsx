@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { useTranslations } from '../../i18n';
 import { useSessionListActions } from '../actions/use-session-list-actions';
 import { useLocalizedUiCatalog } from '../../i18n/ui-catalog/use-localized-ui-catalog';
@@ -17,7 +18,9 @@ import {
 import Hint from '../../primitives/hint';
 import Loading from '../../primitives/loading';
 import { Skeleton } from '../../primitives/skeleton';
-import { useSidebar } from '../../primitives/sidebar';
+import { useOptionalSidebar } from '../../primitives/sidebar';
+import { useIsMobile } from '../../hooks/use-mobile';
+import { useSessionIds } from '../../providers/session-ids';
 import { errorToast, successToast } from '../../primitives/toast';
 import { copyToClipboard } from '../../internal/lib/utils/clipboard';
 import { CompactModal } from './compact-modal';
@@ -32,7 +35,6 @@ import {
 import { SessionPendingApprovalsIndicator } from './session-pending-approvals-indicator';
 import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from './session-title-input';
-import { childSessionHref } from '../tool/tools/session-spawn-urls';
 import { SubagentHoverCard, subagentTitle } from './subagent-hover-card';
 import { Copy } from '../../icons/copy';
 import { Home } from '../../internal/icons/home';
@@ -44,6 +46,7 @@ import { SessionDeleteModal } from '../actions/session-delete-modal';
 import { useNotificationCenter } from '../../internal/hooks/use-notification-center';
 import {
   useUiComponents,
+  useUiHostConfig,
   useUiPathname,
   useUiRouter,
   useUiViewerId,
@@ -58,10 +61,9 @@ import {
   useReadyChip,
   useToggleActionPanel,
 } from '../../internal/stores/kortix-computer-store';
-import { directSubsessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
+import { createProjectSession, directSubsessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import {
   qk,
-  useForkSession,
   useProjectSession,
   useRuntimeSupports,
   useSessionParticipants,
@@ -91,7 +93,7 @@ import {
   TrashIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 /** Sandbox surfaces reachable from the header. One list drives both the
  *  desktop segment and the mobile sheet, so growing to 4-5 is a one-line add.
@@ -127,7 +129,13 @@ export function SessionSiteHeader({
   const tPalette = useTranslations('commandPalette');
   const tNotifications = useTranslations('notifications');
   const tPinArchive = useTranslations('sidebar.pinArchive');
-  const devTools = useLocalizedUiCatalog(DEV_TOOLS);
+  const localizedDevTools = useLocalizedUiCatalog(DEV_TOOLS);
+  // A host that cannot reach the pty WebSocket turns the terminal off (`config.terminalEnabled`).
+  const { terminalEnabled } = useUiHostConfig();
+  const devTools = useMemo(
+    () => (terminalEnabled ? localizedDevTools : localizedDevTools.filter((tool) => tool.view !== 'terminal')),
+    [localizedDevTools, terminalEnabled],
+  );
   const router = useUiRouter();
   const pathname = useUiPathname();
   const queryClient = useQueryClient();
@@ -136,7 +144,11 @@ export function SessionSiteHeader({
   // the shell's one "Open sidebar" toggle both live in that band. The row
   // indents past them and drops onto their centre line; `.kx-titlebar-row`
   // carries both offsets so no window px are hard-coded here.
-  const { state: sidebarState, isMobile: isMobileViewport } = useSidebar();
+  // Optional: a host without a project sidebar (SessionThread alone) has no provider.
+  const sidebar = useOptionalSidebar();
+  const viewportIsMobile = useIsMobile();
+  const sidebarState = sidebar?.state ?? 'expanded';
+  const isMobileViewport = sidebar?.isMobile ?? viewportIsMobile;
   const desktopShell = useDesktopShell();
   const sidebarHidden = desktopShell !== null && sidebarState === 'collapsed';
 
@@ -156,10 +168,13 @@ export function SessionSiteHeader({
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Lifecycle actions (Share / Restart / Delete) operate on the project-level
-  // session, which is only addressable on the `/projects/:id/sessions/:id` route.
+  // session.
+  // The ids come from the session view (`SessionIdsProvider`); a host whose
+  // URL has another shape still gets them. apps/web's route is the fallback.
+  const sessionIds = useSessionIds();
   const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
-  const projectId = projectRoute?.[1];
-  const projectSessionId = projectRoute?.[2];
+  const projectId = sessionIds.projectId ?? projectRoute?.[1];
+  const projectSessionId = sessionIds.sessionId ?? projectRoute?.[2];
   const isProjectSession = !!projectId && !!projectSessionId;
 
   // The header needs ONE session — the one in the URL. It used to fetch the
@@ -287,11 +302,14 @@ export function SessionSiteHeader({
   });
   const canStop = !!projectSession && sessionCanBeStopped(projectSession) && canManageLifecycle;
 
-  // Fork this conversation into a new one in the same sandbox: the runtime's
-  // own `session.fork` (a capability, so a pi session shows no item). The fork
-  // carries the copied history; open it on the same project-session route.
+  // The capability gates the action; history is copied into an independent
+  // platform session rather than another runtime thread in this sandbox.
   const canFork = useRuntimeSupports('session.fork') && isProjectSession;
-  const forkSession = useForkSession();
+  const forkSession = useMutation({
+    mutationFn: ({ sessionId }: { sessionId: string }) =>
+      createProjectSession(projectId!, { fork_from_session_id: sessionId }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId ?? '') }),
+  });
 
   // Hoisted so the chip and the ⋯ item share one pending state and one confirm
   // dialog. `canManageLifecycle` is the client mirror of the reload route's own
@@ -423,16 +441,15 @@ export function SessionSiteHeader({
               disabled={forkSession.isPending}
               onClick={() =>
                 forkSession.mutate(
-                  { sessionId },
+                  { sessionId: projectSessionId! },
                   {
                     onSuccess: (fork) => {
+                      successToast('Conversation forked');
                       if (projectId && projectSessionId) {
-                        router.push(
-                          childSessionHref(
-                            `/projects/${projectId}/sessions/${projectSessionId}`,
-                            fork.id,
-                          ),
-                        );
+                        const href = uiRoutes().session(projectId, fork.session_id);
+                        router.prefetch(href);
+                        // nav-contract: prefetch-only — the new platform id exists only after create succeeds.
+                        router.push(href);
                       }
                     },
                     onError: (err) => {
@@ -830,7 +847,7 @@ export function SessionSiteHeader({
             sessionLabel={projectTitle}
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
-            onDeleted={() => router.push(`/projects/${projectId}`)}
+            onDeleted={() => router.push(uiRoutes().project(projectId))}
           />
         </>
       )}

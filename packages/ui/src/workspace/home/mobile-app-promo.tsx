@@ -47,7 +47,7 @@ const subscribeToNothing = () => () => { };
 
 /**
  * Introduces the Kortix mobile app on the project page, once per browser.
- * Same frame as "Connect your computer" (`features/tunnel/computer-connect.tsx`),
+ * Same frame as "Connect your computer" (`packages/ui/src/internal/tunnel/computer-connect.tsx`),
  * mirrored: the copy and the two store buttons first, the app shot beside
  * them. Every way out closes it for good (`mobile-app-promo-store.ts`).
  */

@@ -3,15 +3,22 @@
 The shared React component library for `apps/web`, Kortix Apps, the
 white-label demo and SDK hosts. Components are Tailwind v4 class strings themed
 by CSS variables. The whole session UI lives here, one module per
-responsibility (layout below); `apps/web` keeps a one-line re-export shim at
-each old path of a file that moved here.
+responsibility (layout below). `apps/web` imports it like any host: the module
+entries, the primitives, and a short list of deep paths (below).
+
+**Built with @kortix/ui:** [Lumen](../../apps/whitelabel-demo), a complete white-label agent
+product in its own brand. Every screen is a module of this package.
+
+<p align="center"><img src="https://github.com/kortix-ai/suna/raw/dev/apps/whitelabel-demo/public/screenshots/session.png" width="720" alt="Lumen: the Kortix session workspace in Lumen's brand" /></p>
 
 Install: not on npm yet. Inside kortix-ai/suna: `"@kortix/ui": "workspace:*"`.
 After the first npm release: `npm i @kortix/ui`.
-`react` and `react-dom` 18 or later are peers.
+`react` and `react-dom` 19 are peers (the PowerPoint preview needs React 19.2.7 or later).
 
 - Public docs: `apps/web/content/docs/sdk/ui.mdx` (https://kortix.com/docs/sdk/ui).
-- Agent skill: `skills/kortix-ui/SKILL.md`. Kortix sessions load the same file
+- Agent skill: `skills/kortix-ui/SKILL.md`, with `references/custom-dashboard.md`
+  (a whole dashboard), `references/modules.md` (every entry, its props, an example) and
+  `references/theming.md` (every theme key). Kortix sessions load the same files
   from `packages/starter/templates/managed/skills/kortix-ui/SKILL.md`
   (`kortix-ui` is in `KORTIX_MANAGED_SKILL_NAMES`, so the sandbox bake ships it).
   `src/skill.test.ts` fails when the copies (SKILL.md and `references/`) differ,
@@ -74,14 +81,15 @@ any prop gets these defaults:
 
 | Prop | Default without it |
 | --- | --- |
-| `strings` | English copy (`defaultUiStrings`; `chat` keys in `defaultChatStrings`) |
+| `strings` | English copy (`defaultUiStrings`) |
 | `link` | a plain `<a>`: every link is a full page load |
 | `image` | a plain `<img>` |
-| `navigation` | `defaultUiNavigation`: `push` / `replace` are full page loads, `usePathname` / `useSearchParams` read `window.location`, `useParams` returns `{}` |
+| `navigation` | `defaultUiNavigation`: `push` / `replace` are full page loads, `usePathname` / `useSearchParams` read `window.location`, `useParams` returns `{}`. `observesHistory: true` (Next.js): a session tab or query param the UI changes is written to history with no navigation; off (React Router), it goes through `useRouter` |
 | `i18n` | the bundled English catalog of `@kortix/ui/i18n` |
-| `useViewerId` | no signed-in user (`undefined`) |
+| `useViewerId` | no signed-in user (`undefined`): a one-person session names no sender and no "Stopped by". A session several people write in needs it |
 | `useBrand` | the Kortix marks |
-| `config` | `{ billingEnabled: false }` |
+| `config` | `{ connectorsEnabled: true, managedModelsEnabled: false, terminalEnabled: true, cliConnectEnabled: true, publicSharesEnabled: true, commandPaletteShortcut: false, settingsShortcut: false, accountApiEnabled: true }`. `config.cliConnectEnabled` (default true): false hides the Terminal's "Connect from your machine" bar (the `<origin>/install` installer and `kortix sessions connect`), for a host that serves no installer and ships no Kortix CLI. `config.publicSharesEnabled` (default true): false hides every control that mints or lists a public link (the Share dialog's public-link section, the Browser panel's Copy link and Manage links, the file and app viewers' Copy link), for a host that serves no page at `share.public_path` (`/share/session/<token>`). `config.accountApiEnabled` (default true): false for a host that fronts one operator key and blocks the account routes; then no IAM probe, account member or group list, billing or session-oversight request runs, the sharing pickers offer no "Specific people" option (the project's members are the operator's account), billing state stays empty, and every permission gate shows its control (the server enforces each route). The two shortcut flags say the host opens a command palette on ⌘K or settings on ⌘,; only then does the composer hint at them. `config.providerIconBaseUrl`: where the host serves provider logos (`<base>/<icon>.svg`); without it they load from models.dev, and the Kortix provider draws `useBrand`'s icon. Billing is the SDK flag `billingEnabled` of `createKortix({ backendUrl, getToken, billingEnabled })`, which every billing gate reads. It is for Kortix's own app: its upgrade actions open the Kortix plan dialog that apps/web mounts. A custom host leaves it off, so no upgrade control renders. |
+| `components` | no slots: a control that opens a missing slot is hidden (`ShareSessionModal`, `HomeAnnouncement`, `Wallpaper`, `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal`) |
 
 `strings` takes any subset of `UiStrings`. `MermaidRenderer`'s controls are
 English only.
@@ -103,18 +111,18 @@ import NextLink from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 
-const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
+const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams, observesHistory: true };
 const i18n: UiI18nHost = { useTranslations, useLocale };
 const useViewerId = () => useAuth().user?.id;
 
 <UiProvider
-  strings={{ confirm: t('confirm'), chat: { model: t('model') } }}
+  strings={{ confirm: t('confirm') }}
   link={NextLink}
   image={NextImage}
   navigation={navigation}
   i18n={i18n}
   useViewerId={useViewerId}
-  config={{ billingEnabled: true }}
+  config={{ managedModelsEnabled: true }}
 >
   {app}
 </UiProvider>
@@ -123,10 +131,15 @@ const useViewerId = () => useAuth().user?.id;
 `image={NextImage}` needs `images.remotePatterns` for every remote logo URL.
 
 The session UI reads the project and session it renders from
-`SessionIdsProvider`, never from route params. Mount one around each session
-view: `<SessionIdsProvider projectId={projectId} sessionId={sessionId}>`.
+`SessionIdsProvider`, never from route params. `SessionThread`,
+`SessionWorkspace` and `ProjectHome` mount it themselves, together with the
+SDK's project scope (`internal/project-scope.tsx`). Around any other block,
+mount `KortixProjectProvider` (`@kortix/sdk/react`) and
+`<SessionIdsProvider projectId={projectId} sessionId={sessionId}>`.
 `useSessionIds()` reads it; without a provider both ids are `undefined`, and
-components that need them render nothing.
+components that need them render nothing. The root entry imports nothing from
+`@kortix/sdk`: `scripts/build.mjs` loads `dist/providers/session-ids.js` in
+plain Node to keep it so.
 
 Telemetry is module level, so plain functions report too. Call
 `setUiTelemetry` once at module load; omitted functions keep their default
@@ -152,7 +165,7 @@ without host hooks. The catalog ships in every bundle that imports
 passes its own hooks.
 
 Two more host-free helpers: `lazyClient(load, { fallback })`
-(`@kortix/ui/lib/lazy-client`) loads a component on the client only, the
+(from the `@kortix/ui` root) loads a component on the client only, the
 `next/dynamic(..., { ssr: false })` contract. `ErrorBoundary` and
 `ErrorBoundaryFallback` (`@kortix/ui/error-boundary`) report to
 `captureException`.
@@ -164,56 +177,69 @@ The root `@kortix/ui` barrel holds only light core primitives. Toasts need one
 `<Toaster />` from `@kortix/ui/toast` at the root; `IconProvider`
 (`@kortix/ui/icon-provider`) sets the house icon weight.
 
-## Session thread
+### Routes
 
-Every part of `@kortix/ui/session` needs `@kortix/sdk` and `@tanstack/react-query`
-5 (`@kortix/sdk/react` imports it; it is an optional peer, so npm does not
-warn when it is missing and the bundler fails instead):
-`npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod`
-(the last two are the optional `@kortix/sdk` peers the thread's genui blocks need),
-plus one `QueryClientProvider`.
+Every URL the components link to comes from one route table, `setUiRoutes` (`@kortix/ui`), called once at module load. The defaults are Kortix's own paths: `project` `/projects/<id>`, `session` `/projects/<id>/sessions/<sessionId>`, `sessions` `/projects/<id>/sessions` (`?view=archived|deleted`), `files` `/projects/<id>/files`, `drive` `/projects/<id>/drive`, `apps` `/projects/<id>/apps`, `members` `/projects/<id>/members`, `sandboxSettings` `/projects/<id>/config?section=sandbox`, `customize` `/projects/<id>/customize/<page>` (agents, skills, connectors, triggers, reminders, models, secrets, review, settings). Return your own path for a page you serve elsewhere. Return `null` for a page you do not serve: every link to it is hidden. `project` and `session` cannot be null.
+
+## Modules
+
+Every part of a Kortix session is a module with one entry. Its curated names
+are the public API (semver). Each needs `@kortix/sdk` and `@tanstack/react-query`
+5 (an optional peer, shared with the host so both read one `QueryClient`: the bundler
+fails without it, npm does not warn), one
+`QueryClientProvider`, and, for the thread, `@openuidev/lang-core@0.3.1` and `zod`:
+`npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod @phosphor-icons/react@2.1.10`
+(the icon set, at the version `@kortix/ui` pins, for your own icons).
+
+| Entry | What it is | Minimal mount |
+| --- | --- | --- |
+| `./workspace` | `SessionWorkspace` (thread + resizable side panel), `ProjectHome`, `ProjectSessionList`, `ProjectFilesView`, `ShareSessionModal` | `<SessionWorkspace session={useSession(p, s)} />` |
+| `./session` | `SessionThread`, turns, `ToolRegistry`, prompts, pickers | `<SessionThread session={useSession(p, s)} />` |
+| `./composer` | `ComposerChatInput` and the send pipeline | in the project scope |
+| `./session-panel` | `SessionPanelProvider`, `ActionPanel`, `SessionFiles`, `SessionChanges` | `SessionPanelProvider` |
+| `./files`, `./file-viewer` | project and sandbox files, `FilePreviewHost`; `FileViewer`, `FileContentRenderer` | `ProjectFilesView`; `<FileViewer content fileName />` |
+| `./terminal`, `./browser` | `SessionTerminal`; `SessionBrowser`, `BrowserLanding` | a mounted session's runtime ids |
+| `./markdown`, `./genui`, `./diff`, `./changes` | `UnifiedMarkdown`, GenUI blocks, `DiffView`, `ChangeList` | none |
+| `./apps`, `./access`, `./customize` | App frames; sharing and roles; project configuration pages | `projectId` |
+| `./theme`, `./i18n`, `./icons` | the typed theme; translations; glyphs | none |
 
 ```tsx
 import { useSession } from '@kortix/sdk/react';
-import { SessionThread } from '@kortix/ui/session';
+import { SessionWorkspace } from '@kortix/ui/workspace';
 
-<SessionThread session={useSession(projectId, sessionId)} />
-```
-
-`SessionThread` is the thread apps/web renders: transcript, tool rows,
-permission and question prompts, the composer with its model and agent
-pickers. `hideHeader` hides its title row; `readOnly` hides the composer. The
-parent sets the height. `@kortix/ui/session` also exports `ModelPicker` and
-`AgentPicker` for a form outside a session.
-
-`src/session/index.ts` lists the building blocks for a host that composes its
-own layout: `UserMessage`, `ThrottledMarkdown`, `UnifiedMarkdown`,
-`ToolPartRenderer`, `SessionChatInput`, `ModelSelector`, `AgentSelector`,
-`SessionPermissionPrompt`, `QuestionPrompt`, `TurnErrorDisplay`,
-`SessionBusyIndicator`, `SessionStartingLoader`.
-
-A custom tool row replaces the built-in one for a tool name:
-
-```tsx
-import { BasicTool, ToolRegistry, type ToolProps } from '@kortix/ui/session';
-
-function LookupRow({ call }: ToolProps) {
-  return <BasicTool trigger={`Lookup ${(call.input as { query: string }).query}`} />;
+export function Session({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  return <SessionWorkspace session={useSession(projectId, sessionId)} />;
 }
-ToolRegistry.register('lookup', LookupRow);
 ```
 
-A fully custom transcript uses `renderParts` from `@kortix/sdk/react`.
+`SessionThread` alone shows file and preview opens in a dialog when no side
+panel is mounted. `ProjectHome` sends by itself (creates the session with the
+prompt and navigates to `/projects/<id>/sessions/<sessionId>`); `beforeSend`
+gates it. `ToolRegistry.register('<tool>', Row)` replaces a tool row.
 
-A whole dashboard or App (client, providers, theme, project and session lists,
-the embedded thread, a custom tool row, an App's viewer sign-in):
-`skills/kortix-ui/references/custom-dashboard.md`. Its samples are copies of a
-Vite + React 19 app that type-checks, builds and runs against a live API.
+Compose a custom workspace at any depth: your own column inside
+`SessionWorkspace` (`children`), the panel alone (`SessionPanelProvider` +
+`ActionPanel`), single blocks inside `KortixProjectProvider` +
+`SessionIdsProvider`, or every part yourself with `renderParts` from
+`@kortix/sdk/react`.
+
+Deep paths have no semver. `@kortix/ui/internal/*` and
+`@kortix/ui/<module>/<path>` exist only for the files Kortix's own apps import
+(`scripts/deep-exports.json`). A host imports the entries and the primitives.
+
+A whole dashboard (client, router adapters, theme, sidebar with the session
+list, project home, session workspace, Files page, custom tool row, App
+sign-in): `skills/kortix-ui/references/custom-dashboard.md`. Its samples are
+copies of a Vite + React 19 app that type-checks, builds and runs against a
+live API. Every entry with its props and an example: `references/modules.md`.
 
 ## Layout
 
 `src/<module>/` holds one responsibility each. A file imports its own module or
-a lower layer; `internal` has no public entry and no semver.
+a lower layer; `internal` has no public entry and no semver. The static upward
+imports that still exist (26, mostly `customize` → `workspace` and `internal` →
+`customize`) are listed in `src/module-cycles.test.ts` (`KNOWN_UPWARD`): a new
+one fails the test, and the list only shrinks.
 
 | Layer | Module | Entry |
 | --- | --- | --- |
@@ -229,8 +255,11 @@ a lower layer; `internal` has no public entry and no semver.
 "Sandbox files" are a live session's workspace (`files/runtime`); "project
 files" are the git-backed repo (`files/project`). Each entry is an explicit
 barrel (no `export *`), listed in `scripts/gen-exports.mjs` `ENTRIES`. Every
-other module file also gets a deep key (`./<module>/<path>`) for apps/web's
-shims; deep keys carry no semver.
+other module file is reachable through its entry only. A deep key
+(`./<module>/<path>`, no semver) exists for each file in
+`scripts/deep-exports.json`: the module files apps/web, the white-label demo and
+the repo tests import today. `tests/unit/ui-deep-exports.test.ts` keeps that list
+equal to the imports, so a new deep import is a deliberate edit.
 
 ## Theming
 
@@ -283,9 +312,10 @@ How it stays themable:
 
 ## Known issues
 
-- React 19: npm prints `ERESOLVE overriding peer dependency` for `cmdk@0.2.1`
-  (React 18 peer) and nests `@radix-ui/react-dialog@1.0.0` under it. The install
-  succeeds. A host with `strict-peer-dependencies` must allow it. `cmdk` 1.x
+- Server rendering: the entries that render sessions or files (`session`, `composer`, `session-panel`, `workspace`, `files`, `file-viewer`, `markdown`, `genui`, `customize`) import CSS (KaTeX and others) from JS, so plain Node cannot evaluate them (`ERR_UNKNOWN_FILE_EXTENSION ".css"`). A Vite SSR host adds `ssr: { noExternal: ['@kortix/ui'] }`. A Next.js host lists `@kortix/ui` in `transpilePackages`. Or load those blocks on the client only (`lazyClient`). The root, `theme`, `i18n`, `icons`, `diff`, `changes`, `terminal`, `browser`, `apps` and `access` entries evaluate in Node.
+- `cmdk@0.2.1` declares a React 18 peer and nests `@radix-ui/react-dialog@1.0.0`.
+  `Command` works on React 19. A host with `strict-peer-dependencies` must allow
+  `cmdk`'s React peer. `cmdk` 1.x
   changes the selection model `command.tsx` is tuned to, and `apps/web` imports
   `cmdk` directly, so the upgrade is its own change.
 
@@ -297,9 +327,8 @@ How it stays themable:
 - Imports inside the package are relative. Never import `apps/web` code.
 - `@kortix/shared` and `@kortix/manifest-schema` are private: they are
   devDependencies, and `scripts/build.mjs` inlines what dist imports from them.
-- Edit a component here, never its `apps/web` shim. A shim is only
-  `export * from '@kortix/ui/<name>'` (plus `'use client'` and the default
-  re-export when the component has them).
+- Edit a component here. `apps/web` keeps no re-export shims
+  (`tests/unit/web-no-ui-shims.test.ts`); it imports `@kortix/ui/<name>` or the entry.
 - `package.json` `exports` is generated: `pnpm --filter @kortix/ui gen-exports`.
   `src/exports.test.ts` fails on drift and on an export target that does not exist.
 - `src/styles/tokens.css`, `src/styles/fonts.css` and the `theme` region of

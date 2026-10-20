@@ -8,21 +8,31 @@ import {
 
 describe('projectChildSessionHref', () => {
   test('deep-links from a project session route to a child runtime session', () => {
-    expect(projectChildSessionHref('/projects/proj-1/sessions/route-session-1', 'ses_child1')).toBe(
+    expect(projectChildSessionHref({ projectId: 'proj-1', sessionId: 'route-session-1' }, 'ses_child1')).toBe(
       '/projects/proj-1/sessions/route-session-1?rs=ses_child1',
     );
   });
 
   test('encodes the child session id query value', () => {
-    expect(projectChildSessionHref('/projects/p/sessions/s', 'ses_child/one')).toBe(
+    expect(projectChildSessionHref({ projectId: 'p', sessionId: 's' }, 'ses_child/one')).toBe(
       '/projects/p/sessions/s?rs=ses_child%2Fone',
     );
   });
 
-  test('returns null outside a project session route', () => {
-    expect(projectChildSessionHref('/projects/p', 'ses_child1')).toBeNull();
-    expect(projectChildSessionHref('/marketplace', 'ses_child1')).toBeNull();
-    expect(projectChildSessionHref('/projects/p/sessions/s', undefined)).toBeNull();
+  test('returns null outside a session', () => {
+    expect(projectChildSessionHref({ projectId: 'p' }, 'ses_child1')).toBeNull();
+    expect(projectChildSessionHref({}, 'ses_child1')).toBeNull();
+    expect(projectChildSessionHref({ projectId: 'p', sessionId: 's' }, undefined)).toBeNull();
+  });
+
+  test('follows the host session route (setUiRoutes)', async () => {
+    const { setUiRoutes } = await import('../../../lib/routes');
+    setUiRoutes({ session: (p, s) => `/app/${p}/chat?id=${s}` });
+    try {
+      expect(projectChildSessionHref({ projectId: 'p', sessionId: 's' }, 'c1')).toBe('/app/p/chat?id=s&rs=c1');
+    } finally {
+      setUiRoutes({});
+    }
   });
 });
 

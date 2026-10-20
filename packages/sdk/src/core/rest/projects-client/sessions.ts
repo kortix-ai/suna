@@ -3,7 +3,7 @@
 import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { currentSavedCopyStore } from '../../session-sync/saved-copy-store';
-import { noteSessionStopped } from '../../http/session-stopped';
+import { noteSessionDeleted, noteSessionStopped } from '../../http/session-stopped';
 import { isSessionLogPage } from '../../session-log/guard';
 import { loadSessionLogPage, type SessionLogPage, type SessionLogPageQuery } from '../../session-log/source';
 import type { AuditEvent } from './audit';
@@ -65,12 +65,14 @@ export interface ProjectSessionInitiator {
 }
 
 export interface ProjectSession {
+  /** Conversation model from the durable log; creation pin until one is recorded. Absent on older APIs. */
+  model?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;
   branch_name: string;
   base_ref: string;
-  sandbox_provider: 'daytona' | 'platinum' | 'e2b' | null;
+  sandbox_provider: 'platinum' | 'daytona' | null;
   /** Null until the session has a sandbox. */
   sandbox_id: string | null;
   sandbox_url: string | null;
@@ -98,6 +100,13 @@ export interface ProjectSession {
   labels?: string[];
   agent_name: string | null;
   status: ProjectSessionStatus;
+  /** Canonical work activity, independent of computer lifecycle. Absent on older servers. */
+  working?: {
+    state: 'working' | 'idle';
+    since: string | null;
+    turn_token: string | null;
+    pending_delivery: boolean;
+  };
   error: string | null;
   metadata: ProjectSessionMetadata;
   /** The runtime's conversation tree. Served by APIs since W4. */
@@ -167,8 +176,8 @@ export interface ProjectSession {
  *
  * Three hosts hand-rolled the identical `typeof meta.spawned_by_session ===
  * 'string'` cast over an `unknown` bag
- * (`apps/web/src/components/projects/session-label.ts:61`,
- * `apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359`,
+ * (`packages/ui/src/session/actions/session-label.ts:61`,
+ * `packages/ui/src/session/actions/project-session-list-helpers.ts:359`,
  * `apps/tui/src/lib/session-groups.ts:145`). `metadata` is jsonb, so a
  * malformed row is possible and a non-string must never escape as a session
  * id. A self-referential link is rejected too: a session that is its own
@@ -229,6 +238,8 @@ export interface PendingSessionPrompt {
  * The later `/start` call is an idempotent readiness/resume operation.
  */
 export interface CreateProjectSessionInput {
+  /** Authorized platform session whose saved conversation is copied before boot. */
+  fork_from_session_id?: string;
   base_ref?: string;
   agent_name?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */
@@ -251,7 +262,7 @@ export interface CreateProjectSessionInput {
   labels?: string[];
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
-  provider?: 'daytona' | 'platinum' | 'e2b';
+  provider?: 'platinum' | 'daytona';
   /** @deprecated Withdrawn — persistent machines left the product. The API ignores it. Removed in the next major. */
   persistent_machine?: boolean;
   branch_already_created?: boolean;
@@ -314,6 +325,8 @@ export interface ClaimWarmProjectSessionInput {
 /** One conversation in the session runtime's tree (the root and its subagent children). */
 export interface ProjectRuntimeSession {
   id: string;
+  /** Explicit server-registered fork provenance, never inferred from titles. */
+  fork_source_id?: string;
   title: string | null;
   parent_id: string | null;
   project_id: string | null;
@@ -717,7 +730,7 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   // `session_id` is exactly the route param those navigations land on.
   // Skip when an initial_prompt is set: those sessions get a server-side reply,
   // so they must mount the real chat to stream it (the shell would hold it back).
-  if (!input?.initial_prompt) {
+  if (!input?.initial_prompt && !input?.fork_from_session_id) {
     markSessionFresh((session as ProjectSession | undefined)?.session_id);
   }
   return session;
@@ -1706,6 +1719,7 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
   );
   // The device's saved copy of a deleted session would only take space.
   void currentSavedCopyStore()?.remove(projectId, sessionId);
+  noteSessionDeleted(sessionId);
   return result;
 }
 

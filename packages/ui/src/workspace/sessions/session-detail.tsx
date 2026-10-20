@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
 import { InfoBanner } from '../../primitives/info-banner';
 import { cn } from '../../internal/lib/utils';
@@ -42,7 +43,7 @@ export function SessionDetail({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const access = sessionAccessMeta(session, tI18nComplete);
   const fields = sessionDetailFields(session, formatted, tI18nComplete);
-  const href = `/projects/${projectId}/sessions/${session.session_id}`;
+  const href = uiRoutes().session(projectId, session.session_id);
 
   return (
     <div className="space-y-5 px-4 py-5">

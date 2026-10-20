@@ -37,22 +37,24 @@ file (the shadow ladder that never existed, the press value) are recorded in
   hooks in `packages/ui/src/hooks/`, the session thread in `packages/ui/src/session/`
   (`@kortix/ui/session`). `apps/web`, Kortix Apps, the white-label demo and SDK hosts
   render the same files (decision K9 in [`decisions.md`](../kortix-brand/references/decisions.md)).
-- **The shim rule.** `apps/web/src/components/ui/<name>.tsx` is a one-line shim:
-  `export * from '@kortix/ui/<name>'`, plus `'use client'` and
-  `export { default } from '@kortix/ui/<name>'` when the component has them. Feature
-  code keeps importing `@/components/ui/<name>`. Edit the component in
-  `packages/ui`, never the shim. Never add logic, a prop or a class to a shim.
-- **Mock the package path in tests.** bun mocks by resolved file, and components
-  inside `packages/ui` import each other relatively, so `mock.module('@/components/ui/<name>')`
-  misses them. Mock `'@kortix/ui/<name>'`; keep a twin `@/components/ui/<name>` mock
-  only when the code under test imports the shim path.
+- **Import the package path.** apps/web imports `@kortix/ui/<name>` for a primitive
+  and `@kortix/ui/<entry>` (`session`, `files`, `workspace`, …) for a module. apps/web
+  has no re-export shims: `tests/unit/web-no-ui-shims.test.ts` fails on a file that only
+  re-exports `@kortix/ui`. Edit the component in `packages/ui`.
+- **Mock the file the import resolves to.** bun mocks by resolved file:
+  `mock.module('@kortix/ui/<name>')` reaches the primitive for apps/web and for the
+  package files that import it relatively. A barrel import (`@kortix/ui`,
+  `@kortix/ui/session`) loads every module of the barrel, so a partial mock of one of
+  them must keep the module's other exports:
+  `const real = await import('@kortix/ui/button'); mock.module('@kortix/ui/button', () => ({ ...real, Button: Stub }))`.
 - **A new primitive** goes in `packages/ui/src/primitives/` with relative imports
   only (never `@/`, never `next/*`, never an app store), then
-  `pnpm --filter @kortix/ui gen-exports`, then a shim in `apps/web` when web code
-  imports it. Copy for the user goes through `useUiStrings()`; a link goes through
-  `useUiLink()`. `npx shadcn add <x>` in `apps/web` still writes into the shim
-  folder (`apps/web/components.json`): move the file to `packages/ui`, rewrite its
-  imports to relative paths, and leave a shim behind.
+  `pnpm --filter @kortix/ui gen-exports`. apps/web imports it as `@kortix/ui/<name>`.
+  Copy for the user goes through `useUiStrings()`; a link goes through
+  `useUiLink()`. `npx shadcn add <x>` in `apps/web` writes into
+  `apps/web/src/components/ui/` (`apps/web/components.json`): move the file to
+  `packages/ui/src/primitives/`, rewrite its imports to relative paths, and import it
+  from `@kortix/ui/<name>`.
 - **Outside `apps/web`** (a Kortix App, an SDK host): follow the package skill,
   [`packages/ui/skills/kortix-ui/SKILL.md`](../../../packages/ui/skills/kortix-ui/SKILL.md).
   A dashboard or App over Kortix sessions:
@@ -99,9 +101,9 @@ These are **mandatory** for their job. Import from the paths below; never reimpl
 | Inline alerts | `packages/ui/src/primitives/info-banner.tsx` | `tone` + optional `icon` + `title` |
 | Search fields | `packages/ui/src/primitives/input-group.tsx` | `InputGroupSearch` + `InputGroupSearchInput`. Every input is the one field surface: `bg-popover`, border, `rounded-md`. `variant="popover"` is deprecated and ignored (D4j) |
 | Forms in panels | `packages/ui/src/primitives/field.tsx` | `Field`, `FieldLabel`, `FieldGroup`, `FieldDescription` |
-| Empty / error states | `apps/web/src/features/layout/section/empty-state.tsx`, `error-state.tsx` | `size="sm"` in customize sections. An empty state is one muted line and an optional hint, with no icon tile and no card (D4g) |
+| Empty / error states | `packages/ui/src/primitives/empty-state.tsx`, `error-state.tsx` | `size="sm"` in customize sections. An empty state is one muted line and an optional hint, with no icon tile and no card (D4g) |
 | Confirm destructive | `packages/ui/src/primitives/confirm-dialog.tsx` | **Mandatory before any destructive mutation** — including `DropdownMenuItem variant="destructive"` items (see `secrets-view.tsx` delete, `sections/view/gateway/gateway-keys.tsx` revoke). Only accepted alternative: the inline Cancel/confirm button swap used for channel disconnects (`channels-view.tsx`). Never mutate from a single click |
-| Loading / pending spinners | `packages/ui/src/primitives/loading.tsx` | `import Loading from '@/components/ui/loading'` — default `size-4`; use `className="size-4 shrink-0"` in dense buttons. **Never** `CircleNotchIcon`, `SpinnerIcon`, or other icons |
+| Loading / pending spinners | `packages/ui/src/primitives/loading.tsx` | `import Loading from '@kortix/ui/loading'` — default `size-4`; use `className="size-4 shrink-0"` in dense buttons. **Never** `CircleNotchIcon`, `SpinnerIcon`, or other icons |
 
 Also reach for: `Button`, `ButtonGroup`, `Input`, `Select`, `Switch`, `Skeleton`, `Tabs` / `TabsListCompact`, `Table`, `InlineMeta`, `UserAvatar`, `EntityAvatar`.
 
@@ -113,10 +115,10 @@ Paths are relative to `apps/web/src/`. The values and the copy are in `kortix-br
 | --- | --- | --- |
 | The route has not mounted its shell (sign-in, project switch) | `ProjectPendingScreen` (`components/projects/project-pending-screen.tsx`) | A skeleton of a page you cannot draw |
 | A list loads inside a mounted shell and the row shape is known | `Skeleton` rows | A spinner for a list |
-| A page or list failed to load | `ErrorState size="sm"` (`features/layout/section/error-state.tsx`) inside the host panel, with a "Try again" action | `InfoBanner` for a load failure, or a wrapper box around it |
+| A page or list failed to load | `ErrorState size="sm"` (`packages/ui/src/primitives/error-state.tsx`) inside the host panel, with a "Try again" action | `InfoBanner` for a load failure, or a wrapper box around it |
 | An inline alert in a view that did load (a connection, a warning) | `InfoBanner` with a `tone` | A hand-colored banner |
 | A list has no items | `EmptyState size="sm"` unmodified: one muted line and an optional hint. A first-run list adds `PixelKortixMark` (`packages/ui/src/primitives/pixel-kortix-mark.tsx`) as a sibling above it | An icon tile, a card, a `className` override of its slots, a new prop |
-| People and agents with a role | `AccessRow` (`features/workspace/shared/access/access-row.tsx`), grouped "People" then "Agents" under a `Label` | A hand-built `li`, a kind badge, a `[&>div]:` selector |
+| People and agents with a role | `AccessRow` (`packages/ui/src/access/access/access-row.tsx`), grouped "People" then "Agents" under a `Label` | A hand-built `li`, a kind badge, a `[&>div]:` selector |
 | Any form field, in a panel or in a `Modal` | `Field`, `FieldLabel`, `FieldGroup` (`packages/ui/src/primitives/field.tsx`) | A raw `<label>` beside an `Input` |
 | A mutation finished | `successToast` or `errorToast` from `packages/ui/src/primitives/toast.tsx` | An inline "Saved" line |
 | A new capability page | `CapabilityPageShell` | `CustomizeSectionWrapper` (legacy, `customize/sections/view/` only) |
@@ -138,7 +140,7 @@ relative to `apps/web/src/features/workspace/` unless given in full.
 | **`packages/ui/src/workspace/sessions/project-sessions-view.tsx`** | `TabsListCompact` filter tabs |
 | **`customize/sections/view/channels-view.tsx`** | `Table` for integrations, `Modal` for connect flows, `InfoBanner` for connected state |
 | **`packages/ui/src/internal/tunnel/computer-connect.tsx`** | Split art modal (beams art beside the content), pinned `lg` actions, one copy button that swaps to a check in place (#8491) |
-| **`apps/web/src/components/setup-links/connector-handshake.tsx`** | Handshake tile: a catalogue logo fills its tile, a drawn mark takes one hairline (one boundary per tile, #8421) |
+| **`packages/ui/src/markdown/setup-links/connector-handshake.tsx`** | Handshake tile: a catalogue logo fills its tile, a drawn mark takes one hairline (one boundary per tile, #8421) |
 | **`packages/ui/src/primitives/tabs.tsx`** | Segmented `TabsList` (the default): recessed track, raised chip, concentric radii, `p-[2px]` pixel snap (D4b, D4c) |
 | **`packages/ui/src/primitives/menu-recipe.ts`** | Menu row grid; `MENU_PANEL_STATIC` and `FLOATING_PANEL_SURFACE` are instant, `MENU_PANEL` and `FLOATING_PANEL` are for the hover card (D4a) |
 | **`apps/web/src/components/projects/project-pending-screen.tsx`** | The page-level loading mark (D4h) |
@@ -151,7 +153,7 @@ is the current shell for capability pages. The older `CustomizeSectionWrapper`
 (`customize/sections/component/section-wrapper.tsx`) still backs the
 `customize/sections/view/*` screens.
 
-**Other references:** tinted-icon tiles → `packages/ui/src/workspace/projects/schedule-view.tsx`; sidebar → `project-sidebar/project-sidebar.tsx`.
+**Other references:** tinted-icon tiles → `packages/ui/src/customize/triggers/schedule-view.tsx`; sidebar → `project-sidebar/project-sidebar.tsx`.
 
 ## Layout & responsiveness
 
@@ -332,7 +334,7 @@ Icons in buttons: `size-3.5 shrink-0` (dense) or `size-4` (header). Always `shri
 
 ### Button groups — the default for buttons in a row
 
-**Two or more buttons side by side that serve one surface are a `ButtonGroup`** (`@/components/ui/button-group`). A toolbar cluster, a back/forward pair, a header's action set and a viewer's close cluster are all groups. Do not line buttons up with `flex gap-1` and hand-tuned `ml-*`: the group owns the spacing (`gap-px`) and joins the corners of neighbours, so a row of controls reads as one object instead of loose icons.
+**Two or more buttons side by side that serve one surface are a `ButtonGroup`** (`@kortix/ui/button-group`). A toolbar cluster, a back/forward pair, a header's action set and a viewer's close cluster are all groups. Do not line buttons up with `flex gap-1` and hand-tuned `ml-*`: the group owns the spacing (`gap-px`) and joins the corners of neighbours, so a row of controls reads as one object instead of loose icons.
 
 | Rule | Why |
 | --- | --- |
@@ -350,11 +352,11 @@ Reference implementations:
 | File | Group |
 | --- | --- |
 | `app/[locale]/(public)/share/session/[token]/page.tsx` | Header actions, all `secondary`: open app, full screen, download or copy link, Open in Kortix |
-| `features/session/action-panel/shared/sandbox-browser-chrome.tsx` | Back / forward, `ghost`; Reload and the pill's trailing actions inside the address pill |
-| `features/session/action-panel/easy/viewer-actions.tsx` (`ViewerPathPill`) | Refresh, copy, copy link inside the path pill, `ghost` |
-| `features/session/action-panel/easy/app-preview.tsx` | Open in new tab, full screen, close, `ghost` |
-| `features/session/action-panel/easy/file-viewer.tsx`, `file-preview.tsx` | Save as PDF or Present, Download, full screen, close, `ghost` |
-| `features/changes/change-list.tsx` | Unified / split diff toggle, `outline` |
+| `packages/ui/src/browser/sandbox-browser-chrome.tsx` | Back / forward, `ghost`; Reload and the pill's trailing actions inside the address pill |
+| `packages/ui/src/files/viewer/viewer-actions.tsx` (`ViewerPathPill`) | Refresh, copy, copy link inside the path pill, `ghost` |
+| `packages/ui/src/session/panel/easy/app-preview.tsx` | Open in new tab, full screen, close, `ghost` |
+| `packages/ui/src/files/viewer/file-viewer.tsx`, `file-preview.tsx` | Save as PDF or Present, Download, full screen, close, `ghost` |
+| `packages/ui/src/changes/change-list.tsx` | Unified / split diff toggle, `outline` |
 
 ## Cursor affordance
 
@@ -378,12 +380,11 @@ Reference implementations:
 `react-icons`, `@mynaui/icons-react`, and `@icons-pack/react-simple-icons` are
 removed and blocked by ESLint (`no-restricted-imports`).
 
-- **House glyphs (D4i).** `apps/web/src/features/icon/icons` holds the glyphs Phosphor lacks and the third-party marks. A house glyph uses `currentColor` and takes its size from `className`. When you add one, replace every Phosphor equivalent in the same change.
+- **House glyphs (D4i).** `packages/ui/src/internal/icons` (the glyphs the package renders) and `apps/web/src/features/icon/icons` (the ones only apps/web renders) hold the glyphs Phosphor lacks and the third-party marks. A house glyph uses `currentColor` and takes its size from `className`. When you add one, replace every Phosphor equivalent in the same change.
 - Always import the `*Icon`-suffixed exports: `PlusIcon`, `MagnifyingGlassIcon`,
   `CaretRightIcon` — never the deprecated bare names (`Plus`).
 - **Never pass a `weight` prop.** One constant governs the whole app:
-  `DEFAULT_ICON_WEIGHT` in `packages/ui/src/lib/icon-config.ts` (currently `bold`;
-  `apps/web/src/lib/icons/icon-config.ts` is a re-export shim, never edit it).
+  `DEFAULT_ICON_WEIGHT` in `packages/ui/src/lib/icon-config.ts` (currently `bold`).
   Change it, save, and every icon flips; commit it and production renders the
   same. There is no runtime toggle and **no dev/prod branching** — the constant
   is the single source of truth in every environment. Compare all six weights
@@ -504,7 +505,7 @@ child `absolute inset-0`) so they overlap and the blur bridges the crossfade.
 Confirmed status colour stays a `kortix-*` token (`text-kortix-green`), never raw
 palette. Ship a `prefers-reduced-motion` branch — drop the scale and blur, keep
 the opacity. **Reference:** `CopyButton` in
-`apps/web/src/components/markdown/copy-button.tsx`.
+`packages/ui/src/markdown/copy-button.tsx`.
 ## Spacing cheat sheet (from reference views)
 
 | Layer | Classes |
@@ -600,7 +601,7 @@ Destructive confirms → `ConfirmDialog`, not a red-styled `Modal` trigger.
 **No icon is ever a spinner.** Not `CircleNotchIcon`, not `SpinnerIcon`, not `SpinnerGapIcon`, not any other Phosphor glyph, whatever it is aliased to (`Loader`, `Loader2`, `IconLoader`, …). If you catch yourself writing `animate-spin` on an icon, the answer is `Loading`. `kortix-icons.ts` deliberately exports **no** loader icon so the semantic layer can't offer you one.
 
 ```tsx
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
 // Button pending (replaces action icon)
 <Button disabled={pending}>
@@ -650,7 +651,7 @@ Standard content block (`agents-page.tsx` pattern):
 - ✅ Destructive actions → `ConfirmDialog` (or the inline two-step Cancel/confirm swap, `channels-view.tsx`). ❌ firing a delete/revoke mutation directly from a `variant="destructive"` click.
 - ✅ Tooltips → `Hint`. ❌ `Tooltip` primitives in features.
 - ✅ Two or more buttons in a row on one surface → `ButtonGroup`, one variant, close `X` included. ❌ `flex gap-1` rows of loose buttons, ❌ `ml-*` / dividers between members, ❌ a group of one, ❌ grouping a modal's Cancel + Confirm.
-- ✅ Toasts → `@/components/ui/toast` helpers. ❌ `@/lib/toast` (deleted), raw sonner, `toast.success()`.
+- ✅ Toasts → `@kortix/ui/toast` helpers. ❌ `@/lib/toast` (deleted), raw sonner, `toast.success()`.
 - ✅ Badges → `<Badge size="sm" variant="…">`. ❌ hand-rolled chip spans.
 - ✅ Status → tinted icon tile + optional `Badge`. ❌ raw palette icon colors.
 - ✅ Color → `kortix-*` + semantic tokens. ❌ `text-emerald-600`, `bg-amber-500`.

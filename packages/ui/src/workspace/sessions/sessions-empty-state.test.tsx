@@ -5,6 +5,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { PIXEL_KORTIX_ROWS, PixelKortixMark } from '../../primitives/pixel-kortix-mark';
+import { UiProvider } from '../../providers/ui-provider';
 
 import { SessionsEmptyState } from './sessions-empty-state';
 
@@ -37,6 +38,17 @@ describe('SessionsEmptyState', () => {
     const text = html.indexOf('Sessions you start will show up here');
     expect(text).toBeGreaterThan(-1);
     expect(html.indexOf('<svg')).toBeGreaterThan(text);
+  });
+
+  test("a white-label host's icon replaces the Kortix mark", () => {
+    const useBrand = () => ({ app_name: 'Acme', icon_url: 'data:image/svg+xml,acme' });
+    const html = renderToStaticMarkup(
+      <UiProvider useBrand={useBrand}>
+        <SessionsEmptyState />
+      </UiProvider>,
+    );
+    expect(html).toContain('src="data:image/svg+xml,acme"');
+    expect(html).not.toContain('<rect');
   });
 
   test('offers no button — both lists already have a New session control', () => {

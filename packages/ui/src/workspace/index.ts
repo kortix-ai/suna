@@ -46,9 +46,16 @@ export {
 export { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-body';
 export { InstantSessionShell } from './instant-session-shell';
 export { ProjectFilesView } from './layout/project-files-view';
-export { ProjectHome } from './layout/project-home';
+export { ProjectHome, type ProjectHomeSendOptions } from './layout/project-home';
+export { useProjectHomeSend, type UseProjectHomeSendOptions } from './layout/use-project-home-send';
 export { SavedSessionSkeleton } from './saved-session-skeleton';
-export { SessionLayout as SessionWorkspace } from './session-workspace';
+export {
+  SessionLayout,
+  SessionWorkspace,
+  type SessionLayoutProps,
+  type SessionWorkspaceProps,
+} from './session-workspace';
 export { ProjectSessionsView } from './sessions/project-sessions-view';
 export { ProjectSessionList } from './sidebar/project-session-list';
 export { ProjectSidebar } from './sidebar/project-sidebar';
+export { ShareSessionModal } from './sidebar/modal/share-session-modal';

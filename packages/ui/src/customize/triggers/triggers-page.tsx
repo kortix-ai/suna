@@ -1,6 +1,6 @@
 'use client';
 
-import { ScheduleView } from '../../workspace/projects/schedule-view';
+import { ScheduleView } from './schedule-view';
 
 /**
  * The page body for /projects/[id]/triggers — the capability tab that

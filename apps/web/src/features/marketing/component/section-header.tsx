@@ -1,5 +1,5 @@
 import { Reveal } from '@/components/home/reveal';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 type Props = {
   eyebrow: string;

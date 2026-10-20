@@ -19,7 +19,7 @@ import { EmptyState } from '../../../primitives/empty-state';
 import { ErrorState } from '../../../primitives/error-state';
 import { FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
-import { useUiPathname, useUiSearchParams } from '../../../providers/ui-provider';
+import { useUiPathname, useUiSearchParams, useUiShallowNavigate } from '../../../providers/ui-provider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../api/runtime-files';
 import { useProjectContext } from '../context';
@@ -40,7 +40,7 @@ import { DriveGridView } from './drive-grid-view';
 import { DriveHeader } from './drive-header';
 import { DriveListView } from './drive-list-view';
 import { FileHistoryPopoverContent } from './file-history-popover';
-import { FilePreviewModal } from './file-preview-modal';
+import { ExplorerFilePreview } from './file-preview-modal';
 import { FileSearch } from './file-search';
 import { isPartialListing, LoadMoreRow } from './load-more-row';
 import { type FilesRightPanel, requestedFilesRightPanel } from './file-route-state';
@@ -387,6 +387,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
 
   const searchParams = useUiSearchParams();
   const pathname = useUiPathname();
+  const shallowNavigate = useUiShallowNavigate();
   useEffect(() => {
     const cr = searchParams.get('cr');
     const requestedPanel = requestedFilesRightPanel(searchParams.get('panel'));
@@ -397,14 +398,13 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
     params.delete('cr');
     params.delete('panel');
     const query = params.toString();
-    // `history.replaceState`, not `router.replace`: the two lines above already
+    // A shallow replace, not `router.replace`: the two lines above already
     // moved the params into React state, so the strip needs no server data.
-    // Dropping a param changes the router cache key, so `router.replace` would
-    // buy a cold RSC fetch for nothing. Next patches `replaceState` and updates
-    // its own canonical URL, so `useSearchParams` still reports the stripped
-    // URL. Same mechanism as `openTabAndNavigate` in `stores/tab-store.ts`.
-    window.history.replaceState(null, '', query ? `${pathname}?${query}` : pathname);
-  }, [searchParams, pathname]);
+    // Under Next.js `router.replace` would buy a cold RSC fetch for nothing;
+    // `useUiShallowNavigate` writes `history.replaceState`, which Next observes,
+    // and routes through the host router when it does not observe history.
+    shallowNavigate(query ? `${pathname}?${query}` : pathname, { replace: true });
+  }, [searchParams, pathname, shallowNavigate]);
 
   const isEmpty =
     !isLoading &&
@@ -418,6 +418,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
   return (
     <div className="bg-background relative flex h-full flex-col">
       <DriveHeader
+        projectId={projectId || undefined}
         offsetForSidebarToggle={!embedded}
         historyToggle={{
           open: rightPanel === 'history',
@@ -577,7 +578,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
 
       <ChangeRequestDetailDialog crId={createdCrId} onClose={() => setCreatedCrId(null)} />
 
-      <FilePreviewModal />
+      <ExplorerFilePreview />
       {searchEnabled && isSearchOpen && <FileSearch />}
 
       {historyPopoverPath && (

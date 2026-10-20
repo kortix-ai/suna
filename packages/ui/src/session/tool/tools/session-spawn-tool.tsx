@@ -15,7 +15,8 @@ import { cn } from '../../../lib/utils';
 import { getChildSessionId, getToolInfo } from '../../../internal/session-types';
 import { capitalizeWords } from '@kortix/shared';
 import { CpuIcon as Cpu, ArrowSquareOutIcon as ExternalLink } from '@phosphor-icons/react';
-import { useUiLink, useUiPathname } from '../../../providers/ui-provider';
+import { useSessionIds } from '../../../providers/session-ids';
+import { useUiLink } from '../../../providers/ui-provider';
 import { useMemo, useState } from 'react';
 import { projectChildSessionHref } from './session-spawn-urls';
 import { subAgentCalls } from '@kortix/sdk';
@@ -24,7 +25,7 @@ export function SessionSpawnTool({ call, forceOpen }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(call);
   const status = partStatus(call);
-  const pathname = useUiPathname();
+  const { projectId, sessionId } = useSessionIds();
   const Link = useUiLink();
 
   const agentName = capitalizeWords((input.agent as string) || 'kortix');
@@ -42,8 +43,8 @@ export function SessionSpawnTool({ call, forceOpen }: ToolProps) {
   const isRunning = status === 'running' || status === 'pending';
   const isCompleted = status === 'completed';
   const childHref = useMemo(
-    () => projectChildSessionHref(pathname, childSessionId),
-    [pathname, childSessionId],
+    () => projectChildSessionHref({ projectId, sessionId }, childSessionId),
+    [projectId, sessionId, childSessionId],
   );
 
   const lastActivity = useMemo(() => {

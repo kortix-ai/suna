@@ -27,10 +27,13 @@ import {
   useSessionBrowserStore,
 } from '../internal/stores/session-browser-store';
 import type { SessionStartStage } from '@kortix/sdk';
+import type { UseSessionResult } from '@kortix/sdk/react';
+import { ProjectScope } from '../internal/project-scope';
+import { SessionThread } from '../session/thread/session-thread';
 import type React from 'react';
 import { memo, useCallback, useEffect, useState } from 'react';
 
-interface SessionLayoutProps {
+export interface SessionLayoutProps {
   sessionId: string;
   projectId?: string;
   projectSessionId?: string;
@@ -510,5 +513,62 @@ function SessionPanelSide({ panel }: { panel: SessionPanelProps }) {
         </div>
       </div>
     </ResizablePanel>
+  );
+}
+
+export interface SessionWorkspaceProps {
+  /** The result of `useSession(projectId, sessionId)` from `@kortix/sdk/react`. */
+  session: UseSessionResult;
+  /** The conversation column. Default: `<SessionThread session={session} />`. */
+  children?: React.ReactNode;
+  /** Passed to the default thread: hide its header (title, panel buttons, menu). */
+  hideHeader?: boolean;
+  /** Passed to the default thread: no composer. */
+  readOnly?: boolean;
+  className?: string;
+}
+
+/**
+ * The whole session screen apps/web renders: the thread, and the resizable side
+ * panel its actions open (files, the file viewer, browser, terminal, changes,
+ * audit). On a phone the panel is a sheet. The parent sets the size.
+ *
+ *   const session = useSession(projectId, sessionId);
+ *   return <SessionWorkspace session={session} />;
+ *
+ * Until the runtime has a session id, the thread shows its own starting state
+ * and no panel is mounted.
+ */
+export function SessionWorkspace({
+  session,
+  children,
+  hideHeader,
+  readOnly,
+  className,
+}: SessionWorkspaceProps) {
+  const { projectId, sessionId, runtimeSessionId } = session;
+  const thread = children ?? (
+    <SessionThread session={session} hideHeader={hideHeader} readOnly={readOnly} />
+  );
+  return (
+    <ProjectScope projectId={projectId} sessionId={sessionId}>
+      <div
+        data-slot="session-workspace"
+        className={cn('relative flex h-full min-h-0 w-full flex-col', className)}
+      >
+        {runtimeSessionId ? (
+          <SessionLayout
+            key={runtimeSessionId}
+            sessionId={runtimeSessionId}
+            projectId={projectId}
+            projectSessionId={sessionId}
+          >
+            {thread}
+          </SessionLayout>
+        ) : (
+          thread
+        )}
+      </div>
+    </ProjectScope>
   );
 }

@@ -446,10 +446,14 @@ flow(
   'SEC-G',
   {
     domain: 'security',
-    routes: ['POST /v1/p/auth', 'GET /v1/p/share', 'POST /v1/p/share'],
+    routes: ['POST /v1/p/auth', 'POST /v1/p/ticket', 'GET /v1/p/share', 'POST /v1/p/share'],
   },
   async (ctx) => {
     const bogusSandbox = `ke2e-no-such-sandbox-${Date.now()}`;
+    await ctx.step('POST /p/ticket without authorization refuses a navigation grant', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post('/v1/p/ticket', { preview_url: 'http://p3000-synthetic.localhost:8008/' });
+      r.status(401);
+    });
     await ctx.step('POST /p/auth with no Authorization → 400/401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/p/auth', {});
       r.status([400, 401]);

@@ -29,6 +29,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -278,6 +279,11 @@ export function FilePreviewModal({
   // preventDefault it. Native listener (not React onWheel) so it fires during
   // real DOM bubbling, ahead of the document-level listener.
   const contentRef = useRef<HTMLDivElement | null>(null);
+  // A host theme with larger controls, or a narrow panel: the toolbar drops the
+  // Download label and the previous/next pair (the arrow keys still step), so
+  // Expand and Close stay inside the panel.
+  const [toolbarEl, toolbarRef] = useState<HTMLDivElement | null>(null);
+  const compactToolbar = useCompactRow(toolbarEl);
   useEffect(() => {
     if (!isOpen || !fullscreen) return;
     const el = contentRef.current;
@@ -361,7 +367,7 @@ export function FilePreviewModal({
             </Button>
           </Hint>
         )}
-        {filePathList.length > 1 && (
+        {filePathList.length > 1 && !compactToolbar && (
           // Previous / next live with the other actions; the arrow keys still work.
           <ButtonGroup>
             <Hint
@@ -434,7 +440,7 @@ export function FilePreviewModal({
             aria-label={tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
           >
             <Download className="h-3.5 w-3.5" />
-            {tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
+            {!compactToolbar && tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
           </Button>
         </ButtonGroup>
         {shareContext && (
@@ -517,7 +523,10 @@ export function FilePreviewModal({
 
   const panelInner = (
     <>
-      <div className="border-border/40 bg-background/95 flex h-12 shrink-0 items-center gap-2 border-b px-3 backdrop-blur-sm">
+      <div
+        ref={toolbarRef}
+        className="border-border/40 bg-background/95 flex h-12 shrink-0 items-center gap-2 border-b px-3 backdrop-blur-sm"
+      >
         {toolbar}
       </div>
       <div ref={contentRef} className="relative min-h-0 flex-1 overflow-hidden">
@@ -571,4 +580,31 @@ export function FilePreviewModal({
   );
 
   return createPortal(node, document.body);
+}
+
+/**
+ * True once the row overflows its width, and until it grows wider than the
+ * width where it overflowed. The width is the hysteresis: the compact row
+ * fits, so "does it overflow now" alone would flip back and forth.
+ */
+function useCompactRow(el: HTMLElement | null): boolean {
+  const [compactAt, setCompactAt] = useState<number | null>(null);
+  const check = useCallback(() => {
+    if (!el) return;
+    setCompactAt((at) => {
+      if (at !== null) return el.clientWidth > at ? null : at;
+      return el.scrollWidth > el.clientWidth ? el.clientWidth : null;
+    });
+  }, [el]);
+  // Every commit: a new file can bring more actions at the same width.
+  useLayoutEffect(check);
+  useLayoutEffect(() => {
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    // The row for its width, its groups for their content (a late font or a
+    // host stylesheet widens the actions without resizing the row).
+    const observer = new ResizeObserver(check);
+    for (const node of [el, ...Array.from(el.children)]) observer.observe(node);
+    return () => observer.disconnect();
+  }, [el, check]);
+  return compactAt !== null;
 }

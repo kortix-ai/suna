@@ -1,3 +1,4 @@
+import { uiRoutes } from '../../lib/routes';
 import { hubTarget, type HubTarget } from '../../internal/stores/account-panel-store';
 import type { KortixAccount, KortixProject } from '@kortix/sdk';
 
@@ -106,7 +107,7 @@ export function groupWorkspacesByAccount({
  *    reads the menu as "settings for where I am", and the open workspace is
  *    the only unambiguous statement of that;
  * 2. `selectedAccountId`, for a mount with no workspace in the URL. It is
- *    persisted (`stores/current-account-store`) so it is present on the first
+ *    persisted (`packages/ui/src/internal/stores/current-account-store`) so it is present on the first
  *    paint of a returning visit, before any query resolves;
  * 3. the first account, matching the seed `useEnsureSelectedAccount` writes.
  *
@@ -148,7 +149,7 @@ export function resolveWorkspaceRowNavigation(
   if (activeWorkspaceId && workspace.project_id === activeWorkspaceId) {
     return { kind: 'account-settings', to: hubTarget(workspace.account_id) };
   }
-  return { kind: 'switch', href: `/projects/${workspace.project_id}` };
+  return { kind: 'switch', href: uiRoutes().project(workspace.project_id) };
 }
 
 /**

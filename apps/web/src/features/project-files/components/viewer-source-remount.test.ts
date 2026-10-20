@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { workspaceFileSource } from '@/features/files/file-source';
+import { workspaceFileSource } from '@kortix/ui/files';
 
 /**
  * The session Files explorer provides `sandboxExplorerSource`, whose

@@ -1,7 +1,7 @@
 'use client';
 
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../../primitives/disclosure';
-import { SidebarToggle as PanelRight } from '../../../icons/sidebar-toggle';
+import { SidebarGlyph as PanelRight } from '../../../icons/sidebar-toggle';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import { cn } from '../../../lib/utils';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { runProjectArchive, type RunProjectArchiveClient } from './general-tab';
+import { runProjectArchive, type RunProjectArchiveClient, withoutProject } from './general-tab';
 
 /**
  * `runProjectArchive` is the archive mutation's real side effects, extracted
@@ -70,6 +70,35 @@ describe('runProjectArchive', () => {
       (path: string) => events.push(`left:${path}`),
     );
     expect(events).toEqual(['archived', 'forgotten', 'left:/projects/start']);
+  });
+
+  /**
+   * KRTX-2904: the landing door decides from the cached project lists at once.
+   * A list that still named the deleted project could send the browser
+   * straight back to its dead workspace, so the cache drops it before leaving.
+   */
+  test('drops the project from the cached lists before it leaves', async () => {
+    const events: string[] = [];
+    await runProjectArchive(
+      'p1',
+      client({
+        archiveProject: async () => {
+          events.push('archived');
+        },
+      }),
+      () => events.push('forgotten'),
+      (path: string) => events.push(`left:${path}`),
+      () => events.push('dropped'),
+    );
+    expect(events).toEqual(['archived', 'forgotten', 'dropped', 'left:/projects/start']);
+  });
+
+  test('withoutProject removes the project from a list and leaves any other cached value alone', () => {
+    const list = [{ project_id: 'p1' }, { project_id: 'p2' }];
+    expect(withoutProject(list, 'p1')).toEqual([{ project_id: 'p2' }]);
+    const quota = { used: 1, limit: 3 };
+    expect(withoutProject(quota, 'p1')).toBe(quota);
+    expect(withoutProject(undefined, 'p1')).toBeUndefined();
   });
 
   test('does NOT leave the project when the archive call fails', async () => {

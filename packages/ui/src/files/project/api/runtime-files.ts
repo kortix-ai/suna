@@ -1,7 +1,7 @@
 /**
  * Project Files API — Git-backed, read-only.
  *
- * Mirrors the public surface of the sandbox `features/files/api/runtime-files.ts`
+ * Mirrors the public surface of the sandbox `packages/ui/src/internal/files/runtime-files.ts`
  * (so the copy of all UI components/hooks needs no signature changes), but
  * every function dispatches against `/v1/projects/:projectId/files` instead
  * of the OpenCode SDK.

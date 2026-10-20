@@ -17,7 +17,7 @@ mock.module('@kortix/ui/files/project/components/file-content-renderer', () => (
   },
   getFileCategory: () => 'code',
 }));
-const { FileThumbnail, THUMBNAIL_NEAR_MARGIN } = await import('./file-thumbnail');
+const { FileThumbnail, THUMBNAIL_NEAR_MARGIN } = await import('@kortix/ui/files/project/components/file-thumbnail');
 
 type Callback = (entries: Array<{ isIntersecting: boolean }>) => void;
 let observers: Array<{

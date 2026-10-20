@@ -13,7 +13,7 @@
 
 import { AppPreview } from '../apps/app-preview';
 import { appCan, appStatus, gridApps } from '../apps/app-shared';
-import { appForUrl } from '../apps/app-in-browser';
+import { appForUrl } from './app-in-browser';
 import { useTranslations } from '../i18n';
 import { PROJECT_ACTIONS } from '../internal/lib/project-actions';
 import { useProjectCan } from '../internal/lib/use-project-can';

@@ -39,7 +39,7 @@ import {
   WarningIcon,
   XIcon,
 } from '@phosphor-icons/react';
-import { UiLink as Link } from '../../../providers/ui-provider';
+import { UiLink as Link, useUiRouter } from '../../../providers/ui-provider';
 import { useMemo, useState } from 'react';
 
 import { RunHistogram, type RunTimeRange, fmtRange } from './trigger-runs-histogram';
@@ -169,6 +169,7 @@ export function TriggerRunsPanel({
   running?: boolean;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
+  const router = useUiRouter();
   const locale = useLocale();
   const poll = useRunsPoll();
   const query = useTriggerRuns(projectId, trigger.slug, {
@@ -192,7 +193,7 @@ export function TriggerRunsPanel({
       {
         onSuccess: (res) => {
           setConfirmRun(null);
-          fireResultToast(res, trigger, projectId, t);
+          fireResultToast(res, trigger, projectId, t, router);
         },
         onError: (err) => {
           // The server is the judge of "unverified": ask, then retry with the confirmation.
@@ -230,12 +231,15 @@ export function TriggerRunsPanel({
     body = <EmptyState size="sm" title={t.raw('text6de3a7d8e5db')} />;
   } else if (shown.length === 0 && !query.hasNextPage) {
     // Paper C06 / C14: one line, then Run now; no histogram.
-    const next = trigger.next_fire_at ? Date.parse(trigger.next_fire_at) : Number.NaN;
+    const nextIso = trigger.next_cron_at ?? trigger.next_fire_at;
+    const next = nextIso ? Date.parse(nextIso) : Number.NaN;
     const line = !trigger.enabled
       ? t.raw('text75c4316dcad4')
       : Number.isFinite(next)
         ? t('textdf86da65c421', {
             value0: new Date(next).toLocaleString(locale, {
+              timeZoneName: 'short',
+              second: '2-digit',
               weekday: 'long',
               hour: '2-digit',
               minute: '2-digit',

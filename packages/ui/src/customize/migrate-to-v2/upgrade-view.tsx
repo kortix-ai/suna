@@ -19,7 +19,7 @@
  * `general-tab.tsx`, and `organization-tab.tsx`. Pane heading, then rows —
  * label left, control right, consecutive rows sharing ONE bordered box
  * separated by hairlines (`SettingsRowGroup` / `SettingsRow`,
- * `components/ui/settings-row.tsx`). Sections are a plain small heading
+ * `packages/ui/src/primitives/settings-row.tsx`). Sections are a plain small heading
  * (`SettingsSubsectionHeader`).
  *
  * This pane was the odd one out. Six things changed, and each replaced

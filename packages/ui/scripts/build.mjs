@@ -174,6 +174,22 @@ if (typeSpecs.size > 0) {
   );
   tsc('tsc', ['-p', tsconfig]);
   tsc('tsc-alias', ['-p', tsconfig, '--resolve-full-paths']);
+  // A shared module whose declaration names the NodeJS namespace is server code (for
+  // example environment-secret). It leaves the vendored types, so a browser host's
+  // typecheck with skipLibCheck: false needs no @types/node.
+  for (const dts of walk(vendorTypes).filter((p) => p.endsWith('.d.ts'))) {
+    if (!/\bNodeJS\./.test(readFileSync(dts, 'utf8'))) continue;
+    const mod = posix(relative(vendorTypes, dts)).replace(/\.d\.ts$/, '');
+    for (const index of walk(vendorTypes).filter((p) => p.endsWith('index.d.ts'))) {
+      const rel = posix(relative(dirname(index), join(vendorTypes, mod)));
+      const spec = rel.startsWith('.') ? rel : `./${rel}`;
+      const text = readFileSync(index, 'utf8');
+      const kept = text.replace(new RegExp(`^export \\* from ['"]${spec.replace(/[.]/g, '\\.')}(?:\\.js)?['"];?\\n`, 'gm'), '');
+      if (kept !== text) writeFileSync(index, kept);
+    }
+    rmSync(dts);
+    rmSync(dts.replace(/\.d\.ts$/, '.d.ts.map'), { force: true });
+  }
 }
 rmSync(cache, { recursive: true, force: true });
 
@@ -191,6 +207,14 @@ for (const file of emitted) {
       ? relativeTo(file, join(vendorTypes, relative(join(SHARED_DIR, 'src'), sharedSource(spec)).replace(/\.tsx?$/, '.js')))
       : relativeTo(file, vendor);
   writeFileSync(file, text.replace(SHARED, (_, q, spec) => `${q}${to(spec)}${q}`));
+}
+
+// 4b. Every dist/internal/**/*.d.ts says it is private, so an editor's hover and
+// autocomplete show it next to the name (README "Modules": internal/* has no semver).
+const INTERNAL_BANNER = '/** @internal Kortix apps only. No semver: it may change in any release. */\n';
+for (const dts of walk(join(DIST, 'internal')).filter((p) => p.endsWith('.d.ts'))) {
+  const text = readFileSync(dts, 'utf8');
+  if (!text.startsWith(INTERNAL_BANNER)) writeFileSync(dts, INTERNAL_BANNER + text);
 }
 
 // 5. Guards.

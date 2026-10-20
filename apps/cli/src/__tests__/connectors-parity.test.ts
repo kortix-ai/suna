@@ -71,9 +71,10 @@ function startServer(): string {
         if (!connectorsV2) return moveGate();
         return Response.json({
           moves: [
-            { slug: 'crm', name: 'CRM', app: 'hubspot', to: null, connection_id: null, signed_in: false, accounts: 1 },
-            { slug: 'linear', name: 'Linear', app: 'linear_app', to: { slug: 'linear', name: 'Linear', icon: null }, connection_id: null, signed_in: false, accounts: 2 },
-            { slug: 'notes', name: 'Notes', app: 'notion', to: { slug: 'notion', name: 'Notion', icon: null }, connection_id: 'conn_move', signed_in: false, accounts: 1 },
+            { slug: 'crm', name: 'CRM', provider: 'pipedream', app: 'hubspot', to: null, connection_id: null, signed_in: false, accounts: 1 },
+            { slug: 'linear', name: 'Linear', provider: 'pipedream', app: 'linear_app', to: { slug: 'linear', name: 'Linear', icon: null }, connection_id: null, signed_in: false, accounts: 2 },
+            { slug: 'mail', name: 'Mail', provider: 'composio', app: 'gmail', to: { slug: 'gmail', name: 'Gmail', icon: null }, connection_id: null, signed_in: false, accounts: 1 },
+            { slug: 'notes', name: 'Notes', provider: 'pipedream', app: 'notion', to: { slug: 'notion', name: 'Notion', icon: null }, connection_id: 'conn_move', signed_in: false, accounts: 1 },
           ].filter((move) => !switched.has(move.slug)),
         });
       }
@@ -809,16 +810,17 @@ describe('kortix connectors — capability-page parity', () => {
     expect(calls.some((c) => c.path.endsWith('/device/sess_dev'))).toBe(false);
   });
 
-  test('moves tables each Pipedream connector, its Kortix app and the move state', async () => {
+  test('moves tables each Pipedream and Composio connector, its Kortix app and the move state', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'moves', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`GET /v1/projects/${PROJECT}/connector-moves`]);
     const lines = r.stdout.split('\n').map((line) => line.trim());
-    expect(lines).toContain('SLUG     APP          MOVES TO   STATE               ACCOUNTS');
-    expect(lines).toContain('crm      hubspot      —          no Kortix app yet   1');
-    expect(lines).toContain('linear   linear_app   Linear     ready               2');
-    expect(lines).toContain('notes    notion       Notion     signing in          1');
+    expect(lines).toContain('SLUG     PROVIDER    APP          MOVES TO   STATE               ACCOUNTS');
+    expect(lines).toContain('crm      pipedream   hubspot      —          no Kortix app yet   1');
+    expect(lines).toContain('linear   pipedream   linear_app   Linear     ready               2');
+    expect(lines).toContain('mail     composio    gmail        Gmail      ready               1');
+    expect(lines).toContain('notes    pipedream   notion       Notion     signing in          1');
     expect(r.stdout).toContain('Move one: kortix connectors move <slug>');
   });
 
@@ -826,8 +828,9 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'moves', '--json', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    const parsed = JSON.parse(r.stdout) as { moves: Array<{ slug: string; to: { slug: string; name: string; icon: string | null } | null }> };
-    expect(parsed.moves.map((m) => m.slug)).toEqual(['crm', 'linear', 'notes']);
+    const parsed = JSON.parse(r.stdout) as { moves: Array<{ slug: string; provider: string; to: { slug: string; name: string; icon: string | null } | null }> };
+    expect(parsed.moves.map((m) => m.slug)).toEqual(['crm', 'linear', 'mail', 'notes']);
+    expect(parsed.moves[2]!.provider).toBe('composio');
     expect(parsed.moves[1]!.to).toEqual({ slug: 'linear', name: 'Linear', icon: null });
   });
 

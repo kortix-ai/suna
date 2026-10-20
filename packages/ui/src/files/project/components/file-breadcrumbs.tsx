@@ -2,7 +2,7 @@
 
 import { useFilesStore, useFilesStoreApi } from '../../../internal/stores/files-store';
 import { cn } from '../../../lib/utils';
-import { openTabAndNavigate } from '../../../internal/stores/tab-store';
+import { useTabStore } from '../../../internal/stores/tab-store';
 import { CaretRightIcon as ChevronRight, FolderIcon as FolderRoot } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -262,7 +262,8 @@ export function FilePathBreadcrumbs({ filePath, className }: FilePathBreadcrumbs
     (index: number) => {
       const dirPath = '/' + segments.slice(0, index + 1).join('/');
       filesStore.getState().navigateToPath(dirPath);
-      openTabAndNavigate({
+      // The Files tab only: `/files` is no route of any host, so no URL is written.
+      useTabStore.getState().openTab({
         id: 'page:/files',
         title: tI18nComplete.raw('textabc7e9892806'),
         type: 'page',
@@ -274,7 +275,7 @@ export function FilePathBreadcrumbs({ filePath, className }: FilePathBreadcrumbs
 
   const handleHomeClick = useCallback(() => {
     filesStore.getState().navigateToPath(homePath);
-    openTabAndNavigate({
+    useTabStore.getState().openTab({
       id: 'page:/files',
       title: tI18nComplete.raw('textabc7e9892806'),
       type: 'page',

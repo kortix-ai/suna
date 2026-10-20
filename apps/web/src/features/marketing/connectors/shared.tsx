@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import Image from 'next/image';
 import type { ReactNode } from 'react';
 

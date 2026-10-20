@@ -197,6 +197,12 @@ export const accounts = kortixSchema.table(
    *  may change it (`PATCH /accounts/:id/iam/session-oversight`). Members see
    *  a disclosure in the share dialog while it is on. */
   adminsSeeAllSessions: boolean('admins_see_all_sessions').default(false).notNull(),
+  /** Pause all automations (KRTX-1721): set, no schedule, reminder, webhook,
+   *  app event or monitor of any project in the account fires on its own. A
+   *  manual fire still runs. NULL = automations run. `PATCH /accounts/:id/automations`. */
+  automationsPausedAt: timestamp('automations_paused_at', { withTimezone: true }),
+  /** Who paused them; NULL while running. */
+  automationsPausedBy: uuid('automations_paused_by'),
   /** Organization branding (enterprise `branding` entitlement): the product
    *  name plus the Storage URLs of the logo / icon / favicon (light + optional
    *  dark) that replace the Kortix marks for this account's members. `{}` = default Kortix branding. The
@@ -1652,6 +1658,15 @@ export const projectTriggerRuntime = kortixSchema.table(
     // Suppression episodes in the trailing 24 h. Three ⇒ the monitor is
     // auto-disabled with a `last_error` (spec bounds table).
     suppressionCount: integer('suppression_count').default(0),
+    // Auto-pause (KRTX-1721): set when the trigger ran at its hourly run limit
+    // through the previous hour and is still being held. While set, no
+    // automatic fire starts a run; a manual fire still does. `PATCH enabled:
+    // true` clears both and stamps `auto_pause_resumed_at`: for 2 hours after
+    // a resume the trigger cannot pause itself again, so its old runs do not
+    // re-pause a trigger whose cause was fixed. Runtime state, not a manifest edit.
+    autoPausedAt: timestamp('auto_paused_at', { withTimezone: true }),
+    autoPausedReason: text('auto_paused_reason'),
+    autoPauseResumedAt: timestamp('auto_pause_resumed_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -2045,6 +2060,12 @@ export const sessionLifecycleCommands = kortixSchema.table(
     index('idx_session_lifecycle_commands_forwarded')
       .on(table.updatedAt)
       .where(sql`(${table.result}->>'status') = 'forwarded'`),
+    // The claim drain (`claimDueLifecycleCommands`). Without it the claim
+    // reads every due queued row and detoasts the payload of each held
+    // prompt, which can be megabytes, on every tick.
+    index('idx_session_lifecycle_commands_claimable')
+      .on(table.availableAt)
+      .where(sql`${table.status} = 'queued' AND (COALESCE(${table.result}->>'held', '') <> 'true' OR ${table.payload}->>'clientMessageId' IS NULL)`),
   ],
 );
 
@@ -3976,6 +3997,18 @@ export const auditEvents = kortixSchema.table(
     // on the growing audit_events table and 500-ing /ops/overview (Better Stack
     // error 4ba74f8c17f3e48e13c07511fb802ec55ba07294237c0985f3df792729e8f4d8).
     index('idx_audit_events_occurred_at').on(table.occurredAt),
+    // Partial index for the audit list's connector/computer action filter
+    // (GET /v1/accounts/:id/audit?action=connector.): every entry IS a row
+    // that filter wants, so the plan walks one account's tool rows newest-
+    // first and stops at LIMIT instead of walking the whole recent ledger.
+    // Only tool-action rows are indexed, so the write cost stays bounded.
+    // Scanned backward for the `order by occurred_at desc, event_id desc` —
+    // declared ascending because drizzle-orm 0.45's index builder cannot
+    // express DESC — by
+    // 20261020080001000_audit_events_account_tool_action_time.concurrent.ts.
+    index('idx_audit_events_account_tool_action_time')
+      .on(table.accountId, table.occurredAt, table.eventId)
+      .where(sql`${table.action} like 'connector.%' or ${table.action} like 'computer.%'`),
   ],
 );
 
@@ -4163,6 +4196,16 @@ export const gatewayRequestLogs = kortixSchema.table(
     // idx_gateway_logs_project_failed_time — by
     // 20261008012757000_gateway_logs_account_time_covering.concurrent.ts.
     index('idx_gateway_logs_account_time_covering').on(table.accountId, table.createdAt),
+    // Covering index for the project-led gateway aggregates (gateway budgets
+    // memberRows/projectAgg + budgetSpends, gateway overview, gateway series):
+    // index-only scan by (project_id, created_at) that never touches the wide
+    // request/response jsonb heap rows. Built CONCURRENTLY with INCLUDE (ok,
+    // billing_mode, final_cost_precise, upstream_cost_precise, input_tokens,
+    // output_tokens, latency_ms, actor_user_id) — not expressible in
+    // drizzle-orm 0.45's index builder; the schema contract checks relation
+    // + uniqueness only, same pattern as idx_gateway_logs_account_time_covering
+    // — by 20261020080000000_gateway_logs_project_time_covering.concurrent.ts.
+    index('idx_gateway_logs_project_time_covering').on(table.projectId, table.createdAt),
   ],
 );
 

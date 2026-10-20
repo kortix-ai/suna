@@ -8,10 +8,8 @@
 //   node scripts/gen-i18n-catalog.mjs           write
 //   node scripts/gen-i18n-catalog.mjs --check   exit 1 when en.ts drifts (src/i18n/i18n.test.tsx runs it)
 //
-// Scanned: the import graph of packages/ui/src and of the apps/web session UI
-// that moves into the package (features/session, components/markdown,
-// components/diff), following relative and '@/' imports, plus every other
-// apps/web file that imports '@kortix/ui/i18n'.
+// Scanned: the import graph of packages/ui/src, following relative imports,
+// plus the apps/web files that wire the package translator (ADOPTERS).
 //
 // Per file, a translator is a name bound to a namespace:
 //   const t = useTranslations('ns')            → 'ns'
@@ -24,7 +22,7 @@
 // namespace that has it. A string literal that names a message of a namespace
 // the file binds is copied too (`titleKey: 'a.b'`, then `t(titleKey)`). Every
 // 'text<hex12>' literal is copied from hardcodedUi.i18nComplete: key maps such
-// as components/iam/audit-credential-label.ts bind no translator themselves.
+// as packages/ui/src/session/panel/audit/audit-credential-label.ts bind no translator themselves.
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,13 +32,11 @@ const REPO = join(PKG_DIR, '..', '..');
 const SOURCE = join(REPO, 'apps/web/translations/en.json');
 const OUT = join(PKG_DIR, 'src/i18n/en.ts');
 const WEB_SRC = join(REPO, 'apps/web/src');
-const ROOTS = [
-  'packages/ui/src',
-  'apps/web/src/features/session',
-  'apps/web/src/components/markdown',
-  'apps/web/src/components/diff',
-].map((dir) => join(REPO, dir));
-const ADOPTERS = WEB_SRC;
+const ROOTS = [join(PKG_DIR, 'src')];
+// The apps/web files that wire the package translator into the host. apps/web
+// product files import '@kortix/ui/i18n' too, but they render in apps/web only,
+// which ships its own catalogs, so their keys stay out of the bundled catalog.
+const ADOPTERS = ['components/kortix-ui-provider.tsx', 'i18n/translator.ts', 'test-utils/ui-host.tsx'];
 const SMALL = 50_000;
 const UI_TRANSLATOR_NS = 'hardcodedUi.i18nComplete';
 export const HEX_KEY = /(['"`])(text[0-9a-f]{12})\1/g;
@@ -157,7 +153,7 @@ export function buildCatalog() {
   const source = JSON.parse(readFileSync(SOURCE, 'utf8'));
   const namespaces = new Set();
   const keyed = []; // [namespace ('' = root, null = unknown), key or subtree path, message only]
-  const adopters = walk(ADOPTERS).filter((f) => readFileSync(f, 'utf8').includes("'@kortix/ui/i18n'"));
+  const adopters = ADOPTERS.map((f) => join(WEB_SRC, f));
   for (const file of new Set([...scannedFiles(), ...adopters])) {
     const code = readFileSync(file, 'utf8');
     // name → namespaces. One file can bind `t` in several components.

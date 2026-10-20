@@ -55,3 +55,54 @@ describe('HtmlPreview — waiting state', () => {
     expect(pending).toContain('Starting preview server…');
   });
 });
+
+// ── A host's resolvePreviewUrl ─────────────────────────────────────────────
+// A host whose origin is not the Kortix backend resolves preview URLs on its
+// server. The HTML viewer must ask it for port 3211 and frame its answer, and
+// must not probe /health with the SDK token.
+describe('HtmlPreview — host resolvePreviewUrl', () => {
+  test('frames the URL the host resolves for /open?path=… on port 3211', async () => {
+    const { act, create } = await import('react-test-renderer');
+    const { UiProvider } = await import('../../providers/ui-provider');
+    const { SessionIdsProvider } = await import('../../providers/session-ids');
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const asked: unknown[] = [];
+    const fetched: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      fetched.push(String(input));
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+    let root!: ReturnType<typeof create>;
+    try {
+      await act(async () => {
+        root = create(
+          <UiProvider
+            resolvePreviewUrl={async (request) => {
+              asked.push(request);
+              return 'https://host.example/frame?scoped=1';
+            }}
+          >
+            <SessionIdsProvider projectId="p1" sessionId="s1">
+              <HtmlPreview path="/workspace/site/page one.html" fileName="page one.html" />
+            </SessionIdsProvider>
+          </UiProvider>,
+        );
+      });
+      expect(asked).toEqual([
+        {
+          projectId: 'p1',
+          sessionId: 's1',
+          port: 3211,
+          path: '/open?path=/workspace/site/page%20one.html',
+          url: 'http://localhost:3211/open?path=/workspace/site/page%20one.html',
+        },
+      ]);
+      expect(root.root.findByType('iframe').props.src).toBe('https://host.example/frame?scoped=1');
+      expect(fetched).toEqual([]);
+    } finally {
+      await act(async () => root?.unmount());
+      globalThis.fetch = realFetch;
+    }
+  });
+});

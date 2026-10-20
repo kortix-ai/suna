@@ -19,7 +19,7 @@ import {
   DEFAULT_LIGHT_THEME,
   type DarkThemeId,
   type LightThemeId,
-} from './interface-theme-defaults';
+} from '@kortix/ui/internal/lib/interface-theme-defaults';
 import terminalThemes from './kortix-themes.generated.json';
 
 export { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, type DarkThemeId, type LightThemeId };

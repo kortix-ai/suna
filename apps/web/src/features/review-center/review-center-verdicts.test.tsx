@@ -66,8 +66,8 @@ const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query
 const { NextIntlClientProvider } = await import('@/i18n/use-translations');
 const { PROJECT_ACTIONS, reviewVerdictAllowed } = await import('@kortix/sdk');
 const messages = (await import('../../../translations/en.json')).default;
-const { MOCK_ITEMS } = await import('./mock-data');
-const { ReviewCenter } = await import('./review-center');
+const { MOCK_ITEMS } = await import('@kortix/ui/workspace/review/mock-data');
+const { ReviewCenter } = await import('@kortix/ui/workspace/review/review-center');
 type ReviewItem = (typeof MOCK_ITEMS)[number];
 
 const mockItem = (id: string) => MOCK_ITEMS.find((item) => item.id === id)!;

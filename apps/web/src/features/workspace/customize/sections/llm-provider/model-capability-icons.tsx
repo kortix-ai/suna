@@ -1,3 +1,0 @@
-'use client';
-
-export * from '@kortix/ui/customize/sections/llm-provider/model-capability-icons';

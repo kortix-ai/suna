@@ -10,7 +10,7 @@ import {
   useShowPageSidebarOpener,
 } from './sidebar-opener';
 import { cn } from '../../lib/utils';
-import { SidebarToggle as PanelLeft } from '../../icons/sidebar-toggle';
+import { SidebarGlyph as PanelLeft } from '../../icons/sidebar-toggle';
 import { useTranslations } from '../../i18n';
 
 /**

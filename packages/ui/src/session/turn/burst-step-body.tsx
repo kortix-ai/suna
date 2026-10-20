@@ -5,6 +5,10 @@ import { ActivityGroupStep } from './activity-group-step';
 import { ActivityStep, StepLabelRow } from './activity-step';
 import { AnsweredQuestionStep, isAnsweredQuestionCall } from './answered-question-step';
 import { stepLabel } from '@kortix/sdk';
+import { ToolRegistry } from '../tool/shared/registry';
+
+/** A host's `ToolRegistry.register` row for this tool wins over the chip and question rows. */
+const hostRow = (call: ToolCallBlock) => ToolRegistry.replaced(call.name, call.kind);
 
 /**
  * True when this run is entirely one file family, so it can render as chips.
@@ -18,7 +22,7 @@ import { stepLabel } from '@kortix/sdk';
  */
 function isFileChipRun(calls: ReadonlyArray<ToolCallBlock>): boolean {
   const first = calls[0];
-  if (!first || !isFileChipCall(first)) return false;
+  if (!first || !isFileChipCall(first) || calls.some(hostRow)) return false;
   const name = normalizeActivityToolName(first.name);
   return calls.every((call) => isFileChipCall(call) && normalizeActivityToolName(call.name) === name);
 }
@@ -70,12 +74,12 @@ export function StepBody({
   const call = step.block;
   // An answered question renders as its own chain row — "Questions · N
   // answered", opening in place — never as the generic tool card.
-  if (isAnsweredQuestionCall(call)) {
+  if (isAnsweredQuestionCall(call) && !hostRow(call)) {
     return <AnsweredQuestionStep call={call} bare={bareRow} />;
   }
   // A run of one read is unwrapped into a flat row by the burst steps, which
   // is right for a shell command and wrong here: one file is still a file.
-  if (isFileChipCall(call)) {
+  if (isFileChipCall(call) && !hostRow(call)) {
     return (
       <ActivityFileChipStep
         calls={[call]}

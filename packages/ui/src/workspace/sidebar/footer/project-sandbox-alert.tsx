@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../../lib/routes';
 import {
   CATEGORY_CAUSE,
   CATEGORY_CAUSE_FALLBACK,
@@ -87,7 +88,7 @@ function SandboxAlertContent({
   // unhealthy, which is the worst moment to reboot the SPA.
   // The Settings overlay's Sandbox templates tab, via its deep-link route —
   // the config page this pointed at was retired on 2026-09-02.
-  const sandboxSectionHref = `/projects/${projectId}/config?section=sandbox`;
+  const sandboxSectionHref = uiRoutes().sandboxSettings(projectId);
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
   // The alert TEXT is information a plain member needs — "new sessions can't
   // start until this image builds" explains why the composer is refusing them.
@@ -110,7 +111,7 @@ function SandboxAlertContent({
 
   // The single Details control. An outline Button, not text: it is the one
   // escape hatch on this card and it has to look like something you can press.
-  const detailsButton = canOpenDetails ? (
+  const detailsButton = canOpenDetails && sandboxSectionHref ? (
     <Button asChild size="sm" variant="outline" className={ACTION_BUTTON}>
       <Link href={sandboxSectionHref} prefetch>
         {tI18nHardcoded.raw('i18nComplete.text45989de49fb7')}

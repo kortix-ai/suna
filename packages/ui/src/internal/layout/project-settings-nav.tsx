@@ -1,12 +1,13 @@
 'use client';
 
+import { customizePath, uiRoutes } from '../../lib/routes';
 import { ProjectNavRow } from './project-nav-row';
 
 import { CustomizeGlyph } from '../icons/customize';
 export { CustomizeGlyph } from '../icons/customize';
 
 import { useTranslations } from '../../i18n';
-import { useUiParams, useUiPathname } from '../../providers/ui-provider';
+import { useUiPathname } from '../../providers/ui-provider';
 
 import { CountBadge } from '../../primitives/count-badge';
 import {
@@ -231,7 +232,9 @@ export function projectNavRows(
 export function useProjectNavRows(projectId: string | undefined): ProjectNavRows {
   const readRepo = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
   const drives = useFeatureFlag(projectId, 'drives').enabled;
-  return projectNavRows(useCapabilityAccess(projectId), readRepo, drives);
+  const rows = projectNavRows(useCapabilityAccess(projectId), readRepo, drives);
+  // A host that serves no customize pages (`setUiRoutes({ customize: () => null })`) gets no row.
+  return projectId && uiRoutes().customize(projectId) === null ? { ...rows, customize: null } : rows;
 }
 
 /**
@@ -259,11 +262,9 @@ export function useProjectNavRows(projectId: string | undefined): ProjectNavRows
  * duplicate, not as two ways in. No keycap either — Mod+, is printed on the
  * Settings row, and one shortcut advertised on two rows is a lie on one of them.
  */
-export function ProjectCustomizeNavItem() {
+export function ProjectCustomizeNavItem({ projectId }: { projectId: string }) {
   const t = useTranslations('sidebar');
   const pathname = useUiPathname();
-  const params = useUiParams<{ id: string }>();
-  const projectId = params?.id;
   const access = useCapabilityAccess(projectId);
   const rows = useProjectNavRows(projectId);
   const tab = rows.customize;
@@ -276,7 +277,7 @@ export function ProjectCustomizeNavItem() {
   // Connectors or one agent's page, not just on the landing tab.
   const isActive =
     !!pathname &&
-    (pathname === `/projects/${projectId}/customize` || activeCapabilityTab(pathname) !== null);
+    (pathname === customizePath(projectId) || activeCapabilityTab(pathname) !== null);
 
   if (!tab) return null;
   // No project id means no valid href, so there is nothing to render.

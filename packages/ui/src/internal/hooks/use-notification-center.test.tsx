@@ -221,3 +221,49 @@ describe('useNotificationHostGate', () => {
     expect(queryClient.isFetching()).toBe(0);
   });
 });
+
+/**
+ * On `/projects` the host gate scans the query cache. Its child, the
+ * notification center, builds its inbox query during render, and the cache
+ * reports that at once. When the scanned answer changed meanwhile, the gate
+ * must not re-render its component in the middle of the child's render
+ * ("Cannot update a component while rendering a different component").
+ */
+describe('a cache change made while another component renders', () => {
+  test('re-renders the scanning component after that render, not during it', async () => {
+    const queryClient = client();
+    const errors: unknown[][] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => errors.push(args);
+    let answer: boolean | undefined;
+    let built = false;
+    function Child() {
+      // A cache write during render, as `useQuery` makes when it builds its query.
+      if (!built) {
+        built = true;
+        queryClient.setQueryData(qk.projects.list('acc-1'), [flagged(true)]);
+      }
+      return null;
+    }
+    function Gate() {
+      answer = useNotificationHostGate(null);
+      return null;
+    }
+    const tree = (child: boolean) =>
+      createElement(QueryClientProvider, { client: queryClient }, createElement(Gate), child ? createElement(Child) : null);
+    try {
+      await act(async () => {
+        renderer = create(tree(false));
+      });
+      expect(answer).toBe(false);
+      await act(async () => {
+        renderer?.update(tree(true));
+        await tick();
+      });
+    } finally {
+      console.error = original;
+    }
+    expect(errors.filter((args) => String(args[0]).includes('Cannot update a component'))).toEqual([]);
+    expect(answer).toBe(true);
+  });
+});

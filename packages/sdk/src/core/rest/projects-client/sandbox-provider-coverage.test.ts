@@ -5,7 +5,7 @@ test('SandboxTemplate types launch readiness independently for every supported p
   const template = {
     provider_coverage: [
       {
-        provider: 'e2b',
+        provider: 'platinum',
         available: true,
         snapshot_name: 'kortix-default-current',
         state: 'building',
@@ -16,7 +16,7 @@ test('SandboxTemplate types launch readiness independently for every supported p
     ],
   } satisfies Pick<SandboxTemplate, 'provider_coverage'>;
 
-  expect(template.provider_coverage[0].provider).toBe('e2b');
+  expect(template.provider_coverage[0].provider).toBe('platinum');
   expect(template.provider_coverage[0].launch_ready).toBe(false);
 });
 
@@ -26,10 +26,10 @@ test('rebuild responses type partial provider startup failures', () => {
     slug: 'default',
     deleted_existing: true,
     snapshot_name: 'kortix-default-current',
-    providers: ['daytona', 'e2b'],
-    failed_providers: ['platinum'],
+    providers: ['platinum'],
+    failed_providers: ['daytona'],
   } satisfies RebuildSnapshotResponse;
 
-  expect(response.providers).toEqual(['daytona', 'e2b']);
-  expect(response.failed_providers).toEqual(['platinum']);
+  expect(response.providers).toEqual(['platinum']);
+  expect(response.failed_providers).toEqual(['daytona']);
 });

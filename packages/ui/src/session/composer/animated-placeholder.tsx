@@ -3,6 +3,7 @@
 import { cn } from '../../lib/utils';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '../../i18n';
+import { useUiHostConfig } from '../../providers/ui-provider';
 import { useEffect, useMemo, useState } from 'react';
 
 import { COMPOSER_TEXT_METRICS } from './composer-text-metrics';
@@ -42,11 +43,14 @@ const FADE_SWAP = {
  * new line only enters this list with its handler named:
  *
  *  - `/` and `@`      → editor/composer-editor.tsx suggestion extensions
- *  - ⌘K / Ctrl+K      → workspace/command-palette.tsx
+ *  - ⌘K / Ctrl+K      → workspace/command-palette.tsx, mounted by the host
  *  - Tab              → `cycleAgent` in composer.tsx
- *  - ⌘, / Ctrl+,      → `useSettingsKeyboardShortcut` (settings/use-settings-shortcut.ts)
+ *  - ⌘, / Ctrl+,      → the host's settings shortcut
  *  - Shift+Enter      → hard break in editor/extensions.ts
  *  - drag & drop      → `handleDropFiles` in composer.tsx
+ *
+ * The two host shortcuts show only when the host says it handles them
+ * (`UiHostConfig.commandPaletteShortcut` / `settingsShortcut`).
  *
  * `base` is always index 0. That is what makes the platform-aware shortcuts
  * hydration-safe: the server renders index 0 (no `navigator`, no ⌘/Ctrl
@@ -79,10 +83,17 @@ const ENGLISH_PLACEHOLDER_COPY: ComposerPlaceholderCopy = {
   compact: 'Ask to compact the session when it gets long',
 };
 
+/** The shortcuts the host handles, not the composer. */
+export interface HostShortcuts {
+  commandPalette: boolean;
+  settings: boolean;
+}
+
 export function buildPlaceholderVariants(
   base: string,
   mac: boolean,
   copy: ComposerPlaceholderCopy = ENGLISH_PLACEHOLDER_COPY,
+  host: HostShortcuts = { commandPalette: false, settings: false },
 ): string[] {
   const mod = mac ? '⌘' : 'Ctrl+';
   return [
@@ -90,14 +101,14 @@ export function buildPlaceholderVariants(
     copy.skills,
     copy.mentions,
     copy.workspaceFile,
-    copy.commandPalette(mod),
+    host.commandPalette && copy.commandPalette(mod),
     copy.switchAgents,
     copy.attachFiles,
     copy.changed,
     copy.newLine,
-    copy.settings(mod),
+    host.settings && copy.settings(mod),
     copy.compact,
-  ];
+  ].filter((line): line is string => typeof line === 'string');
 }
 
 export interface AnimatedComposerPlaceholderProps {
@@ -115,7 +126,7 @@ export interface AnimatedComposerPlaceholderProps {
  * The rotating placeholder, drawn OVER the TipTap editor rather than in it.
  *
  * TipTap's Placeholder extension paints a `::before` pseudo-element
- * (`content: attr(data-placeholder)` — globals.css), and pseudo-element
+ * (`content: attr(data-placeholder)` — styles/components.css), and pseudo-element
  * content cannot animate between two strings. So while this overlay is
  * active the composer passes `''` to the editor — the `::before` renders
  * empty — and this absolutely-positioned sibling carries the visible text.
@@ -131,6 +142,7 @@ export function AnimatedComposerPlaceholder({
   active,
 }: AnimatedComposerPlaceholderProps) {
   const t = useTranslations('threads');
+  const { commandPaletteShortcut, settingsShortcut } = useUiHostConfig();
   const reduceMotion = useReducedMotion();
   const variants = useMemo(
     () =>
@@ -145,8 +157,8 @@ export function AnimatedComposerPlaceholder({
         newLine: t('hintNewLine'),
         settings: (modifier) => t('hintSettings', { modifier }),
         compact: t('hintCompact'),
-      }),
-    [placeholder, t],
+      }, { commandPalette: commandPaletteShortcut, settings: settingsShortcut }),
+    [placeholder, t, commandPaletteShortcut, settingsShortcut],
   );
   const [index, setIndex] = useState(0);
 

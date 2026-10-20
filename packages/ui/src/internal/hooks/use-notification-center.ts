@@ -77,10 +77,27 @@ export function anyCachedNotificationCenter(client: QueryClient): boolean {
   return client.getQueryCache().getAll().some(holdsFlagOn);
 }
 
-/** `anyCachedNotificationCenter`, reactive. Subscribes to the cache only while `scan`. */
+/**
+ * `anyCachedNotificationCenter`, reactive. Subscribes to the cache only while
+ * `scan`. The cache reports synchronously, also when another component's
+ * `useQuery` builds its query during render; the re-check waits for a
+ * microtask so this component never updates in the middle of that render.
+ */
 function useAnyCachedNotificationCenter(client: QueryClient, scan: boolean): boolean {
   const subscribe = useCallback(
-    (onChange: () => void) => (scan ? client.getQueryCache().subscribe(onChange) : () => {}),
+    (onChange: () => void) => {
+      if (!scan) return () => {};
+      let live = true;
+      const unsubscribe = client.getQueryCache().subscribe(() => {
+        queueMicrotask(() => {
+          if (live) onChange();
+        });
+      });
+      return () => {
+        live = false;
+        unsubscribe();
+      };
+    },
     [client, scan],
   );
   return useSyncExternalStore(

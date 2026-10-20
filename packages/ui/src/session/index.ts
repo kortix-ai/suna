@@ -65,8 +65,6 @@ export { useSessionListActions } from './actions/use-session-list-actions';
 export { CompactModal } from './header/compact-modal';
 export { ProviderFailureRecovery } from './models/provider-failure-recovery';
 export { useModelConnectionGate } from './models/use-model-connection-gate';
-export { AgentPicker } from './pickers/agent-picker';
-export { ModelPicker, filterModels } from './pickers/model-picker';
 export {
   ApprovalAgentContext,
   ApprovalDecisionActions,

@@ -193,7 +193,28 @@ export function ComposerChatInput({
   // `disabled` for exactly that case.
   const noAccessibleAgents = agentResolution.disabled;
   // The slash menu lists only the commands the selected agent may run.
-  const { data: commands } = useRuntimeCommands({ agent: selectedAgentName ?? undefined });
+  const { data: runtimeCommands } = useRuntimeCommands({ agent: selectedAgentName ?? undefined });
+  // Home has no session runtime. Project detail supplies its server-filtered catalog.
+  const commands: Command[] | undefined = sessionId
+    ? runtimeCommands
+    : projectConfig
+      ? [
+          ...projectConfig.skills.map((skill): Command => ({
+            name: skill.name,
+            description: skill.description ?? undefined,
+            source: 'skill',
+            template: '',
+            hints: [],
+          })),
+          ...projectConfig.commands.map((command): Command => ({
+            name: command.name,
+            description: command.description ?? undefined,
+            source: 'command',
+            template: '',
+            hints: [],
+          })),
+        ]
+      : undefined;
 
   useEffect(() => {
     onAgentSelectionChange?.(selectedAgentName);

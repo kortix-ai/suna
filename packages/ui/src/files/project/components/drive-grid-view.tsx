@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '../../../primitives/button';
+import type { DroppedEntry } from '../drop-tree';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -19,10 +20,11 @@ import { Label } from '../../../primitives/label';
 import type { GitStatusType } from '../../tree/components/file-tree-item';
 import type { FileNode } from '../../../internal/files/types';
 import { cn } from '../../../lib/utils';
+import Loading from '../../../primitives/loading';
+import { Copy } from '../../../icons/copy';
 import {
   ArrowUpRightIcon as ArrowUpRight,
   ClipboardIcon as ClipboardCopy,
-  CopyIcon as Copy,
   EyeIcon as Eye,
   ClockCounterClockwiseIcon as History,
   DotsThreeIcon as MoreVertical,
@@ -34,6 +36,8 @@ import { useTranslations } from '../../../i18n';
 import { type ComponentType, memo, type ReactNode } from 'react';
 import { useDriveRowInteractions } from './use-drive-row-interactions';
 import { DriveFolderThumbnail } from './drive-folder-thumbnail';
+import { useItemSelection } from './drive-selection';
+import { SelectionCheck, SelectMenuItem } from './drive-selection-ui';
 import { FileThumbnail } from './file-thumbnail';
 import { Download } from '../../../internal/icons/download';
 import { ownClicks } from './own-clicks';
@@ -51,10 +55,14 @@ interface DriveGridItemProps {
   onCut?: (node: FileNode) => void;
   onDropMove?: (sourcePath: string, targetDirPath: string) => void;
   /** External files dropped onto THIS folder card. Absent = read-only source. */
-  onDropUpload?: (files: File[], targetDirPath: string) => void;
+  onDropUpload?: (files: File[], targetDirPath: string, entries?: DroppedEntry[]) => void;
   isDownloadingItem?: boolean;
   gitStatus?: GitStatusType;
   isCut?: boolean;
+  /** On the clipboard as a copy (a cut is `isCut`): both wear the focus ring. */
+  isCopied?: boolean;
+  /** Still on its way up: the card shows a spinner until the server has it. */
+  uploading?: boolean;
 }
 
 type DriveMenuItemComponent = ComponentType<{
@@ -262,6 +270,7 @@ const FolderCard = memo(function FolderCard({
   onDropUpload,
   isDownloadingItem,
   isCut,
+  isCopied,
 }: DriveGridItemProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const {
@@ -279,6 +288,7 @@ const FolderCard = memo(function FolderCard({
     'featuresProjectFilesComponentsDriveGridView.line231JsxTextCopyPath',
   );
   const open = () => onClick(node);
+  const { selection, selected, selectMode, onClick: onItemClick } = useItemSelection(node, open);
   const folderMenuProps = {
     node,
     onClick: open,
@@ -304,17 +314,25 @@ const FolderCard = memo(function FolderCard({
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onClick={isRenaming ? undefined : ownClicks(open)}
+          onClick={isRenaming ? undefined : onItemClick}
+          data-drive-item={node.path}
           className={cn(
             'group relative flex cursor-pointer flex-col gap-2 select-none',
-            isCut && 'opacity-40',
+            isCut && 'opacity-60',
             isDragging && 'opacity-30',
           )}
         >
           <DriveFolderThumbnail
             path={node.path}
-            className={cn('h-[120px]', isDragOver && 'ring-primary ring-2')}
+            className={cn(
+              // Transparent at rest, so the marked border takes no space when it appears.
+              'h-[120px] border border-transparent',
+              // Copied, cut or selected: the focus border plus its soft 15% ring.
+              (isCut || isCopied || selected) && 'border-ring ring-ring/15 ring-2',
+              isDragOver && 'ring-primary ring-2',
+            )}
           />
+          {selectMode ? <SelectionCheck selected={selected} className="absolute top-2 left-2" /> : null}
 
           {!isRenaming && (
             <DropdownMenu>
@@ -361,11 +379,16 @@ const FolderCard = memo(function FolderCard({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
-        <FolderDriveMenuItems
-          Item={ContextMenuItem}
-          Separator={ContextMenuSeparator}
-          {...folderMenuProps}
-        />
+        {selection?.selectionMenu(node, ContextMenuItem, ContextMenuSeparator) ?? (
+          <>
+            <SelectMenuItem selection={selection} node={node} Item={ContextMenuItem} Separator={ContextMenuSeparator} />
+            <FolderDriveMenuItems
+              Item={ContextMenuItem}
+              Separator={ContextMenuSeparator}
+              {...folderMenuProps}
+            />
+          </>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -382,8 +405,11 @@ const FileCard = memo(function FileCard({
   onCopy,
   onCut,
   isCut,
+  isCopied,
+  uploading,
 }: DriveGridItemProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tDrives = useTranslations('drives');
   const {
     isDragging, isRenaming, setIsRenaming, renameName, setRenameName,
     renameInputRef, handleDragStart, handleDragEnd, startRenaming, confirmRename,
@@ -398,6 +424,7 @@ const FileCard = memo(function FileCard({
     'featuresProjectFilesComponentsDriveGridView.line402JsxTextCheckpointHistory',
   );
   const open = () => onClick(node);
+  const { selection, selected, selectMode, onClick: onItemClick } = useItemSelection(node, open);
   const fileMenuProps = {
     node,
     onClick: open,
@@ -419,19 +446,36 @@ const FileCard = memo(function FileCard({
           draggable={!isRenaming}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-          onClick={isRenaming ? undefined : ownClicks(open)}
+          onClick={isRenaming ? undefined : onItemClick}
+          data-drive-item={node.path}
           onDoubleClick={isRenaming || !onDoubleClick ? undefined : ownClicks(() => onDoubleClick(node))}
           className={cn(
             'group relative flex cursor-pointer flex-col gap-2 select-none',
-            isCut && 'opacity-40',
+            isCut && 'opacity-60',
             isDragging && 'opacity-30',
           )}
         >
           <FileThumbnail
             filePath={node.path}
             fileName={node.name}
-            className="border-border h-[120px] rounded-lg border"
+            className={cn(
+              'border-border h-[120px] rounded-lg border',
+              // Copied, cut or selected: the focus border plus its soft 15% ring.
+              (isCut || isCopied || selected) && 'border-ring ring-ring/15 ring-2',
+            )}
           />
+          {selectMode && !uploading ? (
+            <SelectionCheck selected={selected} className="absolute top-2 left-2 z-10" />
+          ) : null}
+          {uploading ? (
+            <span
+              role="status"
+              aria-label={tDrives('uploadingFile', { name: node.name })}
+              className="bg-popover border-border absolute top-2 left-2 z-10 flex size-7 items-center justify-center rounded-md border shadow-xs"
+            >
+              <Loading variant="spokes" className="size-4" />
+            </span>
+          ) : null}
 
           {!isRenaming && (
             <DropdownMenu>
@@ -478,11 +522,16 @@ const FileCard = memo(function FileCard({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
-        <FileDriveMenuItems
-          Item={ContextMenuItem}
-          Separator={ContextMenuSeparator}
-          {...fileMenuProps}
-        />
+        {selection?.selectionMenu(node, ContextMenuItem, ContextMenuSeparator) ?? (
+          <>
+            <SelectMenuItem selection={selection} node={node} Item={ContextMenuItem} Separator={ContextMenuSeparator} />
+            <FileDriveMenuItems
+              Item={ContextMenuItem}
+              Separator={ContextMenuSeparator}
+              {...fileMenuProps}
+            />
+          </>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -512,13 +561,15 @@ interface DriveGridViewProps {
   onCut: (node: FileNode) => void;
   onDropMove: (sourcePath: string, targetDirPath: string) => void;
   /** External files dropped onto a folder card upload into THAT folder. */
-  onDropUpload?: (files: File[], targetDirPath: string) => void;
+  onDropUpload?: (files: File[], targetDirPath: string, entries?: DroppedEntry[]) => void;
   gitStatusMap: Map<string, GitStatusType>;
   clipboardPath?: string;
   clipboardOperation?: string;
   isDirDownloading: (path: string) => boolean;
   /** Hide mutation context-menu entries (delete/rename/cut/copy/history). */
   readOnly?: boolean;
+  /** Paths still uploading. */
+  uploadingPaths?: ReadonlySet<string>;
 }
 
 export function DriveGridView({
@@ -542,6 +593,7 @@ export function DriveGridView({
   clipboardOperation,
   isDirDownloading,
   readOnly = false,
+  uploadingPaths,
 }: DriveGridViewProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const onRename = readOnly ? undefined : rawOnRename;
@@ -612,6 +664,7 @@ export function DriveGridView({
                 onDropMove={onDropMove}
                 onDropUpload={onDropUpload}
                 isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
+                isCopied={clipboardOperation === 'copy' && clipboardPath === node.path}
               />
             ))}
           </div>
@@ -639,6 +692,8 @@ export function DriveGridView({
                 onCut={onCut}
                 gitStatus={gitStatusMap.get(node.path)}
                 isCut={clipboardOperation === 'cut' && clipboardPath === node.path}
+                isCopied={clipboardOperation === 'copy' && clipboardPath === node.path}
+                uploading={uploadingPaths?.has(node.path)}
               />
             ))}
           </div>
@@ -659,11 +714,11 @@ function SectionHeader({
 }) {
   return (
     <div className="flex w-fit items-center justify-between gap-2 px-1">
-      <Label className="text-foreground/90 flex items-center gap-2 text-sm font-medium">
+      <Label className="text-foreground flex items-center gap-2 text-sm font-medium">
         {icon}
         {label}
       </Label>
-      <span className="text-muted-foreground text-[12px] tabular-nums">{count}</span>
+      <span className="text-muted-foreground text-xs tabular-nums">{count}</span>
     </div>
   );
 }

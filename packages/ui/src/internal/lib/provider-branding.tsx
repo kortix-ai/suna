@@ -6,7 +6,8 @@ import {
   MODEL_SELECTOR_PROVIDER_IDS as SHARED_MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS as SHARED_PROVIDER_LABELS,
 } from '@kortix/llm-catalog';
-import { useUiImage } from '../../providers/ui-provider';
+import { KortixLogo } from '../../primitives/kortix-logo';
+import { useUiHostConfig, useUiImage } from '../../providers/ui-provider';
 import { useState } from 'react';
 
 export const POPULAR_PROVIDER_IDS = [
@@ -37,59 +38,63 @@ export const PROVIDER_NOTES: Record<string, string> = {
   vercel: 'Use Vercel AI Gateway credentials',
 };
 
-const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
-  anthropic: { src: '/provider-icons/anthropic.svg', fallback: 'AN' },
-  openai: { src: '/provider-icons/openai.svg', fallback: 'OA' },
-  codex: { src: '/provider-icons/openai.svg', fallback: 'GPT' },
-  opencode: { src: '/provider-icons/opencode.svg', fallback: 'OC' },
-  'opencode-go': { src: '/provider-icons/opencode.svg', fallback: 'OC' },
-  kortix: { src: '/kortix-symbol.svg', fallback: 'KX' },
-  'github-copilot': { src: '/provider-icons/github-copilot.svg', fallback: 'GH' },
-  google: { src: '/provider-icons/google.svg', fallback: 'GO' },
-  openrouter: { src: '/provider-icons/openrouter.svg', fallback: 'OR' },
-  vercel: { src: '/provider-icons/vercel.svg', fallback: 'VE' },
-  groq: { src: '/provider-icons/groq.svg', fallback: 'GQ' },
-  xai: { src: '/provider-icons/xai.svg', fallback: 'XA' },
+/**
+ * Provider id → icon file name. apps/web serves the files at `/provider-icons/<icon>.svg`
+ * (`UiHostConfig.providerIconBaseUrl`); a host without them gets the models.dev logo of
+ * the same name. `kortix` is drawn by `KortixLogo`, so the host's brand mark replaces it.
+ */
+const PROVIDER_ICON_MAP: Record<string, { icon: string; fallback: string }> = {
+  anthropic: { icon: 'anthropic', fallback: 'AN' },
+  openai: { icon: 'openai', fallback: 'OA' },
+  codex: { icon: 'openai', fallback: 'GPT' },
+  opencode: { icon: 'opencode', fallback: 'OC' },
+  'opencode-go': { icon: 'opencode', fallback: 'OC' },
+  'github-copilot': { icon: 'github-copilot', fallback: 'GH' },
+  google: { icon: 'google', fallback: 'GO' },
+  openrouter: { icon: 'openrouter', fallback: 'OR' },
+  vercel: { icon: 'vercel', fallback: 'VE' },
+  groq: { icon: 'groq', fallback: 'GQ' },
+  xai: { icon: 'xai', fallback: 'XA' },
   // Bedrock: models.dev's canonical id is `amazon-bedrock`; keep the short
   // `bedrock` alias for any legacy call site that still passes it.
-  'amazon-bedrock': { src: '/provider-icons/amazon-bedrock.svg', fallback: 'AW' },
-  bedrock: { src: '/provider-icons/amazon-bedrock.svg', fallback: 'AW' },
+  'amazon-bedrock': { icon: 'amazon-bedrock', fallback: 'AW' },
+  bedrock: { icon: 'amazon-bedrock', fallback: 'AW' },
   // Moonshot ships as three distinct providers on models.dev — Moonshot AI,
   // Moonshot AI (China), and the Kimi For Coding plan. They share the one
   // Moonshot mark (no separate -cn / kimi asset exists), but their VERBATIM
   // names keep them readable apart in the list.
-  moonshotai: { src: '/provider-icons/moonshotai.svg', fallback: 'MS' },
-  'moonshotai-cn': { src: '/provider-icons/moonshotai.svg', fallback: 'MS' },
-  'kimi-for-coding': { src: '/provider-icons/moonshotai.svg', fallback: 'KI' },
-  deepseek: { src: '/provider-icons/deepseek.svg', fallback: 'DS' },
-  mistral: { src: '/provider-icons/mistral.svg', fallback: 'MI' },
-  cohere: { src: '/provider-icons/cohere.svg', fallback: 'CO' },
-  'cohere-platform': { src: '/provider-icons/cohere.svg', fallback: 'CO' },
-  llama: { src: '/provider-icons/llama.svg', fallback: 'LL' },
-  huggingface: { src: '/provider-icons/huggingface.svg', fallback: 'HF' },
-  cerebras: { src: '/provider-icons/cerebras.svg', fallback: 'CE' },
-  togetherai: { src: '/provider-icons/togetherai.svg', fallback: 'TA' },
+  moonshotai: { icon: 'moonshotai', fallback: 'MS' },
+  'moonshotai-cn': { icon: 'moonshotai', fallback: 'MS' },
+  'kimi-for-coding': { icon: 'moonshotai', fallback: 'KI' },
+  deepseek: { icon: 'deepseek', fallback: 'DS' },
+  mistral: { icon: 'mistral', fallback: 'MI' },
+  cohere: { icon: 'cohere', fallback: 'CO' },
+  'cohere-platform': { icon: 'cohere', fallback: 'CO' },
+  llama: { icon: 'llama', fallback: 'LL' },
+  huggingface: { icon: 'huggingface', fallback: 'HF' },
+  cerebras: { icon: 'cerebras', fallback: 'CE' },
+  togetherai: { icon: 'togetherai', fallback: 'TA' },
   // Fireworks: `fireworks-ai` is the models.dev id; `firepass` is its
   // pass-through variant; keep `fireworks` as a legacy alias.
-  'fireworks-ai': { src: '/provider-icons/fireworks-ai.svg', fallback: 'FW' },
-  firepass: { src: '/provider-icons/fireworks-ai.svg', fallback: 'FW' },
-  fireworks: { src: '/provider-icons/fireworks-ai.svg', fallback: 'FW' },
-  deepinfra: { src: '/provider-icons/deepinfra.svg', fallback: 'DI' },
-  nvidia: { src: '/provider-icons/nvidia.svg', fallback: 'NV' },
+  'fireworks-ai': { icon: 'fireworks-ai', fallback: 'FW' },
+  firepass: { icon: 'fireworks-ai', fallback: 'FW' },
+  fireworks: { icon: 'fireworks-ai', fallback: 'FW' },
+  deepinfra: { icon: 'deepinfra', fallback: 'DI' },
+  nvidia: { icon: 'nvidia', fallback: 'NV' },
   // Google Vertex reuses the Google mark; the Anthropic-on-Vertex variant
   // reuses the Anthropic mark so it reads as what it actually serves.
-  'google-vertex': { src: '/provider-icons/google.svg', fallback: 'GV' },
-  'google-vertex-anthropic': { src: '/provider-icons/anthropic.svg', fallback: 'GV' },
-  cloudflare: { src: '/provider-icons/cloudflare-workers-ai.svg', fallback: 'CF' },
-  'cloudflare-workers-ai': { src: '/provider-icons/cloudflare-workers-ai.svg', fallback: 'CF' },
-  azure: { src: '/provider-icons/azure.svg', fallback: 'AZ' },
-  ollama: { src: '/provider-icons/ollama-cloud.svg', fallback: 'OL' },
-  perplexity: { src: '/provider-icons/perplexity.svg', fallback: 'PE' },
-  'perplexity-agent': { src: '/provider-icons/perplexity.svg', fallback: 'PE' },
-  lmstudio: { src: '/provider-icons/lmstudio.svg', fallback: 'LM' },
-  v0: { src: '/provider-icons/v0.svg', fallback: 'V0' },
-  wandb: { src: '/provider-icons/wandb.svg', fallback: 'WB' },
-  baseten: { src: '/provider-icons/baseten.svg', fallback: 'BT' },
+  'google-vertex': { icon: 'google', fallback: 'GV' },
+  'google-vertex-anthropic': { icon: 'anthropic', fallback: 'GV' },
+  cloudflare: { icon: 'cloudflare-workers-ai', fallback: 'CF' },
+  'cloudflare-workers-ai': { icon: 'cloudflare-workers-ai', fallback: 'CF' },
+  azure: { icon: 'azure', fallback: 'AZ' },
+  ollama: { icon: 'ollama-cloud', fallback: 'OL' },
+  perplexity: { icon: 'perplexity', fallback: 'PE' },
+  'perplexity-agent': { icon: 'perplexity', fallback: 'PE' },
+  lmstudio: { icon: 'lmstudio', fallback: 'LM' },
+  v0: { icon: 'v0', fallback: 'V0' },
+  wandb: { icon: 'wandb', fallback: 'WB' },
+  baseten: { icon: 'baseten', fallback: 'BT' },
   // Everything else falls back to monochrome initials.
 };
 
@@ -99,13 +104,15 @@ const CATALOG_PROVIDER_IDS = new Set(CATALOG_PROVIDER_ENV.map((provider) => prov
  * Resolve a provider id to its logo, or `undefined` when there is none (the
  * caller falls back to monochrome initials). Keyed on the VERBATIM models.dev
  * provider ids so live-catalog entries resolve — see the icon-map notes above
- * for the Moonshot trio / Bedrock / Vertex cases. A catalog provider without a
- * bundled asset uses its models.dev logo; models.dev answers any id with a
- * generic mark, so an id outside the catalog (a custom provider) keeps initials.
+ * for the Moonshot trio / Bedrock / Vertex cases. A mapped provider uses the
+ * host's copy under `baseUrl` when the host serves one, else the models.dev
+ * logo; a catalog provider without a mapped icon uses its models.dev logo.
+ * models.dev answers any id with a generic mark, so an id outside the catalog
+ * (a custom provider) keeps initials.
  */
-export function providerIconSrc(providerID: string): string | undefined {
-  const bundled = PROVIDER_ICON_MAP[providerID]?.src;
-  if (bundled) return bundled;
+export function providerIconSrc(providerID: string, baseUrl?: string): string | undefined {
+  const icon = PROVIDER_ICON_MAP[providerID]?.icon;
+  if (icon) return baseUrl === undefined ? `https://models.dev/logos/${icon}.svg` : `${baseUrl}/${icon}.svg`;
   if (CATALOG_PROVIDER_IDS.has(providerID)) return `https://models.dev/logos/${providerID}.svg`;
   return undefined;
 }
@@ -135,13 +142,14 @@ const LOGO_TILE_LIGHT = 'border-border rounded-md border bg-white';
 const LOGO_TILE_LIGHT_TEXT = 'text-black';
 
 /** The Kortix mark has no built-in padding, so it gets its own size per tile
- *  to match the other logos' optical size (roughly half the tile). */
-const KORTIX_MARK_SIZE = {
-  xs: 'size-3.5',
-  small: 'size-3',
-  medium: 'size-4',
-  default: 'size-4',
-  large: 'size-5',
+ *  to match the other logos' optical size (roughly half the tile). In spacing
+ *  steps (`size-3.5` … `size-5`), so the mark follows the host's `--spacing`. */
+const KORTIX_MARK_STEPS = {
+  xs: 3.5,
+  small: 3,
+  medium: 4,
+  default: 4,
+  large: 5,
 } as const;
 
 export function ProviderLogo({
@@ -160,10 +168,12 @@ export function ProviderLogo({
   tone?: 'theme' | 'light';
 }) {
   const Image = useUiImage();
+  const { providerIconBaseUrl } = useUiHostConfig();
   const light = tone === 'light';
   // An unreachable models.dev logo (offline self-host) falls back to initials.
   const [failedSrc, setFailedSrc] = useState<string>();
-  const iconSrc = providerIconSrc(providerID);
+  const kortix = providerID === 'kortix';
+  const iconSrc = kortix ? undefined : providerIconSrc(providerID, providerIconBaseUrl);
   const src = iconSrc === failedSrc ? undefined : iconSrc;
 
   const sizeClasses = {
@@ -191,13 +201,23 @@ export function ProviderLogo({
         // the other sizes read as an avatar, and at 16px a tile around a 12px
         // mark is all frame and no logo. The initials fallback keeps its tile
         // at every size: two bare letters at 9px read as debris, not a logo.
-        src && size === 'xs' ? 'bg-transparent' : light ? LOGO_TILE_LIGHT : 'bg-muted rounded-md',
+        (src || kortix) && size === 'xs' ? 'bg-transparent' : light ? LOGO_TILE_LIGHT : 'bg-muted rounded-md',
         sizeClasses[size],
         className,
       )}
       aria-hidden="true"
     >
-      {src ? (
+      {kortix ? (
+        // The host's brand mark (`useBrand` icon), else the Kortix symbol in currentColor.
+        <KortixLogo
+          variant="icon"
+          style={{
+            width: `calc(var(--spacing) * ${KORTIX_MARK_STEPS[size]})`,
+            height: `calc(var(--spacing) * ${KORTIX_MARK_STEPS[size]})`,
+          }}
+          className={light ? LOGO_TILE_LIGHT_TEXT : 'text-foreground'}
+        />
+      ) : src ? (
         <Image
           src={src}
           alt=""
@@ -208,17 +228,13 @@ export function ProviderLogo({
           className={cn(
             'object-contain',
             !light && 'dark:invert',
-            // The Kortix mark is drawn edge-to-edge with no built-in padding,
-            // so inside a tile it needs its own inset to match the other
-            // logos' optical size. At `xs` there is no tile to inset from.
-            src === '/kortix-symbol.svg' && KORTIX_MARK_SIZE[size],
           )}
         />
       ) : (
         <span
           className={cn(
             'font-semibold tracking-wide uppercase',
-            light ? LOGO_TILE_LIGHT_TEXT : 'text-zinc-600 dark:text-zinc-300',
+            light ? LOGO_TILE_LIGHT_TEXT : 'text-muted-foreground',
             size === 'xs' ? 'text-[9px]' : 'text-xs',
           )}
         >

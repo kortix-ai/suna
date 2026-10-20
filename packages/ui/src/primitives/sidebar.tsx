@@ -74,7 +74,7 @@ function SidebarProvider({
       const openState = typeof value === 'function' ? value(open) : value;
       if (setOpenProp) {
         // Controlled: whoever owns the state owns its persistence. The
-        // settings shell (`features/accounts/hub/account-settings-shell.tsx`)
+        // settings shell (`packages/ui/src/internal/account-hub/account-settings-shell.tsx`)
         // controls its sidebar precisely so a collapse there does not land in
         // this cookie and hide the project sidebar on the next app load.
         setOpenProp(openState);

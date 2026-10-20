@@ -10,7 +10,6 @@ import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import { filesNavLabel } from '../../../internal/layout/files-nav-label';
 import { useFeatureFlag } from '@kortix/sdk/react';
-import { useUiParams } from '../../../providers/ui-provider';
 import {
   GitDiffIcon as FileDiff,
   ClockCounterClockwiseIcon as History,
@@ -20,6 +19,8 @@ import { DrivePathBar, DriveViewMenu } from './drive-toolbar';
 import { VersionSelector } from './version-selector';
 
 interface DriveHeaderProps {
+  /** The project the header belongs to. Without it, the Drive label and the sidebar offset stay off. */
+  projectId?: string;
   historyToggle: { open: boolean; onToggle: () => void };
   reviewsToggle: { open: boolean; onToggle: () => void; openCount?: number };
   /** `⋯` menu wiring — the page owns the queries these act on. */
@@ -86,6 +87,7 @@ export function DriveHeader({
   showSearch = false,
   sortDisabled = false,
   offsetForSidebarToggle = false,
+  projectId,
 }: DriveHeaderProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSidebar = useTranslations('sidebar');
@@ -93,9 +95,8 @@ export function DriveHeader({
   const sidebarCollapsed = sidebar?.state === 'collapsed';
 
   const reviewCount = reviewsToggle.openCount ?? 0;
-  const params = useUiParams<{ id?: string }>();
   // Volumes on for the project: the repo browser is Repo; off, it is Files.
-  const volumes = useFeatureFlag(params?.id, 'drives');
+  const volumes = useFeatureFlag(projectId, 'drives');
 
   const actions = (
     <div className="flex shrink-0 items-center gap-1">
@@ -158,7 +159,7 @@ export function DriveHeader({
 
   // The standalone page: the shared project page header, with the folder path
   // in its own strip below it, shown only inside a subfolder.
-  if (offsetForSidebarToggle && params?.id) {
+  if (offsetForSidebarToggle && projectId) {
     // With Volumes on, the git repository is "Repo" and "Files" is the shared
     // folders; off, the repository keeps the title it had before volumes.
     const title =

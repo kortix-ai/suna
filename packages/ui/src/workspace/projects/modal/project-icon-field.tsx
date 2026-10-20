@@ -16,7 +16,7 @@ import { preloadProjectIconPicker, ProjectIconPicker } from '../../../primitives
 import { cn } from '../../../internal/lib/utils';
 
 /** The codebase's icon-swap treatment: scale + opacity + blur, on a spring with
- *  no bounce. See components/markdown/copy-button.tsx. */
+ *  no bounce. See packages/ui/src/markdown/copy-button.tsx. */
 const SWAP = {
   initial: { scale: 0.25, opacity: 0, filter: 'blur(4px)' },
   animate: { scale: 1, opacity: 1, filter: 'blur(0px)' },

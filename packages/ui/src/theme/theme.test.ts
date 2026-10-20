@@ -94,3 +94,15 @@ test('a scoped secondary re-derives liquid glass per mode unless the theme sets 
 test('borderWidth sets --border-width in both modes', () => {
   expect(themeToCssVars({ borderWidth: '2px' })).toEqual({ light: { '--border-width': '2px' }, dark: { '--border-width': '2px' } });
 });
+
+test('action recolors the default Button fill; unset, the class falls back to foreground on background', async () => {
+  expect(themeToCssVars({ light: { action: 'teal', actionForeground: 'white' } }).light).toEqual({
+    '--action': 'teal',
+    '--action-foreground': 'white',
+  });
+  const { buttonVariants } = await import('../primitives/button');
+  expect(buttonVariants()).toContain('bg-action text-action-foreground');
+  const css = await Bun.file(new URL('../styles/theme.css', import.meta.url)).text();
+  expect(css).toContain('--color-action: var(--action, var(--foreground));');
+  expect(css).toContain('--color-action-foreground: var(--action-foreground, var(--background));');
+});

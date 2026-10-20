@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createTranslator } from 'next-intl';
 
 import deMessages from '../../../../translations/de.json';
-import { attachmentTileCopy } from './attachment-tiles';
+import { attachmentTileCopy } from '@kortix/ui/session/composer/attachment-tiles';
 
 describe('attachment tile catalog strings', () => {
   test('renders the failure reason, retry label, and announcement in the active locale', () => {

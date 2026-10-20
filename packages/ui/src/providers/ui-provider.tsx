@@ -32,37 +32,6 @@ export interface UiI18nHost {
  * `@kortix/ui/lib/host-env`.
  */
 /**
- * The copy of the @kortix/ui/session pickers (`ModelPicker`, `AgentPicker`).
- * Every key has an English default; a host passes the keys it translates as
- * `strings.chat`. The session thread reads the i18n catalog instead
- * (`UiProvider` `i18n`).
- */
-export interface ChatStrings {
-  /** Model picker trigger label. */
-  model: string;
-  defaultModel: string;
-  searchModels: string;
-  models: string;
-  noModelsMatch: string;
-  /** Agent picker trigger label. */
-  agent: string;
-  defaultAgent: string;
-  /** The default agent's row: `name (default)`. */
-  defaultAgentNamed: (name: string) => string;
-}
-
-export const defaultChatStrings: ChatStrings = {
-  model: 'Model',
-  defaultModel: 'Default model',
-  searchModels: 'Search models…',
-  models: 'Models',
-  noModelsMatch: 'No models match.',
-  agent: 'Agent',
-  defaultAgent: 'Default agent',
-  defaultAgentNamed: (name) => `${name} (default)`,
-};
-
-/**
  * Every string @kortix/ui renders by itself. Components that render copy
  * without a caller-supplied label read it from here, so a host translates
  * them once through `<UiProvider strings>`. Copy not listed here is English
@@ -79,8 +48,6 @@ export interface UiStrings {
   commandPaletteTitle: string;
   /** CommandDialog screen-reader description. */
   commandPaletteDescription: string;
-  /** @kortix/ui/chat picker copy. */
-  chat: ChatStrings;
 }
 
 export const defaultUiStrings: UiStrings = {
@@ -89,11 +56,10 @@ export const defaultUiStrings: UiStrings = {
   close: 'Close',
   commandPaletteTitle: 'Command Palette',
   commandPaletteDescription: 'Search for a command to run...',
-  chat: defaultChatStrings,
 };
 
-/** What a host passes as `strings`: any subset, `chat` included. */
-export type UiStringsInput = Partial<Omit<UiStrings, 'chat'>> & { chat?: Partial<ChatStrings> };
+/** What a host passes as `strings`: any subset. */
+export type UiStringsInput = Partial<UiStrings>;
 
 export type UiLinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & {
   href: string;
@@ -193,6 +159,13 @@ export interface UiNavigation {
   useSearchParams: () => UiSearchParams;
   /** Default: no route params. A host with dynamic segments passes its own. */
   useParams: () => UiRouteParams;
+  /**
+   * The router observes `history.pushState` / `replaceState` (Next.js does,
+   * React Router does not). True: a URL for the view already on screen (a
+   * session tab, a query param) is written to history, with no navigation.
+   * False or omitted: it goes through `useRouter`. The default navigation is true.
+   */
+  observesHistory?: boolean;
 }
 
 const browserRouter: UiRouter = {
@@ -202,17 +175,24 @@ const browserRouter: UiRouter = {
   back: () => window.history.back(),
 };
 
+/** Dispatched after the UI writes history itself, so the default navigation re-reads the URL. */
+const LOCATION_EVENT = 'kortix-ui:location';
+
 function subscribeLocation(onChange: () => void): () => void {
   window.addEventListener('popstate', onChange);
-  return () => window.removeEventListener('popstate', onChange);
+  window.addEventListener(LOCATION_EVENT, onChange);
+  return () => {
+    window.removeEventListener('popstate', onChange);
+    window.removeEventListener(LOCATION_EVENT, onChange);
+  };
 }
 
 const NO_PARAMS: UiRouteParams = {};
 
 /**
  * Framework-free navigation: full page loads, `window.location` reads that
- * update on `popstate`. SSR renders an empty pathname and no search params.
- * ponytail: a direct `history.pushState` is not observed; a SPA host passes its router.
+ * update on `popstate` and on the UI's own history writes
+ * (`useUiShallowNavigate`). SSR renders an empty pathname and no search params.
  */
 export const defaultUiNavigation: UiNavigation = {
   useRouter: () => browserRouter,
@@ -227,12 +207,11 @@ export const defaultUiNavigation: UiNavigation = {
     return React.useMemo(() => new URLSearchParams(search), [search]);
   },
   useParams: () => NO_PARAMS,
+  observesHistory: true,
 };
 
 /** Values the host knows and the UI reads. Every field has a default. */
 export interface UiHostConfig {
-  /** Billing is on, so upgrade actions have a target. Default: false. */
-  billingEnabled: boolean;
   /**
    * The backend serves the hosted app-connector catalog ("Easy connect").
    * False hides that catalog; custom connectors stay. Default: true.
@@ -242,12 +221,77 @@ export interface UiHostConfig {
   managedModelsEnabled: boolean;
   /** The deployment's release version, for version-pinned CLI install commands. Default: none (latest). */
   deploymentVersion?: string;
+  /**
+   * The session terminal can connect: the host reaches the runtime's pty
+   * WebSocket. A host that proxies HTTP only (a Next route handler cannot
+   * upgrade a WebSocket) sets false, and the Terminal control is hidden. Default: true.
+   */
+  terminalEnabled: boolean;
+  /**
+   * The Terminal panel offers "Connect from your machine": the deployment's
+   * CLI installer (`<origin>/install`) and `kortix sessions connect`. A host
+   * that serves no installer and ships no Kortix CLI sets false, and the bar
+   * is hidden. Default: true.
+   */
+  cliConnectEnabled: boolean;
+  /**
+   * The host serves the public share page at `share.public_path`
+   * (`/share/session/<token>` on its own origin). False hides every control
+   * that mints or lists a public link: the Share dialog's public-link section,
+   * the Browser panel's Copy link and Manage links, and the file and app
+   * viewers' Copy link. Default: true.
+   */
+  publicSharesEnabled: boolean;
+  /**
+   * Where the host serves the provider icons (`<base>/<icon>.svg`, apps/web: `/provider-icons`).
+   * Default: none, so provider logos load from models.dev. The `kortix` provider draws `useBrand`'s icon.
+   */
+  providerIconBaseUrl?: string;
+  /** The host opens a command palette on ⌘K / Ctrl+K; the composer hints at it. Default: false. */
+  commandPaletteShortcut: boolean;
+  /** The host opens settings on ⌘, / Ctrl+,; the composer hints at it. Default: false. */
+  settingsShortcut: boolean;
+  /**
+   * The host reaches the backend's account routes: the IAM permission probes
+   * (`/accounts/:id/iam/*`), account members and groups, billing (`/billing/*`)
+   * and session oversight. A host that fronts one operator key and blocks those
+   * routes sets false. Then no such request runs, the sharing pickers offer no
+   * "Specific people" option, billing state stays empty (no balance warning, no
+   * upgrade prompt), and every permission gate shows its control: the server
+   * still enforces each route. Default: true.
+   */
+  accountApiEnabled: boolean;
 }
 
+/** What the session browser frames: a port and path inside the session's sandbox, or a URL. */
+export interface UiPreviewRequest {
+  projectId: string;
+  sessionId: string;
+  /** The sandbox port, or 0 for a URL outside the sandbox. */
+  port: number;
+  path: string;
+  /** The address the user sees, for example `http://localhost:8123/`. */
+  url: string;
+}
+
+/**
+ * Resolves the final URL the session browser frames and opens in a new tab
+ * (and the tab a sandbox link in a message or tool card opens),
+ * with its own scoped credentials. Return null to use the default (the SDK's
+ * preview URL with the SDK token). A host whose browser must not hold a Kortix
+ * token, or whose origin is not the Kortix backend, resolves it on its server.
+ */
+export type UiPreviewUrlResolver = (request: UiPreviewRequest) => Promise<string | null>;
+
 export const defaultUiHostConfig: UiHostConfig = {
-  billingEnabled: false,
   connectorsEnabled: true,
   managedModelsEnabled: false,
+  terminalEnabled: true,
+  cliConnectEnabled: true,
+  publicSharesEnabled: true,
+  commandPaletteShortcut: false,
+  settingsShortcut: false,
+  accountApiEnabled: true,
 };
 
 const useNoViewer = (): string | undefined => undefined;
@@ -323,6 +367,11 @@ export interface UiHostComponents {
   }>;
   /** The decorative background of an empty session. Without it, the plain surface. */
   Wallpaper?: React.ComponentType;
+  /**
+   * The host's own announcement on the project home, once onboarding is done
+   * (apps/web: its mobile app). Without it, nothing is shown.
+   */
+  HomeAnnouncement?: React.ComponentType;
   /** Who can open a session, and its public link. Without it, the header has no Share button. */
   ShareSessionModal?: React.ComponentType<{
     projectId: string;
@@ -347,6 +396,7 @@ interface UiContextValue {
   updateViewerMetadata: UpdateUiViewerMetadata | undefined;
   config: UiHostConfig;
   components: UiHostComponents;
+  resolvePreviewUrl: UiPreviewUrlResolver | undefined;
 }
 
 const UiContext = React.createContext<UiContextValue>({
@@ -361,6 +411,7 @@ const UiContext = React.createContext<UiContextValue>({
   updateViewerMetadata: undefined,
   config: defaultUiHostConfig,
   components: NO_COMPONENTS,
+  resolvePreviewUrl: undefined,
 });
 
 export function UiProvider({
@@ -375,6 +426,7 @@ export function UiProvider({
   updateViewerMetadata,
   config,
   components,
+  resolvePreviewUrl,
   children,
 }: {
   strings?: UiStringsInput;
@@ -402,11 +454,13 @@ export function UiProvider({
   config?: Partial<UiHostConfig>;
   /** Default: no slots. Pass a stable object. */
   components?: UiHostComponents;
+  /** Default: the SDK's preview URL. Pass a stable function. */
+  resolvePreviewUrl?: UiPreviewUrlResolver;
   children: React.ReactNode;
 }) {
   const value = React.useMemo<UiContextValue>(
     () => ({
-      strings: { ...defaultUiStrings, ...strings, chat: { ...defaultChatStrings, ...strings?.chat } },
+      strings: { ...defaultUiStrings, ...strings },
       link: link ?? DefaultLink,
       image: image ?? DefaultImage,
       useBrand: useBrand ?? useNoBrand,
@@ -417,8 +471,22 @@ export function UiProvider({
       updateViewerMetadata,
       config: { ...defaultUiHostConfig, ...config },
       components: components ?? NO_COMPONENTS,
+      resolvePreviewUrl,
     }),
-    [strings, link, image, useBrand, navigation, i18n, useViewerId, useViewer, updateViewerMetadata, config, components],
+    [
+      strings,
+      link,
+      image,
+      useBrand,
+      navigation,
+      i18n,
+      useViewerId,
+      useViewer,
+      updateViewerMetadata,
+      config,
+      components,
+      resolvePreviewUrl,
+    ],
   );
   return (
     <UiContext.Provider value={value}>
@@ -470,6 +538,33 @@ export function useUiRouter(): UiRouter {
   return React.useContext(UiContext).navigation.useRouter();
 }
 
+/** Moves the URL to a view the page already renders (a tab, a query param). */
+export type UiShallowNavigate = (href: string, options?: { replace?: boolean }) => void;
+
+/**
+ * The URL change for a view already on screen: `history` when the host router
+ * observes it (`UiNavigation.observesHistory`), else the host router, so a SPA
+ * router never falls out of step with the address bar.
+ */
+export function useUiShallowNavigate(): UiShallowNavigate {
+  const { navigation } = React.useContext(UiContext);
+  const router = navigation.useRouter();
+  const observesHistory = navigation.observesHistory === true;
+  return React.useCallback(
+    (href, options) => {
+      if (!observesHistory) {
+        if (options?.replace) router.replace(href, { scroll: false });
+        else router.push(href, { scroll: false });
+        return;
+      }
+      if (options?.replace) window.history.replaceState(null, '', href);
+      else window.history.pushState(null, '', href);
+      window.dispatchEvent(new window.Event(LOCATION_EVENT));
+    },
+    [observesHistory, router],
+  );
+}
+
 export function useUiPathname(): string {
   return React.useContext(UiContext).navigation.usePathname();
 }
@@ -500,6 +595,11 @@ export function useUiUpdateViewerMetadata(): UpdateUiViewerMetadata | undefined 
 
 export function useUiHostConfig(): UiHostConfig {
   return React.useContext(UiContext).config;
+}
+
+/** The host's preview URL resolver, or undefined for the SDK default. */
+export function useUiPreviewUrlResolver(): UiPreviewUrlResolver | undefined {
+  return React.useContext(UiContext).resolvePreviewUrl;
 }
 
 /** The host's component slots. A missing slot means: hide the control. */

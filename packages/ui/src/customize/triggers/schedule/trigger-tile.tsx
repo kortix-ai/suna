@@ -5,7 +5,7 @@
  * corner status dot. Every trigger type draws the clock in the list and the
  * sheet; the toast keeps its per-type glyphs.
  *
- * The glyph is drawn as `EntityTile` in `components/ui/toast.tsx` draws it:
+ * The glyph is drawn as `EntityTile` in `packages/ui/src/primitives/toast.tsx` draws it:
  * muted, then again in the health colour under the toast's `REFLECTION_MASK`,
  * so the colour reaches in from the corner the dot sits on. The dot is a plain
  * 5 px dot on a disc in the row's own surface. One tone per state colours

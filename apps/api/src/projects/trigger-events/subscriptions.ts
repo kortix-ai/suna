@@ -189,6 +189,18 @@ async function reconcileOne(
     ? { kind: 'error', message: EVENT_TRIGGERS_OFF_MESSAGE }
     : await resolveSource(projectId, accountId, event, projectMetadata);
   const providerId = resolved.providerId ?? prev?.provider ?? 'composio';
+  // The source changed (a connector moved from Composio to Kortix): the old
+  // instance belongs to the old source, and only that source can drop it, once
+  // this row no longer references it.
+  const moved =
+    prev?.externalId && prev.provider !== providerId
+      ? { provider: prev.provider, externalId: prev.externalId }
+      : null;
+  const prevExternalId = moved ? null : (prev?.externalId ?? null);
+  const dropMovedInstance = async () => {
+    const old = moved ? eventSourceFor(moved.provider) : undefined;
+    if (moved && old) await unsubscribeIfUnreferenced(old, moved.externalId);
+  };
   const base = {
     projectId,
     slug: spec.slug,
@@ -208,7 +220,8 @@ async function reconcileOne(
       lastError: resolved.message,
     });
     const provider = eventSourceFor(providerId);
-    if (provider && prev?.externalId) await unsubscribeIfUnreferenced(provider, prev.externalId);
+    if (provider && prevExternalId) await unsubscribeIfUnreferenced(provider, prevExternalId);
+    await dropMovedInstance();
     return;
   }
   const { provider, connection } = resolved;
@@ -217,7 +230,7 @@ async function reconcileOne(
     prev &&
     prev.status === 'active' &&
     prev.desiredHash === hash &&
-    (!prev.externalId || !provider.instanceExists || (await provider.instanceExists(prev.externalId)))
+    (!prevExternalId || !provider.instanceExists || (await provider.instanceExists(prevExternalId)))
   ) {
     return;
   }
@@ -231,18 +244,20 @@ async function reconcileOne(
       status: status?.kind ?? 'active',
       lastError: status?.message ?? null,
     });
-    if (prev?.externalId && prev.externalId !== externalId) {
-      await unsubscribeIfUnreferenced(provider, prev.externalId);
+    if (prevExternalId && prevExternalId !== externalId) {
+      await unsubscribeIfUnreferenced(provider, prevExternalId);
     }
+    await dropMovedInstance();
   } catch (error) {
     await store.upsert({
       ...base,
       connectionId: connection.connectionId,
-      externalId: prev?.externalId ?? null,
+      externalId: prevExternalId,
       desiredHash: hash,
       status: error instanceof EventConnectionNotReadyError ? 'needs_connection' : 'error',
       lastError: errorText(error),
     });
+    await dropMovedInstance();
   }
 }
 

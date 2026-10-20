@@ -1,12 +1,19 @@
 'use client';
 
-import { UiProvider, type UiLinkProps, type UiNavigation, type UiStringsInput } from '@kortix/ui';
-import { lazyClient } from '@kortix/ui/lib/lazy-client';
-import type { UiHostComponents, UiHostConfig, UiViewer } from '@kortix/ui/providers/ui-provider';
+import {
+  SessionIdsProvider,
+  UiProvider,
+  lazyClient,
+  setUiHostEnv,
+  setUiTelemetry,
+  type UiHostComponents,
+  type UiHostConfig,
+  type UiLinkProps,
+  type UiNavigation,
+  type UiStringsInput,
+  type UiViewer,
+} from '@kortix/ui';
 import type { UiI18nHost } from '@kortix/ui/i18n';
-import { SessionIdsProvider } from '@kortix/ui/providers/session-ids';
-import { setUiHostEnv } from '@kortix/ui/lib/host-env';
-import { setUiTelemetry } from '@kortix/ui/lib/telemetry';
 import { setSilentErrorToastFilter } from '@kortix/ui/toast';
 import * as Sentry from '@sentry/nextjs';
 import NextImage from 'next/image';
@@ -15,15 +22,15 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 import { forwardRef, useMemo, type ReactNode } from 'react';
 
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { useBranding } from '@/features/branding/branding-provider';
+import { useBranding } from '@kortix/ui/internal/branding/branding-provider';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { updateProfileMetadata } from '@/lib/auth/update-profile';
-import { isRuntimeNotReadyNoiseMessage } from '@/lib/browser-error-noise';
-import { isBillingEnabled, isConnectorsEnabled, isManagedProviderEnabled } from '@/lib/config';
+import { isRuntimeNotReadyNoiseMessage } from '@kortix/ui/internal/lib/browser-error-noise';
+import { isConnectorsEnabled, isManagedProviderEnabled } from '@/lib/config';
 import { isStaticSitePath } from '@/lib/navigation/static-site-path';
 import { getEnv } from '@/lib/env-config';
-import { isSilentTimeoutMessage } from '@/lib/timeout-toast-policy';
+import { isSilentTimeoutMessage } from '@kortix/ui/internal/lib/timeout-toast-policy';
 import { track, type PanelEvent } from '@/lib/track';
 
 // Request-deadline noise never reaches a toast. Set at module load, before the first errorToast.
@@ -75,7 +82,14 @@ const HostLink = forwardRef<HTMLAnchorElement, Omit<UiLinkProps, 'ref'>>(functio
   return <NextLink ref={ref} {...props} />;
 });
 
-const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
+// Next.js observes history.pushState/replaceState: tab and query-param URL writes stay shallow.
+const navigation: UiNavigation = {
+  useRouter,
+  usePathname,
+  useSearchParams,
+  useParams,
+  observesHistory: true,
+};
 const i18n: UiI18nHost = { useTranslations, useLocale };
 const useViewerId = () => useAuth().user?.id;
 function useViewer(): UiViewer | undefined {
@@ -90,6 +104,10 @@ function useViewer(): UiViewer | undefined {
 // root bundle stays small. The wallpaper is static: it paints on first frame.
 const components: UiHostComponents = {
   Wallpaper: WallpaperBackground,
+  // The project home's announcement: the Kortix mobile app.
+  HomeAnnouncement: lazyClient(() =>
+    import('@kortix/ui/workspace/home/mobile-app-promo').then((m) => m.MobileAppPromo),
+  ),
   // Only the `codex` pooled provider exists today; the dialog ignores `providerId`.
   ProviderAccountsModal: lazyClient(() =>
     import('@/features/providers/chatgpt-accounts-dialog').then((m) => m.ChatGptAccountsDialog),
@@ -98,13 +116,13 @@ const components: UiHostComponents = {
     import('@/components/setup-links/connector-connect-modal').then((m) => m.ConnectorConnectModal),
   ),
   ShareSessionModal: lazyClient(() =>
-    import('@/features/workspace/project-sidebar/modal/share-session-modal').then(
+    import('@kortix/ui/workspace/sidebar/modal/share-session-modal').then(
       (m) => m.ShareSessionModal,
     ),
   ),
   // The whole Customize → Models surface: loaded on first open only.
   ProjectProviderModal: lazyClient(() =>
-    import('@/features/workspace/customize/sections/llm-provider/llm-provider-modal').then(
+    import('@kortix/ui/customize/sections/llm-provider/llm-provider-modal').then(
       (m) => m.ProjectProviderModal,
     ),
   ),
@@ -131,7 +149,6 @@ function RouteSessionIds({ children }: { children: ReactNode }) {
 export function KortixUiProvider({ children }: { children: ReactNode }) {
   const common = useTranslations('common');
   const palette = useTranslations('commandPalette');
-  // apps/web does not render @kortix/ui/chat, so `chat` keeps its English defaults.
   const strings = useMemo<UiStringsInput>(
     () => ({
       confirm: common('confirm'),
@@ -145,10 +162,14 @@ export function KortixUiProvider({ children }: { children: ReactNode }) {
   // Read on first render, not at module load: the browser reads the runtime config script.
   const config = useMemo<Partial<UiHostConfig>>(
     () => ({
-      billingEnabled: isBillingEnabled(),
       connectorsEnabled: isConnectorsEnabled(),
       managedModelsEnabled: isManagedProviderEnabled(),
       deploymentVersion: getEnv().VERSION,
+      // apps/web mounts the command palette (⌘K) and the settings shortcut (⌘,).
+      commandPaletteShortcut: true,
+      // apps/web/public/provider-icons holds the provider logos.
+      providerIconBaseUrl: '/provider-icons',
+      settingsShortcut: true,
     }),
     [],
   );

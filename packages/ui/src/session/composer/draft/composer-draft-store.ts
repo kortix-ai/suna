@@ -25,7 +25,7 @@ export const DRAFT_CACHE_MAX_SCOPES = 50;
  * The ONE storage object for the feature. Constructing it registers
  * `kortix_draft` as a disposable family, so a saturated bucket evicts drafts
  * rather than letting an unrelated store's `setItem` throw — the failure mode
- * `lib/storage/managed-storage.ts:1-28` documents.
+ * `packages/ui/src/internal/lib/storage/managed-storage.ts:1-28` documents.
  */
 const draftCache = new ScopedCache<StoredDraft>(DRAFT_CACHE_FAMILY, DRAFT_CACHE_MAX_SCOPES);
 

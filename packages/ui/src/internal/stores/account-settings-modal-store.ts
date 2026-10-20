@@ -5,7 +5,7 @@ import { useCurrentAccountStore } from './current-account-store';
 /**
  * Account-level settings — Billing, Usage — live in the account hub modal,
  * addressed by `?accountId=` on whatever page you are on
- * (`stores/account-panel-store.ts`). The legacy modal was removed long ago and
+ * (`packages/ui/src/internal/stores/account-panel-store.ts`). The legacy modal was removed long ago and
  * this store then navigated to `/accounts/[id]`; that route was deleted on
  * 2026-09-08, so it opens the modal instead. The `openAccountSettings(...)`
  * call shape is preserved for its existing callers — the user menu, the error

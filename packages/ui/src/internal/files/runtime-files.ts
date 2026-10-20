@@ -47,7 +47,7 @@ export type { UploadResult } from '@kortix/sdk';
 
 // A file under one of the open session's drive mounts (`/drives/me/…`) is read
 // through the drive API: the box daemon serves only the workspace. See
-// `features/drives/session-drive-files`. An explicit `baseUrl` names one
+// `packages/ui/src/internal/files/session-drive-files`. An explicit `baseUrl` names one
 // session's runtime, so it reads from that box as asked.
 
 /** Read a file's content (text, or base64 for binaries). */

@@ -86,7 +86,7 @@ describe('findServableLastReadyImage — a session boot never waits for a build'
       project,
       template,
       identity,
-      buildProvider: 'e2b',
+      buildProvider: 'platinum',
       readHistory: noHistory,
     });
     expect(servable).toEqual({ snapshotName: 'kortix-tpl-OLD', contentHash: 'hash-old' });
@@ -99,7 +99,7 @@ describe('findServableLastReadyImage — a session boot never waits for a build'
       project,
       template,
       identity,
-      buildProvider: 'e2b',
+      buildProvider: 'platinum',
       readHistory: async () => [{ snapshotName: 'kortix-tpl-OLDER', contentHash: 'hash-older' }],
     });
     expect(servable).toEqual({ snapshotName: 'kortix-tpl-OLDER', contentHash: 'hash-older' });
@@ -112,7 +112,7 @@ describe('findServableLastReadyImage — a session boot never waits for a build'
         project,
         template: { ...template, providerSnapshotName: null, contentHash: null },
         identity,
-        buildProvider: 'e2b',
+        buildProvider: 'platinum',
         readHistory: noHistory,
       }),
     ).toBeNull();
@@ -125,7 +125,7 @@ describe('findServableLastReadyImage — a session boot never waits for a build'
         project,
         template,
         identity,
-        buildProvider: 'e2b',
+        buildProvider: 'platinum',
         readHistory: noHistory,
       }),
     ).toBeNull();
@@ -137,7 +137,7 @@ describe('findServableLastReadyImage — a session boot never waits for a build'
       project,
       template,
       identity,
-      buildProvider: 'e2b',
+      buildProvider: 'platinum',
       readHistory: async () => {
         throw new Error('db down');
       },

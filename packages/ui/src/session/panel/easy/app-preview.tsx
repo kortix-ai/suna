@@ -24,11 +24,11 @@ import { Button } from '../../../primitives/button';
 import { ButtonGroup } from '../../../primitives/button-group';
 import Hint from '../../../primitives/hint';
 import Loading from '../../../primitives/loading';
-import { useAppInBrowser, withoutAppAccessToken } from '../../../apps/app-in-browser';
+import { useAppInBrowser, withoutAppAccessToken } from '../../../browser/app-in-browser';
 import { framePolicy } from '../../../files/viewer/preview-policy';
 import { ErrorState } from '../../../primitives/error-state';
-import { useAuthenticatedPreviewUrl } from '@kortix/sdk/react';
 import { useSandboxProxy } from '../../../internal/hooks/use-sandbox-proxy';
+import { usePreviewFrameUrl } from '../../../internal/hooks/use-preview-frame-url';
 import { useIsMobile } from '../../../internal/hooks';
 import { track } from '../../../lib/telemetry';
 import { focusWithoutScroll } from '../../../internal/lib/utils/focus-without-scroll';
@@ -62,7 +62,7 @@ import {
   shouldArmLoadTimeout,
   shouldKeepProbingPort,
 } from './easy-panel-logic';
-import { PanelWidthButton, type ShareContext, ViewerActions } from './viewer-actions';
+import { PanelWidthButton, type ShareContext, ViewerActions } from '../../../files/viewer/viewer-actions';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -126,8 +126,13 @@ export function AppPreview({
   const port = useMemo(() => parseLocalhostUrl(current)?.port ?? 0, [current]);
 
   const proxied = useMemo(() => proxyUrl(current) ?? current, [proxyUrl, current]);
-  // Null while the auth token is still being fetched — the landing state holds.
-  const authenticatedUrl = useAuthenticatedPreviewUrl(proxied);
+  // Null while the token or the host's URL (`UiProvider resolvePreviewUrl`) resolves.
+  const hostPreview = usePreviewFrameUrl(
+    current,
+    proxied,
+    shareContext ?? (projectId ? { projectId } : undefined),
+  );
+  const authenticatedUrl = hostPreview.url;
   // A project App frames signed in, on its own origin (`useAppInBrowser`).
   const { app, apps, src: previewUrl } = useAppInBrowser(projectId, authenticatedUrl);
   const hasPreview = !!previewUrl;
@@ -354,7 +359,7 @@ export function AppPreview({
           <PreviewLoadingOverlay label={tI18nComplete.raw('textc4cf2b2ccb5d')} />
         )}
 
-        {hasError && !noApp && (
+        {(hasError || hostPreview.failed) && !noApp && (
           <ErrorState
             icon={WarningIcon}
             size="sm"

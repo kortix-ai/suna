@@ -11,7 +11,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
-import { cachedManagedPricingRoutes } from '../../llm-gateway/models/managed-pricing-routes';
+import { cachedManagedPricingRoutes, withManagedPricing } from '../../llm-gateway/models/managed-pricing-routes';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
@@ -205,6 +205,7 @@ export function registerModelsRoutes(): void {
       );
       return c.json({
         ...catalog,
+        models: withManagedPricing(catalog.models, quotes),
         managedPricingRoutes: Object.fromEntries(
           Object.entries(quotes).filter(([id]) => id in catalog.models),
         ),
@@ -425,13 +426,12 @@ export function registerModelsRoutes(): void {
         freeModelsOnly: freeTier,
       });
       return c.json({
-        platformDefault: platformDefaultModelId(),
+        platformDefault: freeTier ? null : platformDefaultModelId(),
         accountDefault: defaults.account,
         agentDefaults: defaults.agents,
         projectDefault: defaults.projects[projectId] ?? null,
-        // The platform default is servable for every tier (KRTX-1067), so the
-        // honest fallback is the same for free and paid callers.
-        resolvedForCaller: resolved.model ?? platformDefaultModelId(),
+        // An account without managed models has no platform default.
+        resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
         resolvedSource: resolved.source,
         freeTier,
       });

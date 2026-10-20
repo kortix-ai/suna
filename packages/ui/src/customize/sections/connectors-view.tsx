@@ -328,6 +328,11 @@ function ConnectionRow({
           {active && needsSignIn ? (
             <span>{tConnectorPages('notSignedIn')}</span>
           ) : null}
+          {/* The upstream answered 401 to the stored credential (gateway mark;
+              a new credential or an ok call clears it). */}
+          {active && connection.metadata?.credential_rejected_at ? (
+            <span className="text-destructive">{tConnectorPages('credentialRejected')}</span>
+          ) : null}
           {active ? null : (
             <span className="text-destructive">
               {connection.status === 'revoked' ? 'Disconnected' : 'Error'}

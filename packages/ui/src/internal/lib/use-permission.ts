@@ -19,7 +19,7 @@
  * assignment MUST call `invalidatePermissionProbes` — see `access-dialog.tsx`.
  */
 
-import { useUiViewerId } from '../../providers/ui-provider';
+import { useUiHostConfig, useUiViewerId } from '../../providers/ui-provider';
 import type { PermissionProbeInput, PermissionProbeTarget } from '@kortix/sdk';
 import {
   invalidatePermissionProbes,
@@ -37,18 +37,32 @@ export type { CanResult, CanTarget };
 export type UsePermissionResult = CanResult;
 export type UsePermissionTarget = PermissionProbeTarget;
 
+/** The verdict when the host serves no IAM probes (`accountApiEnabled: false`):
+ *  show the control, and the server enforces the route. */
+const HOST_ENFORCED: CanResult = { allowed: true, reason: 'host_enforced', isLoading: false, isError: false };
+/** A target the SDK never resolves, so its probe query stays disabled. */
+const NO_TARGET: CanTarget = { accountId: undefined };
+
+function useProbesEnabled(): boolean {
+  return useUiHostConfig().accountApiEnabled;
+}
+
 /** Can the CURRENT user perform `action` on this target?
  *  `{ accountId }` for an account action, `{ projectId }` for a project one. */
 export function useCan(target: CanTarget, action: string): CanResult {
   const userId = useUiViewerId();
-  return useSdkCan(target, action, { userId });
+  const probes = useProbesEnabled();
+  const result = useSdkCan(probes ? target : NO_TARGET, action, { userId });
+  return probes ? result : HOST_ENFORCED;
 }
 
 /** Batch variant — ONE roundtrip, answers keyed by action. `actions` must be
  *  stable across renders (module-level or memoized). */
 export function useCans(target: CanTarget, actions: readonly string[]): Record<string, CanResult> {
   const userId = useUiViewerId();
-  return useSdkCans(target, actions, { userId });
+  const probes = useProbesEnabled();
+  const result = useSdkCans(probes ? target : NO_TARGET, actions, { userId });
+  return probes ? result : Object.fromEntries(actions.map((action) => [action, HOST_ENFORCED]));
 }
 
 /** Account-scoped single probe. Thin alias of `useCan({ accountId }, action)`. */
@@ -58,11 +72,13 @@ export function usePermission(
   target?: UsePermissionTarget,
 ): CanResult {
   const userId = useUiViewerId();
+  const probes = useProbesEnabled();
   const resource =
     target && target.resourceType !== 'account'
       ? { type: target.resourceType, id: target.resourceId as string }
       : undefined;
-  return useSdkCan({ accountId, resource }, action, { userId });
+  const result = useSdkCan(probes ? { accountId, resource } : NO_TARGET, action, { userId });
+  return probes ? result : HOST_ENFORCED;
 }
 
 /** Probe on behalf of ANOTHER member — "what can this person actually do".
@@ -73,11 +89,13 @@ export function usePermissionFor(
   action: string,
   target?: UsePermissionTarget,
 ): CanResult {
+  const probes = useProbesEnabled();
   const resource =
     target && target.resourceType !== 'account'
       ? { type: target.resourceType, id: target.resourceId as string }
       : undefined;
-  return useSdkCan({ accountId, resource }, action, { userId: memberUserId });
+  const result = useSdkCan(probes ? { accountId, resource } : NO_TARGET, action, { userId: memberUserId });
+  return probes ? result : HOST_ENFORCED;
 }
 
 /** Batch probe for another member. Answers come back in input order. */
@@ -86,7 +104,9 @@ export function usePermissionsFor(
   memberUserId: string | undefined,
   probes: PermissionProbeInput[],
 ): CanResult[] {
-  return useSdkPermissionsFor(accountId, memberUserId, probes);
+  const enabled = useProbesEnabled();
+  const result = useSdkPermissionsFor(enabled ? accountId : undefined, memberUserId, probes);
+  return enabled ? result : probes.map(() => HOST_ENFORCED);
 }
 
 /** Current-user batch probe, probe-shaped. Prefer `useCans` for a single target. */
@@ -95,5 +115,7 @@ export function usePermissions(
   probes: PermissionProbeInput[],
 ): CanResult[] {
   const userId = useUiViewerId();
-  return useSdkPermissionsFor(accountId, userId, probes);
+  const enabled = useProbesEnabled();
+  const result = useSdkPermissionsFor(enabled ? accountId : undefined, userId, probes);
+  return enabled ? result : probes.map(() => HOST_ENFORCED);
 }

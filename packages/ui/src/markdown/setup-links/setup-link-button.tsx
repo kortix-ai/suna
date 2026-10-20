@@ -50,7 +50,7 @@ const CONNECTOR_TITLES = {
 
 /**
  * True inside a table cell or a list item. A setup link there shares its line
- * with other content (see `components/markdown/setup-link-blocks.ts`, which
+ * with other content (see `packages/ui/src/markdown/setup-link-blocks.ts`, which
  * lifts the links that do not), so it renders as an inline chip, not a card.
  */
 export const SetupLinkInlineContext = createContext(false);

@@ -14,11 +14,11 @@ import { createContext, useContext, type ReactNode } from 'react';
  * (<DriveExplorer> and its data-touching children: toolbar refresh, search
  * overlay, history popover, thumbnails, preview modal).
  *
- * Extends the `features/file-viewer` FileSource idea to the whole explorer:
+ * Extends the `packages/ui/src/files/viewer` FileSource idea to the whole explorer:
  * each surface supplies its own implementation —
- *   • live sandbox workspace (`features/files` hooks, writable) — the session
+ *   • live sandbox workspace (`packages/ui/src/files/runtime` hooks, writable) — the session
  *     side panel;
- *   • project git-ref view (`features/project-files` hooks, read-only) — the
+ *   • project git-ref view (`packages/ui/src/files/project` hooks, read-only) — the
  *     customize → Files section.
  *
  * All `use*` members are React hooks. The explorer calls them unconditionally
@@ -116,9 +116,29 @@ export interface FileExplorerSource {
   ) => ExplorerQueryResult<FileCommitDiff>;
 
   // ── Mutations (read-only sources reject; the UI never invokes them) ──
-  useFileUpload: () => ExplorerMutation<{ file: File | Blob; targetPath?: string }>;
+  /** `onProgress` reports bytes sent; a source that cannot measure them ignores it. */
+  useFileUpload: () => ExplorerMutation<{
+    file: File | Blob;
+    targetPath?: string;
+    onProgress?: (sentBytes: number, totalBytes: number) => void;
+  }>;
+  /**
+   * Show `file` as the preview of its path before its upload lands, so the
+   * listing's thumbnail never fetches a file that is still on its way up.
+   * Optional: a source without it fetches as usual.
+   */
+  useUploadPreview?: () => (file: File, targetPath?: string) => void;
+  /**
+   * Save several files and folders as one zip (a multi-selection's "Download
+   * as zip"). Optional: without it, a selection downloads its files one by one.
+   */
+  useDownloadZip?: () => (
+    items: { path: string; name: string; type: 'file' | 'directory' }[],
+    zipName: string,
+  ) => Promise<void>;
   useFileDelete: () => ExplorerMutation<{ filePath: string }>;
-  useFileMkdir: () => ExplorerMutation<{ dirPath: string }>;
+  /** `everyone`: Drive only, share the new folder with the whole project as it is made. */
+  useFileMkdir: () => ExplorerMutation<{ dirPath: string; everyone?: boolean }>;
   useFileRename: () => ExplorerMutation<{ from: string; to: string }>;
   useFileCreate: () => ExplorerMutation<{ filePath: string }>;
   useFileCopy: () => ExplorerMutation<{ sourcePath: string; destPath: string }>;

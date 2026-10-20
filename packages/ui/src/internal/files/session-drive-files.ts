@@ -12,7 +12,7 @@
  * folder access, exactly as the Files page does.
  *
  * The session page registers its scope; the workspace file client
- * (`features/files/api/runtime-files`) asks here first for any path under a
+ * (`packages/ui/src/internal/files/runtime-files`) asks here first for any path under a
  * mount, so every viewer, card, renderer and download takes the drive source
  * without knowing about it.
  */

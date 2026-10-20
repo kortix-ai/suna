@@ -1,6 +1,7 @@
 'use client';
 
 
+import { uiRoutes } from '../../lib/routes';
 import { isQuestionTool } from '@kortix/sdk';
 import { SessionApprovalPrompt } from '../prompts/session-approval-prompt';
 import { childSessionHref } from '../tool/tools/session-spawn-urls';
@@ -34,6 +35,7 @@ import {
 } from '@kortix/sdk';
 import {
   useProjectSession,
+  useSessionLogOlder,
   useSessionLogRecord,
   useSessionLogThread,
   useSessionMessageAuthors,
@@ -50,6 +52,7 @@ import {
   useUiLink,
   useUiPathname,
   useUiRouter,
+  useUiShallowNavigate,
   useUiSearchParams,
   useUiViewerId,
 } from '../../providers/ui-provider';
@@ -626,18 +629,31 @@ export function SessionChat({
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
+  // A chat with no `useSession` (a sub-agent's: `sub-session-modal`, the `?rs=` route) runs
+  // inside the route's session. While that session reads its log (v2: the store holds it),
+  // the sub-agent's thread and its older pages are the log's, and no saved copy is read.
+  const [scopeProjectId = '', scopeSessionId = ''] = savedHistoryScope?.split('/') ?? [];
+  const parentSource = useMemo(
+    () => ({ projectId: projectId ?? scopeProjectId, sessionId: projectSessionId ?? scopeSessionId, runtimeSessionId: null }),
+    [projectId, projectSessionId, scopeProjectId, scopeSessionId],
+  );
+  const onParentLog = useSessionLogRecord(sessionState ? DETACHED_SESSION_MESSAGES : parentSource) !== null;
   const localSync = useSessionSync(
     sessionState ? '' : sessionId,
-    savedHistoryScope ? { kortixSessionScope: savedHistoryScope, savedChild: true } : undefined,
+    savedHistoryScope ? { kortixSessionScope: savedHistoryScope, savedChild: true, sessionLog: onParentLog } : undefined,
   );
   // The page's `useSession` runs with `subscribeMessages: false`, so its
   // `messages` is a render-time snapshot and the page does not re-render per
   // streamed delta. The live thread is read HERE, where it is drawn: the
   // session log's root thread (`useSessionLogThread`), the `fromV1` view of
-  // the v1 rows while the session reads v1, the API's log on v2.
-  const liveThread = useSessionLogThread(sessionState ?? DETACHED_SESSION_MESSAGES, undefined, {
-    throttleMs: TRANSCRIPT_THROTTLE_MS,
-  });
+  // the v1 rows while the session reads v1, the API's log on v2. A sub-agent's
+  // chat on v2 reads its thread of the route session's log.
+  const liveThread = useSessionLogThread(
+    sessionState ?? (onParentLog ? parentSource : DETACHED_SESSION_MESSAGES),
+    sessionState || !onParentLog ? undefined : sessionId,
+    { throttleMs: TRANSCRIPT_THROTTLE_MS },
+  );
+  const parentLogOlder = useSessionLogOlder(parentSource, sessionId, { enabled: !sessionState && onParentLog });
   const {
     messages: hookMessages,
     isLoading: syncMessagesLoading,
@@ -647,12 +663,10 @@ export function SessionChat({
     // swallowed 503 used to render exactly that, blank and "complete".
     freshness: transcriptFreshness,
     retryTranscript,
-    hasOlder,
-    isLoadingOlder,
-    loadOlder,
   } = sessionState ?? localSync;
   // A chat with no `useSession` (a sub-agent's, `sub-session-modal`) reads its
   // runtime session's rows through `useSessionSync`: the same `fromV1` view.
+  // On v2 that is the fallback while the log does not hold the sub-agent's thread yet.
   const detachedThread = useMemo(
     () =>
       sessionState || hookMessages.length === 0
@@ -660,12 +674,15 @@ export function SessionChat({
         : (sessionLogOfV1Rows(sessionId, sessionId, hookMessages).threads[0] ?? null),
     [sessionState, sessionId, hookMessages],
   );
-  const thread: SessionLogThread | null = sessionState ? liveThread : detachedThread;
+  const thread: SessionLogThread | null = sessionState ? liveThread : (liveThread ?? detachedThread);
+  const { hasOlder, isLoadingOlder, loadOlder } = sessionState ?? (liveThread ? parentLogOlder : localSync);
   // P5.6. The session record of the v2 log (null on v1): the restore notice and the harness
   // history. `useSessionLogRecord` keeps its identity through message puts, so a streamed
   // delta does not re-render the chat through it. The view settings are per session.
   const historyKey = projectSessionId || sessionId;
   const sessionRecord = useSessionLogRecord(sessionState ?? DETACHED_SESSION_MESSAGES);
+  // The transcript reads the session log (v2): the session's own, or the parent's for a sub-agent chat.
+  const transcriptOnLog = sessionState ? sessionRecord !== null : onParentLog;
   const restoreNotice = useMemo(() => sessionLogRestoreNotice(sessionRecord), [sessionRecord]);
   const restoreDismissed = useSessionHistoryViewStore(
     (s) => !!restoreNotice && s.dismissedRestore[historyKey] === restoreNotice.generation,
@@ -1183,13 +1200,14 @@ export function SessionChat({
   );
   const { data: modelUsage, refetch: refetchModelUsage } = useSessionModelUsage(projectId, projectSessionId);
   useEffect(() => {
-    if (!newestAssistantMessageId) return;
+    // `refetch` ignores `enabled`: a chat with no project session (the sub-agent modal) asks nothing.
+    if (!newestAssistantMessageId || !projectId || !projectSessionId) return;
     // `cancelRefetch: false`: a read already in flight (the mount's own) is the read.
     void refetchModelUsage({ cancelRefetch: false });
     if (effectiveBusy) return;
     const timer = setTimeout(() => void refetchModelUsage(), MODEL_USAGE_SETTLE_MS);
     return () => clearTimeout(timer);
-  }, [newestAssistantMessageId, effectiveBusy, refetchModelUsage]);
+  }, [newestAssistantMessageId, effectiveBusy, refetchModelUsage, projectId, projectSessionId]);
   // Not gated on the composer's selection: the session modal reports the
   // session, not what the composer will send next.
   const sessionServedModel = useMemo(
@@ -1610,14 +1628,21 @@ export function SessionChat({
     const observer = new IntersectionObserver(
       ([entry]) => {
         const isIntersecting = !!entry?.isIntersecting;
+        // On the session log a transcript shorter than its viewport cannot be scrolled: a 40-message
+        // first page often folds to a few rows (a turn is one row), and the reader has no other way
+        // to reach older history. Pull until it fills the viewport, within the auto-load page budget.
+        // The auto-scroll spacer pads the content to the viewport: measure without it.
+        const root = scrollRef.current;
+        const cannotScroll =
+          transcriptOnLog && !!root && root.scrollHeight - (spacerElRef.current?.offsetHeight ?? 0) <= root.clientHeight;
         const didPull = shouldLoadOlderHistory({
           isIntersecting,
           hasOlder,
           isLoadingOlder,
           lastPullFailed: olderPullFailed,
           autoLoadedPages,
-          readerScrolledUp: readerScrolledUpRef.current,
-          armed: olderAutoloadArmedRef.current,
+          readerScrolledUp: readerScrolledUpRef.current || cannotScroll,
+          armed: olderAutoloadArmedRef.current || cannotScroll,
         });
         olderAutoloadArmedRef.current = nextOlderAutoloadArm({
           armed: olderAutoloadArmedRef.current,
@@ -1644,6 +1669,7 @@ export function SessionChat({
     handleLoadOlder,
     scrollRef,
     sessionId,
+    transcriptOnLog,
   ]);
 
   // Scroll to the bottom on initial load / session change.
@@ -3514,6 +3540,7 @@ export function SessionChat({
 
   const pathname = useUiPathname();
   const router = useUiRouter();
+  const shallowNavigate = useUiShallowNavigate();
 
   // Thread context for subsessions only (real parentID).
   const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
@@ -3523,13 +3550,10 @@ export function SessionChat({
   // is warmed below instead of being fetched cold on the click.
   const backToParentHref = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return null;
-    const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
-    if (!projectRoute) return null;
-    const [, projectId, projectSessionId] = projectRoute;
-    return parentSessionData.parentID
-      ? childSessionHref(`/projects/${projectId}/sessions/${projectSessionId}`, parentSessionData.id)
-      : `/projects/${projectId}/sessions/${projectSessionId}`;
-  }, [session?.parentID, parentSessionData, pathname]);
+    if (!projectId || !projectSessionId) return null;
+    const href = uiRoutes().session(projectId, projectSessionId);
+    return parentSessionData.parentID ? childSessionHref(href, parentSessionData.id) : href;
+  }, [session?.parentID, parentSessionData, projectId, projectSessionId]);
 
   useEffect(() => {
     if (backToParentHref) router.prefetch(backToParentHref);
@@ -3557,10 +3581,10 @@ export function SessionChat({
           href: projectId
             ? projectSessionHref(projectId, parentSessionData.id)
             : `/sessions/${parentSessionData.id}`,
-        });
+        }, undefined, shallowNavigate);
       },
     };
-  }, [session?.parentID, parentSessionData, backToParentHref, router, projectId]);
+  }, [session?.parentID, parentSessionData, backToParentHref, router, projectId, shallowNavigate]);
 
   // ---- Stable props for <SessionChatInput> (it's React.memo-wrapped, so every
   // prop below must keep referential identity across renders that don't
@@ -4008,19 +4032,16 @@ export function SessionChat({
       if (id) params.set('cr', id);
       else params.delete('cr');
       const qs = params.toString();
-      // `history.replaceState`, not `router.replace`: `cr` is a param this
-      // page has already resolved client-side, so there is no server data to
-      // fetch. Changing a query param changes the router cache key, so
-      // `router.replace` would run a COLD RSC FETCH on every open/close of
-      // this dialog, on the hottest route in the app — see the same trap
-      // documented at
-      // app/(app)/projects/[id]/sessions/[sessionId]/page.tsx:1309. Next
-      // patches `replaceState` and updates its own canonical URL, so
-      // `useSearchParams` still reports the new URL. Same mechanism as
-      // `openTabAndNavigate` in `stores/tab-store.ts`.
-      window.history.replaceState(null, '', qs ? `${pathname}?${qs}` : pathname);
+      // A shallow replace, not `router.replace`: `cr` is a param this page has
+      // already resolved client-side, so there is no server data to fetch.
+      // Under Next.js `router.replace` would run a COLD RSC FETCH on every
+      // open/close of this dialog, on the hottest route in the app (see
+      // app/(app)/projects/[id]/sessions/[sessionId]/page.tsx:1309); Next
+      // observes `history.replaceState`, which `useUiShallowNavigate` writes
+      // when the host router observes history and routes through it otherwise.
+      shallowNavigate(qs ? `${pathname}?${qs}` : pathname, { replace: true });
     },
-    [readOnly, pathname, searchParams],
+    [readOnly, pathname, searchParams, shallowNavigate],
   );
   const handleOpenOutcome = useCallback(
     (outcome: Outcome) => {
@@ -4336,7 +4357,15 @@ export function SessionChat({
                               agentNames={agentNames}
                               onFileClick={openFileInComputer}
                               sessionId={sessionId}
-                              busy={turns.length === 0 && lastTurnWorking}
+                              // The first item of the conversation, like turn 0, which has no
+                              // top margin. `first:mt-0` misses here: the list opens with a
+                              // zero-height <header>, so the stand-in sat 44px lower than turn 0
+                              // and every swap between the two jumped the bubble (KRTX-2931).
+                              className="mt-0"
+                              // An undelivered first prompt is a turn about to start, as the
+                              // shell above this chat shows it: busy from the first frame,
+                              // before the working projection has read the inbox (KRTX-2931).
+                              busy={turns.length === 0 && (lastTurnWorking || promptInbox.prompts.some(isFirstPromptRow))}
                             />
                           )}
                         {turns.map((turn, turnIndex) => {
@@ -4434,7 +4463,7 @@ export function SessionChat({
                               author={turnAuthor}
                               showAuthor={showAuthorName(turnAuthor, groupChat, viewerId)}
                               stoppedBy={stoppedByName(messageAuthors, turn.id, viewerId)}
-                              servedModel={servedModelOfTurn(modelUsage, turn.id)}
+                              servedModel={servedModelOfTurn(modelUsage, turn.id, turns[turnIndex - 1]?.id)}
                               turnOutcome={turnOutcome}
                               isLast={turn.id === lastUserMessageId}
                               ownsPlan={turn.id === planAnchorId}

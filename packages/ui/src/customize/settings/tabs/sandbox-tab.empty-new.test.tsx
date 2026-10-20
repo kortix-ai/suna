@@ -68,7 +68,7 @@ mock.module('../../../internal/lib/manifest-version', () => ({
  * real dialog's overlay/escape/close make, and the call that leaves
  * `editingTemplate` behind.
  */
-mock.module('../../../workspace/projects/sandbox-template-form', () => ({
+mock.module('./sandbox-template-form', () => ({
   SandboxTemplateForm: (props: {
     open: boolean;
     onOpenChange: (open: boolean) => void;

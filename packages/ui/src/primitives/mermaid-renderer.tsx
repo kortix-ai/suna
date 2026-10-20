@@ -5,13 +5,7 @@ import { Button } from './button';
 import { ButtonGroup } from './button-group';
 import Hint from './hint';
 import { KortixLoader } from './kortix-loader';
-import {
-  cacheMermaidSvg,
-  MERMAID_CONFIG,
-  readCachedMermaidSvg,
-  removeMermaidRenderArtifacts,
-  zoomAtPoint,
-} from './mermaid-render';
+import { renderMermaidSvg, zoomAtPoint } from './mermaid-render';
 import { Modal, ModalBody, ModalClose, ModalContent, ModalTitle } from './modal';
 import { cn } from '../lib/utils';
 import {
@@ -24,8 +18,6 @@ import {
 } from '@phosphor-icons/react';
 import { Copy } from '../icons/copy';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-
-let mermaidInstance: any = null;
 
 interface MermaidRendererProps {
   chart: string;
@@ -145,6 +137,21 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
       [panOffset],
     );
 
+    const applyCanvasZoom = useCallback(
+      (point: { x: number; y: number }, zoomFactor: number) => {
+        if (canvasRef.current) {
+          const rect = canvasRef.current.getBoundingClientRect();
+          const mouseX = point.x - rect.left;
+          const mouseY = point.y - rect.top;
+
+          const next = zoomAtPoint(zoom, panOffset, { x: mouseX, y: mouseY }, zoomFactor);
+          setZoom(next.zoom);
+          setPanOffset(next.panOffset);
+        }
+      },
+      [zoom, panOffset],
+    );
+
     const handleTouchMove = useCallback(
       (e: React.TouchEvent) => {
         // Only prevent default if we're actively interacting with the canvas
@@ -167,22 +174,13 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
             const zoomFactor = currentDistance / lastTouchDistance;
 
             // Zoom towards touch center
-            if (canvasRef.current) {
-              const rect = canvasRef.current.getBoundingClientRect();
-              const touchCenter = getTouchCenter(e.touches);
-              const centerX = touchCenter.x - rect.left;
-              const centerY = touchCenter.y - rect.top;
-
-              const next = zoomAtPoint(zoom, panOffset, { x: centerX, y: centerY }, zoomFactor);
-              setZoom(next.zoom);
-              setPanOffset(next.panOffset);
-            }
+            applyCanvasZoom(getTouchCenter(e.touches), zoomFactor);
 
             setLastTouchDistance(currentDistance);
           }
         }
       },
-      [isDragging, dragStart, lastTouchDistance, zoom, panOffset],
+      [isDragging, dragStart, lastTouchDistance, applyCanvasZoom],
     );
 
     const handleTouchEnd = useCallback(() => {
@@ -200,17 +198,9 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
         const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
 
         // Zoom towards mouse position
-        if (canvasRef.current) {
-          const rect = canvasRef.current.getBoundingClientRect();
-          const mouseX = e.clientX - rect.left;
-          const mouseY = e.clientY - rect.top;
-
-          const next = zoomAtPoint(zoom, panOffset, { x: mouseX, y: mouseY }, zoomFactor);
-          setZoom(next.zoom);
-          setPanOffset(next.panOffset);
-        }
+        applyCanvasZoom({ x: e.clientX, y: e.clientY }, zoomFactor);
       },
-      [zoom, panOffset],
+      [applyCanvasZoom],
     );
 
     // Attach wheel event listener manually with passive: false
@@ -245,100 +235,16 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
       if (source === null) return;
       let mounted = true;
 
-      const renderChart = async () => {
-        if (!source) {
-          if (mounted) setIsLoading(false);
-          return;
-        }
-
-        const cachedResult = readCachedMermaidSvg(source);
-        if (cachedResult) {
-          if (mounted) {
-            setRenderedContent(cachedResult);
-            setError(null);
-            setIsLoading(false);
-          }
-          return;
-        }
-
+      (async () => {
         try {
-          if (mounted) {
+          const svg = await renderMermaidSvg(source, () => {
+            if (!mounted) return;
             setIsLoading(true);
             setError(null);
-          }
-
-          // Check for basic Mermaid syntax
-          const firstLine = source.split('\n')[0].toLowerCase().trim();
-          const validStarters = [
-            'graph',
-            'flowchart',
-            'sequencediagram',
-            'sequence',
-            'classdiagram',
-            'class',
-            'statediagram',
-            'state',
-            'erdiagram',
-            'journey',
-            'gantt',
-            'pie',
-            'gitgraph',
-            'mindmap',
-            'timeline',
-            'sankey',
-            'block',
-            'quadrant',
-            'requirement',
-            'c4context',
-            'c4container',
-            'c4component',
-            'c4dynamic',
-          ];
-
-          const hasValidStarter = validStarters.some(
-            (starter) => firstLine.startsWith(starter) || firstLine.includes(starter),
-          );
-
-          if (!hasValidStarter) {
-            throw new Error(
-              `Invalid diagram type. Chart must start with a valid Mermaid diagram type (e.g., graph, flowchart, sequenceDiagram, etc.). Found: "${firstLine}"`,
-            );
-          }
-
-          // Use cached Mermaid instance or initialize new one
-          if (!mermaidInstance) {
-            const mermaid = (await import('mermaid')).default;
-            await mermaid.initialize({
-              ...MERMAID_CONFIG,
-              gitGraph: { ...MERMAID_CONFIG.gitGraph },
-            });
-            mermaidInstance = mermaid;
-          }
-
-          const chartId = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-
-          let result;
-          try {
-            result = await mermaidInstance.render(chartId, source);
-          } catch (renderError) {
-            const errorMessage =
-              renderError instanceof Error ? renderError.message : String(renderError);
-
-            // Remove the temporary nodes this render created, and only those.
-            removeMermaidRenderArtifacts(document, chartId);
-
-            if (errorMessage.includes('Parse error') || errorMessage.includes('Syntax error')) {
-              throw new Error(`Diagram syntax error: ${errorMessage}`);
-            } else if (errorMessage.includes('UnknownDiagramError')) {
-              throw new Error('unsupported_diagram_type');
-            } else {
-              throw new Error(`Failed to render diagram: ${errorMessage}`);
-            }
-          }
-
-          cacheMermaidSvg(source, result.svg);
-          if (!mounted) return;
-          setRenderedContent(result.svg);
+          });
+          if (!mounted || svg === undefined) return;
+          setRenderedContent(svg);
+          setError(null);
         } catch (err) {
           if (mounted) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to render diagram';
@@ -356,9 +262,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
         } finally {
           if (mounted) setIsLoading(false);
         }
-      };
-
-      renderChart();
+      })();
 
       return () => {
         mounted = false;

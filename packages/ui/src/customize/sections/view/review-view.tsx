@@ -1,7 +1,7 @@
 'use client';
 
 import { ProjectFilesProvider } from '../../../files/project';
-import { ReviewCenterConnected } from '../../../workspace/review/review-center-connected';
+import { ReviewCenterConnected } from './review-center-connected';
 import { useProjectName } from '@kortix/sdk/react';
 
 /**

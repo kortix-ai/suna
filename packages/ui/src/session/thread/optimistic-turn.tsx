@@ -31,6 +31,7 @@ import { useProjectSessionHref } from '../../internal/lib/navigation/session-hre
 import { cn } from '../../lib/utils';
 import { getFilename } from '../../internal/lib/utils/file-utils';
 import { openTabAndNavigate } from '../../internal/stores/tab-store';
+import { useUiShallowNavigate } from '../../providers/ui-provider';
 
 // `BUBBLE_SURFACE` / `BUBBLE_TEXT` are imported from `turn/user-message.tsx`,
 // not redeclared here. A local copy drifted twice already — first the dark
@@ -301,6 +302,7 @@ export function HighlightMentions({
   }, [cleanText, sessionTitles, agentNames]);
 
   const sessionHref = useProjectSessionHref();
+  const shallowNavigate = useUiShallowNavigate();
 
   const openSessionMention = (raw: string) => {
     // `/projects/<id>/sessions/<id>`, not `/sessions/<id>`: the latter is not a
@@ -315,7 +317,7 @@ export function HighlightMentions({
         title: tI18nComplete.raw('text6959b4159575'),
         type: 'session',
         href,
-      });
+      }, undefined, shallowNavigate);
       return;
     }
     const ref = sessions.find((s) => s.title === raw);
@@ -327,7 +329,7 @@ export function HighlightMentions({
       title: ref.title || 'Session',
       type: 'session',
       href,
-    });
+    }, undefined, shallowNavigate);
   };
 
   return (

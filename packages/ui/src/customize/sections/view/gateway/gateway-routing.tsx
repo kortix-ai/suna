@@ -7,7 +7,7 @@ import { useTranslations } from '../../../../i18n';
  * **One axis, flat rows.** Every control on this screen sits in the same
  * right-hand column, one row per decision: label and explanation on the left,
  * the control on the right. Same shape, same column width, same row padding
- * as `ProviderRow` in `features/providers/provider-connect.tsx` ("click,
+ * as `ProviderRow` in `packages/ui/src/customize/providers/provider-connect.tsx` ("click,
  * paste, done") — a settings screen is scanned by running the eye straight
  * down the controls, and it can only be scanned that way if the controls
  * share one x-position and one rhythm, not just a similar-looking layout.
@@ -246,7 +246,7 @@ export function hasAdvancedRoutingConfig(
  * is what the four `bg-popover` boxes were doing.
  *
  * Column width, row padding, and gaps match `ProviderRow` in
- * `features/providers/provider-connect.tsx` exactly (`13rem` label column,
+ * `packages/ui/src/customize/providers/provider-connect.tsx` exactly (`13rem` label column,
  * `py-1.5` row, `gap-4` between columns) — same list-row rhythm the rest of
  * Customize already uses, not a lookalike with its own spacing.
  */

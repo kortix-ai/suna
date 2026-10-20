@@ -22,6 +22,9 @@ export const THEME_COLOR_VARS = {
   cardForeground: '--card-foreground',
   popover: '--popover',
   popoverForeground: '--popover-foreground',
+  /** The default Button fill and its text. Unset: `foreground` on `background`. */
+  action: '--action',
+  actionForeground: '--action-foreground',
   primary: '--primary',
   primaryForeground: '--primary-foreground',
   secondary: '--secondary',
@@ -113,7 +116,7 @@ export interface ThemeCssVars {
 
 const EASING_VARS: Record<ThemeEasing, string> = {
   default: '--ease-default',
-  in: '--ease-in',
+  in: '--ease-in', // audit:allow token-name map for KortixTheme easing, not a usage
   out: '--ease-out',
   inOut: '--ease-in-out',
 };

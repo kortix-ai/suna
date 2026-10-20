@@ -32,7 +32,7 @@ import type { StatusTone } from '../../primitives/status';
  *   came from this session.
  *
  * `external` stays in the union with NO transcript producer. Its only caller is
- * `components/setup-links/setup-link-button.tsx`, which renders this same card
+ * `packages/ui/src/markdown/setup-links/setup-link-button.tsx`, which renders this same card
  * inline in prose for a secret or connector link — a different surface, not a
  * turn outcome.
  */

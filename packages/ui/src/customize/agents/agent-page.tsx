@@ -143,7 +143,7 @@ import { useIsMobile } from '../../internal/hooks';
 
 import { EditorSectionStyleProvider } from '../sections/view/agent-editor-primitives';
 
-import { AgentDrivesSection } from '../../files/drives/agent-drives-section';
+import { AgentDrivesSection } from './agent-drives-section';
 
 import { AgentAuthorityCard } from './agent-authority-card';
 import { AgentModel, AgentScope } from './agent-detail-aside';

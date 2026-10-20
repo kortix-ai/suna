@@ -81,6 +81,30 @@ describe('triggerPatch: only what changed', () => {
     expect(triggerPatch(base, { ...base, nameOverride: '  Renamed ' })).toEqual({ name: 'Renamed' });
   });
 
+  // KRTX-1721: the run limits round-trip as text in the form.
+  test('run limits: the saved caps fill the draft, a change sends the number, an emptied field sends null', () => {
+    const base = saved(trigger({ max_runs_per_hour: 5, max_runs_per_day: null }));
+    expect([base.maxRunsPerHour, base.maxRunsPerDay]).toEqual(['5', '']);
+    expect(triggerPatch(base, { ...base, maxRunsPerDay: '40' })).toEqual({ max_runs_per_day: 40 });
+    expect(triggerPatch(base, { ...base, maxRunsPerHour: '' })).toEqual({ max_runs_per_hour: null });
+    expect(triggerPatch(base, { ...base, maxRunsPerHour: ' 5 ' })).toEqual({});
+    // An older server sends no caps: the fields stay empty and patch nothing.
+    const older = saved(trigger());
+    expect([older.maxRunsPerHour, older.maxRunsPerDay]).toEqual(['', '']);
+    expect(triggerPatch(older, { ...older })).toEqual({});
+  });
+
+  // KRTX-1721: overlap is default (unset), skip or allow; default sends null.
+  test('overlap: the saved value fills the draft, a change sends it, default resets it', () => {
+    const unset = saved(trigger());
+    expect(unset.overlap).toBe('default');
+    expect(triggerPatch(unset, { ...unset })).toEqual({});
+    expect(triggerPatch(unset, { ...unset, overlap: 'allow' })).toEqual({ overlap: 'allow' });
+    const skip = saved(trigger({ overlap: 'skip' }));
+    expect(skip.overlap).toBe('skip');
+    expect(triggerPatch(skip, { ...skip, overlap: 'default' })).toEqual({ overlap: null });
+  });
+
   test('two changed fields make one payload with both', () => {
     const base = saved(eventTrigger(), eventType());
     expect(
@@ -110,6 +134,38 @@ describe('triggerPatch: only what changed', () => {
     ).toEqual({ filter: { 'body.kind': 'push' } });
     const cron = saved(trigger());
     expect(triggerPatch(cron, { ...cron, conditions: [{ path: 'a', value: 'b' }] })).toEqual({});
+  });
+
+  // KRTX-1721: a filter with operators survives the editor. Opening and saving
+  // without a change sends no filter; changing one row sends the whole filter.
+  test('conditions with operators round-trip, and only a change is sent', () => {
+    const filter = {
+      'body.type': 'push',
+      'body.ref': { not_prefix: ['refs/heads/kortix/', 'refs/heads/bot/'] },
+      'body.sender.login': { not: ['kortix-bot'] },
+      'body.action': { in: ['opened', 'reopened'] },
+      'body.base': { prefix: ['release/'] },
+      'body.pull_request': { exists: true },
+      'body.draft': { exists: false },
+    };
+    const base = saved(trigger({ type: 'webhook', cron: null, secret_env: 'S', filter }));
+    expect(base.conditions).toEqual([
+      { path: 'body.type', operator: 'equals', value: 'push' },
+      { path: 'body.ref', operator: 'not_prefix', value: 'refs/heads/kortix/, refs/heads/bot/' },
+      { path: 'body.sender.login', operator: 'not', value: 'kortix-bot' },
+      { path: 'body.action', operator: 'in', value: 'opened, reopened' },
+      { path: 'body.base', operator: 'prefix', value: 'release/' },
+      { path: 'body.pull_request', operator: 'exists', value: '' },
+      { path: 'body.draft', operator: 'missing', value: '' },
+    ]);
+    expect(triggerPatch(base, { ...base })).toEqual({});
+
+    const conditions = base.conditions.map((row) =>
+      row.path === 'body.sender.login' ? { ...row, value: 'kortix-bot, other-bot' } : row,
+    );
+    expect(triggerPatch(base, { ...base, conditions })).toEqual({
+      filter: { ...filter, 'body.sender.login': { not: ['kortix-bot', 'other-bot'] } },
+    });
   });
 
   test('run location: a mode carries only the value it needs', () => {

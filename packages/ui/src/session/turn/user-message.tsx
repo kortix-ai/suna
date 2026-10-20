@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { MessageSenderAbove } from '../participants/session-participants';
 import { MessageAuthorLabel } from './message-author-label';
 import { errorToast } from '../../primitives/toast';
@@ -49,6 +50,7 @@ import { getFilename } from '../../internal/lib/utils/file-utils';
 import { stripKortixSystemTags } from '../../internal/lib/utils/kortix-system-tags';
 import { useKortixComputerStore } from '../../internal/stores/kortix-computer-store';
 import { openTabAndNavigate } from '../../internal/stores/tab-store';
+import { useUiShallowNavigate } from '../../providers/ui-provider';
 import type { Command } from '../../internal/session-types';
 import {
   AttachmentRemoveButton,
@@ -251,7 +253,7 @@ function ReminderMessage({ info, actions }: { info: ReminderPromptInfo; actions?
   const t = useTranslations('reminders');
   const ids = useSessionIds();
   const manageHref =
-    ids.projectId && ids.sessionId ? `/projects/${ids.projectId}/reminders?session=${ids.sessionId}` : null;
+    ids.projectId && ids.sessionId ? uiRoutes().customize(ids.projectId, `reminders?session=${ids.sessionId}`) : null;
   return (
     <PlatformPromptMessage
       data-testid="reminder-turn"
@@ -1748,6 +1750,7 @@ export function UserMessage({
   }, [quotes, effectiveCommandInfo, commandBefore.text, bodyText]);
 
   const sessionHref = useProjectSessionHref();
+  const shallowNavigate = useUiShallowNavigate();
 
   const openSessionMention = (raw: string) => {
     // `/projects/<id>/sessions/<id>`, not `/sessions/<id>`. The latter is not a
@@ -1762,7 +1765,7 @@ export function UserMessage({
         title: tI18nComplete.raw('text6959b4159575'),
         type: 'session',
         href,
-      });
+      }, undefined, shallowNavigate);
       return;
     }
     const ref = sessionRefs.find((s) => s.title === raw);
@@ -1774,7 +1777,7 @@ export function UserMessage({
       title: ref.title || 'Session',
       type: 'session',
       href,
-    });
+    }, undefined, shallowNavigate);
   };
 
   /* The `/command` chip sits exactly where it was typed — leading the line,

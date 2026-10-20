@@ -33,12 +33,19 @@ import {
   shouldUseNextLink,
 } from './unified-markdown-utils';
 import { remarkSetupLinkBlocks } from './setup-link-blocks';
-import { rehypeStreamWords, STREAM_WORD_CLASS, StreamWord } from './stream-words';
+import {
+  rehypeStreamWords,
+  STREAM_WORD_CLASS,
+  StreamFadeGateContext,
+  StreamWord,
+  createStreamFadeGate,
+} from './stream-words';
 import { SetupLinkButton, SetupLinkInlineContext } from './setup-links/setup-link-button';
 import { parsePendingSetupLinkHref, parseSetupLinkHref } from './setup-links/util';
 import { Button } from '../primitives/button';
 import { Checkbox } from '../primitives/checkbox';
 import { useSandboxProxy } from '../internal/hooks/use-sandbox-proxy';
+import { useOpenPreviewLink } from '../internal/hooks/use-open-preview-link';
 import { cn } from '../lib/utils';
 import { ImageIcon } from '@phosphor-icons/react';
 import { useUiLink } from '../providers/ui-provider';
@@ -84,6 +91,7 @@ const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
 export function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
   const Link = useUiLink();
   const { proxy, policy, variant } = useContext(MarkdownRenderContext);
+  const openPreview = useOpenPreviewLink();
   // Only agent content may turn a setup link into the in-app card. From any
   // other writer it stays a plain link to the same page.
   const setupLink = policy.setupLinks ? parseSetupLinkHref(href) : null;
@@ -130,6 +138,21 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
   const resolvedHref = proxy(href) ?? href ?? '#';
   const isHash = resolvedHref.startsWith('#');
   const isExternal = !isInternalUrl(resolvedHref);
+  // A sandbox address under a host preview resolver: the proxied href would
+  // land on the host's own origin, so the click opens the host's URL.
+  if (openPreview && href && resolvedHref !== href) {
+    return (
+      <a
+        href={href}
+        className={LINK_CLASS}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => openPreview(e, href, resolvedHref)}
+      >
+        <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+      </a>
+    );
+  }
 
   // Markdown can contain arbitrary same-origin absolute URLs. Next.js
   // treats those as app routes and prefetches them, including typos such
@@ -293,7 +316,7 @@ const MARKDOWN_COMPONENTS = {
   a: MarkdownLink,
 
   // Every fence kind and inline code resolve in one shared place; see
-  // components/markdown/code.
+  // packages/ui/src/markdown/code.
   code: function MarkdownCodeRenderer(props: { children?: React.ReactNode; className?: string }) {
     const { isStreaming, policy, trust, variant, genui } = useContext(MarkdownRenderContext);
     return (
@@ -541,6 +564,8 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
     // above. A message that mounts streaming keeps the block renderer for good;
     // one that mounts settled (history) is parsed as one document.
     const [streamedAtMount] = useState(isStreaming);
+    // Text present at mount shows without the per-word fade (see `StreamFadeGate`).
+    const [fadeGate] = useState(() => createStreamFadeGate(!isStreaming));
 
     const safeContent = typeof content === 'string' ? content : content ? String(content) : '';
 
@@ -591,31 +616,33 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
         data-streaming={isStreaming ? 'true' : 'false'}
       >
         <MarkdownRenderContext.Provider value={renderContext}>
-          <Streamdown
-            isAnimating={isStreaming}
-            mode={streamedAtMount || isStreaming ? 'streaming' : 'static'}
-            // Completing half-written markdown is for text that is still
-            // arriving. A settled message renders exactly as written.
-            parseIncompleteMarkdown={isStreaming}
-            parseMarkdownIntoBlocksFn={parseMarkdownBlocks}
-            components={MARKDOWN_COMPONENTS as any}
-            remarkPlugins={remarkPlugins}
-            // Module-level arrays for the same reason as MARKDOWN_COMPONENTS: a
-            // new array each render made every block re-parse on every token.
-            // While streaming, each word also fades in as it mounts. Dropping
-            // the plugin at the end re-renders every block once as plain text.
-            rehypePlugins={
-              isStreaming
-                ? policy.rawHtml
-                  ? STREAMING_REHYPE_PLUGINS
-                  : STREAMING_REHYPE_PLUGINS_NO_RAW
-                : policy.rawHtml
-                  ? katexRehypePlugins
-                  : katexRehypePluginsNoRaw
-            }
-          >
-            {finalContent}
-          </Streamdown>
+          <StreamFadeGateContext.Provider value={fadeGate}>
+            <Streamdown
+              isAnimating={isStreaming}
+              mode={streamedAtMount || isStreaming ? 'streaming' : 'static'}
+              // Completing half-written markdown is for text that is still
+              // arriving. A settled message renders exactly as written.
+              parseIncompleteMarkdown={isStreaming}
+              parseMarkdownIntoBlocksFn={parseMarkdownBlocks}
+              components={MARKDOWN_COMPONENTS as any}
+              remarkPlugins={remarkPlugins}
+              // Module-level arrays for the same reason as MARKDOWN_COMPONENTS: a
+              // new array each render made every block re-parse on every token.
+              // While streaming, each word also fades in as it mounts. Dropping
+              // the plugin at the end re-renders every block once as plain text.
+              rehypePlugins={
+                isStreaming
+                  ? policy.rawHtml
+                    ? STREAMING_REHYPE_PLUGINS
+                    : STREAMING_REHYPE_PLUGINS_NO_RAW
+                  : policy.rawHtml
+                    ? katexRehypePlugins
+                    : katexRehypePluginsNoRaw
+              }
+            >
+              {finalContent}
+            </Streamdown>
+          </StreamFadeGateContext.Provider>
         </MarkdownRenderContext.Provider>
       </div>
     );

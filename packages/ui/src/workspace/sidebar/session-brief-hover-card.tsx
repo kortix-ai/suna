@@ -124,7 +124,10 @@ function ChangeRequestRow({
   // Every change opens in the Review Center inbox, the same place the footer
   // Review pill leads.
   const reviewItemId = `${CR_ID_PREFIX}${changeRequest.cr_id}`;
-  const href = `${reviewHref(projectId)}?id=${encodeURIComponent(reviewItemId)}`;
+  const review = reviewHref(projectId);
+  // A host without the Review page lists the change without a link.
+  if (!review) return <div className={menuRow('sm', 'default', 'py-1.5 text-left')}>{content}</div>;
+  const href = `${review}?id=${encodeURIComponent(reviewItemId)}`;
   return (
     <HoverPrefetchLink href={href} onClick={onDismiss} className={className}>
       {content}

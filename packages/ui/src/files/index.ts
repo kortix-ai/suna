@@ -16,10 +16,12 @@ export {
   useShareFolder,
   useUnshareFolder,
 } from './drives/use-drives';
+export { FilePreviewHost } from './file-preview-host';
 export { FilesStoreProvider, getFileIcon } from './project';
 export { ChangeRequestDetailDialog } from './project/components/change-request-detail-dialog';
 export { DiffRenderer } from './project/components/diff-renderer';
 export { DriveExplorer } from './project/components/drive-explorer';
+export { DriveUploadTray } from './project/components/drive-upload-tray';
 export { FileExplorerPage } from './project/components/file-explorer-page';
 export { FileThumbnail } from './project/components/file-thumbnail';
 export { ProjectFilesProvider, useProjectContext } from './project/context';

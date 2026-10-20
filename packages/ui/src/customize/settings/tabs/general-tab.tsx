@@ -11,7 +11,7 @@ import { Skeleton } from '../../../primitives/skeleton';
 import { errorToast, successToast } from '../../../primitives/toast';
 import { TypeToConfirmDialog } from '../../../primitives/type-to-confirm-dialog';
 import { ErrorState } from '../../../primitives/error-state';
-import { buildProjectEditPatch } from '../../../workspace/projects/modal/project-edit-patch';
+import { buildProjectEditPatch } from './project-edit-patch';
 import {
   ProjectIconField,
   type ProjectIconValue,
@@ -70,7 +70,7 @@ export const DELETE_WORKSPACE_REASSURANCE =
  *
  * Deliberately duplicated in `profile-tab.tsx` rather than shared: the two
  * Linear restyles landed in parallel and neither should have edited the other
- * agent's file. Promote it to `components/ui/settings-row.tsx` once a third
+ * agent's file. Promote it to `packages/ui/src/primitives/settings-row.tsx` once a third
  * pane needs it.
  */
 export interface GeneralTabViewProps {
@@ -262,10 +262,22 @@ export async function runProjectArchive(
    *  the cookie is forgotten, so the door opens the next project — or, after
    *  the account's last one, the create form. */
   onLeave?: (path: string) => void,
+  /** Drop the project from the cached project lists. Runs before `onLeave`:
+   *  the door decides from the cache at once, and a list that still names
+   *  the deleted project sent the browser straight back to it (KRTX-2904). */
+  onDropCached?: () => void,
 ): Promise<void> {
   await client.archiveProject(projectId);
   onForget?.();
+  onDropCached?.();
   onLeave?.(PROJECT_LANDING_PATH);
+}
+
+/** A cached project list without `projectId`; any other cached value (the
+ *  quota under the same key prefix) is returned unchanged. */
+export function withoutProject(data: unknown, projectId: string): unknown {
+  if (!Array.isArray(data)) return data;
+  return data.filter((p: { project_id?: string }) => p?.project_id !== projectId);
 }
 
 /** Workspace name + icon. Moved from `settings-view.tsx`'s
@@ -452,6 +464,10 @@ export function GeneralTab({ projectId }: { projectId: string }) {
           useSettingsPanelStore.getState().close();
           router.replace(path);
         },
+        () =>
+          queryClient.setQueriesData({ queryKey: qk.projects.scope() }, (old: unknown) =>
+            withoutProject(old, projectId),
+          ),
       ),
     onSuccess: () => {
       successToast(tI18nComplete('textdd9e881230eb'));

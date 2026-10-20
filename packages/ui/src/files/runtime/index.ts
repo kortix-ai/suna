@@ -92,5 +92,5 @@ export {
   type FilesView,
 } from '../../internal/stores/files-store';
 
-// Explorer source (the shared Drive explorer UI lives in features/project-files)
+// Explorer source (the shared Drive explorer UI lives in packages/ui/src/files/project)
 export { sandboxExplorerSource } from './sandbox-explorer-source';

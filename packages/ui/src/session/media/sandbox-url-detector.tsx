@@ -9,6 +9,7 @@ import Hint from '../../primitives/hint';
 import Loading from '../../primitives/loading';
 import { useAuthenticatedPreviewUrl } from '@kortix/sdk/react';
 import { useSandboxProxy } from '../../internal/hooks/use-sandbox-proxy';
+import { useOpenPreviewLink } from '../../internal/hooks/use-open-preview-link';
 import { framePolicy } from '../../files/viewer/preview-policy';
 import { cn } from '../../lib/utils';
 import { stripKortixSystemTags } from '../../internal/lib/utils/kortix-system-tags';
@@ -19,6 +20,7 @@ import {
 } from '@kortix/sdk';
 import { enrichPreviewMetadata } from '../../internal/lib/utils/session-context';
 import { openTabAndNavigate } from '../../internal/stores/tab-store';
+import { useUiShallowNavigate } from '../../providers/ui-provider';
 import {
   ArrowSquareOutIcon as ExternalLink,
   GlobeIcon as Globe,
@@ -233,6 +235,7 @@ function SandboxUrlChip({
   const tabHref = `/p/${detected.port}`;
   const internalUrl = toInternalUrl(detected.port, detected.path);
 
+  const shallowNavigate = useUiShallowNavigate();
   const navigateToPreviewTab = useCallback(() => {
     openTabAndNavigate({
       id: tabId,
@@ -244,8 +247,8 @@ function SandboxUrlChip({
         port: detected.port,
         originalUrl: internalUrl,
       }),
-    });
-  }, [tabId, tHardcodedUi, detected.port, tabHref, proxyUrl, internalUrl]);
+    }, undefined, shallowNavigate);
+  }, [tabId, tHardcodedUi, detected.port, tabHref, proxyUrl, internalUrl, shallowNavigate]);
 
   const handleCopyUrl = useCallback(() => {
     navigator.clipboard.writeText(proxyUrl).then(() => {
@@ -254,9 +257,11 @@ function SandboxUrlChip({
     });
   }, [proxyUrl]);
 
+  const openPreview = useOpenPreviewLink();
   const handleOpenExternal = useCallback(() => {
+    if (openPreview?.(null, detected.originalUrl, proxyUrl)) return;
     window.open(proxyUrl, '_blank', 'noopener,noreferrer');
-  }, [proxyUrl]);
+  }, [openPreview, detected.originalUrl, proxyUrl]);
 
   const displayPath = detected.path !== '/' ? detected.path : '';
 

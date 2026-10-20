@@ -1,4 +1,4 @@
-import { resolveSectionLabels } from './session-section-labels';
+import { resolveSectionLabels } from '@kortix/ui/workspace/sidebar/session-section-labels';
 /**
  * Every session source the filter menu OFFERS must have an icon and a label.
  *
@@ -22,11 +22,11 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { SESSION_SOURCE_FILTERS } from '@/components/projects/session-label';
-import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
-import { readSource } from '@/test-utils/read-source';
+import { SESSION_SOURCE_FILTERS } from '@kortix/ui/session/actions/session-label';
+import { SOURCE_ICONS } from '@kortix/ui/workspace/sidebar/session-source-icons';
+import { uiSourcePath } from '@/test-utils/read-source';
 
-const menuSource = readSource(resolve(import.meta.dir, 'session-filter-menu.tsx'));
+const menuSource = readFileSync(uiSourcePath('workspace/sidebar/session-filter-menu.tsx'), 'utf8');
 
 /** The keys of the object literal assigned to `name`, by brace matching so the
  *  scan stops at THIS literal's close and not a later one. */

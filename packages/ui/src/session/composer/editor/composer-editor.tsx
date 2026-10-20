@@ -656,7 +656,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
            * dispatches a ProseMirror transaction carrying `.scrollIntoView()`.
            * ProseMirror then walks EVERY scrollable ancestor and scrolls the
            * caret into view. On project home that ancestor is the hero column's
-           * own `overflow-y-auto` wrapper (`project-layout/home/welcome-body.tsx`),
+           * own `overflow-y-auto` wrapper (`workspace/home/welcome-body.tsx`),
            * and the scroll is computed in the same frame the card is growing by
            * several lines of freshly-inserted text — so it lands against a box
            * that is mid-reflow and yanks the column.
@@ -693,7 +693,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           // `text-base` (16px) on mobile, NOT 15px: iOS Safari force-zooms the
           // page on focus for any input under 16px, and the composer is the one
           // field on the screen. `sm:text-sm` above 640px, which is the size
-          // `globals.css`'s slash-trigger rule already documents.
+          // `styles/components.css`'s slash-trigger rule already documents.
           'kortix-composer-editor w-full text-sm',
           disabled && 'opacity-50',
         )}

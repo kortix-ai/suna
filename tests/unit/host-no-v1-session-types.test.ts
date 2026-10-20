@@ -48,8 +48,6 @@ const V1_NAMES = new Set([
 const ALLOWED: Record<string, string> = {
   'apps/mobile/lib/projects/projects-client.ts: *':
     'a namespace import of the SDK REST client (projects, secrets, connectors, change requests); it reads no transcript',
-  'packages/ui/src/session/pickers/user-message-parts.ts: ClassifiedPart':
-    'the public @kortix/ui/session API (#10257) renders classified v1 parts; it moves to blocks with that API',
 };
 
 const SDK_PACKAGE = /^@kortix\/sdk(?:\/|$)/;
@@ -134,7 +132,7 @@ function hostFiles(root: string): string[] {
 }
 
 describe('host files import no v1 part or turn type', () => {
-  const at = `${WEB_SRC}/features/session/tool/tools/task-tool.tsx`;
+  const at = `${WEB_SRC}/features/workspace/settings/tabs/profile-tab.tsx`;
 
   it('flags a planted import, an aliased one, a namespace import and an inline type import', () => {
     const planted = [

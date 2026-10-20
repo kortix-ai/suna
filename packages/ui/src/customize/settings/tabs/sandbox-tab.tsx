@@ -5,7 +5,7 @@ import { FactCell } from './fact-cell';
 
 import { type ReactNode, useState } from 'react';
 
-import { SandboxTemplateForm } from '../../../workspace/projects/sandbox-template-form';
+import { SandboxTemplateForm } from './sandbox-template-form';
 import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
 import { ConfirmDialog } from '../../../primitives/confirm-dialog';
@@ -70,6 +70,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   type SandboxProvider,
   SandboxProviderBadge,
+  SandboxProviderLabel,
   type SandboxProviderMode,
   availableProviderCoverage,
   describeProviderMode,
@@ -79,6 +80,11 @@ import {
   applySandboxProviderResult,
   pollSandboxProviderTransition,
 } from '../../sections/view/sandbox-provider-result';
+import {
+  formatSandboxProvider,
+  isLegacySandboxProvider,
+  sortSandboxProviders,
+} from '../../../internal/lib/sandbox-providers';
 import { SettingsTabHeader } from '../settings-tab-header';
 import { snapshotsQueryRetry } from './snapshots-query';
 
@@ -507,9 +513,8 @@ function SandboxProviderRow({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.sandbox');
   const queryClient = useQueryClient();
-  const available = project.available_sandbox_providers ?? [];
+  const available = sortSandboxProviders(project.available_sandbox_providers ?? []);
   const current = project.default_sandbox_provider ?? null;
-  const label = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
 
   const mutation = useMutation({
     mutationFn: (next: SandboxProviderName | null) =>
@@ -524,7 +529,7 @@ function SandboxProviderRow({
       if (kind === 'preparation') {
         successToast(
           tI18nComplete('text32f14aa9ea33', {
-            provider: next ? label(next) : tI18nComplete('text22412aa281cb'),
+            provider: next ? formatSandboxProvider(next) : tI18nComplete('text22412aa281cb'),
           }),
         );
         // Poll the durable transition (bounded, backoff, terminal-stop, 404 = done)
@@ -545,7 +550,7 @@ function SandboxProviderRow({
             if (status === 'activated') {
               successToast(
                 tI18nComplete('text1c145081eddd', {
-                  provider: label(state?.latest?.target_provider ?? ''),
+                  provider: formatSandboxProvider(state?.latest?.target_provider ?? ''),
                 }),
               );
             } else if (status === 'failed') {
@@ -573,7 +578,11 @@ function SandboxProviderRow({
               </Badge>
             </>
           }
-          description={t('provider.description')}
+          description={
+            available.some(isLegacySandboxProvider)
+              ? `${t('provider.description')} ${t('provider.legacyNote')}`
+              : t('provider.description')
+          }
         >
           <Select
             value={current ?? AUTO_PROVIDER}
@@ -584,14 +593,14 @@ function SandboxProviderRow({
             }
             disabled={!canManage || mutation.isPending}
           >
-            <SelectTrigger aria-label={t('provider.label')} className="h-8 w-40 shrink-0">
+            <SelectTrigger aria-label={t('provider.label')} className="h-8 w-48 shrink-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="end">
               <SelectItem value={AUTO_PROVIDER}>{t('routing.automatic')}</SelectItem>
               {available.map((p) => (
                 <SelectItem key={p} value={p}>
-                  {label(p)}
+                  <SandboxProviderLabel provider={p} />
                 </SelectItem>
               ))}
             </SelectContent>

@@ -6,7 +6,7 @@
  * That indirection exists because of a real, measured regression: a store's
  * own file often imports feature code far heavier than its persisted state
  * needs (`session-browser-store.ts` → `kortix-computer-store.ts` →
- * `features/files` → … → the shiki-backed markdown code renderer, ~3.8MB).
+ * `packages/ui/src/files/runtime` → … → the shiki-backed markdown code renderer, ~3.8MB).
  * `connectors-page.chunk.test.ts` walks the connectors route's real static
  * import graph and asserts that renderer is NOT in its initial chunk — a
  * static `import { useSessionBrowserStore } from './session-browser-store'`
@@ -47,7 +47,7 @@ export function resetPersistedStore<T>(store: ResettablePersistedStore<T>): void
 
 /**
  * Call once per persisted store, at the store's own module scope, right
- * after `create()` — e.g. in `stores/browser-recents-store.ts`:
+ * after `create()` — e.g. in `packages/ui/src/internal/stores/browser-recents-store.ts`:
  *
  *   registerPersistedStore('kortix-browser-recents', () =>
  *     resetPersistedStore(useBrowserRecentsStore),

@@ -1,3 +1,4 @@
+import { uiRoutes } from '../../lib/routes';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -8,7 +9,7 @@ import { registerPersistedStore, resetPersistedStore } from './persisted-store-r
  * Projects that have a first chat.
  *
  * Onboarding starts it, and it stays. `firstChatHref` opens the welcome chat
- * (`project-layout/home/first-chat.tsx`), and the sidebar keeps one "Your first
+ * (`workspace/home/first-chat.tsx`), and the sidebar keeps one "Your first
  * chat with Kortix" row at the bottom of the sessions. Each send from it starts a new
  * session; the welcome chat is never replaced by one. `finish` remains for
  * sign-out cleanup and tests.
@@ -69,7 +70,8 @@ const FIRST_CHAT_PARAM = 'chat';
 const FIRST_CHAT_VALUE = 'first';
 
 export function firstChatHref(projectId: string): string {
-  return `/projects/${encodeURIComponent(projectId)}?${FIRST_CHAT_PARAM}=${FIRST_CHAT_VALUE}`;
+  const home = uiRoutes().project(encodeURIComponent(projectId));
+  return `${home}${home.includes('?') ? '&' : '?'}${FIRST_CHAT_PARAM}=${FIRST_CHAT_VALUE}`;
 }
 
 export function isFirstChatRequested(

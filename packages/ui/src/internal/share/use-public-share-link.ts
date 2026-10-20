@@ -23,6 +23,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
 import { errorToast, successToast } from '../../primitives/toast';
+import { useUiHostConfig } from '../../providers/ui-provider';
 
 import { publicSharesQueryKey, publicShareUrl } from './use-session-public-shares';
 
@@ -50,6 +51,9 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
   // verdict. The read-by-id is exact at any age.
   const { data: session } = useProjectSession(projectId, sessionId);
   const canManageSharing = session?.can_manage_sharing !== false;
+  // A host without the public share page (`config.publicSharesEnabled: false`)
+  // would hand out a link that 404s on its own origin.
+  const { publicSharesEnabled } = useUiHostConfig();
   const [copied, setCopied] = useState(false);
   // A public link is an anonymous credential. Every request to create one is
   // confirmed first (`PublicShareLinkConfirm`); nothing is minted on the click.
@@ -114,6 +118,8 @@ export function usePublicShareLink({ projectId, sessionId, input }: PublicShareL
     },
     isPending: mutation.isPending,
     copied,
-    canShare: !!projectId && !!sessionId && !!input && canManageSharing,
+    canShare: publicSharesEnabled && !!projectId && !!sessionId && !!input && canManageSharing,
+    /** The host serves public share pages at all (`config.publicSharesEnabled`). */
+    enabled: publicSharesEnabled,
   };
 }

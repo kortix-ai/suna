@@ -58,16 +58,16 @@ Choose the smallest path that meets the user's goal.
 
 **A. No code: the Branding tab.** Open `/accounts/<account_id>?tab=branding` in
 the instance. Set the product name and upload the logo, the symbol, and the
-favicon (each with a dark variant). `apps/web/src/components/ui/kortix-logo.tsx`
+favicon (each with a dark variant). `packages/ui/src/primitives/kortix-logo.tsx`
 and the browser-tab title use these values after the account loads.
 
 **B. Source rebrand of `apps/web`.** For what path A does not cover:
 
 | What | Where |
 |---|---|
-| Name, title, canonical domain | `apps/web/src/lib/site-metadata.ts` |
+| Name, title, canonical domain | `packages/ui/src/internal/lib/site-metadata.ts` |
 | Page metadata, author, icons | `apps/web/src/app/[locale]/layout.tsx` |
-| Logo component | `apps/web/src/components/ui/kortix-logo.tsx` |
+| Logo component | `packages/ui/src/primitives/kortix-logo.tsx` |
 | Static icons and logos | `apps/web/public/` (`favicon.*`, `icon-*.png`, `apple-touch-icon.png`, `*.svg`) |
 | PWA manifest | `apps/web/public/manifest.json` |
 | Colors | `.agents/skills/kortix-brand/references/visual/visual-system.json`, then run `.agents/skills/kortix-brand/scripts/generate-tokens.ts`. Never edit the generated blocks of `globals.css` by hand. |
@@ -86,8 +86,8 @@ and the browser-tab title use these values after the account loads.
 
 ## 4. Stay compliant
 
-- Never configure Daytona, E2B, or any other sandbox provider for a white-label
-  instance.
+- Never configure Daytona (the legacy fallback) or any other sandbox provider
+  for a white-label instance. Platinum is the only one.
 - When Kortix gives notice of a new Platinum service that the instance uses, move
   that work to Platinum within 90 days.
 - Keep every copyright and license notice in the source code. The UI does not

@@ -59,15 +59,16 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { uiSourcePath } from '@/test-utils/read-source';
 
-import { railItemForTab } from './rail';
-import type { SettingsTab } from './settings-tabs';
-import { readSource } from '@/test-utils/read-source';
+import { railItemForTab } from '@kortix/ui/customize/settings/rail';
+import type { SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
 
-const TABS_DIR = join(import.meta.dir, 'tabs');
-const SRC_DIR = join(import.meta.dir, '..', '..', '..');
+
+// Account tabs live beside this file; project tabs render from @kortix/ui.
+const TABS_DIRS = [join(import.meta.dir, 'tabs'), dirname(uiSourcePath('customize/settings/tabs/general-tab.tsx'))];
 
 /** Single-column settings. The design system's default container. */
 const FORM_TABS = [
@@ -156,11 +157,13 @@ const TAB_SUBTREE: Record<string, string[]> = {
 const CHILD_SUBTREE: Record<string, string[]> = {};
 
 function tabSource(file: string): string {
-  return readSource(join(TABS_DIR, file));
+  const dir = TABS_DIRS.find((d) => existsSync(join(d, file)));
+  return readFileSync(join(dir ?? TABS_DIRS[0], file), 'utf8');
 }
 
+/** A packages/ui/src file: the customize sections the panel mounts. */
 function srcFile(relative: string): string {
-  return readSource(join(SRC_DIR, relative));
+  return readFileSync(uiSourcePath(relative), 'utf8');
 }
 
 /** True when the mapped child renders a table itself OR through its own slot child. */
@@ -208,7 +211,7 @@ describe('settings tab content width', () => {
   }
 
   test('every tab file is classified — a new tab cannot silently pick its own width', () => {
-    const onDisk = readdirSync(TABS_DIR)
+    const onDisk = TABS_DIRS.flatMap((dir) => readdirSync(dir))
       .filter((f) => f.endsWith('-tab.tsx') && !f.endsWith('.test.tsx'))
       .sort();
     const classified = [...FORM_TABS, ...TABLE_TABS, ...DELEGATING_TABS].sort();
@@ -321,8 +324,8 @@ const PANEL_SECTIONS_VIA_WRAPPER: string[] = [];
  * until the gateway bar was cut from ten tabs to six; that file is deleted.)
  */
 const PANEL_SECTIONS_OWN_CONTAINER = [
-  'features/workspace/customize/migrate-to-v2/upgrade-view.tsx',
-  // `components/projects/schedule-view.tsx` was here until Schedules and
+  'customize/migrate-to-v2/upgrade-view.tsx',
+  // `packages/ui/src/customize/triggers/schedule-view.tsx` was here until Schedules and
   // Webhooks graduated out of the settings overlay into their own capability
   // pages. It is no longer panel content, so the panel's two-width rule does
   // not govern it — the capability page that mounts it does.
@@ -365,7 +368,7 @@ const PANEL_SECTIONS_OWN_CONTAINER = [
  * Repositories folded INTO General as a "Git repo" section, so it dropped the
  * lookup and the container both — it is `general-tab.test.tsx`'s pane now.
  */
-const PANES_WITH_REGISTRY_LOOKUP = ['features/workspace/customize/migrate-to-v2/upgrade-view.tsx'];
+const PANES_WITH_REGISTRY_LOOKUP = ['customize/migrate-to-v2/upgrade-view.tsx'];
 
 /**
  * The mirror image: a pane no registry answers for, where `SettingsTabHeader`
@@ -385,7 +388,7 @@ const PANES_WITH_OWN_HEADING: string[] = [];
 
 describe('customize sections mounted in the settings panel', () => {
   test('the shared wrapper defaults to the panel column, not a third width', () => {
-    const wrapper = srcFile('features/workspace/customize/sections/component/section-wrapper.tsx');
+    const wrapper = srcFile('customize/sections/component/section-wrapper.tsx');
     expect(wrapper).toContain('mx-auto w-full max-w-2xl');
     expect(wrapper).not.toContain('mx-auto w-full max-w-3xl');
   });

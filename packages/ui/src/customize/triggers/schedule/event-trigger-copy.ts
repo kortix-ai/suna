@@ -7,6 +7,7 @@
  * id first and never asks a person to write JSON.
  */
 
+import { customizePath } from '../../../lib/routes';
 import type { UiTranslator } from '../../../i18n';
 import type {
   ProjectTrigger,
@@ -171,7 +172,7 @@ export function describeEventStatus(
 
 /** Where a person connects an account for a connector: the Connectors page, detail open. */
 export function connectorHref(projectId: string, connector?: string | null): string {
-  const base = `/projects/${projectId}/customize/connectors`;
+  const base = customizePath(projectId, 'connectors');
   return connector ? `${base}?c=${encodeURIComponent(connector)}` : base;
 }
 

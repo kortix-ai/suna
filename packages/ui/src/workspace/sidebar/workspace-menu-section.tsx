@@ -31,7 +31,9 @@ import {
   PlusIcon,
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
-import { UiLink as Link, useUiParams, useUiPathname } from '../../providers/ui-provider';
+import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
+import { useSessionIds } from '../../providers/session-ids';
+import { isProjectPath } from '../../lib/routes';
 import { useState, type MouseEvent } from 'react';
 
 import { Button } from '../../primitives/button';
@@ -67,14 +69,15 @@ export function WorkspaceMenuSection() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
   const pathname = useUiPathname();
-  const params = useUiParams<{ id?: string }>();
+  const { projectId: routeProjectId } = useSessionIds();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const beginSwitch = useProjectSwitchStore((s) => s.beginSwitch);
   const switchingToProjectId = useProjectSwitchStore((s) => s.targetProjectId);
   const [query, setQuery] = useState('');
   const tCapture = useTranslations('capture.account');
 
-  const activeProjectId = pathname?.startsWith('/projects/') ? params?.id : undefined;
+  const activeProjectId =
+    routeProjectId && isProjectPath(pathname, routeProjectId) ? routeProjectId : undefined;
 
   const {
     workspacesLoading,

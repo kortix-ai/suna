@@ -4,7 +4,7 @@ import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
 import { Tabs, TabsList, TabsTrigger } from '../../primitives/tabs';
-import { SidebarToggle as PanelRight } from '../../icons/sidebar-toggle';
+import { SidebarGlyph as PanelRight } from '../../icons/sidebar-toggle';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import type { SessionPanelView } from '../../internal/stores/session-browser-store';

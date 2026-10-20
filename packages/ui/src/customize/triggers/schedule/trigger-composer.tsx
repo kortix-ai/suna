@@ -51,6 +51,7 @@ import { triggerToastEntity } from './trigger-toast';
 import { rowsToConditions } from './schedule-fields';
 import { ThenFields } from './then-fields';
 import {
+  runCapFromInput,
   type ComposerBlock,
   type ComposerDraft,
   findDraftApp,
@@ -204,10 +205,14 @@ function ComposerForm({
     if (at.top >= view.top && at.bottom <= view.bottom) return;
     scroller.scrollTop += at.top - view.top - scroller.clientHeight / 4;
   };
+  // A blocked Create moves focus to the first field that needs input, so the
+  // click visibly lands somewhere instead of reading as a dead control
+  // (KRTX-2816). Only the submit path calls this.
   const scrollTo = (block: ComposerBlock) =>
     requestAnimationFrame(() => {
       const section = bodyRef.current?.querySelector(`[data-block="${block}"]`);
       reveal(section?.querySelector('[role="alert"]') ?? section);
+      section?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus({ preventScroll: true });
     });
   useEffect(() => {
     if (error) reveal(errorRef.current);
@@ -258,6 +263,9 @@ function ComposerForm({
             ...(draft.agent ? { agent: draft.agent } : {}),
             ...(draft.model ? { model: modelKeyToWire(draft.model) } : {}),
             session_access: draft.sessionAccess,
+            ...(runCapFromInput(draft.maxRunsPerHour) ? { max_runs_per_hour: runCapFromInput(draft.maxRunsPerHour)! } : {}),
+            ...(runCapFromInput(draft.maxRunsPerDay) ? { max_runs_per_day: runCapFromInput(draft.maxRunsPerDay)! } : {}),
+            ...(draft.overlap !== 'default' ? { overlap: draft.overlap } : {}),
             ...(draft.mode !== 'fresh' ? { session_mode: draft.mode } : {}),
             ...(draft.mode === 'pinned' && draft.pinnedSessionId
               ? { session_id: draft.pinnedSessionId }

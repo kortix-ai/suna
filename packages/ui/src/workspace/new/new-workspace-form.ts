@@ -143,7 +143,7 @@ export function resolveDefaultCreatableAccountId(
  * of creating any workspace. That gap is closed one layer up instead,
  * structurally: the account list is cached under `qk.accounts.list(userId)`
  * (`packages/sdk/src/react/query-keys.ts`), read only through
- * `useAccountsList()` (`hooks/account/use-accounts-list.ts`), and every
+ * `useAccountsList()` (`packages/ui/src/internal/hooks/account/use-accounts-list.ts`), and every
  * reader is gated `enabled: !!user`. A previous user's list — of ANY size,
  * not only one account — is not ADDRESSABLE from this user's session, so it
  * cannot reach this function at all any more.

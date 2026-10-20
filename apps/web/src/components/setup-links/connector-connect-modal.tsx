@@ -1,9 +1,9 @@
 'use client';
 
-import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
+import { SessionDotMatrix } from '@kortix/ui/dot-matrix/session-dot-matrix';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -12,8 +12,8 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { AddAccountFields } from '@/features/workspace/customize/sections/add-account-fields';
+} from '@kortix/ui/modal';
+import { AddAccountFields } from '@kortix/ui/customize/sections/add-account-fields';
 import {
   accountVisibility,
   connectorConnectionRows,
@@ -21,13 +21,12 @@ import {
   newAccountLabelTaken,
   newAccountReady,
   type NewAccountDraft,
-} from '@/features/workspace/customize/sections/view/connector-connections';
+} from '@kortix/ui/customize/sections/view/connector-connections';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useAddManagedAccount } from '@/hooks/connectors/use-add-managed-account';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useAddManagedAccount } from '@kortix/ui/internal/hooks/connectors/use-add-managed-account';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
-import { useProjectCan } from '@/lib/use-project-can';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan, PROJECT_ACTIONS } from '@kortix/ui/workspace';
 import {
   finalizeConnectorSetupLink,
   listConnections,
@@ -38,10 +37,10 @@ import { CheckIcon, WarningIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
-import { ConnectorHandshake } from './connector-handshake';
+import { ConnectorHandshake } from '@kortix/ui/markdown/setup-links/connector-handshake';
 import { useConnectorIntake } from './connector-intake';
-import { connectorHeadline, useConnectorLinkInfo } from './connector-link-info';
-import { setupLinkApiBase } from './api-base';
+import { connectorHeadline, useConnectorLinkInfo } from '@kortix/ui/markdown/setup-links/connector-link-info';
+import { setupLinkApiBase } from '@kortix/ui/markdown/setup-links/api-base';
 
 const COPY = {
   title: 'Connect {app}',

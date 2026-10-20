@@ -12,6 +12,7 @@ import {
 import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
 import { useSandboxProxy } from '../../../internal/hooks/use-sandbox-proxy';
+import { useOpenPreviewLink } from '../../../internal/hooks/use-open-preview-link';
 import { safeHttpUrl } from '@kortix/shared';
 import { cn } from '../../../lib/utils';
 import {
@@ -64,6 +65,7 @@ export function PresentationGenTool({ call, defaultOpen, forceOpen, locked }: To
   const isError = parsed ? !parsed.success : false;
 
   const { proxyUrl } = useSandboxProxy();
+  const openPreview = useOpenPreviewLink();
   const viewerProxyUrl = useMemo(() => {
     if (!parsed?.viewer_url) return undefined;
     return proxyUrl(parsed.viewer_url);
@@ -115,7 +117,10 @@ export function PresentationGenTool({ call, defaultOpen, forceOpen, locked }: To
               target="_blank"
               rel="noopener noreferrer"
               className="ml-auto shrink-0"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (parsed?.viewer_url) openPreview?.(e, parsed.viewer_url, viewerProxyUrl);
+              }}
             >
               <ExternalLink className="text-muted-foreground/60 hover:text-foreground size-3 transition-colors" />
             </a>

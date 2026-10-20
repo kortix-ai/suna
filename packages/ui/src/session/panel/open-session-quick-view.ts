@@ -23,6 +23,7 @@ import {
   useKortixComputerStore,
 } from '../../internal/stores/kortix-computer-store';
 import { getActivePanelSessionId, useSessionBrowserStore } from '../../internal/stores/session-browser-store';
+import { openPanelFallbackView, panelFallbackActive } from '../../internal/stores/panel-fallback-store';
 import { useUserPreferencesStore } from '../../internal/stores/user-preferences-store';
 
 /** Same cutoff as `useIsMobile`, readable outside a component. This is a
@@ -40,6 +41,14 @@ export function openSessionQuickView(
    *  it here instead of writing `viewBySession`, which only Advanced reads. */
   target?: QuickViewTarget,
 ): void {
+  // No side panel on this page (a host renders `SessionThread` alone): the
+  // thread's fallback overlay shows the view. See `panel-fallback-store.ts`.
+  if (panelFallbackActive()) {
+    openPanelFallbackView(view, target);
+    track('panel_opened', { source, surface: 'fallback', view });
+    return;
+  }
+
   // Mobile: the tool gets its own top-level drawer (`MobileToolDrawer`),
   // never the panel sheet — opening the Easy/Advanced panel just to host a
   // terminal meant two stacked sheets and an Easy home the user never asked

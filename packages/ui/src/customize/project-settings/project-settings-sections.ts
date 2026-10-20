@@ -18,7 +18,7 @@ import type { CustomizeSection } from '../../internal/lib/project-actions';
  * "Settings" tab of the Customize bar.
  *
  * These six sections used to be part of the `Workspace` and `Agent` groups of
- * the Settings overlay's rail (`features/workspace/settings/rail.ts`), plus
+ * the Settings overlay's rail (`packages/ui/src/customize/settings/rail.ts`), plus
  * its pinned Upgrades row and its `experimental` row. All of them configure a
  * PROJECT, and every one of them is reachable by exactly the people who can
  * already see Customize — so they belong on the Customize bar, not behind a
@@ -43,7 +43,7 @@ import type { CustomizeSection } from '../../internal/lib/project-actions';
  * Labels, descriptions and docs links are carried over verbatim from the rail
  * rows they replace. The one rename is `experimental` -> `feature-flags`,
  * which is what the pane is called everywhere else in the codebase (it is
- * already the `CustomizeSection` id, see `lib/project-actions.ts`).
+ * already the `CustomizeSection` id, see `packages/ui/src/internal/lib/project-actions.ts`).
  *
  * A `key` IS its `?section=` query value, so renaming one breaks live links.
  * `settings-tabs.ts`'s `GRADUATED` map points every retired `SettingsTab` id

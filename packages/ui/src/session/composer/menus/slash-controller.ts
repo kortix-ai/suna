@@ -179,7 +179,7 @@ export function createSlashSuggestion(
      * The suggestion plugin already wraps the trigger range in a decoration
      * span and tags it `is-empty` while the query has no characters; it also
      * copies `decorationContent` onto the span as `data-decoration-content`.
-     * All that is missing is a rule to paint it, which lives in `globals.css`
+     * All that is missing is a rule to paint it, which lives in `styles/components.css`
      * beside the composer's own placeholder rule (same `content:
      * attr(...)`/`pointer-events: none` shape, for the same reason: it must
      * not be selectable and must not shift the caret).
@@ -211,7 +211,7 @@ export function createSlashSuggestion(
      * same attrs, same `kind: 'file'` — so one file has exactly one
      * representation in the document no matter which palette picked it, and
      * it reaches the agent through the existing `<file_ref>` path
-     * (`editor/serialize.ts` -> `lib/project-preamble.ts`) with nothing new
+     * (`editor/serialize.ts` -> `packages/ui/src/internal/lib/project-preamble.ts`) with nothing new
      * on the send side. `label` is the PATH, not the row's display name:
      * `collectMentions` addresses files by label, so a basename here would
      * hand the agent a reference it cannot resolve.

@@ -350,6 +350,12 @@ describe('describeNextRun', () => {
       ),
     ).toBeNull();
     expect(describeNextRun(trigger({ type: 'cron', enabled: true }))).toBeNull();
+    // An auto-paused cron trigger (KRTX-1721) claims no slot until it is resumed.
+    expect(
+      describeNextRun(
+        trigger({ type: 'cron', enabled: true, next_fire_at: '2026-10-08T09:12:00.000Z', auto_paused_at: '2026-10-08T08:00:00.000Z' }),
+      ),
+    ).toBeNull();
   });
 });
 
@@ -375,6 +381,9 @@ describe('triggerBadgeState: the one status every surface shows', () => {
     expect(triggerBadgeState(trigger({ type: 'event', enabled: false, event: ev('error') }))).toBe(
       'paused',
     );
+  });
+  test('an auto-paused trigger is paused though its manifest says enabled (KRTX-1721)', () => {
+    expect(triggerBadgeState(trigger({ enabled: true, auto_paused_at: '2026-10-19T12:00:00.000Z' }))).toBe('paused');
   });
   test('an event trigger shows its subscription state', () => {
     for (const status of ['needs_connection', 'error', 'pending'] as const) {
@@ -404,5 +413,19 @@ describe('triggerSubtitle', () => {
   test('no schedule line and no prompt: the name stands alone', () => {
     expect(triggerSubtitle('Every minute', 'Every minute', null)).toBeNull();
     expect(triggerSubtitle('Every minute', 'Every minute', '  \n ')).toBeNull();
+  });
+});
+
+// The cron boundary and the scheduler's jittered execution are different facts.
+describe('next run timezone and cron boundary', () => {
+  test('shows the six-field cron occurrence and preserves the scheduled execution', () => {
+    expect(describeNextRun(trigger({
+      next_cron_at: '2026-10-10T09:00:00.000Z',
+      next_fire_at: '2026-10-10T09:15:00.000Z',
+    }))).toBe('Next run Oct 10, 09:00:00 AM UTC · Scheduled execution Oct 10, 09:15:00 AM UTC');
+  });
+  test('labels a one-off or older API execution without inventing a cron boundary', () => {
+    expect(describeNextRun(trigger({ next_fire_at: '2026-10-10T09:15:00.000Z' })))
+      .toBe('Next run Oct 10, 09:15:00 AM UTC');
   });
 });

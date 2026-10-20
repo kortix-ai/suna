@@ -27,7 +27,7 @@ import {
   maxSidebarWidth,
 } from './sidebar-width';
 import { cn } from '../lib/utils';
-import { SidebarToggle as PanelLeftIcon } from '../icons/sidebar-toggle';
+import { SidebarGlyph as PanelLeftIcon } from '../icons/sidebar-toggle';
 
 function Sidebar({
   side = 'left',

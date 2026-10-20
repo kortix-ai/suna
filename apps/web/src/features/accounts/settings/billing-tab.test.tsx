@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const reactQuery = await import('@tanstack/react-query');
-const billingHooks = await import('@/hooks/billing');
+const billingHooks = await import('@kortix/ui/internal/billing/index');
 let total = 2;
 let billingEnabled = true;
 // The account-state the Plan pane renders. The free-account cases below never

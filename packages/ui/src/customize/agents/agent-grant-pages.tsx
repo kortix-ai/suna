@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { useTranslations as useI18nTranslations } from '../../i18n';
 /**
  * The agent editor's Access pages — Skills, Connectors, Secrets — built from
@@ -510,7 +511,7 @@ export function AppsGrantPage({ projectId, editor }: { projectId: string; editor
       trailing={
         <GrantHeaderTrailing
           value={editor.draft.apps}
-          href={(id) => `/projects/${id}/apps`}
+          href={(id) => uiRoutes().apps(id)}
           label={t('manageApps')}
         />
       }

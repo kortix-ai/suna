@@ -96,7 +96,7 @@ import { usePreviewFit } from '../../viewer/preview-fit';
 import { cn } from '../../../lib/utils';
 import { downloadBlob } from '../../../internal/lib/utils/download';
 import { loadSharedPdfEngine } from './pdf-thumbnail-utils';
-import { SidebarToggle as PanelLeft } from '../../../icons/sidebar-toggle';
+import { SidebarGlyph as PanelLeft } from '../../../icons/sidebar-toggle';
 
 export type PDFViewerPageOverlayProps = {
   pageNumber: number;

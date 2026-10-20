@@ -12,7 +12,7 @@ export type { FileContentRendererProps } from './file-content-renderer';
 export { FileExplorerPage } from './file-explorer-page';
 export { FileHistoryPopoverContent } from './file-history-popover';
 export { getFileIcon } from './file-icon';
-export { FilePreviewModal } from './file-preview-modal';
+export { ExplorerFilePreview } from './file-preview-modal';
 export { FileSearch } from './file-search';
 export { FileThumbnail } from './file-thumbnail';
 export { VersionSelector } from './version-selector';

@@ -8,6 +8,10 @@ import * as React from 'react';
  * around its session view (apps/web maps its `/projects/[id]/sessions/[sessionId]`
  * route params in KortixUiProvider). Without a provider both ids are undefined,
  * and the components that need them render nothing or skip their query.
+ *
+ * It imports nothing from `@kortix/sdk`: the root entry loads without that
+ * optional peer. `SessionThread`, `SessionWorkspace` and `ProjectHome` also
+ * scope the SDK's project hooks themselves (`internal/project-scope.tsx`).
  */
 export interface UiSessionIds {
   projectId?: string;

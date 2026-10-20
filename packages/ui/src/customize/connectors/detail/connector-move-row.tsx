@@ -17,10 +17,11 @@ import { ConnectorNoticeRow } from './connector-notice-view';
 export const connectorMovesQueryKey = (projectId: string) =>
   ['connector-moves', projectId] as const;
 
-/** The move of a Pipedream connector in a `connectors_v2` project, or undefined. */
+/** The move of a Pipedream or Composio connector in a `connectors_v2` project, or undefined. */
 export function useConnectorMove(projectId: string, connector: AdminConnector) {
   const enabled =
-    useFeatureFlag(projectId, 'connectors_v2').enabled && connector.provider === 'pipedream';
+    useFeatureFlag(projectId, 'connectors_v2').enabled &&
+    (connector.provider === 'pipedream' || connector.provider === 'composio');
   const moves = useQuery({
     queryKey: connectorMovesQueryKey(projectId),
     queryFn: () => listConnectorMoves(projectId),
@@ -30,10 +31,10 @@ export function useConnectorMove(projectId: string, connector: AdminConnector) {
 }
 
 /**
- * A Pipedream connector in a `connectors_v2` project: Kortix retires Pipedream.
- * With a Kortix app for it, the row moves the connector there: the person signs
- * in once, and the connector switches when the sign-in completes (it keeps its
- * slug). Without one, it says the connector stays on Pipedream.
+ * A Pipedream or Composio connector in a `connectors_v2` project: Kortix retires
+ * both. With a Kortix app for it, the row moves the connector there: the person
+ * signs in once, and the connector switches when the sign-in completes (it keeps
+ * its slug). Without one, it says the connector stays on its provider.
  */
 export function ConnectorMoveRow({
   projectId,
@@ -73,7 +74,8 @@ export function ConnectorMoveRow({
   });
   if (!move) return null;
 
-  // The other accounts hold Pipedream logins that no Kortix app accepts.
+  const provider = move.provider === 'composio' ? 'Composio' : 'Pipedream';
+  // The other accounts hold logins of the old provider, which no Kortix app accepts.
   const others = Math.max(0, move.accounts - 1);
   const start = () => (others > 0 ? setConfirming(true) : run.mutate());
   return (
@@ -81,14 +83,14 @@ export function ConnectorMoveRow({
       <ConnectorNoticeRow
         title={
           move.to
-            ? t('moveTitle', { app: move.to.name })
-            : t('moveNoneTitle', { name: displayName })
+            ? t('moveTitle', { app: move.to.name, provider })
+            : t('moveNoneTitle', { name: displayName, provider })
         }
         detail={
           <p className="text-muted-foreground text-xs text-pretty">
             {move.to
-              ? t('moveBody', { app: move.to.name, slug: connector.slug })
-              : t('moveNoneBody', { name: displayName })}
+              ? t('moveBody', { app: move.to.name, slug: connector.slug, provider })
+              : t('moveNoneBody', { name: displayName, provider })}
           </p>
         }
       >
@@ -103,7 +105,7 @@ export function ConnectorMoveRow({
         open={confirming}
         onOpenChange={setConfirming}
         title={t('moveConfirmTitle', { app: move.to?.name ?? displayName })}
-        description={t('moveConfirmBody', { count: others })}
+        description={t('moveConfirmBody', { count: others, provider })}
         confirmLabel={t('moveAction')}
         isPending={run.isPending}
         onConfirm={() => {

@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../../lib/routes';
 import { create } from 'zustand';
 
 /**
@@ -42,7 +43,7 @@ export function pendingNewSessionPath(
   projectId: string,
 ): string | null {
   const sessionId = pending[projectId]?.sessionId;
-  return sessionId ? `/projects/${projectId}/sessions/${sessionId}` : null;
+  return sessionId ? uiRoutes().session(projectId, sessionId) : null;
 }
 
 /** True once the browser is showing the session the pending create minted. */

@@ -12,7 +12,7 @@ import { useTranslations } from '../../i18n';
 import { connectorHref } from './connector-routes';
 import { connectorMovesQueryKey } from './detail/connector-move-row';
 
-/** The Pipedream connectors a `connectors_v2` project can move to Kortix apps, each linked to its page. */
+/** The Pipedream and Composio connectors a `connectors_v2` project can move to Kortix apps, each linked to its page. */
 export function ConnectorMovesBanner({ projectId }: { projectId: string }) {
   const t = useTranslations('connectorPages');
   const enabled = useFeatureFlag(projectId, 'connectors_v2').enabled;

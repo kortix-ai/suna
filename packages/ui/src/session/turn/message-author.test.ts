@@ -39,6 +39,11 @@ describe('resolveTranscriptAuthors', () => {
     expect(showAuthorName(undefined, true, 'u1')).toBe(false);
   });
 
+  test('with no viewer id a one-person session names nobody; a group chat still names everyone', () => {
+    expect(showAuthorName(avery, false, undefined)).toBe(false);
+    expect(showAuthorName(avery, true, undefined)).toBe(true);
+  });
+
   test('initial_author goes to the first user message that has no author', () => {
     const r = resolveTranscriptAuthors(['a', 'b', 'c'], { authors: { b: avery }, initial_author: parent });
     expect(r.byMessage.get('a')).toEqual(parent);
@@ -114,6 +119,10 @@ describe('stoppedByName', () => {
     expect(stoppedByName(stops, 'm2', 'u1')).toBeNull();
     expect(stoppedByName({ authors: {}, initial_author: null }, 'm1', 'u1')).toBeNull();
     expect(stoppedByName(undefined, 'm1', 'u1')).toBeNull();
+  });
+
+  test('with no viewer id a stop names nobody: the stopper may be the viewer', () => {
+    expect(stoppedByName(stops, 'm1', undefined)).toBeNull();
   });
 
   test('a stop recorded for an agent session names nobody', () => {

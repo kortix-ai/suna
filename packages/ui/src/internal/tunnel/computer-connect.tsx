@@ -16,6 +16,7 @@ import { Button } from '../../primitives/button';
 import Loading from '../../primitives/loading';
 import { Modal, ModalContent, ModalDescription, ModalTitle } from '../../primitives/modal';
 import { BeamsShader } from '../../primitives/paper-wallpaper-shaders';
+import { Switch } from '../../primitives/switch';
 import { errorToast, successToast } from '../../primitives/toast';
 import { Download } from '../icons/download';
 import { SolidCheckIcon } from '../icons/solid-check-icon';
@@ -370,23 +371,35 @@ const CAPABILITIES: readonly { key: 'filesystem' | 'shell' | 'desktop'; icon: Ic
 ];
 
 /**
- * What Kortix can use on a computer. With `granted` (the capabilities approved
- * at pairing) each row says Allowed / Not allowed; without it, it is a preview.
+ * What Kortix can use on a computer. With `granted` (the capabilities the
+ * owner approved) each row says Allowed / Not allowed; without it, it is a
+ * preview. With `onChange` each row is a switch: the owner turns a capability
+ * on or off, and the next call obeys it. A capability the machine's agent
+ * does not serve (`available`) cannot be turned on.
  */
 export function ComputerCapabilities({
   granted,
   needsSetup,
+  available,
+  onChange,
+  disabled,
 }: {
   granted?: readonly string[];
   /** Approved, but the macOS permission it needs is still missing (setup). */
   needsSetup?: readonly string[];
+  /** What the machine's agent serves. Absent: everything. */
+  available?: readonly string[];
+  onChange?: (next: string[]) => void;
+  disabled?: boolean;
 }) {
   const t = useTranslations('computers');
   return (
     <ul className="divide-border divide-y">
       {CAPABILITIES.map(({ key, icon: CapabilityIcon }) => {
-        const allowed = granted?.includes(key) && !needsSetup?.includes(key);
-        const pending = granted?.includes(key) && needsSetup?.includes(key);
+        const on = granted?.includes(key) ?? false;
+        const servable = !available || available.includes(key);
+        const allowed = on && servable && !needsSetup?.includes(key);
+        const pending = on && needsSetup?.includes(key);
         return (
           <li key={key} className="flex items-center gap-3 py-3">
             <span className="bg-muted text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-sm">
@@ -395,10 +408,26 @@ export function ComputerCapabilities({
             <div className="min-w-0 flex-1 space-y-0.5">
               <p className="text-sm font-medium">{t(`capability.${key}`)}</p>
               <p className="text-muted-foreground truncate text-xs">
-                {t(`capability.${key}Description`)}
+                {servable ? t(`capability.${key}Description`) : t('capability.notAvailable')}
               </p>
             </div>
-            {granted ? (
+            {granted && onChange ? (
+              <span className="flex shrink-0 items-center gap-2">
+                {pending ? (
+                  <span className="text-muted-foreground text-xs">{t('capability.needsSetup')}</span>
+                ) : null}
+                <Switch
+                  checked={on && servable}
+                  disabled={disabled || !servable}
+                  onCheckedChange={(next) =>
+                    onChange(
+                      next ? [...granted, key] : granted.filter((capability) => capability !== key),
+                    )
+                  }
+                  aria-label={t(`capability.${key}`)}
+                />
+              </span>
+            ) : granted ? (
               <span
                 className={cn(
                   'flex shrink-0 items-center gap-1 text-xs',

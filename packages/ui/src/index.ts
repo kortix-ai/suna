@@ -8,7 +8,6 @@
 export { cn } from './lib/utils';
 export {
   UiProvider,
-  defaultChatStrings,
   defaultUiHostConfig,
   defaultUiNavigation,
   defaultUiStrings,
@@ -19,6 +18,7 @@ export {
   useUiParams,
   useUiPathname,
   useUiRouter,
+  useUiShallowNavigate,
   useUiSearchParams,
   useUiStrings,
   useUiViewerId,
@@ -32,7 +32,7 @@ export {
   type UiRouteParams,
   type UiRouter,
   type UiSearchParams,
-  type ChatStrings,
+  type UiShallowNavigate,
   type UiStrings,
   type UiStringsInput,
   type UseUiBrand,
@@ -217,6 +217,7 @@ export { useMediaQuery } from './internal/hooks/use-media-query';
 export { useSlashFocus } from './internal/hooks/use-slash-focus';
 export { faviconUrlForHostname } from './lib/favicon';
 export { setUiHostEnv } from './lib/host-env';
+export { defaultUiRoutes, setUiRoutes, uiRoutes, type UiRoutes } from './lib/routes';
 export { DEFAULT_ICON_WEIGHT, ICON_WEIGHTS, SHIPPED_ICON_WEIGHTS } from './lib/icon-config';
 export { lazyClient } from './lib/lazy-client';
 export { spring } from './lib/springs';
@@ -234,5 +235,7 @@ export {
   UiLink,
   useUiViewer,
   type UiHostComponents,
+  type UiPreviewRequest,
+  type UiPreviewUrlResolver,
   type UiViewer,
 } from './providers/ui-provider';

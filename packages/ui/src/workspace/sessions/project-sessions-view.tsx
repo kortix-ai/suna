@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectCan } from '../../internal/lib/use-project-can';
 import { Button } from '../../primitives/button';
@@ -644,7 +645,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         actions: [
           {
             label: tDeleted('openSession'),
-            onClick: () => router.push(`/projects/${projectId}/sessions/${session.session_id}`),
+            onClick: () => router.push(uiRoutes().session(projectId, session.session_id)),
           },
         ],
       });

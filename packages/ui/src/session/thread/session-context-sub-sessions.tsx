@@ -6,7 +6,7 @@ import { useTranslations } from '../../i18n';
 import { formatUsdAsCredits } from '@kortix/shared';
 import { Label } from '../../primitives/label';
 import { cn } from '../../lib/utils';
-import { useSessionLogThread, useSessionSync, type SessionMessagesSource } from '@kortix/sdk/react';
+import { useSessionLogRecord, useSessionLogThread, useSessionSync, type SessionMessagesSource } from '@kortix/sdk/react';
 import { CaretDownIcon, CaretRightIcon } from '@phosphor-icons/react';
 import { allDescendantIds, childMapByParent, sessionLogThreadMetrics, type ModelPricingLookup, type Session, type SessionLogThread, type SessionLogThreadMetrics } from '@kortix/sdk';
 
@@ -241,6 +241,9 @@ export function SubSessionSection({ source, session, allSessions, pricingLookup,
   // The root's own metrics, plus every descendant's (the whole tree, whatever
   // is expanded): the combined totals read the same records the rows do.
   const root = useSessionLogThread(source);
+  // On v2 (the store holds the session's log) each row's `useSessionLogThread` reads the
+  // sub-agent's thread from the log: no saved copy, nothing to load here.
+  const onLog = useSessionLogRecord(source) !== null;
   const scope = source.projectId && source.sessionId ? `${source.projectId}/${source.sessionId}` : undefined;
   const rootMetrics = useMemo(() => threadMetrics(root, pricingLookup), [root, pricingLookup]);
   // A row's thread loads once the row has been in view, or on "Load all"; kept while the modal is open.
@@ -271,9 +274,8 @@ export function SubSessionSection({ source, session, allSessions, pricingLookup,
         const totals = sumMetrics([rootMetrics, ...descendantIds.map((id) => metrics[id] ?? NO_METRICS)]);
         return (
           <section className="space-y-3">
-            {[...requested].map((id) => (
-              <LoadSubAgentThread key={id} id={id} scope={scope} onFailed={onFailed} />
-            ))}
+            {!onLog &&
+              [...requested].map((id) => <LoadSubAgentThread key={id} id={id} scope={scope} onFailed={onFailed} />)}
             <div className="space-y-1">
               <Label>{t.raw('subAgentsLabel')}</Label>
               <p className="text-muted-foreground text-xs">{t.raw('subAgentsNote')}</p>

@@ -12,6 +12,7 @@ import {
 } from '../../internal/files/file-availability';
 import { resolveRuntimePath } from '../../internal/files/use-oc-file-open';
 import { useSandboxProxy } from '../../internal/hooks/use-sandbox-proxy';
+import { useOpenPreviewLink } from '../../internal/hooks/use-open-preview-link';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import { useFilePreviewStore } from '../../internal/stores/file-preview-store';
@@ -149,6 +150,7 @@ export function ClickableInlineCode({ children }: { children: React.ReactNode })
   const Link = useUiLink();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { proxyUrl } = useSandboxProxy();
+  const openPreview = useOpenPreviewLink();
   const insideLink = useInsideLink();
   const text = childrenToText(children).trim();
 
@@ -170,6 +172,23 @@ export function ClickableInlineCode({ children }: { children: React.ReactNode })
     // WITHOUT its own anchor. See `inside-link-context.ts`.
     if (insideLink) {
       return <code className={linkClass}>{children}</code>;
+    }
+
+    // A sandbox address under a host preview resolver: the proxied href would
+    // land on the host's own origin, so the click opens the host's URL.
+    if (openPreview && href !== text) {
+      return (
+        <a
+          href={text}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={tI18nComplete('text06ce842278f6', { value0: text })}
+          className={linkClass}
+          onClick={(e) => openPreview(e, text, href)}
+        >
+          {children}
+        </a>
+      );
     }
 
     // A malformed absolute URL (e.g. `http://:`) must not reach next/link —

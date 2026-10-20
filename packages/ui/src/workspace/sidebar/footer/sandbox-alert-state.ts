@@ -65,22 +65,13 @@ export function sandboxHealthRefetchInterval(
   return 120_000;
 }
 
-const PROVIDER_LABEL: Record<string, string> = {
-  daytona: 'Daytona',
-  platinum: 'Platinum',
-  e2b: 'E2B',
-};
-
-export function formatSandboxProvider(provider: string): string {
-  return PROVIDER_LABEL[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
-}
-
-/** `Daytona`, `Daytona and Platinum`, `Daytona, Platinum and E2B`. */
-export function formatSandboxProviders(providers: readonly string[]): string {
-  const names = providers.map(formatSandboxProvider);
-  if (names.length <= 1) return names[0] ?? '';
-  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-}
+export {
+  formatSandboxProvider,
+  formatSandboxProviders,
+  isLegacySandboxProvider,
+  sandboxProviderRank,
+  sortSandboxProviders,
+} from '../../../internal/lib/sandbox-providers';
 
 export function describeFailedBuild(
   build: Pick<ProjectSnapshotBuild, 'build_id' | 'snapshot_name' | 'status'>,

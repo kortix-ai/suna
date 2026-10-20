@@ -397,7 +397,7 @@ function basename(p: string): string {
  * `show`/`show_user` display an existing result — a file, a link, a block of
  * text. `getToolPrimaryArg` has no case for them, so it used to fall through
  * to its generic fallback-key list, which returns `input.path`/`input.url`
- * completely verbatim (a real sandbox path or e2b preview URL straight to a
+ * completely verbatim (a real sandbox path or provider preview URL straight to a
  * non-technical user — rule 2 forbids exactly this). ShowTool itself renders
  * `input.title` as its own heading, so prefer that; then a description; and
  * only when neither exists fall back to a BASENAME or DOMAIN — never the raw

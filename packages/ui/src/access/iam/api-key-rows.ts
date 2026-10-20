@@ -33,7 +33,7 @@ import type { AccountToken, KortixProject } from '@kortix/sdk';
  * signal the browser has.
  *
  * Since 2026-08-18 the one surface that lists personal keys — a person's own
- * settings (`features/workspace/settings/tabs/tokens-tab.tsx`) — reads
+ * settings (`packages/ui/src/customize/settings/tabs/tokens-tab.tsx`) — reads
  * `?mine=true`, and the SERVER excludes session tokens from that answer by
  * `session_id IS NULL` (`listPersonalAccountTokens`). So this is now a second
  * line of defence rather than the only one, and it still earns its place: it

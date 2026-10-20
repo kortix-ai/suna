@@ -3,6 +3,7 @@
 import { safeLocalStorage } from '../lib/storage/managed-storage';
 import { withoutAppAccessToken } from '../lib/utils/app-access-token';
 import { registerPersistedStore, resetPersistedStore } from './persisted-store-registry';
+import type { UiShallowNavigate } from '../../providers/ui-provider';
 import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@kortix/sdk';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
@@ -281,9 +282,13 @@ const PRE_MOUNTED_TAB_TYPES: ReadonlySet<TabType> = new Set([
 /**
  * Open (or activate) a tab AND navigate the browser to it.
  *
- * Pre-mounted types (session, file, preview, terminal) use `history.pushState`
- * so the component stays mounted. Other types require a Next.js `router` for
- * full page navigation.
+ * Pre-mounted types (session, file, preview, terminal) move the URL without a
+ * navigation, so the component stays mounted. With `navigate`
+ * (`useUiShallowNavigate()`, which follows the host router) only a session tab
+ * writes its URL: the other tab hrefs (`/p/<port>`, `/files`) are no route of
+ * any host, so the tab opens and the address bar keeps the page's URL.
+ * Without it (apps/web's module-level callers), `history.pushState`. Other
+ * types require a `router` for full page navigation.
  *
  * Prefer this over calling `openTab()` + manual `pushState`/`router.push`
  * separately — it guarantees the newly opened tab is always visible.
@@ -291,12 +296,14 @@ const PRE_MOUNTED_TAB_TYPES: ReadonlySet<TabType> = new Set([
 export function openTabAndNavigate(
   tabInput: Omit<Tab, 'openedAt'>,
   router?: { push: (url: string) => void },
+  navigate?: UiShallowNavigate,
 ) {
   useTabStore.getState().openTab(tabInput);
   if (typeof window === 'undefined') return;
   const href = toInstanceAwarePath(tabInput.href, getCurrentInstanceIdFromWindow());
   if (PRE_MOUNTED_TAB_TYPES.has(tabInput.type)) {
-    window.history.pushState(null, '', href);
+    if (!navigate) window.history.pushState(null, '', href);
+    else if (tabInput.type === 'session') navigate(href);
   } else if (router) {
     router.push(href);
   }

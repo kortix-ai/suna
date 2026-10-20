@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../../lib/routes';
 import { useSessionIds } from '../../../providers/session-ids';
 
 /**
@@ -18,7 +19,7 @@ import { useSessionIds } from '../../../providers/session-ids';
  * reload, and "copy link" all agree with what is on screen.
  */
 export function projectSessionHref(projectId: string, sessionId: string): string {
-  return `/projects/${projectId}/sessions/${sessionId}`;
+  return uiRoutes().session(projectId, sessionId);
 }
 
 /**

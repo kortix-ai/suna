@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUiRouter, useUiViewerId } from '../../providers/ui-provider';
 import { useCallback, useState } from 'react';
@@ -252,7 +253,7 @@ const LOST_PROVISION_REASON_RE = /^(?:Provision failed: )?HTTP \d{3}(?::|$)/;
  *
  * Managed git being unconfigured is NOT an upstream failure and must not share
  * its message. `isManagedGitUnavailableError`
- * (`lib/onboarding/provision-errors.ts`) names it by its message: on the wire
+ * (`packages/ui/src/internal/lib/onboarding/provision-errors.ts`) names it by its message: on the wire
  * it is a 503, but so is every 502, which the API's edge middleware rewrites to
  * 503 (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES). Managed git
  * unconfigured is a server-config state no client-side retry can fix. Telling the
@@ -375,7 +376,7 @@ const GITHUB_PERSONAL_ACCOUNT_CREATE_UNSUPPORTED = 'github_personal_account_crea
  * - `502` (bad gateway) — retryable. A transient upstream/gateway fault; a
  *   later attempt can land differently with no change on the client at all.
  * - `503` that `isManagedGitUnavailableError`
- *   (`lib/onboarding/provision-errors.ts`) matches — NOT retryable. A server
+ *   (`packages/ui/src/internal/lib/onboarding/provision-errors.ts`) matches — NOT retryable. A server
  *   configuration state; see `messageFor` above. Any other `503` is an
  *   edge-rewritten `502` and falls through to the retryable default. Reuses that detector rather than
  *   re-deriving the 503 check, so this and `messageFor` can never disagree
@@ -972,7 +973,7 @@ export function useCreateWorkspace(): {
         // decision reads `projectsCachedForAccount`), so its onboarding wizard
         // opens on the landing (KRTX-2092).
         completeOnboarding: (projectId) => setProjectOnboardingComplete(projectId, true),
-        enterProject: (projectId) => router.replace(`/projects/${encodeURIComponent(projectId)}`),
+        enterProject: (projectId) => router.replace(uiRoutes().project(encodeURIComponent(projectId))),
         now: Date.now,
       });
 

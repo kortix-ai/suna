@@ -46,6 +46,7 @@ import { type ModelDefaultControls } from '../models/model-selector';
 import { useModelConnectionGate } from '../models/use-model-connection-gate';
 import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
 import { useComposerDropZone } from './composer-drop-zone';
+import { useComposerEscapeStop } from './hooks/use-composer-escape-stop';
 import type { DraftScope, StoredDraft } from './draft/composer-draft';
 import { finishedDraftUploads, keepUnsentUploadFile, restoreDraftUploads } from './draft/draft-uploads';
 import { useComposerDraft } from './draft/use-composer-draft';
@@ -503,6 +504,7 @@ function ComposerImpl(props: SessionChatInputProps) {
   runtimeReady = true,
   onStop,
   stopDisabled = false,
+  canStop = true,
   isSending = false,
   rewind,
   agents = EMPTY_AGENTS,
@@ -1066,10 +1068,6 @@ function ComposerImpl(props: SessionChatInputProps) {
     return true;
   }, [canSwitchAgent, primaryAgents, onAgentChange, selectedAgent]);
 
-  // Escape no longer has a staged command to cancel: the command is a chip in
-  // the document, so Backspace removes it — one keystroke, at the caret, with
-  // undo — and there is no mode left for Escape to exit. Escape is left
-  // entirely to `@tiptap/suggestion`, which uses it to dismiss an open menu.
   useEffect(() => {
     if (!editorElement) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1216,6 +1214,12 @@ function ComposerImpl(props: SessionChatInputProps) {
     !isEmpty ||
     attachedFiles.length > 0 ||
     (!lockForQuestion && (quotes.length > 0 || pastes.length > 0));
+  useComposerEscapeStop({
+    editorElement,
+    enabled: isBusy && canStop && !stopDisabled && !isSending && !lockForQuestion && !props.submitLabel,
+    hasDraft: canSubmit,
+    onStop,
+  });
   /**
    * No agent may run this prompt. Refused here rather than at the server:
    * `lockForQuestion` is exempt because answering an open question is not a new

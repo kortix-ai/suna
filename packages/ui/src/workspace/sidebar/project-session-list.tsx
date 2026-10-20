@@ -1,5 +1,6 @@
 'use client';
 
+import { sessionIdFromPath, uiRoutes } from '../../lib/routes';
 import { useTranslations } from '../../i18n';
 
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
@@ -86,6 +87,7 @@ import {
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '../../internal/stores/session-switch-store';
 import {
   directSubsessions,
+  createProjectSession,
   listChangeRequests,
   restartProjectSession,
   sessionParentId,
@@ -95,7 +97,6 @@ import {
 } from '@kortix/sdk';
 import {
   qk,
-  useForkSession,
   useProjectSession,
   useProjectSessions,
   useRuntimeSupports,
@@ -240,7 +241,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const searchParams = useUiSearchParams();
   const firstChatPending = useFirstChatPending(projectId);
   const activeRuntimeSessionId = readRuntimeSessionParam(searchParams);
-  const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
+  const activeSessionId = sessionIdFromPath(pathname, projectId);
   const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
   const beginSessionSwitch = useSessionSwitchStore((state) => state.beginSwitch);
   const cancelSessionSwitch = useSessionSwitchStore((state) => state.cancelSwitch);
@@ -393,14 +394,14 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     },
   });
 
-  // Fork the open session's conversation from its row: the runtime's own
-  // `session.fork`, same as the session header's item. Only the row of the
-  // session you are viewing gets it — the runtime client is bound to that
-  // session's box, so a fork fired from any other row would hit the wrong
-  // sandbox and fail (or worse, fork another box's conversation). The fork
-  // opens on the same row's route.
+  // Fork the open conversation into an independent platform session. The
+  // runtime capability gates exposure; creation and navigation use platform ids.
   const runtimeForks = useRuntimeSupports('session.fork');
-  const forkSession = useForkSession();
+  const forkSession = useMutation({
+    mutationFn: ({ sessionId }: { sessionId: string }) =>
+      createProjectSession(projectId!, { fork_from_session_id: sessionId }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId ?? '') }),
+  });
 
   // Unsorted on purpose: nothing here reads the order. The two consumers are
   // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
@@ -441,8 +442,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // row: the connector already carries the link, and it has no children of its
   // own to show.
   const renderSessionNode = (session: ProjectSession, nested: boolean, inSharedGroup = false) => {
-    const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
-    const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+    const href = uiRoutes().session(session.project_id, session.session_id);
+    const isActive = sessionIdFromPath(pathname, session.project_id) === session.session_id;
     const isSwitchTarget = switchingToSessionId === session.session_id;
     const children = directSubsessions(session);
     const spawnedCount = nested ? 0 : (session.child_count ?? 0);
@@ -496,13 +497,16 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           isForking={
             forkSession.isPending &&
             forkSession.variables?.sessionId ===
-              (session.runtime_session_id ?? session.opencode_session_id)
+              session.session_id
           }
-          onFork={(runtimeSessionId, href) =>
+          onFork={() =>
             forkSession.mutate(
-              { sessionId: runtimeSessionId },
+              { sessionId: session.session_id },
               {
-                onSuccess: (fork) => router.push(childSessionHref(href, fork.id)),
+                onSuccess: (fork) => {
+                  successToast('Conversation forked');
+                  router.push(uiRoutes().session(projectId, fork.session_id));
+                },
                 onError: (err) => {
                   errorToast(
                     err instanceof Error ? err.message : tI18nComplete.raw('text32ad3abe4479'),
@@ -601,7 +605,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       return firstChatPending ? (
         <FirstChatRow
           projectId={projectId}
-          isActive={pathname === `/projects/${projectId}` && isFirstChatRequested(searchParams)}
+          isActive={pathname === uiRoutes().project(projectId) && isFirstChatRequested(searchParams)}
         />
       ) : (
         <SessionsEmptyState className="flex-1 pb-16" />
@@ -705,7 +709,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           !automatedQuery.hasNextPage && (
             <FirstChatRow
               projectId={projectId}
-              isActive={pathname === `/projects/${projectId}` && isFirstChatRequested(searchParams)}
+              isActive={pathname === uiRoutes().project(projectId) && isFirstChatRequested(searchParams)}
             />
           )}
       </FadedScrollArea>
@@ -777,6 +781,7 @@ function SessionListHeader({
   onMenuOpenChange: (open: boolean) => void;
 }) {
   const t = useTranslations('sidebar');
+  const sessionsHref = uiRoutes().sessions(projectId);
   return (
     <div
       className={cn(
@@ -784,12 +789,18 @@ function SessionListHeader({
         SESSION_ROW_HEIGHT_CLASS,
       )}
     >
-      <HoverPrefetchLink
-        href={`/projects/${projectId}/sessions`}
-        className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium"
-      >
-        <span className="truncate">{t('sessions')}</span>
-      </HoverPrefetchLink>
+      {sessionsHref ? (
+        <HoverPrefetchLink
+          href={sessionsHref}
+          className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium"
+        >
+          <span className="truncate">{t('sessions')}</span>
+        </HoverPrefetchLink>
+      ) : (
+        <span className="text-muted-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium">
+          <span className="truncate">{t('sessions')}</span>
+        </span>
+      )}
       {sessions.length > 0 && (
         <DropdownMenu onOpenChange={onMenuOpenChange}>
           <SessionFilterMenu

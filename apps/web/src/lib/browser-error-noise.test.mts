@@ -64,7 +64,7 @@ import {
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
   shouldIgnoreSentryNoiseEvent,
-} from './browser-error-noise.ts';
+} from '@kortix/ui/internal/lib/browser-error-noise';
 
 test('matches the Safari runtime.sendMessage tab-not-found noise', () => {
   assert.equal(

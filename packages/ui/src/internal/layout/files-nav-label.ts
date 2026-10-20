@@ -1,3 +1,4 @@
+import { uiRoutes } from '../../lib/routes';
 /**
  * What the sidebar's file row is called. With the project's Volumes flag on
  * it is Drive, the shared folders, and the repo browser moves to Customize →
@@ -10,12 +11,12 @@ export function filesNavLabel(volumesOn: boolean): FilesNavLabel {
   return volumesOn ? 'drive' : 'files';
 }
 
-/** Label and destination of the row `useProjectNavRows().files` decided. */
+/** Label and destination of the row `useProjectNavRows().files` decided; null when the host serves no such page. */
 export function filesRow(
   projectId: string,
   target: 'repo' | 'drive',
-): { label: FilesNavLabel; href: string } {
-  return target === 'drive'
-    ? { label: 'drive', href: `/projects/${projectId}/drive` }
-    : { label: 'files', href: `/projects/${projectId}/files` };
+): { label: FilesNavLabel; href: string } | null {
+  const drive = target === 'drive';
+  const href = drive ? uiRoutes().drive(projectId) : uiRoutes().files(projectId);
+  return href ? { label: filesNavLabel(drive), href } : null;
 }

@@ -1474,14 +1474,6 @@
       "count": 1
     }
   },
-  "src/platform/providers/e2b.ts": {
-    "kortix-api/replica-local": {
-      "count": 6
-    },
-    "no-console": {
-      "count": 2
-    }
-  },
   "src/platform/providers/index.ts": {
     "kortix-api/replica-local": {
       "count": 1
@@ -3205,14 +3197,6 @@
     },
     "no-console": {
       "count": 3
-    }
-  },
-  "src/snapshots/providers/e2b.ts": {
-    "no-console": {
-      "count": 2
-    },
-    "no-restricted-properties": {
-      "count": 1
     }
   },
   "src/snapshots/providers/index.ts": {

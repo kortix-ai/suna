@@ -8,9 +8,19 @@ describe('buildPlaceholderVariants', () => {
     expect(buildPlaceholderVariants('Ask anything...', false)[0]).toBe('Ask anything...');
   });
 
+  test('the host shortcuts show only when the host handles them', () => {
+    const all = buildPlaceholderVariants('Ask anything...', true).join('\n');
+    expect(all).not.toContain('command palette');
+    expect(all).not.toContain('settings');
+    const palette = buildPlaceholderVariants('Ask anything...', true, undefined, { commandPalette: true, settings: false });
+    expect(palette).toContain('Press ⌘K to open the command palette');
+    expect(palette.join('\n')).not.toContain('settings');
+  });
+
   test('mac renders ⌘ shortcuts, other platforms render Ctrl+', () => {
-    const mac = buildPlaceholderVariants('Ask anything...', true);
-    const win = buildPlaceholderVariants('Ask anything...', false);
+    const host = { commandPalette: true, settings: true };
+    const mac = buildPlaceholderVariants('Ask anything...', true, undefined, host);
+    const win = buildPlaceholderVariants('Ask anything...', false, undefined, host);
     expect(mac).toContain('Press ⌘K to open the command palette');
     expect(mac).toContain('Press ⌘, to open settings');
     expect(win).toContain('Press Ctrl+K to open the command palette');
@@ -20,7 +30,7 @@ describe('buildPlaceholderVariants', () => {
   });
 
   test('every variant is unique — AnimatePresence keys on the string', () => {
-    const variants = buildPlaceholderVariants('Ask anything...', true);
+    const variants = buildPlaceholderVariants('Ask anything...', true, undefined, { commandPalette: true, settings: true });
     expect(new Set(variants).size).toBe(variants.length);
   });
 

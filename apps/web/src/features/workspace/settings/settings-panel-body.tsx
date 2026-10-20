@@ -2,37 +2,35 @@
 
 import { SettingsRail } from './settings-rail';
 
-import { BackPillBody, backPillClass } from '@/components/ui/back-pill';
+import { BackPillBody, backPillClass } from '@kortix/ui/back-pill';
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import { Button } from '@/components/ui/button';
-import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
-import { Tabs, TabsContent } from '@/components/ui/tabs';
-import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
-import { Close } from '@/features/icon/icons/close';
-import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
+} from '@kortix/ui/breadcrumb';
+import { Button } from '@kortix/ui/button';
+import { Modal, ModalClose, ModalContent, ModalTitle } from '@kortix/ui/modal';
+import { SettingsSectionHeader } from '@kortix/ui/settings-section-header';
+import { Tabs, TabsContent } from '@kortix/ui/tabs';
+import { SETTINGS_SIDEBAR_WIDTH_PX } from '@kortix/ui/internal/account-hub/account-settings-shell';
+import { Close } from '@kortix/ui/icons';
+import { UpgradesView } from '@kortix/ui/customize/migrate-to-v2/upgrade-view';
 import {
   SettingsNavProvider,
   type SettingsNav,
-} from '@/features/workspace/shared/settings-nav-context';
-import { useIsMobile } from '@/hooks/utils';
+} from '@kortix/ui/internal/layout/settings-nav-context';
+import { useIsMobile, cn, hasOpenFloatingLayer, hasOpenNestedDialog } from '@kortix/ui';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
-import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
-import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
+import { useSettingsPanelStore, type MembersTab } from '@kortix/ui/internal/stores/settings-panel-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { isRailItemActive, railGroups } from './rail';
-import { SettingsRailCopyProvider, type SettingsRailChromeCopy } from './rail-copy-context';
-import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
+import { isRailItemActive, railGroups } from '@kortix/ui/customize/settings/rail';
+import { SettingsRailCopyProvider, type SettingsRailChromeCopy } from '@kortix/ui/customize/settings/rail-copy-context';
+import { DEFAULT_SETTINGS_TAB, type SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
 import {
   DEFAULT_ACCOUNT_MEMBERSHIPS_COPY,
   useAccountMemberships,
@@ -43,18 +41,18 @@ import { AppearanceTab } from './tabs/appearance-tab';
 import { ComputerTab } from './tabs/computer-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
 import { CreditsTab } from './tabs/credits-tab';
-import { ExperimentalTab } from './tabs/experimental-tab';
-import { GeneralTab } from './tabs/general-tab';
+import { ExperimentalTab } from '@kortix/ui/customize/settings/tabs/experimental-tab';
+import { GeneralTab } from '@kortix/ui/customize/settings/tabs/general-tab';
 import { McpTab } from './tabs/mcp-tab';
 import { PlanTab } from './tabs/plan-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
-import { SandboxTab } from './tabs/sandbox-tab';
+import { SandboxTab } from '@kortix/ui/customize/settings/tabs/sandbox-tab';
 import { SecurityTab } from './tabs/security-tab';
 import { SessionsTab } from './tabs/sessions-tab';
-import { SnapshotsTab } from './tabs/snapshots-tab';
-import { TokensTab } from './tabs/tokens-tab';
-import type { RailGroup, RailItem } from './type';
+import { SnapshotsTab } from '@kortix/ui/customize/settings/tabs/snapshots-tab';
+import { TokensTab } from '@kortix/ui/customize/settings/tabs/tokens-tab';
+import type { RailGroup, RailItem } from '@kortix/ui/customize/settings/type';
 import { useSettingsAccountId } from './use-settings-account-id';
 
 export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
@@ -351,10 +349,7 @@ export function SettingsPanelShell({
   // dialog's own title already says Settings. It comes back the moment a
   // second group does — or the Organizations block, which is a second list
   // under the same rail — which is the only case where the label does work.
-  // The footer group (Connect) is a block at the foot of the rail, not a
-  // second list, so it does not count.
-  const showGroupLabels =
-    groups.filter((group) => !group.footer).length > 1 || organizations.length > 0;
+  const showGroupLabels = groups.length > 1 || organizations.length > 0;
   const activeItem = allItems.find((item) => isRailItemActive(item, tab));
   // Mobile only: the list screen, or the pane screen. A caller that opened
   // settings on a named tab lands on that pane.

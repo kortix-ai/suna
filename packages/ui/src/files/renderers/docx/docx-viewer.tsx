@@ -59,7 +59,7 @@ import {
   createDocxCommentCardRenderer,
   createDocxTrackedChangeCardRenderer,
 } from './docx-annotation-card';
-import { SidebarToggle as PanelLeft } from '../../../icons/sidebar-toggle';
+import { SidebarGlyph as PanelLeft } from '../../../icons/sidebar-toggle';
 
 // react-docx loads its wasm inside a `blob:`-URL Web Worker, where a
 // root-relative path (`/_next/static/media/docx_wasm_bg.*.wasm`) fails to parse

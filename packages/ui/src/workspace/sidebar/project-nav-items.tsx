@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '../../primitives/dropdown-menu';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '../../primitives/sidebar';
-import { SidebarToggle } from '../../icons/sidebar-toggle';
+import { SidebarGlyph } from '../../icons/sidebar-toggle';
 import { useNavRowMeta } from './nav-row-meta';
 import { useIsMobile } from '../../internal/hooks';
 import { useTranslations } from '../../i18n';
@@ -46,7 +46,7 @@ export function ProjectNavItems({ projectId }: { projectId: string }) {
   return (
     <>
       {items.map((entry) => (
-        <NavItem key={entry.id} entry={entry} />
+        <NavItem key={entry.id} entry={entry} projectId={projectId} />
       ))}
       <MoreNavItem projectId={projectId} items={items} />
     </>
@@ -148,7 +148,7 @@ function MoreNavItem({
               requestAnimationFrame(openCustomizeSidebar);
             }}
           >
-            <SidebarToggle />
+            <SidebarGlyph />
             {t('customizeSidebar')}
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -157,14 +157,14 @@ function MoreNavItem({
   );
 }
 
-function NavItem({ entry }: { entry: SidebarNavEntry }) {
+function NavItem({ entry, projectId }: { entry: SidebarNavEntry; projectId: string }) {
   if (entry.visibility === 'never') return null;
   switch (entry.id) {
     case 'customize':
-      return <ProjectCustomizeNavItem />;
+      return <ProjectCustomizeNavItem projectId={projectId} />;
     case 'apps':
-      return <ProjectAppsNavItem />;
+      return <ProjectAppsNavItem projectId={projectId} />;
     case 'files':
-      return <ProjectFilesNavItem />;
+      return <ProjectFilesNavItem projectId={projectId} />;
   }
 }

@@ -41,7 +41,7 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 're
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AccessHelp } from '@/components/iam/access-help';
 import { AccessProjectsTab } from '@/components/iam/access-projects-tab';
-import { AddGitHubAccountDialog } from '@/components/iam/add-github-account-dialog';
+import { AddGitHubAccountDialog } from '@kortix/ui/access/iam/add-github-account-dialog';
 import { ApiKeysSection } from '@/components/iam/api-keys-card';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
@@ -49,59 +49,59 @@ import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { IdentityIntro } from '@/components/iam/identity-intro';
 import { KeyRulesCard } from '@/components/iam/key-rules-card';
-import { ManagedGitNotice } from '@/components/iam/managed-git-notice';
+import { ManagedGitNotice } from '@kortix/ui/access/iam/managed-git-notice';
 import { MemberAccessPanel } from '@/components/iam/member-access-panel';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
-import { SessionOversightCard } from '@/components/iam/session-oversight-card';
+import { SessionOversightCard } from '@kortix/ui/access/iam/session-oversight-card';
+import { AutomationsPauseCard } from '@/components/iam/automations-pause-card';
 import { OAuthAppsCard } from '@/components/iam/oauth-apps-card';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AccountSessionsPanel, SessionControlsCard } from '@/components/iam/session-controls-card';
 import { SsoCard } from '@/components/iam/sso-card';
-import { Badge } from '@/components/ui/badge';
-import { ButtonGroup } from '@/components/ui/button-group';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Badge } from '@kortix/ui/badge';
+import { ButtonGroup } from '@kortix/ui/button-group';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { InlineMeta } from '@/components/ui/inline-meta';
-import { Input } from '@/components/ui/input';
+} from '@kortix/ui/dropdown-menu';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import Hint from '@kortix/ui/hint';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { InlineMeta } from '@kortix/ui/inline-meta';
+import { Input } from '@kortix/ui/input';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import { SettingsRowGroup } from '@/components/ui/settings-row';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
-import { UserAvatar } from '@/components/ui/user-avatar';
+} from '@kortix/ui/input-group';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
+import { SettingsRowGroup } from '@kortix/ui/settings-row';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, infoToast, successToast, warningToast } from '@kortix/ui/toast';
+import { UserAvatar } from '@kortix/ui/user-avatar';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { BrandingTab } from '@/features/accounts/settings/branding-tab';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
-import { useBrandingScope } from '@/features/branding/branding-provider';
-import { Close } from '@/features/icon/icons/close';
-import { Plus } from '@/features/icon/icons/plus';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { useBrandingScope } from '@kortix/ui/internal/branding/branding-provider';
+import { Close } from '@kortix/ui/icons';
+import { Plus } from '@kortix/ui/internal/icons/plus';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { ScimSetupWizard, SsoSetupWizard } from '@/features/sso-setup/setup-wizard';
 import {
   ACCESS_ROW_CLASS,
-  AccessDialog,
   type AccessDialogPrincipal,
   type KebabItem,
   type RoleValue,
@@ -111,12 +111,13 @@ import {
   roleValueLabel,
   useAccountRoleEditor,
   useAccountRoles,
-} from '@/features/workspace/shared/access';
-import { useAccountState } from '@/hooks/billing';
+} from '@kortix/ui/access/access/index';
+import { AccessDialog } from '@kortix/ui/access';
+import { useAccountState } from '@kortix/ui/internal/billing/index';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { cn } from '@/lib/utils';
-import { forgetPushedEntry, hubTarget, openAccountPanel } from '@/stores/account-panel-store';
-import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { cn } from '@kortix/ui';
+import { forgetPushedEntry, hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
+import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 import {
   type AccountDetail,
   type AccountInvitation,
@@ -136,13 +137,13 @@ import {
   TrashIcon,
   UsersIcon as Users,
 } from '@phosphor-icons/react';
-import { useAccountPanelId, useHubSearchParams } from './account-hub-location';
+import { useAccountPanelId, useHubSearchParams } from '@kortix/ui/internal/account-hub/account-hub-location';
 import { AccountPane, AccountPaneSkeleton } from './account-pane';
-import { type AccountSection, localizedAccountPaneMeta, paneWidth } from './sections';
-import { useAccountDetail } from './use-account-detail';
-import { useAccountHubSection } from './use-account-hub-access';
-import { useAccountMembers } from './use-account-members';
-import { useAccountHubSheet } from './hub-sheet';
+import { type AccountSection, localizedAccountPaneMeta, paneWidth } from '@kortix/ui/internal/account-hub/sections';
+import { useAccountDetail } from '@kortix/ui/internal/account-hub/use-account-detail';
+import { useAccountHubSection } from '@kortix/ui/internal/account-hub/use-account-hub-access';
+import { useAccountMembers } from '@kortix/ui/internal/account-hub/use-account-members';
+import { useAccountHubSheet } from '@kortix/ui/internal/account-hub/hub-sheet';
 
 // The enterprise IdP surface (SAML SSO + SCIM provisioning) is PLAN-GATED,
 // not env-gated: the cards render only for accounts whose tier carries the
@@ -152,7 +153,7 @@ import { useAccountHubSheet } from './hub-sheet';
 // backend would reject. See `entitlements` on the account-state `tier` block.
 
 // `formatDate` and `principalLabel` come from
-// `features/workspace/shared/access` — this file used to carry its own copy of
+// `packages/ui/src/access/access` — this file used to carry its own copy of
 // both, byte-identical to the ones the project/group/audit surfaces carried.
 
 /** Copy an invite URL to the clipboard with a friendly toast either way. */
@@ -172,6 +173,7 @@ async function copyInviteLink(url: string, copiedMessage: string, fallbackMessag
 
 export function AccountHubContent() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tAutomations = useTranslations('automationsPause');
   // `?accountId=` and the hub's own params, both off the URL the modal writes
   // onto the page it floats over. See `account-hub-location.tsx`.
   const accountId = useAccountPanelId();
@@ -299,7 +301,6 @@ export function AccountHubContent() {
       title: tI18nComplete.raw('text8693768c7e08'),
       body: (
         <AccessDialog
-          presentation="split-sheet"
           open
           onOpenChange={(next) => {
             if (!next) hubSheet.close();
@@ -505,7 +506,7 @@ export function AccountHubContent() {
               2026-08-18: service account tokens first, the rules that govern
               them second. A person's own API keys are not account
               configuration and left for `/settings/tokens`
-              (`features/workspace/settings/tabs/tokens-tab.tsx`);
+              (`packages/ui/src/customize/settings/tabs/tokens-tab.tsx`);
               `ApiKeysSection` carries the one line that points there. Both
               components carry their own section headers, so the pane header
               above is the only other chrome. */}
@@ -602,6 +603,15 @@ export function AccountHubContent() {
                   <SessionOversightCard accountId={account.account_id} />
                 </SettingsRowGroup>
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
+              </SettingsGroup>
+
+              {/* Pause all automations (KRTX-1721): one switch for every
+                  project's schedules, reminders, webhooks, app events and
+                  monitors. See `automations-pause-card.tsx`. */}
+              <SettingsGroup title={tAutomations('groupTitle')} description={tAutomations('groupDescription')}>
+                <SettingsRowGroup>
+                  <AutomationsPauseCard accountId={account.account_id} />
+                </SettingsRowGroup>
               </SettingsGroup>
 
               {canDeleteAccount ? (

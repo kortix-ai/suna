@@ -8,6 +8,7 @@
  * endpoint, which 409s on them by design (see review-center-connected.tsx).
  */
 
+import { uiRoutes } from '../../lib/routes';
 import type { ReviewItem, ReviewRisk } from './types';
 
 export const CR_ID_PREFIX = 'cr:';
@@ -49,7 +50,7 @@ export function itemDeepLink(
   sessionId: string | undefined | null,
 ): string | null {
   if (!projectId || !sessionId) return null;
-  return `/projects/${projectId}/sessions/${sessionId}`;
+  return uiRoutes().session(projectId, sessionId);
 }
 
 /**

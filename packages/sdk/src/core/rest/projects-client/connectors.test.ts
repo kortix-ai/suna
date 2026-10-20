@@ -1299,11 +1299,21 @@ test('listConnectorAccounts reads the accounts a call may run as', async () => {
       connector: 'gmail',
       accounts: [
         { connection_id: 'c-1', label: 'Work', owner_type: 'project', is_default: true },
-        { connection_id: 'c-2', label: 'Personal', owner_type: 'member', is_default: false },
+        {
+          connection_id: 'c-2',
+          label: 'Personal',
+          owner_type: 'member',
+          is_default: false,
+          credential_rejected_at: '2026-10-19T00:00:00Z',
+        },
       ],
     },
   };
   const accounts = await listConnectorAccounts('P1', 'gmail');
+  // The upstream answered 401 to the stored credential: a person must replace it.
+  const rejectedAt: string | null | undefined = accounts[1].credential_rejected_at;
+  expect(rejectedAt).toBe('2026-10-19T00:00:00Z');
+  expect(accounts[0].credential_rejected_at).toBeUndefined();
   expect(calls[0].url).toBe('http://test.local/connectors/projects/P1/connectors/gmail/accounts');
   expect(calls[0].method).toBe('GET');
   expect(accounts.map((account) => account.label)).toEqual(['Work', 'Personal']);
@@ -1592,6 +1602,7 @@ test('listConnectorMoves GETs the Pipedream connectors and the Kortix app each m
   const move = {
     slug: 'gmail',
     name: 'Gmail',
+    provider: 'composio' as const,
     app: 'gmail',
     to: { slug: 'gmail', name: 'Gmail', icon: '/connector-icons/gmail.svg' },
     connection_id: null,
@@ -1601,6 +1612,8 @@ test('listConnectorMoves GETs the Pipedream connectors and the Kortix app each m
   nextResponse = { status: 200, body: { moves: [move] } };
   const moves: import('./connectors').ConnectorMove[] = await listConnectorMoves('p1');
   expect(moves).toEqual([move]);
+  const provider: 'pipedream' | 'composio' = moves[0]!.provider;
+  expect(provider).toBe('composio');
   expect(last()).toEqual({ url: 'http://test.local/projects/p1/connector-moves', method: 'GET', body: undefined });
 });
 

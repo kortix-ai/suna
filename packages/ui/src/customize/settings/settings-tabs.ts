@@ -31,7 +31,6 @@ import { accountPanelUrl, hubTarget } from '../../internal/stores/account-panel-
 import {
   capabilityTabHref,
   channelsHref,
-  reviewHref,
 } from '../../internal/lib/capability-tab-routes';
 
 export type SettingsTab =
@@ -151,9 +150,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'tokens',
   'mcp',
   'computer',
-  // `connected` is still in the type but NOT here: it listed the ACCOUNT's
-  // GitHub App installations — the account page's Git tab — under a
-  // person's own settings (Marko, 2026-09-03). It redirects there.
+  // `connected` is a legacy alias for the person's Profile tab in RENAMED.
   // `credits` and `plan` are still in the type but NOT here: the overlay's
   // Account group was removed on 2026-09-03 (Marko) — a wallet and a
   // subscription belong to the account page, `/accounts/[id]`, and both ids
@@ -222,7 +219,7 @@ export const GRADUATED: Record<string, (projectId: string) => string> = {
   upgrades: (p) => `${capabilityTabHref(p, 'config')}?section=upgrades`,
   // `upgrade`, singular, is the old Customize id for the Upgrades pane.
   upgrade: (p) => `${capabilityTabHref(p, 'config')}?section=upgrades`,
-  review: reviewHref,
+  review: (p) => capabilityTabHref(p, 'review'),
   // Secrets, Channels, and Models graduated a SECOND time — off the Settings
   // sub-nav entirely and onto their own top-level Customize tab. `models` and
   // every `llm-*` sub-section (the old Models pane's own sub-tabs) all land
@@ -295,8 +292,6 @@ export const ACCOUNT_GRADUATED: Record<string, string> = {
   // account page already owns both.
   credits: 'transactions',
   plan: 'billing',
-  // Connected accounts = the account's GitHub App installations = the Git tab.
-  connected: 'git',
   groups: 'groups',
   roles: 'roles',
   identity: 'identity',
@@ -327,6 +322,8 @@ export const ACCOUNT_GRADUATED: Record<string, string> = {
  * the caller happened to have resolved an account id yet.
  */
 export const RENAMED: Record<string, SettingsTab> = {
+  // Personal sign-in details live on Profile, not the organization's Git pane.
+  connected: 'profile',
   'api-keys': 'tokens',
   // Every project-configuration spelling (`general`, `git`, `snapshots`,
   // `experimental`, `upgrade`, …) is in `GRADUATED` above: they name the
@@ -354,6 +351,11 @@ export function resolveOverlayTab(raw: string | null | undefined): SettingsTab |
  */
 export function isAccountGraduatedSection(rawSection: string | null | undefined): boolean {
   return !!rawSection && Object.hasOwn(ACCOUNT_GRADUATED, rawSection);
+}
+
+/** Whether a legacy section id graduated to a PROJECT page (`GRADUATED`). */
+export function isProjectGraduatedSection(rawSection: string | null | undefined): boolean {
+  return !!rawSection && Object.hasOwn(GRADUATED, rawSection);
 }
 
 /**
@@ -397,7 +399,7 @@ export function legacySectionRedirect(
   // `Object.hasOwn`.
   if (accountId && isAccountGraduatedSection(rawSection)) {
     // The destination is the account hub, which has no route: it is a modal
-    // over a page (`stores/account-panel-store.ts`). So the redirect lands on
+    // over a page (`packages/ui/src/internal/stores/account-panel-store.ts`). So the redirect lands on
     // the PROJECT the bookmark came from, with the hub's params on it — which
     // is strictly better than the `/accounts/<id>` page this used to produce,
     // because closing the hub leaves the person on their project instead of on

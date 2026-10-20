@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { useQuery } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 import { useUiComponents, useUiLink } from '../../providers/ui-provider';
@@ -58,11 +59,12 @@ const PERSONAL_KEYS_NOTE: Record<PersonalKeysReason, 'sharedSessionKeys' | 'prom
 function NoPoolKeys({ projectId, shared = false, reason = null }: { projectId: string; shared?: boolean; reason?: PersonalKeysReason | null }) {
   const Link = useUiLink();
   const t = useTranslations('pooledSecrets');
+  const modelsHref = uiRoutes().customize(projectId, 'models');
   return <div className="space-y-2"><p className="text-muted-foreground text-xs">{t('addSharedKey')}</p>
     {shared && <p className="text-muted-foreground text-xs">{t(PERSONAL_KEYS_NOTE[reason ?? 'shared'])}</p>}
     <div className="flex flex-wrap items-center gap-2">
       {!shared && <ChatGptAccountsButton projectId={projectId} variant="secondary" action="connect" />}
-      <Button size="sm" variant={shared ? 'secondary' : 'outline-ghost'} asChild><Link href={`/projects/${projectId}/customize/models`}>{t('manageKeys')}</Link></Button>
+      {modelsHref && <Button size="sm" variant={shared ? 'secondary' : 'outline-ghost'} asChild><Link href={modelsHref}>{t('manageKeys')}</Link></Button>}
     </div></div>;
 }
 
@@ -75,6 +77,7 @@ function PoolChoices({ projectId, providers, providerId, onProviderChange, keys,
 }) {
   const Link = useUiLink();
   const t = useTranslations('pooledSecrets');
+  const modelsHref = uiRoutes().customize(projectId, 'models');
   const id = useId();
   const personalChatGpt = providerId === 'codex' && personalKeys;
   const available = new Set(keys.map((secret) => secret.secret_id));
@@ -111,9 +114,11 @@ function PoolChoices({ projectId, providers, providerId, onProviderChange, keys,
       {configured && !readOnly && <Button size="sm" variant="secondary" disabled={disabled} onClick={onReset}>{t(personalChatGpt ? 'resetPersonalChatGptDefault' : 'resetDefault')}</Button>}
       {providerId === 'codex'
         ? <ChatGptAccountsButton projectId={projectId} variant="outline-ghost" action="manage" disabled={disabled} />
-        : disabled
+        : !modelsHref
+          ? null
+          : disabled
           ? <Button size="sm" variant="outline-ghost" disabled>{t('manageKeys')}</Button>
-          : <Button size="sm" variant="outline-ghost" asChild><Link href={`/projects/${projectId}/customize/models`}>{t('manageKeys')}</Link></Button>}
+          : <Button size="sm" variant="outline-ghost" asChild><Link href={modelsHref}>{t('manageKeys')}</Link></Button>}
     </div>
   </>;
 }

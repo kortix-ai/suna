@@ -10,7 +10,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-foreground text-background hover:bg-foreground/90',
+        default: 'bg-action text-action-foreground hover:bg-action/90',
         brand:
           'bg-kortix-blue/90 dark:bg-kortix-blue/60 text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/85 dark:hover:bg-kortix-blue/50 transition-colors duration-moderate ease-out',
         blue: 'bg-kortix-blue text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/90',

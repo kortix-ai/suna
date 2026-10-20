@@ -131,6 +131,31 @@ export function sessionUnreadRowId(
   return rows?.find((row) => !row.read && row.session_id === sessionId)?.id ?? null;
 }
 
+/** The bell's tabs. `needs` holds the kinds that wait on the person: an answer, an approval, a failure to look at. */
+export type NotificationTab = 'all' | 'needs' | 'done';
+
+const NEEDS_YOU_KINDS: ReadonlySet<InboxNotification['kind']> = new Set([
+  'question',
+  'permission',
+  'turn_error',
+  'automation_failed',
+  'capture_device_down',
+]);
+
+/**
+ * The rows a tab shows: unread first, so an untouched row never sits between
+ * read ones. Each group keeps the inbox order (newest first; `sort` is stable).
+ */
+export function tabRows(rows: readonly InboxNotification[], tab: NotificationTab): InboxNotification[] {
+  const shown =
+    tab === 'all' ? [...rows] : rows.filter((row) => NEEDS_YOU_KINDS.has(row.kind) === (tab === 'needs'));
+  return shown.sort((a, b) => Number(a.read) - Number(b.read));
+}
+
+export function tabUnreadCount(rows: readonly InboxNotification[], tab: NotificationTab): number {
+  return tabRows(rows, tab).filter((row) => !row.read).length;
+}
+
 /** The badge text: the count, clamped at 99+. */
 export function badgeCount(count: number): string {
   return count > 99 ? '99+' : String(count);

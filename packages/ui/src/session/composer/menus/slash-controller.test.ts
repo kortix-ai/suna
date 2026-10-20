@@ -379,7 +379,7 @@ describe('createSlashSuggestion — dockSelector reaches the plugin', () => {
 describe('createSlashSuggestion — the inline "/Type to search" hint', () => {
   test('the trigger decoration carries a class and the hint content', () => {
     // The plugin adds `is-empty` and copies `decorationContent` onto the
-    // decoration span itself; `globals.css`'s
+    // decoration span itself; `styles/components.css`'s
     // `.kortix-slash-trigger.is-empty::after` is what paints it. Both halves
     // have to agree on the class name, and nothing else in the codebase
     // would catch a rename of one without the other.
@@ -396,7 +396,7 @@ describe('createSlashSuggestion — the inline "/Type to search" hint', () => {
  * The point of the feature, stated as behavior: a file the Outputs card shows
  * can be picked from the `/` palette and lands in the document as the SAME
  * mention the `@` menu inserts — so the send path (`editor/serialize.ts` ->
- * `lib/project-preamble.ts`'s `<file_ref>` block) needs nothing new, and the
+ * `packages/ui/src/internal/lib/project-preamble.ts`'s `<file_ref>` block) needs nothing new, and the
  * user keeps typing with the file attached.
  */
 const reportFile: SlashFile = {

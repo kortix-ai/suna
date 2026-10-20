@@ -24,10 +24,20 @@ mock.module('@kortix/sdk/react', () => ({
   useRuntimeProviders: () => ({ data: undefined, isLoading: false }),
   useRuntimeConfig: () => ({ data: undefined }),
   useRuntimeCommands: () => ({ data: [] }),
-  useProjectConfig: () => null,
+  useProjectConfig: () => ({
+    skills: [
+      { name: 'research', path: 'skills/research/SKILL.md', description: 'Research a topic' },
+    ],
+    commands: [{ name: 'review', path: 'commands/review.md', description: 'Review changes' }],
+  }),
   useSessionModelSelection: () => ({
     agent: { set: noop, current: undefined, list: [] },
-    model: { set: noop, currentKey: undefined, list: [], variant: { set: noop, current: undefined } },
+    model: {
+      set: noop,
+      currentKey: undefined,
+      list: [],
+      variant: { set: noop, current: undefined },
+    },
   }),
 }));
 
@@ -58,5 +68,57 @@ describe('ComposerChatInput, a first message', () => {
     expect(sent[0]).toContain('read @README.md, then ask @reviewer');
     expect(sent[0]).toContain('<file_ref path="README.md" name="README.md" />');
     expect(sent[0]).toContain('<agent_ref name="reviewer" />');
+  });
+});
+
+// Project home has no runtime: its catalog must come from project detail.
+describe('ComposerChatInput project-home slash catalog', () => {
+  test('offers project skills and commands before a session exists', async () => {
+    await act(async () => {
+      create(
+        createElement(ComposerChatInput, {
+          projectId: 'synthetic-project',
+          onSend: async () => undefined,
+        }),
+      );
+    });
+    expect(inner.commands?.map(({ name, source }) => ({ name, source }))).toEqual([
+      { name: 'research', source: 'skill' },
+      { name: 'review', source: 'command' },
+    ]);
+  });
+  test('keeps the runtime catalog for an existing session', async () => {
+    await act(async () => {
+      create(
+        createElement(ComposerChatInput, {
+          projectId: 'synthetic-project',
+          sessionId: 'synthetic-session',
+          onSend: async () => undefined,
+        }),
+      );
+    });
+    expect(inner.commands).toEqual([]);
+  });
+
+  test('hands a selected home command and arguments to the first-message host', async () => {
+    const selected: string[] = [];
+    await act(async () => {
+      create(
+        createElement(ComposerChatInput, {
+          projectId: 'synthetic-project',
+          onSend: async () => undefined,
+          onCommand: (command, args) => {
+            selected.push(`/${command.name} ${args}`);
+          },
+        }),
+      );
+    });
+    const review = inner.commands?.find((command) => command.name === 'review');
+    expect(review).toBeDefined();
+    if (!review) throw new Error('missing project command');
+    await act(async () => {
+      inner.onCommand?.(review, 'changes');
+    });
+    expect(selected).toEqual(['/review changes']);
   });
 });

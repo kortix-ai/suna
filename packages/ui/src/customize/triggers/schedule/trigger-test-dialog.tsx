@@ -21,6 +21,7 @@ import {
 import { Textarea } from '../../../primitives/textarea';
 import { SolidCheckIcon } from '../../../internal/icons/solid-check-icon';
 import { useTranslations } from '../../../i18n';
+import { useUiRouter } from '../../../providers/ui-provider';
 import type { ProjectTrigger } from '@kortix/sdk';
 import { useProjectTriggers } from '@kortix/sdk/react';
 import { FlaskIcon, PlayIcon, XIcon } from '@phosphor-icons/react';
@@ -42,6 +43,7 @@ export function TriggerTestDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
+  const router = useUiRouter();
   const { fire, dryRun } = useProjectTriggers(projectId);
   const [text, setText] = useState(trigger.type === 'webhook' ? '{\n  "body": {}\n}' : '{}');
   const parsed = parsePayload(text);
@@ -66,7 +68,7 @@ export function TriggerTestDialog({
       { slug: trigger.slug, payload: parsed.value },
       {
         onSuccess: (res) => {
-          fireResultToast(res, trigger, projectId, t);
+          fireResultToast(res, trigger, projectId, t, router);
           onOpenChange(false);
         },
       },

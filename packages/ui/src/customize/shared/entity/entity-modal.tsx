@@ -261,7 +261,7 @@ function EntityModalBody({
   // so an AlertDialog confirms first. The dialog nests inside this modal's
   // React tree on purpose: rendered as a sibling, Radix would read every
   // click in the alert as an outside-click and dismiss the modal underneath
-  // (see components/ui/alert-dialog.tsx).
+  // (see packages/ui/src/primitives/alert-dialog.tsx).
   const editButton = canWrite ? (
     <EntityEditButton
       name={entity.name}

@@ -4,7 +4,7 @@
  * throwaway project with react 19, and imports EVERY export in Node ESM. Then it
  * type-checks a file that imports every JS export through the published .d.ts.
  *
- * @kortix/ui peers on @kortix/sdk (for @kortix/ui/chat), and @kortix/sdk depends on
+ * @kortix/ui peers on @kortix/sdk (for the session entries), and @kortix/sdk depends on
  * @kortix/llm-catalog. stage-npm-publish.mjs pins those to the lockstep release
  * version, so the run packs all three at one synthetic version and installs the
  * tarballs together: nothing resolves from the registry for a version that exists

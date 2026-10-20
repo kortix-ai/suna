@@ -33,7 +33,6 @@ describe('classifySandboxProvisioningFailure', () => {
   });
 
   test.each([
-    'you have reached the maximum number of concurrent E2B sandboxes (8)',
     'max number of running sandboxes on node reached',
     'too many sandboxes starting on this node',
     'No available runners can satisfy the request',

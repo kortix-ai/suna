@@ -1,6 +1,6 @@
 /**
  * Desktop shell detection from the user agent. No env, no window helpers:
- * shared UI imports it without the rest of `lib/desktop.ts`.
+ * shared UI imports it without the rest of `packages/ui/src/internal/lib/desktop.ts`.
  */
 
 export const DESKTOP_UA_TOKEN = 'KortixDesktop';

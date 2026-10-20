@@ -19,7 +19,7 @@ import {
 import * as commandModule from './command';
 
 /**
- * Characterization test for `components/ui/command.tsx`.
+ * Characterization test for `packages/ui/src/primitives/command.tsx`.
  *
  * Pins the module contract the app depends on before any restructure of the
  * file: every exported component is still exported, and the primitives render

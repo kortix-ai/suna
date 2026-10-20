@@ -10,10 +10,11 @@
 //   src/primitives/<path>.tsx            → "./<path>"         (subfolders kept: "./dot-matrix/dotm-square-1")
 //   src/styles/<name>.css                → "./<name>.css"
 //   dist/styles.css                      → "./styles.css"     (built by scripts/build-styles.mjs)
-//   every other src/<module>/<path>.ts(x) → "./<module>/<path>"  (deep path: no semver; apps/web's
-//                                          one-line shims read these until it imports the entries)
+//   DEEP (scripts/deep-exports.json)     → "./<module>/<path>"  (deep path: no semver; only the
+//                                          module files a workspace consumer imports today)
 // Test files (*.test.*), __snapshots__, *.d.ts, src/test-utils/**, src/types/** and INTERNAL
-// modules are never exported. An entry file is exported under its module key only.
+// modules are never exported. An entry file is exported under its module key only. Any other
+// module file is reachable only through its entry, unless DEEP names it.
 //
 // It also writes "publishConfig.exports", the map npm consumers resolve (see
 // scripts/stage-npm-publish.mjs). Same keys; each target maps to the build output:
@@ -66,6 +67,8 @@ export const ENTRIES = {
   './customize': 'customize/index.ts',
 };
 const ENTRY_FILES = new Set(Object.values(ENTRIES));
+// Deep keys a workspace consumer imports (tests/unit/ui-deep-exports.test.ts keeps the list exact).
+export const DEEP = JSON.parse(readFileSync(join(PKG_DIR, 'scripts', 'deep-exports.json'), 'utf8')).keys;
 // Top-level folders that are never exported (test helpers, ambient types, styles have their own rule).
 const PRIVATE_DIRS = new Set(['primitives', 'styles', 'test-utils', 'types']);
 
@@ -96,12 +99,14 @@ export function buildExports() {
   for (const file of modules(join(SRC, 'primitives'))) {
     out[`./${posix(relative(join(SRC, 'primitives'), file)).replace(MODULE, '')}`] = rel(file);
   }
-  for (const dir of readdirSync(SRC).filter((n) => statSync(join(SRC, n)).isDirectory() && !PRIVATE_DIRS.has(n))) {
-    for (const file of modules(join(SRC, dir))) {
-      const key = `./${posix(relative(SRC, file)).replace(MODULE, '')}`;
-      if (out[key]) throw new Error(`gen-exports: ${key} is both ${out[key]} and ${rel(file)}`);
-      out[key] = rel(file);
+  for (const key of DEEP) {
+    const file = ['.ts', '.tsx'].map((ext) => join(SRC, `${key.slice(2)}${ext}`)).find(existsSync);
+    const sub = file && posix(relative(SRC, file));
+    if (!file || PRIVATE_DIRS.has(sub.split('/')[0]) || INTERNAL.has(sub) || ENTRY_FILES.has(sub)) {
+      throw new Error(`gen-exports: deep key ${key} is not an exportable module file under src/`);
     }
+    if (out[key]) throw new Error(`gen-exports: ${key} is both ${out[key]} and ${rel(file)}`);
+    out[key] = rel(file);
   }
   for (const file of walk(join(SRC, 'styles')).filter((p) => p.endsWith('.css'))) {
     out[`./${posix(relative(join(SRC, 'styles'), file))}`] = rel(file);

@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { resolveSectionLabels } from './session-section-labels';
 
 import { useTranslations } from '../../i18n';
@@ -274,6 +275,8 @@ export function SessionFilterMenu({
   const t = useTranslations('sidebar.filter');
   const tPinArchive = useTranslations('sidebar.pinArchive');
   const tDeleted = useTranslations('sidebar.recentlyDeleted');
+  const archivedHref = uiRoutes().sessions(projectId, 'archived');
+  const deletedHref = uiRoutes().sessions(projectId, 'deleted');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const localizedGroupModes = localizedSessionGroupModes(tI18nComplete);
   const localizedOrderModes = localizedSessionOrderModes(tI18nComplete);
@@ -655,13 +658,13 @@ export function SessionFilterMenu({
         {t('collapseAll')}
       </DropdownMenuItem>
       {/* The sidebar hides archived and deleted sessions; the sessions page lists them. */}
-      {!pageFacets && (
+      {!pageFacets && archivedHref && deletedHref && (
         <>
           <DropdownMenuItem asChild className="cursor-pointer">
-            <Link href={`/projects/${projectId}/sessions?view=archived`}>{tPinArchive('showArchived')}</Link>
+            <Link href={archivedHref}>{tPinArchive('showArchived')}</Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild className="cursor-pointer">
-            <Link href={`/projects/${projectId}/sessions?view=deleted`}>{tDeleted('view')}</Link>
+            <Link href={deletedHref}>{tDeleted('view')}</Link>
           </DropdownMenuItem>
         </>
       )}

@@ -36,7 +36,7 @@ const XML_ATTR_ESCAPES: Readonly<Record<string, string>> = {
  * `'`, `<` and `>`. Values here often come from outside the user's own input
  * (an agent writes session titles), so the result can never close the
  * attribute or read as another tag. The inverse is `unescapeAttr` in
- * features/session/message-parsing.tsx.
+ * packages/ui/src/session/thread/message-parsing.tsx.
  */
 export function escapeXmlAttr(value: string): string {
   return value.replace(/[&"'<>]/g, (ch) => XML_ATTR_ESCAPES[ch]!);

@@ -2,8 +2,8 @@ import { afterEach, expect, mock, test } from 'bun:test';
 import type { SessionPromptPart } from '@kortix/sdk';
 import { createElement, type ComponentProps, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ComposerChatInput } from '@/features/session/composer-chat-input';
-import type { FirstChat } from './home/first-chat';
+import type { ComposerChatInput } from '@kortix/ui/composer';
+import type { FirstChat } from '@kortix/ui/workspace/home/first-chat';
 
 let composer!: ComponentProps<typeof ComposerChatInput>;
 let firstChat: ComponentProps<typeof FirstChat> | undefined;
@@ -12,14 +12,14 @@ let firstChatPending = false;
 let firstChatRequested = true;
 // `mock.module` is process-wide: every shared module keeps its real exports and
 // overrides only what this test needs, so other suites in the same run still link.
-const realComposerInput = await import('@/features/session/composer-chat-input');
+const realComposerInput = await import('@kortix/ui/session/composer/composer-chat-input');
 const realTranslations = await import('@/i18n/use-translations');
 const realQuery = await import('@tanstack/react-query');
-const realProjectCan = await import('@/lib/use-project-can');
-const realAccountPanel = await import('@/stores/account-panel-store');
+const realProjectCan = await import('@kortix/ui/internal/lib/use-project-can');
+const realAccountPanel = await import('@kortix/ui/internal/stores/account-panel-store');
 const realSdk = await import('@kortix/sdk');
 const realSdkReact = await import('@kortix/sdk/react');
-const realFirstChatStore = await import('@/stores/first-chat-store');
+const realFirstChatStore = await import('@kortix/ui/internal/stores/first-chat-store');
 const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
 mock.module('@kortix/ui/providers/ui-provider', () => ({
   ...realUiProvider,
@@ -50,6 +50,7 @@ mock.module('@kortix/ui/internal/stores/first-chat-store', () => ({
 mock.module('@tanstack/react-query', () => ({
   ...realQuery,
   useQuery: () => ({ data: undefined }),
+  useQueryClient: () => new realQuery.QueryClient(),
 }));
 mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   ...realProjectCan,
@@ -90,7 +91,7 @@ mock.module('@kortix/ui/workspace/home/welcome-body', () => ({
   ProjectHomeWallpaper: () => null,
   ProjectHomeWelcomeBody: ({ composer: input }: { composer: ReactNode }) => input,
 }));
-const { ProjectHome } = await import('./project-home');
+const { ProjectHome } = await import('@kortix/ui/workspace/layout/project-home');
 
 const handle: SessionPromptPart = {
   type: 'file',

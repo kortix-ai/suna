@@ -13,7 +13,8 @@ const noopRouter: UiRouter = { push() {}, replace() {}, prefetch() {}, back() {}
  * route params `{ id, sessionId }` (also the SessionIdsProvider ids), the
  * viewer id, the router and the web translation hooks. Session components read
  * these from @kortix/ui, so a test that mocks `next/navigation` or `useAuth`
- * reaches nothing without this wrapper.
+ * reaches nothing without this wrapper. packages/ui/src/test-utils/ui-host.tsx
+ * is the package's own variant (use-intl hooks); @kortix/ui does not publish it.
  */
 export function TestUiHost({
   params = {},

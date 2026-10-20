@@ -1,7 +1,7 @@
 'use client';
 
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 // SAML SSO config on the Settings tab. The Supabase auth.sso_providers
 // row is created out-of-band (Studio or auth admin API) — admins paste
@@ -9,7 +9,7 @@ import { useTranslations } from '@/i18n/use-translations';
 // holding group memberships. Once configured, every SAML-issued JWT
 // triggers JIT membership + group sync in the auth middleware.
 
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { getEnv } from '@/lib/env-config';
 import {
   ArrowRightIcon as ArrowRight,
@@ -22,14 +22,14 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useSyncExternalStore } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@kortix/ui/disclosure';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -38,18 +38,18 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/modal';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
+import { ErrorState } from '@kortix/ui/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   CopyRow,
   EMPTY_PRINCIPAL_SELECTION,
-  PrincipalPicker,
   type PrincipalSelection,
   singlePrincipal,
-} from '@/features/workspace/shared/access';
+} from '@kortix/ui/access/access/index';
+import { PrincipalPicker } from '@kortix/ui/access';
 import {
   type SsoGroupMapping,
   type SsoProvider,

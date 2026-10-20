@@ -5,7 +5,7 @@ import Hint from '../../../primitives/hint';
 import Loading from '../../../primitives/loading';
 import { framePolicy, serviceFrameContent } from '../../../files/viewer/preview-policy';
 import { openSessionQuickView } from '../../panel/open-session-quick-view';
-import { useAuthenticatedPreviewUrl } from '@kortix/sdk/react';
+import { usePreviewFrameUrl } from '../../../internal/hooks/use-preview-frame-url';
 import { useSandboxProxy } from '../../../internal/hooks/use-sandbox-proxy';
 import { useTranslations } from '../../../i18n';
 import { openSafeExternalUrl } from '../../../internal/lib/safe-url';
@@ -14,6 +14,8 @@ import { isProxiableLocalhostUrl, parseLocalhostUrl } from '@kortix/sdk';
 import { enrichPreviewMetadata, getActiveSessionContext } from '../../../internal/lib/utils/session-context';
 import { getActivePanelSessionId, sessionPreviewTabId } from '../../../internal/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '../../../internal/stores/tab-store';
+import { useUiShallowNavigate } from '../../../providers/ui-provider';
+import { openPanelFallbackView, panelFallbackActive } from '../../../internal/stores/panel-fallback-store';
 import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
 import {
   PREVIEW_BUILDING_STATES,
@@ -40,13 +42,24 @@ export const ToolNavigationContext = createContext(true);
 
 export function useToolNavigation() {
   const enabled = useContext(ToolNavigationContext);
+  const shallowNavigate = useUiShallowNavigate();
 
   const openTab = useCallback(
     (tab: Parameters<typeof openTabAndNavigate>[0]) => {
       if (!enabled) return;
-      openTabAndNavigate(tab);
+      // A preview tab is a route of apps/web's tab shell. A host without a
+      // side panel shows the page in the thread's fallback overlay instead.
+      if (tab.type === 'preview' && panelFallbackActive()) {
+        const originalUrl = tab.metadata?.originalUrl;
+        openPanelFallbackView('browser', {
+          url: typeof originalUrl === 'string' ? originalUrl : undefined,
+          title: tab.title,
+        });
+        return;
+      }
+      openTabAndNavigate(tab, undefined, shallowNavigate);
     },
-    [enabled],
+    [enabled, shallowNavigate],
   );
 
   const openExternal = useCallback(
@@ -91,8 +104,9 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
   const { enabled: navigationEnabled, openTab, openExternal } = useToolNavigation();
   const proxy = useProxyUrl(url);
   const externalUrl = proxy ? null : safeHttpUrl(url);
-  const authenticatedProxyUrl = useAuthenticatedPreviewUrl(proxy?.proxyUrl || '');
-  const previewUrl = proxy ? authenticatedProxyUrl : externalUrl;
+  // The host's URL (`UiProvider resolvePreviewUrl`) or the SDK token URL.
+  const framed = usePreviewFrameUrl(proxy ? url : '', proxy?.proxyUrl || '');
+  const previewUrl = proxy ? framed.url : externalUrl;
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -205,8 +219,8 @@ export function useServicePreview(url: string, label?: string, sessionId?: strin
     previewUrl,
     /** A static file the agent wrote (`document`) or a server it runs (`app`). */
     frameContent: serviceFrameContent(proxy?.port),
-    isLoading,
-    hasError,
+    isLoading: isLoading && !framed.failed,
+    hasError: hasError || framed.failed,
     /** Same condition as the viewport's "Loading preview…" overlay (no URL
      *  yet, or the frame has not loaded), plus the proxy page while the app
      *  is still building (`PREVIEW_BUILDING_STATES`). */

@@ -12,7 +12,7 @@ import { type MessageTimeOptions, formatMessageDay, formatMessageExact } from '@
  *
  * `toLocaleString` and friends format in the *runtime's* zone — the server's on
  * SSR, the viewer's in the browser — so the same instant produces two different
- * strings and hydration fails (React #418, the bug `components/ui/local-time`
+ * strings and hydration fails (React #418, the bug `packages/ui/src/primitives/local-time`
  * exists to document). Pinning UTC and `en-US` makes the server's output depend
  * on nothing but the timestamp, so both passes agree; the client then re-derives
  * in the viewer's real zone and locale.

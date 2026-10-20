@@ -24,9 +24,9 @@ import {
 import { RadioGroup as RadioGroupPrimitive } from 'radix-ui';
 import { useId, useRef } from 'react';
 
-import { Input } from '@/components/ui/input';
+import { Input } from '@kortix/ui/input';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 import { USE_CASE_NOTE_MAX, WORK_OPTIONS } from '../onboarding-profile';
 import { StepShell } from '../step-shell';

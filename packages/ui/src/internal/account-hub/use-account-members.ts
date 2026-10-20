@@ -5,7 +5,7 @@
  * pane) and the settings sidebar (the count beside "Members"). One key, one
  * fetcher, one gate — two hand-typed copies is how a "13 readers, one
  * request" property quietly becomes two requests (see
- * `hooks/account/use-accounts-list.ts` for the longer version of that story).
+ * `packages/ui/src/internal/hooks/account/use-accounts-list.ts` for the longer version of that story).
  */
 
 import { listAccountMembers } from '@kortix/sdk';

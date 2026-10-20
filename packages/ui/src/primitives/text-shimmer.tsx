@@ -50,7 +50,7 @@ export type TextShimmerProps = {
  * old transition's `repeatDelay: 0` there.
  *
  * These keyframes are scoped to this file via an inline `<style>` — the
- * same technique `components/ui/chart.tsx` already uses for component-local
+ * same technique `packages/ui/src/primitives/chart.tsx` already uses for component-local
  * CSS — because `globals.css` is out of scope for this change and this
  * codebase has no CSS Modules precedent (`bun test` has no loader for
  * `.css` imports, so a `.module.css` file would break every test that

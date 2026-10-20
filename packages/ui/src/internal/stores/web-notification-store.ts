@@ -55,7 +55,7 @@ interface WebNotificationState {
 }
 
 const DEFAULT_PREFERENCES: WebNotificationPreferences = {
-  enabled: false,
+  enabled: true,
   onCompletion: true,
   onError: true,
   onQuestion: true,

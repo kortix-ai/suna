@@ -91,7 +91,7 @@ export function flattenDocument(doc: ProseMirrorNode): SerializableNode[] {
  * substrings at all. They match `<file_ref>`/`<agent_ref>`/`<session_ref>`
  * XML blocks that `session-chat.tsx`'s `handleSend` appends AFTER this text,
  * built from the separate `mentions` array via `buildFileRefsBlock` /
- * `buildAgentRefsBlock` (`lib/project-preamble.ts`) and its own inline
+ * `buildAgentRefsBlock` (`packages/ui/src/internal/lib/project-preamble.ts`) and its own inline
  * `<session_ref>` construction. `mentions` is therefore the half of this
  * return value those parsers actually depend on; `text` only has to stay
  * human-readable and round-trip through `HighlightMentions`-style `@`

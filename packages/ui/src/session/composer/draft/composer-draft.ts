@@ -35,7 +35,7 @@ export const DRAFT_ENVELOPE_VERSION = 1;
 
 /**
  * Per-draft ceiling, bytes of serialized JSON. The whole origin shares one
- * ~5-10MB localStorage bucket (see `lib/storage/managed-storage.ts`), so one
+ * ~5-10MB localStorage bucket (see `packages/ui/src/internal/lib/storage/managed-storage.ts`), so one
  * pasted logfile must not be able to consume it. Enforced here rather than in
  * the store so it is testable without storage.
  */

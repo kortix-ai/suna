@@ -1,5 +1,6 @@
 'use client';
 
+import { sessionIdFromPath, uiRoutes } from '../../lib/routes';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import { IconDelete } from '../../primitives/kortix-icons';
 import {
@@ -12,7 +13,8 @@ import {
 import { deleteProjectSession, restoreProjectSession } from '@kortix/sdk';
 import { qk, removeCachedProjectSession } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useUiParams, useUiRouter } from '../../providers/ui-provider';
+import { useUiPathname, useUiRouter } from '../../providers/ui-provider';
+import { useSessionIds } from '../../providers/session-ids';
 import { useTranslations } from '../../i18n';
 
 /** Days a deleted session stays restorable (`SESSION_DELETE_ROWS_DAYS` in the API). */
@@ -66,7 +68,9 @@ export function SessionDeleteModal({
   const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
   const router = useUiRouter();
-  const openSessionId = useUiParams<{ sessionId?: string }>()?.sessionId;
+  // The session the page shows: the host's ids, else its session URL.
+  const pathname = useUiPathname();
+  const openSessionId = useSessionIds().sessionId ?? sessionIdFromPath(pathname, projectId);
 
   // Runs from the toast, after the dialog closed (and maybe unmounted).
   const undoDelete = async (id: string, toastId: string) => {
@@ -93,7 +97,7 @@ export function SessionDeleteModal({
     successToast(t('restored'));
     void queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     // Deleting the open session left its page: Undo goes back to it.
-    if (id === openSessionId) router.push(`/projects/${projectId}/sessions/${id}`);
+    if (id === openSessionId) router.push(uiRoutes().session(projectId, id));
   };
 
   const deleteMutation = useMutation({
@@ -118,8 +122,17 @@ export function SessionDeleteModal({
           onUndo: () => void undoDelete(id, toastId),
         },
       );
-      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
-      onDeleted?.();
+      // Every list refetches. The deleted session's own reads do not: they
+      // would answer 404 while the page they sit on navigates away.
+      const own = qk.project.session(projectId, id);
+      void queryClient.invalidateQueries({
+        queryKey: qk.project.sessionsScope(projectId),
+        predicate: (q) => !own.every((part, i) => q.queryKey[i] === part),
+      });
+      // The open session's page has nothing left to show: a caller without
+      // its own destination (the sidebar row menu) leaves it for the project home.
+      if (onDeleted) onDeleted();
+      else if (id === openSessionId) router.push(uiRoutes().project(projectId));
       onOpenChange(false);
     },
     onError: (err, _id, restore) => {
