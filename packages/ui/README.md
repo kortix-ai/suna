@@ -165,7 +165,7 @@ without host hooks. The catalog ships in every bundle that imports
 passes its own hooks.
 
 Two more host-free helpers: `lazyClient(load, { fallback })`
-(`@kortix/ui/lib/lazy-client`) loads a component on the client only, the
+(from the `@kortix/ui` root) loads a component on the client only, the
 `next/dynamic(..., { ssr: false })` contract. `ErrorBoundary` and
 `ErrorBoundaryFallback` (`@kortix/ui/error-boundary`) report to
 `captureException`.
