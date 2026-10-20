@@ -32,37 +32,6 @@ export interface UiI18nHost {
  * `@kortix/ui/lib/host-env`.
  */
 /**
- * The copy of the @kortix/ui/session pickers (`ModelPicker`, `AgentPicker`).
- * Every key has an English default; a host passes the keys it translates as
- * `strings.chat`. The session thread reads the i18n catalog instead
- * (`UiProvider` `i18n`).
- */
-export interface ChatStrings {
-  /** Model picker trigger label. */
-  model: string;
-  defaultModel: string;
-  searchModels: string;
-  models: string;
-  noModelsMatch: string;
-  /** Agent picker trigger label. */
-  agent: string;
-  defaultAgent: string;
-  /** The default agent's row: `name (default)`. */
-  defaultAgentNamed: (name: string) => string;
-}
-
-export const defaultChatStrings: ChatStrings = {
-  model: 'Model',
-  defaultModel: 'Default model',
-  searchModels: 'Search models…',
-  models: 'Models',
-  noModelsMatch: 'No models match.',
-  agent: 'Agent',
-  defaultAgent: 'Default agent',
-  defaultAgentNamed: (name) => `${name} (default)`,
-};
-
-/**
  * Every string @kortix/ui renders by itself. Components that render copy
  * without a caller-supplied label read it from here, so a host translates
  * them once through `<UiProvider strings>`. Copy not listed here is English
@@ -79,8 +48,6 @@ export interface UiStrings {
   commandPaletteTitle: string;
   /** CommandDialog screen-reader description. */
   commandPaletteDescription: string;
-  /** @kortix/ui/chat picker copy. */
-  chat: ChatStrings;
 }
 
 export const defaultUiStrings: UiStrings = {
@@ -89,11 +56,10 @@ export const defaultUiStrings: UiStrings = {
   close: 'Close',
   commandPaletteTitle: 'Command Palette',
   commandPaletteDescription: 'Search for a command to run...',
-  chat: defaultChatStrings,
 };
 
-/** What a host passes as `strings`: any subset, `chat` included. */
-export type UiStringsInput = Partial<Omit<UiStrings, 'chat'>> & { chat?: Partial<ChatStrings> };
+/** What a host passes as `strings`: any subset. */
+export type UiStringsInput = Partial<UiStrings>;
 
 export type UiLinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & {
   href: string;
@@ -450,7 +416,7 @@ export function UiProvider({
 }) {
   const value = React.useMemo<UiContextValue>(
     () => ({
-      strings: { ...defaultUiStrings, ...strings, chat: { ...defaultChatStrings, ...strings?.chat } },
+      strings: { ...defaultUiStrings, ...strings },
       link: link ?? DefaultLink,
       image: image ?? DefaultImage,
       useBrand: useBrand ?? useNoBrand,

@@ -142,7 +142,6 @@ function RouteSessionIds({ children }: { children: ReactNode }) {
 export function KortixUiProvider({ children }: { children: ReactNode }) {
   const common = useTranslations('common');
   const palette = useTranslations('commandPalette');
-  // apps/web does not render @kortix/ui/chat, so `chat` keeps its English defaults.
   const strings = useMemo<UiStringsInput>(
     () => ({
       confirm: common('confirm'),

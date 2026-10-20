@@ -8,7 +8,6 @@
 export { cn } from './lib/utils';
 export {
   UiProvider,
-  defaultChatStrings,
   defaultUiHostConfig,
   defaultUiNavigation,
   defaultUiStrings,
@@ -32,7 +31,6 @@ export {
   type UiRouteParams,
   type UiRouter,
   type UiSearchParams,
-  type ChatStrings,
   type UiStrings,
   type UiStringsInput,
   type UseUiBrand,

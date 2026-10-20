@@ -81,7 +81,7 @@ any prop gets these defaults:
 
 | Prop | Default without it |
 | --- | --- |
-| `strings` | English copy (`defaultUiStrings`; `chat` keys in `defaultChatStrings`) |
+| `strings` | English copy (`defaultUiStrings`) |
 | `link` | a plain `<a>`: every link is a full page load |
 | `image` | a plain `<img>` |
 | `navigation` | `defaultUiNavigation`: `push` / `replace` are full page loads, `usePathname` / `useSearchParams` read `window.location`, `useParams` returns `{}` |
