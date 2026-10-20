@@ -21499,7 +21499,7 @@
     "audienceQuestion": "Who can open it?",
     "badgeEveryone": "Everyone",
     "badgePeople": "{count, plural, one {# person} other {# people}}",
-    "privateNote": "Your files stay private, even from admins. Share a folder to give someone access.",
+    "privateNote": "Only you can open My files, not even admins. Share a folder to give someone access.",
     "noTeamFolders": "No team folders yet.",
     "sessionFilesName": "Files",
     "sessionFilesHint": "Folders it can open",

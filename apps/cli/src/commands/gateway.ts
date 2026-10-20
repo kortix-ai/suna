@@ -568,8 +568,9 @@ async function gatewayTest(rest: string[], opts: CtxOpts, json: boolean): Promis
       prompt: prompt ?? 'Reply with exactly: pong',
       models,
     });
-    if (json) return outJson(data);
-    process.stdout.write('\n');
+    const gw = gatewayUrl(ctx.auth, data.gateway_url);
+    if (json) return outJson({ ...data, gateway_url: gw });
+    process.stdout.write(`\n  ${C.dim}Gateway URL: ${gw}${C.reset}\n\n`);
     for (const r of data.results ?? []) {
       if (r.ok) {
         process.stdout.write(

@@ -1,11 +1,10 @@
 'use client';
 
-import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useTranslations as useI18nTranslations } from '../../i18n';
+import { UiLink, useUiParams } from '../../providers/ui-provider';
 
-import { Button } from '@kortix/ui/button';
-import { projectSettingsSectionHref } from '@kortix/ui/customize/project-settings/project-settings-sections';
+import { Button } from '../../primitives/button';
+import { projectSettingsSectionHref } from '../project-settings/project-settings-sections';
 import { FlagIcon } from '@phosphor-icons/react';
 
 /**
@@ -41,8 +40,8 @@ export function FeatureGateScreen({
   internalOnly?: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const params = useParams<{ id: string }>();
-  const projectId = params?.id;
+  const params = useUiParams();
+  const projectId = typeof params.id === 'string' ? params.id : undefined;
 
   return (
     <div className="bg-popover rounded-md border px-4 py-5">
@@ -63,9 +62,9 @@ export function FeatureGateScreen({
         </div>
         {projectId && !internalOnly ? (
           <Button asChild size="sm" variant="secondary" className="shrink-0">
-            <Link href={projectSettingsSectionHref(projectId, 'feature-flags')}>
+            <UiLink href={projectSettingsSectionHref(projectId, 'feature-flags')}>
               {tI18nComplete.raw('text20a2e59ba129')}
-            </Link>
+            </UiLink>
           </Button>
         ) : null}
       </div>

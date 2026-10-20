@@ -15,7 +15,7 @@ import { Button } from '@kortix/ui/button';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
-import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
+import { FeatureGateScreen } from '@kortix/ui/customize/shared/feature-gate-screen';
 import { useTranslations } from '@/i18n/use-translations';
 import { useFeatureFlag, useProjectReminders } from '@kortix/sdk/react';
 import { AlarmIcon, ArrowUpRightIcon } from '@phosphor-icons/react';

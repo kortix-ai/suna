@@ -5497,6 +5497,7 @@ const catalog = {
       "text4c012b6f97ca": "Connect {app}",
       "text84e071180ac2": "Edit settings",
       "text5441e7146193": "App event",
+      "text1c41abcc2fff": "Contact Kortix to enable it.",
       "textce0eabb01151": "{value0} vCPU · {value1} GB · {value2} GB",
       "text0d04bfeb7d64": "App",
       "text840993da3129": "App event created",
