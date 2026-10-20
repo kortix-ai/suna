@@ -29,6 +29,7 @@ function formatDay(iso: string, locale: string): string {
 
 export function PlanAccessNotice({ state }: { state: AccountState }) {
   const t = useTranslations('billing.access');
+  const tModel = useTranslations('modelAccess');
   const locale = useLocale();
   const accountId = useBillingAccountId();
   const sales = useTalkToSales(accountId);
@@ -38,6 +39,11 @@ export function PlanAccessNotice({ state }: { state: AccountState }) {
 
   return (
     <div className="space-y-3 empty:hidden">
+      {state.model_access?.requires_provider_key ? (
+        <InfoBanner tone="info" title={tModel('managedTitle')}>
+          {tModel('managedUpgradeHint')}
+        </InfoBanner>
+      ) : null}
       {offer ? <OfferBanner offer={offer} manager={canManageBilling(state)} /> : null}
 
       {grace ? (

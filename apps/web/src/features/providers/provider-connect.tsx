@@ -103,6 +103,7 @@ export interface ProviderListRow {
   label: string;
   method: ProviderMethod;
   modelCount: number;
+  hint?: string;
   status: ProviderStatus;
   /** How a connected two-way provider is connected (OpenAI only today). */
   via?: ConnectedVia;
@@ -223,6 +224,7 @@ function ProviderRow({
 }) {
   const t = useTranslations('providerSheet');
   const meta = useProviderMeta();
+  const tAccess = useTranslations('modelAccess');
   return (
     <button
       type="button"
@@ -240,7 +242,9 @@ function ProviderRow({
       <span className="min-w-0 flex-1">
         <span className="text-foreground block truncate text-sm font-medium">{row.label}</span>
         <span className="text-muted-foreground block truncate text-xs">
-          {meta(row.method, row.modelCount, row.id, row.via)}
+          {row.method === 'included' && row.modelCount === 0
+            ? row.hint ?? tAccess('managedUpgradeHint')
+            : meta(row.method, row.modelCount, row.id, row.via)}
         </span>
       </span>
       {row.disabled ? (
@@ -364,7 +368,7 @@ export function useManagedProvider(projectId: string | null): LlmProviderEntry {
   const pickerCatalog = useProjectModelPickerCatalog(projectId);
   return useMemo<LlmProviderEntry>(() => {
     const managedModels = Object.entries(pickerCatalog?.models ?? {})
-      .filter(([id]) => !id.includes('/'))
+      .filter(([id, model]) => !id.includes('/') && model.enabled !== false)
       .map(([id, model]) => ({
         id,
         name: model.name || id,
@@ -491,9 +495,10 @@ export function ProviderConnect({
         label: entry.label,
         method,
         modelCount: entry.models.length,
+        hint: entry.hint,
         status:
           method === 'included'
-            ? 'included'
+            ? entry.models.length > 0 ? 'included' : 'none'
             : connectedIds.has(entry.id) ||
                 pooled.pooledProviderIds.has(entry.id) ||
                 // A ChatGPT sign-in connects OpenAI as provider `codex`.
