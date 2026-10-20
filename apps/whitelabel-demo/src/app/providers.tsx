@@ -14,6 +14,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 // wrapper mode is confirmed.
 import { configureWrapperMode } from '@/lib/kortix';
 import { fetchWrapperMode } from '@/lib/mode';
+import { resolveWrapperPreviewUrl } from '@/lib/preview-url';
 // The toast host. @kortix/ui/toast draws every toast (successToast,
 // errorToast, …) into the <Toaster /> it exports, so the host needs no sonner
 // dependency of its own.
@@ -27,6 +28,9 @@ const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useP
 // A Kortix deployment serves its managed model lineup; without this flag the
 // model picker would list only the account's own provider keys.
 const config = { managedModelsEnabled: true };
+// Wrapper mode proxies HTTP through Next route handlers, which cannot upgrade
+// the terminal's WebSocket, so the Terminal control is hidden there.
+const wrapperConfig = { ...config, terminalEnabled: false };
 
 // The app features the session UI renders whole. A slot left out hides its
 // control. Lumen ships Kortix's own sharing dialog (who can open a session,
@@ -97,7 +101,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
             stay plain <img> (next/image would need images.remotePatterns for
             organization logos). IconProvider gives every Phosphor icon the house
             weight. Mounted once. */}
-        <UiProvider link={NextLink} navigation={navigation} components={components} config={config}>
+        <UiProvider link={NextLink} navigation={navigation} components={components} config={wrapperMode ? wrapperConfig : config}
+          resolvePreviewUrl={wrapperMode ? resolveWrapperPreviewUrl : undefined}>
           <IconProvider>
             <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
             <Toaster />

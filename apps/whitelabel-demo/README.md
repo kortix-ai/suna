@@ -52,13 +52,16 @@ opens it on the first frame.
 **The session workspace.** The thread is Kortix's own: streaming markdown, grouped tool
 rows, questions and approvals, the send error, Stop. Every file the agent touches is a
 link. The header opens Files, the Terminal and the Browser in a resizable side panel, and
-the composer keeps the model and agent pickers.
+the composer keeps the model and agent pickers. Wrapper mode hides the Terminal: its proxy
+is Next route handlers, which cannot upgrade the pty WebSocket.
 
 **Files and the viewer.** The session's files, the changes it made, and a viewer for every
 kind: markdown, code, pdf, docx, xlsx, csv, pptx, images.
 
 **Live preview.** When the agent serves an app, it runs in the panel's browser on its port.
-Lumen resolves the preview URL on its server, so the browser never sees a sandbox address.
+In wrapper mode Lumen resolves the preview URL on its server (`resolvePreviewUrl` →
+`POST /api/preview-url`), with a project-scoped preview token. The Lumen session token
+never appears in a frame URL.
 
 **Sharing and access.** Kortix's share dialog: who can open a session, public links.
 Members, roles and invites per account.

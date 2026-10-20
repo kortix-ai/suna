@@ -240,11 +240,37 @@ export interface UiHostConfig {
   managedModelsEnabled: boolean;
   /** The deployment's release version, for version-pinned CLI install commands. Default: none (latest). */
   deploymentVersion?: string;
+  /**
+   * The session terminal can connect: the host reaches the runtime's pty
+   * WebSocket. A host that proxies HTTP only (a Next route handler cannot
+   * upgrade a WebSocket) sets false, and the Terminal control is hidden. Default: true.
+   */
+  terminalEnabled: boolean;
 }
+
+/** What the session browser frames: a port and path inside the session's sandbox, or a URL. */
+export interface UiPreviewRequest {
+  projectId: string;
+  sessionId: string;
+  /** The sandbox port, or 0 for a URL outside the sandbox. */
+  port: number;
+  path: string;
+  /** The address the user sees, for example `http://localhost:8123/`. */
+  url: string;
+}
+
+/**
+ * Resolves the final URL the session browser frames and opens in a new tab,
+ * with its own scoped credentials. Return null to use the default (the SDK's
+ * preview URL with the SDK token). A host whose browser must not hold a Kortix
+ * token, or whose origin is not the Kortix backend, resolves it on its server.
+ */
+export type UiPreviewUrlResolver = (request: UiPreviewRequest) => Promise<string | null>;
 
 export const defaultUiHostConfig: UiHostConfig = {
   connectorsEnabled: true,
   managedModelsEnabled: false,
+  terminalEnabled: true,
 };
 
 const useNoViewer = (): string | undefined => undefined;
@@ -349,6 +375,7 @@ interface UiContextValue {
   updateViewerMetadata: UpdateUiViewerMetadata | undefined;
   config: UiHostConfig;
   components: UiHostComponents;
+  resolvePreviewUrl: UiPreviewUrlResolver | undefined;
 }
 
 const UiContext = React.createContext<UiContextValue>({
@@ -363,6 +390,7 @@ const UiContext = React.createContext<UiContextValue>({
   updateViewerMetadata: undefined,
   config: defaultUiHostConfig,
   components: NO_COMPONENTS,
+  resolvePreviewUrl: undefined,
 });
 
 export function UiProvider({
@@ -377,6 +405,7 @@ export function UiProvider({
   updateViewerMetadata,
   config,
   components,
+  resolvePreviewUrl,
   children,
 }: {
   strings?: UiStringsInput;
@@ -404,6 +433,8 @@ export function UiProvider({
   config?: Partial<UiHostConfig>;
   /** Default: no slots. Pass a stable object. */
   components?: UiHostComponents;
+  /** Default: the SDK's preview URL. Pass a stable function. */
+  resolvePreviewUrl?: UiPreviewUrlResolver;
   children: React.ReactNode;
 }) {
   const value = React.useMemo<UiContextValue>(
@@ -419,8 +450,22 @@ export function UiProvider({
       updateViewerMetadata,
       config: { ...defaultUiHostConfig, ...config },
       components: components ?? NO_COMPONENTS,
+      resolvePreviewUrl,
     }),
-    [strings, link, image, useBrand, navigation, i18n, useViewerId, useViewer, updateViewerMetadata, config, components],
+    [
+      strings,
+      link,
+      image,
+      useBrand,
+      navigation,
+      i18n,
+      useViewerId,
+      useViewer,
+      updateViewerMetadata,
+      config,
+      components,
+      resolvePreviewUrl,
+    ],
   );
   return (
     <UiContext.Provider value={value}>
@@ -502,6 +547,11 @@ export function useUiUpdateViewerMetadata(): UpdateUiViewerMetadata | undefined 
 
 export function useUiHostConfig(): UiHostConfig {
   return React.useContext(UiContext).config;
+}
+
+/** The host's preview URL resolver, or undefined for the SDK default. */
+export function useUiPreviewUrlResolver(): UiPreviewUrlResolver | undefined {
+  return React.useContext(UiContext).resolvePreviewUrl;
 }
 
 /** The host's component slots. A missing slot means: hide the control. */

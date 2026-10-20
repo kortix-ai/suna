@@ -46,6 +46,7 @@ import { SessionDeleteModal } from '../actions/session-delete-modal';
 import { useNotificationCenter } from '../../internal/hooks/use-notification-center';
 import {
   useUiComponents,
+  useUiHostConfig,
   useUiPathname,
   useUiRouter,
   useUiViewerId,
@@ -93,7 +94,7 @@ import {
   TrashIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 /** Sandbox surfaces reachable from the header. One list drives both the
  *  desktop segment and the mobile sheet, so growing to 4-5 is a one-line add.
@@ -129,7 +130,13 @@ export function SessionSiteHeader({
   const tPalette = useTranslations('commandPalette');
   const tNotifications = useTranslations('notifications');
   const tPinArchive = useTranslations('sidebar.pinArchive');
-  const devTools = useLocalizedUiCatalog(DEV_TOOLS);
+  const localizedDevTools = useLocalizedUiCatalog(DEV_TOOLS);
+  // A host that cannot reach the pty WebSocket turns the terminal off (`config.terminalEnabled`).
+  const { terminalEnabled } = useUiHostConfig();
+  const devTools = useMemo(
+    () => (terminalEnabled ? localizedDevTools : localizedDevTools.filter((tool) => tool.view !== 'terminal')),
+    [localizedDevTools, terminalEnabled],
+  );
   const router = useUiRouter();
   const pathname = useUiPathname();
   const queryClient = useQueryClient();

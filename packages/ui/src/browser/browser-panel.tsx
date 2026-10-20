@@ -15,6 +15,8 @@ import { EmptyState } from '../primitives/empty-state';
 import { ErrorState } from '../primitives/error-state';
 import { isKortixAppUrl } from '../apps/kortix-app-url';
 import { useAuthenticatedPreviewUrl } from '@kortix/sdk/react';
+import { useUiPreviewUrlResolver } from '../providers/ui-provider';
+import { useHostPreviewUrl } from './use-host-preview-url';
 import { PublicShareLinkConfirm } from '../internal/share/public-share-link-confirm';
 import { usePublicShareLink } from '../internal/share/use-public-share-link';
 import { useSandboxProxy } from '../internal/hooks/use-sandbox-proxy';
@@ -126,7 +128,19 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   // Inject auth token for cloud preview proxy URLs.
   // Returns null while auth is in progress — the landing state below renders
   // until the token is ready.
-  const authenticatedUrl = useAuthenticatedPreviewUrl(proxiedPreviewUrl);
+  // A host resolver (`UiProvider resolvePreviewUrl`) replaces both steps: the
+  // host returns the final URL with its own scoped credentials, so the SDK
+  // token never lands in the frame URL.
+  const resolvePreview = useUiPreviewUrlResolver();
+  const previewPath = (tab?.metadata?.path as string) || '/';
+  const hostPreview = useHostPreviewUrl(
+    resolvePreview,
+    rawPreviewUrl && projectId && projectSessionId
+      ? { projectId, sessionId: projectSessionId, port, path: previewPath, url: originalUrl }
+      : null,
+  );
+  const sdkPreviewUrl = useAuthenticatedPreviewUrl(hostPreview.handled ? '' : proxiedPreviewUrl);
+  const authenticatedUrl = hostPreview.handled ? hostPreview.url : sdkPreviewUrl;
   // A project App frames signed in, on its own origin (`useAppInBrowser`).
   const { app, apps, src: previewUrl } = useAppInBrowser(projectId, authenticatedUrl);
   const suggestions = useMemo(() => apps.map((row) => ({ label: row.name, url: row.url })), [apps]);
@@ -352,7 +366,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
     };
   }, [fullUrl, isExternalBrowsing, originalUrl, port, tab?.metadata?.path, tab?.title]);
 
-  const hasPreview = !!previewUrl;
+  const hasPreview = !!previewUrl || hostPreview.failed;
   const emptyState = (
     <EmptyState
       icon={Globe}
@@ -470,7 +484,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
           )}
 
           {/* Error state */}
-          {hasError && (
+          {(hasError || hostPreview.failed) && (
             <ErrorState
               icon={AlertTriangle}
               size="sm"
@@ -494,7 +508,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
 
           <iframe
             key={refreshKey}
-            src={previewUrl}
+            src={previewUrl ?? undefined}
             title={
               app
                 ? app.name
@@ -503,7 +517,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
                   : tI18nComplete('text8d0218f233bb', { value0: port })
             }
             className="h-full w-full border-0"
-            sandbox={framePolicy('app', previewUrl).sandbox}
+            sandbox={framePolicy('app', previewUrl ?? '').sandbox}
             onLoad={handleLoad}
             onError={handleError}
           />

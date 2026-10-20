@@ -234,5 +234,7 @@ export {
   UiLink,
   useUiViewer,
   type UiHostComponents,
+  type UiPreviewRequest,
+  type UiPreviewUrlResolver,
   type UiViewer,
 } from './providers/ui-provider';
