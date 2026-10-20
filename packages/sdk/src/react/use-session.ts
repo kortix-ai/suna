@@ -1409,7 +1409,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // into a second cadence.
   useIsomorphicLayoutEffect(() => {
     if (!startEnabled) return;
-    openSessionBundle(projectId, sessionId, logOwned ? { transcript: 0 } : undefined);
+    // On v2 no host reads the snapshot's v1 window (a chat-engine-less host renders the log).
+    openSessionBundle(projectId, sessionId, logDialect === 'v2' ? { transcript: 0 } : undefined);
     seedModelDefaultsFromOpenBundle(queryClient, projectId, sessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sessionId]);

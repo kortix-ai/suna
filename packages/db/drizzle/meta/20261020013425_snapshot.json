@@ -1,6 +1,6 @@
 {
-  "id": "4692f7bb-12e8-465b-a9a9-f5e574543f19",
-  "prevId": "38fa1b63-764b-4c24-851d-7a4cb6652b9b",
+  "id": "6ab36647-5d3b-4ea8-aab8-de7eab376876",
+  "prevId": "237b4845-2462-4290-896b-ae02dafcc0bd",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -23259,6 +23259,22 @@
           ],
           "isUnique": false,
           "where": "(\"kortix\".\"session_lifecycle_commands\".\"result\"->>'status') = 'forwarded'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_session_lifecycle_commands_claimable": {
+          "name": "idx_session_lifecycle_commands_claimable",
+          "columns": [
+            {
+              "expression": "available_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"session_lifecycle_commands\".\"status\" = 'queued' AND (COALESCE(\"kortix\".\"session_lifecycle_commands\".\"result\"->>'held', '') <> 'true' OR \"kortix\".\"session_lifecycle_commands\".\"payload\"->>'clientMessageId' IS NULL)",
           "concurrently": false,
           "method": "btree",
           "with": {}

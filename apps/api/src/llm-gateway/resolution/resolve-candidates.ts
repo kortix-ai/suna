@@ -273,6 +273,18 @@ function opencodeHeaders(baseUrl: string, principal: AuthedPrincipal): Record<st
 }
 
 /**
+ * The ChatGPT backend keeps a conversation's prompt prefix cached only when its
+ * requests name the conversation in `session_id`, as the Codex CLI does.
+ * Without it, prod Sol requests read 24.8% of their input from cache (7 days
+ * to 2026-10-19). With it, 8 of 8 probe follow-ups read 99% (24,192 of 24,405
+ * tokens). A gateway API key call has no session, as in `opencodeHeaders`.
+ */
+export function codexConversationHeaders(principal: AuthedPrincipal): Record<string, string> {
+  const conversation = principal.sessionId ?? principal.keyId ?? principal.userId;
+  return { session_id: conversation, conversation_id: conversation };
+}
+
+/**
  * BYOK bills the provider account directly (`billingMode: 'none'`). Bedrock has
  * no static catalog baseUrl: its endpoint and AI-SDK region come from the
  * project's own AWS_REGION secret, and a wrong-geography inference-profile
@@ -446,7 +458,9 @@ export async function resolveCandidates(
         'Choose another model from the current ChatGPT lineup.',
       );
     }
-    return resolveCodexCandidates(context);
+    const conversation = codexConversationHeaders(principal);
+    return (await resolveCodexCandidates(context)).map((candidate) =>
+      ({ ...candidate, headers: { ...candidate.headers, ...conversation } }));
   }
 
   const byok = resolveCatalogUpstream(provider, provider ? effectiveModel.slice(provider.length + 1) : undefined);

@@ -81,6 +81,19 @@ const STRIPE_CUSTOM_DOMAIN = 'pay.kortix.com';
 const STRIPE_CHECKOUT_HOSTS = ['checkout.stripe.com', STRIPE_CUSTOM_DOMAIN];
 const STRIPE_PORTAL_HOSTS = ['billing.stripe.com', STRIPE_CUSTOM_DOMAIN];
 
+/**
+ * The app sends the browser to Stripe Checkout in the same tab
+ * (`window.location.href = checkout_url`). Wait until that navigation commits:
+ * the next step's own `page.goto` otherwise races it and Chromium aborts the
+ * goto ("interrupted by another navigation").
+ */
+async function leftForStripeCheckout(page: Page): Promise<void> {
+  await page.waitForURL((url) => STRIPE_CHECKOUT_HOSTS.includes(url.hostname), {
+    waitUntil: 'commit',
+    timeout: 45_000,
+  });
+}
+
 function expectStripeUrl(value: string | undefined, hosts: string[], pathPattern: RegExp): void {
   if (!value) throw new Error(`no Stripe URL captured for ${hosts.join(' / ')}`);
   const url = new URL(value);
@@ -178,6 +191,7 @@ test.describe
           STRIPE_CHECKOUT_HOSTS,
           /^\/c\/pay\/cs_(test|live)_/,
         );
+        await leftForStripeCheckout(page);
         await page.unroute('**/v1/billing/plan');
       });
 
@@ -229,6 +243,7 @@ test.describe
           STRIPE_CHECKOUT_HOSTS,
           /^\/c\/pay\/cs_(test|live)_/,
         );
+        await leftForStripeCheckout(page);
         await page.unroute('**/v1/billing/purchase-credits');
       });
 

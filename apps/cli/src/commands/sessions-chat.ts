@@ -605,8 +605,10 @@ at the end of every turn, so a stopped session is never woken up just to be
 read. A running session adds the messages of the turn it runs now, read live
 from its sandbox. A session with no stored log yet, or a credential the log
 does not answer (a session-bound token, as inside a sandbox), is read from the
-v1 transcript: live while the session runs, else the copy the server saved. The source is
-noted on stderr when the session is not read live.
+v1 transcript: live while the session runs, else the copy the server saved. With the
+project flag session_log on, the stored log is the only saved copy: a session with no
+stored log yet is read live while it runs, else nothing. The source is noted on stderr
+when the session is not read live.
 
   --limit, -n <N>   How many recent messages to show, per thread (default 10).
   --json            Emit the session log as JSON for scripting: the session
@@ -639,7 +641,8 @@ them is currently doing. Aliases: \`messages\`, \`history\`.`;
  * is stopped, and holds every thread. It is journaled at each turn end, so a
  * running session appends the messages of its open turn from the live read. A
  * session with no stored log (404) reads v1 as before — live while running,
- * else the server's saved transcript — converted to the same records
+ * else the server's saved transcript (not with `session_log` on: the log is
+ * the only saved copy then) — converted to the same records
  * (`sessionLogOfV1Rows`), so `--json` has one shape. `--schema v1` keeps the old
  * v1 JSON for one release.
  */
@@ -764,9 +767,15 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
       ({ messages, runtimeSessionId } = live);
       hasMore = messages.length >= limit;
     } else {
-      const saved = await readSavedTranscript(auth, projectId, session.session_id, limit);
+      // With `session_log` on the stored log is the only saved copy: no v1 transcript (`GET …/transcript`).
+      const logOn = await sessionLogOn(auth, projectId);
+      const saved: SavedTranscript = logOn ? { kind: 'none' } : await readSavedTranscript(auth, projectId, session.session_id, limit);
       if (saved.kind !== 'ok' && liveError !== null) return surfaceApiError(liveError);
       if (saved.kind === 'error') return surfaceApiError(saved.error);
+      if (logOn && schema === 'v1') {
+        process.stderr.write(`${status.err('--schema v1 reads the v1 transcript, which this project no longer serves (session_log is on). Drop --schema v1.')}\n`);
+        return 1;
+      }
       if (saved.kind === 'none') {
         process.stderr.write(
           `${status.err(`No saved transcript for session ${session.session_id} yet.`)}\n` +
@@ -935,6 +944,19 @@ export function withLiveTurn(threads: LogThread[], live: SessionLogThread, limit
   const next = [...threads];
   next[at] = fit(root, [...root.messages, ...numbered], root.has_more);
   return next;
+}
+
+/**
+ * The project flag `session_log`: on, the stored session log is the session's only saved
+ * copy, and no v1 transcript route is read. Off when the project detail cannot be read.
+ */
+export async function sessionLogOn(auth: Auth, projectId: string): Promise<boolean> {
+  try {
+    const detail = await withKortixScope(auth, () => kortixFromAuth(auth).project(projectId).detail());
+    return detail.project?.experimental?.session_log === true;
+  } catch {
+    return false;
+  }
 }
 
 /** The mirror's largest window; the route answers 400 above it. */

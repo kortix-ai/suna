@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { GatewayHooks, GatewayTrace, UpstreamDescriptor, UsageEvent } from '../domain';
 import { GatewayResolutionError, UpstreamHttpError } from '../errors';
 import { rawProviderError } from './dispatch';
+import { createRouteMemory, routeMemoryKey } from './route-memory';
 import { handleChatCompletions } from './simple-handler';
 
 const principal = { userId: 'user', accountId: 'account', projectId: 'project' };
@@ -1841,5 +1842,156 @@ describe('refused requests are traced', () => {
     expect(trace?.accountId).toBe('account');
     expect(trace?.projectId).toBe('project');
     expect(usage).toHaveLength(0);
+  });
+});
+
+describe('one-call admission (hooks.admit)', () => {
+  const ok = () => new Response(JSON.stringify({ choices: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  const logger = { info() {}, warn() {}, error() {} };
+  const failing = async (): Promise<never> => { throw new Error('hook must not run'); };
+
+  test('an admit answer replaces authorize, route, primary resolve and billing', async () => {
+    const inputs: unknown[] = [];
+    const usage: UsageEvent[] = [];
+    let dispatchedModel = '';
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks(usage, []),
+        authorize: failing,
+        resolveRoute: failing,
+        resolveUpstream: failing,
+        assertBillingActive: failing,
+        admit: async (token, input) => {
+          inputs.push({ token, input });
+          return {
+            admission: { ok: true, principal },
+            route: { policyId: 'route', primaryModel: 'primary-model', fallbackModels: [] },
+            upstream: [primary],
+            billing: { holdUsd: 0.01 },
+          };
+        },
+      },
+      logger,
+      fetchImpl: async (_url, init) => {
+        dispatchedModel = JSON.parse(String(init.body)).model;
+        return ok();
+      },
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    expect(response.status).toBe(200);
+    expect(inputs).toEqual([{ token: 'token', input: { requestedModel: 'requested-model', requires: { imageInput: false } } }]);
+    expect(dispatchedModel).toBe('primary-model');
+    // The hold the admit call took is settled with the request.
+    expect(usage.at(-1)?.billingHoldUsd).toBe(0.01);
+  });
+
+  test('a null admit answer falls back to the separate hooks', async () => {
+    const calls: string[] = [];
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks([], []),
+        authorize: async () => { calls.push('authorize'); return { ok: true, principal }; },
+        resolveRoute: async () => { calls.push('route'); return null; },
+        resolveUpstream: async () => { calls.push('resolve'); return [primary]; },
+        assertBillingActive: async () => { calls.push('billing'); },
+        admit: async () => null,
+      },
+      logger,
+      fetchImpl: async () => ok(),
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    expect(response.status).toBe(200);
+    expect(calls).toEqual(['authorize', 'route', 'resolve', 'billing']);
+  });
+
+  test('admit answers a denial, a resolution error and a billing refusal like the separate hooks', async () => {
+    const run = (answer: Awaited<ReturnType<NonNullable<GatewayHooks['admit']>>>) => handleChatCompletions({
+      hooks: { ...hooks([], []), admit: async () => answer },
+      logger,
+      fetchImpl: async () => ok(),
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    const route = { policyId: 'route', primaryModel: 'primary-model' };
+    expect((await run({ admission: { ok: false, status: 401, errorCode: 'invalid_token' } })).status).toBe(401);
+    const unresolved = await run({
+      admission: { ok: true, principal }, route,
+      upstream: new GatewayResolutionError('provider_not_connected', 'Connect it', 'Connect the provider'),
+    });
+    expect(unresolved.status).toBe(400);
+    expect((await unresolved.json()).code).toBe('provider_not_connected');
+    const refused = Object.assign(new Error('Add credits'), { reason: 'insufficient_credits' });
+    const unpaid = await run({ admission: { ok: true, principal }, route, upstream: [primary], billing: refused });
+    expect(unpaid.status).toBe(402);
+    expect((await unpaid.json()).code).toBe('insufficient_credits');
+  });
+
+  // The API takes the admission hold inside /admit for the routed primary. A
+  // per-session route hold can then send the request to a fallback, so the
+  // hold must be reconciled whatever the fallback's payee is.
+  const heldRun = async (fallbackModel: UpstreamDescriptor) => {
+    const usage: UsageEvent[] = [];
+    const billingCalls: string[] = [];
+    const routeMemory = createRouteMemory();
+    routeMemory.hold(routeMemoryKey(principal, 'primary-model'), {
+      fallbackModel: 'fallback-model',
+      failure: { attempt: 1, provider: 'provider-a', routeModel: 'primary-model', resolvedModel: 'primary-model', stage: 'dispatch', status: 503, code: 'upstream_error', message: 'down' },
+      byok: false,
+    }, 60);
+    const dispatched: string[] = [];
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks(usage, []),
+        authorize: failing,
+        resolveRoute: failing,
+        resolveUpstream: async (_p, model) => (model === 'fallback-model' ? [fallbackModel] : [primary]),
+        assertBillingActive: async () => { billingCalls.push('billing'); return { holdUsd: 0.01 }; },
+        admit: async () => ({
+          admission: { ok: true, principal },
+          route: { policyId: 'project:route', primaryModel: 'primary-model', fallbackModels: ['fallback-model'], fallbackOn: 'transient' },
+          upstream: [primary],
+          billing: { holdUsd: 0.01 },
+        }),
+      },
+      routeMemory,
+      logger,
+      // Usage, so the settlement event carries the upstream cost a fee is on.
+      fetchImpl: async (url) => {
+        dispatched.push(String(url));
+        return new Response(JSON.stringify({ choices: [], usage: { prompt_tokens: 1_000, completion_tokens: 500 } }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        });
+      },
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'primary-model', messages: [] }) });
+    await Bun.sleep(0);
+    return { response, usage, billingCalls, dispatched };
+  };
+
+  // The API settles this one event (apps/api hooks.ts recordGatewayUsage):
+  // it reconciles the hold against the BYOK fee on `upstreamCost`, so the fee
+  // is charged once and the rest of the hold comes back
+  // (usage-settlement.integration.test.ts proves the wallet side).
+  test('a held route that serves an own-key fallback settles the admit hold against the BYOK fee', async () => {
+    const own: UpstreamDescriptor = { ...primary, provider: 'own', baseUrl: 'https://own.example/v1', billingMode: 'none', markup: 0 };
+    const { response, usage, billingCalls, dispatched } = await heldRun(own);
+    expect(response.status).toBe(200);
+    expect(dispatched).toEqual(['https://own.example/v1/chat/completions']);
+    expect(billingCalls).toEqual([]);
+    const held = usage.filter((event) => event.billingHoldUsd === 0.01);
+    expect(held).toHaveLength(1);
+    expect(held[0]).toMatchObject({ billingMode: 'none', provider: 'own', finalCost: 0 });
+    expect(held[0]!.upstreamCost).toBeGreaterThan(0);
+  });
+
+  test('a held route that serves a Kortix-billed fallback reuses the admit hold once', async () => {
+    const { response, usage, billingCalls, dispatched } = await heldRun({ ...fallback, baseUrl: 'https://provider-b.example/v1' });
+    expect(response.status).toBe(200);
+    expect(dispatched).toEqual(['https://provider-b.example/v1/chat/completions']);
+    expect(billingCalls).toEqual([]);
+    expect(usage.filter((event) => event.billingHoldUsd === 0.01)).toHaveLength(1);
+  });
+
+  test('invalid JSON from an unauthenticated caller still answers 401 first', async () => {
+    const response = await handleChatCompletions({
+      hooks: { ...hooks([], []), authorize: async () => ({ ok: false, status: 401, errorCode: 'invalid_token' }) , admit: failing },
+      logger,
+    }, { authorization: 'Bearer token', rawBody: '{not json' });
+    expect(response.status).toBe(401);
   });
 });

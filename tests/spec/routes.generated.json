@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 872,
+  "count": 873,
   "routes": [
     {
       "method": "GET",
@@ -29,6 +29,10 @@
     {
       "method": "GET",
       "path": "/health/ready"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/admit"
     },
     {
       "method": "POST",

@@ -240,7 +240,7 @@ describe('the built-in member role reads no directory', () => {
 
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
-    // 51 since rooms' `project.room.read` and `project.room.write` (20261019195750954).
+    // 51 since rooms' `project.room.read` and `project.room.write` (20261020013411200).
     expect(PROJECT_LEAVES.length).toBe(51);
     // 31 since Kortix Capture's `capture.read_all` and `capture.manage` (20261015003000001).
     expect(ACCOUNT_LEAVES.length).toBe(31);

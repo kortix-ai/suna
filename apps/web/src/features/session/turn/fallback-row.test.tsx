@@ -20,7 +20,7 @@ describe('TurnFallbackRows', () => {
   test('only settled requests show the safe error code and the actual switch', () => {
     expect(render(true, [event])).toBe('');
     const html = render(false, [event]);
-    expect(html).toContain('Sol failed (rate_limit_exceeded) — switched to Flash.');
+    expect(html).toContain('Sol failed (rate limited) — switched to Flash.');
     expect(html).toContain('role="note"');
     expect(html).not.toContain('did not answer this turn');
   });
@@ -43,14 +43,14 @@ describe('TurnFallbackRows', () => {
       { providerID: 'kortix', modelID: 'flash', modelName: 'Flash' },
     ];
     const html = render(false, turnServedModel(usage, 'prompt', models)!.fallbacks);
-    expect(html).toContain('Sol failed (provider_unavailable) — switched to Flash.');
+    expect(html).toContain('Sol failed (error) — switched to Flash.');
     expect(html.match(/data-testid="turn-fallback-row"/g)).toHaveLength(1);
   });
 
   test('each request event retains its own source, reason and served model in order', () => {
     const html = render(false, [event, { requested: 'Flash', served: 'Other', reason: 'timeout' }, event]);
     expect(html.match(/data-testid="turn-fallback-row"/g)).toHaveLength(3);
-    expect(html).toContain('Flash failed (timeout) — switched to Other.');
+    expect(html).toContain('Flash failed (error) — switched to Other.');
     expect(html.indexOf('switched to Flash.')).toBeLessThan(html.indexOf('switched to Other.'));
   });
 
@@ -58,9 +58,9 @@ describe('TurnFallbackRows', () => {
     const other = { requested: 'Flash', served: 'Other', reason: 'timeout' };
     const html = render(false, [...Array(1219).fill(event), other, event, event]);
     expect(html.match(/data-testid="turn-fallback-row"/g)).toHaveLength(3);
-    expect(html).toContain('Sol failed (rate_limit_exceeded) on 1,219 requests — switched to Flash.');
-    expect(html).toContain('Flash failed (timeout) — switched to Other.');
-    expect(html).toContain('Sol failed (rate_limit_exceeded) on 2 requests — switched to Flash.');
+    expect(html).toContain('Sol failed (rate limited) on 1,219 requests — switched to Flash.');
+    expect(html).toContain('Flash failed (error) — switched to Other.');
+    expect(html).toContain('Sol failed (rate limited) on 2 requests — switched to Flash.');
     expect(html.indexOf('1,219')).toBeLessThan(html.indexOf('switched to Other.'));
   });
 });

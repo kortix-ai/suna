@@ -85,17 +85,30 @@ export function turnServedModel(
  * `turnServedModel` with one result per ledger entry. A refetch keeps the
  * identity of each turn that did not change, and the memoized turn row needs
  * the same from what it is given.
+ *
+ * A turn whose first switches repeat the previous turn's last switch drops
+ * them: the session is still on the same fallback, and a thread showed the
+ * same "failed — switched" row on every turn (2026-10-19).
  */
 export function turnServedModelResolver(models: readonly NamedModel[] | undefined) {
-  const resolved = new WeakMap<object, TurnServedModel>();
-  return (usage: SessionModelUsage | undefined, messageId: string): TurnServedModel | undefined => {
+  const resolved = new WeakMap<object, { previous: object | undefined; value: TurnServedModel }>();
+  return (
+    usage: SessionModelUsage | undefined,
+    messageId: string,
+    previousMessageId?: string,
+  ): TurnServedModel | undefined => {
     const turn = usage?.turns[messageId];
     if (!turn) return undefined;
-    let value = resolved.get(turn);
-    if (!value) {
-      value = turnServedModel(usage, messageId, models)!;
-      resolved.set(turn, value);
-    }
+    const previous = previousMessageId ? usage.turns[previousMessageId] : undefined;
+    const cached = resolved.get(turn);
+    if (cached && cached.previous === previous) return cached.value;
+    const value = turnServedModel(usage, messageId, models)!;
+    const last = previous?.fallbacks?.at(-1);
+    // `value.fallbacks` maps the ledger's `turn.fallbacks` one to one.
+    const fresh = last ? (turn.fallbacks ?? []).findIndex((event) => event.requested_model !== last.requested_model ||
+      event.served_model !== last.served_model || event.error_code !== last.error_code) : 0;
+    if (fresh !== 0) value.fallbacks = fresh < 0 ? [] : value.fallbacks?.slice(fresh);
+    resolved.set(turn, { previous, value });
     return value;
   };
 }
