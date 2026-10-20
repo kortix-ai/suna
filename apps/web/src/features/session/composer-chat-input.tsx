@@ -68,6 +68,7 @@ export function ComposerChatInput({
   promptAttachments,
   submitLabel,
   onArrowUpAtStart,
+  notice,
 }: {
   onSend: (
     text: string,
@@ -108,6 +109,8 @@ export function ComposerChatInput({
   } | null;
   onPrefillApplied?: SessionChatInputProps['onPrefillApplied'];
   aboveSlot?: ReactNode;
+  /** A line under the input naming why sending waits. See `SessionChatInputProps.notice`. */
+  notice?: SessionChatInputProps['notice'];
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
   underbarPlacement?: SessionChatInputProps['underbarPlacement'];
@@ -280,6 +283,7 @@ export function ComposerChatInput({
       prefill={deliveredPrefill}
       onPrefillApplied={onPrefillApplied}
       aboveSlot={aboveSlot}
+      notice={notice}
       inputSlot={inputSlot}
       toolbarSlot={combinedToolbarSlot}
       underbarPlacement={underbarPlacement}

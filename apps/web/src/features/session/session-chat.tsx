@@ -4355,7 +4355,10 @@ export function SessionChat({
                               agentNames={agentNames}
                               onFileClick={openFileInComputer}
                               sessionId={sessionId}
-                              busy={turns.length === 0 && lastTurnWorking}
+                              // An undelivered first prompt is a turn about to start, as the
+                              // shell above this chat shows it: busy from the first frame,
+                              // before the working projection has read the inbox (KRTX-2931).
+                              busy={turns.length === 0 && (lastTurnWorking || promptInbox.prompts.some(isFirstPromptRow))}
                             />
                           )}
                         {turns.map((turn, turnIndex) => {
