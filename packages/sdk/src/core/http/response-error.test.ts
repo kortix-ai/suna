@@ -74,3 +74,34 @@ describe('handleErrorResponse · connectors_provider_unavailable 503', () => {
     expect(errors).toHaveLength(0);
   });
 });
+
+describe('feature-disabled responses', () => {
+  test('returns the typed refusal without reporting an expected feature gate', async () => {
+    errors.length = 0;
+    const result = await handleErrorResponse(
+      response(403, {
+        error: 'Reminders is not enabled for this project. Enable it in Settings → Feature flags.',
+        code: 'feature_disabled',
+        feature: 'reminders',
+      }),
+      signal,
+      true,
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toBeInstanceOf(ApiError);
+    if (!(result.error instanceof ApiError)) throw new Error('Expected ApiError');
+    expect(result.error.status).toBe(403);
+    expect(result.error.code).toBe('feature_disabled');
+    expect(result.error.details).toMatchObject({ feature: 'reminders' });
+    expect(errors).toHaveLength(0);
+  });
+
+  test.each([
+    [403, 'forbidden'],
+    [500, 'feature_disabled'],
+  ])('still reports HTTP %i with code %s', async (status, code) => {
+    errors.length = 0;
+    await handleErrorResponse(response(status, { error: 'Unexpected failure', code }), signal, true);
+    expect(errors).toHaveLength(1);
+  });
+});
