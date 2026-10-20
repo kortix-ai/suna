@@ -52,7 +52,7 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
     if (el) setMore(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
   }, []);
   useEffect(() => {
-    tabs.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    tabs.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
     edge();
   }, [path, edge]);
 

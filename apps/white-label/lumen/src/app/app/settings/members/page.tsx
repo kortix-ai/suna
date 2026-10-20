@@ -200,7 +200,7 @@ function InviteForm({ full, seats, onInvited }: { full: boolean; seats?: number;
           <Input id="invite-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="colleague@example.com" />
         </div>
         <Select value={role} onValueChange={(r) => setRole(r as 'member' | 'admin')}>
-          <SelectTrigger aria-label="Invite role" className="h-10 w-32">
+          <SelectTrigger aria-label="Invite role" className="h-9 w-32">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

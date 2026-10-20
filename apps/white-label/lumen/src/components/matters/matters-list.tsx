@@ -71,7 +71,7 @@ export function MattersList({ startOpen = false }: { startOpen?: boolean }) {
           <Input aria-label="Search matters" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name, client or number" className="pl-8" />
         </div>
         <Select value={status} onValueChange={(v) => setStatus(v as Status | 'all')}>
-          <SelectTrigger aria-label="Status" className="h-10 w-36">
+          <SelectTrigger aria-label="Status" className="h-9 w-36">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

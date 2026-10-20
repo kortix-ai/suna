@@ -94,7 +94,7 @@ export default function FirmSettings() {
           <div className="space-y-1.5">
             <Label>Firm size</Label>
             <Select value={sizeBand} onValueChange={(v) => setSizeBand(v as typeof sizeBand)}>
-              <SelectTrigger aria-label="Firm size" className="h-10">
+              <SelectTrigger aria-label="Firm size" className="h-9">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
