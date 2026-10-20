@@ -1093,6 +1093,57 @@ export const projectSessionOriginEnum = kortixSchema.enum('project_session_origi
   'system',
 ]);
 
+export const projectSpaceKindEnum = kortixSchema.enum('project_space_kind', ['channel', 'dm']);
+
+/**
+ * A project space: a channel (product word "Channel") or a member's DM with one
+ * agent. A thread is a `project_sessions` row whose `space_id` points here.
+ * Named "space" in code because "channel" already means a chat integration
+ * (`chat_channel_bindings`, `initiator_type = 'channel'`).
+ */
+export const projectSpaces = kortixSchema.table(
+  'project_spaces',
+  {
+    spaceId: uuid('space_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    kind: projectSpaceKindEnum('kind').notNull(),
+    /** Channels: lowercase `a-z0-9-`, 1–40 chars. Null for DMs. */
+    slug: text('slug'),
+    /** Display name; for a DM, the agent name. */
+    name: text('name').notNull(),
+    description: text('description'),
+    /** True only for the project's `#general`. */
+    isDefault: boolean('is_default').default(false).notNull(),
+    /** DM owner; null for channels. */
+    dmUserId: uuid('dm_user_id'),
+    /** DM agent; null for channels. */
+    dmAgentName: text('dm_agent_name'),
+    createdBy: uuid('created_by'),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'project_spaces_kind_shape_check',
+      sql`(${table.kind} = 'channel' and ${table.slug} is not null and ${table.dmUserId} is null and ${table.dmAgentName} is null) or (${table.kind} = 'dm' and ${table.slug} is null and ${table.dmUserId} is not null and ${table.dmAgentName} is not null)`,
+    ),
+    uniqueIndex('uniq_project_spaces_channel_slug')
+      .on(table.projectId, table.slug)
+      .where(sql`${table.kind} = 'channel'`),
+    uniqueIndex('uniq_project_spaces_dm')
+      .on(table.projectId, table.dmUserId, table.dmAgentName)
+      .where(sql`${table.kind} = 'dm'`),
+    uniqueIndex('uniq_project_spaces_default').on(table.projectId).where(sql`${table.isDefault}`),
+    index('idx_project_spaces_project').on(table.projectId),
+  ],
+);
+
 // Who started a session's RUN (the whole spawn tree), for attribution and the
 // session list's "mine / shared / automated" split. Server-derived at create and
 // copied from the parent for a spawned session — see session-initiator.ts.
@@ -1142,6 +1193,9 @@ export const projectSessions = kortixSchema.table(
     // account id, or system source. null only on rows no backfill classified.
     initiatorType: projectSessionInitiatorEnum('initiator_type'),
     initiatorId: text('initiator_id'),
+    // The project space (channel or DM) this thread belongs to. null = no space
+    // (every session created before channels, or while the flag is off).
+    spaceId: uuid('space_id'),
     // Backend-only per-session secrets allowlist (KaaB): a list of project-secret
     // IDENTIFIERS this session may receive. Set ONLY by a backend-origin caller
     // at create; immutable afterward. Semantics are pure NARROWING — the injected
@@ -1185,6 +1239,16 @@ export const projectSessions = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({
+      name: 'project_sessions_space_fk',
+      columns: [table.spaceId],
+      foreignColumns: [projectSpaces.spaceId],
+    }).onDelete('set null'),
+    // One space's threads, newest first. Partial: sessions outside a space are
+    // never listed by it.
+    index('idx_project_sessions_space')
+      .on(table.projectId, table.spaceId, table.createdAt.desc(), table.sessionId.desc())
+      .where(sql`${table.spaceId} is not null`),
     index('idx_project_sessions_account').on(table.accountId),
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),

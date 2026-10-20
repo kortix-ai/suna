@@ -81,6 +81,8 @@ export {
   chatEventDedup,
   chatUserIdentities,
   projectSessions,
+  projectSpaces,
+  projectSpaceKindEnum,
   sessionPresenceLeases,
   projectSessionRuntimeContexts,
   accountModelPreferences,
