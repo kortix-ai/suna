@@ -197,14 +197,33 @@ function pushCurrentBranch(
   repoUrl: string,
   pushToken: string | null,
   gitUsername = 'x-access-token',
-  opts: { quietOnFailure?: boolean } = {},
-): string | null {
+  opts: { quietOnFailure?: boolean; managedProjectId?: string } = {},
+): string | null | false {
   const branch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
   if (!branch || branch === 'HEAD') {
     process.stderr.write(
       `${status.err('Not on a branch (detached HEAD?) — check out a branch and retry.')}\n`,
     );
     return null;
+  }
+  // Refuse divergent histories before trying either push transport. A web-created
+  // project already contains work; a fresh local init must not overwrite it.
+  if (opts.managedProjectId) {
+    const env = pushToken ? authGitEnv(repoUrl, pushToken, gitUsername) : undefined;
+    const shallow = run('git', ['rev-parse', '--is-shallow-repository']).stdout.trim() === 'true';
+    const fetched = run('git', [
+      'fetch', '--no-tags', ...(shallow ? ['--unshallow'] : []), 'origin', `refs/heads/${branch}`,
+    ], { env });
+    if (fetched.ok && !run('git', ['merge-base', '--is-ancestor', 'FETCH_HEAD', 'HEAD']).ok) {
+      process.stderr.write(
+        `\n${status.err('The managed repository contains commits missing from this folder. Nothing was pushed.')}\n` +
+          `  Clone the project into a new folder with the same --host used for this ship:\n` +
+          `    kortix projects clone ${opts.managedProjectId} ../kortix-integrated\n` +
+          `  Copy your local files into that clone (not .git), review the differences, then run kortix ship there.\n` +
+          `  Keep this folder until you have verified the shipped result.\n`,
+      );
+      return false;
+    }
   }
   const refspec = `${branch}:refs/heads/${branch}`;
   const args = ['push', '-u', 'origin', refspec];
@@ -248,7 +267,9 @@ export async function pushProjectBranch(
   const canRetry = target.credentialMode === 'kortix-token' && projectIsManaged(project);
   const pushed = pushCurrentBranch(target.repoUrl, pushToken, pushUsername, {
     quietOnFailure: canRetry,
+    managedProjectId: projectIsManaged(project) ? project.project_id : undefined,
   });
+  if (pushed === false) return null;
   if (pushed || !canRetry) return pushed;
 
   let minted: GitTokenResponse;
@@ -264,7 +285,9 @@ export async function pushProjectBranch(
   );
   const upstreamUrl = minted.repo_url || project.repo_url;
   setOrigin(upstreamUrl);
-  return pushCurrentBranch(upstreamUrl, minted.push_token, minted.git_username || pushUsername);
+  return pushCurrentBranch(upstreamUrl, minted.push_token, minted.git_username || pushUsername, {
+    managedProjectId: project.project_id,
+  }) || null;
 }
 
 /** The environment that makes git send `http.<scheme>://<host>/.extraheader=

@@ -12,6 +12,7 @@ let bareRepo: string;
 let provisionBodies: unknown[];
 let refuseCreation: boolean;
 let useLocalRepo: boolean;
+let managedRepo: boolean;
 
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), 'kortix-ship-host-'));
@@ -22,6 +23,7 @@ beforeEach(() => {
   provisionBodies = [];
   refuseCreation = false;
   useLocalRepo = false;
+  managedRepo = false;
   bareRepo = join(cwd, 'remote.git');
   server = Bun.serve({
     port: 0,
@@ -41,6 +43,7 @@ beforeEach(() => {
           metadata: {},
         });
       }
+      if (path.endsWith('/git-token')) return Response.json({ push_token: 'synthetic', repo_url: bareRepo });
       if (path.endsWith('/connectors/sync')) return Response.json({ ok: true });
       if (path.startsWith('/v1/projects/'))
         return Response.json({
@@ -49,7 +52,7 @@ beforeEach(() => {
           name: 'Workspace',
           repo_url: useLocalRepo ? bareRepo : 'https://git.example.test/workspace.git',
           default_branch: 'main',
-          metadata: {},
+          metadata: managedRepo ? { git: { managed: true } } : {},
         });
       return Response.json({ error: 'unexpected request' }, { status: 500 });
     },
@@ -214,8 +217,9 @@ test.each([
     host_url: `http://127.0.0.1:${server.port}`,
   });
 });
-test('projects use then unlinked ship pushes twice to the saved default without provisioning', async () => {
+test.each([false, true])('projects use then ship pushes twice without provisioning (managed=%s)', async (managed) => {
   useLocalRepo = true;
+  managedRepo = managed;
   expect(Bun.spawnSync(['git', 'init', '--bare', bareRepo]).exitCode).toBe(0);
   Bun.spawnSync(['git', 'config', 'user.name', 'Synthetic Agent'], { cwd });
   Bun.spawnSync(['git', 'config', 'user.email', 'synthetic@example.test'], { cwd });
@@ -278,4 +282,41 @@ test('projects use binds only the named host despite session injection', async (
   const config = JSON.parse(readFileSync(configFile, 'utf8'));
   expect(config.hosts.other.default_project.project_id).toBe('workspace_project');
   expect(config.hosts.workspace.default_project.project_id).toBe('global_default');
+});
+
+
+test('ship to a seeded managed project gives recovery without changing either history', async () => {
+  useLocalRepo = true;
+  managedRepo = true;
+  link();
+  const git = (...args: string[]) => {
+    const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    expect(result.exitCode).toBe(0);
+    return result.stdout.toString().trim();
+  };
+  git('config', 'user.name', 'Synthetic');
+  git('config', 'user.email', 'agent@kortix.ai');
+  writeFileSync(join(cwd, '.git/info/exclude'), '/remote.git/\n');
+  git('add', 'kortix.yaml');
+  git('commit', '-m', 'seed');
+  git('clone', '--bare', '.', bareRepo);
+  const seed = git('--git-dir', bareRepo, 'rev-parse', 'main');
+  git('checkout', '--orphan', 'local');
+  writeFileSync(join(cwd, 'kortix.yaml'), 'name: local-work\n');
+  git('add', 'kortix.yaml');
+  git('commit', '-m', 'local work');
+  git('branch', '-M', 'main');
+  git('add', '-A');
+  git('commit', '-m', 'fixture files');
+  const local = git('rev-parse', 'HEAD');
+  const result = await cli(['ship', '--host', 'workspace', '--no-verify', '--no-env', '--no-connect', '-y']);
+  expect(result.code).toBe(1);
+  expect(result.stderr).toContain('kortix projects clone workspace_project');
+  expect(result.stderr).toContain('Copy your local files');
+  expect(result.stderr).toContain('not .git');
+  expect(git('--git-dir', bareRepo, 'rev-parse', 'main')).toBe(seed);
+  expect(git('merge-base', '--is-ancestor', local, 'HEAD')).toBe('');
+  expect(git('show', 'HEAD:kortix.yaml')).toBe('name: local-work');
+  expect(hits.some((hit) => hit.path.includes('/git-token'))).toBe(true);
+  expect(hits.every((hit) => hit.auth === 'Bearer tok_workspace')).toBe(true);
 });
