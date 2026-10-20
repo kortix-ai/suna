@@ -280,6 +280,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             href={agentHref(projectId, agent.name)}
             onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
             title={agentTitle(agent.name)}
+            subtitle={<code className="text-muted-foreground text-xs break-all">{agent.name}</code>}
             description={agent.description}
             badges={<AgentCardBadges agent={agent} isDefault={defaultAgent === agent.name} />}
             meta={
@@ -320,6 +321,9 @@ export function AgentsPage({ projectId }: { projectId: string }) {
                   href={agentHref(projectId, agent.name)}
                   onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
                   title={agentTitle(agent.name)}
+                  subtitle={
+                    <code className="text-muted-foreground text-xs break-all">{agent.name}</code>
+                  }
                   description={agent.description}
                   badges={<AgentCardBadges agent={agent} isDefault={false} />}
                   meta={
