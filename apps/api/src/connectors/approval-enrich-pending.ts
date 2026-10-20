@@ -7,6 +7,7 @@
  */
 import { connectorCalls, connectors } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { isPlainRecord } from './args-preview';
 import { approvalNotExpired, isApprovalExpired } from './approval-expiry';
@@ -110,6 +111,8 @@ export async function enrichPendingCallOnce(
   if (!found || !enricher) return call.resultSummary;
   const resolved = await resolveApprovalPreview(enricher, found.ctx);
   const next = { ...summary, ...resolved };
+  // A failed write never fails the read: the reviewer still sees the content,
+  // and the next read tries again.
   await db
     .update(connectorCalls)
     .set({ resultSummary: next })
@@ -120,6 +123,12 @@ export async function enrichPendingCallOnce(
         approvalNotExpired,
         sql`not (coalesce(${connectorCalls.resultSummary}, '{}'::jsonb) ?| array['resolved_preview', 'resolved_error'])`,
       ),
-    );
+    )
+    .catch((error: unknown) => {
+      logger.warn('[approvals] could not store the loaded approval content', {
+        executionId: call.executionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   return next;
 }

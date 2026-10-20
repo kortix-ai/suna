@@ -51,21 +51,18 @@ function header(headers: unknown, name: string): string {
 }
 
 /**
- * `GMAIL_SEND_DRAFT {draft_id}`. Composio has no get-draft tool, so this lists
- * the mailbox's drafts (`verbose: true` carries headers and the decoded text)
- * and picks `drafts[].id === draft_id`. Shape verified against a live mailbox
- * on 2026-10-20: `message.payload.headers[{name,value}]`, `message.messageText`,
- * `message.attachmentList[{filename}]`. Volatile fields (Date, Message-Id,
+ * `GMAIL_SEND_DRAFT {draft_id}`: one `GMAIL_GET_DRAFT {draft_id, format: full}`
+ * read. Shape verified against a live mailbox on 2026-10-20:
+ * `result{id, message{payload{headers[{name,value}]}, messageText,
+ * attachmentList[{filename}]}}`, the same message `GMAIL_LIST_DRAFTS verbose`
+ * returns, without listing every draft. Volatile fields (Date, Message-Id,
  * attachment ids, timestamps) stay out of the content.
- * ponytail: one page of 500 drafts; a draft past it reads as unavailable.
  */
 async function gmailSendDraft(ctx: ApprovalEnricherContext): Promise<Record<string, unknown> | null> {
   const draftId = ctx.args.draft_id;
   if (typeof draftId !== 'string' || !draftId) return null;
-  const list = await composioRead(ctx, 'GMAIL_LIST_DRAFTS', { verbose: true, max_results: 500 });
-  const drafts: unknown[] = Array.isArray(list?.drafts) ? list.drafts : [];
-  const draft = drafts.find((d) => isPlainRecord(d) && d.id === draftId);
-  const message = isPlainRecord(draft) && isPlainRecord(draft.message) ? draft.message : null;
+  const draft = await composioRead(ctx, 'GMAIL_GET_DRAFT', { draft_id: draftId, format: 'full' });
+  const message = draft?.id === draftId && isPlainRecord(draft.message) ? draft.message : null;
   if (!message) return null;
   const headers = isPlainRecord(message.payload) ? message.payload.headers : null;
   const attachments = Array.isArray(message.attachmentList) ? message.attachmentList : [];
@@ -80,9 +77,14 @@ async function gmailSendDraft(ctx: ApprovalEnricherContext): Promise<Record<stri
   };
 }
 
-/** `GMAIL_SEND_EMAIL`: the arguments carry to/cc/bcc/subject/body; only the sender is missing. */
+/**
+ * `GMAIL_SEND_EMAIL`: the arguments carry the recipients, subject and body.
+ * The sender is `from_email` when the call names one, else the mailbox's own
+ * address.
+ */
 async function gmailSendEmail(ctx: ApprovalEnricherContext): Promise<Record<string, unknown> | null> {
-  const from = await gmailSender(ctx);
+  const named = ctx.args.from_email;
+  const from = typeof named === 'string' && named ? named : await gmailSender(ctx);
   return from ? { from } : null;
 }
 

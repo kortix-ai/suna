@@ -81,8 +81,9 @@ describe('approvalPreviewReviewable', () => {
 
 /**
  * Composio Gmail results shaped like the live tool output (2026-10-20), with
- * synthetic values only. `GMAIL_LIST_DRAFTS {verbose:true}` →
- * `drafts[{id, message{payload{headers[{name,value}]}, messageText, attachmentList[{filename}]}}]`.
+ * synthetic values only. `GMAIL_GET_DRAFT {draft_id, format:'full'}` →
+ * `{id, message{payload{headers[{name,value}]}, messageText, attachmentList[{filename}]}}`.
+ * `results.GMAIL_GET_DRAFT` lists the mailbox's drafts; the stub answers by id.
  */
 function gmailCtx(
   results: Record<string, unknown>,
@@ -92,7 +93,11 @@ function gmailCtx(
   const deps = {
     executeComposio: async (input: { toolSlug: string; args: Record<string, unknown> }) => {
       calls.push({ toolSlug: input.toolSlug, args: input.args });
-      const result = results[input.toolSlug];
+      // GMAIL_GET_DRAFT answers from a list of drafts by id; a missing id fails like Composio does.
+      const result =
+        input.toolSlug === 'GMAIL_GET_DRAFT'
+          ? (results.GMAIL_GET_DRAFT as Array<{ id: string }> | undefined)?.find((d) => d.id === input.args.draft_id)
+          : results[input.toolSlug];
       return result ? { ok: true, status: 200, data: { provider: 'composio', result } } : { ok: false, status: 502, data: null };
     },
   } as unknown as GatewayDeps;
@@ -131,8 +136,7 @@ describe('gmail enrichers', () => {
   test('send_draft maps the matching draft to from/to/cc/bcc/subject/body/attachments', async () => {
     const { ctx, calls } = gmailCtx(
       {
-        GMAIL_LIST_DRAFTS: {
-          drafts: [
+        GMAIL_GET_DRAFT: [
             draftRow('r-other', [header('to', 'nobody@example.test')]),
             draftRow('r-123', [
               header('to', 'buyer@example.test'),
@@ -141,9 +145,7 @@ describe('gmail enrichers', () => {
               header('subject', 'Quote'),
               header('From', 'Ops <ops@example.test>'),
             ]),
-          ],
-          next_page_token: null,
-        },
+        ],
       },
       { draft_id: 'r-123' },
     );
@@ -156,13 +158,13 @@ describe('gmail enrichers', () => {
       body: 'Hello from the synthetic draft.',
       attachments: ['quote.pdf'],
     });
-    // One read-only list call with the page size; no profile read when From is present.
-    expect(calls).toEqual([{ toolSlug: 'GMAIL_LIST_DRAFTS', args: { verbose: true, max_results: 500 } }]);
+    // One read-only get-draft call; no profile read when From is present.
+    expect(calls).toEqual([{ toolSlug: 'GMAIL_GET_DRAFT', args: { draft_id: 'r-123', format: 'full' } }]);
   });
 
   test('send_draft falls back to the profile address and reads absent headers as empty', async () => {
     const { ctx } = gmailCtx(
-      { GMAIL_LIST_DRAFTS: { drafts: [draftRow('r-1', [header('to', 'buyer@example.test')], { attachmentList: [] })] }, GMAIL_GET_PROFILE: PROFILE },
+      { GMAIL_GET_DRAFT: [draftRow('r-1', [header('to', 'buyer@example.test')], { attachmentList: [] })], GMAIL_GET_PROFILE: PROFILE },
       { draft_id: 'r-1' },
     );
     expect(await sendDraft(ctx)).toEqual({
@@ -178,7 +180,7 @@ describe('gmail enrichers', () => {
 
   test('send_draft content is deterministic: volatile ids and dates stay out of the digest', async () => {
     const digest = async (row: ReturnType<typeof draftRow>) => {
-      const { ctx } = gmailCtx({ GMAIL_LIST_DRAFTS: { drafts: [row] } }, { draft_id: 'r-1' });
+      const { ctx } = gmailCtx({ GMAIL_GET_DRAFT: [row] }, { draft_id: 'r-1' });
       const resolved = await resolveApprovalPreview(sendDraft, ctx);
       return 'resolved_digest' in resolved ? resolved.resolved_digest : null;
     };
@@ -192,10 +194,10 @@ describe('gmail enrichers', () => {
   });
 
   test('send_draft is unavailable when the draft is missing, the id is absent, or the list fails', async () => {
-    const unavailable = { resolved_error: 'unavailable' };
-    const missing = gmailCtx({ GMAIL_LIST_DRAFTS: { drafts: [draftRow('r-other', [])] } }, { draft_id: 'r-1' });
+    const unavailable = { resolved_error: 'unavailable' } as const;
+    const missing = gmailCtx({ GMAIL_GET_DRAFT: [draftRow('r-other', [])] }, { draft_id: 'r-1' });
     expect(await resolveApprovalPreview(sendDraft, missing.ctx)).toEqual(unavailable);
-    const noId = gmailCtx({ GMAIL_LIST_DRAFTS: { drafts: [] } }, {});
+    const noId = gmailCtx({ GMAIL_GET_DRAFT: [] }, {});
     expect(await resolveApprovalPreview(sendDraft, noId.ctx)).toEqual(unavailable);
     expect(noId.calls).toEqual([]);
     const failed = gmailCtx({}, { draft_id: 'r-1' });
@@ -207,5 +209,11 @@ describe('gmail enrichers', () => {
     expect(await sendEmail(ctx)).toEqual({ from: 'ops@example.test' });
     expect(calls).toEqual([{ toolSlug: 'GMAIL_GET_PROFILE', args: {} }]);
     expect(await resolveApprovalPreview(sendEmail, gmailCtx({}, {}).ctx)).toEqual({ resolved_error: 'unavailable' });
+  });
+
+  test('send_email takes the sender from from_email when the call names one, without a read', async () => {
+    const { ctx, calls } = gmailCtx({ GMAIL_GET_PROFILE: PROFILE }, { to: 'buyer@example.test', from_email: 'alias@example.test' });
+    expect(await sendEmail(ctx)).toEqual({ from: 'alias@example.test' });
+    expect(calls).toEqual([]);
   });
 });

@@ -26,7 +26,9 @@ const enrichers = {
 };
 const contextFor = async () => ({ key: KEY, ctx: {} as ApprovalEnricherContext });
 
-async function seed(values: Partial<typeof connectorCalls.$inferInsert> = {}) {
+type CallInsert = typeof connectorCalls.$inferInsert;
+/** Overrides may carry SQL (`expires_at` on the database clock). */
+async function seed(values: { [K in keyof CallInsert]?: CallInsert[K] | ReturnType<typeof sql> } = {}) {
   const [row] = await db
     .insert(connectorCalls)
     .values({
