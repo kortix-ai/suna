@@ -23,6 +23,7 @@ import {
 } from '../../../access/sharing-picker';
 import type { UiTranslator } from '../../../i18n';
 import { useTranslations } from '../../../i18n';
+import { useUiHostConfig } from '../../../providers/ui-provider';
 import { getSessionOversight, setProjectSessionSharing, type ProjectSession } from '@kortix/sdk';
 import { sessionOversightQueryKey } from '../../../access/iam/session-oversight-card';
 import { ShieldCheckIcon } from '@phosphor-icons/react';
@@ -90,10 +91,11 @@ export function ShareSessionModal({
   // while the dialog is open (a user action), and silently absent on any error
   // — the IAM read never toasts (`showErrors: false`).
   const accountId = session?.account_id ?? null;
+  const { accountApiEnabled } = useUiHostConfig();
   const oversightQuery = useQuery({
     queryKey: sessionOversightQueryKey(accountId ?? ''),
     queryFn: () => getSessionOversight(accountId!),
-    enabled: open && !!accountId,
+    enabled: open && !!accountId && accountApiEnabled,
     staleTime: 30_000,
     retry: false,
   });

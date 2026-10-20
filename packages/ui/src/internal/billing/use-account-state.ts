@@ -15,6 +15,7 @@ import { useTranslations } from '../../i18n';
 
 import { errorToast, successToast } from '../../primitives/toast';
 import { shouldQueryAccountState } from './account-state-gating';
+import { useUiHostConfig } from '../../providers/ui-provider';
 import { useBillingAccountId, useBillingAccountResolved } from '../stores/billing-account-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -176,8 +177,10 @@ export function useAccountState(options?: UseAccountStateOptions) {
   // Hold the query until the surface knows whose account it is; fetching the
   // primary account as a stand-in only to swap cache slots is what made every
   // presence-driven billing UI paint, unpaint, and paint again on cold load.
+  // A host without the billing routes (`accountApiEnabled: false`) never asks.
+  const billingReachable = useUiHostConfig().accountApiEnabled;
   const enabled = shouldQueryAccountState({
-    enabled: options?.enabled ?? true,
+    enabled: billingReachable && (options?.enabled ?? true),
     hasExplicitAccountId: options?.accountId !== undefined,
     contextResolved,
   });

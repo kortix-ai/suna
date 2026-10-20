@@ -236,6 +236,15 @@ export interface UiHostConfig {
   commandPaletteShortcut: boolean;
   /** The host opens settings on ⌘, / Ctrl+,; the composer hints at it. Default: false. */
   settingsShortcut: boolean;
+  /**
+   * The host reaches the backend's account routes: the IAM permission probes
+   * (`/accounts/:id/iam/*`), billing (`/billing/*`) and session oversight. A
+   * host that fronts one operator key and blocks those routes sets false. Then
+   * no such request runs, billing state stays empty (no balance warning, no
+   * upgrade prompt), and every permission gate shows its control: the server
+   * still enforces each route. Default: true.
+   */
+  accountApiEnabled: boolean;
 }
 
 /** What the session browser frames: a port and path inside the session's sandbox, or a URL. */
@@ -263,6 +272,7 @@ export const defaultUiHostConfig: UiHostConfig = {
   terminalEnabled: true,
   commandPaletteShortcut: false,
   settingsShortcut: false,
+  accountApiEnabled: true,
 };
 
 const useNoViewer = (): string | undefined => undefined;

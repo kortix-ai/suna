@@ -35,8 +35,10 @@ const useLumenBrand = () => LUMEN_UI_BRAND;
 // model picker would list only the account's own provider keys.
 const config = { managedModelsEnabled: true };
 // Wrapper mode proxies HTTP through Next route handlers, which cannot upgrade
-// the terminal's WebSocket, so the Terminal control is hidden there.
-const wrapperConfig = { ...config, terminalEnabled: false };
+// the terminal's WebSocket, so the Terminal control is hidden there. Its policy
+// (src/server/policy.ts) also blocks the account routes, so the UI sends no
+// IAM probe, billing or oversight request, and the policy enforces each route.
+const wrapperConfig = { ...config, terminalEnabled: false, accountApiEnabled: false };
 
 const components: UiHostComponents = {
   ShareSessionModal: lazyClient(() => import('@kortix/ui/workspace').then((m) => m.ShareSessionModal)),

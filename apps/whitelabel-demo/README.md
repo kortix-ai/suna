@@ -185,8 +185,11 @@ SESSION_SECRET=replace-with-a-long-random-value \
 pnpm --filter @kortix/whitelabel-demo dev
 ```
 
-Known limit: in wrapper mode the session preview frame loads Lumen's own sign-in page,
-because the preview host resolves to Lumen's server. Direct mode previews work.
+The policy blocks the account routes (IAM, billing, session oversight), so wrapper mode
+mounts `UiProvider` with `config.accountApiEnabled: false`: the UI sends none of those
+requests, and every permission-gated control (for example Session overrides) shows. The
+policy and the upstream API enforce each route. The Terminal is hidden
+(`terminalEnabled: false`): a Next route handler cannot upgrade a WebSocket.
 
 ### Server-first preview
 
