@@ -315,6 +315,8 @@ export interface ProjectTrigger {
   max_runs_per_hour?: number | null;
   /** Runs it may start in a UTC day; null = no daily cap. Older servers omit it. */
   max_runs_per_day?: number | null;
+  /** Fresh session mode only (KRTX-1721). Null when unset: skip for cron, allow otherwise. */
+  overlap?: 'skip' | 'allow' | null;
   /** Set while the trigger paused itself after a sustained run-limit breach (KRTX-1721). */
   auto_paused_at?: string | null;
   auto_paused_reason?: string | null;
