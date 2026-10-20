@@ -1,6 +1,6 @@
 import { eq, and, desc, inArray, isNull, type SQL } from 'drizzle-orm';
 import { SESSION_LEASE_REFUSAL } from '../shared/session-lease-refusal';
-import { accountTokens, accounts, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
+import { accountTokens, accounts, projects, projectSessions, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
@@ -227,6 +227,23 @@ export async function createAccountToken(
 
   if (!row) {
     throw new Error('Failed to create account token');
+  }
+
+  // Check after inserting: deletion tombstones the owner before revoking its
+  // tokens. Either its revocation sees this row or this read sees the tombstone.
+  if (params.sessionId && params.projectId) {
+    try {
+      const [project] = await db.select({ status: projects.status }).from(projects)
+        .where(and(eq(projects.projectId, params.projectId), eq(projects.accountId, params.accountId)));
+      if (project?.status === 'archived') throw new Error('Project is archived');
+      const [session] = await db.select({ metadata: projectSessions.metadata }).from(projectSessions)
+        .where(and(eq(projectSessions.sessionId, params.sessionId), eq(projectSessions.accountId, params.accountId)));
+      if (typeof session?.metadata?.deletedAt === 'string') throw new Error('Session is deleted');
+    } catch (error) {
+      await db.update(accountTokens).set({ status: 'revoked', revokedAt: new Date() })
+        .where(eq(accountTokens.tokenId, row.tokenId));
+      throw error;
+    }
   }
 
   return {
