@@ -474,7 +474,7 @@ export async function configurePreviousRepositorySession(
       await client.query(
         `UPDATE kortix.project_sessions
          SET status = 'stopped',
-             sandbox_provider = 'daytona',
+             sandbox_provider = 'platinum',
              metadata = COALESCE(metadata, '{}'::jsonb) || '{"repository_generation":"generation-previous"}'::jsonb
          WHERE session_id = $1 AND project_id = $2::uuid`,
         [input.sessionId, input.projectId],
@@ -483,7 +483,7 @@ export async function configurePreviousRepositorySession(
         await client.query(
           `INSERT INTO kortix.session_sandboxes (
              sandbox_id, session_id, account_id, project_id, provider, external_id, status, config, metadata
-           ) VALUES ($1::uuid, $1, $2::uuid, $3::uuid, 'daytona', $4, 'error', '{}'::jsonb, '{}'::jsonb)
+           ) VALUES ($1::uuid, $1, $2::uuid, $3::uuid, 'platinum', $4, 'error', '{}'::jsonb, '{}'::jsonb)
            ON CONFLICT (sandbox_id) DO UPDATE
            SET external_id = EXCLUDED.external_id, status = EXCLUDED.status`,
           [input.sessionId, input.accountId, input.projectId, `ke2e-preserved-${input.sessionId}`],

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseRunCapFlags } from './triggers-manifest.ts';
+import { parseFilterFlags, parseRunCapFlags } from './triggers-manifest.ts';
 
 // KRTX-1721: the run caps a trigger flag sets, on `add` and on `set`.
 describe('parseRunCapFlags', () => {
@@ -23,5 +23,71 @@ describe('parseRunCapFlags', () => {
         error: `--max-runs-per-hour must be a whole number of at least 1, or none to remove it (got "${raw}").`,
       });
     }
+  });
+});
+
+// KRTX-1721: --overlap skip|allow rides with the run limits.
+describe('parseRunCapFlags: --overlap', () => {
+  test('skip or allow becomes the manifest field; on set, default resets it', () => {
+    expect(parseRunCapFlags({ overlap: 'skip' }, false)).toEqual({ caps: { overlap: 'skip' } });
+    expect(parseRunCapFlags({ overlap: 'allow', maxRunsPerHour: '10' }, true)).toEqual({ caps: { max_runs_per_hour: 10, overlap: 'allow' } });
+    expect(parseRunCapFlags({ overlap: 'default' }, true)).toEqual({ caps: { overlap: null } });
+  });
+
+  test('anything else is refused, naming the flag; default is refused on add', () => {
+    expect(parseRunCapFlags({ overlap: 'queue' }, true)).toEqual({ error: '--overlap must be skip or allow, or default to reset it (got "queue").' });
+    expect(parseRunCapFlags({ overlap: 'default' }, false)).toEqual({ error: '--overlap must be skip or allow (got "default").' });
+  });
+});
+
+describe('parseFilterFlags', () => {
+  test('path=value is equality; path:op=value picks an operator; list operators split on commas', () => {
+    expect(
+      parseFilterFlags([
+        'body.type=push',
+        'body.ref:not_prefix=refs/heads/kortix/, refs/heads/bot/',
+        'body.sender.login:not=kortix-bot',
+        'body.action:in=opened,reopened',
+        'body.pull_request:exists=true',
+        'body.base:prefix=release/',
+      ]),
+    ).toEqual({
+      filter: {
+        'body.type': 'push',
+        'body.ref': { not_prefix: ['refs/heads/kortix/', 'refs/heads/bot/'] },
+        'body.sender.login': { not: ['kortix-bot'] },
+        'body.action': { in: ['opened', 'reopened'] },
+        'body.pull_request': { exists: true },
+        'body.base': { prefix: ['release/'] },
+      },
+    });
+  });
+
+  test('a repeated list operator on one path adds to the list', () => {
+    expect(parseFilterFlags(['body.sender.login:not=kortix-bot', 'body.sender.login:not=other-bot'])).toEqual({
+      filter: { 'body.sender.login': { not: ['kortix-bot', 'other-bot'] } },
+    });
+  });
+
+  test('a colon that does not name an operator stays part of the path, and equality keeps commas', () => {
+    expect(parseFilterFlags(['headers.x:y=a,b'])).toEqual({ filter: { 'headers.x:y': 'a,b' } });
+  });
+
+  test('no flags is no filter', () => {
+    expect(parseFilterFlags([])).toEqual({ filter: null });
+  });
+
+  test.each([
+    ['body.type', '--filter must look like path=value or path:operator=value (got "body.type")'],
+    ['=push', '--filter must look like path=value or path:operator=value (got "=push")'],
+    ['body.pr:exists=maybe', '--filter body.pr:exists takes true or false (got "maybe")'],
+  ])('rejects %s', (flag, error) => {
+    expect(parseFilterFlags([flag])).toEqual({ error });
+  });
+
+  test('two conditions on one path are rejected', () => {
+    expect(parseFilterFlags(['body.ref=main', 'body.ref:not=dev'])).toEqual({
+      error: '--filter body.ref takes one condition; repeat only a list operator (not, in, prefix, not_prefix)',
+    });
   });
 });

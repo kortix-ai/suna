@@ -3,8 +3,11 @@ import {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  TRIGGER_FILTER_OPERATORS,
+  type TriggerFilter,
   formatDurationSeconds,
   parseDurationSeconds,
+  parseTriggerFilter,
 } from '@kortix/manifest-schema';
 import { type CtxOpts, fail, missing } from '../command-helpers.ts';
 import {
@@ -151,8 +154,8 @@ interface MonitorFields {
 export function parseRunCapFlags(
   tf: Record<string, string | undefined>,
   allowClear: boolean,
-): { caps: Record<string, number | null> } | { error: string } {
-  const out: Record<string, number | null> = {};
+): { caps: Record<string, number | string | null> } | { error: string } {
+  const out: Record<string, number | string | null> = {};
   for (const [flag, key, field] of [
     ['--max-runs-per-hour', 'maxRunsPerHour', 'max_runs_per_hour'],
     ['--max-runs-per-day', 'maxRunsPerDay', 'max_runs_per_day'],
@@ -169,7 +172,54 @@ export function parseRunCapFlags(
     }
     out[field] = value;
   }
+  // --overlap (KRTX-1721): skip | allow; on `set`, default resets it.
+  const overlap = tf.overlap?.trim();
+  if (overlap !== undefined) {
+    if (overlap === 'skip' || overlap === 'allow') out.overlap = overlap;
+    else if (allowClear && overlap === 'default') out.overlap = null;
+    else return { error: `--overlap must be skip or allow${allowClear ? ', or default to reset it' : ''} (got "${overlap}").` };
+  }
   return { caps: out };
+}
+
+const LIST_FILTER_OPERATORS = ['not', 'in', 'prefix', 'not_prefix'];
+
+/**
+ * `--filter` flags → the payload filter (KRTX-1721). `path=value` is equality.
+ * `path:op=value` picks an operator: `not`, `in`, `prefix` and `not_prefix`
+ * take comma-separated values, `exists` takes true or false. Repeating a list
+ * operator on one path adds to its list. A colon that names no operator stays
+ * part of the path.
+ */
+export function parseFilterFlags(raw: readonly string[]): { filter: TriggerFilter | null } | { error: string } {
+  const draft: Record<string, unknown> = {};
+  for (const entry of raw) {
+    const index = entry.indexOf('=');
+    const left = index > 0 ? entry.slice(0, index).trim() : '';
+    if (!left) return { error: `--filter must look like path=value or path:operator=value (got "${entry}")` };
+    const value = entry.slice(index + 1);
+    const colon = left.lastIndexOf(':');
+    const operator = colon > 0 ? left.slice(colon + 1) : '';
+    const isOperator = (TRIGGER_FILTER_OPERATORS as readonly string[]).includes(operator);
+    const path = isOperator ? left.slice(0, colon).trim() : left;
+    const existing = draft[path];
+    const isList = LIST_FILTER_OPERATORS.includes(operator);
+    const sameList = isList && typeof existing === 'object' && existing !== null && operator in existing;
+    if (existing !== undefined && !sameList) {
+      return { error: `--filter ${path} takes one condition; repeat only a list operator (${LIST_FILTER_OPERATORS.join(', ')})` };
+    }
+    if (isList) {
+      const previous = sameList ? (existing as Record<string, string[]>)[operator] ?? [] : [];
+      draft[path] = { [operator]: [...previous, ...value.split(',').map((item) => item.trim())] };
+    } else if (isOperator) {
+      if (value !== 'true' && value !== 'false') return { error: `--filter ${path}:exists takes true or false (got "${value}")` };
+      draft[path] = { exists: value === 'true' };
+    } else {
+      draft[path] = value;
+    }
+  }
+  const parsed = parseTriggerFilter(draft);
+  return 'error' in parsed ? { error: `--filter: ${parsed.error}` } : parsed;
 }
 
 export function parseMonitorFlags(

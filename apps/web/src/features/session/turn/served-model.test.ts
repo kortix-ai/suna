@@ -125,6 +125,24 @@ describe('turnServedModelResolver', () => {
     expect(resolve(refetched, 'msg_b')).not.toBe(resolve(fallback, 'msg_b'));
     expect(resolve(undefined, 'msg_a')).toBeUndefined();
   });
+
+  test('a turn that continues the previous turn\'s switch does not repeat it', () => {
+    const resting = { requested_model: 'codex/gpt-6.1-sol', served_model: 'glm-5.3-flash', error_code: 'provider_pool_rate_limited' };
+    const busy = { requested_model: 'glm-5.3-flash', served_model: 'deepseek-v4.1-flash', error_code: 'model_busy' };
+    const turn = (fallbacks: (typeof resting)[]) => ({ served_models: ['glm-5.3-flash'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0, fallbacks });
+    const usage: SessionModelUsage = {
+      latest: null, billed_cost: 0,
+      turns: { t1: turn([resting, resting]), t2: turn([resting]), t3: turn([resting, busy]), t4: turn([resting]) },
+    };
+    const resolve = turnServedModelResolver(models);
+    expect(resolve(usage, 't1')?.fallbacks).toHaveLength(2);
+    expect(resolve(usage, 't2', 't1')?.fallbacks).toEqual([]);
+    expect(resolve(usage, 't3', 't2')?.fallbacks?.map((event) => event.reason)).toEqual(['model_busy']);
+    // t3 ended on another switch, so t4's is new again.
+    expect(resolve(usage, 't4', 't3')?.fallbacks).toHaveLength(1);
+    // Without a previous turn, the same ledger entry shows its switch.
+    expect(resolve(usage, 't2')?.fallbacks).toHaveLength(1);
+  });
 });
 
 describe('sessionBilledCost', () => {

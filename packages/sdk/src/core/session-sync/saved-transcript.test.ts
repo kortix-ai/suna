@@ -17,6 +17,11 @@ import {
   openSessionBundle,
   resetSessionOpenBundles,
 } from '../session/open-bundle';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { SessionLog } from '../session-log/types';
+import { EMPTY_SESSION_LOG_STATE, applySessionLogPage } from '../session-log/store';
+import { sessionLogRoot } from '../session-log/v1-view';
 
 const base: SavedTranscriptInput = {
   enabled: true,
@@ -441,5 +446,87 @@ describe('loadSavedTranscript', () => {
     const answer = await loadSavedTranscript('p1', 's1', { snapshotWaitMs: 20 });
     expect(answer.messages).toHaveLength(1);
     expect(urls.filter((url) => url.includes('/transcript?') && url.includes('history=true'))).toHaveLength(1);
+  });
+});
+
+describe('readSavedSessionCopy with the session log (`session_log` on, P8)', () => {
+  // With the project flag on the session log is the saved copy: the connecting view paints
+  // its newest page, and no v1 window (`GET …/transcript`) is read.
+  const originalFetch = globalThis.fetch;
+  const golden: SessionLog = JSON.parse(
+    readFileSync(join(import.meta.dir, '../../../../api-contract/src/__tests__/fixtures/session-log/golden21.v2.json'), 'utf8'),
+  );
+  const root = golden.threads.find((thread) => thread.parent_thread_id === null)!;
+  const page = (fields: Record<string, unknown> = {}) => {
+    const { threads, ...session } = structuredClone(golden);
+    return {
+      session,
+      generation: 1,
+      threads: threads.map(({ messages: _m, ...head }) => head),
+      thread_id: root.thread_id,
+      messages: root.messages,
+      has_more: true,
+      ...fields,
+    };
+  };
+  const emptyPage = page({ messages: [], has_more: false });
+  const rootRuntimeId = sessionLogRoot(applySessionLogPage(EMPTY_SESSION_LOG_STATE, emptyPage as never))!.runtimeSessionId!;
+  const read = () =>
+    readSavedSessionCopy({ projectId: 'p1', sessionId: 's1', runtimeSessionId: rootRuntimeId, sessionLog: true });
+
+  function serve(route: (url: string) => Response): string[] {
+    const urls: string[] = [];
+    globalThis.fetch = mock(async (input: unknown) => {
+      const url = String(input instanceof Request ? input.url : input);
+      urls.push(url);
+      return route(url);
+    }) as unknown as typeof fetch;
+    return urls;
+  }
+
+  beforeEach(() => {
+    resetSessionOpenBundles();
+    configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    resetSessionOpenBundles();
+  });
+
+  test("reads the log's newest page once, and no v1 window", async () => {
+    const urls = serve(() => Response.json(page()));
+    const answer = await read();
+    expect(answer.log?.thread_id).toBe(root.thread_id);
+    expect(answer.log?.messages).toHaveLength(root.messages.length);
+    expect(answer.envelope).toBeNull();
+    expect(answer.empty).toBe(false);
+    expect(urls).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
+  });
+
+  test('a page that proves the root empty, and no turn on record, is empty', async () => {
+    const urls = serve((url) => Response.json(url.includes('/turn') ? { turns: [] } : emptyPage));
+    expect((await read()).empty).toBe(true);
+    expect(urls.some((url) => url.includes('/transcript'))).toBe(false);
+  });
+
+  test('a turn that ended since outranks the empty page', async () => {
+    serve((url) =>
+      Response.json(url.includes('/turn') ? { turns: [], last_ended: { turn_token: 't1', end_reason: 'completed', ended_at: '2026-09-28T00:00:00Z' } } : emptyPage),
+    );
+    expect((await read()).empty).toBe(false);
+  });
+
+  test('an empty page of another root proves nothing about this one', async () => {
+    const urls = serve(() => Response.json(emptyPage));
+    const answer = await readSavedSessionCopy({ projectId: 'p1', sessionId: 's1', runtimeSessionId: 'ses_child', sessionLog: true });
+    expect(answer.empty).toBe(false);
+    expect(urls.some((url) => url.includes('/turn'))).toBe(false);
+  });
+
+  test('no stored log (404) answers no copy, and still reads no v1 window', async () => {
+    const urls = serve(() => Response.json({ error: 'No session log for this session' }, { status: 404 }));
+    expect(await read()).toEqual({ envelope: null, empty: false, log: null });
+    expect(urls.some((url) => url.includes('/transcript'))).toBe(false);
   });
 });

@@ -103,7 +103,7 @@ let activeRouting: {
 let agentGrantError: Error | null = null;
 let gatewayFlag = false;
 const testConfig = {
-  ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
+  ALLOWED_SANDBOX_PROVIDERS: ['platinum', 'daytona'],
   KORTIX_URL: 'http://localhost:8008',
   LLM_GATEWAY_PROXY_PORT: undefined,
   LLM_GATEWAY_PROXY_TARGET: undefined,
@@ -285,7 +285,7 @@ mock.module('./runtime-settings', () => ({
 }));
 
 mock.module('./provider-balancer', () => ({
-  selectProvider: async () => 'e2b',
+  selectProvider: async () => 'platinum',
 }));
 
 mock.module('../../snapshots/builder', () => ({
@@ -871,12 +871,12 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateCalls).toBe(1);
   });
 
-  test('E2B success records only provider-neutral lifecycle metadata and E2B billing attribution', async () => {
+  test('Platinum success records only provider-neutral lifecycle metadata and Platinum billing attribution', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
 
-    await provisionSessionSandbox({ ...baseOpts(), provider: 'e2b' });
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
     await opened;
 
     const finishCall = updateCalls.find(
@@ -884,24 +884,24 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
         call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
     );
     expect(mergedMetadata(finishCall?.updates)).toMatchObject({
-      providerExternalId: 'ext-e2b-1',
-      runtimeArtifact: { provider: 'e2b', artifactType: 'e2b_template' },
+      providerExternalId: 'ext-platinum-1',
+      runtimeArtifact: { provider: 'platinum', artifactType: 'platinum_template' },
     });
     expect(mergedMetadata(finishCall?.updates)).not.toHaveProperty('daytonaSandboxId');
-    expect(computeSessionsOpened[0]).toMatchObject({ provider: 'e2b' });
+    expect(computeSessionsOpened[0]).toMatchObject({ provider: 'platinum' });
   });
 
-  test('an explicitly selected E2B provider never fails over to another provider', async () => {
+  test('an explicitly selected Platinum provider never fails over to another provider', async () => {
     providerFallbackEnabled = true;
-    providerCreateErrors.e2b = 'E2B unavailable';
+    providerCreateErrors.platinum = 'Platinum unavailable';
     const failed = waitFor((resolve) => {
       onProviderEvent = resolve;
     });
 
-    await provisionSessionSandbox({ ...baseOpts(), provider: 'e2b' });
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
     await failed;
 
-    expect(providerNamesRequested).toEqual(['e2b']);
+    expect(providerNamesRequested).toEqual(['platinum']);
     expect(providerCreateCalls).toBe(3);
     expect(
       updateCalls.some(
@@ -910,16 +910,20 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     ).toBe(false);
   });
 
-  test('capacity failure records one attempt and provider-neutral failure metadata', async () => {
-    providerCreateErrors.e2b = '500: Failed to place sandbox';
+  test('an unused project auto-session surfaces terminal provisioning failure', async () => {
+    scenario.projectSessionMetadataAtCheck = { source: 'ui', warm: true };
+    providerCreateErrors.platinum = '500: Failed to place sandbox';
     const failed = waitFor((resolve) => {
       onProviderEvent = resolve;
     });
 
-    await provisionSessionSandbox({ ...baseOpts(), provider: 'e2b' });
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
     await failed;
 
     expect(providerCreateCalls).toBe(1);
+    expect(updateCalls.find((call) =>
+      call.table === projectSessions && call.updates.status === 'failed',
+    )?.updates.error).toBe('The sandbox provider is at capacity right now. Try again in a minute.');
     const terminal = updateCalls.find(
       (call) =>
         call.table === sessionSandboxes &&
@@ -936,7 +940,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
 
   test('automatic selection may use the admin-enabled one-shot provider fallback', async () => {
     providerFallbackEnabled = true;
-    providerCreateErrors.e2b = 'E2B unavailable';
+    providerCreateErrors.platinum = 'Platinum unavailable';
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
@@ -945,7 +949,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await provisionSessionSandbox(automaticOpts);
     await opened;
 
-    expect(providerNamesRequested).toEqual(['e2b', 'daytona']);
+    expect(providerNamesRequested).toEqual(['platinum', 'daytona']);
     expect(providerCreateCalls).toBe(4);
     expect(
       updateCalls.some(

@@ -190,6 +190,7 @@ describe('local test runner contract', () => {
       kortix: '221 mobile test files whose mock.module calls leak across files without isolation',
       'Kortix-Computer-Frontend': '762 test files; serial is not viable',
       '@kortix/sdk': 'xargs -n1 -P4 runs one file per process: no isolate swap, no leak',
+      '@kortix/ui': '52 test files; three mock.module calls (toast, preview-image, dot-matrix) leak across files without isolation',
     };
 
     const offenders: string[] = [];

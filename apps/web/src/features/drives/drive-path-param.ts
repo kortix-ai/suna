@@ -7,8 +7,18 @@
  * Paths here are the explorer store's form: `/` for the top, else no leading
  * slash (`Users/ana/Memory`). `personal` is `Drive.personalFolder`.
  */
+/** Strips leading and trailing `/` in linear time: `/\/+$/` backtracks
+ *  quadratically on a long run of slashes inside an untrusted `?path=`. */
+function trimSlashes(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value[start] === '/') start++;
+  while (end > start && value[end - 1] === '/') end--;
+  return value.slice(start, end);
+}
+
 export function drivePathToParam(path: string, personal: string | null): string {
-  const abs = `/${path.replace(/^\/+|\/+$/g, '')}`;
+  const abs = `/${trimSlashes(path)}`;
   if (abs === '/') return '';
   if (personal && (abs === personal || abs.startsWith(`${personal}/`))) {
     return `~${abs.slice(personal.length)}`;
@@ -24,8 +34,8 @@ export function drivePathFromParam(param: string | null, personal: string | null
     ? personal
       ? `${personal}${value.slice(1)}`
       : '/'
-    : `/${value.replace(/^\/+/, '')}`;
-  return abs.replace(/^\/+|\/+$/g, '') || '/';
+    : `/${value}`;
+  return trimSlashes(abs) || '/';
 }
 
 /** `?path=` with its slashes left readable; other query values are kept. */

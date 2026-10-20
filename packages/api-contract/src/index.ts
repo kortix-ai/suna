@@ -134,7 +134,9 @@ export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
 /** Every sandbox provider the current platform can select or emit. */
-export const SANDBOX_PROVIDERS = ['daytona', 'platinum', 'e2b'] as const;
+// Platinum is the reference provider; Daytona is a legacy fallback (removal
+// scheduled). E2B support is discontinued.
+export const SANDBOX_PROVIDERS = ['platinum', 'daytona'] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 
@@ -1453,6 +1455,23 @@ export const TriggerSessionAccessSchema = z
 export type TriggerSessionAccess = z.infer<typeof TriggerSessionAccessSchema>;
 
 /** One trigger entry as emitted by `loadTriggersForResponse`. */
+/**
+ * One trigger filter condition (KRTX-1721): exactly one operator. `not` and
+ * `in` compare the payload value as text; `prefix` and `not_prefix` test its
+ * start; `exists` tests that it is present and not null.
+ */
+export const TriggerFilterConditionSchema = z.union([
+  z.object({ not: z.array(z.string()) }).strict(),
+  z.object({ in: z.array(z.string()) }).strict(),
+  z.object({ exists: z.boolean() }).strict(),
+  z.object({ prefix: z.array(z.string()) }).strict(),
+  z.object({ not_prefix: z.array(z.string()) }).strict(),
+]);
+export type TriggerFilterCondition = z.infer<typeof TriggerFilterConditionSchema>;
+/** A filter path's condition: a string means "equals". */
+export const TriggerFilterValueSchema = z.union([z.string(), TriggerFilterConditionSchema]);
+export type TriggerFilterValue = z.infer<typeof TriggerFilterValueSchema>;
+
 export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
@@ -1511,8 +1530,11 @@ export const TriggerSchema = z.object({
    * per delivery to pick one session per key. Null otherwise.
    */
   session_key: z.string().nullable(),
-  /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
-  filter: z.record(z.string(), z.string()).nullable(),
+  /**
+   * Payload paths that must match for the trigger to fire. Null when unfiltered.
+   * A path maps to a value (equals) or one operator (KRTX-1721).
+   */
+  filter: z.record(z.string(), TriggerFilterValueSchema).nullable(),
   /**
    * Runs the trigger may start in any 60 minutes. Null when unset: the default,
    * 60, applies. A fire past it is a skipped run with reason `throttled: …`.
@@ -1520,6 +1542,21 @@ export const TriggerSchema = z.object({
   max_runs_per_hour: z.number().int().nullable().optional(),
   /** Runs the trigger may start in a UTC day. Null when unset: no daily cap. */
   max_runs_per_day: z.number().int().nullable().optional(),
+  /**
+   * Set while the trigger paused itself (KRTX-1721): it ran at its hourly run
+   * limit through the previous hour and was still being held. No automatic
+   * fire starts a run until it is resumed (`PATCH enabled: true`). Absent on
+   * older servers.
+   */
+  auto_paused_at: z.string().nullable().optional(),
+  /** Why it paused, e.g. `auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row`. */
+  auto_paused_reason: z.string().nullable().optional(),
+  /**
+   * Fresh session mode only (KRTX-1721): `skip` holds a fire while the
+   * trigger's previous run is still active. Null when unset: `skip` for a
+   * cron trigger, `allow` otherwise. Absent on older servers.
+   */
+  overlap: z.enum(['skip', 'allow']).nullable().optional(),
   /** Account-local policy for sessions this trigger creates. */
   session_access: TriggerSessionAccessSchema,
   last_fired_at: z.string().nullable(),

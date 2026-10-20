@@ -74,7 +74,7 @@ export function evaluatePolicy(
   // reach `p/{sandboxId}/{port}/...` for ANY sandboxId, not just one the
   // caller owns (HIGH IDOR — any authenticated wrapper user could read/write
   // another tenant's live sandbox by guessing or observing its id). Sandbox
-  // ids are opaque (Daytona's own external id, unrelated to the project id —
+  // ids are opaque (the provider's own external id, unrelated to the project id —
   // see `packages/sdk/src/session/url.ts`), so this now requires the caller
   // to resolve sandboxId → projectId via `resolveProjectIdForSandbox` and
   // checks that resolved project against `isOwner`, mirroring the

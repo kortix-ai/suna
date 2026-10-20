@@ -7,7 +7,7 @@ flow(
   'COST-1',
   {
     domain: 'billing',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 300_000,
     routes: ['GET /v1/usage/session-costs', 'GET /v1/usage/session-costs/:sessionId'],
   },
@@ -83,7 +83,7 @@ flow(
   'COST-2',
   {
     domain: 'billing',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 300_000,
     routes: ['GET /v1/usage/cost-by-project', 'GET /v1/usage/cost-summary'],
   },
@@ -213,7 +213,7 @@ flow(
   'COST-3',
   {
     domain: 'billing',
-    requires: ['funded', 'daytona', 'database'],
+    requires: ['funded', 'sandbox', 'database'],
     timeoutMs: 300_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
   },

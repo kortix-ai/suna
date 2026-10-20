@@ -65,7 +65,7 @@ Change the mode later without a redeploy:
 does the same on the next
 `kortix apps deploy --manifest-app <name>`.
 
-On Daytona and E2B (self-host), an always-on App can be unreachable for up to
+On the legacy Daytona fallback (self-host), an always-on App can be unreachable for up to
 5 minutes when the provider stops its VM. On Kortix Cloud the VM is
 persistent.
 

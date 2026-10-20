@@ -73,7 +73,7 @@ Every field is optional. With no input, the session runs the project's default a
 | `session_id` | A v4 UUID you generate, so you know the id before the create returns. A second create with the same id returns `409`. |
 | `base_ref` | The branch or ref the session branch starts from. Default: the project's default branch. |
 | `sandbox_slug` | The sandbox to boot, by its slug in `kortix.yaml`. Default: the agent's sandbox, then the project default, then `default`. |
-| `provider` | The sandbox provider: `daytona`, `platinum` or `e2b`. Default: the project's pinned provider, else the platform's choice. |
+| `provider` | The sandbox provider: `platinum`, or the legacy fallback `daytona`. Default: the project's pinned provider, else the platform's choice. |
 | `runtime_context` | Non-secret values for the agent. See [Start sessions from your server](#start-sessions-from-your-server). |
 | `connector_bindings` | Pins one connector account per connector alias: `{ gmail: { connection_id } }`. |
 | `inherit_unbound` | With `connector_bindings` set, a connector you did not bind gets no account. `true` lets it use the project default. Default `false`. |

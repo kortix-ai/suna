@@ -482,6 +482,33 @@ describe('options', () => {
     expectPatch({ filter: { event: 'push' } });
   });
 
+  // KRTX-1721: a viewer without edit rights reads each operator as text.
+  test('the read-only view shows each condition with its operator', async () => {
+    const sheet = mountSheet(
+      {
+        type: 'webhook',
+        cron: null,
+        filter: {
+          'body.type': 'push',
+          'body.ref': { not_prefix: ['refs/heads/kortix/'] },
+          'body.sender.login': { not: ['kortix-bot', 'other-bot'] },
+          'body.pull_request': { exists: true },
+        },
+      },
+      false,
+    );
+    await sheet.flush();
+    const lines = sheet.renderer.root.findAll((n) => n.type === 'code').map((n) => textOf(n.props.children));
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        'body.type = push',
+        'body.ref does not start with refs/heads/kortix/',
+        'body.sender.login is not kortix-bot, other-bot',
+        'body.pull_request exists',
+      ]),
+    );
+  });
+
   test('a schedule has no conditions', async () => {
     const sheet = mountSheet();
     await sheet.openOptions();
@@ -706,6 +733,27 @@ describe('the header toggle', () => {
     expectPatch({ enabled: false });
     expect(toastCalls.map((t) => t.kind)).toEqual(['success']);
     expect(sheet.onMutated()).toBe(1);
+  });
+});
+
+// KRTX-1721: a trigger that paused itself shows why, and Resume clears it.
+describe('an auto-paused trigger', () => {
+  const reason = 'auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row';
+
+  test('shows the reason, offers Resume instead of Pause, and Resume sends { enabled: true }', async () => {
+    const sheet = mountSheet({ enabled: true, auto_paused_at: '2026-10-19T12:00:00.000Z', auto_paused_reason: reason });
+    expect(JSON.stringify(sheet.renderer.toJSON())).toContain(reason);
+    expect(sheet.buttonsWithin('Pause')).toHaveLength(0);
+    const resume = sheet.buttonsWithin('Resume');
+    expect(resume).toHaveLength(1);
+    await act(async () => call(at(resume, 0).props, 'onClick'));
+    await sheet.flush();
+    expectPatch({ enabled: true });
+  });
+
+  test('a trigger that is not auto-paused shows no such notice', () => {
+    const sheet = mountSheet();
+    expect(JSON.stringify(sheet.renderer.toJSON())).not.toContain('auto-paused');
   });
 });
 

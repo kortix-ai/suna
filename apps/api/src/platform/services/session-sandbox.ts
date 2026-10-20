@@ -893,8 +893,8 @@ async function createAttemptSandbox(
   const createFn = bootDecision.bootByTemplateId
     ? (o: CreateSandboxOpts) => provider.createFromExternalId!(bootDecision.bootByTemplateId!, o)
     : undefined;
-  // No provider edge is armed at create: one mechanism serves daytona, e2b
-  // and platinum alike. The guest holds a handle; the broker route substitutes server-side.
+  // No provider edge is armed at create: one mechanism serves platinum
+  // and daytona alike. The guest holds a handle; the broker route substitutes server-side.
   let result: ProvisionResult;
   let attempts: number;
   try {
@@ -1243,7 +1243,7 @@ async function runProvisionAttempt(
   // throws on a policy no session could serve, which is what turns a broken
   // secret config into `invalid-secret-boundary-policy` instead of a
   // generic provider fault. There is nothing to register with a provider —
-  // one mechanism serves daytona, e2b and platinum alike: the guest gets a HANDLE
+  // one mechanism serves platinum and daytona alike: the guest gets a HANDLE
   // and the broker route substitutes the real value server-side.
   await resolveSessionNetworkBoundary(opts.projectId, sandbox.sandboxId);
   tl.note('network-boundary');
@@ -1409,7 +1409,7 @@ async function failSessionSandboxProvisioning(
   const { accountId } = opts;
   const { providerName, provider, bgExternalId } = state;
   // Keep provider SDK text in diagnostic metadata. Show one stable contract
-  // for E2B, Daytona, Platinum, and future providers.
+  // for Platinum, Daytona, and future providers.
   // A project with drives runs on Platinum only: when Platinum cannot be
   // reached at all, say that, instead of a generic provider failure.
   const platinumUnreachable =

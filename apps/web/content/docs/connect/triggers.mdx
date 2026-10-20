@@ -442,9 +442,10 @@ await reminders.remove(reminder.id);
 | `session_mode` | all | no | `fresh`; `reuse` on a monitor | `fresh`, `reuse`, `pinned` or `keyed`. See [Session strategy](#session-strategy). |
 | `session_id` | `pinned` | yes | — | The session to re-prompt. |
 | `session_key` | `keyed` | yes | — | Template. Setting it alone implies `keyed`. |
-| `filter` | all | no | — | Map of dotted path to expected string. See [Templates and filters](#templates-and-filters). |
+| `filter` | all | no | — | Map of dotted path to a value it must equal, or to one operator: `not`, `in`, `exists`, `prefix`, `not_prefix`. See [Templates and filters](#templates-and-filters). |
 | `max_runs_per_hour` | all | no | `60` | Whole number, at least 1. Runs the trigger may start in any 60 minutes. See [Pause and limits](#pause-and-limits). |
 | `max_runs_per_day` | all | no | no cap | Whole number, at least 1. Runs the trigger may start in a UTC day. |
+| `overlap` | all, fresh session mode | no | `skip` for cron, `allow` otherwise | `skip` or `allow`. See [Overlap](#overlap). |
 | `cron` | `cron` | one of `cron`, `run_at` | — | 6-field expression, at most once a minute. |
 | `run_at` | `cron` | one of `cron`, `run_at` | — | ISO-8601 instant. Fires once. |
 | `timezone` | `cron` | no | `UTC` | IANA name. |
@@ -487,12 +488,41 @@ A frequent trigger can roll its session on a calendar boundary so its history st
 | Monitor | `line.*` (`line.raw` for a line that is not JSON), `monitor.slug`, `monitor.seq`, `monitor.emitted_at`, `monitor.kind` (`event` or `lifecycle`) |
 | Manual fire | `fired_at`, `source` (`manual`), `actor`. An `event` trigger gets an empty `event.data`. |
 
-`filter` maps dotted paths to expected strings. A fire runs only when every path matches; a missing path does not match. A webhook that does not match answers `200` with `status: skipped`. Use a filter to break loops, for example when a source reports the agent's own reply as a new event:
+`filter` maps dotted paths to conditions. A fire runs only when every condition matches. A webhook that does not match answers `200` with `status: skipped`. Values compare as text, so `true`, `3` and `"3"` are the same. A missing or `null` path reads as an empty string.
+
+| Condition | Matches when the value at the path |
+| --- | --- |
+| `"inbound"` (a plain value) | equals it. A missing path does not match. |
+| `{ not: [a, b] }` | equals none of them. A missing path matches. |
+| `{ in: [a, b] }` | equals one of them. |
+| `{ prefix: [a, b] }` | starts with one of them. |
+| `{ not_prefix: [a, b] }` | starts with none of them. A missing path matches. |
+| `{ exists: true }` | is present and not `null`. `false` matches a missing or `null` path. |
+
+Each path takes one condition. `not`, `in`, `prefix` and `not_prefix` take one value or a list. `kortix validate` and the API reject an unknown operator, two operators on one path, and an empty list.
+
+Use a filter to break loops. A source that reports the agent's own reply as a new event:
 
 ```yaml
 filter:
   "body.data.direction": "inbound"
 ```
+
+A push webhook whose agent pushes fixes on `kortix/*` branches. It skips the agent's pushes and still fires for everyone else's:
+
+```yaml
+filter:
+  "body.ref": { not_prefix: "refs/heads/kortix/" }
+  "body.sender.login": { not: [kortix-bot] }
+```
+
+From the CLI, `--filter path=value` sets equality and `--filter path:operator=value` sets an operator. List operators take comma-separated values; `exists` takes `true` or `false`:
+
+```bash
+kortix triggers set on-push --filter body.ref:not_prefix=refs/heads/kortix/ --filter body.sender.login:not=kortix-bot
+```
+
+`kortix triggers fire <slug> --payload <json> --dry-run` prints the filter verdict for a payload without firing.
 
 ## Session access
 
@@ -546,6 +576,35 @@ triggers:
     max_runs_per_hour: 20
     max_runs_per_day: 100
 ```
+
+### Overlap
+
+A schedule that fires faster than its runs finish would stack sessions. With `overlap: skip`, a fire waits out the previous run: it starts nothing and is a skipped run with the reason `overlap: the previous run is still active (session <id>)`, or `… still queued (command <id>)` while its create waits in the queue. With `overlap: allow`, every fire starts a run.
+
+- `skip` is the default for a cron trigger and `allow` for webhook, app event and monitor triggers, where each delivery is separate work. Set it per trigger.
+- Overlap applies to session mode `fresh` only. The other modes send each fire into one session, which runs one prompt at a time.
+- The previous run counts as still active while a session this trigger started in the last 24 hours is still being set up, or is running a turn, or while its create is still queued. A turn that never ends stops counting when the platform ends it, within 24 hours.
+- A manual fire and a replay are never held.
+- Set it in `kortix.yaml`, with `kortix triggers add|set --overlap skip|allow` (`set … --overlap default` restores the default), in the API body, or under **Options → Overlap** on the trigger.
+
+```yaml
+triggers:
+  - slug: hourly-report
+    type: cron
+    cron: "0 0 * * * *"
+    prompt: "Write the hourly report."
+    overlap: allow   # start a new run even while the last one is still going
+```
+
+### Auto-pause
+
+A trigger that keeps hitting its hourly limit is a runaway, not a burst. When `max_runs_per_hour` holds a fire and the trigger also ran at that limit through the hour before, the trigger pauses itself. Two full hours at the limit is the threshold. `max_runs_per_day` never pauses a trigger: holding the rest of the day is that limit's purpose.
+
+- While auto-paused, no schedule slot, webhook, app event or monitor event starts a run. Each fire is a skipped run with the reason `auto-paused: ran at max_runs_per_hour <n> for 2 hours in a row`. A webhook answers `200` with `status: skipped` and that reason. A manual fire still runs.
+- The trigger's watchers get one alert per pause. The alert needs the project's notification center.
+- The trigger shows **Paused** on the Triggers page. Its sheet says why, and its `GET …/triggers` entry carries `auto_paused_at` and `auto_paused_reason`. `kortix triggers ls` marks it `auto-paused`, and `kortix triggers info` prints the reason.
+- To resume it, find what keeps firing it, then press **Resume** in the trigger's sheet, run `kortix triggers enable <slug> --apply`, or send `PATCH …/triggers/<slug>` with `{ "enabled": true }`. The pause is runtime state, not a `kortix.yaml` change, so editing the file does not resume it.
+- For 2 hours after a resume, the trigger cannot pause itself again. The runs from before the resume still count against `max_runs_per_hour`, so it may be held until its hour has room.
 
 ### Platform limits
 

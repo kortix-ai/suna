@@ -31,7 +31,7 @@ mock.module('./client', () => ({
   }),
 }));
 
-const { supabaseMFAService, mfaChallengeRequired } = await import('./mfa');
+const { supabaseMFAService, mfaChallengeRequired, rememberValidatedUser } = await import('./mfa');
 
 const CUTOFF_ISO = '2025-12-24T00:09:30.000Z';
 
@@ -199,6 +199,37 @@ describe('getAAL error paths', () => {
     user = null;
 
     expect(supabaseMFAService.getAAL()).rejects.toThrow('Failed to get AAL: User not found');
+  });
+});
+
+describe('getAAL after the auth bootstrap validated the user', () => {
+  const totp: FakeFactor = { id: 't', factor_type: 'totp', status: 'verified' };
+
+  test('the first read uses the validated user and makes no getUser round trip', async () => {
+    signIn('2025-01-01T00:00:00.000Z');
+    aal = { data: { currentLevel: 'aal1', nextLevel: 'aal2' }, error: null };
+    user = null; // a getUser round trip would throw "User not found"
+    rememberValidatedUser({ id: 'u', created_at: '2025-01-01T00:00:00.000Z', factors: [totp] });
+
+    const result = await supabaseMFAService.getAAL();
+    expect(result.factors).toEqual([expect.objectContaining({ id: 't', status: 'verified' })]);
+    expect(mfaChallengeRequired(result)).toBe(true);
+  });
+
+  test('it is used once: the next read asks the auth server again', async () => {
+    signIn('2025-01-01T00:00:00.000Z');
+    rememberValidatedUser({ id: 'u', created_at: '2025-01-01T00:00:00.000Z', factors: [totp] });
+    await supabaseMFAService.getAAL();
+
+    user = { created_at: '2025-01-01T00:00:00.000Z', factors: [] };
+    expect((await supabaseMFAService.getAAL()).factors).toEqual([]);
+  });
+
+  test('a validated user of another account is ignored', async () => {
+    signIn('2025-01-01T00:00:00.000Z');
+    rememberValidatedUser({ id: 'someone-else', factors: [totp] });
+
+    expect((await supabaseMFAService.getAAL()).factors).toEqual([]);
   });
 });
 

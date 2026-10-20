@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { CRON_MIN_INTERVAL_SECONDS, cronIntervalError } from '@kortix/manifest-schema';
+import { CRON_MIN_INTERVAL_SECONDS, type TriggerFilter, cronIntervalError } from '@kortix/manifest-schema';
 import { Cron } from 'croner';
 
 export interface TriggerScheduleSpec {
@@ -17,7 +17,7 @@ export interface TriggerScheduleSpec {
   sessionMode: string;
   pinnedSessionId: string | null;
   sessionKey: string | null;
-  filter: Record<string, string> | null;
+  filter: TriggerFilter | null;
   /** type=monitor only — see GitTriggerSpec. Absent for cron/webhook. */
   run?: string | null;
   monitorMode?: 'poll' | 'stream' | null;
@@ -32,6 +32,8 @@ export interface TriggerScheduleSpec {
   /** Any type — see GitTriggerSpec.maxRunsPerHour / maxRunsPerDay. */
   maxRunsPerHour?: number;
   maxRunsPerDay?: number;
+  /** See GitTriggerSpec.overlap. */
+  overlap?: 'skip' | 'allow';
 }
 
 export function validateTriggerTimezone(timezone: string): string | null {
@@ -104,6 +106,7 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
     // Run caps (KRTX-1721): the same rule. Cron, event and monitor fires read
     // them from the stored spec.
     ...(spec.maxRunsPerHour ? { maxRunsPerHour: spec.maxRunsPerHour } : {}),
+    ...(spec.overlap ? { overlap: spec.overlap } : {}),
     ...(spec.maxRunsPerDay ? { maxRunsPerDay: spec.maxRunsPerDay } : {}),
   };
   return createHash('sha256').update(JSON.stringify(scheduleConfig)).digest('hex');

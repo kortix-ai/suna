@@ -6,6 +6,7 @@ import type {
   ProjectTrigger,
   ProjectTriggerEventApp,
   ProjectTriggerType,
+  TriggerFilterValue,
   UpdateProjectTriggerInput,
 } from './triggers';
 import {
@@ -99,6 +100,36 @@ test('listProjectTriggers reads a monitor entry off the wire without losing its 
     memberIds: ['member-1'],
     groupIds: ['group-1'],
   });
+});
+
+// KRTX-1721: overlap — skip holds a fire while the previous run is active.
+test('createProjectTrigger and updateProjectTrigger send overlap; the listing reads it', async () => {
+  nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, overlap: 'allow' }], errors: [] } };
+  await createProjectTrigger('P1', { name: 'Nightly', type: 'cron', cron: '0 0 3 * * *', prompt_template: 'Go', overlap: 'skip' });
+  expect(last().body).toMatchObject({ overlap: 'skip' });
+  await updateProjectTrigger('P1', 'nightly', { overlap: null });
+  expect(last().body).toEqual({ overlap: null });
+  const [trigger] = (await listProjectTriggers('P1')).triggers;
+  const overlap: 'skip' | 'allow' | null | undefined = trigger!.overlap;
+  // @ts-expect-error overlap is skip or allow
+  const bad: CreateProjectTriggerInput['overlap'] = 'queue';
+  expect(overlap).toBe('allow');
+  expect([overlap, bad]).toHaveLength(2);
+});
+
+// KRTX-1721: a trigger that paused itself after a sustained run-limit breach.
+test('listProjectTriggers keeps the auto-pause the API reports', async () => {
+  const reason = 'auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row';
+  nextResponse = {
+    status: 200,
+    body: { triggers: [{ ...MONITOR_WIRE_ENTRY, auto_paused_at: '2026-10-19T12:00:00.000Z', auto_paused_reason: reason }], errors: [] },
+  };
+
+  const [trigger] = (await listProjectTriggers('P1')).triggers;
+  const pausedAt: string | null | undefined = trigger!.auto_paused_at;
+  const why: string | null | undefined = trigger!.auto_paused_reason;
+
+  expect([pausedAt, why]).toEqual(['2026-10-19T12:00:00.000Z', reason]);
 });
 
 // The API reports the last fire or run outcome; a host shows a failed trigger.
@@ -272,6 +303,27 @@ test('the public trigger access type rejects unknown modes', () => {
   };
 
   expect([access, badAccess]).toHaveLength(2);
+});
+
+test('createProjectTrigger and updateProjectTrigger send filter operators unchanged (KRTX-1721)', async () => {
+  nextResponse = { status: 200, body: { triggers: [], errors: [], triggers_paused: false } };
+  const filter: Record<string, TriggerFilterValue> = {
+    'body.type': 'push',
+    'body.ref': { not_prefix: ['refs/heads/kortix/'] },
+    'body.sender.login': { not: ['kortix-bot'] },
+    'body.action': { in: ['opened', 'reopened'] },
+    'body.pull_request': { exists: true },
+  };
+
+  await createProjectTrigger('P1', { name: 'On push', slug: 'on-push', type: 'webhook', prompt_template: 'Lint {{ body.ref }}', filter });
+  expect(last().body).toMatchObject({ filter });
+  await updateProjectTrigger('P1', 'on-push', { filter: { 'body.base': { prefix: ['release/'] } } });
+  expect(last().body).toEqual({ filter: { 'body.base': { prefix: ['release/'] } } });
+
+  const read: ProjectTrigger['filter'] = filter;
+  // @ts-expect-error an operator takes a list of strings, not a bare object
+  const badOperand: TriggerFilterValue = { not: { login: 'kortix-bot' } };
+  expect([read, badOperand]).toHaveLength(2);
 });
 
 test('listProjectTriggerEventTypes GETs event-types with the connector query and returns the typed catalog', async () => {

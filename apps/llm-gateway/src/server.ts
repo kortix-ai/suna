@@ -120,6 +120,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       authenticate: api.authenticate,
       // Combined authentication + budget gate. Billing runs after model resolution.
       authorize: api.authorize,
+      admit: api.admit,
       resolveRoute: api.resolveRoute,
       resolveUpstream: api.resolveUpstream,
       notePoolRateLimit: api.notePoolRateLimit,

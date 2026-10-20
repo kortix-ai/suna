@@ -40,7 +40,6 @@ import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
-import { isWarmProjectSession } from './warm-sessions';
 import { probeProjectSecret } from '../secrets/envelope';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
@@ -183,7 +182,8 @@ export function serializeSession(
     project_id: row.projectId,
     branch_name: row.branchName,
     base_ref: row.baseRef,
-    sandbox_provider: row.sandboxProvider,
+    // A legacy `e2b` row passes through as stored: E2B support is discontinued.
+    sandbox_provider: row.sandboxProvider as ProjectSession['sandbox_provider'],
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
     runtime_session_id: row.runtimeSessionId,
@@ -192,17 +192,10 @@ export function serializeSession(
     custom_name: customName,
     labels: canAccess ? (row.labels ?? []) : [],
     agent_name: row.agentName,
-    // A warm (pre-created, never-prompted) session whose box is up must not
-    // claim `running`: nothing has ever run in it, and every list painted those
-    // shells as phantom green "Running" rows (KRTX-1466). Report the status it
-    // held while its box booted; the first accepted turn drops the warm marker
-    // (session-activity.ts) and the row reads `running` again. The row still
-    // bills; the manager `project` scope keeps listing it for lifecycle
-    // inspection — see session-inventory.ts (the `visible` scope hides it).
-    status:
-      row.status === 'running' && isWarmProjectSession(row.metadata)
-        ? 'provisioning'
-        : row.status,
+    // Lifecycle reads report the stored state. The visible inventory hides
+    // unused warm sessions; masking a ready runtime as provisioning leaves
+    // manager and CLI reads permanently showing Starting.
+    status: row.status,
     error: row.error,
     // Inventory filters inaccessible rows. Keep this boundary fail-closed for
     // other callers that serialize with canAccess=false. Metadata holds

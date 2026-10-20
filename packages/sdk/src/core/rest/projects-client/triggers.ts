@@ -71,6 +71,22 @@ export interface ProjectTriggerEvent {
 }
 
 /** Parsed trigger spec — what the listing endpoint returns. */
+/**
+ * One trigger filter condition (KRTX-1721): exactly one operator. `not` and
+ * `in` compare the payload value as text; `prefix` and `not_prefix` test how
+ * it starts; `exists` tests that it is present and not null. A missing path
+ * reads as an empty string.
+ */
+export type TriggerFilterCondition =
+  | { not: string[] }
+  | { in: string[] }
+  | { exists: boolean }
+  | { prefix: string[] }
+  | { not_prefix: string[] };
+
+/** A filter path's condition: a string means "equals". */
+export type TriggerFilterValue = string | TriggerFilterCondition;
+
 export interface ProjectTrigger {
   /** URL-safe slug (the filename minus `.md`). */
   slug: string;
@@ -121,6 +137,21 @@ export interface ProjectTrigger {
   max_runs_per_hour?: number | null;
   /** Runs the trigger may start in a UTC day. Null when unset: no daily cap. */
   max_runs_per_day?: number | null;
+  /**
+   * Fresh session mode only (KRTX-1721): `skip` holds a fire while the
+   * trigger's previous run is still active. Null when unset: `skip` for a
+   * cron trigger, `allow` for the others. Optional: older servers omit it.
+   */
+  overlap?: 'skip' | 'allow' | null;
+  /**
+   * Set while the trigger paused itself (KRTX-1721): it ran at its hourly run
+   * limit through the previous hour and was still being held. No automatic fire
+   * starts a run until it is resumed: `updateProjectTrigger(…, { enabled: true })`.
+   * Absent on older servers.
+   */
+  auto_paused_at?: string | null;
+  /** Why it paused, e.g. `auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row`. */
+  auto_paused_reason?: string | null;
   /** For session_mode === 'pinned' only: the session id looped. Null otherwise. */
   session_id: string | null;
   /**
@@ -132,11 +163,12 @@ export interface ProjectTrigger {
   session_key: string | null;
   /**
    * Payload paths (dotted, rooted at the same `body`/`headers` object the
-   * prompt template sees) mapped to the value they must equal for the trigger
-   * to fire. A non-matching delivery is accepted but spawns no session. Null
-   * when unfiltered.
+   * prompt template sees) mapped to the condition each must meet for the
+   * trigger to fire: a value it must equal, or one operator
+   * ({@link TriggerFilterCondition}). A non-matching delivery is accepted but
+   * spawns no session. Null when unfiltered.
    */
-  filter: Record<string, string> | null;
+  filter: Record<string, TriggerFilterValue> | null;
   /** Access policy applied to every session this trigger creates. */
   session_access: TriggerSessionAccess;
   last_fired_at: string | null;
@@ -235,6 +267,8 @@ export interface CreateProjectTriggerInput {
   max_runs_per_hour?: number;
   /** Runs it may start in a UTC day, a whole number ≥ 1. Omit for no daily cap. */
   max_runs_per_day?: number;
+  /** See {@link ProjectTrigger.overlap}. Omit for the type's default. */
+  overlap?: 'skip' | 'allow';
   /**
    * Session strategy across fires. Omit for the type's default — 'fresh' on
    * cron/webhook, 'reuse' on monitor (a monitor fires repeatedly by design, so
@@ -249,8 +283,8 @@ export interface CreateProjectTriggerInput {
    * sent explicitly.
    */
   session_key?: string | null;
-  /** Payload paths mapped to the value they must equal for the trigger to fire. */
-  filter?: Record<string, string> | null;
+  /** Payload paths mapped to the condition each must meet for the trigger to fire. See {@link ProjectTrigger.filter}. */
+  filter?: Record<string, TriggerFilterValue> | null;
   /** Defaults to private. This is account-local runtime state, not manifest config. */
   session_access?: TriggerSessionAccess;
 }
@@ -292,12 +326,14 @@ export interface UpdateProjectTriggerInput {
   max_runs_per_hour?: number | null;
   /** null removes the daily cap. */
   max_runs_per_day?: number | null;
+  /** See {@link ProjectTrigger.overlap}. null resets it to the type's default. */
+  overlap?: 'skip' | 'allow' | null;
   session_mode?: ProjectTriggerSessionMode;
   session_id?: string | null;
   /** See {@link CreateProjectTriggerInput.session_key}. null clears it. */
   session_key?: string | null;
-  /** null or {} clears the filter. */
-  filter?: Record<string, string> | null;
+  /** Replaces the whole filter. null or {} clears it. */
+  filter?: Record<string, TriggerFilterValue> | null;
   /** Replaces the policy and updates prior sessions created by this trigger. */
   session_access?: TriggerSessionAccess;
 }

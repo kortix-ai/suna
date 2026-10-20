@@ -99,6 +99,8 @@ interface ConnectorAccountRow {
   is_default: boolean;
   /** Who the account was authorized as. Absent on older servers. */
   connected_as?: string | null;
+  /** When the upstream rejected the stored credential (401). Absent: not rejected. */
+  credential_rejected_at?: string | null;
 }
 
 /** One condition on a policy rule: a dot path into the call's arguments, the
@@ -1101,7 +1103,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
             `  ${pad(account.label, labelWidth)}  ${pad(account.connected_as ?? '—', asWidth)}  ` +
               `${pad(accountOwnerLabel(account.owner_type), 8)} ` +
               `${pad(account.is_default ? 'yes' : 'no', 8)} ${account.connection_id}` +
-              `${account.is_default ? `  ${C.dim}(pinned default)${C.reset}` : ''}\n`,
+              `${account.is_default ? `  ${C.dim}(pinned default)${C.reset}` : ''}` +
+              `${account.credential_rejected_at ? `  ${C.red}(credential rejected — replace it)${C.reset}` : ''}\n`,
           );
         }
         process.stdout.write('\n');
@@ -1623,7 +1626,7 @@ async function runConnections(input: {
           `  ${pad(connection.connector_alias, connectorWidth)}  ${pad(connection.label ?? '—', labelWidth)}  ` +
             `${pad(connection.connected_as ?? '—', asWidth)}  ` +
             `${pad(connection.owner_type, 9)} ${pad(connectionAudienceLabel(connection), audienceWidth)}  ` +
-            `${pad(connection.status, 8)} ` +
+            `${pad(connection.status === 'active' && connection.metadata?.credential_rejected_at ? 'rejected' : connection.status, 8)} ` +
             `${pad(connection.is_default ? 'yes' : 'no', 8)} ${connection.connection_id}\n`,
         );
       }

@@ -8,6 +8,10 @@ describe('tryGetProvider', () => {
     expect(tryGetProvider('some-retired-provider')).toBeNull();
   });
 
+  test('returns null for a legacy e2b row: E2B support is discontinued', () => {
+    expect(tryGetProvider('e2b')).toBeNull();
+  });
+
   test('never throws, whatever the provider string', () => {
     // Disabled providers (API key unset) throw inside getProvider; tryGetProvider
     // converts every such failure to null.

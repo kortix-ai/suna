@@ -227,7 +227,7 @@ flow(
     tags: ['deployed'],
     serial: true,
     timeoutMs: 300_000,
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     routes: [
       'GET /v1/accounts/me',
       'GET /v1/projects/:projectId',
@@ -492,7 +492,7 @@ flow(
     // polls above; 180s could no longer contain them plus the 120s fire budget.
     // Not a general timeout tuning pass — only the arithmetic this fix forces.
     timeoutMs: 420_000,
-    requires: ['daytona', 'funded'],
+    requires: ['sandbox', 'funded'],
     routes: [
       'GET /v1/accounts/me',
       'GET /v1/projects/:projectId/triggers',
