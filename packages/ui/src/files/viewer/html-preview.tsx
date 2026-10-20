@@ -24,13 +24,40 @@ import { useTranslations } from '../../i18n';
 import { Button } from '../../primitives/button';
 import Loading from '../../primitives/loading';
 import { cn } from '../../lib/utils';
+import { buildStaticFileLocalUrl, buildStaticFileServicePath } from '@kortix/sdk';
 import { useStaticFilePreview } from '@kortix/sdk/react';
 import {
   FileXIcon as FileWarning,
   ArrowCounterClockwiseIcon as RotateCcw,
 } from '@phosphor-icons/react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { useHostPreviewUrl } from '../../browser/use-host-preview-url';
+import { useSessionIds } from '../../providers/session-ids';
+import { useUiPreviewUrlResolver, type UiPreviewUrlResolver } from '../../providers/ui-provider';
 import { framePolicy } from './preview-policy';
+
+/** The static file server in every sandbox. */
+const STATIC_FILE_PORT = 3211;
+
+/**
+ * The page through the host's `resolvePreviewUrl`: the host returns the final URL
+ * with its own credentials, so the SDK token never reaches the frame or a probe.
+ */
+function useHostHtmlPreview(resolve: UiPreviewUrlResolver | undefined, path: string) {
+  const { projectId, sessionId } = useSessionIds();
+  return useHostPreviewUrl(
+    resolve,
+    resolve && projectId && sessionId
+      ? {
+          projectId,
+          sessionId,
+          port: STATIC_FILE_PORT,
+          path: buildStaticFileServicePath(path),
+          url: buildStaticFileLocalUrl(path),
+        }
+      : null,
+  );
+}
 
 /**
  * The frame fills its region edge to edge, and paints WHITE behind the
@@ -46,13 +73,7 @@ import { framePolicy } from './preview-policy';
  */
 export const HTML_PREVIEW_IFRAME_CLASS = 'block h-full w-full border-0 bg-white';
 
-export function HtmlPreview({
-  path,
-  fileName,
-  className,
-  reloadKey,
-  pendingLabel = 'Starting preview server…',
-}: {
+type HtmlPreviewProps = {
   /** Sandbox path of the file to serve. */
   path: string;
   /** A change reloads the page in place. Only the frame is re-keyed: the
@@ -67,9 +88,28 @@ export function HtmlPreview({
    *  it. The default is the English copy, which is what the untranslated
    *  session panel would show anyway. */
   pendingLabel?: ReactNode;
-}) {
+};
+
+export function HtmlPreview(props: HtmlPreviewProps) {
+  // A host-resolved preview retries by mounting again: the resolver runs once per mount.
+  const [attempt, setAttempt] = useState(0);
+  return <HtmlPreviewFrame key={attempt} {...props} onHostRetry={() => setAttempt((n) => n + 1)} />;
+}
+
+function HtmlPreviewFrame({
+  path,
+  fileName,
+  className,
+  reloadKey,
+  pendingLabel = 'Starting preview server…',
+  onHostRetry,
+}: HtmlPreviewProps & { onHostRetry: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { url, status, retry } = useStaticFilePreview(path);
+  const host = useHostHtmlPreview(useUiPreviewUrlResolver(), path);
+  const sdk = useStaticFilePreview(path, { enabled: !host.handled });
+  const { url, status, retry } = host.handled
+    ? { url: host.url, status: host.failed ? 'unavailable' : 'ready', retry: onHostRetry }
+    : sdk;
 
   // Never a dead end: the server may simply be slower than the bound, and the
   // sandbox may have been asleep. One button is the whole recovery.
