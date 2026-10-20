@@ -186,6 +186,7 @@ export default function DebugApprovalsPage() {
           className="overflow-hidden rounded-md border"
         />
         <ApprovalParameters
+          action="gmail.send_draft"
           argsPreview={{ draft_id: 'r-draft-1' }}
           resolvedPreview={RESOLVED_DRAFT}
           resolvedFrom="Gmail"

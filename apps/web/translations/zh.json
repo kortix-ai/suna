@@ -20422,7 +20422,9 @@
       "loadedFrom": "从 {connector} 加载",
       "loadedFromConnector": "从连接器加载",
       "idsOnlyHint": "此次调用没有可检查的内容。代理的任何描述均未经验证。",
-      "resolvedUnavailable": "无法加载草稿。请仔细核对代理的描述。"
+      "resolvedUnavailable": "无法加载草稿。请仔细核对代理的描述。",
+      "aboutDescription": "关于此描述",
+      "senderUnavailable": "无法加载发送账户。请检查发件人一行。"
     }
   },
   "projectOnboarding": {

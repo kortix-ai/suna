@@ -20422,7 +20422,9 @@
       "loadedFrom": "Caricato da {connector}",
       "loadedFromConnector": "Caricato dal connettore",
       "idsOnlyHint": "Questa chiamata non mostra contenuti da verificare. Qualsiasi descrizione dell’agente non è verificata.",
-      "resolvedUnavailable": "Impossibile caricare la bozza. Controlla con attenzione la descrizione dell’agente."
+      "resolvedUnavailable": "Impossibile caricare la bozza. Controlla con attenzione la descrizione dell’agente.",
+      "aboutDescription": "Informazioni su questa descrizione",
+      "senderUnavailable": "Impossibile caricare l'account di invio. Controlla la riga Da."
     }
   },
   "projectOnboarding": {

@@ -416,6 +416,7 @@ export function ApprovalDecisionPanel({
               viewer who may not see arguments gets that warning too. */}
           {hasParameters || previewAuthorized ? (
             <ApprovalParameters
+              action={details.action}
               argsPreview={details.args_preview}
               reviewComplete={details.review_complete !== false}
               resolvedPreview={details.resolved_preview}

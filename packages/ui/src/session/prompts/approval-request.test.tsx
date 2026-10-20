@@ -90,15 +90,19 @@ describe('ApprovalRequest', () => {
     expect(html).toContain('r-1');
     // The unverified note sits in a hover card behind an info trigger, not inline.
     const note = 'Written by the agent and not verified. The parameters below are what the connector receives.';
-    expect(html).toContain(`aria-label="${note}"`);
+    expect(html).toContain('aria-label="About this description"');
     expect(html).toContain('data-slot="hover-card-trigger"');
-    expect(html).not.toContain(`>${note}<`);
+    // Inline only as the screen-reader description the trigger points at.
+    const describedBy = /aria-describedby="([^"]+)"/.exec(html)?.[1];
+    expect(describedBy).toBeTruthy();
+    expect(html).toContain(`<span id="${describedBy}" class="sr-only">${note}</span>`);
+    expect(html.split(note).length - 1).toBe(1);
   });
 
   test('the dense agent description keeps the same info trigger', () => {
     const html = renderToStaticMarkup(<ApprovalAgentContext dense context="Sends the Q3 draft" />);
     expect(html).toContain('data-slot="hover-card-trigger"');
-    expect(html).toContain('aria-label="Written by the agent and not verified.');
+    expect(html).toContain('aria-label="About this description"');
     expect(html).toContain('Sends the Q3 draft');
   });
 
@@ -262,6 +266,7 @@ describe('ApprovalParameters rendering', () => {
   test('an email reads as ONE email: From, To, Cc, Bcc, Subject, then the body', () => {
     const html = renderToStaticMarkup(
       <ApprovalParameters
+        action="gmail.send_email"
         argsPreview={{
           recipient_email: 'sam@example.test',
           cc: ['audit@example.test'],
@@ -288,7 +293,7 @@ describe('ApprovalParameters rendering', () => {
   });
 
   test('an email without a subject or body still shows those rows as None; no Cc or Bcc rows', () => {
-    const html = renderToStaticMarkup(<ApprovalParameters argsPreview={{ to: 'sam@example.test', subject: '' }} />);
+    const html = renderToStaticMarkup(<ApprovalParameters action="gmail.send_email" argsPreview={{ to: 'sam@example.test', subject: '' }} />);
     expect(html).toContain('>Subject<');
     expect(html).not.toContain('>Cc<');
     expect(html).not.toContain('>Bcc<');
@@ -298,6 +303,7 @@ describe('ApprovalParameters rendering', () => {
   test('send_email: From comes from the resolved preview, the rest from the arguments', () => {
     const html = renderToStaticMarkup(
       <ApprovalParameters
+        action="gmail.send_email"
         argsPreview={{ to: 'sam@example.test', subject: 'Hi', body: 'Text', user_id: 'me' }}
         resolvedPreview={{ from: 'ops@example.test' }}
         resolvedFrom="gmail"
@@ -345,7 +351,7 @@ describe('ApprovalParameters rendering', () => {
 
   test('a redacted email body stays hidden', () => {
     const html = renderToStaticMarkup(
-      <ApprovalParameters argsPreview={{ to: 'a@example.test', subject: 's', body: '[redacted]' }} />,
+      <ApprovalParameters action="gmail.send_email" argsPreview={{ to: 'a@example.test', subject: 's', body: '[redacted]' }} />,
     );
     expect(html).toContain('Hidden credential');
     expect(html).not.toContain('[redacted]');
@@ -354,6 +360,7 @@ describe('ApprovalParameters rendering', () => {
   test('send_draft: the loaded draft is the email, and the draft id stays out of it', () => {
     const html = renderToStaticMarkup(
       <ApprovalParameters
+        action="gmail-x1.send_draft"
         argsPreview={{ draft_id: 'r-1' }}
         resolvedPreview={{
           from: 'ops@example.test',
@@ -392,5 +399,75 @@ describe('ApprovalParameters rendering', () => {
     );
     expect(html).toContain('Loaded from the connector');
     expect(html).toContain('Loaded');
+  });
+});
+
+describe('ApprovalParameters email card safety', () => {
+  test('extra recipients join the To row and attachments show; other arguments stay visible', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalParameters
+        action="gmail.send_email"
+        argsPreview={{
+          recipient_email: 'a@example.test',
+          extra_recipients: ['b@example.test'],
+          subject: 'Q3',
+          body: 'Hi',
+          attachment: { name: 'q3.pdf', mimetype: 'application/pdf', s3key: 'k' },
+          include_signature: true,
+          user_id: 'me',
+          is_html: false,
+        }}
+      />,
+    );
+    const to = html.indexOf('>To<');
+    expect(html.indexOf('a@example.test, b@example.test')).toBeGreaterThan(to);
+    expect(html.indexOf('a@example.test, b@example.test')).toBeLessThan(html.indexOf('>Subject<'));
+    expect(html).toContain('>Attachments<');
+    expect(html).toContain('q3.pdf');
+    expect(html).not.toContain('>extra_recipients<');
+    expect(html).not.toContain('>attachment<');
+    // An argument outside the email is listed under the card; harmless ones are not.
+    expect(html.indexOf('>include_signature<')).toBeGreaterThan(html.indexOf('Hi'));
+    expect(html).not.toContain('>user_id<');
+    expect(html).not.toContain('>is_html<');
+  });
+
+  test('a non-mail call with {to, body} keeps the key/value list', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalParameters
+        action="twilio.send_sms"
+        argsPreview={{ to: '+15550100', body: 'Hi', media_url: 'https://example.test/a.png' }}
+      />,
+    );
+    expect(html).toContain('>Parameters<');
+    expect(html).toContain('>to<');
+    expect(html).toContain('>media_url<');
+    expect(html).not.toContain('>From<');
+    // No action at all: no email card either.
+    expect(renderToStaticMarkup(<ApprovalParameters argsPreview={{ to: 'a@example.test', body: 'Hi' }} />)).toContain(
+      '>Parameters<',
+    );
+  });
+
+  test('a shortened preview and a failed load are said inside the card', () => {
+    const html = renderToStaticMarkup(
+      <ApprovalParameters
+        action="gmail.send_email"
+        argsPreview={{ to: 'a@example.test', subject: 'Q3', body: 'Hi … [+3 chars]' }}
+        reviewComplete={false}
+        resolvedError="unavailable"
+      />,
+    );
+    expect(html).toContain('marked in place');
+    expect(html).toContain('Couldn&#x27;t load the sending account.');
+    expect(html).not.toContain('>Parameters<');
+    const draft = renderToStaticMarkup(
+      <ApprovalParameters
+        action="gmail.send_draft"
+        argsPreview={{ draft_id: 'r-1', to: 'a@example.test', subject: 'Q3' }}
+        resolvedError="unavailable"
+      />,
+    );
+    expect(draft).toContain('Couldn&#x27;t load the draft.');
   });
 });

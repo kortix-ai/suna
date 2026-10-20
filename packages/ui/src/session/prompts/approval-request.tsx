@@ -17,7 +17,7 @@ import {
 } from '@phosphor-icons/react';
 import type { SessionAuditAction } from '@kortix/sdk';
 import { approvalReviewable } from './session-approval-review';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 
 /** Matches `Date#toLocaleString()` with no options — date + time, default locale. */
 const requestedAtFormat = new Intl.DateTimeFormat(undefined, {
@@ -189,27 +189,66 @@ export function resolvedTone(label: string): 'success' | 'destructive' | 'muted'
   return 'muted';
 }
 
+/**
+ * The send actions that render as an email card. Matched on the action path
+ * (`<connector slug>.<tool>`), so a non-mail call with `{to, body}` (an SMS)
+ * keeps the key/value list.
+ */
+const EMAIL_ACTION = /^gmail[\w-]*\.(send_email|send_draft|reply_to_thread)$/i;
+
 /** Header rows of an email: label key → the keys that fill it, first match wins. */
 const EMAIL_HEADERS = [
-  ['from', ['from', 'sender']],
+  ['from', ['from', 'from_email', 'sender']],
   ['to', ['to', 'recipient_email', 'recipients']],
   ['cc', ['cc']],
   ['bcc', ['bcc']],
   ['subject', ['subject']],
 ] as const;
 const EMAIL_BODY_KEYS = ['body', 'message_body', 'html'];
+const EMAIL_ATTACHMENT_KEYS = ['attachments', 'attachment'];
+/** Additional To recipients (Composio `GMAIL_SEND_EMAIL.extra_recipients`): shown in the To row. */
+const EXTRA_TO_KEY = 'extra_recipients';
+/** Arguments that change nothing a reviewer judges. Every other argument stays visible. */
+const EMAIL_HIDDEN_KEYS = ['draft_id', 'user_id', 'is_html'];
+const EMAIL_KEYS = new Set<string>([
+  ...EMAIL_HEADERS.flatMap(([, keys]) => keys),
+  ...EMAIL_BODY_KEYS,
+  ...EMAIL_ATTACHMENT_KEYS,
+  EXTRA_TO_KEY,
+  ...EMAIL_HIDDEN_KEYS,
+]);
 
 function emptyValue(value: unknown): boolean {
   return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
 }
 
+function listOf(value: unknown): unknown[] {
+  return emptyValue(value) ? [] : Array.isArray(value) ? value : [value];
+}
+
+/** An attachment by its file name; the whole value when it has none. */
+function attachmentName(item: unknown): unknown {
+  if (item && typeof item === 'object' && !Array.isArray(item)) {
+    const named = (item as Record<string, unknown>).name ?? (item as Record<string, unknown>).filename;
+    if (typeof named === 'string' && named) return named;
+  }
+  return item;
+}
+
 /**
  * One email built from the content Kortix loaded (`loaded`, the draft) merged
- * over the call's own arguments: every header row and the body, each present
- * even when empty. Null when neither reads as an email: a recipient plus a
- * body, a subject or a loaded sender.
+ * over the call's own arguments. Null unless `action` is a mail send and the
+ * content reads as an email: a recipient plus a body, a subject or a loaded
+ * sender. `extra_recipients` joins the To row; `attachment(s)` is the
+ * Attachments row; `rest` is every other argument except the harmless
+ * `EMAIL_HIDDEN_KEYS`, shown under the card.
  */
-function emailView(args: Record<string, unknown> | null, loaded: Record<string, unknown> | null) {
+function emailView(
+  action: string | null | undefined,
+  args: Record<string, unknown> | null,
+  loaded: Record<string, unknown> | null,
+) {
+  if (!action || !EMAIL_ACTION.test(action)) return null;
   const merged = { ...args, ...loaded };
   const pick = (keys: readonly string[]) => keys.find((key) => key in merged);
   const recipient = pick(EMAIL_HEADERS[1][1]);
@@ -218,10 +257,15 @@ function emailView(args: Record<string, unknown> | null, loaded: Record<string, 
     const key = pick(keys);
     return key === undefined ? undefined : merged[key];
   };
-  const header = EMAIL_HEADERS.map(([label, keys]) => ({ label, value: valueOf(keys) }));
+  const header = EMAIL_HEADERS.map(([label, keys]) => {
+    if (label !== 'to') return { label, value: valueOf(keys) };
+    const to = [...listOf(valueOf(keys)), ...listOf(merged[EXTRA_TO_KEY])];
+    return { label, value: to.length > 0 ? to : undefined };
+  });
   const body = valueOf(EMAIL_BODY_KEYS);
-  const attachments = loaded?.attachments;
-  return { header, body, attachments };
+  const attachments = listOf(valueOf(EMAIL_ATTACHMENT_KEYS)).map(attachmentName);
+  const rest = Object.fromEntries(Object.entries(args ?? {}).filter(([key]) => !EMAIL_KEYS.has(key)));
+  return { header, body, attachments, rest };
 }
 
 /** The call names its target only by id (`draft_id`), or names nothing at all. */
@@ -324,16 +368,22 @@ function PreviewValues({
 function EmailCard({
   email,
   caption,
+  incomplete = null,
+  hint = null,
   dense = false,
   channelNames,
 }: DenseProp & {
   email: NonNullable<ReturnType<typeof emailView>>;
   caption?: string | null;
+  /** The preview was shortened: the line that says elisions are marked in place. */
+  incomplete?: string | null;
+  /** A warning: content the server could not load. */
+  hint?: string | null;
   channelNames?: ReadonlyMap<string, string>;
 }) {
   const t = useTranslations('hardcodedUi.approvalParameters');
   const valueSize = dense ? 'text-xs' : 'text-sm';
-  const attachments = Array.isArray(email.attachments) && email.attachments.length > 0 ? email.attachments : null;
+  const attachments = email.attachments.length > 0 ? email.attachments : null;
   return (
     <div className={dense ? 'px-3 py-2' : 'px-4 py-3'}>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1">
@@ -368,6 +418,13 @@ function EmailCard({
           <ArgValue value={email.body} />
         </ClampedValue>
       </div>
+      {incomplete ? <p className="text-muted-foreground mt-3 text-xs text-pretty">{incomplete}</p> : null}
+      {hint ? (
+        <p className="text-muted-foreground mt-3 flex items-start gap-1.5 text-xs text-pretty">
+          <WarningIcon className="text-kortix-orange mt-px size-3.5 shrink-0" />
+          {hint}
+        </p>
+      ) : null}
       {caption ? <p className="text-muted-foreground mt-3 text-xs">{caption}</p> : null}
     </div>
   );
@@ -381,10 +438,11 @@ function EmailCard({
  * server loaded nothing: the decision surface says it cannot be reviewed.
  *
  * `resolvedPreview`: content the server loaded for the reviewer (the draft a
- * `draft_id` points at). An email send renders as ONE email (`EmailCard`):
- * the loaded content merged over the arguments, captioned with the connector
- * it came from (`resolvedFrom`), with no other section; arguments that are
- * not part of the email are not shown. Other loaded content renders above the
+ * `draft_id` points at). A mail send (`action`) renders as ONE email
+ * (`EmailCard`): the loaded content merged over the arguments, captioned with
+ * the connector it came from (`resolvedFrom`), with no section headers. The
+ * arguments outside the email follow it as a key/value list, except
+ * `draft_id`, `user_id` and `is_html`. Other loaded content renders above the
  * arguments. An empty record counts as absent. `resolvedError`: the server
  * could not load it, so the strip warns that the agent's description is all
  * there is.
@@ -393,6 +451,7 @@ function EmailCard({
  * beside it. The id stays, because it is the exact parameter.
  */
 export function ApprovalParameters({
+  action = null,
   argsPreview,
   reviewComplete = true,
   resolvedPreview = null,
@@ -402,6 +461,8 @@ export function ApprovalParameters({
   channelNames,
   className,
 }: DenseProp & {
+  /** The call's action path (`gmail.send_email`). Only a mail send renders as an email card. */
+  action?: string | null;
   argsPreview: Record<string, unknown> | null;
   reviewComplete?: boolean;
   resolvedPreview?: Record<string, unknown> | null;
@@ -417,7 +478,7 @@ export function ApprovalParameters({
   // Nothing recorded and nothing loaded: no section at all. The decision
   // surface says the call cannot be reviewed.
   if (empty && !loaded) return null;
-  const email = emailView(argsPreview, loaded);
+  const email = emailView(action, argsPreview, loaded);
   // A display name, never the bare slug: `gmail` reads "Gmail".
   const connector = resolvedFrom ? resolvedFrom.charAt(0).toUpperCase() + resolvedFrom.slice(1) : null;
   const caption = loaded
@@ -430,12 +491,26 @@ export function ApprovalParameters({
     dense ? 'border-border overflow-hidden rounded-sm border' : 'border-border border-t',
     className,
   );
-  // An email send is ONE email: no section headers, and the arguments that
-  // are not part of the email (`draft_id`, `is_html`) stay out of it.
+  // An email send is ONE email card with no section headers. Arguments that
+  // are not part of the email, except the harmless ones, follow it as a list.
   if (email) {
     return (
       <div className={frame}>
-        <EmailCard email={email} caption={caption} dense={dense} channelNames={channelNames} />
+        <EmailCard
+          email={email}
+          caption={caption}
+          incomplete={reviewComplete ? null : tI18nComplete.raw('text877c39a121a9')}
+          hint={
+            resolvedError
+              ? argsPreview && 'draft_id' in argsPreview
+                ? t('resolvedUnavailable')
+                : t('senderUnavailable')
+              : null
+          }
+          dense={dense}
+          channelNames={channelNames}
+        />
+        <PreviewValues preview={email.rest} dense={dense} channelNames={channelNames} />
       </div>
     );
   }
@@ -482,6 +557,8 @@ export function ApprovalAgentContext({
   className,
 }: DenseProp & { context: string | null | undefined; className?: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('hardcodedUi.approvalParameters');
+  const noteId = useId();
   if (!context) return null;
   return (
     <div
@@ -500,7 +577,8 @@ export function ApprovalAgentContext({
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground"
-              aria-label={tI18nComplete.raw('textfa0db737cb09')}
+              aria-label={t('aboutDescription')}
+              aria-describedby={noteId}
             >
               <InfoIcon weight="fill" className={dense ? 'size-3' : 'size-3.5'} />
             </Button>
@@ -511,6 +589,11 @@ export function ApprovalAgentContext({
             </p>
           </HoverCardContent>
         </HoverCard>
+        {/* The hover card mounts only while open; the note stays readable to
+            a screen reader through aria-describedby. */}
+        <span id={noteId} className="sr-only">
+          {tI18nComplete.raw('textfa0db737cb09')}
+        </span>
       </div>
       <p
         className={cn(
@@ -755,6 +838,7 @@ export function ApprovalRequest({
       <ApprovalAgentContext context={request.approvalContext} />
 
       <ApprovalParameters
+        action={request.action}
         argsPreview={request.argsPreview}
         reviewComplete={reviewComplete}
         resolvedPreview={request.resolvedPreview}

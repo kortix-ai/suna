@@ -20422,7 +20422,9 @@
       "loadedFrom": "Carregado de {connector}",
       "loadedFromConnector": "Carregado do conector",
       "idsOnlyHint": "Esta chamada não mostra conteúdo para verificar. Qualquer descrição do agente não foi verificada.",
-      "resolvedUnavailable": "Não foi possível carregar o rascunho. Revise com atenção a descrição do agente."
+      "resolvedUnavailable": "Não foi possível carregar o rascunho. Revise com atenção a descrição do agente.",
+      "aboutDescription": "Sobre esta descrição",
+      "senderUnavailable": "Não foi possível carregar a conta de envio. Verifique a linha De."
     }
   },
   "projectOnboarding": {

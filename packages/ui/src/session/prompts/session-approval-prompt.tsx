@@ -407,6 +407,7 @@ export function SessionApprovalNotice({
             <ApprovalAgentContext dense context={request.approvalContext} />
             <ApprovalParameters
               dense
+              action={request.action}
               argsPreview={request.argsPreview}
               reviewComplete={request.reviewComplete !== false}
               resolvedPreview={request.resolvedPreview}
