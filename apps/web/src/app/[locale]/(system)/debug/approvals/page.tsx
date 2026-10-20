@@ -2,8 +2,9 @@
 
 import { Composer } from '@kortix/ui/composer';
 import { ApprovalParameters, SessionApprovalNotice } from '@kortix/ui/session';
+import { ApprovalDecisionPanel } from '@kortix/ui/markdown/setup-links/approval-decision';
 import { approvalNoticeRows, type DecidedApproval } from '@kortix/ui/session/prompts/session-approval-review';
-import { SESSION_NOTICE, type SessionAuditAction } from '@kortix/sdk';
+import { type ApprovalLinkDetails, SESSION_NOTICE, type SessionAuditAction } from '@kortix/sdk';
 import { useState } from 'react';
 
 /**
@@ -120,6 +121,79 @@ const SCENARIOS: Record<string, SessionAuditAction[]> = {
   ],
 };
 
+/** The decision panel (Review Center modal, `/approve/[token]`) for the three V01 connectors. */
+function decisionCall(
+  action: string,
+  connectorName: string,
+  risk: string,
+  args: Record<string, unknown>,
+  context: string,
+  minutesLeft: number,
+): ApprovalLinkDetails {
+  return {
+    kind: 'approval',
+    project_id: 'project-debug',
+    project_name: 'Debug',
+    execution_id: action,
+    session_id: 'ses_debug',
+    action,
+    connector: action.split('.')[0],
+    connector_name: connectorName,
+    risk,
+    status: 'pending_approval',
+    pending: true,
+    args_preview: args,
+    review_complete: true,
+    args_summary: null,
+    approval_context: context,
+    policy_source: null,
+    requested_at: new Date().toISOString(),
+    resolved_at: null,
+    expires_at: new Date(Date.now() + minutesLeft * 60_000).toISOString(),
+  };
+}
+
+const DECISION_CALLS = [
+  decisionCall(
+    'gmail.send_email',
+    'Gmail',
+    'write',
+    {
+      from: 'ops@example.test',
+      to: 'reviewer@example.test',
+      cc: 'finance@example.test',
+      subject: 'Q3 launch notes',
+      body: 'Hi, attached are the Q3 launch notes.\nThe rollout starts Monday with the web app.\nFlag anything before Friday’s sync.',
+      attachments: [{ name: 'q3-launch-notes.pdf', size: 245_760 }],
+    },
+    'Send the Q3 launch notes to the reviewer before Friday’s sync.',
+    134,
+  ),
+  decisionCall(
+    'github.merge_pull_request',
+    'GitHub',
+    'destructive',
+    { owner: 'example-org', repo: 'web', pull_number: 482, merge_method: 'squash' },
+    'Merge the stale-cache fix so QA can test the launch build.',
+    38,
+  ),
+  decisionCall(
+    'linear.create_issue',
+    'Linear',
+    'write',
+    {
+      team: 'Platform',
+      title: 'Session list skips archived projects',
+      description: 'Archived projects disappear from the session list after a refresh.\nExpected: they show under an Archived group.',
+      priority: 2,
+      assignee: 'Sam Lee',
+      labels: ['Bug', 'Web'],
+    },
+    'Track the archived-projects bug found during launch QA.',
+    23 * 60 + 10,
+  ),
+];
+
 const NOTICES = { none: null, waking: SESSION_NOTICE.waking } as const;
 
 export default function DebugApprovalsPage() {
@@ -192,6 +266,28 @@ export default function DebugApprovalsPage() {
           resolvedFrom="Gmail"
           className="overflow-hidden rounded-md border"
         />
+      </div>
+
+      {/* The decision panel as the Review Center modal renders it. */}
+      <div className="mx-auto grid w-full max-w-7xl items-start gap-6 px-4 pt-6 lg:grid-cols-3">
+        {DECISION_CALLS.map((details) => (
+          <div
+            key={details.execution_id}
+            data-testid={`decision-${details.connector}`}
+            className="bg-popover border-border overflow-hidden rounded-xl border shadow-md"
+          >
+            <ApprovalDecisionPanel
+              details={details}
+              outcome={null}
+              busyDecision={null}
+              error={null}
+              onDecision={() => undefined}
+              onOpenSession={() => undefined}
+              agentName="Writer"
+              sessionTitle="Q3 launch prep"
+            />
+          </div>
+        ))}
       </div>
 
       {/* Transcript stand-in, so the docked card reads against real height. */}
