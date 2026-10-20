@@ -184,7 +184,7 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   scheduledForDeletion: 'Scheduled for deletion.',
   cancelBeforeDeletion: 'You can cancel any time before then.',
   deletionDescription:
-    'This deletes every agent, thread, credential, and subscription tied to your account. This cannot be undone.',
+    'Schedule deletion with a cancellable grace period, or choose immediate deletion.',
   unavailable: 'Unavailable',
   retry: 'Retry',
   keepMyAccount: 'Keep my account',
@@ -196,7 +196,7 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   // (KRTX-1403: "is scheduled" read as an already-scheduled deletion while
   // GET /v1/account/deletion-status reported none).
   gracePeriodWarning:
-    'Your account will be scheduled for deletion after a 30-day grace period, during which you can cancel.',
+    'Your account will be scheduled for deletion after a 14-day grace period, during which you can cancel.',
   whenDeleted: 'When your account is deleted:',
   agentsDeleted: 'Every agent you own is deleted',
   threadsDeleted: 'Every thread and message is deleted',
@@ -204,9 +204,9 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   subscriptionCancelled: 'Your subscription is cancelled',
   billingHistoryRemoved: 'Your billing history is removed',
   chooseWhen: 'Choose when',
-  gracePeriodLabel: '30-day grace period',
+  gracePeriodLabel: '14-day grace period',
   gracePeriodDescription:
-    'Deletion happens automatically after 30 days. Cancel any time before then.',
+    'Deletion happens automatically after 14 days. Cancel any time before then.',
   immediateLabel: 'Delete immediately',
   immediateDescription: 'Your account and its data are deleted right away. This cannot be undone.',
   typeDeleteToConfirm: 'Type "delete" to confirm',
