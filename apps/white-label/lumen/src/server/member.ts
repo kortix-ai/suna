@@ -10,7 +10,7 @@
 
 import { api } from '@convex/_generated/api';
 import { createScopedKortix } from '@kortix/sdk/server';
-import { fetchAuthAction, getToken } from './auth-server';
+import { fetchAuthAction, fetchAuthQuery, getToken } from './auth-server';
 import { upstreamBase } from './upstream-path';
 
 export interface Member {
@@ -104,6 +104,41 @@ export async function resolveMemberFor(
   const resolved = await resolveMember(req);
   if ('error' in resolved) return resolved;
   if (projectId !== resolved.member.projectId) {
+    return { error: Response.json({ error: 'Not found' }, { status: 404 }) };
+  }
+  return resolved;
+}
+
+const MATTER_CACHE_MS = 60_000;
+// replica-local: a cache miss costs one Convex query; the thread row in Convex is the source of truth.
+const sessionMatter = new Map<string, number>();
+
+/**
+ * A session belongs to the matter in the bearer. The member token reaches
+ * every session of the firm's project, so without this a lawyer with access
+ * to one matter could read, prompt, re-model or preview a thread of another
+ * (restricted) matter. Every route that takes a session id calls it.
+ */
+export async function sessionInMatter(member: Member, kortixSessionId: string): Promise<boolean> {
+  const key = `${member.userId}:${member.matterId}:${kortixSessionId}`;
+  if ((sessionMatter.get(key) ?? 0) > Date.now()) return true;
+  const row = await fetchAuthQuery(api.threads.bySession, { kortixSessionId }).catch(() => null);
+  if (row?.matterId !== member.matterId) return false;
+  // Only a yes is cached: a session recorded a moment later is not refused for a minute.
+  if (sessionMatter.size > 5000) sessionMatter.clear();
+  sessionMatter.set(key, Date.now() + MATTER_CACHE_MS);
+  return true;
+}
+
+/** resolveMemberFor plus sessionInMatter: 404 for a session of another matter, as the proxy answers. */
+export async function resolveMemberForSession(
+  req: Request,
+  projectId: string,
+  sessionId: string,
+): Promise<{ member: Member } | { error: Response }> {
+  const resolved = await resolveMemberFor(req, projectId);
+  if ('error' in resolved) return resolved;
+  if (!(await sessionInMatter(resolved.member, sessionId))) {
     return { error: Response.json({ error: 'Not found' }, { status: 404 }) };
   }
   return resolved;

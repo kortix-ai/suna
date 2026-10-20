@@ -24,14 +24,15 @@
  * allowlists paths instead of trusting Kortix's scope check alone.
  */
 
-import { fetchAuthMutation, fetchAuthQuery } from '@/server/auth-server';
-import { type Member, memberKortix, resolveMember } from '@/server/member';
+import { fetchAuthMutation } from '@/server/auth-server';
+import { type Member, memberKortix, resolveMember, sessionInMatter } from '@/server/member';
 import {
   SESSION_CREATE,
   SESSION_ONE,
   blockedReason,
   forwardedHeaders,
   localAnswer,
+  redactError,
   redactIdentity,
   redactsIdentity,
 } from '@/server/proxy-policy';
@@ -49,7 +50,8 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   const { path = [] } = await ctx.params;
   const built = buildUpstreamPath(path);
   const res = await route(req, built);
-  return built.ok && res.ok && redactsIdentity(built.path) ? redacted(res, built.path) : res;
+  if (!res.ok) return redactedError(res);
+  return built.ok && redactsIdentity(built.path) ? redacted(res, built.path) : res;
 }
 
 async function route(req: NextRequest, built: ReturnType<typeof buildUpstreamPath>): Promise<Response> {
@@ -83,26 +85,6 @@ async function route(req: NextRequest, built: ReturnType<typeof buildUpstreamPat
 
 // Every session route: `projects/<pid>/sessions/<sid>` and below.
 const SESSION_PATH = /^projects\/[^/]+\/sessions\/([0-9a-f-]{36})(?:\/|$)/i;
-const MATTER_CACHE_MS = 60_000;
-// replica-local: a cache miss costs one Convex query; the thread row in Convex is the source of truth.
-const sessionMatter = new Map<string, number>();
-
-/**
- * A session belongs to the matter in the bearer. The member token reaches
- * every session of the firm's project, so without this a lawyer with access
- * to one matter could read or prompt a thread of a restricted matter.
- */
-async function sessionInMatter(member: Member, kortixSessionId: string): Promise<boolean> {
-  const key = `${member.userId}:${member.matterId}:${kortixSessionId}`;
-  if ((sessionMatter.get(key) ?? 0) > Date.now()) return true;
-  const row = await fetchAuthQuery(api.threads.bySession, { kortixSessionId }).catch(() => null);
-  if (row?.matterId !== member.matterId) return false;
-  // Only a yes is cached: a session recorded a moment later is not refused for a minute.
-  if (sessionMatter.size > 5000) sessionMatter.clear();
-  sessionMatter.set(key, Date.now() + MATTER_CACHE_MS);
-  return true;
-}
-
 /** The request Kortix receives: the browser's method and body, only the allowed headers. */
 async function outbound(req: NextRequest, body?: BodyInit): Promise<Request> {
   const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
@@ -111,6 +93,17 @@ async function outbound(req: NextRequest, body?: BodyInit): Promise<Request> {
     headers: forwardedHeaders(req.headers),
     body: hasBody ? (body ?? (await req.arrayBuffer())) : undefined,
   });
+}
+
+/** A non-2xx body names no platform and carries no diagnostics (`redactError`). Streams and non-JSON pass. */
+async function redactedError(res: Response): Promise<Response> {
+  if (!res.headers.get('content-type')?.includes('json')) return res;
+  const text = await res.text();
+  try {
+    return new Response(JSON.stringify(redactError(JSON.parse(text))), { status: res.status, headers: res.headers });
+  } catch {
+    return new Response(text, { status: res.status, headers: res.headers });
+  }
 }
 
 async function redacted(res: Response, path: string): Promise<Response> {

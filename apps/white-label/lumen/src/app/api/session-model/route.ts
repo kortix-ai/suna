@@ -11,7 +11,7 @@
  *        or whether it applies at next start. Those are different outcomes and
  *        the client must be able to say which.
  */
-import { isValidSessionId, memberKortix, resolveMemberFor } from '@/server/member';
+import { isValidSessionId, memberKortix, resolveMemberForSession } from '@/server/member';
 import { sessionModelPin } from '@kortix/sdk';
 import type { NextRequest } from 'next/server';
 
@@ -22,7 +22,7 @@ async function scoped(req: NextRequest) {
   if (!isValidSessionId(sessionId)) {
     return { error: Response.json({ error: 'Invalid identifiers' }, { status: 400 }) };
   }
-  const resolved = await resolveMemberFor(req, projectId);
+  const resolved = await resolveMemberForSession(req, projectId, sessionId);
   if ('error' in resolved) return resolved;
   return { kortix: memberKortix(resolved.member), projectId, sessionId };
 }

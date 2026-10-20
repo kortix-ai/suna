@@ -5,6 +5,7 @@ import {
   blockedReason,
   forwardedHeaders,
   localAnswer,
+  redactError,
   redactIdentity,
   redactsIdentity,
 } from '../../src/server/proxy-policy';
@@ -27,15 +28,6 @@ describe('proxy policy: what a member token may do', () => {
     ['GET', `${P}/model-defaults`],
     ['GET', `${P}/connections`],
     ['GET', `${P}/secrets`],
-    ['GET', `${P}/files`],
-    ['GET', `${P}/files/content`],
-    ['GET', `${P}/files/search`],
-    ['GET', `${P}/files/history`],
-    ['GET', `${P}/branches`],
-    ['GET', `${P}/commits`],
-    ['GET', `${P}/commits/81af8705bc8e64adaeda3717cc9f081dcca520f9`],
-    ['GET', `${P}/commits/81af870/diff`],
-    ['GET', `${P}/version-diff`],
     ['POST', `${P}/sessions`],
     ['POST', `${P}/attachments`],
     ['POST', `${P}/attachments/9c0d1e2f-1111-4222-8333-944455556666/complete`],
@@ -100,6 +92,15 @@ describe('proxy policy: what a member token may do', () => {
     ['GET', `${P}/sessions`],
     ['GET', `${P}/agents`],
     ['GET', `${P}/files/archive`],
+    // The repository spans every matter (each session's branch is named after its session id).
+    ['GET', `${P}/files`],
+    ['GET', `${P}/files/content`],
+    ['GET', `${P}/files/search`],
+    ['GET', `${P}/files/history`],
+    ['GET', `${P}/branches`],
+    ['GET', `${P}/commits`],
+    ['GET', `${P}/commits/81af8705bc8e64adaeda3717cc9f081dcca520f9`],
+    ['GET', `${P}/version-diff`],
     ['GET', `${P}/files/raw`],
     ['POST', `${RT}/kortix/runtime/sessions/ses_1/prompt`],
     ['POST', `${RT}/kortix/runtime/anything`],
@@ -372,42 +373,30 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
     expect(out).toEqual({ authors: { m2: agent }, initial_author: null, stops: {} });
   });
 
-  test('git history names Lumen as every author and committer, with no email and no Kortix in a message', () => {
-    const seed = {
-      hash: 'a'.repeat(40),
-      short_hash: 'aaaaaaa',
-      parents: [],
-      author_name: 'Kortix',
-      author_email: 'noreply@kortix.ai',
-      authored_at: '2026-10-20T00:00:00Z',
-      committer_name: 'Kortix',
-      committer_email: 'noreply@kortix.ai',
-      committed_at: '2026-10-20T00:00:00Z',
-      subject: 'chore: scaffold Kortix project',
-      body: '',
-    };
-    const agent = { ...seed, hash: 'b'.repeat(40), author_name: 'Operator', author_email: OPERATOR, committer_name: 'Operator', committer_email: OPERATOR, subject: 'Add the Q3 memo' };
-    const lumen = { author_name: 'Lumen', author_email: '', committer_name: 'Lumen', committer_email: '' };
-    for (const path of [`${P}/commits`, `${P}/files/history`]) {
+  test("records drop the operator's Kortix user and account ids and the managed repository", () => {
+    const ids = { account_id: 'acc_op', created_by: 'u_op', owner_id: 'u_op' };
+    const session = { session_id: 's1', ...ids, owner_email: OPERATOR, opencode_model: 'kortix/x' };
+    const cases: Array<[string, unknown]> = [
+      [P, { project_id: 'p1', name: 'Firm', ...ids, repo_url: 'https://github.com/managed-x/p1', manifest_path: 'kortix.yaml', description: 'A Kortix project.' }],
+      [S, session],
+      [`${P}/sessions`, [session]],
+      [`${S}/snapshot`, { ...ids, session }],
+      [`${P}/change-requests`, { change_requests: [{ id: 'cr1', ...ids, title: 'x' }] }],
+    ];
+    for (const [path, body] of cases) {
       expect(redactsIdentity(path)).toBe(true);
-      const out = redactIdentity(path, { ref: 'main', commits: [seed, agent], hasMore: false });
-      expect(JSON.stringify(out)).not.toMatch(/kortix|operator/i);
-      expect(out).toEqual({
-        ref: 'main',
-        hasMore: false,
-        commits: [
-          { ...seed, ...lumen, subject: 'chore: scaffold Lumen project' },
-          { ...agent, ...lumen },
-        ],
-      });
+      const out = JSON.stringify(redactIdentity(path, body));
+      expect(out).not.toMatch(/acc_op|u_op|managed-x|manifest_path|Kortix project/);
     }
-    const one = `${P}/commits/${'a'.repeat(40)}`;
-    expect(redactsIdentity(one)).toBe(true);
-    expect(redactIdentity(one, { ...seed, files: [{ path: 'README.md' }] })).toMatchObject({ ...lumen, files: [{ path: 'README.md' }] });
-    const branches = redactIdentity(`${P}/branches`, { default_branch: 'main', branches: [{ name: 'main', subject: 'chore: scaffold Kortix project', committer_name: 'Kortix', committer_email: 'noreply@kortix.ai' }] });
-    expect(JSON.stringify(branches)).not.toMatch(/kortix/i);
-    // The patch carries no author; it passes through.
-    expect(redactsIdentity(`${one}/diff`)).toBe(false);
+  });
+
+  test('an upstream error body names no platform and carries no check diagnostics', () => {
+    const out = redactError({
+      error: 'Project-scoped token cannot access a different project [check=token-project-scope:cross-project principal=project-scoped-pat project=p path=/v1/projects/p]',
+      account_id: 'acc_op',
+      detail: 'kortix gateway refused',
+    });
+    expect(out).toEqual({ error: 'Project-scoped token cannot access a different project', detail: 'Lumen gateway refused' });
   });
 
   test("a failed turn's error copy names Lumen, not Kortix", () => {

@@ -10,7 +10,7 @@
  * share of the same port and path with more than 5 minutes left is reused.
  */
 
-import { memberKortix, resolveMemberFor } from '@/server/member';
+import { memberKortix, resolveMemberForSession } from '@/server/member';
 import { type PreviewRequest, parsePreviewRequest } from '@/server/preview-request';
 import { upstreamBase } from '@/server/upstream-path';
 import { ApiError } from '@kortix/sdk';
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   const input = parsePreviewRequest(body);
   if (!input) return errorResponse(400, 'Invalid preview request');
 
-  const resolved = await resolveMemberFor(req, input.projectId);
+  const resolved = await resolveMemberForSession(req, input.projectId, input.sessionId);
   if ('error' in resolved) return resolved.error;
   const session = memberKortix(resolved.member).session(input.projectId, input.sessionId);
 

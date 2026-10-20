@@ -12,9 +12,10 @@ mock.module('../../src/server/auth-server', () => ({
     return answer();
   },
   fetchAuthMutation: async () => null,
-  fetchAuthQuery: async () => null,
+  fetchAuthQuery: async (_ref: unknown, args: { kortixSessionId: string }) => threadMatter.get(args.kortixSessionId) ?? null,
 }));
-const { resolveMember } = await import('../../src/server/member');
+const threadMatter = new Map<string, { matterId: string }>();
+const { resolveMember, resolveMemberForSession } = await import('../../src/server/member');
 
 const MATTER = 'k57abcdefghijklmnopqrstuvwxyz0123';
 const req = (m = MATTER) => new Request('http://lumen.test/api/kortix/x', { headers: { authorization: `Bearer matter.${m}` } });
@@ -79,5 +80,23 @@ describe('resolveMember: one Convex call per (user, matter) at a time', () => {
     expect('error' in r && r.error.status).toBe(409);
     const bad = await resolveMember(new Request('http://lumen.test/x'));
     expect('error' in bad && bad.error.status).toBe(400);
+  });
+});
+
+describe('resolveMemberForSession: the side routes (session-model, preview-url) check the matter like the proxy', () => {
+  const OWN = '0b8c9d3e-1111-4222-8333-944455556666';
+  const OTHER = '7a1b2c3d-1111-4222-8333-944455556666';
+  test('a session of the bearer matter resolves; a session of another matter or no thread is 404', async () => {
+    answer = async () => minted(Date.now() + 3_600_000);
+    threadMatter.set(OWN, { matterId: MATTER });
+    threadMatter.set(OTHER, { matterId: 'k57someothermatter00000000000000' });
+    const own = await resolveMemberForSession(req(), 'proj_1', OWN);
+    expect('member' in own).toBe(true);
+    for (const sid of [OTHER, '11111111-1111-4111-8111-111111111111']) {
+      const r = await resolveMemberForSession(req(), 'proj_1', sid);
+      expect('error' in r && r.error.status).toBe(404);
+    }
+    const wrongProject = await resolveMemberForSession(req(), 'proj_2', OWN);
+    expect('error' in wrongProject && wrongProject.error.status).toBe(404);
   });
 });

@@ -45,10 +45,9 @@ const RT = `p/${SEG}/8000`;
 const RULES: readonly Rule[] = [
   // The project: its card, agents and models (the picker and its defaults), connection and secret names, change requests.
   rule('GET', `projects/${PROJECT}(?:/(?:detail|change-requests|model-picker|model-defaults|connections|secrets))?`),
-  // The Files and Changes tabs: the project repository, read only.
-  rule('GET', `projects/${PROJECT}/(?:files|files/content|files/search|files/history|branches|commits|version-diff)`),
-  // One commit and its patch: the Changes tab's commit dialog.
-  rule('GET', `projects/${PROJECT}/commits/[0-9a-f]{7,40}(?:/diff)?`),
+  // No repository reads (files, branches, commits, history, diffs): Lumen's thread calls none of
+  // them, and they span every matter. Kortix names each session's branch after its session id, so a
+  // branch list hands a lawyer the session ids of matters they cannot open.
   rule('POST', `projects/${PROJECT}/sessions`),
   rule('POST', `projects/${PROJECT}/attachments(?:/${SEG}/complete)?`),
   // One session: the session, its live stream, transcript, turn, queue, authors, model usage, scope, previews.
@@ -185,9 +184,8 @@ const SESSION_RECORD = new RegExp(`^projects/${PROJECT}/sessions(?:/${SESSION})?
 const SESSION_SNAPSHOT = new RegExp(`^${S}/snapshot$`);
 const MESSAGE_AUTHORS = new RegExp(`^${S}/message-authors$`);
 
-// Responses that carry git authors and commit messages: the Changes tab's
-// branches and commits, one commit, and a file's history.
-const GIT_HISTORY = new RegExp(`^projects/${PROJECT}/(?:branches|commits|commits/[0-9a-f]{7,40}|files/history)$`);
+// Change requests name the operator's Kortix user as their author.
+const CHANGE_REQUESTS = new RegExp(`^projects/${PROJECT}/change-requests$`);
 
 // The runtime's slash-command list: the platform's own skills (kortix-cli,
 // kortix-apps, …) are not a customer's commands.
@@ -208,7 +206,7 @@ export function redactsIdentity(path: string): boolean {
     SESSION_RECORD.test(path) ||
     SESSION_SNAPSHOT.test(path) ||
     MESSAGE_AUTHORS.test(path) ||
-    GIT_HISTORY.test(path) ||
+    CHANGE_REQUESTS.test(path) ||
     SESSION_TURN.test(path) ||
     RUNTIME_COMMANDS.test(path) ||
     PROJECT_RECORD.test(path)
@@ -230,23 +228,43 @@ const notMember = (a: unknown) => !(isObject(a) && a.kind === 'member');
 const KORTIX_WORD = /\bKortix\b/g;
 
 /**
- * A branch or commit, as Lumen shows it. Every commit in a workspace is made
- * by Lumen: the seed commit Kortix writes (author `Kortix`, `noreply@kortix.ai`,
- * "chore: scaffold Kortix project") and the agent's commits, made under the
- * operator's Kortix user. So every author and committer is the brand with no
- * email, and the word Kortix in a message becomes the brand.
+ * Ids of the operator's Kortix user and account. Every member token is that
+ * user, so these name the operator, never the member: they are dropped
+ * wherever Lumen forwards a record (project, session, snapshot, change request).
  */
-function scrubGit(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(scrubGit);
+const OPERATOR_ID_KEYS = new Set(['account_id', 'created_by', 'owner_id', 'owner_user_id', 'user_id', 'updated_by', 'merged_by', 'closed_by', 'deleted_by', 'author_id']);
+// Platform plumbing on the project record: the managed repository and the manifest file.
+const PLATFORM_KEYS = new Set(['repo_url', 'manifest_path', 'git_url', 'clone_url', 'git_origin_url', 'dashboard_url']);
+
+function dropOperatorIds(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(dropOperatorIds);
   if (!isObject(value)) return value;
-  const out: Json = {};
-  for (const [key, v] of Object.entries(value)) {
-    if (key === 'author_name' || key === 'committer_name') out[key] = BRAND.name;
-    else if (key === 'author_email' || key === 'committer_email') out[key] = '';
-    else if ((key === 'subject' || key === 'body') && typeof v === 'string') out[key] = v.replace(KORTIX_WORD, BRAND.name);
-    else out[key] = scrubGit(v);
-  }
-  return out;
+  return Object.fromEntries(
+    Object.entries(value).filter(([k]) => !OPERATOR_ID_KEYS.has(k) && !PLATFORM_KEYS.has(k)).map(([k, v]) => [k, dropOperatorIds(v)]),
+  );
+}
+
+/**
+ * An upstream error body as the browser sees it: the brand instead of the
+ * platform's name, and no `[check=… principal=… path=…]` diagnostics.
+ */
+export function redactError(body: unknown): unknown {
+  if (typeof body === 'string') return body.replace(/\s*\[check=[^\]]*\]/g, '').replace(/\bkortix\b/gi, BRAND.name);
+  if (Array.isArray(body)) return body.map(redactError);
+  if (!isObject(body)) return body;
+  return Object.fromEntries(Object.entries(dropOperatorIds(body) as Json).map(([k, v]) => [k, redactError(v)]));
+}
+
+/**
+ * The project record's prose (feature catalog, manifest description) in any
+ * case: "kortix-genui", "kortix remind", "OpenCode" name the platform too.
+ * Only for records with no functional ids (a model id "kortix/…" must stay).
+ */
+function scrubPlatform(value: unknown): unknown {
+  if (typeof value === 'string') return value.replace(/\bkortix\b/gi, BRAND.name).replace(/\bOpenCode\b/gi, 'the agent runtime');
+  if (Array.isArray(value)) return value.map(scrubPlatform);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrubPlatform(v)]));
 }
 
 /** Every string in a value names the brand instead of Kortix. Keys and non-strings stay. */
@@ -297,23 +315,24 @@ function scrubTurn(value: unknown): unknown {
  * the session record loses its owner name, email and avatar and its
  * initiator label; message authors and stops lose their `member` entries
  * ("Messages with no known sender are absent"), so the transcript draws no
- * "Sent by" or "Stopped by". Authors that are agent sessions stay. Git
- * history names Lumen as every author (`scrubGit`), a failed turn's error
- * copy names Lumen (`scrubTurn`), the slash-command list leaves out the
- * platform's own commands and names Lumen in the rest, and the project
- * record names Lumen (`scrubWord`).
+ * "Sent by" or "Stopped by". Authors that are agent sessions stay. The
+ * session, snapshot, project and change-request records lose the operator's
+ * Kortix user and account ids and the managed repository
+ * (`dropOperatorIds`), a failed turn's error copy names Lumen (`scrubTurn`),
+ * the slash-command list leaves out the platform's own commands and names
+ * Lumen in the rest, and the project record names Lumen (`scrubWord`).
  */
 export function redactIdentity(path: string, body: unknown): unknown {
   if (RUNTIME_COMMANDS.test(path) && Array.isArray(body)) return scrubCommands(body);
-  if (PROJECT_RECORD.test(path)) return scrubWord(body);
+  if (PROJECT_RECORD.test(path) || CHANGE_REQUESTS.test(path)) return scrubPlatform(dropOperatorIds(body));
+  if (SESSION_RECORD.test(path) && Array.isArray(body)) return dropOperatorIds(body.map(scrubSession));
   if (!isObject(body)) return body;
-  if (GIT_HISTORY.test(path)) return scrubGit(body);
   if (SESSION_TURN.test(path)) return scrubTurn(body);
-  if (SESSION_RECORD.test(path)) return scrubSession(body);
+  if (SESSION_RECORD.test(path)) return dropOperatorIds(Array.isArray(body.sessions) ? { ...body, sessions: body.sessions.map(scrubSession) } : scrubSession(body));
   if (SESSION_SNAPSHOT.test(path)) {
     return {
-      ...body,
-      session: scrubSession(body.session),
+      ...(dropOperatorIds(body) as Json),
+      session: dropOperatorIds(scrubSession(body.session)),
       ...('turn' in body ? { turn: scrubTurn(body.turn) } : {}),
       ...('runtime' in body ? { runtime: scrubSnapshotRuntime(body.runtime) } : {}),
     };
