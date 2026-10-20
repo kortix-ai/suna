@@ -126,7 +126,7 @@ export type CtxOpts = Pick<ProjectContextOpts, 'projectArg' | 'hostArg' | 'onePr
 
 export async function resolveProjectContext(
   optsOrProjectArg?: ProjectContextOpts | string,
-): Promise<{ client: ApiClient; projectId: string; auth: Auth } | null> {
+): Promise<{ client: ApiClient; projectId: string; auth: Auth; defaultProject?: boolean } | null> {
   const opts: ProjectContextOpts =
     typeof optsOrProjectArg === 'string'
       ? { projectArg: optsOrProjectArg }
@@ -159,11 +159,13 @@ export async function resolveProjectContext(
   // cross-deployment, exactly like --host would.
   const scopedHost = opts.hostArg ?? (hostScoped ? (activeHostName() ?? undefined) : undefined);
   let projectId: string | null;
+  let defaultProject = false;
   if (scopedHost && !opts.projectArg) {
     const link = loadLink();
     const linkProject = link?.host === scopedHost ? link.project_id : undefined;
     const hostDefault = getHost(scopedHost)?.default_project;
     projectId = linkProject ?? hostDefault?.project_id ?? null;
+    defaultProject = !linkProject && !!hostDefault?.project_id;
     if (!projectId) {
       if (!opts.quietWhenUnresolved) {
         const source = opts.hostArg ? '(--host)' : '(the active host)';
@@ -177,6 +179,7 @@ export async function resolveProjectContext(
   } else {
     const ref = resolveProjectRef(opts.projectArg);
     projectId = ref?.projectId ?? null;
+    defaultProject = ref?.source === 'default';
     // ONE PRINCIPAL (KRTX-1486): the ambient sandbox session token is bound
     // to the sandbox's own project. A project the CLI config resolved
     // (.kortix/link.json) must never pair with it — writes 403 cross-project
@@ -223,7 +226,7 @@ export async function resolveProjectContext(
     }
     return null;
   }
-  return { client: clientFromAuth(auth), projectId, auth };
+  return { client: clientFromAuth(auth), projectId, auth, defaultProject };
 }
 
 export interface AccountContext {

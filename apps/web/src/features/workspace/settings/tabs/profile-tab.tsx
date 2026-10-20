@@ -676,7 +676,7 @@ export function ProfileTab() {
       const filePath = `${userId}/${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+        .upload(filePath, file, { cacheControl: '0', upsert: true });
       if (uploadError) throw uploadError;
       const {
         data: { publicUrl },
