@@ -197,7 +197,6 @@ export function createModelVisibility(input: {
       if (MANAGED_MODEL_IDS.has(model.modelID)) {
         // Same rule as `hasUsableModel` above.
         return !freeTier;
-
       }
       if (!isGatewayModelConnected(model, connectedProviderIds)) return false;
     }
