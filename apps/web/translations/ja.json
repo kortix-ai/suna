@@ -638,6 +638,7 @@
         "userNotFound": "ユーザーが見つかりません",
         "profilePictureUpdated": "プロフィール写真を更新しました",
         "profilePictureUploadFailed": "プロフィール写真をアップロードできませんでした",
+        "avatarUploadOffline": "画像をアップロードできませんでした。接続を確認して、もう一度お試しください。",
         "profilePictureRemoved": "プロフィール写真が削除されました",
         "profilePictureRemoveFailed": "プロフィール写真を削除できませんでした",
         "chooseImageFile": "画像ファイルを選択してください",

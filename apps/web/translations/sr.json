@@ -638,6 +638,7 @@
         "userNotFound": "Корисник није пронађен",
         "profilePictureUpdated": "Слика профила је ажурирана",
         "profilePictureUploadFailed": "Није могуће отпремити слику профила",
+        "avatarUploadOffline": "Слика није отпремљена. Провери везу и покушај поново.",
         "profilePictureRemoved": "Слика профила је уклоњена",
         "profilePictureRemoveFailed": "Није могуће уклонити слику профила",
         "chooseImageFile": "Изаберите датотеку слике",

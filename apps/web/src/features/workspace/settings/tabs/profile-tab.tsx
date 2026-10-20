@@ -1,6 +1,7 @@
 'use client';
 
 import { localizedCopy } from './localized-copy';
+import { removeProfileAvatar } from './profile-avatar';
 
 /**
  * The Profile tab — profile picture, email, display name, the organizations
@@ -93,6 +94,7 @@ import {
   AccountMembershipsSection,
   useAccountMemberships,
 } from './account-memberships';
+import { isOfflineUploadError } from './avatar-upload-error';
 
 const PROFILE_QUERY_KEY = ['account', 'profile'] as const;
 
@@ -662,6 +664,7 @@ export function ProfileTab() {
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData.user?.id;
       if (!userId) throw new Error(t('toasts.userNotFound'));
+      await removeProfileAvatar(supabase, userId);
       const fileExt = (file.name.split('.').pop() || 'png').toLowerCase();
       const filePath = `${userId}/${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage
@@ -681,17 +684,26 @@ export function ProfileTab() {
       successToast(tI18nComplete('text5f2e85f50ed3'));
       queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, file) => {
       if (avatarPreviewRef.current) URL.revokeObjectURL(avatarPreviewRef.current);
       setAvatarPreview(null);
+      // A request that never reached a server: say so and offer a retry, not "Failed to fetch" (KRTX-2838).
+      if (isOfflineUploadError(error)) {
+        errorToast(t('toasts.avatarUploadOffline'), {
+          actions: [{ label: t('retry'), onClick: () => uploadAvatarMutation.mutate(file) }],
+        });
+        return;
+      }
       errorToast(error.message || tI18nComplete('text1a495c868b6b'));
     },
   });
 
   const removeAvatarMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.auth.updateUser({ data: { avatar_url: '' } });
+      const { data, error } = await supabase.auth.getUser();
       if (error) throw error;
+      if (!data.user) throw new Error(t('toasts.userNotFound'));
+      await removeProfileAvatar(supabase, data.user.id);
     },
     onSuccess: () => {
       successToast(tI18nComplete('text2fd3b5709d0d'));
