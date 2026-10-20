@@ -1168,6 +1168,7 @@ const catalog = {
     "upgrade": "Upgrade",
     "noMatch": {
       "title": "No models match",
+      "singleModelDescription": "Only 1 model is available in this project. Model availability depends on your plan and connected providers.",
       "description": "Nothing matches “{search}”. Try a different search.",
       "clear": "Clear search"
     },
@@ -6618,7 +6619,7 @@ const catalog = {
     "audienceQuestion": "Who can open it?",
     "badgeEveryone": "Everyone",
     "badgePeople": "{count, plural, one {# person} other {# people}}",
-    "privateNote": "Your files stay private, even from admins. Share a folder to give someone access.",
+    "privateNote": "Only you can open My files, not even admins. Share a folder to give someone access.",
     "noTeamFolders": "No team folders yet.",
     "sessionFilesName": "Files",
     "sessionFilesHint": "Folders it can open",
