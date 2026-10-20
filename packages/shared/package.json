@@ -32,7 +32,8 @@
     "./host-config": "./src/host-config/config.ts",
     "./sandbox-env": "./src/host-config/sandbox-env.ts",
     "./test-sandbox-env": "./src/host-config/test-sandbox-env.ts",
-    "./subprocessors": "./src/subprocessors.ts"
+    "./subprocessors": "./src/subprocessors.ts",
+    "./ssrf-guard": "./src/ssrf-guard.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",

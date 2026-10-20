@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 import { getTranslations } from '@/i18n/get-translations';
-import { siteMetadata } from '@/lib/site-metadata';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 
 import NotFoundBoundary from './[locale]/not-found';
 import './globals.css';

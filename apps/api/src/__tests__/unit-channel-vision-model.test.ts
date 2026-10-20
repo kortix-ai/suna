@@ -290,11 +290,6 @@ mock.module('../llm-gateway/models/served-managed-models', () => ({
   isPlatformDefaultModelId: (id: string) => id === 'deepseek-v4-flash',
 }));
 
-mock.module('../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => true,
-  projectLlmGatewayEnabledById: async () => true,
-}));
-
 mock.module('../billing/services/entitlements', () => ({
   accountMayUseManagedModels: async () => true,
 }));

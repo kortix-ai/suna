@@ -691,17 +691,11 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
  * says) and the manifest's `runtime:` field (`pi` ⇒ pi, even with the flag
  * off). Everything else is OpenCode. `runtime: null` is "no readable v2
  * manifest", which counts as opencode.
- *
- * pi calls models only through the Kortix LLM gateway (kortixd
- * `harness/pi/model.ts`). A project with the `llm_gateway` flag off gets no
- * gateway URL, so it always boots OpenCode, which calls providers directly.
  */
 export function selectSessionHarness(input: {
   piHarnessFlag: boolean;
   runtime: RuntimeV2 | null;
-  llmGateway: boolean;
 }): 'opencode' | 'pi' {
-  if (!input.llmGateway) return 'opencode';
   if (input.piHarnessFlag) return 'pi';
   return input.runtime === 'pi' ? 'pi' : 'opencode';
 }

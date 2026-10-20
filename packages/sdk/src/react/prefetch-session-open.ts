@@ -3,6 +3,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 
 import { claimOpenBundle, openSessionBundle } from '../core/session/open-bundle';
+import { getModelDefaults } from '../core/rest/projects-client/model-defaults';
 import { readProjectSessionRow } from '../core/session/project-session-read';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
@@ -78,13 +79,13 @@ export function prefetchSessionOpen(
 
 /**
  * Hand the session-open snapshot's `models` leg (= `GET .../model-defaults`)
- * to the model-defaults query. `useModelDefaults` then answers when the
- * snapshot lands: it does not wait for `/detail` to name the gateway flag, and
- * it issues no `/model-defaults` request while the seed is fresh.
+ * to the model-defaults query. The seed is the query's own fetch, started
+ * from `useSession`'s layout effect: `useModelDefaults` mounts onto it and
+ * issues no `/model-defaults` request of its own. A leg that is not `known`
+ * (a failed read) falls back to the route.
  *
- * Seeds only an empty entry, as every snapshot leg does: a read issued after a
- * change asks the route. A leg that is not `known` (gateway off, a failed
- * read) seeds nothing.
+ * Seeds only an empty or stale entry, as every snapshot leg does: a read
+ * issued after a change asks the route.
  *
  * Internal: not exported from any public entry point.
  */
@@ -93,10 +94,17 @@ export function seedModelDefaultsFromOpenBundle(
   projectId: string,
   sessionId: string,
 ): void {
-  void claimOpenBundle(projectId, sessionId)?.then((bundle) => {
-    const key = ['model-defaults', projectId];
-    if (!bundle?.models?.known || queryClient.getQueryData(key) !== undefined) return;
-    const { known: _known, ...defaults } = bundle.models;
-    queryClient.setQueryData(key, defaults);
+  const bundle = claimOpenBundle(projectId, sessionId);
+  if (!bundle) return;
+  void queryClient.prefetchQuery({
+    queryKey: ['model-defaults', projectId],
+    queryFn: async () => {
+      const models = (await bundle)?.models;
+      if (!models?.known) return getModelDefaults(projectId);
+      const { known: _known, ...defaults } = models;
+      return defaults;
+    },
+    // `useModelDefaults`' own freshness: inside it the seed is the answer.
+    staleTime: 30_000,
   });
 }

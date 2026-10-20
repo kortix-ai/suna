@@ -675,3 +675,13 @@ test('getAccountAutomations reads the switch and setAccountAutomationsPaused fli
   expect(last().body).toEqual({ paused: true });
   expect([after.paused, after.paused_by]).toEqual([true, 'U1']);
 });
+
+test('list preserves the exact cron occurrence separately from scheduled execution', async () => {
+  nextResponse = { status: 200, body: { triggers: [{
+    ...MONITOR_WIRE_ENTRY, type: 'cron', cron: '0 0 9 * * *',
+    next_cron_at: '2026-10-10T09:00:00.000Z', next_fire_at: '2026-10-10T09:15:00.000Z',
+  }], errors: [] } };
+  const result = await listProjectTriggers('project-test');
+  expect(result.triggers[0]?.next_cron_at).toBe('2026-10-10T09:00:00.000Z');
+  expect(result.triggers[0]?.next_fire_at).toBe('2026-10-10T09:15:00.000Z');
+});

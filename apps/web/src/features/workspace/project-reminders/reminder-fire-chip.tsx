@@ -1,12 +1,12 @@
 'use client';
 
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { CSSProperties } from 'react';
 import { clockTime } from './reminder-calendar-model';
 import { reminderColors, useOpenFire } from './reminder-fire-popover';
-import { reminderTitle } from './reminder-format';
+import { reminderTitle } from '@kortix/ui/workspace';
 import type { ReminderFire } from './reminder-schedule';
 
 const FOCUS = 'focus-visible:ring-ring/50 outline-none focus-visible:ring-2';

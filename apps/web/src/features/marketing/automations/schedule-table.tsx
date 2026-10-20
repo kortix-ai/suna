@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { getLocalizedAutomationsContent } from './content';

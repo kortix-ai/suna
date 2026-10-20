@@ -3,7 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useRef } from 'react';
 
-import { ChatMinimap } from '@/features/session/chat-minimap';
+import { ChatMinimap } from '@kortix/ui/session';
 import {
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,

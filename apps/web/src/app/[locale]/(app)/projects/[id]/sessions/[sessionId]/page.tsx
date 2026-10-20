@@ -9,36 +9,47 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { AppErrorCard, ClientErrorBoundary } from '@/components/common/error-boundary';
-import { isLegacyMigratedSession, sessionDisplayLabel } from '@/components/projects/session-label';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { useNotificationCenter } from '@/features/notifications/use-notification-center';
+import {
+  isLegacyMigratedSession,
+  sessionDisplayLabel,
+  ProviderFailureRecovery,
+  SandboxLoadingBoundary,
+  SessionChat,
+  SessionConnectingBanner,
+  SessionStartingLoader,
+  SessionNoticeBanner,
+  SessionDeleteModal,
+} from '@kortix/ui/session';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { ErrorState } from '@kortix/ui/error-state';
+import { useNotificationCenter } from '@kortix/ui/internal/hooks/use-notification-center';
 import { useOpenSessionRead } from '@/features/notifications/use-open-session-read';
 import { useAuth } from '@/features/providers/auth-provider';
-import { InstantSessionShell } from '@/features/session/instant-session-shell';
-import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
+import { MissingSessionBoundary } from '@/features/session/missing-session-boundary';
+import {
+  InstantSessionShell,
+  SavedSessionSkeleton,
+  SessionLayout,
+  SidebarToggle,
+} from '@kortix/ui/workspace';
+import { resolvePinnedRootSessionId } from '@kortix/ui/session/thread/pinned-root-session';
 import {
   PreviousRepositoryNoticeProvider,
   sessionUsesPreviousRepository,
-} from '@/features/session/previous-repository-session';
-import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
+} from '@kortix/ui/session/status/previous-repository-session';
 import {
   pendingSessionPromptForRecovery,
   provisioningFailurePresentation,
-} from '@/features/session/provisioning-failure';
-import { isFirstPromptRow } from '@/features/session/queue-projection';
-import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
+} from '@kortix/ui/session/status/provisioning-failure';
+import { isFirstPromptRow } from '@kortix/ui/session/composer/queue-projection';
 import {
   deleteRuntimeSessionParam,
   readRuntimeSessionParam,
-} from '@/features/session/tool/tools/session-spawn-urls';
-import { SavedSessionSkeleton } from '@/features/session/saved-session-skeleton';
-import { useSessionAudit } from '@/features/session/session-audit-shared';
-import { SessionChat } from '@/features/session/session-chat';
-import '@/features/session/tool/tools/register';
-import { SessionLayout } from '@/features/session/session-layout';
+} from '@kortix/ui/session/tool/tools/session-spawn-urls';
+import { useSessionAudit } from '@kortix/ui/session-panel';
+import '@kortix/ui/session/tool/tools/register';
 import {
   canMountSessionChat,
   findInitialSessionPin,
@@ -46,7 +57,7 @@ import {
   gatedRuntimeError,
   runtimeErrorPresentation,
   sessionErrorSurfaceReady,
-} from '@/features/session/session-load-state';
+} from '@kortix/ui/session/status/session-load-state';
 import {
   AUTO_RESUME_WINDOW_MS,
   isAutoResuming,
@@ -54,17 +65,12 @@ import {
   isSandboxResumable,
   isWakeClassFailure,
   sessionWakeProgress,
-} from '@/features/session/session-resume';
-import { canPollSessionStart } from '@/features/session/session-start-gate';
-import {
-  SessionConnectingBanner,
-  SessionStartingLoader,
-} from '@/features/session/session-starting-loader';
+} from '@kortix/ui/session/status/session-resume';
+import { canPollSessionStart } from '@kortix/ui/session/status/session-start-gate';
 import {
   SessionNotice,
-  SessionNoticeBanner,
   type SessionNoticeProps,
-} from '@/features/session/session-notice-banner';
+} from '@kortix/ui/session/status/session-notice-banner';
 import {
   hasOrExpectsTranscript,
   resolveBootPresentation,
@@ -72,45 +78,44 @@ import {
   resolveSessionOverlay,
   shouldForgetNewSessionHint,
   shouldMountSessionChat,
-} from '@/features/session/session-surface';
+} from '@kortix/ui/session/status/session-surface';
 import {
   canRenderCachedTranscriptWhileSandboxDown,
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
-} from '@/features/session/session-terminal-state';
+} from '@kortix/ui/session/status/session-terminal-state';
 import {
   shouldPaintFatalCard,
   shouldPaintTerminalCard,
-} from '@/features/session/terminal-card-gate';
-import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
-import { useAccountState } from '@/hooks/billing';
+} from '@kortix/ui/terminal';
+import { useAccountState } from '@kortix/ui/internal/billing/index';
+import { ReconnectGitHubButton, useRepositoryDisconnect } from '@kortix/ui/workspace/repository-disconnected';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import {
   useRecoverLostSession,
   useRestartProjectSession,
-} from '@/hooks/projects/use-restart-project-session';
+} from '@kortix/ui/internal/hooks/projects/use-restart-project-session';
 import {
   billingDialogArgs,
   billingGateCopy,
   billingStateAllowsRun,
   resolveBillingState,
-} from '@/lib/billing/billing-gate-state';
+} from '@kortix/ui/internal/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
-import { cn } from '@/lib/utils';
-import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
-import { useSessionComposerPrefillStore } from '@/stores/session-composer-prefill-store';
+import { cn } from '@kortix/ui';
+import { useFirstPromptPreviewStore, useSessionComposerPrefillStore } from '@kortix/ui/composer';
 import {
   shouldShowSessionSwitchLoading,
   useSessionSwitchStore,
-} from '@/stores/session-switch-store';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { useWebNotificationStore } from '@/stores/web-notification-store';
+} from '@kortix/ui/internal/stores/session-switch-store';
+import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
+import { useWebNotificationStore } from '@kortix/ui/internal/stores/web-notification-store';
 import {
   clearSessionFresh,
   formatRuntimeError,
   getProjectDetail,
+  isRepositoryDisconnectedError,
   isSessionFresh,
   sessionStartKey,
   setActiveInstanceCookie,
@@ -156,13 +161,29 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
  */
 export default function ProjectSessionPage() {
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
+  const tSessionPage = useTranslations('sessionPage');
   if (!projectId || !sessionId) return null;
   return (
-    <ProjectSessionView
+    <MissingSessionBoundary
       key={`${projectId}/${sessionId}`}
       projectId={projectId}
       sessionId={sessionId}
-    />
+      fallback={
+        <InlineSessionError
+          title={tSessionPage('missing.title')}
+          message={tSessionPage('missing.message')}
+          action={
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/projects/${projectId}`} prefetch>
+                {tSessionPage('backToProject')}
+              </Link>
+            </Button>
+          }
+        />
+      }
+    >
+      <ProjectSessionView projectId={projectId} sessionId={sessionId} />
+    </MissingSessionBoundary>
   );
 }
 
@@ -188,6 +209,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   useSessionAudit(projectId, sessionId, { poll: true, silent: true, limit: 100 });
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tSessionPage = useTranslations('sessionPage');
+  const tRepository = useTranslations('repositoryDisconnected');
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -214,7 +236,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const accountLoaded = !!accountState;
   // ONE resolver for "what is this account's billing situation" (see
-  // lib/billing/billing-gate-state.ts). This used to be `!can_run`, rendered as
+  // packages/ui/src/internal/lib/billing/billing-gate-state.ts). This used to be `!can_run`, rendered as
   // `noPlan` with a subscribe pitch — which told an account on an ACTIVE
   // subscription with a $0.0099 wallet that it had no plan, while the modal
   // that CTA opened correctly said "Out of credits — your plan is unaffected".
@@ -601,6 +623,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (session.messages.length > 0) setSawTranscript(true);
   }, [session.messages.length]);
   const hasTranscript = session.messages.length > 0 || sawTranscript;
+  const repositoryDisconnect = useRepositoryDisconnect(projectId);
   // A session whose clone predates a repository replacement still has its
   // transcript. Do not replace a readable conversation with a failure card.
   const previousRepositoryHistoryAvailable = hasTranscript && usesPreviousRepository;
@@ -938,6 +961,23 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // nothing to read.
     let notice: SessionNoticeProps | null = null;
 
+    // The project's GitHub repository cannot be reached (KRTX-2955): the
+    // start failed with the cause, and no retry can help until GitHub is
+    // reconnected. Say that, with the one fix, instead of a machine failure.
+    if (session.startError && isRepositoryDisconnectedError(session.startError)) {
+      const message = repositoryDisconnect
+        ? tRepository(`reasons.${repositoryDisconnect.reason}`, {
+            owner: repositoryDisconnect.owner,
+            repository: repositoryDisconnect.repository,
+          })
+        : session.startError.message;
+      const action = <ReconnectGitHubButton projectId={projectId} />;
+      if (!hasTranscript) {
+        return <InlineSessionError title={tRepository('title')} message={message} action={action} />;
+      }
+      notice = { tone: 'warning', title: tRepository('title'), message, action };
+    }
+
     // The wake ladder is still working: a session with rungs left is not a dead
     // end, and painting one is the exact defect this replaces — the card fired
     // while the box was seconds from ready. The transcript mirror keeps
@@ -958,7 +998,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           </HeaderlessSessionSurface>
         );
       }
-    } else if (recoverableFailure) {
+    } else if (recoverableFailure && !notice) {
       // A dead end that cannot say what was already attempted invites the
       // user to repeat it by hand. `wake.summary` names every rung the ladder
       // used before giving up. It rides in the MESSAGE, not in `detail`: that
@@ -1590,7 +1630,7 @@ function ActiveSessionChat({
     // route. Next patches `replaceState` and updates its own canonical URL, so
     // `useSearchParams` still reports the stripped URL and this effect settles
     // on its next run. Same mechanism as `openTabAndNavigate` in
-    // `stores/tab-store.ts`.
+    // `packages/ui/src/internal/stores/tab-store.ts`.
     window.history.replaceState(
       null,
       '',

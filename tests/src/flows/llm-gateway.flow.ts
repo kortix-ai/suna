@@ -137,13 +137,9 @@ flow(
 
 // GW-5 — project-scoped LLM catalog surfaces read by the connect modal.
 //   GET /:projectId/llm-catalog           — model-level entries (Record<
-//                                          "provider/model", GatewayModel>),
-//                                          gated by the project's llm_gateway
-//                                          flag.
+//                                          "provider/model", GatewayModel>).
 //   GET /:projectId/llm-catalog/providers  — provider-level rows (id, name,
-//                                          env, docs, models), NOT gated by
-//                                          llm_gateway (BYOK connect modal
-//                                          applies to native projects too).
+//                                          env, docs, models).
 // Both read the same 24h-refreshed runtimeModelCatalog; both enforce
 // project-read authz. Cover both in one flow so the gate can't drift between
 // the two shapes.
@@ -152,7 +148,6 @@ flow(
   {
     domain: 'llm-gateway',
     routes: [
-      'PATCH /v1/projects/:projectId/experimental',
       'GET /v1/projects/:projectId/llm-catalog',
       'GET /v1/projects/:projectId/llm-catalog/providers',
     ],
@@ -183,12 +178,7 @@ flow(
       });
     }
 
-    await ctx.step('enabled catalog retains published rates for ChatGPT picker rows', async () => {
-      (await ctx.client.as(ctx.P.OWNER).patch(
-        '/v1/projects/:projectId/experimental',
-        { feature: 'llm_gateway', enabled: true },
-        { params },
-      )).status(200);
+    await ctx.step('the catalog retains published rates for ChatGPT picker rows', async () => {
       const response = await ctx.client.as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/llm-catalog', { params });
       response.status(200);
@@ -348,15 +338,6 @@ flow(
     await ctx.step(
       'compact project model picker is available without the full runtime catalog',
       async () => {
-        const enabled = await ctx.client
-          .as(ctx.P.OWNER)
-          .patch(
-            '/v1/projects/:projectId/experimental',
-            { feature: 'llm_gateway', enabled: true },
-            { params },
-          );
-        enabled.status(200);
-
         const picker = await ctx.client
           .as(ctx.P.OWNER)
           .get('/v1/projects/:projectId/model-picker', { params });
@@ -472,9 +453,11 @@ flow(
 flow('GW-ACCESS-1', {
   domain: 'llm-gateway',
   routes: [
+    'GET /v1/projects/:projectId',
+    'PATCH /v1/projects/:projectId/features',
+    'PATCH /v1/projects/:projectId/experimental',
     'GET /v1/projects/:projectId/model-access',
     'PUT /v1/projects/:projectId/model-access',
-    'PATCH /v1/projects/:projectId/experimental',
     'PUT /v1/projects/:projectId/gateway/routing-policy',
     'POST /v1/projects/:projectId/gateway/keys',
     'GET /v1/projects/:projectId/gateway/keys',
@@ -496,8 +479,21 @@ flow('GW-ACCESS-1', {
   const request = (model: string) => gateway.withBearer(key, 'PROJECT_GATEWAY_KEY')
     .post('/v1/llm/chat/completions', { model, messages: [{ role: 'user', content: 'Reply OK' }], max_tokens: 4 });
 
+  await ctx.step('the graduated llm_gateway key is unknown: /features and /experimental → 400, no catalog row, the wire reads true', async () => {
+    for (const route of ['/v1/projects/:projectId/features', '/v1/projects/:projectId/experimental'] as const) {
+      (await owner.patch(route, { feature: 'llm_gateway', enabled: false }, { params })).status(400)
+        .body().has('$.error', "Unknown feature flag 'llm_gateway'");
+    }
+    const read = await owner.get('/v1/projects/:projectId', { params });
+    // Old clients and CLIs read this value; the gateway serves every project.
+    read.status(200).body().has('$.experimental.llm_gateway', true);
+    const rows = read.json<{ experimental_features: Array<{ key: string }> }>().experimental_features;
+    if (rows.some((f) => f.key === 'llm_gateway')) {
+      throw new Error(`the catalog still lists llm_gateway: ${JSON.stringify(rows)}`);
+    }
+  });
+
   await ctx.step('new project has no explicit restrictions and uses a non-managed default', async () => {
-    (await owner.patch('/v1/projects/:projectId/experimental', { feature: 'llm_gateway', enabled: true }, { params })).status(200);
     (await owner.put('/v1/projects/:projectId/gateway/routing-policy', {
       defaultModel: 'codex/gpt-5.6-sol', visionModel: null, defaultFallback: null, rules: [],
     }, { params })).status(200);
@@ -696,7 +692,6 @@ flow('GW-MANAGED-1', {
   requires: ['stripe'],
   timeoutMs: 300_000,
   routes: [
-    'PATCH /v1/projects/:projectId/experimental',
     'POST /v1/projects/:projectId/gateway/keys',
     'GET /v1/projects/:projectId/model-picker',
     'POST /v1/llm/chat/completions',
@@ -710,9 +705,7 @@ flow('GW-MANAGED-1', {
   const project = await team.project();
   const params = { projectId: project.id };
   let key = '';
-  await ctx.step('the project turns on the gateway and mints a gateway key', async () => {
-    (await owner.patch('/v1/projects/:projectId/experimental', { feature: 'llm_gateway', enabled: true }, { params }))
-      .status(200);
+  await ctx.step('the project mints a gateway key', async () => {
     const minted = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'managed lineup' }, { params });
     minted.status(200).body().exists('$.secret_key');
     key = minted.json<{ secret_key: string }>().secret_key;

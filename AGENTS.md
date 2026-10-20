@@ -109,7 +109,7 @@ corner to make sure the output is good.
 Every repo skill is a directory in `.agents/skills/<name>/`. `.claude/skills/<name>` is a
 symlink to it. Add a skill in `.agents/skills/`, then add the symlink. Third-party skills come
 from `npx skills add` and are pinned in `skills-lock.json`. The PR procedure is the
-**contributing** skill. Browser work is the **agent-browser** skill.
+**contributing** skill; the PR title and body are the **create-pr** skill. Browser work is the **agent-browser** skill.
 
 The repository has no `docs/` tree. Put a runbook or spec in the skill that owns the
 surface (`.agents/skills/<name>/references/`). Put an incident rule in the learnings
@@ -348,9 +348,10 @@ turns red on your change, you fix forward on `dev` the same day.
    (`pnpm worktree start <slug>`) and drive the changed behavior through it: the
    HTTP route, the real CLI process, or the page with agent-browser. Nothing
    before the release suite at Promote to Production catches what you skip.
-3. Open the PR against `dev` and follow the **contributing** skill: it fills
-   the PR template and attaches the demo video you recorded against your local
-   stack. Do not add `test` or `preview` unless you need that one explicit run.
+3. Open the PR against `dev` and follow the **contributing** skill: it attaches
+   the demo video you recorded against your local stack. Write the title and
+   body with the **create-pr** skill: English only, for a human reviewer who
+   decides "merge or iterate" without reading the diff. Do not add `test` or `preview` unless you need that one explicit run.
 4. Merge `dev` into the canonical branch daily. A branch that diverges for weeks
    detonates on merge exactly like a 1,500-line PR does.
 5. **Self-merge to `dev` when the change is verified. Do not wait for the
@@ -439,9 +440,10 @@ these as standing rules whenever you touch the data/runtime layer:
   The sandbox provider and the harness are server-side concerns. Host code
   must not implement a second transport.
 - **Build on the Kortix contract, not on OpenCode.** A session runs one of two
-  harnesses inside kortixd: OpenCode (the default today) or pi (the
-  `pi_harness` project flag or `runtime: pi` in `kortix.yaml`, and only with
-  the LLM gateway on). pi replaces OpenCode; OpenCode support is temporary.
+  harnesses inside kortixd: pi (the default since 2026-10-20: the
+  `pi_harness` project flag, on by default, or `runtime: pi` in
+  `kortix.yaml`) or OpenCode (the flag off). Both call models only through
+  the LLM gateway (no `llm_gateway` flag since 2026-10-20). A flag change applies to new sessions only. pi replaces OpenCode; OpenCode support is temporary.
   Both serve the same daemon routes (`/kortix/runtime/*`), the same transcript
   (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
   same events. New code reads those, never an OpenCode route, type, file or
@@ -756,8 +758,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 | Surface | Read before changing UI | Implemented source |
 |---|---|---|
-| Web (`apps/web`) | `.agents/skills/kortix-brand/SKILL.md` (the router: values, voice, claims, decision history), then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens (generated from `.agents/skills/kortix-brand/references/visual/visual-system.json`), `packages/ui/src/components/ui/` (`@kortix/ui`; `apps/web/src/components/ui/<name>.tsx` is a one-line re-export shim, never edit it), the live `/design-system` route |
-| `@kortix/ui` hosts (Kortix Apps, `apps/whitelabel-demo`, SDK customer apps) | `packages/ui/skills/kortix-ui/SKILL.md` (setup, which component, white-label theming, the `SessionThread` chat), then the web row for Kortix-owned surfaces | `packages/ui/src/` (components, `chat/`, `styles/tokens.css` + `theme.css`, prebuilt `dist/styles.css`); white-label = CSS variable overrides, never a forked component |
+| Web (`apps/web`) | `.agents/skills/kortix-brand/SKILL.md` (the router: values, voice, claims, decision history), then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens (generated from `.agents/skills/kortix-brand/references/visual/visual-system.json`), `packages/ui/src/primitives/` (apps/web imports each one as `@kortix/ui/<name>`; apps/web has no re-export shims, `tests/unit/web-no-ui-shims.test.ts` enforces it), the live `/design-system` route |
+| `@kortix/ui` hosts (Kortix Apps, `apps/whitelabel-demo`, SDK customer apps) | `packages/ui/skills/kortix-ui/SKILL.md` (setup, which component, white-label theming, the `SessionThread` chat), then the web row for Kortix-owned surfaces | `packages/ui/src/` (components, `session/` for the `SessionThread` chat, `styles/tokens.css` + `theme.css`, prebuilt `dist/styles.css`); white-label = CSS variable overrides, never a forked component |
 | Desktop (Electron shell) | The web row — the shell renders `apps/web` — plus `apps/desktop-electron/README.md` for the shell boundary, then the parity gate below | `apps/web` rendered by the shell; native window geometry in the shell's titlebar classes |
 | Mobile (`apps/mobile`) | `apps/mobile/design.md` for screens, `apps/mobile/AGENTS.md` for primitives | `apps/mobile/global.css` colors, `apps/mobile/components/ui/`; stock Tailwind spacing for touch targets |
 
@@ -797,12 +799,12 @@ gate, not polish:
   then run `scripts/generate-tokens.ts`. Never edit a generated region of
   `globals.css` by hand.
 - Read `.agents/skills/kortix-design-system/SKILL.md` next and compose existing
-  primitives from `@/components/ui/*` before inventing local chrome.
+  primitives from `@kortix/ui/*` before inventing local chrome.
 - Match the current Jay Suthar / Kortix product aesthetic: calm neutral surfaces,
   dense-but-legible UI, black/white plus one earned accent, token-driven spacing,
   and no decorative color, glow, or one-off rounded boxes.
 - Use recent product surfaces as references before editing: `/design-system`,
-  `apps/web/src/features/workspace/project-layout/project-home.tsx`,
+  `packages/ui/src/workspace/layout/project-home.tsx`,
   `apps/web/src/components/ui/wallpaper-background.tsx`, and the account/IAM
   screens called out by the design-system skill.
 - Verify visual work in the browser and include the exact lint/typecheck commands

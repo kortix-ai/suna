@@ -135,6 +135,28 @@ describe("mirrorMessagesForHydrate", () => {
 		expect(msgs[0].parts.map((p) => p.id)).toEqual(["prt_1", "prt_9"]);
 	});
 
+	test("parts sort in byte order, as every other paint path does (KRTX-2897)", () => {
+		// OpenCode part ids are base62, so case mixes. `localeCompare` puts
+		// `prt_aB` before `prt_Ab`; the store's binary search and
+		// `reconcile-parts.ts` sort by code unit, so the two disagreed on the
+		// same message.
+		const msgs = mirrorMessagesForHydrate(
+			envelope({
+				messages: [
+					{
+						info: { id: "msg_1", role: "user" },
+						parts: [
+							{ id: "prt_aB", messageID: "msg_1", type: "text", text: "a" },
+							{ id: "prt_Ab", messageID: "msg_1", type: "text", text: "b" },
+							{ id: "prt_B1", messageID: "msg_1", type: "text", text: "c" },
+						],
+					},
+				],
+			}),
+		);
+		expect(msgs[0].parts.map((p) => p.id)).toEqual(["prt_Ab", "prt_B1", "prt_aB"]);
+	});
+
 	test("THE REGRESSION: a finished turn survives hydration as FINISHED", () => {
 		// The deleted disk mirror could not tell a finished turn from a running
 		// one: its freshness test read the transcript's SHAPE (message count,
@@ -269,7 +291,7 @@ describe("loadSessionTranscriptMirror and the open bundle", () => {
 			queue: { known: true, prompts: [], held: false },
 			transcript: { known: true, requested: true, ...envelope() },
 			config: { known: true },
-			models: { known: false, reason: "llm_gateway_disabled" },
+			models: { known: false, reason: "read_failed" },
 		});
 		openSessionBundle("P1", "S1");
 		// NOT awaited here on purpose. The hydrate runs at mount, while the

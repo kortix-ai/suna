@@ -2,7 +2,7 @@
 //
 // Exposes a `window.__TAURI__` object with the shape the web app's desktop
 // bridge expects (the previous shell set Tauri's `withGlobalTauri`). The web
-// app's only native-bridge consumer — apps/web/src/lib/desktop.ts — talks
+// app's only native-bridge consumer — packages/ui/src/internal/lib/desktop.ts — talks
 // exclusively through `window.__TAURI__.core.invoke(...)` and
 // `window.__TAURI__.window.getCurrentWindow()`, so mirroring that shape here
 // means the entire web app runs UNCHANGED on Electron. No `isElectron` branches

@@ -1,6 +1,6 @@
 'use client';
 
-import { ProjectSessionsView } from '@/features/workspace/project-sessions/project-sessions-view';
+import { ProjectSessionsView } from '@kortix/ui/workspace';
 import { useParams } from 'next/navigation';
 
 export default function ProjectSessionsPage() {

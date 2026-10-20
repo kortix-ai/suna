@@ -49,7 +49,6 @@ import { createRoute, z, type RouteHandler } from '@hono/zod-openapi';
 
 import { accountHasEntitlement, accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
@@ -77,7 +76,7 @@ import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import { scheduleRuntimeProjectionRefresh } from '../lib/session-runtime-projection-refresh';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
-import { readSessionLogPage } from '../session-log-read';
+import { readSessionConversationModels, readSessionLogPage } from '../session-log-read';
 
 /** Same ceiling `GET .../audit` uses for the pending-approvals poll. */
 const AUDIT_ACTIONS_LIMIT = 100;
@@ -156,7 +155,6 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     // `GET .../sessions/:sessionId` applies, for the same reason.
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
-    const gatewayEnabled = projectLlmGatewayEnabled(loaded.row.metadata);
     const logEnabled = resolveFeatureFlag(loaded.row.metadata, 'session_log');
     const userId = c.get('userId') as string;
 
@@ -171,7 +169,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     // paint. Nothing here touches the sandbox, so nothing here can be held up
     // by a box that is asleep.
     const personId = personUserId(c, loaded);
-    const [turn, queue, transcript, models, runtime, audit, log, listState] = await Promise.allSettled([
+    const [turn, queue, transcript, models, runtime, audit, log, listState, conversationModels] = await Promise.allSettled([
       // = GET .../turn, `can_stop` included: one prompter read, only while a
       // turn runs for a caller who is not the owner or a manager.
       readSessionTurnState(sessionId).then(async (state) => ({
@@ -189,37 +187,35 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
             session: visible.row,
             limit: transcriptLimit.value,
           }),
-      gatewayEnabled
-        ? (async () => {
-            const accountId = loaded.row.accountId as string;
-            const [defaults, mayUseManaged] = await Promise.all([
-              getAccountModelDefaults(accountId, projectId),
-              accountMayUseManagedModels(accountId),
-            ]);
-            const freeTier = !mayUseManaged;
-            // The project-level resolution, exactly as `GET .../model-defaults`
-            // computes it (no session scope): the SDK seeds that query from
-            // this leg, so the two answers must be the same answer.
-            const resolved = await resolveEffectiveModel({
-              userId,
-              accountId,
-              projectId,
-              explicit: null,
-              freeModelsOnly: freeTier,
-            });
-            return {
-              platformDefault: freeTier ? null : platformDefaultModelId(),
-              accountDefault: defaults.account,
-              agentDefaults: defaults.agents,
-              projectDefault: defaults.projects[projectId] ?? null,
-              // Same answer as GET /model-defaults: an account without
-              // managed models has no platform default.
-              resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
-              resolvedSource: resolved.source,
-              freeTier,
-            };
-          })()
-        : Promise.resolve(null),
+      (async () => {
+        const accountId = loaded.row.accountId as string;
+        const [defaults, mayUseManaged] = await Promise.all([
+          getAccountModelDefaults(accountId, projectId),
+          accountMayUseManagedModels(accountId),
+        ]);
+        const freeTier = !mayUseManaged;
+        // The project-level resolution, exactly as `GET .../model-defaults`
+        // computes it (no session scope): the SDK seeds that query from
+        // this leg, so the two answers must be the same answer.
+        const resolved = await resolveEffectiveModel({
+          userId,
+          accountId,
+          projectId,
+          explicit: null,
+          freeModelsOnly: freeTier,
+        });
+        return {
+          platformDefault: freeTier ? null : platformDefaultModelId(),
+          accountDefault: defaults.account,
+          agentDefaults: defaults.agents,
+          projectDefault: defaults.projects[projectId] ?? null,
+          // Same answer as GET /model-defaults: an account without
+          // managed models has no platform default.
+          resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
+          resolvedSource: resolved.source,
+          freeTier,
+        };
+      })(),
       // = the daemon's `/kortix/opencode/state`, served from Postgres. This is
       // the leg that lets a STOPPED session answer "which agents, which
       // commands, what model" — it is a DB read like every other leg here, and
@@ -252,6 +248,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
         : Promise.resolve(undefined),
       // The person's pin and archive, as the read by id serves them (KRTX-2418).
       personId ? loadSessionUserStates([sessionId], personId) : Promise.resolve(null),
+      readSessionConversationModels([sessionId]),
     ]);
 
     const prompts =
@@ -281,6 +278,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
       // The session row, byte-identical to `GET .../sessions/:sessionId`.
       session: serializeSession(visible.row, {
         grants: visible.grants,
+        conversationModel: conversationModels.status === 'fulfilled' ? conversationModels.value.get(sessionId) : undefined,
         viewerId: loaded.userId,
         canManageProject: visible.canManageProject,
         ownerIsMachine: visible.ownerIsMachine,
@@ -336,18 +334,14 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
         known: true as const,
         base_ref: visible.row.baseRef ?? loaded.row.defaultBranch ?? null,
         agent_name: visible.row.agentName ?? null,
-        llm_gateway_enabled: gatewayEnabled,
+        // Always true since the gateway is the only model path; kept for older clients.
+        llm_gateway_enabled: true,
       },
 
-      // = GET /projects/:id/model-defaults. `known: false` with
-      // `reason: 'llm_gateway_disabled'` mirrors that route's own 404 for a
-      // project with the gateway off — the client must not read the absence as
-      // "no default model".
+      // = GET /projects/:id/model-defaults.
       models:
         models.status === 'fulfilled'
-          ? models.value === null
-            ? { known: false as const, reason: 'llm_gateway_disabled' }
-            : { known: true as const, ...models.value }
+          ? { known: true as const, ...models.value }
           : failed(models.reason),
 
       // = the daemon's `/kortix/opencode/state`, from the runtime-projection

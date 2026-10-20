@@ -40,12 +40,15 @@ import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR, SKILLS_DIR } from '@ko
 import { type Auth, loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { type ApiClient, ApiError, clientFromAuth } from '../api/client.ts';
 import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { featureKnownOff, featureOffMessage, featureShown } from '../feature-flags.ts';
 import { C, help, status } from '../style.ts';
 
 /** One entry of `GET /v1/skills` — cheap by design: no body, no file contents. */
 interface SkillSummary {
   name: string;
   description: string;
+  /** The project feature flag the skill exists behind, or null. */
+  featureFlag?: string | null;
   referenceCount?: number;
   bytes?: number;
 }
@@ -60,6 +63,7 @@ interface SkillReference {
 interface SkillDetail {
   name: string;
   description: string;
+  featureFlag?: string | null;
   body: string;
   references: SkillReference[];
 }
@@ -142,7 +146,8 @@ function resolveClient(host?: string): { client: ApiClient; auth: Auth } | null 
 /** The system floor — the kortix-managed skills that describe how Kortix works. */
 async function fetchSystemSkills(client: ApiClient): Promise<SkillSummary[]> {
   const res = await client.get<SkillsListResponse>('/skills');
-  return res.skills ?? [];
+  // A skill behind a feature flag is listed only where the flag is known on (feature-flags.ts).
+  return (res.skills ?? []).filter((skill) => featureShown(skill.featureFlag));
 }
 
 /** `--all` used to mix the marketplace catalog into this list. It no longer does
@@ -231,6 +236,11 @@ async function skillsGet(argv: string[], flags: SkillsFlags, cmd: string): Promi
       return 1;
     }
     return surfaceApiError(err);
+  }
+
+  if (detail.featureFlag && featureKnownOff(detail.featureFlag)) {
+    process.stderr.write(`${status.err(featureOffMessage(`The ${detail.name} skill`, detail.featureFlag))}\n`);
+    return 1;
   }
 
   const references = detail.references ?? [];

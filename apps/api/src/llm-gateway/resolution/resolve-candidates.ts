@@ -21,6 +21,7 @@ import {
 import { CodexRefreshError, resolveCodexAccountCredential, resolveCodexCredential } from '../credentials/codex';
 import { opencodeInferenceBaseUrl, parseOpencodeLogin, resolveOpencodeLogin } from '../credentials/opencode-console';
 import { capabilitiesForModel } from '../models/catalog-models';
+import { type CustomLlmProviderDefinition, customProviderDescriptor, customProviderSecretName } from '../custom-providers';
 import { isRefusedCodexModelId } from '../models/codex-models';
 import {
   canonicalManagedModelId,
@@ -40,7 +41,7 @@ import {
 import { isAwsRegion } from './aws-region';
 
 // Bedrock is the one native-transport BYOK provider whose credential is
-// multi-field (see apps/web/src/lib/llm-providers.ts's env-vars-per-provider
+// multi-field (see packages/ui/src/internal/lib/llm-providers.ts's env-vars-per-provider
 // doc comment): AWS_BEARER_TOKEN_BEDROCK (fetched below via `byok.envVar`,
 // same as every other BYOK provider) PLUS the project's own AWS_REGION, which
 // no other BYOK provider needs — every other provider publishes a static
@@ -375,6 +376,22 @@ async function resolveByokCandidates(context: Context, provider: string,
   return keys.length ? byokDescriptors(context, provider, byok, keys, !!pool?.configured) : [];
 }
 
+/** A project's own OpenAI-compatible endpoint (custom-providers.ts). Its key is optional. */
+async function resolveCustomCandidates(context: Context, provider: CustomLlmProviderDefinition): Promise<UpstreamDescriptor[]> {
+  const { principal, effectiveModel } = context;
+  const modelId = effectiveModel.slice(provider.id.length + 1);
+  if (!provider.models.some((model) => model.id === modelId)) throw new GatewayResolutionError(
+    'model_not_found', `"${effectiveModel}" is not a model of the custom provider ${provider.name}.`,
+    'Add the model to the provider in Models → Custom, or choose another model.');
+  // Like a project BYOK key: no pool, no agent-grant check.
+  const [key] = await resolveProjectSecretsForConsumer({
+    projectId: principal.projectId!, accountId: principal.accountId,
+    sessionId: principal.sessionId, actorUserId: principal.userId,
+    name: customProviderSecretName(provider.id), consumer: 'llm_gateway',
+  });
+  return [customProviderDescriptor(provider, modelId, key ? { value: key.value, secretId: key.secretId ?? key.identifier } : null)];
+}
+
 /**
  * The managed route on Kortix's own credentials. Cloud-only:
  * getRuntimeManagedModel() matches only when KORTIX_MANAGED_PROVIDER_ENABLED is
@@ -384,7 +401,7 @@ async function resolveByokCandidates(context: Context, provider: string,
 async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveModel: string,
   access: Awaited<ReturnType<typeof getProjectModelAccess>>): Promise<UpstreamDescriptor[]> {
   const managed = getRuntimeManagedModel(effectiveModel);
-  if (!managed || !config.LLM_GATEWAY_ENABLED || !config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
+  if (!managed || !config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
   if (access.disabledProviders.includes('kortix')) throw new GatewayResolutionError('provider_disabled',
     'Kortix Managed Models are disabled for this project.',
     'Choose a model from an enabled provider, or enable Kortix Managed Models in Models.');
@@ -437,9 +454,9 @@ export async function resolveCandidates(
   // (legacy); null = none (agent-principal session with no on-behalf-of human).
   const personalUserId = principal.personalUserId === undefined ? principal.userId : principal.personalUserId;
   // Avoid a second projects-row query on every resolution (KRTX-586).
-  const { access, pooledEnabled } = principal.projectId
-    ? await getProjectGatewayResolution(principal.projectId)
-    : { access: { disabledProviders: [], disabledModels: [] }, pooledEnabled: false };
+  const resolution = principal.projectId ? await getProjectGatewayResolution(principal.projectId) : null;
+  const access = resolution?.access ?? { disabledProviders: [], disabledModels: [] };
+  const pooledEnabled = resolution?.pooledEnabled ?? false;
   if (!modelAccessAllows(access, effectiveModel)) {
     const providerDisabled = access.disabledProviders.includes(modelAccessProvider(effectiveModel));
     throw new GatewayResolutionError(
@@ -462,6 +479,9 @@ export async function resolveCandidates(
     return (await resolveCodexCandidates(context)).map((candidate) =>
       ({ ...candidate, headers: { ...candidate.headers, ...conversation } }));
   }
+
+  const custom = resolution?.customProviders?.find((candidate) => candidate.id === provider);
+  if (custom) return resolveCustomCandidates(context, custom);
 
   const byok = resolveCatalogUpstream(provider, provider ? effectiveModel.slice(provider.length + 1) : undefined);
   if (byok && principal.projectId) {

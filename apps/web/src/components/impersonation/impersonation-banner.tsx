@@ -1,9 +1,9 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { clearLastProjectId } from '@/lib/onboarding/last-project-cookie';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { clearLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { cn } from '@kortix/ui';
 import { useImpersonation, useStopImpersonation } from '@kortix/sdk/react';
 import { EyeIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';

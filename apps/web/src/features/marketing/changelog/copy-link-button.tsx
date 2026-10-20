@@ -1,7 +1,7 @@
 'use client';
 
-import { Copy } from '@/features/icon/icons/copy';
-import { cn } from '@/lib/utils';
+import { Copy } from '@kortix/ui/icons';
+import { cn } from '@kortix/ui';
 import { CheckIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';

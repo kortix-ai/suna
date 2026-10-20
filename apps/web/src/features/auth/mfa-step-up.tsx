@@ -30,24 +30,28 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import Loading from '@/components/ui/loading';
-import { successToast } from '@/components/ui/toast';
+import { Button } from '@kortix/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@kortix/ui/dialog';
+import { SessionDotMatrix } from '@kortix/ui/dot-matrix/session-dot-matrix';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
+import Loading from '@kortix/ui/loading';
+import { successToast } from '@kortix/ui/toast';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { invalidateTokenCache } from '@/lib/auth-token';
 import { type AALResponse, mfaChallengeRequired, supabaseMFAService } from '@/lib/supabase/mfa';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useAuth } from '@/features/providers/auth-provider';
 import { MFA_AAL_QUERY_KEY, MFA_FACTORS_QUERY_KEY } from '@/hooks/account/use-mfa';
 import { useTranslations } from '@/i18n/use-translations';
 
-import { MFA_VERIFIED_EVENT, armPendingMfaAction, clearPendingMfaAction } from './mfa-pending-action';
+import {
+  MFA_REQUIRED_EVENT,
+  MFA_VERIFIED_EVENT,
+  armPendingMfaAction,
+  clearPendingMfaAction,
+} from '@kortix/ui/internal/auth/mfa-pending-action';
 
-export const MFA_REQUIRED_EVENT = 'kortix:mfa-required';
-export { MFA_VERIFIED_EVENT };
+export { MFA_REQUIRED_EVENT, MFA_VERIFIED_EVENT };
 
 /**
  * Run `action` now, or — while this session still owes a TOTP challenge — open

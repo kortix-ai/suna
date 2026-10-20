@@ -22,6 +22,7 @@ import {
   consumeGitHubInstallationState,
   countInstallationsLinkedToOtherAccounts,
   createGitHubInstallationInstallUrl,
+  expireAccountGitHealth,
   getAccountGitHubInstallation,
   listAccountGitHubInstallations,
 } from '../lib/git';
@@ -125,6 +126,10 @@ export async function upsertAccountGitHubInstallation(
   });
 
   if (!row) throw new Error('Failed to save the GitHub installation');
+  // A reconnect: every disconnected project of this account is probed on its
+  // next read instead of after PROBE_INTERVAL_MS, and is repointed to this
+  // installation when it is the one that now mints for its owner.
+  await expireAccountGitHealth(accountId);
   return row;
 }
 

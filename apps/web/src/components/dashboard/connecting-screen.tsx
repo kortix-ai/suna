@@ -11,10 +11,10 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { translateUiCatalogText } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
 import { STAGE_LABELS, type ProvisioningStageInfo } from '@/lib/provisioning-stages';
 
 /**

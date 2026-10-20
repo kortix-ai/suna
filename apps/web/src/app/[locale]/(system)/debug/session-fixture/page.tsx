@@ -21,14 +21,11 @@ import { useEffect, useMemo, useState } from 'react';
 // Register the tool renderers. Without this every tool part on the fixture
 // page renders the GenericTool fallback, so the parity view shows no tool
 // card, including the connector_get notes block this page exists to show.
-import '@/features/session/tool/tools/register';
+import '@kortix/ui/session/tool/tools/register';
 
-import { QuestionPrompt } from '@/features/session/question-prompt';
-import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-body';
-import { SessionTurn } from '@/features/session/session-chat/transcript';
-import { FOREIGN_TOOL_CALLS } from '@/features/session/tool/foreign-tool-calls';
-import { ToolPartRenderer } from '@/features/session/tool/tool-part-renderer';
-import { TurnViewport } from '@/features/session/turn/turn-viewport';
+import { QuestionPrompt, SessionTurn, ToolPartRenderer, TurnViewport } from '@kortix/ui/session';
+import { SESSION_TRANSCRIPT_CLASS } from '@kortix/ui/session/thread/session-body';
+import { FOREIGN_TOOL_CALLS } from '@kortix/ui/session/tool/foreign-tool-calls';
 import { SESSION_FIXTURE } from '@kortix/shared/session-fixture';
 
 import {
@@ -113,7 +110,12 @@ export default function SessionFixturePage() {
                         ? 'mt-3'
                         : 'mt-12';
                   return (
-                    <TurnViewport key={id} turnId={id} className={gap}>
+                    <TurnViewport
+                      key={id}
+                      turnId={id}
+                      className={gap}
+                      continues={compaction !== null || turn.continues !== null}
+                    >
                       {suppressed ? null : (
                         <SessionTurn
                           turn={turn}

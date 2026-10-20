@@ -29,7 +29,7 @@
   "marketing:careers": "2026-10-04T21:48:06.000Z",
   "marketing:changelog": "2026-09-24T14:24:05.000Z",
   "marketing:use-cases": "2026-10-04T21:48:06.000Z",
-  "marketing:download": "2026-10-19T15:45:39.000Z",
+  "marketing:download": "2026-10-08T13:52:49.000Z",
   "docs:accounts/identity": "2026-10-15T22:42:46.000Z",
   "docs:accounts": "2026-10-19T19:37:08.000Z",
   "docs:api": "2026-10-15T14:01:58.000Z",
@@ -47,9 +47,9 @@
   "docs:credits": "2026-10-19T18:39:35.000Z",
   "docs:git": "2026-10-17T14:18:34.000Z",
   "docs:host": "2026-10-19T20:13:22.000Z",
-  "docs:index": "2026-10-15T14:01:58.000Z",
+  "docs:index": "2026-10-20T11:00:49.000Z",
   "docs:project/agents": "2026-10-17T14:02:09.000Z",
-  "docs:project": "2026-10-19T09:36:51.000Z",
+  "docs:project": "2026-10-20T10:44:35.000Z",
   "docs:project/manifest": "2026-10-17T14:02:09.000Z",
   "docs:project/models": "2026-10-19T18:39:35.000Z",
   "docs:project/secrets": "2026-10-16T14:31:49.000Z",
@@ -64,5 +64,5 @@
   "docs:sdk/ui": "2026-10-19T07:04:36.000Z",
   "docs:tui": "2026-10-11T19:28:15.000Z",
   "docs:work/runtime": "2026-10-19T20:13:22.000Z",
-  "docs:work/sessions": "2026-10-19T11:07:00.000Z"
+  "docs:work/sessions": "2026-10-20T10:44:35.000Z"
 }

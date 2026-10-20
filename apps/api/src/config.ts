@@ -175,12 +175,6 @@ const envSchema = z.object({
   // asking GoTrue on every request (shared/jwt-verify.ts). Optional: without it
   // HS256 tokens keep the per-request GoTrue round trip.
   SUPABASE_JWT_SECRET: optStr,
-  // How long a GoTrue confirmation that an HS256 token's session is still live
-  // is reused, per token, per replica. This is the upper bound on how long a
-  // signed-out or deleted user's still-unexpired HS256 token keeps working on a
-  // replica that already confirmed it. 0 = confirm with GoTrue on every request
-  // (the pre-2026-09-23 behavior).
-  SUPABASE_JWT_LIVENESS_TTL_MS: optInt(0),
 
   // ── Prompt attachment uploads (optional, non-secret) ────────────────────
   // `direct` (default): the client PUTs each file once to a signed Storage URL.
@@ -255,6 +249,13 @@ const envSchema = z.object({
    * test stack sets `127.0.0.1` for its loopback upstream.
    */
   KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: optStr,
+  /**
+   * The same allowlist for a project's custom LLM provider (Models → Custom):
+   * the gateway calls its base URL from inside our network, so by default it
+   * must resolve to a public address. Set it on a self-hosted deployment whose
+   * models run on an internal host (Ollama, vLLM).
+   */
+  KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS: optStr,
 
   // ── Streaming secret relay (POST /v1/projects/:id/secrets/:id/relay) ──────
   //
@@ -307,6 +308,10 @@ const envSchema = z.object({
   // default; dev turns it on in its deploy overrides (deploy-dev.yml). A project's stored value wins.
   // Rollback: set it to "false" in the overrides. Removing the key keeps the running task's value.
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolFalse,
+  // Default of the project flag `pi_harness` for a project with no stored value. On by default
+  // (2026-10-20): new sessions boot pi. A project's stored value wins. Rollback for a whole
+  // deployment: set it to "false" in the overrides; new sessions boot OpenCode again.
+  PI_HARNESS_DEFAULT_ENABLED: optBoolTrue,
   // The largest restore the API answers (`POST …/log/restore`), in bytes: the live messages' stored
   // JSON lengths plus 2/5 of the session's live blob bytes (full texts, attachments; ~15x in the daemon,
   // 30 MB of images: +455 MB; `SESSION_LOG_BLOB_WEIGHT`). So 24 MiB allows 24 MiB of records or 60 MiB
@@ -328,8 +333,12 @@ const envSchema = z.object({
   // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only. The pass resumes across leaders
   // (`kortix.session_log_backfill_state`). A dry pass runs once per build (KORTIX_COMMIT): a new
   // build runs it again; on the same build, `DELETE FROM kortix.session_log_backfill_state`.
-  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) is not converted (`too_large`).
+  // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) converts in a
+  // Worker thread, only while the process has room for it (SESSION_LOG_BACKFILL_MEMORY_MB).
   SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('off'),
+  // The API task's memory in MiB (prod and dev ECS tasks: 4096). The backfill starts a conversion
+  // thread only while RSS plus its estimate stays under 75 % of this, or of cgroup memory.max when lower.
+  SESSION_LOG_BACKFILL_MEMORY_MB: optInt(4096),
   // The source commit the image was built from (Dockerfile ARG, kept across the prod retag). 'unknown' locally.
   KORTIX_COMMIT: optStrDefault('unknown'),
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
@@ -509,14 +518,10 @@ const envSchema = z.object({
   OPENCODE_ZEN_API_KEY: optStr,
   // Managed model IDs served by OpenCode Zen after Morph (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
   OPENCODE_ZEN_MANAGED_MODELS: z.string().default(OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
-  // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
-  // sandbox model call here. Off by default.
-  LLM_GATEWAY_ENABLED: optBoolFalse,
   // CLOUD-ONLY. Whether KORTIX's own managed model lineup exists on this
   // deployment. The lineup routes through Kortix's shared Bedrock and
   // OpenRouter credentials. Kortix bills each route as platform credits.
-  // This flag is independent of
-  // LLM_GATEWAY_ENABLED above: a self-host still runs the gateway for its own
+  // A self-host still runs the gateway for its own
   // BYOK routing (every sandbox model call goes through `/v1/llm`), it just
   // must never see or route to Kortix's shared credentials. When unset it
   // follows KORTIX_BILLING_INTERNAL_ENABLED (derived below): billing on =
@@ -526,19 +531,6 @@ const envSchema = z.object({
   // (descriptors.ts) — both are gated on this and read no managed credentials
   // when off.
   KORTIX_MANAGED_PROVIDER_ENABLED: optBoolUnset,
-  // Fleet default for projects with no explicit per-project override. Defaults
-  // ON: wherever the gateway is available (master switch above), the managed
-  // gateway is the default routing mechanism and every project inherits it
-  // unless it explicitly opts out. Turning the per-project flag OFF is a
-  // fully supported first-class path (native OpenCode provider management:
-  // provider keys injected into the sandbox env, native `provider/model`
-  // refs, no gateway URL in the box) — the deliberate lever for deployments
-  // like SampleCo that want their own keys end to end. The master switch
-  // still wins — LLM_GATEWAY_ENABLED=false forces native OpenCode for
-  // everyone regardless of this value — and an operator can set
-  // LLM_GATEWAY_DEFAULT_ENABLED=false to opt a whole environment back to
-  // native-by-default.
-  LLM_GATEWAY_DEFAULT_ENABLED: optBoolTrue,
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL: optStr,
@@ -912,6 +904,10 @@ const envSchema = z.object({
   // (notifications/expo-push.ts). The access token is optional: Expo accepts
   // unauthenticated sends unless the project enables enhanced push security.
   EXPO_ACCESS_TOKEN: optStr,
+  // Expo push sends (KRTX-2938). Unset: off on a local stack (the launchers
+  // set KORTIX_INSTANCE_ID), on everywhere else. A local stack holds tokens of
+  // real phones, and Expo routes them to the App Store app. `true` opts in.
+  EXPO_PUSH_ENABLED: optBoolUnset,
   // Kill switch for session push notifications. On by default; `0` or `false`
   // stops every send. Device-token registration keeps working.
   PUSH_NOTIFICATIONS_ENABLED: z
@@ -1196,10 +1192,10 @@ function validateEnv(): z.infer<typeof envSchema> {
       level: 'warn',
     });
   }
-  if (raw.LLM_GATEWAY_ENABLED === 'true' && raw.KORTIX_MANAGED_PROVIDER_ENABLED === 'true' && !raw.OPENROUTER_API_KEY) {
+  if (raw.KORTIX_MANAGED_PROVIDER_ENABLED === 'true' && !raw.OPENROUTER_API_KEY) {
     issues.push({
       var: 'OPENROUTER_API_KEY',
-      message: 'Gateway is on but OPENROUTER_API_KEY is unset — Kortix managed models are unavailable',
+      message: 'Managed models are on but OPENROUTER_API_KEY is unset — Kortix managed models are unavailable',
       level: 'warn',
     });
   }
@@ -1268,6 +1264,11 @@ export const config = {
   // 'dev' above, and the router credit gate must not read that fallback as a
   // dev exemption (see router/services/credit-gate-env.ts).
   INTERNAL_KORTIX_ENV_EXPLICIT: Boolean(process.env.INTERNAL_KORTIX_ENV),
+  // A local stack (the worktree launcher and scripts/dev-local.sh export it).
+  // It runs as INTERNAL_KORTIX_ENV=dev on dev's sandbox provider organisation
+  // but reads its own database, so it must never delete provider images it
+  // did not build (KRTX-2546). No deployed environment sets it.
+  KORTIX_LOCAL_DEV: process.env.KORTIX_LOCAL_DEV === '1',
   // Empty string reads as unset: the launchers always export the var, and a
   // blank value must not turn into an instance called "".
   KORTIX_INSTANCE_ID: env.KORTIX_INSTANCE_ID || undefined,
@@ -1285,6 +1286,10 @@ export const config = {
     .split(',')
     .map((host) => host.trim())
     .filter(Boolean),
+  KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS: env.KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean),
   KORTIX_SECRET_RELAY_STREAM_ENABLED: env.KORTIX_SECRET_RELAY_STREAM_ENABLED,
   KORTIX_RELAY_MAX_REQUEST_BYTES: env.KORTIX_RELAY_MAX_REQUEST_BYTES,
   KORTIX_RELAY_MAX_RESPONSE_BYTES: env.KORTIX_RELAY_MAX_RESPONSE_BYTES,
@@ -1295,10 +1300,12 @@ export const config = {
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
   SESSION_LOG_RESTORE_DEFAULT_ENABLED: env.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
+  PI_HARNESS_DEFAULT_ENABLED: env.PI_HARNESS_DEFAULT_ENABLED,
   SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
   SESSION_LOG_BACKFILL: env.SESSION_LOG_BACKFILL,
+  SESSION_LOG_BACKFILL_MEMORY_MB: env.SESSION_LOG_BACKFILL_MEMORY_MB,
   KORTIX_COMMIT: env.KORTIX_COMMIT,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
@@ -1320,7 +1327,6 @@ export const config = {
   KORTIX_PUBLIC_AUTH_PROVIDERS: env.KORTIX_PUBLIC_AUTH_PROVIDERS,
   ENABLE_EMAIL_AUTOCONFIRM: env.ENABLE_EMAIL_AUTOCONFIRM,
   SUPABASE_JWT_SECRET: env.SUPABASE_JWT_SECRET,
-  SUPABASE_JWT_LIVENESS_TTL_MS: env.SUPABASE_JWT_LIVENESS_TTL_MS,
   PROMPT_ATTACHMENT_UPLOAD_MODE: env.PROMPT_ATTACHMENT_UPLOAD_MODE,
   PROMPT_ATTACHMENT_CHUNK_BYTES: env.PROMPT_ATTACHMENT_CHUNK_BYTES,
 
@@ -1396,12 +1402,10 @@ export const config = {
   OPENCODE_ZEN_API_URL: env.OPENCODE_ZEN_API_URL,
   OPENCODE_ZEN_API_KEY: env.OPENCODE_ZEN_API_KEY,
   OPENCODE_ZEN_MANAGED_MODELS: env.OPENCODE_ZEN_MANAGED_MODELS,
-  LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
   // blob misses the var; self-host stays off). Explicit value always wins.
   KORTIX_MANAGED_PROVIDER_ENABLED:
     env.KORTIX_MANAGED_PROVIDER_ENABLED ?? env.KORTIX_BILLING_INTERNAL_ENABLED,
-  LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
   LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,
   LLM_GATEWAY_VISION_MODEL: env.LLM_GATEWAY_VISION_MODEL,
@@ -1594,6 +1598,7 @@ export const config = {
   RESEND_API_KEY: env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: env.RESEND_FROM_EMAIL,
   EXPO_ACCESS_TOKEN: env.EXPO_ACCESS_TOKEN,
+  EXPO_PUSH_ENABLED: env.EXPO_PUSH_ENABLED ?? !env.KORTIX_INSTANCE_ID,
   PUSH_NOTIFICATIONS_ENABLED: env.PUSH_NOTIFICATIONS_ENABLED,
   MAILPIT_API_URL: env.MAILPIT_API_URL,
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,

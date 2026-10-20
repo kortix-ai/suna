@@ -31,11 +31,6 @@ const PROJECT_ROW = {
   metadata: null as Record<string, unknown> | null,
 };
 
-let llmGatewayEnabled = false;
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => llmGatewayEnabled,
-}));
-
 const SESSION_ROW = {
   createdBy: 'user-1',
   agentName: 'support',
@@ -58,7 +53,7 @@ let sandboxConfigReads = 0;
  *  merge fragment (drizzle's `queryChunks` interleave literal `StringChunk`s
  *  with the raw interpolated values) — same technique as
  *  `env-sync-durable-state.test.ts`. Returns null for a merge this suite does
- *  not care about (e.g. `markSandboxLlmGatewayMode`'s `llmGatewayEnabled`).
+ *  not care about.
  */
 function extractEnvSyncWrite(fragment: unknown): { signature: unknown; appliedAtMs: unknown } | null {
   if (!(fragment instanceof SQL)) return null;
@@ -192,7 +187,6 @@ beforeEach(() => {
   snapshotRevision = 'rev-1';
   snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
   PROJECT_ROW.metadata = null;
-  llmGatewayEnabled = false;
 });
 
 afterEach(async () => {

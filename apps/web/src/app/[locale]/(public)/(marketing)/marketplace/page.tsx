@@ -5,7 +5,7 @@ import { MarketplaceExplore } from '@/features/marketplace/marketplace-explore';
 import { PublicMarketplaceProvider } from '@/features/marketplace/marketplace-public-surface';
 import { loadMarketplaceExploreData } from '@/lib/marketplace-public';
 import { socialMetadata } from '@/lib/seo/metadata';
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 
 export const revalidate = 3600;
 

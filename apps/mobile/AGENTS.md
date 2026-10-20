@@ -38,7 +38,7 @@ Kortix-specific: 39 files, built on top of `components/ui/`. **There is no
 | Separator | `@/components/ui/separator` → `<Separator>` | ad-hoc `border-b` / hairline `View`s |
 | Avatar (3-part composition) | `@/components/ui/avatar` → `<Avatar>` + `AvatarImage` / `AvatarFallback` | see **Avatar** section — most screens want `@/components/kortix/avatar` instead |
 | Native-only animated wrapper | `@/components/ui/native-only-animated-view` → `<NativeOnlyAnimatedView>` | animating a view that must also render inertly on web |
-| Context menu (long press, anchored to its trigger) | `@/components/ui/context-menu` → `<ContextMenu relativeTo="trigger">` + `ContextMenuTrigger` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuLabel` (the user message menu, `turn/user-message.tsx`) | a bottom sheet for a short action list on one element; `react-native-context-menu-view` (native module, absent in Expo Go) |
+| Context menu (long press, anchored to its trigger) | `@/components/ui/context-menu` → `<ContextMenu relativeTo="trigger">` + `ContextMenuTrigger` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuLabel` (Android; on iOS the user message menu, `turn/user-message.tsx`, is the system context menu: `NativeContextMenu` from the local module `modules/kortix-context-menu`, a plain UIKit container with `UIContextMenuInteraction` around the React Native bubble, Liquid Glass on iOS 26. A binary without the module keeps the RNR menu. Never `@expo/ui` `ContextMenu` + `RNHostView` around a transcript row: SwiftUI sized the row a pass late and broke the thread's layout twice — Jay, 2026-10-20) | a bottom sheet for a short action list on one element; `react-native-context-menu-view` (native module, absent in Expo Go) |
 
 ## Kortix-specific components — `components/kortix/` (39 files)
 
@@ -117,13 +117,17 @@ children.
 - Variants: `default` `secondary` `destructive` `outline` `ghost` `link`.
   Gone: `secondary-outline` `accent` `card` `transparent` `inverted` `white`
   `black` — do not reintroduce them.
-- Sizes: `default` (`h-10`) `sm` (`h-9`) `lg` (`h-11`) `xl` (`h-12`) `icon` (`h-10 w-10`) `icon-md` (`h-9 w-9`) `icon-sm` (`h-7 w-7`).
+- Sizes: `default` (`h-10`) `sm` (`h-9`) `lg` (`h-11`) `xl` (`h-12`) `icon` (`h-10 w-10`) `icon-lg` (`h-11 w-11`) `icon-md` (`h-9 w-9`) `icon-sm` (`h-7 w-7`).
   `icon-md` is added to the registry output (Jay, 2026-09-21): the 36pt round controls of
   the composer's row (add, send, Stop, AutoContinue), beside the `sm` agent chip. Always pair
   it with `hitSlop={COMPOSER_CONTROL_HIT_SLOP}` (4pt) so the touch target stays 44pt.
   `icon-sm` is added to the registry output (Jay, 2026-09-21): the 28pt action under a chat
   message (Copy, Edit, turn details). Always pair it with `hitSlop` so the touch target
-  stays 44pt tall (`TURN_ACTION_HIT_SLOP`). Every icon button outside the composer row and
+  stays 44pt tall (`TURN_ACTION_HIT_SLOP`).
+  `icon-lg` is added (Jay, 2026-10-20): the header-row icon buttons on iOS only, through
+  `HEADER_BUTTON_SIZE` in `components/kortix/header-button.ts` (hamburger, Go back, the
+  thread's `···`, the bell, `PageHeader`'s right column; 22pt glyph). Android keeps `icon`.
+  Never pass `icon-lg` directly. Every other icon button outside the composer row and
   the message actions stays `icon` (40pt).
   A `Button` with no `hitSlop` prop grows its touch target to 44pt by itself
   (`defaultButtonHitSlop` in `lib/ui/hit-target.ts`: `icon` 2pt, `icon-md` 4pt,
@@ -201,8 +205,10 @@ Needs you · Waiting · Done bar (`ReviewPage`). Android, iOS
 before 26 and a binary without `ExpoUI` keep the opaque capsule
 (`supportsLiquidGlass`, `lib/ui/liquid-glass.ts`). Every hamburger
 (`MenuButton`: floating header, `PageHeader`, `SettingsHeader`) and the thread's
-`···` (`ProjectHeaderActions`) sit on a 40pt glass circle behind the unchanged
-ghost button (Jay, 2026-10-20). `PageHeader`'s right column (`rightActions` +
+`···` (`ProjectHeaderActions`) sit on a glass circle (44pt on iOS, `HEADER_BUTTON_SIZE`) behind the unchanged
+ghost button (Jay, 2026-10-20), and so does the thread's scroll-to-bottom
+chevron above the composer (`ScrollToBottomButton` in `SessionPage.tsx`; its
+bordered `secondary` circle stays elsewhere). `PageHeader`'s right column (`rightActions` +
 `+`) shares one glass capsule, a button group. Never the native SwiftUI glass
 button there (rejected 2026-09-17).
 Every sheet title row (`SheetTitleRow`: `KortixBottomSheetModal title`,
@@ -456,7 +462,7 @@ that drops props silently breaks the screens that still pass them.
    `native-only-animated-view.tsx` (a cast around an upstream typing gap that
    reproduces against stock), and `button.tsx` (`size="lg"` label is
    `text-base font-medium`, plus an added `xl` size — `h-12`, same label —
-   and added `icon-md` (`h-9 w-9`) and `icon-sm` (`h-7 w-7`) sizes —
+   and added `icon-lg` (`h-11 w-11`), `icon-md` (`h-9 w-9`) and `icon-sm` (`h-7 w-7`) sizes —
    so no screen sets label or box size by class; no added `variant`s),
    and `input.tsx` (borderless filled field in Roobert — no input has a
    border), and `dialog.tsx` + `alert-dialog.tsx` (no `border` on the

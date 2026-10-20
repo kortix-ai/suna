@@ -1,3 +1,4 @@
+import { ApiError } from '../api/client.ts';
 import {
   describeConfigStatus,
   describeReloadOutcome,
@@ -71,6 +72,7 @@ import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
 import { runSessionsShell } from './sessions-shell.ts';
 import { parseMetaPair, runSessionsUpdate } from './sessions-update.ts';
 import { runSessionsWaitFor } from './sessions-wait.ts';
+import { requireConnectedModel } from './session-model-access.ts';
 
 const HELP = help`Usage: kortix sessions <subcommand> [options]
 
@@ -250,7 +252,7 @@ Subcommands:
                                     A session with no keys for the new
                                     model's provider gets every key you may
                                     use there.
-  compact <session-id>              Summarize the conversation and continue
+  compact <session-id>              Summarize the conversation; wakes a stopped session first
                                     from the summary.
   update [<session-id>]             Change labels and metadata. --label <l>
                                     adds, --unlabel <l> removes,
@@ -558,13 +560,17 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
       `/projects/${ctx.projectId}/sessions${sessionListQuery(flags, parentId)}`,
     );
   } catch (err) {
+    if (err instanceof ApiError && err.status === 404 && ctx.defaultProject) {
+      process.stderr.write(`${status.err('Default project not found or no longer accessible.')} Run ` +
+        `kortix projects use <id>${opts.hostArg ? ` --host ${opts.hostArg}` : ''} to select another project.\n`);
+      return 1;
+    }
     return surfaceApiError(err);
   }
 
   if (json) {
-    // `model`: the stored resolved model pin, read through the SDK, never
-    // from `metadata` directly (the server bakes the resolution at create).
-    emitJson(sessions.map((s) => ({ ...s, model: sessionModelPin(s) })));
+    // New APIs report the durable conversation selection. Keep old servers compatible.
+    emitJson(sessions.map((s) => ({ ...s, model: s.model === undefined ? sessionModelPin(s) : s.model })));
     return 0;
   }
 
@@ -589,7 +595,7 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   const byW = Math.min(Math.max(...sessions.map((s) => startedByLabel(s, viewer).length), 10), 24);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('NAME', labelW)}   ${pad('STARTED BY', byW)}   ${showChildren ? 'CHILDREN  ' : ''}STATUS         BRANCH                                    UPDATED${showLabels ? '     LABELS' : ''}${C.reset}\n`,
+    `  ${C.dim}${pad('NAME', labelW)}   ${pad('STARTED BY', byW)}   ${showChildren ? 'CHILDREN  ' : ''}COMPUTER       BRANCH                                    UPDATED${showLabels ? '     LABELS' : ''}${C.reset}\n`,
   );
   for (const s of sessions) {
     process.stdout.write(
@@ -661,6 +667,12 @@ async function sessionsNew(
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
+  try {
+    await requireConnectedModel(ctx.client, ctx.projectId);
+  } catch (error) {
+    return surfaceApiError(error);
+  }
+
   // --with-file: uploads need a live sandbox, and the prompt must go out AFTER
   // the files land (an initial_prompt would race the uploads). So validate the
   // local files up front, force the readiness wait, and defer the prompt.
@@ -719,9 +731,8 @@ async function sessionsNew(
   // Shared by --wait (readiness before returning) and the post-create connect
   // path (attach needs a live runtime).
   const awaitReadiness = async (): Promise<boolean> => {
-    if (!json) {
-      process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
-    }
+    process.stderr.write(`Session ${created.session_id}: created (${created.status}); waiting for readiness…\n`);
+    let previousStage = '';
     let ready = false;
     for (let i = 0; i < 75; i += 1) {
       if (i > 0) await new Promise((r) => setTimeout(r, 4000));
@@ -730,6 +741,10 @@ async function sessionsNew(
           stage: 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
           reason?: string;
         }>(`/projects/${ctx.projectId}/sessions/${created.session_id}/start`, {});
+        if (start.stage !== previousStage) {
+          process.stderr.write(`Session ${created.session_id}: ${start.stage}\n`);
+          previousStage = start.stage;
+        }
         created = await ctx.client.get<ProjectSession>(
           `/projects/${ctx.projectId}/sessions/${created.session_id}`,
         );
@@ -967,8 +982,9 @@ async function sessionsInfo(
   process.stdout.write(`  ${C.bold}${s.name ?? shortId(s.session_id)}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}session_id ${C.reset}${s.session_id}\n`);
   process.stdout.write(
-    `  ${C.dim}status     ${C.reset}${statusColor(s.status)}${s.status}${C.reset}\n`,
+    `  ${C.dim}computer   ${C.reset}${statusColor(s.status)}${s.status}${C.reset}\n`,
   );
+  if (s.working) process.stdout.write(`  ${C.dim}activity   ${C.reset}${s.working.state}\n`);
   process.stdout.write(`  ${C.dim}branch     ${C.reset}${s.branch_name}\n`);
   process.stdout.write(`  ${C.dim}base_ref   ${C.reset}${s.base_ref}\n`);
   process.stdout.write(`  ${C.dim}agent      ${C.reset}${s.agent_name}\n`);

@@ -13,10 +13,10 @@ import {
 import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { CONTACT_TRANSLATION_KEYS } from '@/i18n/contact-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 
 const CONTACT_EMAIL = 'hey@kortix.ai';
 

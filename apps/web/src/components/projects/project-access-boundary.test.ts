@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { contract, qk } from '@kortix/sdk/react';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import {
   errorStatus,
   gateAction,
@@ -11,6 +13,7 @@ import {
   gateStateForError,
   gateStateForRequestResult,
   isForbiddenState,
+  projectGateQuery,
   resolveBoundaryView,
   resolveGateState,
   routeSessionIdFromParams,
@@ -41,11 +44,10 @@ function copyBlock(locale: string): Record<string, string> {
 const en = copyBlock('en');
 
 describe('project access waits for the authenticated identity', () => {
-  test('the query waits for auth hydration and is isolated by user', () => {
+  test('the query waits for auth hydration', () => {
     expect(componentSource).toContain('const { user, isLoading: isAuthLoading } = useAuth();');
     expect(componentSource).toContain('const authReady = !isAuthLoading && !!user?.id;');
     expect(componentSource).toContain('enabled: authReady && !!projectId');
-    expect(componentSource).toContain('queryKey: [QUERY_KEY, projectId, user?.id]');
   });
 
   test('the boundary renders what resolveBoundaryView decides', () => {
@@ -447,9 +449,9 @@ describe('house dialect', () => {
   // be composed from their shared vocabulary, not from a bespoke frame — that
   // is the whole reason the previous split-hero version looked foreign.
   test('is built from the shared auth consent primitives', () => {
-    expect(componentSource).toContain("from '@/features/auth/auth-card-shell'");
-    expect(componentSource).toContain("from '@/features/auth/auth-consent'");
-    expect(componentSource).toContain("from '@/features/auth/auth-primitives'");
+    expect(componentSource).toContain("from '@kortix/ui/internal/auth/auth-card-shell'");
+    expect(componentSource).toContain("from '@kortix/ui/internal/auth/auth-consent'");
+    expect(componentSource).toContain("from '@kortix/ui/internal/auth/auth-primitives'");
     for (const primitive of [
       '<AuthFrame>',
       '<StepHeader',
@@ -497,7 +499,7 @@ describe('house dialect', () => {
 
   test('never uses an icon as a spinner', () => {
     // `Loading` is the codebase's only spinner.
-    expect(componentSource).toContain("import Loading from '@/components/ui/loading'");
+    expect(componentSource).toContain("import Loading from '@kortix/ui/loading'");
     expect(componentSource.match(/CircleNotch|SpinnerIcon|animate-spin/)?.[0] ?? null).toBeNull();
   });
 });
@@ -511,16 +513,51 @@ describe('session open read starts beside getProject', () => {
     expect(routeSessionIdFromParams(null)).toBeNull();
   });
 
-  test('the boundary starts prefetchSessionOpen gated on auth, not on the project read', () => {
-    // Pinned as source: the gain is the ORDER — the snapshot must not wait for
-    // `getProject`, and it must not fire before the user's token exists.
-    const effect = componentSource.match(
-      /useEffect\(\(\) => \{\s*if \(!authReady \|\| !routeSessionId\) return;\s*void prefetchSessionOpen\(queryClient, projectId, routeSessionId\);/,
-    );
-    expect(effect).not.toBeNull();
-    const prefetchAt = componentSource.indexOf('void prefetchSessionOpen(');
-    const pendingGateAt = componentSource.indexOf("if (view === 'pending') return");
-    expect(prefetchAt).toBeGreaterThan(0);
-    expect(prefetchAt).toBeLessThan(pendingGateAt);
+
+});
+
+// One page load: the gate fetches, then the shell mounts its own
+// `qk.project.summary` observer (`project-shell.tsx`, `contract('config')`).
+// Two keys sent `GET /projects/:id` twice per load.
+describe('one GET /projects/:id per project page load', () => {
+  const PROJECT = 'project-1';
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  async function loadPage(seed?: (client: QueryClient) => Promise<void>) {
+    // The web client's default staleTime (`react-query-provider.tsx`).
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60_000 } } });
+    await seed?.(client);
+    let gets = 0;
+    const getProject = async () => {
+      gets += 1;
+      return { project_id: PROJECT };
+    };
+    const gate = new QueryObserver(client, { ...projectGateQuery(PROJECT), queryFn: getProject });
+    const stopGate = gate.subscribe(() => {});
+    await settle();
+    expect(gate.getCurrentResult().isSuccess).toBe(true);
+    const shell = new QueryObserver(client, {
+      queryKey: qk.project.summary(PROJECT),
+      queryFn: getProject,
+      ...contract('config'),
+    });
+    const stopShell = shell.subscribe(() => {});
+    await settle();
+    stopGate();
+    stopShell();
+    client.clear();
+    return gets;
+  }
+
+  test('a cold load sends one GET', async () => {
+    expect(await loadPage()).toBe(1);
+  });
+
+  test('a reload from the persisted cache (restored, then invalidated) sends one GET', async () => {
+    const gets = await loadPage(async (client) => {
+      client.setQueryData(qk.project.summary(PROJECT), { project_id: PROJECT });
+      await client.invalidateQueries({ queryKey: qk.project.summary(PROJECT), refetchType: 'none' });
+    });
+    expect(gets).toBe(1);
   });
 });

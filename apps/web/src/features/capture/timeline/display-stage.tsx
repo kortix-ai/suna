@@ -4,7 +4,7 @@ import type { CaptureDisplay, CaptureFrame } from '@kortix/sdk';
 import { useEffect, useState } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 import { displayLayout, type FocusSpan, type ScreenItem } from './display-model';
 import { FrameStage, useFrameSource } from './frame-stage';

@@ -53,7 +53,6 @@ export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
-  llm_gateway: z.boolean(),
   meta_agent: z.boolean(),
   monitors: z.boolean(),
   reminders: z.boolean(),
@@ -70,6 +69,8 @@ export const FeatureFlagMapSchema = z.object({
   session_log: z.boolean(),
   session_log_restore: z.boolean(),
   connectors_v2: z.boolean(),
+  agent_rooms: z.boolean(),
+  goals: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -182,7 +183,11 @@ export const ProjectSchema = z.object({
   dashboard_url: z.string(),
   /** `apps` is not a flag (Apps graduated); it is always `true` so CLIs before
    *  v0.14.0, which gate `kortix apps` on it, keep working. */
-  experimental: FeatureFlagMapSchema.extend({ apps: z.literal(true).optional() }),
+  experimental: FeatureFlagMapSchema.extend({
+    apps: z.literal(true).optional(),
+    /** Not a flag (the gateway is the only model path); always `true` for older SDK and mobile clients. */
+    llm_gateway: z.literal(true).optional(),
+  }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
   default_sandbox_provider: SandboxProviderSchema.nullable(),
@@ -984,6 +989,8 @@ export const SESSION_INITIAL_CONTEXT_MAX_CHARS = 8_192;
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
+    /** Copy the authorized platform session history into a new independent session. */
+    fork_from_session_id: z.string().min(1).max(255).optional(),
     base_ref: z.string().min(1).optional(),
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
@@ -1084,6 +1091,7 @@ export type SessionUpdateInput = z.input<typeof SessionUpdateInputSchema>;
  *  (`apps/api/src/projects/opencode-session-snapshot.ts`). Times are epoch ms. */
 export const RuntimeSessionSnapshotSchema = z.object({
   id: z.string(),
+  fork_source_id: z.string().optional(),
   title: z.string().nullable(),
   parent_id: z.string().nullable(),
   project_id: z.string().nullable(),
@@ -1093,7 +1101,28 @@ export const RuntimeSessionSnapshotSchema = z.object({
 });
 export type RuntimeSessionSnapshot = z.infer<typeof RuntimeSessionSnapshotSchema>;
 
+/**
+ * Is the session working, decided ONCE by the server (R5.2). Clients show this
+ * instead of combining their own signals. `working` while a live turn runs that
+ * the runtime has not reported ended, or while a prompt is on its way to the
+ * runtime (`pending_delivery`). Ordered by the control frame's `cseq`.
+ */
+export const SessionWorkingSchema = z.object({
+  state: z.enum(['working', 'idle']),
+  /** When this state began (ISO), or null when the server does not know. */
+  since: z.string().nullable(),
+  /** The newest live turn, or null. */
+  turn_token: z.string().nullable(),
+  /** No live turn yet, but a prompt is queued for or being handed to the runtime. */
+  pending_delivery: z.boolean(),
+});
+export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
+
 export const ProjectSessionSchema = z.object({
+  /** Durable conversation selection, falling back to the creation pin before a log exists. */
+  model: z.string().nullable().optional(),
+  /** Work activity, independent of the computer lifecycle status. Older servers may omit it. */
+  working: SessionWorkingSchema.optional(),
   session_id: z.string(),
   account_id: z.string(),
   project_id: z.string(),
@@ -1565,6 +1594,8 @@ export const TriggerSchema = z.object({
   last_attempt_at: z.string().nullable(),
   /** When an enabled cron trigger runs next: the slot the scheduler claims, jitter included. Null for a webhook trigger. */
   next_fire_at: z.string().nullable().optional(),
+  /** Next exact cron occurrence, without scheduler jitter. */
+  next_cron_at: z.string().nullable().optional(),
   webhook_url: z.string().nullable(),
 });
 export type Trigger = z.infer<typeof TriggerSchema>;
@@ -1781,23 +1812,6 @@ export const SessionTurnFailureSchema = z.object({
 });
 export type SessionTurnFailure = z.infer<typeof SessionTurnFailureSchema>;
 
-/**
- * Is the session working, decided ONCE by the server (R5.2). Clients show this
- * instead of combining their own signals. `working` while a live turn runs that
- * the runtime has not reported ended, or while a prompt is on its way to the
- * runtime (`pending_delivery`). Ordered by the control frame's `cseq`.
- */
-export const SessionWorkingSchema = z.object({
-  state: z.enum(['working', 'idle']),
-  /** When this state began (ISO), or null when the server does not know. */
-  since: z.string().nullable(),
-  /** The newest live turn, or null. */
-  turn_token: z.string().nullable(),
-  /** No live turn yet, but a prompt is queued for or being handed to the runtime. */
-  pending_delivery: z.boolean(),
-});
-export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
-
 /** `GET .../turn`. `turns` empty means idle; it is a list because a session
  *  can hold more than one open turn. */
 export const SessionTurnStatusSchema = z.object({
@@ -1973,6 +1987,7 @@ export const SessionSnapshotSchema = z.object({
     known: z.literal(true),
     base_ref: z.string().nullable(),
     agent_name: z.string().nullable(),
+    /** @deprecated Always true: the LLM gateway is the only model path. Kept for older clients. */
     llm_gateway_enabled: z.boolean(),
   }),
   models: z.union([
@@ -2241,6 +2256,8 @@ export const SecretSchema = z.object({
    *  any agent may actually receive the secret. See
    *  `SecretDeliveryBlockedReasonSchema` for the tri-state rule. */
   delivery_blocked_reason: SecretDeliveryBlockedReasonSchema.nullable().optional(),
+  /** Manifest agent grants; null means the roster could not be loaded. */
+  agents: z.union([z.array(z.string()), z.literal('all')]).nullable().optional(),
   network_boundary_available: z.boolean().optional(),
   egress_policy: SecretEgressPolicySchema.nullable(),
   strategy_locked: z.boolean(),
