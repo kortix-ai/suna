@@ -3,7 +3,7 @@
 import { Reveal } from '@/components/home/reveal';
 import { Button } from '@/components/ui/marketing/button';
 import { ArrowRightIcon } from '@/features/icon/arrow-right';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { CheckIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';

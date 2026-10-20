@@ -10,11 +10,11 @@
  * (`Users/ana/notes.md`); the API takes them with one.
  */
 
-import type { FileNode } from '@/features/file-browser/types';
-import type { FileContentResult, FileSource } from '@/features/file-viewer';
-import type { ExplorerQueryResult, FileExplorerSource } from '@/features/project-files/explorer-source';
-import { saveDriveFile } from '@/hooks/drives/use-drives';
-import { blobToFileContent, typedDriveBlob } from './session-drive-files';
+import type { FileNode } from '@kortix/ui/internal/files/types';
+import type { FileContentResult, FileSource } from '@kortix/ui/file-viewer';
+import type { ExplorerQueryResult, FileExplorerSource } from '@kortix/ui/files';
+import { saveDriveFile } from '@kortix/ui/files';
+import { blobToFileContent, typedDriveBlob } from '@kortix/ui/internal/files/session-drive-files';
 import {
   deleteDriveFile,
   downloadDriveFile,
@@ -22,10 +22,11 @@ import {
   makeDriveFolder,
   moveDriveFile,
   readDriveFile,
+  shareFolder,
   uploadDriveFile,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
-import { ScopedCache } from '@/lib/storage/managed-storage';
+import { ScopedCache } from '@kortix/ui/internal/lib/storage/managed-storage';
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
@@ -362,8 +363,8 @@ export const driveExplorerSource: FileExplorerSource = {
     ),
   useFileMkdir: () => {
     const queryClient = useQueryClient();
-    return useDriveMutation<{ dirPath: string }>(
-      (driveId, { dirPath }) => {
+    return useDriveMutation<{ dirPath: string; everyone?: boolean }>(
+      async (driveId, { dirPath, everyone }) => {
         const path = toDrivePath(dirPath);
         // A new folder is empty: its card reads 0 at once and never lists a
         // folder the server has not made yet. Access is its parent's, which
@@ -373,7 +374,11 @@ export const driveExplorerSource: FileExplorerSource = {
           const parent = queryClient.getQueryData<FolderListing>(qk.drives.files(driveId, parentOf(path)));
           queryClient.setQueryData<FolderListing>(key, { entries: [], access: parent?.access ?? 'write' });
         }
-        return makeDriveFolder(driveId, path);
+        const made = await makeDriveFolder(driveId, path);
+        // A team folder says who can open it when it is made. Should the share
+        // fail, the folder stays admins-only, which its badge shows.
+        if (everyone) await shareFolder(driveId, { path, principalType: 'project', level: 'write' });
+        return made;
       },
       ({ dirPath }) => [parentOf(toDrivePath(dirPath))],
     );

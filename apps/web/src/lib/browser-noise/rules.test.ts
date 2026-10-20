@@ -20,15 +20,15 @@ import {
   NOISE_RULES,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
-} from '../browser-error-noise';
+} from '@kortix/ui/internal/lib/browser-error-noise';
 import type {
   NoiseEvidence,
   NoiseKind,
   NoiseRule,
   RuntimeNoiseInput,
   SentryNoiseEvent,
-} from './evidence';
-import { runtimeNoiseEvidence, sentryNoiseEvidence } from './evidence';
+} from '@kortix/ui/internal/lib/browser-noise/evidence';
+import { runtimeNoiseEvidence, sentryNoiseEvidence } from '@kortix/ui/internal/lib/browser-noise/evidence';
 
 type GoldenInput = RuntimeNoiseInput & SentryNoiseEvent;
 

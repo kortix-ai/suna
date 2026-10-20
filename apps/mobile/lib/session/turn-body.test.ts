@@ -12,6 +12,8 @@ import {
   isSuppressedFailedCompaction,
   lastCompactionTurnIndex,
   lastTextBlockId,
+  liveTextBlockId,
+  textBlockRevealKey,
   parseAnswersFromOutput,
   segmentInputBlocks,
   showTurnActions,
@@ -310,6 +312,40 @@ describe('lastTextBlockId', () => {
     ).toBe(b!.id);
     expect(lastTextBlockId([{ kind: 'burst', blocks: [] }])).toBeUndefined();
   });
+});
+
+describe('liveTextBlockId and textBlockRevealKey (KRTX-2933)', () => {
+  const msg = (id: string, status: string, blockIds: string[]) =>
+    ({ message_id: id, status, blocks: blockIds.map((b) => ({ id: b, type: 'text', text: b })) }) as never;
+  const seg = (id: string) => ({ kind: 'text', block: { id, type: 'text', text: id } }) as never;
+
+  test('the last text block of a streaming message is live', () => {
+    expect(liveTextBlockId([msg('m1', 'complete', ['a']), msg('m2', 'streaming', ['b'])], [seg('a'), seg('b')])).toBe('b');
+  });
+
+  test('a text block whose message completed is not live, even while the turn reads busy', () => {
+    expect(liveTextBlockId([msg('m1', 'complete', ['a'])], [seg('a')])).toBeUndefined();
+    expect(liveTextBlockId([msg('m1', 'interrupted', ['a'])], [seg('a')])).toBeUndefined();
+  });
+
+  test('a text block followed by another block of its message has ended', () => {
+    expect(liveTextBlockId([msg('m1', 'streaming', ['a', 'call'])], [seg('a')])).toBeUndefined();
+  });
+
+  test('the reveal key names the message and the block', () => {
+    expect(textBlockRevealKey([msg('m1', 'complete', ['a']), msg('m2', 'streaming', ['b'])], 'b')).toBe('m2:b');
+    expect(textBlockRevealKey([msg('m1', 'complete', ['a'])], 'zz')).toBe('zz');
+  });
+
+  test('each reply list answers from its own blocks, the first message holding an id wins', () => {
+    const first = [msg('m1', 'complete', ['a', 'b']), msg('m2', 'streaming', ['b'])];
+    expect(textBlockRevealKey(first, 'b')).toBe('m1:b');
+    // The next streamed frame is a new list: an index built for `first` must not answer for it.
+    const next = [msg('m1', 'complete', ['a']), msg('m2', 'streaming', ['b'])];
+    expect(textBlockRevealKey(next, 'b')).toBe('m2:b');
+    expect(textBlockRevealKey(first, 'b')).toBe('m1:b');
+  });
+
 });
 
 describe('turnWorkSplit (KRTX-2113, web TurnToolBlocks fold)', () => {

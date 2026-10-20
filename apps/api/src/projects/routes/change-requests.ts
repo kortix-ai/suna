@@ -594,7 +594,10 @@ export function registerChangeRequestsRoutes(): void {
       const [row] = await db
         .update(changeRequests)
         .set(updates)
-        .where(eq(changeRequests.crId, crId))
+        // Bind the write to the resolved row's canonical id (see the merge route
+        // in routes/change-request-actions.ts): the raw path param may be the
+        // display number, which matched the CR above but would 22P02 here.
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
       return c.json(serializeChangeRequest(row));
     },

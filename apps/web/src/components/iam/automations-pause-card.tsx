@@ -10,12 +10,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import Loading from '@/components/ui/loading';
-import { SettingsRow } from '@/components/ui/settings-row';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import Loading from '@kortix/ui/loading';
+import { SettingsRow } from '@kortix/ui/settings-row';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import { getAccountAutomations, setAccountAutomationsPaused } from '@/lib/iam-client';
 

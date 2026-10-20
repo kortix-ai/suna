@@ -4,10 +4,10 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { useEffect, useRef, useState } from 'react';
 
-import { setupLinkApiBase } from '@/components/setup-links/util';
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import Loading from '@/components/ui/loading';
-import { ErrorStrip } from '@/features/auth/auth-primitives';
+import { setupLinkApiBase } from '@kortix/ui/markdown/setup-links/api-base';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
+import Loading from '@kortix/ui/loading';
+import { ErrorStrip } from '@kortix/ui/internal/auth/auth-primitives';
 
 type ConnectMessage =
   | { type: 'github-connect-success'; provider_token: string }
