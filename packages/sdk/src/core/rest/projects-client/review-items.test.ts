@@ -172,6 +172,14 @@ describe('mapApiReviewItem', () => {
     expect(approvalDetailOf(empty).actions[0].resolvedPreview).toBeUndefined();
   });
 
+  test('an adapted connector call carries the connector display name when the API sends it', () => {
+    const detail = { execution_id: 'e', action_path: 'github.merge_a_pull_request' };
+    const named = mapApiReviewItem({ ...row, kind: 'approval', detail: { ...detail, connector_name: 'GitHub' } });
+    expect(approvalDetailOf(named).actions[0]).toMatchObject({ connector: 'github', connectorName: 'GitHub' });
+    const older = mapApiReviewItem({ ...row, kind: 'approval', detail });
+    expect(approvalDetailOf(older).actions[0].connectorName).toBeUndefined();
+  });
+
   test('a viewer without argument visibility gets previewAuthorized false', () => {
     const item = mapApiReviewItem({
       ...row,

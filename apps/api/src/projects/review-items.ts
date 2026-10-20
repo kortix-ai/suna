@@ -8,7 +8,7 @@
  * core module (./change-requests.ts).
  */
 
-import { changeRequests, connectorCalls, projectSessions, reviewItems } from '@kortix/db';
+import { changeRequests, connectorCalls, connectors, projectSessions, reviewItems } from '@kortix/db';
 import { type AnyColumn, type SQL, and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { enrichPendingCallOnce } from '../connectors/approval-enrich-pending';
 import { approvalNotExpired, isApprovalExpired } from '../connectors/approval-expiry';
@@ -238,6 +238,8 @@ type Sortable<T> = T & { sortAt?: string };
 export type PendingConnectorCall = Sortable<ConnectorCallRow> & {
   sessionCreatedBy?: string | null;
   sessionOrigin?: string | null;
+  /** The connector's display name ("GitHub"). */
+  connectorName?: string | null;
 };
 
 /**
@@ -384,8 +386,10 @@ async function pendingConnectorCalls(
       sortAt: microIso(connectorCalls.createdAt),
       sessionCreatedBy: projectSessions.createdBy,
       sessionOrigin: projectSessions.origin,
+      connectorName: connectors.name,
     })
     .from(connectorCalls)
+    .leftJoin(connectors, eq(connectors.connectorId, connectorCalls.connectorId))
     .leftJoin(
       projectSessions,
       and(
@@ -411,6 +415,7 @@ async function pendingConnectorCalls(
     sortAt: row.sortAt,
     sessionCreatedBy: row.sessionCreatedBy,
     sessionOrigin: row.sessionOrigin,
+    connectorName: row.connectorName,
   }));
 }
 

@@ -70,6 +70,13 @@ const baseCall: ConnectorCallRow = {
 };
 
 describe('connectorCallToReviewItem', () => {
+  test('names the connector by its display name when the row has one', () => {
+    const named = connectorCallToReviewItem({ ...baseCall, connectorName: 'GitHub' }, { canResolve: true });
+    expect((named.detail as Record<string, unknown>).connector_name).toBe('GitHub');
+    const unnamed = connectorCallToReviewItem(baseCall, { canResolve: true });
+    expect('connector_name' in (unnamed.detail as Record<string, unknown>)).toBe(false);
+  });
+
   test('a pending connector call the caller may resolve maps to a needs_you approval item', () => {
     const item = connectorCallToReviewItem(baseCall, { canResolve: true });
     expect(item.review_item_id).toBe(`${CALL_ID_PREFIX}ex-1`);

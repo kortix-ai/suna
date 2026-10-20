@@ -50,7 +50,7 @@ const CALL_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']>
  * `resolvers` names who decides (`approvalResolvers`); null when unknown.
  */
 export function connectorCallToReviewItem(
-  ex: ConnectorCallRow,
+  ex: ConnectorCallRow & { connectorName?: string | null },
   options: { canResolve?: boolean; resolvers?: ApprovalResolvers } = {},
 ): ReviewItemDTO & {
   can_resolve: boolean;
@@ -85,6 +85,8 @@ export function connectorCallToReviewItem(
       execution_id: ex.executionId,
       action_path: ex.actionPath,
       connector_id: ex.connectorId,
+      // The display name ("GitHub"); the slug in `action_path` is not a name.
+      ...(ex.connectorName ? { connector_name: ex.connectorName } : {}),
       request_digest: ex.requestDigest,
       risk: ex.risk,
       ...(includeArgsPreview ? { args_preview: argsPreview } : {}),

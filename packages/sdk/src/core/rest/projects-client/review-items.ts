@@ -66,6 +66,9 @@ export interface ReviewApprovalAction {
   id: string;
   title: string;
   connector: string;
+  /** The connector's display name ("GitHub"), when the API sends it. `connector`
+   *  is the slug from the action path. */
+  connectorName?: string;
   action: string;
   consequence: string;
   risk: ReviewItemRisk;
@@ -338,6 +341,7 @@ function approvalDetail(detail: AnyRecord, row: ApiReviewItem): ReviewApprovalDe
         id: asString(detail.execution_id) ?? row.review_item_id,
         title: path ? humanizeReviewActionPath(path) : row.title || 'Run action',
         connector,
+        connectorName: asString(detail.connector_name),
         action,
         consequence: 'Runs against the real connector once you approve',
         risk: row.risk,
