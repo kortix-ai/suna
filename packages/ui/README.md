@@ -88,7 +88,7 @@ any prop gets these defaults:
 | `i18n` | the bundled English catalog of `@kortix/ui/i18n` |
 | `useViewerId` | no signed-in user (`undefined`) |
 | `useBrand` | the Kortix marks |
-| `config` | `{ billingEnabled: false, connectorsEnabled: true, managedModelsEnabled: false }` |
+| `config` | `{ connectorsEnabled: true, managedModelsEnabled: false }`. Billing is the SDK flag `configureKortix({ billingEnabled })`, which every billing gate reads. It is for Kortix's own app: its upgrade actions open the Kortix plan dialog that apps/web mounts. A custom host leaves it off, so no upgrade control renders. |
 | `components` | no slots: a control that opens a missing slot is hidden (`ShareSessionModal`, `HomeAnnouncement`, `Wallpaper`, `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal`) |
 
 `strings` takes any subset of `UiStrings`. `MermaidRenderer`'s controls are
@@ -122,7 +122,7 @@ const useViewerId = () => useAuth().user?.id;
   navigation={navigation}
   i18n={i18n}
   useViewerId={useViewerId}
-  config={{ billingEnabled: true }}
+  config={{ managedModelsEnabled: true }}
 >
   {app}
 </UiProvider>

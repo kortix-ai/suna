@@ -231,8 +231,6 @@ export const defaultUiNavigation: UiNavigation = {
 
 /** Values the host knows and the UI reads. Every field has a default. */
 export interface UiHostConfig {
-  /** Billing is on, so upgrade actions have a target. Default: false. */
-  billingEnabled: boolean;
   /**
    * The backend serves the hosted app-connector catalog ("Easy connect").
    * False hides that catalog; custom connectors stay. Default: true.
@@ -245,7 +243,6 @@ export interface UiHostConfig {
 }
 
 export const defaultUiHostConfig: UiHostConfig = {
-  billingEnabled: false,
   connectorsEnabled: true,
   managedModelsEnabled: false,
 };

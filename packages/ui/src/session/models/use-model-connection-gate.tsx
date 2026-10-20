@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useSessionIds } from '../../providers/session-ids';
-import { useUiComponents, useUiHostConfig } from '../../providers/ui-provider';
+import { useUiComponents } from '../../providers/ui-provider';
 import { useCallback, useMemo, useState } from 'react';
 
 import { useAccountState } from '../../internal/billing/use-account-state';
@@ -12,7 +12,7 @@ import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectPageCans } from '../../internal/lib/use-project-can';
 import type { ProviderModalTab } from '../../internal/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '../../internal/stores/upgrade-dialog-store';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk';
+import { getProjectDetail, listProjectSecrets, platformConfig } from '@kortix/sdk';
 import { contract, type FlatModel, type ModelKey, qk } from '@kortix/sdk/react';
 import { resolveEntitlementsPending } from '../composer/entitlements-pending';
 
@@ -203,8 +203,9 @@ export function useModelConnectionGate(
   //
   // This flag answers "is billing ON", NOT "is a host MOUNTED". A route that
   // enables billing without mounting one still yields a dead click — which is
-  // exactly why `/new` had to mount its own.
-  const showUpgradeOption = useUiHostConfig().billingEnabled;
+  // exactly why `/new` had to mount its own. It is the SDK's flag
+  // (`configureKortix({ billingEnabled })`), the one every billing gate reads.
+  const showUpgradeOption = !!platformConfig().billingEnabled;
 
   return {
     canConnectProvider,

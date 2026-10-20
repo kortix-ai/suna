@@ -27,7 +27,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { updateProfileMetadata } from '@/lib/auth/update-profile';
 import { isRuntimeNotReadyNoiseMessage } from '@kortix/ui/internal/lib/browser-error-noise';
-import { isBillingEnabled, isConnectorsEnabled, isManagedProviderEnabled } from '@/lib/config';
+import { isConnectorsEnabled, isManagedProviderEnabled } from '@/lib/config';
 import { isStaticSitePath } from '@/lib/navigation/static-site-path';
 import { getEnv } from '@/lib/env-config';
 import { isSilentTimeoutMessage } from '@kortix/ui/internal/lib/timeout-toast-policy';
@@ -156,7 +156,6 @@ export function KortixUiProvider({ children }: { children: ReactNode }) {
   // Read on first render, not at module load: the browser reads the runtime config script.
   const config = useMemo<Partial<UiHostConfig>>(
     () => ({
-      billingEnabled: isBillingEnabled(),
       connectorsEnabled: isConnectorsEnabled(),
       managedModelsEnabled: isManagedProviderEnabled(),
       deploymentVersion: getEnv().VERSION,

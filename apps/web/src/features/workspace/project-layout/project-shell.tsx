@@ -19,6 +19,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useCustomizePrefetch } from '@kortix/ui/customize/shared/use-customize-prefetch';
 import { parseSidebarStateCookie } from '@kortix/ui/workspace/layout/sidebar-cookie';
 import { useDesktopShell } from '@kortix/ui/internal/layout/sidebar-opener';
+import { openCommandPalette } from '@kortix/ui/internal/layout/open-command-palette';
 import { ProjectSidebar } from '@kortix/ui/workspace';
 import { WorkspaceSwitcher } from '@/features/workspace/project-sidebar/workspace-switcher';
 import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
@@ -48,7 +49,6 @@ import {
   qk,
   useFeatureFlag,
   useGatewayCatalogSync,
-  useSessionsNeedingInput,
 } from '@kortix/sdk/react';
 import { SidebarGlyph as PanelLeft } from '@kortix/ui/icons';
 
@@ -98,10 +98,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   // Fill every Customize tab's cache on the first idle slot, so opening
   // Customize renders from memory instead of waiting on the API.
   useCustomizePrefetch(projectId);
-  // The one 30 s poll of GET needs-input for this project (KRTX-1739). The
-  // sidebar and the Sessions page read its cache (`useSessionNeedsYouCounts`):
-  // a poll in each would read up to twice per 30 s.
-  useSessionsNeedingInput(projectId);
+  // GET needs-input is polled by the session lists (`useSessionNeedsYouCounts`), once per project.
 
   // Presence: this shell is mounted for EVERY /projects/[id] route and survives
   // in-project navigation, so mounting the warm hook here means "one ensure
@@ -265,7 +262,11 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         showGlobalUserSettingsModal={false}
         defaultSidebarOpen={resolvedSidebarOpen}
         sidebarContent={
-          <ProjectSidebar projectId={projectId} menu={<WorkspaceSwitcher projectId={projectId} />} />
+          <ProjectSidebar
+            projectId={projectId}
+            menu={<WorkspaceSwitcher projectId={projectId} />}
+            onOpenSearch={openCommandPalette}
+          />
         }
       >
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
