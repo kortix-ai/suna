@@ -1,4 +1,4 @@
-import { errorToast } from '@/components/ui/toast';
+import { errorToast } from '@kortix/ui/toast';
 import { buildTemplateSetupPrompt } from '@/features/marketplace/marketplace-setup-prompt';
 import { createProjectSession, type KortixProject } from '@kortix/sdk';
 

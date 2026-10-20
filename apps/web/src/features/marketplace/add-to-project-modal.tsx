@@ -2,14 +2,14 @@
 
 import { KeyIcon as KeyRound, PlugIcon as Plug, WrenchIcon as Wrench } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
+import { hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   Field,
   FieldContent,
@@ -17,9 +17,9 @@ import {
   FieldGroup,
   FieldLabel,
   FieldTitle,
-} from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/field';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -27,26 +27,26 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
+} from '@kortix/ui/modal';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { errorToast } from '@/components/ui/toast';
+} from '@kortix/ui/select';
+import { errorToast } from '@kortix/ui/toast';
 import {
   GitHubSetupRequiredPanel,
   isAccountGitAdmin,
 } from '@/features/projects/modal/github-setup-required-panel';
 import { startTemplateSetupSession } from '@/features/projects/modal/template-setup-session';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
-import { isManagedGitUnavailableError } from '@/lib/onboarding/provision-errors';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { isManagedGitUnavailableError } from '@kortix/ui/internal/lib/onboarding/provision-errors';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { capabilityCount, hasCapabilities } from './marketplace-install';

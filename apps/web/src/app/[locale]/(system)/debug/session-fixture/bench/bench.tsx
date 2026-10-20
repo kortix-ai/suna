@@ -5,10 +5,8 @@ import { sessionLogTurns } from '@kortix/sdk';
 import { useSession, useSessionLogThread, useSessionStateStore } from '@kortix/sdk/react';
 import { Profiler, memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 
-import { SESSION_TRANSCRIPT_CLASS } from '@/features/session/session-body';
-import { SessionChat } from '@/features/session/session-chat';
-import { SessionTurn } from '@/features/session/session-chat/transcript';
-import { TurnViewport } from '@/features/session/turn/turn-viewport';
+import { SESSION_TRANSCRIPT_CLASS } from '@kortix/ui/session/thread/session-body';
+import { SessionChat, SessionTurn, TurnViewport } from '@kortix/ui/session';
 import type { SessionStatus } from '@/ui';
 
 const SESSION_ID = 'ses_FixtureBench';

@@ -12,17 +12,17 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import {
   AuthPendingScreen,
   AuthStatusScreen,
   DetailPanel,
   DetailRow,
-} from '@/features/auth/auth-consent';
-import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
-import { armPendingMfaAction, clearPendingMfaAction } from '@/features/auth/mfa-pending-action';
+} from '@kortix/ui/internal/auth/auth-consent';
+import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
+import { armPendingMfaAction, clearPendingMfaAction } from '@kortix/ui/internal/auth/mfa-pending-action';
 import { useAuth } from '@/features/providers/auth-provider';
 import type { ChatIdentityPreview } from '@kortix/sdk';
 
@@ -207,7 +207,7 @@ export function ChatIdentityConnect({
           <p>
             <Link
               href="/"
-              className="hover:text-foreground -my-2 inline-block py-2 underline-offset-4 transition-colors hover:underline"
+              className="hover:text-foreground -my-2 inline-block py-2 transition-colors"
             >
               {tI18nComplete.raw('text19766ed6ccb2')}
             </Link>

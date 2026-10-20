@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { ProviderLogo } from './provider-branding';
+import { ProviderLogo } from '@kortix/ui/internal/lib/provider-branding';
 
 const render = (props: React.ComponentProps<typeof ProviderLogo>) =>
   renderToStaticMarkup(<ProviderLogo {...props} />);

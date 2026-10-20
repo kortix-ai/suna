@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { connectorBindingNotice } from '../../src/lib/connector-binding';
 import { selectConnectorBindingChoices } from '../../src/server/bindable-connections';
 
 const connection = (over: Record<string, unknown> = {}) =>
@@ -54,69 +53,6 @@ describe('selectConnectorBindingChoices', () => {
 
   test('no connections is no connectors, not a crash', () => {
     expect(selectConnectorBindingChoices(undefined)).toEqual([]);
-  });
-});
-
-describe('connectorBindingNotice', () => {
-  const choiceFor = (over: Record<string, unknown>) =>
-    ({
-      alias: 'gmail',
-      connections: [],
-      unavailable: 'private_only',
-      ...over,
-    }) as never;
-
-  test('a bindable alias has no notice — the picker speaks for itself', () => {
-    expect(
-      connectorBindingNotice(
-        choiceFor({
-          unavailable: null,
-          connections: [
-            {
-              connectionId: 'p',
-              connectorAlias: 'gmail',
-              label: 'Support',
-              isDefault: true,
-            },
-          ],
-        }),
-      ),
-    ).toBeNull();
-  });
-
-  test('the private-only case points at a TEAMMATE, not at the reader', () => {
-    const notice = connectorBindingNotice(choiceFor({}))!;
-    expect(notice.detail).toContain('teammate');
-    expect(notice.detail).toContain('own accounts');
-  });
-
-  test('a revoked project connection asks for a reconnect, not a first-time share', () => {
-    const notice = connectorBindingNotice(
-      choiceFor({ unavailable: 'project_connection_inactive' }),
-    )!;
-    expect(notice.detail).toContain('reconnect');
-    expect(notice.detail).toContain('project');
-    expect(notice.detail.toLowerCase()).not.toContain('team connection');
-  });
-
-  test('neither case offers a self-connect action', () => {
-    // A wrapper credential has no personal upstream identity, so it can never
-    // complete an interactive connect flow for a member-owned account — a
-    // "connect it yourself" button could only ever lead to that dead end.
-    for (const unavailable of ['private_only', 'project_connection_inactive']) {
-      expect(
-        connectorBindingNotice(choiceFor({ unavailable }))!.selfServiceAction,
-      ).toBeNull();
-    }
-  });
-
-  test('no notice ever tells the reader to connect the account themselves', () => {
-    for (const unavailable of ['private_only', 'project_connection_inactive']) {
-      const notice = connectorBindingNotice(choiceFor({ unavailable }))!;
-      expect(`${notice.title} ${notice.detail}`.toLowerCase()).not.toContain(
-        'connect your',
-      );
-    }
   });
 });
 

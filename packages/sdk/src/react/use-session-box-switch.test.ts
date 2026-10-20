@@ -4,6 +4,7 @@ import { createElement, type ReactNode } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { sessionStartKey, type SessionStartResult } from '../core/rest/projects-client';
+import { noteSessionDeleted } from '../core/http/session-stopped';
 import { getCurrentRuntimeSandboxId, setCurrentRuntime } from '../core/session/current-runtime';
 import { useSession } from './opencode';
 
@@ -84,5 +85,33 @@ describe('useSession follows the session to a new box', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
     expect(getCurrentRuntimeSandboxId()).toBe('sbx_new');
+  });
+});
+
+describe('useSession after its session is deleted', () => {
+  test('stops /start and leaves the box, so nothing reads the deleted session', async () => {
+    queryClient.setQueryData(sessionStartKey(PROJECT_ID, SESSION_ID), readyOn('sbx_live'));
+    const seen: boolean[] = [];
+    function Host() {
+      seen.push(useSession(PROJECT_ID, SESSION_ID, { chatEngine: false, replayStartStash: false }).switched);
+      return null;
+    }
+    mount(createElement(Host));
+    expect(seen.at(-1)).toBe(true);
+    const start = () => queryClient.getQueryCache().find({ queryKey: sessionStartKey(PROJECT_ID, SESSION_ID) });
+    expect(start()?.isDisabled()).toBe(false);
+
+    await act(async () => {
+      noteSessionDeleted('kses_other');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(seen.at(-1)).toBe(true);
+
+    await act(async () => {
+      noteSessionDeleted(SESSION_ID);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(seen.at(-1)).toBe(false);
+    expect(start()?.isDisabled()).toBe(true);
   });
 });
