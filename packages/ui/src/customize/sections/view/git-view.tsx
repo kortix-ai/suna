@@ -51,6 +51,7 @@ import {
   type ProjectDetail,
   type ProjectGitConnection,
   platformConfig,
+  stripTrailingSlashes,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
@@ -103,7 +104,7 @@ type ProjectWithOrigin = KortixProject & { git_origin_url?: string };
  */
 function gitCloneUrl(project: ProjectWithOrigin): string {
   if (project.git_origin_url) return project.git_origin_url;
-  const configured = platformConfig().backendUrl.replace(/\/+$/, '');
+  const configured = stripTrailingSlashes(platformConfig().backendUrl);
   const base = configured.startsWith('http')
     ? configured
     : `${typeof window === 'undefined' ? '' : window.location.origin}${configured}`;

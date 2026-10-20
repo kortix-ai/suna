@@ -1,5 +1,6 @@
 'use client';
 
+import { stripTrailingSlashes } from '@kortix/sdk';
 import { createContext, createElement, useContext, useRef, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { createStore, type StoreApi } from 'zustand/vanilla';
@@ -154,8 +155,8 @@ interface FilesStoreActions {
 
 /** Check if a path is equal to or a descendant of the root */
 export function isWithinRoot(path: string, root: string): boolean {
-  const normPath = path.replace(/\/+$/, '') || '/';
-  const normRoot = root.replace(/\/+$/, '') || '/';
+  const normPath = stripTrailingSlashes(path) || '/';
+  const normRoot = stripTrailingSlashes(root) || '/';
   // Everything is within `/`. Comparing against `'/' + '/'` put no path in it.
   if (normRoot === '/') return true;
   return normPath === normRoot || normPath.startsWith(normRoot + '/');
