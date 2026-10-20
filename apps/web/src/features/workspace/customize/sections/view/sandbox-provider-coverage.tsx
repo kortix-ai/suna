@@ -3,6 +3,11 @@ import type { SandboxTemplate } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
 
 import { Badge } from '@/components/ui/badge';
+import {
+  formatSandboxProvider,
+  isLegacySandboxProvider,
+  sandboxProviderRank,
+} from '../../../project-sidebar/footer/sandbox-alert-state';
 
 export type ProviderCoverageEntry = NonNullable<SandboxTemplate['provider_coverage']>[number];
 export type ProviderCoverageStatus = ProviderCoverageEntry['status'];
@@ -10,15 +15,19 @@ export type SandboxProvider = ProviderCoverageEntry['provider'];
 
 export type SandboxProviderMode = 'automatic' | 'pinned';
 
-export function sandboxProviderLabel(provider: SandboxProvider): 'Daytona' | 'Platinum' | 'E2B' {
-  switch (provider) {
-    case 'daytona':
-      return 'Daytona';
-    case 'platinum':
-      return 'Platinum';
-    case 'e2b':
-      return 'E2B';
-  }
+/** A provider's name, with a `Legacy` badge for the legacy fallback provider (Daytona). */
+export function SandboxProviderLabel({ provider }: { provider: string }) {
+  const t = useTranslations('settings.sandbox');
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {formatSandboxProvider(provider)}
+      {isLegacySandboxProvider(provider) ? (
+        <Badge variant="muted" size="sm">
+          {t('provider.legacy')}
+        </Badge>
+      ) : null}
+    </span>
+  );
 }
 
 export function describeProviderMode(
@@ -28,7 +37,7 @@ export function describeProviderMode(
 ): { label: string; selectedProvider: string | null } {
   if (mode === 'automatic')
     return { label: tI18nComplete.raw('textd461a493a375'), selectedProvider: null };
-  const selected = selectedProvider ? sandboxProviderLabel(selectedProvider) : null;
+  const selected = selectedProvider ? formatSandboxProvider(selectedProvider) : null;
   return {
     label: tI18nComplete.raw('text3b3c31642567'),
     selectedProvider: selected,
@@ -67,7 +76,9 @@ export interface SandboxProviderBadgeCopy {
 export function availableProviderCoverage(
   coverage: SandboxTemplate['provider_coverage'] | null | undefined,
 ): ProviderCoverageEntry[] {
-  return (coverage ?? []).filter((item) => item.available);
+  return (coverage ?? [])
+    .filter((item) => item.available)
+    .sort((a, b) => sandboxProviderRank(a.provider) - sandboxProviderRank(b.provider));
 }
 
 function providerCoverageVariant(
@@ -123,17 +134,27 @@ export function SandboxProviderBadge({
   copy?: SandboxProviderBadgeCopy;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('settings.sandbox');
+  const legacy = isLegacySandboxProvider(item.provider);
   const state = describeProviderCoverage(item.status, tI18nComplete);
   const stateLabel = copy.states?.[item.status] ?? state.label;
-  const provider = sandboxProviderLabel(item.provider);
+  const provider = formatSandboxProvider(item.provider);
 
   return (
     <Badge
       variant={providerCoverageVariant(state.tone)}
       size="xs"
-      aria-label={`${provider}${selected ? ` ${copy.selectedAria ?? 'selected'}` : ''}: ${stateLabel}`}
+      aria-label={`${provider}${legacy ? ` ${t('provider.legacy')}` : ''}${selected ? ` ${copy.selectedAria ?? 'selected'}` : ''}: ${stateLabel}`}
     >
       {provider}
+      {legacy ? (
+        <>
+          <span className="opacity-50" aria-hidden="true">
+            {tI18nComplete.raw('text3b9453dad42b')}
+          </span>
+          {t('provider.legacy')}
+        </>
+      ) : null}
       {selected ? (
         <>
           <span className="opacity-50" aria-hidden="true">

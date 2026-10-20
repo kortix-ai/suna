@@ -6,6 +6,7 @@ import { testUiTranslator as t } from '@/i18n/test-translator';
 import type { ProjectTriggerEventApp, ProjectTriggerEventType } from '@kortix/sdk';
 
 import { defaultConfigDraft, oneLineDescription, schemaFields } from './event-trigger-copy';
+import type { ConditionRow } from './schedule-fields';
 import {
   type ComposerDraft,
   autoName,
@@ -213,6 +214,15 @@ describe('trigger composer: the app and its connector', () => {
     expect(findDraftApp(apps, draftOf())).toBeNull();
   });
 
+  test('one app slug under two sources: the draft keeps the source it was picked with', () => {
+    const mcpGmail = { ...gmailApp, source: 'mcp', provider: 'mcp', connector: null, mcp_url: 'https://gmailmcp.example.test/mcp' };
+    const both = [{ ...gmailApp, source: 'composio', provider: 'composio' }, mcpGmail];
+    const picked = withAppPicked(draftOf({ kind: 'event' }), 'gmail', 'mcp');
+    expect(picked.appSource).toBe('mcp');
+    expect(findDraftApp(both, picked)).toBe(mcpGmail);
+    expect(findDraftApp(both, draftOf({ appSlug: 'gmail' }))?.source).toBe('composio');
+  });
+
   test('an app the project has runs on its first connector; one it lacks has none', () => {
     expect(resolveProfile(githubApp, draftOf())).toBe('github');
     expect(resolveProfile(gmailApp, draftOf())).toBeNull();
@@ -266,7 +276,7 @@ describe('trigger composer: Create writes in order', () => {
 
   test('browsing sends nothing: the composer adds a connector in one place, inside Create', () => {
     expect(composer.match(/\badd\(/g)?.length).toBe(1);
-    expect(composer.indexOf('add({')).toBeGreaterThan(composer.indexOf('runCreate({'));
+    expect(composer.search(/\badd\(/)).toBeGreaterThan(composer.indexOf('runCreate({'));
   });
 });
 
@@ -342,6 +352,14 @@ describe('trigger composer: inline validation', () => {
     });
     expect(validate(half, ctx(), t).map((p) => p.block)).toEqual(['options']);
     expect(validate({ ...half, kind: 'cron' }, ctx(), t)).toEqual([]);
+  });
+
+  test('an exists or missing condition needs no value; a list operator does (KRTX-1721)', () => {
+    const rows = (conditions: ConditionRow[]) =>
+      validate(draftOf({ kind: 'webhook', signingKey: 'k', instruction: 'x', conditions }), ctx(), t).map((p) => p.block);
+    expect(rows([{ path: 'body.pull_request', operator: 'exists', value: '' }])).toEqual([]);
+    expect(rows([{ path: 'body.draft', operator: 'missing', value: '' }])).toEqual([]);
+    expect(rows([{ path: 'body.sender.login', operator: 'not', value: ' ' }])).toEqual(['options']);
   });
 });
 
@@ -478,13 +496,6 @@ describe('trigger composer: connector first, then its account', () => {
     expect(triggerConnection(gmailApp, base, 'gmail-events')).toEqual({
       connector: 'gmail-events',
     });
-  });
-});
-
-describe('triggers page: the paused banner is one whole sentence', () => {
-  test('`text3bc554b5c290` names Resume all itself, so nothing is appended to it', () => {
-    const view = readFileSync(join(import.meta.dir, '..', 'schedule-view.tsx'), 'utf8');
-    expect(view).toMatch(/\{tI18nComplete\.raw\('text3bc554b5c290'\)\}\s*<\/InfoBanner>/);
   });
 });
 

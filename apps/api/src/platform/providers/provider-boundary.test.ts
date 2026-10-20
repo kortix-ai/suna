@@ -45,7 +45,7 @@ describe('sandbox provider architecture boundary', () => {
   test('concrete providers use the registry helpers without changing their public behavior', async () => {
     const registry = await import('./index');
     const opts = { accountId: 'a', userId: 'u', name: 'box' };
-    for (const name of ['daytona', 'e2b', 'platinum'] as const) {
+    for (const name of ['platinum', 'daytona'] as const) {
       const provider = await import(`./${name}.ts`);
       expect(provider).toBeDefined();
       expect(registry.sandboxWorkloadType(opts)).toBe('session');
@@ -70,7 +70,7 @@ describe('sandbox provider architecture boundary', () => {
   });
 
   test('concrete providers have no runtime import of the registry', () => {
-    for (const name of ['daytona', 'e2b', 'platinum']) {
+    for (const name of ['platinum', 'daytona']) {
       const source = readFileSync(resolve(import.meta.dir, `${name}.ts`), 'utf8');
       expect(source, name).not.toMatch(
         /(?:import|export)\s*(?:type\s*)?(?:\{[^}]*\}|\*\s+from)\s*['"]\.\/index['"]/s,
@@ -82,10 +82,10 @@ describe('sandbox provider architecture boundary', () => {
     for (const relativePath of GENERIC_DATA_PATHS) {
       const source = readFileSync(resolve(API_SRC, relativePath), 'utf8');
       expect(source, relativePath).not.toMatch(
-        /(?:provider|providerName)\s*(?:===|!==|==|!=)\s*['"](?:daytona|platinum|e2b)['"]/i,
+        /(?:provider|providerName)\s*(?:===|!==|==|!=)\s*['"](?:daytona|platinum)['"]/i,
       );
       expect(source, relativePath).not.toMatch(
-        /x-daytona-|x-access-token|e2b-traffic-access-token/i,
+        /x-daytona-|x-access-token/i,
       );
     }
   });

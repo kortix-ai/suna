@@ -172,6 +172,11 @@ test('media: a frame with its video URL, an item’s media, an asset URL', async
   expect(last().url).toBe(`${P}/frames/f1?user_id=u2`);
   await getCaptureChunkMedia('a1', 'c1');
   expect(last().url).toBe(`${P}/chunks/c1/media`);
+  // A computer linked to no one is read as itself: the media and frame reads name the device.
+  await getCaptureChunkMedia('a1', 'c1', { deviceId: 'd1' });
+  expect(last().url).toBe(`${P}/chunks/c1/media?device_id=d1`);
+  await getCaptureFrame('a1', 'f1', { deviceId: 'd1' });
+  expect(last().url).toBe(`${P}/frames/f1?device_id=d1`);
   await getCaptureAssetUrl('a1', 'd1', `sha256-${'a'.repeat(64)}.png`);
   expect(last().url).toBe(`${P}/devices/d1/assets/sha256-${'a'.repeat(64)}.png`);
 });

@@ -183,6 +183,11 @@ export interface ProjectSession {
    *  Absent for an agent, an API key or a service account. */
   pinned_at?: string | null;
   archived_at?: string | null;
+  /** A deleted session (`ls --deleted`): when, by whom, and the last instant
+   *  `sessions restore` takes it back. */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  restore_until?: string | null;
 }
 
 export interface ProjectSessionInitiator {
@@ -213,6 +218,10 @@ export interface ProjectTriggerEvent {
   status: 'active' | 'needs_connection' | 'error' | 'pending';
   error: string | null;
   last_event_at: string | null;
+  /** Source `mcp`: when Kortix last checked the app with success. */
+  checked_at?: string | null;
+  /** Source `mcp`: when Kortix checks the app next. */
+  next_check_at?: string | null;
 }
 
 /** One event type from `GET /projects/:id/triggers/event-types`. */
@@ -269,6 +278,8 @@ export interface TriggerEventApp {
   connected: boolean;
   /** Every connector (profile) of this app with its shared accounts. */
   connectors?: TriggerEventConnector[];
+  /** Source `mcp`: the catalogue MCP server URL a new connector is added with. Null for other sources and for a project MCP server outside the catalogue. */
+  mcp_url?: string | null;
 }
 
 export interface TriggerEventAppsResponse {
@@ -300,6 +311,13 @@ export interface ProjectTrigger {
   prompt_template: string;
   /** 'fresh' (default) mints a new session per fire; 'reuse' re-prompts one persistent session. */
   session_mode: 'fresh' | 'reuse';
+  /** Runs it may start in any 60 minutes; null = unset (the default, 60). Older servers omit it. */
+  max_runs_per_hour?: number | null;
+  /** Runs it may start in a UTC day; null = no daily cap. Older servers omit it. */
+  max_runs_per_day?: number | null;
+  /** Set while the trigger paused itself after a sustained run-limit breach (KRTX-1721). */
+  auto_paused_at?: string | null;
+  auto_paused_reason?: string | null;
   last_fired_at: string | null;
   /** `queued`, `fired`, or `failed` (the prompt was not delivered, or its run ended with an error). */
   last_status?: string | null;
@@ -316,6 +334,8 @@ export interface ProjectTriggersResponse {
   // auto-run ANY of this project's triggers (cron sweep skips, webhooks ignored)
   // regardless of each trigger's own `enabled`. Toggle with `triggers pause/resume`.
   triggers_paused?: boolean;
+  // The account's Pause all automations: stops every project's triggers. Toggle with `triggers pause --account`.
+  account_automations_paused?: boolean;
   errors: Array<{ path: string; error: string }>;
 }
 

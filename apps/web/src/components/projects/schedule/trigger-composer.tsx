@@ -42,6 +42,7 @@ import {
   appConnectors,
   describeEventStatus,
   draftToConfig,
+  eventAppTarget,
   parseConfigErrors,
   schemaFields,
 } from './event-trigger-copy';
@@ -50,6 +51,7 @@ import { triggerToastEntity } from './trigger-toast';
 import { rowsToConditions } from './schedule-fields';
 import { ThenFields } from './then-fields';
 import {
+  runCapFromInput,
   type ComposerBlock,
   type ComposerDraft,
   findDraftApp,
@@ -80,7 +82,7 @@ export interface TriggerComposerProps {
   /** Opens on this kind, e.g. the empty state's "App event" button. */
   initialKind?: TriggerKind | null;
   /** Opens on App event with this app chosen and its events listed. Sends no request. */
-  initialApp?: { app: string } | null;
+  initialApp?: { app: string; source?: string; provider?: string } | null;
   /** Opens on App event with this connector of the project chosen, e.g. from its own page. */
   initialConnector?: { slug: string; name: string } | null;
 }
@@ -147,6 +149,7 @@ function ComposerForm({
           : initialKind,
       agent: initialAgent,
       appSlug: initialApp?.app ?? null,
+      appSource: initialApp?.source ?? initialApp?.provider ?? null,
       profile: initialConnector?.slug ?? null,
     }),
   );
@@ -241,12 +244,7 @@ function ComposerForm({
           needsConnector && app
             ? async () => {
                 if (addedConnector.current?.app === app.app) return addedConnector.current.slug;
-                const added = await add({
-                  app: app.app,
-                  name: app.name,
-                  connector: null,
-                  newConnectorSlug: app.new_connector_slug,
-                });
+                const added = await add(eventAppTarget(app));
                 addedConnector.current = { app: app.app, slug: added };
                 return added;
               }
@@ -261,6 +259,8 @@ function ComposerForm({
             ...(draft.agent ? { agent: draft.agent } : {}),
             ...(draft.model ? { model: modelKeyToWire(draft.model) } : {}),
             session_access: draft.sessionAccess,
+            ...(runCapFromInput(draft.maxRunsPerHour) ? { max_runs_per_hour: runCapFromInput(draft.maxRunsPerHour)! } : {}),
+            ...(runCapFromInput(draft.maxRunsPerDay) ? { max_runs_per_day: runCapFromInput(draft.maxRunsPerDay)! } : {}),
             ...(draft.mode !== 'fresh' ? { session_mode: draft.mode } : {}),
             ...(draft.mode === 'pinned' && draft.pinnedSessionId
               ? { session_id: draft.pinnedSessionId }

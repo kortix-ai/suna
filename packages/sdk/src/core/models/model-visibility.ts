@@ -1,7 +1,6 @@
 import {
   DEFAULT_MANAGED_MODEL_IDS,
   MANAGED_FLAGSHIP_MODEL_ID,
-  PLATFORM_DEFAULT_MODEL_ID,
   defaultEnabledModelIds,
 } from '@kortix/llm-catalog/lite';
 
@@ -92,9 +91,9 @@ export function hasUsableModel(
       return true;
     }
     if (MANAGED_MODEL_IDS.has(m.modelID)) {
-      // The platform default is the ONE managed model every tier may use
-      // (KRTX-1067) — the gateway serves it to free tier, so it is usable.
-      return !freeTier || m.modelID === PLATFORM_DEFAULT_MODEL_ID;
+      // The gateway serves no managed model to an account without the
+      // managed-models entitlement (`freeTier`), the platform default included.
+      return !freeTier;
     }
     return isGatewayModelConnected(m, connectedProviderIds);
   });
@@ -137,8 +136,8 @@ export interface ModelVisibilityPin extends ModelKey {
  * the same model win. Rules, in order:
  *  • a `hide` pin hides;
  *  • gateway (`kortix`) models: a platform-managed model shows unless
- *    `freeTier` — the platform default always shows (the gateway serves it to
- *    every tier, KRTX-1067); any other shows only while its real provider is
+ *    `freeTier` (the gateway refuses every managed model then); any other
+ *    shows only while its real provider is
  *    connected, then by `show` pin, newest-per-family, or the
  *    undated-flagship rule;
  *  • native models: `show` pin, newest per family within the window
@@ -196,9 +195,9 @@ export function createModelVisibility(input: {
     // connected. Everything else is search-only so the catalog can't flood.
     if (model.providerID === MANAGED_GATEWAY_PROVIDER_ID) {
       if (MANAGED_MODEL_IDS.has(model.modelID)) {
-        // Same rule as `hasUsableModel` above (KRTX-1067). Terminal: a
-        // managed model never falls through to the curation tail.
-        return !freeTier || model.modelID === PLATFORM_DEFAULT_MODEL_ID;
+        // Same rule as `hasUsableModel` above.
+        return !freeTier;
+
       }
       if (!isGatewayModelConnected(model, connectedProviderIds)) return false;
     }

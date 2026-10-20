@@ -55,6 +55,11 @@ mock.module('next/navigation', () => ({
 mock.module('@/features/workspace/customize/sections/component/slack-connect-card', () => ({
   SlackConnectCard: () => null,
 }));
+// Telegram (connectors_v2, on here with every flag) reads its install hooks
+// through a QueryClient this suite does not mount.
+mock.module('@/features/workspace/customize/sections/component/telegram-channel-row', () => ({
+  TelegramChannelRow: () => null,
+}));
 mock.module('@/features/workspace/customize/sections/teams-channel-panel', () => ({
   TeamsChannelPanel: () => null,
 }));

@@ -125,7 +125,7 @@ beforeEach(() => {
   sandboxProvider = 'daytona';
 });
 
-const PROVIDERS: ProviderName[] = ['daytona', 'platinum', 'e2b'];
+const PROVIDERS: ProviderName[] = ['platinum', 'daytona'];
 
 describe('egress-enforced delivery is provider-independent', () => {
   for (const provider of PROVIDERS) {
@@ -138,13 +138,13 @@ describe('egress-enforced delivery is provider-independent', () => {
       expect(result.results).toHaveLength(1);
       expect(result.results[0].status).toBe('synced');
       expect(result.results[0].reason).toBeUndefined();
-      // The env push is the delivery. Before the unification, daytona and e2b
+      // The env push is the delivery. Before the unification, daytona
       // never reached it: the arm refused first and the sandbox got nothing.
       expect(envPushes).toHaveLength(1);
     });
   }
 
-  test('the three providers produce byte-identical outcomes', async () => {
+  test('every provider produces byte-identical outcomes', async () => {
     const outcomes: Array<{ provider: ProviderName; status: string; pushes: number }> = [];
     for (const provider of PROVIDERS) {
       __resetNetworkBoundaryArmCacheForTests();
@@ -160,7 +160,6 @@ describe('egress-enforced delivery is provider-independent', () => {
 
     const shape = ({ provider: _provider, ...rest }: (typeof outcomes)[number]) => rest;
     expect(outcomes.map(shape)).toEqual([
-      { status: 'synced', pushes: 1 },
       { status: 'synced', pushes: 1 },
       { status: 'synced', pushes: 1 },
     ]);

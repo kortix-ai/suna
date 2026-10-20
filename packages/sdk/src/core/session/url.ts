@@ -41,7 +41,7 @@ export interface ParsedLocalhostUrl {
 
 /** Options for proxy URL generation */
 export interface SubdomainUrlOptions {
-  /** Sandbox ID (the sandbox's external id — the Daytona sandbox ID). */
+  /** Sandbox ID (the sandbox's provider external id). */
   sandboxId: string;
   /** Backend port (e.g. 8008) — the port kortix-api listens on */
   backendPort: number;

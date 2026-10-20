@@ -1,11 +1,11 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Avatar, AvatarFallback } from '@kortix/ui/avatar';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,23 +15,23 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
+} from '@kortix/ui/dropdown-menu';
+import { Input } from '@kortix/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import { type AccountMember, ApiError } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MoreHorizontal, UserMinus } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { DotsThreeIcon, UserMinusIcon } from '@phosphor-icons/react';
 
 const ROLES = ['owner', 'admin', 'member'] as const;
 type Role = (typeof ROLES)[number];
@@ -82,7 +82,7 @@ function MemberRow({
             disabled={!userId || busy}
             aria-label={`Manage ${label}`}
           >
-            {busy ? <Loading className="size-4" /> : <MoreHorizontal className="size-4" />}
+            {busy ? <Loading className="size-4" /> : <DotsThreeIcon className="size-4" />}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
@@ -101,7 +101,7 @@ function MemberRow({
           </DropdownMenuRadioGroup>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onClick={() => userId && onRemove(userId)}>
-            <UserMinus className="size-4" /> Remove from account
+            <UserMinusIcon className="size-4" /> Remove from account
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -124,12 +124,12 @@ function MemberInviteForm({
     onSuccess: (result) => {
       setEmail('');
       onInvited();
-      if (result.status === 'pending') toast.success(`Invitation sent to ${result.email}`);
-      else toast.success(`${result.email} added`);
+      if (result.status === 'pending') successToast(`Invitation sent to ${result.email}`);
+      else successToast(`${result.email} added`);
     },
     onError: (err: unknown) => {
       const conflict = err instanceof ApiError && err.status === 409;
-      toast.error(conflict ? 'Already a member or invited' : 'Could not invite');
+      errorToast(conflict ? 'Already a member or invited' : 'Could not invite');
     },
   });
 
@@ -189,18 +189,18 @@ export function MembersSection({ accountId }: { accountId: string }) {
       kortix.accounts.updateMemberRole(accountId, vars.userId, vars.role),
     onSuccess: () => {
       refresh();
-      toast.success('Role updated');
+      successToast('Role updated');
     },
-    onError: () => toast.error('Could not update the role'),
+    onError: () => errorToast('Could not update the role'),
   });
 
   const remove = useMutation({
     mutationFn: (userId: string) => kortix.accounts.removeMember(accountId, userId),
     onSuccess: () => {
       refresh();
-      toast.success('Member removed');
+      successToast('Member removed');
     },
-    onError: () => toast.error('Could not remove the member'),
+    onError: () => errorToast('Could not remove the member'),
   });
 
   const items = members.data ?? [];

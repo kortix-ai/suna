@@ -1,5 +1,6 @@
 'use client';
 
+import type { TriggerFilterValue } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
 /**
  * The controls the create flow and the detail panel both use, so the two can
@@ -98,7 +99,7 @@ export function CopyBlock({
     <div
       className={cn(
         'bg-secondary flex items-start gap-2 rounded-md border p-2 transition-colors',
-        copied ? 'border-kortix-green/40' : 'border-transparent',
+        copied ? 'border-kortix-green/15' : 'border-transparent',
         className,
       )}
     >
@@ -264,41 +265,80 @@ export function RunLocationFields({
 
 /* ─── Conditions (the wire calls this `filter`) ─────────────────────────── */
 
+/**
+ * The editor's operators: the wire's `not`, `in`, `prefix`, `not_prefix`, plus
+ * `equals` (a plain value) and `exists` split into "exists" / "missing".
+ */
+export const CONDITION_OPERATORS = ['equals', 'not', 'in', 'prefix', 'not_prefix', 'exists', 'missing'] as const;
+export type ConditionOperator = (typeof CONDITION_OPERATORS)[number];
+
 export interface ConditionRow {
   path: string;
+  /** Absent means equals. */
+  operator?: ConditionOperator;
+  /** Comma-separated for not, in, prefix and not_prefix. Unused for exists and missing. */
   value: string;
 }
 
-export function conditionsToRows(
-  filter: Record<string, string> | null | undefined,
-): ConditionRow[] {
-  return Object.entries(filter ?? {}).map(([path, value]) => ({ path, value }));
+type TriggerFilter = Record<string, TriggerFilterValue>;
+
+/** False for exists and missing: those rows have no value field. */
+export function conditionNeedsValue(operator: ConditionOperator = 'equals'): boolean {
+  return operator !== 'exists' && operator !== 'missing';
+}
+
+export function conditionsToRows(filter: TriggerFilter | null | undefined): ConditionRow[] {
+  return Object.entries(filter ?? {}).map(([path, condition]): ConditionRow => {
+    if (typeof condition === 'string') return { path, operator: 'equals', value: condition };
+    if ('exists' in condition) return { path, operator: condition.exists ? 'exists' : 'missing', value: '' };
+    const [operator, values] = Object.entries(condition)[0] as [ConditionOperator, string[]];
+    return { path, operator, value: values.join(', ') };
+  });
+}
+
+function rowCondition(row: ConditionRow): TriggerFilterValue {
+  const operator = row.operator ?? 'equals';
+  if (operator === 'equals') return row.value.trim();
+  if (!conditionNeedsValue(operator)) return { exists: operator === 'exists' };
+  const values = row.value.split(',').map((item) => item.trim()).filter(Boolean);
+  return { [operator]: values } as TriggerFilterValue;
 }
 
 /** Blank paths are dropped. `null` means "run on everything". */
-export function rowsToConditions(rows: ConditionRow[]): Record<string, string> | null {
-  const out: Record<string, string> = {};
+export function rowsToConditions(rows: ConditionRow[]): TriggerFilter | null {
+  const out: TriggerFilter = {};
   for (const row of rows) {
     const path = row.path.trim();
     if (!path) continue;
-    out[path] = row.value.trim();
+    out[path] = rowCondition(row);
   }
   return Object.keys(out).length > 0 ? out : null;
 }
 
-export function sameConditions(
-  a: Record<string, string> | null,
-  b: Record<string, string> | null | undefined,
-): boolean {
+export function sameConditions(a: TriggerFilter | null, b: TriggerFilter | null | undefined): boolean {
   const left = a ?? {};
   const right = b ?? {};
   const keys = Object.keys(left);
   if (keys.length !== Object.keys(right).length) return false;
-  return keys.every((k) => left[k] === right[k]);
+  return keys.every((k) => JSON.stringify(left[k]) === JSON.stringify(right[k]));
+}
+
+/** The label each operator shows in the editor and the read-only view. */
+export function useConditionOperatorLabels(): Record<ConditionOperator, string> {
+  const t = useTranslations('triggerConditions');
+  return {
+    equals: t('equals'),
+    not: t('not'),
+    in: t('in'),
+    prefix: t('prefix'),
+    not_prefix: t('notPrefix'),
+    exists: t('exists'),
+    missing: t('missing'),
+  };
 }
 
 /**
- * Repeatable "this must equal that" rows. Not a JSON box on purpose — the
+ * Repeatable "field · operator · value" rows. Not a JSON box on purpose — the
  * shape is always a flat map, and the loop-breaking case in the help text is
  * the one nearly everybody needs.
  */
@@ -312,6 +352,8 @@ export function ConditionsEditor({
   disabled?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tConditions = useTranslations('triggerConditions');
+  const operatorLabel = useConditionOperatorLabels();
   const patch = (index: number, next: Partial<ConditionRow>) =>
     onChange(rows.map((row, i) => (i === index ? { ...row, ...next } : row)));
 
@@ -325,7 +367,7 @@ export function ConditionsEditor({
             // Rows are edited in place and identified positionally; there is
             // no stable id to key on until a field is typed.
             // biome-ignore lint/suspicious/noArrayIndexKey: positional rows
-            <div key={index} className="flex items-center gap-2">
+            <div key={index} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-2">
               <Input
                 value={row.path}
                 onChange={(e) => patch(index, { path: e.target.value })}
@@ -334,17 +376,41 @@ export function ConditionsEditor({
                 className="font-mono text-xs"
                 disabled={disabled}
               />
-              <span className="text-muted-foreground shrink-0 text-xs">
-                {tI18nComplete.raw('textfa51fd49abf6')}
-              </span>
-              <Input
-                value={row.value}
-                onChange={(e) => patch(index, { value: e.target.value })}
-                placeholder={tI18nComplete.raw('textd62c9039203e')}
-                aria-label={tI18nComplete('text54dcdc410e46', { value0: index + 1 })}
-                className="font-mono text-xs"
+              <Select
+                value={row.operator ?? 'equals'}
+                onValueChange={(v) => patch(index, { operator: v as ConditionOperator })}
                 disabled={disabled}
-              />
+              >
+                <SelectTrigger
+                  className="w-48 shrink-0 cursor-pointer text-xs"
+                  aria-label={tConditions('operatorLabel', { value0: index + 1 })}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONDITION_OPERATORS.map((op) => (
+                    <SelectItem key={op} value={op} className="cursor-pointer text-xs">
+                      {operatorLabel[op]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* exists / missing take no value; the empty cell keeps the columns aligned. */}
+              {!conditionNeedsValue(row.operator) && <span aria-hidden />}
+              {conditionNeedsValue(row.operator) && (
+                <Input
+                  value={row.value}
+                  onChange={(e) => patch(index, { value: e.target.value })}
+                  placeholder={
+                    (row.operator ?? 'equals') === 'equals'
+                      ? tI18nComplete.raw('textd62c9039203e')
+                      : tConditions('listPlaceholder')
+                  }
+                  aria-label={tI18nComplete('text54dcdc410e46', { value0: index + 1 })}
+                  className="font-mono text-xs"
+                  disabled={disabled}
+                />
+              )}
               <Button
                 type="button"
                 variant="ghost"
@@ -365,7 +431,7 @@ export function ConditionsEditor({
         size="sm"
         className="gap-1.5"
         disabled={disabled}
-        onClick={() => onChange([...rows, { path: '', value: '' }])}
+        onClick={() => onChange([...rows, { path: '', operator: 'equals', value: '' }])}
       >
         <PlusIcon className="size-3.5 shrink-0" />
         {tI18nComplete.raw('text60a0d83510ea')}

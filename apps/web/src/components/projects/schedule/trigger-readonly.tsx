@@ -7,7 +7,7 @@ import type { ProjectTrigger } from '@kortix/sdk';
 
 import { type EventAppIndex, describeEventSource } from './event-trigger-copy';
 import { describeNextRun, describeRunLocation, describeWhen } from './schedule-copy';
-import { PropertyList } from './schedule-fields';
+import { PropertyList, conditionNeedsValue, conditionsToRows, useConditionOperatorLabels } from './schedule-fields';
 
 function accessSummary(access: ProjectTrigger['session_access']): string {
   if (access.mode === 'project') return 'Every project member can open trigger-created sessions.';
@@ -30,7 +30,8 @@ export function TriggerReadOnly({
   agentLabel: string;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
-  const conditions = Object.entries(trigger.filter ?? {});
+  const operatorLabel = useConditionOperatorLabels();
+  const conditions = conditionsToRows(trigger.filter);
   const when = [describeWhen(trigger, eventNames), describeNextRun(trigger)].filter(Boolean);
   return (
     <section className="bg-popover rounded-md border px-4 py-4">
@@ -63,9 +64,11 @@ export function TriggerReadOnly({
                       t.raw('textbce22443b335')
                     ) : (
                       <span className="space-y-0.5">
-                        {conditions.map(([path, value]) => (
+                        {conditions.map(({ path, operator = 'equals', value }) => (
                           <code key={path} className="block font-mono text-xs">
-                            {path} = {value}
+                            {operator === 'equals'
+                              ? `${path} = ${value}`
+                              : `${path} ${operatorLabel[operator]}${conditionNeedsValue(operator) ? ` ${value}` : ''}`}
                           </code>
                         ))}
                       </span>

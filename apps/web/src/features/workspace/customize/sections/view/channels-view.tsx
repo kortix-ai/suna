@@ -112,6 +112,7 @@ import {
   ChannelRow,
 } from '@/features/workspace/customize/sections/component/channel-row';
 import { TeamsConnectCard } from '@/features/workspace/customize/sections/component/teams-connect-card';
+import { TelegramChannelRow } from '@/features/workspace/customize/sections/component/telegram-channel-row';
 import { SlackConnectCard } from '@/features/workspace/customize/sections/component/slack-connect-card';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
 import { ChannelBrandMark } from '@/features/session/turn/channel-brand';
@@ -192,6 +193,8 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   // `useEmailInstall` stays unfired until the flag resolves.
   const emailFlag = useFeatureFlag(projectId, 'agentmail_email');
   const emailChannelEnabled = emailFlag.enabled;
+  // Telegram is a channel connector behind connectors_v2; off, it is not listed.
+  const telegramEnabled = useFeatureFlag(projectId, 'connectors_v2').enabled;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
   // Teams is on for every project (its feature flag graduated on 2026-10-01).
@@ -287,6 +290,7 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
                 installation={emailInstall ?? null}
                 canWrite={canWrite}
               />
+              {telegramEnabled ? <TelegramChannelRow projectId={projectId} canWrite={canWrite} /> : null}
               {teamsHero ? null : (
                 <TeamsChannelRow
                   projectId={projectId}

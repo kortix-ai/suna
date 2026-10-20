@@ -256,6 +256,10 @@ the rare explicit request.
 - Run the trusted preview controller from `main`.
 - Run on Platinum only: the preview host and every session inside it. A
   Platinum failure fails the preview. Never fall back to Daytona.
+- Live-sandbox flows declare `requires: ['sandbox']` (`KE2E_CAP_SANDBOX`). The
+  capability means a real Platinum sandbox, the reference provider; a preview
+  enables it from `PLATINUM_API_KEY`. Daytona is a legacy fallback and E2B
+  support is discontinued: never make either a test default.
 - Generate the regular `kortix self-host` Compose distribution in the sandbox.
 - Give each preview a fresh PostgreSQL and Supabase data plane.
 - On a dispatch, run `pnpm test -- --target-full` against the sandbox HTTPS origin.
@@ -270,8 +274,7 @@ the rare explicit request.
   that idled over 6 hours (`tests/src/core/preview-session-reaper.ts`). A suite
   stops the session boxes it created when it ends, on a branch environment too.
 - Reconcile stale previews each hour. It stops hosts of closed pull requests
-  and hosts idle over 1 hour. Daytona reconciliation only deletes previews
-  created before 2026-09-22.
+  and hosts idle over 1 hour. Previews hold no Daytona credential.
 
 The preview warm image can contain dependencies and Docker layers. It must not
 contain a database or runtime secret. Keep the runtime secret allowlist in

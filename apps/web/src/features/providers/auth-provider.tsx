@@ -7,6 +7,7 @@ import { isDefinitiveSessionRejection } from '@/lib/auth/session-rejection';
 import { adoptDeviceCaches } from '@/lib/device-caches';
 import { safeGetItem, safeSetItem } from '@/lib/storage/managed-storage';
 import { createClient } from '@/lib/supabase/client';
+import { rememberValidatedUser } from '@/lib/supabase/mfa';
 import { resetClientState } from '@/lib/utils/reset-client-state';
 import { Session, SupabaseClient, User } from '@supabase/supabase-js';
 import {
@@ -103,11 +104,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           // Validate the session against the auth server — catches stale
           // sessions after a DB reset where the JWT is valid but the user
           // no longer exists.
-          const { error: userError } = await withAuthBootstrapTimeout(
+          const { data: validated, error: userError } = await withAuthBootstrapTimeout(
             supabase.auth.getUser(),
             AUTH_BOOTSTRAP_TIMEOUT_MS,
           );
           if (!active) return;
+          // The sign-in gate's first AAL read reuses this answer instead of a
+          // second auth round trip (see `rememberValidatedUser`).
+          rememberValidatedUser(userError ? null : (validated?.user ?? null));
           //
           // Only the auth server's VERDICT signs out (`isDefinitiveSessionRejection`:
           // 401, 403, or no session to validate). A round trip that never

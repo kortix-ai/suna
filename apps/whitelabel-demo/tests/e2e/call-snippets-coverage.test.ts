@@ -335,8 +335,8 @@ const OFF_CHAIN_ACTIONS: {
   {
     id: 'session.prompt',
     file: 'src/components/workbench/workbench-tabs.tsx',
-    marker: 'onSend={c.send}',
-    why: 'A prompt goes through the `useSession` hook, which owns the runtime transport.',
+    marker: '<SessionThread',
+    why: 'A prompt goes through the `useSession` hook, which owns the runtime transport; @kortix/ui SessionThread calls `session.send`.',
   },
 ];
 

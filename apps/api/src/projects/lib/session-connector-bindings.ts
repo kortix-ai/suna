@@ -19,6 +19,7 @@ import {
   loadAgentMailInstall,
   loadSlackInstall,
   loadTeamsInstall,
+  loadTelegramInstall,
 } from '../../channels/install-store';
 import {
   credentialExists,
@@ -114,6 +115,9 @@ export async function connectorConnectionIsConnected(input: {
     }
     if (platform === 'teams') {
       return (await loadTeamsInstall(connector.projectId).catch(() => null)) !== null;
+    }
+    if (platform === 'telegram') {
+      return (await loadTelegramInstall(connector.projectId).catch(() => null)) !== null;
     }
     if (platform === 'email') {
       const install = await loadAgentMailInstall(connector.projectId, connectionSlug).catch(

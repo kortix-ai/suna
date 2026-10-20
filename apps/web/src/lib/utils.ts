@@ -1,10 +1,6 @@
-import { clsx, type ClassValue } from 'clsx';
 import * as Color from 'color-bits';
-import { twMerge } from 'tailwind-merge';
 
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+export { cn } from '@kortix/ui/lib/utils';
 
 // Helper function to convert any CSS color to rgba
 export const getRGBA = (

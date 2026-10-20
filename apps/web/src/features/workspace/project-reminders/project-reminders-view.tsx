@@ -6,7 +6,9 @@
  * `routes/session-reminders.ts`); this page is the place to see what will
  * fire next and to pause or remove one, since each fire is a model turn.
  *
- * The shell: header, toolbar, then the List (a table) or the Calendar. View, range and session filter live in the URL.
+ * A Customize tab (`remindersHref`): the tab bar is the header. The shell is
+ * the toolbar, then the List (a table) or the Calendar. View, range and
+ * session filter live in the URL.
  */
 
 import { Button } from '@/components/ui/button';
@@ -14,7 +16,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
-import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { useTranslations } from '@/i18n/use-translations';
 import type { SessionReminderState } from '@kortix/sdk';
 import { useFeatureFlag, useProjectReminders } from '@kortix/sdk/react';
@@ -68,16 +69,6 @@ function useNarrowViewport(): boolean {
     },
     () => window.matchMedia(NARROW).matches,
     () => false,
-  );
-}
-
-/** The page header; `actions` (the List | Calendar switch) sit on the right. */
-function RemindersHeader({ projectId, actions }: { projectId: string; actions?: ReactNode }) {
-  const t = useTranslations('reminders');
-  return (
-    <ProjectPageHeader title={t('title')}>
-      {actions}
-    </ProjectPageHeader>
   );
 }
 
@@ -151,8 +142,6 @@ function RemindersPage({ projectId }: { projectId: string }) {
   const loaded = !reminders.isLoading && !!reminders.data;
 
   let body: ReactNode;
-  // The view switch only means something where the toolbar shows.
-  let showsToolbar = false;
   if (gate.isLoading) {
     body = <Skeleton className="m-4 h-14 rounded-md" />;
   } else if (!gate.enabled) {
@@ -160,7 +149,6 @@ function RemindersPage({ projectId }: { projectId: string }) {
   } else if (loaded && all.length === 0 && !url.session) {
     body = <RemindersEmpty />;
   } else {
-    showsToolbar = true;
     body = (
       <>
         <RemindersToolbar
@@ -178,6 +166,9 @@ function RemindersPage({ projectId }: { projectId: string }) {
             onChange={(session) => url.set({ session })}
           />
           {view === 'calendar' ? <ReminderCalendarControls now={now} /> : null}
+          {narrow ? null : (
+            <ReminderViewSwitch value={url.view} onChange={(next) => url.set({ view: next })} />
+          )}
         </RemindersToolbar>
         {reminders.isError && !reminders.data ? (
           <div className="flex min-h-0 flex-1 items-center justify-center">
@@ -231,17 +222,7 @@ function RemindersPage({ projectId }: { projectId: string }) {
 
   return (
     <CalendarStoreContext.Provider value={calendar}>
-      <div className="flex h-svh flex-col overflow-hidden">
-        <RemindersHeader
-          projectId={projectId}
-          actions={
-            showsToolbar && !narrow ? (
-              <ReminderViewSwitch value={url.view} onChange={(view) => url.set({ view })} />
-            ) : null
-          }
-        />
-        {body}
-      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{body}</div>
     </CalendarStoreContext.Provider>
   );
 }

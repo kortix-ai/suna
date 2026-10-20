@@ -1,6 +1,6 @@
 'use client';
-import { invalidateConnections } from '../invalidate-connections';
 import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
+import { invalidateConnections } from '../invalidate-connections';
 import {
   ConnectorNoticeRow,
   NOTICE_BODY,
@@ -43,6 +43,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 
 import { isManagedConnectorProvider } from '../provider-label';
 import { ConnectorDetailTabs } from './connector-detail-tabs';
+import { ConnectorMoveRow, useConnectorMove } from './connector-move-row';
 import { connectorNotice, noticeButton, noticeTarget } from './connector-notice';
 import { connectHandoff, connectorPageState } from './connector-page-state';
 import { connectorRunsOver, connectorStatusTone } from './connector-status';
@@ -379,7 +380,10 @@ function ConnectorPageBody({
   // The banner's button fixes one of the caller's own accounts. With none it
   // opens "Add account" ("Only you" preselected), never the project's shared
   // account: a shared account is signed in from its own row.
-  const fix = noticeButton(notice, noticeTarget(accounts), isManagedProvider);
+  // A Pipedream connector that can move: the move is the fix. A new Pipedream
+  // account would only have to sign in again after the move.
+  const move = useConnectorMove(projectId, connector);
+  const fix = move?.to ? null : noticeButton(notice, noticeTarget(accounts), isManagedProvider);
   const runFix = () => {
     if (fix?.run === 'add') requestAdd();
     else if (fix?.run === 'sign_in' && fix.account) signIn.mutate(fix.account);
@@ -550,6 +554,13 @@ function ConnectorPageBody({
                 ) : null}
               </ConnectorNoticeRow>
             ) : null}
+            <ConnectorMoveRow
+              projectId={projectId}
+              connector={connector}
+              displayName={displayName}
+              canWrite={canWrite}
+              onMoved={onChanged}
+            />
           </div>
 
           <Tabs

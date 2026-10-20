@@ -105,14 +105,15 @@ test('Apps sits with Customize in the sidebar, not in the bottom alert group', (
   // It is a project surface you configure and operate, so it belongs with the
   // Customize row in the top nav group — not among the bottom-anchored alerts,
   // which shift as late-arriving billing and sandbox state lands. The rows are
-  // customizable now; this pins the default order and the group they render in.
+  // customizable now; this pins the default order and the group they render in:
+  // Customize, then Files/Drive (#10258), then Apps.
   const defaults = navStore.slice(navStore.indexOf('SIDEBAR_NAV_DEFAULTS'));
   const customizeAt = defaults.indexOf("id: 'customize'");
   const appsAt = defaults.indexOf("id: 'apps'");
   const filesAt = defaults.indexOf("id: 'files'");
   expect(customizeAt).toBeGreaterThan(-1);
-  expect(appsAt).toBeGreaterThan(customizeAt);
-  expect(appsAt).toBeLessThan(filesAt);
+  expect(filesAt).toBeGreaterThan(customizeAt);
+  expect(appsAt).toBeGreaterThan(filesAt);
   expect(sidebar.indexOf('<ProjectNavItems')).toBeLessThan(sidebar.indexOf('<ProjectSessionList'));
 });
 
@@ -313,31 +314,33 @@ test("the header separates the App's actions from the window's Close", () => {
   const view = appsSource();
   const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
 
-  // Close used to be the fifth button INSIDE the group, which made "stop this
-  // App" and "shut this panel" read as peers. It sits outside now, and it is
-  // ghost rather than outline because it is chrome, not an action.
-  const groupEndsAt = header.indexOf('</ButtonGroup>');
-  const closeAt = header.indexOf('text7d9eb7acb13e');
-  expect(groupEndsAt).toBeGreaterThan(-1);
-  expect(closeAt).toBeGreaterThan(groupEndsAt);
-  expect(header.slice(groupEndsAt)).toContain('variant="ghost"');
+  // The bar is Refresh, Open, Settings, Close (#10245). Close is window
+  // chrome, not an App action: a divider sets it apart, and it is ghost.
+  const settingsAt = header.indexOf('data-testid="app-settings"');
+  const dividerAt = header.indexOf('<span aria-hidden className="bg-border mx-1.5 h-4 w-px" />');
+  const closeAt = header.indexOf("raw('text7d9eb7acb13e')");
+  expect(settingsAt).toBeGreaterThan(-1);
+  expect(dividerAt).toBeGreaterThan(settingsAt);
+  expect(closeAt).toBeGreaterThan(dividerAt);
+  expect(header.slice(dividerAt)).toContain('variant="ghost"');
 });
 
-test('Delete lives in the header menu, never buried in the version drawer', () => {
+test('Delete lives in the App settings modal, behind a confirm, never in the bar', () => {
   const view = appsSource();
   const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
 
-  // A destructive action reachable only by first opening a history panel is an
-  // action you find by looking for something else.
-  expect(header).toContain("raw('textd1b0a6e3985a')");
-  expect(header).toContain('variant="destructive"');
-  // …and it still goes through the confirm step.
-  expect(view).toContain('<ConfirmDialog');
-  expect(view).toContain('confirmVariant="destructive"');
+  // Delete is configuration, not navigation: the bar over the App never
+  // carries it (#10245).
+  expect(header).not.toContain("raw('textd1b0a6e3985a')");
+  expect(header).not.toContain('variant="destructive"');
 
-  // The versions drawer keeps only the deploy command.
-  const drawer = view.slice(view.indexOf('{versionsOpen ? ('));
-  expect(drawer.slice(0, drawer.indexOf('DeploymentRow'))).not.toContain('Delete App');
+  // The settings modal lists it as its own destructive row…
+  const settings = view.slice(view.indexOf("open={overlay === 'settings'}"), view.indexOf('</Modal>'));
+  expect(settings).toContain("raw('textd1b0a6e3985a')");
+  expect(settings).toContain('variant="destructive" onClick={() => setOverlay(\'delete\')}');
+  // …and it still goes through the confirm step.
+  expect(view).toContain("open={overlay === 'delete'}");
+  expect(view).toContain('confirmVariant="destructive"');
 });
 
 test('internal infrastructure names are not shown to App owners', () => {

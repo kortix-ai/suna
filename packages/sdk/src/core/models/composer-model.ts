@@ -15,9 +15,9 @@ import { type ModelKey, modelRefToKey, wireToModelKey } from './model-key';
 /**
  * The gateway's configured default for an agent, from
  * `GET /projects/:id/model-defaults`: agent → project → account → platform.
- * The platform default resolves for every tier — the gateway serves it to
- * free tier too (KRTX-1067), and an unoffered model is skipped by the caller's
- * `isOfferedModel` validation either way.
+ * An account without managed models gets no platform default from the API
+ * (`resolvedForCaller` is null), and an unoffered model is skipped by the
+ * caller's `isOfferedModel` validation either way.
  */
 export function resolveModelDefault(
   data: ModelDefaultsResponse | undefined,
@@ -27,7 +27,7 @@ export function resolveModelDefault(
     (agentName ? data?.agentDefaults?.[agentName] : undefined) ??
     data?.projectDefault ??
     data?.accountDefault ??
-    data?.platformDefault;
+    (data?.freeTier ? undefined : data?.platformDefault);
   return wire ? wireToModelKey(wire) : undefined;
 }
 

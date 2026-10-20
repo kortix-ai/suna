@@ -197,6 +197,12 @@ export const accounts = kortixSchema.table(
    *  may change it (`PATCH /accounts/:id/iam/session-oversight`). Members see
    *  a disclosure in the share dialog while it is on. */
   adminsSeeAllSessions: boolean('admins_see_all_sessions').default(false).notNull(),
+  /** Pause all automations (KRTX-1721): set, no schedule, reminder, webhook,
+   *  app event or monitor of any project in the account fires on its own. A
+   *  manual fire still runs. NULL = automations run. `PATCH /accounts/:id/automations`. */
+  automationsPausedAt: timestamp('automations_paused_at', { withTimezone: true }),
+  /** Who paused them; NULL while running. */
+  automationsPausedBy: uuid('automations_paused_by'),
   /** Organization branding (enterprise `branding` entitlement): the product
    *  name plus the Storage URLs of the logo / icon / favicon (light + optional
    *  dark) that replace the Kortix marks for this account's members. `{}` = default Kortix branding. The
@@ -1652,6 +1658,15 @@ export const projectTriggerRuntime = kortixSchema.table(
     // Suppression episodes in the trailing 24 h. Three ⇒ the monitor is
     // auto-disabled with a `last_error` (spec bounds table).
     suppressionCount: integer('suppression_count').default(0),
+    // Auto-pause (KRTX-1721): set when the trigger ran at its hourly run limit
+    // through the previous hour and is still being held. While set, no
+    // automatic fire starts a run; a manual fire still does. `PATCH enabled:
+    // true` clears both and stamps `auto_pause_resumed_at`: for 2 hours after
+    // a resume the trigger cannot pause itself again, so its old runs do not
+    // re-pause a trigger whose cause was fixed. Runtime state, not a manifest edit.
+    autoPausedAt: timestamp('auto_paused_at', { withTimezone: true }),
+    autoPausedReason: text('auto_paused_reason'),
+    autoPauseResumedAt: timestamp('auto_pause_resumed_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -1703,6 +1718,66 @@ export const projectTriggerEventSubscriptions = kortixSchema.table(
     check(
       'project_trigger_event_subscriptions_status_check',
       sql`${table.status} in ('active', 'needs_connection', 'error')`,
+    ),
+  ],
+);
+
+/**
+ * One Kortix-polled app-event stream (source `mcp`): one shared account, one
+ * event type, one config. `external_id` is the subscriptions' `external_id`;
+ * triggers that watch the same thing share the stream. The row is its own
+ * schedule: `next_poll_at` (NULL = parked until the next subscribe), claimed
+ * with `locked_until`, fenced by `claim`. `connection_id` has no FK on
+ * purpose: a vanished account is found by the poll and reconciled, so the
+ * subscription rows say why instead of staying `active` over nothing.
+ */
+export const projectTriggerEventPolls = kortixSchema.table(
+  'project_trigger_event_polls',
+  {
+    externalId: text('external_id').primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    connectionId: uuid('connection_id').notNull(),
+    connectorSlug: varchar('connector_slug', { length: 128 }).notNull(),
+    eventType: text('event_type').notNull(),
+    config: jsonb('config').$type<Record<string, unknown>>().default({}).notNull(),
+    intervalSeconds: integer('interval_seconds').notNull(),
+    /** Item keys already handled, newest-visible first; bounded by the poller. */
+    seen: text('seen').array().default(sql`'{}'::text[]`).notNull(),
+    /** NULL: the next check records what is there (and fires only items newer than `fire_after`). */
+    primedAt: timestamp('primed_at', { withTimezone: true }),
+    /** Items older than this never fire. Set at subscribe, and moved on every re-prime (a pause, no live trigger). */
+    fireAfter: timestamp('fire_after', { withTimezone: true }).defaultNow().notNull(),
+    nextPollAt: timestamp('next_poll_at', { withTimezone: true }),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    claim: integer('claim').default(0).notNull(),
+    failures: integer('failures').default(0).notNull(),
+    lastError: text('last_error'),
+    lastErrorKind: text('last_error_kind'),
+    rateWindowStart: timestamp('rate_window_start', { withTimezone: true }),
+    rateWindowFires: integer('rate_window_fires').default(0).notNull(),
+    lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'project_trigger_event_polls_project_fk',
+      columns: [table.projectId],
+      foreignColumns: [projects.projectId],
+    }).onDelete('cascade'),
+    index('idx_project_trigger_event_polls_due')
+      .on(table.nextPollAt)
+      .where(sql`${table.nextPollAt} is not null`),
+    index('idx_project_trigger_event_polls_project').on(table.projectId),
+    index('idx_project_trigger_event_polls_connection').on(table.connectionId),
+    check(
+      'project_trigger_event_polls_interval_check',
+      sql`${table.intervalSeconds} between 60 and 86400`,
+    ),
+    check(
+      'project_trigger_event_polls_error_kind_check',
+      sql`${table.lastErrorKind} is null or ${table.lastErrorKind} in ('needs_connection', 'fatal', 'transient')`,
     ),
   ],
 );
@@ -1985,6 +2060,12 @@ export const sessionLifecycleCommands = kortixSchema.table(
     index('idx_session_lifecycle_commands_forwarded')
       .on(table.updatedAt)
       .where(sql`(${table.result}->>'status') = 'forwarded'`),
+    // The claim drain (`claimDueLifecycleCommands`). Without it the claim
+    // reads every due queued row and detoasts the payload of each held
+    // prompt, which can be megabytes, on every tick.
+    index('idx_session_lifecycle_commands_claimable')
+      .on(table.availableAt)
+      .where(sql`${table.status} = 'queued' AND (COALESCE(${table.result}->>'held', '') <> 'true' OR ${table.payload}->>'clientMessageId' IS NULL)`),
   ],
 );
 
@@ -7338,8 +7419,8 @@ export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
   onPermission: boolean('on_permission').default(true).notNull(),
   playSound: boolean('play_sound').default(true).notNull(),
   /** The sign-in (`auth.sessions.id`) that registered the token. A push goes
-   *  only while that sign-in exists. NULL: registered with a personal token,
-   *  or before this column existed. */
+   *  only while that sign-in exists. NULL (registered before this column
+   *  existed) gets no push. */
   authSessionId: uuid('auth_session_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

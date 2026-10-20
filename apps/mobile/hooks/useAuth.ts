@@ -329,6 +329,7 @@ export function useAuth() {
             );
             setOauthRejection('No account found. Create an account on the web first.');
             sessionExpiry.disarm();
+            await unregisterPushOnSignOut();
             await signOutThisDevice(supabase.auth);
             return;
           }

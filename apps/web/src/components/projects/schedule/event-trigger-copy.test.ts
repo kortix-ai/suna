@@ -125,6 +125,18 @@ describe('config draft', () => {
     });
   });
 
+  test('an integer enum sends the number: the API refuses "interval must be integer" for "15"', () => {
+    const interval = schemaFields({
+      properties: { interval: { type: 'integer', enum: [1, 5, 15, 60], default: 5 } },
+    });
+    expect(interval[0]).toMatchObject({ kind: 'enum', options: ['1', '5', '15', '60'] });
+    expect(draftToConfig(interval, defaultConfigDraft(interval))).toEqual({ interval: 5 });
+    expect(draftToConfig(interval, { interval: '15' })).toEqual({ interval: 15 });
+    expect(draftToConfig(interval, configToDraft(interval, { interval: 60 }))).toEqual({ interval: 60 });
+    // A string enum keeps its string.
+    expect(draftToConfig(fields, { ...defaultConfigDraft(fields), state: 'closed' }).state).toBe('closed');
+  });
+
   test('round-trips a saved config', () => {
     const saved = { owner: 'acme', repo: 'api', labels: ['bug', 'urgent'], limit: 5 };
     const draft = configToDraft(fields, saved);
@@ -352,6 +364,11 @@ describe('describeEventSource', () => {
     expect(describeEventSource(eventOf({ source: 'acme_hooks' }), testUiTranslator, githubIndex)).toBe('GitHub · via Acme hooks');
     expect(eventSourceName(eventOf({ source: 'composio' }))).toBe('Composio');
     expect(eventSourceName(eventOf({}))).toBeNull();
+  });
+  test('names no adapter for mcp: Kortix checks the MCP server itself', () => {
+    expect(describeEventSource(eventOf({ source: 'mcp', provider: 'mcp' }), testUiTranslator, githubIndex)).toBe('GitHub');
+    expect(describeEventSource(eventOf({ provider: 'mcp' }), testUiTranslator, githubIndex)).toBe('GitHub');
+    expect(eventSourceName({ source: 'mcp' })).toBeNull();
   });
   test('adds the connector when it is a different profile, and the account it runs as', () => {
     expect(

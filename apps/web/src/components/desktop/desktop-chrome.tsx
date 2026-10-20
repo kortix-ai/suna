@@ -1,10 +1,16 @@
 'use client';
 
+import { ListIcon } from '@phosphor-icons/react';
+
+import { TITLEBAR_CONTROL_CLASS } from '@/components/desktop/titlebar-control';
+import { Button } from '@/components/ui/button';
+import { useTranslations } from '@/i18n/use-translations';
 import {
   getDesktopZoom,
   isDesktop,
   setDesktopNativeTheme,
   setDesktopZoom,
+  showDesktopAppMenu,
   zoomIn,
   zoomOut,
   zoomReset,
@@ -21,6 +27,8 @@ import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { useTheme } from 'next-themes';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+
+import { cn } from '@/lib/utils';
 
 /**
  * Invisible top-of-window drag region. The web app's own UI extends to the
@@ -101,8 +109,40 @@ export function DesktopChrome() {
   }, [pathname, router]);
 
   return (
-    <div className="kx-desktop-chrome" aria-hidden>
-      <div className="kx-desktop-drag" data-tauri-drag-region />
-    </div>
+    <>
+      <div className="kx-desktop-chrome" aria-hidden>
+        <div className="kx-desktop-drag" data-tauri-drag-region />
+      </div>
+      <DesktopAppMenuButton />
+    </>
+  );
+}
+
+/**
+ * The application menu, in the title-bar band's left slot (Windows). The
+ * Windows window has no menu bar, so this button and Alt are how About,
+ * Settings, Check for Updates and Change Kortix Instance are reached. CSS
+ * shows it only under `html[data-desktop-titlebar='overlay']`, which the
+ * shell sets before first paint, so server and client markup stay identical.
+ */
+function DesktopAppMenuButton() {
+  const t = useTranslations('sidebar');
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      aria-label={t('openMenu')}
+      title={t('openMenu')}
+      onClick={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        void showDesktopAppMenu(rect.left, rect.bottom);
+      }}
+      className={cn(
+        TITLEBAR_CONTROL_CLASS,
+        'kx-desktop-app-menu left-[var(--kx-titlebar-menu-left)] w-[var(--kx-titlebar-control-size)] p-0',
+      )}
+    >
+      <ListIcon className="size-4" />
+    </Button>
   );
 }

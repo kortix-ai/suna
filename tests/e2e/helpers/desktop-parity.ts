@@ -1053,7 +1053,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
                   session_id: sessionId,
                   project_id: project.id,
                   account_id: accounts[0].account_id,
-                  provider: "daytona",
+                  provider: "platinum",
                   external_id: sessionId,
                   base_url: "http://127.0.0.1:1",
                   status: "active",

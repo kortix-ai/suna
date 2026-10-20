@@ -4,11 +4,15 @@ import type {
   CreateProjectTriggerInput,
   ProjectMonitorMode,
   ProjectTrigger,
+  ProjectTriggerEventApp,
   ProjectTriggerType,
+  TriggerFilterValue,
   UpdateProjectTriggerInput,
 } from './triggers';
 import {
   createProjectTrigger,
+  getAccountAutomations,
+  setAccountAutomationsPaused,
   fireProjectTrigger,
   listProjectTriggerRuns,
   listTriggerRuns,
@@ -96,6 +100,21 @@ test('listProjectTriggers reads a monitor entry off the wire without losing its 
     memberIds: ['member-1'],
     groupIds: ['group-1'],
   });
+});
+
+// KRTX-1721: a trigger that paused itself after a sustained run-limit breach.
+test('listProjectTriggers keeps the auto-pause the API reports', async () => {
+  const reason = 'auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row';
+  nextResponse = {
+    status: 200,
+    body: { triggers: [{ ...MONITOR_WIRE_ENTRY, auto_paused_at: '2026-10-19T12:00:00.000Z', auto_paused_reason: reason }], errors: [] },
+  };
+
+  const [trigger] = (await listProjectTriggers('P1')).triggers;
+  const pausedAt: string | null | undefined = trigger!.auto_paused_at;
+  const why: string | null | undefined = trigger!.auto_paused_reason;
+
+  expect([pausedAt, why]).toEqual(['2026-10-19T12:00:00.000Z', reason]);
 });
 
 // The API reports the last fire or run outcome; a host shows a failed trigger.
@@ -271,6 +290,27 @@ test('the public trigger access type rejects unknown modes', () => {
   expect([access, badAccess]).toHaveLength(2);
 });
 
+test('createProjectTrigger and updateProjectTrigger send filter operators unchanged (KRTX-1721)', async () => {
+  nextResponse = { status: 200, body: { triggers: [], errors: [], triggers_paused: false } };
+  const filter: Record<string, TriggerFilterValue> = {
+    'body.type': 'push',
+    'body.ref': { not_prefix: ['refs/heads/kortix/'] },
+    'body.sender.login': { not: ['kortix-bot'] },
+    'body.action': { in: ['opened', 'reopened'] },
+    'body.pull_request': { exists: true },
+  };
+
+  await createProjectTrigger('P1', { name: 'On push', slug: 'on-push', type: 'webhook', prompt_template: 'Lint {{ body.ref }}', filter });
+  expect(last().body).toMatchObject({ filter });
+  await updateProjectTrigger('P1', 'on-push', { filter: { 'body.base': { prefix: ['release/'] } } });
+  expect(last().body).toEqual({ filter: { 'body.base': { prefix: ['release/'] } } });
+
+  const read: ProjectTrigger['filter'] = filter;
+  // @ts-expect-error an operator takes a list of strings, not a bare object
+  const badOperand: TriggerFilterValue = { not: { login: 'kortix-bot' } };
+  expect([read, badOperand]).toHaveLength(2);
+});
+
 test('listProjectTriggerEventTypes GETs event-types with the connector query and returns the typed catalog', async () => {
   nextResponse = {
     status: 200,
@@ -393,6 +433,25 @@ test('listProjectTriggerEventTypes and EventApps expose source next to the depre
   expect((await listProjectTriggerEventApps('P1')).apps[0]!.source).toBe('composio');
 });
 
+test('listProjectTriggerEventApps reads mcp_url: the catalogue server for source mcp, null otherwise, absent from an older API', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      apps: [
+        { source: 'mcp', provider: 'mcp', app: 'linear', name: 'Linear', logo: 'l.png', event_count: 0, connector: null, connected: false, mcp_url: 'https://mcp.linear.app/mcp' },
+        { source: 'mcp', provider: 'mcp', app: 'tickets', name: 'Tickets', logo: null, event_count: 2, connector: 'tickets', connected: true, mcp_url: null },
+        { source: 'composio', provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 4, connector: 'github', connected: true, mcp_url: null },
+        { source: 'composio', provider: 'composio', app: 'slack', name: 'Slack', logo: null, event_count: 3, connector: 'slack', connected: true },
+      ],
+    },
+  };
+
+  const { apps } = await listProjectTriggerEventApps('P1');
+
+  const urls: ProjectTriggerEventApp['mcp_url'][] = apps.map((a) => a.mcp_url);
+  expect(urls).toEqual(['https://mcp.linear.app/mcp', null, null, undefined]);
+});
+
 test('createProjectTrigger sends an event trigger body and the listing reads event state back', async () => {
   const input: CreateProjectTriggerInput = {
     name: 'PR opened',
@@ -423,6 +482,28 @@ test('createProjectTrigger sends an event trigger body and the listing reads eve
   const type: ProjectTriggerType = listing.triggers[0]!.type;
   expect(type).toBe('event');
   expect(listing.triggers[0]!.event?.status).toBe('needs_connection');
+});
+
+test('the listing reads when a Kortix-polled trigger checked its app and checks next', async () => {
+  const event: NonNullable<ProjectTrigger['event']> = {
+    connector: 'inbox',
+    type: 'new_item.list_items',
+    config: { interval: 5 },
+    source: 'mcp',
+    provider: 'mcp',
+    app: 'inbox',
+    status: 'active',
+    error: null,
+    last_event_at: null,
+    checked_at: '2026-10-19T04:00:00.000Z',
+    next_check_at: '2026-10-19T04:05:00.000Z',
+  };
+  nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'event', event }], errors: [] } };
+
+  const listing = await listProjectTriggers('P1');
+
+  expect(listing.triggers[0]!.event?.checked_at).toBe('2026-10-19T04:00:00.000Z');
+  expect(listing.triggers[0]!.event?.next_check_at).toBe('2026-10-19T04:05:00.000Z');
 });
 
 test('updateProjectTrigger accepts event_config', async () => {
@@ -544,4 +625,38 @@ test('replayTriggerRun POSTs the replay route, with confirm_unverified only when
 test('replayTriggerRun throws on 409 payload_unverified', async () => {
   nextResponse = { status: 409, body: { error: 'Payload unverified', code: 'payload_unverified' } };
   await expect(replayTriggerRun('P1', 'nightly', 'run-1')).rejects.toBeDefined();
+});
+
+// KRTX-1721: run caps are typed on create, update (null removes one) and the listing.
+test('createProjectTrigger sends the run caps, updateProjectTrigger removes one with null, and the listing reads them', async () => {
+  nextResponse = { status: 200, body: { triggers: [], errors: [] } };
+  await createProjectTrigger('P1', {
+    name: 'Hook', type: 'webhook', prompt_template: 'x', secret_env: 'HOOK_SECRET',
+    max_runs_per_hour: 5, max_runs_per_day: 40,
+  });
+  expect(last().body).toMatchObject({ max_runs_per_hour: 5, max_runs_per_day: 40 });
+
+  nextResponse = {
+    status: 200,
+    body: { triggers: [{ slug: 'hook', max_runs_per_hour: 5, max_runs_per_day: null }], errors: [] },
+  };
+  const listing = await updateProjectTrigger('P1', 'hook', { max_runs_per_day: null });
+  expect(last().body).toEqual({ max_runs_per_day: null });
+  const caps: Array<number | null | undefined> = [listing.triggers[0]!.max_runs_per_hour, listing.triggers[0]!.max_runs_per_day];
+  expect(caps).toEqual([5, null]);
+});
+
+// KRTX-1721: the account's Pause all automations.
+test('getAccountAutomations reads the switch and setAccountAutomationsPaused flips it', async () => {
+  nextResponse = { status: 200, body: { paused: false, paused_at: null, paused_by: null, can_change: true } };
+  const status = await getAccountAutomations('A1');
+  expect(last().url).toContain('/accounts/A1/automations');
+  expect(last().method ?? 'GET').toBe('GET');
+  expect(status.paused).toBe(false);
+
+  nextResponse = { status: 200, body: { paused: true, paused_at: '2026-10-19T10:00:00.000Z', paused_by: 'U1', can_change: true } };
+  const after = await setAccountAutomationsPaused('A1', true);
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ paused: true });
+  expect([after.paused, after.paused_by]).toEqual([true, 'U1']);
 });

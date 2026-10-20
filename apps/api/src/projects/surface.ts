@@ -29,6 +29,7 @@ export {
   createSession,
   startSession,
   continueSession,
+  deliverThroughQueue,
   drainSessionLifecycleQueue,
   resolveProjectAutomationActor,
   retireWarmProjectSessions,
@@ -94,6 +95,13 @@ export const reconcileEventSubscriptionsFromCatalog: typeof import('./trigger-ev
   async (...args) => (await eventSubscriptions()).reconcileEventSubscriptionsFromCatalog(...args);
 export const releaseProjectEventSubscriptions: typeof import('./trigger-events/subscriptions').releaseProjectEventSubscriptions =
   async (...args) => (await eventSubscriptions()).releaseProjectEventSubscriptions(...args);
+// Kortix-polled app events (consumed by workers/trigger-event-poll-worker.ts). Loading the
+// module registers the delivery queue's job handler. Lazy for the same cycle as above.
+export const runDueEventPolls = async (onSlotFree?: () => void): Promise<number> =>
+  (await import('./trigger-events/mcp-poll')).runDueEventPolls(onSlotFree);
+export const loadEventPoller = async (): Promise<void> => {
+  await import('./trigger-events/mcp-poll');
+};
 
 // Drive sync's last push before a synced box loses a writable folder (consumed by drives/service.ts).
 export { flushDriveSyncBeforeStop } from './reaping/stop-box';

@@ -1,8 +1,8 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 
 export function BootScreen({
   stage,

@@ -12,16 +12,19 @@ import * as phosphorAll from '@phosphor-icons/react';
 import { FILL_INTENT_SOURCES, MANUAL_MAP, TYPE_MAP } from './phosphor-map.mjs';
 
 const ROOT = join(process.cwd(), 'src');
+// @kortix/ui (the moved components/ui, lib, hooks, icons) lives outside apps/web.
+const UI_ROOT = join(process.cwd(), '..', '..', 'packages', 'ui', 'src');
 const DRY = process.argv.includes('--dry');
 const PHOSPHOR = new Set(Object.keys(phosphorAll));
 
 const SKIP_FILES = new Set(
   [
-    'components/ui/kortix-icons.ts',
     'features/icon/icon.tsx',
     'components/brand/brand-logos.tsx',
     'lib/utils/icon-utils.ts',
-  ].map((p) => join(ROOT, p)),
+  ]
+    .map((p) => join(ROOT, p))
+    .concat(join(UI_ROOT, 'components/ui/kortix-icons.ts')),
 );
 
 function libOf(spec) {
@@ -82,7 +85,7 @@ function* walk(dir) {
 
 let changed = 0;
 const pending = [];
-for (const file of walk(ROOT)) {
+for (const file of [...walk(ROOT), ...walk(UI_ROOT)]) {
   if (SKIP_FILES.has(file)) continue;
   const src = readFileSync(file, 'utf8');
   const fillLocals = [];

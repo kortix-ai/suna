@@ -1,0 +1,68 @@
+// This file must import the `react` module namespace rather than rely on the
+// ambient UMD `React` global. Two `@types/react` copies are in this program
+// (19.2.18 for apps/web, 19.1.17 pulled in by `next` and `@sentry/react`), and
+// the UMD global binds to 19.1.17 — which still types `DOMAttributes.onChange`
+// as `FormEventHandler<T>` instead of 19.2.18's `ChangeEventHandler<T>`. That
+// version skew, not any real prop incompatibility, is what made the props bag
+// below fail against `Slot.Root`. The explicit import pins every `React.*` type
+// here to the same copy the JSX checker and `radix-ui` use.
+import { cva, type VariantProps } from 'class-variance-authority';
+import * as React from 'react';
+
+import { Separator } from './separator';
+import { cn } from '../../lib/utils';
+
+// Members sit 1px apart. Outer corners keep the member's own radius; the
+// corners that face a neighbour shrink to `--radius - 6px` (4px).
+const buttonGroupVariants = cva(
+  "flex w-fit items-stretch gap-px has-[>[data-slot=button-group]]:gap-2 [&>*]:focus-visible:relative [&>*]:focus-visible:z-10 has-[select[aria-hidden=true]:last-child]:[&>[data-slot=select-trigger]:last-of-type]:rounded-r-md [&>[data-slot=select-trigger]:not([class*='w-'])]:w-fit [&>input]:flex-1",
+  {
+    variants: {
+      orientation: {
+        horizontal:
+          '[&>*:not(:first-child)]:rounded-l-[calc(var(--radius)-6px)] [&>*:not(:last-child)]:rounded-r-[calc(var(--radius)-6px)]',
+        vertical:
+          'flex-col [&>*:not(:first-child)]:rounded-t-[calc(var(--radius)-6px)] [&>*:not(:last-child)]:rounded-b-[calc(var(--radius)-6px)]',
+      },
+    },
+    defaultVariants: {
+      orientation: 'horizontal',
+    },
+  },
+);
+
+function ButtonGroup({
+  className,
+  orientation,
+  ...props
+}: React.ComponentProps<'div'> & VariantProps<typeof buttonGroupVariants>) {
+  return (
+    <div
+      role="group"
+      data-slot="button-group"
+      data-orientation={orientation}
+      className={cn(buttonGroupVariants({ orientation }), className)}
+      {...props}
+    />
+  );
+}
+
+function ButtonGroupSeparator({
+  className,
+  orientation = 'vertical',
+  ...props
+}: React.ComponentProps<typeof Separator>) {
+  return (
+    <Separator
+      data-slot="button-group-separator"
+      orientation={orientation}
+      className={cn(
+        'bg-input relative m-0! self-stretch data-[orientation=vertical]:h-auto',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export { ButtonGroup, ButtonGroupSeparator };
