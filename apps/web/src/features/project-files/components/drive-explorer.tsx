@@ -26,11 +26,11 @@ import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
 import { useFilesStore, useFilesStoreApi } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { DriveEmptyArt } from './drive-empty-art';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { isSandboxNotReadyError } from '@kortix/sdk';
 import {
   ClipboardIcon as Clipboard,
-  FolderOpenIcon as FolderOpen,
   FolderPlusIcon as FolderPlus,
   ClipboardTextIcon,
   MoonIcon,
@@ -69,7 +69,12 @@ import {
   type TreeFile,
   treeLevels,
 } from '../drop-tree';
-import { DriveCreateDialog, type DriveCreateKind, type DriveLocation } from './drive-create-dialog';
+import {
+  DriveCreateDialog,
+  type DriveCreateKind,
+  type DriveLocation,
+  type FolderAudienceMode,
+} from './drive-create-dialog';
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
 import { type DriveUpload, useDriveUploads } from '../store/upload-store';
@@ -128,6 +133,7 @@ export function DriveExplorer({
   rootIcon,
   location,
   onOpenFolder,
+  onTeamFolderCreated,
   listingAs,
   panels,
   children,
@@ -159,6 +165,11 @@ export function DriveExplorer({
    * once the user has left). Absent: the button only works while mounted.
    */
   onOpenFolder?: (path: string) => void;
+  /**
+   * Drive: a folder made at the top is a team folder, and the create dialog
+   * asks who can open it. Called once it exists.
+   */
+  onTeamFolderCreated?: (path: string, audience: FolderAudienceMode) => void;
   /**
    * Element type for the listing region.
    *
@@ -826,15 +837,17 @@ export function DriveExplorer({
    * A failure removes the row and says why.
    */
   const handleCreate = useCallback(
-    async (kind: DriveCreateKind, name: string) => {
+    async (kind: DriveCreateKind, name: string, audience?: FolderAudienceMode) => {
       const dir = currentPath;
       const node = pendingNode(name, kind === 'folder' ? 'directory' : 'file');
       setPending((prev) => [...prev, { dir, node }]);
       let ok = false;
       try {
-        if (kind === 'folder') await mkdirMutation.mutateAsync({ dirPath: node.path });
+        if (kind === 'folder')
+          await mkdirMutation.mutateAsync({ dirPath: node.path, everyone: audience === 'everyone' });
         else await createMutation.mutateAsync({ filePath: node.path });
         ok = true;
+        if (audience) onTeamFolderCreated?.(node.path, audience);
       } catch (err) {
         errorToast(
           (err as { status?: number } | null)?.status === 409
@@ -853,7 +866,15 @@ export function DriveExplorer({
         settlePending(dir, name, ok);
       }
     },
-    [currentPath, pendingNode, settlePending, mkdirMutation, createMutation, tHardcodedUi],
+    [
+      currentPath,
+      pendingNode,
+      settlePending,
+      mkdirMutation,
+      createMutation,
+      onTeamFolderCreated,
+      tHardcodedUi,
+    ],
   );
 
   // Paste: every item on the clipboard, into the folder in view.
@@ -1464,7 +1485,7 @@ export function DriveExplorer({
 
               {isEmpty && !parked && (
                 <EmptyState
-                  icon={FolderOpen}
+                  media={<DriveEmptyArt />}
                   title={tHardcodedUi.raw(
                     'featuresProjectFilesComponentsDriveListView.line396JsxTextThisFolderIsEmpty',
                   )}
@@ -1489,7 +1510,7 @@ export function DriveExplorer({
                   secondaryAction={
                     canWrite ? (
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
                         className="gap-1.5"
                         onClick={() => setCreateKind('folder')}
@@ -1692,7 +1713,8 @@ export function DriveExplorer({
           }
         }
         isTaken={nameTaken}
-        onCreate={(kind, name) => void handleCreate(kind, name)}
+        askAudience={!!onTeamFolderCreated && isRootPath}
+        onCreate={(kind, name, audience) => void handleCreate(kind, name, audience)}
         onClose={() => setCreateKind(null)}
       />
 
