@@ -638,6 +638,7 @@
         "userNotFound": "未找到用户",
         "profilePictureUpdated": "个人资料图片已更新",
         "profilePictureUploadFailed": "无法上传个人资料图片",
+        "avatarUploadOffline": "无法上传你的图片。请检查网络连接后重试。",
         "profilePictureRemoved": "个人资料图片已删除",
         "profilePictureRemoveFailed": "无法删除个人资料图片",
         "chooseImageFile": "请选择图像文件",
