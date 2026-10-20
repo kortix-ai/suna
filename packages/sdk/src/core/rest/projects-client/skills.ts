@@ -34,3 +34,18 @@ export async function createProjectSkill(
     }),
   );
 }
+
+/** Whole-folder removal includes user edits; shared dependencies are never removed. */
+export async function removeProjectSkill(
+  projectId: string,
+  input: { folder: string; confirm: true },
+  options?: ApiClientOptions,
+): Promise<{ ok: true; commitSha: string; removed: string[] }> {
+  return unwrap(
+    await backendApi.post<{ ok: true; commitSha: string; removed: string[] }>(
+      `/projects/${projectId}/skills/remove`,
+      input,
+      { showErrors: false, ...options },
+    ),
+  );
+}

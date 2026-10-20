@@ -14,6 +14,8 @@ export function bindProjectCore(projectId: string) {
     get: (opts?: Parameters<typeof P.getProject>[1]) => P.getProject(projectId, opts),
     detail: () => P.getProjectDetail(projectId),
     skills: {
+      remove: (...a: DropFirst<Parameters<typeof P.removeProjectSkill>>) =>
+        P.removeProjectSkill(projectId, ...a),
       /** Create a skill file on the default branch — no model needed. */
       create: (...a: DropFirst<Parameters<typeof P.createProjectSkill>>) =>
         P.createProjectSkill(projectId, ...a),
