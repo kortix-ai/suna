@@ -138,6 +138,12 @@ export interface ProjectTrigger {
   /** Runs the trigger may start in a UTC day. Null when unset: no daily cap. */
   max_runs_per_day?: number | null;
   /**
+   * Fresh session mode only (KRTX-1721): `skip` holds a fire while the
+   * trigger's previous run is still active. Null when unset: `skip` for a
+   * cron trigger, `allow` for the others. Optional: older servers omit it.
+   */
+  overlap?: 'skip' | 'allow' | null;
+  /**
    * Set while the trigger paused itself (KRTX-1721): it ran at its hourly run
    * limit through the previous hour and was still being held. No automatic fire
    * starts a run until it is resumed: `updateProjectTrigger(…, { enabled: true })`.
@@ -261,6 +267,8 @@ export interface CreateProjectTriggerInput {
   max_runs_per_hour?: number;
   /** Runs it may start in a UTC day, a whole number ≥ 1. Omit for no daily cap. */
   max_runs_per_day?: number;
+  /** See {@link ProjectTrigger.overlap}. Omit for the type's default. */
+  overlap?: 'skip' | 'allow';
   /**
    * Session strategy across fires. Omit for the type's default — 'fresh' on
    * cron/webhook, 'reuse' on monitor (a monitor fires repeatedly by design, so
@@ -318,6 +326,8 @@ export interface UpdateProjectTriggerInput {
   max_runs_per_hour?: number | null;
   /** null removes the daily cap. */
   max_runs_per_day?: number | null;
+  /** See {@link ProjectTrigger.overlap}. null resets it to the type's default. */
+  overlap?: 'skip' | 'allow' | null;
   session_mode?: ProjectTriggerSessionMode;
   session_id?: string | null;
   /** See {@link CreateProjectTriggerInput.session_key}. null clears it. */
