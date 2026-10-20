@@ -51,7 +51,7 @@ async function fixture(opts: { userId?: string; revokedAt?: string; recordKey?: 
   await db.execute(sql`
     insert into kortix.project_sessions (session_id, account_id, project_id, branch_name, agent_name, status, created_by, metadata)
     values (${sessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid, ${sessionId}, 'default', 'stopped', ${userId}::uuid,
-            ${JSON.stringify(opts.tombstone ? { deletedAt: '2026-09-30T00:00:00Z' } : {})}::jsonb)`);
+            ${JSON.stringify({})}::jsonb)`);
   const token = await createAccountToken({
     accountId: project.account_id,
     userId,
@@ -60,6 +60,11 @@ async function fixture(opts: { userId?: string; revokedAt?: string; recordKey?: 
     sessionId,
     agentGrant: null,
   } as never);
+  // Mint while the owner is live, then delete it: the mint boundary now
+  // correctly refuses credentials for an already-tombstoned session.
+  if (opts.tombstone) await db.execute(sql`
+    update kortix.project_sessions set metadata = '{"deletedAt":"2026-09-30T00:00:00Z"}'::jsonb
+    where session_id = ${sessionId}`);
   await db.execute(sql`
     insert into kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, external_id, provider, status, config)
     values (${sessionId}::uuid, ${sessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid,

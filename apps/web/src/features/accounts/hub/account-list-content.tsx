@@ -9,23 +9,23 @@
  */
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
-import { forgetPushedEntry, hubTarget } from '@/stores/account-panel-store';
+import { forgetPushedEntry, hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 
 import { accountCreated } from '@/features/accounts/account-created';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { useAccountsList, useAccountsQueryKey } from '@kortix/ui/internal/hooks/account/use-accounts-list';
+import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { isAccountCreationRestricted } from '@/lib/config';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import type { KortixAccount } from '@kortix/sdk';
 import {
   CaretRightIcon as ChevronRight,
@@ -35,7 +35,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { HubLink } from './account-hub-location';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
 import { AccountPane } from './account-pane';
 
 export function AccountListContent() {

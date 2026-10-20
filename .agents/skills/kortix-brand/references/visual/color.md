@@ -50,7 +50,7 @@ Values live in `visual-system.json` (keys `color.*`). This file says which token
 
 **Rule.** Use `bg-popover` for a floating or inset surface: an overlay, a field, or a row or panel inside another panel. Do not use `bg-card` for these. — *Why:* `bg-card` is the washed region tone. `bg-popover` is the flat elevated surface that sits on top of another surface. — *Where:* app. — *When silent:* if it floats, or sits inside another panel, use `bg-popover`. If it sits directly on the page, see the in-flow rule below.
 
-**Rule.** Use `bg-input` for nothing new. Fields use `bg-popover` + `border-border` + `rounded-md`. — *Why:* `bg-input` "sank into a bg-card panel". One field surface reads the same on a white page, a gray card and inside a modal (#8286). — *Where:* app. — *When silent:* copy `inputSurfaceClasses` in `apps/web/src/components/ui/input.tsx`. `variant="popover"` is deprecated and ignored.
+**Rule.** Use `bg-input` for nothing new. Fields use `bg-popover` + `border-border` + `rounded-md`. — *Why:* `bg-input` "sank into a bg-card panel". One field surface reads the same on a white page, a gray card and inside a modal (#8286). — *Where:* app. — *When silent:* copy `inputSurfaceClasses` in `packages/ui/src/primitives/input.tsx`. `variant="popover"` is deprecated and ignored.
 
 **Rule.** Keep one border color: `border-border`. Two sanctioned siblings exist: `border-sidebar-border` (softer in dark) and `terminal-border`. Add no new alpha border on `border-border`. — *Why:* a second hairline reads as a second system. Outlined `Card` uses `border-border/60` today; treat it as debt, not a pattern. — *Where:* app, marketing. — *When silent:* `border-border`.
 
@@ -123,7 +123,7 @@ The `kortix-*` accents are the only source of hue in product UI. Same value in l
 ## Other families in `visual-system.json`
 
 - **Chart ramp** (`color.chart.chart-1` to `chart-5`): data visualization only. Read through `var(--chart-n)`, not utilities. Theme-invariant.
-- **Terminal** (`color.terminal.*`): the PTY pane mirrors a real shell, so it is shell-black in both themes. xterm needs literal colors, so `terminalTheme` in `features/session/pty-terminal.tsx` must equal these.
+- **Terminal** (`color.terminal.*`): the PTY pane mirrors a real shell, so it is shell-black in both themes. xterm needs literal colors, so `terminalTheme` in `packages/ui/src/terminal/pty-terminal.tsx` must equal these.
 - **Glyph and emoji palettes** (`color.glyph`, `color.emoji`): two families on purpose. Emoji hues derive from the glyph and must stay stable. Glyph colors are user-chosen. Both clear 3:1 on the ring.
 - **Mobile status tokens** (`color.status_mobile_only`): `success` and `warning` exist on mobile only. Resolved (`decisions.md` J-4): alias `kortix-green` and `kortix-orange`.
 

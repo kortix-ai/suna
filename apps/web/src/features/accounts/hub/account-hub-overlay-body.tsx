@@ -8,9 +8,9 @@
  */
 
 import { AccountHubContent } from './account-hub-content';
-import { useAccountPanelId } from './account-hub-location';
+import { useAccountPanelId } from '@kortix/ui/internal/account-hub/account-hub-location';
 import { AccountListContent } from './account-list-content';
-import { AccountSettingsShell } from './account-settings-shell';
+import { AccountSettingsShell } from '@kortix/ui/internal/account-hub/account-settings-shell';
 
 export function AccountHubOverlayBody() {
   // The URL is the ONE thing that decides which pane shows. `?accountId=` with

@@ -1,7 +1,7 @@
 'use client';
 
-import { useGitHubStars } from '@/hooks/utils/use-github-stars';
-import { cn } from '@/lib/utils';
+import { useGitHubStars } from '@/hooks/use-github-stars';
+import { cn } from '@kortix/ui';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 const DURATION_MS = 1600;

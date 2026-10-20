@@ -4,9 +4,9 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
 import { ClockIcon } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { Badge } from '@kortix/ui/badge';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import {
   useMaintenanceAdmin,
   useUpdateMaintenanceConfig,

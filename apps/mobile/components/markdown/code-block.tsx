@@ -1,21 +1,30 @@
 /**
  * A fenced code block in a message — web's `components/markdown/code/
- * code-block.tsx`: a bordered card with a caption (lowercase language label +
- * copy) over a scrollable, syntax-highlighted body.
+ * code-block.tsx`: a bordered card with a caption (lowercase language label,
+ * then copy and full screen) over a scrollable, syntax-highlighted body. Full
+ * screen opens the code in the app's bottom sheet (`CodeSheet`): title, Copy
+ * at the far right, the whole block scrolling vertically, as the file preview.
  *
  * Highlighting uses the one app palette (Shiki `min-light` / `min-dark`, see
  * `lib/highlight/shiki.ts`). While the fence is still streaming the body
  * renders plain in the theme's base colour and follows the newest line; the
  * block highlights once, when the fence closes.
  */
-import React, { createContext, memo, useCallback, useContext, useEffect, useRef } from 'react';
-import { Text as RNText, View, type StyleProp, type ViewStyle } from 'react-native';
+import React, { createContext, memo, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { Pressable, Text as RNText, View, type StyleProp, type ViewStyle } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
+import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { CopyContentButton, KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { Icon } from '@/components/ui/icon';
+import { haptics } from '@/lib/haptics';
+import { ArrowsOutSimpleIcon } from '@/lib/icons';
 
 import { languageLabel } from '@/lib/code-theme';
 import { ensureLanguage } from '@/lib/highlight/shiki';
 import { useCodeTokens } from '@/lib/highlight/use-code-tokens';
-import { CODE_BLOCK, RADIUS } from '@/lib/markdown/markdown-layout';
+import { CODE_BLOCK, MARKDOWN_BORDER_WIDTH } from '@/lib/markdown/markdown-layout';
 
 import { CopyButton } from './copy-button';
 import { markdownPalette, MONO_FONT } from './markdown-theme';
@@ -73,48 +82,23 @@ export const CodeBlock = memo(function CodeBlock({
     if (isStreaming) scrollRef.current?.scrollToEnd({ animated: false });
   }, [isStreaming]);
 
-  const body = (
-    <ScrollView
-      horizontal
-      nestedScrollEnabled
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{
-        paddingHorizontal: CODE_BLOCK.bodyPaddingX,
-        paddingVertical: CODE_BLOCK.bodyPaddingY,
-      }}
-    >
-      <RNText
-        selectable
-        style={{
-          fontFamily: MONO_FONT,
-          fontSize: CODE_BLOCK.fontSize,
-          lineHeight: CODE_BLOCK.lineHeight,
-          letterSpacing: CODE_BLOCK.letterSpacing,
-          color: palette.strong,
-        }}
-      >
-        {lines.map((line, lineIndex) => (
-          <React.Fragment key={lineIndex}>
-            {lineIndex > 0 ? '\n' : null}
-            {line.map((token, tokenIndex) => (
-              <RNText key={tokenIndex} style={{ color: token.color }}>
-                {token.content}
-              </RNText>
-            ))}
-          </React.Fragment>
-        ))}
-      </RNText>
-    </ScrollView>
-  );
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const openSheet = useCallback(() => {
+    haptics.tap();
+    setSheetOpen(true);
+  }, []);
+  const closeSheet = useCallback(() => setSheetOpen(false), []);
+  const body = <CodeLines lines={lines} color={palette.strong} />;
 
   return (
     <View
       style={[
         {
           backgroundColor: palette.codeFrame,
+          // The markdown table's hairline (`MARKDOWN_BORDER_WIDTH`, `palette.border`).
           borderColor: palette.border,
-          borderWidth: 1,
-          borderRadius: RADIUS.md,
+          borderWidth: MARKDOWN_BORDER_WIDTH,
+          borderRadius: CODE_BLOCK.radius,
           overflow: 'hidden',
         },
         style,
@@ -145,14 +129,20 @@ export const CodeBlock = memo(function CodeBlock({
         >
           {languageLabel(language)}
         </RNText>
-        {code ? <CopyButton code={code} color={palette.strong} /> : null}
+        {code ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+            <CopyButton code={code} color={palette.strong} />
+            {/* Inside a sheet that already scrolls the whole block: no second sheet. */}
+            {fullHeight ? null : <ExpandButton color={palette.strong} onPress={openSheet} />}
+          </View>
+        ) : null}
       </View>
 
       <View
         style={{
           backgroundColor: palette.codeBody,
-          borderTopLeftRadius: RADIUS.sm,
-          borderTopRightRadius: RADIUS.sm,
+          borderTopLeftRadius: CODE_BLOCK.bodyRadius,
+          borderTopRightRadius: CODE_BLOCK.bodyRadius,
         }}
       >
         {fullHeight ? (
@@ -169,6 +159,135 @@ export const CodeBlock = memo(function CodeBlock({
           </ScrollView>
         )}
       </View>
+      {/* Mounted only while open: a transcript holds many code blocks. */}
+      {sheetOpen ? (
+        <CodeSheet
+          code={code}
+          title={languageLabel(language)}
+          lines={lines}
+          color={palette.strong}
+          onDismiss={closeSheet}
+        />
+      ) : null}
     </View>
   );
 });
+
+type CodeTokenLines = ReturnType<typeof useCodeTokens>['lines'];
+
+/**
+ * The highlighted lines. In the block they scroll sideways; `wrap` (the full
+ * screen sheet) wraps them instead, so the sheet has one vertical scroll and
+ * no sideways one (Jay, 2026-10-20).
+ */
+function CodeLines({
+  lines,
+  color,
+  wrap = false,
+}: {
+  lines: CodeTokenLines;
+  color: string;
+  wrap?: boolean;
+}) {
+  const text = (
+    <RNText
+      selectable
+      style={{
+        fontFamily: MONO_FONT,
+        fontSize: CODE_BLOCK.fontSize,
+        lineHeight: CODE_BLOCK.lineHeight,
+        letterSpacing: CODE_BLOCK.letterSpacing,
+        color,
+      }}>
+      {lines.map((line, lineIndex) => (
+        <React.Fragment key={lineIndex}>
+          {lineIndex > 0 ? '\n' : null}
+          {line.map((token, tokenIndex) => (
+            <RNText key={tokenIndex} style={{ color: token.color }}>
+              {token.content}
+            </RNText>
+          ))}
+        </React.Fragment>
+      ))}
+    </RNText>
+  );
+  if (wrap) return <View style={SHEET_CODE_PADDING}>{text}</View>;
+  return (
+    <ScrollView
+      horizontal
+      nestedScrollEnabled
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={CODE_PADDING}
+    >
+      {text}
+    </ScrollView>
+  );
+}
+
+const CODE_PADDING = { paddingHorizontal: CODE_BLOCK.bodyPaddingX, paddingVertical: CODE_BLOCK.bodyPaddingY } as const;
+/** The full-screen sheet: 20pt sides, wider than the block's 14.72pt (Jay, 2026-10-20). */
+const SHEET_CODE_PADDING = { paddingHorizontal: 20, paddingVertical: CODE_BLOCK.bodyPaddingY } as const;
+
+/** Spread to the 44pt minimum touch target around the 32pt visible button. */
+const EXPAND_HIT_SLOP = (44 - CODE_BLOCK.copyButtonSize) / 2;
+
+/** Full screen: the copy button's twin (size, press fill, touch target), beside it. */
+function ExpandButton({ color, onPress }: { color: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={EXPAND_HIT_SLOP}
+      accessibilityRole="button"
+      accessibilityLabel="Open code full screen"
+      className="items-center justify-center rounded-full active:bg-accent"
+      style={{ width: CODE_BLOCK.copyButtonSize, height: CODE_BLOCK.copyButtonSize }}
+    >
+      <Icon as={ArrowsOutSimpleIcon} size={CODE_BLOCK.copyIconSize} color={color} />
+    </Pressable>
+  );
+}
+
+/** Gorhom wants a stable array. Opens at full screen, as the file preview. */
+const FULL_SCREEN = ['100%'];
+
+/**
+ * The whole block in the app's bottom sheet: the language as the title, Copy
+ * at the far right (`CopyContentButton`), the code below on the sheet itself
+ * (no card, no border: Jay, 2026-10-20), wrapped, in one vertical scroll.
+ * Presents on mount; swipe down closes.
+ */
+function CodeSheet({
+  code,
+  title,
+  lines,
+  color,
+  onDismiss,
+}: {
+  code: string;
+  title: string;
+  lines: CodeTokenLines;
+  color: string;
+  onDismiss: () => void;
+}) {
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const insets = useSafeAreaInsets();
+  useEffect(() => {
+    sheetRef.current?.present();
+  }, []);
+  return (
+    <KortixBottomSheetModal
+      ref={sheetRef}
+      title={title}
+      titleTrailing={<CopyContentButton text={code} label="Copy code" />}
+      snapPoints={FULL_SCREEN}
+      enableDynamicSizing={false}
+      enablePanDownToClose
+      onDismiss={onDismiss}
+    >
+      {/* The lines' own 14.72pt side padding keeps the code off the sheet's edges. */}
+      <BottomSheetScrollView contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 16 }}>
+        <CodeLines lines={lines} color={color} wrap />
+      </BottomSheetScrollView>
+    </KortixBottomSheetModal>
+  );
+}

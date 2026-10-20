@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { m, useMotionValue, useTransform } from 'motion/react';
 import { useEffect, useId, useMemo, useState } from 'react';
 
