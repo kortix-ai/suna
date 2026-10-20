@@ -192,6 +192,8 @@ const DECISION_CALLS = [
     'Track the archived-projects bug found during launch QA.',
     23 * 60 + 10,
   ),
+  // Nothing recorded: only Deny is offered.
+  { ...decisionCall('gmail.send_email', 'Gmail', 'write', {}, '', 134), execution_id: 'deny-only', args_preview: null, review_complete: false, approval_context: null },
 ];
 
 const NOTICES = { none: null, waking: SESSION_NOTICE.waking } as const;
@@ -273,7 +275,7 @@ export default function DebugApprovalsPage() {
         {DECISION_CALLS.map((details) => (
           <div
             key={details.execution_id}
-            data-testid={`decision-${details.connector}`}
+            data-testid={`decision-${details.execution_id === 'deny-only' ? 'deny-only' : details.connector}`}
             className="bg-popover border-border overflow-hidden rounded-xl border shadow-md"
           >
             <ApprovalDecisionPanel
