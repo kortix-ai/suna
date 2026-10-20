@@ -1008,6 +1008,7 @@ describe('kortix CLI black-box behavior', () => {
       ['GET', '/v1/projects?account_id=account_1', null],
       ['GET', '/v1/projects/proj_e2e', null],
       ['GET', '/v1/projects/proj_e2e', null],
+      ['GET', '/v1/projects/proj_e2e/git/connection', null],
       ['GET', '/v1/marketplace/items?query=agent-browser&source=kortix', null],
       ['GET', '/v1/marketplace/items/agent-browser', null],
       ['GET', '/v1/projects/proj_e2e', null],

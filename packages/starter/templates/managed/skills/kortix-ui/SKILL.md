@@ -9,8 +9,8 @@ description: "Build React UI with @kortix/ui, the Kortix component library and t
 white-label demo and SDK customer apps. Components are Tailwind v4 class strings that read CSS variables.
 Docs: https://kortix.com/docs/sdk/ui. Live catalog: https://kortix.com/design-system.
 
-Availability: a workspace package of `kortix-ai/suna` (`"@kortix/ui": "workspace:*"`), not on npm yet.
-Outside it: tell the user, style with plain CSS over the section 6 variables, never copy component source.
+Install: `npm i @kortix/ui @kortix/sdk`, the same version of each (peers: `references/custom-dashboard.md`).
+Module entries and `@kortix/ui/theme` need 0.14.4+. Inside `kortix-ai/suna`: `"workspace:*"`. Never copy component source.
 
 ## 1. Set up once
 

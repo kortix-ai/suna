@@ -1229,10 +1229,6 @@
           "name": "Email AgentMail",
           "description": "Assegna caselle AgentMail affinché le email in arrivo possano avviare e continuare sessioni Kortix."
         },
-        "llm_gateway": {
-          "name": "Gateway LLM",
-          "description": "Instrada il progetto tramite il gateway LLM gestito da Kortix per modelli, misurazione e budget."
-        },
         "meta_agent": {
           "name": "Meta-agente",
           "description": "Aggiungi un coordinatore che gestisce sessioni specializzate e attività in più passaggi nel progetto."
@@ -1296,6 +1292,14 @@
         "connectors_v2": {
           "name": "Connettori v2",
           "description": "Il catalogo di app MCP in Personalizza → Connettori, con accesso gestito da Kortix. Con «Trigger di eventi dell'app» attivo, Kortix controlla queste app per nuove email, file ed elementi e avvia un agente. Aggiunge anche Telegram come canale. I nuovi account dei connettori non sono più condivisi con l'intero progetto per impostazione predefinita."
+        },
+        "agent_rooms": {
+          "name": "Stanze",
+          "description": "Chat room con nome in cui sessioni degli agenti e persone pubblicano messaggi e rispondono nei thread. Una sessione si riattiva quando un messaggio è indirizzato a lei. Aggiunge la pagina Stanze, `kortix rooms` e `kortix peers`."
+        },
+        "goals": {
+          "name": "Obiettivi",
+          "description": "Assegna a un agente un obiettivo di cui resta responsabile finché un controllo indipendente non conferma il risultato. Pianifica, lavora, attende, sollecita le persone e conserva il suo stato in una cartella Goals in File. Richiede Volumi e Promemoria attivi."
         }
       }
     },
@@ -1945,6 +1949,7 @@
     "upgrade": "Effettua l’upgrade",
     "noMatch": {
       "title": "Nessun modello corrispondente",
+      "singleModelDescription": "In questo progetto è disponibile solo 1 modello. La disponibilità dei modelli dipende dal tuo piano e dai provider collegati.",
       "description": "Nessun risultato per “{search}”. Prova con una ricerca diversa.",
       "clear": "Cancella ricerca"
     },

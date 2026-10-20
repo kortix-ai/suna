@@ -233,17 +233,10 @@ const allowedLiteralValues = new Set([
   'Ruby on Rails',
   'Laravel',
   'Discover and read Kortix public API and documentation resources.',
-  // The Slack and Teams connect heroes (#9982) render a mock chat preview:
-  // the demo persona, her message timestamps, the channel name and the
-  // @Kortix handle are non-linguistic demo content, like the product names
-  // above — localizing a fake "10:42 AM" would be nonsense in every locale.
-  'Maya',
-  '10:42 AM',
-  '10:43 AM',
-  '@Kortix',
-  '# launch',
-  'Launch',
-  'Posts',
+  // Technical tokens a user types verbatim: a host in a URL placeholder and the
+  // room-wide mention.
+  'example.com',
+  '@here',
 ]);
 
 const ignoredAttributes = new Set([
@@ -655,6 +648,17 @@ function scanFile(file) {
   }
 
   function containingUiMessageArgument(node) {
+    // A comparison operand (`decision === 'approve' ? … : …`) is never rendered.
+    if (
+      ts.isBinaryExpression(node.parent) &&
+      [
+        ts.SyntaxKind.EqualsEqualsEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsEqualsToken,
+        ts.SyntaxKind.EqualsEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsToken,
+      ].includes(node.parent.operatorToken.kind)
+    )
+      return undefined;
     let cursor = node.parent;
     while (cursor && !ts.isFunctionLike(cursor) && !ts.isSourceFile(cursor)) {
       if (ts.isJsxElement(cursor) || ts.isJsxSelfClosingElement(cursor)) return undefined;
@@ -1049,6 +1053,8 @@ function scanFile(file) {
           node.text === 'bun test apps/api/src/billing') ||
         (file === path.join(uiSrcDir, 'internal/lib/attachment-mime.ts') &&
           catalogRoot === 'MIME_BY_EXTENSION') ||
+        (file === path.join(uiSrcDir, 'internal/lib/web-notifications.ts') &&
+          ['TYPE_TO_KIND', 'TYPE_TO_SOUND', 'NOTIFICATION_TOAST_VARIANT'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/preferences-tab.tsx') &&
           catalogRoot === 'MODIFIER_OPTIONS') ||
         (file.includes(`${path.sep}i18n${path.sep}`) && file.endsWith('.generated.ts')) ||
