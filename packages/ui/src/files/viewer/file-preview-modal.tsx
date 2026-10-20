@@ -283,7 +283,8 @@ export function FilePreviewModal({
   // Download label and the previous/next pair (the arrow keys still step), so
   // Expand and Close stay inside the panel.
   const [toolbarEl, toolbarRef] = useState<HTMLDivElement | null>(null);
-  const compactToolbar = useCompactRow(toolbarEl);
+  const [nameEl, nameRef] = useState<HTMLSpanElement | null>(null);
+  const compactToolbar = useCompactRow(toolbarEl, nameEl);
   useEffect(() => {
     if (!isOpen || !fullscreen) return;
     const el = contentRef.current;
@@ -317,7 +318,9 @@ export function FilePreviewModal({
     <>
       {/* Name and place in the folder only: Close is the one way out. */}
       <div className="flex min-w-0 flex-1 items-center gap-2 pl-1">
-        <span className="max-w-[300px] truncate text-sm font-medium">{fileName}</span>
+        <span ref={nameRef} className="max-w-[300px] truncate text-sm font-medium">
+          {fileName}
+        </span>
         {statusSlot}
       </div>
 
@@ -514,7 +517,7 @@ export function FilePreviewModal({
       </div>
 
       {historyPath && (
-        <div className="bg-popover border-border/60 animate-in slide-in-from-bottom-4 fade-in-0 absolute right-4 bottom-4 z-30 overflow-hidden rounded-md border shadow-md duration-150">
+        <div className="bg-popover border-border/60 animate-in slide-in-from-bottom-4 fade-in-0 absolute right-4 bottom-4 z-30 overflow-hidden rounded-md border shadow-md duration-normal">
           <HistoryContent filePath={historyPath} onClose={() => setHistoryPath(null)} />
         </div>
       )}
@@ -547,7 +550,7 @@ export function FilePreviewModal({
           value0: fileName ? `: ${fileName}` : '',
         })}
         tabIndex={-1}
-        className="bg-background animate-in fade-in-0 absolute inset-0 z-20 flex flex-col overflow-hidden duration-150 outline-none"
+        className="bg-background animate-in fade-in-0 absolute inset-0 z-20 flex flex-col overflow-hidden duration-normal outline-none"
       >
         {panelInner}
       </div>
@@ -558,7 +561,7 @@ export function FilePreviewModal({
     <DialogDepthProvider depth={dialogDepth}>
       <div
         data-file-preview-overlay=""
-        className="animate-in fade-in-0 pointer-events-auto fixed inset-0 bg-black/50 backdrop-blur-sm duration-150"
+        className="animate-in fade-in-0 pointer-events-auto fixed inset-0 bg-black/50 backdrop-blur-sm duration-normal"
         style={{ zIndex: dialogOverlayZ(dialogDepth) }}
         onClick={embedded ? () => setExpanded(false) : onClose}
       />
@@ -571,7 +574,7 @@ export function FilePreviewModal({
           value0: fileName ? `: ${fileName}` : '',
         })}
         tabIndex={-1}
-        className="kx-fullscreen-modal border-border/60 bg-background animate-in fade-in-0 zoom-in-[0.98] pointer-events-auto fixed inset-3 flex flex-col overflow-hidden rounded-xl border shadow-lg duration-150 outline-none sm:inset-4"
+        className="kx-fullscreen-modal border-border/60 bg-background animate-in fade-in-0 zoom-in-[0.98] pointer-events-auto fixed inset-3 flex flex-col overflow-hidden rounded-xl border shadow-lg duration-normal outline-none sm:inset-4"
         style={{ zIndex: dialogContentZ(dialogDepth) }}
       >
         {panelInner}
@@ -582,20 +585,29 @@ export function FilePreviewModal({
   return createPortal(node, document.body);
 }
 
+/** Below this the file name stops being readable, so the row compacts first. */
+const MIN_NAME_PX = 96;
+
 /**
- * True once the row overflows its width, and until it grows wider than the
- * width where it overflowed. The width is the hysteresis: the compact row
- * fits, so "does it overflow now" alone would flip back and forth.
+ * True once the row overflows its width or squeezes the name below
+ * `MIN_NAME_PX`, and until the row grows wider than the width where that
+ * happened. The width is the hysteresis: the compact row fits, so "does it
+ * overflow now" alone would flip back and forth.
+ *
+ * The name check exists because the row never overflows on its own: the name
+ * column shrinks first (`min-w-0`), so a 367px side panel showed the actions
+ * and a 1px name.
  */
-function useCompactRow(el: HTMLElement | null): boolean {
+function useCompactRow(el: HTMLElement | null, name: HTMLElement | null): boolean {
   const [compactAt, setCompactAt] = useState<number | null>(null);
   const check = useCallback(() => {
     if (!el) return;
     setCompactAt((at) => {
       if (at !== null) return el.clientWidth > at ? null : at;
-      return el.scrollWidth > el.clientWidth ? el.clientWidth : null;
+      const nameSqueezed = !!name && name.clientWidth < Math.min(name.scrollWidth, MIN_NAME_PX);
+      return el.scrollWidth > el.clientWidth || nameSqueezed ? el.clientWidth : null;
     });
-  }, [el]);
+  }, [el, name]);
   // Every commit: a new file can bring more actions at the same width.
   useLayoutEffect(check);
   useLayoutEffect(() => {
