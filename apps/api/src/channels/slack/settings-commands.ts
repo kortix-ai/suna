@@ -297,12 +297,7 @@ export async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
   // Effective MODEL (channel override → project/account/platform), with source.
   const gate = await channelModelContext(ctx);
   let modelText = '`not configured` · platform default';
-  if (gate && !gate.llmGatewayEnabled) {
-    // Native mode: report the channel pin verbatim, or OpenCode's own default.
-    modelText = selection?.opencodeModel
-      ? `\`${escapeMrkdwn(selection.opencodeModel)}\` · channel`
-      : '*OpenCode default* · native';
-  } else if (gate) {
+  if (gate) {
     const eff = await resolveEffectiveModel({
       userId: gate.ownerUserId,
       accountId: gate.accountId,

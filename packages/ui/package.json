@@ -249,6 +249,7 @@
     "./internal/branding/branding-provider": "./src/internal/branding/branding-provider.tsx",
     "./internal/capture/use-capture-area": "./src/internal/capture/use-capture-area.ts",
     "./internal/components/hover-prefetch-link": "./src/internal/components/hover-prefetch-link.tsx",
+    "./internal/components/mobile-store-qr": "./src/internal/components/mobile-store-qr.tsx",
     "./internal/desktop/desktop-back-button": "./src/internal/desktop/desktop-back-button.tsx",
     "./internal/desktop/titlebar-control": "./src/internal/desktop/titlebar-control.ts",
     "./internal/files/session-drive-files": "./src/internal/files/session-drive-files.ts",
@@ -308,6 +309,7 @@
     "./internal/lib/onboarding/last-project-cookie": "./src/internal/lib/onboarding/last-project-cookie.ts",
     "./internal/lib/onboarding/provision-errors": "./src/internal/lib/onboarding/provision-errors.ts",
     "./internal/lib/onboarding/use-app-home": "./src/internal/lib/onboarding/use-app-home.ts",
+    "./internal/lib/promo-art": "./src/internal/lib/promo-art.ts",
     "./internal/lib/provider-branding": "./src/internal/lib/provider-branding.tsx",
     "./internal/lib/query-client-singleton": "./src/internal/lib/query-client-singleton.ts",
     "./internal/lib/relative-time": "./src/internal/lib/relative-time.ts",
@@ -530,6 +532,7 @@
     "./workspace/projects/onboarding/connect-app": "./src/workspace/projects/onboarding/connect-app.ts",
     "./workspace/projects/policies-panel": "./src/workspace/projects/policies-panel.tsx",
     "./workspace/projects/session-shared-icon": "./src/workspace/projects/session-shared-icon.tsx",
+    "./workspace/repository-disconnected": "./src/workspace/repository-disconnected.tsx",
     "./workspace/review/map": "./src/workspace/review/map.ts",
     "./workspace/review/mock-data": "./src/workspace/review/mock-data.ts",
     "./workspace/review/review-center": "./src/workspace/review/review-center.tsx",
@@ -1449,6 +1452,10 @@
         "types": "./dist/internal/components/hover-prefetch-link.d.ts",
         "import": "./dist/internal/components/hover-prefetch-link.js"
       },
+      "./internal/components/mobile-store-qr": {
+        "types": "./dist/internal/components/mobile-store-qr.d.ts",
+        "import": "./dist/internal/components/mobile-store-qr.js"
+      },
       "./internal/desktop/desktop-back-button": {
         "types": "./dist/internal/desktop/desktop-back-button.d.ts",
         "import": "./dist/internal/desktop/desktop-back-button.js"
@@ -1684,6 +1691,10 @@
       "./internal/lib/onboarding/use-app-home": {
         "types": "./dist/internal/lib/onboarding/use-app-home.d.ts",
         "import": "./dist/internal/lib/onboarding/use-app-home.js"
+      },
+      "./internal/lib/promo-art": {
+        "types": "./dist/internal/lib/promo-art.d.ts",
+        "import": "./dist/internal/lib/promo-art.js"
       },
       "./internal/lib/provider-branding": {
         "types": "./dist/internal/lib/provider-branding.d.ts",
@@ -2555,6 +2566,10 @@
         "types": "./dist/workspace/projects/session-shared-icon.d.ts",
         "import": "./dist/workspace/projects/session-shared-icon.js"
       },
+      "./workspace/repository-disconnected": {
+        "types": "./dist/workspace/repository-disconnected.d.ts",
+        "import": "./dist/workspace/repository-disconnected.js"
+      },
       "./workspace/review/map": {
         "types": "./dist/workspace/review/map.d.ts",
         "import": "./dist/workspace/review/map.js"
@@ -2761,6 +2776,7 @@
     "streamdown": "^1.6.11",
     "tailwind-merge": "^3.6.0",
     "unified": "^11.0.5",
+    "uqr": "0.1.3",
     "use-intl": "^4.13.4",
     "vaul": "^1.1.2",
     "zustand": "^5.0.3"

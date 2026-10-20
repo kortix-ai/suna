@@ -114,11 +114,14 @@ describe('buildOpencodeConfigContent — base composition', () => {
     }
   })
 
-  test('registers nothing session-specific when no contributor applies', async () => {
+  // The gateway is the only model path: a box without its env still gets
+  // `kortix` as the only provider, never OpenCode's native providers.
+  test('without gateway env the config enables only the kortix provider', async () => {
     for (const env of [{}, ENV]) {
       const parsed = JSON.parse((await buildOpencodeConfigContent(env))!)
       expect(parsed.mcp).toBeUndefined()
-      expect(parsed.provider).toBeUndefined()
+      expect(Object.keys(parsed.provider)).toEqual(['kortix'])
+      expect(parsed.enabled_providers).toEqual(['kortix'])
     }
   })
 
@@ -284,10 +287,10 @@ describe('buildOpencodeConfigContent — server-compiled v2 agent config (KORTIX
 
   test('builds a config from the compiled agent config alone (no connector/gateway/Slack)', async () => {
     const config = JSON.parse((await buildOpencodeConfigContent({ KORTIX_COMPILED_AGENT_CONFIG: COMPILED }))!)
-    expect(config.model).toBe('anthropic/claude-sonnet-5')
+    expect(config.model).toBe('kortix/anthropic/claude-sonnet-5')
     expect(config.agent.support).toEqual({
       mode: 'primary',
-      model: 'anthropic/claude-sonnet-5',
+      model: 'kortix/anthropic/claude-sonnet-5',
       prompt: 'Triage support tickets.',
     })
   })
@@ -302,7 +305,7 @@ describe('buildOpencodeConfigContent — server-compiled v2 agent config (KORTIX
     expect(env.KORTIX_COMPILED_AGENT_CONFIG_GZ_PARTS).toBe('1')
 
     const config = JSON.parse((await buildOpencodeConfigContent(env))!)
-    expect(config.model).toBe('anthropic/claude-sonnet-5')
+    expect(config.model).toBe('kortix/anthropic/claude-sonnet-5')
     expect(config.agent.support).toEqual({ mode: 'primary', prompt })
   })
 
@@ -335,7 +338,7 @@ describe('buildOpencodeConfigContent — server-compiled v2 agent config (KORTIX
         OPENCODE_CONFIG_CONTENT: existing,
       }))!,
     )
-    expect(config.model).toBe('repo/override-model')
+    expect(config.model).toBe('kortix/repo/override-model')
     expect(config.agent.support).toBeDefined()
   })
 
@@ -550,7 +553,7 @@ describe('buildOpencodeConfigContent — kortix.yaml v3 (schema: 3)', () => {
 
   test('OPENCODE_CONFIG_CONTENT from the environment is not read: the compiled set is the only input', async () => {
     const config = await build({ OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: 'repo/override', command: { x: { template: 'y' } } }) })
-    expect(config.model).toBeUndefined()
+    expect(config.model).not.toBe('kortix/repo/override')
     expect(Object.keys(config.command)).toEqual(['weekly', 'triage'])
   })
 

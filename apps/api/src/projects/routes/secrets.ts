@@ -29,7 +29,6 @@ import {
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { createRoute, z } from '@hono/zod-openapi';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
@@ -521,10 +520,8 @@ export function registerSecretsRoutes(): void {
 
     // First provider connect on a default-less project → seed a sensible project
     // default model (that provider's flagship). Detached + idempotent; never seeds
-    // over an existing default. Gateway projects only: model defaults are a
-    // gateway-catalog concept — off-gateway, OpenCode resolves its own default
-    // from the keys now in the box, and a seeded wire id would be a dead ref.
-    if (value !== null && isGatewayManagedEnv(name) && projectLlmGatewayEnabled(loaded.row.metadata)) {
+    // over an existing default.
+    if (value !== null && isGatewayManagedEnv(name)) {
       void seedProjectDefaultModelOnConnect({
         projectId,
         accountId: loaded.row.accountId,

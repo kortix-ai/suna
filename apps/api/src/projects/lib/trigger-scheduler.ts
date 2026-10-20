@@ -1,4 +1,6 @@
 import { projects } from '@kortix/db';
+import { assertRepositoryConnected } from './git';
+import { REPOSITORY_DISCONNECTED_CODE, isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
@@ -141,6 +143,19 @@ async function executeTriggerExecution(
     return 'skipped';
   }
 
+  // A disconnected repository (KRTX-2955): skip the run with the cause, no
+  // retries and no alert per slot. The trigger shows the cause as its last
+  // error; the next slot after a reconnect fires normally.
+  try {
+    await assertRepositoryConnected(project);
+  } catch (error) {
+    if (!isRepositoryDisconnectedError(error)) throw error;
+    const skippedAt = new Date();
+    await markTriggerExecutionSkipped({ row, skippedAt, reason: `${error.code}: ${error.message}` });
+    await markGitTriggerAttemptFailed(row.projectId, row.slug, skippedAt, error.message).catch(() => {});
+    return 'skipped';
+  }
+
   const spec = row.spec as unknown as GitTriggerSpec;
   const payload = row.payload as Record<string, unknown>;
   const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
@@ -225,7 +240,9 @@ async function recordTriggerExecutionResult(
       // same way a billing rejection does.
       || result.errorCode === 'no_usable_model'
       // The fire already paused the reminder; a retry cannot bring the session back.
-      || result.errorCode === 'reminder_session_gone';
+      || result.errorCode === 'reminder_session_gone'
+      // No retry reaches a repository until a person reconnects GitHub.
+      || result.errorCode === REPOSITORY_DISCONNECTED_CODE;
     const state = await markTriggerExecutionFailed({ row, failedAt: completedAt, error, terminal });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, completedAt, error);
     // Only the dead letter alerts the watchers: a retried attempt may still work.

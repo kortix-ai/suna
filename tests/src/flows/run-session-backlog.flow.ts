@@ -1,7 +1,7 @@
 /**
  * Agent-run + session happy-path backlog.
  *
- * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
+ * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
  * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10.
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
@@ -1154,36 +1154,6 @@ harnessFlow(
     } finally {
       await world.close();
     }
-  },
-);
-
-flow(
-  'RUN-11',
-  {
-    domain: 'agent-run',
-    requires: ['funded', 'sandbox'],
-    timeoutMs: 900_000,
-    routes: [
-      'PATCH /v1/projects/:projectId/features',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-    ],
-  },
-  async (ctx) => {
-    const project = await ctx.fixtures.project({ seed: true });
-    await ctx.step('the project asks for pi and turns the LLM gateway off', async () => {
-      for (const [feature, enabled] of [['pi_harness', true], ['llm_gateway', false]] as const) {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .patch('/v1/projects/:projectId/features', { feature, enabled }, { params: { projectId: project.id } });
-        r.status(200).body().has(`$.experimental.${feature}`, enabled);
-      }
-    });
-    // pi has no model path without the gateway: the session boots OpenCode,
-    // and bootSession proves it from the daemon's health.
-    await bootSession(ctx, 'opencode', { project });
   },
 );
 
