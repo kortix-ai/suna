@@ -18,3 +18,34 @@ describe('withNeedsInput', () => {
     expect(withNeedsInput(reviews, { total: 0, sessions: {} })).toBe(reviews);
   });
 });
+
+describe('useIsNeedsInputPoller: one 30 s poll per project, however many lists mount', () => {
+  test('the oldest mounted reader polls; the next one takes over when it unmounts', async () => {
+    const { createElement } = await import('react');
+    const { act, create } = await import('react-test-renderer');
+    const { useIsNeedsInputPoller } = await import('./use-review-session-summary');
+    const seen: Record<string, boolean> = {};
+    const Reader = ({ name, projectId }: { name: string; projectId: string }) => {
+      seen[name] = useIsNeedsInputPoller(projectId);
+      return null;
+    };
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    let sidebar!: ReturnType<typeof create>;
+    let page!: ReturnType<typeof create>;
+    let other!: ReturnType<typeof create>;
+    await act(async () => {
+      sidebar = create(createElement(Reader, { name: 'sidebar', projectId: 'p1' }));
+    });
+    await act(async () => {
+      page = create(createElement(Reader, { name: 'page', projectId: 'p1' }));
+      other = create(createElement(Reader, { name: 'other', projectId: 'p2' }));
+    });
+    expect(seen).toEqual({ sidebar: true, page: false, other: true });
+    await act(async () => sidebar.unmount());
+    expect(seen.page).toBe(true);
+    await act(async () => {
+      page.unmount();
+      other.unmount();
+    });
+  });
+});

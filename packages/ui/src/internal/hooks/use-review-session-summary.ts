@@ -2,7 +2,7 @@
 
 import type { SessionsNeedingInputResponse } from '@kortix/sdk';
 import { useReviewSummary, useSessionsNeedingInput } from '@kortix/sdk/react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 /**
  * The one derived view the sidebar needs from the review inbox: how many items
@@ -67,15 +67,53 @@ export function withNeedsInput(
   return merged;
 }
 
+// Mounted readers of GET needs-input per project, in mount order. The first one polls.
+const needsInputReaders = new Map<string, number[]>();
+const readerListeners = new Set<() => void>();
+let lastReaderToken = 0;
+const notifyReaders = () => readerListeners.forEach((listener) => listener());
+const subscribeReaders = (listener: () => void) => {
+  readerListeners.add(listener);
+  return () => void readerListeners.delete(listener);
+};
+
+/**
+ * True for exactly one mounted caller per project: the oldest. When it unmounts,
+ * the next one takes over. The sidebar and the Sessions page both mount
+ * `useSessionNeedsYouCounts`, and one 30 s poll serves both (one read per 30 s).
+ * Exported for unit tests.
+ */
+export function useIsNeedsInputPoller(projectId: string): boolean {
+  const [token] = useState(() => ++lastReaderToken);
+  useEffect(() => {
+    if (!projectId) return;
+    needsInputReaders.set(projectId, [...(needsInputReaders.get(projectId) ?? []), token]);
+    notifyReaders();
+    return () => {
+      const rest = (needsInputReaders.get(projectId) ?? []).filter((t) => t !== token);
+      if (rest.length) needsInputReaders.set(projectId, rest);
+      else needsInputReaders.delete(projectId);
+      notifyReaders();
+    };
+  }, [projectId, token]);
+  return useSyncExternalStore(
+    subscribeReaders,
+    () => needsInputReaders.get(projectId)?.[0] === token,
+    () => false,
+  );
+}
+
 /**
  * What waits on the viewer, by session, for the session lists: the review
  * inbox and every open agent question or connector approval. A positive count
  * makes the row `needs-you` (`sessionDisplayStatus`). The sidebar and the
- * Sessions page read this one shape. The needs-input read is the project
- * shell's 30 s poll (`ProjectShell`); this only reads its cache.
+ * Sessions page read this one shape. The hook polls GET needs-input every 30 s
+ * by itself, once per project however many lists mount, so a host that mounts
+ * `ProjectSessionList` alone still sees open questions.
  */
 export function useSessionNeedsYouCounts(projectId: string): Record<string, number> {
   const { needsYouBySession } = useReviewSessionSummary(projectId);
-  const { data: needsInput } = useSessionsNeedingInput(projectId, { enabled: false });
+  const poller = useIsNeedsInputPoller(projectId);
+  const { data: needsInput } = useSessionsNeedingInput(projectId, { enabled: poller });
   return useMemo(() => withNeedsInput(needsYouBySession, needsInput), [needsYouBySession, needsInput]);
 }
