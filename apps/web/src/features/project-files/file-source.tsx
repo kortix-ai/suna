@@ -1,6 +1,11 @@
 'use client';
 
 import type { FileSource } from '@/features/file-viewer';
+import { useQueryClient } from '@tanstack/react-query';
+import { writeProjectFile } from '@kortix/sdk';
+import { fileContentKeys } from './hooks/use-file-content';
+import { useProjectCan } from '@/lib/use-project-can';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useMemo } from 'react';
 import { downloadFile, uploadFile } from './api/runtime-files';
 import { FilePathBreadcrumbs } from './components/file-breadcrumbs';
@@ -19,6 +24,8 @@ import { useBinaryBlob } from './hooks/use-binary-blob';
  */
 export function useProjectFileSource(): FileSource {
   const ctx = useProjectContext();
+  const queryClient = useQueryClient();
+  const canWrite = useProjectCan(ctx?.projectId ?? '', PROJECT_ACTIONS.PROJECT_FILE_WRITE).allowed === true;
   return useMemo<FileSource>(
     () => ({
       id: 'project-ref',
@@ -30,8 +37,17 @@ export function useProjectFileSource(): FileSource {
           ? downloadFile(ctx.projectId, ctx.ref, filePath, fileName)
           : Promise.reject(new Error('No project context for download')),
       upload: uploadFile,
+      editablePreview: canWrite,
+      save: ctx && canWrite ? async (filePath, file, revision) => {
+        if (!revision) throw new Error('Reload the file before saving.');
+        await writeProjectFile(ctx.projectId, {
+          path: filePath.replace(/^\/workspace\//, '').replace(/^\//, ''), ref: ctx.ref,
+          content: await file.text(), expected_revision: revision,
+        });
+        await queryClient.invalidateQueries({ queryKey: fileContentKeys.all });
+      } : undefined,
       Breadcrumbs: FilePathBreadcrumbs,
     }),
-    [ctx],
+    [ctx, canWrite, queryClient],
   );
 }

@@ -29,6 +29,8 @@ export function useFileContent(
     staleTime: options?.staleTime ?? 10_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
+    // A revision used for edits must remain paired with the displayed text.
+    refetchOnMount: false,
     retry: (failureCount, error: Error) => {
       const msg = error.message.toLowerCase();
       if (

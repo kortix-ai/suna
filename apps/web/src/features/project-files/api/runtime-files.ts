@@ -256,13 +256,14 @@ export async function readFile(
   // text, and the JSON content read is byte-safe for it.
   if (hasExtension && getLanguageFromExt(name) !== 'plaintext') {
     const result = await readProjectFile(projectId, relativePath, ref);
-    return { type: 'text', content: result.content };
+    return { type: 'text', content: result.content, revision: result.revision };
   }
 
   // Unknown or missing extension: the bytes decide, text or binary.
   const bytes = await readRawBytes(projectId, relativePath, ref);
   if (isTextBytes(bytes)) {
-    return { type: 'text', content: new TextDecoder().decode(bytes), mimeType: 'text/plain; charset=utf-8' };
+    const result = await readProjectFile(projectId, relativePath, ref);
+    return { type: 'text', content: result.content, revision: result.revision, mimeType: 'text/plain; charset=utf-8' };
   }
   return { type: 'binary', content: '', mimeType: 'application/octet-stream' };
 }

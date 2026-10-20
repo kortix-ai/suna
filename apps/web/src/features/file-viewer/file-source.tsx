@@ -8,6 +8,7 @@ import { createContext, useContext, type ComponentType, type ReactNode } from 'r
  * their own typed hooks without conversion.
  */
 export interface FileContent {
+  revision?: string;
   type: 'text' | 'binary';
   content: string;
   patch?: FilePatch;
@@ -87,7 +88,8 @@ export interface FileSource {
    * instead of `upload`, so a source can refuse a save over a file someone
    * changed since it was read (a conditional write) rather than clobber it.
    */
-  save?: (filePath: string, file: File) => Promise<unknown>;
+  editablePreview?: boolean;
+  save?: (filePath: string, file: File, revision?: string) => Promise<unknown>;
   /**
    * Every byte the viewer shows comes from this source, which owns the
    * authorization. Previewers that otherwise read a sandbox path themselves

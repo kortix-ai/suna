@@ -242,7 +242,7 @@ export function useFileContentState({
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const file = new File([blob], fileName, { type: 'text/plain' });
         if (source.save) {
-          await source.save(filePath, file);
+          await source.save(filePath, file, fileContent?.revision);
         } else {
           const parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
           await source.upload(file, parentPath || undefined);
@@ -270,7 +270,7 @@ export function useFileContentState({
         setIsSaving(false);
       }
     },
-    [filePath, fileName, refetch, onSaved, readOnly, source],
+    [filePath, fileName, refetch, onSaved, readOnly, source, fileContent?.revision],
   );
 
   // Discard handler — force-remounts CodeEditor so it re-initialises from fileContent.content.
