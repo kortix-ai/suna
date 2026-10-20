@@ -1,11 +1,11 @@
 'use client';
 
-import { ApplicationUserBadge } from '@/components/project-access-panel';
 import { SessionApprovals } from '@/components/workbench/approvals-panel';
 import { BootScreen } from '@/components/workbench/boot-screen';
 import { SessionHeader } from '@/components/workbench/session-header';
 import { WorkbenchTabs } from '@/components/workbench/workbench-tabs';
 import { CitationLayer } from '@/components/chat/citation-layer';
+import '@/components/chat/lumen-tool-row';
 import type { Id } from '@convex/_generated/dataModel';
 import { useSession } from '@kortix/sdk/react';
 
@@ -20,16 +20,11 @@ export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId:
   return (
     <>
       <SessionHeader projectId={projectId} sessionId={sessionId} runtimeReady={session.phase === 'ready'} />
-      {/* Who this browser is acting as, above the conversation rather than in a
-          settings page: every Lumen member calls Kortix as the same operator
-          user, so this is the only thing separating this session from
-          another signed-in person's. */}
-      <ApplicationUserBadge projectId={projectId} />
       {/* A `require_approval` gate ends the agent's turn and nothing says so in
           the transcript — the session just goes quiet. Poll for it here, where
-          the person who can decide is already looking. Rendered before the boot
-          check on purpose: a gate raised earlier is still pending while the
-          runtime is coming back up. */}
+          the person who can decide is already looking; the strip shows only
+          when something waits. Rendered before the boot check on purpose: a
+          gate raised earlier is still pending while the runtime is coming back up. */}
       <SessionApprovals
         projectId={projectId}
         sessionId={sessionId}

@@ -2,7 +2,6 @@
 
 import { CallSnippet } from '@/components/dev/call-snippet';
 import { useMatter } from '@/components/access';
-import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, ModalTitle } from '@kortix/ui/modal';
@@ -46,8 +45,7 @@ export function SessionHeader({
     retry: false,
   });
   const title =
-    session.data?.name || session.data?.custom_name || session.data?.branch_name || 'Session';
-  const status = session.data?.status;
+    session.data?.name || session.data?.custom_name || session.data?.branch_name || 'Conversation';
 
   // Runtime liveness probe (GET /kortix/health) for the header dot.
   const health = useQuery({
@@ -65,16 +63,12 @@ export function SessionHeader({
           'size-2 shrink-0 rounded-full',
           ready ? 'bg-kortix-green' : health.data ? 'bg-kortix-orange' : 'bg-muted-foreground/40',
         )}
-        title={ready ? 'Runtime healthy' : 'Runtime warming up'}
+        title={ready ? 'Workspace ready' : 'Starting the workspace'}
+        aria-label={ready ? 'Workspace ready' : 'Starting the workspace'}
       />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{title}</div>
       </div>
-      {status && (
-        <Badge variant="secondary" className="capitalize">
-          {status}
-        </Badge>
-      )}
       <SessionActions projectId={projectId} sessionId={sessionId} currentName={title} />
     </header>
   );

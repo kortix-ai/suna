@@ -26,7 +26,7 @@ export default function BillingPage() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <section className="grid grid-cols-3 divide-x divide-border rounded-xl border border-border bg-card">
+      <section className="grid divide-y divide-border rounded-xl border border-border bg-card sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <div className="p-5">
           <p className="text-xs text-muted-foreground">Plan</p>
           <p className="mt-1 font-display text-2xl">{PLAN_LABEL[s.plan]}</p>

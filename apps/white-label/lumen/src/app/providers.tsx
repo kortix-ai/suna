@@ -1,6 +1,7 @@
 'use client';
 
 import { setUiRoutes, UiProvider, type UiHostConfig, type UiNavigation } from '@kortix/ui';
+import { defaultUiMessages, type UiI18nHost } from '@kortix/ui/i18n';
 import { IconProvider } from '@kortix/ui/icon-provider';
 import { TooltipProvider } from '@kortix/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -48,6 +49,26 @@ setUiRoutes({
 // the proxy refuses with 403. With it on, the UI asks the permission probes,
 // the proxy answers them itself with "denied" (`localAnswer`), and the UI
 // hides those controls and sends none of those reads.
+// @kortix/ui's composer hints speak of projects, agents and files. Lumen's speak of matters and documents.
+const i18n: UiI18nHost = {
+  messages: {
+    ...defaultUiMessages,
+    threads: {
+      ...defaultUiMessages.threads,
+      hintSkills: 'Ask about a clause, a party or a date',
+      hintMentions: 'Name a document to focus the answer on it',
+      hintWorkspaceFile: 'Ask about any document in this matter',
+      hintSwitchAgents: 'Ask for a short answer with citations',
+      hintAttachFiles: 'Add documents to the vault to include them',
+      hintChanged: 'Ask which agreements depart from your playbook',
+      hintCompact: 'Ask for a one-paragraph summary',
+      startingSession: 'Starting a secure workspace…',
+      sessionStarted: 'Conversation started',
+      failedToStartSession: 'Could not start the conversation',
+    },
+  },
+};
+
 const config: Partial<UiHostConfig> = {
   cliConnectEnabled: false,
   publicSharesEnabled: false,
@@ -93,6 +114,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           link={NextLink}
           navigation={navigation}
           config={config}
+          i18n={i18n}
           useBrand={useLumenBrand}
           resolvePreviewUrl={resolveLumenPreviewUrl}
         >

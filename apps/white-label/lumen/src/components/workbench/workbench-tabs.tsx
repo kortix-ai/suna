@@ -22,7 +22,7 @@ export function WorkbenchTabs({
   sessionId: string;
   chatOnly?: boolean;
 }) {
-  if (chatOnly) return <Thread session={session} />;
+  if (chatOnly) return <Thread session={session} lawyer />;
   return (
     <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col gap-0">
       <div className="px-5 pt-3.5">
@@ -74,18 +74,19 @@ export function WorkbenchTabs({
  * connected runtime drops (`useRuntimeRecovery`). No second chat hook and no
  * transport code.
  */
-function Thread({ session }: { session: UseSessionResult }) {
+function Thread({ session, lawyer = false }: { session: UseSessionResult; lawyer?: boolean }) {
   useRuntimeRecovery(session);
   return (
     <>
       <SessionThread session={session} hideHeader className="flex-1" />
-      <div className="mx-auto w-full max-w-3xl shrink-0 px-5 pb-3">
+      {/* The scope chips (agent, secrets, connections) are operator detail: Agent activity only. */}
+      {!lawyer && <div className="mx-auto w-full max-w-3xl shrink-0 px-5 pb-3">
         <ScopeBar
           projectId={session.projectId}
           sessionId={session.sessionId}
           pickedModel={session.picks.model}
         />
-      </div>
+      </div>}
     </>
   );
 }

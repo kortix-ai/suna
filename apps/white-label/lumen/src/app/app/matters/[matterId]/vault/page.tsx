@@ -17,7 +17,7 @@ import { errorToast, successToast } from '@kortix/ui/toast';
 import { FileDocIcon, FilePdfIcon, FileTextIcon, MagnifyingGlassIcon, TableIcon, TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'next/navigation';
-import { useDeferredValue, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 
 const ACCEPT = '.pdf,.docx,.txt';
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -47,6 +47,12 @@ export default function VaultPage() {
   const input = useRef<HTMLInputElement>(null);
   const removeDoc = useMutation(api.documents.remove);
   const [open, setOpen] = useState<{ id: string; focus?: DocFocus } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(null);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
   const [q, setQ] = useState('');
   const term = useDeferredValue(q.trim());
   const hits = useQuery(api.documents.search, term.length >= 2 ? { matterId: matter._id, q: term } : 'skip');
@@ -100,8 +106,8 @@ export default function VaultPage() {
   return (
     <div className="flex min-h-0 flex-1">
       <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-5xl space-y-4 px-6 py-6">
-          <div className="flex items-center justify-between gap-3">
+        <div className="mx-auto w-full max-w-5xl space-y-4 px-4 py-6 sm:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-medium">Documents</h2>
               <p className="text-xs text-muted-foreground">
@@ -219,10 +225,10 @@ export default function VaultPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead className="w-24 text-right">Pages</TableHead>
-                    <TableHead className="w-24 text-right">Size</TableHead>
-                    <TableHead className="w-28">Added</TableHead>
-                    <TableHead className="w-44">Status</TableHead>
+                    <TableHead className="hidden w-24 text-right sm:table-cell">Pages</TableHead>
+                    <TableHead className="hidden w-24 text-right sm:table-cell">Size</TableHead>
+                    <TableHead className="hidden w-28 md:table-cell">Added</TableHead>
+                    <TableHead className="w-28 sm:w-44">Status</TableHead>
                     <TableHead className="w-10" />
                   </TableRow>
                 </TableHeader>
@@ -230,9 +236,9 @@ export default function VaultPage() {
                   {Object.entries(uploading).map(([name, p]) => (
                     <TableRow key={`up-${name}`}>
                       <TableCell className="font-medium">{name}</TableCell>
-                      <TableCell />
-                      <TableCell />
-                      <TableCell />
+                      <TableCell className="hidden sm:table-cell" />
+                      <TableCell className="hidden sm:table-cell" />
+                      <TableCell className="hidden md:table-cell" />
                       <TableCell>
                         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <Loading className="size-3.5" /> {p < 1 ? 'Uploading…' : 'Extracting…'}
@@ -257,9 +263,9 @@ export default function VaultPage() {
                             <span className="truncate font-medium">{d.filename}</span>
                           </span>
                         </TableCell>
-                        <TableCell className="text-right font-mono text-xs tabular-nums">{d.pages ?? '—'}</TableCell>
-                        <TableCell className="text-right font-mono text-xs tabular-nums text-muted-foreground">{kb(d.bytes)}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="hidden text-right font-mono text-xs tabular-nums sm:table-cell">{d.pages ?? '—'}</TableCell>
+                        <TableCell className="hidden text-right font-mono text-xs tabular-nums text-muted-foreground sm:table-cell">{kb(d.bytes)}</TableCell>
+                        <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
                           {relativeTime(new Date(d._creationTime).toISOString())}
                         </TableCell>
                         <TableCell>
@@ -307,7 +313,7 @@ export default function VaultPage() {
         onConfirm={remove}
       />
       {open && (
-        <div className="hidden w-[46%] max-w-2xl shrink-0 lg:block">
+        <div className="fixed inset-0 z-40 bg-background lg:static lg:z-auto lg:w-[46%] lg:max-w-2xl lg:shrink-0">
           <DocumentPanel documentId={open.id} focus={open.focus} onClose={() => setOpen(null)} />
         </div>
       )}

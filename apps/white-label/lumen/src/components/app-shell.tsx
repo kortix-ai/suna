@@ -26,12 +26,15 @@ import {
   DropdownMenuTrigger,
 } from '@kortix/ui/dropdown-menu';
 import { Kbd } from '@kortix/ui/kbd';
+import { Sheet, SheetContent, SheetTitle } from '@kortix/ui/sheet';
 import Loading from '@kortix/ui/loading';
 import {
   BriefcaseIcon,
   CaretUpDownIcon,
   CheckIcon,
+  ClockCounterClockwiseIcon,
   GearSixIcon,
+  ListIcon,
   BooksIcon,
   HouseIcon,
   MagnifyingGlassIcon,
@@ -51,6 +54,7 @@ const NAV = [
   { href: '/app', label: 'Home', icon: HouseIcon, exact: true },
   { href: '/app/matters', label: 'Matters', icon: BriefcaseIcon },
   { href: '/app/library', label: 'Library', icon: BooksIcon },
+  { href: '/app/history', label: 'History', icon: ClockCounterClockwiseIcon },
 ] as const;
 
 /** The signed-in app: sidebar, the provisioning banner, the command palette. */
@@ -90,56 +94,87 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const active = (href: string, exact?: boolean) => (exact ? path === href : path === href || path.startsWith(`${href}/`));
+  const [menu, setMenu] = useState(false);
+  useEffect(() => setMenu(false), [path]);
+
+  const body = (c: boolean, onToggle?: () => void) => (
+    <>
+      <div className={cn('flex items-center gap-1 px-2 pt-3 pb-2', c && 'flex-col')}>
+        <FirmSwitcher firm={firm} collapsed={c} />
+        {onToggle && (
+          <Button variant="ghost" size="icon" className="size-8 shrink-0" aria-label={c ? 'Expand sidebar' : 'Collapse sidebar'} onClick={onToggle}>
+            <SidebarSimpleIcon className="size-4" />
+          </Button>
+        )}
+      </div>
+
+      <Button
+        variant="ghost"
+        type="button"
+        onClick={() => {
+          setMenu(false);
+          setPalette(true);
+        }}
+        className={cn(
+          'mx-2 mb-2 flex h-8 items-center justify-start gap-2 rounded-md border border-sidebar-border bg-background/60 px-2 text-sm font-normal text-muted-foreground transition-colors hover:text-foreground',
+          c && 'justify-center px-0',
+        )}
+        aria-label="Search"
+      >
+        <MagnifyingGlassIcon className="size-4 shrink-0" />
+        {!c && (
+          <>
+            <span className="flex-1 text-left">Search</span>
+            <Kbd className="hidden md:inline-flex">⌘K</Kbd>
+          </>
+        )}
+      </Button>
+
+      <nav className="flex flex-col gap-0.5 px-2" aria-label="Main">
+        {NAV.map((n) => (
+          <NavLink key={n.href} href={n.href} label={n.label} icon={n.icon} active={active(n.href, 'exact' in n)} collapsed={c} />
+        ))}
+      </nav>
+
+      <div className="flex-1" />
+
+      <nav className="flex flex-col gap-0.5 px-2 pb-2" aria-label="Firm">
+        <NavLink href="/app/settings" label="Settings" icon={GearSixIcon} active={active('/app/settings')} collapsed={c} />
+      </nav>
+      <UserMenu collapsed={c} />
+    </>
+  );
 
   return (
-    <div className="flex h-dvh bg-background">
+    <div className="flex h-dvh flex-col bg-background md:flex-row">
       <aside
         className={cn(
-          'flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 motion-reduce:transition-none',
+          'hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 motion-reduce:transition-none md:flex',
           collapsed ? 'w-14' : 'w-60',
         )}
       >
-        <div className={cn('flex items-center gap-1 px-2 pt-3 pb-2', collapsed && 'flex-col')}>
-          <FirmSwitcher firm={firm} collapsed={collapsed} />
-          <Button variant="ghost" size="icon" className="size-8 shrink-0" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={toggle}>
-            <SidebarSimpleIcon className="size-4" />
-          </Button>
-        </div>
-
-        <Button
-          variant="ghost"
-          type="button"
-          onClick={() => setPalette(true)}
-          className={cn(
-            'mx-2 mb-2 flex h-8 items-center justify-start gap-2 rounded-md border border-sidebar-border bg-background/60 px-2 text-sm font-normal text-muted-foreground transition-colors hover:text-foreground',
-            collapsed && 'justify-center px-0',
-          )}
-          aria-label="Search"
-        >
-          <MagnifyingGlassIcon className="size-4 shrink-0" />
-          {!collapsed && (
-            <>
-              <span className="flex-1 text-left">Search</span>
-              <Kbd>⌘K</Kbd>
-            </>
-          )}
-        </Button>
-
-        <nav className="flex flex-col gap-0.5 px-2" aria-label="Main">
-          {NAV.map((n) => (
-            <NavLink key={n.href} href={n.href} label={n.label} icon={n.icon} active={active(n.href, 'exact' in n)} collapsed={collapsed} />
-          ))}
-        </nav>
-
-        <div className="flex-1" />
-
-        <nav className="flex flex-col gap-0.5 px-2 pb-2" aria-label="Firm">
-          <NavLink href="/app/settings" label="Settings" icon={GearSixIcon} active={active('/app/settings')} collapsed={collapsed} />
-        </nav>
-        <UserMenu collapsed={collapsed} />
+        {body(collapsed, toggle)}
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+      {/* Below md the sidebar is a sheet behind a top bar. */}
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-sidebar-border bg-sidebar px-2 md:hidden">
+        <Button variant="ghost" size="icon" className="size-9" aria-label="Open menu" onClick={() => setMenu(true)}>
+          <ListIcon className="size-5" />
+        </Button>
+        <FirmLogo firm={firm} className="size-6" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{firm.name}</span>
+        <Button variant="ghost" size="icon" className="size-9" aria-label="Search" onClick={() => setPalette(true)}>
+          <MagnifyingGlassIcon className="size-5" />
+        </Button>
+      </header>
+      <Sheet open={menu} onOpenChange={setMenu}>
+        <SheetContent side="left" showCloseButton={false} className="w-72 max-w-[85vw] gap-0 p-0">
+          <SheetTitle className="sr-only">Menu</SheetTitle>
+          {body(false)}
+        </SheetContent>
+      </Sheet>
+
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
         <ProvisioningBanner firm={firm} />
         {children}
       </main>
@@ -318,6 +353,9 @@ function Palette({ open, onOpenChange, firm }: { open: boolean; onOpenChange: (o
           </CommandItem>
           <CommandItem onSelect={() => go('/app/matters')}>
             <BriefcaseIcon className="size-4" /> All matters
+          </CommandItem>
+          <CommandItem onSelect={() => go('/app/history')}>
+            <ClockCounterClockwiseIcon className="size-4" /> History
           </CommandItem>
           <CommandItem onSelect={() => go('/app/settings/members')}>
             <GearSixIcon className="size-4" /> Members and invitations

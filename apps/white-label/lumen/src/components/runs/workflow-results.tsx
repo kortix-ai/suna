@@ -208,12 +208,16 @@ export function ReportView({ view, matterId }: { view: RunView; matterId: Id<'ma
           <tbody className="divide-y divide-border">
             {flags.map((f, i) => (
               <tr key={i} className="align-top" data-testid="red-flag">
-                <td className="w-24 px-5 py-3"><SeverityBadge severity={f.severity} /></td>
-                <td className="px-2 py-3">
+                <td className="w-20 py-3 pr-2 pl-4 sm:w-24 sm:pl-5"><SeverityBadge severity={f.severity} /></td>
+                <td className="py-3 pr-4 pl-2 sm:pr-2">
                   <p className="font-medium">{f.title}</p>
                   {f.citations[0] && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">“{f.citations[0].quote}”</p>}
+                  <p className="mt-1 text-xs text-muted-foreground sm:hidden">
+                    {f.filename}
+                    {f.citations[0] && <span className="ml-1 font-mono">p. {f.citations[0].page}</span>}
+                  </p>
                 </td>
-                <td className="px-5 py-3 text-right text-xs text-muted-foreground">
+                <td className="hidden px-5 py-3 text-right text-xs text-muted-foreground sm:table-cell">
                   {f.filename}
                   {f.citations[0] && <span className="ml-1 font-mono">p. {f.citations[0].page}</span>}
                   {f.citations.every((c) => c.status === 'unverified') && <span className="block">Citation not found</span>}

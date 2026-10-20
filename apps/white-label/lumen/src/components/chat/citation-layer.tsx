@@ -21,6 +21,12 @@ export function CitationLayer({ matterId, children }: { matterId: Id<'matters'>;
   const ref = useRef<HTMLDivElement>(null);
   const [cites, setCites] = useState<Cite[]>([]);
   const [active, setActive] = useState<{ cite: Cite; n: number } | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setActive(null);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active]);
   const resolved = useQuery(api.citations.resolve, cites.length ? { matterId, cites } : 'skip');
   const status = useRef(new Map<string, string>());
 
@@ -89,7 +95,7 @@ export function CitationLayer({ matterId, children }: { matterId: Id<'matters'>;
         <aside
           aria-label="Source"
           data-testid="source-panel"
-          className="flex w-[44%] max-w-xl shrink-0 flex-col border-l border-border bg-background"
+          className="fixed inset-0 z-40 flex flex-col bg-background lg:static lg:z-auto lg:w-[44%] lg:max-w-xl lg:shrink-0 lg:border-l lg:border-border"
         >
           <div className="flex items-center justify-between px-4 pt-3">
             <h2 className="text-sm font-medium">Source</h2>

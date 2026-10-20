@@ -257,7 +257,7 @@ export default function ReviewPage() {
   const [adding, setAdding] = useState(false);
   const base = `/app/matters/${matter._id}`;
 
-  if (view === undefined) return <div className="mx-auto w-full max-w-6xl space-y-3 px-6 py-6">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-9 w-full" />)}</div>;
+  if (view === undefined) return <div className="mx-auto w-full max-w-6xl space-y-3 px-4 py-6 sm:px-6">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-9 w-full" />)}</div>;
   if (view === null) return <Notice icon={TableIcon} title="Review not found" body="It may belong to another matter." href={`${base}/reviews`} cta="Back to reviews" />;
 
   const live = view.runs.find((r) => isActive(r.status as never));
@@ -275,7 +275,7 @@ export default function ReviewPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[90rem] space-y-4 px-6 py-6">
+    <div className="mx-auto w-full max-w-[90rem] space-y-4 px-4 py-6 sm:px-6">
       <div className="flex flex-wrap items-center gap-3">
         <Link href={`${base}/reviews`} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <CaretLeftIcon className="size-3" /> Reviews

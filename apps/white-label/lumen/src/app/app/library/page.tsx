@@ -70,7 +70,7 @@ export default function LibraryPage() {
 
   const group = (k: Kind) => items?.filter((i) => i.kind === k) ?? [];
   return (
-    <div className="mx-auto grid w-full max-w-6xl gap-5 px-6 py-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
+    <div className="mx-auto grid w-full max-w-6xl gap-5 px-4 py-6 sm:px-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
       <aside className="space-y-5">
         <div>
           <h1 className="font-display text-2xl tracking-tight">Library</h1>
@@ -118,7 +118,7 @@ export default function LibraryPage() {
           <Tabs defaultValue={admin ? 'edit' : 'preview'} key={String(selected)}>
             <header className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3">
               {admin ? (
-                <Input aria-label="Name" value={name} onChange={(e) => setName(e.target.value)} className="h-8 w-72 min-w-0 font-medium" />
+                <Input aria-label="Name" value={name} onChange={(e) => setName(e.target.value)} className="h-8 w-full min-w-0 font-medium sm:w-72" />
               ) : (
                 <h2 className="text-sm font-medium">{name}</h2>
               )}

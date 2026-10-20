@@ -46,7 +46,7 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="shrink-0 border-b border-border px-6 pt-4">
+      <header className="shrink-0 border-b border-border px-4 pt-4 sm:px-6">
         <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Link href="/app/matters" className="hover:text-foreground">
             Matters
@@ -54,8 +54,8 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
           <CaretRightIcon className="size-3" />
           <span className="truncate text-foreground">{matter.name}</span>
         </nav>
-        <div className="mt-1.5 flex items-center gap-3">
-          <h1 className="truncate font-display text-2xl tracking-tight">{matter.name}</h1>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h1 className="min-w-0 truncate font-display text-2xl tracking-tight">{matter.name}</h1>
           {matter.number && <span className="font-mono text-xs text-muted-foreground">{matter.number}</span>}
           {matter.visibility === 'restricted' && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -84,7 +84,7 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
           </DropdownMenu>
         </div>
         {matter.client && <p className="mt-0.5 text-sm text-muted-foreground">{matter.client}</p>}
-        <nav aria-label="Matter" className="mt-3 flex gap-4">
+        <nav aria-label="Matter" className="scrollbar-none -mx-4 mt-3 flex gap-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
           {TABS.map((t) => {
             const href = `${base}${t.seg}`;
             // A run's detail page belongs to History.
@@ -95,7 +95,7 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
                 href={href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  '-mb-px border-b-2 pb-2 text-sm transition-colors',
+                  '-mb-px shrink-0 border-b-2 pb-2 text-sm transition-colors',
                   active ? 'border-brand font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
                 )}
               >

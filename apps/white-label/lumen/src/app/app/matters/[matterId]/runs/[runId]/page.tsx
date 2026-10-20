@@ -204,12 +204,12 @@ export default function RunPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const base = `/app/matters/${matter._id}`;
 
-  if (view === undefined) return <div className="mx-auto w-full max-w-6xl space-y-3 px-6 py-6">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-9 w-full" />)}</div>;
+  if (view === undefined) return <div className="mx-auto w-full max-w-6xl space-y-3 px-4 py-6 sm:px-6">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-9 w-full" />)}</div>;
   if (view === null) return <Notice icon={FileMagnifyingGlassIcon} title="Run not found" body="It may belong to another matter." href={`${base}/history`} cta="Back to history" />;
   const { run } = view;
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 px-6 py-6">
+    <div className="mx-auto w-full max-w-6xl space-y-4 px-4 py-6 sm:px-6">
       <div className="flex flex-wrap items-center gap-3">
         <Link href={`${base}/history`} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <CaretLeftIcon className="size-3" /> History

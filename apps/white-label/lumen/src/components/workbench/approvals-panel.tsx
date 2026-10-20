@@ -21,7 +21,6 @@
 
 import Loading from '@kortix/ui/loading';
 
-import { CallSnippet } from '@/components/dev/call-snippet';
 import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
 import {
@@ -34,7 +33,7 @@ import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { cn } from '@kortix/ui';
-import { CheckIcon, ShieldCheckIcon, ShieldWarningIcon, XIcon } from '@phosphor-icons/react';
+import { CheckIcon, ShieldWarningIcon, XIcon } from '@phosphor-icons/react';
 
 /** Query key kept local: `lib/query-keys.ts` is shared by every panel and this
  *  is the only reader of the session audit. */
@@ -96,12 +95,7 @@ export function SessionApprovals({
     );
   }
   if (audit.isLoading) {
-    return (
-      <Strip>
-        <Loading className="size-3.5" />
-        Checking for anything waiting on a human…
-      </Strip>
-    );
+    return null;
   }
 
   const view = sessionApprovalsView(audit.data);
@@ -115,21 +109,8 @@ export function SessionApprovals({
     );
   }
 
-  if (view.pending.length === 0) {
-    return (
-      <Strip>
-        <ShieldCheckIcon className="size-3.5 shrink-0" />
-        <span>
-          Nothing is waiting on a human decision.
-          {view.trailLimited
-            ? ' Only pending approvals are shown here.'
-            : view.recent.length > 0
-              ? ` ${view.recent.length} governed action${view.recent.length === 1 ? '' : 's'} so far, most recently ${view.recent[0]!.action}.`
-              : ''}
-        </span>
-      </Strip>
-    );
-  }
+  // Nothing waits on a decision: no strip.
+  if (view.pending.length === 0) return null;
 
   return (
     <div className="shrink-0 border-b border-border bg-kortix-orange/15 px-5 py-3">
@@ -185,13 +166,6 @@ export function SessionApprovals({
             </div>
           );
         })}
-
-        {/* The decision these buttons send, on the execution id that is
-            actually waiting. */}
-        <CallSnippet
-          id="approval.resolve"
-          context={{ projectId, executionId: view.pending[0]?.executionId }}
-        />
 
         {failure && (
           <div
