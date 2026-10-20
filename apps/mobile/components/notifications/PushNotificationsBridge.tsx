@@ -34,6 +34,7 @@ import {
   notificationOpenMove,
   parsePushData,
   PREFERENCE_SYNC_DEBOUNCE_MS,
+  pushFromOtherBackend,
   shouldPresentInForeground,
 } from '@/lib/notifications/push';
 import {
@@ -76,7 +77,11 @@ function handleResponse(
   const id = response.notification.request.identifier;
   if (handledResponses.has(id)) return;
   handledResponses.add(id);
-  const data = parsePushData(response.notification.request.content.data);
+  const raw = response.notification.request.content.data;
+  // A release build ignores a push from another backend (KRTX-2938). A local
+  // build's API_URL is a LAN host, never the stack's public KORTIX_URL.
+  if (pushFromOtherBackend(raw, API_URL) && !__DEV__) return;
+  const data = parsePushData(raw);
   if (!data) return;
   if (data.notificationId) markRead([data.notificationId], queryClient);
   usePushStore.getState().requestOpen(data.projectId, data.sessionId);

@@ -3,7 +3,7 @@
 import { ArrowSquareOutIcon, CheckIcon, CopyIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   Modal,
   ModalBody,
@@ -12,8 +12,8 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { useCopy } from '@/hooks/use-copy';
+} from '@kortix/ui/modal';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
 import { getEnv } from '@/lib/env-config';
 

@@ -1,4 +1,4 @@
-import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
+import { ReviewView } from '@kortix/ui/customize/sections/view/review-view';
 
 /**
  * /projects/[id]/customize/review — the Review Center, a Customize tab

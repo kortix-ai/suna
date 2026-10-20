@@ -1,0 +1,547 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  OWN_SCROLL_MS,
+  chevronVisible,
+  isAtEnd,
+  keyScrollIntentFor,
+  pickAnchorIndex,
+  prefersReducedMotion,
+  roomUnderNewestTurn,
+  settleMotion,
+  shouldReleaseFollow,
+} from './use-auto-scroll-physics';
+
+export {
+  AT_END_PX,
+  BOTTOM_GAP_PX,
+  CHEVRON_PX,
+  GLIDE_MIN_PX,
+  OWN_SCROLL_MS,
+  TURN_TOP_OFFSET,
+  chevronVisible,
+  classifyScrollKey,
+  isAtEnd,
+  isEditableTarget,
+  isSpaceActivatedTarget,
+  keyScrollIntentFor,
+  pickAnchorIndex,
+  roomUnderNewestTurn,
+  settleMotion,
+  shouldReleaseFollow,
+} from './use-auto-scroll-physics';
+export type { ScrollKeyIntent, SettleMotion } from './use-auto-scroll-physics';
+
+/**
+ * useAutoScroll — the session transcript's scroll physics, from first
+ * principles. Two facts and one rule; nothing else.
+ *
+ * FACT 1 — the room. Under the newest turn there is always exactly
+ *
+ *     spacer = max(BOTTOM_GAP_PX, viewportH − newestTurnH − TURN_TOP_OFFSET)
+ *
+ * of empty space (`spacerElRef`). It is a property of "the newest turn can sit
+ * at the top of the screen" — not of "a turn is running" — so it is the same
+ * while streaming and when idle, and NOTHING moves when an answer finishes.
+ * (Claude.ai.) Recomputed on every content change and viewport resize.
+ *
+ * FACT 2 — the end. Because of that room, `scrollHeight − clientHeight` IS the
+ * newest turn at TURN_TOP_OFFSET while the answer still fits in the room, and
+ * the bottom of the answer once it has outgrown it. One position covers both
+ * of the old "phases": there is no anchor-vs-follow logic here.
+ *
+ * THE RULE — follow. `follow` is true when the reader is at the end. While it
+ * is true, every layout change (content grew, spacer changed, viewport
+ * resized) puts the viewport back at the end, synchronously in the observer
+ * callback — so a streaming answer keeps its tail in view, and a transient
+ * block that collapses and re-expands the room cannot leave the turn stranded
+ * mid-screen (the re-expansion is just another layout change).
+ * `follow` becomes false on READER intent — a wheel/touch/keyboard scroll up,
+ * or a scrollbar drag that leaves the end — and true again when the reader
+ * comes back to the end (drag, wheel, chevron, End key) or sends. Intent is
+ * read from the INPUT event, and keys are read on `document`: the transcript
+ * is not focusable, so a key that scrolls it is never delivered to it.
+ * Nothing here reads "is the session working": if the reader is at the end and
+ * something appears, they see it.
+ *
+ * It also becomes false for a scroll AWAY from the end that this hook did not
+ * make and that no layout change explains — `shouldReleaseFollow`. The rule is
+ * "never fight a scroll we did not make": find-in-page, `scrollIntoView`, the
+ * minimap and a test driver all move the viewport without an input event, and
+ * following through one of those puts the reader straight back at the end
+ * ~16ms later. That is what "I scroll up and it throws me back down" is when
+ * no wheel was involved (measured: `scrollTop = 0` on a 12,976px transcript
+ * was undone to 12,256px within one frame). Our own writes are tagged, and a
+ * scroll whose `scrollHeight`/`clientHeight` changed in the same breath is a
+ * CLAMP, never intent — that distinction is why this cannot resurrect the old
+ * "a composer resize killed follow" bug.
+ *
+ * THE MOTION — one per change. A send, and the agent reaching a queued prompt,
+ * move the viewport by a whole turn; that move is ONE glide (`settleMotion`),
+ * and nothing else may add a second one:
+ *  - a send does not jump to the OLD end first — it arms the glide and lets
+ *    the commit's own settle carry the viewport from wherever it is;
+ *  - a glide whose end moves in flight is re-aimed, never cut short by a
+ *    `scrollTop` write when a timer fires;
+ *  - the anchor a turn was REACHED on never falls back to an older turn while
+ *    it is still in the transcript (`pickAnchorIndex`) — a one-frame pending
+ *    flip on the fresh send used to collapse the room (a clamp, i.e. a sudden
+ *    jump down) and then glide back up: the reported double jump on send.
+ * Reduced motion makes every glide an instant move.
+ *
+ * Direct DOM writes only (`spacer.style.height`, `el.scrollTop`) — never React
+ * state on the hot path. The one piece of state is the chevron.
+ */
+
+/** A glide has landed once its scroll events stop for this long. Measured from
+ *  the glide's own events, never from its start: a heavy commit right after a
+ *  send can hold the first frame back well past any fixed window, and a timer
+ *  that ended the glide early wrote `scrollTop` over the browser's animation. */
+const GLIDE_QUIET_MS = 120;
+/** The hard stop for a glide that never reports landing (a stream re-aiming it
+ *  every frame). Past it, instant follow resumes. */
+const GLIDE_MAX_MS = 1200;
+/** How long a send's armed glide waits for the commit that carries its turn. */
+const SEND_GLIDE_ARM_MS = 1000;
+
+interface UseAutoScrollOptions {
+  /** True once the scroll area is mounted with content — the refs are null
+   *  until then (the area is conditionally rendered), so the observers and
+   *  listeners attach on this edge. */
+  hasContent?: boolean;
+}
+
+interface UseAutoScrollReturn {
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  contentRef: React.RefObject<HTMLDivElement | null>;
+  spacerElRef: React.RefObject<HTMLDivElement | null>;
+  showScrollButton: boolean;
+  /** Go to the end now (instant) and follow from here. */
+  scrollToBottom: () => void;
+  /** The chevron: glide to the end and follow from here. */
+  smoothScrollToAbsoluteBottom: () => void;
+  /**
+   * A send. Follow from here and arm ONE glide: the commit that carries the
+   * new turn moves the viewport from wherever it is to that turn at the top of
+   * the screen (FACT 2). No jump to the old end first — that was the first of
+   * two motions for a reader who was not exactly at the end.
+   */
+  anchorTurn: (turnId: string) => void;
+  /** Open at the TOP and stay there (a sub-session viewed from its start):
+   *  turns follow off until the reader comes to the end themselves. */
+  startAtTop: () => void;
+}
+
+function distanceFromEnd(el: HTMLElement): number {
+  return el.scrollHeight - el.scrollTop - el.clientHeight;
+}
+
+interface Glide {
+  target: number;
+  quiet: number;
+  cap: number;
+}
+
+export function useAutoScroll({
+  hasContent = false,
+}: UseAutoScrollOptions = {}): UseAutoScrollReturn {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const spacerElRef = useRef<HTMLDivElement>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
+  /** THE RULE's one bit. Starts true: a session opens at its end. */
+  const followRef = useRef(true);
+  /** The anchor turn `sizeRoom` last measured against — the ELEMENT, so a
+   *  re-minted echo id (same node, new `data-turn-id`) is not a new anchor —
+   *  and whether it was a reached turn (`pickAnchorIndex`). */
+  const lastAnchorRef = useRef<{ el: HTMLElement; reached: boolean } | null>(null);
+  /** The glide in flight, or null. While set, settles re-aim it or wait. */
+  const glideRef = useRef<Glide | null>(null);
+  /** Until when the next whole-turn move glides because the reader SENT. */
+  const sendGlideUntilRef = useRef(0);
+  /** Until when a `scroll` event is OUR OWN write rather than something that
+   *  moved the viewport out from under us (`shouldReleaseFollow`). A window,
+   *  not a boolean: a `scrollTop` write is delivered as an event on a LATER
+   *  frame, and a smooth glide keeps emitting them for its whole duration. */
+  const ownScrollUntilRef = useRef(0);
+  const markOwnScroll = useCallback((ms: number) => {
+    ownScrollUntilRef.current = Math.max(ownScrollUntilRef.current, performance.now() + ms);
+  }, []);
+
+  /** The one bit, with its reason, mirrored onto the scroll element as
+   *  `data-follow` / `data-follow-why` — readable by e2e assertions and by a
+   *  human in devtools, so "why did it stop following?" is never a guess. */
+  const setFollow = useCallback((next: boolean, why: string) => {
+    followRef.current = next;
+    const el = scrollRef.current;
+    if (el) {
+      el.dataset.follow = String(next);
+      el.dataset.followWhy = why;
+    }
+  }, []);
+
+  /**
+   * FACT 1: size the room. The ANCHOR turn is the newest turn the agent has
+   * reached, never a compaction or a continuation — a prompt queued mid-turn (`data-turn-pending`, dimmed) is not
+   * it: anchoring on the queued bubble would shift the answer that is still
+   * streaming above it out of view. The room is measured from the anchor
+   * turn's top to the end of the content, so queued bubbles under it simply
+   * take some of that room; the moment the agent reaches one (its pending
+   * mark drops) it becomes the anchor and the viewport shifts to it.
+   */
+  const sizeRoom = useCallback((): { room: number; anchorChanged: boolean } => {
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    const spacer = spacerElRef.current;
+    if (!el || !content || !spacer) return { room: 0, anchorChanged: false };
+    // A compaction and the work after it continue the turn above (`data-turn-continues`): the
+    // anchor stays that turn's, so a running compaction is not a marker alone on a blank page.
+    const prompts = content.querySelectorAll<HTMLElement>('[data-turn-id]:not([data-turn-continues])');
+    const turns = prompts.length ? prompts : content.querySelectorAll<HTMLElement>('[data-turn-id]');
+    const isPending = (i: number) => turns[i].querySelector('[data-turn-pending]') !== null;
+    const previous = lastAnchorRef.current;
+    // The first prompt's stand-in (`OptimisticTurn`) stays above server turn 0
+    // until the hand-off. Anchoring turn 0 pushed the bubble the reader just
+    // sent off the top, and the view glided back when the stand-in left
+    // (KRTX-2931). While it exists it is the anchor; turn 0 then takes its place.
+    const standIn = content.querySelector('[data-turn-id="optimistic"]');
+    const standInIndex = standIn ? Array.prototype.indexOf.call(turns, standIn) : -1;
+    const index =
+      standInIndex >= 0
+        ? standInIndex
+        : pickAnchorIndex(
+            turns.length,
+            isPending,
+            previous
+              ? { index: Array.prototype.indexOf.call(turns, previous.el), reached: previous.reached }
+              : null,
+          );
+    const anchor = index >= 0 ? turns[index] : null;
+    // The end of the CONTENT is the spacer's own top edge — the spacer lives
+    // inside the content box, so measuring to the box's bottom would include
+    // the room itself and feed back (room grows → span grows → room shrinks →
+    // …, a 400px oscillation every 100ms, observed).
+    const span = anchor
+      ? spacer.getBoundingClientRect().top - anchor.getBoundingClientRect().top
+      : null;
+    const h = roomUnderNewestTurn(el.clientHeight, span);
+    if (spacer.style.height !== `${h}px`) spacer.style.height = `${h}px`;
+    const anchorChanged = previous !== null && anchor !== previous.el;
+    lastAnchorRef.current = anchor
+      ? {
+          el: anchor,
+          // Reached once, reached for good — the flip `pickAnchorIndex` holds through.
+          reached: (previous?.el === anchor && previous.reached) || !isPending(index),
+        }
+      : null;
+    return { room: h, anchorChanged };
+  }, []);
+
+  const settleRef = useRef<(() => void) | null>(null);
+
+  const cancelGlide = useCallback(() => {
+    const glide = glideRef.current;
+    if (!glide) return;
+    window.clearTimeout(glide.quiet);
+    window.clearTimeout(glide.cap);
+    glideRef.current = null;
+    // The glide's own-scroll window was sized for its cap; give it back.
+    ownScrollUntilRef.current = performance.now() + OWN_SCROLL_MS;
+  }, []);
+
+  /** The glide landed (its events went quiet or it reached the target): one
+   *  settle for whatever changed meanwhile — a re-aim or a sub-pixel write. */
+  const endGlide = useCallback(() => {
+    if (!glideRef.current) return;
+    cancelGlide();
+    settleRef.current?.();
+  }, [cancelGlide]);
+
+  /** Start a glide to `target`, or re-aim the one in flight (it keeps its cap). */
+  const glideTo = useCallback(
+    (target: number) => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const inFlight = glideRef.current;
+      if (Math.abs(el.scrollTop - target) <= 1) {
+        // Already there — a scrollTo that does not move emits no events, so it
+        // could only end on the cap, holding every settle for a second.
+        if (inFlight) endGlide();
+        return;
+      }
+      if (inFlight) window.clearTimeout(inFlight.quiet);
+      glideRef.current = {
+        target,
+        // Armed by the glide's first scroll event (`onScroll`), not here.
+        quiet: 0,
+        cap: inFlight ? inFlight.cap : window.setTimeout(endGlide, GLIDE_MAX_MS),
+      };
+      markOwnScroll(GLIDE_MAX_MS + OWN_SCROLL_MS);
+      el.scrollTo({ top: target, behavior: 'smooth' });
+    },
+    [endGlide, markOwnScroll],
+  );
+
+  /** FACT 2 + THE RULE: after any layout change, a following viewport is at the end. */
+  const settle = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const { anchorChanged } = sizeRoom();
+    if (!followRef.current) return;
+    const end = el.scrollHeight - el.clientHeight;
+    const motion = settleMotion({
+      distance: Math.abs(el.scrollTop - end),
+      end,
+      anchorChanged,
+      glideArmed: performance.now() < sendGlideUntilRef.current,
+      glideTarget: glideRef.current?.target ?? null,
+      reduceMotion: prefersReducedMotion(),
+    });
+    if (motion === 'none' || motion === 'wait') return;
+    // The armed glide is spent by the first move it could have shaped — never
+    // by a no-op settle that ran before the send's turn was on screen.
+    sendGlideUntilRef.current = 0;
+    if (motion === 'glide') {
+      glideTo(end);
+      return;
+    }
+    markOwnScroll(OWN_SCROLL_MS);
+    el.scrollTop = end;
+  }, [sizeRoom, glideTo, markOwnScroll]);
+  settleRef.current = settle;
+
+  const goToEnd = useCallback(
+    (behavior: ScrollBehavior) => {
+      const el = scrollRef.current;
+      if (!el) return;
+      setFollow(true, behavior === 'smooth' ? 'chevron' : 'send');
+      setShowScrollButton(false);
+      sizeRoom();
+      const end = el.scrollHeight - el.clientHeight;
+      if (behavior === 'smooth' && !prefersReducedMotion()) {
+        glideTo(end);
+        return;
+      }
+      // An instant jump supersedes a glide in flight (the write stops it).
+      cancelGlide();
+      markOwnScroll(OWN_SCROLL_MS);
+      el.scrollTop = end;
+    },
+    [sizeRoom, setFollow, glideTo, cancelGlide, markOwnScroll],
+  );
+
+  const scrollToBottom = useCallback(() => goToEnd('auto'), [goToEnd]);
+  const smoothScrollToAbsoluteBottom = useCallback(() => goToEnd('smooth'), [goToEnd]);
+  const anchorTurn = useCallback(() => {
+    setFollow(true, 'send');
+    setShowScrollButton(false);
+    sendGlideUntilRef.current = performance.now() + SEND_GLIDE_ARM_MS;
+  }, [setFollow]);
+  const startAtTop = useCallback(() => {
+    const el = scrollRef.current;
+    setFollow(false, 'start-at-top');
+    if (el) {
+      cancelGlide();
+      markOwnScroll(OWN_SCROLL_MS);
+      el.scrollTop = 0;
+    }
+  }, [setFollow, cancelGlide, markOwnScroll]);
+
+  // A glide's timers must not outlive the transcript they scroll.
+  useEffect(() => cancelGlide, [cancelGlide]);
+
+  // ── Layout observers: content + viewport → settle ──────────────────────
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    if (!el || !content) return;
+
+    // ResizeObserver fires after layout for both the content box (text
+    // streamed, a block appeared, an image loaded) and the viewport (panel
+    // resized, composer grew). MutationObserver covers DOM changes that do
+    // not change the content box's size but move the newest turn (a node
+    // swapped for one of equal height) — cheap, and settle() is idempotent.
+    let frame = 0;
+    const scheduleSettle = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        settle();
+      });
+    };
+    const ro = new ResizeObserver(() => settle());
+    ro.observe(content);
+    ro.observe(el);
+    const mo = new MutationObserver(scheduleSettle);
+    mo.observe(content, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      // The anchor turn is chosen by `data-turn-pending` — see `sizeRoom`.
+      attributes: true,
+      attributeFilter: ['data-turn-pending'],
+    });
+    settle();
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [settle, hasContent]);
+
+  // ── Reader intent ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const leaveEnd = (why: string) => {
+      if (!followRef.current) return;
+      setFollow(false, why);
+    };
+    const updateChevron = () => {
+      if (followRef.current) {
+        setShowScrollButton(false);
+        return;
+      }
+      const room = spacerElRef.current?.offsetHeight ?? 0;
+      setShowScrollButton(chevronVisible(distanceFromEnd(el) - room));
+    };
+    const maybeResume = (why: string) => {
+      if (isAtEnd(distanceFromEnd(el))) {
+        setFollow(true, why);
+        setShowScrollButton(false);
+      }
+    };
+
+    // Wheel: up = intent to leave; down = intent, and resumes at the end.
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) leaveEnd('wheel-up');
+      requestAnimationFrame(() => {
+        if (e.deltaY > 0) maybeResume('wheel-down');
+        updateChevron();
+      });
+    };
+    // Touch: any move is intent; a downward swipe that reaches the end resumes.
+    let touchStartY = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0]?.clientY ?? 0;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const dy = touchStartY - (e.touches[0]?.clientY ?? 0);
+      if (dy < -6) leaveEnd('touch-up');
+      requestAnimationFrame(() => {
+        if (dy > 6) maybeResume('touch-down');
+        updateChevron();
+      });
+    };
+    // Keyboard scrolling. Bound to `document` in the CAPTURE phase (below),
+    // NOT to `el`: the transcript carries no tabindex, so the browser delivers
+    // the key to <body> — or to whatever else holds focus — and an element
+    // listener never fires. That is the bug the reader sees: at the end,
+    // Cmd+↑ scrolls up for an instant and the next `settle()` puts it straight
+    // back, because follow was never told the reader had taken over. Capture
+    // also means a handler that stops propagation cannot hide the intent.
+    const onKeyDown = (e: KeyboardEvent) => {
+      // A session tab kept mounted but off-screen (`hidden`) must not react to
+      // a key aimed at the visible transcript.
+      if (el.clientHeight === 0) return;
+      const intent = keyScrollIntentFor(e);
+      if (!intent) return;
+      if (intent === 'end') {
+        // "Go to the end" — run the chevron's own jump instead of waiting for
+        // the browser's animation to land. A transcript that is still growing
+        // moves the end away from that animation's target, so the reader would
+        // press End and never get follow back.
+        goToEnd('auto');
+        setFollow(true, 'key-end');
+        return;
+      }
+      if (intent === 'up') leaveEnd('key-up');
+      requestAnimationFrame(() => {
+        if (intent === 'down') maybeResume('key-down');
+        updateChevron();
+      });
+    };
+    // Scroll: NOT an intent signal. The transcript hides its scrollbar
+    // (`scrollbar-hide`), so every reader scroll arrives as wheel, touch or
+    // keys above; what reaches this listener is our own writes, the browser
+    // clamping scrollTop when content shrinks, and the minimap. Reading any
+    // of those as "the reader left" is exactly what used to kill follow at
+    // random (a composer shrink clamped scrollTop by 24px in the same frame a
+    // send committed). This listener only re-arms follow when the reader has
+    // come back to the end, and keeps the chevron honest.
+    let lastTop = el.scrollTop;
+    let lastScrollHeight = el.scrollHeight;
+    let lastClientHeight = el.clientHeight;
+    const onScroll = () => {
+      const top = el.scrollTop;
+      const movedTowardEnd = top >= lastTop;
+      const geometryChanged =
+        el.scrollHeight !== lastScrollHeight || el.clientHeight !== lastClientHeight;
+      lastTop = top;
+      lastScrollHeight = el.scrollHeight;
+      lastClientHeight = el.clientHeight;
+      // Never fight a scroll we did not make. See `shouldReleaseFollow`.
+      if (
+        shouldReleaseFollow({
+          following: followRef.current,
+          ours: performance.now() < ownScrollUntilRef.current,
+          geometryChanged,
+          distanceFromEnd: distanceFromEnd(el),
+        })
+      ) {
+        setFollow(false, 'scroll-away');
+      }
+      // Re-arm only when the viewport ARRIVED at the end moving toward it.
+      // Direction matters: the browser animates a keyboard scroll, and its
+      // first frame off the end is 2-3px — inside AT_END_PX. A direction-blind
+      // check therefore re-armed follow on the first frame of Cmd+↑/PageUp,
+      // and the next `settle()` yanked the reader straight back, which is the
+      // very symptom the keydown intent above exists to remove. Content
+      // shrinking and clamping scrollTop moves away from the end too, so this
+      // also keeps the "a clamp is not intent" promise in the header.
+      if (!followRef.current && movedTowardEnd && isAtEnd(distanceFromEnd(el))) {
+        setFollow(true, 'scroll-to-end');
+      }
+      updateChevron();
+      // A glide lands when it reaches its target or its events go quiet (a
+      // wheel cancelled it, or the browser finished a hair short).
+      const glide = glideRef.current;
+      if (glide) {
+        if (Math.abs(top - glide.target) <= 1) {
+          endGlide();
+        } else {
+          window.clearTimeout(glide.quiet);
+          glide.quiet = window.setTimeout(endGlide, GLIDE_QUIET_MS);
+        }
+      }
+    };
+    el.dataset.follow = String(followRef.current);
+
+    el.addEventListener('wheel', onWheel, { passive: true });
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: true });
+    document.addEventListener('keydown', onKeyDown, { capture: true, passive: true });
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      document.removeEventListener('keydown', onKeyDown, { capture: true });
+      el.removeEventListener('scroll', onScroll);
+    };
+  }, [goToEnd, endGlide, hasContent, setFollow, markOwnScroll]);
+
+  return {
+    scrollRef,
+    contentRef,
+    spacerElRef,
+    showScrollButton,
+    scrollToBottom,
+    smoothScrollToAbsoluteBottom,
+    anchorTurn,
+    startAtTop,
+  };
+}

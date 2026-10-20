@@ -182,7 +182,8 @@ describe('motion duration utilities', () => {
       for (const [name, ms] of Object.entries(expected)) {
         const rule = out.match(new RegExp(`\\.duration-${name}\\s*\\{([^}]*)\\}`));
         expect(rule, `.duration-${name} emits no CSS`).not.toBeNull();
-        expect(rule?.[1]).toContain(`transition-duration: ${ms}ms`);
+        // The ladder is a host-overridable token with the pinned value as fallback.
+        expect(rule?.[1]).toMatch(new RegExp(`transition-duration: (?:var\\(--duration-${name}, )?${ms}ms\\)?;?`));
       }
     },
     60_000

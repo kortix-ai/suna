@@ -93,7 +93,8 @@ export interface OpenEventStreamOptions {
    *  throw here is caught and logged — one bad handler must never break the
    *  stream or crash the host.
    *
-   *  Consecutive `message.part.delta` events of one part field that land in
+   *  Consecutive `message.part.delta` events of one part field (or
+   *  `log.block.delta` events of one session-log block) that land in
    *  the same 16ms flush arrive as ONE event: `properties.delta` is their
    *  text joined, `id` is the last one's, and `coalesced` lists the wire
    *  events it replaced. Appending `delta` gives the same text either way. */

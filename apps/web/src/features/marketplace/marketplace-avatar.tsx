@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { EntityAvatar, type EntityAvatarSize } from '@/components/ui/entity-avatar';
-import { cn } from '@/lib/utils';
+import { EntityAvatar, type EntityAvatarSize } from '@kortix/ui/entity-avatar';
+import { cn } from '@kortix/ui';
 
 type MarketplaceAvatarSize = 'xs' | 'sm' | 'md' | 'lg';
 

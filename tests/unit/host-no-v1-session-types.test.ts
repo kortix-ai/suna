@@ -9,16 +9,22 @@ import { describe, expect, it } from 'vitest';
 // imports a v1 part or turn type, or a v1 helper that takes v1 rows, depends on the shape
 // P8.4 deletes. Session Log Plan P5.7 (web) and P5.4 (mobile).
 //
-// Scope: every tracked `.ts`/`.tsx` under apps/web/src and apps/mobile. Not scanned: tests
-// (they build v1 fixtures on purpose), `apps/web/src/ui/` and the shims (a file that only
-// re-exports an SDK module, such as `lib/iam-client.ts`): they are the SDK surface. An import
-// from any of them counts as an import from the SDK. Each host resolves `@/` to its own root.
+// Scope: every tracked `.ts`/`.tsx` under apps/web/src, apps/mobile and packages/ui/src (the
+// session UI moved there). Not scanned: tests (they build v1 fixtures on purpose),
+// `apps/web/src/ui/`, `packages/ui/src/internal/session-types/` and the shims (a file that only re-exports
+// an SDK module, such as `lib/iam-client.ts`): they are the SDK surface. An import from any of
+// them counts as an import from the SDK. Each host resolves `@/` to its own root.
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const WEB_SRC = 'apps/web/src';
 const MOBILE = 'apps/mobile';
+const UI_SRC = 'packages/ui/src';
+/** The SDK surface shims: `@/ui` in apps/web and its copy in @kortix/ui. */
+const SDK_SHIM_DIRS = [`${WEB_SRC}/ui/`, `${UI_SRC}/internal/session-types/`];
+const inShimDir = (file: string) => SDK_SHIM_DIRS.some((dir) => file.startsWith(dir));
 /** The host a repo file belongs to: the root `@/` resolves to. */
-const hostRoot = (file: string) => (file.startsWith(`${MOBILE}/`) ? MOBILE : WEB_SRC);
+const hostRoot = (file: string) =>
+  file.startsWith(`${MOBILE}/`) ? MOBILE : file.startsWith(`${UI_SRC}/`) ? UI_SRC : WEB_SRC;
 
 /** v1 part and turn types, and the v1 helpers that take or return v1 rows or parts. */
 const V1_NAMES = new Set([
@@ -45,6 +51,7 @@ const ALLOWED: Record<string, string> = {
 };
 
 const SDK_PACKAGE = /^@kortix\/sdk(?:\/|$)/;
+const UI_SDK_SHIM = /^@kortix\/ui\/internal\/session-types(?:\/|$)/;
 const NAMED = /\b(?:import|export)\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g;
 const NAMESPACE = /\bimport\s+(?:type\s+)?\*\s+as\s+\w+\s+from\s*['"]([^'"]+)['"]/g;
 const STAR_EXPORT = /\bexport\s+(?:type\s+)?\*\s+(?:as\s+\w+\s+)?from\s*['"]([^'"]+)['"]/g;
@@ -86,9 +93,9 @@ function isShim(file: string): boolean {
 
 /** `@kortix/sdk*`, the `src/ui/` shim (by `@/ui` or a relative path), or a shim of either. */
 function isSdkModule(specifier: string, fromFile: string): boolean {
-  if (SDK_PACKAGE.test(specifier)) return true;
+  if (SDK_PACKAGE.test(specifier) || UI_SDK_SHIM.test(specifier)) return true;
   const file = resolveHost(specifier, fromFile);
-  return !!file && (file.startsWith(`${WEB_SRC}/ui/`) || isShim(file));
+  return !!file && (inShimDir(file) || isShim(file));
 }
 
 /** Every `<name> (<module>)` a source text imports from the SDK that is a v1 name. */
@@ -120,12 +127,12 @@ function hostFiles(root: string): string[] {
     .split('\n')
     .filter((file) => /\.tsx?$/.test(file))
     .filter((file) => !/\.test\.tsx?$|\/__tests__\//.test(file))
-    .filter((file) => !file.startsWith(`${WEB_SRC}/ui/`))
+    .filter((file) => !inShimDir(file))
     .filter((file) => !isShim(file));
 }
 
 describe('host files import no v1 part or turn type', () => {
-  const at = `${WEB_SRC}/features/session/tool/tools/task-tool.tsx`;
+  const at = `${WEB_SRC}/features/workspace/settings/tabs/profile-tab.tsx`;
 
   it('flags a planted import, an aliased one, a namespace import and an inline type import', () => {
     const planted = [
@@ -147,6 +154,7 @@ describe('host files import no v1 part or turn type', () => {
     const planted = [
       "import { ToolPart } from '@/lib/iam-client';",
       "import { useRuntimeMessages } from '@/hooks/tunnel/use-tunnel';",
+      "import type { Part } from '@kortix/ui/internal/session-types/types';",
       "import type { TextPart } from '../../../../ui';",
       "export * from '@/ui';",
       'import {\n  // a comment\n  SessionLogBlock, /* another */ Turn,\n} from "@kortix/sdk";',
@@ -154,6 +162,7 @@ describe('host files import no v1 part or turn type', () => {
     expect(v1Imports(planted, at)).toEqual([
       'ToolPart (@/lib/iam-client)',
       'useRuntimeMessages (@/hooks/tunnel/use-tunnel)',
+      'Part (@kortix/ui/internal/session-types/types)',
       'TextPart (../../../../ui)',
       'Turn (@kortix/sdk)',
       'export * (@/ui)',
@@ -170,7 +179,7 @@ describe('host files import no v1 part or turn type', () => {
     const surfaces = [
       'packages/sdk/src/public-surface.snapshot.json',
       'packages/sdk/src/public-type-surface.snapshot.json',
-      `${WEB_SRC}/ui/types.ts`,
+      `${UI_SRC}/internal/session-types/types.ts`,
     ].map((file) => readFileSync(join(REPO_ROOT, file), 'utf8'));
     const missing = [...V1_NAMES].filter((name) => !surfaces.some((s) => new RegExp(`\\b${name}\\b`).test(s)));
     expect(missing).toEqual([]);
@@ -179,6 +188,7 @@ describe('host files import no v1 part or turn type', () => {
   it.each([
     [WEB_SRC, 500],
     [MOBILE, 500],
+    [UI_SRC, 300],
   ])('holds for every host file under %s', (root, atLeast) => {
     const files = hostFiles(root);
     expect(files.length).toBeGreaterThan(atLeast);

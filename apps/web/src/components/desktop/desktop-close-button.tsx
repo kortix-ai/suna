@@ -2,8 +2,8 @@
 
 import { XIcon } from '@phosphor-icons/react';
 
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
+import { Button } from '@kortix/ui/button';
+import Hint from '@kortix/ui/hint';
 import { useTranslations } from '@/i18n/use-translations';
 
 /**

@@ -6,9 +6,9 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from '@/components/ui/accordion';
+} from '@kortix/ui/accordion';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import type { ReactNode } from 'react';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { faq, type FaqItem } from './content';
