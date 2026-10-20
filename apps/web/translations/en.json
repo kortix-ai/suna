@@ -20310,7 +20310,12 @@
       "text08f3c151d323": "Ask for custom terms",
       "texta0990a4a86dc": "White-label: your AI product on Platinum.dev compute",
       "text6189ab6313de": "Fork Kortix, put your brand on it, and sell it as your own product. The license is free. The one requirement is that your compute runs on Platinum.dev.",
-      "text7971dd752669": "Reminders"
+      "text7971dd752669": "Reminders",
+      "cliDeviceTitle": "Authorize Kortix CLI",
+      "cliDeviceWarning": "Approve only a login you started. Check this code against your terminal.",
+      "cliDeviceCode": "Login code",
+      "cliDeviceApproved": "Login approved. Return to your terminal.",
+      "cliDeviceAction": "Authorize CLI"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

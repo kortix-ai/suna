@@ -20299,7 +20299,12 @@
       "text08f3c151d323": "咨询定制条款",
       "texta0990a4a86dc": "白标:运行在 Platinum.dev 算力上的你的 AI 产品",
       "text6189ab6313de": "Fork Kortix,打上你的品牌,作为你自己的产品出售。许可证免费。唯一的要求是你的算力运行在 Platinum.dev 上。",
-      "text7971dd752669": "提醒"
+      "text7971dd752669": "提醒",
+      "cliDeviceTitle": "授权 Kortix CLI",
+      "cliDeviceWarning": "仅批准您自己发起的登录。请将此代码与终端中的代码核对。",
+      "cliDeviceCode": "登录代码",
+      "cliDeviceApproved": "登录已批准。请返回终端。",
+      "cliDeviceAction": "授权 CLI"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

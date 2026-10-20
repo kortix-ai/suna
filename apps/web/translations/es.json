@@ -20299,7 +20299,12 @@
       "text08f3c151d323": "Solicitar condiciones personalizadas",
       "texta0990a4a86dc": "Marca blanca: tu producto de IA sobre el cómputo de Platinum.dev",
       "text6189ab6313de": "Haz un fork de Kortix, ponle tu marca y véndelo como tu producto. La licencia es gratuita. El único requisito: tu cómputo se ejecuta en Platinum.dev.",
-      "text7971dd752669": "Recordatorios"
+      "text7971dd752669": "Recordatorios",
+      "cliDeviceTitle": "Autorizar Kortix CLI",
+      "cliDeviceWarning": "Aprueba solo un inicio de sesión que hayas iniciado. Compara este código con tu terminal.",
+      "cliDeviceCode": "Código de inicio de sesión",
+      "cliDeviceApproved": "Inicio de sesión aprobado. Vuelve a tu terminal.",
+      "cliDeviceAction": "Autorizar CLI"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

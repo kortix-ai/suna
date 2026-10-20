@@ -78,10 +78,10 @@ function CliAuthorizeInner() {
   if (userCode) {
     return (
       <AuthFrame>
-        <StepHeader title="Authorize Kortix CLI" description="Approve only a login you started. Check this code against your terminal." />
-        <DetailPanel><DetailRow label="Login code" value={userCode} mono /></DetailPanel>
+        <StepHeader title={tI18nComplete.raw('cliDeviceTitle')} description={tI18nComplete.raw('cliDeviceWarning')} />
+        <DetailPanel><DetailRow label={tI18nComplete.raw('cliDeviceCode')} value={userCode} mono /></DetailPanel>
         {error ? <ErrorStrip message={error} /> : null}
-        {phase === 'success' ? <p>Login approved. Return to your terminal.</p> : (
+        {phase === 'success' ? <p>{tI18nComplete.raw('cliDeviceApproved')}</p> : (
           <Button disabled={phase === 'authorizing'} onClick={async () => {
             setPhase('authorizing'); setError(null);
             try {
@@ -89,7 +89,7 @@ function CliAuthorizeInner() {
               if (!result.success) throw result.error ?? new Error('Could not approve login.');
               setPhase('success');
             } catch (err) { setError((err as Error).message); setPhase('error'); }
-          }}>Authorize CLI</Button>
+          }}>{tI18nComplete.raw('cliDeviceAction')}</Button>
         )}
       </AuthFrame>
     );

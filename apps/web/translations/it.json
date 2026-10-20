@@ -20299,7 +20299,12 @@
       "text08f3c151d323": "Richiedi condizioni personalizzate",
       "texta0990a4a86dc": "White-label: il tuo prodotto di IA sul calcolo di Platinum.dev",
       "text6189ab6313de": "Fai il fork di Kortix, applica il tuo marchio e vendilo come tuo prodotto. La licenza è gratuita. Unico requisito: il tuo calcolo gira su Platinum.dev.",
-      "text7971dd752669": "Promemoria"
+      "text7971dd752669": "Promemoria",
+      "cliDeviceTitle": "Autorizza Kortix CLI",
+      "cliDeviceWarning": "Approva solo un accesso avviato da te. Confronta questo codice con il terminale.",
+      "cliDeviceCode": "Codice di accesso",
+      "cliDeviceApproved": "Accesso approvato. Torna al terminale.",
+      "cliDeviceAction": "Autorizza CLI"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

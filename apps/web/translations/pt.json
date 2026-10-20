@@ -20299,7 +20299,12 @@
       "text08f3c151d323": "Solicitar termos personalizados",
       "texta0990a4a86dc": "White-label: seu produto de IA sobre a computação do Platinum.dev",
       "text6189ab6313de": "Faça um fork do Kortix, coloque sua marca e venda como seu produto. A licença é gratuita. O único requisito: sua computação roda no Platinum.dev.",
-      "text7971dd752669": "Lembretes"
+      "text7971dd752669": "Lembretes",
+      "cliDeviceTitle": "Autorizar Kortix CLI",
+      "cliDeviceWarning": "Aprove apenas um início de sessão que você iniciou. Compare este código com o seu terminal.",
+      "cliDeviceCode": "Código de acesso",
+      "cliDeviceApproved": "Acesso aprovado. Volte ao terminal.",
+      "cliDeviceAction": "Autorizar CLI"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

@@ -20299,7 +20299,12 @@
       "text08f3c151d323": "Затражите прилагођене услове",
       "texta0990a4a86dc": "Вајт-лејбл: ваш AI производ на Platinum.dev compute-у",
       "text6189ab6313de": "Форкујте Kortix, ставите свој бренд и продајте га као свој производ. Лиценца је бесплатна. Једини услов: ваш compute ради на Platinum.dev-у.",
-      "text7971dd752669": "Подсетници"
+      "text7971dd752669": "Подсетници",
+      "cliDeviceTitle": "Ovlasti Kortix CLI",
+      "cliDeviceWarning": "Odobrite samo prijavu koju ste sami pokrenuli. Uporedite ovaj kod sa terminalom.",
+      "cliDeviceCode": "Kod za prijavu",
+      "cliDeviceApproved": "Prijava je odobrena. Vratite se u terminal.",
+      "cliDeviceAction": "Ovlasti CLI"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

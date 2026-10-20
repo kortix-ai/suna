@@ -20299,7 +20299,12 @@
       "text08f3c151d323": "個別条件を相談する",
       "texta0990a4a86dc": "ホワイトラベル:Platinum.dev のコンピュートで動く自社 AI プロダクト",
       "text6189ab6313de": "Kortix をフォークし、自社ブランドで自社製品として販売できます。ライセンスは無料。唯一の条件は、コンピュートを Platinum.dev で実行することです。",
-      "text7971dd752669": "リマインダー"
+      "text7971dd752669": "リマインダー",
+      "cliDeviceTitle": "Kortix CLI を認証",
+      "cliDeviceWarning": "自分で開始したログインのみ承認してください。このコードをターミナルと照合してください。",
+      "cliDeviceCode": "ログインコード",
+      "cliDeviceApproved": "ログインを承認しました。ターミナルに戻ってください。",
+      "cliDeviceAction": "CLI を認証"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
