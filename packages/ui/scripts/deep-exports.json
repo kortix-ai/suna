@@ -23,7 +23,6 @@
     "./customize/migrate-to-v2/upgrade-view",
     "./customize/models/models-page",
     "./customize/project-settings/project-settings-page",
-    "./customize/project-settings/project-settings-sections",
     "./customize/secrets/secrets-page",
     "./customize/sections/add-account-fields",
     "./customize/sections/component/manifest-copy-block",

@@ -75,7 +75,6 @@
     "./customize/migrate-to-v2/upgrade-view": "./src/customize/migrate-to-v2/upgrade-view.tsx",
     "./customize/models/models-page": "./src/customize/models/models-page.tsx",
     "./customize/project-settings/project-settings-page": "./src/customize/project-settings/project-settings-page.tsx",
-    "./customize/project-settings/project-settings-sections": "./src/customize/project-settings/project-settings-sections.ts",
     "./customize/secrets/secrets-page": "./src/customize/secrets/secrets-page.tsx",
     "./customize/sections/add-account-fields": "./src/customize/sections/add-account-fields.tsx",
     "./customize/sections/component/manifest-copy-block": "./src/customize/sections/component/manifest-copy-block.tsx",
@@ -759,10 +758,6 @@
       "./customize/project-settings/project-settings-page": {
         "types": "./dist/customize/project-settings/project-settings-page.d.ts",
         "import": "./dist/customize/project-settings/project-settings-page.js"
-      },
-      "./customize/project-settings/project-settings-sections": {
-        "types": "./dist/customize/project-settings/project-settings-sections.d.ts",
-        "import": "./dist/customize/project-settings/project-settings-sections.js"
       },
       "./customize/secrets/secrets-page": {
         "types": "./dist/customize/secrets/secrets-page.d.ts",
