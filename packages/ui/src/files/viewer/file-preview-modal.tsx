@@ -1,20 +1,20 @@
-'use client';
+"use client";
 
-import { PublicShareLinkButton } from '../../internal/share/public-share-link-button';
-import { Button } from '../../primitives/button';
-import { ButtonGroup } from '../../primitives/button-group';
-import Hint from '../../primitives/hint';
-import Loading from '../../primitives/loading';
-import { errorToast, successToast } from '../../primitives/toast';
-import { Download } from '../../internal/icons/download';
-import { useTranslations } from '../../i18n';
-import { cn } from '../../lib/utils';
+import { PublicShareLinkButton } from "../../internal/share/public-share-link-button";
+import { Button } from "../../primitives/button";
+import { ButtonGroup } from "../../primitives/button-group";
+import Hint from "../../primitives/hint";
+import Loading from "../../primitives/loading";
+import { errorToast, successToast } from "../../primitives/toast";
+import { Download } from "../../internal/icons/download";
+import { useTranslations } from "../../i18n";
+import { cn } from "../../lib/utils";
 import {
   dialogContentZ,
   DialogDepthProvider,
   dialogOverlayZ,
   useDialogLayerDepth,
-} from '../../lib/z-stack';
+} from "../../lib/z-stack";
 import {
   ArrowClockwiseIcon,
   CaretLeftIcon as ChevronLeft,
@@ -25,7 +25,7 @@ import {
   ArrowsOutSimpleIcon as Maximize2,
   ArrowsInSimpleIcon as Minimize2,
   XIcon as X,
-} from '@phosphor-icons/react';
+} from "@phosphor-icons/react";
 import {
   useCallback,
   useEffect,
@@ -35,27 +35,31 @@ import {
   useState,
   type ComponentType,
   type ReactNode,
-} from 'react';
-import { createPortal } from 'react-dom';
-import { FileContentRenderer } from './file-content-renderer';
-import { FileSourceProvider, type FileRefreshResult, type FileSource } from './file-source';
-import { getLanguageFromExt } from './preview-policy';
-import { SaveAsPdfButton } from './save-as-pdf-button';
+} from "react";
+import { createPortal } from "react-dom";
+import { FileContentRenderer } from "./file-content-renderer";
+import {
+  FileSourceProvider,
+  type FileRefreshResult,
+  type FileSource,
+} from "./file-source";
+import { getLanguageFromExt } from "./preview-policy";
+import { SaveAsPdfButton } from "./save-as-pdf-button";
 
 /** Tabbable elements used by the focus trap below. */
 const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'textarea:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
+  "a[href]",
+  "button:not([disabled])",
+  "textarea:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
   '[tabindex]:not([tabindex="-1"])',
-].join(',');
+].join(",");
 
 /** The slice of a feature's files store the preview modal reads. */
 export interface FilePreviewState {
   selectedFilePath: string | null;
-  panelMode: 'welcome' | 'viewer' | 'history';
+  panelMode: "welcome" | "viewer" | "history";
   filePathList: string[];
   currentFileIndex: number;
 }
@@ -93,7 +97,11 @@ export interface FilePreviewModalProps extends FilePreviewState {
 function useNoRefresh(_filePath: string | null): FileRefreshResult {
   return NO_REFRESH;
 }
-const NO_REFRESH: FileRefreshResult = { refresh: () => {}, refreshing: false, reloadKey: 0 };
+const NO_REFRESH: FileRefreshResult = {
+  refresh: () => {},
+  refreshing: false,
+  reloadKey: 0,
+};
 
 /**
  * The single full-screen file preview modal shared by every surface (the
@@ -127,12 +135,12 @@ export function FilePreviewModal({
   statusSlot,
   extraActions,
   shareContext,
-  historyLabel = 'History',
+  historyLabel = "History",
   embedded = false,
   targetLine = null,
 }: FilePreviewModalProps) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const isOpen = panelMode === 'viewer' && !!selectedFilePath;
+  const tI18nHardcoded = useTranslations("hardcodedUi");
+  const isOpen = panelMode === "viewer" && !!selectedFilePath;
 
   // Embedded viewers start inline (in the side panel); "Expand" pops them to
   // the full-screen overlay. Non-embedded viewers are always full-screen.
@@ -141,7 +149,7 @@ export function FilePreviewModal({
   // Only the full-screen overlay is a layer; the inline panel sits in flow.
   const dialogDepth = useDialogLayerDepth(isOpen && fullscreen);
 
-  const fileName = selectedFilePath?.split('/').pop() || '';
+  const fileName = selectedFilePath?.split("/").pop() || "";
   const hasNext = currentFileIndex < filePathList.length - 1;
   const hasPrev = currentFileIndex > 0;
 
@@ -150,15 +158,20 @@ export function FilePreviewModal({
   // renders — the same pattern `FileContentRenderer` uses for `useFileContent`.
   const useRefresh = source.useRefresh ?? useNoRefresh;
   const { refresh, refreshing, reloadKey } = useRefresh(selectedFilePath);
-  const refreshLabel = tI18nHardcoded.raw('i18nComplete.text0e9161011702');
+  const refreshLabel = tI18nHardcoded.raw("i18nComplete.text0e9161011702");
   const [markdownPreview, setMarkdownPreview] = useState(true);
   // Markdown and Mermaid files both open rendered, with a Source toggle.
-  const isMarkdownFile = ['markdown', 'mermaid'].includes(getLanguageFromExt(fileName));
+  const isMarkdownFile = ["markdown", "mermaid"].includes(
+    getLanguageFromExt(fileName),
+  );
   // Markdown alone also exports to PDF. Only its text is read here — the query
   // `FileContentRenderer` already runs for the same path, so no second fetch.
   // The PDF export renders through a session's sandbox; a bytes-only source has none.
-  const exportsPdf = getLanguageFromExt(fileName) === 'markdown' && !source.bytesOnly;
-  const { data: pdfSource } = source.useFileContent(exportsPdf ? selectedFilePath : null);
+  const exportsPdf =
+    getLanguageFromExt(fileName) === "markdown" && !source.bytesOnly;
+  const { data: pdfSource } = source.useFileContent(
+    exportsPdf ? selectedFilePath : null,
+  );
   const shareInput = useMemo(() => {
     if (!selectedFilePath || !shareContext) return null;
     return {
@@ -166,7 +179,7 @@ export function FilePreviewModal({
         label: fileName || selectedFilePath,
         path: selectedFilePath,
       },
-      mode: 'view' as const,
+      mode: "view" as const,
     };
   }, [fileName, selectedFilePath, shareContext]);
 
@@ -189,13 +202,16 @@ export function FilePreviewModal({
       // Focus trap: keep Tab cycling within the dialog. Only acts when focus is
       // already inside our surface, so when nested under the Customize Radix
       // dialog (whose own FocusScope owns focus) we don't hijack its Tab order.
-      if (e.key === 'Tab') {
+      if (e.key === "Tab") {
         const surface = surfaceRef.current;
         if (surface && surface.contains(document.activeElement)) {
           const focusables = Array.from(
             surface.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
           ).filter(
-            (el) => el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0,
+            (el) =>
+              el.offsetWidth > 0 ||
+              el.offsetHeight > 0 ||
+              el.getClientRects().length > 0,
           );
           if (focusables.length === 0) {
             e.preventDefault();
@@ -220,11 +236,13 @@ export function FilePreviewModal({
       const target = e.target as HTMLElement;
       if (
         target &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
       ) {
         return;
       }
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         e.preventDefault();
         e.stopImmediatePropagation();
         if (historyPath) setHistoryPath(null);
@@ -232,20 +250,30 @@ export function FilePreviewModal({
         else onClose();
         return;
       }
-      if (e.key === 'ArrowRight' && hasNext) {
+      if (e.key === "ArrowRight" && hasNext) {
         e.preventDefault();
         onNext();
         return;
       }
-      if (e.key === 'ArrowLeft' && hasPrev) {
+      if (e.key === "ArrowLeft" && hasPrev) {
         e.preventDefault();
         onPrev();
         return;
       }
     };
-    window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isOpen, onClose, onNext, onPrev, hasNext, hasPrev, historyPath, embedded, expanded]);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [
+    isOpen,
+    onClose,
+    onNext,
+    onPrev,
+    hasNext,
+    hasPrev,
+    historyPath,
+    embedded,
+    expanded,
+  ]);
 
   // Move focus into the dialog on open and restore it to the triggering element
   // on close. Standalone (session Files tab) this completes the focus trap;
@@ -257,7 +285,7 @@ export function FilePreviewModal({
     const previouslyFocused = document.activeElement as HTMLElement | null;
     surfaceRef.current?.focus();
     return () => {
-      if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+      if (previouslyFocused && typeof previouslyFocused.focus === "function") {
         previouslyFocused.focus();
       }
     };
@@ -267,9 +295,9 @@ export function FilePreviewModal({
   // the panel and must leave the rest of the page scrollable).
   useEffect(() => {
     if (isOpen && fullscreen) {
-      document.body.style.overflow = 'hidden';
+      document.body.style.overflow = "hidden";
       return () => {
-        document.body.style.overflow = '';
+        document.body.style.overflow = "";
       };
     }
   }, [isOpen, fullscreen]);
@@ -280,8 +308,10 @@ export function FilePreviewModal({
   // real DOM bubbling, ahead of the document-level listener.
   const contentRef = useRef<HTMLDivElement | null>(null);
   // A host theme with larger controls, or a narrow panel: the toolbar drops the
-  // Download label and the previous/next pair (the arrow keys still step), so
-  // Expand and Close stay inside the panel.
+  // Download label, the previous/next pair (the arrow keys still step), the
+  // git status chip (the Changes tab carries it), Save as PDF and Copy link
+  // (Expand brings all of them back), so the name stays readable and Expand
+  // and Close stay inside the panel. A 367px side panel left the name 0px.
   const [toolbarEl, toolbarRef] = useState<HTMLDivElement | null>(null);
   const [nameEl, nameRef] = useState<HTMLSpanElement | null>(null);
   const compactToolbar = useCompactRow(toolbarEl, nameEl);
@@ -290,11 +320,11 @@ export function FilePreviewModal({
     const el = contentRef.current;
     if (!el) return;
     const stop = (e: Event) => e.stopPropagation();
-    el.addEventListener('wheel', stop, { passive: false });
-    el.addEventListener('touchmove', stop, { passive: false });
+    el.addEventListener("wheel", stop, { passive: false });
+    el.addEventListener("touchmove", stop, { passive: false });
     return () => {
-      el.removeEventListener('wheel', stop);
-      el.removeEventListener('touchmove', stop);
+      el.removeEventListener("wheel", stop);
+      el.removeEventListener("touchmove", stop);
     };
   }, [isOpen, fullscreen, selectedFilePath]);
 
@@ -302,9 +332,13 @@ export function FilePreviewModal({
     if (!selectedFilePath) return;
     try {
       await source.download(selectedFilePath, fileName);
-      successToast(tI18nHardcoded('i18nComplete.text7eca5e05f915', { value0: fileName }));
+      successToast(
+        tI18nHardcoded("i18nComplete.text7eca5e05f915", { value0: fileName }),
+      );
     } catch {
-      errorToast(tI18nHardcoded('i18nComplete.textc85c359673e0', { value0: fileName }));
+      errorToast(
+        tI18nHardcoded("i18nComplete.textc85c359673e0", { value0: fileName }),
+      );
     }
   }, [selectedFilePath, source, fileName, tI18nHardcoded]);
 
@@ -312,23 +346,28 @@ export function FilePreviewModal({
   // Portal to <body>: this fixed overlay is rendered inside constrained
   // containers (session side panel / Customize section) whose overflow-hidden
   // or display:none would clip or collapse it. React context is preserved.
-  if (typeof document === 'undefined') return null;
+  if (typeof document === "undefined") return null;
 
   const toolbar = (
     <>
       {/* Name and place in the folder only: Close is the one way out. */}
       <div className="flex min-w-0 flex-1 items-center gap-2 pl-1">
-        <span ref={nameRef} className="max-w-[300px] truncate text-sm font-medium">
+        <span
+          ref={nameRef}
+          className="max-w-[300px] truncate text-sm font-medium"
+        >
           {fileName}
         </span>
-        {statusSlot}
+        {!compactToolbar && statusSlot}
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
         {isMarkdownFile && (
           <Hint
             label={
-              markdownPreview ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3') : 'Preview'
+              markdownPreview
+                ? tI18nHardcoded.raw("i18nComplete.text6ee818aa2de3")
+                : "Preview"
             }
             side="bottom"
           >
@@ -336,18 +375,24 @@ export function FilePreviewModal({
               variant="ghost"
               size="icon"
               aria-label={
-                markdownPreview ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3') : 'Preview'
+                markdownPreview
+                  ? tI18nHardcoded.raw("i18nComplete.text6ee818aa2de3")
+                  : "Preview"
               }
               aria-pressed={markdownPreview}
               className={cn(
-                'h-8 w-8 active:scale-[0.96]',
+                "h-8 w-8 active:scale-[0.96]",
                 markdownPreview
-                  ? 'text-muted-foreground hover:text-foreground'
-                  : 'text-foreground bg-muted',
+                  ? "text-muted-foreground hover:text-foreground"
+                  : "text-foreground bg-muted",
               )}
               onClick={() => setMarkdownPreview((v) => !v)}
             >
-              {markdownPreview ? <Code className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {markdownPreview ? (
+                <Code className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
             </Button>
           </Hint>
         )}
@@ -375,7 +420,7 @@ export function FilePreviewModal({
           <ButtonGroup>
             <Hint
               label={tI18nHardcoded.raw(
-                'autoFeaturesFileViewerFilePreviewModalJsxAttrTitlePreviousb7cda316',
+                "autoFeaturesFileViewerFilePreviewModalJsxAttrTitlePreviousb7cda316",
               )}
               side="bottom"
             >
@@ -384,7 +429,7 @@ export function FilePreviewModal({
                 size="icon-base"
                 disabled={!hasPrev}
                 aria-label={tI18nHardcoded.raw(
-                  'autoFeaturesFileViewerFilePreviewModalJsxAttrAriaLabel03ab3a76',
+                  "autoFeaturesFileViewerFilePreviewModalJsxAttrAriaLabel03ab3a76",
                 )}
                 className="active:scale-[0.96]"
                 onClick={onPrev}
@@ -394,7 +439,7 @@ export function FilePreviewModal({
             </Hint>
             <Hint
               label={tI18nHardcoded.raw(
-                'autoFeaturesFileViewerFilePreviewModalJsxAttrTitleNext96666bd8',
+                "autoFeaturesFileViewerFilePreviewModalJsxAttrTitleNext96666bd8",
               )}
               side="bottom"
             >
@@ -403,7 +448,7 @@ export function FilePreviewModal({
                 size="icon-base"
                 disabled={!hasNext}
                 aria-label={tI18nHardcoded.raw(
-                  'autoFeaturesFileViewerFilePreviewModalJsxAttrAriaLabelda6ea7e4',
+                  "autoFeaturesFileViewerFilePreviewModalJsxAttrAriaLabelda6ea7e4",
                 )}
                 className="active:scale-[0.96]"
                 onClick={onNext}
@@ -420,16 +465,20 @@ export function FilePreviewModal({
               size="icon-base"
               aria-label={historyLabel}
               aria-pressed={!!historyPath}
-              className={cn('active:scale-[0.96]', historyPath && 'bg-accent')}
-              onClick={() => setHistoryPath(historyPath ? null : selectedFilePath)}
+              className={cn("active:scale-[0.96]", historyPath && "bg-accent")}
+              onClick={() =>
+                setHistoryPath(historyPath ? null : selectedFilePath)
+              }
             >
               <History className="h-4 w-4" />
             </Button>
           </Hint>
-          {exportsPdf && (
+          {exportsPdf && !compactToolbar && (
             <SaveAsPdfButton
               fileName={fileName}
-              content={pdfSource?.type === 'text' ? pdfSource.content : undefined}
+              content={
+                pdfSource?.type === "text" ? pdfSource.content : undefined
+              }
               variant="secondary"
               className="h-8 w-8"
               iconClassName="h-4 w-4"
@@ -440,19 +489,20 @@ export function FilePreviewModal({
             size="sm"
             className="gap-1.5 active:scale-[0.96]"
             onClick={handleDownload}
-            aria-label={tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
+            aria-label={tI18nHardcoded.raw("i18nComplete.textd6eafe823591")}
           >
             <Download className="h-3.5 w-3.5" />
-            {!compactToolbar && tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
+            {!compactToolbar &&
+              tI18nHardcoded.raw("i18nComplete.textd6eafe823591")}
           </Button>
         </ButtonGroup>
-        {shareContext && (
+        {shareContext && !compactToolbar && (
           <PublicShareLinkButton
             projectId={shareContext.projectId}
             sessionId={shareContext.sessionId}
             input={shareInput}
             tooltip={tI18nHardcoded.raw(
-              'autoFeaturesFileViewerFilePreviewModalJsxAttrTooltipCopy42229181',
+              "autoFeaturesFileViewerFilePreviewModalJsxAttrTooltipCopy42229181",
             )}
             className="text-muted-foreground hover:text-foreground"
           />
@@ -460,25 +510,37 @@ export function FilePreviewModal({
         {extraActions}
         {embedded && (
           <Hint
-            label={expanded ? tI18nHardcoded.raw('i18nComplete.textde12e3c7c7a8') : 'Expand'}
+            label={
+              expanded
+                ? tI18nHardcoded.raw("i18nComplete.textde12e3c7c7a8")
+                : "Expand"
+            }
             side="bottom"
           >
             <Button
               variant="ghost"
               size="icon"
-              aria-label={expanded ? tI18nHardcoded.raw('i18nComplete.textde12e3c7c7a8') : 'Expand'}
+              aria-label={
+                expanded
+                  ? tI18nHardcoded.raw("i18nComplete.textde12e3c7c7a8")
+                  : "Expand"
+              }
               aria-pressed={expanded}
               className="text-muted-foreground hover:text-foreground h-8 w-8 active:scale-[0.96]"
               onClick={() => setExpanded((v) => !v)}
             >
-              {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              {expanded ? (
+                <Minimize2 className="h-4 w-4" />
+              ) : (
+                <Maximize2 className="h-4 w-4" />
+              )}
             </Button>
           </Hint>
         )}
         <ButtonGroup className="ml-1.5">
           <Hint
             label={tI18nHardcoded.raw(
-              'autoFeaturesFileViewerFilePreviewModalJsxAttrTitleClosea40d0510',
+              "autoFeaturesFileViewerFilePreviewModalJsxAttrTitleClosea40d0510",
             )}
             side="bottom"
           >
@@ -486,7 +548,7 @@ export function FilePreviewModal({
               variant="secondary"
               size="icon-base"
               aria-label={tI18nHardcoded.raw(
-                'autoFeaturesFileViewerFilePreviewModalJsxAttrTitleClosea40d0510',
+                "autoFeaturesFileViewerFilePreviewModalJsxAttrTitleClosea40d0510",
               )}
               className="active:scale-[0.96]"
               onClick={onClose}
@@ -518,7 +580,10 @@ export function FilePreviewModal({
 
       {historyPath && (
         <div className="bg-popover border-border/60 animate-in slide-in-from-bottom-4 fade-in-0 absolute right-4 bottom-4 z-30 overflow-hidden rounded-md border shadow-md duration-normal">
-          <HistoryContent filePath={historyPath} onClose={() => setHistoryPath(null)} />
+          <HistoryContent
+            filePath={historyPath}
+            onClose={() => setHistoryPath(null)}
+          />
         </div>
       )}
     </>
@@ -546,8 +611,8 @@ export function FilePreviewModal({
         ref={surfaceRef}
         data-file-preview-embedded=""
         role="dialog"
-        aria-label={tI18nHardcoded('i18nComplete.text4a7346d46cf6', {
-          value0: fileName ? `: ${fileName}` : '',
+        aria-label={tI18nHardcoded("i18nComplete.text4a7346d46cf6", {
+          value0: fileName ? `: ${fileName}` : "",
         })}
         tabIndex={-1}
         className="bg-background animate-in fade-in-0 absolute inset-0 z-20 flex flex-col overflow-hidden duration-normal outline-none"
@@ -570,8 +635,8 @@ export function FilePreviewModal({
         data-file-preview-overlay=""
         role="dialog"
         aria-modal="true"
-        aria-label={tI18nHardcoded('i18nComplete.text4a7346d46cf6', {
-          value0: fileName ? `: ${fileName}` : '',
+        aria-label={tI18nHardcoded("i18nComplete.text4a7346d46cf6", {
+          value0: fileName ? `: ${fileName}` : "",
         })}
         tabIndex={-1}
         className="kx-fullscreen-modal border-border/60 bg-background animate-in fade-in-0 zoom-in-[0.98] pointer-events-auto fixed inset-3 flex flex-col overflow-hidden rounded-xl border shadow-lg duration-normal outline-none sm:inset-4"
@@ -598,20 +663,26 @@ const MIN_NAME_PX = 96;
  * column shrinks first (`min-w-0`), so a 367px side panel showed the actions
  * and a 1px name.
  */
-function useCompactRow(el: HTMLElement | null, name: HTMLElement | null): boolean {
+function useCompactRow(
+  el: HTMLElement | null,
+  name: HTMLElement | null,
+): boolean {
   const [compactAt, setCompactAt] = useState<number | null>(null);
   const check = useCallback(() => {
     if (!el) return;
     setCompactAt((at) => {
       if (at !== null) return el.clientWidth > at ? null : at;
-      const nameSqueezed = !!name && name.clientWidth < Math.min(name.scrollWidth, MIN_NAME_PX);
-      return el.scrollWidth > el.clientWidth || nameSqueezed ? el.clientWidth : null;
+      const nameSqueezed =
+        !!name && name.clientWidth < Math.min(name.scrollWidth, MIN_NAME_PX);
+      return el.scrollWidth > el.clientWidth || nameSqueezed
+        ? el.clientWidth
+        : null;
     });
   }, [el, name]);
   // Every commit: a new file can bring more actions at the same width.
   useLayoutEffect(check);
   useLayoutEffect(() => {
-    if (!el || typeof ResizeObserver === 'undefined') return;
+    if (!el || typeof ResizeObserver === "undefined") return;
     // The row for its width, its groups for their content (a late font or a
     // host stylesheet widens the actions without resizing the row).
     const observer = new ResizeObserver(check);
