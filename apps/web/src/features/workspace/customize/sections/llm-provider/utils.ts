@@ -244,21 +244,6 @@ export function envVarPlaceholder(provider: LlmProviderEntry, envVar: string): s
 
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-/**
- * The gateway wire id for a model listed under a PROVIDER entry (the "Add
- * provider" catalog, which browses providers rather than the project's served
- * models). Surfaces that work from the served catalog have the wire id already
- * and use `modelKeyToWire` instead — see model-rows.ts.
- */
-export function gatewayModelId(
-  provider: Pick<LlmProviderEntry, 'id' | 'managed'>,
-  modelId: string,
-): string {
-  if (provider.managed) return modelId;
-  if (provider.id === 'codex') return `codex/${modelId}`;
-  return `${provider.id}/${modelId}`;
-}
-
 /** Compact token-count label — "128K", "1M", "8K". Empty string when falsy/invalid. */
 export function formatTokenCount(tokens: number | null | undefined): string {
   if (!tokens || tokens <= 0) return '';
@@ -322,7 +307,7 @@ export function shouldSaveCredential(input: {
 }
 
 /** The minimum a provider entry needs for `orderProviderRows` to place it. */
-export interface OrderableProvider {
+interface OrderableProvider {
   id: string;
   label: string;
   envVars: string[];

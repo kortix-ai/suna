@@ -44,10 +44,10 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
+import { ModalDescription, ModalTitle } from '@/components/ui/modal';
+import { ByoWizardModal } from './byo-wizard-modal';
 import { Alert, AlertDescription, AlertMedia } from '@/components/ui/alert';
 import {
-  Stepper,
   StepperIndicator,
   StepperItem,
   StepperSeparator,
@@ -138,12 +138,14 @@ export function SlackByoWizard({
   };
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent
-        variant="base"
-        className="space-y-0 overflow-hidden lg:max-w-4xl lg:flex-row"
-      >
-        <aside className="flex flex-col gap-6 border-b bg-sidebar p-5 lg:w-72 lg:shrink-0 lg:border-e lg:border-b-0">
+    <ByoWizardModal
+      platform="slack"
+      open={open}
+      onOpenChange={onOpenChange}
+      step={step}
+      setStep={setStep}
+      count={steps.length}
+      header={
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <Slack className="size-5 shrink-0" />
@@ -155,16 +157,9 @@ export function SlackByoWizard({
               {tI18nComplete.raw('text36e35c306f96')}
             </ModalDescription>
           </div>
-
-          <Stepper
-            orientation="vertical"
-            count={steps.length}
-            value={step}
-            onValueChange={(v) => {
-              if (v === 1 || v === 2 || v === 3) setStep(v);
-            }}
-            className="flex flex-col"
-          >
+      }
+      steps={
+        <>
             {steps.map(({ step: n, title }) => (
               <div key={n} className="flex gap-3">
                 {/* Only completed steps are re-visitable; jumping ahead would
@@ -187,50 +182,11 @@ export function SlackByoWizard({
                 </StepperTitle>
               </div>
             ))}
-          </Stepper>
-        </aside>
-
-        {/* min-h holds step 1's height, so the modal never shrinks between steps. */}
-        <section className="flex min-w-0 flex-1 flex-col lg:min-h-176">
-          <m.div
-            key={step}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-            className="flex-1 space-y-5 overflow-y-auto p-6 lg:max-h-[70vh]"
-          >
-            <header className="space-y-1 pe-8">
-              <h2 className="text-lg font-medium text-balance text-foreground">
-                {steps[step - 1].title}
-              </h2>
-              {leads[step] ? (
-                <p className="text-sm/relaxed text-pretty text-muted-foreground">
-                  {leads[step]}
-                </p>
-              ) : null}
-            </header>
-
-            {step === 1 ? (
-              <StepCreateApp
-                manifestText={manifest.data ?? ''}
-                loading={manifest.isLoading}
-                error={manifest.error instanceof Error ? manifest.error.message : null}
-              />
-            ) : null}
-            {step === 2 ? <StepInstall /> : null}
-            {step === 3 ? (
-              <StepCredentials
-                botToken={botToken}
-                signingSecret={signingSecret}
-                onBotTokenChange={setBotToken}
-                onSigningSecretChange={setSigningSecret}
-                error={error}
-              />
-            ) : null}
-          </m.div>
-
+        </>
+      }
+      footer={
+        <>
           {/* [secondary] … [the step's one action]. */}
-          <footer className="flex items-center justify-between gap-3 border-t px-6 py-4">
             {step === 1 ? (
               <Button size="sm" variant="outline" className="gap-1.5" asChild>
                 <Link href={SLACK_NEW_APP_URL} target="_blank" rel="noopener noreferrer">
@@ -270,10 +226,47 @@ export function SlackByoWizard({
                 {tI18nComplete.raw('textaa665ddf2727')}
               </Button>
             ) : null}
-          </footer>
-        </section>
-      </ModalContent>
-    </Modal>
+        </>
+      }
+    >
+        {/* min-h holds step 1's height, so the modal never shrinks between steps. */}
+          <m.div
+            key={step}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+            className="flex-1 space-y-5 overflow-y-auto p-6 lg:max-h-[70vh]"
+          >
+            <header className="space-y-1 pe-8">
+              <h2 className="text-lg font-medium text-balance text-foreground">
+                {steps[step - 1].title}
+              </h2>
+              {leads[step] ? (
+                <p className="text-sm/relaxed text-pretty text-muted-foreground">
+                  {leads[step]}
+                </p>
+              ) : null}
+            </header>
+
+            {step === 1 ? (
+              <StepCreateApp
+                manifestText={manifest.data ?? ''}
+                loading={manifest.isLoading}
+                error={manifest.error instanceof Error ? manifest.error.message : null}
+              />
+            ) : null}
+            {step === 2 ? <StepInstall /> : null}
+            {step === 3 ? (
+              <StepCredentials
+                botToken={botToken}
+                signingSecret={signingSecret}
+                onBotTokenChange={setBotToken}
+                onSigningSecretChange={setSigningSecret}
+                error={error}
+              />
+            ) : null}
+          </m.div>
+    </ByoWizardModal>
   );
 }
 

@@ -1,4 +1,4 @@
-import type { AdminConnector, ConnectorDraftInput, ConnectorSyncResult } from '@kortix/sdk';
+import type { AdminConnector, ConnectorDraftInput, ConnectorSyncResult, DiscoverConnectorTemplate } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 
 const MAX_CONNECTOR_SLUG_LENGTH = 128;
@@ -189,4 +189,28 @@ export function buildEasyConnectConnectorDraft(
     app: app.slug,
     account: 'default',
   });
+}
+
+export function buildDiscoverConnectorDraft(
+  template: DiscoverConnectorTemplate,
+  input: EasyConnectConnectionInput,
+): ConnectorDraftInput {
+  const auth = template.auth
+    ? {
+        type: template.auth.type,
+        in: template.auth.in,
+        ...(template.auth.name ? { name: template.auth.name } : {}),
+        ...(template.auth.prefix ? { prefix: template.auth.prefix } : {}),
+      }
+    : undefined;
+  return createOnlyConnectorDraft({
+        slug: input.slug,
+        name: input.name.trim(),
+        provider: template.provider,
+        ...(template.spec ? { spec: template.spec } : {}),
+        ...(template.url ? { url: template.url } : {}),
+        ...(template.transport ? { transport: template.transport } : {}),
+        ...(template.endpoint ? { endpoint: template.endpoint } : {}),
+        ...(auth ? { auth } : {}),
+      });
 }

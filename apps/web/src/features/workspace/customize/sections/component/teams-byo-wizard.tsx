@@ -43,9 +43,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
+import { ModalDescription, ModalTitle } from '@/components/ui/modal';
+import { ByoWizardModal } from './byo-wizard-modal';
 import {
-  Stepper,
   StepperIndicator,
   StepperItem,
   StepperSeparator,
@@ -82,7 +82,7 @@ type StepNumber = 1 | 2 | 3;
  * The endpoint an Azure bot must post to for THIS project. See the note at the
  * top: the server's value is the managed one until a BYO app id exists.
  */
-export function byoMessagingEndpoint(
+function byoMessagingEndpoint(
   serverEndpoint: string | null | undefined,
   projectId: string,
 ): string | null {
@@ -172,12 +172,14 @@ export function TeamsByoWizard({
   };
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent
-        variant="base"
-        className="space-y-0 overflow-hidden lg:h-auto lg:max-w-4xl lg:flex-row"
-      >
-        <aside className="bg-sidebar flex flex-col gap-6 border-b p-6 lg:w-72 lg:shrink-0 lg:border-e lg:border-b-0">
+    <ByoWizardModal
+      platform="teams"
+      open={open}
+      onOpenChange={onOpenChange}
+      step={step}
+      setStep={setStep}
+      count={steps.length}
+      header={
           <div className="space-y-3">
             <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <MicrosoftTeams className="size-5" />
@@ -190,16 +192,9 @@ export function TeamsByoWizard({
               {tI18nComplete.raw('text3312ddb06c1d')}
             </ModalDescription>
           </div>
-
-          <Stepper
-            orientation="vertical"
-            count={steps.length}
-            value={step}
-            onValueChange={(v) => {
-              if (v === 1 || v === 2 || v === 3) setStep(v);
-            }}
-            className="flex flex-col"
-          >
+      }
+      steps={
+        <>
             {steps.map(({ step: n, title }) => (
               <div key={n} className="flex gap-3">
                 {/* Only completed steps are re-visitable; jumping ahead would
@@ -223,10 +218,43 @@ export function TeamsByoWizard({
                 </StepperTitle>
               </div>
             ))}
-          </Stepper>
-        </aside>
-
-        <section className="flex min-w-0 flex-1 flex-col">
+        </>
+      }
+      footer={
+        <>
+            {step === 1 ? (
+              <>
+                <p className="text-muted-foreground text-xs text-pretty">
+                  {tI18nComplete.raw('textbda0f959cde0')}
+                </p>
+                <Button type="button" onClick={() => setStep(2)}>
+                  {tI18nComplete.raw('text97fa07f21de8')}
+                </Button>
+              </>
+            ) : null}
+            {step === 2 ? (
+              <>
+                <Button type="button" variant="outline-ghost" onClick={() => setStep(1)}>
+                  {tI18nComplete.raw('text76900f1bfd16')}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={submit}
+                  disabled={connect.isPending || !credentialsFilled}
+                >
+                  {connect.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                  {tI18nComplete.raw('text5df0a8e1f30f')}
+                </Button>
+              </>
+            ) : null}
+            {step === 3 ? (
+              <Button type="button" className="ms-auto" onClick={() => onOpenChange(false)}>
+                {tI18nComplete.raw('text11a6767d5674')}
+              </Button>
+            ) : null}
+        </>
+      }
+    >
           {/* Step 1 is the tallest step, so it sets the pane's minimum height:
               an invisible, inert copy shares the grid cell with the active
               step, and the modal no longer shrinks when the user moves on. */}
@@ -267,42 +295,7 @@ export function TeamsByoWizard({
               ) : null}
             </m.div>
           </div>
-
-          <footer className="flex items-center justify-between gap-4 border-t px-6 py-4">
-            {step === 1 ? (
-              <>
-                <p className="text-muted-foreground text-xs text-pretty">
-                  {tI18nComplete.raw('textbda0f959cde0')}
-                </p>
-                <Button type="button" onClick={() => setStep(2)}>
-                  {tI18nComplete.raw('text97fa07f21de8')}
-                </Button>
-              </>
-            ) : null}
-            {step === 2 ? (
-              <>
-                <Button type="button" variant="outline-ghost" onClick={() => setStep(1)}>
-                  {tI18nComplete.raw('text76900f1bfd16')}
-                </Button>
-                <Button
-                  type="button"
-                  onClick={submit}
-                  disabled={connect.isPending || !credentialsFilled}
-                >
-                  {connect.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                  {tI18nComplete.raw('text5df0a8e1f30f')}
-                </Button>
-              </>
-            ) : null}
-            {step === 3 ? (
-              <Button type="button" className="ms-auto" onClick={() => onOpenChange(false)}>
-                {tI18nComplete.raw('text11a6767d5674')}
-              </Button>
-            ) : null}
-          </footer>
-        </section>
-      </ModalContent>
-    </Modal>
+    </ByoWizardModal>
   );
 }
 

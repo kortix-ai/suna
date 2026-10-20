@@ -29,6 +29,7 @@ import {
 } from './subscription-control';
 import type { ChatGptChallenge, ChatGptPhase } from './types';
 import { sleep } from './utils';
+import { runDeviceGrant } from './device-grant';
 
 /**
  * A subscription sign-in card. `chatgpt` is the ChatGPT Plus/Pro login (Codex
@@ -112,56 +113,25 @@ export function useSubscriptionSignIn({
     setError(null);
     setChallenge(null);
     setPhase('waiting');
-    try {
-      const start = await startProjectProviderOAuth(projectId, subscription.oauth, {});
-      if (cancelledRef.current) return;
-      setChallenge({ url: start.verification_url, code: start.user_code });
-
-      const interval = Math.max(2000, start.interval_ms || 3000);
-      const deadline = start.expires_at || Date.now() + 10 * 60_000;
-      while (!cancelledRef.current && Date.now() < deadline) {
-        await sleep(interval);
-        if (cancelledRef.current) return;
-        let res;
-        try {
-          res = await pollProjectProviderOAuth(projectId, subscription.oauth, start.flow_id);
-        } catch {
-          continue;
-        }
-        if (cancelledRef.current) return;
-        if (res.status === 'success') {
+    await runDeviceGrant({
+      startOAuth: () => startProjectProviderOAuth(projectId, subscription.oauth, {}),
+      pollOAuth: (flowId) => pollProjectProviderOAuth(projectId, subscription.oauth, flowId),
+      sleep,
+      now: Date.now,
+      isCancelled: () => cancelledRef.current,
+      setChallenge,
+      setPhase,
+      setError,
+      failedMessage: copy.failed,
+      onSuccess: () => {
           setPhase('done');
           successToast(copy.connectedToast);
           queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
           queryClient.invalidateQueries({ queryKey: providerLoginsKey(projectId) });
           refreshProjectProviderState(queryClient, projectId, { expectProviderId: subscription.providerId });
           onConnected(subscription.providerId);
-          return;
-        }
-        if (res.status === 'failed') {
-          setChallenge(null);
-          setPhase('idle');
-          setError(res.error || 'Authorization failed');
-          return;
-        }
-        if (res.status === 'expired') {
-          setChallenge(null);
-          setPhase('idle');
-          setError('Authorization timed out. Try again.');
-          return;
-        }
-      }
-      if (!cancelledRef.current) {
-        setChallenge(null);
-        setPhase('idle');
-        setError('Authorization timed out. Try again.');
-      }
-    } catch (err) {
-      if (cancelledRef.current) return;
-      setChallenge(null);
-      setPhase('idle');
-      setError(err instanceof Error ? err.message : copy.failed);
-    }
+      },
+    });
   }, [projectId, queryClient, onConnected, subscription, copy.connectedToast, copy.failed]);
 
   // What the PROJECT holds, not what this component remembers doing. A

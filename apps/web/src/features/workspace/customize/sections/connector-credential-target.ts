@@ -4,7 +4,7 @@
  * (`connectionId` + `owner`), so both answers must follow the selected account.
  */
 
-export type CredentialWriteTarget =
+type CredentialWriteTarget =
   /** `PUT /projects/:id/connections/:connectionId/credential`. */
   | { kind: 'connection'; connectionId: string }
   /** A personal account not created yet: reconcile it, then write through it. */

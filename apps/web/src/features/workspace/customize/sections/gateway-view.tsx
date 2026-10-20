@@ -101,10 +101,10 @@ import { useIsMutating } from '@tanstack/react-query';
 export const MODELS_PAGE_TITLE = 'Models';
 export const MODELS_PAGE_DESCRIPTION = 'Choose the providers and models this project can use.';
 
-export type LlmTab =
+type LlmTab =
   'providers' | 'models' | 'custom' | 'gateway' | 'routing' | 'overview' | 'logs';
 
-export interface LlmTabEntry {
+interface LlmTabEntry {
   id: LlmTab;
   label: string;
 }
@@ -162,7 +162,7 @@ export function isQuickLlmTab(tab: string): tab is QuickLlmTab {
  * discipline as `QUICK_LLM_TABS`: a subset of `LLM_TABS`, never a second
  * list.
  */
-export type NativeLlmTab = 'providers' | 'custom';
+type NativeLlmTab = 'providers' | 'custom';
 
 export const NATIVE_LLM_TABS: LlmTabEntry[] = LLM_TABS.filter((t) =>
   (['providers', 'custom'] as string[]).includes(t.id),

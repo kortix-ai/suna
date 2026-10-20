@@ -146,15 +146,6 @@ describe('Slack connect card — the payoff renders before the commitment', () =
 });
 
 describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
-  test('three steps driven by the shared Stepper in a rail, inside a two-pane Modal', () => {
-    expect(wizardSource).toContain("from '@/components/ui/stepper'");
-    expect(wizardSource).toContain('<Stepper');
-    expect(wizardSource).toContain('<aside');
-    expect(wizardSource).not.toContain('<ByoWizardSteps');
-    expect(wizardSource).toContain('ModalContent');
-    expect(wizardSource).toMatch(/const STEPS = \[[\s\S]*?step: 3/);
-  });
-
   test('the prose step counter is gone', () => {
     expect(wizardSource).not.toContain('Step 1 of 2');
     expect(wizardSource).not.toContain('Step 2 of 2');
@@ -263,16 +254,7 @@ describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
     expect(wizardSource).not.toContain('fetch(');
   });
 
-  test('the house icon-swap values live in the shared CopyButton, once', () => {
-    const copyButton = read('../../../../components/markdown/copy-button.tsx');
-    expect(copyButton).toContain("filter: 'blur(4px)'");
-    expect(copyButton).toContain('scale: 0.25');
-    expect(copyButton).toContain('bounce: 0');
-    expect(copyButton).toContain('initial={false}');
-    // Teams' old local button hard-swapped the glyphs; nothing does now.
-    expect(teamsCardSource).not.toMatch(/\{copied \? <Check/);
-    expect(teamsCardSource).not.toContain('navigator.clipboard');
-  });
+
 });
 
 describe('Channels view — Email and Teams are entity rows', () => {

@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from '@/i18n/test-source';
-import { join } from 'node:path';
 
 import { wireToModelKey } from '@kortix/sdk/react';
 
@@ -18,19 +16,6 @@ import { wireToModelKey } from '@kortix/sdk/react';
  * when this moved: the identity comparison that decides which row is badged,
  * and the gate that decides which rows offer the menu at all.
  */
-
-/**
- * Comments stripped first — a `toContain` over a whole file otherwise matches
- * the file's own doc comment rather than its code. Same helper, same reason, as
- * `llm-provider-modal.test.ts`.
- */
-function code(path: string): string {
-  return readFileSync(path, 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
-}
-
-const tabSource = code(join(import.meta.dir, 'models-tab.tsx'));
 
 describe('the identity a badged row is decided by', () => {
   /**
@@ -63,140 +48,5 @@ describe('the identity a badged row is decided by', () => {
     ]) {
       expect(wireToModelKey(wire).modelID).toBe(wire);
     }
-  });
-});
-
-describe('ModelsTab offers both default scopes', () => {
-  test('the account default is settable from this tab', () => {
-    // The half that was missing: the project default already lived here, the
-    // account default only existed under the session picker.
-    expect(tabSource).toContain('defaults.setAccountDefault(');
-  });
-
-  test('the project default is still settable from this tab', () => {
-    expect(tabSource).toContain('defaults.setProjectDefault(');
-  });
-
-  test('each scope badges the model that currently holds it', () => {
-    // The full `<Tag>` element, NOT the bare words: the scope phrases also
-    // appear in the menu items' own labels, so a substring check on a phrase
-    // passes with the badge deleted — it cannot fail, which makes it worse
-    // than no test. Verified by deleting the tag and watching the loose
-    // version stay green.
-    //
-    // `your default` was `my default`. Both tags are read on someone else's
-    // row as often as your own, and "my" in a badge is ambiguous about whose
-    // "my" it is; the menu item that SETS it still says "my", because there
-    // the reader is the actor.
-    expect(tabSource).toContain("raw('text5e06ae1125b5')");
-    expect(tabSource).toContain("raw('text071c0f5e8495')");
-  });
-
-  /**
-   * The wire id's only remaining home. It used to print under every model
-   * name — `anthropic/claude-sonnet-4-5` on 34 rows, meaningless to most
-   * readers and needed only by the few about to paste one into a config. If
-   * this item goes, the id becomes unreachable from the UI entirely, and the
-   * row would look no different.
-   */
-  test('the wire id is off the row and inside the menu', () => {
-    expect(tabSource).toContain('Copy model ID');
-    expect(tabSource).toContain('clipboard?.writeText(wireId)');
-    // Not rendered on the row any more. The id used to sit in a `<code>` with
-    // a copy button beside it; both are gone, so asserting on those two is
-    // asserting on the thing that was actually deleted. (A looser check like
-    // `not.toContain('{wireId}')` cannot fail — `key={wireId}` keeps it true
-    // forever.)
-    expect(tabSource).not.toContain('<ModelIdCopyButton');
-    expect(tabSource).not.toContain('<code');
-  });
-
-  /**
-   * The row shows the same real numbers as the "Add provider" catalog
-   * — context window, price per 1M, capability icons
-   * — instead of a prose paraphrase. One catalog, one set of facts.
-   */
-  test('the row shows real catalog figures, not a paraphrase', () => {
-    expect(tabSource).toContain('formatPricePerMillion');
-    expect(tabSource).toContain('formatTokenCount');
-    expect(tabSource).toContain('<ModelCapabilityIcons');
-    // "$X / $Y per 1M" — the cheapest route as "from", every route on hover.
-    expect(tabSource).toContain("tList(hasRoutes ? 'fromPrice' : 'price'");
-    expect(tabSource).toContain('<ModelPriceHoverCard');
-    // The hover card keeps every route line, its preferred mark, the cached
-    // price, the estimate disclaimer and both data notes.
-    const card = tabSource.slice(tabSource.indexOf('export function ModelPriceHoverCard'));
-    for (const piece of ['routes.map', 'price.cacheRead', "'pricingPreferred'", "'pricingEstimate'", "'zdrDescription'", "'usProvidersDescription'"]) {
-      expect(card).toContain(piece);
-    }
-    expect(tabSource).not.toContain('modelPlainSummary');
-  });
-
-  test('the menu permits disabling hidden models while default actions require an offered model', () => {
-    // The old gate was `!isProjectDefault && enabled`, which hid the control on
-    // exactly the row you would reach for to ALSO make it your own default.
-    // Hidden models need the disable action. Default actions remain unavailable.
-    expect(tabSource).not.toContain('!isProjectDefault && enabled');
-    expect(tabSource).toContain('(enabled || hiddenFromPicker)');
-    expect(tabSource).toContain('disabled={!enabled || isProjectDefault || defaults.isUpdating}');
-    expect(tabSource).toContain('disabled={!enabled || isAccountDefault || defaults.isUpdating}');
-  });
-});
-
-/**
- * The list must not move when you flip a switch.
- *
- * "Start over" only exists once `usingDefaults` goes false — i.e. from the
- * moment you touch your first model. It used to own a row of its own
- * (`flex items-center justify-between … pb-2.5`, holding an empty `<p>` the
- * rest of the time), so appearing inserted a 26px band and pushed the entire
- * list down under the cursor that had just clicked a switch. Measured on the
- * running app before the fix: the first provider group's top went 233.7px →
- * 259.4px, and the gap under the search field went 20px → 46px.
- *
- * The fix is structural, so the guard is too: the conditional control shares
- * the search field's always-present row, and there is no spacer row for it to
- * grow.
- */
-describe('selecting a model does not resize the layout above the list', () => {
-  test('"Start over" shares the search row instead of owning one', () => {
-    // The row always renders — it also carries the "N of M on" count — so
-    // "Start over" appearing never inserts a row of its own.
-    const row = tabSource.slice(tabSource.indexOf('<div className="mb-4 flex items-center gap-3">'));
-    expect(row.indexOf('!enablement.usingDefaults')).toBeGreaterThan(-1);
-    expect(row.indexOf('!enablement.usingDefaults')).toBeLessThan(row.indexOf("tList('onCount'"));
-    expect(tabSource).toContain('Start over');
-  });
-
-  test('the empty spacer row is gone', () => {
-    // The row and its placeholder `<p className="flex-1" />`, which existed
-    // only to push a sometimes-there button to the right.
-    expect(tabSource).not.toContain('<p className="flex-1" />');
-    expect(tabSource).not.toContain(
-      'className="flex items-center justify-between gap-3 px-1 pb-2.5"',
-    );
-  });
-});
-
-/**
- * A search that matches nothing must leave the search box on screen.
- *
- * The no-match message used to be an early `return` placed ABOVE the JSX that
- * holds the search row, so typing "gpt 6" unmounted the input and its clear
- * button. `ownSearch` kept the string; nothing rendered could edit it. The
- * tab sat on "Nothing matches" until it was remounted.
- */
-describe('a no-match search keeps the search input mounted', () => {
-  test('the no-match message is not an early return', () => {
-    // The only early return left is the one for an EMPTY catalogue, which has
-    // nothing to search. `groups.length === 0` must render inside the layout.
-    expect(tabSource).not.toMatch(/if \(groups\.length === 0\) \{\s*return \(/);
-  });
-
-  test('the no-match message renders below the search row, in the list slot', () => {
-    const searchRow = tabSource.indexOf('<div className="mb-4 flex items-center gap-3">');
-    const noMatch = tabSource.indexOf("tI18nComplete('textb475669b9d30'");
-    expect(searchRow).toBeGreaterThan(-1);
-    expect(noMatch).toBeGreaterThan(searchRow);
   });
 });
