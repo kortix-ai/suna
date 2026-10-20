@@ -129,7 +129,10 @@ export function SessionDeleteModal({
         queryKey: qk.project.sessionsScope(projectId),
         predicate: (q) => !own.every((part, i) => q.queryKey[i] === part),
       });
-      onDeleted?.();
+      // The open session's page has nothing left to show: a caller without
+      // its own destination (the sidebar row menu) leaves it for the project home.
+      if (onDeleted) onDeleted();
+      else if (id === openSessionId) router.push(uiRoutes().project(projectId));
       onOpenChange(false);
     },
     onError: (err, _id, restore) => {
