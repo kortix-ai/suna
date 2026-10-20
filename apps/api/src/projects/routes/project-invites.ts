@@ -1,5 +1,5 @@
 /** Project invites: invite by email and manage pending invites. */
-import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail } from '../../accounts/email';
+import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail, sendProjectAddedEmail } from '../../accounts/email';
 import { PROJECT_ACTIONS } from '../../iam';
 import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { assignPendingProjectRole, revokePendingAssignments } from '../../iam/assignments';
@@ -191,33 +191,33 @@ export function registerProjectInvitesRoutes(): void {
     }
 
     const targetAccountRole = await ensureOrgMembership(loaded.row.accountId, targetUserId);
-    if (isAccountManager(targetAccountRole)) {
-      return c.json({
-        user_id: targetUserId,
-        email,
-        account_role: targetAccountRole,
-        project_role: null,
-        effective_project_role: 'manager',
-        has_implicit_access: true,
+    const implicitAccess = isAccountManager(targetAccountRole);
+    if (!implicitAccess) {
+      await grantProjectRole({
+        accountId: loaded.row.accountId,
+        projectId,
+        userId: targetUserId,
+        role,
+        grantedBy: loaded.userId,
+        expiresAt: expires.value,
       });
     }
 
-    await grantProjectRole({
-      accountId: loaded.row.accountId,
+    await sendProjectAddedEmail({
+      email,
       projectId,
-      userId: targetUserId,
-      role,
-      grantedBy: loaded.userId,
-      expiresAt: expires.value,
+      projectName: loaded.row.name ?? 'Untitled project',
+      inviterEmail: c.get('userEmail') ?? null,
+      role: implicitAccess ? 'manager' : role,
     });
 
     return c.json({
       user_id: targetUserId,
       email,
       account_role: targetAccountRole,
-      project_role: role,
-      effective_project_role: role,
-      has_implicit_access: false,
+      project_role: implicitAccess ? null : role,
+      effective_project_role: implicitAccess ? 'manager' : role,
+      has_implicit_access: implicitAccess,
     });
   },
   );
