@@ -30,7 +30,6 @@ import {
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
 export function AgentAuthorityCard({
@@ -66,11 +65,6 @@ export function AgentAuthorityCard({
       <EditorSection
         title={t('title')}
         description={t('description')}
-        trailing={
-          <Badge variant="outline" size="sm" className="tabular-nums">
-            {t('effectiveCount', { count: authority.effective.length })}
-          </Badge>
-        }
       >
         <SettingRow label={t('kortixPermissions')} help={t('kortixPermissionsHelp', { agent: agentName })}>
           <span className="text-foreground block text-sm sm:text-right">{declaredLabel}</span>
@@ -92,10 +86,9 @@ export function AgentAuthorityCard({
               ))
             )}
             {accountId && ceiling.kind !== 'hidden' && ceiling.kind !== 'loading' ? (
-              <Button asChild variant="ghost" size="sm" className="gap-1 px-2">
+              <Button asChild variant="secondary" size="sm">
                 <HubLink to={hubTarget(accountId, { tab: 'access-projects', project: projectId })}>
                   {t('changeCeiling')}
-                  <ArrowUpRightIcon className="size-3.5 shrink-0" />
                 </HubLink>
               </Button>
             ) : null}

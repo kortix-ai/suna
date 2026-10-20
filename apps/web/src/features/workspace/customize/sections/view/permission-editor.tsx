@@ -4,7 +4,6 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
 /** The tool-permission editor — a default action plus per-tool rules (a bare
  *  action, or a map of path/command patterns to actions). */
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
@@ -29,6 +28,8 @@ import {
   PERMISSION_RULE_GROUPS,
   PERMISSION_RULE_KEYS,
 } from './agent-editor-catalog';
+import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
+import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { EditorSection } from './agent-editor-primitives';
 
 type PermObject = Record<string, PermissionRule | PermissionAction | undefined>;
@@ -96,7 +97,7 @@ function PermissionKeyName({ permKey }: { permKey: string }) {
         <span className="text-foreground truncate text-sm">
           {PERMISSION_KEY_LABEL[permKey] ?? permKey}
         </span>
-        <span className="text-muted-foreground/70 shrink-0 font-mono text-xs">{permKey}</span>
+        <span className="text-muted-foreground shrink-0 font-mono text-xs">{permKey}</span>
       </span>
     </Hint>
   );
@@ -137,7 +138,7 @@ function PermissionRuleRow({
   };
 
   return (
-    <div className="space-y-2 px-3 py-2.5">
+    <div className="space-y-2 px-4 py-3">
       <div className="flex items-center justify-between gap-3">
         <PermissionKeyName permKey={label} />
         <div className="flex shrink-0 items-center gap-1.5">
@@ -261,17 +262,12 @@ export function ToolsSection({
     <EditorSection
       title={tI18nComplete.raw('textea93d6a262ec')}
       description={tI18nComplete.raw('text765f388e2ce6')}
-      trailing={
-        <Badge variant="outline" size="sm">
-          {summary}
-        </Badge>
-      }
+      lead
+      bare
     >
       {/* Open, not behind a disclosure: the page gives Tools a full column
           of its own (Marko, 2026-09-03). */}
-      <div className="py-4">
-        <PermissionEditor permission={permission} onChange={onChange} />
-      </div>
+      <PermissionEditor permission={permission} onChange={onChange} summary={summary} />
     </EditorSection>
   );
 }
@@ -279,9 +275,12 @@ export function ToolsSection({
 function PermissionEditor({
   permission,
   onChange,
+  summary,
 }: {
   permission: PermissionConfig | undefined;
   onChange: (next: PermissionConfig | undefined) => void;
+  /** What the rules add up to, under the default row's label. */
+  summary: string;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const obj = asPermObject(permission);
@@ -300,28 +299,31 @@ function PermissionEditor({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2.5">
-        <div className="min-w-0">
-          <p className="text-foreground text-sm">{tI18nComplete.raw('text9b99443d24c5')}</p>
-          <p className="text-muted-foreground text-xs">
-            {bareDefault
-              ? tI18nComplete.raw('textabba11786cee')
-              : tI18nComplete.raw('texte640da5d14fd')}
-          </p>
-        </div>
-        <ActionSelect
-          value={bareDefault}
-          onChange={setDefault}
-          inheritLabel={tI18nComplete.raw('text8d2dd4e8c7ca')}
+    <div className="space-y-8">
+      <SettingsRowGroup>
+        <SettingsRow
           label={tI18nComplete.raw('text9b99443d24c5')}
-        />
-      </div>
+          description={
+            bareDefault
+              ? tI18nComplete.raw('textabba11786cee')
+              : Object.keys(obj).length > 0
+                ? `${summary}.`
+                : tI18nComplete.raw('texte640da5d14fd')
+          }
+        >
+          <ActionSelect
+            value={bareDefault}
+            onChange={setDefault}
+            inheritLabel={tI18nComplete.raw('text8d2dd4e8c7ca')}
+            label={tI18nComplete.raw('text9b99443d24c5')}
+          />
+        </SettingsRow>
+      </SettingsRowGroup>
 
       {PERMISSION_RULE_GROUPS.map((group) => (
-        <div key={group.label} className="space-y-1.5">
-          <p className="text-muted-foreground text-xs font-medium">{group.label}</p>
-          <div className="divide-border/60 divide-y rounded-md border">
+        <section key={group.label} className="space-y-3">
+          <SettingsSubsectionHeader title={group.label} />
+          <div className="bg-popover divide-border divide-y rounded-md border">
             {group.keys.map((key) => (
               <PermissionRuleRow
                 key={key}
@@ -331,16 +333,14 @@ function PermissionEditor({
               />
             ))}
           </div>
-        </div>
+        </section>
       ))}
 
-      <div className="space-y-1.5">
-        <p className="text-muted-foreground text-xs font-medium">
-          {PERMISSION_ACTION_ONLY_GROUP_LABEL}
-        </p>
-        <div className="divide-border/60 divide-y rounded-md border">
+      <section className="space-y-3">
+        <SettingsSubsectionHeader title={PERMISSION_ACTION_ONLY_GROUP_LABEL} />
+        <div className="bg-popover divide-border divide-y rounded-md border">
           {PERMISSION_ACTION_ONLY_KEYS.map((key) => (
-            <div key={key} className="flex items-center justify-between gap-3 px-3 py-2.5">
+            <div key={key} className="flex items-center justify-between gap-3 px-4 py-3">
               <PermissionKeyName permKey={key} />
               <ActionSelect
                 value={typeof obj[key] === 'string' ? (obj[key] as PermissionAction) : undefined}
@@ -351,7 +351,7 @@ function PermissionEditor({
             </div>
           ))}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

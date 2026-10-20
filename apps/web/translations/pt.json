@@ -22033,5 +22033,9 @@
   "triggerAutoPause": {
     "title": "Pausou-se ao atingir o limite de execuções",
     "description": "Rodou no limite de execuções por hora por 2 horas seguidas, então parou de iniciar execuções. Descubra o que continua acionando-o e depois retome-o."
+  },
+  "agentEditor": {
+    "manage": "Gerenciar",
+    "overviewTitle": "Visão geral"
   }
 }

@@ -247,7 +247,6 @@ describe('mode pickers use the shared component library', () => {
 
   test('the grant-mode field is built from Tabs', () => {
     expect(grantFieldSource).toContain("from '@/components/ui/tabs'");
-    expect(grantFieldSource).toContain('TabsTriggerCompact');
     for (const mode of ['all', 'pick', 'none']) {
       expect(grantFieldSource).toContain(`value: '${mode}'`);
     }

@@ -36,7 +36,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { EditorSection } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import {
+  EditorList,
+  EditorSection,
+} from '@/features/workspace/customize/sections/view/agent-editor-primitives';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
 import { listProjectTriggers, type ProjectTrigger } from '@kortix/sdk';
@@ -137,19 +141,31 @@ export function AgentTriggersSection({
     <EditorSection
       title={tI18nComplete.raw('texte62f2148a64d')}
       description={tI18nComplete.raw('text1a1e4d549e85')}
+      trailing={
+        canCreate ? (
+          <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+            <PlusIcon className="size-4" />
+            {tI18nComplete.raw('text58fd308928dd')}
+          </Button>
+        ) : undefined
+      }
+      lead
+      bare
     >
-      <div className="space-y-3 py-3.5">
+      <div>
         {triggersQuery.isLoading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-11 w-full rounded-md" />
-            <Skeleton className="h-11 w-full rounded-md" />
-          </div>
+          <EditorList>
+            {[0, 1].map((i) => (
+              <li key={i} className="flex items-center gap-3 px-4 py-2.5">
+                <Skeleton className="size-8 rounded-sm" />
+                <Skeleton className="h-4 w-40 rounded-sm" />
+              </li>
+            ))}
+          </EditorList>
         ) : mine.length === 0 ? (
-          <p className="text-muted-foreground text-xs text-pretty">
-            {tI18nComplete.raw('textb254c6e02e1a')}
-          </p>
+          <EmptyState size="sm" title={tI18nComplete.raw('textb254c6e02e1a')} />
         ) : (
-          <ul className="space-y-2">
+          <EditorList>
             {mine.map((trigger) => {
               const KindIcon = KIND_ICON[trigger.type] ?? TimerIcon;
               return (
@@ -158,9 +174,8 @@ export function AgentTriggersSection({
                     type="button"
                     onClick={() => setSelectedSlug(trigger.slug)}
                     className={cn(
-                      'group bg-popover flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left',
-                      'hover:border-border hover:bg-accent transition-[background-color,border-color]',
-                      'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
+                      'hover:bg-hover flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors duration-fast',
+                      'focus-visible:bg-hover focus-visible:outline-none',
                     )}
                   >
                     <span
@@ -194,20 +209,8 @@ export function AgentTriggersSection({
                 </li>
               );
             })}
-          </ul>
+          </EditorList>
         )}
-
-        {canCreate ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => setCreateOpen(true)}
-          >
-            <PlusIcon className="size-3.5 shrink-0" />
-            {tI18nComplete.raw('text58fd308928dd')}
-          </Button>
-        ) : null}
       </div>
 
       {canCreate ? (

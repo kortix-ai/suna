@@ -31,6 +31,7 @@ import {
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import Hint from '@/components/ui/hint';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import {
@@ -1584,9 +1585,10 @@ function SecretDialog({
               </Field>
 
               {strategy === 'runtime' && (
-                <InfoBanner tone="warning" title={tI18nComplete.raw('text4fb8319405f3')}>
-                  {tI18nComplete.raw('textdb71b63b5778')}
-                </InfoBanner>
+                <Alert variant="warning">
+                  <AlertTitle>{tI18nComplete.raw('text4fb8319405f3')}</AlertTitle>
+                  <AlertDescription>{tI18nComplete.raw('textdb71b63b5778')}</AlertDescription>
+                </Alert>
               )}
 
               {grantNotice && (

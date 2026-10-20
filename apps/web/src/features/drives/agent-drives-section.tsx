@@ -2,7 +2,10 @@
 
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { EditorSection } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
+import {
+  EditorList,
+  EditorSection,
+} from '@/features/workspace/customize/sections/view/agent-editor-primitives';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -16,7 +19,6 @@ import {
 } from '@/hooks/drives/use-drives';
 import { useTranslations } from '@/i18n/use-translations';
 import type { DriveEntry } from '@kortix/sdk';
-import { HardDriveIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
 /**
@@ -37,10 +39,13 @@ export function AgentDrivesSection({ projectId, agentName }: { projectId: string
   let body;
   if (drive.isLoading || root.isLoading) {
     body = (
-      <div className="space-y-2">
-        <Skeleton className="h-13 w-full rounded-md" />
-        <Skeleton className="h-13 w-full rounded-md" />
-      </div>
+      <EditorList>
+        {[0, 1].map((i) => (
+          <li key={i} className="flex items-center gap-3 px-4 py-3">
+            <Skeleton className="h-4 w-40 rounded-sm" />
+          </li>
+        ))}
+      </EditorList>
     );
   } else if (drive.isError || root.isError || !drive.data) {
     body = (
@@ -58,11 +63,11 @@ export function AgentDrivesSection({ projectId, agentName }: { projectId: string
     body = <EmptyState size="sm" title={t('noCompanyDrives')} />;
   } else {
     body = (
-      <ul className="space-y-2">
+      <EditorList>
         {drives.map((entry) => (
           <AgentDriveRow key={entry.path} driveId={drive.data!.driveId} entry={entry} agentName={agentName} />
         ))}
-      </ul>
+      </EditorList>
     );
   }
 
@@ -71,12 +76,14 @@ export function AgentDrivesSection({ projectId, agentName }: { projectId: string
       title={t('customizeTitle')}
       description={t('accessAgentsCompanyHint')}
       trailing={
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="secondary" size="sm">
           <Link href={`/projects/${projectId}/drive`}>{t('driveLabel')}</Link>
         </Button>
       }
+      lead
+      bare
     >
-      <div className="py-4">{body}</div>
+      {body}
     </EditorSection>
   );
 }
@@ -104,10 +111,7 @@ function AgentDriveRow({ driveId, entry, agentName }: { driveId: string; entry: 
   };
 
   return (
-    <li className="bg-popover flex items-center gap-3 rounded-md border px-4 py-2">
-      <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-md">
-        <HardDriveIcon className="size-4" />
-      </span>
+    <li className="flex items-center gap-3 px-4 py-2.5">
       <div className="min-w-0 flex-1">
         <p className="text-foreground truncate text-sm font-medium">{entry.name}</p>
         <p className="text-muted-foreground truncate font-mono text-xs">

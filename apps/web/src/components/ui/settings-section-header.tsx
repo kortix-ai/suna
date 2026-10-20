@@ -14,7 +14,7 @@ export function SettingsSectionHeader({
   className,
 }: {
   title: string;
-  description?: string;
+  description?: ReactNode;
   action?: ReactNode;
   className?: string;
 }) {

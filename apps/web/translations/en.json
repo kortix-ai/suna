@@ -22033,5 +22033,9 @@
   "triggerAutoPause": {
     "title": "Paused itself at its run limit",
     "description": "It ran at its hourly run limit for 2 hours in a row, so it stopped starting runs. Find what keeps firing it, then resume it."
+  },
+  "agentEditor": {
+    "manage": "Manage",
+    "overviewTitle": "Overview"
   }
 }

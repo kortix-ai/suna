@@ -10,7 +10,6 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * platform enforcement; the heading now says what it governs.
  */
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { Switch } from '@/components/ui/switch';
@@ -22,11 +21,11 @@ import {
 import { cn } from '@/lib/utils';
 import type { AgentConfigBlock, AgentGrantSetV2, SandboxTemplate } from '@kortix/sdk';
 import { useKortixRouteProjectId } from '@kortix/sdk/react';
-import { ArrowRightIcon, CaretDownIcon, CubeIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, CubeIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { EditorSection, SettingRow } from './agent-editor-primitives';
 import { pruneRequiredConnectors } from './connectors-personal';
-import { type GrantOption, GrantSetField, KortixPermissionsField, grantSummary } from './grant-mode-field';
+import { type GrantOption, GrantSetField, KortixPermissionsField } from './grant-mode-field';
 
 type SetKortix = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) => void;
 
@@ -49,75 +48,54 @@ export function RequiredConnectorToggle({
     <Hint
       label={active ? tI18nComplete.raw('text49c8975f345b') : tI18nComplete.raw('texta54220c82b33')}
     >
-      <button
+      <Button
         type="button"
+        variant={active ? 'secondary' : 'ghost'}
+        size="sm"
         aria-pressed={active}
         aria-label={
           active ? tI18nComplete.raw('textd16c94c19673') : tI18nComplete.raw('text63336c8a8e83')
         }
         onClick={onToggle}
-        className={cn(
-          'shrink-0 rounded px-1.5 py-1 text-xs transition-[color,background-color,transform] active:scale-[0.96]',
-          active
-            ? 'bg-kortix-purple/15 text-kortix-purple font-medium'
-            : 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50',
-        )}
+        className={cn('shrink-0', !active && 'text-muted-foreground')}
       >
         {tI18nComplete.raw('text4850b174b713')}
-      </button>
+      </Button>
     </Hint>
   );
 }
 
-/** The summary chip at a grant card's right edge — "All", "3 picked", "None". */
-export function GrantChip({ value }: { value: AgentGrantSetV2 | undefined }) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const summary = grantSummary(value, tI18nComplete);
-  return (
-    <Badge
-      variant={summary.tone === 'muted' ? 'muted' : 'outline'}
-      size="sm"
-      className="tabular-nums"
-    >
-      {summary.label}
-    </Badge>
-  );
-}
-
 /**
- * Chip plus a link to the project-wide page for the same thing. A grant page
- * picks from what the project has; adding, editing or removing one of them
- * happens on its own Customize tab (Marko, 2026-09-03: "for now … point to
- * the general page … to see & browse em all"). Full CRUD in place is the
- * follow-up.
+ * The section action of a grant page: one `secondary` button to the
+ * project-wide page for the same thing. A grant page picks from what the
+ * project has; adding, editing or removing one happens on its own Customize
+ * tab. The grant mode row already states All / Pick / None, so the header
+ * carries no summary chip.
  */
-export function GrantHeaderTrailing({
-  value,
+export function ManageButton({
   tab,
   href,
-  label,
 }: {
-  value: AgentGrantSetV2 | undefined;
   tab?: 'skills' | 'connectors' | 'secrets';
-  /** A page `tab` cannot name — Apps is a Customize tab, reached
-   *  through `capabilityTabHref(projectId, 'apps')`. */
+  /** A page `tab` cannot name, such as Apps. */
   href?: (projectId: string) => string;
-  label: string;
 }) {
+  const tEditor = useI18nTranslations('agentEditor');
   const projectId = useKortixRouteProjectId();
-  const target = projectId ? (href ? href(projectId) : tab ? capabilityTabHref(projectId, tab) : null) : null;
+  const target = projectId
+    ? href
+      ? href(projectId)
+      : tab
+        ? capabilityTabHref(projectId, tab)
+        : null
+    : null;
+  if (!target) return null;
   return (
-    <div className="flex items-center gap-2">
-      <GrantChip value={value} />
-      {target ? (
-        <Button asChild variant="ghost" size="sm" className="gap-1 px-2">
-          <Link href={target} prefetch>
-            {label}
-            <ArrowRightIcon className="size-3.5 shrink-0" />
-          </Link>
-        </Button>
-      ) : null}
-    </div>
+    <Button asChild variant="secondary" size="sm">
+      <Link href={target} prefetch>
+        {tEditor('manage')}
+      </Link>
+    </Button>
   );
 }
 
@@ -139,23 +117,16 @@ export function SkillsSection({ draft, set, options }: GrantSectionProps) {
     <EditorSection
       title={tI18nComplete.raw('text66d0f523a379')}
       description={tI18nComplete.raw('textb27e54100c96')}
-      trailing={
-        <GrantHeaderTrailing
-          value={draft.skills}
-          tab="skills"
-          label={tI18nComplete.raw('text78abcbbfb830')}
-        />
-      }
+      trailing={<ManageButton tab="skills" />}
+      lead
+      bare
     >
-      <div className="py-4">
-        <GrantSetField
-          value={draft.skills}
-          onChange={(v: AgentGrantSetV2) => set('skills', v)}
-          options={options}
-          allLabel={tI18nComplete.raw('textf059c2dbe260')}
-          emptyLabel={tI18nComplete.raw('text66e36043ff7c')}
-        />
-      </div>
+      <GrantSetField
+        value={draft.skills}
+        onChange={(v: AgentGrantSetV2) => set('skills', v)}
+        options={options}
+        emptyLabel={tI18nComplete.raw('text66e36043ff7c')}
+      />
     </EditorSection>
   );
 }
@@ -166,15 +137,11 @@ export function ConnectorsSection({ draft, set, options }: GrantSectionProps) {
     <EditorSection
       title={tI18nComplete.raw('textc3d2e79ebdd0')}
       description={tI18nComplete.raw('text00f5aae9f9d3')}
-      trailing={
-        <GrantHeaderTrailing
-          value={draft.connectors}
-          tab="connectors"
-          label={tI18nComplete.raw('textd83250185d41')}
-        />
-      }
+      trailing={<ManageButton tab="connectors" />}
+      lead
+      bare
     >
-      <div className="space-y-2 py-4">
+      <div className="space-y-3">
         <GrantSetField
           value={draft.connectors}
           onChange={(v: AgentGrantSetV2) => {
@@ -185,7 +152,6 @@ export function ConnectorsSection({ draft, set, options }: GrantSectionProps) {
             }
           }}
           options={options}
-          allLabel={tI18nComplete.raw('text35e54cea7f41')}
           emptyLabel={tI18nComplete.raw('text389fb5217392')}
           rowAccessory={(id, isSelected) =>
             isSelected ? (
@@ -220,23 +186,16 @@ export function SecretsSection({ draft, set, options }: GrantSectionProps) {
     <EditorSection
       title={tI18nComplete.raw('textd8707d411d99')}
       description={tI18nComplete.raw('text7f619d9e30a8')}
-      trailing={
-        <GrantHeaderTrailing
-          value={draft.secrets}
-          tab="secrets"
-          label={tI18nComplete.raw('text0b38e3daeb93')}
-        />
-      }
+      trailing={<ManageButton tab="secrets" />}
+      lead
+      bare
     >
-      <div className="py-4">
-        <GrantSetField
-          value={draft.secrets}
-          onChange={(v: AgentGrantSetV2) => set('secrets', v)}
-          options={options}
-          allLabel={tI18nComplete.raw('text86fdc0c950d5')}
-          emptyLabel={tI18nComplete.raw('text82a37b8c2266')}
-        />
-      </div>
+      <GrantSetField
+        value={draft.secrets}
+        onChange={(v: AgentGrantSetV2) => set('secrets', v)}
+        options={options}
+        emptyLabel={tI18nComplete.raw('text82a37b8c2266')}
+      />
     </EditorSection>
   );
 }
@@ -258,17 +217,15 @@ export function RegistryGrantSection({
     <EditorSection
       title={t(`${grant}.title`)}
       description={t(`${grant}.description`)}
-      trailing={<GrantChip value={draft[grant]} />}
+      lead
+      bare
     >
-      <div className="py-4">
-        <GrantSetField
-          value={draft[grant]}
-          onChange={(v: AgentGrantSetV2) => set(grant, v)}
-          options={options}
-          allLabel={t(`${grant}.all`)}
-          emptyLabel={t(`${grant}.empty`)}
-        />
-      </div>
+      <GrantSetField
+        value={draft[grant]}
+        onChange={(v: AgentGrantSetV2) => set(grant, v)}
+        options={options}
+        emptyLabel={t(`${grant}.empty`)}
+      />
     </EditorSection>
   );
 }
@@ -284,17 +241,16 @@ export function ProjectActionsSection({ draft, set }: Omit<GrantSectionProps, 'o
     <EditorSection
       title={tI18nComplete.raw('text8f12a6e05e6d')}
       description={tI18nComplete.raw('text15365eb45e29')}
-      trailing={<GrantChip value={permissions} />}
+      lead
+      bare
     >
-      <div className="py-4">
-        <KortixPermissionsField
-          value={permissions}
-          onChange={(v: AgentGrantSetV2) => {
-            set('kortix_cli', undefined);
-            set('kortix_permissions', v);
-          }}
-        />
-      </div>
+      <KortixPermissionsField
+        value={permissions}
+        onChange={(v: AgentGrantSetV2) => {
+          set('kortix_cli', undefined);
+          set('kortix_permissions', v);
+        }}
+      />
     </EditorSection>
   );
 }
@@ -326,6 +282,7 @@ export function WorkspaceSection({
     <EditorSection
       title={tI18nComplete.raw('text87bb59ba2f92')}
       description={tI18nComplete.raw('text76a5e5a39b4a')}
+      lead
     >
       <SettingRow
         label={tI18nComplete.raw('text9e471951a1b4')}

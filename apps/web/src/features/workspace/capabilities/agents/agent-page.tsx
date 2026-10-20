@@ -79,6 +79,7 @@ import {
   agentConfigSectionKeys,
   agentEditorOptionQueries,
   DEFAULT_AGENT_CONFIG_SECTION,
+  grantSummary,
   isAgentConfigSectionKey,
   registryGrantOptions,
   useAgentDraft,
@@ -142,7 +143,11 @@ import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-setti
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useIsMobile } from '@/hooks/utils';
 
-import { EditorSectionStyleProvider } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
+import {
+  EditorSection,
+  EditorSectionStyleProvider,
+} from '@/features/workspace/customize/sections/view/agent-editor-primitives';
+import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
 
 import { AgentDrivesSection } from '@/features/drives/agent-drives-section';
 
@@ -154,6 +159,13 @@ import {
   SecretsGrantPage,
   SkillsGrantPage,
 } from './agent-grant-pages';
+import {
+  GroupedUnderlineTabs,
+  GroupSwitchTabs,
+  InlineVerticalTabs,
+  PrototypeSwitcher,
+  useNavVariant,
+} from './agent-nav.prototype';
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
 import { AgentTriggersSection } from './agent-triggers-section';
@@ -291,6 +303,7 @@ function AgentPageFrame({
   sectionHref,
   pane,
   footer,
+  summaries,
 }: {
   header: ReactNode;
   section: AgentConfigSectionKey;
@@ -298,6 +311,8 @@ function AgentPageFrame({
   sectionHref: (key: AgentConfigSectionKey) => string;
   pane: ReactNode;
   footer?: ReactNode;
+  /** PROTOTYPE: each topic's current value, for the `inline` nav variant. */
+  summaries?: Partial<Record<AgentConfigSectionKey, string>>;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const isMobile = useIsMobile();
@@ -339,8 +354,42 @@ function AgentPageFrame({
     );
   };
 
+  // PROTOTYPE: `?variant=` swaps the rail for one of the candidate navs.
+  const variant = useNavVariant();
+  const navProps = {
+    groups,
+    section,
+    href: (key: string) => sectionHref(key as AgentConfigSectionKey),
+    summaries,
+  };
+  if (!isMobile && variant !== 'rail') {
+    return (
+      <div className="relative flex h-full min-h-0 flex-1 flex-col">
+        <div
+          className={cn(
+            'shrink-0 px-5 py-3',
+            variant === 'inline' && 'border-border/60 border-b',
+          )}
+        >
+          {header}
+        </div>
+        {variant === 'tabs' ? <GroupedUnderlineTabs {...navProps} /> : null}
+        {variant === 'groups' ? <GroupSwitchTabs {...navProps} /> : null}
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+          {variant === 'inline' ? (
+            <InlineVerticalTabs {...navProps}>{pane}</InlineVerticalTabs>
+          ) : (
+            <div className="mx-auto w-full max-w-2xl px-4 py-10 pb-32 lg:py-14 lg:pb-32">{pane}</div>
+          )}
+        </main>
+        {footer}
+        <PrototypeSwitcher />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
+    <div className="relative flex h-full min-h-0 flex-1 flex-col">
       <div className="border-border/60 shrink-0 border-b px-5 py-3">{header}</div>
       <div
         className={cn(
@@ -390,10 +439,11 @@ function AgentPageFrame({
           </aside>
         )}
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-          <div className="mx-auto w-full max-w-2xl px-6 py-8 pb-24 lg:py-10">{pane}</div>
+          <div className="mx-auto w-full max-w-2xl px-4 py-10 pb-32 lg:py-14 lg:pb-32">{pane}</div>
         </main>
       </div>
       {footer}
+      <PrototypeSwitcher />
     </div>
   );
 }
@@ -518,7 +568,7 @@ function AgentActions({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
-              variant="outline"
+              variant="secondary"
               size="icon-sm"
               aria-label={tI18nComplete.raw('textf8d46c2570e7')}
             >
@@ -579,13 +629,12 @@ function AgentChips({
   return (
     <span className="flex items-center gap-1.5">
       {showMode ? (
-        <Badge variant="outline" size={size} className="text-muted-foreground font-medium">
+        <Badge variant="secondary" size={size}>
           {formatMode(agent.mode ?? '')}
         </Badge>
       ) : null}
       {isDefault ? (
-        <Badge variant="outline" size={size} className="text-muted-foreground gap-1 font-medium">
-          <StarIcon weight="fill" className="text-kortix-orange size-3 shrink-0" />
+        <Badge variant="secondary" size={size}>
           {tI18nComplete.raw('text21b111cbfe6e')}
         </Badge>
       ) : null}
@@ -634,7 +683,7 @@ function AgentHeader({
           >
             {tI18nComplete.raw('text279b44d2ab4b')}
           </Link>
-          <CaretRightIcon aria-hidden className="text-muted-foreground/50 size-3.5 shrink-0" />
+          <CaretRightIcon aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
           <h1 className="text-foreground truncate text-sm font-semibold">
             {isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
           </h1>
@@ -698,6 +747,22 @@ function EditableAgentPage({
     [config.manifest_raw, config.agents, agent.name],
   );
   const section = useAgentSection(sections);
+  // PROTOTYPE: the `inline` nav variant shows each topic's current value.
+  const summaries = useMemo<Partial<Record<AgentConfigSectionKey, string>>>(() => {
+    const d = editor.draft;
+    const grant = (v: Parameters<typeof grantSummary>[0]) => grantSummary(v, tI18nComplete).label;
+    return {
+      skills: grant(d.skills),
+      connectors: grant(d.connectors),
+      secrets: grant(d.secrets),
+      apps: grant(d.apps),
+      actions: grant(d.kortix_permissions ?? d.kortix_cli),
+      subagents: grant(d.subagents),
+      commands: grant(d.commands),
+      extensions: grant(d.extensions),
+      model: editor.oc.model ? (editor.oc.model.split('/').pop() ?? editor.oc.model) : 'Default',
+    };
+  }, [editor.draft, editor.oc.model, tI18nComplete]);
 
   const onSave = useCallback(async () => {
     if (!editor.isDirty || update.isPending) return;
@@ -722,6 +787,7 @@ function EditableAgentPage({
       section={section}
       sections={sections}
       sectionHref={sectionHrefFor(pathname)}
+      summaries={summaries}
       pane={
         <AgentConfigSections
           section={section}
@@ -810,7 +876,9 @@ function EditableAgentPage({
 
 /**
  * The Overview topic — what the agent IS: one line of description and the
- * instructions, which are the agent. Two cards, in the pane's card dialect.
+ * instructions. Laid out like a Settings pane: the pane title, then each
+ * field under its own section heading. A field is its own surface; no box
+ * wraps a heading and a field together.
  */
 function OverviewPane({
   description,
@@ -826,30 +894,22 @@ function OverviewPane({
   onPromptChange: (next: string) => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tEditor = useI18nTranslations('agentEditor');
   return (
-    <div className="space-y-4">
-      <section className="bg-popover rounded-md border">
-        <div className="border-border/60 border-b px-4 pt-4 pb-3">
-          <h3 className="text-foreground text-sm font-medium">
-            {tI18nComplete.raw('text526e0087cc3f')}
-          </h3>
-          <p className="text-muted-foreground mt-1 text-xs leading-relaxed text-pretty">
-            {descriptionHelp}
-          </p>
-        </div>
-        <div className="px-4 py-4">
-          <Textarea
-            aria-label={tI18nComplete.raw('text526e0087cc3f')}
-            value={description}
-            placeholder={tI18nComplete.raw('text446f4eabf99f')}
-            minHeight={44}
-            className="text-sm"
-            onChange={(e) => onDescriptionChange(e.target.value)}
-          />
-        </div>
-      </section>
-      <InstructionsPanel value={prompt} onChange={onPromptChange} />
-    </div>
+    <>
+      <SettingsSectionHeader title={tEditor('overviewTitle')} className="pb-1" />
+      <EditorSection title={tI18nComplete.raw('text526e0087cc3f')} description={descriptionHelp} bare>
+        <Textarea
+          aria-label={tI18nComplete.raw('text526e0087cc3f')}
+          value={description}
+          placeholder={tI18nComplete.raw('text446f4eabf99f')}
+          minHeight={44}
+          className="text-sm"
+          onChange={(e) => onDescriptionChange(e.target.value)}
+        />
+      </EditorSection>
+      <InstructionsSection value={prompt} onChange={onPromptChange} />
+    </>
   );
 }
 
@@ -858,10 +918,9 @@ function OverviewPane({
  * the agent. Two views of one field: Edit is the textarea, Preview renders
  * the markdown the way the agent's source file reads. It opens on Preview
  * when there is something to read and on Edit when there is not; the toggle
- * is a segmented pair at the section's right edge, the same control the list
- * pages use for their filters.
+ * is the segmented `TabsList` at the section heading's right edge.
  */
-function InstructionsPanel({
+function InstructionsSection({
   value,
   onChange,
 }: {
@@ -871,49 +930,47 @@ function InstructionsPanel({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [view, setView] = useState<'edit' | 'preview'>(value.trim() ? 'preview' : 'edit');
   return (
-    <section className="bg-popover rounded-md border">
-      <div className="border-border/60 flex items-end justify-between gap-3 border-b px-4 pt-4 pb-3">
-        <div className="space-y-1">
-          <h3 className="text-foreground text-sm font-medium">
-            {tI18nComplete.raw('text934652dce41d')}
-          </h3>
-          <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-            {tI18nComplete.raw('text5fe8921b712c')}
-          </p>
-        </div>
+    <EditorSection
+      title={tI18nComplete.raw('text934652dce41d')}
+      description={tI18nComplete.raw('text5fe8921b712c')}
+      trailing={
         <Tabs value={view} onValueChange={(next) => setView(next as 'edit' | 'preview')}>
           <TabsList aria-label={tI18nComplete.raw('texte75bb2d0d554')}>
             <TabsTrigger value="edit">{tI18nComplete.raw('text464c4ffd019e')}</TabsTrigger>
             <TabsTrigger value="preview">{tI18nComplete.raw('text324b134f57c7')}</TabsTrigger>
           </TabsList>
         </Tabs>
-      </div>
+      }
+      bare
+    >
       {view === 'edit' ? (
-        <div className="p-2">
-          <Textarea
-            aria-label={tI18nComplete.raw('text934652dce41d')}
-            value={value}
-            placeholder={tI18nComplete.raw('text1436469ad07f')}
-            minHeight={420}
-            autoFocus={value.trim().length > 0}
-            className="border-0 font-mono text-xs leading-relaxed focus-visible:ring-0"
-            onChange={(e) => onChange(e.target.value)}
-          />
-        </div>
+        <Textarea
+          aria-label={tI18nComplete.raw('text934652dce41d')}
+          value={value}
+          placeholder={tI18nComplete.raw('text1436469ad07f')}
+          minHeight={420}
+          autoFocus={value.trim().length > 0}
+          className="font-mono text-xs leading-relaxed"
+          onChange={(e) => onChange(e.target.value)}
+        />
       ) : (
-        <div className="min-h-[420px] px-5 py-4">
+        <div className="bg-popover min-h-[420px] rounded-md border px-5 py-4">
           <MarkdownWithFrontmatter content={value} />
         </div>
       )}
-    </section>
+    </EditorSection>
   );
 }
 
 /**
  * The save bar. Exists only while there is something to save — an always-on
- * disabled pair of buttons is chrome that never earns its row. It sits across
- * the foot of the page, outside both scrollers, so it is reachable from any
- * point in a long instruction set and from anywhere in the pane.
+ * disabled pair of buttons is chrome that never earns its row. It floats at
+ * the bottom centre of the page in the Drive selection bar's shape
+ * (`project-files/components/drive-selection-bar.tsx`): a `bg-popover` card
+ * as wide as its content — the state as a title over one muted line, then
+ * Discard and Save as a spaced pair (a confirm is never glued to its cancel).
+ * It sits outside both scrollers, so it is reachable
+ * from any point in a long instruction set.
  */
 function SaveBar({
   dirty,
@@ -936,23 +993,36 @@ function SaveBar({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 8 }}
           transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-          className="bg-background/95 border-border/60 z-10 shrink-0 border-t shadow-sm backdrop-blur"
+          className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center px-4"
         >
-          <div className="flex w-full items-center justify-between gap-3 px-6 py-3 lg:px-10">
-            <p className="text-muted-foreground min-w-0 truncate text-xs">
-              <span className="text-foreground font-medium">
+          <div className="bg-popover text-popover-foreground border-border pointer-events-auto flex max-w-full items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-md">
+            <div className="min-w-0" aria-live="polite">
+              <p className="text-foreground truncate text-sm font-medium">
                 {tI18nComplete.raw('textefa5855ff509')}
-              </span>{' '}
-              {tI18nComplete.raw('textc8134fda3694')}
-            </p>
+              </p>
+              <p className="text-muted-foreground truncate text-xs">
+                {tI18nComplete.raw('textc8134fda3694')}
+              </p>
+            </div>
             <div className="flex shrink-0 items-center gap-2">
-              <Button variant="outline-ghost" size="sm" onClick={onDiscard} disabled={pending}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onDiscard}
+                disabled={pending}
+              >
                 {tI18nComplete.raw('texteb1a70e39274')}
               </Button>
-              <Button size="sm" onClick={onSave} disabled={pending}>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="gap-1.5"
+                onClick={onSave}
+                disabled={pending}
+              >
                 {pending ? <Loading className="size-3.5 shrink-0" /> : null}
                 {tI18nComplete.raw('text1509f561f241')}
-                <Kbd className="ml-1">{tI18nComplete.raw('text8cd003e6301b')}</Kbd>
+                <Kbd>{tI18nComplete.raw('text8cd003e6301b')}</Kbd>
               </Button>
             </div>
           </div>
@@ -1074,28 +1144,27 @@ function ReadOnlyAgentPage({
   const section = useAgentSection(isPlatform ? PLATFORM_SECTIONS : READ_ONLY_SECTIONS);
 
   const source = (
-    <section className="bg-popover rounded-md border">
-      <div className="border-border/60 border-b px-4 pt-4 pb-3">
-        <h3 className="text-foreground text-sm font-medium">
-          {tI18nComplete.raw('text934652dce41d')}
-        </h3>
-        <p className="text-muted-foreground mt-1 text-xs">
-          <span className="font-mono">{sourcePath}</span>
-        </p>
+    <EditorSection
+      title={tI18nComplete.raw('text934652dce41d')}
+      description={<span className="font-mono">{sourcePath}</span>}
+      lead
+      bare
+    >
+      <div className="bg-popover overflow-hidden rounded-md border">
+        <EntityFilePane
+          path={sourcePath}
+          content={fileQuery.data?.content}
+          isLoading={fileQuery.isLoading}
+          isError={fileQuery.isError}
+          error={fileQuery.error}
+          onRetry={() => {
+            void fileQuery.refetch();
+          }}
+          skeletonRows={4}
+          errorTitle={tI18nComplete.raw('text2f2f540650bf')}
+        />
       </div>
-      <EntityFilePane
-        path={sourcePath}
-        content={fileQuery.data?.content}
-        isLoading={fileQuery.isLoading}
-        isError={fileQuery.isError}
-        error={fileQuery.error}
-        onRetry={() => {
-          void fileQuery.refetch();
-        }}
-        skeletonRows={4}
-        errorTitle={tI18nComplete.raw('text2f2f540650bf')}
-      />
-    </section>
+    </EditorSection>
   );
 
   return (
@@ -1119,7 +1188,7 @@ function ReadOnlyAgentPage({
       sectionHref={sectionHrefFor(pathname)}
       pane={
         <EditorSectionStyleProvider value="panel">
-          <div className="space-y-4">
+          <div className="space-y-8">
             {isPlatform ? (
               <InfoBanner tone="info" title={tI18nComplete.raw('text85b7a59cdbd5')}>
                 {tI18nComplete.raw('textd9c0c74b514b')}
@@ -1151,7 +1220,7 @@ function ReadOnlyAgentPage({
                 grant={agent.scope?.kortix_permissions ?? agent.scope?.kortix_cli}
               />
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <AgentModel projectId={projectId} agentName={agent.name} />
                 <p className="text-muted-foreground text-xs text-pretty">
                   {tI18nComplete.raw('text9dee2a1acfd9')}

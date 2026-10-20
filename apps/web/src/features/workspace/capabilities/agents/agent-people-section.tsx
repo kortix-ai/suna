@@ -38,7 +38,11 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { EditorSection } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import {
+  EditorList,
+  EditorSection,
+} from '@/features/workspace/customize/sections/view/agent-editor-primitives';
 import {
   AccessDialog,
   type AccessDialogCurrent,
@@ -194,29 +198,38 @@ export function AgentPeopleSection({
     <EditorSection
       title={tI18nComplete.raw('text82d9af69e1a1')}
       description={tI18nComplete.raw('text96feb5be077d')}
+      trailing={
+        accountId ? (
+          <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setGrantOpen(true)}>
+            <PlusIcon className="size-4" />
+            {tI18nComplete.raw('text8693768c7e08')}
+          </Button>
+        ) : undefined
+      }
+      lead
+      bare
     >
-      <div className="space-y-3 py-3.5">
+      <div>
         {grantsQuery.isLoading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-11 w-full rounded-md" />
-            <Skeleton className="h-11 w-full rounded-md" />
-          </div>
+          <EditorList>
+            {[0, 1].map((i) => (
+              <li key={i} className="flex items-center gap-3 px-4 py-2.5">
+                <Skeleton className="size-8 rounded-md" />
+                <Skeleton className="h-4 w-40 rounded-sm" />
+              </li>
+            ))}
+          </EditorList>
         ) : assigned.length === 0 ? (
-          <p className="text-muted-foreground text-xs text-pretty">
-            {tI18nComplete.raw('text011c4e48df01')}
-          </p>
+          <EmptyState size="sm" title={tI18nComplete.raw('text011c4e48df01')} />
         ) : (
-          <ul className="space-y-2">
+          <EditorList>
             {assigned.map((g) => {
               const member =
                 g.principal_type === 'member'
                   ? accessQuery.data?.members.find((m) => m.user_id === g.principal_id)
                   : undefined;
               return (
-                <li
-                  key={g.grant_id}
-                  className="group bg-popover flex items-center gap-3 rounded-md border px-3 py-2"
-                >
+                <li key={g.grant_id} className="flex items-center gap-3 px-4 py-2.5">
                   {g.principal_type === 'group' ? (
                     <EntityAvatar icon={UsersIcon} size="md" />
                   ) : g.principal_type === 'project' ? (
@@ -263,20 +276,8 @@ export function AgentPeopleSection({
                 </li>
               );
             })}
-          </ul>
+          </EditorList>
         )}
-
-        {accountId ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => setGrantOpen(true)}
-          >
-            <PlusIcon className="size-3.5 shrink-0" />
-            {tI18nComplete.raw('text8693768c7e08')}
-          </Button>
-        ) : null}
       </div>
 
       {accountId ? (
