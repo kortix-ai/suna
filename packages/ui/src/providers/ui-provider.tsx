@@ -253,9 +253,10 @@ export interface UiHostConfig {
   settingsShortcut: boolean;
   /**
    * The host reaches the backend's account routes: the IAM permission probes
-   * (`/accounts/:id/iam/*`), billing (`/billing/*`) and session oversight. A
-   * host that fronts one operator key and blocks those routes sets false. Then
-   * no such request runs, billing state stays empty (no balance warning, no
+   * (`/accounts/:id/iam/*`), account members and groups, billing (`/billing/*`)
+   * and session oversight. A host that fronts one operator key and blocks those
+   * routes sets false. Then no such request runs, the sharing pickers offer no
+   * "Specific people" option, billing state stays empty (no balance warning, no
    * upgrade prompt), and every permission gate shows its control: the server
    * still enforces each route. Default: true.
    */
@@ -274,7 +275,8 @@ export interface UiPreviewRequest {
 }
 
 /**
- * Resolves the final URL the session browser frames and opens in a new tab,
+ * Resolves the final URL the session browser frames and opens in a new tab
+ * (and the tab a sandbox link in a message or tool card opens),
  * with its own scoped credentials. Return null to use the default (the SDK's
  * preview URL with the SDK token). A host whose browser must not hold a Kortix
  * token, or whose origin is not the Kortix backend, resolves it on its server.

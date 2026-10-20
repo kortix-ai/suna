@@ -39,6 +39,7 @@ import { parsePendingSetupLinkHref, parseSetupLinkHref } from './setup-links/uti
 import { Button } from '../primitives/button';
 import { Checkbox } from '../primitives/checkbox';
 import { useSandboxProxy } from '../internal/hooks/use-sandbox-proxy';
+import { useOpenPreviewLink } from '../internal/hooks/use-open-preview-link';
 import { cn } from '../lib/utils';
 import { ImageIcon } from '@phosphor-icons/react';
 import { useUiLink } from '../providers/ui-provider';
@@ -84,6 +85,7 @@ const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
 export function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
   const Link = useUiLink();
   const { proxy, policy, variant } = useContext(MarkdownRenderContext);
+  const openPreview = useOpenPreviewLink();
   // Only agent content may turn a setup link into the in-app card. From any
   // other writer it stays a plain link to the same page.
   const setupLink = policy.setupLinks ? parseSetupLinkHref(href) : null;
@@ -130,6 +132,21 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
   const resolvedHref = proxy(href) ?? href ?? '#';
   const isHash = resolvedHref.startsWith('#');
   const isExternal = !isInternalUrl(resolvedHref);
+  // A sandbox address under a host preview resolver: the proxied href would
+  // land on the host's own origin, so the click opens the host's URL.
+  if (openPreview && href && resolvedHref !== href) {
+    return (
+      <a
+        href={href}
+        className={LINK_CLASS}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => openPreview(e, href, resolvedHref)}
+      >
+        <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+      </a>
+    );
+  }
 
   // Markdown can contain arbitrary same-origin absolute URLs. Next.js
   // treats those as app routes and prefetches them, including typos such

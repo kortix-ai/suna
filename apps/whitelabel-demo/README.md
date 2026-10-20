@@ -62,8 +62,9 @@ kind: markdown, code, pdf, docx, xlsx, csv, pptx, images.
 
 **Live preview.** When the agent serves an app, it runs in the panel's browser on its port.
 In wrapper mode Lumen resolves the preview URL on its server (`resolvePreviewUrl` →
-`POST /api/preview-url`), with a project-scoped preview token. The Lumen session token
-never appears in a frame URL.
+`POST /api/preview-url`), with a project-scoped preview token. A `localhost` link in an
+agent reply opens that same URL in a new tab. The Lumen session token never appears in a
+frame URL.
 
 **Sharing and access.** Kortix's share dialog: who can open a session. Lumen has no
 public share page, so it sets `publicSharesEnabled: false` and the UI offers no public link.
@@ -190,7 +191,9 @@ pnpm --filter @kortix/whitelabel-demo dev
 
 The policy blocks the account routes (IAM, billing, session oversight), so wrapper mode
 mounts `UiProvider` with `config.accountApiEnabled: false`: the UI sends none of those
-requests, and every permission-gated control (for example Session overrides) shows. The
+requests, the Share dialog offers no "Specific people" option (every Lumen user acts as the
+key's one Kortix account), and every permission-gated control (for example Session
+overrides) shows. The
 policy and the upstream API enforce each route. The Terminal is hidden
 (`terminalEnabled: false`): a Next route handler cannot upgrade a WebSocket.
 
