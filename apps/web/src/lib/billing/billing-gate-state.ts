@@ -48,7 +48,7 @@ export type AccountStateLike = Pick<
     lifetime_purchased?: number | null;
   } | null;
   subscription?: { subscription_id?: string | null; status?: string | null } | null;
-  tier?: { can_purchase_credits?: boolean | null } | null;
+  tier?: { can_purchase_credits?: boolean | null; monthly_credits?: number | null } | null;
 };
 
 function isBillingState(value: unknown): value is BillingState {
@@ -147,7 +147,13 @@ export function walletSeverity(state: AccountStateLike | null | undefined): Wall
   if (!billingStateAllowsRun(billingState)) return null; // `no_subscription` / `no_account` own their own CTA.
   const balance = state.credits?.total;
   if (typeof balance !== 'number' || !state.credits) return null;
-  return balance < lowBalanceLine(state.credits) ? 'low' : null;
+  // Prefer the recurring USD grant; lifetime funding grows across renewals.
+  // Retain the lifetime-based line for older responses without a recurring grant.
+  const grant = state.tier?.monthly_credits;
+  const threshold = typeof grant === 'number' && grant > 0
+    ? Math.min(LOW_BALANCE_USD, grant * 0.1)
+    : lowBalanceLine(state.credits);
+  return balance < threshold ? 'low' : null;
 }
 
 /**

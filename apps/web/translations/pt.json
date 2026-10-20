@@ -820,7 +820,17 @@
       "email": "E-mail",
       "channelSwitch": "{kind}: {channel}",
       "preferencesLoadError": "Não foi possível carregar suas configurações de notificação",
-      "retry": "Tentar novamente"
+      "retry": "Tentar novamente",
+      "recovery": {
+        "instructions": "Como desbloquear as notificações do navegador",
+        "chrome": "Chrome: abra os controles do site ao lado do endereço → Configurações do site → Notificações → Permitir.",
+        "edge": "Edge: abra os controles do site ao lado do endereço → Permissões para este site → Notificações → Permitir.",
+        "firefox": "Firefox: abra o ícone de permissões ao lado do endereço e remova a permissão de notificações bloqueada. Ative as notificações aqui para solicitar a permissão novamente.",
+        "safari": "Safari no Mac: abra Safari → Ajustes → Sites → Notificações e selecione Permitir para este site. No iPhone ou iPad, adicione o Kortix à Tela de Início e ative as notificações nesse app.",
+        "afterChange": "Recarregue esta página após alterar as permissões do navegador e ative as notificações. Os ajustes de notificações do sistema também devem permitir as do seu navegador.",
+        "fallback": "Enquanto uma aba do Kortix estiver aberta, os sons de conclusão podem avisar você sem permissão para notificações do navegador. Mantenha o som da aba e do dispositivo ativado. Esta opção ativa os sons de notificação e reproduz uma prévia do som de conclusão.",
+        "enableSound": "Ativar som de conclusão"
+      }
     },
     "git": {
       "updateFailed": "Não foi possível atualizar o repositório",

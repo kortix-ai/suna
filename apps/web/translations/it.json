@@ -820,7 +820,17 @@
       "email": "Email",
       "channelSwitch": "{kind}: {channel}",
       "preferencesLoadError": "Impossibile caricare le impostazioni delle notifiche",
-      "retry": "Riprova"
+      "retry": "Riprova",
+      "recovery": {
+        "instructions": "Come sbloccare le notifiche del browser",
+        "chrome": "Chrome: apri i controlli del sito accanto all’indirizzo → Impostazioni sito → Notifiche → Consenti.",
+        "edge": "Edge: apri i controlli del sito accanto all’indirizzo → Autorizzazioni per questo sito → Notifiche → Consenti.",
+        "firefox": "Firefox: apri l’icona dei permessi accanto all’indirizzo e rimuovi il permesso di notifica bloccato. Attiva le notifiche qui per richiederlo di nuovo.",
+        "safari": "Safari su Mac: apri Safari → Impostazioni → Siti web → Notifiche, poi seleziona Consenti per questo sito. Su iPhone o iPad, aggiungi Kortix alla schermata Home e attiva le notifiche da quell’app.",
+        "afterChange": "Ricarica questa pagina dopo aver modificato i permessi del browser, quindi attiva le notifiche. Anche le impostazioni delle notifiche del sistema devono consentire quelle del browser.",
+        "fallback": "Finché una scheda di Kortix è aperta, i suoni di completamento possono avvisarti senza il permesso per le notifiche del browser. Mantieni attivo l’audio della scheda e del dispositivo. Questa opzione attiva i suoni di notifica e riproduce un’anteprima del suono di completamento.",
+        "enableSound": "Attiva il suono di completamento"
+      }
     },
     "git": {
       "updateFailed": "Impossibile aggiornare il repository",

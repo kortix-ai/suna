@@ -62,7 +62,7 @@ const state = newBackfillState('dry');
 const total: Record<string, number> = {};
 let ticks = 0;
 for (let more = true; more; ) {
-  const r = await backfillSessionLogs('dry', state);
+  const r = await backfillSessionLogs('dry', { state });
   more = r.more;
   ticks++;
   for (const [k, v] of Object.entries(r.counts)) total[k] = k.startsWith('max_') || k === 'pass_ms' ? Math.max(total[k] ?? 0, v) : (total[k] ?? 0) + v;
