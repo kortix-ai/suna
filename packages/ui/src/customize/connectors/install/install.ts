@@ -1,9 +1,9 @@
 import type { AdminConnector, ConnectorDraftInput, ConnectorSyncResult } from '@kortix/sdk';
 
 import {
+  buildDiscoverConnectorDraft,
   buildEasyConnectConnectorDraft,
   connectorSyncErrorForSlug,
-  createOnlyConnectorDraft,
   isAuthChallenge,
   normalizeConnectorConnectionSlug,
   proposeConnectorConnectionName,
@@ -28,30 +28,13 @@ export interface InstallTarget {
 
 export function discoverInstallTarget(appName: string, variant: InstallableVariant): InstallTarget {
   const template = variant.template;
-  const auth = template.auth
-    ? {
-        type: template.auth.type,
-        in: template.auth.in,
-        ...(template.auth.name ? { name: template.auth.name } : {}),
-        ...(template.auth.prefix ? { prefix: template.auth.prefix } : {}),
-      }
-    : undefined;
   return {
     appName,
     provider: template.provider,
     managed: false,
     needsCredential: Boolean(template.auth) && template.auth?.type !== 'none',
     buildDraft: (input) =>
-      createOnlyConnectorDraft({
-        slug: input.slug,
-        name: input.name.trim(),
-        provider: template.provider,
-        ...(template.spec ? { spec: template.spec } : {}),
-        ...(template.url ? { url: template.url } : {}),
-        ...(template.transport ? { transport: template.transport } : {}),
-        ...(template.endpoint ? { endpoint: template.endpoint } : {}),
-        ...(auth ? { auth } : {}),
-      }),
+      buildDiscoverConnectorDraft(template, input),
   };
 }
 

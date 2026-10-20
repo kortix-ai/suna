@@ -1094,7 +1094,7 @@ describe('pi harness', () => {
     expect(text).toContain('finished normally')
   })
 
-  test('a restarted daemon restores the transcript, title and turn verdicts from the state dir', async () => {
+  test('a restarted daemon restores the transcript and turn verdicts, and leaves the title to Kortix', async () => {
     // A daemon restart is a new process: a second service on the same state
     // dir must restore what the first one persisted, not reuse its memory.
     const r = await boot({ script: [{ text: 'first answer' }] })
@@ -1103,7 +1103,16 @@ describe('pi harness', () => {
     expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'remember me' }] })).status).toBe(204)
     await waitFor(() => !r.service.runtime()!.busy())
     const before = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info: { id: string } }>
+    // The title is Kortix's to write (`metadata.name`, generated from the first
+    // prompt). A runtime title of the prompt's first line outranked it in the
+    // API and ended the web's wait for the real title (KRTX-2567).
+    const live = (await r.user('/session').then((res) => res.json())) as Array<{ title: string }>
+    expect(live[0]!.title).toBe('New session')
     await r.service.lifecycle.stop()
+    // A dump an older daemon wrote carries the first prompt line as its title.
+    const stateDir = join(r.workspace, '.state')
+    const dumpFile = join(stateDir, readdirSync(stateDir).find((f) => f.endsWith('.json'))!)
+    writeFileSync(dumpFile, JSON.stringify({ ...JSON.parse(readFileSync(dumpFile, 'utf8')), title: 'remember me' }))
 
     const restarted = await boot({ script: [{ text: 'second answer' }], workspace: r.workspace })
     rigs.splice(rigs.indexOf(r), 1)
@@ -1112,7 +1121,7 @@ describe('pi harness', () => {
     expect(page.messages.map((m) => m.info.role)).toEqual(['user', 'assistant'])
     expect(page.messages[1]!.parts[0]).toMatchObject({ type: 'text', text: 'first answer' })
     const sessions = (await restarted.user('/session').then((res) => res.json())) as Array<{ title: string }>
-    expect(sessions[0]!.title).toBe('remember me')
+    expect(sessions[0]!.title).toBe('New session')
     const probe = (await restarted.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_end).toBe('completed')
 
@@ -4143,5 +4152,59 @@ describe('command template expansion', () => {
     ['no arguments leave a plain template alone', 'Ship it.', '', 'Ship it.'],
   ])('%s', (_name, template, args, expected) => {
     expect(expandCommandTemplate(template, args)).toBe(expected)
+  })
+})
+
+describe('pi Changes surface (/project/current vcs, /vcs/diff)', () => {
+  const sh = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.test', ...args], { cwd, encoding: 'utf8' })
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`)
+  }
+
+  test('a non-git workspace reports no vcs and an empty diff', async () => {
+    const r = await boot({ script: [] })
+    const project = (await r.user('/project/current').then((res) => res.json())) as Record<string, unknown>
+    expect(project.worktree).toBe(r.workspace)
+    expect(project).not.toHaveProperty('vcs')
+    expect(await r.user('/vcs/diff?mode=branch').then((res) => res.json())).toEqual([])
+  })
+
+  test('a git workspace reports vcs git and lists committed, modified, deleted and new files against the base', async () => {
+    const r = await boot({
+      script: [],
+      env: { KORTIX_DEFAULT_BRANCH: 'main' },
+      prepare: (ws) => {
+        writeFileSync(join(ws, '.gitignore'), '.state/\n.pi-agent/\n.pi-packages/\n')
+        writeFileSync(join(ws, 'kept.txt'), 'one\ntwo\n')
+        writeFileSync(join(ws, 'gone.txt'), 'bye\n')
+        sh(ws, 'init', '-q', '-b', 'main')
+        sh(ws, 'add', '.')
+        sh(ws, 'commit', '-q', '-m', 'base')
+        sh(ws, 'checkout', '-q', '-b', 'kortix/session')
+        writeFileSync(join(ws, 'committed.txt'), 'a\n')
+        sh(ws, 'add', 'committed.txt')
+        sh(ws, 'commit', '-q', '-m', 'session work')
+        writeFileSync(join(ws, 'kept.txt'), 'one\nTWO\nthree\n')
+        rmSync(join(ws, 'gone.txt'))
+        writeFileSync(join(ws, 'new file.txt'), 'x\ny\n')
+      },
+    })
+    const project = (await r.user('/project/current').then((res) => res.json())) as Record<string, unknown>
+    expect(project.vcs).toBe('git')
+
+    const branch = (await r.user('/vcs/diff?mode=branch').then((res) => res.json())) as Array<Record<string, any>>
+    expect(branch.map(({ file, status, additions, deletions }) => ({ file, status, additions, deletions }))).toEqual([
+      { file: 'committed.txt', status: 'added', additions: 1, deletions: 0 },
+      { file: 'gone.txt', status: 'deleted', additions: 0, deletions: 1 },
+      { file: 'kept.txt', status: 'modified', additions: 2, deletions: 1 },
+      { file: 'new file.txt', status: 'added', additions: 2, deletions: 0 },
+    ])
+    expect(branch.find((f) => f.file === 'kept.txt')!.patch).toContain('diff --git a/kept.txt b/kept.txt')
+    expect(branch.find((f) => f.file === 'kept.txt')!.patch).toContain('+TWO')
+    expect(branch.find((f) => f.file === 'new file.txt')!.patch).toContain('+++ b/new file.txt')
+
+    // `git` mode is the working tree only: the committed file is not in it.
+    const working = (await r.user('/vcs/diff?mode=git').then((res) => res.json())) as Array<{ file: string }>
+    expect(working.map((f) => f.file)).toEqual(['gone.txt', 'kept.txt', 'new file.txt'])
   })
 })

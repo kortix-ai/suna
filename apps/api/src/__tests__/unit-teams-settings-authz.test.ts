@@ -81,7 +81,6 @@ mock.module('../channels/slack/model-gate', () => ({
     accountId: 'acct-1',
     ownerUserId: 'owner-1',
     freeManagedOnly: false,
-    llmGatewayEnabled: true,
   }),
 }));
 mock.module('../llm-gateway/models/picker', () => ({

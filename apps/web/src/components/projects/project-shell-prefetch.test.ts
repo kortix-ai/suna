@@ -22,13 +22,13 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-function mockFetch(gatewayEnabled: boolean) {
+function mockFetch() {
   const urls: string[] = [];
   globalThis.fetch = (async (url: unknown) => {
     urls.push(String(url));
     if (String(url).includes('/detail')) {
       return Response.json({
-        project: { id: 'P1', account_id: 'A1', experimental: { llm_gateway: gatewayEnabled } },
+        project: { id: 'P1', account_id: 'A1' },
         config: {},
         file_count: 0,
         files: [],
@@ -50,53 +50,34 @@ function mockFetch(gatewayEnabled: boolean) {
 }
 
 describe('prefetchProjectShellReads', () => {
-  test('issues detail, sessions and sandbox-health reads up front', async () => {
-    const urls = mockFetch(false);
+  test('issues detail, model-picker, sessions and sandbox-health reads up front', async () => {
+    const urls = mockFetch();
     const client = new QueryClient();
     prefetchProjectShellReads(client, 'P1');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(urls.filter((u) => u.includes('/projects/P1/detail'))).toHaveLength(1);
+    expect(urls.filter((u) => u.includes('/model-picker'))).toHaveLength(1);
     expect(urls.filter((u) => u.includes('/projects/P1/sandbox-health'))).toHaveLength(1);
     expect(urls.filter((u) => u.includes('/projects/P1/sessions'))).toHaveLength(1);
     client.clear();
   });
 
   test('seeds the exact cache entries their real hooks read', async () => {
-    mockFetch(false);
+    mockFetch();
     const client = new QueryClient();
     prefetchProjectShellReads(client, 'P1');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(client.getQueryData(qk.project.detail('P1'))).toBeDefined();
+    expect(client.getQueryData(qk.project.modelPicker('P1'))).toBeDefined();
     expect(client.getQueryData(qk.project.sessionsPaged('P1', 'visible'))).toBeDefined();
     expect(client.getQueryData(SANDBOX_HEALTH_QUERY_KEY('P1'))).toBeDefined();
     client.clear();
   });
 
-  test('fetches the model picker once detail says the gateway is on', async () => {
-    const urls = mockFetch(true);
-    const client = new QueryClient();
-    prefetchProjectShellReads(client, 'P1');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(urls.filter((u) => u.includes('/model-picker'))).toHaveLength(1);
-    expect(client.getQueryData(qk.project.modelPicker('P1'))).toBeDefined();
-    client.clear();
-  });
-
-  test('never fetches the model picker for a gateway-disabled project', async () => {
-    const urls = mockFetch(false);
-    const client = new QueryClient();
-    prefetchProjectShellReads(client, 'P1');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(urls.filter((u) => u.includes('/model-picker'))).toHaveLength(0);
-    client.clear();
-  });
-
   test('missing project id issues no request', async () => {
-    const urls = mockFetch(false);
+    const urls = mockFetch();
     const client = new QueryClient();
     prefetchProjectShellReads(client, '');
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -115,22 +96,14 @@ describe('prefetchProjectShellReads', () => {
 
   /**
    * KRTX-2436: the prefetch runs on EVERY navigation to `/projects/<id>`, and
-   * its `fetchQuery` refetches an entry that already settled as error without
-   * data — so returning to the gone screen re-asked its final 404 even after
-   * the mounted hooks stood down. The contract owns retry policy: the prefetch
-   * must leave an errored entry to the remounting hooks (a transient error
-   * retries on their mount; a gone answer stands down).
-   */
-  /**
-   * KRTX-2436: the prefetch runs on EVERY navigation to `/projects/<id>`, and
-   * its `fetchQuery` refetches an entry that already settled as error without
+   * its prefetch refetches an entry that already settled as error without
    * data — so returning to the gone screen re-asked its final 404 even after
    * the mounted hooks stood down. The contract owns retry policy: the prefetch
    * must leave an errored entry to the remounting hooks (a transient error
    * retries on their mount; a gone answer stands down). The healthy siblings
    * (sessions, sandbox health) still prefetch.
    */
-  test('skips its detail read when the entry already settled as error without data', async () => {
+  test('skips its detail and model-picker reads when the entry already settled as error without data', async () => {
     const client = new QueryClient();
     // Settle the shared detail entry the way a returned-to gone screen has it:
     // error, no data. A gone answer never changes on a retry.
@@ -145,11 +118,12 @@ describe('prefetchProjectShellReads', () => {
       .catch(() => undefined);
     expect(client.getQueryState(qk.project.detail('P1'))?.status).toBe('error');
 
-    const urls = mockFetch(false);
+    const urls = mockFetch();
     prefetchProjectShellReads(client, 'P1');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(urls.filter((u) => u.includes('/projects/P1/detail'))).toHaveLength(0);
+    expect(urls.filter((u) => u.includes('/model-picker'))).toHaveLength(0);
     expect(urls.filter((u) => u.includes('/projects/P1/sessions'))).toHaveLength(1);
     expect(urls.filter((u) => u.includes('/projects/P1/sandbox-health'))).toHaveLength(1);
     client.clear();

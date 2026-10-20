@@ -10,8 +10,8 @@
  * published yet) parks the detail entry in `status: 'error'` with no data.
  * Nothing refetches a settled error while its page stays mounted —
  * `refetchOnWindowFocus`/`refetchOnReconnect` are false in the web host and
- * nothing remounts — so every `enabled: <gateway known>` query downstream
- * never fires, and the page sits dead until a reload.
+ * nothing remounts — so every read off that entry stays empty, and the page
+ * sits dead until a reload.
  *
  * The fix lives in the one freshness contract every entity read spreads:
  * `contract()` carries a `refetchInterval` that retries an errored, no-data
@@ -39,8 +39,7 @@ import { type FreshnessTier, contract } from './query-contracts';
 (globalThis as unknown as { window?: object }).window ??= {};
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
-const { useProjectLlmGatewayEnabled } = await import('./use-project-llm-gateway');
-const { useProjectModels } = await import('./use-project-models');
+const { useProjectName } = await import('./use-project-name');
 
 // A test that times out never reaches its own `finally { jest.useRealTimers() }`.
 // Restore real timers here too, so one stuck test cannot freeze every later
@@ -54,22 +53,18 @@ const DETAIL_BODY = {
     id: 'p1',
     account_id: 'a1',
     name: 'Project',
-    experimental: { llm_gateway: true },
   },
   config: {},
 };
 
-const PICKER_BODY = { providers: [] };
-
 /** Count requests per path so assertions name the wire, not a mock's memory. */
-const counts = { detail: 0, picker: 0, other: 0 };
+const counts = { detail: 0, other: 0 };
 let detailFails = true;
 /** The status the failing detail read answers with (500 unless a test sets it). */
 let detailStatus = 500;
 
 function installFetch() {
   counts.detail = 0;
-  counts.picker = 0;
   counts.other = 0;
   detailFails = true;
   detailStatus = 500;
@@ -79,10 +74,6 @@ function installFetch() {
       counts.detail += 1;
       if (detailFails) return Response.json({ error: 'server error' }, { status: detailStatus });
       return Response.json(DETAIL_BODY);
-    }
-    if (path.includes('/model-picker')) {
-      counts.picker += 1;
-      return Response.json(PICKER_BODY);
     }
     counts.other += 1;
     return Response.json({});
@@ -96,12 +87,11 @@ const flush = async (hops = 30) => {
 
 /**
  * The reported scenario end to end: the detail read fails once (HTTP 500), the
- * page stays mounted, then the API recovers. The gates must reopen and the
- * model list must load — with NO remount, NO refocus and NO manual refetch.
- * Today the detail entry parks in error forever, so nothing ever refetches and
- * the picker is never asked: that is the infinite loading state.
+ * page stays mounted, then the API recovers. The detail must load — with NO
+ * remount, NO refocus and NO manual refetch. Before the fix the detail entry
+ * parked in error forever: that is the infinite loading state.
  */
-test('a failed detail read self-heals on the mounted page and opens the gated model list', async () => {
+test('a failed detail read self-heals on the mounted page', async () => {
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
   installFetch();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -110,12 +100,9 @@ test('a failed detail read self-heals on the mounted page and opens the gated mo
   // under jest, or advancing fake time would not advance a real interval.
   jest.useFakeTimers();
 
-  let gatewayKnown = false;
-  let modelCount = -1;
+  let name: string | undefined;
   function Probe() {
-    const gateway = useProjectLlmGatewayEnabled('p1');
-    gatewayKnown = gateway.known;
-    modelCount = useProjectModels('p1').length;
+    name = useProjectName('p1');
     return null;
   }
   let root: ReturnType<typeof create> | undefined;
@@ -127,10 +114,9 @@ test('a failed detail read self-heals on the mounted page and opens the gated mo
     await flush();
   });
 
-  // The detail read failed; the page's gates are shut and the picker was never asked.
+  // The detail read failed; the page has nothing to render.
   expect(counts.detail).toBe(1);
-  expect(counts.picker).toBe(0);
-  expect(gatewayKnown).toBe(false);
+  expect(name).toBeUndefined();
 
   // The API recovers. Nothing remounts.
   detailFails = false;
@@ -154,12 +140,9 @@ test('a failed detail read self-heals on the mounted page and opens the gated mo
     await new Promise((resolve) => setTimeout(resolve, 50));
     await flush();
   });
-  // The detail entry refetched and now carries data.
+  // The detail entry refetched, carries data, and the page rendered it.
   expect(counts.detail).toBeGreaterThan(1);
-  expect(gatewayKnown).toBe(true);
-  // The gate opened, the model list was fetched, and the page rendered it.
-  expect(counts.picker).toBe(1);
-  expect(modelCount).toBe(0);
+  expect(name).toBe('Project');
 
   await act(async () => root?.unmount());
   client.clear();
@@ -183,7 +166,7 @@ test('a final 404 stands down: the self-heal interval never refires on the mount
   jest.useFakeTimers();
 
   function Probe() {
-    useProjectLlmGatewayEnabled('p1');
+    useProjectName('p1');
     return null;
   }
   let root: ReturnType<typeof create> | undefined;
@@ -230,7 +213,7 @@ test('a final 404 does not refetch when a new observer mounts the settled entry'
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   function Probe() {
-    useProjectLlmGatewayEnabled('p1');
+    useProjectName('p1');
     return null;
   }
   let root: ReturnType<typeof create> | undefined;
@@ -270,7 +253,7 @@ test('the self-heal interval stands down after the first success', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   jest.useFakeTimers();
   function Probe() {
-    useProjectLlmGatewayEnabled('p1');
+    useProjectName('p1');
     return null;
   }
   let root: ReturnType<typeof create> | undefined;

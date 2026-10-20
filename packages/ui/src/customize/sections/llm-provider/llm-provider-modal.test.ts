@@ -72,11 +72,7 @@ describe('LLM provider modal shell', () => {
    * have, and it cannot relabel one.
    */
   test('its tabs are the page’s first three, by reference not by copy', () => {
-    // Forked on the project's llm_gateway flag: gateway mode keeps the quick
-    // three; native mode drops the Models tab (its /model-picker catalog 404s
-    // off-gateway) and offers Providers + Custom — both slices ship from the
-    // page's own module.
-    expect(modalSource).toContain('tabs={llmGatewayEnabled ? QUICK_LLM_TABS : NATIVE_LLM_TABS}');
+    expect(modalSource).toContain('tabs={QUICK_LLM_TABS}');
     expect(QUICK_LLM_TABS).toEqual(LLM_TABS.slice(0, 3));
     expect(QUICK_LLM_TABS.map((t) => t.id)).toEqual(['providers', 'models', 'custom']);
     expect(QUICK_LLM_TABS.map((t) => t.label)).toEqual(['Providers', 'Models', 'Custom']);
@@ -125,15 +121,11 @@ describe('LLM provider modal shell', () => {
    * close button is `absolute top-3 right-3` at `size-8`, so 44px of the right
    * edge is spoken for and the header has to stop short of it.
    */
-  test('the project-default picker shares the close button row, gated like before', () => {
+  test('the project-default picker shares the close button row', () => {
     // In the close button's own row (ModalContent's closeButtonChildren), so
     // the picker and the × share one centre line.
     expect(modalSource).toContain('closeButtonChildren={');
-    expect(modalSource).toContain('canWrite && open ? <HeaderDefaultPicker projectId={projectId} /> : null');
-    // Gateway-gated: a native project has no model-defaults chain to write.
-    const picker = modalSource.slice(modalSource.indexOf('function HeaderDefaultPicker'));
-    expect(picker).toContain('isLlmGatewayEnabled(detailQuery.data?.project) ? (');
-    expect(picker).toContain('<ProjectDefaultPicker projectId={projectId} />');
+    expect(modalSource).toContain('canWrite && open ? <ProjectDefaultPicker projectId={projectId} /> : null');
     // The header text clears the picker + close button on the right.
     expect(modalSource).toContain('pr-64');
   });

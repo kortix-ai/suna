@@ -38,10 +38,12 @@ import { confirmInboxPromptConsumed, steerTargetAtTurnEnd } from '../session-lif
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
+import { revertSessionModelFallback } from '../lib/session-model-fallback-revert';
 import {
   recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
 } from '../session-turn-ledger';
+import { fireIdleWatches } from '../rooms/service';
 
 /** The relay request body, shape only — the route parses JSON into this. */
 export type TurnStreamBody = Partial<TurnStreamRelayBody>;
@@ -354,6 +356,10 @@ async function promoteAfterTurnEnd(
   // turn end is the only moment its history is saved. Skipping it served
   // `available: false` and a loading bar to the first person who looked.
   void captureSessionTranscriptMirror(sessionId);
+  // The session is idle: a session a fallback took over moves back to its own
+  // model when that model can serve again (never throws). Child sessions too:
+  // the switch writes them, and their prompts then send the fallback pin.
+  if (turnCompletion.outcome === 'closed') void revertSessionModelFallback(sessionId);
   // THE TURN ENDED — the session's next queued prompt is admissible NOW.
   // Await the durable promotion before acknowledging the terminal relay.
   // The targeted drain remains asynchronous and re-runs admission itself;
@@ -538,6 +544,11 @@ export async function settleTurnEnd(
         err: err instanceof Error ? err.message : String(err),
       }),
     );
+  }
+  // THE TURN ENDED, SO "TELL ME WHEN IT IS IDLE" IS DUE (flag agent_rooms).
+  // Fire-and-forget: a notice never holds the daemon's relay, and it never throws.
+  if (settled.turnCompletion.outcome === 'closed' && !ctx.childSession) {
+    void fireIdleWatches(ctx.sessionId, settled.status, settled.errorInfo?.name ?? null);
   }
   // Started beside the promotion, awaited before the acknowledgement.
   const sessionList = refreshSessionListAtTurnEnd(ctx);

@@ -44,6 +44,7 @@ const WORKERS: Record<string, string> = {
   'project-snapshots': 'workers/project-snapshot-worker.ts',
   'iam-grant-expiry': 'workers/grant-expiry-worker.ts',
   'oauth-sweep': 'workers/oauth-sweep-worker.ts',
+  'session-model-fallback': 'workers/session-model-fallback-worker.ts',
   'session-lifecycle': 'projects/session-lifecycle/drain.ts',
   'tunnel-cleanup': 'workers/tunnel-worker.ts',
   'tunnel-rpc-forwarder': 'tunnel/core/cluster-forwarder.ts',
@@ -65,6 +66,7 @@ const WORKERS: Record<string, string> = {
   'notification-digest': 'workers/notification-worker.ts',
   'session-log-purge': 'workers/session-log-purge-worker.ts',
   'session-log-backfill': 'workers/session-log-backfill-worker.ts',
+  'gateway-spend-backfill': 'workers/gateway-spend-backfill-worker.ts',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
@@ -114,7 +116,9 @@ const STARTS: Record<string, string> = {
   startTriggerEventPollWorker: 'trigger-event-poll',
   startNotificationWorker: 'notification-digest',
   startSessionLogPurgeWorker: 'session-log-purge',
+  startSessionModelFallbackWorker: 'session-model-fallback',
   startSessionLogBackfillWorker: 'session-log-backfill',
+  startGatewaySpendBackfillWorker: 'gateway-spend-backfill',
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
   startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
   startSessionLifecycleWorker: 'session-lifecycle',

@@ -54,7 +54,7 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../../openapi';
 import type { AppEnv } from '../../types';
-import { assertProjectCapability, loadVisibleSession } from '../lib/access';
+import { assertProjectCapability, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { findSessionLogBlob, storeSessionLogBlob } from '../session-log-blobs';
@@ -162,7 +162,12 @@ async function sessionReadGate(
   const { loaded } = binding;
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
   const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-  return visible ? { denied: null, projectMetadata: loaded.row.metadata } : { denied: c.json({ error: 'Not found' }, 404) };
+  // A deleted session reads nothing (KRTX-2744, as `GET …/transcript`): its stored log and
+  // loss report are content of a session the trash model advertises as gone. The restore
+  // claim takes the session sandbox credential, not this gate, so a fresh box still claims.
+  return !visible || sessionIsTombstoned(visible.row)
+    ? { denied: c.json({ error: 'Not found' }, 404) }
+    : { denied: null, projectMetadata: loaded.row.metadata };
 }
 
 export function registerSessionLogRoutes(): void {
@@ -379,7 +384,7 @@ export function registerSessionLogRoutes(): void {
       summary: 'List what a session would lose on another harness',
       description:
         'Read only: claims nothing, changes nothing. Body `{ to: "pi" | "opencode" }`. Answers `SessionLogSwitchPreflight`: ' +
-        '`available` and `reason` (`same_harness`, `llm_gateway_off`: a switch that cannot happen is still a 200), ' +
+        '`available` and `reason` (`same_harness`: a switch that cannot happen is still a 200), ' +
         '`restores` (the project restores session logs; false puts a `history` line first in `losses`), ' +
         '`losses` (each feature or runtime control the stored log uses that `to` handles worse, with counts; `degraded`: ' +
         'lowered or emulated, `lost`) and `unsupported` (everything the source harness handles that `to` handles worse, used or not). ' +

@@ -185,8 +185,8 @@ function snapshot(overrides: Record<string, unknown> = {}) {
     turn: { known: false, reason: 'test' },
     queue: { known: false, reason: 'test' },
     transcript: { known: true, requested: true, ...transcript() },
-    config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: false },
-    models: { known: false, reason: 'llm_gateway_disabled' },
+    config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: true },
+    models: { known: false, reason: 'read_failed' },
     audit: { known: false, reason: 'test' },
     ...overrides,
   };

@@ -1,3 +1,5 @@
+import { stripTrailingSlashes } from '@kortix/sdk';
+
 type BackendUrlArgs = {
   backendUrl: string;
   origin: string;
@@ -9,7 +11,7 @@ type BackendUrlArgs = {
  * so it needs the origin spelled out.
  */
 export function absoluteBackendUrl({ backendUrl, origin }: BackendUrlArgs): string {
-  const backend = backendUrl.replace(/\/+$/, '');
+  const backend = stripTrailingSlashes(backendUrl);
   return /^https?:\/\//i.test(backend) ? backend : `${origin}${backend}`;
 }
 

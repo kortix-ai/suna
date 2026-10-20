@@ -66,7 +66,7 @@ Every field is optional. With no input, the session runs the project's default a
 | --- | --- |
 | `initial_prompt` | The first prompt. The server delivers it when the runtime is up, so you need no `send()`. |
 | `agent_name` | The agent to run. Default: the project's default agent. |
-| `model` | The model id (see [Models](/docs/project/models)). With the LLM gateway off, use the native `provider/model` form; a bare id returns `400` `INVALID_SESSION_MODEL`. A model the account cannot use returns `400`. |
+| `model` | The model id (see [Models](/docs/project/models)). A model the account cannot use returns `400`. |
 | `name` | The session title. Without it, the server makes a title from the first prompt. |
 | `labels` | Up to 20 labels, each 1 to 64 characters after trimming. Duplicates drop. Matching is exact and case-sensitive. |
 | `metadata` | A JSON object of your own keys, at most 16,384 characters of JSON per write. Server-managed keys, such as `source`, `trigger_kind` and `trigger_slug`, return `400`. Prefix your keys, for example `app_`. |

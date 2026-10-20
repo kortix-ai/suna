@@ -1,5 +1,6 @@
 'use client';
 
+import { stripTrailingSlashes } from '@kortix/sdk';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -27,7 +28,7 @@ export function normalizeRecentUrl(url: string): string {
   if (!/^https?:\/\/[^/\s]+/i.test(trimmed)) return '';
   trimmed = withoutAppAccessToken(trimmed);
   if (!trimmed) return '';
-  return trimmed.replace(/\/+$/, '');
+  return stripTrailingSlashes(trimmed);
 }
 
 /** What the recents list renders: URL without the scheme noise. */
