@@ -111,9 +111,14 @@ Subcommands:
                                     subscription runs on every key you may
                                     use for it, and they rotate (see
                                     \`kortix models ls\`).
-                                    --wait blocks until it's running; --json
-                                    prints the session object (capture
-                                    session_id to orchestrate).
+                                    --wait blocks until the runtime is
+                                    ready, not until the prompt's turn
+                                    ends, and exits 1 when that turn has
+                                    already failed. To wait for the turn,
+                                    run kortix sessions wait-for <id> (exit
+                                    1 when the turn fails). --json prints
+                                    the session object (capture session_id
+                                    to orchestrate).
                                     --connect attaches the OpenCode TUI as
                                     soon as it's ready (implies --wait); on an
                                     interactive terminal without it, you're
@@ -808,11 +813,14 @@ async function sessionsNew(
     }
   }
 
+  // Readiness can come after the first turn already failed (KRTX-2913): a
+  // failure the record already shows is not a success.
+  const turnFailed = waited && Boolean(created.error);
   if (json) {
     emitJson(
       uploads.length > 0 ? { ...created, uploaded_files: uploads.map((u) => u.target) } : created,
     );
-    return 0;
+    return turnFailed ? 1 : 0;
   }
 
   process.stdout.write(
@@ -825,6 +833,12 @@ async function sessionsNew(
     process.stdout.write(`  ${C.dim}sandbox    ${C.reset}${created.sandbox_url}\n`);
   }
   process.stdout.write('\n');
+  if (turnFailed) {
+    process.stderr.write(
+      `${status.err(`Agent turn failed: ${created.error}`)}\n` +
+        `  ${C.dim}Inspect: \`kortix sessions log ${created.session_id}\`.${C.reset}\n`,
+    );
+  }
 
   const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
   const decision = resolveConnectAfterCreate({ connect: connectAfter, json, tty });
@@ -844,7 +858,7 @@ async function sessionsNew(
       `  ${C.dim}Later: ${C.reset}${C.cyan}kortix connect ${shortId(created.session_id)}${C.reset}\n`,
     );
   }
-  return 0;
+  return turnFailed ? 1 : 0;
 }
 
 /**

@@ -25,6 +25,9 @@ const SESSION_B = '00000000-0000-4000-a000-000000000502';
 const SESSION_C = '00000000-0000-4000-a000-000000000503';
 /** A pi-harness session: its runtime lists no `session.compact` / `session.attach`. */
 const SESSION_PI = '00000000-0000-4000-a000-000000000504';
+/** A new session whose first turn failed before `--wait` returned (KRTX-2913). */
+const SESSION_FAILED_TURN = '00000000-0000-4000-a000-000000000506';
+const FAILED_TURN_ERROR = 'agent turn failed: APIError: "synthetic-model" requires a paid plan.';
 /** A session the caller archived: only `GET .../sessions?archived=only` lists it. */
 const SESSION_ARCHIVED = 'a7c1e2d4-0000-4000-a000-000000000505';
 /** The time the fake API stamps on a pin or an archive. */
@@ -219,6 +222,15 @@ function startServer(): string {
       }
       if (method === 'GET' && path === `${project}/sessions/${SESSION_PI}`) {
         return Response.json(sessionRow(SESSION_PI));
+      }
+      if (method === 'POST' && path === `${project}/sessions`) {
+        return Response.json({ ...sessionRow(SESSION_FAILED_TURN), status: 'provisioning' }, { status: 201 });
+      }
+      if (method === 'POST' && path === `${project}/sessions/${SESSION_FAILED_TURN}/start`) {
+        return Response.json({ stage: 'ready' });
+      }
+      if (method === 'GET' && path === `${project}/sessions/${SESSION_FAILED_TURN}`) {
+        return Response.json({ ...sessionRow(SESSION_FAILED_TURN), error: FAILED_TURN_ERROR });
       }
       if (method === 'POST' && path === `${project}/sessions/${SESSION_PI}/start`) {
         return Response.json({
@@ -622,6 +634,21 @@ describe('kortix sessions stop / start / warm', () => {
     const r = await runCli(['sessions', 'start', SESSION, '--wait', '--json', ...P], config);
     expect(r.code).toBe(0);
     expect(JSON.parse(r.stdout).stage).toBe('ready');
+  });
+
+  // KRTX-2913: `new --wait` returns once the runtime is ready. When the record
+  // already shows the first turn failed, that is not a success.
+  test('new --wait exits 1 when the session already records a failed turn, and --json still prints it', async () => {
+    const r = await runCli(['sessions', 'new', '--prompt', 'hi', '--wait', '--json', ...P], config);
+    expect(r.code).toBe(1);
+    const printed = JSON.parse(r.stdout) as { session_id: string; error: string | null };
+    expect(printed).toMatchObject({ session_id: SESSION_FAILED_TURN, error: FAILED_TURN_ERROR });
+  });
+
+  test('the new --wait help says it waits for the runtime, and wait-for waits for the turn', async () => {
+    const r = await runCli(['sessions', '--help']);
+    expect(r.stdout).toContain('kortix sessions wait-for');
+    expect(r.stdout).toMatch(/--wait blocks until the runtime is[\s\S]*ready/);
   });
 
   test('start without a session id exits 2', async () => {
