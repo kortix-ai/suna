@@ -47,6 +47,19 @@ mock.module('../projects/lib/session-secret-reach', () => ({
   },
 }));
 
+// This route suite isolates policy annotations; real mint persistence is covered
+// by integration-unset-revokes-intake-link.test.ts.
+const realDb = await import('../shared/db');
+const mintDb = {
+  select: () => ({ from: () => ({ where: () => Object.assign(Promise.resolve([]), { for: async () => [] }) }) }),
+  insert: () => ({ values: () => ({ onConflictDoUpdate: async () => {} }) }),
+};
+mock.module('../shared/db', () => ({
+  ...realDb,
+  db: mintDb,
+  withDbTransaction: async <T>(fn: () => Promise<T>) => fn(),
+}));
+
 const { projectsApp } = await import('../projects/lib/app');
 (await import('../projects/routes/setup-links')).registerSetupLinksRoutes();
 
