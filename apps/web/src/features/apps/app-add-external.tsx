@@ -1,6 +1,8 @@
 'use client';
 
+import Link from '@/components/site-link';
 import { Button } from '@/components/ui/button';
+import { connectorsHref } from '@/features/workspace/capabilities/connectors/connector-routes';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -31,6 +33,7 @@ export function AddExternalAppDialog({
   onAdded: (appId: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('externalApp');
   const apps = useProjectApps(projectId);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
@@ -76,6 +79,15 @@ export function AddExternalAppDialog({
           }}
         >
           <ModalBody>
+            <p className="text-sm text-muted-foreground">
+              {t.rich('connectorGuidance', {
+                connectors: (chunks) => (
+                  <Link href={connectorsHref(projectId)} className="text-foreground underline" onClick={() => onOpenChange(false)}>
+                    {chunks}
+                  </Link>
+                ),
+              })}
+            </p>
             <div className="space-y-1.5">
               <Label htmlFor="external-app-url">{tI18nComplete.raw('texte7a241debad5')}</Label>
               <Input

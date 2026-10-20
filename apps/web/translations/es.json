@@ -22011,5 +22011,8 @@
   "triggerAutoPause": {
     "title": "Se pausó solo al llegar a su límite de ejecuciones",
     "description": "Se ejecutó en su límite por hora durante 2 horas seguidas, así que dejó de iniciar ejecuciones. Averigua qué lo sigue activando y luego reanúdalo."
+  },
+  "externalApp": {
+    "connectorGuidance": "Adding an MCP server? <connectors>Connect it in Connectors</connectors> to manage its tools and approval rules. This form adds a website, not a connector."
   }
 }

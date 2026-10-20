@@ -22011,5 +22011,8 @@
   "triggerAutoPause": {
     "title": "Paused itself at its run limit",
     "description": "It ran at its hourly run limit for 2 hours in a row, so it stopped starting runs. Find what keeps firing it, then resume it."
+  },
+  "externalApp": {
+    "connectorGuidance": "Adding an MCP server? <connectors>Connect it in Connectors</connectors> to manage its tools and approval rules. This form adds a website, not a connector."
   }
 }

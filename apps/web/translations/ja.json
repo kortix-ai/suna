@@ -22011,5 +22011,8 @@
   "triggerAutoPause": {
     "title": "実行上限に達したため自動で一時停止しました",
     "description": "1 時間あたりの実行上限で 2 時間連続して実行されたため、実行の開始を停止しました。何が起動し続けているかを確認してから再開してください。"
+  },
+  "externalApp": {
+    "connectorGuidance": "Adding an MCP server? <connectors>Connect it in Connectors</connectors> to manage its tools and approval rules. This form adds a website, not a connector."
   }
 }

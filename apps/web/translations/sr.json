@@ -22011,5 +22011,8 @@
   "triggerAutoPause": {
     "title": "Сам се паузирао на ограничењу покретања",
     "description": "Радио је на свом ограничењу покретања по сату 2 сата заредом, па више не покреће извршавања. Пронађи шта га стално покреће, па га настави."
+  },
+  "externalApp": {
+    "connectorGuidance": "Adding an MCP server? <connectors>Connect it in Connectors</connectors> to manage its tools and approval rules. This form adds a website, not a connector."
   }
 }
