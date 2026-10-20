@@ -153,6 +153,8 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       session_log: false,
       session_log_restore: false,
       connectors_v2: false,
+      agent_rooms: false,
+      goals: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -813,6 +815,8 @@ describe('envelopes', () => {
       'session_log',
       'session_log_restore',
       'connectors_v2',
+      'agent_rooms',
+      'goals',
     ]);
   });
 

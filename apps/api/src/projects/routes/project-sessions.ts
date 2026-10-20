@@ -59,6 +59,7 @@ import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
 import {
+  OWNER_MANAGED_SESSION_METADATA_KEYS,
   PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
   SERVER_MANAGED_SESSION_METADATA_KEYS,
 } from '../lib/session-metadata-keys';
@@ -800,7 +801,7 @@ export function registerProjectSessionsRoutes(): void {
         },
       responses: {
           200: json(SessionSchema, 'The updated session'),
-          ...errors(400, 404),
+          ...errors(400, 403, 404),
       },
     }),
     async (c) => {
@@ -874,6 +875,13 @@ export function registerProjectSessionsRoutes(): void {
 
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    // Seeing a session is not owning it: an owner-managed key changes what the
+    // server decides for this session, so only its creator or its own token may set it.
+    const ownerKey = metadata && OWNER_MANAGED_SESSION_METADATA_KEYS.find((key) => hasOwn(metadata, key));
+    if (ownerKey && loaded.userId !== visible.row.createdBy && callerKortixSessionId(c) !== sessionId) {
+      return c.json({ error: `metadata key ${ownerKey} can be set only by the session's owner or the session itself` }, 403);
+    }
 
     const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
 

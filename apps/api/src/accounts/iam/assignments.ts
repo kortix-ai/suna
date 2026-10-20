@@ -283,6 +283,7 @@ export function registerIamAssignmentsRoutes(): void {
           : {}),
         expiresAt,
         source: 'manual',
+        exclusive: principalType === 'user' && scopeType === 'project' && !objectType,
       });
       resyncSecretAudience(row);
       return c.json(serialize(row), 201);

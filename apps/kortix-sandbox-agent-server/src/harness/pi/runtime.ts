@@ -27,7 +27,7 @@ import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
-import { genuiEnabled, GENUI_SKILL_NAME } from '@/lib/config/genui'
+import { withheldManagedSkills } from '@/services/skills/managed-skills'
 import { loadTools } from '@/services/tools/host'
 import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import type { PiConfig, ProjectInstructions } from './config'
@@ -1758,8 +1758,9 @@ export class PiRuntime {
       // overlay): the first directory wins, like OpenCode's search order. pi reports the loser.
       const { skills, diagnostics } = this.coding.loadSkills({ cwd: this.workspace, agentDir: this.cfg.piAgentDir, skillPaths: dirs, includeDefaults: false })
       for (const diagnostic of diagnostics) if (diagnostic.type !== 'collision') logger.warn('[pi] skill diagnostic', diagnostic)
-      // The kortix-genui system skill exists only while the project's `genui` flag is on.
-      return genuiEnabled(this.env) ? skills : skills.filter((skill) => skill.name !== GENUI_SKILL_NAME)
+      // A flagged managed skill exists only while the project's flag is on.
+      const withheld = await withheldManagedSkills(this.env)
+      return skills.filter((skill) => !withheld.includes(skill.name))
     } catch (err) {
       logger.warn('[pi] skill load failed', { err: (err as Error).message })
       return []

@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { nextTriggerScheduleSlot, triggerScheduleRevision } from '../trigger-schedule';
 import { channelPrompterForOnBehalfOf } from './on-behalf-of';
-import { type ReminderDraft, reminderPromptText, reminderSpec, newReminderId, parseReminderDraft } from './session-reminders';
+import {
+  type ReminderDraft,
+  reminderPromptText,
+  reminderSpec,
+  newReminderId,
+  parseReminderDraft,
+  serializeSessionReminder,
+} from './session-reminders';
 
 const NOW = new Date('2026-09-28T12:00:00.000Z');
 const SESSION = '00000000-0000-4000-a000-00000000aa01';
@@ -107,6 +114,40 @@ describe('reminderSpec', () => {
     const id = newReminderId();
     expect(id).toMatch(/^reminder\.[0-9a-f]{12}$/);
     expect(/^[a-z0-9][a-z0-9_-]{0,127}$/.test(id)).toBe(false);
+  });
+});
+
+describe('serializeSessionReminder state', () => {
+  type Row = Parameters<typeof serializeSessionReminder>[0];
+  const row = (body: Record<string, unknown>, fields: Partial<Row>): Row =>
+    ({
+      slug: 'reminder.abc',
+      sessionId: SESSION,
+      scheduleSpec: reminderSpec({ id: 'reminder.abc', sessionId: SESSION, agent: 'kortix', draft: draft(body), now: NOW }),
+      enabled: true,
+      nextFireAt: null,
+      lastScheduledFor: null,
+      lastFiredAt: null,
+      lastStatus: null,
+      lastError: null,
+      ownerUserId: null,
+      ...fields,
+    }) as Row;
+  const FIRED = new Date('2026-09-28T14:00:00.000Z');
+
+  test('KRTX-2945: a one-shot that fired stays done after it is paused', () => {
+    expect(serializeSessionReminder(row({ prompt: 'x', in: '2h' }, { lastScheduledFor: FIRED })).state).toBe('done');
+    expect(serializeSessionReminder(row({ prompt: 'x', in: '2h' }, { lastScheduledFor: FIRED, enabled: false })).state).toBe('done');
+  });
+
+  test('a one-shot paused before its fire, and a paused recurring reminder, stay paused', () => {
+    expect(serializeSessionReminder(row({ prompt: 'x', in: '2h' }, { enabled: false })).state).toBe('paused');
+    expect(serializeSessionReminder(row({ prompt: 'x', every: '1h' }, { lastScheduledFor: FIRED, enabled: false })).state).toBe('paused');
+  });
+
+  test('a scheduled reminder is active', () => {
+    expect(serializeSessionReminder(row({ prompt: 'x', every: '1h' }, { lastScheduledFor: FIRED, nextFireAt: new Date('2026-09-28T15:00:00.000Z') })).state).toBe('active');
+    expect(serializeSessionReminder(row({ prompt: 'x', in: '2h' }, { nextFireAt: FIRED })).state).toBe('active');
   });
 });
 

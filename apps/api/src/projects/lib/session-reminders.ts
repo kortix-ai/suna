@@ -185,7 +185,10 @@ export type ReminderState = 'active' | 'paused' | 'done';
 export function serializeSessionReminder(row: RuntimeRow) {
   const spec = row.scheduleSpec as unknown as GitTriggerSpec;
   const everySeconds = spec.reminder?.everySeconds ?? null;
-  const state: ReminderState = !row.enabled ? 'paused' : row.nextFireAt ? 'active' : 'done';
+  // A one-shot that fired is done for good: pausing it afterwards (an agent
+  // cleaning up) or a failed fire switching it off does not make it resumable.
+  const fired = Boolean(spec.runAt && row.lastScheduledFor);
+  const state: ReminderState = fired || (row.enabled && !row.nextFireAt) ? 'done' : row.enabled ? 'active' : 'paused';
   return {
     id: row.slug,
     session_id: row.sessionId,
@@ -244,7 +247,7 @@ export async function listProjectReminders(projectId: string): Promise<RuntimeRo
       ),
     )
     .orderBy(
-      sql`case when ${projectTriggerRuntime.enabled} and ${projectTriggerRuntime.nextFireAt} is not null then 0 when not ${projectTriggerRuntime.enabled} then 1 else 2 end`,
+      sql`case when ${projectTriggerRuntime.scheduleRunAt} is not null and ${projectTriggerRuntime.lastScheduledFor} is not null then 2 when ${projectTriggerRuntime.enabled} and ${projectTriggerRuntime.nextFireAt} is not null then 0 when not ${projectTriggerRuntime.enabled} then 1 else 2 end`,
       sql`${projectTriggerRuntime.nextFireAt} asc nulls last`,
       sql`${projectTriggerRuntime.lastFiredAt} desc nulls last`,
       asc(projectTriggerRuntime.slug),
@@ -409,5 +412,29 @@ export async function disableSessionReminder(projectId: string, id: string, now:
   await db
     .update(projectTriggerRuntime)
     .set({ enabled: false, nextFireAt: null, updatedAt: now })
+    .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, id), isReminderRow));
+}
+
+/**
+ * Move a reminder to another session of the same project (its session failed)
+ * and re-arm it from now: the move also ends the pause a queued successor holds.
+ */
+export async function repinSessionReminder(projectId: string, id: string, sessionId: string, now: Date): Promise<void> {
+  const [row] = await db
+    .select({ spec: projectTriggerRuntime.scheduleSpec })
+    .from(projectTriggerRuntime)
+    .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, id), isReminderRow))
+    .limit(1);
+  if (!row) return;
+  const spec = { ...(row.spec as unknown as GitTriggerSpec), pinnedSessionId: sessionId };
+  await db
+    .update(projectTriggerRuntime)
+    .set({
+      sessionId,
+      scheduleSpec: spec as unknown as Record<string, unknown>,
+      enabled: true,
+      nextFireAt: spec.runAt ? null : nextTriggerScheduleSlot(spec, now),
+      updatedAt: now,
+    })
     .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, id), isReminderRow));
 }
