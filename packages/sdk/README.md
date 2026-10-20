@@ -892,11 +892,11 @@ mode — see its README.
 
 ## Rendering chat (the headless chat kit)
 
-For the Kortix chat itself, use `SessionThread` from `@kortix/ui/chat` (the
+For the Kortix chat itself, use `SessionThread` from `@kortix/ui/session` (the
 Kortix component package, not on npm yet): one component renders the whole
-session from one `useSession(projectId, sessionId)` result, with `renderTool` and
-`renderers` to replace one tool card or one part kind. Docs:
-<https://kortix.com/docs/sdk/ui#add-a-chat>. The kit below is for a host that
+session from one `useSession(projectId, sessionId)` result, the same thread
+apps/web renders. `ToolRegistry.register(name, Row)` replaces one tool row. Docs:
+<https://kortix.com/docs/sdk/ui#the-thread-alone>. The kit below is for a host that
 draws every part with its own components.
 
 Everything needed to render an agent transcript without adopting any Kortix
@@ -942,9 +942,9 @@ function Turn({ message }: { message: MessageWithParts }) {
 }
 ```
 
-The living reference is `packages/ui/src/chat/message-view.tsx`
-(`MessageView` in `@kortix/ui/chat`) — one deliberate rendering decision per
-part kind, on the session-log message (`classifySessionLogMessage`). For a
+The living reference is `packages/ui/src/session/thread/transcript.tsx`
+(the transcript of `SessionThread` in `@kortix/ui/session`), on the
+session-log message. For a
 memoized message-list binding use `useChatTurns(messages)` (`@kortix/sdk/react`);
 for a no-React plain-text version of the same classification see
 `examples/04-render-transcript.ts`. On the live side, `narrowChatEvent`

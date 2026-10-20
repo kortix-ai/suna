@@ -16,8 +16,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import messages from '../../../../translations/en.json';
 
-import { COMPOSER_INPUT_SLOT_CLASS, COMPOSER_SHELL_CLASS } from './composer';
-import { ComposerAboveCard } from './ComposerAboveCard';
+import {
+  COMPOSER_INPUT_SLOT_CLASS,
+  COMPOSER_SHELL_CLASS,
+  ComposerAboveCard,
+} from '@kortix/ui/composer';
 
 const noop = () => {};
 

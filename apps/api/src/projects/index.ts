@@ -78,6 +78,7 @@ import { registerSessionWatchRoutes } from './routes/session-watch';
 import { registerSessionListStateRoutes } from './routes/session-list-state';
 import { registerSessionParticipantsRoutes } from './routes/session-participants';
 import { registerSessionPromptsRoutes } from './routes/session-prompts';
+import { registerRoomsRoutes } from './routes/rooms';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
 import { registerChangeRequestsRoutes } from './routes/change-requests';
 import { registerPromptAttachmentsRoutes } from './routes/prompt-attachments';
@@ -165,6 +166,7 @@ export function registerAllProjectRoutes(): void {
   registerSessionListStateRoutes();
   registerSessionParticipantsRoutes();
   registerSessionPromptsRoutes();
+  registerRoomsRoutes();
   registerSessionRemindersRoutes();
   registerChangeRequestsRoutes();
   registerPromptAttachmentsRoutes();

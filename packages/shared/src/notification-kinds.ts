@@ -16,6 +16,7 @@ export const NOTIFICATION_KINDS = [
   'automation_recovered',
   'capture_device_down',
   'capture_device_recovered',
+  'message',
 ] as const;
 
 export type NotificationKindName = (typeof NOTIFICATION_KINDS)[number];
@@ -41,6 +42,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationKindPreferences = {
   automation_recovered: { push: true, email: false },
   capture_device_down: { push: true, email: true },
   capture_device_recovered: { push: true, email: false },
+  message: { push: true, email: true },
 };
 
 /** Kinds emailed as soon as they happen. Every other kind with email on joins the digest. */

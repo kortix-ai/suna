@@ -6,17 +6,17 @@
  * live release; a volume outlives every release. Clients branch on
  * capabilities: `machines`, `scale`, `volumes`, `snapshots`.
  */
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { successToast } from '@/components/ui/toast';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import Hint from '@kortix/ui/hint';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { successToast } from '@kortix/ui/toast';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { relativeTime } from '@/lib/relative-time';
-import { cn } from '@/lib/utils';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
+import { cn } from '@kortix/ui';
 
 import { type App, type AppMachine, type AppVolume } from '@kortix/sdk';
 import { useAppMachines, useAppVolumeSnapshots, useAppVolumes } from '@kortix/sdk/react';
@@ -24,7 +24,7 @@ import { CameraIcon, CopyIcon } from '@phosphor-icons/react';
 
 import { useState } from 'react';
 
-import { appCan } from './app-shared';
+import { appCan } from '@kortix/ui/apps';
 
 /** How long a machine has been up: "3h 12m", "12m", "2d 4h". */
 export function uptime(since: string, now = Date.now()): string {

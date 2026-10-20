@@ -17,7 +17,6 @@ const uiModalMock = () => ({
   ModalHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ModalTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 });
-mock.module('@/components/ui/modal', uiModalMock);
 mock.module('@kortix/ui/modal', uiModalMock);
 
 // Imported after the mock so the module binds to the stand-in.

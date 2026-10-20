@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { UseCasesBrowser } from '@/components/use-cases/use-cases-browser';
 import { getTranslations } from '@/i18n/get-translations';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
-import { siteMetadata } from '@/lib/site-metadata';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 import { getAllUseCases } from '@/lib/use-cases';
 
 const URL = `${siteMetadata.url}/use-cases`;

@@ -100,7 +100,7 @@ const RULES = [
     pattern:
       /['"](?:lucide-react|radix-ui|@radix-ui\/[^'"]+|class-variance-authority|next-themes|react-markdown)['"]/g,
     message:
-      'Compose @kortix/ui (Phosphor icons, @kortix/ui/chat for markdown); do not build a second UI kit.',
+      'Compose @kortix/ui (Phosphor icons, @kortix/ui/session for markdown); do not build a second UI kit.',
   },
   {
     scope: 'client',

@@ -2,8 +2,8 @@
 
 import { ListIcon } from '@phosphor-icons/react';
 
-import { TITLEBAR_CONTROL_CLASS } from '@/components/desktop/titlebar-control';
-import { Button } from '@/components/ui/button';
+import { TITLEBAR_CONTROL_CLASS } from '@kortix/ui/internal/desktop/titlebar-control';
+import { Button } from '@kortix/ui/button';
 import { useTranslations } from '@/i18n/use-translations';
 import {
   getDesktopZoom,
@@ -14,21 +14,21 @@ import {
   zoomIn,
   zoomOut,
   zoomReset,
-} from '@/lib/desktop';
+} from '@kortix/ui/internal/lib/desktop';
 import {
   DEFAULT_THEME_CHOICE,
   isThemedPath,
   normalizeDarkTheme,
   normalizeLightTheme,
 } from '@/lib/interface-themes';
-import { projectIdFromPathname } from '@/stores/project-switch-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { projectIdFromPathname } from '@kortix/ui/internal/stores/project-switch-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import { useTheme } from 'next-themes';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /**
  * Invisible top-of-window drag region. The web app's own UI extends to the
