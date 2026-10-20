@@ -714,9 +714,8 @@ async function sessionsNew(
   // Shared by --wait (readiness before returning) and the post-create connect
   // path (attach needs a live runtime).
   const awaitReadiness = async (): Promise<boolean> => {
-    if (!json) {
-      process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
-    }
+    process.stderr.write(`Session ${created.session_id}: created (${created.status}); waiting for readiness…\n`);
+    let previousStage = '';
     let ready = false;
     for (let i = 0; i < 75; i += 1) {
       if (i > 0) await new Promise((r) => setTimeout(r, 4000));
@@ -725,6 +724,10 @@ async function sessionsNew(
           stage: 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
           reason?: string;
         }>(`/projects/${ctx.projectId}/sessions/${created.session_id}/start`, {});
+        if (start.stage !== previousStage) {
+          process.stderr.write(`Session ${created.session_id}: ${start.stage}\n`);
+          previousStage = start.stage;
+        }
         created = await ctx.client.get<ProjectSession>(
           `/projects/${ctx.projectId}/sessions/${created.session_id}`,
         );
