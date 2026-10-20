@@ -209,8 +209,9 @@ export interface SecretRow {
   /** 'no_agent_grant' only when the API is certain. Null covers "unknown" too. */
   deliveryBlockedReason: SecretDeliveryBlockedReason | null;
   /** Who can use the shared value. Empty = everyone in the project. */
-  agents?: string[] | 'all' | null;
   sharedWith: ConnectionShare[];
+  /** Enabled manifest agents admitted by identifier; unknown on older servers. */
+  agents?: string[] | 'all' | null;
   /** False when it is shared with specific people and the viewer is not one of them. */
   usable: boolean;
   /** Kortix can no longer decrypt the shared value (`status: 'undecryptable'`). */

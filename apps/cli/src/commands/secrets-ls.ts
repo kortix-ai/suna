@@ -27,8 +27,9 @@ type SecretRow = {
    *  be set, but this session never receives it and the API does not list it. */
   granted: boolean;
   /** Audience labels; empty = everyone in the project. */
-  agents?: string[] | 'all' | null;
   sharedWith: string[];
+  /** Enabled manifest agents admitted by identifier; unknown on older servers. */
+  agents?: string[] | 'all' | null;
   /** False when the value is shared with specific people and not the caller. */
   usable: boolean;
 };
