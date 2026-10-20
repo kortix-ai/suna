@@ -17,7 +17,7 @@ import { getFileIcon } from './file-icon';
  * chip renders only for sources that expose live status (sandbox), never for
  * read-only ref views.
  */
-export function FilePreviewModal({
+export function ExplorerFilePreview({
   embedded = false,
   shareContext,
 }: {

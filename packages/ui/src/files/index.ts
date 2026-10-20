@@ -16,7 +16,6 @@ export {
   useShareFolder,
   useUnshareFolder,
 } from './drives/use-drives';
-export { FilePreviewDialog } from './file-preview-dialog';
 export { FilePreviewHost } from './file-preview-host';
 export { FilesStoreProvider, getFileIcon } from './project';
 export { ChangeRequestDetailDialog } from './project/components/change-request-detail-dialog';

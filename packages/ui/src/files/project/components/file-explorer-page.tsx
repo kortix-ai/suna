@@ -40,7 +40,7 @@ import { DriveGridView } from './drive-grid-view';
 import { DriveHeader } from './drive-header';
 import { DriveListView } from './drive-list-view';
 import { FileHistoryPopoverContent } from './file-history-popover';
-import { FilePreviewModal } from './file-preview-modal';
+import { ExplorerFilePreview } from './file-preview-modal';
 import { FileSearch } from './file-search';
 import { isPartialListing, LoadMoreRow } from './load-more-row';
 import { type FilesRightPanel, requestedFilesRightPanel } from './file-route-state';
@@ -578,7 +578,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
 
       <ChangeRequestDetailDialog crId={createdCrId} onClose={() => setCreatedCrId(null)} />
 
-      <FilePreviewModal />
+      <ExplorerFilePreview />
       {searchEnabled && isSearchOpen && <FileSearch />}
 
       {historyPopoverPath && (

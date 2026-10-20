@@ -56,7 +56,7 @@ import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
 import { DRIVE_ACTION_ROW_CLASS, DriveNewMenu, DrivePathBar, DriveViewMenu } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
-import { FilePreviewModal } from './file-preview-modal';
+import { ExplorerFilePreview } from './file-preview-modal';
 import { FileSearch } from './file-search';
 import { isPartialListing, LoadMoreRow } from './load-more-row';
 
@@ -1154,7 +1154,7 @@ export function DriveExplorer({
       )}
 
       {/* File preview modal */}
-      <FilePreviewModal embedded={embedded} shareContext={shareContext} />
+      <ExplorerFilePreview embedded={embedded} shareContext={shareContext} />
 
       {/* History popover */}
       {historyPopoverPath && (
