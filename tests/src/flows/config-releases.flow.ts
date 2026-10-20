@@ -1696,13 +1696,12 @@ async function boxSession(ctx: FlowContext, fixture: Fixture) {
 }
 
 /**
- * Run the flow on `harness`: a pi run turns the project's `pi_harness` flag on
- * before the session boots, and every run proves which harness the box runs.
+ * Run the flow on `harness`: the project's `pi_harness` flag (on by default) is
+ * set before the session boots, and every run proves which harness the box runs.
  */
 async function optIntoHarness(ctx: FlowContext, fixture: Fixture, harness: Harness): Promise<void> {
-  if (harness !== 'pi') return;
-  await ctx.step('the project runs pi: `pi_harness` is on, so every session boots pi', async () => {
-    await fixture.setFeature(true, 'pi_harness');
+  await ctx.step(`the project runs ${harness}: \`pi_harness\` is ${harness === 'pi' ? 'on' : 'off'}`, async () => {
+    await fixture.setFeature(harness === 'pi', 'pi_harness');
   });
 }
 
@@ -1804,7 +1803,7 @@ harnessFlow(
   'CFG-11',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe'],
+    requires: ['database', 'funded', 'sandbox', 'managedGit', 'stripe'],
     timeoutMs: 1_500_000,
     routes: [
       FEATURES,
@@ -2089,7 +2088,7 @@ harnessFlow(
   'CFG-12',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe'],
+    requires: ['database', 'funded', 'sandbox', 'managedGit', 'stripe'],
     timeoutMs: 1_800_000,
     routes: [
       FEATURES,
@@ -2306,7 +2305,7 @@ flow(
   'CFG-13',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe'],
+    requires: ['database', 'funded', 'sandbox', 'managedGit', 'stripe'],
     timeoutMs: 900_000,
     routes: [
       FEATURES,
@@ -2566,7 +2565,7 @@ harnessFlow(
   'CFG-16',
   {
     domain: 'config-releases',
-    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe', 'projectSnapshots'],
+    requires: ['database', 'funded', 'sandbox', 'managedGit', 'stripe', 'projectSnapshots'],
     timeoutMs: 1_500_000,
     routes: [
       FEATURES,

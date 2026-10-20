@@ -199,6 +199,9 @@ describe('multiple displays', () => {
     const frames = (runs: Array<Record<string, unknown>>) => runs.reduce((n, r) => n + Number(r.frames), 0);
     expect(frames(await timelineRuns(ACCOUNT, MEMBER, span, dual!.deviceId))).toBe(perDisplay);
     expect(frames(await timelineRuns(ACCOUNT, MEMBER, span, dual!.deviceId, 2))).toBe(perDisplay);
+    // Frames without input for inactivity_seconds (reading, an unattended screen) keep their runs.
+    await db.execute(sql`UPDATE kortix.timeline_frames SET inactive = true WHERE device_id = ${dual!.deviceId}::uuid`);
+    expect(frames(await timelineRuns(ACCOUNT, MEMBER, span, dual!.deviceId))).toBe(perDisplay);
     expect((await timelineFocus(ACCOUNT, MEMBER, span, dual!.deviceId)).map((f) => f.display_id)).toEqual([1]);
 
     const items = async (opts: { displayId?: number; allDisplays?: boolean }) => (await timelineItems(ACCOUNT, MEMBER, span, dual!.deviceId, opts)).frames;

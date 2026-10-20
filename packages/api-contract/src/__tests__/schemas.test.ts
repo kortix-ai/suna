@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type SessionWorking,
   ConnectorAuthorizationStrategySchema,
   ConnectionSchema,
   ConnectionMetadataSchema,
@@ -151,6 +152,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       drives: false,
       session_log: false,
       session_log_restore: false,
+      connectors_v2: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -290,12 +292,12 @@ describe('ProjectSchema', () => {
     expect(parsed.project_role).toBeNull();
   });
 
-  test('accepts E2B and rejects retired sandbox providers in project pin fields', () => {
+  test('accepts Platinum and Daytona and rejects retired sandbox providers in project pin fields', () => {
     expect(() =>
       ProjectSchema.parse(
         projectFixture({
-          default_sandbox_provider: 'e2b',
-          available_sandbox_providers: ['daytona', 'platinum', 'e2b'],
+          default_sandbox_provider: 'platinum',
+          available_sandbox_providers: ['platinum', 'daytona'],
         }),
       ),
     ).not.toThrow();
@@ -306,7 +308,8 @@ describe('ProjectSchema', () => {
         }),
       ),
     ).toThrow();
-    const retiredProviders = [['local', 'docker'].join('_'), ['local', 'docker'].join('-')];
+    // E2B support is discontinued: `e2b` is a retired provider too.
+    const retiredProviders = ['e2b', ['local', 'docker'].join('_'), ['local', 'docker'].join('-')];
     for (const retiredProvider of retiredProviders) {
       expect(() =>
         ProjectSchema.parse(
@@ -361,6 +364,15 @@ describe('ProjectSchema.icon_glyph', () => {
 });
 
 describe('ProjectSessionSchema', () => {
+  test('working is additive and survives parsing independently of lifecycle status', () => {
+    const working: SessionWorking = { state: 'idle', since: null, turn_token: null, pending_delivery: false };
+    const parsed = ProjectSessionSchema.parse(sessionFixture({ working }));
+    expect(parsed.working).toEqual(working);
+    expect(String(parsed.status)).toBe(sessionFixture().status);
+    expect(ProjectSessionSchema.parse(sessionFixture()).working).toBeUndefined();
+    expect(ProjectSessionSchema.safeParse(sessionFixture({ working: { ...working, state: 'running' } })).success).toBe(false);
+  });
+
   test('accepts a full serialized session', () => {
     expect(() => ProjectSessionSchema.strict().parse(sessionFixture())).not.toThrow();
   });
@@ -511,7 +523,7 @@ describe('pending session prompt contract', () => {
 
 describe('ProjectSessionSandboxSchema', () => {
   test('accepts every provider the platform can emit', () => {
-    for (const provider of ['daytona', 'platinum', 'e2b']) {
+    for (const provider of ['platinum', 'daytona']) {
       expect(() =>
         ProjectSessionSandboxSchema.strict().parse(sandboxFixture({ provider })),
       ).not.toThrow();
@@ -520,6 +532,14 @@ describe('ProjectSessionSandboxSchema', () => {
 });
 
 describe('TriggerSchema', () => {
+  test('keeps exact cron time distinct from jittered execution and accepts older APIs', () => {
+    const parsed = TriggerSchema.strict().parse(triggerFixture({
+      next_cron_at: '2026-10-10T09:00:00.000Z', next_fire_at: '2026-10-10T09:15:00.000Z',
+    }));
+    expect(parsed.next_cron_at).toBe('2026-10-10T09:00:00.000Z');
+    expect(parsed.next_fire_at).toBe('2026-10-10T09:15:00.000Z');
+    expect(TriggerSchema.strict().parse(triggerFixture()).next_cron_at).toBeUndefined();
+  });
   test('accepts a cron trigger and a webhook trigger', () => {
     expect(() => TriggerSchema.strict().parse(triggerFixture())).not.toThrow();
     expect(() =>
@@ -532,6 +552,20 @@ describe('TriggerSchema', () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  test('filter: a value or exactly one operator per path (KRTX-1721)', () => {
+    const filter = {
+      'body.type': 'push',
+      'body.sender.login': { not: ['kortix-bot'] },
+      'body.action': { in: ['opened'] },
+      'body.pull_request': { exists: true },
+      'body.base': { prefix: ['release/'] },
+      'body.ref': { not_prefix: ['refs/heads/kortix/'] },
+    };
+    expect(() => TriggerSchema.strict().parse(triggerFixture({ filter }))).not.toThrow();
+    expect(TriggerSchema.safeParse(triggerFixture({ filter: { 'body.ref': { in: ['a'], not: ['b'] } } })).success).toBe(false);
+    expect(TriggerSchema.safeParse(triggerFixture({ filter: { 'body.ref': { nott: ['a'] } } })).success).toBe(false);
   });
 
   test('accepts an event trigger with its subscription state', () => {
@@ -778,6 +812,7 @@ describe('envelopes', () => {
       'drives',
       'session_log',
       'session_log_restore',
+      'connectors_v2',
     ]);
   });
 

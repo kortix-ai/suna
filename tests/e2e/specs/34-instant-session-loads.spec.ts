@@ -28,7 +28,8 @@
  * The fourth arm saves a turn that dispatched a sub-agent. A sub-agent runs in
  * its own OpenCode session, and its row opens that transcript, which only the
  * running computer could answer: while it was off, the view waited. Now saved
- * history holds the sub-agent's transcript too, and the view draws its steps.
+ * history holds the sub-agent's transcript too: the row opens its steps in
+ * place, and its 'View' action opens the whole transcript.
  *
  * The fifth arm stores a tool call the way saved history stored it before it
  * kept tool calls 1:1: no input, no output, only the title (OpenCode titles a
@@ -44,7 +45,7 @@
  * session-open snapshot never answer. The copy the device kept painted first,
  * and the newer saved copy from the history read never replaced it, so the
  * reload showed an older last message until the computer woke. The newer turn
- * now shows at once, from one transcript read.
+ * now shows at once, from one read of the session log.
  *
  * The eighth arm opens the Sessions page as the project owner, then reloads it
  * with every session-list and permission read held. The page picks the
@@ -87,6 +88,8 @@ const API_PATH = new URL(process.env.E2E_API_URL!).pathname.replace(/\/+$/, '');
  * The saved copy this device keeps for one session, or null. The web host keeps
  * saved copies in IndexedDB (`kortix-session-cache`, store `saved-copies`, see
  * the SDK's `idb-sync-cache.ts`), keyed `kortix.saved-copy:<user>:<project>/<session>`.
+ * A session whose project has the `session_log` flag on keeps its session-log page
+ * instead, under `kortix.saved-copy.log:…` (`savedLogCopyKey`).
  * The read opens the database at its current version and closes it, so it never
  * blocks the page's own upgrade.
  */
@@ -122,6 +125,34 @@ function readSavedCopy(page: Page, key: string): Promise<string | null> {
  * for the conversation. An older page (`before=`) and a sub-agent's window
  * (`child=`) are other reads.
  */
+/**
+ * The key of the copy this device keeps for one session. The session log owns the history of a
+ * project with the `session_log` flag on (#10305): the device keeps the log's page under the
+ * `.log` namespace (the SDK's `saved-log.ts`) and no v1 copy.
+ */
+const savedLogCopyKey = (userId: string, projectId: string, sessionId: string) =>
+  `kortix.saved-copy.log:${userId}:${projectId}/${sessionId}`;
+
+/**
+ * Every read of the newest page of the session log's root thread from now on: `GET …/log?`.
+ * An older page (`before_seq=`) and a sub-agent's thread (`thread=`) are other reads.
+ */
+function countOpenLogReads(page: Page, sessionId: string): { urls: string[] } {
+  const reads = { urls: [] as string[] };
+  page.on('request', (request) => {
+    const url = request.url();
+    if (
+      request.method() === 'GET' &&
+      url.includes(`/sessions/${sessionId}/log?`) &&
+      !url.includes('before_seq=') &&
+      !url.includes('thread=')
+    ) {
+      reads.urls.push(url);
+    }
+  });
+  return reads;
+}
+
 function countOpenTranscriptReads(page: Page, sessionId: string): { urls: string[] } {
   const reads = { urls: [] as string[] };
   page.on('request', (request) => {
@@ -287,7 +318,7 @@ test('34 — a reload with every read held shows the project, its session list a
       await route.continue().catch(() => {});
     });
     // Once `holding`, every read the reload depends on waits for the end of the test.
-    for (const path of ['snapshot', 'transcript']) {
+    for (const path of ['snapshot', 'transcript', 'log']) {
       await page.route(`**/sessions/${sessionId}/${path}*`, hold);
     }
     await page.route(
@@ -307,7 +338,7 @@ test('34 — a reload with every read held shows the project, its session list a
       .poll(
         () =>
           Promise.all([
-            readSavedCopy(page, `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`),
+            readSavedCopy(page, savedLogCopyKey(user.id, project.id, sessionId)),
             page.evaluate(
               (userId) => Object.keys(localStorage).includes(`kortix.query-cache:${userId}`),
               user.id,
@@ -473,7 +504,7 @@ test('34 — a saved tool call shows its command and output, from the server and
       await held;
       await route.continue().catch(() => {});
     });
-    for (const path of ['snapshot', 'transcript']) {
+    for (const path of ['snapshot', 'transcript', 'log']) {
       await page.route(`**/sessions/${sessionId}/${path}*`, hold);
     }
     await page.route(
@@ -628,7 +659,18 @@ test("34 — a saved sub-agent's steps open while the computer is off", async ({
     // #9774 each run of work under the fold has its own closed, named line.
     await openWork(page);
     await page.getByRole('button', { name: 'Asked a helper agent', exact: true }).click();
+    // The row reads the sub-agent's thread from the session log as it mounts. Until the
+    // steps are in hand it is a plain button onto the full view; with them it is a
+    // closed disclosure that opens them in place (`TaskTool`). Click it only then.
+    const agentRow = page.getByRole('button', { name: new RegExp(SUBAGENT_TASK), expanded: false });
+    await expect(agentRow).toBeVisible({ timeout: 30_000 });
     await page.getByText(SUBAGENT_TASK, { exact: true }).first().click();
+    await expect(page.getByRole('button', { name: `List the source files ${SUBAGENT_COMMAND}` })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // The row's 'View' action opens the sub-agent's whole transcript.
+    await page.getByRole('button', { name: 'Open full view', exact: true }).click();
     const view = page.getByRole('dialog');
     await expect(view).toBeVisible();
     // The sub-agent's own settled turn folds the same way.
@@ -762,7 +804,7 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
     await expect
       .poll(
         () =>
-          readSavedCopy(page, `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`).then(
+          readSavedCopy(page, savedLogCopyKey(user.id, project.id, sessionId)).then(
             (copy) => copy?.includes('This reply is stored in the database.') === true,
           ),
         { timeout: 30_000, message: 'the device keeps the saved copy' },
@@ -798,9 +840,15 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
     });
 
     holding = true;
-    const reads = countOpenTranscriptReads(page, sessionId);
+    const transcriptReads = countOpenTranscriptReads(page, sessionId);
+    const reads = countOpenLogReads(page, sessionId);
+    // The session log owns this history (#10305): the newer turn comes from `GET …/log`.
     const history = page.waitForResponse(
-      (r) => r.url().includes(`/sessions/${sessionId}/transcript?`) && r.url().includes('history=true'),
+      (r) =>
+        r.request().method() === 'GET' &&
+        r.url().includes(`/sessions/${sessionId}/log?`) &&
+        !r.url().includes('before_seq=') &&
+        !r.url().includes('thread='),
     );
     await page.reload({ waitUntil: 'commit' });
     // The newer turn shows while the computer and the snapshot are still held.
@@ -808,14 +856,15 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
     await expect(page.getByText(newerReply, { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(newerPrompt, { exact: true })).toBeVisible();
     await expect(page.getByText(SAVED_REPLY, { exact: true })).toHaveCount(1);
-    // One saved-history read, not that one plus a second read of the window.
+    // One saved-history read, not that one plus a second read of the window, and no v1 read.
     expect(reads.urls).toHaveLength(1);
+    expect(transcriptReads.urls).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath('reload-newer-copy.png') });
     // And the device keeps the newer copy for the next open.
     await expect
       .poll(
         () =>
-          readSavedCopy(page, `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`).then(
+          readSavedCopy(page, savedLogCopyKey(user.id, project.id, sessionId)).then(
             (copy) => copy?.includes(newerReply) === true,
           ),
         { timeout: 15_000, message: 'the device keeps the newer copy' },

@@ -13,7 +13,7 @@ import type { CardRow } from '@/features/marketing/download/platform-card';
 import { PlatformCard } from '@/features/marketing/download/platform-card';
 import {
   formatSize,
-  getLatestRelease,
+  getDesktopRelease,
   pickDesktopAsset,
 } from '@/features/marketing/download/releases';
 import { TerminalBlock } from '@/features/marketing/download/terminal-block';
@@ -44,7 +44,7 @@ export default async function DownloadPage({
   const [headerList, params, release, tI18nComplete] = await Promise.all([
     headers(),
     searchParams,
-    getLatestRelease(),
+    getDesktopRelease(),
     getTranslations('hardcodedUi.i18nComplete'),
   ]);
   const {

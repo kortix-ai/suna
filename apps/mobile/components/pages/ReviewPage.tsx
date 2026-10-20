@@ -92,9 +92,6 @@ interface ReviewPageProps {
   projectId: string;
   onOpenSession: (sessionId: string) => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
 const EMPTY_TITLE: Record<ReviewSegment, string> = {
@@ -108,9 +105,6 @@ export function ReviewPage({
   projectId,
   onOpenSession,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: ReviewPageProps) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
@@ -200,9 +194,6 @@ export function ReviewPage({
       <PageHeader
         title={page.label}
         onOpenDrawer={onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
         onAdd={
           canOpenChange
             ? () => {
@@ -300,6 +291,7 @@ export function ReviewPage({
               the page — the same bar as the switcher sheet's. */}
           <PinnedBar controlHeight={FLOATING_BAR_HEIGHT} background={pageBackground} className="justify-center px-4">
             <FloatingTabCapsule
+              glass
               items={SEGMENT_TABS}
               activeIndex={REVIEW_SEGMENTS.findIndex(({ key }) => key === segment)}
               onSelect={(index) => {

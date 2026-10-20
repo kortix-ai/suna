@@ -9,7 +9,7 @@ import type { ProviderName } from '../../platform/providers';
 
 /**
  * Only Platinum honors `autoStopInterval: 0` → `type: 'persistent'`. Daytona
- * clamps auto-stop to ≥1 min and E2B caps a sandbox at 1 h, so neither can host
+ * clamps auto-stop to ≥1 min, so it cannot host
  * a 24/7 watcher. This mirrors the `monitors` feature flag's
  * `available: () => Boolean(config.PLATINUM_API_KEY)`.
  */

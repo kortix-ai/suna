@@ -263,7 +263,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
             session_id: sessionId,
             project_id: projectId,
             account_id: 'acct_test',
-            provider: 'daytona',
+            provider: 'platinum',
             external_id: externalId,
             base_url: `/p/${externalId}/8000`,
             status: 'active',

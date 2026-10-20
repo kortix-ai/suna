@@ -1,5 +1,5 @@
 import { CONNECTORS_TRANSLATION_KEYS } from '@/i18n/connectors-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import type { UiTranslator } from '@/i18n/translator';
 
 /**

@@ -15,7 +15,7 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { act, create } from 'react-test-renderer';
 
-import { ConnectorIcon } from './connector-browse';
+import { ConnectorIcon } from '../../../../../../../../packages/ui/src/customize/connectors/catalog/connector-browse';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

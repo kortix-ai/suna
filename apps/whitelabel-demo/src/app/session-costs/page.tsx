@@ -2,15 +2,15 @@
 
 import { CallSnippet } from '@/components/dev/call-snippet';
 import { ModeNotice } from '@/components/mode-notice';
-import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@kortix/ui/badge';
+import { Card } from '@kortix/ui/card';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { authHeaders, getSessionToken } from '@/lib/session';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Receipt } from 'lucide-react';
 import Link from 'next/link';
 import { useWrapperMode } from '../providers';
 import type { SessionCostsResponse } from './contract';
+import { ArrowLeftIcon, ReceiptIcon } from '@phosphor-icons/react';
 
 async function fetchSessionCosts(): Promise<SessionCostsResponse> {
   const token = getSessionToken();
@@ -53,15 +53,15 @@ function SessionCostsDashboard() {
             href="/"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ArrowLeft className="size-4" /> Back to projects
+            <ArrowLeftIcon className="size-4" /> Back to projects
           </Link>
         </div>
       </header>
 
       <main className="mx-auto max-w-4xl px-5 py-8">
         <div className="flex items-center gap-2">
-          <Receipt className="size-5 text-muted-foreground" />
-          <h1 className="text-xl font-semibold tracking-tight">Session costs</h1>
+          <ReceiptIcon className="size-5 text-muted-foreground" />
+          <h1 className="font-display text-3xl tracking-tight">Session costs</h1>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
           Each row represents one Kortix session. The wrapper applies its configured markup to that

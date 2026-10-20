@@ -96,3 +96,32 @@ describe('macOS title-bar band geometry', () => {
     }
   });
 });
+
+describe('Windows title-bar band geometry', () => {
+  const { WIN_TITLEBAR, winBandMetrics, winTitleBarOverlay } = require('./window-chrome');
+
+  test('the overlay is as tall as the band and transparent', () => {
+    expect(winTitleBarOverlay(false)).toEqual({ color: '#00000000', symbolColor: '#1F1F1F', height: 40 });
+    expect(winTitleBarOverlay(true).symbolColor).toBe('#FFFFFF');
+    expect(winTitleBarOverlay(true).height).toBe(WIN_TITLEBAR.band);
+  });
+
+  test('the menu button, the shell control and the content follow left to right without overlap', () => {
+    const m = winBandMetrics();
+    expect(m).toEqual({
+      band: 40,
+      controlsWidth: 138,
+      controlTop: 6,
+      menuLeft: 8,
+      menuEnd: 36,
+      controlLeft: 44,
+      contentLeft: 80,
+    });
+    expect(m.controlLeft).toBeGreaterThanOrEqual(m.menuEnd);
+    expect(m.contentLeft).toBeGreaterThanOrEqual(m.controlLeft + WIN_TITLEBAR.control);
+  });
+
+  test('the caption-button reservation covers three 45 px buttons and their 1 px gaps', () => {
+    expect(WIN_TITLEBAR.controlsWidth).toBeGreaterThanOrEqual(45 * 3 + 2);
+  });
+});

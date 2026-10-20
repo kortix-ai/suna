@@ -39,6 +39,7 @@ export const LOCALIZED_ROUTES = [
   '/self-hosted',
   '/solutions',
   '/support',
+  '/white-label',
 ] as const;
 
 function htmlEntry(pathname: string, lastModified?: string): SitemapEntry {

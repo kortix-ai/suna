@@ -288,6 +288,46 @@ function deltaShape(event: RuntimeEvent) {
   };
 }
 
+function blockDelta(id: string, delta: string, blockID = 'blk_1', messageID = 'msg_1'): RuntimeEvent {
+  return {
+    id,
+    type: 'log.block.delta',
+    properties: { thread_id: 'ses_1', message_id: messageID, block_id: blockID, delta },
+  } as unknown as RuntimeEvent;
+}
+
+describe('openEventStream log.block.delta coalescing (KRTX-2880)', () => {
+  test('consecutive deltas of one block dispatch as ONE event per flush window; another block or message is its own run', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const dispatched: RuntimeEvent[] = [];
+    const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
+    await tick();
+
+    const run = Array.from({ length: 30 }, (_, i) => blockDelta(`evt_${i}`, `w${i} `));
+    for (const event of run) channels[0].push(event);
+    const other = blockDelta('evt_b', 'x', 'blk_2');
+    const otherMessage = blockDelta('evt_m', 'y', 'blk_2', 'msg_2');
+    channels[0].push(other);
+    channels[0].push(otherMessage);
+    await tick(200);
+    await clock.advance(16);
+
+    expect(dispatched.length).toBe(3);
+    expect(dispatched[0]!.type as string).toBe('log.block.delta');
+    expect(deltaShape(dispatched[0]!)).toEqual({
+      id: 'evt_29',
+      delta: run.map((e) => (e.properties as { delta: string }).delta).join(''),
+      wireIds: run.map((e) => (e as { id?: string }).id),
+    });
+    expect((dispatched[0]!.properties as { block_id: string }).block_id).toBe('blk_1');
+    expect(dispatched[1]).toBe(other);
+    expect(dispatched[2]).toBe(otherMessage);
+
+    handle.close();
+  });
+});
+
 describe('openEventStream text-delta coalescing', () => {
   test('consecutive deltas of one part field dispatch as ONE event per flush window', async () => {
     const clock = createFakeClock();

@@ -80,20 +80,19 @@ describe('channelModelContext — freeManagedOnly honors the managedModels overr
     invalidateAccountBilling();
   });
 
-  test('free plan, no override → managed models offered', async () => {
-    expect((await gateFor({ tier: 'free' })).freeManagedOnly).toBe(false);
+  test('free plan, no override → no managed models', async () => {
+    expect((await gateFor({ tier: 'free' })).freeManagedOnly).toBe(true);
   });
 
   test('paid plan, no override → managed models offered (unchanged)', async () => {
     expect((await gateFor({ tier: 'credits' })).freeManagedOnly).toBe(false);
   });
 
-  test('THE BUG: override=true on an account with no plan grants managed models', async () => {
-    // Old behavior: freeManagedOnly followed the tier string, so the operator
-    // grant was invisible to Slack only.
-    expect((await gateFor({ tier: 'none', entitlementOverrides: { managedModels: { value: true } } })).freeManagedOnly).toBe(
-      false,
-    );
+  test('override=true never grants managed models to No Plan or Free', async () => {
+    for (const tier of ['none', 'free']) {
+      invalidateAccountBilling();
+      expect((await gateFor({ tier, entitlementOverrides: { managedModels: { value: true } } })).freeManagedOnly).toBe(true);
+    }
   });
 
   test('THE BUG, other direction: override=false on a paid plan withdraws them', async () => {

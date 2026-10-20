@@ -1,26 +1,26 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/select';
+import { Separator } from '@kortix/ui/separator';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Shield, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { PlusIcon, ShieldIcon, TrashIcon } from '@phosphor-icons/react';
 
 type PolicyAction = 'always_run' | 'require_approval' | 'block';
 type DefaultMode = 'risk' | 'allow_all';
@@ -68,9 +68,9 @@ export function PoliciesTab({ projectId }: { projectId: string }) {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: key });
-      toast.success('Policies saved');
+      successToast('Policies saved');
     },
-    onError: () => toast.error('Could not save policies'),
+    onError: () => errorToast('Could not save policies'),
   });
 
   const addRule = () => {
@@ -83,7 +83,7 @@ export function PoliciesTab({ projectId }: { projectId: string }) {
     <div className="space-y-4">
       <Card className="p-5">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <Shield className="size-4 text-muted-foreground" /> Tool policies
+          <ShieldIcon className="size-4 text-muted-foreground" /> Tool policies
         </div>
         <p className="text-xs text-muted-foreground">
           Decide which tool calls run automatically, need approval, or are blocked.
@@ -160,7 +160,7 @@ export function PoliciesTab({ projectId }: { projectId: string }) {
                 onClick={() => setRules((prev) => prev.filter((_, j) => j !== i))}
                 aria-label="Remove rule"
               >
-                <Trash2 className="size-4" />
+                <TrashIcon className="size-4" />
               </Button>
             </div>
           ))}
@@ -192,7 +192,7 @@ export function PoliciesTab({ projectId }: { projectId: string }) {
             </SelectContent>
           </Select>
           <Button variant="outline" size="icon" onClick={addRule} aria-label="Add rule">
-            <Plus className="size-4" />
+            <PlusIcon className="size-4" />
           </Button>
         </div>
       </Card>

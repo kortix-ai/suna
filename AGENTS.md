@@ -439,9 +439,10 @@ these as standing rules whenever you touch the data/runtime layer:
   The sandbox provider and the harness are server-side concerns. Host code
   must not implement a second transport.
 - **Build on the Kortix contract, not on OpenCode.** A session runs one of two
-  harnesses inside kortixd: OpenCode (the default today) or pi (the
-  `pi_harness` project flag or `runtime: pi` in `kortix.yaml`, and only with
-  the LLM gateway on). pi replaces OpenCode; OpenCode support is temporary.
+  harnesses inside kortixd: pi (the default since 2026-10-20: the
+  `pi_harness` project flag, on by default, or `runtime: pi` in
+  `kortix.yaml`, and only with the LLM gateway on) or OpenCode (the flag off,
+  or the gateway off). A flag change applies to new sessions only. pi replaces OpenCode; OpenCode support is temporary.
   Both serve the same daemon routes (`/kortix/runtime/*`), the same transcript
   (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
   same events. New code reads those, never an OpenCode route, type, file or
@@ -472,7 +473,7 @@ these as standing rules whenever you touch the data/runtime layer:
 This repo ships a **complete, runnable local stack with live cloud sandboxes**.
 Do not claim you "can't verify from here" or hand back unverified work — you
 have everything needed to run the app, hit the real API, provision real
-Daytona sandboxes, drive the real UI in a browser, and assert behavior. Use it.
+Platinum sandboxes, drive the real UI in a browser, and assert behavior. Use it.
 
 ### Required verification standard — real inputs, real outputs
 
@@ -513,8 +514,10 @@ mocked internals when a real surface exists.
 - **Web** — Next.js dev server on `http://localhost:3000`.
 - **API** — Bun server on `http://localhost:8008/v1` (`/health` returns JSON).
 - **Supabase** — local, on `http://127.0.0.1:54321` (Docker).
-- **Sandboxes** — REAL cloud sandboxes on the enabled provider (Daytona,
-  Platinum, or E2B; credentials in `apps/api/.env` / `.env.local`). Each project
+- **Sandboxes** — REAL cloud sandboxes on Platinum, the reference provider
+  (`PLATINUM_API_KEY` in `apps/api/.env` / `.env.local`). Daytona is a legacy
+  fallback with removal scheduled and no support guarantee; E2B support is
+  discontinued. Each project
   session gets its own sandbox; `session_id == sandbox_id`. The sandbox daemon is
   reached through `http://localhost:8008/v1/p/<external_id>/8000/...`.
   The session runtime answers on the same proxy, under `/kortix/runtime/*`,
@@ -754,7 +757,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 | Surface | Read before changing UI | Implemented source |
 |---|---|---|
-| Web (`apps/web`) | `.agents/skills/kortix-brand/SKILL.md` (the router: values, voice, claims, decision history), then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens (generated from `.agents/skills/kortix-brand/references/visual/visual-system.json`), `apps/web/src/components/ui/`, the live `/design-system` route |
+| Web (`apps/web`) | `.agents/skills/kortix-brand/SKILL.md` (the router: values, voice, claims, decision history), then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens (generated from `.agents/skills/kortix-brand/references/visual/visual-system.json`), `packages/ui/src/primitives/` (apps/web imports each one as `@kortix/ui/<name>`; apps/web has no re-export shims, `tests/unit/web-no-ui-shims.test.ts` enforces it), the live `/design-system` route |
+| `@kortix/ui` hosts (Kortix Apps, `apps/whitelabel-demo`, SDK customer apps) | `packages/ui/skills/kortix-ui/SKILL.md` (setup, which component, white-label theming, the `SessionThread` chat), then the web row for Kortix-owned surfaces | `packages/ui/src/` (components, `session/` for the `SessionThread` chat, `styles/tokens.css` + `theme.css`, prebuilt `dist/styles.css`); white-label = CSS variable overrides, never a forked component |
 | Desktop (Electron shell) | The web row — the shell renders `apps/web` — plus `apps/desktop-electron/README.md` for the shell boundary, then the parity gate below | `apps/web` rendered by the shell; native window geometry in the shell's titlebar classes |
 | Mobile (`apps/mobile`) | `apps/mobile/design.md` for screens, `apps/mobile/AGENTS.md` for primitives | `apps/mobile/global.css` colors, `apps/mobile/components/ui/`; stock Tailwind spacing for touch targets |
 
@@ -794,12 +798,12 @@ gate, not polish:
   then run `scripts/generate-tokens.ts`. Never edit a generated region of
   `globals.css` by hand.
 - Read `.agents/skills/kortix-design-system/SKILL.md` next and compose existing
-  primitives from `@/components/ui/*` before inventing local chrome.
+  primitives from `@kortix/ui/*` before inventing local chrome.
 - Match the current Jay Suthar / Kortix product aesthetic: calm neutral surfaces,
   dense-but-legible UI, black/white plus one earned accent, token-driven spacing,
   and no decorative color, glow, or one-off rounded boxes.
 - Use recent product surfaces as references before editing: `/design-system`,
-  `apps/web/src/features/workspace/project-layout/project-home.tsx`,
+  `packages/ui/src/workspace/layout/project-home.tsx`,
   `apps/web/src/components/ui/wallpaper-background.tsx`, and the account/IAM
   screens called out by the design-system skill.
 - Verify visual work in the browser and include the exact lint/typecheck commands

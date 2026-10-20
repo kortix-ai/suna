@@ -1,6 +1,6 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
 import { AccountDetailCard } from '@/components/account/account-detail-card';
 import { AccountSwitcher } from '@/components/account/account-switcher';
@@ -9,15 +9,15 @@ import { MembersSection } from '@/components/account/members-section';
 import { ProjectsSection } from '@/components/account/projects-section';
 import { ApiKeyGate } from '@/components/api-key-gate';
 import { ModeNotice } from '@/components/mode-notice';
-import { Card } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card } from '@kortix/ui/card';
+import { Separator } from '@kortix/ui/separator';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { getApiKey, kortix } from '@/lib/kortix';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useWrapperMode } from '../providers';
+import { ArrowLeftIcon } from '@phosphor-icons/react';
 
 /**
  * Account administration (members, invites, billing) is operator-only in
@@ -82,7 +82,7 @@ function AccountSettings() {
             href="/"
             className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ArrowLeft className="size-4" /> Back to projects
+            <ArrowLeftIcon className="size-4" /> Back to projects
           </Link>
           <AccountSwitcher
             accounts={accounts}
@@ -95,7 +95,7 @@ function AccountSettings() {
 
       <div className="mx-auto max-w-4xl px-5 py-8">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Account settings</h1>
+          <h1 className="font-display text-3xl tracking-tight">Account settings</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Manage your teams and personal account — members, invites, and the projects they own.
           </p>

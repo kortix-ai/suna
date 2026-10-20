@@ -112,6 +112,8 @@ const RETIRED_MANAGED_MODEL_IDS = new Set([
   'morph-glm53-744b', 'morph-dsv4flash', 'morph-kimik3',
   'morph-kimik3-fast', 'morph-dsv41flash',
   'deepseek-v4-flash-0731', 'kimi-k3-fast',
+  // 2026-10-19: Kimi K3 left the managed lineup; its sessions move to the default.
+  'kimi-k3',
 ]);
 
 // Exported (read-only) so a test can iterate every declared alias and assert
@@ -132,6 +134,7 @@ export const LEGACY_MANAGED_IDS: Readonly<Record<string, string>> = {
   // resolution guard test below, 2026-09-28, the same bug class as
   // deepseek-v4-flash-0731 above: a target retired out from under its alias.
   'kimi-k3-fast': 'kimi-k3',
+  'kimi-k3': 'deepseek-v4.1-flash',
 };
 
 // Bounds chain resolution below. This map is hand-maintained: retiring a

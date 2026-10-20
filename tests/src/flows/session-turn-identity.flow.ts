@@ -6,7 +6,7 @@
  * that turn must act as that member. The agent proves it from inside the box:
  * it calls `GET /accounts/me` with its own credential and reports the email.
  *
- * Needs a booted sandbox: `requires: ['daytona', 'funded']`, so the local
+ * Needs a booted sandbox: `requires: ['sandbox', 'funded']`, so the local
  * runner skips it and it runs against a deployed target. The bind itself is
  * pinned without a runtime by `integration-session-turn-identity.test.ts`.
  */
@@ -31,8 +31,8 @@ flow(
   'SESS-39',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
-    // A cold Daytona image build can take ~7 min before the first turn.
+    requires: ['sandbox', 'funded'],
+    // A cold provider image build can take ~7 min before the first turn.
     timeoutMs: 1_200_000,
     routes: [
       'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',

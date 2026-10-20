@@ -140,9 +140,9 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       STRIPE_SECRET_KEY: 'sk_test_wallet_ledger',
       STRIPE_WEBHOOK_SECRET: 'whsec_wallet_ledger',
       KORTIX_URL: 'http://127.0.0.1:1',
-      DAYTONA_API_KEY: 'wallet-ledger-test',
-      DAYTONA_SERVER_URL: 'http://127.0.0.1:1',
-      DAYTONA_TARGET: 'us',
+      ALLOWED_SANDBOX_PROVIDERS: 'platinum',
+      PLATINUM_API_KEY: 'wallet-ledger-test',
+      PLATINUM_API_URL: 'http://127.0.0.1:1',
     });
     // `mock.module` is process-global. The `db-suites` lane runs each file in
     // its own process, but a hand-run `bun test tests/migration` runs every

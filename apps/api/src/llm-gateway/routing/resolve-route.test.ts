@@ -17,6 +17,19 @@ describe('gateway control-plane route resolver', () => {
     supportsImage: (model) => model === 'model-default' || model === 'model-vision',
   });
 
+  test('a legacy or prefixed id gets the fallback chain of the model it resolves to', async () => {
+    const aliased = createGatewayRouteResolver({
+      defaultModel: 'model-default', visionModel: undefined, supportsImage: () => true,
+      policies: [{ id: 'resilience', models: ['model-default'], fallbackModels: ['model-fallback'], fallbackOn: 'transient' }],
+      canonicalModel: (model) => (model === 'retired-model' || model === 'kortix/model-default' ? 'model-default' : model),
+    });
+    for (const requestedModel of ['retired-model', 'kortix/model-default']) {
+      expect(await aliased(principal, { requestedModel, requires: { imageInput: false } })).toMatchObject({
+        policyId: 'resilience', primaryModel: requestedModel, fallbackModels: ['model-fallback'],
+      });
+    }
+  });
+
   test('does not resolve stale auto into the platform default', async () => {
     expect(await resolveRoute(principal, {
       requestedModel: 'auto',

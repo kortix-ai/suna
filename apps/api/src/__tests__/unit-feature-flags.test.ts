@@ -100,6 +100,20 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('agent_tunnel');
   });
 
+  test('warm sessions require explicit opt-in before spending idle compute', () => {
+    for (const metadata of [undefined, null, {}, { experimental: {} }, { experimental: { warm_sessions: 'true' } }]) {
+      expect(resolveFeatureFlag(metadata, 'warm_sessions')).toBe(false);
+    }
+    expect(resolveFeatureFlags({}).warm_sessions).toBe(false);
+    expect(findCatalogFlag('warm_sessions')).toMatchObject({
+      available: true,
+      enabled: false,
+      overridden: false,
+    });
+    expect(resolveFeatureFlag({ experimental: { warm_sessions: true } }, 'warm_sessions')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: { warm_sessions: false } }, 'warm_sessions')).toBe(false);
+  });
+
   test('agentmail_email is explicit opt-in', () => {
     expect(resolveFeatureFlag({}, 'agentmail_email')).toBe(false);
     expect(
@@ -150,6 +164,16 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({}, 'event_triggers')).toBe(false);
     expect(resolveFeatureFlag({ experimental: { event_triggers: true } }, 'event_triggers')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { event_triggers: false } }, 'event_triggers')).toBe(false);
+  });
+
+  test('connectors_v2 is an experimental, explicit opt-in flag offered everywhere', () => {
+    expect(findCatalogFlag('connectors_v2')).toMatchObject({
+      stability: 'experimental',
+      enabled: false,
+      operator_only: false,
+    });
+    expect(resolveFeatureFlag({}, 'connectors_v2')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { connectors_v2: true } }, 'connectors_v2')).toBe(true);
   });
 
   test('session_transcript_history graduated: saved history has no off switch and a stored override is inert', () => {

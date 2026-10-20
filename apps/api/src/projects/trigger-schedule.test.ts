@@ -113,6 +113,17 @@ describe('schedule revision', () => {
       triggerScheduleRevision(schedule({ filter: { 'body.z': 'last', 'body.a': 'first' } })),
     ).toBe(triggerScheduleRevision(schedule({ filter: { 'body.a': 'first', 'body.z': 'last' } })));
   });
+
+  // KRTX-1721: cron, event and monitor fires read the stored spec, which is
+  // rewritten only on a revision change. A cap must move the revision; an
+  // unset cap must not, so every existing revision stays put.
+  test('a run cap moves the revision, and an unset one leaves it put', () => {
+    const original = triggerScheduleRevision(schedule());
+    expect(triggerScheduleRevision(schedule({ maxRunsPerHour: undefined, maxRunsPerDay: undefined }))).toBe(original);
+    expect(triggerScheduleRevision(schedule({ maxRunsPerHour: 5 }))).not.toBe(original);
+    expect(triggerScheduleRevision(schedule({ maxRunsPerDay: 5 }))).not.toBe(original);
+    expect(triggerScheduleRevision(schedule({ maxRunsPerHour: 5 }))).not.toBe(triggerScheduleRevision(schedule({ maxRunsPerHour: 6 })));
+  });
 });
 
 // A monitor is cataloged like any other trigger, but it has no schedule: the
@@ -243,4 +254,12 @@ describe('type = "event" revision', () => {
       triggerScheduleRevision(event(base)),
     );
   });
+});
+
+test('KRTX-2058 exact display occurrence for a six-field daily UTC cron excludes jitter', () => {
+  const spec = schedule({ cron: '0 0 9 * * *', timezone: 'UTC' });
+  const after = new Date('2026-10-10T08:59:59.000Z');
+  expect(nextTriggerScheduleSlot(spec, after)?.toISOString()).toBe('2026-10-10T09:00:00.000Z');
+  expect(nextTriggerScheduleSlot(spec, after, { jitterKey: 'synthetic-project:daily' })?.getTime())
+    .toBeGreaterThan(new Date('2026-10-10T09:00:00.000Z').getTime());
 });

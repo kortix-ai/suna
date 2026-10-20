@@ -108,6 +108,8 @@ let scheduledRequests: Array<{ id: string; accountId: string; userId: string }> 
 let completedRequests: string[] = [];
 let deletedUsers: string[] = [];
 let deleteUserError: Error | null = null;
+let avatarObjects: string[] = [];
+let avatarDeleteError: Error | null = null;
 const { config } = await import('../../config');
 config.SUPABASE_JWT_LIVENESS_TTL_MS = 30000;
 const liveness = await import('../../shared/jwt-liveness');
@@ -131,7 +133,18 @@ mock.module('../../shared/supabase', () => ({
       return { error: null };
     } } },
     // Session files: an empty bucket (account erasure lists each project).
-    storage: { from: () => ({ list: async () => ({ data: [], error: null }), remove: async () => ({ error: null }) }) },
+    storage: { from: (bucket: string) => ({
+      list: async () => ({ data: bucket === 'avatars' ? avatarObjects.map(name => ({ name })) : [], error: null }),
+      remove: async (paths: string[]) => {
+        if (bucket === 'avatars') {
+          if (avatarDeleteError) return { error: avatarDeleteError };
+          expect(deletedUsers).toEqual([]);
+          expect(paths).toEqual(avatarObjects.map(name => `${ME}/${name}`));
+          avatarObjects = [];
+        }
+        return { error: null };
+      },
+    }) },
   }),
 }));
 
@@ -329,6 +342,8 @@ beforeEach(() => {
   scheduledRequests = [];
   completedRequests = [];
   deleteUserError = null;
+  avatarObjects = [];
+  avatarDeleteError = null;
   notificationDataDeleted = [];
   liveness.__setJwtLivenessLoaderForTests(null);
 });
@@ -373,7 +388,7 @@ describe('deleteAccountImmediately — sandbox reclaim', () => {
     sandboxRows = [
       { sandboxId: 'sb-1', provider: 'daytona', externalId: 'ext-1' },
       { sandboxId: 'sb-2', provider: 'daytona', externalId: 'ext-2' },
-      { sandboxId: 'sb-3', provider: 'e2b', externalId: 'ext-3' },
+      { sandboxId: 'sb-3', provider: 'platinum', externalId: 'ext-3' },
       { sandboxId: 'sb-4', provider: 'platinum', externalId: 'ext-4' },
     ];
 
@@ -573,6 +588,19 @@ describe('deleteAccountImmediately — account data deletion', () => {
 });
 
 describe('account deletion — auth lifecycle', () => {
+  test('erases stored avatars before deleting the personal identity', async () => {
+    avatarObjects = ['old.png', 'older.png'];
+    await deleteAccountImmediately(ME, ME);
+    expect(avatarObjects).toEqual([]);
+    expect(deletedUsers).toEqual([ME]);
+  });
+
+  test('storage failure keeps auth identity and deletion retryable', async () => {
+    avatarObjects = ['old.png'];
+    avatarDeleteError = new Error('avatar erasure failed');
+    await expect(deleteAccountImmediately(ME, ME)).rejects.toThrow('avatar erasure failed');
+    expect(deletedUsers).toEqual([]);
+  });
   test('deletes the auth user and rejects all previously cached tokens promptly', async () => {
     liveness.__setJwtLivenessLoaderForTests(async () =>
       deletedUsers.includes(ME) ? null : { id: ME, email: '' });

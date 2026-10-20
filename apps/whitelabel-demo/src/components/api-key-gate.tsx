@@ -2,12 +2,12 @@
 
 import { BRAND } from '@/config/brand';
 import { setApiKey } from '@/lib/kortix';
-import { KeyRound } from 'lucide-react';
 import { useState } from 'react';
 import { BrandMark } from './brand-mark';
-import { Button } from './ui/button';
-import { Card } from './ui/card';
-import { Input } from './ui/input';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
+import { Input } from '@kortix/ui/input';
+import { KeyIcon } from '@phosphor-icons/react';
 
 /**
  * The single auth surface: paste a Kortix API key. One token, stored locally,
@@ -21,7 +21,7 @@ export function ApiKeyGate({ onReady }: { onReady: () => void }) {
     <div className="grid min-h-dvh place-items-center bg-background px-4">
       <Card className="w-full max-w-sm p-6">
         <BrandMark className="mb-5" />
-        <h1 className="text-lg font-semibold tracking-tight">Connect to {BRAND.name}</h1>
+        <h1 className="font-display text-2xl tracking-tight">Connect to {BRAND.name}</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
           Paste a Kortix API key. Create one in your dashboard under{' '}
           <span className="text-foreground">Settings → API keys</span>.
@@ -36,7 +36,7 @@ export function ApiKeyGate({ onReady }: { onReady: () => void }) {
           }}
         >
           <div className="relative">
-            <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <KeyIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               autoFocus
               value={value}

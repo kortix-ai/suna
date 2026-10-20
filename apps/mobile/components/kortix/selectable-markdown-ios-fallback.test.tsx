@@ -105,7 +105,7 @@ mock.module('@/components/markdown/markdown-image', () => ({
 }));
 mock.module('@/lib/markdown/markdown-image', () => ({ groupImageBlocks: (blocks: string[]) => blocks.map((text, index) => ({ kind: 'markdown', index, text })), imageSourceKey: String }));
 mock.module('@/lib/markdown/safe-link', () => ({ isSafeExternalLink: () => true }));
-mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {} }));
+mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {}, openExternalLink: () => {} }));
 
 let SelectableMarkdownText: typeof import('./selectable-markdown').SelectableMarkdownText;
 beforeAll(async () => {

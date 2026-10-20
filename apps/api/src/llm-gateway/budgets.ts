@@ -194,16 +194,16 @@ function budgetExhaustedMessage(who: string, limitUsd: number, spentUsd: number,
 
 
 /**
- * Evaluate every gateway budget scoped to the caller's project (both 'block'
- * and 'warn' actions — a previous version only ever queried action='block',
- * so a 'warn' budget was fetched nowhere and did nothing at all, even though
- * the create-budget API lets an admin configure one). A 'block' budget that's
- * exhausted short-circuits with `exceeded: true` (mirrors the prior
- * behavior). A 'warn' budget that's exhausted never blocks — it's collected
- * into `warnings` so the caller can surface/log it instead of silently
- * dropping it.
+ * Evaluate the project's gateway budgets of one action. 'block' runs at
+ * admission: the first exhausted one denies the request, and each admitted
+ * request reserves against it. 'warn' never denies, so it runs at settlement,
+ * after the response: its spend query (up to ~1 s on a busy project) is off
+ * the latency path. An exhausted 'warn' budget goes into `warnings`.
  */
-export async function checkBudget(principal: AuthedPrincipal): Promise<BudgetCheckResult> {
+export async function checkBudget(
+  principal: AuthedPrincipal,
+  action: 'block' | 'warn' = 'block',
+): Promise<BudgetCheckResult> {
   if (!principal.projectId) return { exceeded: false };
 
   const budgets = await db
@@ -220,6 +220,7 @@ export async function checkBudget(principal: AuthedPrincipal): Promise<BudgetChe
     ...(crossings.length ? { crossings } : {}),
   });
   for (const b of budgets) {
+    if (b.action !== action) continue;
     if (b.scope === 'member' && b.subjectUserId !== principal.userId) continue;
     const subject = b.scope === 'member' ? b.subjectUserId : null;
     const spent = (await budgetSpends(principal.projectId, [b], now))[0]?.spentUsd ?? 0;
@@ -258,8 +259,7 @@ export async function checkBudget(principal: AuthedPrincipal): Promise<BudgetChe
       continue;
     }
 
-    // action === 'warn': never blocks and never needs a reservation (nothing
-    // is gated on it) — evaluated straight off logged spend.
+    // action === 'warn': never blocks and never needs a reservation.
     if (spent >= limit) {
       const who = b.scope === 'member' ? 'Your' : "This project's";
       warnings.push(

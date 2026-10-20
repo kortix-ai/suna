@@ -42,7 +42,7 @@ const { initializeFreeTierAccount, ensureFreeTierAccountReady } = await import(
 const { processFreeTierCreditRotation } = await import('../../billing/services/free-tier-rotation');
 
 describe('free tier account setup', () => {
-  test('initializes a free account with one idempotent $2 expiring grant', async () => {
+  test('initializes a free account with one idempotent $5 (500 credits) expiring grant', async () => {
     await initializeFreeTierAccount('acc_free_1');
 
     expect(upsertCreditAccountCalls).toHaveLength(1);
@@ -54,7 +54,7 @@ describe('free tier account setup', () => {
     expect(walletGrants).toHaveLength(1);
     expect(walletGrants[0]).toEqual({
       accountId: 'acc_free_1',
-      amount: 2,
+      amount: 5,
       kind: 'free_tier_grant',
       description: 'Free tier welcome credits',
       expiring: true,

@@ -245,6 +245,90 @@ describe('handleCall — upstream + errors', () => {
     });
   });
 
+  test('upstream 401 on a stored credential → credential_rejected, names the account and the fix, marks the connection', async () => {
+    const { deps, records } = makeDeps({
+      connector: { ...STRIPE, connectionId: 'cx-1', connectionLabel: 'Stripe API' },
+      fetchStatus: 401,
+      fetchBody: '{"error":{"code":"api_key_expired","message":"Expired API Key provided"}}',
+    });
+    const marks: Array<[string, boolean]> = [];
+    deps.markCredentialRejected = async (id, rejected) => {
+      marks.push([id, rejected]);
+    };
+    deps.credentialKind = async () => 'secret';
+    const res = await handleCall(deps, baseInput);
+    expect(res).toMatchObject({ status: 'error', upstreamStatus: 401 });
+    const reason = (res as { reason: string }).reason;
+    expect(reason.startsWith('credential_rejected: ')).toBe(true);
+    expect(reason).toContain('"Stripe API"');
+    expect(reason).toContain('kortix connectors connections credential cx-1');
+    expect(reason).toContain('api_key_expired');
+    expect(records.at(-1)!.resultSummary).toMatchObject({ http_status: 401, error_code: 'credential_rejected' });
+    expect(marks).toEqual([['cx-1', true]]);
+  });
+
+  test('401 remedy follows the credential: OAuth signs in again, a project secret is rotated, a repeat 401 says retrying fails', async () => {
+    const reasonFor = async (connector: GatewayConnector, kind: string | null) => {
+      const { deps } = makeDeps({ connector, fetchStatus: 401, fetchBody: '{"error":"invalid_token"}' });
+      const marks: string[] = [];
+      deps.markCredentialRejected = async (id) => {
+        marks.push(id);
+      };
+      deps.credentialKind = async () => kind;
+      const res = await handleCall(deps, baseInput);
+      return { reason: (res as { reason: string }).reason, marks };
+    };
+    const account = { ...STRIPE, connectionId: 'cx-1', connectionLabel: 'Main' };
+
+    const oauth = await reasonFor(account, 'oauth2_delegated');
+    expect(oauth.reason).toContain('signs in to account "Main" again in Connectors');
+    expect(oauth.reason).not.toContain('connections credential');
+
+    const projectSecret = await reasonFor({ ...account, authSecret: 'STRIPE_KEY' }, null);
+    expect(projectSecret.reason).toContain('project secret STRIPE_KEY');
+    expect(projectSecret.reason).not.toContain('connections credential');
+
+    const first = await reasonFor(account, 'secret');
+    expect(first.reason).not.toContain('Retrying');
+    const repeat = await reasonFor({ ...account, connectionMetadata: { credential_rejected_at: '2026-10-19T00:00:00Z' } }, 'secret');
+    expect(repeat.reason).toContain('Retrying returns this error until the credential is replaced.');
+    expect(repeat.marks).toEqual([]);
+  });
+
+  test('a channel 401 is the platform token, not the account credential: plain upstream_401, no mark', async () => {
+    const { deps } = makeDeps({
+      connector: { ...STRIPE, provider: 'channel', connectionId: 'cx-1' },
+      fetchStatus: 401,
+      fetchBody: '',
+    });
+    const marks: string[] = [];
+    deps.markCredentialRejected = async (id) => {
+      marks.push(id);
+    };
+    const res = await handleCall(deps, baseInput);
+    expect((res as { reason: string }).reason.startsWith('credential_rejected')).toBe(false);
+    expect(marks).toEqual([]);
+  });
+
+  test('a later ok call on a marked connection clears the mark; an unmarked one writes nothing', async () => {
+    const marked = makeDeps({
+      connector: { ...STRIPE, connectionId: 'cx-1', connectionMetadata: { credential_rejected_at: '2026-10-19T00:00:00Z' } },
+    });
+    const marks: Array<[string, boolean]> = [];
+    marked.deps.markCredentialRejected = async (id, rejected) => {
+      marks.push([id, rejected]);
+    };
+    expect(await handleCall(marked.deps, baseInput)).toMatchObject({ status: 'ok' });
+    expect(marks).toEqual([['cx-1', false]]);
+
+    const clean = makeDeps({ connector: { ...STRIPE, connectionId: 'cx-2', connectionMetadata: {} } });
+    clean.deps.markCredentialRejected = async (id, rejected) => {
+      marks.push([id, rejected]);
+    };
+    await handleCall(clean.deps, baseInput);
+    expect(marks).toHaveLength(1);
+  });
+
   test('thrown execution error is caught + audited', async () => {
     const { deps, records } = makeDeps();
     deps.fetchImpl = async () => {

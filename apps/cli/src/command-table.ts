@@ -186,7 +186,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'connectors',
             args: '<subcommand>',
-            blurb: 'Manage connectors agents call as tools (Pipedream/MCP/HTTP)',
+            blurb: 'Manage connectors agents call as tools (Composio/MCP/HTTP)',
           },
           {
             name: 'secrets',
@@ -232,6 +232,11 @@ export const TIERS: readonly CommandTier[] = [
             name: 'files',
             args: '<subcommand>',
             blurb: 'Browse repo files, commits, branches, diffs; download a zip',
+          },
+          {
+            name: 'drive',
+            args: '<subcommand>',
+            blurb: "The project's Files: list, read, upload, move, delete, share folders",
           },
           { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
           {

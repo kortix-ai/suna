@@ -7,22 +7,22 @@
  */
 
 import { BrandMark } from '@/components/brand-mark';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { ArrowLeft } from 'lucide-react';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { ArrowLeftIcon } from '@phosphor-icons/react';
 
 export function ModeNotice({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="grid min-h-dvh place-items-center bg-background px-4">
       <Card className="w-full max-w-sm p-6 text-center">
         <BrandMark className="mx-auto mb-4" />
-        <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
+        <h1 className="font-display text-2xl tracking-tight">{title}</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">{children}</p>
         <Button asChild className="mt-5 gap-2">
           <Link href="/">
-            <ArrowLeft className="size-4" /> Back to projects
+            <ArrowLeftIcon className="size-4" /> Back to projects
           </Link>
         </Button>
       </Card>

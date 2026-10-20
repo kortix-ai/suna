@@ -173,11 +173,14 @@ describe('resolveCandidates free-tier premium gate', () => {
     managedProviderEnabled = true;
   });
 
-  test('allows managed candidates for free accounts', async () => {
+  test('blocks every managed model for free accounts, the platform default included', async () => {
     accountTier = 'free';
-    const candidates = await resolveCandidates(principal('free-managed'), 'glm-5.3-flash');
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.billingMode).toBe('credits');
+    for (const model of ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kortix/deepseek-v4.1-flash']) {
+      await expect(resolveCandidates(principal('free-managed'), model)).rejects.toMatchObject({
+        name: 'GatewayResolutionError',
+        code: 'plan_upgrade_required',
+      });
+    }
   });
 
   test('blocks managed premium candidates for accounts with no plan', async () => {
@@ -279,5 +282,49 @@ describe('resolveCandidates free-tier premium gate', () => {
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('none');
     expect(candidates[0]?.markup).toBe(0);
+  });
+});
+
+// Every managed id the catalog serves, every legacy alias, bare and with the
+// opencode `kortix/` prefix: a new managed model or alias cannot open a path
+// for Free (2026-10-19, see the learnings ledger).
+const { MANAGED_MODELS } = await import('@kortix/llm-catalog/lite');
+const { LEGACY_MANAGED_IDS } = await import('../llm-gateway/models/managed-models');
+
+describe('no managed id or alias reaches a Free account', () => {
+  const ids = [...MANAGED_MODELS.map((m) => m.id), ...Object.keys(LEGACY_MANAGED_IDS)];
+  const refs = ids.flatMap((id) => [id, `kortix/${id}`]);
+
+  beforeEach(() => {
+    billingEnabled = true;
+    managedProviderEnabled = true;
+  });
+
+  test.each(['free', 'none'])('the %s plan is refused every managed id and alias', async (tier) => {
+    accountTier = tier;
+    expect(refs.length).toBeGreaterThan(2);
+    for (const ref of refs) {
+      const outcome = await resolveCandidates(principal(`sweep-${tier}`), ref).then(
+        () => 'served',
+        (err: { code?: string }) => err.code,
+      );
+      // `model_not_found` is fine (an alias this deployment does not serve);
+      // `served` is the bug.
+      expect({ ref, outcome }).not.toEqual({ ref, outcome: 'served' });
+    }
+  });
+
+  test('a principal flagged freeModelsOnly is refused every managed id and alias', async () => {
+    accountTier = 'credits';
+    for (const ref of refs) {
+      await expect(resolveCandidates({ ...principal('sweep-flag'), freeModelsOnly: true }, ref)).rejects.toBeDefined();
+    }
+  });
+
+  test('control: a paid plan is served the current lineup', async () => {
+    accountTier = 'credits';
+    for (const { id } of MANAGED_MODELS) {
+      expect((await resolveCandidates(principal('sweep-paid'), id)).length).toBeGreaterThan(0);
+    }
   });
 });

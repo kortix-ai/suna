@@ -1,6 +1,6 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
 import { ApiKeyGate } from '@/components/api-key-gate';
 import { ImportProjectsDialog } from '@/components/import-projects-dialog';
@@ -8,31 +8,32 @@ import { ModeBadge } from '@/components/mode-badge';
 import { BrandMark } from '@/components/brand-mark';
 import { CallSnippet } from '@/components/dev/call-snippet';
 import { LoginGate } from '@/components/login-gate';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+  ModalTrigger,
+} from '@kortix/ui/modal';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { clearApiKey, getApiKey, kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { clearSessionToken, getSessionToken } from '@/lib/session';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderGit2, LogOut, Plus, Receipt, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
 import { useWrapperMode } from './providers';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { FolderIcon, PlusIcon, ReceiptIcon, SignOutIcon, UsersIcon } from '@phosphor-icons/react';
 
 export default function Home() {
   const wrapperMode = useWrapperMode();
@@ -97,20 +98,20 @@ function Dashboard({
           </div>
           <div className="flex items-center gap-1">
             {wrapperMode ? (
-              <Link href="/session-costs">
-                <Button variant="ghost" size="sm">
-                  <Receipt className="size-4" /> Session costs
-                </Button>
-              </Link>
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/session-costs">
+                  <ReceiptIcon className="size-4" /> Session costs
+                </Link>
+              </Button>
             ) : (
-              <Link href="/account">
-                <Button variant="ghost" size="sm">
-                  <Users className="size-4" /> Account
-                </Button>
-              </Link>
+              <Button asChild variant="ghost" size="sm">
+                <Link href="/account">
+                  <UsersIcon className="size-4" /> Account
+                </Link>
+              </Button>
             )}
             <Button variant="ghost" size="sm" onClick={onDisconnect}>
-              <LogOut className="size-4" /> Disconnect
+              <SignOutIcon className="size-4" /> Disconnect
             </Button>
           </div>
         </div>
@@ -119,7 +120,7 @@ function Dashboard({
       <div className="mx-auto max-w-4xl px-5 py-8">
         <div className="flex items-end justify-between">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
+            <h1 className="font-display text-3xl tracking-tight">Projects</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Each project is a git repo. Open one to run an agent against it.
             </p>
@@ -138,16 +139,19 @@ function Dashboard({
             ))}
           {projects.isError && (
             <Card className="col-span-full p-4 text-sm text-destructive">
-              Couldn&apos;t load projects —{' '}
-              {wrapperMode ? 'try signing in again' : 'check your API key'}.{' '}
-              <Button
-                variant="link"
-                size="sm"
-                className="h-auto p-0 text-destructive"
-                onClick={onDisconnect}
-              >
-                {wrapperMode ? 'Sign out' : 'Reconnect'}
-              </Button>
+              {/* One <p>: Card is a flex column, so bare text and the button would stack. */}
+              <p>
+                Couldn&apos;t load projects —{' '}
+                {wrapperMode ? 'try signing in again' : 'check your API key'}.{' '}
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="inline h-auto p-0 align-baseline text-destructive"
+                  onClick={onDisconnect}
+                >
+                  {wrapperMode ? 'Sign out' : 'Reconnect'}
+                </Button>
+              </p>
             </Card>
           )}
           {projects.isSuccess && items.length === 0 && (
@@ -156,21 +160,25 @@ function Dashboard({
             </Card>
           )}
           {items.map((p) => (
-            <Link key={p.project_id} href={`/projects/${p.project_id}`}>
-              <Card className="flex items-center gap-3 p-4 transition-colors hover:bg-accent">
-                <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">
-                  <FolderGit2 className="size-4 text-muted-foreground" />
+            // Card's `href` renders a stretched link through UiProvider's link (next/link).
+            <Card
+              key={p.project_id}
+              href={`/projects/${p.project_id}`}
+              label={p.name}
+              className="flex-row items-center gap-3 border border-border/60 p-4"
+            >
+              <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">
+                <FolderIcon className="size-4 text-muted-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{p.name}</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {p.updated_at
+                    ? `Updated ${relativeTime(p.updated_at)}`
+                    : p.project_id}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{p.name}</div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {p.updated_at
-                      ? `Updated ${relativeTime(p.updated_at)}`
-                      : p.project_id}
-                  </div>
-                </div>
-              </Card>
-            </Link>
+              </div>
+            </Card>
           ))}
         </div>
       </div>
@@ -191,59 +199,59 @@ function CreateProjectDialog() {
       qc.invalidateQueries({ queryKey: qk.projects });
       setOpen(false);
       setName('');
-      toast.success('Project created');
+      successToast('Project created');
       router.push(`/projects/${project.project_id}`);
     },
-    onError: () => toast.error('Could not create the project'),
+    onError: () => errorToast('Could not create the project'),
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+    <Modal open={open} onOpenChange={setOpen}>
+      <ModalTrigger asChild>
         <Button>
-          <Plus className="size-4" /> New project
+          <PlusIcon className="size-4" /> New project
         </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>New project</DialogTitle>
-          <DialogDescription>
+      </ModalTrigger>
+      <ModalContent>
+        <ModalHeader>
+          <ModalTitle>New project</ModalTitle>
+          <ModalDescription>
             We&apos;ll provision a managed git repo seeded with a starter so the
             agent can boot immediately.
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
         <form
           onSubmit={(e) => {
             e.preventDefault();
             if (name.trim()) create.mutate();
           }}
         >
-          <div className="space-y-2">
-            <Label htmlFor="project-name">Project name</Label>
-            <Input
-              id="project-name"
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My website"
-            />
-          </div>
-          {/* The first call a wrapper ever makes, and the only project-create
-              path it may use — so it belongs on the button that makes it. */}
-          <div className="mt-3">
+          <ModalBody className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="project-name">Project name</Label>
+              <Input
+                id="project-name"
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="My website"
+              />
+            </div>
+            {/* The first call a wrapper ever makes, and the only project-create
+                path it may use — so it belongs on the button that makes it. */}
             <CallSnippet
               id="project.provision"
               context={{ projectName: name }}
             />
-          </div>
-          <DialogFooter className="mt-4">
+          </ModalBody>
+          <ModalFooter>
             <Button type="submit" disabled={!name.trim() || create.isPending}>
               {create.isPending && <Loading className="size-4" />}
               Create project
             </Button>
-          </DialogFooter>
+          </ModalFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </ModalContent>
+    </Modal>
   );
 }

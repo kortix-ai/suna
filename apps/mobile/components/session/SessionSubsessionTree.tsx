@@ -1,6 +1,6 @@
 /**
  * runtime sub-sessions in the session lists (web parity:
- * `apps/web/src/features/workspace/project-sidebar/project-session-list.tsx`,
+ * `packages/ui/src/workspace/sidebar/project-session-list.tsx`,
  * `ProjectSubsessionRow` + `SubAgentConnector`).
  *
  * - `SubsessionCountBadge`: the count after a session title — how many direct

@@ -14,7 +14,7 @@ import {
   parseAuthBounceOwner,
   parseLastProjectForUser,
   projectPathFromId,
-} from '@/lib/onboarding/landing-destination';
+} from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import { ACTIVE_INSTANCE_COOKIE, fetchAccountStateWithToken } from '@kortix/sdk';
@@ -85,7 +85,9 @@ export async function GET(request: NextRequest) {
 
   // Handle errors FIRST - before any Supabase operations that might affect session
   if (error) {
-    console.error('Auth callback error:', error, errorCode, errorDescription);
+    // Query values are attacker-controlled: JSON.stringify escapes CR/LF so
+    // a crafted link cannot forge extra log lines.
+    console.error('Auth callback error:', JSON.stringify({ error, errorCode, errorDescription }));
 
     // Check if the error is due to expired/invalid link
     const isExpiredOrInvalid =

@@ -14,7 +14,8 @@ const TEST_ROOT = join(APP_ROOT, 'tests');
 const REPOSITORY_TEST_ROOT = join(REPO_ROOT, 'tests', 'e2e', 'specs');
 const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.ts', '.tsx']);
 
-const UI_ROOT = join(CLIENT_ROOT, 'components', 'ui');
+// Retired: UI primitives come from @kortix/ui. Any file here is a violation.
+const LOCAL_UI_ROOT = join(CLIENT_ROOT, 'components', 'ui');
 const API_ROOT = join(CLIENT_ROOT, 'app', 'api');
 const SERVER_ROOT = join(CLIENT_ROOT, 'server');
 const ALLOWED_CLIENT_BFF_ROUTES = [
@@ -85,7 +86,34 @@ const RULES = [
     scope: 'client',
     rule: 'native-control',
     pattern: /<(?:button|input|select|textarea)\b/g,
-    message: 'Feature code must compose controls from src/components/ui.',
+    message: 'Feature code must compose controls from @kortix/ui.',
+  },
+  {
+    scope: 'client',
+    rule: 'local-ui-import',
+    pattern: /['"](?:@\/components\/ui|(?:\.{1,2}\/)+(?:components\/)?ui)\/[^'"]+['"]/g,
+    message: 'UI primitives come from @kortix/ui/<name>, never a local src/components/ui.',
+  },
+  {
+    scope: 'client',
+    rule: 'foreign-ui-kit',
+    pattern:
+      /['"](?:lucide-react|radix-ui|@radix-ui\/[^'"]+|class-variance-authority|next-themes|react-markdown)['"]/g,
+    message:
+      'Compose @kortix/ui (Phosphor icons, @kortix/ui/session for markdown); do not build a second UI kit.',
+  },
+  {
+    scope: 'client',
+    rule: 'dialog-primitive',
+    pattern: /['"]@kortix\/ui\/dialog['"]/g,
+    message:
+      'Dialog is the primitive Modal builds on: compose @kortix/ui/modal, or @kortix/ui/confirm-dialog for a destructive action.',
+  },
+  {
+    scope: 'client',
+    rule: 'direct-toast',
+    pattern: /import\s*\{[^}]*\btoast\b[^}]*\}\s*from\s*['"]sonner['"]/g,
+    message: 'Toasts go through @kortix/ui/toast (successToast, errorToast, …).',
   },
   {
     scope: 'client',
@@ -96,7 +124,7 @@ const RULES = [
 ];
 
 function isFeatureClient(path) {
-  return ![API_ROOT, SERVER_ROOT, UI_ROOT].some(
+  return ![API_ROOT, SERVER_ROOT].some(
     (directory) => path === directory || path.startsWith(`${directory}/`),
   );
 }
@@ -146,14 +174,30 @@ export function scanSource(source, options = { client: true }) {
   return violations.sort((left, right) => left.index - right.index);
 }
 
+export function isLocalUiFile(path) {
+  return path === LOCAL_UI_ROOT || path.startsWith(`${LOCAL_UI_ROOT}/`);
+}
+
 export function scanWhiteLabelBoundary() {
   return sourceFiles(CLIENT_ROOT, { extensions: SOURCE_EXTENSIONS }).flatMap((path) => {
     const source = readFileSync(path, 'utf8');
-    return scanSource(source, { client: isFeatureClient(path) }).map((violation) => ({
-      ...violation,
-      file: relative(APP_ROOT, path),
-      line: lineNumber(source, violation.index),
-    }));
+    const local = isLocalUiFile(path)
+      ? [
+          {
+            rule: 'local-ui-primitive',
+            index: 0,
+            match: relative(APP_ROOT, path),
+            message: 'Do not add src/components/ui files: compose @kortix/ui and theme it through tokens.',
+          },
+        ]
+      : [];
+    return [...local, ...scanSource(source, { client: isFeatureClient(path) })].map(
+      (violation) => ({
+        ...violation,
+        file: relative(APP_ROOT, path),
+        line: lineNumber(source, violation.index),
+      }),
+    );
   });
 }
 

@@ -6,8 +6,8 @@ import { notFound } from 'next/navigation';
 
 import { BlogProse } from '@/components/blog/blog-prose';
 import { PostByline } from '@/components/blog/post-byline';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   Callout,
   Fact,
@@ -25,7 +25,7 @@ import { UseCaseMdxImage } from '@/components/use-cases/use-case-mdx-image';
 import { UseCaseToc, type TocItem } from '@/components/use-cases/use-case-toc';
 import { resolveAuthor } from '@/lib/blog';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
-import { siteMetadata } from '@/lib/site-metadata';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 import { getAllUseCases } from '@/lib/use-cases';
 import { useCasesSource } from '@/lib/use-cases-source';
 

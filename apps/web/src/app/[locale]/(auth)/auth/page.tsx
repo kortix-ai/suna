@@ -30,13 +30,13 @@ import {
   submitAuthForm,
 } from '@/lib/auth/submit-auth';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { FieldError, FieldLabel, InfoStrip, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 
@@ -126,7 +126,7 @@ import {
   parseAuthMethods,
   passwordFailureCopy,
 } from '@/lib/auth/unified-auth-flow';
-import { authRedirectUrl } from '@/lib/desktop';
+import { authRedirectUrl } from '@kortix/ui/internal/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import {
@@ -232,6 +232,7 @@ function PasswordInput({
   autoComplete,
   autoFocus,
   invalid,
+  describedBy,
 }: {
   id: string;
   name: string;
@@ -239,6 +240,7 @@ function PasswordInput({
   autoComplete: string;
   autoFocus?: boolean;
   invalid?: boolean;
+  describedBy?: string;
 }) {
   const t = useTranslations('auth.unified');
   const [show, setShow] = useState(false);
@@ -254,6 +256,7 @@ function PasswordInput({
         autoComplete={autoComplete}
         autoFocus={autoFocus}
         aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
         className="pr-10"
       />
       <button
@@ -329,10 +332,14 @@ function AuthCardForm({
   });
 
   useEffect(() => {
-    if (step !== 'link' || resendIn <= 0) return;
+    // The cooldown ticks on every step, not just the link step: a rate-limited
+    // send cools the button that fired it (the password form's and the SSO
+    // interstitial's "Email me a link instead" — KRTX-1882), so the countdown
+    // must keep running wherever the visitor is.
+    if (resendIn <= 0) return;
     const t = setTimeout(() => setResendIn((prev) => prev - 1), 1000);
     return () => clearTimeout(t);
-  }, [step, resendIn]);
+  }, [resendIn]);
 
   // A stale-bundle recovery reloaded the document mid-submit; put the address
   // back so the retried submit is one click away. The controlled field
@@ -488,6 +495,12 @@ function AuthCardForm({
       // is a fresh fetch rather than a call queued behind the hung one.
       const outcome = await submitAuthForm('/api/auth/send-code', formData);
       if (!outcome.ok) {
+        // A refused send is rate-limited, not broken: re-firing it seconds
+        // later fails the same way (the dogfood run clicked through five
+        // doomed attempts — KRTX-1882). Arm the same cooldown the link step
+        // already shows, so the button that fired this send sits out the
+        // window instead of hammering the refused action.
+        if (outcome.status === 429) setResendIn(RESEND_COOLDOWN_SECONDS);
         failWith(noticeFor(outcome));
         return;
       }
@@ -985,7 +998,7 @@ function AuthCardForm({
                   type="button"
                   onClick={usePasswordFromSso}
                   disabled={pending}
-                  className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                  className="hover:text-foreground -my-2 py-2 transition-colors disabled:opacity-50"
                 >
                   {t('usePasswordInstead')}
                 </button>
@@ -999,18 +1012,21 @@ function AuthCardForm({
                 <button
                   type="button"
                   onClick={() => sendMagic(email, 'link')}
-                  disabled={pending}
-                  className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                  disabled={pending || resendIn > 0}
+                  className="hover:text-foreground -my-2 py-2 transition-colors disabled:opacity-50"
                 >
                   {pendingAction === 'link' ? t('sending') : t('emailLinkInstead')}
                 </button>
               )}
             </p>
+            {magicLinkEnabled && resendIn > 0 && (
+              <p>{t('link.resendIn', { seconds: resendIn })}</p>
+            )}
             <p>
               <button
                 type="button"
                 onClick={goToEntry}
-                className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
+                className="hover:text-foreground -my-2 py-2 transition-colors"
               >
                 {t('useDifferentEmail')}
               </button>
@@ -1062,7 +1078,6 @@ function AuthCardForm({
 
         <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
-          {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
           <form onSubmit={handleCredentialsSubmit} className="space-y-5">
             <div className="space-y-3">
@@ -1106,7 +1121,9 @@ function AuthCardForm({
                 autoComplete={copy.passwordAutoComplete}
                 autoFocus
                 invalid={!!errorMessage}
+                describedBy={errorMessage ? 'password-error' : undefined}
               />
+              {errorMessage && <FieldError id="password-error" message={errorMessage} />}
             </div>
 
             <Button type="submit" size="lg" disabled={pending} className="w-full">
@@ -1116,19 +1133,26 @@ function AuthCardForm({
           </form>
 
           {magicLinkEnabled && (
-            <Button
-              type="button"
-              variant="secondary"
-              size="lg"
-              className="mt-3 w-full"
-              onClick={() => sendMagic()}
-              disabled={pending}
-            >
-              {pendingAction === 'link' ? (
-                <Loading className="text-foreground! size-4 shrink-0" />
-              ) : null}
-              {t('emailLinkInstead')}
-            </Button>
+            <div className="mt-3">
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                className="w-full"
+                onClick={() => sendMagic()}
+                disabled={pending || resendIn > 0}
+              >
+                {pendingAction === 'link' ? (
+                  <Loading className="text-foreground! size-4 shrink-0" />
+                ) : null}
+                {t('emailLinkInstead')}
+              </Button>
+              {resendIn > 0 && (
+                <p className="text-muted-foreground mt-2 text-center text-sm">
+                  {t('link.resendIn', { seconds: resendIn })}
+                </p>
+              )}
+            </div>
           )}
         </m.div>
       </>
@@ -1205,7 +1229,7 @@ function AuthCardForm({
               type="button"
               onClick={() => void handleSsoContinue()}
               disabled={pending}
-              className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+              className="hover:text-foreground -my-2 py-2 transition-colors disabled:opacity-50"
             >
               {pendingAction === 'sso' ? t('sso.lookingUp') : t('sso.use')}
             </button>

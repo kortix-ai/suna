@@ -12,9 +12,9 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { createContext, useContext, useId, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { RadioGroupItem } from '@/components/ui/radio-group';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import { RadioGroupItem } from '@kortix/ui/radio-group';
+import { cn } from '@kortix/ui';
 
 const StepIdentityContext = createContext<string | null>(null);
 
@@ -136,7 +136,7 @@ export function StepShell({
           <Button
             size="lg"
             variant="ghost"
-            className="w-full whitespace-nowrap active:scale-[0.96] motion-reduce:active:scale-100 md:w-auto"
+            className="w-full whitespace-nowrap active:scale-[0.96] motion-reduce:active:scale-100 md:w-auto hit-area-y-2"
             onClick={onSkip}
           >
             {skipLabel}
@@ -144,7 +144,7 @@ export function StepShell({
         )}
         <Button
           size="lg"
-          className="w-full whitespace-nowrap active:scale-[0.96] motion-reduce:active:scale-100 md:w-auto md:min-w-36"
+          className="w-full whitespace-nowrap active:scale-[0.96] motion-reduce:active:scale-100 md:w-auto md:min-w-36 hit-area-y-2"
           onClick={onPrimary}
           disabled={primaryDisabled}
         >

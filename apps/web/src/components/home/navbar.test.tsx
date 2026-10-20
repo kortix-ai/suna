@@ -57,7 +57,7 @@ mock.module('next/navigation', () => ({
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({ user: authUser }),
 }));
-mock.module('@/hooks/utils/use-github-stars', () => ({
+mock.module('@/hooks/use-github-stars', () => ({
   useGitHubStars: () => ({ stars, formattedStars: stars === null ? null : '4,321', loading: false }),
 }));
 mock.module('@/lib/analytics/gtm', () => ({ trackCtaSignup: () => undefined }));
@@ -260,6 +260,44 @@ test('a signed-in visitor sees the projects button; a signed-out one sees Get St
   authUser = null;
   await mountNavbar();
   expect(container!.innerHTML).toContain('href="/auth"');
+});
+
+test('mobile tap targets: the brand links span the 64px bar and the menu toggles are 44px ghost buttons', async () => {
+  // The phone-sized public pages measured tap targets of 15-33px
+  // (KRTX-2110, KRTX-1790): the brand link is a 75x15 glyph box, the menu
+  // toggles 28-33px. The fix makes the boxes themselves carry the target:
+  // the brand links stretch the full h-16 bar (the glyph stays 15px), and
+  // the ghost toggles grow to size-12 — invisible at rest, 44px to the
+  // pointer, measurable by the journey.
+  await mountNavbar();
+  const brand = header()!.querySelector<HTMLAnchorElement>('a[href="/"]');
+  expect(brand).not.toBeNull();
+  expect(brand!.className).toContain('h-16');
+  const open = container!.querySelector(
+    '[aria-label="componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu"]',
+  );
+  expect(open!.className).toContain('size-12');
+  await act(async () => {
+    lib.click(open!);
+  });
+  const drawerEl = container!.querySelector('.bg-background.fixed.inset-0');
+  expect(drawerEl).not.toBeNull();
+  const drawerBrand = drawerEl!.querySelector<HTMLAnchorElement>('a[href="/"]');
+  expect(drawerBrand!.className).toContain('h-16');
+  const close = drawerEl!.querySelector(
+    '[aria-label="componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu"]',
+  );
+  expect(close!.className).toContain('size-12');
+});
+
+test('mobile tap targets: the Get started CTA extends its hit area to the 44px floor without growing the filled button', async () => {
+  // The CTA is a filled button — growing its box would change what the
+  // visitor sees, so its tap target extends through the shared hit-area
+  // pseudo-element instead (29px box + 3*spacing each side ≈ 51px).
+  await mountNavbar();
+  const cta = header()!.querySelector<HTMLAnchorElement>('a[href="/auth"]');
+  expect(cta).not.toBeNull();
+  expect(cta!.className).toContain('hit-area-y-3');
 });
 
 test('the drawer docs row stays a plain anchor: the tap marks it pending and leaves the document load to the browser', async () => {

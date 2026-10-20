@@ -102,6 +102,14 @@ describe('authenticatedUrlAddresses', () => {
     expect(authenticatedUrlAddresses(authenticated, SUBDOMAIN)).toBe(true);
   });
 
+  it('accepts ticket navigation for the same file but rejects a different file', () => {
+    const authorized = new URL(SUBDOMAIN);
+    authorized.searchParams.set('preview_ticket', 'scoped-ticket');
+    expect(authenticatedUrlAddresses(authorized.toString(), SUBDOMAIN)).toBe(true);
+    const other = staticFilePreviewTargets('/workspace/other.html', LOCAL)!.previewUrl;
+    expect(authenticatedUrlAddresses(authorized.toString(), other)).toBe(false);
+  });
+
   it('accepts the path-based form, which authenticates by cookie and is unchanged', () => {
     expect(authenticatedUrlAddresses(DEPLOYED_FILE, DEPLOYED_FILE)).toBe(true);
   });

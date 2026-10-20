@@ -17,7 +17,7 @@ let pickerFetches = 0;
 let tunnelFetches = 0;
 let listFetches = 0;
 let runtimeListResult: unknown = null;
-let detailData: unknown = { project: { experimental: { llm_gateway: true } } };
+let projectRow: unknown = { experimental: { llm_gateway: true } };
 
 mock.module('react', () => ({
   useMemo: (fn: () => unknown) => fn(),
@@ -27,7 +27,7 @@ mock.module('react', () => ({
 mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => ({
     ...config,
-    data: detailData,
+    data: projectRow,
     isSuccess: true,
     isLoading: false,
   }),
@@ -49,7 +49,7 @@ mock.module('./use-opencode-sessions/keys', () => ({
 }));
 
 mock.module('../core/rest/projects-client', () => ({
-  getProjectDetail: async () => ({ project: { experimental: { llm_gateway: true } } }),
+  getProject: async () => projectRow,
   getProjectModelPicker: async () => {
     pickerFetches++;
     throw new ApiError('Invalid or expired token', { status: 401 });
@@ -107,7 +107,7 @@ beforeEach(() => {
   pickerFetches = 0;
   tunnelFetches = 0;
   listFetches = 0;
-  detailData = { project: { experimental: { llm_gateway: true } } };
+  projectRow = { experimental: { llm_gateway: true } };
   runtimeListResult = null;
 });
 
@@ -141,7 +141,7 @@ describe('dead-token 401 runs one fetch, not a retry storm', () => {
     // The runtime REST client NEVER throws for an HTTP error — it resolves
     // `{ error, response }` — so before the unwrap fix the native queryFn threw
     // a status-less Error and this 401 stormed 11 fetches through `retry: 10`.
-    detailData = { project: { experimental: { llm_gateway: false } } };
+    projectRow = { experimental: { llm_gateway: false } };
     runtimeListResult = { error: { detail: 'Invalid or expired token' }, request: {}, response: { status: 401 } };
     const config = providers.useRuntimeProviders();
     const client = new QueryClient();
@@ -157,7 +157,7 @@ describe('dead-token 401 runs one fetch, not a retry storm', () => {
   });
 
   test('native provider query: the boot race (empty provider list) still retries', async () => {
-    detailData = { project: { experimental: { llm_gateway: false } } };
+    projectRow = { experimental: { llm_gateway: false } };
     runtimeListResult = { data: {} };
     const config = providers.useRuntimeProviders();
     const client = new QueryClient();

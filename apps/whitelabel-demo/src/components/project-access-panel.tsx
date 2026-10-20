@@ -1,13 +1,14 @@
 'use client';
 
+import { useWrapperMode } from '@/app/providers';
 import { CallSnippet } from '@/components/dev/call-snippet';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { useQuery } from '@tanstack/react-query';
-import { ShieldCheck, UserCheck } from 'lucide-react';
 import Link from 'next/link';
+import { ShieldCheckIcon, UserCheckIcon } from '@phosphor-icons/react';
 
 function useApplicationUser() {
   return useQuery({
@@ -21,11 +22,17 @@ function useApplicationUser() {
   });
 }
 
+/** Backend (wrapper) mode only: in direct mode there is no application user and no local ownership. */
 export function ApplicationUserBadge({ projectId }: { projectId: string }) {
+  if (!useWrapperMode()) return null;
+  return <ApplicationUserStrip projectId={projectId} />;
+}
+
+function ApplicationUserStrip({ projectId }: { projectId: string }) {
   const user = useApplicationUser();
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-border px-5 py-1.5 text-xs text-muted-foreground">
-      <UserCheck className="size-3.5 shrink-0" />
+      <UserCheckIcon className="size-3.5 shrink-0" />
       <span className="min-w-0 flex-1 truncate">
         Application user{' '}
         <span className="font-mono">{user.data?.userId ?? '…'}</span> — local
@@ -50,7 +57,7 @@ export function ProjectAccessPanel({ projectId }: { projectId: string }) {
     <div className="space-y-3">
       <div className="rounded-md border border-border bg-card px-3 py-2.5">
         <div className="flex items-center gap-2">
-          <UserCheck className="size-4 shrink-0 text-brand" />
+          <UserCheckIcon className="size-4 shrink-0 text-brand" />
           <span className="text-sm font-medium">Application identity</span>
         </div>
         <div className="mt-1 break-all font-mono text-xs">
@@ -67,7 +74,7 @@ export function ProjectAccessPanel({ projectId }: { projectId: string }) {
 
       <div className="rounded-md border border-border bg-card px-3 py-2.5">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="size-4 shrink-0 text-brand" />
+          <ShieldCheckIcon className="size-4 shrink-0 text-brand" />
           <span className="text-sm font-medium">
             Sessions in this owned project
           </span>

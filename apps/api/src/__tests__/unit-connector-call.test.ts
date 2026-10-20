@@ -55,6 +55,34 @@ describe('auth attachment', () => {
     expect(custom.calls[0]!.headers.Authorization).toBe('Token sk_123');
   });
 
+  test('path credential is the first URL segment, never a header, and never echoed in a fetch error', async () => {
+    const auth: ConnectorAuth = { type: 'custom', in: 'path', name: null, prefix: 'bot' };
+    const { fetchImpl, calls } = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'POST', path: 'sendMessage' },
+      baseUrl: 'https://api.telegram.org',
+      auth,
+      secret: '123:abc',
+      args: { chat_id: 1, text: 'hi' },
+      fetchImpl,
+    });
+    expect(calls[0]!.url).toBe('https://api.telegram.org/bot123:abc/sendMessage');
+    expect(calls[0]!.headers.Authorization).toBeUndefined();
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ chat_id: 1, text: 'hi' });
+
+    const failing: FetchImpl = async (url) => {
+      throw new Error(`connect failed for ${url}`);
+    };
+    const error = await executeCall({
+      binding: { kind: 'http', method: 'POST', path: 'sendMessage' },
+      baseUrl: 'https://api.telegram.org',
+      auth,
+      secret: '123:abc',
+      fetchImpl: failing,
+    }).catch((e: Error) => e);
+    expect(String((error as Error).message)).not.toContain('123:abc');
+  });
+
   test('basic base64-encodes', async () => {
     const { fetchImpl, calls } = recordingFetch();
     await executeCall({

@@ -1,6 +1,6 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
 import { ProjectShell } from '@/components/project-shell';
 import { CapabilitiesTab } from '@/components/settings/capabilities-tab';
@@ -9,22 +9,23 @@ import { MembersTab } from '@/components/settings/members-tab';
 import { PoliciesTab } from '@/components/settings/policies-tab';
 import { SecretsTab } from '@/components/settings/secrets-tab';
 import { TriggersTab } from '@/components/settings/triggers-tab';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import { Switch } from '@kortix/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
-import { cn, fmtDate } from '@/lib/utils';
+import { fmtDate } from '@/lib/utils';
 import type { ExperimentalFeatureView, KortixProject } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, GitBranch } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { cn } from '@kortix/ui/lib/utils';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { ArrowSquareOutIcon, GitBranchIcon } from '@phosphor-icons/react';
 
 /**
  * One registry drives BOTH the tab list and the tab panels: adding a tab is
@@ -48,10 +49,11 @@ export default function SettingsPage() {
   return (
     <ProjectShell>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        <div className="mx-auto max-w-2xl px-6 py-8">
-          <h1 className="text-xl font-semibold tracking-tight">Project settings</h1>
+        <div className="mx-auto max-w-2xl px-4 py-8 md:px-6">
+          <h1 className="font-display text-3xl tracking-tight">Project settings</h1>
           <Tabs defaultValue="general" className="mt-6">
-            <TabsList className="flex-wrap">
+            {/* Seven tabs: an underline row that scrolls sideways instead of wrapping under the pill. */}
+            <TabsList type="underline" className="scrollbar-hide max-w-full overflow-x-auto">
               {TABS.map((tab) => (
                 <TabsTrigger key={tab.name} value={tab.name} className="capitalize">
                   {tab.name}
@@ -99,18 +101,18 @@ function GeneralTab() {
     onSuccess: (updated) => {
       qc.setQueryData(qk.project(projectId), updated);
       qc.invalidateQueries({ queryKey: qk.projects });
-      toast.success('Project renamed');
+      successToast('Project renamed');
     },
-    onError: () => toast.error('Could not rename'),
+    onError: () => errorToast('Could not rename'),
   });
   const archive = useMutation({
     mutationFn: () => kortix.project(projectId).archive(),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.projects });
-      toast.success('Project archived');
+      successToast('Project archived');
       router.push('/');
     },
-    onError: () => toast.error('Could not archive'),
+    onError: () => errorToast('Could not archive'),
   });
 
   const current = project.data?.name ?? '';
@@ -158,7 +160,7 @@ function GeneralTab() {
 
       <Card className="overflow-hidden p-0">
         <div className="flex items-center gap-2 border-b border-border px-5 py-3 text-sm font-medium">
-          <GitBranch className="size-4 text-muted-foreground" />
+          <GitBranchIcon className="size-4 text-muted-foreground" />
           Repository &amp; info
         </div>
         <dl className="divide-y divide-border">
@@ -247,11 +249,11 @@ function ExperimentalFeatureRow({
     onSuccess: (updated) => {
       qc.setQueryData(qk.project(projectId), updated);
       qc.invalidateQueries({ queryKey: qk.projects });
-      toast.success(
+      successToast(
         `${feature.name} ${updated.experimental?.[feature.key] ? 'enabled' : 'disabled'}`,
       );
     },
-    onError: () => toast.error(`Could not update ${feature.name}`),
+    onError: () => errorToast(`Could not update ${feature.name}`),
   });
 
   return (
@@ -301,7 +303,7 @@ function InfoRow({
             className="inline-flex max-w-full items-center gap-1.5 truncate text-foreground transition-colors hover:text-muted-foreground"
           >
             <span className="truncate">{value}</span>
-            <ExternalLink className="size-3 shrink-0" />
+            <ArrowSquareOutIcon className="size-3 shrink-0" />
           </a>
         ) : (
           (value ?? '—')

@@ -209,11 +209,12 @@ The session branch persists after a stop and after a delete. Only work the agent
 
 A deleted session stays restorable for 30 days. The delete answers `restore_until`, the last moment a restore works. To restore it:
 
-- In the web app, select **Undo** in the toast that confirms the delete. While the old sandbox is still being removed, Undo tries again for about 30 seconds, then offers **Try again**. A delete of several sessions from the Sessions page has no Undo: restore each session from the CLI or from code.
-- From the CLI, run `kortix sessions restore <session_id>` with the full session ID. `kortix sessions rm` prints the exact command, with the date, `--project` and, for a session on another host, `--host`.
-- From code, call `s.restore()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/restore`.
+- In the web app, select **Undo** in the toast that confirms the delete. While the old sandbox is still being removed, Undo tries again for about 30 seconds, then offers **Try again**.
+- Later, open **Recently deleted**: the tab on the Sessions page, also in the sidebar's session menu. It lists the deleted sessions you can restore, with the date each one stays restorable. Select **Restore session** on a row. A delete of several sessions from the Sessions page lands here too.
+- From the CLI, `kortix sessions ls --deleted` lists the same sessions with their full IDs. Run `kortix sessions restore <session_id>` with the full session ID. `kortix sessions rm` prints the exact command, with the date, `--project` and, for a session on another host, `--host`.
+- From code, call `s.restore()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/restore`. `GET /v1/projects/<project_id>/sessions?deleted=only` lists what you can restore, each row with `deleted_at`, `deleted_by` and `restore_until` (`listProjectSessionsPage(projectId, { view: 'deleted' })` in the SDK).
 
-A restore needs the same permission as the delete: the session owner or a person who manages the project. The conversation, the stored files and the branch come back. The session's next start boots a new sandbox from the branch. Public links the delete revoked stay revoked: create new ones.
+A restore needs the same permission as the delete: the session owner or a person who manages the project. Recently deleted follows the same rule: you see the sessions you deleted, and a person who manages the project sees every deleted session they can open. The conversation, the stored files and the branch come back. The session's next start boots a new sandbox from the branch, and the new sandbox loads the saved conversation back into the agent: the agent keeps the context of the earlier turns, as when you [continue a lost session](#continue-a-lost-session). The same restore limit applies. Public links the delete revoked stay revoked: create new ones.
 
 | Restore answer | Meaning |
 | --- | --- |
@@ -427,7 +428,7 @@ A warm session is a pre-booted session that waits for your first prompt, so the 
 
 - A warm session waits at most 60 minutes.
 - It uses compute while it waits.
-- The per-project `warm_sessions` flag controls it. Run `kortix projects features ls` to see its state, and change it in **Customize → Settings → Feature flags**.
+- The per-project `warm_sessions` flag is off by default. Turn it on only if you want to spend idle compute for faster starts. Run `kortix projects features ls` to see its state, and change it in **Customize → Settings → Feature flags**.
 
 ```bash
 kortix sessions warm                        # create or reuse your warm session

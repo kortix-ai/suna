@@ -72,13 +72,15 @@ export async function servableProjectCatalog(input: {
   const pooledNames = pooledEnabled && principalUserId
     ? await listGrantedGatewaySecretNames(accountId, projectId, principalUserId, personalUserId).catch(() => [] as string[])
     : [];
+  // An account without managed models has no platform default.
+  const platformDefault = freeManagedOnly ? undefined : platformDefaultModelId();
   const effectiveDefault = toWireModel(
-    defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',
+    defaults.projects[projectId] ?? defaults.account ?? platformDefault ?? '',
   );
   const requiredModels = [
     defaults.projects[projectId],
     defaults.account,
-    platformDefaultModelId(),
+    platformDefault,
     routing?.visionModel,
     ...(routing?.defaultFallback?.models ?? []),
     ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),

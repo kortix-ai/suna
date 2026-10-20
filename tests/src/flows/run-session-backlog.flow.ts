@@ -6,7 +6,7 @@
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
- * FLOW level on `requires: ["funded"]` and/or `["daytona"]`. The runner
+ * FLOW level on `requires: ["funded"]` and/or `["sandbox"]`. The runner
  * self-skips a flow whose capability is absent, so these SKIP cleanly locally
  * and run for real against a deployed target.
  *
@@ -58,7 +58,7 @@ harnessFlow(
   'SESS-10',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     // Boot (≤540s) + one turn (≤240s) + the mirror wait (≤180s) exceeds 360s.
     timeoutMs: 900_000,
@@ -141,7 +141,7 @@ harnessFlow(
   'RUN-1',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -172,7 +172,7 @@ harnessFlow(
   {
     domain: 'agent-run',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -237,7 +237,7 @@ harnessFlow(
   {
     domain: 'agent-run',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -270,7 +270,7 @@ harnessFlow(
   'RUN-4',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -304,7 +304,7 @@ harnessFlow(
   'RUN-5',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -360,7 +360,7 @@ harnessFlow(
   'RUN-6',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -404,7 +404,7 @@ harnessFlow(
   {
     domain: 'agent-run',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -478,7 +478,7 @@ flow(
   {
     domain: 'agent-run',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 660_000,
     retry: { attempts: 2 },
     routes: [
@@ -530,7 +530,7 @@ flow(
   'SESS-2',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 300_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
@@ -568,7 +568,7 @@ flow(
   'SESS-3',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 240_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
   },
@@ -603,7 +603,7 @@ harnessFlow(
   'SESS-9',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -636,7 +636,7 @@ harnessFlow(
   {
     domain: 'sessions',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -705,7 +705,7 @@ flow(
   'FILE-8',
   {
     domain: 'files',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 360_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -756,7 +756,7 @@ flow(
   {
     domain: 'files',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 600_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -816,7 +816,7 @@ flow(
   {
     domain: 'golden',
     tags: ['deployed'],
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 600_000,
     routes: [
@@ -989,13 +989,13 @@ flow(
 // closest real boundary: a `event_callback`/`app_mention` POST is accepted and
 // (when an install + signature are present on the target) acknowledged 200
 // `{ok:true}` and a `source:slack` session subsequently appears; otherwise the
-// install gate (404) is asserted. This flow is gated on funded+daytona because a
+// install gate (404) is asserted. This flow is gated on funded+sandbox because a
 // successful dispatch spins a real sandbox.
 flow(
   'CHN-6',
   {
     domain: 'channels',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 240_000,
     routes: ['POST /v1/webhooks/slack/:projectId', 'GET /v1/projects/:projectId/sessions'],
@@ -1091,7 +1091,7 @@ harnessFlow(
   'RUN-10',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Boot (≤540s) + the boot turn (≤240s).
     timeoutMs: 900_000,
     routes: [
@@ -1107,7 +1107,7 @@ harnessFlow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step(`the project declares a no-edit agent and runs ${harness}`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain(NO_EDIT_FILES, 'ke2e RUN-10: a no-edit agent');
       });
       const path = `ke2e-run10-${Date.now()}.txt`;
@@ -1161,7 +1161,7 @@ flow(
   'RUN-11',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1191,7 +1191,7 @@ harnessFlow(
   'RUN-12',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -1257,7 +1257,7 @@ flow(
   'RUN-20',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 780_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1385,7 +1385,7 @@ harnessFlow(
   'RUN-15',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Three sessions: boot (≤540s) + one turn (≤240s) each.
     timeoutMs: 2_500_000,
     routes: [
@@ -1406,7 +1406,7 @@ harnessFlow(
       ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, `/file/content?path=${encodeURIComponent(`ke2e-run15-${nonce}.txt`)}`));
     try {
       await ctx.step(`the project declares the ke2e_marker tool and a limited agent, and runs ${harness}`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain(PROJECT_TOOL_FILES, 'ke2e RUN-15: a project tool and a limited agent');
       });
 
@@ -1479,7 +1479,7 @@ harnessFlow(
   'RUN-19',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // One session: boot (≤540s) + one turn (≤240s).
     timeoutMs: 900_000,
     routes: [
@@ -1505,7 +1505,7 @@ harnessFlow(
         if (!manifest.includes('  web_search: tools/web_search.ts  # ejected from kortix:web_search\n')) throw new Error(`eject did not point kortix.yaml at the copy:\n${manifest}`);
         const source = cli.readFile('tools/web_search.ts');
         if (!source.includes(EJECTED_EXECUTE)) throw new Error('the ejected web_search no longer has the execute line this flow changes');
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain({ 'kortix.yaml': manifest, 'tools/web_search.ts': source.replace(EJECTED_EXECUTE, CHANGED_EXECUTE) }, 'ke2e RUN-19: four Kortix tools and an ejected web_search');
       });
 
@@ -1574,7 +1574,7 @@ harnessFlow(
   'RUN-13',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1654,7 +1654,7 @@ harnessFlow(
   'RUN-14',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1670,7 +1670,7 @@ harnessFlow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step(`the project runs ${harness} and commits the command where that harness reads it`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         const path = harness === 'pi' ? `harnesses/pi/prompts/${COMMAND}.md` : `harnesses/opencode/commands/${COMMAND}.md`;
         await world.commitToMain({ [path]: COMMAND_TEMPLATE }, `ke2e RUN-14: the ${COMMAND} command`);
       });
@@ -1769,7 +1769,7 @@ harnessFlow(
   'RUN-17',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     // Boot (≤540s) + the boot turn + two turns (≤240s each).
     timeoutMs: 1_200_000,
     routes: [
@@ -1787,7 +1787,7 @@ harnessFlow(
     const token = `Agentpick${Date.now()}`;
     try {
       await ctx.step(`the project declares a second primary agent and runs ${harness}`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain(agentPickFiles(token), 'ke2e RUN-17: a marker agent');
       });
       const session = await bootSession(ctx, harness, { project, prompt: 'Reply with the word ready.' });
@@ -1830,7 +1830,7 @@ flow(
   'RUN-16',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -1877,7 +1877,7 @@ harnessFlow(
   'RUN-18',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'PATCH /v1/projects/:projectId/features',
@@ -1897,7 +1897,7 @@ harnessFlow(
     const agentsMd = `# Project rules\n\n${name}: ${value}\n`;
     try {
       await ctx.step(`the project runs ${harness} and commits a root AGENTS.md`, async () => {
-        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain({ 'AGENTS.md': agentsMd }, 'ke2e RUN-18: a root AGENTS.md');
       });
       const { projectId, sessionId, sandboxId } = await bootSession(ctx, harness, { project });

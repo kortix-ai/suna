@@ -16,10 +16,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@kortix/ui/collapsible';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,10 +29,10 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/dropdown-menu';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -41,18 +41,19 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { connectorHref } from '@/features/workspace/capabilities/connectors/connector-routes';
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
+} from '@kortix/ui/modal';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { Switch } from '@kortix/ui/switch';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { connectorHref } from '@kortix/ui/customize/connectors/connector-routes';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   useDeleteTunnelConnection,
   useSetComputerAccess,
   useTunnelConnections,
+  useUpdateTunnelConnection,
   type ComputerAccess,
   type ComputerAccessChange,
   type TunnelConnection,
@@ -65,9 +66,9 @@ import {
   desktopComputerPause,
   desktopComputerRequestGrants,
   desktopComputerResume,
-} from '@/lib/desktop';
-import { relativeTime } from '@/lib/relative-time';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/internal/lib/desktop';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
+import { cn } from '@kortix/ui';
 import {
   ComputerCapabilities,
   computerDisplayName,
@@ -81,7 +82,7 @@ import {
   useProjectComputerAccounts,
   useThisComputerState,
   type ComputerState,
-} from './computer-connect';
+} from '@kortix/ui/internal/tunnel/computer-connect';
 
 const DESKTOP_GRANTS_KEY = ['desktop-computer-grants'] as const;
 
@@ -287,14 +288,12 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
             unavailable={access.unavailable}
           />
         ) : null}
-        <section className="space-y-2">
-          <Label>{t('capabilitiesTitle')}</Label>
-          <ComputerCapabilities
-            granted={machine?.capabilities ?? []}
+        {machine ? (
+          <CapabilitySection
+            machine={machine}
             needsSetup={capabilitiesNeedingSetup(setupMissing(grants.data?.missing, machine))}
           />
-          <p className="text-muted-foreground text-xs text-pretty">{t('capabilitiesHint')}</p>
-        </section>
+        ) : null}
         <SettingsRowGroup>
           <SettingsRow label={t('runInBackground')} description={t('runInBackgroundDescription')}>
             <Switch
@@ -360,6 +359,184 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
         confirmVariant="destructive"
         isPending={disconnect.isPending}
         onConfirm={() => disconnect.mutate()}
+      />
+    </>
+  );
+}
+
+/**
+ * What Kortix may use on the machine, one switch each. The owner changes the
+ * approved list; the next call obeys it. Pairing approves all three.
+ */
+function CapabilitySection({
+  machine,
+  needsSetup,
+}: {
+  machine: TunnelConnection;
+  needsSetup?: readonly string[];
+}) {
+  const t = useTranslations('computers');
+  const update = useUpdateTunnelConnection();
+  const registered = machine.machineInfo?.registeredCapabilities;
+  return (
+    <section className="space-y-2">
+      <Label>{t('capabilitiesTitle')}</Label>
+      <ComputerCapabilities
+        granted={update.variables?.capabilities ?? machine.approvedCapabilities ?? machine.capabilities}
+        needsSetup={needsSetup}
+        available={Array.isArray(registered) && machine.isLive ? (registered as string[]) : undefined}
+        disabled={update.isPending}
+        onChange={(capabilities) =>
+          update.mutate(
+            { tunnelId: machine.tunnelId, capabilities },
+            {
+              onSuccess: () => successToast(t('capabilitiesSaved')),
+              onError: (error: Error) => errorToast(error.message || t('actionFailed')),
+            },
+          )
+        }
+      />
+      <p className="text-muted-foreground text-xs text-pretty">{t('capabilitiesHint')}</p>
+    </section>
+  );
+}
+
+/**
+ * One paired computer from anywhere (Settings › My computer): its status,
+ * when Kortix may use it, and what it may use. The machine this desktop app
+ * runs on gets the full local dialog (setup, background service, logs).
+ */
+export function ComputerDetailsModal({
+  projectId,
+  tunnelId,
+  onOpenChange,
+}: {
+  projectId: string;
+  /** The machine to show; `null` closes the dialog. */
+  tunnelId: string | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { tunnelId: thisTunnelId, status } = useThisComputerState();
+  const local = Boolean(status?.available && tunnelId && tunnelId === thisTunnelId);
+  return (
+    <Modal open={tunnelId !== null} onOpenChange={onOpenChange}>
+      <ModalContent className="flex flex-col lg:max-w-lg">
+        {tunnelId === null ? null : local ? (
+          <LocalComputerContent projectId={projectId} onClose={() => onOpenChange(false)} />
+        ) : (
+          <RemoteComputerContent
+            projectId={projectId}
+            tunnelId={tunnelId}
+            onClose={() => onOpenChange(false)}
+          />
+        )}
+      </ModalContent>
+    </Modal>
+  );
+}
+
+function RemoteComputerContent({
+  projectId,
+  tunnelId,
+  onClose,
+}: {
+  projectId: string;
+  tunnelId: string;
+  onClose: () => void;
+}) {
+  const t = useTranslations('computers');
+  const locale = useLocale();
+  const { user } = useAuth();
+  const connections = useTunnelConnections({ refetchInterval: 5_000 });
+  const machine = connections.data?.find((candidate) => candidate.tunnelId === tunnelId);
+  const access = useComputerAccess(machine, connections.dataUpdatedAt);
+  const { connectorAlias } = useProjectComputerAccounts(projectId);
+  const deleteMachine = useDeleteTunnelConnection();
+  const queryClient = useQueryClient();
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+
+  if (!machine) {
+    return (
+      <>
+        <ComputerHeader name={t('localComputerTitle')} status={t('notConnected')} />
+        <ModalBody>
+          {connections.isPending ? <Loading className="size-4 shrink-0" /> : null}
+        </ModalBody>
+      </>
+    );
+  }
+
+  const state: ComputerState = machine.isLive ? 'online' : 'offline';
+  const lastSeen =
+    !machine.isLive && machine.lastHeartbeatAt ? relativeTime(machine.lastHeartbeatAt, locale) : '';
+  const platform = platformName(machine.machineInfo?.platform);
+  const name = computerDisplayName(machine.name, machine.machineInfo) || machine.name;
+
+  return (
+    <>
+      <ComputerHeader
+        name={name}
+        status={
+          <>
+            <StatusText state={state} />
+            {lastSeen ? <span>· {t('lastSeen', { time: lastSeen })}</span> : null}
+            {platform ? <span>· {platform}</span> : null}
+          </>
+        }
+      />
+      <ModalBody className="min-h-0 space-y-6 overflow-y-auto">
+        {access.current?.pendingRequest && !access.current.pendingRequest.change ? (
+          <AccessRequestBanner
+            capability={access.current.pendingRequest.capability}
+            update={access.update}
+          />
+        ) : null}
+        {access.current ? (
+          <AccessSection
+            access={access.current}
+            now={access.now}
+            update={access.update}
+            unavailable={access.unavailable}
+          />
+        ) : null}
+        <CapabilitySection machine={machine} />
+        {user?.email ? (
+          <p className="text-muted-foreground text-xs">{t('pairedWith', { email: user.email })}</p>
+        ) : null}
+      </ModalBody>
+      <ModalFooter className="border-t py-3 sm:justify-between">
+        <Button size="sm" variant="ghost" asChild>
+          <Link href={connectorHref(projectId, connectorAlias)} onClick={onClose}>
+            {t('manageInProject')}
+          </Link>
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-kortix-red hover:bg-kortix-red/15 hover:text-kortix-red w-full sm:w-auto"
+          onClick={() => setConfirmDisconnect(true)}
+        >
+          {t('disconnectEllipsis')}
+        </Button>
+      </ModalFooter>
+      <ConfirmDialog
+        open={confirmDisconnect}
+        onOpenChange={setConfirmDisconnect}
+        title={t('disconnectConfirmTitle')}
+        description={t('unpairDescription')}
+        confirmLabel={t('disconnect')}
+        confirmVariant="destructive"
+        isPending={deleteMachine.isPending}
+        onConfirm={() =>
+          deleteMachine.mutate(machine.tunnelId, {
+            onSuccess: () => {
+              void queryClient.invalidateQueries({ queryKey: ['connections'] });
+              successToast(t('disconnected'));
+              onClose();
+            },
+            onError: (error: Error) => errorToast(error.message || t('disconnectFailed')),
+          })
+        }
       />
     </>
   );

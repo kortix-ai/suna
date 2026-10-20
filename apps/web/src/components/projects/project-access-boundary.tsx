@@ -7,23 +7,23 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { Textarea } from '@/components/ui/textarea';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { Textarea } from '@kortix/ui/textarea';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import { DetailPanel, DetailRow } from '@/features/auth/auth-consent';
-import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { DetailPanel, DetailRow } from '@kortix/ui/internal/auth/auth-consent';
+import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
-import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
-import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
-import { prefetchSessionOpen } from '@kortix/sdk/react';
-import { prefetchSessionRouteReads } from '@/features/session/session-route-prefetch';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { forgetLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
+import { focusWithoutScroll } from '@kortix/ui/internal/lib/utils/focus-without-scroll';
+import { getProject, requestProjectAccess } from '@kortix/sdk';
+import { prefetchSessionOpen, useAdminImpersonate } from '@kortix/sdk/react';
+import { prefetchSessionRouteReads } from '@kortix/ui/session/status/session-route-prefetch';
 import { prefetchProjectShellReads } from '@/components/projects/project-shell-prefetch';
 
 const QUERY_KEY = 'project-access-boundary';
@@ -422,25 +422,22 @@ function AccessGateScreen({
       setInlineError(error.message || t.raw('projectAccessBoundary.requestFailed')),
   });
 
-  // Platform-admin escape hatch: flips the client-wide admin-bypass header on,
-  // then re-fetches the same user-scoped query so the boundary
-  // above renders the actual project. Read-only server-side (see
-  // apps/api/src/projects/lib/access.ts) and audit-logged against the project's
-  // own account on every use.
-  const bypassMutation = useMutation({
-    mutationFn: async () => {
-      setAdminBypass(true);
-      return queryClient.fetchQuery({
-        queryKey: [QUERY_KEY, projectId, user?.id],
-        queryFn: () => getProject(projectId, { showErrors: false }),
-      });
-    },
-    onMutate: () => setBypassError(null),
-    onError: (error: Error) => {
-      setAdminBypass(false);
-      setBypassError(error.message || t.raw('projectAccessBoundary.bypassFailed'));
-    },
-  });
+  // Platform-admin escape hatch: act as the project's account (the same grant
+  // as Admin → Accounts → Open as account: one hour, a banner, audited on the
+  // customer's account), then reload so every read runs inside the grant. A
+  // reload, not a refetch: the shell's cached reads ran as the operator.
+  const bypassMutation = useAdminImpersonate();
+  const openAsAdmin = () => {
+    setBypassError(null);
+    bypassMutation.mutate(
+      { projectId, reason: `Open as admin: project ${projectId}` },
+      {
+        onSuccess: () => window.location.reload(),
+        onError: (error: Error) =>
+          setBypassError(error.message || t.raw('projectAccessBoundary.bypassFailed')),
+      },
+    );
+  };
 
   const copy = gateCopyKeys(state);
   const forbidden = isForbiddenState(state);
@@ -561,9 +558,9 @@ function AccessGateScreen({
                   </Link>
                 )}
                 {/*
-                  403 only. Admin bypass re-fetches with a bypass header, which
-                  cannot resurrect a deleted project or clear a 500 — offering
-                  it on those screens is a dead control.
+                  403 only. Acting as the account cannot resurrect a deleted
+                  project or clear a 500 — offering it on those screens is a
+                  dead control.
                 */}
                 {showAdminBypass ? (
                   <Button
@@ -571,7 +568,7 @@ function AccessGateScreen({
                     variant="ghost"
                     size="sm"
                     className="text-kortix-orange hover:text-kortix-orange hover:bg-kortix-orange/10 -mr-2 h-7 shrink-0 px-2 text-xs"
-                    onClick={() => bypassMutation.mutate()}
+                    onClick={openAsAdmin}
                     disabled={bypassMutation.isPending}
                   >
                     {bypassMutation.isPending ? (

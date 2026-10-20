@@ -23,6 +23,7 @@ import {
   sessionTurns,
 } from '@kortix/db';
 import { and, asc, eq, lt, sql } from 'drizzle-orm';
+import { config } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
@@ -36,7 +37,7 @@ mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => (
 
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
-const { backfillSessionTranscriptMirrorOnWake, captureSessionTranscriptMirror, resetTranscriptBackfillMemoForTests } = await import('../projects/lib/session-transcript-capture');
+const { backfillSessionTranscriptMirrorOnWake, captureSessionTranscriptMirror, resetTranscriptBackfillMemoForTests, transcriptCapturesSettledForTests } = await import('../projects/lib/session-transcript-capture');
 const { claimSessionLog } = await import('../projects/session-log-restore');
 const { setTranscriptRewindMarker } = await import('../projects/lib/session-transcript-mirror');
 const { ingestSessionLogJournal, sessionLogContentHash, SESSION_LOG_CAPTURE_REV_LIMIT } = await import('../projects/session-log-ingest');
@@ -434,40 +435,6 @@ describe('the v1 window over a stale log', () => {
     }
   });
 
-  test('a mirror newer than the log by over 60 s serves the mirror and warns once per session; within 60 s the log answers', async () => {
-    const session = await seedSession(project, OWNER);
-    await capture(session, range(0, 6));
-    await setFlag(true);
-    const warn = spyOn(logger, 'warn');
-    try {
-      const [{ last }] = (await db.select({ last: sql<Date>`max(${sessionLogMessages.updatedAt})` }).from(sessionLogMessages).where(eq(sessionLogMessages.sessionId, session))) as [{ last: Date }];
-      const lastMs = new Date(last).getTime();
-      // The mirror window's captured_at is the mirror's run time, whatever its rows' content time.
-      const [mirror] = await db.select({ at: sessionTranscriptMirrors.capturedAt }).from(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, session));
-      const mirrorIso = new Date(mirror!.at).toISOString();
-
-      // Within the margin: the log answers (its captured_at is the log's last write).
-      await mirrorAt(session, new Date(lastMs + 30_000));
-      const near = await read(session);
-      expect(near.status).toBe(200);
-      expect(near.body.captured_at).not.toBe(mirrorIso);
-      expect(staleWarnings(warn, session)).toHaveLength(0);
-
-      // Over the margin (the rows' content time): the mirror answers, once-warned.
-      const at = new Date(lastMs + 120_000);
-      await mirrorAt(session, at);
-      for (let i = 0; i < 2; i++) {
-        const far = await read(session);
-        expect(far.status).toBe(200);
-        expect(far.body.captured_at).toBe(mirrorIso);
-        expect((far.body.messages as unknown[]).length).toBe(6);
-      }
-      expect(staleWarnings(warn, session)).toHaveLength(1);
-    } finally {
-      warn.mockRestore();
-      await setFlag(false);
-    }
-  });
 });
 
 describe('a cursor on a tombstoned message', () => {
@@ -506,10 +473,13 @@ describe('a converted log on a box that wakes with a journal (P3.3)', () => {
     });
     return [plain(0), call, plain(2), plain(3)];
   };
-  /** A converted, `partial` log: the mirror row of the call in the old mirror's stripped shape (a settled call without `input`), then the converter. */
+  /**
+   * A converted, `partial` log: the mirror row of the call in the old mirror's stripped shape (a settled call without
+   * `input`), without the `title` that would prove its command (`restoreStrippedToolParts`), then the converter.
+   */
   const convertStripped = async (session: string, extra: Msg[] = []) => {
     await capture(session, [...history(), ...extra]);
-    await db.execute(sql`UPDATE kortix.session_transcript_messages SET parts = parts #- '{1,state,input}' WHERE session_id = ${session} AND message_id = 'msg_000001'`);
+    await db.execute(sql`UPDATE kortix.session_transcript_messages SET parts = parts #- '{1,state,input}' #- '{1,state,title}' WHERE session_id = ${session} AND message_id = 'msg_000001'`);
     expect((await writeSessionLogFromMirror(session)).outcome).toBe('written');
     const log = await logRow(session);
     expect({ grade: log?.restoreGrade, counts: log?.gradeCounts }).toEqual({ grade: 'partial', counts: { tool_input: 1, cut_point: 0, attachment: 0 } });
@@ -680,5 +650,198 @@ describe('a converted log on a box that wakes with a journal (P3.3)', () => {
     expect(toolInput(await liveRows(session))).toEqual({ command: 'ls', description: 'List files' });
     expect((await logRow(session))?.restoreGrade).toBe('converted');
     expect((await logRow(session))?.journalSeenAt).toBeNull();
+  });
+});
+
+describe('the flag on (P8): the capture writes the log from the box and no v1 row', () => {
+  beforeAll(() => setFlag(true));
+  afterAll(() => setFlag(false));
+
+  const mirrorCount = async (sessionId: string) => {
+    const [r] = await db.execute<{ mirrors: number; messages: number }>(sql`
+      SELECT (SELECT count(*) FROM kortix.session_transcript_mirrors WHERE session_id = ${sessionId})::int AS mirrors,
+             (SELECT count(*) FROM kortix.session_transcript_messages WHERE session_id = ${sessionId})::int AS messages`);
+    return r;
+  };
+  /** A fake box answering `payload`; counts its reads. */
+  const box = (payload: () => Msg[], children: Array<{ id: string; payload: Msg[] }> = [], complete = true) => {
+    const reads = { n: 0 };
+    return {
+      reads,
+      deps: {
+        readMessages: async () => {
+          reads.n++;
+          return {
+            opencodeSessionId: ROOT,
+            payload: payload(),
+            headComplete: complete,
+            complete,
+            children: children.map((c) => ({ opencodeSessionId: c.id, payload: c.payload, complete: true })),
+          };
+        },
+      },
+    };
+  };
+  const pinned = async () => {
+    const session = await seedSession(project, OWNER);
+    await db.update(projectSessions).set({ runtimeSessionId: ROOT }).where(eq(projectSessions.sessionId, session));
+    return session;
+  };
+
+  test('a box without a journal: the log is the conversion the mirror path writes, and no mirror row exists', async () => {
+    const { root, child } = syntheticOpencodeSession({ root: ROOT, child: CHILD, turns: 12 });
+    // The same box through the v1 path (flag off) and through the log path (flag on).
+    await setFlag(false);
+    const viaMirror = await pinned();
+    await capture(viaMirror, root, [{ id: CHILD, payload: child }]);
+    await setFlag(true);
+    const viaLog = await pinned();
+    expect(await captureSessionTranscriptMirror(viaLog, box(() => root, [{ id: CHILD, payload: child }]).deps)).toEqual({ captured: root.length, head_complete: true });
+
+    expect(await mirrorCount(viaLog)).toEqual({ mirrors: 0, messages: 0 });
+    // `content_hash` is of the record as converted, key order included: a box read keeps the daemon's
+    // key order, a mirror read jsonb's. The records are equal.
+    const shape = (rows: Awaited<ReturnType<typeof liveRows>>) => rows.map(({ id, thread, seq, record }) => ({ id, thread, seq, record }));
+    const fromLog = await liveRows(viaLog);
+    expect(fromLog.length).toBe(root.length + child.length - 1); // the compaction summary folds into its marker
+    expect(shape(fromLog)).toEqual(shape(await liveRows(viaMirror)));
+    const mirrored = (await logRow(viaMirror))!;
+    const { record, journalSeenAt, restoreGrade } = (await logRow(viaLog))!;
+    expect({ record, journalSeenAt, restoreGrade }).toEqual({ record: { ...mirrored.record, session_id: viaLog }, journalSeenAt: null, restoreGrade: mirrored.restoreGrade });
+  });
+
+  test('a new turn puts only its messages; a tail read merges into the stored history and tombstones nothing', async () => {
+    const session = await pinned();
+    await captureSessionTranscriptMirror(session, box(() => range(0, 6)).deps);
+    const first = await liveRows(session);
+    expect(first.map((r) => [r.id, r.seq])).toEqual(range(0, 6).map((m, i) => [m.info.id as string, i + 1]));
+
+    await captureSessionTranscriptMirror(session, box(() => range(0, 10)).deps);
+    const second = await liveRows(session);
+    // The first six rows are untouched; the four new ones take the next capture revs.
+    expect(second.slice(0, 6)).toEqual(first);
+    expect(second.slice(6).map((r) => r.rev)).toEqual([7, 8, 9, 10]);
+
+    // A stop's tail: one page, the newest messages only. Older stored messages stay, seqs continue.
+    expect(await captureSessionTranscriptMirror(session, box(() => range(8, 12), [], false).deps, { scope: 'tail' })).not.toBeNull();
+    const third = await logRows(session);
+    expect(third.every((r) => r.deletedAt === null)).toBe(true);
+    expect(third.map((r) => [r.id, r.seq])).toEqual(range(0, 12).map((m, i) => [m.info.id as string, i + 1]));
+    expect(await mirrorCount(session)).toEqual({ mirrors: 0, messages: 0 });
+  });
+
+  test('a journal owns the log: the capture and the wake read nothing from the box and write nothing', async () => {
+    const session = await pinned();
+    const log = fromV1({ session_id: session, root_id: ROOT, rows: range(0, 2).map((m) => ({ runtime_session_id: ROOT, ...m }) as unknown as V1Row) }, { harness: 'opencode' });
+    expect((await ingestSessionLogJournal(scope(session), journalOf(log))).status).toBe(200);
+    const before = await logRows(session);
+    const fake = box(() => range(0, 6));
+    expect(await captureSessionTranscriptMirror(session, fake.deps)).toBeNull();
+    resetTranscriptBackfillMemoForTests();
+    await backfillSessionTranscriptMirrorOnWake(session, fake.deps);
+    await backfillSessionTranscriptMirrorOnWake(session, fake.deps);
+    expect(fake.reads.n).toBe(0);
+    expect(await logRows(session)).toEqual(before);
+  });
+
+  test('the wake of a session without a journal reads the box into the log once', async () => {
+    const session = await pinned();
+    const fake = box(() => range(0, 4));
+    resetTranscriptBackfillMemoForTests();
+    await backfillSessionTranscriptMirrorOnWake(session, fake.deps);
+    await transcriptCapturesSettledForTests(session);
+    await backfillSessionTranscriptMirrorOnWake(session, fake.deps);
+    expect(fake.reads.n).toBe(1);
+    expect((await liveRows(session)).map((r) => r.id)).toEqual(range(0, 4).map((m) => m.info.id as string));
+    expect(await mirrorCount(session)).toEqual({ mirrors: 0, messages: 0 });
+  });
+
+  test('size cap: a session without a log whose read is over the cap gets no log; one that has a log keeps its captures', async () => {
+    const session = await pinned();
+    const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
+    config.SESSION_LOG_RESTORE_MAX_BYTES = 2_000;
+    try {
+      await captureSessionTranscriptMirror(session, box(() => range(0, 12)).deps);
+      expect(await logRow(session)).toBeUndefined();
+      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
+      await captureSessionTranscriptMirror(session, box(() => range(0, 2)).deps);
+      config.SESSION_LOG_RESTORE_MAX_BYTES = 2_000;
+      await captureSessionTranscriptMirror(session, box(() => range(0, 12)).deps);
+      expect((await liveRows(session)).length).toBe(12);
+    } finally {
+      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
+    }
+  });
+
+  test('a mirror from before the flag converts into an empty log only: it never overwrites the log the box wrote', async () => {
+    await setFlag(false);
+    const session = await pinned();
+    await capture(session, range(0, 4));
+    await setFlag(true);
+    await captureSessionTranscriptMirror(session, box(() => range(0, 8)).deps);
+    expect(await writeSessionLogFromMirror(session)).toEqual({ outcome: 'skipped' });
+    const rows = await logRows(session);
+    expect(rows.map((r) => [r.id, r.deletedAt])).toEqual(range(0, 8).map((m) => [m.info.id as string, null]));
+    // The mirror stays as the flag found it.
+    expect(await mirrorCount(session)).toEqual({ mirrors: 1, messages: 4 });
+
+    // A mirror-only session (no log yet) still converts: the backfill, a restore, a lost-session recovery.
+    await setFlag(false);
+    const old = await pinned();
+    await captureSessionTranscriptMirror(old, { readMessages: async () => ({ opencodeSessionId: ROOT, payload: range(0, 2), headComplete: true, complete: true }) });
+    await db.delete(sessionLogMessages).where(eq(sessionLogMessages.sessionId, old));
+    await db.delete(sessionLogThreads).where(eq(sessionLogThreads.sessionId, old));
+    await db.delete(sessionLogs).where(eq(sessionLogs.sessionId, old));
+    await setFlag(true);
+    expect((await writeSessionLogFromMirror(old)).outcome).toBe('written');
+  });
+
+  test('the v1 tables renamed away: turn end, stop, wake, a rewind and the restore conversion of a flag-on session touch neither', async () => {
+    const session = await pinned();
+    const warn = spyOn(logger, 'warn');
+    const consoleWarn = spyOn(console, 'warn');
+    await db.execute(sql`ALTER TABLE kortix.session_transcript_mirrors RENAME TO session_transcript_mirrors_hidden`);
+    await db.execute(sql`ALTER TABLE kortix.session_transcript_messages RENAME TO session_transcript_messages_hidden`);
+    try {
+      expect(await captureSessionTranscriptMirror(session, box(() => range(0, 4)).deps)).not.toBeNull();
+      expect(await captureSessionTranscriptMirror(session, box(() => range(2, 6), [], false).deps, { scope: 'tail' })).not.toBeNull();
+      resetTranscriptBackfillMemoForTests();
+      await backfillSessionTranscriptMirrorOnWake(session, box(() => range(0, 8)).deps);
+      await transcriptCapturesSettledForTests(session);
+      await setTranscriptRewindMarker(session, ROOT, 'msg_000002');
+      expect(await writeSessionLogFromMirror(session)).toEqual({ outcome: 'skipped' });
+      expect((await liveRows(session)).map((r) => r.id)).toEqual(range(0, 8).map((m) => m.info.id as string));
+      const lines = [...warn.mock.calls, ...consoleWarn.mock.calls].map((c) => JSON.stringify(c));
+      expect(lines.filter((l) => /42P01|does not exist|session_transcript/.test(l))).toEqual([]);
+    } finally {
+      await db.execute(sql`ALTER TABLE kortix.session_transcript_mirrors_hidden RENAME TO session_transcript_mirrors`);
+      await db.execute(sql`ALTER TABLE kortix.session_transcript_messages_hidden RENAME TO session_transcript_messages`);
+      warn.mockRestore();
+      consoleWarn.mockRestore();
+    }
+  });
+
+  test('a log write that stores nothing (too large) is a failed capture: null, so a wake retries it', async () => {
+    const session = await pinned();
+    const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
+    config.SESSION_LOG_RESTORE_MAX_BYTES = 200;
+    try {
+      expect(await captureSessionTranscriptMirror(session, box(() => range(0, 6)).deps, { scope: 'tail' })).toBeNull();
+    } finally {
+      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
+    }
+    expect(await liveRows(session)).toEqual([]);
+    expect(await mirrorCount(session)).toEqual({ mirrors: 0, messages: 0 });
+  });
+
+  test('with session-log ingest off, the flag-on capture keeps the history in the mirror as before', async () => {
+    const session = await pinned();
+    config.SESSION_LOG_INGEST_ENABLED = false;
+    try {
+      expect(await captureSessionTranscriptMirror(session, box(() => range(0, 6)).deps)).not.toBeNull();
+    } finally {
+      config.SESSION_LOG_INGEST_ENABLED = true;
+    }
+    expect(await mirrorCount(session)).toEqual({ mirrors: 1, messages: 6 });
   });
 });

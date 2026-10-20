@@ -50,6 +50,14 @@ export const TEAMS_START_ERROR_COMMANDS: StartErrorCommands = {
   login: '`/login`',
 };
 
+/** Telegram has no Kortix commands: every fix is in the project's channel settings. */
+export const TELEGRAM_START_ERROR_COMMANDS: StartErrorCommands = {
+  surface: 'chat',
+  settings: 'Channels → Telegram in the Kortix project',
+  switchProject: 'Channels → Telegram in the Kortix project',
+  login: 'Channels → Telegram in the Kortix project',
+};
+
 export function startErrorMessage(
   status: number | undefined,
   body: unknown,

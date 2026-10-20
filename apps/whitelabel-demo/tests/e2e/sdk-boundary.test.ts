@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
+  isLocalUiFile,
   listWhiteLabelTestFiles,
   scanSource,
   scanTestSource,
@@ -20,6 +21,11 @@ describe('white-label SDK boundary', () => {
       session.previewUrl(3000);
       fetch('/api/kortix/projects');
       export const View = () => <button><Loader2 className="animate-spin" /></button>;
+      import { Button } from '@/components/ui/button';
+      import { Card } from './ui/card';
+      import { X } from 'lucide-react';
+      import { Slot } from 'radix-ui';
+      import { toast } from 'sonner';
     `;
 
     expect(
@@ -36,8 +42,42 @@ describe('white-label SDK boundary', () => {
         'raw-kortix-fetch',
         'native-control',
         'spinner-icon',
+        'local-ui-import',
+        'foreign-ui-kit',
+        'direct-toast',
       ]),
     );
+  });
+
+  test('permits @kortix/ui imports and the sonner toast host', () => {
+    const fixture = `
+      import { Button } from '@kortix/ui/button';
+      import { SessionThread } from '@kortix/ui/session';
+      import { errorToast } from '@kortix/ui/toast';
+      import { Toaster } from 'sonner';
+      import { XIcon } from '@phosphor-icons/react';
+    `;
+
+    expect(scanSource(fixture)).toEqual([]);
+  });
+
+  test('rejects the Dialog primitive and permits Modal and ConfirmDialog', () => {
+    const fixture = `
+      import { Dialog, DialogContent } from '@kortix/ui/dialog';
+      import { Modal, ModalContent } from '@kortix/ui/modal';
+      import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+    `;
+
+    expect(scanSource(fixture).map((violation) => [violation.rule, violation.match])).toEqual([
+      ['dialog-primitive', "'@kortix/ui/dialog'"],
+    ]);
+  });
+
+  test('rejects any file under src/components/ui', () => {
+    const root = resolve(import.meta.dir, '../../src/components/ui');
+
+    expect(isLocalUiFile(resolve(root, 'button.tsx'))).toBe(true);
+    expect(isLocalUiFile(resolve(root, '../chat/scope-bar.tsx'))).toBe(false);
   });
 
   test('permits the documented same-origin BFF routes', () => {
@@ -94,7 +134,7 @@ describe('white-label SDK boundary', () => {
     ]);
   });
 
-  test('the complete client stays inside the SDK and shadcn boundaries', () => {
+  test('the complete client stays inside the SDK and @kortix/ui boundaries', () => {
     expect(scanWhiteLabelBoundary()).toEqual([]);
   });
 

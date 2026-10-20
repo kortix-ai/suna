@@ -19,7 +19,7 @@ import {
   authRateLimitCopy,
   resolveEmailFlowMode,
 } from '@/lib/auth/unified-auth-flow';
-import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@/lib/onboarding/landing-destination';
+import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import { checkAccessEmail, submitAccessRequest } from '@kortix/sdk';
@@ -325,7 +325,13 @@ export async function forgotPassword(_prevState: unknown, formData: FormData) {
   );
 
   if (error) {
-    return authFailure(error, 'Could not send password reset email', tI18nComplete);
+    // Same contract as sendEmailCode: the route turns a rate-limited refusal
+    // into a 429 (with Retry-After) the browser can tell apart from success —
+    // a 200 body the page cannot distinguish is how KRTX-2049 went unnoticed.
+    return {
+      ...authFailure(error, 'Could not send password reset email', tI18nComplete),
+      status: authRateLimitCopy(error, tI18nComplete) ? 429 : error.status === 503 ? 503 : 400,
+    };
   }
 
   return {

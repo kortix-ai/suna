@@ -85,7 +85,7 @@ function parseFlags(argv: string[]): MarketplaceFlags {
 }
 
 async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Promise<number> {
-  const itemId = argv[0];
+  let itemId = argv[0];
   if (!itemId || itemId.startsWith('-')) {
     process.stderr.write(
       `${status.err('pass an item id or name: kortix marketplace install kortix-starter:pdf')}\n`,
@@ -128,6 +128,16 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
     signal: controller.signal,
   });
   try {
+    if (!itemId.includes(':')) {
+      const item = await resolveMarketplaceItem(client, flags, itemId);
+      if (!item)
+        return finish(
+          1,
+          'not_found',
+          `No marketplace item matches "${itemId}". \`kortix marketplace search ${itemId}\` lists the close ones.`,
+        );
+      itemId = item.id;
+    }
     const result = await client.post<{ session_id: string }>(
       `/projects/${ctx.projectId}/marketplace/install-session`,
       { id: itemId },
@@ -235,10 +245,16 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
         'timeout',
         `Install timed out after ${timeout}s. Inspect session ${sessionId ?? '(not yet created)'}; the agent may still be running.`,
       );
+    if (error instanceof AmbiguousMarketplaceItem) return finish(2, 'ambiguous', error.message);
+    // The session hint only helps when a session exists to inspect
+    // (KRTX-2075): a 400 unknown-item or a 402 plan gate never created one,
+    // so the message names the cause alone.
     return finish(
       1,
       'failed',
-      `Install failed${sessionId ? ` in session ${sessionId}` : ''}: ${error instanceof Error ? error.message : String(error)}. Inspect the session before retrying.`,
+      `Install failed${sessionId ? ` in session ${sessionId}` : ''}: ${error instanceof Error ? error.message : String(error)}.${
+        sessionId ? ' Inspect the session before retrying.' : ''
+      }`,
     );
   } finally {
     clearTimeout(timer);
@@ -327,6 +343,41 @@ async function marketplaceSearch(argv: string[], flags: MarketplaceFlags): Promi
   return 0;
 }
 
+class AmbiguousMarketplaceItem extends Error {}
+
+async function resolveMarketplaceItem(
+  client: ApiClient,
+  flags: MarketplaceFlags,
+  raw: string,
+): Promise<CatalogItem | null> {
+  let item: CatalogItem | null = null;
+  try {
+    item = await client.get<CatalogItem>(`/marketplace/items/${encodeURIComponent(raw)}`);
+  } catch {
+    const searched = await client
+      .get<CatalogResponse>(`/marketplace/items${queryString(flags, raw)}`)
+      .catch((error: unknown) => {
+        surfaceApiError(error);
+        return null;
+      });
+    const exact = searched?.items.filter((i) => i.id === raw || i.name === raw || i.id.endsWith(`:${raw}`)) ?? [];
+    if (exact.length > 1)
+      throw new AmbiguousMarketplaceItem(`"${raw}" names ${exact.length} items: ${exact.map((i) => i.id).join(', ')}. Pass the full id.`);
+    item = exact[0] ?? (searched?.items.length === 1 ? searched.items[0] : null);
+    if (item) {
+      try {
+        item = await client.get<CatalogItem>(
+          `/marketplace/items/${encodeURIComponent(item.id)}`,
+        );
+      } catch {
+        // The search result is still useful enough to show.
+      }
+    }
+  }
+
+  return item;
+}
+
 async function marketplaceShow(argv: string[], flags: MarketplaceFlags): Promise<number> {
   const raw = argv.find((a) => !a.startsWith('-'));
   if (!raw) {
@@ -336,25 +387,12 @@ async function marketplaceShow(argv: string[], flags: MarketplaceFlags): Promise
   const ctx = resolveMarketplaceClient(flags.host);
   if (!ctx) return 1;
 
-  let item: CatalogItem | null = null;
+  let item: CatalogItem | null;
   try {
-    item = await ctx.client.get<CatalogItem>(`/marketplace/items/${encodeURIComponent(raw)}`);
-  } catch {
-    const searched = await fetchItems(flags, raw);
-    item =
-      searched?.items.find((i) => i.id === raw) ??
-      searched?.items.find((i) => i.name === raw) ??
-      searched?.items.find((i) => i.id.endsWith(`:${raw}`)) ??
-      (searched?.items.length === 1 ? searched.items[0] : null);
-    if (item) {
-      try {
-        item = await ctx.client.get<CatalogItem>(
-          `/marketplace/items/${encodeURIComponent(item.id)}`,
-        );
-      } catch {
-        // The search result is still useful enough to show.
-      }
-    }
+    item = await resolveMarketplaceItem(ctx.client, flags, raw);
+  } catch (error) {
+    surfaceApiError(error);
+    return error instanceof AmbiguousMarketplaceItem ? 2 : 1;
   }
 
   if (!item) {

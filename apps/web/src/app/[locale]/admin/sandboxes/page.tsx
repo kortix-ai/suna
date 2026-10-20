@@ -1,13 +1,13 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { ArrowsLeftRightIcon, DotsThreeIcon } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   ChartContainer,
   ChartLegend,
@@ -15,18 +15,18 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from '@/components/ui/chart';
+} from '@kortix/ui/chart';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Field, FieldLabel } from '@/components/ui/field';
-import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
-import { IconInbox } from '@/components/ui/kortix-icons';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/dropdown-menu';
+import { Field, FieldLabel } from '@kortix/ui/field';
+import Hint from '@kortix/ui/hint';
+import { Input } from '@kortix/ui/input';
+import { IconInbox } from '@kortix/ui/kortix-icons';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalContent,
@@ -34,16 +34,16 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
+} from '@kortix/ui/modal';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
 import {
   Table,
   TableBody,
@@ -51,11 +51,17 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { SandboxProviderLabel } from '@kortix/ui/customize/sections/view/sandbox-provider-coverage';
+import {
+  formatSandboxProvider,
+  isLegacySandboxProvider,
+  sortSandboxProviders,
+} from '@kortix/ui/internal/lib/sandbox-providers';
+import { cn } from '@kortix/ui';
 import type { AdminProviderSandbox } from '@kortix/sdk';
 import { useAdminProviderDistribution, useAdminProviderSandboxes, useAdminProviderAnalytics, useAdminProviderFallback, useSetAdminProviderDistribution, useMigrateAdminSandboxProvider, useSetAdminProviderFallback } from '@kortix/sdk/react';
 
@@ -143,6 +149,7 @@ const RANGES = [
 
 export default function AdminSandboxesPage() {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tSandbox = useI18nTranslations('settings.sandbox');
   const ranges = useLocalizedUiCatalog(RANGES);
   const [tab, setTab] = useState('overview');
   const [days, setDays] = useState(7);
@@ -190,7 +197,7 @@ export default function AdminSandboxesPage() {
   });
 
   const dist = distQ.data;
-  const allowed = useMemo(() => dist?.allowed ?? [], [dist]);
+  const allowed = useMemo(() => sortSandboxProviders(dist?.allowed ?? []), [dist]);
   const totalW = allowed.reduce((s, p) => s + (Number(weights[p]) || 0), 0);
   const list = listQ.data;
   const targets = migrating ? allowed.filter((p) => p !== migrating.provider) : [];
@@ -285,7 +292,11 @@ export default function AdminSandboxesPage() {
                 return (
                   <StatTile
                     key={p}
-                    label={p[0].toUpperCase() + p.slice(1)}
+                    label={
+                      isLegacySandboxProvider(p)
+                        ? `${formatSandboxProvider(p)} · ${tSandbox('provider.legacy')}`
+                        : formatSandboxProvider(p)
+                    }
                     value={(countByProvider[p] ?? 0).toLocaleString()}
                     hint={tI18nComplete('text347cf684f3e7', { value0: pct })}
                   />
@@ -296,9 +307,9 @@ export default function AdminSandboxesPage() {
 
           <AdminSection
             title={tI18nComplete.raw('text43a857886565')}
-            description={tI18nComplete('textf6668c33ea1a', {
-              value0: dist ? ` (${dist.default})` : '',
-            })}
+            description={`${tI18nComplete('textf6668c33ea1a', {
+              value0: dist ? ` (${formatSandboxProvider(dist.default)})` : '',
+            })}${allowed.some(isLegacySandboxProvider) ? ` ${tSandbox('provider.legacyNote')}` : ''}`}
           >
             <AdminPanel className="space-y-5">
               {distQ.isLoading ? (
@@ -313,9 +324,9 @@ export default function AdminSandboxesPage() {
                         <Field key={p} className="w-40">
                           <FieldLabel
                             htmlFor={`weight-${p}`}
-                            className="flex items-center gap-1.5 capitalize"
+                            className="flex items-center gap-1.5"
                           >
-                            {p}
+                            <SandboxProviderLabel provider={p} />
                             {p === dist?.default && (
                               <Badge variant="outline" size="sm">
                                 {tI18nComplete.raw('text37a8eec1ce19')}
@@ -874,8 +885,8 @@ export default function AdminSandboxesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {targets.map((p) => (
-                    <SelectItem key={p} value={p} className="capitalize">
-                      {p}
+                    <SelectItem key={p} value={p}>
+                      <SandboxProviderLabel provider={p} />
                     </SelectItem>
                   ))}
                 </SelectContent>

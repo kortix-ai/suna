@@ -57,9 +57,10 @@ mock.module('@/lib/supabase/client', () => ({
 mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'password', AUTH_PROVIDERS: '' }),
 }));
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   errorToast: (message: string) => toasts.push(message),
-}));
+});
+mock.module('@kortix/ui/toast', uiToastMock);
 
 /** The exact client-visible shape of Next 16's missing-server-action failure. */
 const staleBundleError = () =>

@@ -36,15 +36,43 @@ export async function claimDueLifecycleCommands(input: {
   availableBefore?: Date;
 }): Promise<SessionLifecycleCommandRow[]> {
   const now = input.now ?? new Date();
-  const staleRunningBefore = new Date(now.getTime() - LIFECYCLE_RUNNING_RECLAIM_GRACE_MS);
-  const instanceId = currentInstanceId();
   // ONE statement. The inner SELECT takes the row locks and skips rows another
   // claim holds; a row whose status another claim changed meanwhile is
   // rechecked against this predicate and drops out. It ran as a SELECT plus
   // one compare-and-set UPDATE per row: 1 + n round trips per drain, on the
   // path of every prompt. `ARRAY(...)` makes the subquery run exactly once, so
   // `LIMIT` holds.
-  const due = db
+  const due = dueLifecycleCommandIds({ ...input, now });
+  const claimed = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'running',
+      attempts: sql`${sessionLifecycleCommands.attempts} + 1`,
+      result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'delivery_started_at'`,
+      lockedBy: input.workerId,
+      lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
+      updatedAt: now,
+    })
+    .where(sql`${sessionLifecycleCommands.commandId} = ANY(ARRAY(${due}))`)
+    .returning();
+  // RETURNING has no order. Restore the queue's.
+  return claimed.sort(
+    (left, right) =>
+      left.availableAt.getTime() - right.availableAt.getTime() || compareInboxSendOrder(left, right),
+  );
+}
+
+/** The claim's row-locking SELECT. Exported for the DB suite's plan check. */
+export function dueLifecycleCommandIds(input: {
+  limit: number;
+  now: Date;
+  idempotencyKey?: string;
+  availableBefore?: Date;
+}) {
+  const now = input.now;
+  const staleRunningBefore = new Date(now.getTime() - LIFECYCLE_RUNNING_RECLAIM_GRACE_MS);
+  const instanceId = currentInstanceId();
+  return db
     .select({ commandId: sessionLifecycleCommands.commandId })
     .from(sessionLifecycleCommands)
     .where(
@@ -58,7 +86,11 @@ export async function claimDueLifecycleCommands(input: {
         )` : undefined,
         or(
           and(
-            eq(sessionLifecycleCommands.status, 'queued'),
+            // A literal, not a bound parameter: under a generic prepared plan
+            // `status = $n` cannot prove the predicate of the partial index
+            // `idx_session_lifecycle_commands_claimable`, and the claim then
+            // detoasts the payload of every held prompt on each tick.
+            sql`${sessionLifecycleCommands.status} = 'queued'`,
             or(
               isNull(sessionLifecycleCommands.lockedUntil),
               lte(sessionLifecycleCommands.lockedUntil, now),
@@ -70,6 +102,10 @@ export async function claimDueLifecycleCommands(input: {
             // admission requeue — and each claim of it looped once per drain
             // tick. An automation row has no such check; its hold still ends
             // at `available_at`.
+            // Held rows stay out of `idx_..._claimable`. One can still reach
+            // this recheck through the `running` arm's `locked_until` index if
+            // it is held with a stale `locked_until`; prod had 0 such rows of
+            // 19 held on 2026-10-20.
             sql`(${notHeldSql}
               OR ${sessionLifecycleCommands.payload}->>'clientMessageId' IS NULL)`,
           ),
@@ -90,21 +126,4 @@ export async function claimDueLifecycleCommands(input: {
     .orderBy(asc(sessionLifecycleCommands.availableAt), ...inboxOrderBy())
     .limit(input.limit)
     .for('update', { skipLocked: true });
-  const claimed = await db
-    .update(sessionLifecycleCommands)
-    .set({
-      status: 'running',
-      attempts: sql`${sessionLifecycleCommands.attempts} + 1`,
-      result: sql`COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'delivery_started_at'`,
-      lockedBy: input.workerId,
-      lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
-      updatedAt: now,
-    })
-    .where(sql`${sessionLifecycleCommands.commandId} = ANY(ARRAY(${due}))`)
-    .returning();
-  // RETURNING has no order. Restore the queue's.
-  return claimed.sort(
-    (left, right) =>
-      left.availableAt.getTime() - right.availableAt.getTime() || compareInboxSendOrder(left, right),
-  );
 }

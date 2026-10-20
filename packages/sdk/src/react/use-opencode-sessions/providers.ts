@@ -10,7 +10,7 @@ import { runtimeKeys, useRuntimeReady } from './keys';
 import type { ProviderListResponse } from './keys';
 import { unwrap } from './shared';
 import {
-  getProjectDetail,
+  getProject,
   getProjectLlmCatalogProviders,
   getProjectModelPicker,
   listProjectSecrets,
@@ -47,20 +47,18 @@ export function useRuntimeProviders() {
   const queryClient = useQueryClient();
   const runtimeReady = useRuntimeReady();
   const projectId = useKortixRouteProjectId();
-  const projectDetailQuery = useQuery({
-    // Same fetcher and same response shape every other `getProjectDetail`
-    // reader caches under `qk.project.detail(id)` — sharing the key (instead
-    // of the old standalone flat `project-detail` array literal) is what stops
-    // this hook from firing a second `GET /projects/:id/detail` on every
-    // session page purely to duplicate data the project shell already has.
-    queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId!),
+  // The bare project row (`GET /projects/:id`, ~10 ms on the server) carries
+  // the gateway flag. `GET /projects/:id/detail` reads git (~0.8 s of a
+  // 0.5–2.6 s answer on prod) and the model picker spun behind it.
+  const projectRowQuery = useQuery({
+    queryKey: qk.project.summary(projectId ?? ''),
+    queryFn: () => getProject(projectId!),
     enabled: !!projectId,
     ...contract('config'),
   });
   const projectGatewayEnabled =
-    projectId ? projectDetailQuery.data?.project.experimental?.llm_gateway === true : false;
-  const projectModeKnown = !projectId || projectDetailQuery.isSuccess;
+    projectId ? projectRowQuery.data?.experimental?.llm_gateway === true : false;
+  const projectModeKnown = !projectId || projectRowQuery.isSuccess;
   const gatewayProvidersQuery = useQuery<ProviderListResponse>({
     queryKey: ['project-providers', projectId, 'gateway'],
     queryFn: async () => {

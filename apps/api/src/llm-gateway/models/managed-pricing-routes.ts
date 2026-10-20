@@ -1,4 +1,5 @@
 import { MANAGED_MODELS } from '@kortix/llm-catalog';
+import { clearedOpenRouterEndpoints } from '../resolution/descriptors';
 
 export interface ManagedPriceRoute {
   route: string;
@@ -33,7 +34,7 @@ export function managedPricingRoutes(
       });
     }
     const allowed = openrouterAvailable
-      ? (model.openrouterProvider as { only?: string[] } | undefined)?.only ?? []
+      ? clearedOpenRouterEndpoints(model.openrouterProvider?.only)
       : [];
     for (const tag of allowed) {
       const price = model.openrouterEndpointPricing?.[tag];
@@ -77,7 +78,7 @@ export async function refreshManagedPricingRoutes(
   if (!options.apiKey) return quoted;
   const fetchImpl = options.fetchImpl ?? fetch;
   await Promise.all(MANAGED_MODELS.map(async (model) => {
-    const allowed = new Set((model.openrouterProvider as { only?: string[] } | undefined)?.only ?? []);
+    const allowed = new Set(clearedOpenRouterEndpoints(model.openrouterProvider?.only));
     if (!allowed.size) return;
     try {
       const response = await fetchImpl(
@@ -128,4 +129,23 @@ export function cachedManagedPricingRoutes(
   const value = refreshManagedPricingRoutes(morphModelIds, markup, morphAvailable, options);
   cachedQuote = { key, expiresAt: now + 300_000, value };
   return value;
+}
+
+/** Project the web's route-price estimates onto the model costs exposed to CLI clients. */
+export function withManagedPricing<T extends { cost?: { input?: number; output?: number } }>(
+  models: Record<string, T>,
+  quotes: Record<string, ManagedPriceRoute[]>,
+): Record<string, T> {
+  return Object.fromEntries(Object.entries(models).map(([id, model]) => {
+    const routes = quotes[id];
+    if (!routes?.length) return [id, model];
+    return [id, {
+      ...model,
+      cost: {
+        input: Math.min(...routes.map((route) => route.input)),
+        output: Math.min(...routes.map((route) => route.output)),
+        cache_read: Math.min(...routes.map((route) => route.cacheRead)),
+      },
+    }];
+  }));
 }

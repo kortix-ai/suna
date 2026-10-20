@@ -92,8 +92,6 @@ export interface RunResult {
   excludedFlows?: Array<{ id: string; reason: string }>;
   /** Run-scoped project fixtures created before teardown starts. */
   fixtureStats: FixtureStats;
-  /** Every route template touched across the run (for coverage). */
-  routesHit: string[];
   flows: FlowResult[];
   summary: RunSummary;
 }

@@ -1,12 +1,15 @@
 # AGENTS.md — Lumen white-label reference
 
-Lumen is the reference implementation for `@kortix/sdk`.
+Lumen is the reference implementation for `@kortix/sdk` and `@kortix/ui`.
+Every white-label host copies this shape: the SDK is the data layer, `@kortix/ui`
+is the UI, and the brand is a set of CSS variable overrides.
 
 ## Required architecture
 
 1. `src/lib/kortix.ts` owns the only browser SDK client.
 2. `useSession(projectId, sessionId)` owns the complete workbench session.
-3. Client code imports only `@kortix/sdk` and `@kortix/sdk/react`.
+3. Client code imports Kortix only through `@kortix/sdk`, `@kortix/sdk/react`
+   and `@kortix/ui`.
 4. Client code does not implement runtime transport logic.
 5. Server Kortix calls use `@kortix/sdk/server`.
 6. The `/api/kortix` route delegates upstream forwarding to `forwardKortixRequest()`.
@@ -59,27 +62,55 @@ The `/api/kortix` route calls `forwardKortixRequest()` from
 `@kortix/sdk/server`. The SDK owns upstream authentication, request buffering,
 streaming, and response-header sanitization.
 
-## UI boundary
+## UI boundary: compose @kortix/ui, theme through tokens
 
-Feature code composes primitives from `src/components/ui`.
+The app has no UI kit of its own. `src/components/ui/` does not exist and must
+not come back.
 
-- Use `Button`, `Input`, `Textarea`, `Select`, and `Switch`.
-- Use `Loading` for pending actions.
-- Use `Skeleton` for page-level loading.
-- Use semantic theme tokens.
-- Use `lucide-react` icons.
-- Add accessible names to icon-only controls.
-- Preserve keyboard actions.
+- Import every primitive from `@kortix/ui/<name>` (`button`, `input`,
+  `textarea`, `select`, `switch`, `dialog`, `card`, `badge`, `tabs`, …).
+- The session chat is `<SessionThread>` from `@kortix/ui/session`, the same
+  thread apps/web renders. Lumen adds only its scope bar under it. The
+  new-session form reuses `ModelPicker` and `AgentPicker` from
+  `@kortix/ui/session`; never re-implement the transcript, composer or prompts.
+- Toasts: `successToast` / `errorToast` / `infoToast` / `warningToast` from
+  `@kortix/ui/toast`. `providers.tsx` mounts its `<Toaster />` once.
+- `cn` comes from `@kortix/ui`.
+- Icons: `@phosphor-icons/react` (`<Name>Icon`), the set @kortix/ui renders.
+- Use `Loading` (`@kortix/ui/loading`) for pending actions and `Skeleton` for
+  page-level loading.
+- Add accessible names to icon-only controls. Preserve keyboard actions.
+- `providers.tsx` mounts `<UiProvider link={NextLink}>` once. Do not mount
+  another.
 
-Do not add native feature controls or feature-level spinner implementations.
-The SDK boundary scanner rejects both.
+Theming happens only in `src/app/globals.css`: it imports `tailwindcss` and
+`@kortix/ui/tailwind.css` (tokens, component layer, `tw-animate-css` and the
+scrollbar plugins), then overrides token variables in `:root` (light) and
+`.dark` (dark). Lumen's brand is `--brand`; `--kortix-blue` (the accent of
+switches, checkboxes, radios, the brand Button and Badge variants and info
+alerts), `--action` (the default Button fill), `--ring`, `--sidebar-primary`,
+`--sidebar-ring` and `--selection` point at it. Never fork
+or wrap a component to change a color, radius or font. Never import
+`@kortix/ui/fonts.css`: white-label surfaces use the system font stack.
+
+A missing primitive or chat slot is added to `packages/ui`, not to this app.
+
+`scripts/sdk-boundary.mjs` rejects: any file under `src/components/ui`,
+imports of a local UI primitive, `lucide-react`, `radix-ui`, `@radix-ui/*`,
+`class-variance-authority`, `next-themes` or `react-markdown`, a direct sonner
+`toast` import, native feature controls (`<button>`, `<input>`, …) and
+feature-level spinners.
 
 ## Structure
 
 - `src/lib/kortix.ts`: One browser SDK client.
-- `src/components/ui/`: Shared UI primitives.
-- `src/components/chat/`: Transcript and composer.
-- `src/components/workbench/`: Session workbench.
+- `src/app/globals.css`: `@kortix/ui` tokens + theme, and the white-label overrides.
+- `src/components/project-shell.tsx` + `project-sidebar.tsx`: Kortix's layout
+  (`@kortix/ui/sidebar`, `ProjectSessionList`) with Lumen's header, nav and footer.
+- `src/app/projects/[id]/sessions/[sessionId]/page.tsx`: `SessionWorkspace`
+  (thread + side panel) from one `useSession` result.
+- `src/components/workbench/`: What Lumen adds around the session (approval
+  gates, runtime reconnect, the boot error).
 - `src/app/**`: Route components.
 - `src/app/api/**`: Same-origin server endpoints.
 - `src/server/**`: Wrapper authentication, authorization, policy, and limits.
@@ -105,7 +136,8 @@ root `AGENTS.md` → "NEVER write customer data or PII".
 
 ## Design references
 
-This app's UI is its own `src/components/ui/` primitives and semantic tokens,
-not the Kortix product design system. For Kortix product UI on web or desktop,
-read the canonical design references in the root `AGENTS.md` →
-"Frontend design standard".
+This app's UI is the Kortix design system (`@kortix/ui`, source in
+`packages/ui`) re-themed by token overrides. Component rules are in
+`.agents/skills/kortix-design-system/SKILL.md`; token values in
+`.agents/skills/kortix-brand/SKILL.md`. Brand voice and the Roobert font do
+not apply: this is a white-label surface.

@@ -74,3 +74,9 @@ describe('promptModelOverride', () => {
     });
   });
 });
+
+test('a browser turn carrying the project default overrides an older platform creation pin', () => {
+  expect(promptModelOverride({ providerID: 'kortix', modelID: 'glm-5.3-flash' }, {
+    opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'platform',
+  })).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
+});

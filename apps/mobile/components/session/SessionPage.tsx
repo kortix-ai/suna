@@ -76,7 +76,8 @@ import { ReviewDetailSheet } from '@/components/review/ReviewDetailSheet';
 import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
-import { ComposerBottomFade } from '@/components/session/composer-bottom-fade';
+import { ComposerBottomFade, composerSafeAreaPadding } from '@/components/session/composer-bottom-fade';
+import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
 
 import {
   addOptimisticMessage,
@@ -107,6 +108,8 @@ import {
   useRuntimeConfig,
   useRuntimeSession,
   useRuntimeSessions,
+  useFeatureFlag,
+  useSessionLogOlder,
   useSessionLogThread,
   useSessionMessages,
   useSessionSync,
@@ -250,7 +253,6 @@ interface SessionPageProps {
   /** The project session row. Its model pin is the model the composer opens on. */
   projectSession?: { metadata?: Record<string, unknown> | null } | null;
   /** True when the right drawer is currently open — swaps the grid icon for an X */
-  isRightDrawerOpen?: boolean;
 }
 
 // Module-level empty values: a `?? []` default creates a new array on every
@@ -304,9 +306,20 @@ const KEYBOARD_MOTION_MAX_MS = 1000;
 /** How long a pull-to-refresh shows its spinner: the re-read is one bounded tail page. */
 const PULL_REFRESH_SPINNER_MS = 800;
 
-/** Keeps the first visible turn in place while older turns prepend (COR-144). */
+/**
+ * Keeps the first visible turn in place while older turns prepend (COR-144).
+ * Never always on: iOS anchors the first cell whose top is on screen, so a
+ * fold opened in a taller turn above it ("Worked for", a burst) moved the
+ * whole thread on every tap (2026-10-20).
+ */
 const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 } as const;
+/**
+ * Clear space between the last line of the thread and the composer's top edge.
+ * The composer is translucent (Liquid Glass on iOS): without it the last line
+ * rests flush on the card and reads as text under the input.
+ */
+const LIST_END_GAP = 12;
 /**
  * iOS: the list draws past its bottom edge. The keyboard is Liquid Glass and
  * shows what lies under it; the list ends at the keyboard, so without this
@@ -321,7 +334,7 @@ function readSavedScrollOffset(sessionId: string): number {
   return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
 }
 
-function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, projectSession, isRightDrawerOpen }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, projectSession }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -332,11 +345,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // the status bar and that button — inset it below them
   // (FLOATING_MENU_CLEARANCE, where the top fade ends).
   const listTopInset = insets.top + FLOATING_MENU_CLEARANCE;
-  // The bottom area rests above the home indicator (`insets.bottom`). While
-  // the keyboard is up the indicator is covered, so the inset collapses with
-  // the keyboard's progress: the composer then sits its own 12pt (`pb-3`) above
-  // the keyboard, the same gap as the project home composer (design.md §5).
-  const bottomInset = insets.bottom;
+  // The composer card rests on the safe-area line: the bottom area pads the
+  // inset minus the composer's own 12pt (`pb-3`), so the gap is
+  // `max(insets.bottom, 12)`, not `insets.bottom + 12` (KRTX-2930). While the
+  // keyboard is up the indicator is covered, so this padding collapses with the
+  // keyboard's progress: the composer then sits its own 12pt above the
+  // keyboard, the same gap as the project home composer (design.md §5).
+  const bottomInset = composerSafeAreaPadding(insets.bottom);
   const { progress: keyboardProgress, height: providerKeyboardHeight } = useReanimatedKeyboardAnimation();
   const bottomAreaStyle = useAnimatedStyle(() => ({
     paddingBottom: bottomInset * (1 - keyboardProgress.value),
@@ -396,11 +411,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const bottomInsetRef = useRef(bottomInset);
   bottomInsetRef.current = bottomInset;
   const endPaddingStyle = useAnimatedStyle(() => ({
-    height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value),
+    height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value) + LIST_END_GAP,
   }));
   /** The end padding as the room reads it (the UI thread's last value). */
   const endPaddingNow = useCallback(
-    () => composerAreaHeightRef.current + bottomInsetRef.current * (1 - keyboardProgress.value),
+    () => composerAreaHeightRef.current + bottomInsetRef.current * (1 - keyboardProgress.value) + LIST_END_GAP,
     [keyboardProgress],
   );
   const { sandboxUrl } = useSandboxContext();
@@ -448,18 +463,31 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // (`readSavedSessionCopy`) it answers from the copy that view read, and the
   // snapshot `useSession` starts asks for no window: one download per open.
   // A sub-agent reads its own window.
+  // With the project flag `session_log` on (and while it is unknown) no v1 copy
+  // is read: the session log is the saved copy (`useSession` reads its page, a
+  // sub-agent's thread loads by `useSessionLogThread`), and older pages are its
+  // (`GET …/log?before_seq=`).
   const kortixSessionScope = projectId && projectSessionId ? `${projectId}/${projectSessionId}` : undefined;
+  const sessionLogFlag = useFeatureFlag(projectId ?? null, 'session_log');
   // The session stream (R5.3): while it is up, the SDK's tail and ask polls
   // stand down — the box's ring replays what a reconnect missed.
   const streamConnected = useSessionStreamConnected(projectId ?? '', projectSessionId ?? '');
-  const { hasOlder, isLoadingOlder, loadOlder, retryTranscript } = useSessionSync(sessionId, {
+  const sync = useSessionSync(sessionId, {
     kortixSessionScope,
     streamConnected,
     networkEnabled: runtimeReady,
     savedChild: isSubThread,
+    sessionLog: sessionLogFlag.enabled || sessionLogFlag.isLoading,
     // The rows are read below, paced: a streamed delta does not re-render this hook.
     subscribeMessages: false,
   });
+  const logOlder = useSessionLogOlder(
+    { projectId: projectId ?? '', sessionId: projectSessionId ?? '' },
+    isSubThread ? sessionId : undefined,
+    { enabled: sessionLogFlag.enabled },
+  );
+  const { hasOlder, isLoadingOlder, loadOlder } = sessionLogFlag.enabled ? logOlder : sync;
+  const { retryTranscript } = sync;
   const loadOlderRef = useRef(loadOlder);
   loadOlderRef.current = loadOlder;
 
@@ -2447,9 +2475,12 @@ const SCROLL_BUTTON_EASING = ReanimatedEasing.bezier(0.23, 1, 0.32, 1);
  * of content away from the end. Opacity + scale 0.97 → 1, `duration-normal`
  * in, `duration-fast` out. Tapping glides to the end and follows from there.
  *
- * The `secondary` round button with a 1pt `border-border` ring on every
- * platform (Jay, 2026-09-22), so it separates from the prose scrolling under
- * it. No native Liquid Glass: SwiftUI glass cannot carry the border.
+ * iOS 26+: a glass circle (`LiquidGlassCapsule`, 40pt) behind the ghost
+ * button and caret, the same recipe as every hamburger (`MenuButton`) and the
+ * composer card it sits above (Jay, 2026-10-20). Android, older iOS and a
+ * binary without `ExpoUI` keep the `secondary` round button with a 1pt
+ * `border-border` ring (Jay, 2026-09-22), so it separates from the prose
+ * scrolling under it.
  */
 function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress: () => void }) {
   const progress = useSharedValue(visible ? 1 : 0);
@@ -2477,13 +2508,14 @@ function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress:
       style={[{ position: 'absolute', right: 16, bottom: 10, zIndex: 20 }, style]}
     >
       <Button
-        variant="secondary"
+        variant={LIQUID_GLASS_AVAILABLE ? 'ghost' : 'secondary'}
         size="icon"
-        className="rounded-full border border-border"
+        className={LIQUID_GLASS_AVAILABLE ? 'rounded-full' : 'rounded-full border border-border'}
         accessibilityLabel="Scroll to bottom"
         onPress={onPress}
       >
-        <Icon as={CaretDownIcon} size={20} />
+        {LIQUID_GLASS_AVAILABLE ? <LiquidGlassCapsule /> : null}
+        <Icon as={CaretDownIcon} size={20} className="text-foreground" />
       </Button>
     </Reanimated.View>
   );

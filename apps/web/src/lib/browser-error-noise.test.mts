@@ -64,7 +64,7 @@ import {
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
   shouldIgnoreSentryNoiseEvent,
-} from './browser-error-noise.ts';
+} from '@kortix/ui/internal/lib/browser-error-noise';
 
 test('matches the Safari runtime.sendMessage tab-not-found noise', () => {
   assert.equal(
@@ -1377,7 +1377,7 @@ test('does NOT suppress a storage SecurityError when only ONE of several frames 
         "SecurityError: Failed to read the 'localStorage' property from 'window': Access is denied for this document.",
       frames: [
         { filename: CHUNK_FRAME_STORAGE },
-        { filename: 'app:///apps/web/src/lib/desktop.ts' },
+        { filename: 'app:///packages/ui/src/internal/lib/desktop.ts' },
       ],
     }),
     false,
@@ -1588,7 +1588,7 @@ const INJECTED_SCRIPT_BUNDLE_FRAME_CHAIN = [
   { filename: 'app:///injectedScript.bundle.js', function: 'n', lineno: 84147 },
 ];
 const FIRST_PARTY_APPS_SRC_FRAME = {
-  filename: 'apps/web/src/lib/desktop.ts',
+  filename: 'packages/ui/src/internal/lib/desktop.ts',
   function: 'handleMessage',
 };
 
@@ -3112,13 +3112,18 @@ test('does NOT suppress the old-browser DOM null-deref when a first-party frame 
   // protection.
   const firstPartyFrames = [
     { filename: 'app:///apps/web/src/hooks/use-proximity-hover.ts' },
-    { filename: 'apps/web/src/features/workspace/project-sidebar/session-title.tsx' },
+    { filename: 'packages/ui/src/workspace/sidebar/session-title.tsx' },
     { filename: 'app:///apps/web/src/components/ui/portal.tsx' },
+    // Both modules live in @kortix/ui now and de-minify to packages/ui/src.
+    { filename: 'app:///packages/ui/src/hooks/use-proximity-hover.ts' },
+    { filename: 'packages/ui/src/primitives/portal.tsx' },
   ];
   for (const frames of [
     [firstPartyFrames[0]],
     [firstPartyFrames[1]],
     [firstPartyFrames[2]],
+    [firstPartyFrames[3]],
+    [firstPartyFrames[4]],
     // A stack that mixes a first-party frame with the minified chunk frame
     // STILL keeps reporting — the first-party frame is the actionable anchor.
     [firstPartyFrames[0], { filename: MEASURE_SCROLL_CHUNK }],
@@ -12126,7 +12131,7 @@ test('keeps reporting the u_noiseTexture message from a first-party frame', () =
   assert.equal(
     isPaperShaderImageUniformNoise({
       message: PAPER_SHADER_IMAGE_UNIFORM_MESSAGE,
-      frames: [{ filename: 'apps/web/src/components/ui/paper-wallpaper-shaders.tsx' }],
+      frames: [{ filename: 'packages/ui/src/primitives/paper-wallpaper-shaders.tsx' }],
     }),
     false,
   );
@@ -13279,7 +13284,7 @@ test('does NOT suppress an Illegal invocation whose stack resolves to a first-pa
       frames: [
         { filename: SPOOF_PROD_CHUNK_FRAME, function: '?' },
         { filename: '<anonymous>', function: 'WebGL2RenderingContext.spoof [as getParameter]' },
-        { filename: 'apps/web/src/lib/shaders-react.ts', function: 'initializeWallpaper' },
+        { filename: 'packages/ui/src/internal/lib/shaders-react.ts', function: 'initializeWallpaper' },
       ],
     }),
     false,

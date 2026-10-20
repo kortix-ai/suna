@@ -528,6 +528,9 @@ to 2 s for one in flight), else `GET …/transcript?shape=sync&history=true`. A 
 the saved copy before `useSession` binds the session calls `readSavedSessionCopy`, the same read
 plus the empty-conversation proof. The SDK holds that copy for the open that follows (up to 5 min):
 the snapshot then asks for no window, and the saved-history read answers from the held copy.
+With the project flag `session_log` on, the host passes `sessionLog: true`: the copy is the
+session log's newest page (`GET …/log`, returned as `log`), and no `GET …/transcript` is read.
+The host applies the page to the session store and renders `useSessionLogThread`.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
@@ -593,7 +596,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
-| `kortix.notifications` | the caller's notifications, across accounts: `list({ limit?, before? })` (inbox page + `unread_count`) · `markRead({ ids } \| { all: true } \| { sessionId })` · `preferences` · `updatePreferences({ kinds })` (push and email per kind) · `webPushPublicKey` · `registerWebPushSubscription` · `unregisterWebPushSubscription` · `registerDeviceToken` · `unregisterDeviceToken` (native Expo push). Muting one session is `session(pid, sid).setWatch(false)`. Hooks: `useNotificationInbox`, `useNotificationPreferences`, `useSessionWatch`. Inbox rows, Web Push, email, and session watch are served only for projects with the `notification_center` flag on, off by default; with it off, the session creator's phone still gets the push |
+| `kortix.notifications` | the caller's notifications, across accounts: `list({ limit?, before? })` (inbox page + `unread_count`) · `markRead({ ids } \| { all: true } \| { sessionId })` · `preferences` · `updatePreferences({ kinds })` (push and email per kind) · `webPushPublicKey` · `registerWebPushSubscription` · `unregisterWebPushSubscription` · `registerDeviceToken` · `unregisterDeviceToken` (native Expo push) · `releaseDeviceToken(token, { backendUrl?, signal? })` (**no token needed**: a signed-out app removes its device token from a backend, `POST /v1/notifications/device-token/release`; resolves `{ ok: true }`, a non-2xx answer throws `ApiError` with `status`). Muting one session is `session(pid, sid).setWatch(false)`. Hooks: `useNotificationInbox`, `useNotificationPreferences`, `useSessionWatch`. Inbox rows, Web Push, email, and session watch are served only for projects with the `notification_center` flag on, off by default; with it off, the session creator's phone still gets the push |
 | `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
@@ -729,7 +732,8 @@ conversion of the v1 rows, with the turn that runs kept open. Pass the session's
 `runtimeSessionId`; without it, or before the first row, they return `null`.
 `throttleMs` paces the v1 rows as `useSessionMessages` paces them. The
 v1 hooks (`useSessionMessages`, `useSession().messages`) return the same rows
-either way. See the
+either way. `useSessionLogOlder(session, threadId?)` pages one thread of a v2 session back
+(`GET …/log?thread=&before_seq=`). See the
 [reference](https://kortix.com/docs/sdk/react#read-the-session-log).
 
 Three transitional functions bridge a host that renders blocks while its rows are
@@ -888,6 +892,13 @@ mode — see its README.
 
 ## Rendering chat (the headless chat kit)
 
+For the Kortix chat itself, use `SessionThread` from `@kortix/ui/session` (the
+Kortix component package, not on npm yet): one component renders the whole
+session from one `useSession(projectId, sessionId)` result, the same thread
+apps/web renders. `ToolRegistry.register(name, Row)` replaces one tool row. Docs:
+<https://kortix.com/docs/sdk/ui#the-thread-alone>. The kit below is for a host that
+draws every part with its own components.
+
 Everything needed to render an agent transcript without adopting any Kortix
 UI: `classifyPart`/`classifyTurn` (framework-free, from the root entry)
 normalize all twelve part types of the Kortix transcript format
@@ -931,9 +942,9 @@ function Turn({ message }: { message: MessageWithParts }) {
 }
 ```
 
-The living reference is
-`apps/whitelabel-demo/src/components/chat/message-view.tsx` — one deliberate
-rendering decision per part kind, with the rationale for each `null`. For a
+The living reference is `packages/ui/src/session/thread/transcript.tsx`
+(the transcript of `SessionThread` in `@kortix/ui/session`), on the
+session-log message. For a
 memoized message-list binding use `useChatTurns(messages)` (`@kortix/sdk/react`);
 for a no-React plain-text version of the same classification see
 `examples/04-render-transcript.ts`. On the live side, `narrowChatEvent`
