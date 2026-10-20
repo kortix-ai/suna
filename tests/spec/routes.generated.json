@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 856,
+  "count": 859,
   "routes": [
     {
       "method": "GET",
@@ -1185,6 +1185,18 @@
     {
       "method": "POST",
       "path": "/v1/channels/teams/identity/preview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/cli/device/decide"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/cli/device/poll"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/cli/device/start"
     },
     {
       "method": "GET",
