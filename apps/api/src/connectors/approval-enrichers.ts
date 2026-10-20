@@ -88,6 +88,46 @@ async function gmailSendEmail(ctx: ApprovalEnricherContext): Promise<Record<stri
   return from ? { from } : null;
 }
 
+const intOf = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isInteger(value) ? value : null;
+const strOf = (value: unknown): string | null => (typeof value === 'string' && value ? value : null);
+
+/**
+ * `GITHUB_MERGE_A_PULL_REQUEST {owner, repo, pull_number}`: one
+ * `GITHUB_GET_A_PULL_REQUEST` read. Shape verified against a live merged pull
+ * request on 2026-10-21: `result` is GitHub's pull request object.
+ *
+ * `head_sha` is bound on purpose: a commit pushed after the approval changes
+ * the digest, so a carried-over approval asks again. `mergeable` and
+ * `mergeable_state` stay out: GitHub computes them lazily (null, then a
+ * value), so they change between two reads of an unchanged pull request.
+ * `updated_at` and comment counts change with every comment.
+ */
+async function githubMergePullRequest(ctx: ApprovalEnricherContext): Promise<Record<string, unknown> | null> {
+  const owner = strOf(ctx.args.owner);
+  const repo = strOf(ctx.args.repo);
+  const number = intOf(ctx.args.pull_number);
+  if (!owner || !repo || number === null) return null;
+  const pr = await composioRead(ctx, 'GITHUB_GET_A_PULL_REQUEST', { owner, repo, pull_number: number });
+  if (!pr || intOf(pr.number) !== number) return null;
+  const head = isPlainRecord(pr.head) ? pr.head : {};
+  const base = isPlainRecord(pr.base) ? pr.base : {};
+  return {
+    title: strOf(pr.title) ?? '',
+    number,
+    state: strOf(pr.state) ?? '',
+    draft: pr.draft === true,
+    author: isPlainRecord(pr.user) ? (strOf(pr.user.login) ?? '') : '',
+    head: strOf(head.ref) ?? '',
+    base: strOf(base.ref) ?? '',
+    head_sha: strOf(head.sha) ?? '',
+    additions: intOf(pr.additions),
+    deletions: intOf(pr.deletions),
+    changed_files: intOf(pr.changed_files),
+    commits: intOf(pr.commits),
+  };
+}
+
 /**
  * Keyed by `enricherKey`.
  *
@@ -101,6 +141,7 @@ async function gmailSendEmail(ctx: ApprovalEnricherContext): Promise<Record<stri
 export const APPROVAL_ENRICHERS: Readonly<Record<string, ApprovalEnricher>> = {
   'composio:GMAIL_SEND_DRAFT': gmailSendDraft,
   'composio:GMAIL_SEND_EMAIL': gmailSendEmail,
+  'composio:GITHUB_MERGE_A_PULL_REQUEST': githubMergePullRequest,
 };
 
 export const APPROVAL_ENRICH_TIMEOUT_MS = 3_000;

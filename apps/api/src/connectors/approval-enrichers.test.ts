@@ -217,3 +217,76 @@ describe('gmail enrichers', () => {
     expect(calls).toEqual([]);
   });
 });
+
+/**
+ * Composio GitHub result shaped like the live `GITHUB_GET_A_PULL_REQUEST`
+ * output (2026-10-21), synthetic values only.
+ */
+const pullRequest = (extra: Record<string, unknown> = {}) => ({
+  number: 482,
+  title: 'Fix stale cache on project switch',
+  state: 'open',
+  draft: false,
+  user: { login: 'octo-dev', id: 1 },
+  head: { ref: 'fix/stale-cache', sha: 'a'.repeat(40), label: 'example-org:fix/stale-cache' },
+  base: { ref: 'main', sha: 'b'.repeat(40), label: 'example-org:main' },
+  additions: 128,
+  deletions: 41,
+  changed_files: 6,
+  commits: 3,
+  mergeable: null,
+  mergeable_state: 'unknown',
+  comments: 0,
+  updated_at: '2026-10-21T10:00:00Z',
+  ...extra,
+});
+
+describe('github merge enricher', () => {
+  const merge = APPROVAL_ENRICHERS['composio:GITHUB_MERGE_A_PULL_REQUEST'];
+  const args = { owner: 'example-org', repo: 'web', pull_number: 482, merge_method: 'squash' };
+  const githubCtx = (result: unknown, callArgs: Record<string, unknown> = args) => {
+    const { ctx, calls } = gmailCtx({ GITHUB_GET_A_PULL_REQUEST: result }, callArgs);
+    return { ctx: { ...ctx, binding: { kind: 'composio', toolkit: 'github', toolSlug: 'GITHUB_MERGE_A_PULL_REQUEST' } } as ApprovalEnricherContext, calls };
+  };
+
+  test('maps the pull request to the fields a reviewer judges', async () => {
+    const { ctx, calls } = githubCtx(pullRequest());
+    expect(await merge(ctx)).toEqual({
+      title: 'Fix stale cache on project switch',
+      number: 482,
+      state: 'open',
+      draft: false,
+      author: 'octo-dev',
+      head: 'fix/stale-cache',
+      base: 'main',
+      head_sha: 'a'.repeat(40),
+      additions: 128,
+      deletions: 41,
+      changed_files: 6,
+      commits: 3,
+    });
+    expect(calls).toEqual([
+      { toolSlug: 'GITHUB_GET_A_PULL_REQUEST', args: { owner: 'example-org', repo: 'web', pull_number: 482 } },
+    ]);
+  });
+
+  test('volatile fields stay out of the digest; a new head commit changes it', async () => {
+    const digest = async (result: unknown) => {
+      const resolved = await resolveApprovalPreview(merge, githubCtx(result).ctx);
+      return 'resolved_digest' in resolved ? resolved.resolved_digest : null;
+    };
+    const base = await digest(pullRequest());
+    expect(base).not.toBeNull();
+    expect(
+      await digest(pullRequest({ mergeable: true, mergeable_state: 'clean', comments: 4, updated_at: '2026-10-22T00:00:00Z' })),
+    ).toBe(base);
+    expect(await digest(pullRequest({ head: { ref: 'fix/stale-cache', sha: 'c'.repeat(40) } }))).not.toBe(base);
+  });
+
+  test('unavailable without owner, repo and number, or when the read fails or names another pull request', async () => {
+    const unavailable = { resolved_error: 'unavailable' } as const;
+    expect(await resolveApprovalPreview(merge, githubCtx(pullRequest(), { owner: 'example-org', repo: 'web' }).ctx)).toEqual(unavailable);
+    expect(await resolveApprovalPreview(merge, githubCtx(null).ctx)).toEqual(unavailable);
+    expect(await resolveApprovalPreview(merge, githubCtx(pullRequest({ number: 7 })).ctx)).toEqual(unavailable);
+  });
+});
