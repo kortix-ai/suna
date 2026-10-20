@@ -3,8 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { accountStateKeys } from '@/hooks/billing';
-import { TurnErrorDisplay } from './session-error-banner';
+import { accountStateKeys } from '@kortix/ui/internal/billing/index';
+import { TurnErrorDisplay } from '@kortix/ui/session';
 
 /** The out-of-credits card for a viewer whose account state says
  *  `can_manage_billing`, or whose account state has not loaded (`undefined`). */

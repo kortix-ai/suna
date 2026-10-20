@@ -120,7 +120,7 @@ function Dashboard({
       <div className="mx-auto max-w-4xl px-5 py-8">
         <div className="flex items-end justify-between">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
+            <h1 className="font-display text-3xl tracking-tight">Projects</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Each project is a git repo. Open one to run an agent against it.
             </p>

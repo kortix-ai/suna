@@ -53,7 +53,7 @@ export function LoginGate({ onReady }: { onReady: () => void }) {
     <div className="grid min-h-dvh place-items-center bg-background px-4">
       <Card className="w-full max-w-sm p-6">
         <BrandMark className="mb-5" />
-        <h1 className="text-lg font-semibold tracking-tight">Sign in to {BRAND.name}</h1>
+        <h1 className="font-display text-2xl tracking-tight">Sign in to {BRAND.name}</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
           {BRAND.name} runs its own login here — your Kortix account stays on the server.
         </p>

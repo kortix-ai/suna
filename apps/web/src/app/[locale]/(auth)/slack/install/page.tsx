@@ -2,9 +2,9 @@
 
 import { Suspense } from 'react';
 
-import { AuthPendingScreen } from '@/features/auth/auth-consent';
+import { AuthPendingScreen } from '@kortix/ui/internal/auth/auth-consent';
 import { ChannelInstallComplete } from '@/features/auth/channel-install-complete';
-import { Slack } from '@/features/icon/icons/slack';
+import { Slack } from '@kortix/ui/internal/icons/slack';
 import { completeSlackInstall } from '@kortix/sdk';
 
 /**

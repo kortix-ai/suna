@@ -90,6 +90,9 @@ if [ -n "$starter_templates" ]; then
   fi
 fi
 
+# Keep committed web manifests synchronized with staged content and route inputs.
+sh scripts/refresh-staged-web-artifacts.sh
+
 # No top-level docs/ tree. Skills hold durable knowledge, the learnings ledger
 # holds incident rules, and the PR body holds detail. tests/unit/no-docs-tree.test.ts
 # and pre-push enforce the same rule.

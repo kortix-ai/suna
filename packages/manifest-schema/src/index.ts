@@ -1445,6 +1445,10 @@ export function validateTriggers(node: unknown, path: string, issues: ManifestIs
         issues.push({ path: `${where}.${field}`, message: `${field} must be a whole number of at least 1.`, severity: 'error' });
       }
     }
+    // Overlap (KRTX-1721): any trigger type; it acts on fresh session mode only.
+    if (entry.overlap !== undefined && entry.overlap !== 'skip' && entry.overlap !== 'allow') {
+      issues.push({ path: `${where}.overlap`, message: 'overlap must be "skip" or "allow".', severity: 'error' });
+    }
     // The payload filter (KRTX-1721): a value (equals) or one operator per path.
     if (entry.filter !== undefined) {
       const parsed = parseTriggerFilter(entry.filter);

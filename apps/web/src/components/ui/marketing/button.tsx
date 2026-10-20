@@ -2,7 +2,7 @@ import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 const marketingButtonVariants = cva(
   "group/button inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-[calc(var(--radius)-3px)] font-medium whitespace-nowrap transition-transform focus-visible:ring-1 focus-visible:outline-none active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none text-center [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 [&_svg]:drop-shadow-sm dark:shadow-md shadow-black/15",

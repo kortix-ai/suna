@@ -1,3 +1,6 @@
+import { copySessionLog, withForkAttachmentCleanup } from '../session-log-fork';
+import { writeSessionLogFromMirror } from '../session-log-capture';
+import { captureSessionTranscriptMirror } from './session-transcript-capture';
 import { randomUUID } from 'node:crypto';
 import { SESSION_INITIAL_CONTEXT_MAX_CHARS, SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
@@ -96,6 +99,8 @@ import {
 
 import { buildSessionSandboxEnvVars } from './session-sandbox-env-build';
 import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } from './session-callback-probe';
+import { HUMAN_SESSION_SURFACES } from './session-surface';
+import type { SessionInvocationSource } from '../session-lifecycle/types';
 /** Every status a failed create answers with. Routes that create a session
  *  declare these, so the published spec lists them. */
 export const SESSION_CREATE_ERROR_STATUSES = [400, 402, 403, 404, 409, 429, 500, 503] as const;
@@ -1036,7 +1041,7 @@ function buildSessionCreateMetadata(params: {
   // the authenticated credential, never a client header. Informational only:
   // no policy reads these values (origin keys on `trigger:`/`system:` and channels).
   const sessionSource =
-    invocationSource === 'ui' && input.callerSessionId ? 'agent' : invocationSource;
+    HUMAN_SESSION_SURFACES.has(invocationSource as SessionInvocationSource) && input.callerSessionId ? 'agent' : invocationSource;
   const initiator: SessionInitiator =
     parentSession?.initiator ??
     resolveRootSessionInitiator({
@@ -1166,11 +1171,16 @@ async function insertSessionAndBindings(
       labels: SessionCreateInputSchema.shape.labels.parse(body.labels) ?? [],
       connectorBindingsConfigured,
       connectorBindingsInheritUnbound: inheritUnbound,
-      metadata,
+      metadata: typeof body.fork_from_session_id === 'string'
+        ? { ...metadata, forkedFromSessionId: body.fork_from_session_id }
+        : metadata,
       updatedAt: new Date(),
     })
     .returning();
   if (!row) throw new Error('Session insert returned no row');
+  if (typeof body.fork_from_session_id === 'string') {
+    await copySessionLog(tx, { sourceId: body.fork_from_session_id, sessionId, projectId, accountId, captureComplete: input.forkCaptureComplete });
+  }
   if (input.createCommandId) {
     // Same transaction as the session row: a create command whose worker
     // dies after this commit is reclaimed WITH its session id, and
@@ -1542,6 +1552,7 @@ export async function createProjectSession(input: {
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
+  forkCaptureComplete?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
@@ -1690,6 +1701,23 @@ export async function createProjectSession(input: {
   const billingCheck = await checkSessionBillingAdmission(accountId);
   if (billingCheck) return billingCheck;
 
+  if (typeof body.fork_from_session_id === 'string') {
+    if (!config.SESSION_LOG_RESTORE_ENABLED || !config.SESSION_LOG_INGEST_ENABLED) {
+      return { error: { status: 503, body: { error: 'Session log restore is off' } } };
+    }
+    const capture = await captureSessionTranscriptMirror(body.fork_from_session_id);
+    // A reachable box must provide the whole snapshot. A stopped box can use
+    // its durable journal, checked again under the journal lock during copy.
+    if (capture && !capture.head_complete) {
+      return { error: { status: 409, body: { error: 'Source history capture is incomplete' } } };
+    }
+    input.forkCaptureComplete = capture?.head_complete === true;
+    const converted = await writeSessionLogFromMirror(body.fork_from_session_id);
+    if (converted.outcome === 'failed' || converted.outcome === 'invalid' || converted.outcome === 'too_large') {
+      return { error: { status: 409, body: { error: 'Source history capture is unavailable' } } };
+    }
+  }
+
   const identity = resolveSessionIdentity({ input, projectId, accountId });
   if (identity.error) return { error: identity.error };
   const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;
@@ -1716,7 +1744,7 @@ export async function createProjectSession(input: {
 
   let sessionRow: ProjectSessionRow | null = null;
   try {
-    sessionRow = await insertSessionAndBindings(
+    const insert = () => insertSessionAndBindings(
       {
         input,
         sessionId,
@@ -1740,6 +1768,9 @@ export async function createProjectSession(input: {
       parsedRuntimeContext.context,
       validatedConnectorBindings.bindings,
     );
+    sessionRow = typeof body.fork_from_session_id === 'string'
+      ? await withForkAttachmentCleanup(projectId, sessionId, insert)
+      : await insert();
   } catch (error) {
     // Besides a randomUUID() collision on the PK / (project_id, branch_name)
     // unique index, `sandbox_provider` is an ENUM: a provider this env enables
@@ -1749,9 +1780,9 @@ export async function createProjectSession(input: {
     // create on a project pinned to it.) verify-live-schema.ts now gates that drift.
     // Session, context and connection bindings are one transaction. Nothing is
     // visible and provisioning never starts when any child insert fails.
-    if (error instanceof HTTPException && error.status < 500) {
+    if (error instanceof HTTPException) {
       return {
-        error: { status: sessionCreateErrorStatus(error.status), body: await error.getResponse().json() },
+        error: { status: sessionCreateErrorStatus(error.status), body: { error: error.message } },
       };
     }
     // Never return `(error as Error).message`: postgres.js embeds the whole
