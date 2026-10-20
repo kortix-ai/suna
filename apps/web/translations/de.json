@@ -20594,6 +20594,12 @@
     "mcpNotChecked": "Noch nicht geprüft",
     "runLimits": "Ausführungslimits",
     "runLimitsHint": "Ein Auslöser über einem Limit startet nichts und erscheint als übersprungene Ausführung. Eine manuelle Ausführung wird nie zurückgehalten, zählt aber mit.",
+    "overlap": "Überschneidung",
+    "overlapHint": "Läuft die vorige Ausführung noch, wartet ein neuer Auslöser entweder ab oder startet eine zweite Ausführung. Eine Ausführung, die du selbst startest, läuft immer.",
+    "overlapDefaultSkip": "Standard: überspringen, solange die letzte Ausführung läuft",
+    "overlapDefaultAllow": "Standard: trotzdem eine neue Ausführung starten",
+    "overlapSkip": "Überspringen, solange die letzte Ausführung läuft",
+    "overlapAllow": "Trotzdem eine neue Ausführung starten",
     "perHour": "Pro Stunde",
     "perDay": "Pro Tag",
     "noLimit": "Kein Limit"
@@ -22000,5 +22006,9 @@
     "exists": "existiert",
     "missing": "existiert nicht",
     "listPlaceholder": "Wert 1, Wert 2"
+  },
+  "triggerAutoPause": {
+    "title": "Hat sich an seinem Ausführungslimit selbst pausiert",
+    "description": "Er lief 2 Stunden in Folge an seinem stündlichen Ausführungslimit und startet daher keine Ausführungen mehr. Finde heraus, was ihn ständig auslöst, und setze ihn dann fort."
   }
 }
