@@ -49,6 +49,12 @@ describe('SelectionBar', () => {
     expect(button(bar({ canSelectAll: false }), 'Select all')).toContain('disabled=""');
   });
 
+  test('enters from a faded 8px rise; animateIn=false paints at rest', () => {
+    const root = (out: string) => out.match(/^<div[^>]*>/)?.[0] ?? '';
+    expect(root(bar())).toContain('opacity:0;transform:translateY(8px)');
+    expect(root(bar({ animateIn: false }))).toContain('opacity:1;transform:translateY(0px)');
+  });
+
   test('progress replaces the count and disables every control, Exit included', () => {
     const out = bar({ progress: { label: 'Approving 1 of 2…', done: 1, total: 2 } });
     expect(out).toContain('Approving 1 of 2…');

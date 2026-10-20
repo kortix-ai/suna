@@ -7,8 +7,9 @@
  * takes the destructive text tone. While a bulk action runs, the count line
  * reads its progress with the session dot matrix and every control disables.
  *
- * It enters with a short rise and fade and leaves faster. The caller mounts
- * it inside `AnimatePresence` to get the exit; reduced motion drops the rise.
+ * It enters with a short rise and fade (reduced motion keeps the fade only).
+ * It leaves at once: Esc exits select mode, and a keyboard action never
+ * animates. `animateIn={false}` skips the enter too, for a keyboard-opened bar.
  */
 
 import { CheckSquareIcon, XIcon } from '@phosphor-icons/react';
@@ -46,6 +47,7 @@ export function SelectionBar({
   onExit,
   actions,
   progress = null,
+  animateIn = true,
 }: {
   selectedCount: number;
   allSelected: boolean;
@@ -55,8 +57,13 @@ export function SelectionBar({
   onClear: () => void;
   onExit: () => void;
   actions: readonly SelectionBarAction[];
-  /** A running bulk action: `label` is the full progress line ("Pausing 3 of 12…"). */
+  /**
+   * A running bulk action: `label` is the full progress line ("Pausing 3 of 12…").
+   * `done` and `total` ride along for consumers that render their own label.
+   */
   progress?: { label: string; done: number; total: number } | null;
+  /** False skips the enter animation (select mode opened from the keyboard). */
+  animateIn?: boolean;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const reduceMotion = useReducedMotion();
@@ -85,16 +92,11 @@ export function SelectionBar({
   );
   return (
     <m.div
-      initial={{ opacity: 0, transform: reduceMotion ? REST : RISE }}
+      initial={animateIn ? { opacity: 0, transform: reduceMotion ? REST : RISE } : false}
       animate={{
         opacity: 1,
         transform: REST,
         transition: { duration: 0.18, ease: EASE_OUT },
-      }}
-      exit={{
-        opacity: 0,
-        transform: reduceMotion ? REST : RISE,
-        transition: { duration: 0.12, ease: EASE_OUT },
       }}
       className="bg-popover text-popover-foreground border-border @container/bar flex w-full items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-md"
     >

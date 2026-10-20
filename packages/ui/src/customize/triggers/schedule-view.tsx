@@ -83,7 +83,6 @@ import {
   MagnifyingGlassIcon as SearchIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence } from 'motion/react';
 import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -775,35 +774,30 @@ export function ScheduleView({ projectId }: { projectId: string }) {
               />
             )}
 
-            <AnimatePresence>
-              {selectMode ? (
-                // Floats at the bottom centre of the list column, inside its edges.
-                <div
-                  key="selection-bar"
-                  className="pointer-events-none sticky bottom-4 z-10 flex justify-center"
-                >
-                  <div className="pointer-events-auto w-full max-w-xl">
-                    <TriggerSelectionBar
-                      selectedCount={actionable.size}
-                      shownCount={filtered.length}
-                      allSelected={
-                        filtered.length > 0 && filtered.every((t) => selectedSlugs.has(t.slug))
-                      }
-                      canPause={bulkTargets(triggers, actionable, false).length > 0}
-                      canResume={bulkTargets(triggers, actionable, true).length > 0}
-                      canDelete={controls.canDelete}
-                      progress={bulkProgress}
-                      onSelectAll={() => setSelectedSlugs(selectAllShown(filtered))}
-                      onClear={() => setSelectedSlugs(new Set())}
-                      onPause={() => void runBulk('pause')}
-                      onResume={() => void runBulk('resume')}
-                      onDelete={() => setBulkDeleteOpen(true)}
-                      onExit={exitSelectMode}
-                    />
-                  </div>
+            {selectMode ? (
+              // Floats at the bottom centre of the list column, inside its edges.
+              <div className="pointer-events-none sticky bottom-4 z-10 flex justify-center">
+                <div className="pointer-events-auto w-full max-w-xl">
+                  <TriggerSelectionBar
+                    selectedCount={actionable.size}
+                    shownCount={filtered.length}
+                    allSelected={
+                      filtered.length > 0 && filtered.every((t) => selectedSlugs.has(t.slug))
+                    }
+                    canPause={bulkTargets(triggers, actionable, false).length > 0}
+                    canResume={bulkTargets(triggers, actionable, true).length > 0}
+                    canDelete={controls.canDelete}
+                    progress={bulkProgress}
+                    onSelectAll={() => setSelectedSlugs(selectAllShown(filtered))}
+                    onClear={() => setSelectedSlugs(new Set())}
+                    onPause={() => void runBulk('pause')}
+                    onResume={() => void runBulk('resume')}
+                    onDelete={() => setBulkDeleteOpen(true)}
+                    onExit={exitSelectMode}
+                  />
                 </div>
-              ) : null}
-            </AnimatePresence>
+              </div>
+            ) : null}
 
             {showContent && eventsOn && filter === 'event' ? (
               <EventAppsStrip

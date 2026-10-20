@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 /**
  * The Triggers select-mode bar: the shared `SelectionBar` with Pause, Resume
@@ -6,20 +6,17 @@
  * While a bulk action runs, the count line reads its progress.
  */
 
-import { PauseIcon, PlayIcon, TrashIcon } from "@phosphor-icons/react";
+import { PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
 
-import { useTranslations } from "../../../i18n";
-import {
-  SelectionBar,
-  type SelectionBarAction,
-} from "../../../workspace/selection/selection-bar";
+import { useTranslations } from '../../../i18n';
+import { SelectionBar, type SelectionBarAction } from '../../../workspace/selection/selection-bar';
 
-export type BulkVerb = "pause" | "resume" | "delete";
+export type BulkVerb = 'pause' | 'resume' | 'delete';
 
 const PROGRESS_KEY = {
-  pause: "text6363885af551",
-  resume: "text4cc2a4d3a49a",
-  delete: "text6e24bb562ab0",
+  pause: 'text6363885af551',
+  resume: 'text4cc2a4d3a49a',
+  delete: 'text6e24bb562ab0',
 } as const satisfies Record<BulkVerb, string>;
 
 export function TriggerSelectionBar({
@@ -53,18 +50,18 @@ export function TriggerSelectionBar({
   onDelete: () => void;
   onExit: () => void;
 }) {
-  const t = useTranslations("hardcodedUi.i18nComplete");
+  const t = useTranslations('hardcodedUi.i18nComplete');
   const actions: SelectionBarAction[] = [
     {
-      id: "pause",
-      label: t.raw("text858e4ba7a29f"),
+      id: 'pause',
+      label: t.raw('text858e4ba7a29f'),
       icon: <PauseIcon className="size-3.5 shrink-0" />,
       disabled: !canPause,
       onSelect: onPause,
     },
     {
-      id: "resume",
-      label: t.raw("textd640c7421da0"),
+      id: 'resume',
+      label: t.raw('textd640c7421da0'),
       icon: <PlayIcon className="size-3.5 shrink-0" />,
       disabled: !canResume,
       onSelect: onResume,
@@ -72,10 +69,10 @@ export function TriggerSelectionBar({
   ];
   if (canDelete) {
     actions.push({
-      id: "delete",
-      label: t.raw("texte2d0a54968ea"),
+      id: 'delete',
+      label: t.raw('texte2d0a54968ea'),
       icon: <TrashIcon className="size-3.5 shrink-0" />,
-      tone: "destructive",
+      tone: 'destructive',
       disabled: selectedCount === 0,
       onSelect: onDelete,
     });
