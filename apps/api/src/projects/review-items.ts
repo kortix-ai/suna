@@ -10,6 +10,7 @@
 
 import { changeRequests, connectorCalls, projectSessions, reviewItems } from '@kortix/db';
 import { type AnyColumn, type SQL, and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
+import { enrichPendingCallOnce } from '../connectors/approval-enrich-pending';
 import { approvalNotExpired, isApprovalExpired } from '../connectors/approval-expiry';
 import { captureException } from '../lib/sentry';
 import { db } from '../shared/db';
@@ -544,7 +545,11 @@ export async function getInboxItem(
     const [call] = await pendingConnectorCalls(projectId, view, undefined, rawId);
     if (!call) return null;
     const verdict = await connectorCallVerdicts([call], resolveCaller);
-    const item = connectorCallToReviewItem(call, verdict(call));
+    const options = verdict(call);
+    // A row held before its action had an enricher reads its content once,
+    // here, for a viewer who may see it (approval-enrich-pending.ts).
+    if (options?.canResolve) call.resultSummary = await enrichPendingCallOnce(call);
+    const item = connectorCallToReviewItem(call, options);
     // Past its window: nobody can decide it any more (connectors/approval-expiry.ts).
     return isApprovalExpired(call) ? { ...item, status: 'expired', can_resolve: false } : item;
   }

@@ -29,6 +29,7 @@ import { composioToolkitLogo } from '../connectors/composio';
 import { and, eq } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { enrichPendingCallOnce } from '../connectors/approval-enrich-pending';
 import { isApprovalExpired } from '../connectors/approval-expiry';
 import { isPlainRecord, summarizeArgsPreview } from '../connectors/args-preview';
 import {
@@ -100,6 +101,9 @@ approvalLinksApp.openapi(createRoute({
   const [row] = await db
     .select({
       executionId: connectorCalls.executionId,
+      accountId: connectorCalls.accountId,
+      projectId: connectorCalls.projectId,
+      connectionId: connectorCalls.connectionId,
       sessionId: connectorCalls.sessionId,
       actingUserId: connectorCalls.actingUserId,
       actionPath: connectorCalls.actionPath,
@@ -179,10 +183,11 @@ approvalLinksApp.openapi(createRoute({
   }
 
   const expired = isApprovalExpired(row);
+  // Only reached by a caller allowed to resolve: a row held before its action
+  // had an enricher reads its content once (approval-enrich-pending.ts).
+  const resultSummary = await enrichPendingCallOnce(row);
   const summary =
-    typeof row.resultSummary === 'object' && row.resultSummary
-      ? (row.resultSummary as Record<string, unknown>)
-      : {};
+    typeof resultSummary === 'object' && resultSummary ? (resultSummary as Record<string, unknown>) : {};
   const argsPreview =
     typeof summary.args_preview === 'object' && summary.args_preview
       ? (summary.args_preview as Record<string, unknown>)

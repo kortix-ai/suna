@@ -206,7 +206,7 @@ async function channelToken(
   return null;
 }
 
-function toGatewayConnector(
+export function toGatewayConnector(
   row: ConnectorRow,
   connection?: {
     connectionId: string;

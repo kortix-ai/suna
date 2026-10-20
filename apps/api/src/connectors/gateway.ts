@@ -1468,7 +1468,7 @@ async function runPipedreamAction(
 }
 
 /** A Composio tool call on the connection's server-owned account and session. */
-async function runComposioAction(
+export async function runComposioAction(
   deps: GatewayDeps,
   input: CallInput,
   connector: GatewayConnector,

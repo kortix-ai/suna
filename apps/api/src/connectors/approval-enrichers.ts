@@ -7,8 +7,8 @@
  * approval to its digest (`resolved_digest`): a carried-over approval whose
  * content changed asks again (`content_changed`).
  */
-import { buildArgsPreviewDetails } from './args-preview';
-import type { CallInput, GatewayConnector, GatewayDeps } from './gateway';
+import { buildArgsPreviewDetails, isPlainRecord } from './args-preview';
+import { type CallInput, type GatewayConnector, type GatewayDeps, runComposioAction } from './gateway';
 import { contentDigest } from './request-digest';
 import type { ActionBinding } from './types';
 import { withTimeout } from '../shared/with-timeout';
@@ -25,8 +25,69 @@ export interface ApprovalEnricherContext {
 /** Un-redacted content the call acts on, or null when it cannot be read. */
 export type ApprovalEnricher = (ctx: ApprovalEnricherContext) => Promise<Record<string, unknown> | null>;
 
+/** One read-only Composio tool on the held call's connection: its `result`, or null. */
+async function composioRead(
+  ctx: ApprovalEnricherContext,
+  toolSlug: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  if (ctx.binding.kind !== 'composio') return null;
+  const out = await runComposioAction(ctx.deps, ctx.input, ctx.connector, { ...ctx.binding, toolSlug }, args);
+  const result = out.ok && isPlainRecord(out.data) ? out.data.result : null;
+  return isPlainRecord(result) ? result : null;
+}
+
+/** The connected mailbox's own address (`GMAIL_GET_PROFILE.emailAddress`). */
+async function gmailSender(ctx: ApprovalEnricherContext): Promise<string | null> {
+  const profile = await composioRead(ctx, 'GMAIL_GET_PROFILE', {});
+  return typeof profile?.emailAddress === 'string' && profile.emailAddress ? profile.emailAddress : null;
+}
+
+/** Header lookup by case-insensitive name: Gmail stores `to`/`subject` lowercase and `From` capitalised. */
+function header(headers: unknown, name: string): string {
+  if (!Array.isArray(headers)) return '';
+  const hit = headers.find((h) => isPlainRecord(h) && typeof h.name === 'string' && h.name.toLowerCase() === name);
+  return isPlainRecord(hit) && typeof hit.value === 'string' ? hit.value : '';
+}
+
 /**
- * Keyed by `enricherKey`. Ships empty.
+ * `GMAIL_SEND_DRAFT {draft_id}`. Composio has no get-draft tool, so this lists
+ * the mailbox's drafts (`verbose: true` carries headers and the decoded text)
+ * and picks `drafts[].id === draft_id`. Shape verified against a live mailbox
+ * on 2026-10-20: `message.payload.headers[{name,value}]`, `message.messageText`,
+ * `message.attachmentList[{filename}]`. Volatile fields (Date, Message-Id,
+ * attachment ids, timestamps) stay out of the content.
+ * ponytail: one page of 500 drafts; a draft past it reads as unavailable.
+ */
+async function gmailSendDraft(ctx: ApprovalEnricherContext): Promise<Record<string, unknown> | null> {
+  const draftId = ctx.args.draft_id;
+  if (typeof draftId !== 'string' || !draftId) return null;
+  const list = await composioRead(ctx, 'GMAIL_LIST_DRAFTS', { verbose: true, max_results: 500 });
+  const drafts: unknown[] = Array.isArray(list?.drafts) ? list.drafts : [];
+  const draft = drafts.find((d) => isPlainRecord(d) && d.id === draftId);
+  const message = isPlainRecord(draft) && isPlainRecord(draft.message) ? draft.message : null;
+  if (!message) return null;
+  const headers = isPlainRecord(message.payload) ? message.payload.headers : null;
+  const attachments = Array.isArray(message.attachmentList) ? message.attachmentList : [];
+  return {
+    from: header(headers, 'from') || (await gmailSender(ctx)) || '',
+    to: header(headers, 'to'),
+    cc: header(headers, 'cc'),
+    bcc: header(headers, 'bcc'),
+    subject: header(headers, 'subject'),
+    body: typeof message.messageText === 'string' ? message.messageText : '',
+    attachments: attachments.flatMap((a) => (isPlainRecord(a) && typeof a.filename === 'string' && a.filename ? [a.filename] : [])),
+  };
+}
+
+/** `GMAIL_SEND_EMAIL`: the arguments carry to/cc/bcc/subject/body; only the sender is missing. */
+async function gmailSendEmail(ctx: ApprovalEnricherContext): Promise<Record<string, unknown> | null> {
+  const from = await gmailSender(ctx);
+  return from ? { from } : null;
+}
+
+/**
+ * Keyed by `enricherKey`.
  *
  * An enricher must return deterministic content: no timestamps, etags, read
  * markers or other volatile fields. The digest covers every field, so a
@@ -34,14 +95,11 @@ export type ApprovalEnricher = (ctx: ApprovalEnricherContext) => Promise<Record<
  * The binding re-reads just before the provider call; a change in the window
  * between that read and the call is not caught (no provider offers a
  * conditional send).
- *
- * ponytail: no enricher registered yet. Follow-up: a Gmail send-draft fetcher
- * (`composio:GMAIL_SEND_DRAFT` via `GMAIL_LIST_DRAFTS` filtered by `draft_id`,
- * and/or the Gmail MCP server's get-draft tool), mapped to
- * `{to, cc, bcc, subject, body, attachments}` and verified against a real
- * connected mailbox. Composio has no get-draft tool (catalog, 2026-10-20).
  */
-export const APPROVAL_ENRICHERS: Readonly<Record<string, ApprovalEnricher>> = {};
+export const APPROVAL_ENRICHERS: Readonly<Record<string, ApprovalEnricher>> = {
+  'composio:GMAIL_SEND_DRAFT': gmailSendDraft,
+  'composio:GMAIL_SEND_EMAIL': gmailSendEmail,
+};
 
 export const APPROVAL_ENRICH_TIMEOUT_MS = 3_000;
 
