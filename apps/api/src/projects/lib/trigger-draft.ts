@@ -11,7 +11,7 @@ import { MCP_SOURCE_ID, connectorEventApp } from '../trigger-events/mcp-source';
 import { streamSchedules } from '../trigger-events/poll-store';
 import { eventSourceAvailable } from '../trigger-events/registry';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
-import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
+import { nextTriggerScheduleSlot, validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
 import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseRunCaps, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from '../trigger-session-access';
 import { withProjectGitAuth } from './git';
@@ -131,6 +131,9 @@ export async function loadTriggersForResponse(
       last_attempt_at: runtimeBySlug.get(spec.slug)?.lastAttemptAt?.toISOString() ?? null,
       // The slot the scheduler claims next, jitter included (KRTX-1743).
       next_fire_at: runtimeBySlug.get(spec.slug)?.nextFireAt?.toISOString() ?? null,
+      next_cron_at: spec.cron && !validateTriggerCron(spec.cron, spec.timezone)
+        ? nextTriggerScheduleSlot(spec, new Date())?.toISOString() ?? null
+        : null,
       webhook_url: spec.type === 'webhook' ? buildPublicWebhookUrl(projectId, spec.slug) : null,
     })),
     // Server-side activation state for this project's whole trigger set. When

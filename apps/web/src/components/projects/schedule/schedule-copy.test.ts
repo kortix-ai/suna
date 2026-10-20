@@ -406,3 +406,17 @@ describe('triggerSubtitle', () => {
     expect(triggerSubtitle('Every minute', 'Every minute', '  \n ')).toBeNull();
   });
 });
+
+// The cron boundary and the scheduler's jittered execution are different facts.
+describe('next run timezone and cron boundary', () => {
+  test('shows the six-field cron occurrence and preserves the scheduled execution', () => {
+    expect(describeNextRun(trigger({
+      next_cron_at: '2026-10-10T09:00:00.000Z',
+      next_fire_at: '2026-10-10T09:15:00.000Z',
+    }))).toBe('Next run Oct 10, 09:00:00 AM UTC · Scheduled execution Oct 10, 09:15:00 AM UTC');
+  });
+  test('labels a one-off or older API execution without inventing a cron boundary', () => {
+    expect(describeNextRun(trigger({ next_fire_at: '2026-10-10T09:15:00.000Z' })))
+      .toBe('Next run Oct 10, 09:15:00 AM UTC');
+  });
+});

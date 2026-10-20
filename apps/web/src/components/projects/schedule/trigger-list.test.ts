@@ -16,10 +16,10 @@ const cron = (next: Date | null, enabled = true) =>
 
 describe('nextRunLabel (C09 trailing, line one)', () => {
   test('today: the time alone', () => {
-    expect(nextRunLabel(cron(new Date(2026, 9, 17, 14, 45)), t, 'en-GB', now)).toBe('next 14:45');
+    expect(nextRunLabel(cron(new Date(2026, 9, 17, 14, 45)), t, 'en-GB', now)).toBe(`next ${new Date(2026, 9, 17, 14, 45).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' })}`);
   });
   test('this week: the weekday and time', () => {
-    expect(nextRunLabel(cron(new Date(2026, 9, 19, 9, 0)), t, 'en-GB', now)).toBe('next Mon 09:00');
+    expect(nextRunLabel(cron(new Date(2026, 9, 19, 9, 0)), t, 'en-GB', now)).toBe(`next Mon ${new Date(2026, 9, 19, 9, 0).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' })}`);
   });
   test('webhooks and app events run on an event; paused reads Paused; unscheduled reads —', () => {
     expect(nextRunLabel({ type: 'webhook', enabled: true, next_fire_at: null }, t, 'en', now)).toBe(
@@ -47,4 +47,10 @@ describe('lastRunLabel (C09 trailing, line two)', () => {
   test('a trigger that never ran says so', () => {
     expect(lastRunLabel(ran(null), t, 'en', now)).toBe('Never run');
   });
+});
+
+test('the list labels the exact six-field cron boundary, not jittered execution', () => {
+  expect(nextRunLabel({ type: 'cron', enabled: true,
+    next_cron_at: '2026-10-17T14:00:00Z', next_fire_at: '2026-10-17T14:15:00Z',
+  }, t, 'en-GB', now)).toBe('next 14:00:00 UTC');
 });
