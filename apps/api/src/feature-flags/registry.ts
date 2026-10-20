@@ -50,12 +50,18 @@
  *     box without the flag; the project's skill list hides it. Never describe a
  *     flagged feature inside an unflagged skill (kortix-system, kortix-cli).
  *   • CLI command — `featureFlag: '<key>'` on its apps/cli/src/command-table.ts
- *     entry: hidden from help unless the box lists the flag, refused in a box
- *     that does not.
+ *     entry: listed and run only where the flag is known on — the box's list,
+ *     or outside a box the linked project's flags from the API. Never suggested
+ *     for a typo. `kortix system-skills` follows the same rule for a skill.
+ *   • IAM — `iamActions` on the entry: the account permission catalog leaves
+ *     them out until a project of the account has the flag on.
+ *   • Notification kind — the preferences API lists it in `hidden_kinds` while
+ *     it cannot reach the person, and the settings screens drop its row.
  *   • Web — `useFeatureFlag` hides every entry point (sidebar row, More menu,
  *     palette via `requiresFlag`, permission group via `featureFlag` in
  *     agent-editor-catalog.ts); a page a deep link still reaches renders
- *     `FeatureGateScreen` and loads no data.
+ *     `FeatureGateScreen` and loads no data. Public docs describe a feature
+ *     once it is on by default; until then its reference lives in its skill.
  *
  * FOUR separate tests guard those six sites, each in its own package, so each
  * one fails only when that package's suite runs — they surface one CI round at
@@ -153,6 +159,12 @@ export interface FeatureFlagDef {
    * toggle.
    */
   derivedFrom?: 'volumes';
+  /**
+   * IAM actions that exist only with this flag. The account permission catalog
+   * (`GET /accounts/:id/iam/permissions`) leaves them out until a project of the
+   * account has the flag on ({@link hiddenIamActions}).
+   */
+  iamActions?: readonly string[];
 }
 
 /**
@@ -492,6 +504,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
   {
     key: 'agent_rooms',
     name: 'Rooms',
+    iamActions: ['project.room.read', 'project.room.write'],
     description:
       'Named chat rooms per goal or topic where agent sessions and people post (`kortix rooms`, `kortix peers`). Every message is stored in its room. A member session gets a message addressed to it (an @-mention, a reply in its thread) between its steps; other room traffic arrives as one batched notice when its turn ends; a thread reply reaches only the thread participants. A stopped session wakes. A member person gets every message as unread and, with the notification center on, a notification for one addressed to them.',
     stability: 'experimental',
@@ -499,7 +512,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
-      'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box, and retires warm sessions (feature-flags/toggle-effects.ts). WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen.',
+      'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box, and retires warm sessions (feature-flags/toggle-effects.ts). CLI outside a box: hidden and refused unless the linked project has the flag on. IAM: project.room.* leave the account permission catalog until a project of the account has it on. NOTIFICATIONS: the `message` kind is in `hidden_kinds` (no settings row) unless the person is in a room of a flag-on project. WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen. DOCS: the reference is the kortix-rooms skill (references/rooms.md), not the public docs.',
   },
 ];
 
@@ -549,6 +562,19 @@ export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): bool
 /** Is this flag derived from another flag (and so not a project choice)? */
 export function isDerivedFeatureFlag(key: FeatureFlagKey): boolean {
   return Boolean(FLAG_BY_KEY[key]?.derivedFrom);
+}
+
+/**
+ * The IAM actions of every flag that is off in all of `projectMetadatas` (an
+ * account's projects): a permission catalog leaves them out.
+ */
+export function hiddenIamActions(projectMetadatas: readonly unknown[]): Set<string> {
+  const hidden = new Set<string>();
+  for (const flag of FLAGS) {
+    if (!flag.iamActions || projectMetadatas.some((metadata) => resolveFeatureFlag(metadata, flag.key))) continue;
+    for (const action of flag.iamActions) hidden.add(action);
+  }
+  return hidden;
 }
 
 /** Effective enablement for every flag, keyed by flag id. */

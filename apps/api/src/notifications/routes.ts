@@ -12,7 +12,7 @@ import { createDeviceTokenReleaseRateLimitMiddleware } from '../middleware/rate-
 import { isUuid } from '../shared/validate';
 import { pushDeviceTokenStore, type PushDeviceTokenStore } from './device-tokens';
 import { isNotificationEmailAvailable } from './email-delivery';
-import { listInbox, markInboxRead, type InboxReadContext } from './inbox-read';
+import { hiddenNotificationKinds, listInbox, markInboxRead, type InboxReadContext } from './inbox-read';
 import { loadEffectivePreferences, updateNotificationPreferences, type NotificationPreferencesPatch } from './preferences';
 import { getVapidPublicKey } from './vapid-keys';
 import {
@@ -117,6 +117,9 @@ const NotificationPreferencesSchema = z
   .object({
     kinds: z.object(Object.fromEntries(NOTIFICATION_KINDS.map((kind) => [kind, ChannelSchema]))),
     email_available: z.boolean().openapi({ description: 'False when this deployment cannot send email: hide the email switches.' }),
+    hidden_kinds: z
+      .array(z.enum(NOTIFICATION_KINDS))
+      .openapi({ description: 'Kinds that cannot reach you now (their feature is off everywhere you are): hide their rows.' }),
   })
   .openapi('NotificationPreferences');
 
@@ -181,6 +184,7 @@ export interface NotificationServices {
   loadPreferences(userId: string): Promise<NotificationKindPreferences>;
   updatePreferences(userId: string, patch: NotificationPreferencesPatch): Promise<NotificationKindPreferences>;
   emailAvailable(): boolean;
+  hiddenKinds(userId: string): Promise<NotificationKindName[]>;
   vapidPublicKey(): Promise<string>;
   validateWebPush: typeof validateWebPushSubscriptionInput;
   registerWebPush(input: Parameters<typeof registerWebPushSubscription>[0]): Promise<void>;
@@ -193,6 +197,7 @@ const LIVE_SERVICES: NotificationServices = {
   loadPreferences: async (userId) => (await loadEffectivePreferences([userId])).get(userId)!,
   updatePreferences: (userId, patch) => updateNotificationPreferences(userId, patch),
   emailAvailable: isNotificationEmailAvailable,
+  hiddenKinds: hiddenNotificationKinds,
   vapidPublicKey: getVapidPublicKey,
   validateWebPush: validateWebPushSubscriptionInput,
   registerWebPush: (input) => registerWebPushSubscription(input),
@@ -357,6 +362,7 @@ export function createNotificationsApp(deps: NotificationsAppDeps = {}) {
   const preferencesResponse = async (userId: string, kinds?: NotificationKindPreferences) => ({
     kinds: kinds ?? (await services.loadPreferences(userId)),
     email_available: services.emailAvailable(),
+    hidden_kinds: await services.hiddenKinds(userId),
   });
 
   app.openapi(
