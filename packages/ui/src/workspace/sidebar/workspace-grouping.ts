@@ -1,3 +1,4 @@
+import { uiRoutes } from '../../lib/routes';
 import { hubTarget, type HubTarget } from '../../internal/stores/account-panel-store';
 import type { KortixAccount, KortixProject } from '@kortix/sdk';
 
@@ -148,7 +149,7 @@ export function resolveWorkspaceRowNavigation(
   if (activeWorkspaceId && workspace.project_id === activeWorkspaceId) {
     return { kind: 'account-settings', to: hubTarget(workspace.account_id) };
   }
-  return { kind: 'switch', href: `/projects/${workspace.project_id}` };
+  return { kind: 'switch', href: uiRoutes().project(workspace.project_id) };
 }
 
 /**

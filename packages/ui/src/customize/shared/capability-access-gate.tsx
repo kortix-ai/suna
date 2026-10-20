@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { useEffect, type ReactNode } from 'react';
 import { useUiPathname, useUiRouter } from '../../providers/ui-provider';
 
@@ -40,7 +41,7 @@ export function CapabilityAccessGate({
 
   useEffect(() => {
     if (!settled || allowed) return;
-    router.replace(tabs[0] ? capabilityTabHref(projectId, tabs[0]) : `/projects/${projectId}`);
+    router.replace(tabs[0] ? capabilityTabHref(projectId, tabs[0]) : uiRoutes().project(projectId));
   }, [settled, allowed, tabs, projectId, router]);
 
   // `/customize` itself (no tab) is a redirect page that waits on its own.

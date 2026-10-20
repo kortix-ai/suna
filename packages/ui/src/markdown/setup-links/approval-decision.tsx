@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import {
   ApprovalAgentContext,
   ApprovalDecisionActions,
@@ -127,7 +128,7 @@ export function ApprovalDecision({ token }: { token: string }) {
   }
 
   const sessionHref =
-    details?.session_id ? `/projects/${details.project_id}/sessions/${details.session_id}` : null;
+    details?.session_id ? uiRoutes().session(details.project_id, details.session_id) : null;
 
   return (
     <ApprovalDecisionView

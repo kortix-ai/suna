@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
 import { DropdownMenu, DropdownMenuTrigger } from '../../primitives/dropdown-menu';
 import Hint from '../../primitives/hint';
@@ -172,7 +173,7 @@ export function SessionsToolbar({
           variant="secondary"
           className={cn('h-8 gap-1.5 transition-[scale] duration-150 active:scale-[0.96]')}
         >
-          <Link href={`/projects/${projectId}`} prefetch onClick={onNewSession}>
+          <Link href={uiRoutes().project(projectId)} prefetch onClick={onNewSession}>
             <PlusIcon className="size-4 shrink-0" />
             {tI18nComplete.raw('text18fdd549b2ed')}
           </Link>

@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
 import Hint from '../../primitives/hint';
 import { Kbd, KbdGroup } from '../../primitives/kbd';
@@ -272,7 +273,7 @@ export function ProjectSidebar({
                     asChild
                     className="group/menu-button text-sidebar-foreground relative"
                   >
-                    <Link href={`/projects/${projectId}`} prefetch onClick={handleNewSessionClick}>
+                    <Link href={uiRoutes().project(projectId)} prefetch onClick={handleNewSessionClick}>
                       {newSessionRowBody}
                     </Link>
                   </SidebarMenuButton>

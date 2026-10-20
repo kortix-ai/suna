@@ -1,5 +1,6 @@
 'use client';
 
+import { customizePath, uiRoutes } from '../../lib/routes';
 import { NewEntityMenu } from '../shared/new-entity-menu';
 import { useTranslations as useI18nTranslations } from '../../i18n';
 import { useMemo, useRef, useState } from 'react';
@@ -194,7 +195,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         onChat={() => configure.start(newConfigPrompt('agent'))}
         manual={{
           description: tI18nComplete.raw('text5210c5acc2cd'),
-          href: `/projects/${projectId}/files`,
+          href: uiRoutes().files(projectId) ?? customizePath(projectId, 'repo'),
         }}
       />
     ) : null;

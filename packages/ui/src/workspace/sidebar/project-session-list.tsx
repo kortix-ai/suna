@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { useTranslations } from '../../i18n';
 
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
@@ -441,7 +442,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // row: the connector already carries the link, and it has no children of its
   // own to show.
   const renderSessionNode = (session: ProjectSession, nested: boolean, inSharedGroup = false) => {
-    const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
+    const href = uiRoutes().session(session.project_id, session.session_id);
     const isActive = pathname?.includes(`/sessions/${session.session_id}`);
     const isSwitchTarget = switchingToSessionId === session.session_id;
     const children = directSubsessions(session);
@@ -601,7 +602,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       return firstChatPending ? (
         <FirstChatRow
           projectId={projectId}
-          isActive={pathname === `/projects/${projectId}` && isFirstChatRequested(searchParams)}
+          isActive={pathname === uiRoutes().project(projectId) && isFirstChatRequested(searchParams)}
         />
       ) : (
         <SessionsEmptyState className="flex-1 pb-16" />
@@ -705,7 +706,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           !automatedQuery.hasNextPage && (
             <FirstChatRow
               projectId={projectId}
-              isActive={pathname === `/projects/${projectId}` && isFirstChatRequested(searchParams)}
+              isActive={pathname === uiRoutes().project(projectId) && isFirstChatRequested(searchParams)}
             />
           )}
       </FadedScrollArea>
@@ -777,6 +778,7 @@ function SessionListHeader({
   onMenuOpenChange: (open: boolean) => void;
 }) {
   const t = useTranslations('sidebar');
+  const sessionsHref = uiRoutes().sessions(projectId);
   return (
     <div
       className={cn(
@@ -784,12 +786,18 @@ function SessionListHeader({
         SESSION_ROW_HEIGHT_CLASS,
       )}
     >
-      <HoverPrefetchLink
-        href={`/projects/${projectId}/sessions`}
-        className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium"
-      >
-        <span className="truncate">{t('sessions')}</span>
-      </HoverPrefetchLink>
+      {sessionsHref ? (
+        <HoverPrefetchLink
+          href={sessionsHref}
+          className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium"
+        >
+          <span className="truncate">{t('sessions')}</span>
+        </HoverPrefetchLink>
+      ) : (
+        <span className="text-muted-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium">
+          <span className="truncate">{t('sessions')}</span>
+        </span>
+      )}
       {sessions.length > 0 && (
         <DropdownMenu onOpenChange={onMenuOpenChange}>
           <SessionFilterMenu

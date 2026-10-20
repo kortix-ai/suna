@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { capabilityTabHref } from '../../internal/lib/capability-tab-routes';
 import { useAppsRowVisible } from './footer/project-apps-nav';
 import { filesRow } from '../../internal/layout/files-nav-label';
@@ -34,7 +35,7 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
   // modal memoizes its rows on this object, and a fresh one per render would
   // re-render every row on every drag frame.
   return useMemo(() => {
-    const base = `/projects/${projectId}`;
+    const appsHref = uiRoutes().apps(projectId);
     const files = filesTarget ? filesRow(projectId, filesTarget) : null;
     return {
       ...(customizeTab
@@ -46,12 +47,12 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
             },
           }
         : {}),
-      ...(appsVisible
+      ...(appsVisible && appsHref
         ? {
             apps: {
               label: tI18nComplete.raw('text89dd748442c1'),
               icon: <AppWindowIcon />,
-              href: `${base}/apps`,
+              href: appsHref,
             },
           }
         : {}),

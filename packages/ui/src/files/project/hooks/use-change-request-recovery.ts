@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../../lib/routes';
 import { errorToast } from '../../../primitives/toast';
 import { useProjectContext } from '../context';
 import { createProjectSession, markSessionFresh } from '@kortix/sdk';
@@ -33,7 +34,7 @@ export function useChangeRequestRecovery() {
 
       setStartingCrId(target.crId);
       const sessionId = randomUUID();
-      const href = `/projects/${projectId}/sessions/${sessionId}`;
+      const href = uiRoutes().session(projectId, sessionId);
       markSessionFresh(sessionId);
       router.prefetch(href);
 

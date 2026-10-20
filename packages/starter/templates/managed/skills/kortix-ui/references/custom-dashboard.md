@@ -201,8 +201,8 @@ A Next.js host passes `next/link` and `{ useRouter, usePathname, useSearchParams
 
 ## 5. The project shell
 
-Your sidebar chrome around Kortix's session list. The list links to
-`/projects/<projectId>/sessions/<sessionId>`, so your router serves that path.
+Your sidebar chrome around Kortix's session list. Every URL the components link to comes from one route table, `setUiRoutes` (`@kortix/ui`), called once at module load. The defaults are Kortix's own paths: `project` `/projects/<id>`, `session` `/projects/<id>/sessions/<sessionId>`, `sessions` `/projects/<id>/sessions` (`?view=archived|deleted`), `files` `/projects/<id>/files`, `drive` `/projects/<id>/drive`, `apps` `/projects/<id>/apps`, `members` `/projects/<id>/members`, `sandboxSettings` `/projects/<id>/config?section=sandbox`, `customize` `/projects/<id>/customize/<page>` (agents, skills, connectors, triggers, reminders, models, secrets, review, settings). Return your own path for a page you serve elsewhere. Return `null` for a page you do not serve: every link to it is hidden. `project` and `session` cannot be null. This app serves the project
+home, its files and a session (section 7), so it maps the other pages to `null`.
 
 ```tsx
 // src/project-shell.tsx
@@ -336,7 +336,7 @@ export function FilesPage() {
 
 ```tsx
 // src/main.tsx
-import { Button, Input, Label } from '@kortix/ui';
+import { Button, Input, Label, setUiRoutes } from '@kortix/ui';
 import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, Outlet, RouterProvider } from 'react-router-dom';
@@ -370,7 +370,17 @@ function SignIn() {
   );
 }
 
-// Session URLs are /projects/:projectId/sessions/:sessionId: the session list links there.
+// This router serves the default paths of `project`, `files` and `session`. Every link to
+// another page is hidden.
+setUiRoutes({
+  sessions: () => null,
+  drive: () => null,
+  apps: () => null,
+  members: () => null,
+  sandboxSettings: () => null,
+  customize: () => null,
+});
+
 const router = createBrowserRouter([
   {
     element: (

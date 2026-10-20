@@ -1,3 +1,4 @@
+import { uiRoutes } from '../../lib/routes';
 import type { AccountInviteLanding, KortixAccount, KortixProject } from '@kortix/sdk';
 
 import { workspaceAccountLabel } from '../sidebar/workspace-grouping';
@@ -169,7 +170,7 @@ export function countProjects(sections: AccountSection[]): number {
  */
 export function inviteLandingPath(landing: AccountInviteLanding): string {
   return landing.kind === 'project'
-    ? `/projects/${landing.projectId}`
+    ? uiRoutes().project(landing.projectId)
     : `/projects/start?account=${encodeURIComponent(landing.accountId)}`;
 }
 

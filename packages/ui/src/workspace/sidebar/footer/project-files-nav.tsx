@@ -79,8 +79,9 @@ export function ProjectFilesNavItem({ projectId }: { projectId: string }) {
 
   // No project id means no valid href. The old onClick already no-op'd in this
   // case, so rendering a dead button was never useful.
-  if (!target || !projectId) return null;
-  const { label, href } = filesRow(projectId, target);
+  const row = target && projectId ? filesRow(projectId, target) : null;
+  if (!row) return null;
+  const { label, href } = row;
 
   return (
     <ProjectNavRow

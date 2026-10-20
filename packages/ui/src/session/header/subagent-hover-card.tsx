@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { HoverPrefetchLink } from '../../internal/components/hover-prefetch-link';
 import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
@@ -42,7 +43,7 @@ export function SubagentHoverCard({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
-  const href = `/projects/${projectId}/sessions/${projectSessionId}`;
+  const href = uiRoutes().session(projectId, projectSessionId);
 
   return (
     <HoverCard open={open} onOpenChange={setOpen} openDelay={300} closeDelay={100}>

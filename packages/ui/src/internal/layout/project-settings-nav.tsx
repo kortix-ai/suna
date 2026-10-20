@@ -1,5 +1,6 @@
 'use client';
 
+import { customizePath } from '../../lib/routes';
 import { ProjectNavRow } from './project-nav-row';
 
 import { CustomizeGlyph } from '../icons/customize';
@@ -274,7 +275,7 @@ export function ProjectCustomizeNavItem({ projectId }: { projectId: string }) {
   // Connectors or one agent's page, not just on the landing tab.
   const isActive =
     !!pathname &&
-    (pathname === `/projects/${projectId}/customize` || activeCapabilityTab(pathname) !== null);
+    (pathname === customizePath(projectId) || activeCapabilityTab(pathname) !== null);
 
   if (!tab) return null;
   // No project id means no valid href, so there is nothing to render.

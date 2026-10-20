@@ -177,6 +177,10 @@ The root `@kortix/ui` barrel holds only light core primitives. Toasts need one
 `<Toaster />` from `@kortix/ui/toast` at the root; `IconProvider`
 (`@kortix/ui/icon-provider`) sets the house icon weight.
 
+### Routes
+
+Every URL the components link to comes from one route table, `setUiRoutes` (`@kortix/ui`), called once at module load. The defaults are Kortix's own paths: `project` `/projects/<id>`, `session` `/projects/<id>/sessions/<sessionId>`, `sessions` `/projects/<id>/sessions` (`?view=archived|deleted`), `files` `/projects/<id>/files`, `drive` `/projects/<id>/drive`, `apps` `/projects/<id>/apps`, `members` `/projects/<id>/members`, `sandboxSettings` `/projects/<id>/config?section=sandbox`, `customize` `/projects/<id>/customize/<page>` (agents, skills, connectors, triggers, reminders, models, secrets, review, settings). Return your own path for a page you serve elsewhere. Return `null` for a page you do not serve: every link to it is hidden. `project` and `session` cannot be null.
+
 ## Modules
 
 Every part of a Kortix session is a module with one entry. Its curated names

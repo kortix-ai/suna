@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
 import { IconDelete } from '../../primitives/kortix-icons';
 import {
@@ -93,7 +94,7 @@ export function SessionDeleteModal({
     successToast(t('restored'));
     void queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     // Deleting the open session left its page: Undo goes back to it.
-    if (id === openSessionId) router.push(`/projects/${projectId}/sessions/${id}`);
+    if (id === openSessionId) router.push(uiRoutes().session(projectId, id));
   };
 
   const deleteMutation = useMutation({

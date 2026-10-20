@@ -1,6 +1,7 @@
 'use client';
 
 
+import { uiRoutes } from '../../lib/routes';
 import { isQuestionTool } from '@kortix/sdk';
 import { SessionApprovalPrompt } from '../prompts/session-approval-prompt';
 import { childSessionHref } from '../tool/tools/session-spawn-urls';
@@ -3523,13 +3524,10 @@ export function SessionChat({
   // is warmed below instead of being fetched cold on the click.
   const backToParentHref = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return null;
-    const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
-    if (!projectRoute) return null;
-    const [, projectId, projectSessionId] = projectRoute;
-    return parentSessionData.parentID
-      ? childSessionHref(`/projects/${projectId}/sessions/${projectSessionId}`, parentSessionData.id)
-      : `/projects/${projectId}/sessions/${projectSessionId}`;
-  }, [session?.parentID, parentSessionData, pathname]);
+    if (!projectId || !projectSessionId) return null;
+    const href = uiRoutes().session(projectId, projectSessionId);
+    return parentSessionData.parentID ? childSessionHref(href, parentSessionData.id) : href;
+  }, [session?.parentID, parentSessionData, projectId, projectSessionId]);
 
   useEffect(() => {
     if (backToParentHref) router.prefetch(backToParentHref);

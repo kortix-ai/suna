@@ -1,3 +1,5 @@
+import { customizePath } from '../../lib/routes';
+
 /**
  * The capability pages that graduated out of the Customize overlay. Commands
  * was removed (its standalone page deleted) and lives only in the Customize
@@ -134,11 +136,12 @@ export const CAPABILITY_SEGMENT: Record<CapabilityTab['key'], string> = {
 /** The root every capability tab hangs off (Marko, 2026-09-03: "always
  *  /customize/agents, /customize/skills"). */
 export function customizeHref(projectId: string): string {
-  return `/projects/${projectId}/customize`;
+  return customizePath(projectId);
 }
 
+/** The tab's URL: the host's `customize` route (`setUiRoutes`) with the tab segment. */
 export function capabilityTabHref(projectId: string, key: CapabilityTab['key']): string {
-  return `${customizeHref(projectId)}/${CAPABILITY_SEGMENT[key]}`;
+  return customizePath(projectId, CAPABILITY_SEGMENT[key]);
 }
 
 /**

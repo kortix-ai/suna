@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUiRouter, useUiViewerId } from '../../providers/ui-provider';
 import { useCallback, useState } from 'react';
@@ -972,7 +973,7 @@ export function useCreateWorkspace(): {
         // decision reads `projectsCachedForAccount`), so its onboarding wizard
         // opens on the landing (KRTX-2092).
         completeOnboarding: (projectId) => setProjectOnboardingComplete(projectId, true),
-        enterProject: (projectId) => router.replace(`/projects/${encodeURIComponent(projectId)}`),
+        enterProject: (projectId) => router.replace(uiRoutes().project(encodeURIComponent(projectId))),
         now: Date.now,
       });
 

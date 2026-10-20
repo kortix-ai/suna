@@ -1,3 +1,4 @@
+import { uiRoutes } from '../../../lib/routes';
 /**
  * The query parameter that opens a child runtime session inside a project
  * session route. Links written before W4 name it `oc`; readers still accept it.
@@ -18,15 +19,14 @@ export function deleteRuntimeSessionParam(params: URLSearchParams): void {
 
 /** `href` (a project session route) opened on the child runtime session `childSessionId`. */
 export function childSessionHref(href: string, childSessionId: string): string {
-  return `${href}?${RUNTIME_SESSION_PARAM}=${encodeURIComponent(childSessionId)}`;
+  return `${href}${href.includes('?') ? '&' : '?'}${RUNTIME_SESSION_PARAM}=${encodeURIComponent(childSessionId)}`;
 }
 
+/** The open session's URL with a child runtime session selected; null outside a session. */
 export function projectChildSessionHref(
-  pathname: string | null,
+  ids: { projectId?: string; sessionId?: string },
   childSessionId: string | undefined,
 ) {
-  if (!pathname || !childSessionId) return null;
-  const match = pathname.match(/^\/projects\/([^/]+)\/sessions\/([^/?#]+)/);
-  if (!match) return null;
-  return childSessionHref(`/projects/${match[1]}/sessions/${match[2]}`, childSessionId);
+  if (!ids.projectId || !ids.sessionId || !childSessionId) return null;
+  return childSessionHref(uiRoutes().session(ids.projectId, ids.sessionId), childSessionId);
 }

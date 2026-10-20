@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../../lib/routes';
 import { errorToast, successToast } from '../../../primitives/toast';
 import { useTranslations } from '../../../i18n';
 import type { SandboxRuntimeStatus } from '@kortix/sdk';
@@ -53,7 +54,7 @@ export function useSandboxRecovery(projectId: string) {
     mutationFn: () => fixSandboxWithAgent(projectId),
     onSuccess: ({ session_id }) => {
       successToast(tI18nComplete.raw('text4b303ca7f76c'));
-      router.push(`/projects/${projectId}/sessions/${session_id}`);
+      router.push(uiRoutes().session(projectId, session_id));
       invalidate();
     },
     onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text02d6613cab50')),

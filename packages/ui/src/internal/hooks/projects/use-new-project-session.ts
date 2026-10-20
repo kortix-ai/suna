@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../../lib/routes';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '../../../i18n';
 import { useUiPathname, useUiRouter, type UiRouter } from '../../../providers/ui-provider';
@@ -155,14 +156,14 @@ function makeTakeOrCreateSession(
             : true;
           if (primed) {
             onAdopt(warm.session);
-            router.prefetch(`/projects/${projectId}/sessions/${warm.sessionId}`);
+            router.prefetch(uiRoutes().session(projectId, warm.sessionId));
             return warm.sessionId;
           }
         }
 
         const sessionId = randomUUID();
         markSessionFresh(sessionId);
-        router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
+        router.prefetch(uiRoutes().session(projectId, sessionId));
         let created: ProjectSession | undefined;
         try {
           created = await createProjectSession(projectId, {
@@ -242,7 +243,7 @@ export function useNewProjectSession(projectId: string | undefined) {
   // that cannot be anchors (the Cmd+J shortcut, the command palette row).
   useEffect(() => {
     if (!projectId) return;
-    router.prefetch(`/projects/${projectId}`);
+    router.prefetch(uiRoutes().project(projectId));
   }, [projectId, router]);
 
   const startSession = useCallback(
@@ -256,7 +257,7 @@ export function useNewProjectSession(projectId: string | undefined) {
         // nav-contract: prefetch-only — this branch serves the keyboard
         // shortcut and the command palette row, neither of which is an anchor.
         // The effect above holds the composer payload in the segment cache.
-        router.push(`/projects/${projectId}`);
+        router.push(uiRoutes().project(projectId));
         return;
       }
 
@@ -365,7 +366,7 @@ export function useNewProjectSession(projectId: string | undefined) {
           // nav-contract: prefetch-only — the session id is minted or returned
           // by the create POST, so no anchor can name it. `takeOrCreateSession`
           // prefetches the route the moment the id exists.
-          router.push(`/projects/${projectId}/sessions/${sessionId}`);
+          router.push(uiRoutes().session(projectId, sessionId));
         },
       }).catch((err) => {
         const code = (err as { code?: string })?.code;

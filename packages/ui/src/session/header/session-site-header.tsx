@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { useTranslations } from '../../i18n';
 import { useSessionListActions } from '../actions/use-session-list-actions';
 import { useLocalizedUiCatalog } from '../../i18n/ui-catalog/use-localized-ui-catalog';
@@ -444,10 +445,7 @@ export function SessionSiteHeader({
                     onSuccess: (fork) => {
                       if (projectId && projectSessionId) {
                         router.push(
-                          childSessionHref(
-                            `/projects/${projectId}/sessions/${projectSessionId}`,
-                            fork.id,
-                          ),
+                          childSessionHref(uiRoutes().session(projectId, projectSessionId), fork.id),
                         );
                       }
                     },
@@ -846,7 +844,7 @@ export function SessionSiteHeader({
             sessionLabel={projectTitle}
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
-            onDeleted={() => router.push(`/projects/${projectId}`)}
+            onDeleted={() => router.push(uiRoutes().project(projectId))}
           />
         </>
       )}

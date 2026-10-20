@@ -20,6 +20,7 @@
  * 2026-09-02, and every id that named one of its sections resolves to an
  * overlay tab now (`resolveOverlayTab`).
  */
+import { uiRoutes } from '../../lib/routes';
 import { useUiRouter } from '../../providers/ui-provider';
 import { useCallback, useMemo } from 'react';
 
@@ -82,7 +83,7 @@ export function projectCapabilityNavHref(
   // `'members'` is not a real `CapabilityTab['key']` — `capabilityTabHref`
   // would reject it at the type level. The redirect page at that path is
   // still the right destination.
-  if (target === 'members') return `/projects/${projectId}/members`;
+  if (target === 'members') return uiRoutes().members(projectId) ?? capabilityTabHref(projectId, 'config');
   return capabilityTabHref(projectId, target);
 }
 

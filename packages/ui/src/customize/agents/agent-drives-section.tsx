@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
 import { EditorSection } from '../sections/view/agent-editor-primitives';
@@ -29,6 +30,7 @@ import { UiLink as Link } from '../../providers/ui-provider';
 export function AgentDrivesSection({ projectId, agentName }: { projectId: string; agentName: string }) {
   const t = useTranslations('drives');
   const drive = useProjectDrive(projectId);
+  const driveHref = uiRoutes().drive(projectId);
   const root = useDriveFolder(drive.data?.driveId ?? null, '/');
   const drives = (root.data?.entries ?? []).filter(
     (e) => e.type === 'dir' && !/^\/?Users(\/|$)/.test(e.path),
@@ -71,9 +73,11 @@ export function AgentDrivesSection({ projectId, agentName }: { projectId: string
       title={t('customizeTitle')}
       description={t('accessAgentsCompanyHint')}
       trailing={
-        <Button asChild variant="ghost" size="sm">
-          <Link href={`/projects/${projectId}/drive`}>{t('driveLabel')}</Link>
-        </Button>
+        driveHref ? (
+          <Button asChild variant="ghost" size="sm">
+            <Link href={driveHref}>{t('driveLabel')}</Link>
+          </Button>
+        ) : undefined
       }
     >
       <div className="py-4">{body}</div>

@@ -101,7 +101,7 @@ export function GrantHeaderTrailing({
   tab?: 'skills' | 'connectors' | 'secrets';
   /** A page `tab` cannot name — Apps is a Customize tab, reached
    *  through `capabilityTabHref(projectId, 'apps')`. */
-  href?: (projectId: string) => string;
+  href?: (projectId: string) => string | null;
   label: string;
 }) {
   const projectId = useKortixRouteProjectId();

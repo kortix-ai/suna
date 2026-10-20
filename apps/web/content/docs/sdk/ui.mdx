@@ -18,7 +18,7 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | `@kortix/ui/session` | The session thread: `SessionThread`, its building blocks, `ModelSelector` and `AgentSelector`. It needs `@kortix/sdk` and its React peers. |
 | `@kortix/ui/<module>` | One curated entry per module: `workspace`, `composer`, `session-panel`, `files`, `file-viewer`, `markdown`, `genui`, `diff`, `changes`, `terminal`, `browser`, `apps`, `access`, `customize`, `icons`, `i18n`. See [Modules](#modules). |
 | `@kortix/ui/theme` | The typed theme: `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`. See [Theming](#theming). |
-| `@kortix/ui` (helpers) | The helpers the components use come from the root too: `cn`, `useIsMobile`, `useDebounce`, `lazyClient`, `setUiTelemetry`, `setUiHostEnv`. |
+| `@kortix/ui` (helpers) | The helpers the components use come from the root too: `cn`, `useIsMobile`, `useDebounce`, `lazyClient`, `setUiTelemetry`, `setUiHostEnv`, `setUiRoutes` (the URL of every page the components link to; see [Routes](#routes)). |
 | `@kortix/ui/tailwind.css`, `/tokens.css`, `/theme.css`, `/styles.css`, `/fonts.css` | The stylesheets. Load them as the next section says. |
 
 `react` and `react-dom` 19 are peer dependencies (the PowerPoint preview needs React 19.2.7 or later). Install the rest by what you use:
@@ -120,6 +120,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
 | `setUiTelemetry` from `@kortix/ui/lib/telemetry` | Not a provider: call it once at module load with `track`, `captureException`, `captureMessage`, `addBreadcrumb`. Declare `UiTelemetryRegister { event: YourEvents }` to make `tsc` check event names. | `track` does nothing; `captureException` logs to the console. |
 | `IconProvider` | Gives every Phosphor icon the Kortix weight and size. | Phosphor's defaults. |
 | `<Toaster />` from `@kortix/ui/toast` | Renders the toasts that `successToast`, `errorToast` and the other helpers in `@kortix/ui/toast` raise. | No toast appears. |
+
+## Routes
+
+Every URL the components link to comes from one route table, `setUiRoutes` (`@kortix/ui`), called once at module load. The defaults are Kortix's own paths: `project` `/projects/<id>`, `session` `/projects/<id>/sessions/<sessionId>`, `sessions` `/projects/<id>/sessions` (`?view=archived|deleted`), `files` `/projects/<id>/files`, `drive` `/projects/<id>/drive`, `apps` `/projects/<id>/apps`, `members` `/projects/<id>/members`, `sandboxSettings` `/projects/<id>/config?section=sandbox`, `customize` `/projects/<id>/customize/<page>` (agents, skills, connectors, triggers, reminders, models, secrets, review, settings). Return your own path for a page you serve elsewhere. Return `null` for a page you do not serve: every link to it is hidden. `project` and `session` cannot be null.
+
+```ts
+import { setUiRoutes } from '@kortix/ui';
+
+setUiRoutes({
+  session: (projectId, sessionId) => `/w/${projectId}/chat/${sessionId}`,
+  drive: () => null,
+  customize: () => null,
+});
+```
 
 ## Theming
 
@@ -494,7 +508,7 @@ export function Providers({ children }: { children: ReactNode }) {
 React 19 hoists `<style href precedence>` into `<head>`. A Next.js host passes `next/link` and the `next/navigation` hooks unchanged.
 </Step>
 <Step title="Put the session list in your sidebar">
-The list links to `/projects/<projectId>/sessions/<sessionId>`, so your router serves that path.
+The list links through [the route table](#routes). This app serves the project home, its files and a session, so it maps the other pages to `null`.
 
 ```tsx title="src/project-shell.tsx"
 import { SessionIdsProvider } from '@kortix/ui';
@@ -610,7 +624,7 @@ export function FilesPage() {
 ```
 
 ```tsx title="src/main.tsx"
-import { Button, Input, Label } from '@kortix/ui';
+import { Button, Input, Label, setUiRoutes } from '@kortix/ui';
 import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, Outlet, RouterProvider } from 'react-router-dom';
@@ -644,7 +658,17 @@ function SignIn() {
   );
 }
 
-// Session URLs are /projects/:projectId/sessions/:sessionId: the session list links there.
+// This router serves the default paths of `project`, `files` and `session`. Every link to
+// another page is hidden.
+setUiRoutes({
+  sessions: () => null,
+  drive: () => null,
+  apps: () => null,
+  members: () => null,
+  sandboxSettings: () => null,
+  customize: () => null,
+});
+
 const router = createBrowserRouter([
   {
     element: (

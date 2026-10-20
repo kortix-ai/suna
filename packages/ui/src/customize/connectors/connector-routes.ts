@@ -1,3 +1,4 @@
+import { customizePath } from '../../lib/routes';
 import type { CatalogEntry } from './catalog/catalog-entry';
 
 /**
@@ -15,7 +16,7 @@ export type AppRef =
   { source: 'discover'; slug: string; id: string } | { source: 'easy-connect'; slug: string };
 
 function base(projectId: string): string {
-  return `/projects/${encodeURIComponent(projectId)}/customize/connectors`;
+  return customizePath(encodeURIComponent(projectId), 'connectors');
 }
 
 function withQuery(path: string, params: URLSearchParams): string {

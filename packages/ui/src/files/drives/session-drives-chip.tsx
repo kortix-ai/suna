@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
 import { warningToast } from '../../primitives/toast';
@@ -27,6 +28,7 @@ export function SessionDrivesChip({ projectId, sessionId }: { projectId: string;
   const Link = useUiLink();
   const t = useTranslations('drives');
   const flag = useFeatureFlag(projectId, 'drives');
+  const driveHref = uiRoutes().drive(projectId);
   const session = useSessionDrives(projectId, sessionId);
   const rows = session.data?.drives ?? [];
   const conflicts = rows.reduce((sum, row) => sum + (row.openConflicts ?? 0), 0);
@@ -90,11 +92,13 @@ export function SessionDrivesChip({ projectId, sessionId }: { projectId: string;
             ))
           )}
         </ul>
-        <div className="border-t px-1.5 py-1.5">
-          <Button asChild variant="ghost" size="sm" className="w-full justify-start">
-            <Link href={`/projects/${projectId}/drive`}>{t('openDrive')}</Link>
-          </Button>
-        </div>
+        {driveHref && (
+          <div className="border-t px-1.5 py-1.5">
+            <Button asChild variant="ghost" size="sm" className="w-full justify-start">
+              <Link href={driveHref}>{t('openDrive')}</Link>
+            </Button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

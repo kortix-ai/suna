@@ -1,5 +1,6 @@
 'use client';
 
+import { uiRoutes } from '../../lib/routes';
 import { MessageSenderAbove } from '../participants/session-participants';
 import { MessageAuthorLabel } from './message-author-label';
 import { errorToast } from '../../primitives/toast';
@@ -251,7 +252,7 @@ function ReminderMessage({ info, actions }: { info: ReminderPromptInfo; actions?
   const t = useTranslations('reminders');
   const ids = useSessionIds();
   const manageHref =
-    ids.projectId && ids.sessionId ? `/projects/${ids.projectId}/reminders?session=${ids.sessionId}` : null;
+    ids.projectId && ids.sessionId ? uiRoutes().customize(ids.projectId, `reminders?session=${ids.sessionId}`) : null;
   return (
     <PlatformPromptMessage
       data-testid="reminder-turn"

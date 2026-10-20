@@ -24,7 +24,7 @@ Outside it: tell the user, style with plain CSS over the section 6 variables, ne
    (`@kortix/ui/toast`). `setUiTelemetry` (`@kortix/ui`) once at module load. Dark mode is `dark` on `<html>`. SDK `billingEnabled` stays off (Kortix's app only).
 4. Ids, never route params. `SessionThread`, `SessionWorkspace` and `ProjectHome` mount `SessionIdsProvider` and the
    SDK project scope themselves. A block outside them: `KortixProjectProvider` (`@kortix/sdk/react`) and
-   `SessionIdsProvider` (`projectId`, `sessionId`) around it. Session links are `/projects/<id>/sessions/<sessionId>`.
+   `SessionIdsProvider` (`projectId`, `sessionId`) around it. Links follow `setUiRoutes` (`@kortix/ui`): map each page you do not serve to `null`.
 5. Import by subpath: `import { Modal } from '@kortix/ui/modal'`. The root `@kortix/ui` (section 7) needs no `@kortix/sdk`.
 
 ## 2. Compose before you create

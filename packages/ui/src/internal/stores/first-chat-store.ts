@@ -1,3 +1,4 @@
+import { uiRoutes } from '../../lib/routes';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -69,7 +70,8 @@ const FIRST_CHAT_PARAM = 'chat';
 const FIRST_CHAT_VALUE = 'first';
 
 export function firstChatHref(projectId: string): string {
-  return `/projects/${encodeURIComponent(projectId)}?${FIRST_CHAT_PARAM}=${FIRST_CHAT_VALUE}`;
+  const home = uiRoutes().project(encodeURIComponent(projectId));
+  return `${home}${home.includes('?') ? '&' : '?'}${FIRST_CHAT_PARAM}=${FIRST_CHAT_VALUE}`;
 }
 
 export function isFirstChatRequested(
