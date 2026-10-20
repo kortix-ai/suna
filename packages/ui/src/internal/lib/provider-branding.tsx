@@ -142,13 +142,14 @@ const LOGO_TILE_LIGHT = 'border-border rounded-md border bg-white';
 const LOGO_TILE_LIGHT_TEXT = 'text-black';
 
 /** The Kortix mark has no built-in padding, so it gets its own size per tile
- *  to match the other logos' optical size (roughly half the tile). */
-const KORTIX_MARK_PX = {
-  xs: 14,
-  small: 12,
-  medium: 16,
-  default: 16,
-  large: 20,
+ *  to match the other logos' optical size (roughly half the tile). In spacing
+ *  steps (`size-3.5` … `size-5`), so the mark follows the host's `--spacing`. */
+const KORTIX_MARK_STEPS = {
+  xs: 3.5,
+  small: 3,
+  medium: 4,
+  default: 4,
+  large: 5,
 } as const;
 
 export function ProviderLogo({
@@ -210,7 +211,10 @@ export function ProviderLogo({
         // The host's brand mark (`useBrand` icon), else the Kortix symbol in currentColor.
         <KortixLogo
           variant="icon"
-          size={KORTIX_MARK_PX[size]}
+          style={{
+            width: `calc(var(--spacing) * ${KORTIX_MARK_STEPS[size]})`,
+            height: `calc(var(--spacing) * ${KORTIX_MARK_STEPS[size]})`,
+          }}
           className={light ? LOGO_TILE_LIGHT_TEXT : 'text-foreground'}
         />
       ) : src ? (
