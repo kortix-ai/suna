@@ -188,3 +188,17 @@ test('an explicit agent file outside the skill replaces its unused conventional 
   expect((await remove()).status).toBe(200);
   expect(writes).toHaveLength(1);
 });
+for (const file of ['command/report.md', 'commands/report.md', 'opencode.json', 'opencode.jsonc']) {
+  test(`refuses deletion of legacy native configuration ${file}`, async () => {
+    raw = { kortix_version: 2, opencode: { config_dir: 'skills/research' } };
+    paths.push(`skills/research/${file}`);
+    expect((await remove()).status).toBe(409);
+    expect(writes).toHaveLength(0);
+  });
+}
+test('ordinary skill reference markdown does not count as native configuration', async () => {
+  raw = { kortix_version: 2, opencode: { config_dir: 'harnesses/opencode' } };
+  paths.push('skills/research/commands/report.md');
+  expect((await remove()).status).toBe(200);
+  expect(firstWrite().deletes).toContain('skills/research/commands/report.md');
+});

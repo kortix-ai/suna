@@ -1,4 +1,4 @@
-import { agentFileCandidates, legacyConfigDir, skillDirs } from '@kortix/manifest-schema';
+import { agentFileCandidates, legacyConfigDir, opencodeConfigDirCandidates, skillDirs } from '@kortix/manifest-schema';
 import type { ParsedManifest } from '../triggers';
 
 const record = (value: unknown): Record<string, unknown> =>
@@ -59,6 +59,11 @@ export function prepareSkillDeletion(
   if (manifest.schemaVersion < 3) {
     const configDir = legacyConfigDir(manifest.raw);
     const agentDirs = ['agents', `${configDir}/agent`, `${configDir}/agents`];
+    const configDirs = opencodeConfigDirCandidates(manifest.raw);
+    protectedPaths.push(...files.filter(file => configDirs.some(dir =>
+      file.path === `${dir}/opencode.json` || file.path === `${dir}/opencode.jsonc`
+      || (file.path.startsWith(`${dir}/`) && /^commands?\/[^/]+\.md$/.test(file.path.slice(dir.length + 1)))))
+      .map(file => file.path));
     protectedPaths.push(...files.filter(file => agentDirs.some(dir =>
       file.path.startsWith(`${dir}/`) && /^[^/]+\.md$/.test(file.path.slice(dir.length + 1))))
       .map(file => file.path));
