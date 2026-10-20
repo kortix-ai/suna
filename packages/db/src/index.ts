@@ -54,6 +54,7 @@ export {
   projectAccessRequests,
   projectSecrets,
   projectSecretTombstones,
+  projectSecretRequests,
   accountSecretResources,
   accountSecretGrants,
   sessionProviderSecretPools,
