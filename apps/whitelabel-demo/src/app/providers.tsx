@@ -12,6 +12,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 // Importing the client configures the SDK platform seam once (createKortix),
 // defaulting to direct mode. `configureWrapperMode` re-points it below when
 // wrapper mode is confirmed.
+import { LUMEN_UI_BRAND } from '@/components/brand-mark';
 import { configureWrapperMode } from '@/lib/kortix';
 import { fetchWrapperMode } from '@/lib/mode';
 import { resolveWrapperPreviewUrl } from '@/lib/preview-url';
@@ -24,7 +25,12 @@ const WrapperModeContext = createContext(false);
 
 // Client-side navigation for @kortix/ui (useUiRouter().push), not full page loads.
 const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
+// Lumen's mark wherever @kortix/ui would draw the Kortix symbol.
+const useLumenBrand = () => LUMEN_UI_BRAND;
 
+// The app features the session UI renders whole. A slot left out hides its
+// control. Lumen ships Kortix's own sharing dialog (who can open a session,
+// public links), loaded on first open.
 // A Kortix deployment serves its managed model lineup; without this flag the
 // model picker would list only the account's own provider keys.
 const config = { managedModelsEnabled: true };
@@ -32,9 +38,6 @@ const config = { managedModelsEnabled: true };
 // the terminal's WebSocket, so the Terminal control is hidden there.
 const wrapperConfig = { ...config, terminalEnabled: false };
 
-// The app features the session UI renders whole. A slot left out hides its
-// control. Lumen ships Kortix's own sharing dialog (who can open a session,
-// public links), loaded on first open.
 const components: UiHostComponents = {
   ShareSessionModal: lazyClient(() => import('@kortix/ui/workspace').then((m) => m.ShareSessionModal)),
 };
@@ -99,10 +102,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
         {/* @kortix/ui's host adapters: links and router calls navigate with
             next/link and next/navigation; copy keeps the English defaults; images
             stay plain <img> (next/image would need images.remotePatterns for
-            organization logos). IconProvider gives every Phosphor icon the house
+            organization logos); the brand is Lumen's mark. IconProvider gives every Phosphor icon the house
             weight. Mounted once. */}
         <UiProvider link={NextLink} navigation={navigation} components={components} config={wrapperMode ? wrapperConfig : config}
-          resolvePreviewUrl={wrapperMode ? resolveWrapperPreviewUrl : undefined}>
+          resolvePreviewUrl={wrapperMode ? resolveWrapperPreviewUrl : undefined} useBrand={useLumenBrand}>
           <IconProvider>
             <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
             <Toaster />

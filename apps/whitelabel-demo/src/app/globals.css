@@ -11,8 +11,10 @@
    @kortix/ui/fonts.css (Roobert is for Kortix-owned surfaces).
 
    This file maps Lumen's own --brand variable (set by the theme) to the
-   `bg-brand` / `text-brand` utilities. */
+   `bg-brand` / `text-brand` utilities, and adds `font-display`, Lumen's
+   heading serif (Instrument Serif, loaded in layout.tsx). */
 @theme inline {
+  --font-display: var(--font-lumen-display), "Iowan Old Style", Georgia, serif;
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
 }

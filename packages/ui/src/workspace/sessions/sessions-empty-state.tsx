@@ -1,12 +1,15 @@
 'use client';
 
+import { KortixLogo } from '../../primitives/kortix-logo';
 import { PixelKortixMark } from '../../primitives/pixel-kortix-mark';
+import { useUiBrand } from '../../providers/ui-provider';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../internal/lib/utils';
 
 /**
  * What a project's session list shows before its first session: one line of
- * text over the pixel Kortix mark. The sidebar list and the sessions page both
+ * text over the pixel Kortix mark, or over the host's icon when `useUiBrand()`
+ * sets one (a white-label never shows the Kortix mark). The sidebar list and the sessions page both
  * render it, so the two empty lists always say the same thing.
  *
  * No button. The sidebar and the sessions toolbar each already have a "New
@@ -18,6 +21,7 @@ import { cn } from '../../internal/lib/utils';
  */
 export function SessionsEmptyState({ className }: { className?: string }) {
   const t = useTranslations('sidebar');
+  const branded = Boolean(useUiBrand()?.icon_url);
 
   return (
     <div
@@ -30,7 +34,11 @@ export function SessionsEmptyState({ className }: { className?: string }) {
       <p className="text-muted-foreground max-w-48 text-sm text-balance">
         {t('sessionList.empty')}
       </p>
-      <PixelKortixMark className="text-muted-foreground opacity-50" />
+      {branded ? (
+        <KortixLogo variant="icon" size={40} className="opacity-50 grayscale" />
+      ) : (
+        <PixelKortixMark className="text-muted-foreground opacity-50" />
+      )}
     </div>
   );
 }
