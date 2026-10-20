@@ -17,6 +17,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useNotificationCenter } from '@/features/notifications/use-notification-center';
 import { useOpenSessionRead } from '@/features/notifications/use-open-session-read';
 import { useAuth } from '@/features/providers/auth-provider';
+import { MissingSessionBoundary } from '@/features/session/missing-session-boundary';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
 import {
@@ -156,13 +157,29 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
  */
 export default function ProjectSessionPage() {
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
+  const tSessionPage = useTranslations('sessionPage');
   if (!projectId || !sessionId) return null;
   return (
-    <ProjectSessionView
+    <MissingSessionBoundary
       key={`${projectId}/${sessionId}`}
       projectId={projectId}
       sessionId={sessionId}
-    />
+      fallback={
+        <InlineSessionError
+          title={tSessionPage('missing.title')}
+          message={tSessionPage('missing.message')}
+          action={
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/projects/${projectId}`} prefetch>
+                {tSessionPage('backToProject')}
+              </Link>
+            </Button>
+          }
+        />
+      }
+    >
+      <ProjectSessionView projectId={projectId} sessionId={sessionId} />
+    </MissingSessionBoundary>
   );
 }
 
