@@ -4,15 +4,15 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useMemo } from 'react';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { setDesktopBadgeCount } from '@/lib/desktop';
+import { setDesktopBadgeCount } from '@kortix/ui/internal/lib/desktop';
 import {
   createTurnCompleteGate,
   onTurnComplete,
   type TurnCompleteMsg,
-} from '@/lib/turn-broadcast';
-import { isTabHidden, isViewingSession, notifyTaskCompleteFor } from '@/lib/web-notifications';
-import { useTabStore } from '@/stores/tab-store';
-import { useTurnAttentionStore } from '@/stores/turn-attention-store';
+} from '@kortix/ui/internal/lib/turn-broadcast';
+import { isTabHidden, isViewingSession, notifyTaskCompleteFor } from '@kortix/ui/internal/lib/web-notifications';
+import { useTabStore } from '@kortix/ui/internal/stores/tab-store';
+import { useTurnAttentionStore } from '@kortix/ui/internal/stores/turn-attention-store';
 
 /**
  * Favicon badge for unseen finished turns.

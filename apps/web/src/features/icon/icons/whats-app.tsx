@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 export const WhatsApp = ({ className }: { className?: string }) => {
   return (

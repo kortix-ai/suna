@@ -299,6 +299,7 @@ async function resolveUpgradeForPrincipal(input: {
   // means nothing to the daemon — strip it with the credentials.
   const wakeRequested = upstreamQuery.get('wake') === '1';
   upstreamQuery.delete('token');
+  upstreamQuery.delete('preview_ticket');
   upstreamQuery.delete('public_share');
   upstreamQuery.delete('wake');
   const queryString = upstreamQuery.toString() ? `?${upstreamQuery.toString()}` : '';

@@ -21,6 +21,16 @@ import { existsSync, readdirSync, readFileSync, statSync } from '@/i18n/test-sou
 import { dirname, relative, resolve } from 'node:path';
 
 const WEB_SRC = resolve(import.meta.dir, '../..');
+const REPO = resolve(WEB_SRC, '../../..');
+const UI = resolve(REPO, 'packages/ui');
+const UI_EXPORTS: Record<string, unknown> = JSON.parse(
+  readFileSync(resolve(UI, 'package.json'), 'utf8'),
+).exports;
+
+/** A graph node: an apps/web/src path, or `packages/ui/src/…` for a @kortix/ui module. */
+function absolute(node: string): string {
+  return node.startsWith('packages/') ? resolve(REPO, node) : resolve(WEB_SRC, node);
+}
 
 /** Comments stripped; `//` spared when it is a URL scheme. */
 /**
@@ -32,7 +42,7 @@ const WEB_SRC = resolve(import.meta.dir, '../..');
  * statements in between. That silently SHRINKS the graph this file walks,
  * which for a security ban means it stops seeing the modules it is meant to
  * police. It happened: a doc comment mentioning an npm subpath wildcard
- * truncated the sign-out graph before `stores/current-account-store.ts`, and
+ * truncated the sign-out graph before `packages/ui/src/internal/stores/current-account-store.ts`, and
  * only the "the walk has to reach past the entry points" assertions below
  * caught it. Removing line comments first makes that unrepresentable.
  */
@@ -41,7 +51,7 @@ function stripComments(source: string): string {
 }
 
 function code(relativePath: string): string {
-  return stripComments(readFileSync(resolve(WEB_SRC, relativePath), 'utf8'));
+  return stripComments(readFileSync(absolute(relativePath), 'utf8'));
 }
 
 /**
@@ -197,7 +207,7 @@ describe('nothing on an identity change can wait forever', () => {
 
   test('the sign-out bounds every step, not just guards it', () => {
     const sequence = code('lib/auth/sign-out-sequence.ts');
-    expect(sequence).toContain("from '@/lib/utils/time-budget'");
+    expect(sequence).toContain("from '@kortix/ui/internal/lib/utils/time-budget'");
 
     // All FOUR pre-navigation awaits, enumerated: a new unbounded `await
     // steps.` added beside them fails here. Four, not three, because
@@ -223,7 +233,7 @@ describe('nothing on an identity change can wait forever', () => {
     // is where this widened, because an absent marker now runs the reset ahead
     // of the first paint.
     const reset = code('lib/utils/reset-client-state.ts');
-    expect(reset).toContain("from '@/lib/utils/time-budget'");
+    expect(reset).toContain("from '@kortix/ui/internal/lib/utils/time-budget'");
     expect(reset).toContain('withTimeBudget(clearSessionIDBCache(), idbTimeoutMs)');
     expect(reset).not.toContain('await clearSessionIDBCache()');
   });
@@ -493,12 +503,18 @@ function sourceFilesForBan(dir = ''): string[] {
   return out;
 }
 
-/** The local modules an import specifier can name, in resolution order. */
+/** The first-party module an import specifier names: apps/web or @kortix/ui. */
 function resolveLocal(specifier: string, fromFile: string): string | null {
-  const base = specifier.startsWith('@/')
+  if (specifier === '@kortix/ui' || specifier.startsWith('@kortix/ui/')) {
+    const target = UI_EXPORTS[`.${specifier.slice('@kortix/ui'.length)}`];
+    return typeof target === 'string' && /\.tsx?$/.test(target)
+      ? relative(REPO, resolve(UI, target))
+      : null;
+  }
+  const base = specifier.startsWith('@/') && !fromFile.startsWith('packages/')
     ? resolve(WEB_SRC, specifier.slice(2))
     : specifier.startsWith('.')
-      ? resolve(dirname(resolve(WEB_SRC, fromFile)), specifier)
+      ? resolve(dirname(absolute(fromFile)), specifier)
       : null;
   if (!base) return null; // a package, not our source
 
@@ -510,7 +526,7 @@ function resolveLocal(specifier: string, fromFile: string): string | null {
     base,
   ]) {
     if (existsSync(candidate) && statSync(candidate).isFile()) {
-      return relative(WEB_SRC, candidate);
+      return candidate.startsWith(`${UI}/`) ? relative(REPO, candidate) : relative(WEB_SRC, candidate);
     }
   }
   return null;
@@ -538,7 +554,7 @@ function importGraph(entries: string[]): string[] {
     // Comments stripped, same as `code()` above: an import specifier inside
     // PROSE (a doc comment naming a module by example) is not an import
     // statement and must not add a graph edge.
-    const source = stripComments(readFileSync(resolve(WEB_SRC, file), 'utf8'));
+    const source = code(file);
     for (const match of source.matchAll(/(?:from|import)\s*['"]([^'"]+)['"]/g)) {
       const next = resolveLocal(match[1], file);
       if (next && !seen.has(next)) queue.push(next);
@@ -593,7 +609,7 @@ describe('the sign-out path leaves `kortix_last_project` alone', () => {
     // "forget this browser's user state" change would most naturally land in,
     // and neither was covered by the path list this replaced.
     expect(graph).toContain('lib/utils/clear-local-storage.ts');
-    expect(graph).toContain('stores/current-account-store.ts');
+    expect(graph).toContain('packages/ui/src/internal/stores/current-account-store.ts');
     expect(graph.length).toBeGreaterThan(6);
 
     for (const file of graph) {

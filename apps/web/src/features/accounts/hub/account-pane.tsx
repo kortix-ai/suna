@@ -18,14 +18,14 @@
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { cn } from '@kortix/ui';
 
-import type { HubTarget } from '@/stores/account-panel-store';
+import type { HubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 
-import { HubLink } from './account-hub-location';
-import type { AccountPaneWidth } from './sections';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import type { AccountPaneWidth } from '@kortix/ui/internal/account-hub/sections';
 
 const WIDTH_CLASS: Record<AccountPaneWidth, string> = {
   default: 'max-w-2xl',

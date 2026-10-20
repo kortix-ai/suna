@@ -9,6 +9,7 @@ import {
   accountSsoProviders,
   accountGroups,
 } from '@kortix/db';
+import { isUuid } from '../shared/validate';
 import { db } from '../shared/db';
 import { nonSsoIdentitySql, ssoProviderIdOf } from '../shared/auth-identity';
 import { selfHostOperatorAllowlist } from '../shared/self-host-operator';
@@ -51,8 +52,9 @@ export type SsoGroupMapping = {
  * (`bootstrapPersonalAccount`).
  */
 export async function isPersonalAccount(accountId: string): Promise<boolean> {
+  if (!isUuid(accountId)) return false;
   const rows = (await db.execute(
-    sql`SELECT 1 FROM auth.users WHERE id::text = ${accountId} LIMIT 1`,
+    sql`SELECT 1 FROM auth.users WHERE id = ${accountId}::uuid LIMIT 1`,
   )) as unknown as unknown[];
   return rows.length > 0;
 }

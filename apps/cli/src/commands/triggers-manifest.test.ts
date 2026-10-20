@@ -26,6 +26,20 @@ describe('parseRunCapFlags', () => {
   });
 });
 
+// KRTX-1721: --overlap skip|allow rides with the run limits.
+describe('parseRunCapFlags: --overlap', () => {
+  test('skip or allow becomes the manifest field; on set, default resets it', () => {
+    expect(parseRunCapFlags({ overlap: 'skip' }, false)).toEqual({ caps: { overlap: 'skip' } });
+    expect(parseRunCapFlags({ overlap: 'allow', maxRunsPerHour: '10' }, true)).toEqual({ caps: { max_runs_per_hour: 10, overlap: 'allow' } });
+    expect(parseRunCapFlags({ overlap: 'default' }, true)).toEqual({ caps: { overlap: null } });
+  });
+
+  test('anything else is refused, naming the flag; default is refused on add', () => {
+    expect(parseRunCapFlags({ overlap: 'queue' }, true)).toEqual({ error: '--overlap must be skip or allow, or default to reset it (got "queue").' });
+    expect(parseRunCapFlags({ overlap: 'default' }, false)).toEqual({ error: '--overlap must be skip or allow (got "default").' });
+  });
+});
+
 describe('parseFilterFlags', () => {
   test('path=value is equality; path:op=value picks an operator; list operators split on commas', () => {
     expect(

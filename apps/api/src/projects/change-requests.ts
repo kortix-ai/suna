@@ -128,11 +128,32 @@ export async function getNextCrNumber(projectId: string): Promise<number> {
   return (row?.max ?? 0) + 1;
 }
 
+/** A UUID (the canonical cr_id) or a bare per-project number ("233", "#233"
+ *  — the number the UI and the CLI display). Anything else can never match:
+ *  returning null instead of handing Postgres a non-UUID is what keeps a
+ *  malformed id a 404 rather than a 500 (prod, 2026-10-18: a caller passed
+ *  the CR number to the merge route and the uuid cast 500-ed).
+ */
+const CR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function getCrById(crId: string, projectId: string) {
+  const ref = crId.replace(/^#/, '');
+  // `number` is int4: a digit string above 2^31-1 would bind as 22003
+  // (integer out of range) — a 500, not the 404 this lookup promises.
+  const num = Number(ref);
+  const byNumber = /^\d+$/.test(ref) && num <= 2147483647;
+  if (!CR_UUID_RE.test(ref) && !byNumber) return null;
   const [row] = await db
     .select()
     .from(changeRequests)
-    .where(and(eq(changeRequests.crId, crId), eq(changeRequests.projectId, projectId)))
+    .where(
+      and(
+        eq(changeRequests.projectId, projectId),
+        // The (project_id, number) unique index serves the number lookup; a
+        // number can never be a UUID, so the two shapes never collide.
+        byNumber ? eq(changeRequests.number, num) : eq(changeRequests.crId, ref),
+      ),
+    )
     .limit(1);
   return row ?? null;
 }
@@ -170,7 +191,10 @@ export async function recordRequestedChange(
       metadata: { ...meta, requested_changes: [...requestedChangesOf(cr), entry] },
       updatedAt: new Date(),
     })
-    .where(and(eq(changeRequests.crId, crId), eq(changeRequests.projectId, projectId)))
+    // crId may be the display number ("233", "#233") that getCrById just
+    // resolved — bind the write to the resolved canonical id, never the raw
+    // argument, or a numeric id would 22P02 the update it just earned.
+    .where(and(eq(changeRequests.crId, cr.crId), eq(changeRequests.projectId, projectId)))
     .returning();
   return row ?? null;
 }

@@ -51,9 +51,10 @@ or not (`unsupported`). The contract is `switchPreflight` in
 | `open-code/background.ts`, `open-code/resource-diagnostics.ts`, `open-code/quick-queue-interrupt.ts` | Native offload, turn guard, tool-boundary queue interrupt and diagnostic projection |
 | Other `open-code/` modules | Native database, projections, pins, attachments, audit and recovery |
 | `pi/service.ts` | Composition; loads pi lazily so an OpenCode boot never pays for it |
-| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, turns, transcript, durability |
+| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, today's date (each turn, OpenCode's `Today's date` line), turns, transcript, durability |
 | `pi/boot.ts` | Session boot: the same host steps as OpenCode, then `pi-ready` |
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
+| `pi/vcs.ts` | The Changes tab on pi: `vcs: 'git'` on `/project/current` and `GET /vcs/diff` (`mode=branch` against the merge base with `KORTIX_DEFAULT_BRANCH`, `mode=git` against HEAD), OpenCode's `VcsFileDiff` shape |
 | `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
 | `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts`, `pi/sampling.ts` | Permissions/questions, workspace tools, gateway model, the agent's `temperature`/`top_p`/`steps` on each model request |
 | `../routes/` | Controllers, authentication, request parsing, HTTP status/headers, gzip and SSE delivery |
@@ -738,7 +739,10 @@ same `/kortix/runtime/*` namespace and the same raw routes
 session: the root id is `ses_pi<sha256(sessionId)[:24]>`, deterministic (or the
 root thread id a session-log restore wrote into the dump), so a restart
 resolves the same root and restores the transcript from
-`$KORTIX_RUNTIME_STATE_DIR/pi/<session>.json`.
+`$KORTIX_RUNTIME_STATE_DIR/pi/<session>.json`. The root's title stays
+`New session`, also after a restore: the session title is Kortix's
+(`metadata.name`, generated from the first prompt), and the API drops the
+placeholder (`isPlaceholderOpencodeTitle`).
 
 Config it reads (all set by apps/api for every session, harness-neutral values):
 `KORTIX_MODEL` (the resolved session model), `KORTIX_COMPILED_AGENT_CONFIG`

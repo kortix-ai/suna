@@ -747,6 +747,7 @@ describe('resolveCandidates — codex + unknown provider', () => {
       provider: 'openai-codex', kind: 'openai-responses', baseUrl: 'https://codex.test',
       apiKey: 'oauth-token', billingMode: 'none', markup: 0, resolvedModel: 'codex/gpt-6.1-sol',
       credentialRef: 'selected', poolSecretId: 'selected', refreshableCredential: true,
+      headers: { session_id: 'session-1', conversation_id: 'session-1' },
     }]);
   });
 

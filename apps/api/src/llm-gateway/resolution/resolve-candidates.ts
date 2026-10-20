@@ -40,7 +40,7 @@ import {
 import { isAwsRegion } from './aws-region';
 
 // Bedrock is the one native-transport BYOK provider whose credential is
-// multi-field (see apps/web/src/lib/llm-providers.ts's env-vars-per-provider
+// multi-field (see packages/ui/src/internal/lib/llm-providers.ts's env-vars-per-provider
 // doc comment): AWS_BEARER_TOKEN_BEDROCK (fetched below via `byok.envVar`,
 // same as every other BYOK provider) PLUS the project's own AWS_REGION, which
 // no other BYOK provider needs — every other provider publishes a static
@@ -140,6 +140,7 @@ async function codexAccountCandidates(context: Context, secrets: Array<{ secretI
         projectId: principal.projectId!, accountId: principal.accountId,
         sessionId: principal.sessionId ?? null, userId: principal.userId,
         secretId: secret.secretId, value: secret.value, updatedAt: secret.updatedAt,
+        probe: context.options?.probe,
       });
       if (!credential) { failed.push(secret.label); continue; }
       // `poolSecretId`: a 429 on one account records its cooldown and moves
@@ -241,6 +242,7 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
           projectId: principal.projectId, accountId: principal.accountId,
           sessionId: principal.sessionId ?? null, userId: principal.userId,
           secretId: personal.secretId, value: personal.value, updatedAt: personal.updatedAt,
+          probe: context.options?.probe,
         });
         if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId, refreshableCredential: true }];
       } catch (err) {
@@ -268,6 +270,18 @@ function opencodeHeaders(baseUrl: string, principal: AuthedPrincipal): Record<st
   // forward the caller's own x-opencode-session if that ever costs cache hits.
   const session = principal.sessionId ?? principal.keyId ?? principal.userId;
   return { 'x-opencode-session': session, 'User-Agent': 'Kortix (https://kortix.com)' };
+}
+
+/**
+ * The ChatGPT backend keeps a conversation's prompt prefix cached only when its
+ * requests name the conversation in `session_id`, as the Codex CLI does.
+ * Without it, prod Sol requests read 24.8% of their input from cache (7 days
+ * to 2026-10-19). With it, 8 of 8 probe follow-ups read 99% (24,192 of 24,405
+ * tokens). A gateway API key call has no session, as in `opencodeHeaders`.
+ */
+export function codexConversationHeaders(principal: AuthedPrincipal): Record<string, string> {
+  const conversation = principal.sessionId ?? principal.keyId ?? principal.userId;
+  return { session_id: conversation, conversation_id: conversation };
 }
 
 /**
@@ -444,7 +458,9 @@ export async function resolveCandidates(
         'Choose another model from the current ChatGPT lineup.',
       );
     }
-    return resolveCodexCandidates(context);
+    const conversation = codexConversationHeaders(principal);
+    return (await resolveCodexCandidates(context)).map((candidate) =>
+      ({ ...candidate, headers: { ...candidate.headers, ...conversation } }));
   }
 
   const byok = resolveCatalogUpstream(provider, provider ? effectiveModel.slice(provider.length + 1) : undefined);

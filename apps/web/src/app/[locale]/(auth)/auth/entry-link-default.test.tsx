@@ -7,7 +7,7 @@
 // server-side (supabase discussion #5741). Defaulting a returning account to
 // the password form dead-ends a passwordless one on a form no password can
 // pass — the regression pinned here. The password form stays one explicit
-// choice away ("Use a password instead" on the link step); whatever the
+// choice away ("Use a password instead" on entry and link steps); whatever the
 // resolver says, the client hands off to the link action, which re-checks
 // closed signups and SSO server-side.
 //
@@ -76,7 +76,6 @@ mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'magic,password', AUTH_PROVIDERS: '' }),
 }));
 const uiToastMock = () => ({ errorToast: () => {} });
-mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 const { default: AuthPage } = await import('./page');
 
@@ -324,6 +323,68 @@ test('a rate-limited send cools the password form link button down', async () =>
     await act(async () => linkButton().props.onClick());
     expect(emailCodeSends).toBe(3);
     expect(JSON.stringify(root.toJSON())).toContain('Open it to continue');
+  } finally {
+    emailFailure = null;
+    emailFailureStatus = null;
+    jest.useRealTimers();
+    await act(async () => root.unmount());
+  }
+});
+
+test('entry offers password sign-in without sending an email', async () => {
+  resolvedMode = 'signin';
+  emailCodeSends = 0;
+  let root: ReturnType<typeof create> | undefined;
+  await act(async () => {
+    root = create(<NextIntlClientProvider locale="en" messages={messages}><AuthPage /></NextIntlClientProvider>);
+  });
+  if (!root) throw new Error('Auth page did not render');
+  const tree = root;
+  try {
+    await act(async () => tree.root.findByProps({ autoComplete: 'email' }).props.onChange({ target: { value: 'returning@example.test' } }));
+    await goToPasswordForm(tree);
+    expect(tree.root.findByProps({ autoComplete: 'current-password', type: 'password' }).props.name).toBe('password');
+    expect(JSON.stringify(tree.toJSON())).toContain('Welcome back');
+    expect(emailCodeSends).toBe(0);
+  } finally {
+    await act(async () => tree.unmount());
+  }
+});
+
+test('a failed entry email send does not block password sign-in', async () => {
+  resolvedMode = 'signin';
+  emailCodeSends = 0;
+  emailFailure = 'Email rate limit exceeded. Try again later.';
+  emailFailureStatus = 429;
+  const root = await continueWithEmail('returning@example.test');
+  try {
+    expect(root.root.findAllByProps({ role: 'alert' })).toHaveLength(1);
+    await goToPasswordForm(root);
+    expect(root.root.findByProps({ autoComplete: 'current-password', type: 'password' }).props.name).toBe('password');
+    expect(root.root.findAllByProps({ role: 'alert' })).toHaveLength(0);
+    expect(emailCodeSends).toBe(1);
+  } finally {
+    emailFailure = null;
+    emailFailureStatus = null;
+    await act(async () => root.unmount());
+  }
+});
+
+// KRTX-2812: the first Continue on the entry step answered 429 (the shared
+// email budget), and a few seconds later the form looked untouched: the only
+// signal was a toast. The refusal must stay on the form as an alert.
+test('a rate-limited first send on the entry step leaves a lasting alert on the form', async () => {
+  jest.useFakeTimers();
+  resolvedMode = 'signin';
+  emailCodeSends = 0;
+  emailFailure = 'Email rate limit exceeded. Try again later.';
+  emailFailureStatus = 429;
+  const root = await continueWithEmail('returning@example.test');
+  try {
+    await cooldownElapsed(root, 5);
+    const alerts = root.root.findAllByProps({ role: 'alert' });
+    expect(alerts).toHaveLength(1);
+    expect(JSON.stringify(root.toJSON())).toContain('Email rate limit exceeded');
   } finally {
     emailFailure = null;
     emailFailureStatus = null;

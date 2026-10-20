@@ -70,6 +70,12 @@ export interface GitTriggerSpec {
   /** Any trigger type (`max_runs_per_day`): runs started in a UTC day. Omitted when unset: no daily cap. */
   maxRunsPerDay?: number;
   /**
+   * `overlap` (KRTX-1721), fresh session mode only: `skip` holds a fire while
+   * the trigger's previous run is still active (`lib/trigger-overlap.ts`).
+   * Omitted when unset: `skip` for a cron trigger, `allow` for the others.
+   */
+  overlap?: 'skip' | 'allow';
+  /**
    * For type=webhook only — the project_secrets key that holds the HMAC
    * signing secret. The actual secret value is never inline.
    */
@@ -219,6 +225,16 @@ export interface ParsedManifest {
    * edit back to the declaring file instead of flattening it into the root.
    */
   imports?: ResolvedManifest;
+  /**
+   * The exact source text this manifest was parsed from, when it was read as
+   * YAML. Comment preservation is per-FORMAT: the `yaml` package's Document
+   * is lossless (comments + blank lines ride on the node tree), while a TOML
+   * parser only decodes data, so a TOML write is a full re-serialize. The
+   * edit path (serializeManifest) splices its changes into this text instead
+   * of reserializing; reads never need it. null/undefined = fall back to a
+   * full re-serialize.
+   */
+  source?: string | null;
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */

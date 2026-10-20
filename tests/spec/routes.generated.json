@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 854,
+  "count": 856,
   "routes": [
     {
       "method": "GET",
@@ -29,6 +29,10 @@
     {
       "method": "GET",
       "path": "/health/ready"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/admit"
     },
     {
       "method": "POST",
@@ -1637,6 +1641,10 @@
     {
       "method": "DELETE",
       "path": "/v1/p/share/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/p/ticket"
     },
     {
       "method": "GET",
