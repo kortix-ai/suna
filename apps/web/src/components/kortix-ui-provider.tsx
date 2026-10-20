@@ -161,6 +161,8 @@ export function KortixUiProvider({ children }: { children: ReactNode }) {
       deploymentVersion: getEnv().VERSION,
       // apps/web mounts the command palette (⌘K) and the settings shortcut (⌘,).
       commandPaletteShortcut: true,
+      // apps/web/public/provider-icons holds the provider logos.
+      providerIconBaseUrl: '/provider-icons',
       settingsShortcut: true,
     }),
     [],

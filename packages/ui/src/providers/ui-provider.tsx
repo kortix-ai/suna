@@ -246,6 +246,11 @@ export interface UiHostConfig {
    * upgrade a WebSocket) sets false, and the Terminal control is hidden. Default: true.
    */
   terminalEnabled: boolean;
+  /**
+   * Where the host serves the provider icons (`<base>/<icon>.svg`, apps/web: `/provider-icons`).
+   * Default: none, so provider logos load from models.dev. The `kortix` provider draws `useBrand`'s icon.
+   */
+  providerIconBaseUrl?: string;
   /** The host opens a command palette on ⌘K / Ctrl+K; the composer hints at it. Default: false. */
   commandPaletteShortcut: boolean;
   /** The host opens settings on ⌘, / Ctrl+,; the composer hints at it. Default: false. */
