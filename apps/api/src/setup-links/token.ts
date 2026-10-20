@@ -132,10 +132,10 @@ const APPROVAL_TTL_MINUTES = 24 * 60;
 export function mintSetupLink(
   projectId: string,
   spec: SecretSpec | ConnectorSpec | ApprovalSpec,
-  opts?: { expiresInMinutes?: number | null },
+  opts?: { expiresInMinutes?: number | null; mintedAt?: number },
 ): { token: string; expiresAt: number } {
   const defaultTtl = spec.kind === 'approval' ? APPROVAL_TTL_MINUTES : undefined;
-  const iat = Date.now();
+  const iat = opts?.mintedAt ?? Date.now();
   const exp = iat + clampTtlMinutes(opts?.expiresInMinutes ?? defaultTtl) * 60_000;
   const nonce = randomBytes(9).toString('base64url');
   const base: BasePayload = { exp, iat, nonce, pid: projectId, uid: spec.uid ?? null };

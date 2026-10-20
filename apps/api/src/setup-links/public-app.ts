@@ -339,6 +339,7 @@ setupLinksPublicApp.openapi(createRoute({
         value,
         scope: payload.scope,
         createdBy: payload.uid,
+        mintedAt: mintedAt.getTime(),
         ...(pendingId ? { secretId: pendingId } : {}),
       });
       if (audience && pendingId && secretId !== pendingId) {

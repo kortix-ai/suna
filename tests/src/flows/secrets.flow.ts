@@ -985,6 +985,7 @@ flow("SEC-3A", {
     "DELETE /v1/projects/:projectId/secrets/:name",
     "GET /v1/setup-links/secret/:token",
     "POST /v1/setup-links/secret/:token",
+    "POST /v1/projects/:projectId/secret-requests",
   ],
 }, async (ctx) => {
   const team = await ctx.fixtures.team();
@@ -1019,6 +1020,15 @@ flow("SEC-3A", {
     if (r.json<{ items: Array<Record<string, unknown>> }>().items.some((s) => s.name === "TOMBSTONE_KEY2")) {
       throw new Error("the link resurrected the unset secret");
     }
+  });
+
+  await ctx.step("re-mint retires the old link and the replacement accepts the value", async () => {
+    const old = await mint("REMINT_KEY");
+    const fresh = await mint("REMINT_KEY");
+    (await anon.get("/v1/setup-links/secret/:token", { params: { token: old } })).status(409);
+    (await anon.post("/v1/setup-links/secret/:token", { values: { REMINT_KEY: "stale-value" } }, { params: { token: old } })).status(409);
+    (await anon.get("/v1/setup-links/secret/:token", { params: { token: fresh } })).status(200);
+    (await anon.post("/v1/setup-links/secret/:token", { values: { REMINT_KEY: "fresh-value" } }, { params: { token: fresh } })).status(200);
   });
 
   await ctx.step("a link minted after the unset still works", async () => {

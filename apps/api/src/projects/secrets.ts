@@ -44,8 +44,10 @@ export async function writeSharedProjectSecret(input: {
   /** Id for a NEW row (its audience may already be written under it). An
    *  existing row keeps its own id. */
   secretId?: string;
+  /** Intake writes must sort after their link, including logical mint times. */
+  mintedAt?: number;
 }): Promise<string> {
-  const now = new Date();
+  const now = new Date(Math.max(Date.now(), (input.mintedAt ?? 0) + 1));
   const identifier = input.identifier ?? input.name;
   const serverSide = input.scope === 'connector';
   const [row] = await db
@@ -120,11 +122,16 @@ export async function recordProjectSecretTombstone(
 ): Promise<void> {
   await tx.select({ status: projects.status }).from(projects)
     .where(eq(projects.projectId, projectId)).limit(1).for('update');
+  const [previous] = await tx.select({ at: projectSecretTombstones.deletedAt })
+    .from(projectSecretTombstones).where(and(
+      eq(projectSecretTombstones.projectId, projectId), eq(projectSecretTombstones.name, name),
+    ));
+  const deletedAt = new Date(Math.max(Date.now(), (previous?.at.getTime() ?? 0) + 1));
   await tx.insert(projectSecretTombstones)
-    .values({ projectId, name, deletedAt: new Date() })
+    .values({ projectId, name, deletedAt })
     .onConflictDoUpdate({
       target: [projectSecretTombstones.projectId, projectSecretTombstones.name],
-      set: { deletedAt: new Date() },
+      set: { deletedAt },
     });
   await tx.delete(projectSecretTombstones)
     .where(lt(projectSecretTombstones.deletedAt, new Date(Date.now() - TOMBSTONE_RETENTION_MINUTES * 60_000)));

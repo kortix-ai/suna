@@ -13,13 +13,14 @@
  * mocked, everything else real). A link minted AFTER the unset must still work:
  * "request a secret that does not exist yet" is the feature, not the bug.
  */
-import { afterAll, beforeAll, expect, mock, test } from 'bun:test';
+import { afterAll, beforeAll, expect, mock, setSystemTime, test } from 'bun:test';
 import { accounts, projectSecrets, projects } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
 import postgres from 'postgres';
 import { db } from '../shared/db';
 import { mintSetupLink } from './token';
+import { mintSecretRequest } from './secret-request';
 
 const propagated: string[] = [];
 // Spread the real module: a wholesale stub drops every export another importer
@@ -161,4 +162,25 @@ test('a link minted after the unset still works — the request flow is not over
     .from(projectSecrets)
     .where(and(eq(projectSecrets.projectId, PROJECT_ID), isNull(projectSecrets.ownerUserId)));
   expect(rows).toEqual([{ name: KEY }]);
+});
+
+test('same-millisecond re-mints stay single-use and unset never revives older links', async () => {
+  setSystemTime(new Date('2030-01-01T00:00:00Z'));
+  try {
+    const spec = { kind: 'secret', fields: [{ name: KEY }], scope: 'runtime' } satisfies Parameters<typeof mintSecretRequest>[1];
+    const old = (await mintSecretRequest(PROJECT_ID, spec)).token;
+    const fresh = (await mintSecretRequest(PROJECT_ID, spec)).token;
+    expect((await submit(old, 'stale')).status).toBe(409);
+    expect((await submit(fresh, 'fresh')).status).toBe(200);
+    expect((await submit(fresh, 'repeat')).status).toBe(409);
+    const current = (await mintSecretRequest(PROJECT_ID, spec)).token;
+    expect((await unsetApp().request(`/v1/projects/${PROJECT_ID}/secrets/${KEY}`, { method: 'DELETE' })).status).toBe(200);
+    for (const token of [old, fresh, current]) {
+      expect((await setupLinksPublicApp.request(`/secret/${token}`)).status).toBe(409);
+      expect((await submit(token, 'resurrection')).status).toBe(409);
+    }
+    expect(await sharedRowCount()).toBe(0);
+  } finally {
+    setSystemTime();
+  }
 });

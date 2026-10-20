@@ -150,6 +150,7 @@ const databaseMock = {
           }),
         };
       }
+      if (table === projectSecretTombstones) return { where: async () => [] };
       if (table !== projectSecrets) throw new Error('unexpected table');
       // The destination-collision query is the only projectSecrets select that
       // asks for identifier + policy and no secretId, and the only one that
