@@ -17,14 +17,17 @@ mock.module('@/features/providers/auth-provider', () => ({
 }));
 mock.module('@tanstack/react-query', () => ({
   ...reactQuery,
-  useQuery: (options: { queryKey: string[] }) => options.queryKey[0] === 'account' ? ({
-    data: memberCount === undefined ? undefined : { member_count: memberCount },
-    isLoading: memberCountLoading,
-    isError: memberCountError,
-  }) : ({
-    data: accountStateData ?? { credits: { total }, subscription: { status: 'none' } },
-    isLoading: false,
-  }),
+  useQuery: (options: { queryKey: string[] }) =>
+    options.queryKey[0] === 'account'
+      ? {
+          data: memberCount === undefined ? undefined : { member_count: memberCount },
+          isLoading: memberCountLoading,
+          isError: memberCountError,
+        }
+      : {
+          data: accountStateData ?? { credits: { total }, subscription: { status: 'none' } },
+          isLoading: false,
+        },
   useQueryClient: () => ({}),
 }));
 mock.module('@kortix/ui/internal/billing/index', () => ({
@@ -150,7 +153,12 @@ describe('BillingTab — plan pane without a paid subscription', () => {
 
   test('no trial line renders, even from a leftover trial block', () => {
     accountStateData = freeState({
-      trial: { plan: 'enterprise', started_at: null, ends_at: '2026-11-14T00:00:00.000Z', days_left: 9 },
+      trial: {
+        plan: 'enterprise',
+        started_at: null,
+        ends_at: '2026-11-14T00:00:00.000Z',
+        days_left: 9,
+      },
     });
     expect(renderPlan().toLowerCase()).not.toContain('trial');
   });
@@ -177,8 +185,18 @@ describe('BillingTab — plan pane without a paid subscription', () => {
     total = 100;
     accountStateData = {
       ...freeState(),
-      plan: { key: 'credits', family: 'credits', label: 'Credits', sublabel: null, monthly_usd: 100 },
-      subscription: { status: 'active', subscription_id: 'sub_synthetic', can_purchase_credits: true },
+      plan: {
+        key: 'credits',
+        family: 'credits',
+        label: 'Credits',
+        sublabel: null,
+        monthly_usd: 100,
+      },
+      subscription: {
+        status: 'active',
+        subscription_id: 'sub_synthetic',
+        can_purchase_credits: true,
+      },
     };
     const html = renderToStaticMarkup(
       createElement(BillingTab, { returnUrl: '/settings/plan', isActive: true }),
@@ -203,7 +221,13 @@ describe('BillingTab — cancel control on a subscribed account', () => {
     return {
       credits: { total: 100 },
       can_manage_billing: true,
-      plan: { key: 'credits', family: 'credits', label: 'Credits', sublabel: null, monthly_usd: 100 },
+      plan: {
+        key: 'credits',
+        family: 'credits',
+        label: 'Credits',
+        sublabel: null,
+        monthly_usd: 100,
+      },
       subscription: {
         status: 'active',
         subscription_id: 'sub_synthetic',
@@ -216,9 +240,13 @@ describe('BillingTab — cancel control on a subscribed account', () => {
   }
 
   function renderPlan() {
-    return renderToStaticMarkup(createElement(BillingTab, {
-      returnUrl: '/settings/plan', isActive: true, showWallet: false,
-    }));
+    return renderToStaticMarkup(
+      createElement(BillingTab, {
+        returnUrl: '/settings/plan',
+        isActive: true,
+        showWallet: false,
+      }),
+    );
   }
 
   test('an active subscription shows its monthly amount and offers Update beside Cancel', () => {
