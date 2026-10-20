@@ -128,6 +128,7 @@ describe('native test-lane workflow', () => {
       'tests/src/core/sandbox-ci.ts',
       'tests/bin/platinum-ci.ts',
       'tests/bin/platinum-ci-cleanup.ts',
+      'tests/src/core/daytona-ci.ts',
     ]) {
       expect(existsSync(resolve(root, path)), path).toBe(false);
     }

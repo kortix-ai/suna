@@ -313,8 +313,8 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
   try {
     // Cold provider images can take longer than a flow's runtime deadline. Build
     // one through the real session route before measuring concurrent user flows.
-    if (env.capabilities.daytona && flows.some((f) =>
-      f.meta.requires?.includes('daytona') && f.meta.requires.includes('funded'))) {
+    if (env.capabilities.sandbox && flows.some((f) =>
+      f.meta.requires?.includes('sandbox') && f.meta.requires.includes('funded'))) {
       const stack = world.newStack();
       try {
         const fixtures = world.makeFixtures(stack);

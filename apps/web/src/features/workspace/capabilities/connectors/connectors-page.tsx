@@ -79,6 +79,7 @@ import {
   filterConnectors,
   type ConnectorScope,
 } from './connector-filter';
+import { ConnectorMovesBanner } from './connector-moves-banner';
 import { appHref, appRefFromEntry, connectorHref, legacyDetailRedirect } from './connector-routes';
 import type { McpServerApp } from './install/mcp-first';
 import { useInstall } from './install/use-install';
@@ -312,7 +313,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // `qk.project.detail(projectId)` entry `projectQuery` above holds, so this is
   // the same fetch and the same fail-closed semantics — `projectQuery` stays
   // only to surface a load FAILURE and drive Retry (see `isError`/`retry`).
-  const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
+  // `connectors_v2`: the catalogue is Kortix's own MCP apps, on the Discover routes.
+  const mcpApps = useFeatureFlag(projectId, 'connectors_v2').enabled;
+  const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled || mcpApps;
   const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
 
   // One catalogue: managed apps for browsing, plus API/MCP apps in search
@@ -394,6 +397,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const catalog = useCatalog(projectId, query, {
     enabled: catalogActive,
     discoverEnabled,
+    mcpApps,
     computers: computersEnabled,
   });
 
@@ -580,7 +584,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                   {/* Rendered only once the page has settled (ownMatches is
                   non-empty), so the grid needs no loading/error/empty state:
                   the page-level ones cover it. */}
-                  <CatalogGrid dense isLoading={false} isError={false} onRetry={retry} isEmpty={false} empty={null}>
+                  <CatalogGrid
+                    dense
+                    isLoading={false}
+                    isError={false}
+                    onRetry={retry}
+                    isEmpty={false}
+                    empty={null}
+                  >
                     {ownMatches.map(ownConnectorCard)}
                   </CatalogGrid>
                 </div>
@@ -599,40 +610,43 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
               />
             </>
           ) : (
-            <CatalogGrid
-              dense
-              // `!settled`, not `connectorsQuery.isLoading`: the empty state's
-              // wording depends on `projectQuery` too. Same gate as the filter row.
-              isLoading={!settled}
-              isError={isError}
-              error={connectorsQuery.error ?? projectQuery.error}
-              onRetry={retry}
-              isEmpty={emptyKind !== null}
-              empty={
-                emptyKind === 'no-match' ? (
-                  <CatalogNoMatch query={query} />
-                ) : (
-                  <EmptyState
-                    icon={PlugIcon}
-                    size="sm"
-                    title={tI18nComplete.raw('text51ae0a7e3783')}
-                    description={tI18nComplete.raw('texta3487dfc2132')}
-                    // The CTA goes with the tab it opens. With no catalogue on this
-                    // deployment it would be a button to a tab that is not there;
-                    // `+` is the remaining way in, and it is already in the header.
-                    action={
-                      catalogueAvailable ? (
-                        <Button size="sm" variant="secondary" onClick={() => setScope('all')}>
-                          {tI18nComplete.raw('text45bfe4f17af7')}
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                )
-              }
-            >
-              {filtered.map(ownConnectorCard)}
-            </CatalogGrid>
+            <>
+              <ConnectorMovesBanner projectId={projectId} />
+              <CatalogGrid
+                dense
+                // `!settled`, not `connectorsQuery.isLoading`: the empty state's
+                // wording depends on `projectQuery` too. Same gate as the filter row.
+                isLoading={!settled}
+                isError={isError}
+                error={connectorsQuery.error ?? projectQuery.error}
+                onRetry={retry}
+                isEmpty={emptyKind !== null}
+                empty={
+                  emptyKind === 'no-match' ? (
+                    <CatalogNoMatch query={query} />
+                  ) : (
+                    <EmptyState
+                      icon={PlugIcon}
+                      size="sm"
+                      title={tI18nComplete.raw('text51ae0a7e3783')}
+                      description={tI18nComplete.raw('texta3487dfc2132')}
+                      // The CTA goes with the tab it opens. With no catalogue on this
+                      // deployment it would be a button to a tab that is not there;
+                      // `+` is the remaining way in, and it is already in the header.
+                      action={
+                        catalogueAvailable ? (
+                          <Button size="sm" variant="secondary" onClick={() => setScope('all')}>
+                            {tI18nComplete.raw('text45bfe4f17af7')}
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+                  )
+                }
+              >
+                {filtered.map(ownConnectorCard)}
+              </CatalogGrid>
+            </>
           )}
 
           {/* Computers are accounts, not profiles: the card pairs the caller's own

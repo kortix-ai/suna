@@ -539,11 +539,8 @@ export function selectStalePreviewSandboxIds(
 }
 
 /**
- * Previews run on Platinum only, host and sessions. There is no Daytona
- * fallback: from 2026-08-10 an infrastructure failure moved the preview to
- * Daytona, and on 2026-09-21 the shared Daytona org hit its snapshot quota and
- * every preview session failed there. A Platinum failure now fails the preview
- * loudly. Daytona code remains only to tear down previews created before this.
+ * Previews run on Platinum, the reference provider, host and sessions. There
+ * is no fallback provider: a Platinum failure fails the preview loudly.
  */
 export async function runSandboxPreview(
   input: SandboxPreviewInput,

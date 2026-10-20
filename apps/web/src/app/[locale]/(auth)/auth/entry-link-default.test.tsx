@@ -75,7 +75,9 @@ mock.module('@/lib/auth/submit-auth', () => ({
 mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'magic,password', AUTH_PROVIDERS: '' }),
 }));
-mock.module('@/components/ui/toast', () => ({ errorToast: () => {} }));
+const uiToastMock = () => ({ errorToast: () => {} });
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 const { default: AuthPage } = await import('./page');
 
 async function continueWithEmail(

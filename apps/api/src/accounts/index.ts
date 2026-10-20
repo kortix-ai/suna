@@ -15,6 +15,7 @@ import { registerDeviceRoutes } from './core/devices';
 import { registerAccountRoutes } from './core/accounts';
 import { registerMemberRoutes } from './core/members';
 import { registerTopUpRequestRoutes } from './core/top-up-requests';
+import { registerAutomationRoutes } from './core/automations';
 import { registerBrandingRoutes } from './branding';
 import { registerSecretResourceRoutes } from './secret-resources';
 import { registerCaptureRoutes } from '../capture/account-routes';
@@ -58,6 +59,7 @@ registerAccountRoutes();
 registerMemberRoutes();
 // A member out of credits asks the owners: /:accountId/top-up-requests.
 registerTopUpRequestRoutes();
+registerAutomationRoutes();
 // Organization branding (Enterprise): /:accountId/branding + /assets/:kind.
 registerBrandingRoutes();
 registerSecretResourceRoutes();

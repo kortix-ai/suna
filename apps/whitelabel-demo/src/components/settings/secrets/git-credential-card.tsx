@@ -2,16 +2,16 @@
 
 /** The "Git credential" card: the token field and its setGitCredential call. */
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
+import { Input } from '@kortix/ui/input';
 import { kortix } from '@/lib/kortix';
 import { useMutation } from '@tanstack/react-query';
-import { GitBranch } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { GitBranchIcon } from '@phosphor-icons/react';
 
 export function GitCredentialCard({ projectId }: { projectId: string }) {
   const [gitToken, setGitToken] = useState('');
@@ -21,15 +21,15 @@ export function GitCredentialCard({ projectId }: { projectId: string }) {
       kortix.project(projectId).secrets.setGitCredential({ token: gitToken.trim() }),
     onSuccess: () => {
       setGitToken('');
-      toast.success('Git credential saved');
+      successToast('Git credential saved');
     },
-    onError: () => toast.error('Could not save git credential'),
+    onError: () => errorToast('Could not save git credential'),
   });
 
   return (
     <Card className="p-5">
       <div className="flex items-center gap-2 text-sm font-medium">
-        <GitBranch className="size-4 text-muted-foreground" /> Git credential
+        <GitBranchIcon className="size-4 text-muted-foreground" /> Git credential
       </div>
       <p className="text-xs text-muted-foreground">
         A token the agent uses to clone and push to the project repository.

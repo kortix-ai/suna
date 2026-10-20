@@ -1073,7 +1073,12 @@ flow(
     await ctx.step('the CLI deletes a revoked key and mine no longer lists it', async () => {
       const cli = new CliSandbox('tok3-delete');
       try {
-        const login = await cli.login(await ctx.fixtures.pat({ name: ctx.fixtures.name('cleanup') }), { noProject: true });
+        // Pin the account the key lives in. A non-TTY login picks the first of
+        // the OWNER's accounts, and concurrent flows add team accounts to it.
+        const login = await cli.login(await ctx.fixtures.pat({ name: ctx.fixtures.name('cleanup') }), {
+          noProject: true,
+          account: ctx.P.OWNER.accountId,
+        });
         if (login.exitCode !== 0) throw new Error('CLI login failed');
         const removed = await cli.run(['tokens', 'rm', tokenId, '-y']);
         if (removed.exitCode !== 0 || !removed.stdout.includes('Deleted')) {

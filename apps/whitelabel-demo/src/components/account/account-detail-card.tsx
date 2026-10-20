@@ -1,29 +1,21 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import { Separator } from '@kortix/ui/separator';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { LogOut, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { SignOutIcon, UsersIcon } from '@phosphor-icons/react';
 
 /**
  * Account detail header + general settings: `accounts.get` for the detail header,
@@ -54,19 +46,19 @@ export function AccountDetailCard({
     onSuccess: (updated) => {
       qc.setQueryData(['account', accountId], updated);
       qc.invalidateQueries({ queryKey: ['accounts'] });
-      toast.success('Account renamed');
+      successToast('Account renamed');
     },
-    onError: () => toast.error('Could not rename the account'),
+    onError: () => errorToast('Could not rename the account'),
   });
 
   const leave = useMutation({
     mutationFn: () => kortix.accounts.leave(accountId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['accounts'] });
-      toast.success('You left the account');
+      successToast('You left the account');
       onLeft();
     },
-    onError: () => toast.error('Could not leave the account'),
+    onError: () => errorToast('Could not leave the account'),
   });
 
   const role = data?.role;
@@ -98,7 +90,7 @@ export function AccountDetailCard({
             </div>
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1">
-                <Users className="size-3.5" />
+                <UsersIcon className="size-3.5" />
                 {data?.member_count ?? 0} {(data?.member_count ?? 0) === 1 ? 'member' : 'members'}
               </span>
               <span>{data?.project_count ?? 0} projects</span>
@@ -168,37 +160,27 @@ function LeaveAccountDialog({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" className="text-destructive hover:text-destructive">
-          <LogOut className="size-4" /> Leave
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Leave {name}?</DialogTitle>
-          <DialogDescription>
-            You&apos;ll immediately lose access to this account&apos;s projects and members. You can
-            be re-invited later.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            disabled={pending}
-            onClick={() => {
-              onConfirm();
-              setOpen(false);
-            }}
-          >
-            {pending && <Loading className="size-4" />}
-            Leave account
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Button
+        variant="outline"
+        className="text-destructive hover:text-destructive"
+        onClick={() => setOpen(true)}
+      >
+        <SignOutIcon className="size-4" /> Leave
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Leave ${name}?`}
+        description="You'll immediately lose access to this account's projects and members. You can be re-invited later."
+        confirmLabel="Leave account"
+        confirmVariant="destructive"
+        isPending={pending}
+        onConfirm={() => {
+          onConfirm();
+          setOpen(false);
+        }}
+      />
+    </>
   );
 }

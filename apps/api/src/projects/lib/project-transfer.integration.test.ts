@@ -40,6 +40,7 @@ import {
   iamRoles,
   projectGitConnections,
   projectSessions,
+  projectTriggerEventPolls,
   projects,
   roleAssignments,
   usageEvents,
@@ -487,6 +488,22 @@ withDb('project transfer', () => {
     })).rejects.toBeInstanceOf(ProjectTransferError);
     const [project] = await db.select().from(projects).where(eq(projects.projectId, PROJECT_ID));
     expect(project?.accountId).toBe(TARGET_ACCOUNT);
+  });
+
+  test('trigger event poll state follows the project without losing its cursor', async () => {
+    await db.insert(projectTriggerEventPolls).values({
+      externalId: 'transfer-poll', projectId: PROJECT_ID, accountId: SOURCE_ACCOUNT,
+      connectionId: '00000000-0000-4000-a000-00000000a199',
+      connectorSlug: 'transfer-http', eventType: 'items', intervalSeconds: 60,
+      seen: ['synthetic-item'],
+    });
+    await transferProjectOwnership({
+      projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT,
+    });
+    const [poll] = await db.select().from(projectTriggerEventPolls)
+      .where(eq(projectTriggerEventPolls.externalId, 'transfer-poll'));
+    expect(poll?.accountId).toBe(TARGET_ACCOUNT);
+    expect(poll?.seen).toEqual(['synthetic-item']);
   });
 
   test('every schema table carrying both account_id and project_id is classified', async () => {

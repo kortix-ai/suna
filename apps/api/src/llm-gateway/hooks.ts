@@ -160,15 +160,12 @@ async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrinc
 }
 
 /**
- * A 'warn' gateway budget is a soft cap: it must never block a request, but it
- * must not be a silent no-op either (it previously wasn't even queried). This
- * is the one place both call sites below surface it — a structured, alertable
- * log line, so a team lead who configured a 'warn' budget gets SOME signal
- * instead of nothing. (A UI notification / email digest is a larger product
- * surface left for a follow-up; see PR description.)
+ * A 'warn' gateway budget is a soft cap: it never blocks a request. Each
+ * exhausted one becomes a structured, alertable log line once the request's
+ * trace row is written (`persistGatewayTrace`).
  */
 function logGatewayBudgetWarnings(
-  principal: AuthedPrincipal,
+  principal: Pick<AuthedPrincipal, 'accountId' | 'projectId' | 'userId'>,
   warnings: string[] | undefined,
 ): void {
   if (!warnings?.length) return;
@@ -186,7 +183,7 @@ function logGatewayBudgetWarnings(
  * and lazy: no request waits on it, and the alert module (IAM, email) stays
  * out of the request path's import graph.
  */
-function alertBudgetCrossings(principal: AuthedPrincipal, crossings: BudgetCrossing[] | undefined): void {
+function alertBudgetCrossings(principal: Pick<AuthedPrincipal, 'projectId'>, crossings: BudgetCrossing[] | undefined): void {
   const projectId = principal.projectId;
   if (!crossings?.length || !projectId) return;
   void import('./budget-alerts')
@@ -196,12 +193,35 @@ function alertBudgetCrossings(principal: AuthedPrincipal, crossings: BudgetCross
     );
 }
 
+/**
+ * Evaluate the 'warn' budgets after the request's trace row is written. That
+ * row is the first place its cost is visible to the spend query, so the
+ * request that crosses 80% / 100% is the one that reports it. A warn budget
+ * never denies, so admission does not wait on this query. A row that adds no
+ * spend cannot cross a threshold and is skipped. Errors are logged, never thrown.
+ */
+async function settleWarnBudgets(trace: GatewayTrace): Promise<void> {
+  if (!trace.projectId || !(trace.finalCost || trace.upstreamCost)) return;
+  const principal = { accountId: trace.accountId, projectId: trace.projectId, userId: trace.actorUserId };
+  try {
+    const { warnings, crossings } = await checkBudget(principal, 'warn');
+    logGatewayBudgetWarnings(principal, warnings);
+    if (crossings?.length) {
+      await (await import('./budget-alerts')).alertBudgetCrossings(trace.projectId, crossings);
+    }
+  } catch (err) {
+    logger.warn('[gateway] warn budget check failed', {
+      projectId: trace.projectId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 /** Throw with the budget message when a project/member gateway budget is exhausted. */
 export class GatewayBudgetExceededError extends Error {}
 
 export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<void> {
-  const { exceeded, message, warnings, crossings } = await checkBudget(principal);
-  logGatewayBudgetWarnings(principal, warnings);
+  const { exceeded, message, crossings } = await checkBudget(principal);
   alertBudgetCrossings(principal, crossings);
   if (exceeded) throw new GatewayBudgetExceededError(message ?? 'Budget exceeded');
 }
@@ -268,8 +288,7 @@ export async function authorizeRequest(
       };
     }
   }
-  const { exceeded, message, warnings, crossings } = await checkBudget(principal);
-  logGatewayBudgetWarnings(principal, warnings);
+  const { exceeded, message, crossings } = await checkBudget(principal);
   alertBudgetCrossings(principal, crossings);
   if (exceeded) {
     // A legacy gateway can have a hold here. It refunds the hold when it sees
@@ -292,20 +311,23 @@ export async function authorizeRequest(
  * An account without the managed-models entitlement (BYOK-only, whether by
  * tier, trial, or operator override) settles its own keys and ChatGPT
  * subscription at billingMode 'none' — nothing for this gate to fund — so the
- * legacy non-deferred auth call (no model resolved yet) skips it. The one
- * exception is the platform default: the ONE managed model every tier may use
- * (KRTX-1067), which settles as credits. The deferred gateway path calls this
- * only for a Kortix-billed request it already resolved (`creditsRequest`), so
- * the floor applies there for every account — without it a drained free
- * wallet ran platform-default turns with no admission hold and the settle
- * (which never enforces a floor) drove the balance negative.
+ * legacy non-deferred auth call (no model resolved yet) skips it. The deferred
+ * gateway path calls this only for a Kortix-billed request it already resolved
+ * (`creditsRequest`), so the floor applies there for every account.
  */
 export async function assertLlmBillingActive(
   accountId: string,
   opts?: { creditsRequest?: boolean },
 ): Promise<{ holdUsd?: number } | void> {
-  if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    if (!(await accountMayUseManagedModels(accountId)) && !opts?.creditsRequest) return;
+  if (config.KORTIX_BILLING_INTERNAL_ENABLED && !(await accountMayUseManagedModels(accountId))) {
+    // The second managed-models gate, independent of model resolution: a
+    // Kortix-billed request (only managed models bill credits) from an
+    // account without the entitlement is refused here even if resolution let
+    // it through.
+    if (opts?.creditsRequest) {
+      throw new BillingGateError('plan_upgrade_required', 0, 'Kortix-managed models require a paid plan.', accountId);
+    }
+    return;
   }
   return assertBillingActive(accountId);
 }
@@ -316,12 +338,11 @@ export async function assertLlmBillingActive(
  *
  * When `event.billingHoldUsd` is set, an atomic admission hold was already
  * taken at the pre-dispatch billing gate (see billing-gate.ts checkBillingActive)
- * — this reconciles it to the real `finalCost` instead of a flat deduct: tops
- * up the remainder if the real cost exceeds the hold, refunds the unused
- * portion otherwise (always the case for a pure hold-refund, where finalCost
- * is 0). Otherwise (no hold — billing disabled or self-host) falls back to the
- * original flat deduct, skipped entirely when the route isn't billable
- * (billingMode === 'none').
+ * — this reconciles it to what the request owes (finalCost, or the BYOK fee
+ * when billingMode is 'none') instead of a flat deduct: tops up the remainder
+ * if that exceeds the hold, refunds the unused portion otherwise (always the
+ * case for a pure hold-refund, which owes 0). Without a hold it debits what is
+ * owed. Either way the wallet moves by the amount the usage row records.
  */
 /**
  * One deadline write per minute per session for LLM activity. A single turn can
@@ -437,12 +458,20 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
 
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
 
+  // What this request owes Kortix: the BYOK fee on the customer's own key,
+  // the real cost otherwise. A hold taken at admission can end on an own key
+  // (a held route-memory fallback, a dispatch fallback), so the hold
+  // reconciles against what is owed, never against finalCost alone.
+  const ownKey = event.billingMode === 'none';
+  const owed = ownKey ? byokFee : event.finalCost;
+  const label = ownKey ? 'BYOK fee' : 'LLM';
+
   if (event.billingHoldUsd != null) {
-    const { toDeduct, toRefund } = reconcileBillingHold(event.finalCost, event.billingHoldUsd);
+    const { toDeduct, toRefund } = reconcileBillingHold(owed, event.billingHoldUsd);
     if (toDeduct > 0) {
-      // The real cost exceeded the (small, fixed) admission hold — collect
+      // What is owed exceeded the (small, fixed) admission hold — collect
       // the difference as a settlement of work already done.
-      await settleLlmUsage(event, toDeduct, usageEventId);
+      await settleLlmUsage(event, toDeduct, usageEventId, label);
     } else if (toRefund > 0) {
       await wallet.grant({
         accountId: event.accountId,
@@ -457,11 +486,7 @@ export async function recordGatewayUsage(event: UsageEvent): Promise<void> {
     return;
   }
 
-  if (event.billingMode === 'none') {
-    if (byokFee > 0) await settleLlmUsage(event, byokFee, usageEventId, 'BYOK fee');
-    return;
-  }
-  await settleLlmUsage(event, event.finalCost, usageEventId);
+  await settleLlmUsage(event, owed, usageEventId, label);
 }
 
 /**
@@ -572,7 +597,7 @@ export function emitGatewayGenAiSpan(trace: GatewayTrace): void {
   }
 }
 
-/** Persist a request trace to gateway_request_logs (skips unauthenticated traces). */
+/** Persist a request trace to gateway_request_logs (skips unauthenticated traces), then evaluate warn budgets. */
 export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
   // Unknown credentials carry no accountId — nothing useful to attribute.
   if (!trace.accountId) return;
@@ -618,4 +643,5 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
   });
   // Non-blocking: never let telemetry delay the caller or affect the trace write.
   emitGatewayGenAiSpan(trace);
+  await settleWarnBudgets(trace);
 }

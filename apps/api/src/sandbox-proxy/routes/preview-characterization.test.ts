@@ -589,7 +589,7 @@ describe('forwardToSandbox authentication failures', () => {
   });
 
   test('an upstream 401 that the provider did not sign is a 502 signed-context rejection', async () => {
-    currentRecord = { ...ACTIVE_RECORD, provider: 'e2b' };
+    currentRecord = { ...ACTIVE_RECORD, provider: 'platinum' };
     queueFetch(new Response('unauthorized', { status: 401 }));
     const res = await forward({ port: 3000, path: '/' });
     expect(res.status).toBe(502);

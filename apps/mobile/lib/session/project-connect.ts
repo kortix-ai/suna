@@ -199,7 +199,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
           sandbox_id: ps.sandbox_id || ps.session_id,
           external_id: externalId,
           name: ps.name || 'Session',
-          provider: (ps.sandbox_provider as SandboxProviderName) || 'daytona',
+          provider: (ps.sandbox_provider as SandboxProviderName) || 'platinum',
           base_url: ps.sandbox_url,
           status: 'running',
           created_at: ps.created_at,
@@ -297,7 +297,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
                 sandbox_url: sandboxUrl,
                 runtime_session_id: runtimeSessionId,
                 opencode_session_id: runtimeSessionId,
-                sandbox_provider: sandbox.provider ?? 'daytona',
+                sandbox_provider: sandbox.provider ?? 'platinum',
                 created_at: sandbox.created_at,
                 updated_at: sandbox.updated_at,
               } as ProjectSession);

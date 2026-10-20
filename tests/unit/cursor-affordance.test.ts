@@ -1,22 +1,24 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // A utility class beats `@layer base`, so one `cursor-default` silently removes
 // the pointer from an interactive element. The base rule in
-// apps/web/src/app/globals.css gives the pointer to every clickable element;
-// a `cursor-default` in components/ui is an exception and must say why, with an
-// inline `// cursor-default: <reason>` comment on the same line.
+// @kortix/ui theme.css (packages/ui/src/styles) gives the pointer to every clickable element;
+// a `cursor-default` in components/ui (packages/ui/src/components/ui since the
+// @kortix/ui move, plus the app-specific ones left in apps/web) is an exception
+// and must say why, with an inline `// cursor-default: <reason>` comment on the
+// same line.
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
-const SCOPE = 'apps/web/src/components/ui';
+const SCOPES = ['packages/ui/src/components/ui', 'apps/web/src/components/ui'];
 const REASON = 'cursor-default:';
 
 function trackedFiles(): string[] {
-  return execFileSync('git', ['ls-files', '--', SCOPE], { cwd: REPO_ROOT, encoding: 'utf8' })
+  return execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', ...SCOPES], { cwd: REPO_ROOT, encoding: 'utf8' })
     .split('\n')
-    .filter(Boolean);
+    .filter((file) => file && existsSync(join(REPO_ROOT, file)));
 }
 
 describe('cursor affordance in components/ui', () => {

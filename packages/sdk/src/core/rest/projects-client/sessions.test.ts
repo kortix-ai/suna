@@ -1987,6 +1987,16 @@ describe('session pin and archive', () => {
     expect(last().url).not.toContain('archived=');
   });
 
+  // KRTX-2853: Recently deleted, the deleted sessions the caller may restore.
+  test('listProjectSessionsPage sends view deleted as deleted=only, alone', async () => {
+    nextResponse = { status: 200, body: [] };
+    await listProjectSessionsPage('P1', { view: 'deleted' });
+    const params = new URL(last().url).searchParams;
+    expect(params.get('deleted')).toBe('only');
+    expect(params.get('pinned')).toBeNull();
+    expect(params.get('archived')).toBeNull();
+  });
+
   test('setSessionPinned PUTs { pinned } and returns the stored state', async () => {
     const stored = { pinned_at: '2026-10-15T10:00:00.000Z', archived_at: null };
     nextResponse = { status: 200, body: stored };

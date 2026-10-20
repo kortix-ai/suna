@@ -15,6 +15,8 @@ export interface Capability {
 
 export class CapabilityRegistry {
   private capabilities = new Map<string, Capability>();
+  /** Approved capabilities this machine cannot run, with the reason. */
+  readonly unavailable = new Map<string, string>();
 
   register(capability: Capability): void {
     this.capabilities.set(capability.name, capability);

@@ -23,7 +23,7 @@ import type { RailGroup, RailItem } from './type';
 export type SettingsRailTranslator = (key: string) => string;
 
 type RailGroupDefinition = RailGroup & {
-  messageKey: 'personal' | 'connect';
+  messageKey: 'personal';
 };
 
 /**
@@ -107,21 +107,10 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
         description: 'API keys that act as you — for the CLI, a script, or a CI job.',
         icon: Key,
       },
-    ],
-  },
-  /**
-   * The connect pages (KRTX-1997): MCP, and your own computer. Drawn at the
-   * foot of the rail as one joined block — the same two rows the project
-   * sidebar footer shows as dismissible promos — but each row opens a page
-   * here, and nothing dismisses it. Both are the person's own: the MCP URL is
-   * one per person, and a paired computer follows its owner into every
-   * project.
-   */
-  {
-    messageKey: 'connect',
-    label: 'Connect',
-    footer: true,
-    items: [
+      // MCP and the paired computers (KRTX-1997) are the person's own too: the
+      // MCP URL is one per person, and a computer follows its owner into every
+      // project. They sat in a separate `Connect` block at the rail's foot
+      // until 2026-10-19 (Marko: "just say MCP and My computer").
       {
         tab: 'mcp',
         label: 'MCP',
@@ -132,7 +121,7 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
       },
       {
         tab: 'computer',
-        label: 'Computer',
+        label: 'My computer',
         // "applications", not "apps": every word a row shows is searchable —
         // `settings-palette-items.ts` builds the palette row's haystack from
         // this description — and "apps" is the subject word of the Apps page
@@ -240,7 +229,6 @@ export function railGroups(...args: [] | [SettingsRailTranslator]): readonly Rai
 
   return STATIC_GROUPS.map((group) => ({
     label: translate(`groups.${group.messageKey}`),
-    footer: group.footer,
     items: group.items.map((item) => ({
       ...item,
       label: translate(`items.${item.tab}.label`),

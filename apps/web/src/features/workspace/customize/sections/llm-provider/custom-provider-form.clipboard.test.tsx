@@ -6,7 +6,9 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 const successToast = mock(() => {});
 const errorToast = mock(() => {});
 const upsertProjectSecret = mock(async () => {});
-mock.module('@/components/ui/toast', () => ({ successToast, errorToast }));
+const uiToastMock = () => ({ successToast, errorToast });
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () =>
     Object.assign((key: string) => `localized:${key}`, { raw: (key: string) => `localized:${key}` }),

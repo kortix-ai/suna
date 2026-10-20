@@ -152,6 +152,16 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { event_triggers: false } }, 'event_triggers')).toBe(false);
   });
 
+  test('connectors_v2 is an experimental, explicit opt-in flag offered everywhere', () => {
+    expect(findCatalogFlag('connectors_v2')).toMatchObject({
+      stability: 'experimental',
+      enabled: false,
+      operator_only: false,
+    });
+    expect(resolveFeatureFlag({}, 'connectors_v2')).toBe(false);
+    expect(resolveFeatureFlag({ experimental: { connectors_v2: true } }, 'connectors_v2')).toBe(true);
+  });
+
   test('session_transcript_history graduated: saved history has no off switch and a stored override is inert', () => {
     // Saved history is how web, mobile and the CLI show a session while its
     // computer is off. Projects that stored `false` keep theirs too.

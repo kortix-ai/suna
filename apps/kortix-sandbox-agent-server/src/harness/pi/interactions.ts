@@ -85,6 +85,80 @@ function matchPatterns(subject: string, patterns: Record<string, PermissionRule>
   return matched
 }
 
+const RESERVED_PREFIX = /^(?:(?:if|then|elif|else|do|while|until|time|!|\{)\s+)+/
+const RESERVED_ALONE = new Set(['fi', 'done', 'esac', '}'])
+
+/**
+ * The commands of a bash line, as OpenCode's tree-sitter walk asks about them:
+ * the line splits on unquoted `;`, `&`, `|` and newlines (so `&&`, `||` and
+ * `|&` too), and every `$(…)`, `` `…` ``, `<(…)`, `>(…)` and `( … )` body is
+ * read as commands of its own. A command keeps its substitutions' text, as
+ * OpenCode's does. `null` when the quotes or brackets do not balance.
+ * ponytail: not a bash grammar — `case` arms and heredoc bodies read as
+ * unbalanced or as extra commands, so they fail closed. Use tree-sitter-bash
+ * when a manifest needs them exact.
+ */
+export function bashCommands(line: string): string[] | null {
+  const commands: string[] = []
+  // Reads from `start` up to `close` ('' = the end) and returns the index after it, or -1.
+  const read = (start: number, close: string): number => {
+    let piece = ''
+    let quote = ''
+    const flush = () => {
+      const command = piece.trim().replace(RESERVED_PREFIX, '')
+      // A `( … )` group is not a command: its body was read on its own.
+      if (command && !RESERVED_ALONE.has(command) && !command.startsWith('(')) commands.push(command)
+      piece = ''
+    }
+    let i = start
+    while (i < line.length) {
+      const ch = line[i]!
+      if (quote === "'") {
+        piece += ch
+        if (ch === "'") quote = ''
+        i++
+        continue
+      }
+      if (ch === '\\') {
+        piece += line.slice(i, i + 2)
+        i += 2
+        continue
+      }
+      if (ch === '"' || (ch === "'" && !quote)) {
+        quote = quote ? '' : ch
+        piece += ch
+        i++
+        continue
+      }
+      if (!quote && close && ch === close) {
+        flush()
+        return i + 1
+      }
+      if (ch === '`' || (ch === '(' && (!quote || line[i - 1] === '$'))) {
+        const end = read(i + 1, ch === '`' ? '`' : ')')
+        if (end < 0) return -1
+        piece += line.slice(i, end)
+        i = end
+        continue
+      }
+      if (!quote && ch === ')') return -1
+      // `2>&1`, `&>file` and `>|file` are redirections, not separators.
+      const redirect = line[i - 1] === '>' || line[i - 1] === '<' || (ch === '&' && line[i + 1] === '>')
+      if (!quote && (ch === ';' || ch === '\n' || ((ch === '&' || ch === '|') && !redirect))) {
+        flush()
+        i++
+        continue
+      }
+      piece += ch
+      i++
+    }
+    if (quote || close) return -1
+    flush()
+    return i
+  }
+  return read(0, '') < 0 ? null : commands
+}
+
 /**
  * The string a pattern is tested against, per tool — the subject OpenCode sends
  * as the permission request's pattern: the command line for `bash`, the skill
@@ -130,8 +204,23 @@ export function toolCapability(tool: string, args?: unknown): string {
  * capability (`*` and `pty_*` are patterns too) is tried most specific first;
  * the first that has a rule for this call decides, as OpenCode's last match
  * does over an ordered block. `undefined` means the policy says nothing.
+ *
+ * A bash line is decided command by command (`bashCommands`), as OpenCode
+ * does, and the strictest answer wins: `allowed x; env` is the rule for `env`,
+ * never the allowed prefix's. A line that does not parse is decided as a call
+ * with no subject, so a restriction asks.
  */
 export function resolvePolicyRule(policy: PermissionPolicy, tool: string, args: unknown): PermissionRule | undefined {
+  const line = tool === 'bash' ? permissionSubject(tool, args) : undefined
+  if (line === undefined) return resolveCall(policy, tool, args)
+  const commands = bashCommands(line)
+  if (commands === null) return resolveCall(policy, tool, {})
+  if (commands.length === 0) return resolveCall(policy, tool, args)
+  const rules = commands.map((command) => resolveCall(policy, tool, { ...(args as object), command }))
+  return (['deny', 'ask', 'allow'] as const).find((rule) => rules.includes(rule))
+}
+
+function resolveCall(policy: PermissionPolicy, tool: string, args: unknown): PermissionRule | undefined {
   const names = [tool, toolCapability(tool, args)]
   const keys = Object.keys(policy)
     .filter((key) => names.some((name) => wildcardMatch(name, key)))

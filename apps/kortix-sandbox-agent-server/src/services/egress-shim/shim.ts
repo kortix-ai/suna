@@ -1,6 +1,6 @@
 /**
  * The in-guest egress shim — the ONE way an egress-enforced secret is spent,
- * identically on daytona, e2b and platinum.
+ * identically on platinum and the legacy daytona fallback.
  *
  * No provider edge serves secrets any more, and one of them never could:
  * Daytona has no credential edge and cannot be pointed at one

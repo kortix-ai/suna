@@ -1,5 +1,6 @@
 'use client';
 
+import { KortixUiProvider } from '@/components/kortix-ui-provider';
 import { useAuth } from '@/features/providers/auth-provider';
 import { catalogHref } from '@/i18n/catalog-href';
 import { loadClientCatalog, type MessageTree } from '@/i18n/client-catalog';
@@ -143,7 +144,7 @@ function CatalogProvider({
       messages={messages as AbstractIntlMessages}
       timeZone="UTC"
     >
-      {children}
+      <KortixUiProvider>{children}</KortixUiProvider>
     </NextIntlClientProvider>
   );
 }

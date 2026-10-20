@@ -398,19 +398,16 @@ describe('Platinum size-cap build-failure classification', () => {
   });
 });
 
-describe('Daytona / E2B build payloads are unaffected by the Platinum build-size knob', () => {
-  test('daytona.ts and e2b.ts have zero source coupling to PLATINUM_BUILD_SIZE_MB', async () => {
+describe('Daytona build payloads are unaffected by the Platinum build-size knob', () => {
+  test('daytona.ts has zero source coupling to PLATINUM_BUILD_SIZE_MB', async () => {
     const { readFile } = await import('node:fs/promises');
-    const daytonaSrc = await readFile(join(import.meta.dir, '../snapshots/providers/daytona.ts'), 'utf8');
-    const e2bSrc = await readFile(join(import.meta.dir, '../snapshots/providers/e2b.ts'), 'utf8');
-    for (const src of [daytonaSrc, e2bSrc]) {
-      expect(src).not.toContain('PLATINUM_BUILD_SIZE_MB');
-      expect(src).not.toContain('platinumBuildSizeMb');
-      expect(src).not.toContain('PLATINUM_MAX_BUILD_SIZE_MB');
-    }
+    const src = await readFile(join(import.meta.dir, '../snapshots/providers/daytona.ts'), 'utf8');
+    expect(src).not.toContain('PLATINUM_BUILD_SIZE_MB');
+    expect(src).not.toContain('platinumBuildSizeMb');
+    expect(src).not.toContain('PLATINUM_MAX_BUILD_SIZE_MB');
   });
 
-  test('the shared DEFAULT_DISK_GB Daytona/E2B consume is untouched by this change', async () => {
+  test('the shared DEFAULT_DISK_GB Daytona consumes is untouched by this change', async () => {
     const { DEFAULT_DISK_GB, DEFAULT_MEMORY_GB, DEFAULT_CPU } = await import('../snapshots/build-context');
     expect(DEFAULT_DISK_GB).toBe(20);
     expect(DEFAULT_MEMORY_GB).toBe(4);

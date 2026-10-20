@@ -119,8 +119,9 @@ export function GenuiTable({ props }: GenuiComponentProps) {
   // 14/20 like a markdown table (markdown-table.tsx), through the token rather than a text-sm class.
   const cellStyle = (c: number) => ({ flexBasis: bases[c], flexGrow: 1, flexShrink: 0, ...TYPE.sm });
   const align = (c: number) => (numeric[c] ? 'text-right' : '');
+  // As web's aria-label: the caption names the table for a screen reader.
   const table = (
-    <View className="overflow-hidden rounded-2xl bg-card">
+    <View className="overflow-hidden rounded-2xl bg-card" accessibilityLabel={props.caption ? String(props.caption) : undefined}>
       <GHScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
         <View className="grow">
           <View className="flex-row bg-secondary">
@@ -201,21 +202,28 @@ export function GenuiCompare({ props }: GenuiComponentProps) {
   );
 }
 
-/** A ranked list: one row per item, in rank order, with no rank numbers. #1 takes the larger title. */
+/** A ranked list, as on web: one row per item, best first, its rank in a mono lane. #1 takes the larger title. */
 export function GenuiRankedList({ props }: GenuiComponentProps) {
   const items = kids(props.items);
   return (
-    <View className="overflow-hidden rounded-2xl bg-card">
+    // Each rank is its own card with a gap between, so the rows read apart.
+    <View className="gap-2">
       {items.map((item, index) => {
         const href = item.props.href;
         const first = index === 0;
         const image = item.props.image ? String(item.props.image) : null;
-        // Just the data, no rank numbers: the order is the ranking. #1 takes the larger title and ink.
+        // The rank is a mono number in a fixed right-aligned lane, so "10" lines up with "9". The lane's line box
+        // matches the title's, so the number sits on the title's baseline. #1 takes ink.
         const row = (
-          <View className="flex-row items-start gap-3 px-4 py-3">
+          <View className="flex-row items-start gap-3 rounded-2xl bg-card px-4 py-3.5">
+            <Text
+              className={`w-5 shrink-0 text-right font-mono text-xs tabular-nums ${first ? 'text-foreground font-medium leading-6' : 'text-muted-foreground leading-5'}`}
+            >
+              {index + 1}
+            </Text>
             {image ? (
               <View className="size-10 overflow-hidden rounded-md bg-secondary">
-                <GenuiImageView src={image} alt="" fixedHeight={40} />
+                <GenuiImageView src={image} alt="" fixedHeight={40} look={{ bare: true, resizeMode: 'cover', compact: true }} />
               </View>
             ) : null}
             <View className="flex-1 gap-0.5">
@@ -234,7 +242,6 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
         );
         return (
           <View key={item.id}>
-            {index > 0 ? <Separator /> : null}
             {href ? (
               <Pressable accessibilityRole="link" className="active:opacity-70" onPress={() => openGenuiLink(href)}>
                 {row}
@@ -272,7 +279,7 @@ export function GenuiSteps({ props }: GenuiComponentProps) {
             <View className="items-center" style={{ width: photos ? THUMB : 28 }}>
               {image ? (
                 <View style={{ width: THUMB, height: THUMB }} className="overflow-hidden rounded-lg bg-secondary">
-                  <GenuiImageView src={image} alt="" fixedHeight={THUMB} look={{ bare: true, resizeMode: 'cover', onError: () => setFailed((known) => new Set(known).add(image)) }} />
+                  <GenuiImageView src={image} alt="" fixedHeight={THUMB} look={{ bare: true, resizeMode: 'cover', compact: true, onError: () => setFailed((known) => new Set(known).add(image)) }} />
                 </View>
               ) : photos ? (
                 // In a list with photos, a row without one keeps the same thumbnail size: its number on the well.

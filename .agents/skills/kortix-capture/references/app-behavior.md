@@ -523,6 +523,36 @@ The MSI (`installer/windows/kortix-capture.wxs`, built by
 - uninstall stops the service (and every recorder it started), removes the
   files, the two values and `%ProgramData%\Kortix\Capture`. People's
   recordings stay in their profiles.
+- runs Microsoft's WebView2 bootstrapper (`MicrosoftEdgeWebview2Setup.exe
+  /silent /install`, in the MSI's Binary table) when
+  `HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-…}` has
+  no `pv`. Windows 11 ships the runtime; some Windows 10 computers do not. The
+  bootstrapper downloads the runtime. Its failure does not fail the install
+  (`Return="ignore"`): the computer records, and the window says what is missing;
+- starts the service with a deferred `sc.exe start KortixCapture` that ignores a
+  failure (`StartMachineService`), not with `ServiceControl Start`: a service that
+  cannot start failed the install with error 1920 and rolled it back. The exes link
+  the C runtime statically (`apps/capture/.cargo/config.toml`), so a computer
+  without the Visual C++ Redistributable runs them;
+- adds the Start menu entry `kortix-capture.exe app` (`Show="minimized"` only
+  hides the console a click on a console exe opens; `app` starts itself again
+  without one, and that process shows the window).
+
+The Windows window (WebView2) keeps its profile in
+`%LOCALAPPDATA%\Kortix\WebView2`. Without a profile folder WebView2 writes
+next to the exe in `%ProgramFiles%`, which a person without admin rights cannot
+write: until 2026-10-19 the window then failed with `0x80070005` and closed at
+once. A window that cannot open (`app`, `ui`, `open`) appends the error to
+`<library>/logs/ui.log` and, on Windows, shows a message box with the error and
+the log path. A second click on the Start menu entry brings the open window
+forward (`ui.lock` and `ui-request.json`, see `src/memory/ui.rs`).
+
+Windows icons: `assets/icons/windows/` (`app.ico` 16-256 px, `app-256.png` for
+the window, `tray.png`, `trayIdle.png`), made by
+`scripts/make_windows_icons.py` from the Capture mark of `app-1024.png`. The
+exe resource (`build.rs`, `embed-resource`), the MSI (`ARPPRODUCTICON`, the
+shortcut), the window and the tray use them. macOS and Linux keep
+`assets/icons/app-*.png` and `tray*.png`.
 
 For every person who signs in to the computer, the machine service:
 
@@ -1112,9 +1142,53 @@ Build: `cargo build --release --features capture-engine --bin kortix-capture-eng
 Swift engine and `engine::locate()` prefers it there.
 
 `bundle_id`: Windows = AppUserModelID for packaged apps, else lowercase exe name
-(`chrome.exe`). Linux = lowercase `WM_CLASS` class. Exclusion lists match
-case-insensitively; the built-in groups carry Windows and Linux ids.
+(`chrome.exe`). Linux = lowercase `WM_CLASS` class. The built-in groups carry
+Windows and Linux ids.
 
+### App lists: the one app rule
+
+Every app list (exclusions, Record only, the organization's policy, Kortix's
+own apps, per-window masking, the action recorder, system audio) uses one rule:
+`memory::exclusions::app_matches` in Rust and `appMatches` in
+`native/macos/CaptureEngine.swift`. Both run the shared vectors in
+`fixtures/capture-format-v2/apps.json`.
+
+An app has several identifiers: its `bundle_id` and its `aliases`. An entry
+names the app when its key equals the key of any identifier. The key is the
+trimmed, lowercase last path component, without `.exe`, `.app`, `.desktop` or
+`.appimage`, and without a `maccatalyst.` prefix. An entry ending in `*` names
+every app with an identifier key that starts with the rest (3 characters or
+more). The API and the SDK (`normalizeCaptureAppId`) accept any such entry.
+
+| OS | Identifiers of an app | What an admin can type (all match) |
+|---|---|---|
+| Windows 10/11, classic Win32 | exe file name, version-resource description | `acad.exe`, `ACAD`, `C:\Program Files\Autodesk\AutoCAD 2025\acad.exe`, `AutoCAD Application`, `autocad*` |
+| Windows, packaged MSIX/Store (Win11 Notepad, Paint, Terminal, Calculator) | AppUserModelID, exe file name, package family, package name, description | `notepad.exe`, `Microsoft.WindowsNotepad`, `Microsoft.WindowsNotepad_8wekyb3d8bbwe`, the AUMID, a `WindowsApps` path |
+| Windows, UWP in `ApplicationFrameHost.exe` | the app process behind the frame; if not found, the window's `PKEY_AppUserModel_ID` | `calculatorapp.exe`, `Microsoft.WindowsCalculator` (`calc.exe` is only a launcher: it never matches) |
+| Windows, elevated or protected process the recorder may not open | none: the app is unknown (a process snapshot names it in `aliases` only) | nothing: never recorded unless `record_unknown_bundle_ids`, never with Record only |
+| Windows, Java / .NET / Electron hosts | the host exe (`javaw.exe`), or the app's own exe (`slack.exe`) | `javaw.exe` names every Java app |
+| macOS 14+ | bundle id, app name, executable name, `.app` file name | `com.autodesk.AutoCAD2025`, `com.autodesk.autocad*`, `AutoCAD 2025`, `AutoCAD 2025.app`, a `/Applications/...` path |
+| macOS, Mac Catalyst | bundle id without `maccatalyst.` | the iOS bundle id |
+| macOS, no bundle id (CLI tools, unbundled Java) | none: the app is unknown | nothing (see below) |
+| Linux X11 | `WM_CLASS` class and instance, process name, `.desktop` name, exe file name | `gedit`, `Text Editor` |
+| Linux, Flatpak / Snap / AppImage | Flatpak app id (cgroup scope), Snap name (`/snap/<name>/`), AppImage file (`APPIMAGE`) | `org.gnome.TextEditor`, `firefox`, `FreeCAD.AppImage` |
+
+Fail-safe rules:
+
+- An app without a `bundle_id` (macOS without a bundle id, an X11 window
+  without `WM_CLASS` or pid, a Windows process the recorder may not open) is
+  never recorded with Record only on, even when its name is listed. With it
+  off it is hidden unless `record_unknown_bundle_ids`; the recorder reports
+  `unknown_bundle`.
+- Record only on: a browser whose URL is not read (an unfocused window on
+  Windows, every window on Linux, an unknown browser) is recorded only when
+  the browser app itself is included. Exclusion: such a window is recorded
+  unless its title marks a private window.
+- Websites follow the domain rule (`fixtures/capture-format-v2/domains.json`):
+  a site covers its subdomains, ports and `www.` are ignored, and an
+  internationalized host compares in its punycode form on every OS.
+- An excluded app is masked window by window on every display, also when it is
+  not in front.
 | | Windows | Linux (X11) |
 |---|---|---|
 | Screen | GDI `BitBlt` of the monitor with the focused window (per-monitor DPI aware) | X11 `GetImage` of the RandR monitor with the focused window |

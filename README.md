@@ -267,8 +267,8 @@ manager, encrypted at rest and injected at runtime · a full audit trail · merg
 for an agent · approval gates you switch on for the actions that matter · your own VPC or on-prem
 network.
 
-Isolation is per provider: the Platinum provider runs microVMs, the default runs containers.
-Ask us and we'll tell you which one you're on.
+Sessions run on Platinum, the reference sandbox provider, where each session is its own microVM.
+Daytona remains only as a legacy fallback, and its removal is scheduled.
 
 ---
 

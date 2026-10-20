@@ -1,14 +1,13 @@
 'use client';
 
 /**
- * Settings › Computer: the page form of `ComputerConnectModal` (KRTX-1997).
- * The modal is reachable only from a dismissible sidebar promo; this page
- * always is, and it stays useful after pairing: it lists the computers this
- * person paired.
+ * Settings › My computer: the page form of `ComputerConnectModal` (KRTX-1997).
+ * It lists the computers this person paired; a row opens that computer's
+ * controls (`ComputerDetailsModal`).
  *
  * Every way to pair, from the same hooks the modal uses:
  * 1. The desktop app, this machine unpaired → one click.
- * 2. A browser → download the desktop app.
+ * 2. Another computer → install the desktop app there.
  * 3. Anywhere → copy the CLI pairing command.
  *
  * Project-scoped only because the CLI command and the desktop pairing name
@@ -16,7 +15,8 @@
  * project.
  */
 
-import { MonitorIcon, TerminalWindowIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, MonitorIcon, TerminalWindowIcon } from '@phosphor-icons/react';
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
@@ -34,6 +34,7 @@ import {
   useOwnsPairedComputer,
   useThisComputerState,
 } from '@/features/tunnel/computer-connect';
+import { ComputerDetailsModal } from '@/features/tunnel/local-computer-modal';
 import { buildTunnelConnectCommand } from '@/features/tunnel/tunnel-connect-command';
 import { useCopy } from '@/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
@@ -50,8 +51,11 @@ export function ComputerTab({ projectId }: { projectId: string }) {
   const connectDesktop = useConnectDesktopComputer(projectId);
   // The button itself confirms the copy; no toast.
   const { copied, copy } = useCopy({ toast: false });
+  const [openTunnelId, setOpenTunnelId] = useState<string | null>(null);
 
-  const inBrowser = desktop.isSuccess && !desktop.data && !isDesktop();
+  // The desktop app connects the machine it runs on in one click. Elsewhere,
+  // and for any other computer, the way in is the desktop app on that machine.
+  const showDownload = (desktop.isSuccess && !desktop.data && !isDesktop()) || paired.owns;
   const copyCliCommand = () =>
     copy(
       buildTunnelConnectCommand({
@@ -72,7 +76,12 @@ export function ComputerTab({ projectId }: { projectId: string }) {
             {paired.owned.map((machine) => {
               const platform = platformName(machine.machineInfo?.platform);
               return (
-                <div key={machine.tunnelId} className="flex items-center gap-3 px-4 py-3">
+                <button
+                  key={machine.tunnelId}
+                  type="button"
+                  onClick={() => setOpenTunnelId(machine.tunnelId)}
+                  className="hover:bg-hover flex w-full items-center gap-3 px-4 py-3 text-left transition-colors"
+                >
                   <ComputerGlyph />
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <p className="truncate text-sm font-medium">
@@ -88,7 +97,8 @@ export function ComputerTab({ projectId }: { projectId: string }) {
                     <ComputerStateDot state={machine.isLive ? 'online' : 'offline'} />
                     {machine.isLive ? t('online') : t('offline')}
                   </span>
-                </div>
+                  <CaretRightIcon className="text-muted-foreground size-3.5 shrink-0" />
+                </button>
               );
             })}
           </SettingsRowGroup>
@@ -118,8 +128,11 @@ export function ComputerTab({ projectId }: { projectId: string }) {
               </Button>
             </SettingsRow>
           ) : null}
-          {inBrowser ? (
-            <SettingsRow label={tPage('desktopLabel')} description={t('downloadHint')}>
+          {showDownload ? (
+            <SettingsRow
+              label={tPage('desktopLabel')}
+              description={paired.owns ? tPage('otherComputerHint') : t('downloadHint')}
+            >
               <Button
                 type="button"
                 size="sm"
@@ -150,12 +163,23 @@ export function ComputerTab({ projectId }: { projectId: string }) {
         </SettingsRowGroup>
       </section>
 
-      <section className="space-y-3">
-        <SettingsSubsectionHeader title={t('capabilitiesTitle')} />
-        <SettingsRowGroup className="px-4 py-0">
-          <ComputerCapabilities />
-        </SettingsRowGroup>
-      </section>
-    </div>
+      {/* Before the first pairing, what a computer gives Kortix. After it, each
+          computer's own controls hold the same list as switches. */}
+      {paired.owns ? null : (
+        <section className="space-y-3">
+          <SettingsSubsectionHeader title={t('capabilitiesTitle')} />
+          <SettingsRowGroup className="px-4 py-0">
+            <ComputerCapabilities />
+          </SettingsRowGroup>
+        </section>
+      )}
+
+      <ComputerDetailsModal
+        projectId={projectId}
+        tunnelId={openTunnelId}
+        onOpenChange={(open) => {
+          if (!open) setOpenTunnelId(null);
+        }}
+      />    </div>
   );
 }

@@ -11,6 +11,7 @@ import {
   loadAgentMailInstall,
   loadSlackInstall,
   loadTeamsInstall,
+  loadTelegramInstall,
 } from '../channels/install-store';
 import { resolveSessionConnectorConnection } from '../projects/lib/session-connector-bindings';
 import { db } from '../shared/db';
@@ -113,6 +114,7 @@ async function channelInstalled(
 ): Promise<boolean> {
   if (platform === 'slack') return (await loadSlackInstall(projectId).catch(() => null)) != null;
   if (platform === 'teams') return (await loadTeamsInstall(projectId).catch(() => null)) != null;
+  if (platform === 'telegram') return (await loadTelegramInstall(projectId).catch(() => null)) != null;
   if (platform === 'email')
     return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
   return false;

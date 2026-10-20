@@ -142,6 +142,7 @@ let pauseAfterPosts: number | null = null;
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
   SANDBOX_VERSION: 'test',
+  KNOWN_PROVIDERS: ['platinum', 'daytona'],
 }));
 
 mock.module('../../../shared/db', () => ({

@@ -7,7 +7,8 @@
  * ignore DEFAULT_ICON_WEIGHT.
  *
  * This module closes that gap: every icon below is the SSR icon with
- * DEFAULT_ICON_WEIGHT (src/lib/icons/icon-config.ts) already bound. Server
+ * DEFAULT_ICON_WEIGHT (packages/ui/src/lib/icon-config.ts; the apps/web path
+ * src/lib/icons/icon-config.ts is a shim) already bound. Server
  * components import from here and, exactly like client components, never pass
  * a weight prop — one constant still governs the whole app. An explicit weight
  * (weight="fill" on solid/status icons) still wins.

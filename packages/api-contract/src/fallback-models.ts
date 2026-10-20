@@ -86,12 +86,6 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     reasoning_options: [{ type: 'effort', values: ['low', 'high', 'max'] }],
     limit: { context: 1_000_000, output: 65_536 }, cost: { input: 0.15, output: 0.5, cache_read: 0.05 },
   },
-  'kimi-k3': {
-    name: 'Kimi K3 2.8T', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: true, modalities: { input: ['text', 'image'], output: ['text'] },
-    reasoning_options: [{ type: 'effort', values: ['low', 'high', 'max'] }],
-    limit: { context: 1_000_000, output: 65_536 }, cost: { input: 3.3, output: 16.5, cache_read: 0.33 },
-  },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
     provider: 'openai',

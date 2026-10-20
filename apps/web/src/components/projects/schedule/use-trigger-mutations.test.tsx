@@ -32,7 +32,9 @@ mock.module('@kortix/sdk', () => ({
   fireProjectTrigger: fire,
   deleteProjectTrigger: deleteTrigger,
 }));
-mock.module('@/components/ui/toast', () => ({ successToast: success, errorToast: error }));
+const uiToastMock = () => ({ successToast: success, errorToast: error });
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 
 const { useTriggerMutations } = await import('./use-trigger-mutations');
 

@@ -63,7 +63,7 @@ const SNAPSHOT_TOO_LARGE_PATTERN =
 const STORAGE_FULL_PATTERN = /total disk limit exceeded|disk quota exceeded|storage quota exceeded/i;
 
 const CAPACITY_PATTERN =
-  /resource pool exhausted|too many starts in flight|no available runner|no runners available|no capacity|out of capacity|capacity exceeded|failed to place sandbox|rate ?limit|too many requests|maximum number of concurrent (?:e2b )?sandboxes|max(?:imum)? number of running sandboxes(?: on node)? reached|too many sandboxes starting on this node/i;
+  /resource pool exhausted|too many starts in flight|no available runner|no runners available|no capacity|out of capacity|capacity exceeded|failed to place sandbox|rate ?limit|too many requests|maximum number of concurrent sandboxes|max(?:imum)? number of running sandboxes(?: on node)? reached|too many sandboxes starting on this node/i;
 
 /**
  * A provider answer that says "not now" rather than "never": 429, or a 5xx a
@@ -86,7 +86,7 @@ const GIT_AUTH_PATTERN =
  * check, plus the other policy throws (invalid consumer, missing policy, non-exact host).
  *
  * There is no longer a PROVIDER capability gap to distinguish it from: one mechanism serves
- * daytona, e2b and platinum alike, so
+ * platinum and daytona alike, so
  * the `unsupported-secret-delivery` category is never produced. It stays on the wire contract
  * because sandbox rows written before this change still carry it.
  */
