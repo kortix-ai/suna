@@ -13,22 +13,21 @@ import {
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { cn } from '@/lib/utils';
-import { floatingZ, useDialogDepth } from '@/lib/z-stack';
+import { cn, floatingZ, useDialogDepth } from '@kortix/ui';
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
-import { errorToast } from '@/components/ui/toast';
+import { errorToast } from '@kortix/ui/toast';
 
-import { UnifiedMarkdown } from '@/components/markdown';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { FileTree, FileTreeNav } from '@/components/ui/file-tree';
-import { Portal } from '@/components/ui/portal';
-import { Copy } from '@/features/icon/icons/copy';
-import { Github } from '@/features/icon/icons/github';
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
+import { FileTree, FileTreeNav } from '@kortix/ui/file-tree';
+import { Portal } from '@kortix/ui/portal';
+import { Copy } from '@kortix/ui/icons';
+import { Github } from '@kortix/ui/internal/icons/github';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
+import { EmptyState } from '@kortix/ui/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import type {
   MarketplaceItem,

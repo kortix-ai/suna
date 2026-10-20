@@ -8,14 +8,14 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { AuthPendingScreen, AuthStatusScreen } from '@/features/auth/auth-consent';
-import { ErrorStrip, FieldLabel, Rise, StepHeader } from '@/features/auth/auth-primitives';
-import { deviceOs } from '@/features/capture/area/use-capture-area';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { AuthPendingScreen, AuthStatusScreen } from '@kortix/ui/internal/auth/auth-consent';
+import { ErrorStrip, FieldLabel, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
+import { deviceOs } from '@kortix/ui/internal/capture/use-capture-area';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
 

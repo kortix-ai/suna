@@ -3,10 +3,10 @@
 import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@kortix/ui/card';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import {
   Modal,
   ModalBody,
@@ -18,14 +18,14 @@ import {
   ModalPortal,
   ModalTitle,
   ModalTrigger,
-} from '@/components/ui/modal';
+} from '@kortix/ui/modal';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@kortix/ui/select';
 import {
   Sheet,
   SheetBody,
@@ -33,10 +33,9 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from '@/components/ui/sheet';
-import { Switch } from '@/components/ui/switch';
-import { cn } from '@/lib/utils';
-import { dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
+} from '@kortix/ui/sheet';
+import { Switch } from '@kortix/ui/switch';
+import { cn, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@kortix/ui';
 
 /**
  * /debug/modal-stack
@@ -45,7 +44,7 @@ import { dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
  * card. Depth used to come only from React context, so a modal that is not
  * nested in the open one's JSX (a global host, a store-driven modal) resolved
  * depth 1 and its overlay rendered under the card it should dim.
- * `lib/z-stack.tsx` now stacks by open order.
+ * `packages/ui/src/lib/z-stack.tsx` now stacks by open order.
  *
  * Every scenario below opens several layers. The inspector (bottom right) reads
  * the computed z-index of each open dialog and its overlay from the DOM and

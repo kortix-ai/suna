@@ -1,7 +1,7 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { Badge } from '@kortix/ui/badge';
+import { cn } from '@kortix/ui';
 import {
   ArrowUpIcon,
   CheckIcon,

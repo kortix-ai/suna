@@ -4,7 +4,7 @@
  * throwaway project with react 19, and imports EVERY export in Node ESM. Then it
  * type-checks a file that imports every JS export through the published .d.ts.
  *
- * @kortix/ui peers on @kortix/sdk (for @kortix/ui/chat), and @kortix/sdk depends on
+ * @kortix/ui peers on @kortix/sdk (for the session entries), and @kortix/sdk depends on
  * @kortix/llm-catalog. stage-npm-publish.mjs pins those to the lockstep release
  * version, so the run packs all three at one synthetic version and installs the
  * tarballs together: nothing resolves from the registry for a version that exists
@@ -17,7 +17,7 @@
  * Run from packages/ui:  node scripts/smoke-install.mjs
  */
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,8 @@ const PACKAGES = [
   { name: '@kortix/ui', dir: UI_DIR, build: 'build' },
 ];
 const VERSION = '0.0.0-smoke';
+/** Exports a host loads only in the browser (see smoke.mjs). */
+const BROWSER_ONLY = ['./terminal/pty-terminal'];
 
 const walkFiles = (dir) =>
   existsSync(dir)
@@ -101,12 +103,19 @@ register('./css-loader.mjs', import.meta.url);
 
 const pkg = JSON.parse(readFileSync(new URL('./node_modules/@kortix/ui/package.json', import.meta.url), 'utf8'));
 if (pkg.version !== '${VERSION}') throw new Error('installed @kortix/ui is not the packed tarball: ' + pkg.version);
-if (pkg.dependencies?.['@kortix/shared']) throw new Error('published manifest depends on the private @kortix/shared');
+for (const name of ['@kortix/shared', '@kortix/manifest-schema']) {
+  if (pkg.dependencies?.[name]) throw new Error('published manifest depends on the private ' + name);
+}
 for (const file of ${JSON.stringify(shipped)}) {
   if (!existsSync(new URL('./node_modules/@kortix/ui/' + file, import.meta.url))) throw new Error('tarball is missing ' + file);
 }
 const keys = Object.keys(pkg.exports);
+// Browser-only modules: resolved, never imported. A host loads them with a
+// dynamic import on the client (session-terminal-panel loads pty-terminal).
+// pty-terminal: @xterm/xterm reads \`self\` at module load.
+const BROWSER_ONLY = ${JSON.stringify(BROWSER_ONLY)};
 const failures = [];
+let browserOnly = 0;
 let js = 0;
 let css = 0;
 for (const key of keys) {
@@ -119,7 +128,11 @@ for (const key of keys) {
       continue;
     }
     const file = fileURLToPath(import.meta.resolve(spec));
-    if (/['"]@kortix\\/shared/.test(readFileSync(file, 'utf8'))) throw new Error('imports @kortix/shared');
+    if (/['"]@kortix\\/(?:shared|manifest-schema)/.test(readFileSync(file, 'utf8'))) throw new Error('imports a private @kortix/ package');
+    if (BROWSER_ONLY.includes(key)) {
+      browserOnly += 1;
+      continue;
+    }
     await import(spec);
     js += 1;
   } catch (error) {
@@ -135,21 +148,25 @@ for (const name of ['cn', 'Button', 'UiProvider', 'useUiStrings', 'useIsDark']) 
   if (root[name] === undefined) throw new Error('root export missing: ' + name);
 }
 if (root.cn('px-2', 'px-4') !== 'px-4') throw new Error('cn() does not merge Tailwind classes');
-const chat = await import('@kortix/ui/chat');
-for (const name of ['SessionThread', 'Composer', 'MessageList', 'Markdown']) {
-  if (typeof chat[name] !== 'function' && typeof chat[name] !== 'object') throw new Error('chat export missing: ' + name);
+const chat = await import('@kortix/ui/session');
+const session = await import('@kortix/ui/session');
+if (chat.SessionThread !== session.SessionThread) throw new Error('@kortix/ui/session SessionThread is not @kortix/ui/session SessionThread');
+for (const name of ['SessionThread', 'SessionChatInput', 'ToolPartRenderer', 'UnifiedMarkdown']) {
+  if (typeof session[name] !== 'function' && typeof session[name] !== 'object') throw new Error('session export missing: ' + name);
 }
+if (!session.ToolRegistry.get('bash')) throw new Error('@kortix/ui/session did not register the tool renderers');
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { createElement } = await import('react');
 const html = renderToStaticMarkup(createElement(root.Button, null, 'Hi'));
 if (!html.startsWith('<button') || !html.includes('Hi')) throw new Error('Button did not render: ' + html);
-console.log('OK: ' + js + ' JS exports imported, ' + css + ' file exports resolved (' + keys.length + ' total), ${shipped.length} shipped files present; Button SSR: ' + html.slice(0, 60) + '…');
+console.log('OK: ' + js + ' JS exports imported, ' + browserOnly + ' browser-only resolved, ' + css + ' file exports resolved (' + keys.length + ' total), ${shipped.length} shipped files present; Button SSR: ' + html.slice(0, 60) + '…');
 `,
   );
   process.stdout.write(run('node', ['smoke.mjs'], workdir));
 
   console.log('→ type-checking every JS export through the published .d.ts');
-  const installed = JSON.parse(run('node', ['-p', "JSON.stringify(require('./node_modules/@kortix/ui/package.json').exports)"], workdir));
+  // Read the file, not `node -p`: a piped stdout over 64 KB arrives cut (502 exports).
+  const installed = JSON.parse(readFileSync(join(workdir, 'node_modules', '@kortix', 'ui', 'package.json'), 'utf8')).exports;
   const specs = Object.keys(installed)
     .filter((key) => !key.endsWith('.css') && key !== './package.json')
     .map((key) => (key === '.' ? '@kortix/ui' : `@kortix/ui/${key.slice(2)}`));
@@ -168,7 +185,7 @@ console.log('OK: ' + js + ' JS exports imported, ' + css + ' file exports resolv
       "import { Dialog, DialogContent, DialogTitle } from '@kortix/ui/dialog';",
       "import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';",
       "import { Command, CommandInput } from '@kortix/ui/command';",
-      "import { Composer } from '@kortix/ui/chat';",
+      "import { SessionThread } from '@kortix/ui/session';",
       'export const view = (',
       '  <div>',
       "    <Button variant='outline' size='sm' className='x'>Hi</Button>",
@@ -178,7 +195,7 @@ console.log('OK: ' + js + ' JS exports imported, ' + css + ' file exports resolv
       '    <Command><CommandInput /></Command>',
       '  </div>',
       ');',
-      'export const composer = Composer;',
+      'export const thread = SessionThread;',
       '',
     ].join('\n'),
   );

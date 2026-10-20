@@ -12,6 +12,7 @@ import { isMissingRemoteBranchError } from '../managed-repo-seed';
 import { FIELD_SEP } from './commits';
 import { authGitPush } from './commit-writer';
 import {
+  ensureMirrorAccess,
   existingProjectMirrorPath,
   hostFromRepoUrl,
   invalidateProjectMirror,
@@ -360,23 +361,24 @@ export async function deleteRemoteSessionBranch(
     throw new Error('Refusing to delete the project default branch');
   }
 
-  const authHost = hostFromRepoUrl(project.repoUrl);
-  const repoPath = await refreshMirror(project, true);
-  const remote = await runGit(
-    ['ls-remote', '--heads', 'origin', branchName],
-    repoPath,
-    true,
-    project.gitAuthToken,
-    undefined,
-    authHost,
-    undefined,
-    project.gitAuthHeaders,
-  ).catch(() => ({ stdout: '', stderr: '' }));
-  if (!remote.stdout.trim()) return false;
+  const branch = validateRef(branchName);
+  const access = await ensureMirrorAccess(project);
+  const authenticated = {
+    ...project,
+    repoUrl: access.repoUrl,
+    gitAuthToken: access.token,
+    gitAuthHeaders: access.headers,
+  };
+  if (!(await resolveRemoteBranchTip(authenticated, branch))) return false;
 
-  await authGitPush(project, repoPath, ['push', 'origin', `:${branchName}`]);
-  await runGit(['update-ref', '-d', `refs/heads/${branchName}`], repoPath, false).catch(
-    () => undefined,
-  );
-  return true;
+  // Deleting a ref needs no objects. Never clone the complete history for GC.
+  const repoPath = await makeSessionBranchRepo(project.projectId);
+  try {
+    await runGit(['init', '--bare', repoPath]);
+    await authGitPush(authenticated, repoPath, ['push', access.repoUrl, `:refs/heads/${branch}`]);
+    invalidateProjectMirror(project.projectId);
+    return true;
+  } finally {
+    await rm(repoPath, { recursive: true, force: true });
+  }
 }

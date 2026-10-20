@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
 import { markViewedSeen } from '@/components/turn-attention-badge';
-import { useTurnAttentionStore } from '@/stores/turn-attention-store';
+import { useTurnAttentionStore } from '@kortix/ui/internal/stores/turn-attention-store';
 
 const originalDocument = globalThis.document;
 const originalWindow = globalThis.window;

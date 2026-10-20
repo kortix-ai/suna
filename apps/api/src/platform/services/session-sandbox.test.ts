@@ -910,7 +910,8 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     ).toBe(false);
   });
 
-  test('capacity failure records one attempt and provider-neutral failure metadata', async () => {
+  test('an unused project auto-session surfaces terminal provisioning failure', async () => {
+    scenario.projectSessionMetadataAtCheck = { source: 'ui', warm: true };
     providerCreateErrors.platinum = '500: Failed to place sandbox';
     const failed = waitFor((resolve) => {
       onProviderEvent = resolve;
@@ -920,6 +921,9 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await failed;
 
     expect(providerCreateCalls).toBe(1);
+    expect(updateCalls.find((call) =>
+      call.table === projectSessions && call.updates.status === 'failed',
+    )?.updates.error).toBe('The sandbox provider is at capacity right now. Try again in a minute.');
     const terminal = updateCalls.find(
       (call) =>
         call.table === sessionSandboxes &&

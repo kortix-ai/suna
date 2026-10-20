@@ -24,7 +24,7 @@
  * the row, so announcing the logo as well is duplication, not information.
  */
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 type MarkProps = { className?: string };
 

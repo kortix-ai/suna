@@ -6,7 +6,7 @@ import { ArrowLeftIcon as ArrowLeft, BookOpenIcon as BookOpen } from '@phosphor-
 import { m } from 'motion/react';
 import Link from '@/components/site-link';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 
 export interface NotFoundAction {
   href: string;
