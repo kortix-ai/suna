@@ -6,12 +6,19 @@ by CSS variables. The whole session UI lives here, one module per
 responsibility (layout below). `apps/web` imports it like any host: the module
 entries, the primitives, and a short list of deep paths (below).
 
+**Built with @kortix/ui:** [Lumen](../../apps/whitelabel-demo), a complete white-label agent
+product in its own brand. Every screen is a module of this package.
+
+<p align="center"><img src="https://github.com/kortix-ai/suna/raw/dev/apps/whitelabel-demo/public/screenshots/session.png" width="720" alt="Lumen: the Kortix session workspace in Lumen's brand" /></p>
+
 Install: not on npm yet. Inside kortix-ai/suna: `"@kortix/ui": "workspace:*"`.
 After the first npm release: `npm i @kortix/ui`.
 `react` and `react-dom` 18 or later are peers.
 
 - Public docs: `apps/web/content/docs/sdk/ui.mdx` (https://kortix.com/docs/sdk/ui).
-- Agent skill: `skills/kortix-ui/SKILL.md`. Kortix sessions load the same file
+- Agent skill: `skills/kortix-ui/SKILL.md`, with `references/custom-dashboard.md`
+  (a whole dashboard), `references/modules.md` (every entry, its props, an example) and
+  `references/theming.md` (every theme key). Kortix sessions load the same files
   from `packages/starter/templates/managed/skills/kortix-ui/SKILL.md`
   (`kortix-ui` is in `KORTIX_MANAGED_SKILL_NAMES`, so the sandbox bake ships it).
   `src/skill.test.ts` fails when the copies (SKILL.md and `references/`) differ,
@@ -81,7 +88,8 @@ any prop gets these defaults:
 | `i18n` | the bundled English catalog of `@kortix/ui/i18n` |
 | `useViewerId` | no signed-in user (`undefined`) |
 | `useBrand` | the Kortix marks |
-| `config` | `{ billingEnabled: false }` |
+| `config` | `{ billingEnabled: false, connectorsEnabled: true, managedModelsEnabled: false }` |
+| `components` | no slots: a control that opens a missing slot is hidden (`ShareSessionModal`, `HomeAnnouncement`, `Wallpaper`, `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal`) |
 
 `strings` takes any subset of `UiStrings`. `MermaidRenderer`'s controls are
 English only.
@@ -123,10 +131,15 @@ const useViewerId = () => useAuth().user?.id;
 `image={NextImage}` needs `images.remotePatterns` for every remote logo URL.
 
 The session UI reads the project and session it renders from
-`SessionIdsProvider`, never from route params. Mount one around each session
-view: `<SessionIdsProvider projectId={projectId} sessionId={sessionId}>`.
+`SessionIdsProvider`, never from route params. `SessionThread`,
+`SessionWorkspace` and `ProjectHome` mount it themselves, together with the
+SDK's project scope (`internal/project-scope.tsx`). Around any other block,
+mount `KortixProjectProvider` (`@kortix/sdk/react`) and
+`<SessionIdsProvider projectId={projectId} sessionId={sessionId}>`.
 `useSessionIds()` reads it; without a provider both ids are `undefined`, and
-components that need them render nothing.
+components that need them render nothing. The root entry imports nothing from
+`@kortix/sdk`: `scripts/build.mjs` loads `dist/providers/session-ids.js` in
+plain Node to keep it so.
 
 Telemetry is module level, so plain functions report too. Call
 `setUiTelemetry` once at module load; omitted functions keep their default
@@ -164,51 +177,55 @@ The root `@kortix/ui` barrel holds only light core primitives. Toasts need one
 `<Toaster />` from `@kortix/ui/toast` at the root; `IconProvider`
 (`@kortix/ui/icon-provider`) sets the house icon weight.
 
-## Session thread
+## Modules
 
-Every part of `@kortix/ui/session` needs `@kortix/sdk` and `@tanstack/react-query`
-5 (`@kortix/sdk/react` imports it; it is an optional peer, so npm does not
-warn when it is missing and the bundler fails instead):
-`npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod`
-(the last two are the optional `@kortix/sdk` peers the thread's genui blocks need),
-plus one `QueryClientProvider`.
+Every part of a Kortix session is a module with one entry. Its curated names
+are the public API (semver). Each needs `@kortix/sdk` and `@tanstack/react-query`
+5 (an optional peer: the bundler fails, npm does not warn), one
+`QueryClientProvider`, and, for the thread, `@openuidev/lang-core@0.3.1` and `zod`:
+`npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod`.
+
+| Entry | What it is | Minimal mount |
+| --- | --- | --- |
+| `./workspace` | `SessionWorkspace` (thread + resizable side panel), `ProjectHome`, `ProjectSessionList`, `ProjectFilesView`, `ShareSessionModal` | `<SessionWorkspace session={useSession(p, s)} />` |
+| `./session` | `SessionThread`, turns, `ToolRegistry`, prompts, pickers | `<SessionThread session={useSession(p, s)} />` |
+| `./composer` | `ComposerChatInput` and the send pipeline | in the project scope |
+| `./session-panel` | `SessionPanelProvider`, `ActionPanel`, `SessionFiles`, `SessionChanges` | `SessionPanelProvider` |
+| `./files`, `./file-viewer` | project and sandbox files, `FilePreviewHost`; `FileViewer`, `FileContentRenderer` | `ProjectFilesView`; `<FileViewer content fileName />` |
+| `./terminal`, `./browser` | `SessionTerminal`; `SessionBrowser`, `BrowserLanding` | a mounted session's runtime ids |
+| `./markdown`, `./genui`, `./diff`, `./changes` | `UnifiedMarkdown`, GenUI blocks, `DiffView`, `ChangeList` | none |
+| `./apps`, `./access`, `./customize` | App frames; sharing and roles; project configuration pages | `projectId` |
+| `./theme`, `./i18n`, `./icons` | the typed theme; translations; glyphs | none |
 
 ```tsx
 import { useSession } from '@kortix/sdk/react';
-import { SessionThread } from '@kortix/ui/session';
+import { SessionWorkspace } from '@kortix/ui/workspace';
 
-<SessionThread session={useSession(projectId, sessionId)} />
-```
-
-`SessionThread` is the thread apps/web renders: transcript, tool rows,
-permission and question prompts, the composer with its model and agent
-pickers. `hideHeader` hides its title row; `readOnly` hides the composer. The
-parent sets the height. `@kortix/ui/session` also exports `ModelPicker` and
-`AgentPicker` for a form outside a session.
-
-`src/session/index.ts` lists the building blocks for a host that composes its
-own layout: `UserMessage`, `ThrottledMarkdown`, `UnifiedMarkdown`,
-`ToolPartRenderer`, `SessionChatInput`, `ModelSelector`, `AgentSelector`,
-`SessionPermissionPrompt`, `QuestionPrompt`, `TurnErrorDisplay`,
-`SessionBusyIndicator`, `SessionStartingLoader`.
-
-A custom tool row replaces the built-in one for a tool name:
-
-```tsx
-import { BasicTool, ToolRegistry, type ToolProps } from '@kortix/ui/session';
-
-function LookupRow({ call }: ToolProps) {
-  return <BasicTool trigger={`Lookup ${(call.input as { query: string }).query}`} />;
+export function Session({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  return <SessionWorkspace session={useSession(projectId, sessionId)} />;
 }
-ToolRegistry.register('lookup', LookupRow);
 ```
 
-A fully custom transcript uses `renderParts` from `@kortix/sdk/react`.
+`SessionThread` alone shows file and preview opens in a dialog when no side
+panel is mounted. `ProjectHome` sends by itself (creates the session with the
+prompt and navigates to `/projects/<id>/sessions/<sessionId>`); `beforeSend`
+gates it. `ToolRegistry.register('<tool>', Row)` replaces a tool row.
 
-A whole dashboard or App (client, providers, theme, project and session lists,
-the embedded thread, a custom tool row, an App's viewer sign-in):
-`skills/kortix-ui/references/custom-dashboard.md`. Its samples are copies of a
-Vite + React 19 app that type-checks, builds and runs against a live API.
+Compose a custom workspace at any depth: your own column inside
+`SessionWorkspace` (`children`), the panel alone (`SessionPanelProvider` +
+`ActionPanel`), single blocks inside `KortixProjectProvider` +
+`SessionIdsProvider`, or every part yourself with `renderParts` from
+`@kortix/sdk/react`.
+
+Deep paths have no semver. `@kortix/ui/internal/*` and
+`@kortix/ui/<module>/<path>` exist only for the files Kortix's own apps import
+(`scripts/deep-exports.json`). A host imports the entries and the primitives.
+
+A whole dashboard (client, router adapters, theme, sidebar with the session
+list, project home, session workspace, Files page, custom tool row, App
+sign-in): `skills/kortix-ui/references/custom-dashboard.md`. Its samples are
+copies of a Vite + React 19 app that type-checks, builds and runs against a
+live API. Every entry with its props and an example: `references/modules.md`.
 
 ## Layout
 

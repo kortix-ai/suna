@@ -239,8 +239,9 @@ Every session downloads the whole repository, so keep it small. Create
 6. **UI.** Vite + React + TypeScript, `npm install convex @kortix/sdk`. Wire
    `src/convex.ts` as references/sign-in.md, "The browser", shows. Read the
    signed-in member with a `members:me` query, never `useConvexAuth()`.
-   Components, theme and an embedded Kortix session thread come from
-   `@kortix/ui`: `kortix system-skills file kortix-ui references/custom-dashboard.md`.
+   Components, theme and the whole Kortix session experience (session workspace,
+   project home, session list, files) come from `@kortix/ui`:
+   `kortix system-skills file kortix-ui references/custom-dashboard.md`.
 7. **Quality bar.** A product, not a demo: navigation and create/edit/delete
    for every entity with confirmation before destructive actions; loading,
    empty and error states; the signed-in name visible; realtime by default;
@@ -320,4 +321,4 @@ kortix apps volumes destroy <slug> <volume> --yes       # admins; a final snapsh
 - references/sign-in.md — tokens, `kortixToken`, `verifyKortixToken`, `requireKortixMember`, troubleshooting.
 - references/bindings.md — `uses` links and the `/_kortix/apps/<slug>` mount.
 - references/connectors.md — calling connectors from an App.
-- kortix-ui skill, references/custom-dashboard.md — a dashboard or App UI on `@kortix/sdk` + `@kortix/ui`: projects, sessions, the embedded session thread, a custom tool row, a company theme.
+- kortix-ui skill, references/custom-dashboard.md — a dashboard or App UI on `@kortix/sdk` + `@kortix/ui`: projects, the session list, the project home, the session workspace (thread + side panel), files, a custom tool row, a company theme. references/modules.md: every module entry with its props and an example; references/theming.md: every theme key.

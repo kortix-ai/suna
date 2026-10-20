@@ -892,7 +892,7 @@ For the Kortix chat itself, use `SessionThread` from `@kortix/ui/session` (the
 Kortix component package, not on npm yet): one component renders the whole
 session from one `useSession(projectId, sessionId)` result, the same thread
 apps/web renders. `ToolRegistry.register(name, Row)` replaces one tool row. Docs:
-<https://kortix.com/docs/sdk/ui#add-a-chat>. The kit below is for a host that
+<https://kortix.com/docs/sdk/ui#the-thread-alone>. The kit below is for a host that
 draws every part with its own components.
 
 Everything needed to render an agent transcript without adopting any Kortix
