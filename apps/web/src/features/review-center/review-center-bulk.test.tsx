@@ -270,11 +270,13 @@ describe('bulk Approve', () => {
     click(barButton('Approve')!);
     const dialog = document.querySelector('[role="alertdialog"]')!;
     expect(dialog.textContent).toContain('Approve 2 actions?');
-    expect(dialog.textContent).toContain('gmail.send_email_1');
-    expect(dialog.textContent).toContain('gmail.send_email_2');
+    // Rows read the app and action, not the tool id.
+    expect(dialog.textContent).toContain('Send email 1');
+    expect(dialog.textContent).toContain('Send email 2');
+    expect(dialog.textContent).not.toContain('gmail.send_email_1');
     // Each row's arguments, recipient first, the redacted field left out.
-    expect(dialog.textContent).toContain('to: team · subject: Weekly 1');
-    expect(dialog.textContent).toContain('to: team · subject: Weekly 2');
+    expect(dialog.textContent).toContain('team · Weekly 1');
+    expect(dialog.textContent).toContain('team · Weekly 2');
     expect(dialog.textContent).not.toContain('[redacted]');
     expect(dialog.textContent).toContain('High risk');
     expect(dialog.textContent).toContain('Low risk');

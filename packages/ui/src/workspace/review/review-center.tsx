@@ -89,6 +89,8 @@ import {
   resolveBulkOutcome,
 } from './review-actions';
 import { reviewArgsSummary } from '../../session/prompts/session-approval-review';
+import { approvalIdentity } from '../../markdown/setup-links/approval-decision';
+import { ConnectorAppMark } from '../../markdown/setup-links/connector-handshake';
 import {
   ApprovalDecisionModal,
   reviewApprovalAsker,
@@ -1227,12 +1229,11 @@ export function ReviewCenter({
           description: (
             <div className="space-y-3">
               <p>{tBulk('approveDescription')}</p>
-              {/* Every approval it will decide: what, which call, how risky. */}
-              <ul className="bg-popover max-h-64 space-y-px overflow-y-auto rounded-md border p-1">
+              {/* Every approval it will decide: which app, what it does, to what, how risky. */}
+              <ul className="border-border divide-border max-h-72 w-full min-w-0 divide-y overflow-y-auto rounded-lg border">
                 {selectedItems
                   .filter((i) => bulkIds.approve.includes(i.id))
                   .map((i) => {
-                    const call = i.kind === 'approval' ? i.detail.actions?.[0] : undefined;
                     const risk = RISK_BADGE[i.risk];
                     // The arguments, as the approval modal reads them: the
                     // content Kortix resolved, else the call's own preview.
@@ -1241,20 +1242,19 @@ export function ReviewCenter({
                       details?.resolved_preview,
                       details?.args_preview,
                     );
+                    const who = details ? approvalIdentity(details) : null;
                     return (
-                      <li key={i.id} className="flex items-center gap-3 px-2.5 py-1.5">
+                      <li
+                        key={i.id}
+                        className="flex min-w-0 items-center gap-3 px-3 py-2.5"
+                        title={details?.action}
+                      >
+                        {who ? <ConnectorAppMark name={who.connector ?? i.title} iconUrl={who.iconUrl} size="xs" /> : null}
                         <span className="flex min-w-0 flex-1 flex-col">
-                          <span className="text-foreground truncate text-sm">{i.title}</span>
-                          {call ? (
-                            <span className="text-muted-foreground truncate font-mono text-xs">
-                              {call.actionPath || call.title}
-                            </span>
-                          ) : null}
-                          {args ? (
-                            <span className="text-muted-foreground truncate font-mono text-xs">
-                              {args}
-                            </span>
-                          ) : null}
+                          <span className="text-foreground truncate text-sm">
+                            {who?.connector && who.action ? `${who.connector} · ${who.action}` : i.title}
+                          </span>
+                          {args ? <span className="text-muted-foreground truncate text-xs">{args}</span> : null}
                         </span>
                         <Badge variant={risk.variant} size="xs" className="shrink-0">
                           {tBulk(risk.key)}

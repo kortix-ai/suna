@@ -62,6 +62,21 @@ function connectorLogoUrl(details: ApprovalLinkDetails): string | null {
 }
 
 /**
+ * Who the call goes to and what it does, as people read them: the connector's
+ * display name ("Gmail", never the slug), the action ("Send email") and the
+ * logo. The decision panel header and the bulk Approve confirm share it.
+ */
+export function approvalIdentity(details: ApprovalLinkDetails) {
+  return {
+    connector:
+      details.connector_name ??
+      (details.connector ? details.connector.charAt(0).toUpperCase() + details.connector.slice(1) : null),
+    action: actionLabel(details.action),
+    iconUrl: connectorLogoUrl(details),
+  };
+}
+
+/**
  * The standalone approval screen: the decision panel (`ApprovalDecisionPanel`)
  * in a bordered card, or, once decided, the same card with its outcome.
  */
@@ -404,12 +419,7 @@ export function ApprovalDecisionPanel({
   // `ApprovalParameters` renders nothing for a call that recorded nothing and
   // loaded nothing; the facts then follow the header with no second gap.
   const showsPreview = hasParameters || (hasLoaded && previewAuthorized);
-  // A display name, never the bare slug: `gmail` reads "Gmail".
-  const connectorName =
-    details.connector_name ??
-    (details.connector
-      ? details.connector.charAt(0).toUpperCase() + details.connector.slice(1)
-      : null);
+  const connectorName = approvalIdentity(details).connector;
   const agent = agentName?.trim() || null;
   const subject = approvalSubject(
     details.action,

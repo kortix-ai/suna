@@ -258,14 +258,14 @@ describe('the review page of one item', () => {
   test('a connector call shows Approve and Deny to the viewer the API lets decide it, whatever leaves they hold', () => {
     search = 'id=call:exec-1';
     mount([call(true)], MEMBER);
-    expect(buttons()).toContain('Approve this call');
+    expect(buttons().some((b) => /^Approve( and \w+)?$/.test(b))).toBe(true);
     expect(buttons()).toContain('Deny');
   });
 
   test('a connector call the API withholds from this viewer shows no decision, even to a manager', () => {
     search = 'id=call:exec-1';
     mount([call(false)], MANAGER);
-    expect(buttons()).not.toContain('Approve this call');
+    expect(buttons().some((b) => /^Approve( and \w+)?$/.test(b))).toBe(false);
     expect(buttons()).not.toContain('Deny');
   });
 
@@ -276,7 +276,7 @@ describe('the review page of one item', () => {
     const waiting = { ...call(false), status: 'waiting' } as ReviewItem;
     (waiting.detail as { actions: Array<{ canResolve?: boolean }> }).actions[0].canResolve = false;
     mount([waiting], MANAGER);
-    expect(buttons()).not.toContain('Approve this call');
+    expect(buttons().some((b) => /^Approve( and \w+)?$/.test(b))).toBe(false);
     expect(buttons()).not.toContain('Deny');
     expect(text()).toContain(
       'Waiting for the person who started this session or anyone who manages this project to approve or deny it.',
