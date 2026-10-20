@@ -67,8 +67,6 @@ import {
   ClockIcon as Clock,
   DotsThreeIcon as DotsThree,
   MagnifyingGlassIcon as Search,
-  TrashIcon,
-  XCircleIcon,
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
@@ -1183,14 +1181,12 @@ export function ReviewCenter({
     {
       id: 'approve',
       label: tBulk('approve'),
-      icon: <CheckCircleSolid className="size-3.5 shrink-0" />,
       disabled: bulkIds.approve.length === 0,
       onSelect: () => startBulk('approve'),
     },
     {
       id: 'deny',
       label: tBulk('deny'),
-      icon: <XCircleIcon className="size-3.5 shrink-0" />,
       tone: 'destructive',
       disabled: bulkIds.deny.length === 0,
       onSelect: () => startBulk('deny'),
@@ -1198,7 +1194,6 @@ export function ReviewCenter({
     {
       id: 'dismiss',
       label: tBulk('dismiss'),
-      icon: <TrashIcon className="size-3.5 shrink-0" />,
       tone: 'destructive',
       disabled: bulkIds.dismiss.length === 0,
       onSelect: () => startBulk('dismiss'),

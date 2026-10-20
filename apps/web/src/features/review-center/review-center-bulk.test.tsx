@@ -149,8 +149,11 @@ const rowCheckbox = (title: string) =>
   document.querySelector(`button[role="checkbox"][aria-label="Select ${title}"]`)!;
 const option = (title: string) =>
   [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent?.includes(title))!;
+// The bar's actions are text buttons inside its button group.
 const barButton = (label: string) =>
-  document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+  [...document.querySelectorAll<HTMLButtonElement>('[data-slot="button-group"] button')].find(
+    (b) => b.textContent?.trim() === label,
+  ) ?? null;
 const flush = () => act(async () => {});
 
 describe('selecting rows', () => {

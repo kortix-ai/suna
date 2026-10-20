@@ -2,7 +2,8 @@
 
 /**
  * The floating select-mode bar shared by every multi-select list: the count,
- * then one `secondary` ButtonGroup (Select all, then the caller's actions),
+ * then one `secondary` ButtonGroup of text buttons (Select all, then the
+ * caller's actions),
  * then the exit button. A destructive action keeps the group's variant and
  * takes the destructive text tone. While a bulk action runs, the count line
  * reads its progress with the session dot matrix and every control disables.
@@ -12,9 +13,8 @@
  * animates. `animateIn={false}` skips the enter too, for a keyboard-opened bar.
  */
 
-import { CheckSquareIcon, XIcon } from '@phosphor-icons/react';
+import { XIcon } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
-import type { ReactNode } from 'react';
 
 import { useTranslations } from '../../i18n';
 import { cn } from '../../internal/lib/utils';
@@ -26,8 +26,6 @@ import Hint from '../../primitives/hint';
 export interface SelectionBarAction {
   id: string;
   label: string;
-  /** A `size-3.5 shrink-0` glyph. */
-  icon: ReactNode;
   tone?: 'default' | 'destructive';
   disabled?: boolean;
   onSelect: () => void;
@@ -72,26 +70,23 @@ export function SelectionBar({
   const reduceMotion = useReducedMotion();
   const busy = progress !== null;
   const selectLabel = allSelected ? t.raw('text83b12c2216ef') : t.raw('text1fc9a387654d');
-  // One action: a fixed-height button whose label hides when the bar is
-  // narrow (`@xl/bar`), leaving the icon with its name as aria-label and Hint.
+  // One action: a fixed-height button that reads its label. No glyph: a
+  // verb in a bulk bar is read, not recognised.
   const action = (a: SelectionBarAction) => (
-    <Hint key={a.id} label={a.label} side="top">
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        aria-label={a.label}
-        onClick={a.onSelect}
-        disabled={busy || a.disabled}
-        className={cn(
-          'h-8 shrink-0 gap-1.5',
-          a.tone === 'destructive' && 'text-destructive hover:text-destructive',
-        )}
-      >
-        {a.icon}
-        <span className="hidden @xl/bar:inline">{a.label}</span>
-      </Button>
-    </Hint>
+    <Button
+      key={a.id}
+      type="button"
+      variant="secondary"
+      size="sm"
+      onClick={a.onSelect}
+      disabled={busy || a.disabled}
+      className={cn(
+        'h-8 shrink-0',
+        a.tone === 'destructive' && 'text-destructive hover:text-destructive',
+      )}
+    >
+      {a.label}
+    </Button>
   );
   return (
     <m.div
@@ -101,7 +96,7 @@ export function SelectionBar({
         transform: REST,
         transition: { duration: 0.18, ease: EASE_OUT },
       }}
-      className="bg-popover text-popover-foreground border-border @container/bar flex w-full items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-md"
+      className="bg-popover text-popover-foreground border-border flex w-full items-center gap-3 rounded-lg border p-2 pl-3.5 shadow-md"
     >
       <span
         className="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium tabular-nums"
@@ -119,7 +114,6 @@ export function SelectionBar({
         {action({
           id: 'select-all',
           label: selectLabel,
-          icon: <CheckSquareIcon className="size-3.5 shrink-0" />,
           disabled: !canSelectAll,
           onSelect: allSelected ? onClear : onSelectAll,
         })}

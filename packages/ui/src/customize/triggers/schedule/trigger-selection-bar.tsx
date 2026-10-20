@@ -6,8 +6,6 @@
  * While a bulk action runs, the count line reads its progress.
  */
 
-import { PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
-
 import { useTranslations } from '../../../i18n';
 import { SelectionBar, type SelectionBarAction } from '../../../workspace/selection/selection-bar';
 
@@ -55,14 +53,12 @@ export function TriggerSelectionBar({
     {
       id: 'pause',
       label: t.raw('text858e4ba7a29f'),
-      icon: <PauseIcon className="size-3.5 shrink-0" />,
       disabled: !canPause,
       onSelect: onPause,
     },
     {
       id: 'resume',
       label: t.raw('textd640c7421da0'),
-      icon: <PlayIcon className="size-3.5 shrink-0" />,
       disabled: !canResume,
       onSelect: onResume,
     },
@@ -71,7 +67,6 @@ export function TriggerSelectionBar({
     actions.push({
       id: 'delete',
       label: t.raw('texte2d0a54968ea'),
-      icon: <TrashIcon className="size-3.5 shrink-0" />,
       tone: 'destructive',
       disabled: selectedCount === 0,
       onSelect: onDelete,

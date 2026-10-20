@@ -5,8 +5,8 @@ import { SelectionBar, type SelectionBarAction } from './selection-bar';
 
 const noop = () => {};
 const actions: SelectionBarAction[] = [
-  { id: 'approve', label: 'Approve', icon: null, onSelect: noop },
-  { id: 'deny', label: 'Deny', icon: null, tone: 'destructive', disabled: true, onSelect: noop },
+  { id: 'approve', label: 'Approve', onSelect: noop },
+  { id: 'deny', label: 'Deny', tone: 'destructive', disabled: true, onSelect: noop },
 ];
 const bar = (props: Partial<Parameters<typeof SelectionBar>[0]> = {}) =>
   renderToStaticMarkup(
@@ -20,8 +20,10 @@ const bar = (props: Partial<Parameters<typeof SelectionBar>[0]> = {}) =>
       {...props}
     />,
   );
+// A text button reads its label; the icon-only Exit carries it as aria-label.
 const button = (out: string, label: string) =>
-  out.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`))?.[0] ?? '';
+  out.match(new RegExp(`<button(?:(?!<button).)*?(?:aria-label="${label}"[^>]*>|>${label}</button>)`))?.[0] ??
+  '';
 
 describe('SelectionBar', () => {
   test('announces the count and renders Select all, the actions and Exit in order', () => {
@@ -30,10 +32,16 @@ describe('SelectionBar', () => {
     expect(out).toContain('2 selected');
     expect(out).toContain('data-slot="button-group"');
     const order = ['Select all', 'Approve', 'Deny', 'Exit selection'].map((l) =>
-      out.indexOf(`aria-label="${l}"`),
+      out.indexOf(button(out, l)),
     );
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  test('actions are text buttons with no glyph', () => {
+    const out = bar();
+    expect(button(out, 'Approve')).not.toContain('<svg');
+    expect(button(out, 'Select all')).not.toContain('<svg');
   });
 
   test('a disabled action is disabled; a destructive action takes the destructive tone', () => {
@@ -45,7 +53,7 @@ describe('SelectionBar', () => {
   });
 
   test('all selected turns Select all into Clear; canSelectAll=false disables it', () => {
-    expect(bar({ allSelected: true })).toContain('aria-label="Clear"');
+    expect(button(bar({ allSelected: true }), 'Clear')).not.toBe('');
     expect(button(bar({ canSelectAll: false }), 'Select all')).toContain('disabled=""');
   });
 
