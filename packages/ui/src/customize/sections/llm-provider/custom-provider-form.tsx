@@ -24,7 +24,7 @@ import {
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, m } from 'motion/react';
+import { AnimatedCopyIcon } from '../../../animated-copy-icon';
 import { type FormEvent, type ReactNode, useState } from 'react';
 
 import type { CustomFormState } from './types';
@@ -370,22 +370,13 @@ function CustomProviderSnippetView({
             className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[background-color,color,scale] duration-(--duration-normal) active:scale-[0.96]"
           >
             <span className="relative inline-flex size-3.5 items-center justify-center">
-              <AnimatePresence initial={false} mode="popLayout">
-                <m.span
-                  key={copied ? 'check' : 'copy'}
-                  initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                  animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-                  exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                  className="absolute inset-0 inline-flex items-center justify-center"
-                >
-                  {copied ? (
-                    <Check className="text-kortix-green size-3.5" />
-                  ) : (
-                    <Copy className="size-3.5" />
-                  )}
-                </m.span>
-              </AnimatePresence>
+              <AnimatedCopyIcon copied={copied}>
+                {copied ? (
+                  <Check className="text-kortix-green size-3.5" />
+                ) : (
+                  <Copy className="size-3.5" />
+                )}
+              </AnimatedCopyIcon>
             </span>
           </button>
         </div>

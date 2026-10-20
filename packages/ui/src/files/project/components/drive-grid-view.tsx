@@ -458,6 +458,7 @@ const FileCard = memo(function FileCard({
           <FileThumbnail
             filePath={node.path}
             fileName={node.name}
+            onOpen={open}
             className={cn(
               'border-border h-[120px] rounded-lg border',
               // Copied, cut or selected: the focus border plus its soft 15% ring.

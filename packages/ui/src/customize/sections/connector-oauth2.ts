@@ -66,7 +66,7 @@ export function buildOAuth2CredentialInput(form: OAuth2CredentialForm): Connecti
   return { oauth2 };
 }
 
-export type OAuth2Grant = 'client_credentials' | 'authorization_code' | 'device_authorization';
+type OAuth2Grant = 'client_credentials' | 'authorization_code' | 'device_authorization';
 
 export interface OAuth2ApplicationForm {
   grant: OAuth2Grant;

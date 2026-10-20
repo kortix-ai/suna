@@ -81,6 +81,8 @@ function render(props?: {
               handleAttachClick={noop}
               primaryAgents={[] as never}
               availableSelectedModel={null}
+              agentMenuOpen={false}
+              setAgentMenuOpen={noop}
               modelMenuOpen={false}
               setModelMenuOpen={noop}
               reasoningMenuOpen={false}
