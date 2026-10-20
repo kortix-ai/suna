@@ -21528,7 +21528,10 @@
       "dictationDescription": "Izdiktirajte prompt umesto da ga kucate."
     },
     "appStore": "App Store",
-    "googlePlay": "Google Play"
+    "googlePlay": "Google Play",
+    "scanTitle": "Skenirajte i preuzmite aplikaciju",
+    "scanDescription": "Usmerite kameru telefona na kod. Otvara App Store ili Google Play.",
+    "qrLabel": "QR kod za Kortix mobilnu aplikaciju"
   },
   "capture": {
     "authorize": {

@@ -21528,7 +21528,10 @@
       "dictationDescription": "口述提示词，不用打字。"
     },
     "appStore": "App Store",
-    "googlePlay": "Google Play"
+    "googlePlay": "Google Play",
+    "scanTitle": "扫码获取 App",
+    "scanDescription": "用手机相机扫描二维码，即可打开 App Store 或 Google Play。",
+    "qrLabel": "Kortix 移动应用二维码"
   },
   "capture": {
     "authorize": {
