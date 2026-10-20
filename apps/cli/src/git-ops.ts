@@ -193,6 +193,16 @@ export function currentBranch(): string {
  * http.extraHeader so it never lands in .git/config; for BYO repos we rely on
  * the user's own git credentials. Returns the pushed branch, or null on error.
  */
+function managedShipRecovery(projectId: string): void {
+  process.stderr.write(
+    `\n${status.err('The managed repository could not be updated. Nothing was pushed.')}\n` +
+      `  If it contains commits missing from this folder, clone the project into a new folder with the same --host used for this ship:\n` +
+      `    kortix projects clone ${projectId} ../kortix-integrated\n` +
+      `  Copy your local files into that clone (not .git), review the differences, then run kortix ship there.\n` +
+      `  Keep this folder until you have verified the shipped result.\n`,
+  );
+}
+
 function pushCurrentBranch(
   repoUrl: string,
   pushToken: string | null,
@@ -215,13 +225,7 @@ function pushCurrentBranch(
       'fetch', '--no-tags', ...(shallow ? ['--unshallow'] : []), 'origin', `refs/heads/${branch}`,
     ], { env });
     if (fetched.ok && !run('git', ['merge-base', '--is-ancestor', 'FETCH_HEAD', 'HEAD']).ok) {
-      process.stderr.write(
-        `\n${status.err('The managed repository contains commits missing from this folder. Nothing was pushed.')}\n` +
-          `  Clone the project into a new folder with the same --host used for this ship:\n` +
-          `    kortix projects clone ${opts.managedProjectId} ../kortix-integrated\n` +
-          `  Copy your local files into that clone (not .git), review the differences, then run kortix ship there.\n` +
-          `  Keep this folder until you have verified the shipped result.\n`,
-      );
+      managedShipRecovery(opts.managedProjectId);
       return false;
     }
   }
@@ -233,6 +237,7 @@ function pushCurrentBranch(
     env: pushToken ? authGitEnv(repoUrl, pushToken, gitUsername) : undefined,
   });
   if (!push.ok) {
+    if (opts.managedProjectId && !opts.quietOnFailure) managedShipRecovery(opts.managedProjectId);
     if (!opts.quietOnFailure) {
       process.stderr.write(`\n${status.err(`git push failed (exit ${push.code}).`)}\n`);
     }

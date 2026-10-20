@@ -84,7 +84,7 @@ afterEach(() => {
   rmSync(cwd, { recursive: true, force: true });
 });
 
-async function cli(args: string[]) {
+async function cli(args: string[], extraEnv: Record<string, string> = {}) {
   const env: Record<string, string | undefined> = {
     ...process.env,
     KORTIX_CONFIG_FILE: configFile,
@@ -96,6 +96,7 @@ async function cli(args: string[]) {
     KORTIX_API_URL: 'http://127.0.0.1:9',
     NO_COLOR: '1',
     HOME: cwd,
+    ...extraEnv,
   };
   delete env.BASH_ENV;
   const proc = Bun.spawn([process.execPath, CLI, ...args], {
@@ -285,7 +286,7 @@ test('projects use binds only the named host despite session injection', async (
 });
 
 
-test('ship to a seeded managed project gives recovery without changing either history', async () => {
+test.each([false, true])('seeded managed ship recovery preserves history (fetch fails=%s)', async (failFetch) => {
   useLocalRepo = true;
   managedRepo = true;
   link();
@@ -295,7 +296,7 @@ test('ship to a seeded managed project gives recovery without changing either hi
     return result.stdout.toString().trim();
   };
   git('config', 'user.name', 'Synthetic');
-  git('config', 'user.email', 'agent@kortix.ai');
+  git('config', 'user.email', 'synthetic@example.test');
   writeFileSync(join(cwd, '.git/info/exclude'), '/remote.git/\n');
   git('add', 'kortix.yaml');
   git('commit', '-m', 'seed');
@@ -309,7 +310,19 @@ test('ship to a seeded managed project gives recovery without changing either hi
   git('add', '-A');
   git('commit', '-m', 'fixture files');
   const local = git('rev-parse', 'HEAD');
-  const result = await cli(['ship', '--host', 'workspace', '--no-verify', '--no-env', '--no-connect', '-y']);
+  const extraEnv: Record<string, string> = {};
+  if (failFetch) {
+    const realGit = Bun.which('git');
+    if (!realGit) throw new Error('git required');
+    const bin = join(cwd, '.git', 'test-bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, 'git'), `#!/bin/sh
+if [ "$1" = fetch ]; then exit 128; fi
+exec ${JSON.stringify(realGit)} "$@"
+`, { mode: 0o755 });
+    extraEnv.PATH = `${bin}:${process.env.PATH}`;
+  }
+  const result = await cli(['ship', '--host', 'workspace', '--no-verify', '--no-env', '--no-connect', '-y'], extraEnv);
   expect(result.code).toBe(1);
   expect(result.stderr).toContain('kortix projects clone workspace_project');
   expect(result.stderr).toContain('Copy your local files');
