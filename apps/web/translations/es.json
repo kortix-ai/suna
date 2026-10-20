@@ -1217,10 +1217,6 @@
           "name": "Correo de AgentMail",
           "description": "Asigna buzones de AgentMail para que los correos entrantes puedan iniciar y continuar sesiones de Kortix."
         },
-        "llm_gateway": {
-          "name": "Puerta de enlace LLM",
-          "description": "Dirige este proyecto mediante la puerta de enlace LLM administrada de Kortix para modelos, medición y presupuestos."
-        },
         "meta_agent": {
           "name": "Metaagente",
           "description": "Añade un coordinador que gestione sesiones especializadas y trabajos de varios pasos dentro del proyecto."
@@ -1284,6 +1280,14 @@
         "connectors_v2": {
           "name": "Conectores v2",
           "description": "El catálogo de apps MCP en Personalizar → Conectores, con inicio de sesión gestionado por Kortix. Con «Disparadores de eventos de app» activado, Kortix revisa estas apps en busca de correos, archivos y elementos nuevos e inicia un agente. También añade Telegram como canal. Las nuevas cuentas de conectores ya no se comparten con todo el proyecto por defecto."
+        },
+        "agent_rooms": {
+          "name": "Salas",
+          "description": "Salas de chat con nombre donde las sesiones de agentes y las personas publican y responden en hilos. Una sesión se reactiva cuando un mensaje va dirigido a ella. Añade la página Salas, `kortix rooms` y `kortix peers`."
+        },
+        "goals": {
+          "name": "Objetivos",
+          "description": "Asigna a un agente un objetivo del que se encarga hasta que una comprobación independiente confirme el resultado. Planifica, trabaja, espera, hace seguimiento con las personas y guarda su estado en una carpeta Goals en Archivos. Requiere Volúmenes y Recordatorios activados."
         }
       }
     },
@@ -1933,6 +1937,7 @@
     "upgrade": "Mejorar plan",
     "noMatch": {
       "title": "No hay modelos coincidentes",
+      "singleModelDescription": "Solo hay 1 modelo disponible en este proyecto. Los modelos disponibles dependen de tu plan y de los proveedores conectados.",
       "description": "Nada coincide con «{search}». Prueba con otra búsqueda.",
       "clear": "Borrar búsqueda"
     },
