@@ -36,6 +36,7 @@ Read the active account's plan, credits and spend. Read-only: plan changes,
 top-ups and payment methods are dashboard flows.
 Credit balances and transaction amounts use 100 credits per USD, including --json.
 Prices, fields named *_usd, and costs JSON/CSV remain in USD.
+JSON credit objects include a units map for their monetary fields.
 
 Subcommands:
   status                            Plan, credits, subscription. --json.
@@ -191,7 +192,10 @@ function creditAmounts<T extends object>(data: T, keys: readonly (keyof T)[]): T
       Object.assign(result, { [key]: value * CREDITS_PER_DOLLAR });
     }
   }
-  return result;
+  return {
+    ...result,
+    units: Object.fromEntries(keys.map((key) => [key, 'credits'])),
+  };
 }
 
 function row(label: string, value: string): string {
@@ -224,7 +228,12 @@ async function statusCommand(ctx: AccountContext, f: Flags): Promise<number> {
           'lifetime_used',
         ]),
       }),
-      ...(state.auto_topup && { auto_topup: creditAmounts(state.auto_topup, ['threshold']) }),
+      ...(state.auto_topup && {
+        auto_topup: {
+          ...creditAmounts(state.auto_topup, ['threshold']),
+          units: { threshold: 'credits', amount: 'USD' },
+        },
+      }),
     });
     return 0;
   }
