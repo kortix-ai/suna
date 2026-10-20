@@ -73,7 +73,7 @@ jobs:
         run: |
           (cd packages/llm-catalog && bun test)
           (cd apps/api && bun test --isolate --env-file=scripts/test.env src/llm-gateway/models)
-          (cd packages/ui && bun test src/session/reasoning-effort-selector.test.ts)
+          (cd packages/ui && bun test --isolate ./src/session/composer/reasoning-effort-selector.test.ts ./src/customize/sections/view/gateway)
           (cd apps/web && bun test src/features/workspace/customize/sections/view/gateway)
 
       # Data-only change behind green tests: merge it, no human in the loop.
