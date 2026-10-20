@@ -13,7 +13,7 @@ product in its own brand. Every screen is a module of this package.
 
 Install: not on npm yet. Inside kortix-ai/suna: `"@kortix/ui": "workspace:*"`.
 After the first npm release: `npm i @kortix/ui`.
-`react` and `react-dom` 18 or later are peers.
+`react` and `react-dom` 19 are peers (the PowerPoint preview needs React 19.2.7 or later).
 
 - Public docs: `apps/web/content/docs/sdk/ui.mdx` (https://kortix.com/docs/sdk/ui).
 - Agent skill: `skills/kortix-ui/SKILL.md`, with `references/custom-dashboard.md`
@@ -181,7 +181,8 @@ The root `@kortix/ui` barrel holds only light core primitives. Toasts need one
 
 Every part of a Kortix session is a module with one entry. Its curated names
 are the public API (semver). Each needs `@kortix/sdk` and `@tanstack/react-query`
-5 (an optional peer: the bundler fails, npm does not warn), one
+5 (an optional peer, shared with the host so both read one `QueryClient`: the bundler
+fails without it, npm does not warn), one
 `QueryClientProvider`, and, for the thread, `@openuidev/lang-core@0.3.1` and `zod`:
 `npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod`.
 
@@ -303,9 +304,9 @@ How it stays themable:
 
 ## Known issues
 
-- React 19: npm prints `ERESOLVE overriding peer dependency` for `cmdk@0.2.1`
-  (React 18 peer) and nests `@radix-ui/react-dialog@1.0.0` under it. The install
-  succeeds. A host with `strict-peer-dependencies` must allow it. `cmdk` 1.x
+- `cmdk@0.2.1` declares a React 18 peer and nests `@radix-ui/react-dialog@1.0.0`.
+  `Command` works on React 19. A host with `strict-peer-dependencies` must allow
+  `cmdk`'s React peer. `cmdk` 1.x
   changes the selection model `command.tsx` is tuned to, and `apps/web` imports
   `cmdk` directly, so the upgrade is its own change.
 

@@ -1862,18 +1862,21 @@ importers:
       '@radix-ui/react-visually-hidden':
         specifier: ^1.2.4
         version: 1.2.11(@types/react-dom@19.2.3)(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
-      '@tanstack/react-query':
-        specifier: ^5.75.2
-        version: 5.103.0(react@19.3.0)
       '@tanstack/react-virtual':
         specifier: ^3.13.12
         version: 3.14.13(react-dom@19.3.0)(react@19.3.0)
       '@tiptap/core':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/pm@3.30.5)
+      '@tiptap/extension-bubble-menu':
+        specifier: 3.30.5
+        version: 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
       '@tiptap/extension-document':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/core@3.30.5)
+      '@tiptap/extension-floating-menu':
+        specifier: 3.30.5
+        version: 3.30.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
       '@tiptap/extension-hard-break':
         specifier: 3.30.5
         version: 3.30.5(@tiptap/core@3.30.5)
@@ -2052,6 +2055,9 @@ importers:
       '@tailwindcss/cli':
         specifier: 4.3.3
         version: 4.3.3
+      '@tanstack/react-query':
+        specifier: ^5.75.2
+        version: 5.103.0(react@19.3.0)
       '@types/bun':
         specifier: ^1.3.12
         version: 1.4.3
@@ -14498,18 +14504,16 @@ packages:
       '@tiptap/pm': 3.30.5
     dev: false
 
-  /@tiptap/extension-bubble-menu@3.31.4(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5):
-    resolution: {integrity: sha512-Ml/yswuys+3QkOMajfXyAGlUKCxEbT3dMyF8vHwQ5mDk9MDm+dqp10It5CrDBkUT/KkVTa6AJI3kb0TXZJZiAA==}
-    requiresBuild: true
+  /@tiptap/extension-bubble-menu@3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5):
+    resolution: {integrity: sha512-redcmBInVwmipjF/WEVcNwCUJgJygUv8leidfRb/jBSAwx7GgnQWPr2HVQDk9zeTt3ykWld2NRdrk94Crjymow==}
     peerDependencies:
-      '@tiptap/core': 3.31.4
-      '@tiptap/pm': 3.31.4
+      '@tiptap/core': 3.30.5
+      '@tiptap/pm': 3.30.5
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@tiptap/core': 3.30.5(@tiptap/pm@3.30.5)
       '@tiptap/pm': 3.30.5
     dev: false
-    optional: true
 
   /@tiptap/extension-document@3.30.5(@tiptap/core@3.30.5):
     resolution: {integrity: sha512-4mKoD3bBr5W2AQ2Y/7amOqcVw0eqJbUwRtwvxypeo5Hi0PB9O5Ev8P05c3EUTo10bllqdKYXGeCU5AcgdQsHWQ==}
@@ -14519,19 +14523,17 @@ packages:
       '@tiptap/core': 3.30.5(@tiptap/pm@3.30.5)
     dev: false
 
-  /@tiptap/extension-floating-menu@3.31.4(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5):
-    resolution: {integrity: sha512-pKzulkDmolpVt7IP9FSPsC5pKbXQ5pyeqkaAYr8cyOVW+KUObpPRIzAuXvEso8PCjWgwJ1f2qyishOEMw8MbfQ==}
-    requiresBuild: true
+  /@tiptap/extension-floating-menu@3.30.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5):
+    resolution: {integrity: sha512-gTjGPWUpGn8IoW533TciZJZC/81LmBgU7zee+aRMRF3ix3K2z1pJjl6knDvrRQA6Kom+yWFaiueqGNXkrk38XQ==}
     peerDependencies:
       '@floating-ui/dom': ^1.0.0
-      '@tiptap/core': 3.31.4
-      '@tiptap/pm': 3.31.4
+      '@tiptap/core': 3.30.5
+      '@tiptap/pm': 3.30.5
     dependencies:
       '@floating-ui/dom': 1.8.0
       '@tiptap/core': 3.30.5(@tiptap/pm@3.30.5)
       '@tiptap/pm': 3.30.5
     dev: false
-    optional: true
 
   /@tiptap/extension-hard-break@3.30.5(@tiptap/core@3.30.5):
     resolution: {integrity: sha512-PcL4Z8l/DlauwZUJg0jf6SXKk6/YOXJtd8yYzqHrmCLRoY4kAa7+TxUhc/lWhuitUiOZ8+nB8V/NNM+WR6mRaw==}
@@ -14621,8 +14623,8 @@ packages:
       react-dom: 19.3.0(react@19.3.0)
       use-sync-external-store: 1.7.0(react@19.3.0)
     optionalDependencies:
-      '@tiptap/extension-bubble-menu': 3.31.4(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
-      '@tiptap/extension-floating-menu': 3.31.4(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@tiptap/extension-bubble-menu': 3.30.5(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
+      '@tiptap/extension-floating-menu': 3.30.5(@floating-ui/dom@1.8.0)(@tiptap/core@3.30.5)(@tiptap/pm@3.30.5)
     transitivePeerDependencies:
       - '@floating-ui/dom'
     dev: false

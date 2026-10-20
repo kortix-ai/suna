@@ -23,7 +23,7 @@ viewer, 0 console errors.
 ## 1. Install
 
 ```sh
-npm i @kortix/sdk @kortix/ui @tanstack/react-query @phosphor-icons/react react react-dom react-router-dom
+npm i @kortix/sdk @kortix/ui @tanstack/react-query @phosphor-icons/react react@19 react-dom@19 react-router-dom
 npm i @openuidev/lang-core@0.3.1 zod   # optional peers of @kortix/sdk; the thread renders genui blocks
 npm i tw-animate-css tailwind-scrollbar tailwind-scrollbar-hide   # Tailwind v4 hosts only
 ```
@@ -32,7 +32,7 @@ npm i tw-animate-css tailwind-scrollbar tailwind-scrollbar-hide   # Tailwind v4 
 the tarballs that `npm pack` makes in `packages/llm-catalog`, `packages/sdk` and `packages/ui`
 after `node ../../scripts/stage-npm-publish.mjs` (what `packages/ui/scripts/smoke-install.mjs` does).
 Without `@openuidev/lang-core`, `vite build` fails with `Missing export` in `@kortix/sdk/dist/genui`.
-npm prints `ERESOLVE overriding peer dependency` for `cmdk` on React 19; the install succeeds.
+Name `react@19 react-dom@19`: with an unversioned `react`, npm picks React 18 for `cmdk`'s peer and the install never finishes.
 
 ## 2. Styles
 

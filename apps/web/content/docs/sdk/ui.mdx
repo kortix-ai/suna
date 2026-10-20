@@ -21,7 +21,7 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | `@kortix/ui` (helpers) | The helpers the components use come from the root too: `cn`, `useIsMobile`, `useDebounce`, `lazyClient`, `setUiTelemetry`, `setUiHostEnv`. |
 | `@kortix/ui/tailwind.css`, `/tokens.css`, `/theme.css`, `/styles.css`, `/fonts.css` | The stylesheets. Load them as the next section says. |
 
-`react` and `react-dom` 18 or later are peer dependencies. Install the rest by what you use:
+`react` and `react-dom` 19 are peer dependencies (the PowerPoint preview needs React 19.2.7 or later). Install the rest by what you use:
 
 | You use | Also install |
 | --- | --- |
@@ -32,11 +32,11 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 After the first npm release:
 
 ```bash
-npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod
+npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod react@19 react-dom@19
 ```
 
 <Callout type="info">
-With React 19, npm prints `ERESOLVE overriding peer dependency` warnings for `cmdk@0.2.1`, which declares a React 18 peer. The install succeeds and `Command` works on React 19. A host with `strict-peer-dependencies` must allow `cmdk`'s React peer.
+Name `react@19 react-dom@19` in the install. An unversioned `react` lets npm pick React 18 for `cmdk@0.2.1`'s React 18 peer, and the install then does not finish. `Command` works on React 19. A host with `strict-peer-dependencies` must allow `cmdk`'s React peer.
 </Callout>
 
 ## Add the styles
