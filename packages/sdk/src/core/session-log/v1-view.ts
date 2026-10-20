@@ -77,18 +77,18 @@ export function rowsOf(head: SessionLogThreadHead, message: SessionLogMessage): 
   return out;
 }
 
-/** Runtime session id -> thread id of each thread, built once per state. */
-const indexes = new WeakMap<SessionLogState, Map<string, string>>();
+/** Runtime session id -> thread id of each thread, built once per thread record (a message frame keeps it). */
+const indexes = new WeakMap<SessionLogState['threads'], Map<string, string>>();
 
 function indexOf(state: SessionLogState): Map<string, string> {
-  let index = indexes.get(state);
+  let index = indexes.get(state.threads);
   if (!index) {
     index = new Map();
     for (const head of Object.values(state.threads)) {
       const native = nativeOf(head);
       if (native !== null && !index.has(native)) index.set(native, head.thread_id);
     }
-    indexes.set(state, index);
+    indexes.set(state.threads, index);
   }
   return index;
 }
@@ -139,6 +139,51 @@ function messageInsertAt(messages: readonly SessionLogMessage[], message: Sessio
 const v1Order = (a: V1MessageRow, b: V1MessageRow) =>
   (createdOf(a) ?? -Infinity) - (createdOf(b) ?? -Infinity) || (a.info.id < b.info.id ? -1 : a.info.id > b.info.id ? 1 : 0);
 
+/** The sorted rows of a thread's last message list, per thread head. */
+const ownRows = new WeakMap<SessionLogThreadHead, { list: SessionLogMessage[]; native: string | null; own: V1MessageRow[] }>();
+/** Above this many changed messages, a list change re-sorts instead of patching in place. */
+const PATCH_LIMIT = 4;
+
+const sameKeys = (a: readonly V1MessageRow[], b: readonly V1MessageRow[]) =>
+  a.length === b.length && a.every((row, i) => row.info.id === b[i]!.info.id && createdOf(row) === createdOf(b[i]!));
+
+/**
+ * `prev.own` with the rows of the messages that changed between `prev.list` and `list` swapped
+ * in place, or undefined when that is not the sort: another length, another id at an index, a
+ * changed row's id or time (its sort key), or more than `PATCH_LIMIT` changes. A streamed delta
+ * changes one message's text, so its rows keep their place and nothing re-sorts (KRTX-2880).
+ */
+function patchOwn(head: SessionLogThreadHead, prev: { list: SessionLogMessage[]; own: V1MessageRow[] }, list: SessionLogMessage[]): V1MessageRow[] | undefined {
+  if (prev.list.length !== list.length) return undefined;
+  let own: V1MessageRow[] | undefined;
+  let changes = 0;
+  for (let i = 0; i < list.length; i++) {
+    const before = prev.list[i]!;
+    const after = list[i]!;
+    if (before === after) continue;
+    if (++changes > PATCH_LIMIT || before.message_id !== after.message_id) return undefined;
+    const old = rowsOf(head, before);
+    const next = rowsOf(head, after);
+    if (!sameKeys(old, next)) return undefined;
+    own ??= prev.own.slice();
+    for (let r = 0; r < old.length; r++) {
+      const at = own.indexOf(old[r]!);
+      if (at < 0) return undefined;
+      own[at] = next[r]!;
+    }
+  }
+  return own ?? prev.own;
+}
+
+/** The thread's own rows, in v1 order (`time.created`, none first, then id), as `toV1` sorts a whole thread. `seq` can disagree (pi stamps coarse times). */
+function ownRowsOf(head: SessionLogThreadHead, list: SessionLogMessage[], native: string | null): V1MessageRow[] {
+  const prev = ownRows.get(head);
+  if (prev && prev.list === list && prev.native === native) return prev.own;
+  const own = (prev && prev.native === native && patchOwn(head, prev, list)) || list.flatMap((m) => rowsOf(head, m)).sort(v1Order);
+  ownRows.set(head, { list, native, own });
+  return own;
+}
+
 const merged = new WeakMap<
   SessionLogMessage[],
   { v1Rows: readonly V1MessageRow[]; native: string | null; revs: SessionLogState['revs']; own: V1MessageRow[]; extra: V1MessageRow[]; result: V1MessageRow[] }
@@ -174,8 +219,7 @@ export function sessionLogRowsFor<R extends V1MessageRow>(
   const { state, head, list } = found;
   const cached = merged.get(list);
   const native = nativeOf(head);
-  // v1 order, as `toV1` sorts a whole thread: `time.created` (none first), then id. `seq` can disagree (pi stamps coarse times).
-  const own = cached && cached.v1Rows === v1Rows && cached.native === native && cached.revs === state.revs ? cached.own : list.flatMap((m) => rowsOf(head, m)).sort(v1Order);
+  const own = cached && cached.v1Rows === v1Rows && cached.native === native && cached.revs === state.revs ? cached.own : ownRowsOf(head, list, native);
   const shown = new Set(own.map((r) => r.info.id));
   const extra = v1Rows.filter((row) => !heldByLog(row, shown, state.revs, echoOf));
   if (cached && cached.own === own && cached.extra.length === extra.length && cached.extra.every((r, i) => r === extra[i])) return cached.result as R[];

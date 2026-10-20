@@ -37,7 +37,7 @@ const fakes: Record<string, Record<string, unknown>> = {
   },
   '@/components/ui/button': { Button: host('Button') },
   '@/components/ui/text': { Text: host('Text') },
-  '@/components/ui/switch': { Switch: host('Switch') },
+  '@/components/kortix/switch': { Switch: host('Switch') },
   '@/components/kortix/kortix-loader': { KortixLoader: host('Loader') },
   '@/components/kortix/settings-list': {
     SettingsPage: host('Page'),

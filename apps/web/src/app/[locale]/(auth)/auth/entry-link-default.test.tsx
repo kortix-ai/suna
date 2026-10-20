@@ -370,3 +370,26 @@ test('a failed entry email send does not block password sign-in', async () => {
     await act(async () => root.unmount());
   }
 });
+
+// KRTX-2812: the first Continue on the entry step answered 429 (the shared
+// email budget), and a few seconds later the form looked untouched: the only
+// signal was a toast. The refusal must stay on the form as an alert.
+test('a rate-limited first send on the entry step leaves a lasting alert on the form', async () => {
+  jest.useFakeTimers();
+  resolvedMode = 'signin';
+  emailCodeSends = 0;
+  emailFailure = 'Email rate limit exceeded. Try again later.';
+  emailFailureStatus = 429;
+  const root = await continueWithEmail('returning@example.test');
+  try {
+    await cooldownElapsed(root, 5);
+    const alerts = root.root.findAllByProps({ role: 'alert' });
+    expect(alerts).toHaveLength(1);
+    expect(JSON.stringify(root.toJSON())).toContain('Email rate limit exceeded');
+  } finally {
+    emailFailure = null;
+    emailFailureStatus = null;
+    jest.useRealTimers();
+    await act(async () => root.unmount());
+  }
+});

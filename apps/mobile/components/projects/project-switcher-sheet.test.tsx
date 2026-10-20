@@ -134,6 +134,8 @@ const real = new Set([
   '@/lib/projects/switcher',
   '@/lib/invites/invite-landing',
   '@/lib/projects/web-project-links',
+  // React-only; outside a real sheet it reads "settled", so every row renders.
+  '@/components/kortix/sheet-settled',
 ]);
 const stubs: Record<string, Record<string, unknown>> = {};
 for (const [, names, name] of source.matchAll(
