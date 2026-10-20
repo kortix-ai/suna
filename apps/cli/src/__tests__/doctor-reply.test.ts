@@ -48,6 +48,32 @@ describe('kortix doctor reply check', () => {
     expect(doctorReplyVerdict(reply({ text: 'ready' }))).toEqual({ ok: true, text: 'ready' });
   });
 
+  test('shows the answer, not the reasoning that precedes it', () => {
+    const message = reply({ text: 'pong' });
+    message.parts.unshift({
+      id: 'part_reasoning',
+      sessionID: 'ses_doctor',
+      messageID: 'msg_reply',
+      type: 'reasoning',
+      text: 'The user just said ping. I should respond with pong.',
+      time: { start: 2, end: 3 },
+    });
+    expect(doctorReplyVerdict(message)).toEqual({ ok: true, text: 'pong' });
+  });
+
+  test('reasoning alone is not a reply', () => {
+    const message = reply({});
+    message.parts.push({
+      id: 'part_reasoning',
+      sessionID: 'ses_doctor',
+      messageID: 'msg_reply',
+      type: 'reasoning',
+      text: 'I should respond with pong.',
+      time: { start: 2, end: 3 },
+    });
+    expect(doctorReplyVerdict(message)).toEqual({ ok: false, reason: 'reply had no text content' });
+  });
+
   test('a clean reply with no text keeps the old message', () => {
     expect(doctorReplyVerdict(reply({}))).toEqual({ ok: false, reason: 'reply had no text content' });
   });
