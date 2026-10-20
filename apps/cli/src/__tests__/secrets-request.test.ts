@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import {
+  chmodSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -18,6 +19,7 @@ test('request --show recovers the original link without minting and isolates cre
     fetch: () => {
       minted++;
       return Response.json({
+        kind: 'secret',
         url: 'https://example.test/secret-intake/synthetic',
         names: ['TEST_KEY'],
         scope: 'connector',
@@ -90,6 +92,10 @@ test('request --show recovers the original link without minting and isolates cre
       readdirSync(join(dir, 'secret-requests'))[0],
     );
     expect(statSync(cache).mode & 0o777).toBe(0o600);
+    chmodSync(cache, 0o644);
+    expect((await run()).code).toBe(0);
+    expect(statSync(cache).mode & 0o777).toBe(0o600);
+    expect(minted).toBe(2);
     expect((await run('--show', '--scope', 'runtime')).code).toBe(2);
     expect((await run('--show', '--expires', '5')).code).toBe(2);
     writeFileSync(
@@ -100,10 +106,10 @@ test('request --show recovers the original link without minting and isolates cre
       }),
     );
     expect((await run('--show')).code).toBe(2);
-    expect(minted).toBe(1);
+    expect(minted).toBe(2);
     configure('other-token');
     expect((await run('--show')).code).toBe(2);
-    expect(minted).toBe(1);
+    expect(minted).toBe(2);
   } finally {
     server.stop(true);
     rmSync(dir, { recursive: true, force: true });

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { configFilePath } from '../api/config.ts';
 import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
@@ -186,6 +186,7 @@ export async function secretsRequest(rest: string[], opts: CtxOpts, json = false
     if (show) {
       if (expires) return fail('--show cannot change expiry. Omit --expires.');
       resp = z.object({
+        kind: z.literal('secret').optional(),
         url: z.string().url(),
         names: z.array(z.string()),
         scope: z.string().optional(),
@@ -202,6 +203,10 @@ export async function secretsRequest(rest: string[], opts: CtxOpts, json = false
       });
       try {
         mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
+        chmodSync(cacheDir, 0o700);
+        // Tighten an existing file before writing a fresh bearer URL.
+        writeFileSync(cacheFile, '', { flag: 'a', mode: 0o600 });
+        chmodSync(cacheFile, 0o600);
         writeFileSync(cacheFile, JSON.stringify(resp), { mode: 0o600 });
       } catch {
         process.stderr.write(
