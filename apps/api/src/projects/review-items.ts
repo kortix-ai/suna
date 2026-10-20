@@ -692,13 +692,17 @@ export async function bulkApplyVerdict(
 
 export const BULK_MAX_IDS = 50;
 
-export type BulkResultCode =
-  | 'expired'
-  | 'already_resolved'
-  | 'preview_unavailable'
-  | 'forbidden'
-  | 'not_found'
-  | 'not_bulk_actionable';
+/** Why one bulk id was refused. The route's OpenAPI enum reads this list. */
+export const BULK_RESULT_CODES = [
+  'expired',
+  'already_resolved',
+  'preview_unavailable',
+  'forbidden',
+  'not_found',
+  'not_bulk_actionable',
+] as const;
+
+export type BulkResultCode = (typeof BULK_RESULT_CODES)[number];
 
 export interface BulkResult {
   id: string;

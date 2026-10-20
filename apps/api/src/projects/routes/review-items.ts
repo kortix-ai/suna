@@ -27,6 +27,7 @@ import {
   type ReviewSegment,
   BULK_MAX_IDS,
   applyVerdict,
+  BULK_RESULT_CODES,
   bulkActReview,
   decodeInboxCursor,
   getInboxItem,
@@ -379,7 +380,7 @@ export function registerReviewItemsRoutes(): void {
             updated: z.number(),
             review_items: z.array(AnyObject),
             results: z
-              .array(z.object({ id: z.string(), ok: z.boolean(), code: z.string().optional() }))
+              .array(z.object({ id: z.string(), ok: z.boolean(), code: z.enum(BULK_RESULT_CODES).optional() }))
               .openapi({ description: 'One entry per requested id, in request order.' }),
           }),
           'Bulk result',
