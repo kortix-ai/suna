@@ -12,13 +12,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { GenuiTelemetryContext } from '@/features/genui/block-telemetry';
-import { GenuiForceEnabledContext } from '@/features/genui/use-genui-enabled';
-import { ThrottledMarkdown } from '@/features/session/turn/throttled-markdown';
-import { cn } from '@/lib/utils';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import { Button } from '@kortix/ui/button';
+import { Textarea } from '@kortix/ui/textarea';
+import { GenuiTelemetryContext, GenuiForceEnabledContext } from '@kortix/ui/genui';
+import { ThrottledMarkdown } from '@kortix/ui/session';
+import { cn } from '@kortix/ui';
 // eslint-disable-next-line no-restricted-imports -- a debug route chunk: parse issues and the markdown fallback
 import { genuiBlockToMarkdown, parseGenui, type GenuiIssue } from '@kortix/sdk/genui';
 

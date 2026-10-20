@@ -86,10 +86,12 @@ worktrees share (allocators before 2026-10-15 could hand one out twice).
   primary Postgres (`pg_dump`/`pg_restore` inside the container, ~5 s; audit-event
   rows are skipped), then applies the branch's migrations. `start` re-applies
   pending migrations. GoTrue, Kong, Storage and Studio stay shared. GoTrue writes
-  users only to the primary, and `kortix.*` has foreign keys to `auth.users`, so
-  a trigger on the primary's `auth.users` pushes every insert/update/delete into
-  each database listed in `kortix_wt.branches` (dblink). `create` and `start` also
-  reconcile the full user list (`kortix_wt.pull_users`). A failed push only logs a
+  users and sessions only to the primary. `kortix.*` has foreign keys to
+  `auth.users`, and the API confirms every access token against `auth.sessions`.
+  Triggers on the primary's `auth.users` and `auth.sessions` push every
+  insert/update/delete into each database listed in `kortix_wt.branches`
+  (dblink). `create` and `start` also reconcile both tables
+  (`kortix_wt.pull_users`). A failed push only logs a
   `kortix_wt:` warning in the primary's Postgres log; it never fails the GoTrue
   write. `nuke` drops the database. `create --db` on an old `--full-supabase`
   worktree moves it to a branch database and deletes its containers and volumes.

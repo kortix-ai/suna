@@ -29,15 +29,15 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { ErrorState } from '@/features/layout/section/error-state';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { ErrorState } from '@kortix/ui/error-state';
 import { type PatPolicy, getPatPolicy, updatePatPolicy } from '@/lib/iam-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 

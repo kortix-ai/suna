@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { locales } from '@/i18n/config';
 import { languageAlternates, localePath, marketingMetadata, metaDescription } from '@/lib/seo/metadata';
 import { getPublicContentRecords } from '@/lib/seo/public-content';
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 
 const marketingRecords = getPublicContentRecords({ includeUseCases: true }).filter(
   (record) => record.kind === 'marketing',

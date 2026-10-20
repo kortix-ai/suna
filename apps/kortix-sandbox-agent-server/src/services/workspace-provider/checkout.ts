@@ -56,17 +56,23 @@ export async function markSessionCheckoutAdopted(target: string, branchName: str
   }
 }
 
-async function establishBaseRefsFromBakedHead(
+/**
+ * Point the local base, `origin/<base>` and `origin/HEAD` at `head`, and make
+ * the base track `origin/<base>`. The runtime diffs a session against
+ * `origin/<base>`, so a ref left on an older commit lists that gap as the
+ * session's own changes.
+ */
+export async function establishBaseRefs(
   target: string,
   base: string,
-  bakedHead: string,
+  head: string,
 ): Promise<void> {
   const localBaseRef = `refs/heads/${base}`
   const remoteBaseRef = `refs/remotes/origin/${base}`
   const remoteHeadRef = 'refs/remotes/origin/HEAD'
   const commands: Array<{ args: string[]; action: string }> = [
-    { args: ['update-ref', localBaseRef, bakedHead], action: `set ${localBaseRef}` },
-    { args: ['update-ref', remoteBaseRef, bakedHead], action: `set ${remoteBaseRef}` },
+    { args: ['update-ref', localBaseRef, head], action: `set ${localBaseRef}` },
+    { args: ['update-ref', remoteBaseRef, head], action: `set ${remoteBaseRef}` },
     { args: ['symbolic-ref', remoteHeadRef, remoteBaseRef], action: `set ${remoteHeadRef}` },
     {
       args: ['branch', `--set-upstream-to=origin/${base}`, '--', base],
@@ -79,11 +85,7 @@ async function establishBaseRefsFromBakedHead(
       throw new Error(`failed to ${command.action}: ${result.stderr || result.stdout}`)
     }
   }
-  logger.info('[git] established base refs from baked checkout', {
-    target,
-    base,
-    head: bakedHead,
-  })
+  logger.info('[git] established base refs', { target, base, head })
 }
 
 /**
@@ -364,7 +366,7 @@ export async function adoptOrClearBakedCheckout(cfg: Config): Promise<boolean> {
       const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', repoUrl])
       if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
       if (cfg.branchName && cfg.sessionFresh && !adoption.adopted && cfg.baseSha === bakedHead) {
-        await establishBaseRefsFromBakedHead(target, base, bakedHead)
+        await establishBaseRefs(target, base, bakedHead)
       }
       if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
       await configureRepoGitIdentity(cfg, target)

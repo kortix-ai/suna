@@ -1,17 +1,17 @@
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Button } from '@kortix/ui/button';
+import { Card } from '@kortix/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import Loading from '@/components/ui/loading';
-import { useIsMobile } from '@/hooks/utils';
+} from '@kortix/ui/dropdown-menu';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import Loading from '@kortix/ui/loading';
+import { useIsMobile } from '@kortix/ui';
 import { relativeTime } from '@/lib/kortix/task-meta';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { PROJECT_ACTIONS } from '@kortix/ui/workspace';
 import { KortixProject } from '@kortix/sdk';
 import {
   ArrowUpRightIcon as ArrowUpRight,

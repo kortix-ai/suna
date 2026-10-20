@@ -34,7 +34,7 @@ const read = (relative: string) =>
 
 // The picker lives in @kortix/ui; the copy script, package.json and
 // next.config.ts that serve its data stay in apps/web.
-const source = read('../../../../../packages/ui/src/components/ui/emoji-picker.tsx');
+const source = read('../../../../../packages/ui/src/primitives/emoji-picker.tsx');
 
 /** Source with comments stripped, so prose describing a prop can never stand in
  *  for the prop. Same convention as emoji-picker.test.tsx. */

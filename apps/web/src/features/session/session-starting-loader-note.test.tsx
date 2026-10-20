@@ -1,8 +1,8 @@
 import {
   SessionConnectingBanner,
   SessionStartingLoader,
-  sessionWakeStatusNote,
-} from '@/features/session/session-starting-loader';
+} from '@kortix/ui/session';
+import { sessionWakeStatusNote } from '@kortix/ui/session/status/session-starting-loader';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';

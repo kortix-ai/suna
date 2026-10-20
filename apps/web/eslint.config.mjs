@@ -57,7 +57,7 @@ const eslintConfig = [
                 '@hugeicons/core-free-icons/*',
               ],
               message:
-                'Icons come from @phosphor-icons/react. Global weight: src/lib/icons/icon-config.ts.',
+                'Icons come from @phosphor-icons/react. Global weight: packages/ui/src/lib/icon-config.ts.',
             },
             {
               group: ['@phosphor-icons/react/dist/ssr', '@phosphor-icons/react/ssr'],
@@ -103,14 +103,14 @@ const eslintConfig = [
               // The deliberate exceptions carry an inline disable instead,
               // where it is visible in review: `idb-sync-cache` in
               // `lib/device-caches.ts` and `lib/utils/reset-client-state.ts`,
-              // `diagnostics-store` in `stores/diagnostics-store.ts`,
-              // `managed-storage` in `lib/storage/managed-storage.ts`,
-              // `genui/fence` in `components/markdown/code/genui-fence.ts`,
-              // `genui/react` in `features/genui/sdk.ts`, `genui` in
-              // `features/genui/components/charts.tsx` and
-              // `features/genui/components/map.tsx`. Mirrors CANONICAL_SDK_ENTRIES
+              // `diagnostics-store` in `packages/ui/src/internal/stores/diagnostics-store.ts`,
+              // `managed-storage` in `packages/ui/src/internal/lib/storage/managed-storage.ts`,
+              // `genui/fence` in `packages/ui/src/markdown/code/genui-fence.ts`,
+              // `genui/react` in `packages/ui/src/markdown/genui/sdk.ts`, `genui` in
+              // `packages/ui/src/markdown/genui/components/charts.tsx` and
+              // `packages/ui/src/markdown/genui/components/map.tsx`. Mirrors CANONICAL_SDK_ENTRIES
               // in scripts/sdk-boundary.mjs — keep the two in sync.
-              // `features/genui/to-markdown.ts` reaches the `genui` barrel
+              // `packages/ui/src/markdown/genui/to-markdown.ts` reaches the `genui` barrel
               // through a dynamic `import()`, which this rule does not inspect.
               group: ['@kortix/sdk/*', '!@kortix/sdk/react', '!@kortix/sdk/server', '!@kortix/sdk/workspace-search'],
               message: 'Use the canonical @kortix/sdk or @kortix/sdk/react entry point.',

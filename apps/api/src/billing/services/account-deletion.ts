@@ -37,7 +37,6 @@ import {
 } from '@kortix/db';
 import { getSupabase } from '../../shared/supabase';
 import { deleteAccountSiteObjects } from '../../apps/static-site';
-import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
 import { db } from '../../shared/db';
@@ -164,6 +163,7 @@ async function runAccountDeletion(accountId: string, userId?: string, requestId?
   await performDeletion(accountId, requester);
   await deleteAccountData(accountId, requestId);
   if (requester) {
+    await deleteUserAvatars(requester);
     await clearLegacyAuthUserReferences(requester);
     // A device token is the person's data; it has no foreign key to cascade.
     await db.delete(pushDeviceTokens).where(eq(pushDeviceTokens.userId, requester));
@@ -176,7 +176,22 @@ async function runAccountDeletion(accountId: string, userId?: string, requestId?
     // A user the auth schema no longer has (an admin-side delete, or a retry
     // after step 3 already ran) is the state this step produces.
     if (error && !isAuthUserNotFound(error)) throw error;
-    forgetUserJwtLiveness(requester);
+  }
+}
+
+/** Storage objects must go before GoTrue removes their owner. */
+async function deleteUserAvatars(userId: string): Promise<void> {
+  const bucket = getSupabase().storage.from('avatars');
+  let previous = '';
+  for (;;) {
+    const { data, error } = await bucket.list(userId, { limit: 100 });
+    if (error) throw error;
+    if (!data?.length) return;
+    const names = data.map(file => file.name).join('\n');
+    if (names === previous) throw new Error('Avatar storage cleanup did not complete');
+    previous = names;
+    const removed = await bucket.remove(data.map(file => `${userId}/${file.name}`));
+    if (removed.error) throw removed.error;
   }
 }
 

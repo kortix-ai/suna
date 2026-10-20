@@ -147,3 +147,18 @@ export function connectedByokPickerModels(connectedEnvVars: Set<string>): Picker
   }
   return models;
 }
+
+/** Discovery metadata only; entries stay outside the runnable picker. */
+export function unavailableCatalog(
+  full: Record<string, { provider?: string }>,
+  served: Record<string, unknown>,
+): Record<string, { provider?: string; availability: 'plan' | 'login' | 'provider' }> {
+  return Object.fromEntries(
+    Object.entries(full)
+      .filter(([id]) => id !== 'auto' && !(id in served))
+      .map(([id, model]) => [id, {
+        provider: model.provider,
+        availability: !id.includes('/') ? 'plan' : id.startsWith('codex/') ? 'login' : 'provider',
+      }]),
+  );
+}

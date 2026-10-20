@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SidebarContext, type SidebarContextProps } from '@/components/ui/sidebar-context';
-import { SidebarToggle } from './sidebar-toggle';
+import { SidebarContext, type SidebarContextProps } from '@kortix/ui/sidebar-context';
+import { SidebarToggle } from '@kortix/ui/workspace';
 
 const base: SidebarContextProps = {
   state: 'expanded', open: true, isMobile: true, openMobile: false,

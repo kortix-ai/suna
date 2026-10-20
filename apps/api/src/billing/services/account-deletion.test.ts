@@ -108,9 +108,8 @@ let scheduledRequests: Array<{ id: string; accountId: string; userId: string }> 
 let completedRequests: string[] = [];
 let deletedUsers: string[] = [];
 let deleteUserError: Error | null = null;
-const { config } = await import('../../config');
-config.SUPABASE_JWT_LIVENESS_TTL_MS = 30000;
-const liveness = await import('../../shared/jwt-liveness');
+let avatarObjects: string[] = [];
+let avatarDeleteError: Error | null = null;
 // The external stores (parked boxes, session files, managed repos) have their
 // own real-DB suite; here they would read the sandbox rows the fake db serves.
 mock.module('./account-erasure-stores', () => ({ deleteAccountExternalStores: async () => undefined }));
@@ -131,7 +130,18 @@ mock.module('../../shared/supabase', () => ({
       return { error: null };
     } } },
     // Session files: an empty bucket (account erasure lists each project).
-    storage: { from: () => ({ list: async () => ({ data: [], error: null }), remove: async () => ({ error: null }) }) },
+    storage: { from: (bucket: string) => ({
+      list: async () => ({ data: bucket === 'avatars' ? avatarObjects.map(name => ({ name })) : [], error: null }),
+      remove: async (paths: string[]) => {
+        if (bucket === 'avatars') {
+          if (avatarDeleteError) return { error: avatarDeleteError };
+          expect(deletedUsers).toEqual([]);
+          expect(paths).toEqual(avatarObjects.map(name => `${ME}/${name}`));
+          avatarObjects = [];
+        }
+        return { error: null };
+      },
+    }) },
   }),
 }));
 
@@ -329,8 +339,9 @@ beforeEach(() => {
   scheduledRequests = [];
   completedRequests = [];
   deleteUserError = null;
+  avatarObjects = [];
+  avatarDeleteError = null;
   notificationDataDeleted = [];
-  liveness.__setJwtLivenessLoaderForTests(null);
 });
 
 describe('reclaimableAccountIds', () => {
@@ -573,18 +584,19 @@ describe('deleteAccountImmediately — account data deletion', () => {
 });
 
 describe('account deletion — auth lifecycle', () => {
-  test('deletes the auth user and rejects all previously cached tokens promptly', async () => {
-    liveness.__setJwtLivenessLoaderForTests(async () =>
-      deletedUsers.includes(ME) ? null : { id: ME, email: '' });
-    const exp = Math.floor(Date.now() / 1000) + 3600;
-    expect(await liveness.confirmJwtLive('old-token-1', exp)).not.toBeNull();
-    expect(await liveness.confirmJwtLive('old-token-2', exp)).not.toBeNull();
+  test('erases stored avatars before deleting the personal identity', async () => {
+    avatarObjects = ['old.png', 'older.png'];
     await deleteAccountImmediately(ME, ME);
+    expect(avatarObjects).toEqual([]);
     expect(deletedUsers).toEqual([ME]);
-    expect(await liveness.confirmJwtLive('old-token-1', exp)).toBeNull();
-    expect(await liveness.confirmJwtLive('old-token-2', exp)).toBeNull();
   });
 
+  test('storage failure keeps auth identity and deletion retryable', async () => {
+    avatarObjects = ['old.png'];
+    avatarDeleteError = new Error('avatar erasure failed');
+    await expect(deleteAccountImmediately(ME, ME)).rejects.toThrow('avatar erasure failed');
+    expect(deletedUsers).toEqual([]);
+  });
   test('does not report success when GoTrue refuses deletion', async () => {
     deleteUserError = new Error('auth deletion failed');
     await expect(deleteAccountImmediately(ME, ME)).rejects.toThrow('auth deletion failed');
@@ -641,56 +653,4 @@ describe("deleting an account that is not the requester's personal account", () 
     expect(whereParams(sessionUpdateWhereArg)).not.toContain('operator-1');
     expect(completedRequests).toEqual(['req-1']);
   });
-});
-
-test('a GoTrue confirmation racing deletion cannot restore cached liveness', async () => {
-  let release: (user: { id: string; email: string }) => void = () => {};
-  const pendingAnswer = new Promise<{ id: string; email: string }>((resolve) => { release = resolve; });
-  let calls = 0;
-  liveness.__setJwtLivenessLoaderForTests(async () => {
-    calls++;
-    return calls === 1 ? pendingAnswer : null;
-  });
-  const pending = liveness.confirmJwtLive('racing-token', Math.floor(Date.now() / 1000) + 3600);
-  await deleteAccountImmediately(ME, ME);
-  release({ id: ME, email: '' });
-  expect(await pending).toBeNull();
-  expect(liveness.jwtLivenessCacheSize()).toBe(0);
-});
-
-for (const ttl of [0, 30000]) {
-  test(`every GoTrue retry validates two deletion invalidations at TTL ${ttl}`, async () => {
-    config.SUPABASE_JWT_LIVENESS_TTL_MS = ttl;
-    let calls = 0;
-    liveness.__setJwtLivenessLoaderForTests(async () => {
-      calls++;
-      if (calls <= 2) {
-        liveness.forgetUserJwtLiveness('user-1');
-        return { id: 'user-1', email: '' };
-      }
-      return null;
-    });
-    try {
-      expect(await liveness.confirmJwtLive('twice-invalidated-token', Math.floor(Date.now() / 1000) + 3600)).toBeNull();
-      expect(calls).toBe(3);
-      expect(liveness.jwtLivenessCacheSize()).toBe(0);
-    } finally {
-      config.SUPABASE_JWT_LIVENESS_TTL_MS = 30000;
-      liveness.__setJwtLivenessLoaderForTests(null);
-    }
-  });
-}
-
-test('deletion in the loader completion microtask cannot republish cached liveness', async () => {
-  const answer = Promise.resolve({ id: 'user-1', email: '' });
-  let calls = 0;
-  liveness.__setJwtLivenessLoaderForTests(() => {
-    calls++;
-    return calls === 1 ? answer : Promise.resolve(null);
-  });
-  const pending = liveness.confirmJwtLive('publication-gap-token', Math.floor(Date.now() / 1000) + 3600);
-  await answer.then(() => liveness.forgetUserJwtLiveness('user-1'));
-  await pending;
-  expect(liveness.jwtLivenessCacheSize()).toBe(0);
-  expect(await liveness.confirmJwtLive('publication-gap-token', Math.floor(Date.now() / 1000) + 3600)).toBeNull();
 });

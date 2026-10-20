@@ -7,7 +7,7 @@ import {
   settingsPaletteGroups,
   settingsPaletteSearchText,
 } from '@/features/workspace/settings-palette-items';
-import { railGroups } from '@/features/workspace/settings/rail';
+import { railGroups } from '@kortix/ui/customize/settings/rail';
 import { TERMINAL_THEMES } from '@/lib/interface-themes';
 import { getItemsForSurface, menuRegistry } from '@/lib/menu-registry';
 

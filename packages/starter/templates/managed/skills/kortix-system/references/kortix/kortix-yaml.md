@@ -59,7 +59,8 @@ sandbox:
       name: ML
       dockerfile: Dockerfile.ml
 
-# The harness a session boots: "opencode" (the default) or "pi".
+# The harness a session boots while the project's pi_harness flag is off:
+# "opencode" (the default) or "pi". The flag is on by default and boots pi.
 runtime: opencode
 
 # The tools every session gets (references/kortix/tools.md). `kortix:<name>`
@@ -588,11 +589,10 @@ The harness a session boots inside its sandbox. **Optional.** Root-only.
 | `opencode` (default) | OpenCode, as a process the sandbox daemon starts. |
 | `pi` | pi, inside the sandbox daemon process. |
 
-Kortix reads the key when a session starts, restarts or resumes, in this
-order: the project's `llm_gateway` flag off → OpenCode; the project's
-`pi_harness` flag on → pi; `runtime: pi` → pi; anything else → OpenCode. pi
-calls models only through the LLM gateway. Any other value fails
-`kortix validate`. `../pi/overview.md` lists what pi supports.
+Kortix reads the key when a session is created, in this order: the
+project's `llm_gateway` flag off → OpenCode; the project's `pi_harness` flag
+on (the default) → pi; `runtime: pi` → pi; anything else → OpenCode. pi calls
+models only through the LLM gateway. Any other value fails `kortix validate`. `../pi/overview.md` lists what pi supports.
 
 ## `pi:` in version 2
 
