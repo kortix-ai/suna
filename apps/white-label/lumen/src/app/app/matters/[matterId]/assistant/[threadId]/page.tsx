@@ -25,7 +25,12 @@ export default function ThreadPage() {
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ThreadWorkbench key={got.thread.kortixSessionId} projectId={got.kortixProjectId} sessionId={got.thread.kortixSessionId} />
+      <ThreadWorkbench
+        key={got.thread.kortixSessionId}
+        projectId={got.kortixProjectId}
+        sessionId={got.thread.kortixSessionId}
+        matterId={got.thread.matterId}
+      />
     </div>
   );
 }

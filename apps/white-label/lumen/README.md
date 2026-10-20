@@ -74,6 +74,22 @@ or system, applied before the first paint.
 **Vault.** Upload PDF, DOCX or TXT to a matter. Lumen extracts the text, splits it into pages and
 anchored paragraphs, and copies the original plus the anchored text into the firm's Kortix Drive,
 where its agents read them.
+Search covers every page of the vault (a Convex search index). A click on a document or a hit
+opens it on the right: the original through `@kortix/ui`'s file viewer (PDF and DOCX renderers,
+bytes from the access-checked `documents.bytes` action) and the extracted text, scrolled to the
+page with the terms marked. Delete removes the rows, the blob and the Drive copies.
+
+**Assistant.** Each conversation is one Kortix session on `lumen-counsel`, scoped to the matter.
+The agent cites every claim as a link `/cite?d=<docId>&a=p3.12&q=<quote>`. Lumen draws each link
+as a numbered chip, checks the quote against the cited paragraph (`citations.resolve`, the same
+rule as the run engine), and opens a Source panel on click: the paragraph with the quote marked,
+and the document beside it. A quote the source does not contain shows as a struck, grey chip and
+"Not found in source", never as a fact.
+
+| | |
+| --- | --- |
+| ![The Vault: search, then the original PDF beside the list](public/screenshots/vault-preview.png) | ![An answer's citation opened: the quoted paragraph, verified](public/screenshots/assistant-source.png) |
+| ![A citation whose quote is not in the source](public/screenshots/assistant-not-found.png) | |
 
 **Runs: reviews and questions.** "New review" turns the vault into a table: one row per document,
 eight commercial terms per row (parties, term, auto-renewal, termination for convenience,
@@ -434,6 +450,9 @@ Stripe SDK dependency. No Stripe key is ever in a tracked file.
 | `convex/operator.ts` | The operator credential, `withRetry` (network and 5xx: 1 s, 4 s, 15 s) |
 | `convex/documents.ts`, `convex/ingest.ts` | The Vault: upload, extract (`unpdf`, `mammoth`), segment, Drive copies, `index.json` |
 | `convex/lib/segment.ts`, `convex/lib/cite.ts` | The one segmenter (anchors `p<page>.<n>`) and the citation check |
+| `convex/citations.ts`, `src/components/chat/citation-layer.tsx` | Citation links in Assistant answers: checked, drawn as chips, opened in the Source panel |
+| `src/components/vault/` | The document panel (original + anchored text) and its read-only `FileSource` |
+| `scripts/copy-viewer-wasm.mjs` | Copies the PDF/DOCX/XLSX viewer engines into `public/` before `dev` and `build` |
 | `agent-kit/`, `convex/kit.ts`, `convex/kitInstall.ts` | The agent kit and its versioned install per firm |
 | `convex/runs.ts`, `convex/engine.ts` | The run engine: state, fan-out, polling, repair, citation checks |
 | `convex/seed.ts`, `scripts/seed-demo.ts`, `scripts/run-watch.ts` | Operator scripts (admin key): demo data, start and watch a run |

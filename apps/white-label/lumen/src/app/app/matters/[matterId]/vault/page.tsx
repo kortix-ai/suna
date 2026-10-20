@@ -1,20 +1,23 @@
 'use client';
 
 import { useMatter } from '@/components/access';
+import { type DocFocus, DocumentPanel, Marked } from '@/components/vault/document-panel';
 import { errorText, relativeTime } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
 import { cn } from '@kortix/ui';
 import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import type { Id } from '@convex/_generated/dataModel';
 import { Input } from '@kortix/ui/input';
 import Loading from '@kortix/ui/loading';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@kortix/ui/table';
 import { errorToast, successToast } from '@kortix/ui/toast';
-import { FileDocIcon, FilePdfIcon, FileTextIcon, TableIcon, UploadSimpleIcon } from '@phosphor-icons/react';
+import { FileDocIcon, FilePdfIcon, FileTextIcon, MagnifyingGlassIcon, TableIcon, TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useDeferredValue, useRef, useState } from 'react';
 
 const ACCEPT = '.pdf,.docx,.txt';
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -43,6 +46,11 @@ export default function VaultPage() {
   const [dragging, setDragging] = useState(false);
   const [starting, setStarting] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const removeDoc = useMutation(api.documents.remove);
+  const [open, setOpen] = useState<{ id: string; focus?: DocFocus } | null>(null);
+  const [q, setQ] = useState('');
+  const term = useDeferredValue(q.trim());
+  const hits = useQuery(api.documents.search, term.length >= 2 ? { matterId: matter._id, q: term } : 'skip');
   const ready = docs?.filter((d) => d.status === 'ready' && (d.paras ?? 0) > 0) ?? [];
 
   async function upload(files: File[]) {
@@ -55,9 +63,16 @@ export default function VaultPage() {
       }
       setUploading((u) => ({ ...u, [file.name]: 0 }));
       try {
-        await uploadDoc({ matterId: matter._id, filename: file.name, bytes: await file.arrayBuffer(), contentType: file.type });
+        await uploadDoc({
+          matterId: matter._id,
+          filename: file.name,
+          bytes: await file.arrayBuffer(),
+          contentType: file.type,
+        });
       } catch (err) {
-        errorToast(`${file.name}: could not upload`, { description: errorText(err) });
+        errorToast(`${file.name}: could not upload`, {
+          description: errorText(err),
+        });
       } finally {
         setUploading(({ [file.name]: _, ...rest }) => rest);
       }
@@ -76,122 +91,234 @@ export default function VaultPage() {
     }
   }
 
+  const [toDelete, setToDelete] = useState<{ id: Id<'documents'>; filename: string } | null>(null);
+  async function remove() {
+    if (!toDelete) return;
+    const { id, filename } = toDelete;
+    setToDelete(null);
+    try {
+      await removeDoc({ documentId: id });
+      if (open?.id === id) setOpen(null);
+      successToast(`${filename} deleted`);
+    } catch (err) {
+      errorToast('Could not delete the document', { description: errorText(err) });
+    }
+  }
+
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4 px-6 py-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-medium">Documents</h2>
-          <p className="text-xs text-muted-foreground">
-            {docs === undefined ? ' ' : `${docs.length} document${docs.length === 1 ? '' : 's'}, ${ready.length} ready`}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => input.current?.click()}>
-            <UploadSimpleIcon className="size-4" /> Upload
-          </Button>
-          <Button size="sm" disabled={ready.length === 0 || starting} onClick={review}>
-            {starting ? <Loading className="size-4" /> : <TableIcon className="size-4" />} Review these
-          </Button>
-        </div>
-      </div>
-
-      <Input
-        ref={input}
-        type="file"
-        multiple
-        accept={ACCEPT}
-        className="hidden"
-        data-testid="vault-file-input"
-        onChange={(e) => {
-          void upload(Array.from(e.target.files ?? []));
-          e.target.value = '';
-        }}
-      />
-
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          void upload(Array.from(e.dataTransfer.files));
-        }}
-        className={cn(
-          'rounded-xl border border-dashed border-border bg-card transition-colors',
-          dragging && 'border-brand bg-brand/5',
-        )}
-      >
-        {docs === undefined ? (
-          <div className="space-y-2 p-4">
-            {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-9 w-full" />)}
+    <div className="flex min-h-0 flex-1">
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-5xl space-y-4 px-6 py-6">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-medium">Documents</h2>
+              <p className="text-xs text-muted-foreground">
+                {docs === undefined ? ' ' : `${docs.length} document${docs.length === 1 ? '' : 's'}, ${ready.length} ready`}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => input.current?.click()}>
+                <UploadSimpleIcon className="size-4" /> Upload
+              </Button>
+              <Button size="sm" disabled={ready.length === 0 || starting} onClick={review}>
+                {starting ? <Loading className="size-4" /> : <TableIcon className="size-4" />} Review these
+              </Button>
+            </div>
           </div>
-        ) : docs.length === 0 && Object.keys(uploading).length === 0 ? (
-          <Button variant="ghost" onClick={() => input.current?.click()} className="flex h-auto w-full flex-col items-center gap-2 px-6 py-16 text-center">
-            <UploadSimpleIcon className="size-6 text-muted-foreground" />
-            <span className="text-sm font-medium">Drop contracts here</span>
-            <span className="text-xs text-muted-foreground">PDF, DOCX or TXT, up to 15 MB each.</span>
-          </Button>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead className="w-24 text-right">Pages</TableHead>
-                <TableHead className="w-24 text-right">Size</TableHead>
-                <TableHead className="w-28">Added</TableHead>
-                <TableHead className="w-44">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Object.entries(uploading).map(([name, p]) => (
-                <TableRow key={`up-${name}`}>
-                  <TableCell className="font-medium">{name}</TableCell>
-                  <TableCell />
-                  <TableCell />
-                  <TableCell />
-                  <TableCell>
-                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Loading className="size-3.5" /> {p < 1 ? 'Uploading…' : 'Extracting…'}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {docs.map((d) => {
-                const Icon = iconFor(d.filename);
-                return (
-                  <TableRow key={d._id} data-testid="vault-row">
-                    <TableCell>
-                      <span className="flex items-center gap-2">
-                        <Icon className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="truncate font-medium">{d.filename}</span>
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-xs tabular-nums">{d.pages ?? '—'}</TableCell>
-                    <TableCell className="text-right font-mono text-xs tabular-nums text-muted-foreground">{kb(d.bytes)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{relativeTime(new Date(d._creationTime).toISOString())}</TableCell>
-                    <TableCell>
-                      {d.status === 'ready' && (d.paras ?? 0) === 0 ? (
-                        <Badge variant="warning">Scanned: text not searchable</Badge>
-                      ) : d.status === 'ready' ? (
-                        <Badge variant="success">Ready</Badge>
-                      ) : d.status === 'failed' ? (
-                        <span className="text-xs text-destructive">{d.error ?? 'Processing failed'}</span>
-                      ) : (
-                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <Loading className="size-3.5" /> Extracting…
+
+          <div className="relative">
+            <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search every page in this vault…"
+              aria-label="Search the vault"
+              className="pl-9"
+            />
+          </div>
+
+          {term.length >= 2 && (
+            <section aria-label="Search results" className="rounded-xl border border-border bg-card">
+              {hits === undefined ? (
+                <div className="space-y-2 p-3">
+                  {Array.from({ length: 3 }, (_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : !hits || hits.length === 0 ? (
+                <p className="px-4 py-5 text-sm text-muted-foreground">
+                  No passage mentions “{term}”. <span className="text-muted-foreground/70">Try a shorter term.</span>
+                </p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {hits.map((h) => (
+                    <li key={`${h.documentId}-${h.page}`}>
+                      <Button
+                        variant="ghost"
+                        data-testid="search-hit"
+                        onClick={() =>
+                          setOpen({
+                            id: h.documentId,
+                            focus: { page: h.page, mark: term },
+                          })
+                        }
+                        className="block h-auto w-full whitespace-normal rounded-none px-4 py-2.5 text-left font-normal hover:bg-muted/60"
+                      >
+                        <span className="flex items-baseline gap-2 text-xs">
+                          <span className="font-medium text-foreground">{h.filename}</span>
+                          <span className="font-mono text-muted-foreground">p. {h.page}</span>
                         </span>
-                      )}
-                    </TableCell>
+                        <span className="mt-0.5 block text-sm text-muted-foreground">
+                          <Marked text={h.snippet} mark={term} />
+                        </span>
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
+          <Input
+            ref={input}
+            type="file"
+            multiple
+            accept={ACCEPT}
+            className="hidden"
+            data-testid="vault-file-input"
+            onChange={(e) => {
+              void upload(Array.from(e.target.files ?? []));
+              e.target.value = '';
+            }}
+          />
+
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              void upload(Array.from(e.dataTransfer.files));
+            }}
+            className={cn('rounded-xl border border-dashed border-border bg-card transition-colors', dragging && 'border-brand bg-brand/5')}
+          >
+            {docs === undefined ? (
+              <div className="space-y-2 p-4">
+                {Array.from({ length: 6 }, (_, i) => (
+                  <Skeleton key={i} className="h-9 w-full" />
+                ))}
+              </div>
+            ) : docs.length === 0 && Object.keys(uploading).length === 0 ? (
+              <Button
+                variant="ghost"
+                onClick={() => input.current?.click()}
+                className="flex h-auto w-full flex-col items-center gap-2 px-6 py-16 text-center"
+              >
+                <UploadSimpleIcon className="size-6 text-muted-foreground" />
+                <span className="text-sm font-medium">Drop contracts here</span>
+                <span className="text-xs text-muted-foreground">PDF, DOCX or TXT, up to 15 MB each.</span>
+              </Button>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="w-24 text-right">Pages</TableHead>
+                    <TableHead className="w-24 text-right">Size</TableHead>
+                    <TableHead className="w-28">Added</TableHead>
+                    <TableHead className="w-44">Status</TableHead>
+                    <TableHead className="w-10" />
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
+                </TableHeader>
+                <TableBody>
+                  {Object.entries(uploading).map(([name, p]) => (
+                    <TableRow key={`up-${name}`}>
+                      <TableCell className="font-medium">{name}</TableCell>
+                      <TableCell />
+                      <TableCell />
+                      <TableCell />
+                      <TableCell>
+                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Loading className="size-3.5" /> {p < 1 ? 'Uploading…' : 'Extracting…'}
+                        </span>
+                      </TableCell>
+                      <TableCell />
+                    </TableRow>
+                  ))}
+                  {docs.map((d) => {
+                    const Icon = iconFor(d.filename);
+                    return (
+                      <TableRow
+                        key={d._id}
+                        data-testid="vault-row"
+                        data-state={open?.id === d._id ? 'selected' : undefined}
+                        className="cursor-pointer"
+                        onClick={() => d.status === 'ready' && setOpen({ id: d._id })}
+                      >
+                        <TableCell>
+                          <span className="flex items-center gap-2">
+                            <Icon className="size-4 shrink-0 text-muted-foreground" />
+                            <span className="truncate font-medium">{d.filename}</span>
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs tabular-nums">{d.pages ?? '—'}</TableCell>
+                        <TableCell className="text-right font-mono text-xs tabular-nums text-muted-foreground">{kb(d.bytes)}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {relativeTime(new Date(d._creationTime).toISOString())}
+                        </TableCell>
+                        <TableCell>
+                          {d.status === 'ready' && (d.paras ?? 0) === 0 ? (
+                            <Badge variant="warning">Scanned: text not searchable</Badge>
+                          ) : d.status === 'ready' ? (
+                            <Badge variant="success">Ready</Badge>
+                          ) : d.status === 'failed' ? (
+                            <span className="text-xs text-destructive">{d.error ?? 'Processing failed'}</span>
+                          ) : (
+                            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              <Loading className="size-3.5" /> Extracting…
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Delete ${d.filename}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setToDelete({ id: d._id, filename: d.filename });
+                            }}
+                          >
+                            <TrashIcon className="size-4 text-muted-foreground" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </div>
       </div>
+      <ConfirmDialog
+        open={!!toDelete}
+        onOpenChange={(o) => !o && setToDelete(null)}
+        title="Delete this document?"
+        description={`${toDelete?.filename ?? ''} is removed from the vault and from every future answer.`}
+        confirmLabel="Delete"
+        confirmVariant="destructive"
+        onConfirm={remove}
+      />
+      {open && (
+        <div className="hidden w-[46%] max-w-2xl shrink-0 lg:block">
+          <DocumentPanel documentId={open.id} focus={open.focus} onClose={() => setOpen(null)} />
+        </div>
+      )}
     </div>
   );
 }

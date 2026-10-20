@@ -27,3 +27,13 @@
     @apply font-sans antialiased;
   }
 }
+
+/* Citation links in an Assistant answer, `[1](/cite?…)`, drawn as chips.
+   CitationLayer sets data-cite-status once Lumen has checked the quote.
+   Unlayered on purpose: it must override the Markdown link's utility classes. */
+.lumen-cites a[href*="/cite?"] {
+  @apply mx-0.5 inline-flex h-[1.15rem] min-w-[1.15rem] cursor-pointer items-center justify-center rounded-full bg-brand/12 px-1.5 align-[0.1em] font-mono text-[11px] font-medium text-brand no-underline transition-colors hover:bg-brand/20;
+}
+.lumen-cites a[href*="/cite?"][data-cite-status="unverified"] {
+  @apply bg-muted text-muted-foreground line-through decoration-muted-foreground/60;
+}

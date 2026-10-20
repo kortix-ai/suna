@@ -5,10 +5,12 @@ import { SessionApprovals } from '@/components/workbench/approvals-panel';
 import { BootScreen } from '@/components/workbench/boot-screen';
 import { SessionHeader } from '@/components/workbench/session-header';
 import { WorkbenchTabs } from '@/components/workbench/workbench-tabs';
+import { CitationLayer } from '@/components/chat/citation-layer';
+import type { Id } from '@convex/_generated/dataModel';
 import { useSession } from '@kortix/sdk/react';
 
 /** One thread: the Kortix session behind it, streamed through Lumen's proxy. */
-export function ThreadWorkbench({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId: string; sessionId: string; matterId: Id<'matters'> }) {
 
   // One hook owns readiness, transport selection, streaming, transcript
   // projection, interactive requests, and message synchronization.
@@ -41,11 +43,11 @@ export function ThreadWorkbench({ projectId, sessionId }: { projectId: string; s
           onRetry={session.retry}
         />
       ) : (
-        <WorkbenchTabs
-          session={session}
-          projectId={projectId}
-          sessionId={sessionId}
-        />
+        // A lawyer sees the conversation and its sources. The repo views
+        // (files, changes, preview, scope) stay out of the Assistant.
+        <CitationLayer matterId={matterId}>
+          <WorkbenchTabs session={session} projectId={projectId} sessionId={sessionId} chatOnly />
+        </CitationLayer>
       )}
     </>
   );

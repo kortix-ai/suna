@@ -62,7 +62,7 @@ function Highlighted({ text, quote }: { text: string; quote: string }) {
   );
 }
 
-export function CitationCard({ c, n }: { c: CitationView; n: number }) {
+export function CitationCard({ c, n }: { c: Pick<CitationView, 'filename' | 'page' | 'status' | 'quote' | 'text'>; n: number }) {
   const s = CITATION_STATUS[c.status];
   return (
     <figure className="rounded-lg border border-border bg-background p-3" data-testid="citation">

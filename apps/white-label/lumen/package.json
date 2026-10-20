@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Lumen: a customer-facing product built on Kortix. Its own stack (Next.js, Convex, Better Auth) owns users, organizations and data; Kortix runs the agents, sandboxes and sessions behind it.",
   "scripts": {
-    "dev": "next dev --port ${WHITELABEL_PORT:-3010}",
-    "build": "pnpm lint:sdk-boundary && next build",
+    "dev": "node scripts/copy-viewer-wasm.mjs && next dev --port ${WHITELABEL_PORT:-3010}",
+    "build": "pnpm lint:sdk-boundary && node scripts/copy-viewer-wasm.mjs && next build",
     "lint:sdk-boundary": "node scripts/sdk-boundary.mjs",
     "start": "next start --port ${WHITELABEL_PORT:-3010}",
     "test": "node ../../../scripts/test-guard.mjs \"pnpm lint:sdk-boundary && bun test tests/unit && vitest run\"",

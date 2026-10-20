@@ -5,3 +5,8 @@
 
 # Extra dev servers (next.config.ts distDir).
 .next-*/
+
+# Viewer wasm engines, copied by scripts/copy-viewer-wasm.mjs.
+public/pdfium/
+public/react-docx/
+public/react-xlsx/
