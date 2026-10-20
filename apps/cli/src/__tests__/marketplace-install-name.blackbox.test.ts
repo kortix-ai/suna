@@ -30,6 +30,7 @@ beforeEach(() => {
         const q = url.searchParams.get('query') ?? '';
         return Response.json({ items: CATALOG.filter((i) => i.id.includes(q)) });
       }
+      if (url.pathname.includes('/marketplace/items/')) return Response.json({ error: 'Unknown item' }, { status: 404 });
       if (url.pathname.endsWith('/install-session')) return Response.json({ session_id: 'session-install' });
       // The install session fails at once: these tests pin only the id sent.
       return Response.json({ status: 'failed', error: 'synthetic stop' });

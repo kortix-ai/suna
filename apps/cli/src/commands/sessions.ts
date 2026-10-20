@@ -588,7 +588,7 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   const byW = Math.min(Math.max(...sessions.map((s) => startedByLabel(s, viewer).length), 10), 24);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('NAME', labelW)}   ${pad('STARTED BY', byW)}   ${showChildren ? 'CHILDREN  ' : ''}STATUS         BRANCH                                    UPDATED${showLabels ? '     LABELS' : ''}${C.reset}\n`,
+    `  ${C.dim}${pad('NAME', labelW)}   ${pad('STARTED BY', byW)}   ${showChildren ? 'CHILDREN  ' : ''}COMPUTER       BRANCH                                    UPDATED${showLabels ? '     LABELS' : ''}${C.reset}\n`,
   );
   for (const s of sessions) {
     process.stdout.write(
@@ -966,8 +966,9 @@ async function sessionsInfo(
   process.stdout.write(`  ${C.bold}${s.name ?? shortId(s.session_id)}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}session_id ${C.reset}${s.session_id}\n`);
   process.stdout.write(
-    `  ${C.dim}status     ${C.reset}${statusColor(s.status)}${s.status}${C.reset}\n`,
+    `  ${C.dim}computer   ${C.reset}${statusColor(s.status)}${s.status}${C.reset}\n`,
   );
+  if (s.working) process.stdout.write(`  ${C.dim}activity   ${C.reset}${s.working.state}\n`);
   process.stdout.write(`  ${C.dim}branch     ${C.reset}${s.branch_name}\n`);
   process.stdout.write(`  ${C.dim}base_ref   ${C.reset}${s.base_ref}\n`);
   process.stdout.write(`  ${C.dim}agent      ${C.reset}${s.agent_name}\n`);

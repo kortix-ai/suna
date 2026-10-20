@@ -147,6 +147,8 @@ export type OauthPollResponse =
 export interface ProjectSession {
   /** Durable conversation model; absent on older APIs. */
   model?: string | null;
+  /** Canonical work activity; missing on older servers. */
+  working?: import('@kortix/sdk').ProjectSession['working'];
   session_id: string;
   account_id: string;
   project_id: string;
