@@ -216,7 +216,7 @@ Kortix ids stay on Lumen rows: `runBatches.kortixSessionId`, and each session ca
 ### Quality, measured
 
 `pnpm --filter @kortix/white-label-lumen eval` seeds the synthetic dataset into a firm, runs the
-real engine on real Kortix sessions (2 reviews over 10 documents, 12 questions, 5 questions the
+real engine on real Kortix sessions (2 reviews over 10 documents, 14 questions, 5 questions the
 documents do not answer), and scores Lumen's rows against `agent-kit/evals/expected.json`. No
 LLM judge.
 
@@ -236,6 +236,11 @@ Local results, 2026-10-20, Platinum sandboxes, the project's default model:
 about any change-of-control provision) and answered two unanswerable questions helpfully instead
 of with the refusal sentence (the counsel prompt now defines `addressed`). Model output varies
 between runs; a score is the kit version plus its failures, not a guarantee.
+
+Kit 1.1.4 (2026-10-21, `--suite qa,refusal`, 19 runs, wall 197 s): QA 14/14 fact recall and
+14/14 cited-document recall, refusals 5/5, citations 93/93 at the cited anchor. The two new
+questions cover a cross-document reference ("Is the Main Agreement that the Lattice DPA refers
+to in this matter?", answer: the SaaS agreement) and indemnities across three agreements.
 
 ## Who owns what
 
