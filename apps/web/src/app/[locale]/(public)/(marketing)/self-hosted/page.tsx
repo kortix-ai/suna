@@ -7,7 +7,7 @@ import { CodePanel } from '@/features/marketing/self-hosted/code-panel';
 import { getLocalizedSelfHostedContent } from '@/features/marketing/self-hosted/content';
 import { SelfHostedHeroVisual } from '@/features/marketing/self-hosted/hero-visual';
 import { StackDiagram } from '@/features/marketing/self-hosted/stack-diagram';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { getTranslations } from '@/i18n/get-translations';
 import type { ReactNode } from 'react';
 

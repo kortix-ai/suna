@@ -26,7 +26,7 @@ test('offer checkout charges the license only (a stale credits amount is ignored
       line_items: [
         { quantity: 1, price_data: { currency: 'usd', product: 'prod_license', unit_amount: 120050, recurring: { interval: 'month', interval_count: 12 } } },
       ],
-      success_url: 'https://example.test/success', cancel_url: 'https://example.test/cancel',
+      success_url: `https://example.test/success?accountId=${offer.accountId}&accountTab=billing`, cancel_url: 'https://example.test/cancel',
       payment_method_collection: 'always', subscription_data: { metadata }, metadata,
       wallet_options: { link: { display: 'never' } },
     },

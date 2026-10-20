@@ -14,9 +14,9 @@ for (const key of Object.getOwnPropertyNames(win)) {
   }
 }
 const { createRoot } = await import('react-dom/client');
-const { CommandDialog } = await import('@/components/ui/command');
+const { CommandDialog } = await import('@kortix/ui/command');
 const { CommandPaletteBoundary } = await import('./command-palette-boundary');
-const { openCommandPalette, consumePendingCommandPalette } = await import('./open-command-palette');
+const { openCommandPalette, consumePendingCommandPalette } = await import('@kortix/ui/internal/layout/open-command-palette');
 let root: Root | undefined;
 afterEach(async () => {
   await act(async () => root?.unmount());

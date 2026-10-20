@@ -1,0 +1,363 @@
+'use client';
+
+import { useTranslations } from '../../i18n';
+import { expandPastedContent, splitPastedContent } from '@kortix/shared';
+import { useMemo, type ReactNode } from 'react';
+
+import { MentionChip } from './mention-chip';
+import { buildMentionSegments } from './mention-segments';
+import {
+  parseAgentMentionReferences,
+  parseFileMentionReferences,
+  parseFileReferences,
+  parseProjectReferences,
+  parseReplyContexts,
+  parseSessionReferences,
+  splitAtQuoteMarkers,
+} from './message-parsing';
+import type { SentAttachment } from '../composer/sent-attachment-previews';
+import { SessionBusyIndicator } from '../status/session-busy-indicator';
+import {
+  BUBBLE_SURFACE,
+  BUBBLE_TEXT,
+  MessageAttachments,
+  QuotedMessageBody,
+  UserMessageActions,
+  pastedAttachment,
+  type AttachmentUploadStatus,
+  type NormalizedAttachment,
+} from '../turn/user-message';
+import { useProjectSessionHref } from '../../internal/lib/navigation/session-href';
+import { cn } from '../../lib/utils';
+import { getFilename } from '../../internal/lib/utils/file-utils';
+import { openTabAndNavigate } from '../../internal/stores/tab-store';
+import { useUiShallowNavigate } from '../../providers/ui-provider';
+
+// `BUBBLE_SURFACE` / `BUBBLE_TEXT` are imported from `turn/user-message.tsx`,
+// not redeclared here. A local copy drifted twice already — first the dark
+// fill (`dark:bg-sidebar-accent-foreground/9` vs `dark:bg-muted`, fixed), then
+// the padding/radius (`px-3 py-2.5 rounded-lg` vs `px-4.5 py-3.5 rounded-xl`)
+// — each drift a visible bubble jump the instant the optimistic turn handed
+// over to the real server turn. One constant, imported, cannot drift.
+
+/**
+ * The optimistic turn — the user's message plus the assistant's waiting row,
+ * rendered the instant a message is sent and before any server turn exists.
+ *
+ * ONE component, deliberately: this exact turn is painted twice in a fresh
+ * session's life — first by {@link InstantSessionShell} while the computer boots,
+ * then again by {@link SessionChat} once the runtime is healthy — and the two
+ * crossfade into each other. Both surfaces used to hand-roll their own copy held
+ * together by a comment asking future authors to keep them identical. They had
+ * already drifted (different vertical padding, raw prompt text vs. parsed, a
+ * logomark on one side only), and every drift showed up as the thread twitching
+ * mid-handover. Sharing the render makes the contract structural instead of
+ * aspirational: there is nothing left to keep in sync.
+ *
+ * The waiting row is {@link SessionBusyIndicator} — the SAME component a live
+ * turn shows while working. So the whole arc (boot → runtime ready → first real
+ * turn) is one row that never unmounts its shape: only its label changes, and
+ * that change is already blur-bridged. No logomark that appears and then
+ * vanishes when the real turn lands, no boot checklist, no rotating filler
+ * copy — just "Thinking" until the agent has something truer to say.
+ */
+export function OptimisticTurn({
+  /** The prompt text, already carrying any upload refs
+   *  (see `buildOptimisticPromptTextWithUploads`). */
+  text,
+  /** Known agent names, so `@agent` mentions render as agent chips. */
+  agentNames,
+  /** Opens a file mention. Omitted before a runtime exists — mentions then
+   *  render as static chips rather than dead buttons. */
+  onFileClick,
+  /** Prevent runtime previews while there is no sandbox yet (instant shell). */
+  deferPreview,
+  /**
+   * Files this prompt is sending, by NAME and TYPE only.
+   *
+   * A reload throws away the composer's optimistic state, so the durable
+   * queued row is all that is left — and it knows the names, never the bytes
+   * (the runtime has not received the files yet, and the row is polled).
+   * Without them a refreshed tab drew a bare sentence for a send of seven
+   * attachments, and the user could not tell a send with files from one
+   * without. Rendered without an open action until a runtime path exists.
+   */
+  attachments: staged,
+  /**
+   * A failed accepted send remains visible until retry — see
+   * {@link AttachmentUploadStatus}.
+   */
+  uploadStatus,
+  /** Keys the busy indicator's dot-matrix glyph — see `SessionDotMatrix`. */
+  sessionId,
+  /**
+   * Draw the waiting row under the bubble. Default true — the whole point of
+   * this component is that the bubble and its "Thinking" row arrive together.
+   *
+   * `SessionChat` turns it off in one case: the transcript has already produced
+   * a turn (with its own busy row) whose user message carries no text yet, so
+   * this stands in for the missing bubble ABOVE it. Two waiting rows would be a
+   * lie about how much is running.
+   */
+  busy = true,
+  deliveryStatus,
+  className,
+}: {
+  text: string;
+  agentNames?: string[];
+  onFileClick?: (path: string) => void;
+  deferPreview?: boolean;
+  attachments?: ReadonlyArray<SentAttachment>;
+  uploadStatus?: AttachmentUploadStatus;
+  sessionId?: string;
+  busy?: boolean;
+  deliveryStatus?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div data-turn-id="optimistic" className={cn('group/turn mt-12 first:mt-0', className)}>
+      <div className="flex justify-end">
+        <OptimisticUserBubble
+          text={text}
+          agentNames={agentNames}
+          onFileClick={onFileClick}
+          deferPreview={deferPreview}
+          staged={staged}
+          uploadStatus={uploadStatus}
+          deliveryStatus={deliveryStatus}
+        />
+      </div>
+      {busy && <SessionBusyIndicator sessionId={sessionId} className="mt-6" />}
+    </div>
+  );
+}
+
+function OptimisticUserBubble({
+  text,
+  agentNames,
+  onFileClick,
+  deferPreview,
+  staged,
+  uploadStatus,
+  deliveryStatus,
+}: {
+  text: string;
+  agentNames?: string[];
+  onFileClick?: (path: string) => void;
+  deferPreview?: boolean;
+  staged?: ReadonlyArray<SentAttachment>;
+  uploadStatus?: AttachmentUploadStatus;
+  deliveryStatus?: ReactNode;
+}) {
+  // Strip every ref block the composer folded into the prompt, in the order it
+  // folded them in, so the bubble shows the sentence the user typed and the
+  // attachments as tiles — never raw XML.
+  const { quotes, files, cleanText, pastes } = useMemo(() => {
+    // Pastes first, as on the sent turn: a ref inside a paste is paste text.
+    const { text: afterPastes, pastes } = splitPastedContent(text);
+    const { cleanText: afterReply, quotes } = parseReplyContexts(afterPastes);
+    const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
+    const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
+    const { cleanText: afterFileMentions } = parseFileMentionReferences(afterProjects);
+    const { cleanText: afterAgentMentions } = parseAgentMentionReferences(afterFileMentions);
+    const { cleanText } = parseSessionReferences(afterAgentMentions);
+    return { quotes, files, cleanText, pastes };
+  }, [text]);
+
+  // Quotes are drawn where they were written, by the same component the sent
+  // message uses — see `QuotedMessageBody`.
+  const quotedPieces = useMemo(
+    () => (quotes.length > 0 ? splitAtQuoteMarkers(cleanText, quotes) : null),
+    [cleanText, quotes],
+  );
+
+  // Same shape MessageAttachments consumes on a real turn — one strip, one tile
+  // language, so the optimistic bubble and the server turn never disagree.
+  const attachments = useMemo((): NormalizedAttachment[] => {
+    const fromText = files.map((f, i) => ({
+      // The attachment identity keys the tile, so the real turn keeps it. A
+      // ref without one falls back to its position.
+      key: f.attachment ? `attachment:${f.attachment}` : `optimistic:${i}:${f.path}`,
+      ...(f.attachment ? { id: f.attachment } : {}),
+      filename: getFilename(f.filename || f.path),
+      mime: f.mime,
+      // A file the runtime does not hold yet has no sandbox path to resolve.
+      // The sent picture comes from the identity (`sent-attachment-previews`).
+      src: deferPreview ? undefined : f.path || undefined,
+      path: deferPreview ? undefined : f.path || undefined,
+    }));
+
+    // A file that already landed is BOTH a text ref and (after a reload) a
+    // staged name. Names already drawn win, so the strip never doubles a tile.
+    const drawn = new Set(fromText.map((tile) => tile.filename));
+    const fromStaged = (staged ?? [])
+      .filter((file) => !drawn.has(file.filename))
+      .map((file, i) => ({
+        // A remembered sent identity keys the tile and finds its picture.
+        key: file.id ? `attachment:${file.id}` : `staged:${i}:${file.filename}`,
+        ...(file.id ? { id: file.id } : {}),
+        filename: file.filename,
+        mime: file.mime,
+        // No `src`/`path`: the runtime cannot preview or open this tile yet.
+      }));
+
+    return [...pastes.map(pastedAttachment), ...fromText, ...fromStaged];
+  }, [pastes, files, deferPreview, staged]);
+
+  return (
+    <div className="ml-auto flex w-full max-w-[80%] flex-col items-end gap-2 self-end">
+      {attachments.length > 0 && (
+        <MessageAttachments attachments={attachments} status={uploadStatus} />
+      )}
+      {(cleanText || quotedPieces) && (
+        <div className={cn(BUBBLE_SURFACE, 'w-fit overflow-hidden')}>
+          {quotedPieces ? (
+            <QuotedMessageBody
+              pieces={quotedPieces}
+              renderText={(runText) => (
+                <HighlightMentions
+                  text={runText}
+                  agentNames={agentNames}
+                  onFileClick={onFileClick}
+                />
+              )}
+            />
+          ) : (
+            <p className={BUBBLE_TEXT}>
+              <HighlightMentions
+                text={cleanText}
+                agentNames={agentNames}
+                onFileClick={onFileClick}
+              />
+            </p>
+          )}
+        </div>
+      )}
+      {/* The same row the server turn renders, for the same reason the
+          attachments strip is shared: anything shaped differently on one side
+          shows up as a twitch at handover. Its height comes from the copy
+          button, so it matches the real turn's row exactly.
+
+          `timestamp` is deliberately `null`. This turn has no server message,
+          so the only stamp available is a local clock read — and this component
+          is mounted TWICE (boot shell, then chat) with a crossfade between. A
+          clock read at mount would differ between the two, which is the same
+          two-clocks bug that already made the elapsed timer run backwards here.
+          The row stays empty until `time.created` arrives with the real
+          message; the label then appears without moving anything. */}
+      <UserMessageActions
+        timestamp={null}
+        copyText={expandPastedContent(text)}
+        deliveryStatus={deliveryStatus}
+      />
+    </div>
+  );
+}
+
+/**
+ * Highlight @mentions in plain text (for optimistic & user messages).
+ *
+ * Draws the SAME chip the composer draws (`../mention-chip`) over the SAME
+ * segmentation the sent message uses (`../mention-segments`). Both used to be
+ * local to this file — an underlined-text treatment and its own copy of the
+ * range walk — so a mention visibly changed shape twice on its way through the
+ * app: chip in the composer, underline in the optimistic bubble, underline
+ * again in the server turn.
+ */
+export function HighlightMentions({
+  text,
+  agentNames,
+  onFileClick,
+}: {
+  text: string;
+  agentNames?: string[];
+  onFileClick?: (path: string) => void;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // Strip every ref block (project/file/agent/session) before processing
+  // inline @ mentions so the visible text never shows raw XML.
+  const { cleanText, sessions } = useMemo(() => {
+    const a = parseProjectReferences(text);
+    const b = parseFileMentionReferences(a.cleanText);
+    const c = parseAgentMentionReferences(b.cleanText);
+    const d = parseSessionReferences(c.cleanText);
+    return {
+      cleanText: d.cleanText,
+      sessions: d.sessions,
+    };
+  }, [text]);
+
+  const sessionTitles = useMemo(() => sessions.map((s) => s.title), [sessions]);
+
+  const segments = useMemo(() => {
+    const built = buildMentionSegments({ text: cleanText, sessionTitles, agentNames });
+    // Key each segment by its source offset in the text — content-derived and
+    // unique per segment, even when the same mention appears twice.
+    let offset = 0;
+    return built.map((seg) => {
+      const key = `${offset}:${seg.type ?? 'text'}`;
+      offset += seg.text.length;
+      return { ...seg, key };
+    });
+  }, [cleanText, sessionTitles, agentNames]);
+
+  const sessionHref = useProjectSessionHref();
+  const shallowNavigate = useUiShallowNavigate();
+
+  const openSessionMention = (raw: string) => {
+    // `/projects/<id>/sessions/<id>`, not `/sessions/<id>`: the latter is not a
+    // route, so the URL it wrote into history 404'd on reload or Back even
+    // though the mounted tab looked fine. See `session-href.ts`.
+    // Direct session ID (ses_...) — navigate without title lookup
+    if (raw.startsWith('ses_')) {
+      const href = sessionHref(raw);
+      if (!href) return;
+      openTabAndNavigate({
+        id: raw,
+        title: tI18nComplete.raw('text6959b4159575'),
+        type: 'session',
+        href,
+      }, undefined, shallowNavigate);
+      return;
+    }
+    const ref = sessions.find((s) => s.title === raw);
+    if (!ref) return;
+    const href = sessionHref(ref.id);
+    if (!href) return;
+    openTabAndNavigate({
+      id: ref.id,
+      title: ref.title || 'Session',
+      type: 'session',
+      href,
+    }, undefined, shallowNavigate);
+  };
+
+  return (
+    <>
+      {segments.map((seg) =>
+        seg.type === 'file' ? (
+          // Static when there is no runtime to open the file in yet (the
+          // instant shell) — a chip that looks pressable and does nothing is
+          // worse than one that plainly does not.
+          <MentionChip
+            key={seg.key}
+            kind="file"
+            label={seg.text.replace(/^@/, '')}
+            onClick={onFileClick ? () => onFileClick(seg.text.replace(/^@/, '')) : undefined}
+          />
+        ) : seg.type === 'session' ? (
+          <MentionChip
+            key={seg.key}
+            kind="session"
+            label={seg.text.replace(/^@/, '')}
+            onClick={() => openSessionMention(seg.text.replace(/^@/, ''))}
+          />
+        ) : seg.type === 'agent' ? (
+          <MentionChip key={seg.key} kind="agent" label={seg.text.replace(/^@/, '')} />
+        ) : (
+          <span key={seg.key}>{seg.text}</span>
+        ),
+      )}
+    </>
+  );
+}

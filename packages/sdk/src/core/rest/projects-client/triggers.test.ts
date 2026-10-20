@@ -102,6 +102,21 @@ test('listProjectTriggers reads a monitor entry off the wire without losing its 
   });
 });
 
+// KRTX-1721: overlap — skip holds a fire while the previous run is active.
+test('createProjectTrigger and updateProjectTrigger send overlap; the listing reads it', async () => {
+  nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, overlap: 'allow' }], errors: [] } };
+  await createProjectTrigger('P1', { name: 'Nightly', type: 'cron', cron: '0 0 3 * * *', prompt_template: 'Go', overlap: 'skip' });
+  expect(last().body).toMatchObject({ overlap: 'skip' });
+  await updateProjectTrigger('P1', 'nightly', { overlap: null });
+  expect(last().body).toEqual({ overlap: null });
+  const [trigger] = (await listProjectTriggers('P1')).triggers;
+  const overlap: 'skip' | 'allow' | null | undefined = trigger!.overlap;
+  // @ts-expect-error overlap is skip or allow
+  const bad: CreateProjectTriggerInput['overlap'] = 'queue';
+  expect(overlap).toBe('allow');
+  expect([overlap, bad]).toHaveLength(2);
+});
+
 // KRTX-1721: a trigger that paused itself after a sustained run-limit breach.
 test('listProjectTriggers keeps the auto-pause the API reports', async () => {
   const reason = 'auto-paused: ran at max_runs_per_hour 60 for 2 hours in a row';
@@ -659,4 +674,14 @@ test('getAccountAutomations reads the switch and setAccountAutomationsPaused fli
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ paused: true });
   expect([after.paused, after.paused_by]).toEqual([true, 'U1']);
+});
+
+test('list preserves the exact cron occurrence separately from scheduled execution', async () => {
+  nextResponse = { status: 200, body: { triggers: [{
+    ...MONITOR_WIRE_ENTRY, type: 'cron', cron: '0 0 9 * * *',
+    next_cron_at: '2026-10-10T09:00:00.000Z', next_fire_at: '2026-10-10T09:15:00.000Z',
+  }], errors: [] } };
+  const result = await listProjectTriggers('project-test');
+  expect(result.triggers[0]?.next_cron_at).toBe('2026-10-10T09:00:00.000Z');
+  expect(result.triggers[0]?.next_fire_at).toBe('2026-10-10T09:15:00.000Z');
 });

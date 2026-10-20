@@ -1,14 +1,14 @@
 'use client';
 
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
-import { CommandDialog } from '@/components/ui/command';
+import { CommandDialog } from '@kortix/ui/command';
 import { useTranslations } from '@/i18n/use-translations';
 import {
   consumePendingCommandPalette,
   hasPendingCommandPalette,
   OPEN_COMMAND_PALETTE_EVENT,
   openCommandPalette,
-} from './open-command-palette';
+} from '@kortix/ui/internal/layout/open-command-palette';
 
 function CommandPaletteLoading() {
   const t = useTranslations('common');

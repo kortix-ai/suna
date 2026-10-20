@@ -12,10 +12,10 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import {
   CubeIcon as Boxes,
   BriefcaseIcon as Briefcase,
