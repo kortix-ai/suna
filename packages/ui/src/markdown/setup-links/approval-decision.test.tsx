@@ -313,6 +313,36 @@ describe('ApprovalDecisionPanel', () => {
     expect(modal).toContain('logos.composio.dev/api/github');
   });
 
+  test('an Expires row sits next to Requested', () => {
+    const html = panel({});
+    expect(html).toContain('Requested');
+    expect(html).toContain('Expires');
+    expect(html.indexOf('Expires')).toBeGreaterThan(html.indexOf('Requested'));
+    expect(panel({ outcome: 'approve' })).not.toContain('Expires');
+  });
+
+  test('expired: the outcome reads Expired, says what to do, and both decisions are off', () => {
+    const html = panel({ details: { ...pending, status: 'expired', pending: false } });
+    expect(html).toContain('Expired');
+    expect(html).toContain('This approval expired. Ask the agent to request it again.');
+    expect(html).not.toContain('An agent needs your approval');
+    // Deny, Approve and the note: each one carries the disabled attribute.
+    const controls = html.match(/<(button|textarea)[^>]*>/g) ?? [];
+    expect(controls).toHaveLength(3);
+    expect(controls.every((tag) => / disabled=""/.test(tag))).toBe(true);
+    expect(html).toContain('Approve this call');
+  });
+
+  test('expired, for a viewer who may not decide: the reason, and no decisions', () => {
+    const html = panel({
+      details: { ...pending, status: 'expired', pending: false },
+      onDecision: undefined,
+    });
+    expect(html).toContain('This approval expired. Ask the agent to request it again.');
+    expect(html).not.toContain('Approve this call');
+    expect(html).not.toContain('Waiting for');
+  });
+
   test('a viewer without argument visibility is told why, not that nothing was recorded', () => {
     const html = panel({
       details: { ...pending, args_preview: null, review_complete: false },

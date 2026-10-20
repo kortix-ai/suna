@@ -20356,7 +20356,10 @@
       "sessionExpired": "Vaša sesija je istekla. Prijavite se ponovo i ponovo otvorite pregled."
     },
     "approvalPage": {
-      "title": "Odobrite {connector} akciju"
+      "title": "Odobrite {connector} akciju",
+      "expires": "Истиче",
+      "expiresIn": "Истиче за {time}",
+      "expiredHint": "Ово одобрење је истекло. Замолите агента да га поново затражи."
     },
     "approvalWaiting": {
       "byManager": "Чека се да неко ко управља овим пројектом одобри или одбије позив.",

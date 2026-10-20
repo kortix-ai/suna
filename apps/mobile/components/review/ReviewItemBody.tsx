@@ -16,6 +16,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import type { ChangeRequestDiff } from '@/lib/projects/projects-client';
 import { splitFilePath } from '@/lib/review/review-detail';
+import { formatApprovalExpiresIn } from '@/lib/review/review-meta';
 import { openLink } from '@/lib/utils/open-link';
 
 /** Files listed before "N more files": the rest are one tap away on the web. */
@@ -37,6 +38,30 @@ function Lines({ lines }: { lines: string[] }) {
         <Text key={`${index}-${line}`}>{line}</Text>
       ))}
     </View>
+  );
+}
+
+/** "Expires in 3h" while the call waits, in the warning tone under one hour;
+ *  the reason once it expired. Nothing for a call with no expiry. */
+function ApprovalExpiry({ item }: { item: ReviewItem }) {
+  if (item.status === 'expired') {
+    return (
+      <Section>
+        <Text variant="muted">This approval expired. Ask the agent to request it again.</Text>
+      </Section>
+    );
+  }
+  const left =
+    item.status === 'needs_you' || item.status === 'waiting'
+      ? formatApprovalExpiresIn(item.expiresAt)
+      : null;
+  if (!left) return null;
+  return (
+    <Section>
+      <Text variant="muted" className={left.soon ? 'text-kortix-orange' : undefined}>
+        Expires in {left.time}
+      </Text>
+    </Section>
   );
 }
 
@@ -67,6 +92,7 @@ export function ReviewBody({
     case 'approval':
       return (
         <>
+          <ApprovalExpiry item={item} />
           {item.detail.actions.map((action) => (
             // One action: the sheet title already names it.
             <Section key={action.id} title={action.title === item.title ? undefined : action.title}>

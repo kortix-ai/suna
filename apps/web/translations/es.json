@@ -20356,7 +20356,10 @@
       "sessionExpired": "Tu sesión ha caducado. Inicia sesión de nuevo y vuelve a abrir la vista previa."
     },
     "approvalPage": {
-      "title": "Aprobar una acción de {connector}"
+      "title": "Aprobar una acción de {connector}",
+      "expires": "Caduca",
+      "expiresIn": "Caduca en {time}",
+      "expiredHint": "Esta aprobación caducó. Pide al agente que la vuelva a solicitar."
     },
     "approvalWaiting": {
       "byManager": "Esperando a que alguien que gestione este proyecto apruebe o rechace la llamada.",

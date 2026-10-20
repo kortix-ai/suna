@@ -62,6 +62,7 @@ import { statusToVerdict } from './map';
 import { getLocalizedMockItems } from './mock-data';
 import {
   bulkSkipMessage,
+  formatExpiresIn,
   formatItemAge,
   isQuickDecidableApproval,
   resolveBulkOutcome,
@@ -98,6 +99,24 @@ function TimeAgo({ iso }: { iso: string }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   return <span className="tabular-nums">{mounted ? formatItemAge(iso) : ''}</span>;
+}
+
+/** "Expires in 3h" on a pending approval; the warning tone under one hour.
+ *  Client-only, like `TimeAgo`. Nothing once it has no time left. */
+function ExpiresIn({ iso }: { iso: string }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const left = mounted ? formatExpiresIn(iso) : null;
+  if (!left) return null;
+  return (
+    <>
+      <Dot />
+      <span className={cn('shrink-0 tabular-nums', left.soon && 'text-kortix-orange')}>
+        {tHardcodedUi('approvalPage.expiresIn', { time: left.time })}
+      </span>
+    </>
+  );
 }
 
 const SEGMENTS: { value: ReviewSegment; label: string }[] = [
@@ -139,6 +158,7 @@ const STATUS_GLYPH: Partial<Record<ReviewStatus, { icon: typeof Check; className
   changes_requested: { icon: ArrowUUpLeft, className: 'text-kortix-orange' },
   rejected: { icon: X, className: 'text-kortix-red' },
   dismissed: { icon: X, className: 'text-muted-foreground' },
+  expired: { icon: Clock, className: 'text-muted-foreground' },
 };
 
 function Dot() {
@@ -229,6 +249,9 @@ function ItemRow({
         </span>
         <span className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
           <TimeAgo iso={item.createdAt} />
+          {item.kind === 'approval' && segment !== 'done' && item.expiresAt ? (
+            <ExpiresIn iso={item.expiresAt} />
+          ) : null}
           <Dot />
           <span className="truncate">{item.agent}</span>
           {where && (

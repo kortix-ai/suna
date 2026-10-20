@@ -329,3 +329,30 @@ describe('the review page of one item', () => {
     expect(buttons()).toContain('Solve with agent');
   });
 });
+
+describe('a pending approval row', () => {
+  const APPROVAL = mockItem('rv-approval-1');
+  const expiringIn = (ms: number) =>
+    ({ ...APPROVAL, expiresAt: new Date(Date.now() + ms).toISOString() }) as ReviewItem;
+  const expiryLabel = () =>
+    [...document.querySelectorAll('span')].find((span) =>
+      span.textContent?.startsWith('Expires in'),
+    );
+
+  test('says how long it can still be decided', () => {
+    mount([expiringIn(3 * 3_600_000 + 60_000)], MANAGER);
+    expect(expiryLabel()?.textContent).toBe('Expires in 3h');
+    expect(expiryLabel()?.className).not.toContain('text-kortix-orange');
+  });
+
+  test('turns to the warning tone under one hour', () => {
+    mount([expiringIn(30 * 60_000)], MANAGER);
+    expect(expiryLabel()?.textContent).toBe('Expires in 30m');
+    expect(expiryLabel()?.className).toContain('text-kortix-orange');
+  });
+
+  test('an approval with no expiry shows no label', () => {
+    mount([APPROVAL], MANAGER);
+    expect(expiryLabel()).toBeUndefined();
+  });
+});

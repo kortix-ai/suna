@@ -22,10 +22,11 @@ import { DetailPanel, DetailRow, OutcomeTitle } from '../../internal/auth/auth-c
 import { ErrorStrip, Rise, StepHeader } from '../../internal/auth/auth-primitives';
 import { useTranslations } from '../../i18n';
 import { type ApprovalLinkDetails, getApprovalLink, resolveApproval } from '@kortix/sdk';
-import { ArrowUpRightIcon, ShieldWarningIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon, ClockIcon, ShieldWarningIcon } from '@phosphor-icons/react';
 import { UiLink as Link, useUiRouter } from '../../providers/ui-provider';
 import { useEffect, useState } from 'react';
 
+import { isApprovalExpiredError } from '../../workspace/review/review-actions';
 import { ConnectorHandshake } from './connector-handshake';
 
 const requestedAtFormat = new Intl.DateTimeFormat(undefined, {
@@ -77,6 +78,7 @@ const RISK_LABEL_KEY: Record<string, string> = {
 
 export function ApprovalDecision({ token }: { token: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useUiRouter();
   const [details, setDetails] = useState<ApprovalLinkDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,6 +120,14 @@ export function ApprovalDecision({ token }: { token: string }) {
         approved ? tI18nComplete.raw('text0674d4a026cb') : tI18nComplete.raw('text4341be8eb7f0'),
       );
     } catch (cause) {
+      if (isApprovalExpiredError(cause)) {
+        // The panel turns to its expired state; the toast says why nothing ran.
+        setDetails((current) =>
+          current ? { ...current, pending: false, status: 'expired' } : current,
+        );
+        errorToast(tHardcodedUi('approvalPage.expiredHint'));
+        return;
+      }
       const message = cause instanceof Error ? cause.message : 'Could not record your decision.';
       setError(message);
       errorToast(message);
@@ -262,12 +272,16 @@ export function ApprovalDecisionPanel({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const waitingText = useApprovalWaitingText(resolvers);
-  const resolved = !details.pending || outcome !== null;
+  const expiresAt = Date.parse(details.expires_at);
+  // The server says `expired` once the window closed. A row read before that
+  // still offers the decision; the API then answers 409 APPROVAL_EXPIRED.
+  const expired = outcome === null && details.status === 'expired';
+  const resolved = !details.pending || outcome !== null || expired;
   const waiting = !resolved && !onDecision;
   const reviewable = approvalReviewable(details.args_preview, details.review_complete);
   const label = resolvedLabel(
     {
-      status: details.status,
+      status: expired ? 'expired' : details.status,
       resolution:
         !details.pending && details.status === 'ok'
           ? 'approve'
@@ -295,7 +309,9 @@ export function ApprovalDecisionPanel({
         ? tI18nComplete.raw('text0674d4a026cb')
         : label === 'Denied'
           ? tI18nComplete.raw('text4341be8eb7f0')
-          : label;
+          : label === 'Expired'
+            ? tI18nComplete.raw('text424a2551d356')
+            : label;
     title = <OutcomeTitle tone={resolvedTone(label)}>{words}</OutcomeTitle>;
   }
 
@@ -365,6 +381,13 @@ export function ApprovalDecisionPanel({
               label={tI18nComplete.raw('text2d9e28289fac')}
               value={requestedAtFormat.format(new Date(details.requested_at))}
             />
+            {/* A decided call no longer expires; the row would only mislead. */}
+            {Number.isFinite(expiresAt) && (expired || (details.pending && outcome === null)) ? (
+              <DetailRow
+                label={tHardcodedUi('approvalPage.expires')}
+                value={requestedAtFormat.format(expiresAt)}
+              />
+            ) : null}
             {onOpenSession ? (
               <DetailRow
                 label={tI18nComplete.raw('text6959b4159575')}
@@ -400,7 +423,22 @@ export function ApprovalDecisionPanel({
 
           {error ? <ErrorStrip message={error} /> : null}
 
-          {details.pending && !resolved && onDecision ? (
+          {expired ? (
+            <>
+              <InfoBanner tone="neutral" icon={ClockIcon}>
+                {tHardcodedUi('approvalPage.expiredHint')}
+              </InfoBanner>
+              {onDecision ? (
+                <ApprovalDecisionActions
+                  onDecision={onDecision}
+                  disabled
+                  stretch
+                  sessionId={details.session_id}
+                  className="border-0 p-0"
+                />
+              ) : null}
+            </>
+          ) : details.pending && !resolved && onDecision ? (
             <>
               {reviewable ? null : (
                 <InfoBanner tone="warning" icon={ShieldWarningIcon}>

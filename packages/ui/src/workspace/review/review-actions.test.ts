@@ -3,7 +3,9 @@ import {
   bulkSkipMessage,
   connectorCallId,
   crChangeRequestId,
+  formatExpiresIn,
   formatItemAge,
+  isApprovalExpiredError,
   formatItemAgeLong,
   isQuickDecidableApproval,
   itemDeepLink,
@@ -176,5 +178,27 @@ describe('bulkSkipMessage', () => {
     expect(msg).toContain('2 approvals kept');
     expect(msg).toContain('1 risky approval skipped');
     expect(msg).toContain('1 change skipped');
+  });
+});
+
+describe('formatExpiresIn', () => {
+  const now = Date.parse('2026-07-01T10:00:00.000Z');
+  test('time left in the row idiom; soon under one hour', () => {
+    expect(formatExpiresIn('2026-07-01T13:00:00.000Z', now)).toEqual({ time: '3h', soon: false });
+    expect(formatExpiresIn('2026-07-01T10:59:00.000Z', now)).toEqual({ time: '59m', soon: true });
+    expect(formatExpiresIn('2026-07-03T10:00:00.000Z', now)).toEqual({ time: '2d', soon: false });
+  });
+  test('no expiry, an unparseable value, or a past time has no label', () => {
+    expect(formatExpiresIn(undefined, now)).toBeNull();
+    expect(formatExpiresIn('not a date', now)).toBeNull();
+    expect(formatExpiresIn('2026-07-01T09:59:00.000Z', now)).toBeNull();
+  });
+});
+
+describe('isApprovalExpiredError', () => {
+  test('only the APPROVAL_EXPIRED code counts', () => {
+    expect(isApprovalExpiredError(Object.assign(new Error('x'), { code: 'APPROVAL_EXPIRED' }))).toBe(true);
+    expect(isApprovalExpiredError(new Error('x'))).toBe(false);
+    expect(isApprovalExpiredError(null)).toBe(false);
   });
 });

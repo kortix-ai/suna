@@ -143,11 +143,31 @@ export function bulkSkipMessage(outcome: BulkOutcome): string {
  *  `TimeAgo` in review-center.tsx, which renders this client-only to avoid
  *  an SSR/hydration mismatch on `Date.now()`). */
 export function formatItemAge(iso: string, now = Date.now()): string {
-  const mins = Math.max(1, Math.round((now - new Date(iso).getTime()) / 60_000));
+  return compactMinutes(Math.round((now - new Date(iso).getTime()) / 60_000));
+}
+
+function compactMinutes(minutes: number): string {
+  const mins = Math.max(1, minutes);
   if (mins < 60) return `${mins}m`;
   const hrs = Math.round(mins / 60);
   if (hrs < 24) return `${hrs}h`;
   return `${Math.round(hrs / 24)}d`;
+}
+
+/** Time left on a pending approval, in the row's compact idiom ("3h"), and
+ *  whether it is under one hour. Null when it has no expiry or already passed. */
+export function formatExpiresIn(
+  iso: string | undefined,
+  now = Date.now(),
+): { time: string; soon: boolean } | null {
+  const left = iso ? new Date(iso).getTime() - now : Number.NaN;
+  if (!(left > 0)) return null;
+  return { time: compactMinutes(Math.round(left / 60_000)), soon: left < 3_600_000 };
+}
+
+/** True when the API reports the approval expired before this decision (HTTP 409). */
+export function isApprovalExpiredError(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === 'APPROVAL_EXPIRED';
 }
 
 /** Longer relative age with a trailing "ago" — the detail-modal idiom (see

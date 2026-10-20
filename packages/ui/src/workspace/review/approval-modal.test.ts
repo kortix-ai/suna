@@ -56,6 +56,15 @@ describe('reviewApprovalDetails', () => {
     });
   });
 
+  test('carries the expiry, and an expired call reads as expired, not pending', () => {
+    const expiresAt = '2026-10-03T10:00:00.000Z';
+    expect(reviewApprovalDetails({ ...connectorCall, expiresAt })?.expires_at).toBe(expiresAt);
+    expect(reviewApprovalDetails({ ...connectorCall, status: 'expired' })).toMatchObject({
+      status: 'expired',
+      pending: false,
+    });
+  });
+
   test('carries the loaded content and its failure to the approve panel', () => {
     const [call] = connectorCall.kind === 'approval' ? connectorCall.detail.actions : [];
     const withContent = (extra: object): ReviewItem => ({

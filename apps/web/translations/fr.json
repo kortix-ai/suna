@@ -20356,7 +20356,10 @@
       "sessionExpired": "Votre session a expiré. Reconnectez-vous et rouvrez l’aperçu."
     },
     "approvalPage": {
-      "title": "Approuver une action {connector}"
+      "title": "Approuver une action {connector}",
+      "expires": "Expire",
+      "expiresIn": "Expire dans {time}",
+      "expiredHint": "Cette approbation a expiré. Demandez à l’agent de la redemander."
     },
     "approvalWaiting": {
       "byManager": "En attente d’une personne qui gère ce projet pour approuver ou refuser l’appel.",

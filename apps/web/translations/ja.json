@@ -20356,7 +20356,10 @@
       "sessionExpired": "セッションの有効期限が切れました。もう一度サインインして、プレビューを開き直してください。"
     },
     "approvalPage": {
-      "title": "{connector} のアクションを承認"
+      "title": "{connector} のアクションを承認",
+      "expires": "有効期限",
+      "expiresIn": "{time}後に期限切れ",
+      "expiredHint": "この承認は期限切れです。エージェントにもう一度リクエストするよう依頼してください。"
     },
     "approvalWaiting": {
       "byManager": "このプロジェクトを管理する人が、この呼び出しを承認または拒否するのを待っています。",

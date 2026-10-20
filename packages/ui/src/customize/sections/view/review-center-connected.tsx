@@ -45,7 +45,13 @@ import {
   useReviewItems,
 } from '../../../workspace/review/hooks/use-review-items';
 import { mapApiReviewItem } from '../../../workspace/review/map';
-import { connectorCallId, crChangeRequestId, itemDeepLink, planBulkAction } from '../../../workspace/review/review-actions';
+import {
+  connectorCallId,
+  crChangeRequestId,
+  isApprovalExpiredError,
+  itemDeepLink,
+  planBulkAction,
+} from '../../../workspace/review/review-actions';
 import { ReviewCenter } from '../../../workspace/review/review-center';
 
 /**
@@ -61,6 +67,7 @@ const CONFLICT_TOAST_MS = 10_000;
 
 export function ReviewCenterConnected({ projectName }: { projectName: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   // Which verdicts this viewer gets (KRTX-1720): the leaves each verdict's
@@ -197,7 +204,11 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
             verdict === 'approve'
               ? successToast(tI18nComplete.raw('text2b2b0a697042'))
               : infoToast(tI18nComplete.raw('textda404deb110f')),
-          onError: (e) => errorToast(e.message),
+          onError: (e) => {
+            if (!isApprovalExpiredError(e)) return errorToast(e.message);
+            errorToast(tHardcodedUi('approvalPage.expiredHint'));
+            refreshInbox();
+          },
         },
       );
       return;

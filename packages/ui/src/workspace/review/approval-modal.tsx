@@ -33,7 +33,14 @@ export function reviewApprovalDetails(item: ReviewItem): ApprovalLinkDetails | n
     action: call.actionPath || call.title,
     connector: call.connector || null,
     risk: call.connectorRisk ?? null,
-    status: item.status === 'approved' ? 'ok' : item.status === 'rejected' ? 'denied' : 'pending_approval',
+    status:
+      item.status === 'approved'
+        ? 'ok'
+        : item.status === 'rejected'
+          ? 'denied'
+          : item.status === 'expired'
+            ? 'expired'
+            : 'pending_approval',
     pending,
     args_preview: call.rawArgsPreview ?? null,
     review_complete: call.reviewComplete === true,
@@ -44,7 +51,7 @@ export function reviewApprovalDetails(item: ReviewItem): ApprovalLinkDetails | n
     policy_source: call.policySource,
     requested_at: item.createdAt,
     resolved_at: null,
-    expires_at: '',
+    expires_at: item.expiresAt ?? '',
   };
 }
 

@@ -200,6 +200,7 @@ export function resolvedLabel(
   if (decision === 'deny') return 'Denied';
   if (request.status === 'denied') return 'Denied';
   if (request.status === 'error') return 'Failed';
+  if (request.status === 'expired') return 'Expired';
   if (request.status === 'ok') return 'Allowed';
   return 'Completed';
 }
@@ -557,11 +558,14 @@ export function ApprovalDecisionActions({
   onDecision,
   busyDecision = null,
   approvable = true,
+  disabled = false,
   dense = false,
   stretch = false,
   sessionId,
   className,
 }: DenseProp & {
+  /** Both decisions and the note are off: the call can no longer be decided. */
+  disabled?: boolean;
   /** Picks the session's own busy mark, the one its busy indicator shows.
    *  Without it the default mark is used. */
   sessionId?: string | null;
@@ -588,7 +592,7 @@ export function ApprovalDecisionActions({
         placeholder={tI18nComplete.raw('text2edf70730233')}
         value={note}
         onChange={(event) => setNote(event.target.value)}
-        disabled={busyDecision !== null}
+        disabled={disabled || busyDecision !== null}
         minHeight={36}
         maxHeight={160}
         className={cn('font-normal', dense ? 'text-xs' : 'text-sm')}
@@ -603,7 +607,7 @@ export function ApprovalDecisionActions({
           type="button"
           size={size}
           variant="outline"
-          disabled={busyDecision !== null}
+          disabled={disabled || busyDecision !== null}
           onClick={() => decide('deny')}
         >
           {busyDecision === 'deny' ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
@@ -613,7 +617,7 @@ export function ApprovalDecisionActions({
           <Button
             type="button"
             size={size}
-            disabled={busyDecision !== null}
+            disabled={disabled || busyDecision !== null}
             onClick={() => decide('approve')}
           >
             {busyDecision === 'approve' ? (

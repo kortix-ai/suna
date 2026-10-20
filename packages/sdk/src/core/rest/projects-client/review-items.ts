@@ -96,6 +96,8 @@ export interface ReviewApprovalAction {
   connectorRisk?: string | null;
   policySource: string;
   decided?: 'approved' | 'denied';
+  /** ISO timestamp after which the call can no longer be decided. Absent: never. */
+  expiresAt?: string;
 }
 
 /** `kind: 'approval'` — one or more actions that need a go-ahead. */
@@ -152,6 +154,8 @@ interface ReviewItemBase {
   createdAt: string;
   /** The session the item came from, when known. */
   sessionId?: string;
+  /** ISO timestamp after which a connector approval can no longer be decided. */
+  expiresAt?: string;
 }
 
 /** One thing a human needs to look at or decide on, discriminated by `kind`. */
@@ -367,6 +371,7 @@ function approvalDetail(detail: AnyRecord, row: ApiReviewItem): ReviewApprovalDe
         ...(asString(detail.resolved_error) ? { resolvedError: asString(detail.resolved_error) } : {}),
         connectorRisk: asString(detail.risk) ?? null,
         policySource: 'Requires approval',
+        expiresAt: asString(row.expires_at),
       },
     ],
   };
@@ -453,6 +458,7 @@ export function mapApiReviewItem(
     agent: row.agent || 'Agent',
     createdAt: row.created_at,
     sessionId,
+    expiresAt: asString(row.expires_at),
     // The kind ↔ detail correlation cannot be proven across the switch.
     detail: normalizeDetail(row),
   } as ReviewItem;

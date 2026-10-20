@@ -5612,7 +5612,10 @@ const catalog = {
       "savedCopy": "Saved copy from {date}"
     },
     "approvalPage": {
-      "title": "Approve this {connector} action"
+      "title": "Approve this {connector} action",
+      "expires": "Expires",
+      "expiresIn": "Expires in {time}",
+      "expiredHint": "This approval expired. Ask the agent to request it again."
     },
     "approvalWaiting": {
       "byManager": "Waiting for anyone who manages this project to approve or deny it.",

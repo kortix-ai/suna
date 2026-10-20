@@ -20356,7 +20356,10 @@
       "sessionExpired": "会话已过期。请重新登录并再次打开预览。"
     },
     "approvalPage": {
-      "title": "批准 {connector} 操作"
+      "title": "批准 {connector} 操作",
+      "expires": "过期时间",
+      "expiresIn": "{time}后过期",
+      "expiredHint": "此审批已过期。请让智能体重新请求。"
     },
     "approvalWaiting": {
       "byManager": "等待管理此项目的人批准或拒绝此次调用。",

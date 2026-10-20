@@ -20356,7 +20356,10 @@
       "sessionExpired": "Ihre Sitzung ist abgelaufen. Melden Sie sich erneut an und öffnen Sie die Vorschau noch einmal."
     },
     "approvalPage": {
-      "title": "{connector}-Aktion genehmigen"
+      "title": "{connector}-Aktion genehmigen",
+      "expires": "Läuft ab",
+      "expiresIn": "Läuft in {time} ab",
+      "expiredHint": "Diese Genehmigung ist abgelaufen. Bitten Sie den Agenten, sie erneut anzufordern."
     },
     "approvalWaiting": {
       "byManager": "Wartet darauf, dass eine Person, die dieses Projekt verwaltet, den Aufruf genehmigt oder ablehnt.",

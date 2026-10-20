@@ -20356,7 +20356,10 @@
       "sessionExpired": "La sessione è scaduta. Accedi di nuovo e riapri l’anteprima."
     },
     "approvalPage": {
-      "title": "Approva un’azione di {connector}"
+      "title": "Approva un’azione di {connector}",
+      "expires": "Scade",
+      "expiresIn": "Scade tra {time}",
+      "expiredHint": "Questa approvazione è scaduta. Chiedi all’agente di richiederla di nuovo."
     },
     "approvalWaiting": {
       "byManager": "In attesa che chi gestisce questo progetto approvi o rifiuti la chiamata.",
