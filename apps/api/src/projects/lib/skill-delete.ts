@@ -66,7 +66,7 @@ export function prepareSkillDeletion(
   if (Object.hasOwn(registry, name)) delete record(raw.skills)[name];
   for (const agent of Object.values(record(raw.agents))) {
     const block = record(agent);
-    if (Array.isArray(block.skills)) block.skills = block.skills.filter(skill => skill !== grantIdentity && skill !== name);
+    if (Array.isArray(block.skills)) block.skills = block.skills.filter(skill => skill !== grantIdentity);
   }
   // Registry-only v3 entries can still be removed when their folder is absent.
   if (!deletes.length && !Object.hasOwn(registry, name)) return { ok: false, status: 404, error: 'Skill not found' };

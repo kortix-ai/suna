@@ -162,3 +162,15 @@ for (const resource of ['tool', 'opencode', 'pi', 'pi-package'] as const) {
     expect(writes).toHaveLength(0);
   });
 }
+test('legacy deletion preserves a different skill whose slug matches the deleted display name', async () => {
+  skills = [
+    { name: 'keep', path: 'skills/research/SKILL.md' },
+    { name: 'Other skill', path: 'skills/keep/SKILL.md' },
+  ];
+  raw = { kortix_version: 2, agents: { worker: { skills: ['research', 'keep'] } } };
+  paths.push('skills/keep/SKILL.md');
+  const response = await remove('keep');
+  expect(response.status).toBe(200);
+  expect(writtenManifest().agents.worker.skills).toEqual(['keep']);
+  expect(firstWrite().deletes).not.toContain('skills/keep/SKILL.md');
+});
