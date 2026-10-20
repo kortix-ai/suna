@@ -45,7 +45,7 @@ echo '{"citations": [{"doc_id": "...", "a": "p3.12", "quote": "..."}]}' | lumen 
 ## In chat answers
 
 Write each citation as a Markdown link after the claim:
-`[1](/cite?d=<doc_id>&a=p3.12&q=<url-encoded quote>)`. Number them in order.
+`[1](/cite?d=<doc_id>&a=p3.12&q=<url-encoded quote>)`. Number them in order. Lumen shows each link as a numbered chip that opens the quoted paragraph. Outside the links, name a document by its filename, never by its `doc_id`.
 
 ## Examples
 
