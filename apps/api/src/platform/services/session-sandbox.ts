@@ -63,7 +63,6 @@ import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
 import { resolveAgentGrant } from '../../projects/agents';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
@@ -378,7 +377,6 @@ interface SessionProvisionContext {
   sessionToken: string;
   providerCreateInput: CreateSandboxOpts;
   tl: ProvisionTimeline;
-  llmGatewayEnabled: boolean;
   providerWasExplicitlySelected: boolean;
   resolveGitProject: () => Promise<GitBackedProject>;
   resolveImage: (gitProject: GitBackedProject, targetProvider: string) => Promise<EnsureSandboxImageResult>;
@@ -603,7 +601,6 @@ export async function provisionSessionSandbox(opts: {
   // sandbox API key can be minted before the row lands. Previously serial
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
-  const llmGatewayEnabled = projectLlmGatewayEnabled(opts.projectMetadata);
   const [rowResult, tokenResult] = await Promise.allSettled([
     createOrClaimSessionSandboxRow(opts, state),
     // Resolve the per-agent grant and mint the sole sandbox credential. Token
@@ -697,7 +694,7 @@ export async function provisionSessionSandbox(opts: {
       // executor and Git credentials stay server-side. The route being called
       // determines what this token may do.
       KORTIX_TOKEN: sessionToken,
-      ...(llmGatewayEnabled ? { KORTIX_LLM_BASE_URL: llmBaseUrl } : {}),
+      KORTIX_LLM_BASE_URL: llmBaseUrl,
     },
     // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
     // so each provider gets its native idle timer set from
@@ -720,7 +717,6 @@ export async function provisionSessionSandbox(opts: {
       sessionToken,
       providerCreateInput,
       tl,
-      llmGatewayEnabled,
       providerWasExplicitlySelected,
       resolveGitProject,
       resolveImage,
@@ -1072,7 +1068,7 @@ async function activateProvisionedSandbox(
     boot: AttemptBoxMetadata;
   },
 ): Promise<void> {
-  const { opts, sandbox, sessionToken, tl, llmGatewayEnabled } = ctx;
+  const { opts, sandbox, sessionToken, tl } = ctx;
   const { accountId, userId } = opts;
   const { providerName, provider } = state;
   const { result, attempts, timeline, firstStage, branch, boot } = created;
@@ -1149,7 +1145,7 @@ async function activateProvisionedSandbox(
     columns: {
       externalId: result.externalId,
       baseUrl: result.baseUrl || null,
-      config: { serviceKey: sessionToken, llmGatewayEnabled },
+      config: { serviceKey: sessionToken },
       lastUsedAt: new Date(),
     },
     metadata: sandboxInitMetadataPatch(snapshot, finishMetadata),

@@ -235,6 +235,21 @@ function pinnedRequest(target: EgressTarget): { url: URL; headersHost: string | 
   return { url: pinned, headersHost: target.url.host, serverName: target.url.hostname };
 }
 
+/**
+ * The pinned form of a caller-influenced URL, for a caller that must send the
+ * request through its own fetch (the LLM gateway keeps its timeout wrappers):
+ * fetch `url` with `host` as the Host header and `serverName` as the TLS server
+ * name, and `redirect: 'manual'`. Throws {@link UnsafeEgressError} like
+ * {@link assertSafeEgressUrl}.
+ */
+export async function resolvePinnedEgress(
+  rawUrl: string,
+  opts: SafeEgressUrlOptions = {},
+): Promise<{ url: string; host: string | null; serverName: string | null }> {
+  const pinned = pinnedRequest(await resolveEgressTarget(rawUrl, opts));
+  return { url: pinned.url.href, host: pinned.headersHost, serverName: pinned.serverName };
+}
+
 interface SafeFetchInit extends RequestInit, SafeEgressUrlOptions {
   /** Redirects to follow (default {@link MAX_REDIRECTS}). 0: a 3xx throws. */
   maxRedirects?: number;

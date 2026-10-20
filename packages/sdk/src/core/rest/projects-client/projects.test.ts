@@ -1002,7 +1002,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'agentmail_email',
     'connectors_api_discover',
     'drives',
-    'llm_gateway',
     'marketplace',
     'meta_agent',
     'monitors',
@@ -1073,6 +1072,14 @@ test('apps graduated: Apps is on for every project, the key still typechecks', (
   // deploy Apps. The API no longer serves, resolves, or accepts `apps`; a
   // stored `experimental.apps` override is inert.
   const graduated: FeatureFlagKey = 'apps';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
+test('llm_gateway graduated: the gateway is the only model path, the key still typechecks', () => {
+  // Every project's models run through the LLM gateway (2026-10-20). The API
+  // no longer lists, resolves, or accepts `llm_gateway`; it still sends
+  // `experimental.llm_gateway: true` for older clients.
+  const graduated: FeatureFlagKey = 'llm_gateway';
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
 });
 

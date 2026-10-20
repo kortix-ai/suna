@@ -269,7 +269,7 @@ describe("loadSessionTranscriptMirror and the open bundle", () => {
 			queue: { known: true, prompts: [], held: false },
 			transcript: { known: true, requested: true, ...envelope() },
 			config: { known: true },
-			models: { known: false, reason: "llm_gateway_disabled" },
+			models: { known: false, reason: "read_failed" },
 		});
 		openSessionBundle("P1", "S1");
 		// NOT awaited here on purpose. The hydrate runs at mount, while the

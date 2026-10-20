@@ -13,8 +13,6 @@
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
-import { propagateLlmGatewayModeToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
 import { reconcileEventSubscriptionsFromCatalog, releaseProjectEventSubscriptions, retireWarmProjectSessions } from '../projects/surface';
 import { resolveFeatureFlag } from './registry';
 
@@ -54,9 +52,6 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
   // KORTIX_GENUI is boot-only: a warm box from before the change must not be adopted.
   genui: async ({ projectId }) => {
     await retireWarmProjectSessions(projectId);
-  },
-  llm_gateway: async ({ projectId, metadata }) => {
-    await propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(metadata));
   },
 };
 

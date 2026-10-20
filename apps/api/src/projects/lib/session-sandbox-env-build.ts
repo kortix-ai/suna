@@ -63,7 +63,6 @@ import { sessionChannelEnvFromMetadata } from './session-channel-env';
 import { buildSessionRuntimeContextEnv } from './session-runtime-context';
 import { buildGenuiSandboxEnv } from './genui-env';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import { buildPlatformMetaOpenCodeConfig } from './platform-meta-agent';
 
@@ -97,11 +96,6 @@ type SessionSandboxEnvInput = {
   baseRef: string;
   agentName: string;
   opencodeModel?: string | null;
-  /** Resolved per-project `llm_gateway` feature flag. Gateway ON →
-   *  opencode is locked to the gateway and native provider keys are withheld;
-   *  OFF (default) → native BYOK providers must reach opencode, so the deny
-   *  list is empty. Mirrors the conditional KORTIX_LLM_* injection at provision. */
-  llmGatewayEnabled: boolean;
   /** New session (brand-new branch == base, no remote commits). Lets the
    *  daemon create the session branch LOCALLY instead of a redundant network
    *  fetch of a branch that's identical to base — that fetch cost up to ~10s
@@ -239,8 +233,6 @@ async function resolveSessionHarness(
     )
     .where(eq(projects.projectId, input.projectId))
     .limit(1);
-  // The same decision provisionSessionSandbox makes for KORTIX_LLM_BASE_URL.
-  const llmGateway = projectLlmGatewayEnabled(projectRow?.metadata);
   // A lost session continued on a new computer (KRTX-2419,
   // `recover-lost-session.ts`) and a restored deleted session
   // (`restore-session.ts`) restore from their log whatever the project flag says.
@@ -251,17 +243,14 @@ async function resolveSessionHarness(
     typeof sessionMetadata?.restoredAt === 'string' ||
     typeof sessionMetadata?.forkedFromSessionId === 'string';
   if (input.platformMetaAgent) {
-    // SUNA runs on the pi harness (the pi coding-agent path), not OpenCode,
-    // whenever the LLM gateway is on — pi has no other model path, so a
-    // gateway-off project falls back to OpenCode. pi reads the SAME
-    // KORTIX_COMPILED_AGENT_CONFIG the OpenCode path receives
+    // SUNA runs on the pi harness (the pi coding-agent path), not OpenCode.
+    // pi reads the SAME KORTIX_COMPILED_AGENT_CONFIG the OpenCode path receives
     // (harness/pi/config.ts:19-22), so the compiled agent prompt is unchanged.
-    return { harness: llmGateway ? 'pi' : 'opencode', sessionLogRestore };
+    return { harness: 'pi', sessionLogRestore };
   }
   const harness = selectSessionHarness({
     piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
     runtime: manifestHarness,
-    llmGateway,
   });
   return { harness, sessionLogRestore };
 }
@@ -394,11 +383,10 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
   // managed lineup can rotate past it while the session sits open. Re-point
   // it here, at this ONE chokepoint every provisioning path (create, restart,
   // open/ensure) already shares, before the box boots on a dead id. No-op for
-  // native mode (no gateway, no managed catalog) and for the overwhelming
-  // common case (a still-servable or non-managed pin) — see
+  // the overwhelming common case (a still-servable or non-managed pin) — see
   // llm-gateway/resolution/session-model-repoint.ts.
   let opencodeModel = input.opencodeModel ?? null;
-  if (input.llmGatewayEnabled && opencodeModel) {
+  if (opencodeModel) {
     opencodeModel = await repointRetiredSessionModel(opencodeModel, {
       projectId: input.projectId,
       accountId: input.accountId,

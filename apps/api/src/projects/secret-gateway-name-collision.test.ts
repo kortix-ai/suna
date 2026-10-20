@@ -33,11 +33,10 @@ const row = (
 const envFor = (rows: ResolvedProjectSecret[]): Record<string, string> =>
   Object.fromEntries(rows.map((r) => [r.key, r.value]));
 
-const materialize = (rows: ResolvedProjectSecret[], env: Record<string, string>, gateway: boolean) =>
+const materialize = (rows: ResolvedProjectSecret[], env: Record<string, string>) =>
   materializeSecretDelivery(rows, env, {
     sessionId: 'sess-1',
     grantEnv: 'all',
-    llmGatewayEnabled: gateway,
     mintHandleFor: async () => 'handle-should-not-be-minted',
   });
 
@@ -46,48 +45,20 @@ describe('gatewayStripsRow', () => {
   // models.dev's `github-copilot` provider declares it; a project's own secret
   // carrying that name must still reach the box.
   test("a project's own sandbox secret survives a gateway-managed NAME", () => {
-    expect(
-      gatewayStripsRow({ llmGatewayEnabled: true, nameIsGatewayManaged: true, consumer: 'sandbox' }),
-    ).toBe(false);
+    expect(gatewayStripsRow({ nameIsGatewayManaged: true, consumer: 'sandbox' })).toBe(false);
   });
 
   test('a real gateway credential is still stripped', () => {
-    expect(
-      gatewayStripsRow({
-        llmGatewayEnabled: true,
-        nameIsGatewayManaged: true,
-        consumer: 'llm_gateway',
-      }),
-    ).toBe(true);
+    expect(gatewayStripsRow({ nameIsGatewayManaged: true, consumer: 'llm_gateway' })).toBe(true);
   });
 
   test('a legacy row with no consumer stamp keeps the old behavior — no widening', () => {
-    expect(
-      gatewayStripsRow({ llmGatewayEnabled: true, nameIsGatewayManaged: true, consumer: null }),
-    ).toBe(true);
-    expect(
-      gatewayStripsRow({
-        llmGatewayEnabled: true,
-        nameIsGatewayManaged: true,
-        consumer: undefined,
-      }),
-    ).toBe(true);
-  });
-
-  test('gateway off strips nothing by name', () => {
-    expect(
-      gatewayStripsRow({
-        llmGatewayEnabled: false,
-        nameIsGatewayManaged: true,
-        consumer: 'llm_gateway',
-      }),
-    ).toBe(false);
+    expect(gatewayStripsRow({ nameIsGatewayManaged: true, consumer: null })).toBe(true);
+    expect(gatewayStripsRow({ nameIsGatewayManaged: true, consumer: undefined })).toBe(true);
   });
 
   test('an ordinary name is never stripped', () => {
-    expect(
-      gatewayStripsRow({ llmGatewayEnabled: true, nameIsGatewayManaged: false, consumer: null }),
-    ).toBe(false);
+    expect(gatewayStripsRow({ nameIsGatewayManaged: false, consumer: null })).toBe(false);
   });
 });
 
@@ -98,7 +69,7 @@ describe('capabilities never advertise a value the env does not hold', () => {
     const dropped = row('nope', 'NOPE_TOKEN', { strategy: 'denied', consumer: 'sandbox' });
     const env = envFor([kept, dropped]);
 
-    const delivered = await materialize([kept, dropped], env, true);
+    const delivered = await materialize([kept, dropped], env);
 
     expect(Object.keys(env).sort()).toEqual(['UI_AUTH_STATE_JSON']);
     // The invariant `secretNamesForSandbox` documents: a name is advertised IFF
@@ -110,7 +81,7 @@ describe('capabilities never advertise a value the env does not hold', () => {
     const github = row('github', 'GITHUB_TOKEN', { strategy: 'runtime', consumer: 'sandbox' });
     const env = envFor([github]);
 
-    const delivered = await materialize([github], env, true);
+    const delivered = await materialize([github], env);
 
     expect(env.GITHUB_TOKEN).toBe('value-of-github');
     expect(delivered.map((r) => r.key)).toEqual(['GITHUB_TOKEN']);

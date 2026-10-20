@@ -322,6 +322,10 @@ export const qk = {
     /** Persisted provider/model inference restrictions and the effective default. */
     modelAccess: (projectId: string) => [...qk.project.scope(projectId), 'model-access'] as const,
 
+    /** `listCustomLlmProviders`: the project's OpenAI-compatible endpoints (`useCustomLlmProviders`). */
+    customLlmProviders: (projectId: string) =>
+      [...qk.project.scope(projectId), 'custom-llm-providers'] as const,
+
     /**
      * Invalidation prefix for the WHOLE sessions family: the list, in every
      * scope, and every individual session/message beneath it. Never pass

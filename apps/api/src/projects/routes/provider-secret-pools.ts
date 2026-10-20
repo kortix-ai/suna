@@ -4,7 +4,6 @@ import { and, eq } from 'drizzle-orm';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { requireFeatureFlag } from '../../feature-flags/gate';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv } from '../../iam/agent-scope';
 import { memberMayReadProject } from '../../secrets/account-resource';
@@ -125,7 +124,7 @@ export function registerProviderSecretPoolsRoutes(): void {
     ]);
     return c.json({
       pools: rows.map(({ provider_id, secret_ids }) => ({ provider_id, secret_ids, configured: true })),
-      can_edit: mayChangeSessionModel(visible) && !visible.ownerIsMachine && projectLlmGatewayEnabled(loaded.row.metadata),
+      can_edit: mayChangeSessionModel(visible) && !visible.ownerIsMachine,
       personal_user_id: personalUserId,
       personal_keys_reason: personalUserId ? null : personalKeysReason(visible.row),
     });
@@ -166,7 +165,6 @@ export function registerProviderSecretPoolsRoutes(): void {
     if (!mayChangeSessionModel(visible)) return c.json({ error: 'Only the session owner or a project manager can select provider secrets' }, 403);
     const gate = requireFeatureFlag(c, loaded.row.metadata, 'pooled_provider_secrets');
     if (gate) return gate;
-    if (!projectLlmGatewayEnabled(loaded.row.metadata)) return c.json({ error: 'Provider pools require the LLM gateway' }, 409);
     const parsed = Input.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid secret ids' }, 400);
     const ids = parsed.data.secret_ids;
