@@ -28,14 +28,21 @@
  *   the build changes, because each dry pass reads and converts every old
  *   mirror. A skipped dry tick says so once per process at info. Run it again on
  *   the same build: `DELETE FROM kortix.session_log_backfill_state`.
- * - Size cap. A mirror over the capture's cap (`mirrorStoredCap`,
- *   `session-log-capture.ts`) is not converted: the capture answers `too_large`
- *   after one cheap size query, and the backfill counts it. Every write pass
- *   counts it again; its v1 mirror stays the store.
+ * - Size cap (P3.4). A mirror over the capture's cap (`mirrorStoredCap`, `session-log-capture.ts`)
+ *   makes the capture answer `too_large` after one cheap size query. The backfill counts it
+ *   (`too_large`) and converts it in a Bun `Worker` (`session-log-backfill-thread.ts`): the same
+ *   `convertOne`, uncapped, on the thread's own heap, event loop and DB pool. The synchronous
+ *   stages (`fromV1`, the schema check, the hashes, `jsonbSafeValue`, the dry round trip) of a
+ *   large mirror run for seconds: one 200 MB session held a prod API task's event loop 17 s
+ *   (2026-10-16). The thread's counts are added to the tick's; a thread that throws or exits
+ *   before it answers counts `failed`. One thread at a time, ended after its session. A restore
+ *   of such a log still answers 413 above `SESSION_LOG_RESTORE_MAX_BYTES`.
  * - Budget. A tick stops after the session that crossed `BACKFILL_BUDGET_MS`.
  * - Checks. Every converted log is validated with `SessionLogSchema` in the converter: a log
  *   that fails is not written (`validation_failed`). A dry pass also compares, per session,
- *   `toV1(fromV1(rows))` with the stored v1 rows, with the P1 round-trip test's equality
+ *   `toV1(fromV1(rows))` with `rows`, the stored v1 rows as the v1 read serves them (a call the
+ *   old mirror stripped carries its proven input, `restoreStrippedToolParts`; the converter
+ *   converts those rows), with the P1 round-trip test's equality
  *   (`session-log-v1.test.ts`: parsed JSON, keys sorted, rows as a multiset):
  *   `roundtrip_mismatch_sessions` and `roundtrip_mismatch_messages`. The compare is on the
  *   converted log before the F3 offload; the v1 read rehydrates offloaded texts.
@@ -57,14 +64,14 @@ export const BACKFILL_BUDGET_MS = 20_000;
 
 export type BackfillMode = 'dry' | 'write';
 
-const zero = () => ({
+export const zero = () => ({
   /** Sessions the tick took from the queue. */
   sessions: 0,
   /** Logs written (dry: logs that would be written). */
   logs: 0,
   skipped: 0,
   failed: 0,
-  /** Sessions whose mirror is over the capture's size cap (`mirrorStoredCap`): not converted. */
+  /** Sessions whose mirror is over the capture's size cap (`mirrorStoredCap`): converted in a thread. */
   too_large: 0,
   messages: 0,
   // Restore grades of the logs. `fromV1` gives converted or partial.
@@ -181,19 +188,45 @@ export async function roundTripMismatches(log: SessionLog, rows: V1Row[]): Promi
   return Math.max(missing, extra);
 }
 
-async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof writeSessionLogFromMirror, counts: BackfillCounts) {
+/** Add `from` into `into`: sums, and the max of the max keys. */
+function addCounts(into: BackfillCounts, from: BackfillCounts) {
+  for (const k of Object.keys(into) as Array<keyof BackfillCounts>) into[k] = MAX_KEYS.has(k) ? Math.max(into[k], from[k]) : into[k] + from[k];
+}
+
+/**
+ * `convertOne` of one session over the cap, uncapped, in a Bun `Worker`; its counts.
+ * ponytail: the thread holds the whole mirror (1-vCPU Linux, 131 MB of JSON: ~1.4 GB peak with `smol`);
+ * page the read and write if a session outgrows the API task's memory.
+ */
+function convertInThread(sessionId: string, mode: BackfillMode): Promise<BackfillCounts> {
+  const worker = new Worker(new URL('./session-log-backfill-thread.ts', import.meta.url).href, { smol: true });
+  return new Promise<BackfillCounts>((resolve, reject) => {
+    worker.onmessage = (event: MessageEvent<BackfillCounts>) => resolve(event.data);
+    worker.onerror = (event) => reject(new Error(event.message));
+    // A thread that exits before it answers.
+    worker.addEventListener('close', () => reject(new Error('the conversion thread exited')));
+    worker.postMessage({ sessionId, mode });
+  }).finally(() => worker.terminate());
+}
+
+export async function convertOne(sessionId: string, mode: BackfillMode, convert: typeof writeSessionLogFromMirror, counts: BackfillCounts) {
   counts.sessions++;
   const started = performance.now();
   const result = await convert(sessionId, { dry: mode === 'dry' }).catch((err: unknown) => {
     logger.debug('[session-log] backfill conversion threw', { sessionId, error: err instanceof Error ? err.message : String(err) });
     return { outcome: 'failed' as const };
   });
-  counts.max_session_ms = Math.max(counts.max_session_ms, Math.round(performance.now() - started));
-  if (result.outcome === 'skipped') counts.skipped++;
   if (result.outcome === 'too_large') {
     counts.too_large++;
-    logger.debug('[session-log] backfill session over the size cap; not converted', { sessionId });
+    const thread = await convertInThread(sessionId, mode).catch((err: unknown) => {
+      logger.debug('[session-log] backfill conversion thread failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
+      return { ...zero(), sessions: 1, failed: 1 };
+    });
+    // This session is already counted.
+    addCounts(counts, { ...thread, sessions: 0 });
   }
+  counts.max_session_ms = Math.max(counts.max_session_ms, Math.round(performance.now() - started));
+  if (result.outcome === 'skipped') counts.skipped++;
   if (result.outcome === 'invalid') {
     counts.validation_failed++;
     logger.debug('[session-log] backfill session fails SessionLogSchema', { sessionId });
@@ -266,9 +299,7 @@ export async function backfillSessionLogs(
   }
   const more = counts.sessions < batch.length || batch.length === BACKFILL_BATCH_SIZE;
   counts.pass_ms = Date.now() - state.passStartedAt;
-  for (const k of Object.keys(counts) as Array<keyof BackfillCounts>) {
-    state.totals[k] = MAX_KEYS.has(k) ? Math.max(state.totals[k], counts[k]) : state.totals[k] + counts[k];
-  }
+  addCounts(state.totals, counts);
   if (counts.sessions > 0) logger.info('[session-log] backfill tick', { mode, ...counts, more, ms: Date.now() - started });
   const summary = !more && state.totals.sessions > 0 ? { mode, ...state.totals } : null;
   if (!more) Object.assign(state, newBackfillState(mode), mode === 'dry' ? { dryDone: true, dryCommit: config.KORTIX_COMMIT } : {});

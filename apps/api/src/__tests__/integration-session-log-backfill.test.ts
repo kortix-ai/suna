@@ -189,6 +189,42 @@ describe('write: a mirror-only session gets the log the capture would write', ()
   });
 });
 
+describe('a tool call the old mirror stripped (before 2026-09-28) converts as the v1 read serves it', () => {
+  /** `plain(n)` plus one settled call without `state.input`, as the old mirror stored it. */
+  const withStrippedCall = (n: number, tool: string, title: string) => {
+    const m = plain(n);
+    const t = 1_790_000_000_000 + n * 1000;
+    m.parts.push({
+      id: `prt_${n}_call`, sessionID: ROOT, messageID: m.info.id, type: 'tool', callID: `call_${n}`, tool,
+      state: { status: 'completed', title, metadata: { exit: 0, output: `out ${n}\n` }, time: { start: t, end: t + 5 } },
+    });
+    return m;
+  };
+  type Call = { type: string; input: unknown; result?: { content: Array<{ type: string; text?: string }> } };
+  const callOf = async (sessionId: string, messageId: string) =>
+    ((await snapshot(sessionId)).messages.find((m) => m.id === messageId)!.record.blocks as Call[]).find((b) => b.type === 'tool_call')!;
+
+  test('a stripped bash call gets input.command = title and its output; every call recoverable: grade converted, dry round trip exact', async () => {
+    const session = await oldSession([plain(0), withStrippedCall(1, 'bash', 'ls -la /workspace')]);
+    const [dry] = await pass('dry');
+    expect(dry!.counts).toMatchObject({ logs: 1, converted: 1, partial: 0, tool_input: 0, roundtrip_mismatch_sessions: 0 });
+    const [write] = await pass('write');
+    expect(write!.counts).toMatchObject({ logs: 1, converted: 1, partial: 0, tool_input: 0 });
+    const call = await callOf(session, 'msg_000001');
+    expect(call.input).toEqual({ command: 'ls -la /workspace' });
+    expect(call.result?.content).toContainEqual({ type: 'text', text: 'out 1\n' });
+    expect((await snapshot(session)).log).toMatchObject({ grade: 'converted', counts: { tool_input: 0, cut_point: 0, attachment: 0 } });
+  });
+
+  test('a stripped call whose title proves no input stays as stored: grade partial, tool_input 1', async () => {
+    const session = await oldSession([plain(0), withStrippedCall(1, 'bash', 'ls'), withStrippedCall(3, 'execute_command', 'ls')]);
+    const [write] = await pass('write');
+    expect(write!.counts).toMatchObject({ logs: 1, converted: 0, partial: 1, tool_input: 1 });
+    expect((await callOf(session, 'msg_000003')).input).toBeNull();
+    expect((await snapshot(session)).log).toMatchObject({ grade: 'partial', counts: { tool_input: 1 } });
+  });
+});
+
 describe('selection', () => {
   test('a soft-deleted session is skipped: no log, not counted', async () => {
     const deleted = await oldSession([plain(0), plain(1)]);
@@ -343,22 +379,32 @@ describe('dry runs once per build', () => {
   });
 });
 
-describe('size cap: a mirror over the capture cap is counted, never converted', () => {
+describe('size cap: a mirror over the capture cap is converted by the backfill in a thread, never by the capture', () => {
   // Random hex: pglz cannot shrink it, so `pg_column_size` is close to the JSON length.
   const incompressible = (n: number) => Buffer.from(crypto.getRandomValues(new Uint8Array(n / 2))).toString('hex');
 
-  test('too_large in dry and in write, from the capture; the smaller session is converted; the large one keeps no log', async () => {
-    const large = await oldSession([plain(0), plain(1, incompressible(6_000))], { createdAt: new Date(T0 + 1000) });
+  test('the capture answers too_large; the backfill counts it and converts it in a Worker, dry and write; the log equals the uncapped conversion', async () => {
+    const large = await oldSession([...synthetic(), plain(1000, incompressible(6_000)), plain(1001)], { createdAt: new Date(T0 + 1000) });
     const small = await oldSession([plain(0), plain(1)], { createdAt: new Date(T0 + 2000) });
     const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
-    config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000; // mirrorStoredCap() = 2,000 stored bytes
+    config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000; // mirrorStoredCap() = 2,000 stored bytes; the thread's own config keeps the default
     try {
       expect(await writeSessionLogFromMirror(large, { dry: true })).toEqual({ outcome: 'too_large' });
+      expect(await writeSessionLogFromMirror(large)).toEqual({ outcome: 'too_large' });
       const dry = await pass('dry');
-      expect([total(dry, 'sessions'), total(dry, 'too_large'), total(dry, 'logs')]).toEqual([2, 1, 1]);
+      const keys = ['sessions', 'too_large', 'logs', 'failed', 'roundtrip_mismatch_sessions'];
+      expect(keys.map((k) => total(dry, k))).toEqual([2, 1, 2, 0, 0]);
+      const expected = await fromMirror(large);
+      expect(total(dry, 'messages')).toBe(expected.threads.flatMap((t) => t.messages).length + 2);
+      expect([await hasLog(large), await hasLog(small)]).toEqual([false, false]);
       const write = await pass('write');
-      expect([total(write, 'sessions'), total(write, 'too_large'), total(write, 'logs')]).toEqual([2, 1, 1]);
-      expect([await hasLog(large), await hasLog(small)]).toEqual([false, true]);
+      expect(keys.map((k) => total(write, k))).toEqual([2, 1, 2, 0, 0]);
+      expect([await hasLog(large), await hasLog(small)]).toEqual([true, true]);
+      const viaThread = await snapshot(large);
+      expect(viaThread.log).toMatchObject({ grade: expected.restore_grade, counts: expected.grade_counts });
+      await deleteLog(large);
+      expect(await writeSessionLogFromMirror(large, { uncapped: true })).toMatchObject({ outcome: 'written' });
+      expect(await snapshot(large)).toEqual(viaThread);
     } finally {
       config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
     }
