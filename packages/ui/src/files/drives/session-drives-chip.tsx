@@ -2,15 +2,11 @@
 
 import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
-import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
 import { warningToast } from '../../primitives/toast';
 import { Home } from '../../internal/icons/home';
-import { FolderPages } from '../project/components/drive-folder-thumbnail';
-import { useDriveFolder, useSessionDrives } from './use-drives';
+import { useSessionDrives } from './use-drives';
 import type { SessionDrive } from '@kortix/sdk';
 import { useTranslations } from '../../i18n';
-import { cn } from '../../lib/utils';
-import { useFeatureFlag } from '@kortix/sdk/react';
 import { ArrowUpRightIcon, FolderIcon, WarningIcon } from '@phosphor-icons/react';
 import { useUiLink } from '../../providers/ui-provider';
 import { useEffect, useRef } from 'react';
@@ -19,155 +15,103 @@ import { useEffect, useRef } from 'react';
 const DESKTOP_PATH = '~/Desktop';
 
 /**
- * Composer chip: the folders of the project's Files this session mounts, and
- * where the agent sees them. What mounts follows folder access: share a folder
- * in Files to give it to this session (it arrives within seconds), stop sharing
- * to take it away. The person's own folder is their desktop, at /drives/me.
- *
- * Also the session's conflict notice: a folder with a new conflict copy turns
- * the chip orange and raises one toast.
+ * The Files row of the session's ⚙ sheet: the folders of the project's Drive
+ * this session mounts, where the agent sees them, and whether it may write.
+ * What mounts follows folder access: share a folder in Drive to give it to
+ * this session (it arrives within seconds), stop sharing to take it away. The
+ * person's own folder is their desktop, at /drives/me.
  */
-export function SessionDrivesChip({ projectId, sessionId }: { projectId: string; sessionId: string }) {
-  const Link = useUiLink();
+export function SessionDrivesList({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const t = useTranslations('drives');
-  const flag = useFeatureFlag(projectId, 'drives');
+  const Link = useUiLink();
   const driveHref = uiRoutes().drive(projectId);
   const session = useSessionDrives(projectId, sessionId);
   const rows = session.data?.drives ?? [];
-  const conflicts = rows.reduce((sum, row) => sum + (row.openConflicts ?? 0), 0);
   const skipped = session.data?.skipped ?? [];
-  useConflictToast(conflicts, sessionId);
-
-  if (!flag.enabled) return null;
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
+    <div className="flex flex-col gap-3">
+      {driveHref ? (
         <Button
-          type="button"
+          asChild
           variant="ghost"
-          size="sm"
-          aria-label={t('sessionChipTitle')}
-          className={cn(
-            'text-muted-foreground hover:text-foreground data-[state=open]:text-foreground gap-1.5 px-2',
-            (conflicts > 0 || skipped.length > 0) && 'text-kortix-orange hover:text-kortix-orange',
-          )}
+          size="xs"
+          className="text-muted-foreground hover:text-foreground -ml-1.5 gap-1 self-start"
         >
-          {conflicts > 0 || skipped.length > 0 ? (
-            <WarningIcon className="size-4 shrink-0" weight="fill" />
-          ) : (
-            <FolderIcon className="size-4 shrink-0" />
-          )}
-          <span className="tabular-nums">{t('sessionChipLabel', { count: rows.length })}</span>
+          <Link href={driveHref}>
+            {t('openDrive')}
+            <ArrowUpRightIcon className="size-3.5" />
+          </Link>
         </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="end"
-        sideOffset={8}
-        // Tiles are Drive's folder card width (~160px): two across, or three.
-        className={cn('p-3.5', rows.length > 2 ? 'w-[31rem]' : 'w-[22.5rem]')}
-      >
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold">{t('sessionCanUse')}</p>
-          {driveHref ? (
-            <Button
-              asChild
-              variant="ghost"
-              size="xs"
-              className="text-muted-foreground hover:text-foreground -mr-1.5 gap-1"
-            >
-              <Link href={driveHref}>
-                {t('openDrive')}
-                <ArrowUpRightIcon className="size-3.5" />
-              </Link>
-            </Button>
-          ) : null}
-        </div>
-        {rows.length === 0 ? (
-          <p className="text-muted-foreground py-2 text-xs">{t('sessionNoFolders')}</p>
-        ) : (
-          // Tiles like Drive's folder cards: two across for one or two folders,
-          // three for more. Up to 8 mount (the sandbox's volume limit), so the
-          // grid tops out at three rows and scrolls past that.
-          <ul className={cn('grid max-h-80 gap-x-2.5 gap-y-3 overflow-y-auto', rows.length > 2 ? 'grid-cols-3' : 'grid-cols-2')}>
-            {rows.map((row) => (
-              <li key={row.mountPath} className="min-w-0">
-                <SessionFolderTile driveHref={driveHref} row={row} />
-              </li>
-            ))}
-          </ul>
-        )}
-        {skipped.length > 0 ? (
-          <p
-            role="status"
-            className="bg-kortix-orange/15 text-foreground mt-3 flex items-start gap-2 rounded-md px-2.5 py-2 text-xs text-pretty"
-          >
-            <WarningIcon className="text-kortix-orange mt-px size-3.5 shrink-0" weight="fill" />
-            {t('sessionSkippedDrives', { count: skipped.length, names: skipped.map((d) => d.name).join(', ') })}
-          </p>
-        ) : null}
-      </PopoverContent>
-    </Popover>
+      ) : null}
+      {rows.length === 0 ? (
+        <p className="text-muted-foreground py-2 text-xs">
+          {session.isLoading ? t('sessionCanUse') : t('sessionNoFolders')}
+        </p>
+      ) : (
+        // Up to 8 mount (the sandbox's volume limit), so the list stays short.
+        <ul className="border-border divide-border divide-y rounded-lg border">
+          {rows.map((row) => (
+            <li key={row.mountPath}>
+              <SessionFolderRow driveHref={driveHref} row={row} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {skipped.length > 0 ? (
+        <p
+          role="status"
+          className="bg-kortix-orange/15 text-foreground flex items-start gap-2 rounded-md px-2.5 py-2 text-xs text-pretty"
+        >
+          <WarningIcon className="text-kortix-orange mt-px size-3.5 shrink-0" weight="fill" />
+          {t('sessionSkippedDrives', { count: skipped.length, names: skipped.map((d) => d.name).join(', ') })}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
 /**
- * One mounted folder: the two pages of Drive's folder card (\`FolderPages\`,
- * the folder's chalk colour, lines that follow its item count), without the
- * pocket or a count. It opens the folder in Drive. The person's own folder
- * wears the focus border and the home mark by its name: it is where the agent
- * saves what it makes for them.
+ * Raises the session's conflict notice: one toast when a mounted folder gets a
+ * new conflict copy. Mounted beside the composer, with no chrome of its own.
  */
-function SessionFolderTile({ driveHref, row }: { driveHref: string | null; row: SessionDrive }) {
-  const Link = useUiLink();
+export function SessionDrivesWatch({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const session = useSessionDrives(projectId, sessionId);
+  const conflicts = (session.data?.drives ?? []).reduce((sum, row) => sum + (row.openConflicts ?? 0), 0);
+  useConflictToast(conflicts, sessionId);
+  return null;
+}
+
+/**
+ * One mounted folder: its name, where the agent sees it, and read or write. It
+ * opens the folder in Drive. A host without a Drive page shows the row without
+ * the link.
+ */
+function SessionFolderRow({ driveHref, row }: { driveHref: string | null; row: SessionDrive }) {
   const t = useTranslations('drives');
+  const Link = useUiLink();
   const mine = row.role === 'me';
-  // The count lists the folder; the popover mounts only while open.
-  const listing = useDriveFolder(row.driveId, row.subdir || '/');
-  const count = listing.data?.entries.length ?? null;
   const path = mine ? '~' : (row.subdir || '/').replace(/^\/+/, '');
-  const label = mine ? t('myDrive') : row.name;
-  const title = mine ? `${row.mountPath} · ${DESKTOP_PATH}` : row.mountPath;
-  const className = 'group flex min-w-0 flex-col gap-1.5 rounded-md outline-none';
+  const Glyph = mine ? Home : FolderIcon;
+  const className = 'flex min-w-0 items-center gap-2.5 px-3 py-2 outline-none';
   const body = (
     <>
-      <span
-        className={cn(
-          'bg-card relative block h-[76px] overflow-hidden rounded-lg border transition-colors',
-          mine ? 'border-ring' : 'group-hover:border-border border-transparent',
-          'group-focus-visible:ring-ring/15 group-focus-visible:border-ring group-focus-visible:ring-2',
-        )}
-      >
-        {/* The pages sit exactly as in Drive's folder card (drawn at its full
-            120px), and the tile is the card's top 76px: a little past where
-            its pocket starts (53%), cut flat by the tile's edge. No pocket, no
-            count; the lines still show how full the folder is. */}
-        <span aria-hidden className="absolute inset-x-0 top-0 block h-[120px]">
-          <FolderPages name={row.name} count={count} pocket={false} />
+      <Glyph className="text-muted-foreground size-4 shrink-0" />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm">{mine ? t('myDrive') : row.name}</span>
+        <span className="text-muted-foreground truncate font-mono text-xs">
+          {mine ? `${row.mountPath} · ${DESKTOP_PATH}` : row.mountPath}
         </span>
-        {row.readOnly ? (
-          <span className="bg-muted text-muted-foreground absolute right-2 bottom-2 rounded-sm px-1.5 py-0.5 text-xs leading-none">
-            {t('readOnly')}
-          </span>
-        ) : null}
       </span>
-      <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
-        {mine ? <Home className="text-muted-foreground size-3.5 shrink-0" /> : null}
-        <span className="truncate">{label}</span>
-      </span>
+      <span className="text-muted-foreground shrink-0 text-xs">{row.readOnly ? t('readOnly') : t('readWrite')}</span>
     </>
   );
-  // A host without a Drive page shows the tile without the link.
-  if (!driveHref) {
-    return (
-      <div title={title} className={className}>
-        {body}
-      </div>
-    );
-  }
+  if (!driveHref) return <div className={className}>{body}</div>;
   return (
-    <Link href={`${driveHref}${path ? `?path=${encodeURI(path)}` : ''}`} title={title} className={className}>
+    <Link
+      href={`${driveHref}${path ? `?path=${encodeURI(path)}` : ''}`}
+      className={`${className} hover:bg-accent/60 focus-visible:bg-accent`}
+    >
       {body}
     </Link>
   );

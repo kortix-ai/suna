@@ -16,6 +16,7 @@
  * as one read-only list.
  */
 
+import { Alert, AlertDescription, AlertTitle } from '../../../primitives/alert';
 import { Button } from '../../../primitives/button';
 import { ButtonGroup } from '../../../primitives/button-group';
 import { Disclosure, DisclosureContent } from '../../../primitives/disclosure';
@@ -230,6 +231,7 @@ function SheetPanel({
   // The sticky header and SaveBar paint the host's own surface, so content passes behind them.
   const surface = split ? 'bg-surface' : 'bg-sidebar';
   const t = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tAutoPause = useI18nTranslations('triggerAutoPause');
   const [tab, setTab] = useState<SheetTab>(initialTab);
   const [testOpen, setTestOpen] = useState(false);
   const event = trigger.type === 'event' ? trigger.event : null;
@@ -269,7 +271,9 @@ function SheetPanel({
   );
 
   const canWrite = controls.canUpdate;
-  const active = trigger.enabled;
+  // An auto-paused trigger (KRTX-1721) is not active: the toggle offers Resume,
+  // which sends `enabled: true` and clears the pause.
+  const active = trigger.enabled && !trigger.auto_paused_at;
   // Never the name twice: a trigger named after its schedule shows its prompt's first line.
   const subtitle = triggerSubtitle(
     triggerName(trigger),
@@ -445,6 +449,15 @@ function SheetPanel({
           The content element above owns scrolling; a second scroller here
           would send the wheel to whichever surface the cursor is over. */}
       <SheetBody className="flex-none items-stretch gap-0 space-y-6 !overflow-visible px-4 pt-5 pb-0">
+        {trigger.auto_paused_at ? (
+          <Alert variant="warning">
+            <AlertTitle>{tAutoPause('title')}</AlertTitle>
+            <AlertDescription>
+              <p>{tAutoPause('description')}</p>
+              {trigger.auto_paused_reason ? <p className="font-mono text-xs">{trigger.auto_paused_reason}</p> : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {/* `forceMount`: switching to Runs keeps an unsaved draft. */}
         <TabsContent value="settings" forceMount className="data-[state=inactive]:hidden">
           {loading ? (

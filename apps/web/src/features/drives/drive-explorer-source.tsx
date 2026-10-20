@@ -22,6 +22,7 @@ import {
   makeDriveFolder,
   moveDriveFile,
   readDriveFile,
+  shareFolder,
   uploadDriveFile,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
@@ -362,8 +363,8 @@ export const driveExplorerSource: FileExplorerSource = {
     ),
   useFileMkdir: () => {
     const queryClient = useQueryClient();
-    return useDriveMutation<{ dirPath: string }>(
-      (driveId, { dirPath }) => {
+    return useDriveMutation<{ dirPath: string; everyone?: boolean }>(
+      async (driveId, { dirPath, everyone }) => {
         const path = toDrivePath(dirPath);
         // A new folder is empty: its card reads 0 at once and never lists a
         // folder the server has not made yet. Access is its parent's, which
@@ -373,7 +374,11 @@ export const driveExplorerSource: FileExplorerSource = {
           const parent = queryClient.getQueryData<FolderListing>(qk.drives.files(driveId, parentOf(path)));
           queryClient.setQueryData<FolderListing>(key, { entries: [], access: parent?.access ?? 'write' });
         }
-        return makeDriveFolder(driveId, path);
+        const made = await makeDriveFolder(driveId, path);
+        // A team folder says who can open it when it is made. Should the share
+        // fail, the folder stays admins-only, which its badge shows.
+        if (everyone) await shareFolder(driveId, { path, principalType: 'project', level: 'write' });
+        return made;
       },
       ({ dirPath }) => [parentOf(toDrivePath(dirPath))],
     );

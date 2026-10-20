@@ -35,7 +35,7 @@ export function PromoNavRow({
         {icon}
         <span className="min-w-0 flex-1 truncate">{label}</span>
       </SidebarMenuButton>
-      <SidebarMenuBadge className="bg-kortix-blue/15 text-kortix-blue mr-1 rounded-sm px-1.5 group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0 max-md:hidden">
+      <SidebarMenuBadge className="bg-kortix-blue/15 text-foreground mr-1 rounded-sm px-1.5 group-focus-within/menu-item:opacity-0 group-hover/menu-item:opacity-0 max-md:hidden">
         {badge}
       </SidebarMenuBadge>
       <SidebarMenuAction onClick={onDismiss} aria-label={dismissLabel} showOnHover className="mr-1">

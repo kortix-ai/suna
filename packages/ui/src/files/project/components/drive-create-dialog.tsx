@@ -12,6 +12,7 @@ import {
   ModalHeader,
   ModalTitle,
 } from '../../../primitives/modal';
+import { RadioGroup, RadioGroupItem } from '../../../primitives/radio-group';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../lib/utils';
 import { CaretRightIcon } from '@phosphor-icons/react';
@@ -19,23 +20,27 @@ import { Fragment, type ReactNode, useId, useState } from 'react';
 
 export type DriveCreateKind = 'folder' | 'file';
 
+/** Who can open a new team folder: the three choices of the access dialog. */
+export type FolderAudienceMode = 'everyone' | 'restricted' | 'specific';
+
 /** Where the new entry lands: the drive's glyph, then drive › folder › folder. */
 export interface DriveLocation {
   icon?: ReactNode;
   crumbs: string[];
 }
 
-
 /**
  * "New folder" / "New file" in a modal. The name is checked as it is typed
  * (a slash, a name already in this folder), so a submit can only succeed: the
  * dialog closes at once and the row appears in the listing before the server
- * answers.
+ * answers. A top-level Drive folder (a team folder) also asks who can open
+ * it, so it is never admins-only by accident.
  */
 export function DriveCreateDialog({
   kind,
   location,
   isTaken,
+  askAudience = false,
   onCreate,
   onClose,
 }: {
@@ -43,18 +48,22 @@ export function DriveCreateDialog({
   kind: DriveCreateKind | null;
   location: DriveLocation;
   isTaken: (name: string) => boolean;
-  onCreate: (kind: DriveCreateKind, name: string) => void;
+  /** Ask who can open the new folder (a Drive team folder). */
+  askAudience?: boolean;
+  onCreate: (kind: DriveCreateKind, name: string, audience?: FolderAudienceMode) => void;
   onClose: () => void;
 }) {
   const t = useTranslations('drives');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const id = useId();
   const [name, setName] = useState('');
+  const [audience, setAudience] = useState<FolderAudienceMode>('everyone');
   // The last kind keeps the title through the exit animation.
   const [shownKind, setShownKind] = useState<DriveCreateKind>('folder');
   if (kind && kind !== shownKind) setShownKind(kind);
   const close = () => {
     setName('');
+    setAudience('everyone');
     onClose();
   };
 
@@ -68,9 +77,15 @@ export function DriveCreateDialog({
 
   return (
     <Modal open={kind !== null} onOpenChange={(open) => !open && close()}>
-      <ModalContent className="lg:max-w-sm">
+      <ModalContent className={askAudience ? 'lg:max-w-md' : 'lg:max-w-sm'}>
         <ModalHeader>
-          <ModalTitle>{shownKind === 'folder' ? t('newFolder') : t('newFile')}</ModalTitle>
+          <ModalTitle>
+            {shownKind === 'file'
+              ? t('newFile')
+              : askAudience
+                ? t('newTeamFolder')
+                : t('newFolder')}
+          </ModalTitle>
           <ModalDescription className="flex min-w-0 flex-wrap items-center gap-1 [&_svg]:size-3.5 [&_svg]:shrink-0">
             {location.icon}
             {/* Every folder, so the path reads in full; a long one wraps. */}
@@ -78,10 +93,7 @@ export function DriveCreateDialog({
               <Fragment key={`${i}-${crumb}`}>
                 {i > 0 ? <CaretRightIcon className="text-muted-foreground" /> : null}
                 <span
-                  className={cn(
-                    'break-all',
-                    i === all.length - 1 && 'text-foreground font-medium',
-                  )}
+                  className={cn('break-all', i === all.length - 1 && 'text-foreground font-medium')}
                 >
                   {crumb}
                 </span>
@@ -93,7 +105,7 @@ export function DriveCreateDialog({
           onSubmit={(event) => {
             event.preventDefault();
             if (!canSubmit || !kind) return;
-            onCreate(kind, trimmed);
+            onCreate(kind, trimmed, askAudience && kind === 'folder' ? audience : undefined);
             close();
           }}
         >
@@ -109,9 +121,7 @@ export function DriveCreateDialog({
                 spellCheck={false}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder={
-                  shownKind === 'folder' ? t('untitledFolder') : t('untitledFile')
-                }
+                placeholder={shownKind === 'folder' ? t('untitledFolder') : t('untitledFile')}
                 aria-invalid={error ? true : undefined}
                 autoFocus
               />
@@ -121,6 +131,41 @@ export function DriveCreateDialog({
                 </FieldDescription>
               ) : null}
             </Field>
+            {askAudience && shownKind === 'folder' ? (
+              <Field className="mt-4 gap-1.5">
+                <FieldLabel>{t('audienceQuestion')}</FieldLabel>
+                <RadioGroup
+                  value={audience}
+                  onValueChange={(mode) => setAudience(mode as FolderAudienceMode)}
+                  className="space-y-2"
+                >
+                  <RadioGroupItem
+                    value="everyone"
+                    id={`${id}-everyone`}
+                    label={t('everyoneInProject')}
+                    description={t('audienceEveryoneDescription')}
+                    size="lg"
+                    variant="outline"
+                  />
+                  <RadioGroupItem
+                    value="restricted"
+                    id={`${id}-restricted`}
+                    label={t('audienceAdmins')}
+                    description={t('audienceAdminsDescription')}
+                    size="lg"
+                    variant="outline"
+                  />
+                  <RadioGroupItem
+                    value="specific"
+                    id={`${id}-specific`}
+                    label={t('audienceSpecific')}
+                    description={t('audienceSpecificDescription')}
+                    size="lg"
+                    variant="outline"
+                  />
+                </RadioGroup>
+              </Field>
+            ) : null}
           </ModalBody>
           <ModalFooter>
             <Button type="button" variant="outline-ghost" onClick={close}>

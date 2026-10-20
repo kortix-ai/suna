@@ -124,17 +124,21 @@ test('session labels survive list metadata trimming', () => {
   expect(output.labels).toEqual(['urgent']);
 });
 
-/**
- * A warm session (`metadata.warm`, pre-created and never prompted) whose box
- * is up must not claim `running`: nothing has ever run in it, and the sidebar
- * painted those shells as phantom green "Running" rows (KRTX-1466). The
- * serialized status is the one it held while its box booted; the first
- * accepted turn drops the marker and the row reads `running` again.
- */
+/** Warm metadata controls inventory visibility, not the runtime lifecycle. */
 describe('serializeSession warm status', () => {
-  test('a warm session whose box is up does not report running', () => {
-    const out = serializeSession(row({ status: 'running', metadata: { warm: true } }));
-    expect(out.status).toBe('provisioning');
+  test('project auto-session reads leave Starting when provisioning finishes or fails', () => {
+    const metadata = { source: 'ui', warm: true };
+    const provisioning = row({ status: 'provisioning', metadata });
+    expect(serializeSession(provisioning).status).toBe('provisioning');
+
+    const ready = row({ status: 'running', metadata, sandboxUrl: 'https://sandbox.example.test' });
+    expect(serializeSession(ready).status).toBe('running');
+    expect(serializeSession(ready, { trimListMetadata: true }).status).toBe('running');
+    expect(serializeSession(ready).metadata.warm).toBe(true);
+
+    const failed = row({ status: 'failed', metadata, error: 'Sandbox provisioning timed out' });
+    expect(serializeSession(failed).status).toBe('failed');
+    expect(serializeSession(failed).error).toBe('Sandbox provisioning timed out');
   });
 
   test('a prompted session still reports running', () => {

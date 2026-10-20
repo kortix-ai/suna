@@ -16,16 +16,20 @@ const cron = (next: Date | null, enabled = true) =>
 
 describe('nextRunLabel (C09 trailing, line one)', () => {
   test('today: the time alone', () => {
-    expect(nextRunLabel(cron(new Date(2026, 9, 17, 14, 45)), t, 'en-GB', now)).toBe('next 14:45');
+    expect(nextRunLabel(cron(new Date(2026, 9, 17, 14, 45)), t, 'en-GB', now)).toMatch(/^next 14:45:00 .+/);
   });
   test('this week: the weekday and time', () => {
-    expect(nextRunLabel(cron(new Date(2026, 9, 19, 9, 0)), t, 'en-GB', now)).toBe('next Mon 09:00');
+    expect(nextRunLabel(cron(new Date(2026, 9, 19, 9, 0)), t, 'en-GB', now)).toMatch(/^next Mon 09:00:00 .+/);
   });
   test('webhooks and app events run on an event; paused reads Paused; unscheduled reads —', () => {
     expect(nextRunLabel({ type: 'webhook', enabled: true, next_fire_at: null }, t, 'en', now)).toBe(
       'On event',
     );
     expect(nextRunLabel(cron(new Date(2026, 9, 19, 9, 0), false), t, 'en', now)).toBe('Paused');
+    // An auto-paused trigger (KRTX-1721) reads Paused though its manifest says enabled.
+    const autoPaused = { auto_paused_at: '2026-10-19T08:00:00.000Z' };
+    expect(nextRunLabel({ ...cron(new Date(2026, 9, 19, 9, 0)), ...autoPaused }, t, 'en', now)).toBe('Paused');
+    expect(nextRunLabel({ type: 'webhook', enabled: true, next_fire_at: null, ...autoPaused }, t, 'en', now)).toBe('Paused');
     expect(nextRunLabel(cron(null), t, 'en', now)).toBe('—');
   });
 });
@@ -47,4 +51,10 @@ describe('lastRunLabel (C09 trailing, line two)', () => {
   test('a trigger that never ran says so', () => {
     expect(lastRunLabel(ran(null), t, 'en', now)).toBe('Never run');
   });
+});
+
+test('the list labels the exact six-field cron boundary, not jittered execution', () => {
+  expect(nextRunLabel({ type: 'cron', enabled: true,
+    next_cron_at: '2026-10-17T14:00:00Z', next_fire_at: '2026-10-17T14:15:00Z',
+  }, t, 'en-GB', now)).toBe('next 14:00:00 UTC');
 });

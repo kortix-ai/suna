@@ -19,15 +19,13 @@ import { useEffect, useRef, useState } from 'react';
 const ARRIVAL_WINDOW_MS = 1200;
 /** Bounds of the reserve, as time at the arrival speed. */
 const MIN_RESERVE_MS = 90;
-const MAX_RESERVE_MS = 450;
+const MAX_RESERVE_MS = 250;
 /** How hard the speed corrects toward the reserve: the error closes by ~63% in this time. */
 const CORRECTION_MS = 350;
 /** How fast the reveal speed follows its target. Without it a big chunk is a visible jump. */
 const RATE_SMOOTHING_MS = 150;
 /** Slowest reveal while text is waiting, so a small backlog never trickles letter by letter. */
 export const STREAM_MIN_CPS = 30;
-/** After the stream ends the rest drains at this time constant, so the end is not held back. */
-export const STREAM_END_LAG_MS = 120;
 /**
  * Minimum gap between two renders of the streaming message (~30 a second).
  * Each render re-splits the message into blocks and re-parses the tail block;
@@ -43,13 +41,19 @@ export const STREAM_COMMIT_MS = 32;
  */
 export const STREAM_FADE_MS = 300 + 40; // the fade + its widest stagger delay
 /**
- * A segment that mounts while streaming with at most this much text is typed
- * from the start: it is the first delta batch of a new answer. More than this
- * is a refresh or a tab switch mid-answer, and shows at once.
+ * Text that has waited longer than this since it arrived shows at once. A
+ * stalled main thread or a long gap between frames never leaves the reveal
+ * trailing the network.
  */
-export const RETYPE_MAX_CHARS = 400;
-/** A frame gap longer than this (a stalled main thread) is not budget. */
-const MAX_FRAME_MS = 100;
+export const STREAM_MAX_LAG_MS = 500;
+/** Unspent budget carries over at most this much frame time (see `tick`). */
+const BUDGET_FRAME_MS = 100;
+/**
+ * A segment that remounts within this long of its last reveal resumes from
+ * the length the reader had seen (see `useStreamingCadence`). Later, it
+ * mounts at its full length.
+ */
+const RESUME_WINDOW_MS = 500;
 
 /**
  * A "word" that is only markdown syntax (`##`, `-`, `1.`, `>`, `|`, a fence)
@@ -122,9 +126,9 @@ const defaultClock: PacerClock = {
  * - `initial` shows at once, as streaming when `initialStreaming`.
  * - `push(text, true)` sets a new target. Text that does not extend the shown
  *   text (an edit, a revert) shows at once.
- * - `push(text, false)` ends the stream. The rest drains at the faster end
- *   rate and lands in full, so no text is dropped. A value that was never
- *   streamed shows at once.
+ * - `push(text, false)` ends the stream. The rest shows in the same frame,
+ *   its words fade in, and the message settles after the fade. A value that
+ *   was never streamed shows at once.
  */
 export function createStreamPacer(
   show: (text: string, streaming: boolean) => void,
@@ -174,7 +178,7 @@ export function createStreamPacer(
   const tick = () => {
     frame = null;
     const now = clock.now();
-    const dt = Math.min(now - lastFrameAt, MAX_FRAME_MS);
+    const dt = now - lastFrameAt;
     lastFrameAt = now;
 
     if (shown === target) {
@@ -185,20 +189,20 @@ export function createStreamPacer(
       return;
     }
 
+    // Only a live stream has a backlog here: its end shows the rest at once (`push`).
     const backlog = target.length - shown.length;
-    let desired: number;
-    if (active) {
-      const { cps, maxGap } = arrivalStats(now);
-      const reserve = (cps * Math.min(MAX_RESERVE_MS, Math.max(MIN_RESERVE_MS, maxGap * 1.2))) / 1000;
-      desired = Math.max(STREAM_MIN_CPS, cps + ((backlog - reserve) * 1000) / CORRECTION_MS);
-      rate += (desired - rate) * Math.min(1, dt / RATE_SMOOTHING_MS);
-    } else {
-      desired = Math.max(STREAM_MIN_CPS, (backlog * 1000) / STREAM_END_LAG_MS);
-      rate = Math.max(rate, desired);
-    }
-    // Unspent budget is capped at one long frame's worth, so a wait for a
-    // word to finish arriving does not bank a burst for afterwards.
-    budget = Math.min(budget + (rate * dt) / 1000, (rate * MAX_FRAME_MS) / 1000);
+    const { cps, maxGap } = arrivalStats(now);
+    const reserve = (cps * Math.min(MAX_RESERVE_MS, Math.max(MIN_RESERVE_MS, maxGap * 1.2))) / 1000;
+    const desired = Math.max(STREAM_MIN_CPS, cps + ((backlog - reserve) * 1000) / CORRECTION_MS);
+    rate += (desired - rate) * Math.min(1, dt / RATE_SMOOTHING_MS);
+    // A long frame spends its whole elapsed time, so the reveal speed does not
+    // drop with the frame rate. Unspent budget carries over at most
+    // `BUDGET_FRAME_MS`, so a wait for a word to finish arriving does not bank
+    // a burst for afterwards.
+    budget = Math.min(budget + (rate * dt) / 1000, (rate * Math.max(dt, BUDGET_FRAME_MS)) / 1000);
+    // Text that has waited too long since it arrived shows now.
+    const oldest = arrivals.find((a) => a.len > shown.length);
+    if (!oldest || now - oldest.at > STREAM_MAX_LAG_MS) budget = Infinity;
 
     if (now - lastCommitAt >= STREAM_COMMIT_MS) {
       const cut = revealCut(target, shown.length, budget, !active);
@@ -232,14 +236,20 @@ export function createStreamPacer(
         if (text !== shown || settled === isActive) emit(text, isActive);
         return;
       }
-      if (text === shown) {
-        // Fully revealed. If the stream just ended, let the last word fade first.
-        if (!isActive && !settled && frame === null) {
+      if (!isActive) {
+        // The stream ended: the rest shows now, then the message settles once
+        // its last words have faded in.
+        if (text !== shown) {
+          stop();
+          emit(text, true);
           drainedAt = clock.now();
-          schedule();
+        } else if (frame === null) {
+          drainedAt = clock.now();
         }
+        if (!settled) schedule();
         return;
       }
+      if (text === shown) return;
       if (!parked()) schedule();
     },
     dispose: stop,
@@ -247,28 +257,51 @@ export function createStreamPacer(
 }
 
 /**
+ * How much of each streaming segment the reader has seen, by `revealKey`, so a
+ * remount mid-stream (a session switch, a runtime id hand-off) resumes where
+ * the reveal was instead of jumping ahead or typing again from the start.
+ */
+const revealed = new Map<string, { len: number; at: number }>();
+/** ponytail: insertion-order LRU; only the few live segments need an entry. */
+const MAX_REVEALED = 64;
+
+function rememberReveal(key: string, len: number, at: number) {
+  revealed.delete(key);
+  revealed.set(key, { len, at });
+  if (revealed.size > MAX_REVEALED) revealed.delete(revealed.keys().next().value!);
+}
+
+/**
  * `value`, revealed at a steady pace while `active`, and whether the message
  * must still render as streaming. That stays true after `active` turns false
- * while the last of the text drains and its last word fades in (a few
- * hundred ms), so the switch to the settled render changes nothing visible.
+ * while the last words fade in (a few hundred ms), so the switch to the
+ * settled render changes nothing visible.
+ *
+ * Text the client already holds when the segment mounts shows at full length:
+ * only text that arrives after mount is paced. The one exception is a remount
+ * within `RESUME_WINDOW_MS` of the last reveal under the same `revealKey`
+ * (`message_id:block_id`), which resumes from the length already shown.
  */
 export function useStreamingCadence(
   rawValue: string,
   active: boolean,
+  revealKey?: string,
+  clock: PacerClock = defaultClock,
 ): { text: string; streaming: boolean } {
   // A part's text is typed as a string but arrives from the wire; anything
   // else renders as its string form instead of throwing in `startsWith`.
   const value = typeof rawValue === 'string' ? rawValue : String(rawValue ?? '');
-  const [state, setState] = useState(() => ({
-    text: active && value.length <= RETYPE_MAX_CHARS ? '' : value,
-    streaming: active,
-  }));
+  const [state, setState] = useState(() => {
+    const kept = active && revealKey ? revealed.get(revealKey) : undefined;
+    const resume = kept && clock.now() - kept.at < RESUME_WINDOW_MS && kept.len < value.length;
+    return { text: resume ? value.slice(0, kept.len) : value, streaming: active };
+  });
   const pacerRef = useRef<ReturnType<typeof createStreamPacer> | null>(null);
   if (pacerRef.current === null) {
     pacerRef.current = createStreamPacer(
       (text, streaming) => setState({ text, streaming }),
       state.text,
-      undefined,
+      clock,
       state.streaming,
     );
   }
@@ -277,6 +310,9 @@ export function useStreamingCadence(
     pacerRef.current?.push(value, active);
   }, [value, active]);
   useEffect(() => () => pacerRef.current?.dispose(), []);
+  useEffect(() => {
+    if (revealKey && state.streaming) rememberReveal(revealKey, state.text.length, clock.now());
+  }, [revealKey, state, clock]);
 
   const text = value.startsWith(state.text) ? state.text : value;
   return { text, streaming: active || state.streaming || text !== value };

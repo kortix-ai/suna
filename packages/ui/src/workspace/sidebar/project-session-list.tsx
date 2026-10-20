@@ -503,7 +503,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             forkSession.mutate(
               { sessionId: runtimeSessionId },
               {
-                onSuccess: (fork) => router.push(childSessionHref(href, fork.id)),
+                onSuccess: (fork) => {
+                  successToast('Conversation forked');
+                  router.push(childSessionHref(href, fork.id));
+                },
                 onError: (err) => {
                   errorToast(
                     err instanceof Error ? err.message : tI18nComplete.raw('text32ad3abe4479'),

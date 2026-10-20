@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
   emitJson,
+  SESSION_UUID_RE,
   expandSessionIdPrefix,
   locateSessionAnywhere,
   resolveProjectContext,
@@ -31,7 +32,7 @@ import { confirm } from '../prompts.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth, sdkBackendUrl, withKortixScope } from '../api/sdk.ts';
 import {
-  appendPreviewToken,
+  authorizePreviewUrl,
   isSubdomainPreviewUrl,
   loadPreviewUrlTemplate,
   rewriteLocalhostUrl,
@@ -110,9 +111,14 @@ Subcommands:
                                     subscription runs on every key you may
                                     use for it, and they rotate (see
                                     \`kortix models ls\`).
-                                    --wait blocks until it's running; --json
-                                    prints the session object (capture
-                                    session_id to orchestrate).
+                                    --wait blocks until the runtime is
+                                    ready, not until the prompt's turn
+                                    ends, and exits 1 when that turn has
+                                    already failed. To wait for the turn,
+                                    run kortix sessions wait-for <id> (exit
+                                    1 when the turn fails). --json prints
+                                    the session object (capture session_id
+                                    to orchestrate).
                                     --connect attaches the OpenCode TUI as
                                     soon as it's ready (implies --wait); on an
                                     interactive terminal without it, you're
@@ -531,7 +537,6 @@ export function parseSessionOverrides(argv: string[]): SessionOverrides {
   return out;
 }
 
-const SESSION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false): Promise<number> {
   const ctx = await resolveProjectContext(opts);
@@ -808,11 +813,14 @@ async function sessionsNew(
     }
   }
 
+  // Readiness can come after the first turn already failed (KRTX-2913): a
+  // failure the record already shows is not a success.
+  const turnFailed = waited && Boolean(created.error);
   if (json) {
     emitJson(
       uploads.length > 0 ? { ...created, uploaded_files: uploads.map((u) => u.target) } : created,
     );
-    return 0;
+    return turnFailed ? 1 : 0;
   }
 
   process.stdout.write(
@@ -825,6 +833,12 @@ async function sessionsNew(
     process.stdout.write(`  ${C.dim}sandbox    ${C.reset}${created.sandbox_url}\n`);
   }
   process.stdout.write('\n');
+  if (turnFailed) {
+    process.stderr.write(
+      `${status.err(`Agent turn failed: ${created.error}`)}\n` +
+        `  ${C.dim}Inspect: \`kortix sessions log ${created.session_id}\`.${C.reset}\n`,
+    );
+  }
 
   const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
   const decision = resolveConnectAfterCreate({ connect: connectAfter, json, tty });
@@ -844,7 +858,7 @@ async function sessionsNew(
       `  ${C.dim}Later: ${C.reset}${C.cyan}kortix connect ${shortId(created.session_id)}${C.reset}\n`,
     );
   }
-  return 0;
+  return turnFailed ? 1 : 0;
 }
 
 /**
@@ -1016,9 +1030,8 @@ async function sessionsPreview(
   // DNS record on any deployed environment. `GET /v1/p/config` states the
   // template; the SDK substitutes it (label-encoding `_` → `-`) and falls back
   // to the localhost or path proxy when the deployment serves none. The
-  // one-shot `?token=` is accepted only on a preview origin (it mints the
-  // preview cookie there); the path proxy rejects query tokens, so it stays
-  // off that form.
+  // short-lived preview ticket is accepted only on a preview origin.
+  // The personal credential stays in the authenticated ticket request header.
   const url = await withKortixScope(auth, async () => {
     const backendUrl = sdkBackendUrl(auth.api_base);
     const template = await loadPreviewUrlTemplate(backendUrl);
@@ -1029,7 +1042,7 @@ async function sessionsPreview(
       backendPort: Number(parsed.port) || (parsed.protocol === 'https:' ? 443 : 80),
       previewUrlTemplate: template,
     });
-    return isSubdomainPreviewUrl(origin) ? appendPreviewToken(origin, auth.token) : origin;
+    return isSubdomainPreviewUrl(origin) ? authorizePreviewUrl(origin) : origin;
   });
 
   if (json) {
@@ -1291,22 +1304,29 @@ async function sessionsRm(
     error?: string;
   }> = [];
   for (const sessionId of ids) {
-    const located = await locateSessionAnywhere(
-      sessionId,
-      opts,
-      (host) => `kortix sessions rm ${sessionId} --host ${host}`,
-    );
-    if (!located) {
+    // A full id and explicit project already identify the DELETE target.
+    // Do not require an independent session read before its authorization check.
+    const pinned = opts.projectArg && SESSION_UUID_RE.test(sessionId)
+      ? await resolveProjectContext(opts)
+      : undefined;
+    const located = pinned === undefined
+      ? await locateSessionAnywhere(
+        sessionId,
+        opts,
+        (host) => `kortix sessions rm ${sessionId} --host ${host}`,
+      )
+      : null;
+    const target = pinned ?? located?.located;
+    if (!target) {
       results.push({ session_id: sessionId, deleted: false, error: 'not found' });
       continue;
     }
-    const canonicalSessionId = located.located.session.session_id;
-    const { projectId } = located.located;
-    // `restore` cannot locate a deleted session (its read answers 404), so the
-    // hint names where this session was found.
-    const host = located.located.hostName ?? opts.hostArg;
+    const canonicalSessionId = located?.located.session.session_id ?? sessionId;
+    const { projectId, client } = target;
+    // `restore` cannot locate a deleted session, so name its exact scope.
+    const host = located?.located.hostName ?? opts.hostArg;
     try {
-      const deleted = await located.located.client.delete<{ ok: boolean; restore_until?: string }>(
+      const deleted = await client.delete<{ ok: boolean; restore_until?: string }>(
         `/projects/${projectId}/sessions/${canonicalSessionId}`,
       );
       // An API that predates restore answers without the window.

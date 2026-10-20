@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useLayoutEffect, useRef, type ReactNode } from 'react';
 
 import { isKatexClassName } from './katex-markdown';
 
@@ -91,6 +91,44 @@ function staggerMounting() {
   mounting = [];
 }
 
+/** Block chrome that fades on mount while streaming (`globals.css`, `.streaming-active`). */
+const FADING_CHROME = 'li, figure, hr, blockquote, .kx-md-table';
+
+/**
+ * One message's fade gate. A message that mounts mid-stream (a session switch,
+ * a reload, a remount) already holds its text: the reader has it, it is not
+ * arriving. The words and block chrome of the first render that has words
+ * therefore show without the fade, and the gate opens for the words after
+ * them. `UnifiedMarkdown` creates one per message, open for a message that
+ * mounts settled.
+ *
+ * The gate takes a word as it mounts. It returns true when the word shows at
+ * once; it has then already turned off that word's fade.
+ */
+export type StreamFadeGate = (word: HTMLElement) => boolean;
+
+export function createStreamFadeGate(open: boolean): StreamFadeGate {
+  let closing = false;
+  return (word) => {
+    if (open) return false;
+    word.style.animation = 'none';
+    if (!closing) {
+      closing = true;
+      // After every word of this commit, before the paint.
+      queueMicrotask(() => {
+        open = true;
+        word
+          .closest('.kortix-markdown')
+          ?.querySelectorAll<HTMLElement>(FADING_CHROME)
+          .forEach((node) => (node.style.animation = 'none'));
+      });
+    }
+    return true;
+  };
+}
+
+export const StreamFadeGateContext = createContext<StreamFadeGate | null>(null);
+
 /**
  * One streamed word. Its layout effect runs once, on mount, with every other
  * word the same render mounted; the microtask then gives each its delay
@@ -99,10 +137,14 @@ function staggerMounting() {
  */
 export function StreamWord({ children }: { children?: ReactNode }) {
   const ref = useRef<HTMLSpanElement>(null);
+  const gate = useContext(StreamFadeGateContext);
   useLayoutEffect(() => {
-    if (!ref.current) return;
+    const el = ref.current;
+    if (!el || gate?.(el)) return;
     if (mounting.length === 0) queueMicrotask(staggerMounting);
-    mounting.push(ref.current);
+    mounting.push(el);
+    // The gate is fixed for this message's lifetime; a word reads it once, on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
     <span ref={ref} className={STREAM_WORD_CLASS}>

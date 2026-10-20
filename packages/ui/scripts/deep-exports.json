@@ -285,7 +285,6 @@
     "./workspace/home/welcome-body",
     "./workspace/layout/project-files-skeleton",
     "./workspace/layout/project-home",
-    "./workspace/layout/session-route-cache",
     "./workspace/layout/sidebar-cookie",
     "./workspace/new/account-param",
     "./workspace/new/account-picker",

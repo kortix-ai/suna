@@ -27,7 +27,8 @@ mock.module('../projects/lib/sessions', () => ({
 
 const { drainTriggerExecutionQueue } = await import('../projects/lib/trigger-scheduler');
 const { fireGitTrigger } = await import('../projects/lib/trigger-fire');
-const { triggerRunCapReason } = await import('../projects/lib/trigger-run-caps');
+const { triggerRunCapReason, clearTriggerAutoPause } = await import('../projects/lib/trigger-run-caps');
+const { claimDueScheduleSlots } = await import('../projects/trigger-execution-store');
 const { setTriggerAlertNotifierForTest, settleTriggerAlerts } = await import('../projects/lib/trigger-alerts');
 const { upsertTriggerWatcher } = await import('../projects/lib/trigger-watchers');
 const { recordTriggerRun, triggerRunFromFire } = await import('../projects/trigger-execution-store');
@@ -256,5 +257,101 @@ describe('a fire by source', () => {
     const result = await fireGitTrigger({ spec: hook as never, project: await projectRow(), payload: {}, renderedPrompt: 'Run it.', source: 'manual', deliberate: true });
     expect(result.status).not.toBe('skipped');
     expect(creates).toEqual([slug]);
+  });
+});
+
+async function autoPause(slug: string) {
+  const [row] = await db
+    .select({ at: projectTriggerRuntime.autoPausedAt, reason: projectTriggerRuntime.autoPausedReason, resumedAt: projectTriggerRuntime.autoPauseResumedAt })
+    .from(projectTriggerRuntime)
+    .where(and(eq(projectTriggerRuntime.projectId, project.project_id), eq(projectTriggerRuntime.slug, slug)));
+  return row;
+}
+
+// KRTX-1721: a trigger that ran at its hourly limit through the previous hour
+// and is still held now is a runaway, not a burst. It pauses itself, tells its
+// watchers once, and stays paused until someone resumes it.
+describe('auto-pause (a sustained breach of max_runs_per_hour)', () => {
+  const slug = 'runaway-hook';
+  const hook = spec(slug, { type: 'webhook', cron: null, secretEnv: 'RUNAWAY_HOOK_SECRET', maxRunsPerHour: 1 });
+  const paused = 'auto-paused: ran at max_runs_per_hour 1 for 2 hours in a row';
+
+  test('at the limit through the previous hour and held now → auto-paused once, one alert, no session', async () => {
+    await seedTrigger(slug, hook);
+    await upsertTriggerWatcher({ accountId: project.account_id, projectId: project.project_id, slug, userId: WATCHER });
+    await seedRun(slug, new Date(), 90);
+    await seedRun(slug, new Date(), 5);
+    creates.length = 0;
+
+    const result = await fireGitTrigger({ spec: hook as never, project: await projectRow(), payload: {}, renderedPrompt: 'Run it.', source: 'webhook' });
+    await settleTriggerAlerts();
+
+    expect(result).toEqual({ status: 'skipped', reason: paused });
+    expect(await autoPause(slug)).toEqual({ at: expect.any(Date), reason: paused, resumedAt: null });
+    expect(await alertsOf(slug)).toEqual([{ userId: WATCHER, kind: 'automation_failed', body: paused }]);
+    expect(creates).toEqual([]);
+  });
+
+  test('while auto-paused every automatic fire is skipped with the reason and no second alert; a person still fires it', async () => {
+    const before = await autoPause(slug);
+    const again = await fireGitTrigger({ spec: hook as never, project: await projectRow(), payload: {}, renderedPrompt: 'Run it.', source: 'webhook' });
+    await settleTriggerAlerts();
+    expect(again).toEqual({ status: 'skipped', reason: paused });
+    expect(await autoPause(slug)).toEqual(before);
+    expect(await alertsOf(slug)).toHaveLength(1);
+
+    creates.length = 0;
+    const manual = await fireGitTrigger({ spec: hook as never, project: await projectRow(), payload: {}, renderedPrompt: 'Run it.', source: 'manual', deliberate: true });
+    expect(manual.status).not.toBe('skipped');
+    expect(creates).toEqual([slug]);
+  });
+
+  test('resuming clears it; for 2 hours a held fire is a plain throttle, so old runs do not pause it again', async () => {
+    expect(await clearTriggerAutoPause(project.project_id, slug)).toBe(true);
+    expect(await autoPause(slug)).toEqual({ at: null, reason: null, resumedAt: expect.any(Date) });
+    expect(await clearTriggerAutoPause(project.project_id, slug)).toBe(false);
+
+    // The last 2 hours still hold the runaway's runs: held, not paused again.
+    const held = await fireGitTrigger({ spec: hook as never, project: await projectRow(), payload: {}, renderedPrompt: 'Run it.', source: 'webhook' });
+    expect(held).toEqual({ status: 'skipped', reason: 'throttled: 1 runs in the last hour (max_runs_per_hour 1)' });
+    expect((await autoPause(slug))?.at).toBeNull();
+
+    // A resume older than 2 hours no longer shields it.
+    await db
+      .update(projectTriggerRuntime)
+      .set({ autoPauseResumedAt: new Date(Date.now() - 3 * 60 * 60_000) })
+      .where(and(eq(projectTriggerRuntime.projectId, project.project_id), eq(projectTriggerRuntime.slug, slug)));
+    const repaused = await fireGitTrigger({ spec: hook as never, project: await projectRow(), payload: {}, renderedPrompt: 'Run it.', source: 'webhook' });
+    expect(repaused).toEqual({ status: 'skipped', reason: paused });
+  });
+
+  test('a throttle with room in the previous hour is a burst: held, not paused', async () => {
+    const burst = 'bursty-hook';
+    const bursty = spec(burst, { type: 'webhook', cron: null, secretEnv: 'BURSTY_HOOK_SECRET', maxRunsPerHour: 1 });
+    await seedTrigger(burst, bursty);
+    await seedRun(burst, new Date(), 5);
+    const result = await fireGitTrigger({ spec: bursty as never, project: await projectRow(), payload: {}, renderedPrompt: 'Run it.', source: 'webhook' });
+    expect(result).toEqual({ status: 'skipped', reason: 'throttled: 1 runs in the last hour (max_runs_per_hour 1)' });
+    expect(await autoPause(burst)).toEqual({ at: null, reason: null, resumedAt: null });
+  });
+
+  test("an auto-paused cron trigger's due slot is not claimed; after resuming it is", async () => {
+    const cron = 'paused-cron';
+    await db.insert(projectTriggerRuntime).values({
+      projectId: project.project_id,
+      slug: cron,
+      triggerType: 'cron',
+      enabled: true,
+      scheduleRevision: 'a'.repeat(64),
+      scheduleSpec: spec(cron),
+      nextFireAt: new Date(Date.now() - 30_000),
+      autoPausedAt: new Date(),
+      autoPausedReason: 'auto-paused: ran at max_runs_per_hour 1 for 2 hours in a row',
+    });
+    const claimed = (await claimDueScheduleSlots({ now: new Date(), limit: 50 })).map(({ execution }) => execution.slug);
+    expect(claimed).not.toContain(cron);
+    await clearTriggerAutoPause(project.project_id, cron);
+    const after = (await claimDueScheduleSlots({ now: new Date(), limit: 50 })).map(({ execution }) => execution.slug);
+    expect(after).toContain(cron);
   });
 });

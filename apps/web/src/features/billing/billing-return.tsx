@@ -5,6 +5,8 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateAccountState } from '@kortix/ui/internal/billing/index';
 import { fireConfetti } from '@/lib/confetti';
 import { latestProjectPath } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { accountPanelUrl, hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
+import { useBillingAccountId } from '@kortix/ui/internal/stores/billing-account-context';
 import { syncSubscription } from '@kortix/sdk';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
@@ -30,7 +32,7 @@ export type BillingReturn = {
   /** Value that marks success. Anything else is ignored. */
   value: string;
   /** Re-read whatever the webhook changed. Must be idempotent. May be sync. */
-  settle: (queryClient: QueryClient) => void | Promise<void>;
+  settle: (queryClient: QueryClient, accountId?: string) => void | Promise<void>;
   title: string;
   description: string;
 };
@@ -41,9 +43,9 @@ const RETURNS = [
     value: 'success',
     // syncSubscription pulls the new plan across before the wallet is re-read,
     // so the toast never lands ahead of the state it is announcing.
-    settle: async (queryClient) => {
-      await syncSubscription();
-      await invalidateAccountState(queryClient);
+    settle: async (queryClient, accountId) => {
+      await syncSubscription(accountId);
+      invalidateAccountState(queryClient, true, true, accountId);
     },
     title: 'Subscription activated',
     description: 'Your plan is active. Credits are ready.',
@@ -53,14 +55,14 @@ const RETURNS = [
     // activates the contract and grants the pool; re-read the account state.
     param: 'enterprise_contract',
     value: 'success',
-    settle: (queryClient) => invalidateAccountState(queryClient, true),
+    settle: (queryClient, accountId) => invalidateAccountState(queryClient, true, true, accountId),
     title: 'Enterprise contract active',
     description: 'Your Enterprise plan is on, and the annual credit pool is in your balance.',
   },
   {
     param: 'credit_purchase',
     value: 'success',
-    settle: (queryClient) => invalidateAccountState(queryClient, true),
+    settle: (queryClient, accountId) => invalidateAccountState(queryClient, true, true, accountId),
     title: 'Credits added',
     description: 'Your top-up landed — compute and the latest AI models are ready to go.',
   },
@@ -81,17 +83,21 @@ export const BILLING_RETURN_PARAMS: readonly string[] = RETURNS.map((r) => r.par
  * the projects page, "where does a checkout return land" was an implicit
  * consequence of where the effect happened to be mounted, and every producer
  * hardcoded `/projects` to match it. Now the destination is a decision, made
- * once, here: the user's latest project — never the list.
+ * once, here: reopen Billing for the account that owns the purchase.
  */
 export function useBillingReturnUrl(): (param: BillingReturnParam) => string {
   const { user } = useAuth();
+  const accountId = useBillingAccountId();
   return useCallback(
     (param: BillingReturnParam) => {
-      const url = new URL(latestProjectPath(user?.id), window.location.origin);
+      const path = accountId
+        ? accountPanelUrl(latestProjectPath(user?.id), hubTarget(accountId, { tab: 'billing' }))
+        : latestProjectPath(user?.id);
+      const url = new URL(path, window.location.origin);
       url.searchParams.set(param, 'success');
       return url.toString();
     },
-    [user?.id],
+    [user?.id, accountId],
   );
 }
 
@@ -120,15 +126,16 @@ export function useBillingReturn(): void {
     if (!match || handled.current === match.param) return;
     handled.current = match.param;
 
+    const accountId = searchParams.get('accountId') || undefined;
     let cancelled = false;
     void (async () => {
       try {
-        await match.settle(queryClient);
+        await match.settle(queryClient, accountId);
         if (cancelled) return;
         fireConfetti();
         successToast(match.title, { description: match.description });
       } catch {
-        invalidateAccountState(queryClient);
+        invalidateAccountState(queryClient, true, true, accountId);
       } finally {
         stripParam(match.param);
       }

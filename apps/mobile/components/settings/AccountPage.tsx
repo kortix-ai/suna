@@ -41,7 +41,7 @@ import Constants from 'expo-constants';
 import { useColorScheme } from 'nativewind';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { Switch } from '@/components/ui/switch';
+import { Switch } from '@/components/kortix/switch';
 import { Text } from '@/components/ui/text';
 import { Avatar } from '@/components/kortix/avatar';
 import { KortixLogo } from '@/components/kortix/KortixLogo';

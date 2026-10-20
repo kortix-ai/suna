@@ -443,6 +443,7 @@ export function SessionSiteHeader({
                   { sessionId },
                   {
                     onSuccess: (fork) => {
+                      successToast('Conversation forked');
                       if (projectId && projectSessionId) {
                         router.push(
                           childSessionHref(uiRoutes().session(projectId, projectSessionId), fork.id),

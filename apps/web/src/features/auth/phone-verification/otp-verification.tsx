@@ -145,7 +145,7 @@ export function OtpVerification({
                   type="button"
                   onClick={handleResend}
                   disabled={isLoading}
-                  className="hover:text-foreground underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                  className="hover:text-foreground transition-colors disabled:opacity-50"
                 >
                   {t('resendCode')}
                 </button>

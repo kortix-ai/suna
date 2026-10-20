@@ -137,7 +137,8 @@ export interface FileExplorerSource {
     zipName: string,
   ) => Promise<void>;
   useFileDelete: () => ExplorerMutation<{ filePath: string }>;
-  useFileMkdir: () => ExplorerMutation<{ dirPath: string }>;
+  /** `everyone`: Drive only, share the new folder with the whole project as it is made. */
+  useFileMkdir: () => ExplorerMutation<{ dirPath: string; everyone?: boolean }>;
   useFileRename: () => ExplorerMutation<{ from: string; to: string }>;
   useFileCreate: () => ExplorerMutation<{ filePath: string }>;
   useFileCopy: () => ExplorerMutation<{ sourcePath: string; destPath: string }>;

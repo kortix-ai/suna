@@ -261,6 +261,7 @@ function ComposerForm({
             session_access: draft.sessionAccess,
             ...(runCapFromInput(draft.maxRunsPerHour) ? { max_runs_per_hour: runCapFromInput(draft.maxRunsPerHour)! } : {}),
             ...(runCapFromInput(draft.maxRunsPerDay) ? { max_runs_per_day: runCapFromInput(draft.maxRunsPerDay)! } : {}),
+            ...(draft.overlap !== 'default' ? { overlap: draft.overlap } : {}),
             ...(draft.mode !== 'fresh' ? { session_mode: draft.mode } : {}),
             ...(draft.mode === 'pinned' && draft.pinnedSessionId
               ? { session_id: draft.pinnedSessionId }

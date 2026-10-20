@@ -81,7 +81,7 @@ interface ResolvedMirrorAccess {
   headers: Record<string, string>;
 }
 
-async function ensureMirrorAccess(project: GitBackedProject): Promise<ResolvedMirrorAccess> {
+export async function ensureMirrorAccess(project: GitBackedProject): Promise<ResolvedMirrorAccess> {
   if (project.gitAuthToken || Object.keys(project.gitAuthHeaders ?? {}).length > 0) {
     return {
       repoUrl: project.repoUrl,

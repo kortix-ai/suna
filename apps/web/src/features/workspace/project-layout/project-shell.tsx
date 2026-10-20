@@ -24,7 +24,6 @@ import { openCommandPalette } from '@kortix/ui/internal/layout/open-command-pale
 import { ProjectSidebar } from '@kortix/ui/workspace';
 import { WorkspaceSwitcher } from '@/features/workspace/project-sidebar/workspace-switcher';
 import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
-import { SessionRouteCache } from '@kortix/ui/workspace/layout/session-route-cache';
 import {
   isAccountGraduatedSection,
   legacySectionRedirect,
@@ -285,7 +284,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
             <CommandPalette />
           </Suspense>
 
-          <ProjectSheelLayout><SessionRouteCache>{children}</SessionRouteCache></ProjectSheelLayout>
+          <ProjectSheelLayout>{children}</ProjectSheelLayout>
         </div>
 
         <SettingsPanel projectId={projectId} />

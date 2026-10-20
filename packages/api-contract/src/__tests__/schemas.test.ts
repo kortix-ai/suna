@@ -522,6 +522,14 @@ describe('ProjectSessionSandboxSchema', () => {
 });
 
 describe('TriggerSchema', () => {
+  test('keeps exact cron time distinct from jittered execution and accepts older APIs', () => {
+    const parsed = TriggerSchema.strict().parse(triggerFixture({
+      next_cron_at: '2026-10-10T09:00:00.000Z', next_fire_at: '2026-10-10T09:15:00.000Z',
+    }));
+    expect(parsed.next_cron_at).toBe('2026-10-10T09:00:00.000Z');
+    expect(parsed.next_fire_at).toBe('2026-10-10T09:15:00.000Z');
+    expect(TriggerSchema.strict().parse(triggerFixture()).next_cron_at).toBeUndefined();
+  });
   test('accepts a cron trigger and a webhook trigger', () => {
     expect(() => TriggerSchema.strict().parse(triggerFixture())).not.toThrow();
     expect(() =>

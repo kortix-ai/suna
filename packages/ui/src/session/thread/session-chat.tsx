@@ -4357,7 +4357,15 @@ export function SessionChat({
                               agentNames={agentNames}
                               onFileClick={openFileInComputer}
                               sessionId={sessionId}
-                              busy={turns.length === 0 && lastTurnWorking}
+                              // The first item of the conversation, like turn 0, which has no
+                              // top margin. `first:mt-0` misses here: the list opens with a
+                              // zero-height <header>, so the stand-in sat 44px lower than turn 0
+                              // and every swap between the two jumped the bubble (KRTX-2931).
+                              className="mt-0"
+                              // An undelivered first prompt is a turn about to start, as the
+                              // shell above this chat shows it: busy from the first frame,
+                              // before the working projection has read the inbox (KRTX-2931).
+                              busy={turns.length === 0 && (lastTurnWorking || promptInbox.prompts.some(isFirstPromptRow))}
                             />
                           )}
                         {turns.map((turn, turnIndex) => {

@@ -1,3 +1,4 @@
+import type { Mermaid } from 'mermaid';
 /**
  * Mermaid configuration and render cleanup, kept apart from the component so
  * the contract is testable without a DOM.
@@ -69,4 +70,84 @@ export function zoomAtPoint(zoom: number, panOffset: { x: number; y: number },
     x: point.x - (point.x - panOffset.x) * (newZoom / zoom),
     y: point.y - (point.y - panOffset.y) * (newZoom / zoom),
   } };
+}
+
+let mermaidInstance: Mermaid | null = null;
+export async function renderMermaidSvg(source: string, onStart: () => void): Promise<string | undefined> {
+  if (!source) return;
+
+  const cachedResult = readCachedMermaidSvg(source);
+  if (cachedResult) return cachedResult;
+  onStart();
+  // Check for basic Mermaid syntax
+  const firstLine = source.split('\n')[0].toLowerCase().trim();
+  const validStarters = [
+    'graph',
+    'flowchart',
+    'sequencediagram',
+    'sequence',
+    'classdiagram',
+    'class',
+    'statediagram',
+    'state',
+    'erdiagram',
+    'journey',
+    'gantt',
+    'pie',
+    'gitgraph',
+    'mindmap',
+    'timeline',
+    'sankey',
+    'block',
+    'quadrant',
+    'requirement',
+    'c4context',
+    'c4container',
+    'c4component',
+    'c4dynamic',
+  ];
+
+  const hasValidStarter = validStarters.some(
+    (starter) => firstLine.startsWith(starter) || firstLine.includes(starter),
+  );
+
+  if (!hasValidStarter) {
+    throw new Error(
+      `Invalid diagram type. Chart must start with a valid Mermaid diagram type (e.g., graph, flowchart, sequenceDiagram, etc.). Found: "${firstLine}"`,
+    );
+  }
+
+  // Use cached Mermaid instance or initialize new one
+  if (!mermaidInstance) {
+    const mermaid = (await import('mermaid')).default;
+    await mermaid.initialize({
+      ...MERMAID_CONFIG,
+      gitGraph: { ...MERMAID_CONFIG.gitGraph },
+    });
+    mermaidInstance = mermaid;
+  }
+
+  const chartId = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+
+  let result;
+  try {
+    result = await mermaidInstance.render(chartId, source);
+  } catch (renderError) {
+    const errorMessage =
+      renderError instanceof Error ? renderError.message : String(renderError);
+
+    // Remove the temporary nodes this render created, and only those.
+    removeMermaidRenderArtifacts(document, chartId);
+
+    if (errorMessage.includes('Parse error') || errorMessage.includes('Syntax error')) {
+      throw new Error(`Diagram syntax error: ${errorMessage}`);
+    } else if (errorMessage.includes('UnknownDiagramError')) {
+      throw new Error('unsupported_diagram_type');
+    } else {
+      throw new Error(`Failed to render diagram: ${errorMessage}`);
+    }
+  }
+
+  cacheMermaidSvg(source, result.svg);
+  return result.svg;
 }

@@ -5,16 +5,16 @@ import { useTheme } from 'next-themes';
 import dynamic from 'next/dynamic';
 import { memo } from 'react';
 
-const Shader = dynamic(() => import('@kortix/ui/internal/lib/shaders-react').then((m) => m.Shader), {
+const Shader = dynamic(() => import('shaders/react').then((m) => m.Shader), {
   ssr: false,
 });
-const Dither = dynamic(() => import('@kortix/ui/internal/lib/shaders-react').then((m) => m.Dither), {
+const Dither = dynamic(() => import('shaders/react').then((m) => m.Dither), {
   ssr: false,
 });
-const Plasma = dynamic(() => import('@kortix/ui/internal/lib/shaders-react').then((m) => m.Plasma), {
+const Plasma = dynamic(() => import('shaders/react').then((m) => m.Plasma), {
   ssr: false,
 });
-const WaveDistortion = dynamic(() => import('@kortix/ui/internal/lib/shaders-react').then((m) => m.WaveDistortion), {
+const WaveDistortion = dynamic(() => import('shaders/react').then((m) => m.WaveDistortion), {
   ssr: false,
 });
 

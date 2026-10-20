@@ -1172,21 +1172,26 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             inert={!overlayDismissed}
           >
             <ProjectSessionRuntimeConnection>
-              {mountChat && (
-                <ActiveSessionChat
-                  projectId={projectId}
-                  sessionId={sessionId}
-                  sessionState={session}
-                  boundAgentName={boundAgentName}
-                  chatReady={chatReady}
-                  onChatReady={handleChatReady}
-                  // A terminal state under a banner: the banner names the reason
-                  // and the one action. A composer beside it would promise that
-                  // the next message wakes a computer that cannot come back.
-                  readOnly={!!notice}
-                  inputReplacement={notice ? <SessionNotice {...notice} /> : undefined}
-                />
-              )}
+              {/* Its own boundary: a runtime-not-ready throw in the chat empties
+                  only this layer, under the overlay, and never the overlay with
+                  it (KRTX-2931). The outer one still covers the overlay. */}
+              <SandboxLoadingBoundary>
+                {mountChat && (
+                  <ActiveSessionChat
+                    projectId={projectId}
+                    sessionId={sessionId}
+                    sessionState={session}
+                    boundAgentName={boundAgentName}
+                    chatReady={chatReady}
+                    onChatReady={handleChatReady}
+                    // A terminal state under a banner: the banner names the reason
+                    // and the one action. A composer beside it would promise that
+                    // the next message wakes a computer that cannot come back.
+                    readOnly={!!notice}
+                    inputReplacement={notice ? <SessionNotice {...notice} /> : undefined}
+                  />
+                )}
+              </SandboxLoadingBoundary>
             </ProjectSessionRuntimeConnection>
           </div>
         )}
@@ -1216,8 +1221,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                 stage={authLoading || !user ? 'provisioning' : startStage}
                 boundAgentName={boundAgentName}
                 onSubmit={() => setSubmittedOnShell(true)}
-                // The chat underneath owns the prompt from here; the shell's
-                // copy would otherwise dissolve over it for the whole fade.
+                // The chat underneath owns the queued rows from here. The
+                // first prompt's bubble stays: see the prop.
                 hasTranscript={hasTranscript}
                 draftActive={!overlayDismissed}
               />

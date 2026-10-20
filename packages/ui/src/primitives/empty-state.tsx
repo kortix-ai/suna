@@ -33,6 +33,8 @@ import type { ReactNode } from 'react';
 
 export interface EmptyStateProps {
   icon?: LucideIcon | IconMynauiType | IconType;
+  /** Custom artwork in place of `icon`. */
+  media?: ReactNode;
   title: string;
   description?: ReactNode;
   action?: ReactNode;
@@ -43,6 +45,7 @@ export interface EmptyStateProps {
 
 export function EmptyState({
   icon: IconComponent,
+  media,
   title,
   description,
   action,
@@ -56,10 +59,14 @@ export function EmptyState({
   return (
     <Empty className={cn('', className)}>
       <EmptyHeader className={maxW}>
-        {IconComponent && (
-          <EmptyMedia className="mb-4">
-            <IconComponent className={cn(iconSize, 'text-muted-foreground')} />
-          </EmptyMedia>
+        {media ? (
+          <EmptyMedia className="mb-5">{media}</EmptyMedia>
+        ) : (
+          IconComponent && (
+            <EmptyMedia className="mb-4">
+              <IconComponent className={cn(iconSize, 'text-muted-foreground')} />
+            </EmptyMedia>
+          )
         )}
         <EmptyTitle className="text-foreground text-sm font-semibold tracking-tight">
           {title}

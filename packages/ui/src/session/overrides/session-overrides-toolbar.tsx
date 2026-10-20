@@ -6,6 +6,7 @@ import { useTranslations } from '../../i18n';
 import type { SessionScope } from '@kortix/sdk';
 import {
   CpuIcon as Cpu,
+  FolderIcon,
   KeyIcon as KeyRound,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
@@ -33,6 +34,7 @@ import { useSessionScope } from '../scope/use-session-scope';
 import {
   useFeatureFlag,
   useProjectSession,
+  useSessionDrives,
   useSessionProviderSecretPools,
 } from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
@@ -50,6 +52,10 @@ const ProviderSecretPoolEditor = lazyClient(() =>
 );
 const NewProviderSecretPoolEditor = lazyClient(() =>
   import('./provider-secret-pool-editor').then((mod) => mod.NewProviderSecretPoolEditor),
+);
+// The Files row's list, loaded when that row opens.
+const SessionDrivesList = lazyClient(() =>
+  import('../../files/drives/session-drives-chip').then((mod) => mod.SessionDrivesList),
 );
 
 const unavailableCatalog: SessionScopeSelectionCatalog = {
@@ -246,6 +252,10 @@ export function SessionOverridesToolbar({
   const tScope = useTranslations('sessionScope');
   const pooledSecretsEnabled = useFeatureFlag(projectId, 'pooled_provider_secrets').enabled;
   const llmGatewayEnabled = useFeatureFlag(projectId, 'llm_gateway').enabled;
+  const drivesEnabled = useFeatureFlag(projectId, 'drives').enabled;
+  const tDrives = useTranslations('drives');
+  // Drives mount when the sandbox is created: an unsent session has none.
+  const sessionDrives = useSessionDrives(projectId, drivesEnabled ? sessionId : undefined);
   const providerPools = useSessionProviderSecretPools(
     pooledSecretsEnabled && llmGatewayEnabled ? projectId : null, sessionId,
   );
@@ -400,6 +410,18 @@ export function SessionOverridesToolbar({
       providerPoolDraft, providerDrafts, providerPools.isError, providerPools.isLoading,
       llmGatewayEnabled, saving, onProviderDraftChange, onProviderSecretPoolsChange, tPooled));
     list.push(sandboxRow(sandboxSlot, sandbox, tI18nComplete));
+    if (sessionId && drivesEnabled) {
+      list.push({
+        id: 'files',
+        name: tDrives('sessionFilesName'),
+        icon: FolderIcon,
+        hint: tDrives('sessionFilesHint'),
+        summary: tDrives('sessionChipLabel', { count: sessionDrives.data?.drives.length ?? 0 }),
+        description: tDrives('sessionFilesDescription'),
+        readOnly: true,
+        editor: <SessionDrivesList projectId={projectId} sessionId={sessionId} />,
+      });
+    }
     return list;
   }, [
     secretsDenied,
@@ -422,6 +444,9 @@ export function SessionOverridesToolbar({
     sessionId,
     sandbox,
     sandboxSlot,
+    drivesEnabled,
+    sessionDrives.data?.drives.length,
+    tDrives,
     saveScope.isPending,
     tI18nComplete,
     tPooled,
@@ -430,7 +455,8 @@ export function SessionOverridesToolbar({
   // Nothing left to change (a member in an existing session: the sandbox row is
   // read-only and fixed at create). A gear that opens onto a Save button and
   // "Changes apply to the next prompt" over nothing editable is a dead end.
-  if (rows.every((row) => row.readOnly)) return null;
+  // The Files row is read-only too, but what a session can open is worth a gear.
+  if (rows.every((row) => row.readOnly && row.id !== 'files')) return null;
 
   return (
     <SessionOverridesControl

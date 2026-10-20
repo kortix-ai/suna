@@ -3,6 +3,7 @@
 import { Disclosure, DisclosureContent } from '../../../primitives/disclosure';
 import { Input } from '../../../primitives/input';
 import { Label } from '../../../primitives/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../primitives/select';
 import { Switch } from '../../../primitives/switch';
 import { SharingPicker } from '../../../access/sharing-picker';
 import { useTranslations as useI18nTranslations } from '../../../i18n';
@@ -142,6 +143,31 @@ export function TriggerOptions({
               </div>
             </div>
           </OptionField>
+
+          {/* Overlap (KRTX-1721): the other modes queue into one session already. */}
+          {draft.mode === 'fresh' && (
+            <OptionField label={tComposer('overlap')} hint={tComposer('overlapHint')}>
+              <Select
+                value={draft.overlap}
+                onValueChange={(v) => patch({ overlap: v as ComposerDraft['overlap'] })}
+              >
+                <SelectTrigger className="w-full cursor-pointer text-sm" aria-label={tComposer('overlap')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default" className="cursor-pointer">
+                    {isCron ? tComposer('overlapDefaultSkip') : tComposer('overlapDefaultAllow')}
+                  </SelectItem>
+                  <SelectItem value="skip" className="cursor-pointer">
+                    {tComposer('overlapSkip')}
+                  </SelectItem>
+                  <SelectItem value="allow" className="cursor-pointer">
+                    {tComposer('overlapAllow')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </OptionField>
+          )}
 
           {!isCron && (
             <OptionField
