@@ -170,7 +170,10 @@
       "deleteMine": "Delete my value",
       "mineDeleted": "Value deleted",
       "mineDeleteError": "Could not delete your value. Try again."
-    }
+    },
+    "agentAccess": "Agents: {agents}",
+    "allAgents": "All agents",
+    "noAgents": "No agents"
   },
   "useCases": {
     "headline": "The loops that run a company"
@@ -1039,10 +1042,6 @@
           "name": "AgentMail Email",
           "description": "Assign AgentMail inboxes so incoming email threads can start and continue Kortix sessions."
         },
-        "llm_gateway": {
-          "name": "LLM Gateway",
-          "description": "Route this project through the managed Kortix LLM gateway for managed models, metering, and budgets."
-        },
         "meta_agent": {
           "name": "Meta Agent",
           "description": "Add a coordinator agent that manages specialized sessions and multi-step work across the project."
@@ -1106,6 +1105,14 @@
         "connectors_v2": {
           "name": "Connectors v2",
           "description": "The MCP app catalog in Customize → Connectors, with sign-in that Kortix runs. With App event triggers on, Kortix checks these apps for new emails, files and items and starts an agent. Also adds Telegram as a channel. New connector accounts are no longer shared with the whole project by default."
+        },
+        "agent_rooms": {
+          "name": "Rooms",
+          "description": "Named chat rooms where agent sessions and people post and reply in threads. A session wakes when a message is addressed to it. Adds the Rooms page, `kortix rooms`, and `kortix peers`."
+        },
+        "goals": {
+          "name": "Goals",
+          "description": "Give an agent an objective it owns until an independent check confirms the outcome. It plans, works, waits, follows up with people, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on."
         }
       }
     },

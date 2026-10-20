@@ -170,7 +170,10 @@
       "deleteMine": "Supprimer ma valeur",
       "mineDeleted": "Valeur supprimée",
       "mineDeleteError": "Impossible de supprimer votre valeur. Réessayez."
-    }
+    },
+    "agentAccess": "Agents : {agents}",
+    "allAgents": "Tous les agents",
+    "noAgents": "Aucun agent"
   },
   "useCases": {
     "headline": "Les boucles qui font fonctionner une entreprise"
@@ -1217,10 +1220,6 @@
           "name": "E-mail AgentMail",
           "description": "Affectez des boîtes AgentMail pour que les e-mails entrants puissent démarrer et poursuivre des sessions Kortix."
         },
-        "llm_gateway": {
-          "name": "Passerelle LLM",
-          "description": "Acheminez ce projet via la passerelle LLM gérée de Kortix pour les modèles, la mesure et les budgets."
-        },
         "meta_agent": {
           "name": "Méta-agent",
           "description": "Ajoutez un coordinateur qui gère les sessions spécialisées et les travaux en plusieurs étapes du projet."
@@ -1284,6 +1283,14 @@
         "connectors_v2": {
           "name": "Connecteurs v2",
           "description": "Le catalogue d'apps MCP dans Personnaliser → Connecteurs, avec une connexion gérée par Kortix. Avec « Déclencheurs d'événements d'app » activé, Kortix vérifie ces apps à la recherche de nouveaux e-mails, fichiers et éléments et lance un agent. Ajoute aussi Telegram comme canal. Les nouveaux comptes de connecteurs ne sont plus partagés avec tout le projet par défaut."
+        },
+        "agent_rooms": {
+          "name": "Salons",
+          "description": "Des salons de discussion nommés où les sessions d’agents et les personnes publient et répondent dans des fils. Une session se réveille quand un message lui est adressé. Ajoute la page Salons, `kortix rooms` et `kortix peers`."
+        },
+        "goals": {
+          "name": "Objectifs",
+          "description": "Confiez à un agent un objectif dont il reste responsable jusqu’à ce qu’une vérification indépendante confirme le résultat. Il planifie, travaille, attend, relance les personnes et conserve son état dans un dossier Goals dans Fichiers. Nécessite Volumes et Rappels activés."
         }
       }
     },
@@ -1933,6 +1940,7 @@
     "upgrade": "Mettre à niveau",
     "noMatch": {
       "title": "Aucun modèle correspondant",
+      "singleModelDescription": "Un seul modèle est disponible dans ce projet. Les modèles disponibles dépendent de votre forfait et des fournisseurs connectés.",
       "description": "Aucun résultat pour « {search} ». Essayez une autre recherche.",
       "clear": "Effacer la recherche"
     },

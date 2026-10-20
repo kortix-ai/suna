@@ -112,20 +112,15 @@ const TABLE_TABS: string[] = [];
 /**
  * Declares no width of its own, because something else supplies the column.
  *
- * Renders `CapabilityPageShell` as its outermost element — it is a routed
- * Customize page (`/projects/[id]/customize/models`) that happens to still live in
- * `tabs/`, not a pane in the settings rail. Its column is the shell's
- * `max-w-5xl`, shared with Connectors / Agents / Skills / Triggers / Secrets /
- * Channels, and it is pinned beside the file (`models-tab.test.tsx`) — not
- * here, because the panel's two-tier rule does not govern a page that is no
- * longer panel content.
- *
- * `members-tab.tsx` was the other entry until Members graduated a FOURTH
- * time (see the `TABLE_TABS` comment above) — `/projects/[id]/members` is a
- * bare redirect now, not a rendered pane, so there is nothing left here to
- * delegate a column for.
+ * Empty since #10547 and kept rather than deleted: the rule still holds for
+ * the next tab whose outermost element is a shell that owns the column.
+ * `models-tab.tsx` was the last entry: a pass-through that rendered the
+ * Customize Models page (`/projects/[id]/customize/models`) inside
+ * `CapabilityPageShell`. #10547 deleted it; that page's chrome is pinned in
+ * `settings/tabs/models-tab.test.tsx`. `members-tab.tsx` left earlier, when
+ * Members graduated a FOURTH time (see the `TABLE_TABS` comment above).
  */
-const DELEGATING_TABS = ['models-tab.tsx'];
+const DELEGATING_TABS: string[] = [];
 
 /** `<Table*>` markup — the ONLY thing that earns a tab the wide tier. */
 const TABLE_MARKUP = /<Table(>|Header|Row|Body|Cell|Head\b)/;
@@ -280,8 +275,8 @@ describe('settings tab content width', () => {
  * `git-view.tsx` (Repositories) is not in either list below any more: it
  * merged INTO General as a "Git repo" section and now delegates to
  * `general-tab.tsx`'s own `max-w-2xl` column instead of declaring one of its
- * own — the same delegation `models-tab.tsx` does via `DELEGATING_TABS`
- * above, just for a section rather than a tab.
+ * own — the delegation `DELEGATING_TABS` above describes, for a section
+ * rather than a tab.
  */
 /**
  * Empty since 2026-08-17, and kept rather than deleted: the rule still holds

@@ -21,6 +21,11 @@ exactly one is "active" — every account-scoped command (\`projects ls\`,
 \`ship\`, …) operates on it unless overridden. To switch instance instead,
 use \`kortix hosts use\`; to sign in, \`kortix hosts login\`.
 
+Inside a Kortix sandbox, plain commands use the delegated session identity,
+not stored host credentials. KORTIX_DISABLE_SANDBOX_ENV_FILE=1 disables the
+sandbox env-file fallback. To use stored credentials, also unset exported KORTIX_TOKEN,
+KORTIX_API_URL, KORTIX_FRONTEND_URL and KORTIX_PROJECT_ID for that invocation.
+
 Subcommands:
   ls                   List the accounts you belong to (--json)
   use [<slug|id>]      Switch the active account (interactive if omitted)

@@ -170,7 +170,10 @@
       "deleteMine": "Meinen Wert löschen",
       "mineDeleted": "Wert gelöscht",
       "mineDeleteError": "Ihr Wert konnte nicht gelöscht werden. Versuchen Sie es erneut."
-    }
+    },
+    "agentAccess": "Agenten: {agents}",
+    "allAgents": "Alle Agenten",
+    "noAgents": "Keine Agenten"
   },
   "useCases": {
     "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"
@@ -1217,10 +1220,6 @@
           "name": "AgentMail-E-Mail",
           "description": "Weisen Sie AgentMail-Postfächer zu, damit eingehende E-Mail-Threads Kortix-Sitzungen starten und fortsetzen können."
         },
-        "llm_gateway": {
-          "name": "LLM-Gateway",
-          "description": "Leiten Sie dieses Projekt über das verwaltete Kortix-LLM-Gateway für Modelle, Messung und Budgets."
-        },
         "meta_agent": {
           "name": "Meta-Agent",
           "description": "Fügen Sie einen Koordinator hinzu, der spezialisierte Sitzungen und mehrstufige Arbeiten im Projekt verwaltet."
@@ -1284,6 +1283,14 @@
         "connectors_v2": {
           "name": "Connectors v2",
           "description": "Der MCP-App-Katalog unter Anpassen → Connectoren, mit Anmeldung über Kortix. Ist „App-Ereignis-Trigger“ an, prüft Kortix diese Apps auf neue E-Mails, Dateien und Einträge und startet einen Agenten. Dazu Telegram als Kanal. Neue Connector-Konten werden nicht mehr standardmäßig mit dem ganzen Projekt geteilt."
+        },
+        "agent_rooms": {
+          "name": "Räume",
+          "description": "Benannte Chaträume, in denen Agentensitzungen und Personen posten und in Threads antworten. Eine Sitzung wacht auf, wenn eine Nachricht an sie gerichtet ist. Fügt die Seite „Räume“, `kortix rooms` und `kortix peers` hinzu."
+        },
+        "goals": {
+          "name": "Ziele",
+          "description": "Gib einem Agenten ein Ziel, für das er verantwortlich bleibt, bis eine unabhängige Prüfung das Ergebnis bestätigt. Er plant, arbeitet, wartet, fragt bei Personen nach und speichert seinen Stand in einem Ordner „Goals“ unter Dateien. Erfordert aktivierte Volumes und Erinnerungen."
         }
       }
     },
@@ -1933,6 +1940,7 @@
     "upgrade": "Upgrade",
     "noMatch": {
       "title": "Keine passenden Modelle",
+      "singleModelDescription": "In diesem Projekt ist nur 1 Modell verfügbar. Welche Modelle verfügbar sind, hängt von deinem Tarif und den verbundenen Anbietern ab.",
       "description": "Keine Treffer für „{search}“. Versuche eine andere Suche.",
       "clear": "Suche löschen"
     },
