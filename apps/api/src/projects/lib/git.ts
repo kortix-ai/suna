@@ -33,6 +33,16 @@ import {
   workspaceMetadataAllowsRepositoryAccess,
 } from './session-workspace-access';
 import { repositoryGeneration } from './repository-generation';
+import { logger } from '../../lib/logger';
+import {
+  RepositoryDisconnectedError,
+  classifyInstallationTokenError,
+  readGitHealth,
+  repositoryDisconnectedMessage,
+  shouldProbeRepository,
+  type GitHealth,
+  type RepositoryDisconnectedReason,
+} from '../../shared/repository-health';
 
 /**
  * Every account connection, NEWEST first. The order is explicit because
@@ -643,6 +653,10 @@ export type GitAuthUnavailableReason =
   | 'repo_url_unparseable'
   | 'managed_git_unavailable'
   | 'managed_git_token_mint_failed'
+  /** The GitHub App can no longer reach the repository (see repository-health.ts). */
+  | 'repository_disconnected'
+  /** GitHub answered 5xx/429 or did not answer. Retry; the state is unchanged. */
+  | 'github_unavailable'
   | 'no_credential';
 
 /**
@@ -652,13 +666,85 @@ export type GitAuthUnavailableReason =
  */
 export const RETRYABLE_GIT_AUTH_REASONS: ReadonlySet<string> = new Set<GitAuthUnavailableReason>([
   'managed_git_token_mint_failed',
+  'github_unavailable',
 ]);
 
-export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
+/**
+ * Store a disconnect on the project's git connection row. One structured warn
+ * per state change (a new disconnect or a new reason), never per request: a
+ * re-probe that finds the same reason only moves `last_validated_at`.
+ */
+async function recordGitHealth(
+  project: ProjectRow,
+  connection: ProjectGitConnectionRow | null,
+  reason: RepositoryDisconnectedReason,
+  repository: string,
+  previous: GitHealth | null,
+): Promise<void> {
+  if (previous?.reason !== reason) {
+    logger.warn('[projects] repository disconnected', {
+      projectId: project.projectId,
+      reason,
+      installationId: connection?.installationId ?? null,
+    });
+  }
+  if (!connection) return; // ponytail: legacy rows without a connection re-probe every read
+  const now = new Date();
+  const message = repositoryDisconnectedMessage(reason, repository);
+  // The connection object is the request-memoized row: mutating it keeps every
+  // later read in this request on the new state without a second query.
+  Object.assign(connection, { status: 'error', lastErrorCode: reason, lastErrorMessage: message, lastValidatedAt: now });
+  await db
+    .update(projectGitConnections)
+    .set({ status: 'error', lastErrorCode: reason, lastErrorMessage: message, lastValidatedAt: now })
+    .where(eq(projectGitConnections.projectId, project.projectId));
+}
+
+/**
+ * Mark the connection healthy after a successful mint: clears a stored
+ * disconnect (logged once) and repoints a project that still names a retired
+ * installation id.
+ */
+async function markGitConnectionHealthy(
+  project: ProjectRow,
+  connection: ProjectGitConnectionRow,
+  installationId: string,
+  previous: GitHealth | null,
+): Promise<void> {
+  const repoint = connection.installationId !== installationId;
+  if (!previous && !repoint) return;
+  if (previous) {
+    logger.info('[projects] repository reconnected', { projectId: project.projectId, previousReason: previous.reason });
+  }
+  const now = new Date();
+  const patch = previous
+    ? { installationId, status: 'connected', lastErrorCode: null, lastErrorMessage: null, lastValidatedAt: now, updatedAt: now }
+    : { installationId, updatedAt: now };
+  Object.assign(connection, patch);
+  await db.update(projectGitConnections).set(patch).where(eq(projectGitConnections.projectId, project.projectId));
+}
+
+/**
+ * Make every stored disconnect of an account due for a probe now. Called when
+ * the account saves a GitHub installation (a reconnect), so the next read asks
+ * GitHub instead of waiting out PROBE_INTERVAL_MS.
+ */
+export async function expireAccountGitHealth(accountId: string): Promise<void> {
+  await db
+    .update(projectGitConnections)
+    .set({ lastValidatedAt: new Date(0) })
+    .where(and(eq(projectGitConnections.accountId, accountId), eq(projectGitConnections.status, 'error')));
+}
+
+export type ProjectGitAuth = {
   auth?: GitHubAuthContext;
   authSource: 'app_installation' | 'pat' | 'managed' | 'project_credential' | 'none';
   reason?: GitAuthUnavailableReason;
-}> {
+  /** Set with reason `repository_disconnected`. */
+  disconnected?: { reason: RepositoryDisconnectedReason; repository: string; installationId: string | null };
+};
+
+export async function resolveProjectGitAuth(project: ProjectRow): Promise<ProjectGitAuth> {
   const connection = await getProjectGitConnection(project.projectId);
   const remote = getProjectGitRemote(project, connection);
 
@@ -719,11 +805,29 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   if (remote.provider === 'github' && remote.authMethod === 'github_app') {
     const repo = parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl);
     if (!repo) return { authSource: 'none', reason: 'repo_url_unparseable' };
+    const repository = `${repo.owner}/${repo.repo}`;
+    const health = readGitHealth(connection);
+    const disconnected = (reason: RepositoryDisconnectedReason, installationId: string | null): ProjectGitAuth => ({
+      authSource: 'none',
+      reason: 'repository_disconnected',
+      disconnected: { reason, repository, installationId },
+    });
+    // While disconnected, ask GitHub at most once per PROBE_INTERVAL_MS. Every
+    // other read answers from the stored state: no mint, no log line.
+    if (health && !shouldProbeRepository(health, Date.now())) {
+      return disconnected(health.reason, health.installationId);
+    }
+    // A reconnect mints a NEW installation id for the same owner and
+    // `upsertAccountGitHubInstallation` deletes the old row, so a project that
+    // still stores the retired id falls back to the account's current
+    // installation for its owner and is repointed below once a mint succeeds.
+    const sameOwner = async () =>
+      (await listAccountGitHubInstallations(project.accountId)).find(
+        (candidate) => candidate.ownerLogin.toLowerCase() === repo.owner.toLowerCase(),
+      ) ?? null;
     const installation = remote.installationId
-      ? await getAccountGitHubInstallation(project.accountId, remote.installationId)
-      : (await listAccountGitHubInstallations(project.accountId)).find(
-          (candidate) => candidate.ownerLogin.toLowerCase() === repo.owner.toLowerCase(),
-        ) ?? null;
+      ? (await getAccountGitHubInstallation(project.accountId, remote.installationId)) ?? (await sameOwner())
+      : await sameOwner();
     // A project grant was verified with GitHub organization-admin credentials
     // at creation. It authorizes only this connection's owner/repository pair;
     // linking the full installation to the customer account would expose every
@@ -735,7 +839,15 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
       && connection.repoName?.toLowerCase() === repo.repo.toLowerCase();
     const installationId = installation?.installationId ?? (projectGrant ? remote.installationId : null);
     const ownerLogin = installation?.ownerLogin ?? (projectGrant ? connection!.repoOwner : null);
-    if (!installationId || !ownerLogin) return { authSource: 'none', reason: 'installation_missing' };
+    if (!installationId || !ownerLogin) {
+      // The project was connected through an installation that this account
+      // no longer has: the same state an uninstall leaves behind.
+      if (remote.installationId) {
+        await recordGitHealth(project, connection, 'app_uninstalled', repository, health);
+        return disconnected('app_uninstalled', remote.installationId);
+      }
+      return { authSource: 'none', reason: 'installation_missing' };
+    }
     if (repo.owner.toLowerCase() !== ownerLogin.toLowerCase()) {
       return { authSource: 'none', reason: 'installation_mismatch' };
     }
@@ -745,17 +857,13 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     if (remote.repoName && remote.repoName.toLowerCase() !== repo.repo.toLowerCase()) {
       return { authSource: 'none', reason: 'installation_mismatch' };
     }
-    // Scope the BYO token to the single linked repo too.
-    //
-    // Minting can fail for a reason the account can fix: GitHub 404s when the
-    // App JWT does not own this installation, which is exactly what a stored
-    // installation looks like after the App identity changes, and it also 404s
-    // once someone uninstalls the App. Without this catch that failure THREW
-    // out of a routine auth resolve, so callers saw an opaque error instead of
-    // "reconnect GitHub". Degrade to a named reason and let
-    // resolveProjectGitConnection turn it into a prompt.
+    // Scope the BYO token to the single linked repo too. A failed mint is
+    // classified (repository-health.ts): a disconnect is stored on the project
+    // and reported as `repository_disconnected`; a GitHub outage is retryable
+    // and changes nothing.
     try {
       const token = await createInstallationToken(installationId, [repo.repo]);
+      if (connection) await markGitConnectionHealthy(project, connection, installationId, health);
       return {
         auth: {
           token: token.token,
@@ -767,11 +875,18 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
         authSource: 'app_installation',
       };
     } catch (err) {
-      console.warn(
-        `[projects] GitHub App installation ${installationId} no longer mints tokens for ${project.projectId}:`,
-        err,
-      );
-      return { authSource: 'none', reason: 'installation_unusable' };
+      const verdict = classifyInstallationTokenError(err);
+      if (verdict === 'transient') return { authSource: 'none', reason: 'github_unavailable' };
+      if (verdict === 'other') {
+        logger.warn('[projects] GitHub App installation token mint failed', {
+          projectId: project.projectId,
+          installationId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return { authSource: 'none', reason: 'installation_unusable' };
+      }
+      await recordGitHealth(project, connection, verdict, repository, health);
+      return disconnected(verdict, installationId);
     }
   }
 
@@ -820,11 +935,31 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   return { authSource: 'none', reason: 'no_credential' };
 }
 
+/**
+ * Throw {@link RepositoryDisconnectedError} when the project's repository
+ * cannot be reached. Session create and start call it before any compute is
+ * spent, so they fail with the cause instead of booting a box that cannot
+ * clone ("machine could not be reached", "agent not declared"). While
+ * disconnected this is a DB read only (see PROBE_INTERVAL_MS).
+ */
+export async function assertRepositoryConnected(project: ProjectRow): Promise<void> {
+  // Only a BYO GitHub App connection can be disconnected; skip the credential
+  // read (and its audit row) for every other kind.
+  const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
+  if (remote.provider !== 'github' || remote.authMethod !== 'github_app' || remote.managed) return;
+  const auth = await resolveProjectGitAuth(project);
+  if (auth.disconnected) throw new RepositoryDisconnectedError(auth.disconnected);
+}
+
 /** What the client should show for a project's git connection. */
 export type ProjectGitConnectionState = {
   state: 'connected' | 'reconnect_required' | 'unavailable' | 'not_connected';
   reason?: GitAuthUnavailableReason;
   installUrl?: string | null;
+  /** Set when `reason` is `repository_disconnected`. */
+  disconnectedReason?: RepositoryDisconnectedReason;
+  /** The cause and the fix, for a person. Set with `disconnectedReason`. */
+  message?: string;
 };
 
 /**
@@ -845,6 +980,16 @@ export async function resolveProjectGitConnection(
 
   const resolved = await resolveProjectGitAuth(project);
   if (resolved.authSource !== 'none') return { state: 'connected' };
+
+  if (resolved.disconnected) {
+    return {
+      state: 'reconnect_required',
+      reason: 'repository_disconnected',
+      disconnectedReason: resolved.disconnected.reason,
+      message: repositoryDisconnectedMessage(resolved.disconnected.reason, resolved.disconnected.repository),
+      installUrl: await createGitHubInstallationInstallUrl(project.accountId, userId),
+    };
+  }
 
   const reconnectable =
     resolved.reason === 'installation_missing' ||
@@ -897,6 +1042,12 @@ export async function resolveProjectUpstream(
     if (!project.repoUrl) return null;
   }
   const gitAuth = await resolveProjectGitAuth(project);
+  // The one seam every repo read and the git proxy route through: a
+  // disconnected repository fails here with its cause, instead of sending a
+  // credential-less request that GitHub answers `Repository not found` (which
+  // the mirror then retries as transient). This includes a PUBLIC repository
+  // whose App is gone: it still could not take a push.
+  if (gitAuth.disconnected) throw new RepositoryDisconnectedError(gitAuth.disconnected);
   const ref = buildConnectionRef(project, remote);
   if (!ref.upstreamUrl) return null;
   const backend = getBackend(ref.provider);
@@ -907,9 +1058,8 @@ export async function resolveProjectUpstream(
   // credential-less request for the caller to send anyway: the provider answers
   // that with `404 Repository not found.`, which reads as a deleted repository.
   //
-  // Deliberately NOT extended to BYO `github_app` connections. Those may point
-  // at a PUBLIC repository that clones perfectly well with no credential, and
-  // refusing those would break a working project to improve an error message.
+  // Not extended to every BYO `github_app` failure: a PUBLIC repository clones
+  // with no credential. Only a classified disconnect (thrown above) refuses.
   if (ref.managed && gitAuth.authSource === 'none') {
     return { ...upstream, credentialUnavailable: gitAuth.reason ?? 'no_credential' };
   }

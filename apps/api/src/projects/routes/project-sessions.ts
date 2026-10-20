@@ -3,6 +3,7 @@
  * Invariant: session_id == sandbox_id == git branch name.
  */
 
+import { assertRepositoryConnected } from '../lib/git';
 import {
   SESSION_SHARING_OWNER_ONLY_ERROR,
   SHARING_SELF_LOCKOUT_ERROR,
@@ -246,6 +247,9 @@ export function registerProjectSessionsRoutes(): void {
     // Runs BEFORE the leaf assert below so its message wins. Both refuse the same
     // requests; only this one can say WHICH agents the caller could pick instead.
     const agentAccess = await resolveAndAuthorizeAgent(c, loaded, projectId, launchAgent);
+    // A disconnected repository: 409 `repository_disconnected` with the fix,
+    // before a session row or a sandbox exists.
+    await assertRepositoryConnected(loaded.row);
     if (launchAgent) {
       await assertProjectCapability(
         c,
