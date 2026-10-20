@@ -36,7 +36,7 @@ import {
 import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
 import { writeProjectFeatureFlag } from '../../feature-flags/write';
 import { isPlatformAdmin } from '../../shared/platform-roles';
-import { deleteManagedProjectRepo, purgeProjectConnectors } from '../lib/project-deletion';
+import { archiveProjectAndRevokeTokens, deleteManagedProjectRepo, purgeProjectConnectors } from '../lib/project-deletion';
 import {
   requestProviderTransition,
   readPublicProjectTransitionState,
@@ -286,12 +286,7 @@ export function registerProjectSettingsRoutes(): void {
       return c.json({ error: 'Failed to purge project connectors' }, 500);
     }
 
-    const [row] = await db
-      .update(projects)
-      .set({ status: 'archived', updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId))
-      .returning();
-
+    const row = await archiveProjectAndRevokeTokens(projectId, loaded.row.accountId);
     if (!row) return c.json({ error: 'Not found' }, 404);
     // An archived project fires nothing: release its app-event provider instances.
     await releaseProjectEventSubscriptions(projectId);

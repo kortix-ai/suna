@@ -638,6 +638,7 @@
         "userNotFound": "Utente non trovato",
         "profilePictureUpdated": "Immagine del profilo aggiornata",
         "profilePictureUploadFailed": "Impossibile caricare l'immagine del profilo",
+        "avatarUploadOffline": "Impossibile caricare la tua immagine. Controlla la connessione e riprova.",
         "profilePictureRemoved": "Immagine del profilo rimossa",
         "profilePictureRemoveFailed": "Impossibile rimuovere l'immagine del profilo",
         "chooseImageFile": "Scegli un file immagine",
@@ -20607,6 +20608,12 @@
     "mcpNotChecked": "Non ancora controllato",
     "runLimits": "Limiti di esecuzione",
     "runLimitsHint": "Un'attivazione oltre un limite non avvia nulla e compare come esecuzione saltata. Un avvio manuale non viene mai trattenuto, ma conta.",
+    "overlap": "Sovrapposizione",
+    "overlapHint": "Se l’esecuzione precedente è ancora in corso, un nuovo avvio aspetta oppure avvia una seconda esecuzione. Un’esecuzione che avvii tu parte sempre.",
+    "overlapDefaultSkip": "Predefinito: salta finché l’ultima esecuzione è in corso",
+    "overlapDefaultAllow": "Predefinito: avvia comunque una nuova esecuzione",
+    "overlapSkip": "Salta finché l’ultima esecuzione è in corso",
+    "overlapAllow": "Avvia comunque una nuova esecuzione",
     "perHour": "Per ora",
     "perDay": "Per giorno",
     "noLimit": "Nessun limite"
@@ -22013,5 +22020,9 @@
     "exists": "esiste",
     "missing": "non esiste",
     "listPlaceholder": "valore 1, valore 2"
+  },
+  "triggerAutoPause": {
+    "title": "Si è messo in pausa al limite di esecuzioni",
+    "description": "Ha girato al suo limite orario di esecuzioni per 2 ore di fila, quindi ha smesso di avviarne. Trova cosa continua ad attivarlo, poi riprendilo."
   }
 }

@@ -638,6 +638,7 @@
         "userNotFound": "未找到用户",
         "profilePictureUpdated": "个人资料图片已更新",
         "profilePictureUploadFailed": "无法上传个人资料图片",
+        "avatarUploadOffline": "无法上传你的图片。请检查网络连接后重试。",
         "profilePictureRemoved": "个人资料图片已删除",
         "profilePictureRemoveFailed": "无法删除个人资料图片",
         "chooseImageFile": "请选择图像文件",
@@ -20607,6 +20608,12 @@
     "mcpNotChecked": "尚未检查",
     "runLimits": "运行上限",
     "runLimitsHint": "超过上限的触发不会启动任何内容，并显示为已跳过的运行。手动运行从不被拦截，但会计入次数。",
+    "overlap": "重叠",
+    "overlapHint": "上一次运行仍在进行时，新的触发要么等待，要么启动第二次运行。你自己启动的运行始终会执行。",
+    "overlapDefaultSkip": "默认：上一次运行进行中时跳过",
+    "overlapDefaultAllow": "默认：仍然启动新的运行",
+    "overlapSkip": "上一次运行进行中时跳过",
+    "overlapAllow": "仍然启动新的运行",
     "perHour": "每小时",
     "perDay": "每天",
     "noLimit": "不限"
@@ -22013,5 +22020,9 @@
     "exists": "存在",
     "missing": "不存在",
     "listPlaceholder": "值 1, 值 2"
+  },
+  "triggerAutoPause": {
+    "title": "已在运行上限处自动暂停",
+    "description": "它连续 2 小时达到每小时运行上限，因此已停止启动运行。找出持续触发它的原因，然后恢复它。"
   }
 }
