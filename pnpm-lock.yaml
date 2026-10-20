@@ -2006,6 +2006,9 @@ importers:
       remark-rehype:
         specifier: ^11.1.2
         version: 11.1.2
+      shaders:
+        specifier: ^2.5.94
+        version: 2.5.135(patch_hash=eaej5q3lhsnrsoz6e7zxio5l2e)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.1)(vue@3.5.43)
       shiki:
         specifier: ^3.12.0
         version: 3.23.0
