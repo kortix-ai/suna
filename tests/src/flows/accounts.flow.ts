@@ -103,6 +103,9 @@ flow(
     await ctx.step('list does not expose the secret', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/tokens');
       r.status(200);
+      const rows = r.json<Array<Record<string, unknown>>>();
+      if (!rows.some((row) => row.token_id === tokenId)) throw new Error('the minted token is missing from the list');
+      if (rows.some((row) => 'secret_key' in row)) throw new Error('the token list exposes secret_key');
     });
     await ctx.step('revoke it', async () => {
       const r = await ctx.client
@@ -146,14 +149,20 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
+    let adminUserId: string | undefined;
     await ctx.step('add an admin member → 201 status added', async () => {
-      await team.addMember('admin');
+      adminUserId = (await team.addMember('admin')).userId;
     });
     await ctx.step('list members → owner + admin present', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId/members', { params: { accountId: team.id } });
       r.status(200);
+      const members = r.json<Array<{ user_id: string; account_role: string }>>();
+      if (!members.some((m) => m.user_id === ctx.P.OWNER.userId && m.account_role === 'owner'))
+        throw new Error('OWNER is not listed as owner');
+      if (!members.some((m) => m.user_id === adminUserId && m.account_role === 'admin'))
+        throw new Error('the added admin is not listed as admin');
     });
     await ctx.step('NONMEMBER cannot list → 403', async () => {
       const r = await ctx.client
@@ -593,6 +602,10 @@ flow(
     const team = await ctx.fixtures.team();
     const admin = await team.addMember('admin');
     const member = await team.addMember('member');
+    // The owner-role guards need a caller that IS an admin when they run. The
+    // first step demotes `admin`, so a 403 for it came from the member floor
+    // and proved nothing about these guards (KRTX-2850).
+    const guardAdmin = await team.addMember('admin');
 
     await ctx.step('OWNER demotes admin → member (downward transition) → 200', async () => {
       const r = await ctx.client
@@ -621,7 +634,7 @@ flow(
         // change OWNER's role (even to owner — the "change the owner role" branch
         // fires whenever the TARGET is an owner) → 403.
         const r = await ctx.client
-          .as(admin)
+          .as(guardAdmin)
           .patch(
             '/v1/accounts/:accountId/members/:userId',
             { role: 'admin' },
@@ -634,7 +647,7 @@ flow(
       'admin cannot promote anyone to owner → 403 (privilege-escalation guard)',
       async () => {
         const r = await ctx.client
-          .as(admin)
+          .as(guardAdmin)
           .patch(
             '/v1/accounts/:accountId/members/:userId',
             { role: 'owner' },

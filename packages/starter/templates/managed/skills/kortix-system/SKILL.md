@@ -83,8 +83,8 @@ A session runs exactly one, and the two read different config files.
 echo "${KORTIX_HARNESS:-opencode}"     # prints pi or opencode
 ```
 
-Kortix selects the harness when a session starts: `llm_gateway` off →
-OpenCode; else the `pi_harness` project flag on (the default) → pi; else
+Kortix selects the harness when a session starts: the `pi_harness` project
+flag on (the default) → pi; else
 `runtime: pi` in `kortix.yaml` → pi; else OpenCode. An existing session keeps
 its harness.
 

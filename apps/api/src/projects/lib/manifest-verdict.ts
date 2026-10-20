@@ -40,7 +40,10 @@ export type ManifestUnknownReason =
   /** Parses, but declares no usable integer `kortix_version`. */
   | 'undeclared'
   /** Hidden from this caller — no `project.file.read`. */
-  | 'restricted';
+  | 'restricted'
+  /** The GitHub App can no longer reach the repository (KRTX-2955). The
+   *  project's `git_connection` carries the reason and the fix. */
+  | 'repository_disconnected';
 
 export interface ProjectManifestVerdict {
   /** Declared `kortix_version`. `null` whenever `unknown_reason` is set. */
@@ -66,6 +69,11 @@ function unknown(reason: ManifestUnknownReason, path: string | null): ProjectMan
     unknown_reason: reason,
     path,
   };
+}
+
+/** The verdict when the repository cannot be reached at all. */
+export function disconnectedManifestVerdict(): ProjectManifestVerdict {
+  return unknown('repository_disconnected', null);
 }
 
 /** The verdict for a caller who may not read the project's config. */

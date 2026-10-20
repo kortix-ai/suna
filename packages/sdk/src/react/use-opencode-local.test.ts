@@ -49,13 +49,14 @@ describe('OpenCode local model selection scoping', () => {
     ).toBe('gateway');
   });
 
-  test('keeps native mode for v0.9.68 legacy provider-list responses', () => {
+  test('the gateway is the only provider mode: a legacy or absent list is gateway too', () => {
     expect(
       modelProviderMode({
         providers: [{ id: 'opencode', name: 'OpenCode', models: {} }],
         default: { opencode: 'deepseek-v4-flash-free' },
       } as any),
-    ).toBe('native');
+    ).toBe('gateway');
+    expect(modelProviderMode(undefined)).toBe('gateway');
   });
 
   test('does not guess a provider for bare model ids', () => {

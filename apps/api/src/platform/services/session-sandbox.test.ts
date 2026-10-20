@@ -101,7 +101,6 @@ let activeRouting: {
   activeSnapshotName: string | null;
 } | null = null;
 let agentGrantError: Error | null = null;
-let gatewayFlag = false;
 const testConfig = {
   ALLOWED_SANDBOX_PROVIDERS: ['platinum', 'daytona'],
   KORTIX_URL: 'http://localhost:8008',
@@ -382,10 +381,6 @@ mock.module('../../projects/agents', () => ({
   },
 }));
 
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: (_metadata: unknown) => gatewayFlag,
-}));
-
 mock.module('../../shared/session-failure-notifier', () => ({
   notifySessionProvisioningFailed: async () => {},
 }));
@@ -436,7 +431,6 @@ beforeEach(() => {
   providerSyncCalls = [];
   activeRouting = null;
   agentGrantError = null;
-  gatewayFlag = false;
 });
 
 function baseOpts() {
@@ -588,12 +582,11 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     ).toBe(true);
   });
 
-  test('a gateway project boots with the gateway env on any plan (the gateway enforces the plan per request)', async () => {
-    // The pi harness has no native-provider path: a box booted without
-    // KORTIX_LLM_BASE_URL never starts pi, so its first prompt is never
-    // delivered. A free account still gets the gateway; the gateway limits it
-    // to free/BYOK models per request (principal.freeModelsOnly).
-    gatewayFlag = true;
+  test('every session boots with the gateway env on any plan (the gateway enforces the plan per request)', async () => {
+    // The gateway is the only model path: a box booted without
+    // KORTIX_LLM_BASE_URL has no model. A free account still gets the gateway;
+    // the gateway limits it to free/BYOK models per request
+    // (principal.freeModelsOnly).
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
@@ -603,28 +596,6 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
 
     const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
     expect(envVars.KORTIX_LLM_BASE_URL).toBe('http://localhost:8008/v1/llm');
-    const finishCall = updateCalls.find(
-      (call) =>
-        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
-    );
-    expect((finishCall?.updates.config as Record<string, unknown>).llmGatewayEnabled).toBe(true);
-  });
-
-  test('a native project boots without the gateway env', async () => {
-    const opened = waitFor((resolve) => {
-      onComputeOpened = resolve;
-    });
-
-    await provisionSessionSandbox(baseOpts());
-    await opened;
-
-    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
-    expect(envVars).not.toHaveProperty('KORTIX_LLM_BASE_URL');
-    const finishCall = updateCalls.find(
-      (call) =>
-        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
-    );
-    expect((finishCall?.updates.config as Record<string, unknown>).llmGatewayEnabled).toBe(false);
   });
 
   test('stamps metadata.instanceId from KORTIX_INSTANCE_ID on the row it creates, and the finish write keeps it', async () => {

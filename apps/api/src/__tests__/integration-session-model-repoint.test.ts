@@ -223,27 +223,8 @@ describe('buildSessionSandboxEnvVars — session open re-points a retired pin be
       baseRef: 'main',
       agentName: 'default',
       opencodeModel: 'kortix/deepseek-v4-flash-0731',
-      llmGatewayEnabled: true,
     });
 
     expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/deepseek-v4.1-flash');
-  });
-
-  test('llmGatewayEnabled: false (native mode) never re-points — the pin is not a managed id there', async () => {
-    const sessionId = await seedSessionWithModel('kortix/deepseek-v4-flash-0731');
-
-    const env = await buildSessionSandboxEnvVars({
-      accountId: project.account_id,
-      projectId: project.project_id,
-      sessionId,
-      userId: crypto.randomUUID(),
-      repoUrl: 'https://example.test/model-repoint.git',
-      baseRef: 'main',
-      agentName: 'default',
-      opencodeModel: 'kortix/deepseek-v4-flash-0731',
-      llmGatewayEnabled: false,
-    });
-
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/deepseek-v4-flash-0731');
   });
 });
