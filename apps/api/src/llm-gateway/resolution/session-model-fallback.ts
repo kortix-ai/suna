@@ -143,7 +143,12 @@ export async function switchSessionToFallback(change: FallbackSwitch, nowMs = Da
           'opencode_model', ${change.to}::text,
           'opencode_model_source', 'fallback',
           ${FALLBACK_KEYS.from}::text, CASE WHEN ${wasFallback} THEN ${metadata}->${FALLBACK_KEYS.from}::text ELSE to_jsonb(${change.from}::text) END,
-          ${FALLBACK_KEYS.fromSource}::text, CASE WHEN ${wasFallback} THEN ${metadata}->${FALLBACK_KEYS.fromSource}::text ELSE coalesce(${metadata}->'opencode_model_source', 'null'::jsonb) END,
+          ${FALLBACK_KEYS.fromSource}::text, CASE
+            WHEN ${wasFallback} THEN ${metadata}->${FALLBACK_KEYS.fromSource}::text
+            WHEN ${metadata}->>'opencode_model' IS NOT DISTINCT FROM ${change.from}::text THEN coalesce(${metadata}->'opencode_model_source', 'null'::jsonb)
+            -- The prompt named another model than the pin: a person picked it.
+            ELSE to_jsonb('explicit'::text)
+          END,
           ${FALLBACK_KEYS.reason}::text, ${change.reason}::text,
           ${FALLBACK_KEYS.at}::text, ${nowMs}::bigint,
           ${FALLBACK_KEYS.until}::text, ${until}::bigint

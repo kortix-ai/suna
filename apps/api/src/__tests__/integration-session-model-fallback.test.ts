@@ -107,7 +107,8 @@ describe('session model fallback', () => {
       opencode_model: DEEPSEEK,
       opencode_model_source: 'fallback',
       opencode_model_fallback_from: SOL,
-      opencode_model_fallback_from_source: 'default',
+      // The prompt picked Sol over the GLM default pin: Sol comes back as a pick.
+      opencode_model_fallback_from_source: 'explicit',
       opencode_model_fallback_reason: 'provider_pool_rate_limited',
       opencode_model_fallback_at: 1_000,
       opencode_model_fallback_until: 601_000,
@@ -119,7 +120,7 @@ describe('session model fallback', () => {
     expect(await metadataOf(sessionId)).toMatchObject({
       opencode_model: DEEPSEEK,
       opencode_model_fallback_from: SOL,
-      opencode_model_fallback_from_source: 'default',
+      opencode_model_fallback_from_source: 'explicit',
       opencode_model_fallback_at: 2_000,
       opencode_model_fallback_until: 602_000,
     });
