@@ -362,3 +362,31 @@ describe('GET .../log', () => {
     expect((await get(`${base()}/log`, null)).status).toBe(401);
   });
 });
+
+test('inventory reports the durable project-default turn model instead of the creation pin', async () => {
+  const id = await seedSession(project, OWNER);
+  await storeBothWays(id, 1);
+  await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'platform' } }).where(eq(projectSessions.sessionId, id));
+  await db.update(sessionLogs).set({ record: sql`jsonb_set(${sessionLogs.record}, '{selection}', ${JSON.stringify({ agent: null, model: { provider: 'kortix', model: 'glm-5.3-flash' } })}::jsonb)` }).where(eq(sessionLogs.sessionId, id));
+  const response = await get(`/v1/projects/${project.project_id}/sessions`);
+  expect(response.status).toBe(200);
+  const rows: Array<{ session_id: string; model: string | null; metadata: Record<string, unknown> }> = await response.json();
+  for (const path of [`/v1/projects/${project.project_id}/sessions/${id}`, `/v1/sessions/${id}`]) {
+    const detail = await get(path);
+    expect(detail.status).toBe(200);
+    expect(await detail.json()).toMatchObject({ model: 'kortix/glm-5.3-flash' });
+  }
+  for (const route of ['snapshot', 'open-bundle']) {
+    for (const transcript of [0, 40]) {
+      const bundle = await get(`${base(id)}/${route}?transcript=${transcript}`);
+      expect(bundle.status).toBe(200);
+      expect(await bundle.json()).toMatchObject({
+        session: { model: 'kortix/glm-5.3-flash', metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } },
+      });
+    }
+  }
+  expect(rows.find((row) => row.session_id === id)).toMatchObject({
+    model: 'kortix/glm-5.3-flash',
+    metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' },
+  });
+});

@@ -305,3 +305,9 @@ describe('sessionCanBeStopped', () => {
     }
   });
 });
+
+test('an awake sidebar row is done after its canonical turn settles', () => {
+  const row = makeSession({ working: { state: 'idle', since: null, turn_token: null, pending_delivery: false } });
+  expect(sessionDisplayStatus(row)).toBe('done');
+  expect(sessionDisplayStatus(row, 1)).toBe('needs-you');
+});

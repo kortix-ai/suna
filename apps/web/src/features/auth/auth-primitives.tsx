@@ -137,6 +137,15 @@ export function FieldLabel({ htmlFor, children }: { htmlFor: string; children: R
   );
 }
 
+/** Inline field error: small red text under the input it describes, left-aligned. */
+export function FieldError({ id, message }: { id: string; message: string }) {
+  return (
+    <p id={id} role="alert" className="text-kortix-red text-xs">
+      {message}
+    </p>
+  );
+}
+
 export function ErrorStrip({ message }: { message: string }) {
   return (
     <div className="bg-kortix-red/15 text-foreground mb-5 flex items-center gap-2 rounded-md px-3 py-2.5">

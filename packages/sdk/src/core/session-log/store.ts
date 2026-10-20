@@ -184,15 +184,29 @@ export function applySessionLogPage(state: SessionLogState, page: SessionLogPage
 }
 
 const logs = new WeakMap<SessionLogState, SessionLog | null>();
+/** The thread built from a head and its message list: a frame that touches neither keeps the thread object. */
+const joined = new WeakMap<SessionLogThreadHead, { messages: SessionLogMessage[] | undefined; thread: SessionLogThread }>();
 
-/** The whole record: threads in arrival order, each with its messages. Null before the session record is known. */
+function threadOf(head: SessionLogThreadHead, messages: SessionLogMessage[] | undefined): SessionLogThread {
+  const cached = joined.get(head);
+  if (cached && cached.messages === messages) return cached.thread;
+  const thread = { ...head, messages: messages ?? [] };
+  joined.set(head, { messages, thread });
+  return thread;
+}
+
+/**
+ * The whole record: threads in arrival order, each with its messages. Null before the session record is known.
+ * A thread keeps its identity while its head and its message list are unchanged, so a delta to one
+ * thread re-renders no consumer of another.
+ */
 export function selectSessionLog(state: SessionLogState): SessionLog | null {
   const cached = logs.get(state);
   if (cached !== undefined) return cached;
   const session = state.session.session_id === undefined ? null : (state.session as SessionLogSessionRecord);
   const log = session && {
     ...session,
-    threads: Object.values(state.threads).map((head) => ({ ...head, messages: state.messages[head.thread_id] ?? [] })),
+    threads: Object.values(state.threads).map((head) => threadOf(head, state.messages[head.thread_id])),
   };
   logs.set(state, log);
   return log;
