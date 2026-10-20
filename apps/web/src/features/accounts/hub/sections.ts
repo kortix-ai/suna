@@ -116,6 +116,7 @@ export const NAV_GROUPS: readonly AccountNavGroup[] = [
 
 // Header block for sections whose content doesn't carry its own title.
 export const PANE_META: Partial<Record<AccountSection, { title: string; description: string }>> = {
+  git: { title: 'Git', description: '' },
   members: { title: 'Members', description: 'People with access to this account.' },
   billing: { title: 'Plan', description: 'Plan, wallet, and spend for this account.' },
   transactions: {

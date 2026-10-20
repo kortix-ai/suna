@@ -455,7 +455,9 @@ function ProjectPicker({
   return (
     <div className="space-y-4">
       <div className="space-y-0.5">
-        <p className="text-foreground text-sm font-medium">{tI18nComplete.raw('text04e2a9728af7')}</p>
+        <h1 className="text-foreground text-2xl font-medium tracking-tight text-balance">
+          {tI18nComplete.raw('text04e2a9728af7')}
+        </h1>
         <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text9949095feb15')}</p>
       </div>
 
