@@ -560,9 +560,10 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
       `/projects/${ctx.projectId}/sessions${sessionListQuery(flags, parentId)}`,
     );
   } catch (err) {
-    if (err instanceof ApiError && err.status === 404 && ctx.defaultProject) {
-      process.stderr.write(`${status.err('Default project not found or no longer accessible.')} Run ` +
-        `kortix projects use <id>${opts.hostArg ? ` --host ${opts.hostArg}` : ''} to select another project.\n`);
+    if (err instanceof ApiError && err.status === 404) {
+      const hostFlag = opts.hostArg ? ` --host ${opts.hostArg}` : '';
+      process.stderr.write(`${status.err(`${ctx.defaultProject ? 'Default project' : 'Project'} "${ctx.projectId}" was not found or is no longer accessible.`)} Run ` +
+        `\`kortix projects ls${hostFlag}\`, then \`kortix projects use <id>${hostFlag}\` to select an available project.\n`);
       return 1;
     }
     return surfaceApiError(err);
