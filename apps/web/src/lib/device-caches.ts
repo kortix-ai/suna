@@ -1,4 +1,4 @@
-import { getSharedQueryClient } from '@/lib/query-client-singleton';
+import { whenQueryClientReady } from '@/lib/query-client-singleton';
 import { registerDisposableFamily } from '@/lib/storage/managed-storage';
 import {
   browserKeyValueStorage,
@@ -121,31 +121,15 @@ export function adoptDeviceCaches(userId: string): void {
   // queries under its own key.
   if (adopted) void clearDeviceCaches();
   const storage = browserKeyValueStorage();
-  const client = getSharedQueryClient();
-  if (!storage || !client) return;
+  if (!storage) return;
   try {
-    // A draft or a preference that does not fit evicts this cache first: it
-    // refetches, the draft would be lost.
-    registerDisposableFamily(QUERY_CACHE_NAMESPACE);
-    const queries = createPersistedQueryCache({
-      storage,
-      userId,
-      shouldPersist: shouldPersistQuery,
-      maxBytes: WEB_QUERY_CACHE_MAX_BYTES,
-      namespace: QUERY_CACHE_NAMESPACE,
-    });
-    // The SDK marks each restored entry invalidated: it refetches the first
-    // time something reads it, even when younger than its staleTime.
-    queries.restore(client);
-    const stopPersisting = queries.persist(client);
-    // Writes are coalesced over a second; a reload inside it would lose the
-    // last change.
-    const flush = () => void queries.flush();
-    const flushWhenHidden = () => {
-      if (document.visibilityState === 'hidden') flush();
-    };
-    window.addEventListener('pagehide', flush);
-    document.addEventListener('visibilitychange', flushWhenHidden);
+    // The saved copy store does NOT need the query client, and it is what
+    // paints the opened session's conversation in the first frame. Register it
+    // and prefetch BEFORE anything else, so a client that is not registered
+    // yet (#10344 mounts the app shell one auth round trip sooner) can never
+    // delay it. Dropping this on an early return left the kept copy to paint
+    // ~1.4 s late, and the skeleton showed in the meantime (journey 34).
+    //
     // No IndexedDB (a blocked or partitioned context): sessions open from the
     // server's copy, as before the device kept one.
     const indexed = indexedDBKeyValueStorage();
@@ -160,7 +144,27 @@ export function adoptDeviceCaches(userId: string): void {
       copyStorage.prefetch(v1Key.replace(/^([^:]+):/, '$1.log:'));
     }
     setSavedCopyStore(copies);
-    adopted = {
+
+    // A draft or a preference that does not fit evicts this cache first: it
+    // refetches, the draft would be lost.
+    registerDisposableFamily(QUERY_CACHE_NAMESPACE);
+    const queries = createPersistedQueryCache({
+      storage,
+      userId,
+      shouldPersist: shouldPersistQuery,
+      maxBytes: WEB_QUERY_CACHE_MAX_BYTES,
+      namespace: QUERY_CACHE_NAMESPACE,
+    });
+    // Writes are coalesced over a second; a reload inside it would lose the
+    // last change.
+    const flush = () => void queries.flush();
+    const flushWhenHidden = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', flushWhenHidden);
+    let stopPersisting = () => {};
+    const record = {
       userId,
       queries,
       copies,
@@ -170,6 +174,19 @@ export function adoptDeviceCaches(userId: string): void {
         document.removeEventListener('visibilitychange', flushWhenHidden);
       },
     };
+    adopted = record;
+    // Restoring and persisting the query cache is the only part that needs the
+    // shared client. Schedule it for when the client registers rather than
+    // dropping the whole adopt on an early return.
+    whenQueryClientReady((client) => {
+      // A sign-out or a user switch before the client registered supersedes
+      // this record; the newer adopt owns the client then.
+      if (adopted !== record) return;
+      // The SDK marks each restored entry invalidated: it refetches the first
+      // time something reads it, even when younger than its staleTime.
+      queries.restore(client);
+      stopPersisting = queries.persist(client);
+    });
   } catch (error) {
     // An accelerator only: without it the app loads as before. A throw here
     // would fail the sign-in.
