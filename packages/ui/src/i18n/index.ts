@@ -1,5 +1,3 @@
-'use client';
-
 /**
  * Translations for @kortix/ui components. A host passes its own hooks through
  * `<UiProvider i18n>` (apps/web passes its next-intl hooks). Without them,
