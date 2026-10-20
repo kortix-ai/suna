@@ -21,9 +21,9 @@ function walk(dir: string): string[] {
 const rel = (p: string) => relative(KIT, p).split('\\').join('/');
 const read = (p: string) => readFileSync(p, 'utf8');
 
-/** Every file the hash covers: what changes agent behavior (not kit.json itself, not the eval set). */
+/** Every file the hash covers: what changes agent behavior (not kit.json, the README or the eval set). */
 export function kitFiles(): string[] {
-  return walk(KIT).filter((p) => rel(p) !== 'kit.json' && !rel(p).startsWith('evals/')).sort();
+  return walk(KIT).filter((p) => !['kit.json', 'README.md'].includes(rel(p)) && !rel(p).startsWith('evals/')).sort();
 }
 
 export function kitHash(): string {

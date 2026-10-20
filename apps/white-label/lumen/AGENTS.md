@@ -59,8 +59,18 @@ scan: it catches these forms, not every way to write them.
 
 ## Convex boundary
 
-- Every Kortix call with the operator credential is a `"use node"` action in
-  `convex/kortix.ts`. Other Convex files never import `@kortix/sdk`.
+- Every Kortix call with the operator credential is a `"use node"` action:
+  `convex/kortix.ts` (projects, threads, tokens), `convex/kitInstall.ts` (the
+  agent kit), `convex/ingest.ts` (Drive copies of documents) and
+  `convex/engine.ts` (run sessions). They share `convex/operator.ts`
+  (credential, `withRetry`). Other Convex files never import `@kortix/sdk`.
+- The agent kit lives in `agent-kit/`. After any edit there, run
+  `bun scripts/kit-bundle.ts` (it rewrites `convex/kit/bundle.generated.ts` and
+  the hash in `kit.json`) and bump `kit.json` `version`; `tests/unit/kit-bundle.test.ts`
+  fails on a stale bundle. Firms upgrade on their next run.
+- Run state changes go through `convex/runs.ts` mutations and write a
+  `runEvents` row; Convex re-checks every citation (`convex/lib/cite.ts`)
+  before a value reaches the UI. `convex/lib/segment.ts` is the only segmenter.
 - Public queries return null or `[]` for a non-member; mutations and actions
   throw `"403: …"`. The status prefix is what the proxy maps to HTTP.
 - Store each Kortix id next to the Lumen id that owns it. Tag sessions with

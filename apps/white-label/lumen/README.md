@@ -71,8 +71,94 @@ or system, applied before the first paint.
 | ![Onboarding: name the firm](public/screenshots/onboarding.png) | ![Matters, light theme](public/screenshots/matters.png) |
 | ![A thread on a real Kortix session, in Lumen's brand](public/screenshots/thread.png) | ![The audit log](public/screenshots/audit.png) |
 
-The document Vault, citations, tabular review and workflows (playbook review, diligence, drafting)
-are on the build plan and are not in this version.
+**Vault.** Upload PDF, DOCX or TXT to a matter. Lumen extracts the text, splits it into pages and
+anchored paragraphs, and copies the original plus the anchored text into the firm's Kortix Drive,
+where its agents read them.
+
+**Runs: reviews and questions.** "New review" turns the vault into a table: one row per document,
+eight commercial terms per row (parties, term, auto-renewal, termination for convenience,
+liability cap, governing law, assignment, change of control). "Ask" answers one question across
+the vault. Each run fans out into Kortix sessions on Lumen's own agents; cells fill as each
+document's row lands; every value carries citations that Lumen checks against the source before
+it shows them (Verified, or "Not found in source").
+
+| | |
+| --- | --- |
+| ![A review filling live: batches, cells, activity](public/screenshots/review-running.png) | ![A cell with its verified citation, quote highlighted](public/screenshots/review-cell.png) |
+
+Contract review against a playbook, due-diligence reports, drafting from templates and the
+Library are on the build plan and are not in this version. The agent kit already ships their
+agents, skills, tools and result schemas.
+
+## The agent kit and the run engine
+
+Lumen's "custom harness" is two layers Lumen owns, on top of Kortix's unchanged runtime. No legal
+code is in the Kortix platform.
+
+**1. The agent kit** (`agent-kit/`, version `kit.json`), installed into every firm's Kortix
+project through `@kortix/sdk`:
+
+| Part | What |
+|---|---|
+| `agents/` | `lumen-counsel` (questions, reports), `lumen-extractor` (review tables), `lumen-reviewer` (playbook review), `lumen-drafter` (templates). One shared rule set: cite every claim (document, anchor, verbatim quote), never guess, name the governing law, never name the platform. |
+| `skills/` | `lumen-citations`, `lumen-research-method`, `lumen-clause-extraction`, `lumen-playbook-review`, `lumen-redlining`, `lumen-due-diligence` |
+| `lumen-kit/` | The `lumen` tool CLI the agents run with `bash`: `docs`, `read`, `search` (SQLite FTS5, BM25), `cite check`, `result write` / `result done` (schema-validated, atomic), `redline` (DOCX tracked changes + comments), `draft render`, `ocr`. Stdlib Python plus the sandbox's `python-docx`, `pandoc` and `tesseract`. |
+| `lumen-kit/schemas/` | JSON Schemas for every result (`review-row`, `answer`, `issues`, `diligence-report`, `draft`, `done`, `input`) |
+| `evals/` | The answer key for the synthetic dataset and the scorer |
+
+Install (`convex/kitInstall.ts`): a short session writes the skills and the CLI into the project
+repo, commits, opens a change request and merges it; then each agent is written with
+`updateAgentConfig` and `lumen-counsel` becomes the default. Measured locally: 56-63 s per firm,
+once. Provisioning installs it; every run checks `kit.json` version + hash first and upgrades a
+firm that is behind (single flight per firm). Running sessions keep the kit they started with.
+
+**2. The run engine** (`convex/runs.ts`, `convex/engine.ts`), Convex only, no browser in the loop:
+
+```
+run    queued → preparing (kit current, input.json per batch in Drive) → running → succeeded | partial | failed   (any → canceled)
+batch  pending → starting → working → succeeded | failed                                                  (any → canceled)
+       working: invalid result → repair prompt (≤ 2) · idle without done.json → nudge (≤ 2)
+                failed session → new session (≤ 1) · 20 min without a new file, or 60 min per run → failed
+```
+
+- Fan-out: a review of N documents is ⌈N/4⌉ batches. At most 4 run at once per run and 8 per firm;
+  a finished batch wakes every waiting run of the firm.
+- The contract per batch is a Drive folder `/Company/Lumen/Runs/<runId>/<batchId>/`: Lumen writes
+  `input.json`; the agent writes `out/*.json` (one row per document, as soon as it is done) and
+  `done.json` last.
+- Convex polls the folder (5 s, then 15 s), validates each new file with ajv against the kit's
+  schemas, then `runs.ingestResult` checks every citation against Lumen's own paragraphs
+  (`convex/lib/cite.ts`; the kit runs the same rules, pinned by `agent-kit/shared/cite-vectors.json`):
+  verified, relocated (anchor corrected) or unverified ("Not found in source", never shown as
+  support). A verified or edited cell keeps its value; a newer AI answer is kept beside it.
+- Every transition writes a `runEvents` row: the run screen subscribes to it.
+
+Kortix ids stay on Lumen rows: `runBatches.kortixSessionId`, and each session carries the labels
+`lumen-firm:`, `lumen-matter:`, `lumen-user:` and `lumen-run:`.
+
+### Quality, measured
+
+`pnpm --filter @kortix/white-label-lumen eval` seeds the synthetic dataset into a firm, runs the
+real engine on real Kortix sessions (2 reviews over 10 documents, 12 questions, 5 questions the
+documents do not answer), and scores Lumen's rows against `agent-kit/evals/expected.json`. No
+LLM judge.
+
+Local results, 2026-10-20, Platinum sandboxes, the project's default model:
+
+| Suite | Kit 1.0.0 | Kit 1.0.1 |
+|---|---|---|
+| Extraction: cell accuracy | 79/80 (98.8%) | 80/80 (100%) |
+| Extraction: planted absences found | 26/26 | 26/26 |
+| Extraction: correct values with a source-checked citation | 53/53 | 54/54 |
+| Citations: quote at the cited anchor | 147/147 | 125/125 |
+| QA (12): fact recall / cited-document recall | 12/12 / 12/12 | 12/12 / 12/12 |
+| Refusal (5): correct refusals | 3/5 | 5/5 |
+| Runs (20 batches): repairs / nudges / restarts | 0 / 0 / 0 | 0 / 2 / 0 |
+
+1.0.0 missed the SPA's change-of-control condition (the column asked about "a party"; it now asks
+about any change-of-control provision) and answered two unanswerable questions helpfully instead
+of with the refusal sentence (the counsel prompt now defines `addressed`). Model output varies
+between runs; a score is the kit version plus its failures, not a guarantee.
 
 ## Who owns what
 
@@ -253,8 +339,14 @@ npx convex env set LUMEN_PROXY_SECRET "$(openssl rand -hex 24)"
 # 3. Next.js env: append to .env.local (see .env.example).
 #    KORTIX_UPSTREAM=<same as Convex>  LUMEN_PROXY_SECRET=<same as Convex>
 
+#    Optional: the sandbox provider for Lumen's sessions.
+npx convex env set KORTIX_SANDBOX_PROVIDER platinum
+
 # 4. Next.js.
 WHITELABEL_PORT=3020 pnpm --filter @kortix/white-label-lumen dev
+
+# 5. After onboarding: the synthetic dataset (2 matters, 10 documents) into your firm.
+pnpm --filter @kortix/white-label-lumen seed:demo -- --firm <firmId>
 ```
 
 Open `http://localhost:3020`, choose **Start free trial**, and follow onboarding.
@@ -338,8 +430,15 @@ Stripe SDK dependency. No Stripe key is ever in a tracked file.
 | `convex/firms.ts`, `convex/matters.ts`, `convex/threads.ts`, `convex/members.ts` | Queries and mutations |
 | `convex/billing.ts`, `convex/seats.ts` | Plans, seats, Stripe checkout, portal and webhook |
 | `convex/audit.ts`, `convex/usage.ts` | The audit log and usage |
-| `convex/kortix.ts` | Every operator call to Kortix (`"use node"` actions): provision, create thread, member token, revoke |
-| `convex/lumenAgent.ts` | The `lumen-counsel` prompt and the firm's Drive folders |
+| `convex/kortix.ts` | Operator calls to Kortix (`"use node"`): provision, create thread, member token, revoke |
+| `convex/operator.ts` | The operator credential, `withRetry` (network and 5xx: 1 s, 4 s, 15 s) |
+| `convex/documents.ts`, `convex/ingest.ts` | The Vault: upload, extract (`unpdf`, `mammoth`), segment, Drive copies, `index.json` |
+| `convex/lib/segment.ts`, `convex/lib/cite.ts` | The one segmenter (anchors `p<page>.<n>`) and the citation check |
+| `agent-kit/`, `convex/kit.ts`, `convex/kitInstall.ts` | The agent kit and its versioned install per firm |
+| `convex/runs.ts`, `convex/engine.ts` | The run engine: state, fan-out, polling, repair, citation checks |
+| `convex/seed.ts`, `scripts/seed-demo.ts`, `scripts/run-watch.ts` | Operator scripts (admin key): demo data, start and watch a run |
+| `demo-data/` | The synthetic dataset: Markdown sources, `build.py`, rendered PDF/DOCX/TXT in `dist/` |
+| `convex/lumenAgent.ts` | Agent names, skill grants and the firm's Drive folders |
 | `convex/tags.ts` | Lumen's ids as session labels and metadata |
 | `src/server/member.ts` | Bearer + cookie → member token (Convex), cached per minute |
 | `src/server/proxy-policy.ts` | What a member token may do through the proxy, the reads Lumen answers itself, and the redaction |
@@ -369,12 +468,21 @@ patterns above, not every way to write them.
 ```bash
 pnpm --filter @kortix/white-label-lumen typecheck   # boundary + tsgo (app) + tsgo -p convex
 cd apps/white-label/lumen && bun test tests/unit/proxy-policy.test.ts   # one file
-cd apps/white-label/lumen && npx vitest run tests/convex/backend.test.ts
+cd apps/white-label/lumen && npx vitest run tests/convex/backend.test.ts tests/convex/runs.test.ts
+cd apps/white-label/lumen/agent-kit/lumen-kit && python3 -m lumen_kit.selftest
 ```
 
 - `tests/unit/*.test.ts` (bun): the proxy policy, local answers and redaction, session tagging,
   the member cache, upstream path validation, CSV export, the SDK boundary and the session UI
   helpers.
+- `tests/unit/cite.test.ts`, `segment.test.ts`, `kit-bundle.test.ts`, `eval-score.test.ts`: the
+  citation rules (shared vectors), the segmenter on a real demo PDF, the kit bundle and hash, the
+  eval scorer.
+- `tests/convex/runs.test.ts`: the engine against a scripted fake Kortix (in-memory Drive and
+  sessions): fan-out, repair, nudge, relaunch, limits → partial, the firm-wide cap, citation
+  outcomes, protected human edits, ask answers, cancel.
+- `cd agent-kit/lumen-kit && python3 -m lumen_kit.selftest`: the `lumen` CLI (anchors, search,
+  cite check, validator, result files, redline round trip).
 - `tests/convex/backend.test.ts` (vitest + `convex-test`, with the Better Auth component): member
   tokens per matter (mint, reuse, revoke, refusals including a restricted matter), matter
   visibility and roles, firm setup and admin gates, provisioning (project, flag, folders, generic
