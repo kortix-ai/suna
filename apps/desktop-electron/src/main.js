@@ -93,7 +93,7 @@ const DEFAULT_URL = process.env.KORTIX_DESKTOP_DEFAULT_URL || bakedDefaultUrl() 
 const CHANNEL = resolveChannel(require('../package.json'));
 
 const URL_SCHEME = 'kortix';
-// Matches DESKTOP_UA_TOKEN in apps/web/src/lib/desktop.ts and the
+// Matches DESKTOP_UA_TOKEN in packages/ui/src/internal/lib/desktop.ts and the
 // KortixDesktop check in apps/web/src/middleware.ts.
 const UA_TOKEN = 'KortixDesktop/0.1.0';
 

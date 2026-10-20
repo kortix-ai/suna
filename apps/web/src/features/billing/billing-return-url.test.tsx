@@ -1,4 +1,4 @@
-import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 import { QueryClient } from '@tanstack/react-query';
 import { afterEach, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({ user: { id: 'synthetic-user' } }),
 }));
-mock.module('@/lib/onboarding/last-project-cookie', () => ({
+mock.module('@kortix/ui/internal/lib/onboarding/last-project-cookie', () => ({
   latestProjectPath: () => '/projects/start',
 }));
 const syncedAccounts: Array<string | undefined> = [];

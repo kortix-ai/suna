@@ -19,6 +19,7 @@ import { AccessibilityInfo, Platform, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { requireOptionalNativeModule } from 'expo';
+import { NativeContextMenu } from '@/modules/kortix-context-menu';
 import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
@@ -68,6 +69,8 @@ function useDetectRows(): Row[] {
     ['Dev build', yesNo(__DEV__)],
     ['ExpoUI native module', yesNo(requireOptionalNativeModule('ExpoUI') != null)],
     ['ExpoBlur native module', yesNo(requireOptionalNativeModule('ExpoBlur') != null)],
+    // The native message menu (`modules/kortix-context-menu`): `no` = a binary built before it.
+    ['Native message menu', yesNo(NativeContextMenu != null)],
     ['Liquid Glass', yesNo(LIQUID_GLASS_AVAILABLE)],
     ['Reduce Motion', yesNo(reducedMotion)],
     ['Reduce Transparency', Platform.OS !== 'ios' ? 'iOS only' : reduceTransparency == null ? '…' : yesNo(reduceTransparency)],

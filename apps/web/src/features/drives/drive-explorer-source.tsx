@@ -10,11 +10,11 @@
  * (`Users/ana/notes.md`); the API takes them with one.
  */
 
-import type { FileNode } from '@/features/file-browser/types';
-import type { FileContentResult, FileSource } from '@/features/file-viewer';
-import type { ExplorerQueryResult, FileExplorerSource } from '@/features/project-files/explorer-source';
-import { saveDriveFile } from '@/hooks/drives/use-drives';
-import { blobToFileContent, typedDriveBlob } from './session-drive-files';
+import type { FileNode } from '@kortix/ui/internal/files/types';
+import type { FileContentResult, FileSource } from '@kortix/ui/file-viewer';
+import type { ExplorerQueryResult, FileExplorerSource } from '@kortix/ui/files';
+import { saveDriveFile } from '@kortix/ui/files';
+import { blobToFileContent, typedDriveBlob } from '@kortix/ui/internal/files/session-drive-files';
 import {
   deleteDriveFile,
   downloadDriveFile,
@@ -26,7 +26,7 @@ import {
   uploadDriveFile,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
-import { ScopedCache } from '@/lib/storage/managed-storage';
+import { ScopedCache } from '@kortix/ui/internal/lib/storage/managed-storage';
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 

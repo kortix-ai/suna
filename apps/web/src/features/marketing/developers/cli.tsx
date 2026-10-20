@@ -1,8 +1,8 @@
 'use client';
 
 import SiteLink from '@/components/site-link';
-import { useCopy } from '@/hooks/use-copy';
-import { cn } from '@/lib/utils';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
+import { cn } from '@kortix/ui';
 import {
   ArrowRightIcon,
   CheckIcon,
