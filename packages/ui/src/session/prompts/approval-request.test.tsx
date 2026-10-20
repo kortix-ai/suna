@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
+  ApprovalAgentContext,
   ApprovalDecisionActions,
   ApprovalParameters,
   ApprovalRequest,
@@ -85,9 +86,20 @@ describe('ApprovalRequest', () => {
       />,
     );
     expect(html).toContain('Agent&#x27;s description');
-    expect(html).toContain('not verified');
     expect(html).toContain('Sends draft r-1 to a@example.test');
     expect(html).toContain('r-1');
+    // The unverified note sits in a hover card behind an info trigger, not inline.
+    const note = 'Written by the agent and not verified. The parameters below are what the connector receives.';
+    expect(html).toContain(`aria-label="${note}"`);
+    expect(html).toContain('data-slot="hover-card-trigger"');
+    expect(html).not.toContain(`>${note}<`);
+  });
+
+  test('the dense agent description keeps the same info trigger', () => {
+    const html = renderToStaticMarkup(<ApprovalAgentContext dense context="Sends the Q3 draft" />);
+    expect(html).toContain('data-slot="hover-card-trigger"');
+    expect(html).toContain('aria-label="Written by the agent and not verified.');
+    expect(html).toContain('Sends the Q3 draft');
   });
 
   test('offers a message to the agent with the decision', () => {

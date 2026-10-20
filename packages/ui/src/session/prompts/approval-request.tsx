@@ -2,6 +2,7 @@
 
 import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
 import { SessionDotMatrix } from '../../primitives/dot-matrix/session-dot-matrix';
 import { Textarea } from '../../primitives/textarea';
 import { useTranslations } from '../../i18n';
@@ -9,6 +10,7 @@ import { cn } from '../../lib/utils';
 import {
   CheckCircleIcon,
   ClockIcon,
+  InfoIcon,
   ShieldWarningIcon,
   WarningIcon,
   XCircleIcon,
@@ -484,13 +486,31 @@ export function ApprovalAgentContext({
         className,
       )}
     >
-      <p className="text-foreground text-xs font-medium">{tI18nComplete.raw('text9dcde51d9ff2')}</p>
-      <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-        {tI18nComplete.raw('textfa0db737cb09')}
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-foreground text-xs font-medium">{tI18nComplete.raw('text9dcde51d9ff2')}</p>
+        {/* Radix opens a hover card on pointer hover and on keyboard focus. */}
+        <HoverCard openDelay={150}>
+          <HoverCardTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground"
+              aria-label={tI18nComplete.raw('textfa0db737cb09')}
+            >
+              <InfoIcon weight="fill" className={dense ? 'size-3' : 'size-3.5'} />
+            </Button>
+          </HoverCardTrigger>
+          <HoverCardContent align="end" className="w-64 p-3">
+            <p className="text-muted-foreground text-xs text-pretty">
+              {tI18nComplete.raw('textfa0db737cb09')}
+            </p>
+          </HoverCardContent>
+        </HoverCard>
+      </div>
       <p
         className={cn(
-          'text-foreground mt-2 wrap-break-word whitespace-pre-wrap',
+          'text-foreground mt-1 wrap-break-word whitespace-pre-wrap',
           dense ? 'text-xs' : 'text-sm',
         )}
       >
