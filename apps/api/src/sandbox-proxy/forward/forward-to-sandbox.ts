@@ -14,6 +14,7 @@ import {
 } from '../pre-prompt-env-sync';
 import { isNonIdempotentSessionWrite } from '../prompt-dedupe';
 import { canonicalProxyPath } from '../proxy-path';
+import { stripInBoxProxyPrefix } from '../runtime-request';
 import { carriesSessionData } from '../session-data-ports';
 import {
   agentSwitchRefusal,
@@ -225,6 +226,19 @@ export async function forwardToSandbox(
     // `SessionScopeInputSchema` in @kortix/api-contract: a turn is never refused
     // for an unconnected connector, because the refusal was unclearable from the
     // product. The connector call denies and hands back a connect link instead.
+  }
+  if (
+    record.status === 'stopped' &&
+    carriesSessionData(upstreamPort) &&
+    method === 'POST' &&
+    /^\/session\/[^/?#]+\/fork\/?(?:$|[?#])/.test(stripInBoxProxyPrefix(remainingPath))
+  ) {
+    // Fork cannot wait for the asynchronous wake. Return a non-retryable
+    // conflict so the caller displays the recovery action instead of a 503.
+    return jsonProxyError({
+      error: 'Resume the session before forking the conversation.',
+      code: 'session_stopped',
+    }, 409, origin);
   }
   if (record.status !== 'active') {
     const woken = await wakeOrRefuseInactiveSandbox({

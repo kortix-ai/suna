@@ -638,6 +638,7 @@
         "userNotFound": "Usuário não encontrado",
         "profilePictureUpdated": "Foto do perfil atualizada",
         "profilePictureUploadFailed": "Não foi possível enviar a foto do perfil",
+        "avatarUploadOffline": "Não foi possível enviar sua imagem. Verifique sua conexão e tente novamente.",
         "profilePictureRemoved": "Foto do perfil removida",
         "profilePictureRemoveFailed": "Não foi possível remover a foto do perfil",
         "chooseImageFile": "Escolha um arquivo de imagem",
@@ -819,7 +820,17 @@
       "email": "E-mail",
       "channelSwitch": "{kind}: {channel}",
       "preferencesLoadError": "Não foi possível carregar suas configurações de notificação",
-      "retry": "Tentar novamente"
+      "retry": "Tentar novamente",
+      "recovery": {
+        "instructions": "Como desbloquear as notificações do navegador",
+        "chrome": "Chrome: abra os controles do site ao lado do endereço → Configurações do site → Notificações → Permitir.",
+        "edge": "Edge: abra os controles do site ao lado do endereço → Permissões para este site → Notificações → Permitir.",
+        "firefox": "Firefox: abra o ícone de permissões ao lado do endereço e remova a permissão de notificações bloqueada. Ative as notificações aqui para solicitar a permissão novamente.",
+        "safari": "Safari no Mac: abra Safari → Ajustes → Sites → Notificações e selecione Permitir para este site. No iPhone ou iPad, adicione o Kortix à Tela de Início e ative as notificações nesse app.",
+        "afterChange": "Recarregue esta página após alterar as permissões do navegador e ative as notificações. Os ajustes de notificações do sistema também devem permitir as do seu navegador.",
+        "fallback": "Enquanto uma aba do Kortix estiver aberta, os sons de conclusão podem avisar você sem permissão para notificações do navegador. Mantenha o som da aba e do dispositivo ativado. Esta opção ativa os sons de notificação e reproduz uma prévia do som de conclusão.",
+        "enableSound": "Ativar som de conclusão"
+      }
     },
     "git": {
       "updateFailed": "Não foi possível atualizar o repositório",
@@ -20594,6 +20605,12 @@
     "mcpNotChecked": "Ainda não verificado",
     "runLimits": "Limites de execução",
     "runLimitsHint": "Um disparo acima de um limite não inicia nada e aparece como uma execução ignorada. Executar manualmente nunca é retido, mas conta.",
+    "overlap": "Sobreposição",
+    "overlapHint": "Se a execução anterior ainda estiver em andamento, um novo disparo espera ou inicia uma segunda execução. Uma execução que você inicia sempre roda.",
+    "overlapDefaultSkip": "Padrão: pular enquanto a última execução estiver em andamento",
+    "overlapDefaultAllow": "Padrão: iniciar uma nova execução mesmo assim",
+    "overlapSkip": "Pular enquanto a última execução estiver em andamento",
+    "overlapAllow": "Iniciar uma nova execução mesmo assim",
     "perHour": "Por hora",
     "perDay": "Por dia",
     "noLimit": "Sem limite"
@@ -21463,6 +21480,18 @@
     "myDrive": "My drive",
     "allFiles": "All files",
     "volumeHint": "A separate volume. Sessions mount each one on its own under /drives.",
+    "teamFolders": "Team folders",
+    "adminSection": "Admin",
+    "newTeamFolder": "New team folder",
+    "audienceQuestion": "Who can open it?",
+    "badgeEveryone": "Everyone",
+    "badgePeople": "{count, plural, one {# person} other {# people}}",
+    "privateNote": "Your files stay private, even from admins. Share a folder to give someone access.",
+    "noTeamFolders": "No team folders yet.",
+    "sessionFilesName": "Files",
+    "sessionFilesHint": "Folders it can open",
+    "sessionFilesDescription": "The Drive folders this session mounts, and where the agent sees them. Share a folder in Drive to add it; stop sharing to take it away.",
+    "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
     "driveLabel": "Drive"
   },
@@ -22000,5 +22029,9 @@
     "exists": "existe",
     "missing": "não existe",
     "listPlaceholder": "valor 1, valor 2"
+  },
+  "triggerAutoPause": {
+    "title": "Pausou-se ao atingir o limite de execuções",
+    "description": "Rodou no limite de execuções por hora por 2 horas seguidas, então parou de iniciar execuções. Descubra o que continua acionando-o e depois retome-o."
   }
 }

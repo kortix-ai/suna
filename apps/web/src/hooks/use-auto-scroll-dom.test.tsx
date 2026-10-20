@@ -182,3 +182,22 @@ describe('sizeRoom over the real DOM — the anchor never lands on a continuatio
     expect(spacerHeight()).toBe(`${room(600, 40)}px`);
   });
 });
+
+describe('sizeRoom over the real DOM — the first prompt stand-in', () => {
+  test('while the stand-in sits above server turn 0, the stand-in is the anchor', () => {
+    // KRTX-2931: turn 0 renders under the stand-in before the hand-off. Anchoring
+    // turn 0 pushed the bubble just sent off the top, then glided back.
+    //   optimistic → span 300 → room 276 (the fix: the bubble stays put)
+    //   t0         → span 180 → room 396 (the bug)
+    mount([
+      { id: 'optimistic', top: 0, height: 120 },
+      { id: 't0', top: 120, height: 180 },
+    ]);
+    expect(spacerHeight()).toBe(`${room(600, 300)}px`);
+  });
+
+  test('once the stand-in leaves, turn 0 takes the anchor', () => {
+    mount([{ id: 't0', top: 0, height: 300 }]);
+    expect(spacerHeight()).toBe(`${room(600, 300)}px`);
+  });
+});
