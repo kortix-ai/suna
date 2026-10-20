@@ -5,7 +5,7 @@ import type { ComponentProps } from 'react';
 import { qk } from '../../src/lib/query-keys';
 
 // Render the select's public value without Radix's client-only portal.
-mock.module('../../src/components/ui/select', () => ({
+mock.module('@kortix/ui/select', () => ({
   Select: ({ value, disabled, children }: ComponentProps<'select'>) => (
     <select defaultValue={value} disabled={disabled}>{children}</select>
   ),

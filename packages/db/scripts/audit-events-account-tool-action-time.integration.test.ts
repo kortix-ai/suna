@@ -6,7 +6,7 @@
  * 2026-10-17 21:10): the query crossed the 25 s statement timeout (503 +
  * error page) and its sibling filters on the same account ran 9-15 s.
  *
- * idx_audit_events_account_tool_action_time (20261018094002000) is partial on
+ * idx_audit_events_account_tool_action_time (20261020070001000) is partial on
  * exactly the two LIKE prefixes the filter builds (audit-filters.ts), so
  * every index entry IS a row the query wants: the plan walks one account's
  * tool rows newest-first, in the query's own order, and stops at LIMIT.

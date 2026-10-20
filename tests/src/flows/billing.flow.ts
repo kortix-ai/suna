@@ -80,9 +80,10 @@ flow(
           .body()
           .has('$.subscription.tier_key', 'free')
           .has('$.tier.name', 'free')
-          .has('$.tier.monthly_credits', 2)
-          .has('$.credits.total', 2)
-          .has('$.credits.monthly', 2)
+          // Free = $5 (500 credits) a month since #10147. The API reports dollars.
+          .has('$.tier.monthly_credits', 5)
+          .has('$.credits.total', 5)
+          .has('$.credits.monthly', 5)
           .has('$.credits.can_run', true)
           // billing_state is the unambiguous discriminator every client branches
           // on. A funded free account is `active`; `can_run:false` must never be
@@ -397,7 +398,9 @@ flow(
 
 /**
  * BILL-10 — the plan amount is validated before any Stripe call: whole dollars
- * from 50 to 10,000. No `stripe` requirement — the 400 fires first.
+ * from 50 to 50,000 (PLAN_MAX_MONTHLY_USD). No `stripe` requirement — the 400
+ * fires first. Every value here must be out of range: an in-range value reaches
+ * Stripe, which the local profile does not have.
  */
 flow(
   'BILL-10',
@@ -408,7 +411,7 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const owner = ctx.client.as(ctx.P.OWNER);
-    for (const monthly_usd of [20, 49, 10_001, 75.5, 'fifty']) {
+    for (const monthly_usd of [20, 49, 50_001, 75.5, 'fifty']) {
       await ctx.step(`monthly_usd ${JSON.stringify(monthly_usd)} → 400`, async () => {
         const r = await owner.post('/v1/billing/plan', {
           account_id: team.id,

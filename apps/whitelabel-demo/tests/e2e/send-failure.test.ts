@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { sendFailureTitle } from '../../src/lib/send-failure';
+import { sendFailureTitle } from '@kortix/ui/chat';
 import { sessionCreateFailure } from '../../src/lib/session-create-failure';
 
 describe('sendFailureTitle', () => {

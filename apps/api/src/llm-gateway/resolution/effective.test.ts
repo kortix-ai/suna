@@ -59,14 +59,10 @@ describe('chooseEffectiveModel', () => {
     ).toEqual({ model: 'anthropic/claude-sonnet-4.6', source: 'project' });
   });
 
-  test('free tier: the platform default managed candidate is kept (KRTX-1067)', () => {
+  test('free tier: the platform default managed model is dropped too', () => {
     const platform = 'deepseek-v4.1-flash';
-    expect(
-      chooseEffectiveModel({ accountDefault: platform, freeModelsOnly: true, platformDefault: platform }),
-    ).toEqual({ model: platform, source: 'account' });
-    expect(
-      chooseEffectiveModel({ projectDefault: `kortix/${platform}`, freeModelsOnly: true, platformDefault: platform }),
-    ).toEqual({ model: `kortix/${platform}`, source: 'project' });
+    expect(chooseEffectiveModel({ accountDefault: platform, freeModelsOnly: true })).toEqual({ model: null, source: 'platform' });
+    expect(chooseEffectiveModel({ projectDefault: `kortix/${platform}`, freeModelsOnly: true })).toEqual({ model: null, source: 'platform' });
   });
 });
 
@@ -79,12 +75,13 @@ describe('toWireModel / toOpencodeModelRef', () => {
 
   test('maps stored Morph-prefixed managed ids to the new Kortix ids', () => {
     expect(toWireModel('morph-dsv41flash')).toBe('deepseek-v4.1-flash');
-    expect(toWireModel('kortix/morph-kimik3')).toBe('kimi-k3');
+    // Kimi K3 itself left the lineup on 2026-10-19: its aliases end at the default.
+    expect(toWireModel('kortix/morph-kimik3')).toBe('deepseek-v4.1-flash');
     // kimi-k3-fast (morph-kimik3-fast's one-hop target) was itself retired in
     // favor of kimi-k3 — canonicalManagedModelId follows the full chain, so
     // this resolves two hops, not one. Was 'kortix/kimi-k3-fast' before
     // 2026-09-28's chain-resolution fix.
-    expect(toOpencodeModelRef('kortix/morph-kimik3-fast')).toBe('kortix/kimi-k3');
+    expect(toOpencodeModelRef('kortix/morph-kimik3-fast')).toBe('kortix/deepseek-v4.1-flash');
     // deepseek-v4-flash-0731 (morph-dsv4flash's and deepseek-v4-flash's
     // one-hop target) was itself retired in favor of deepseek-v4.1-flash —
     // same two-hop resolution. Was 'deepseek-v4-flash-0731' before.

@@ -505,6 +505,72 @@ prompt = "x"
   });
 });
 
+describe('[[triggers]] — run caps (KRTX-1721)', () => {
+  test('max_runs_per_hour and max_runs_per_day parse on a cron and a webhook trigger, and round-trip', () => {
+    const parsed = parseManifestString(
+      manifestWith(`
+[[triggers]]
+slug = "capped-cron"
+type = "cron"
+cron = "0 * * * * *"
+prompt = "x"
+max_runs_per_hour = 2
+max_runs_per_day = 3
+
+[[triggers]]
+slug = "capped-hook"
+type = "webhook"
+secret_env = "HOOK_SECRET"
+prompt = "x"
+max_runs_per_hour = 10
+`),
+    );
+    const { specs, errors } = extractTriggers(parsed);
+    expect(errors).toEqual([]);
+    const cron = specs.find((s) => s.slug === 'capped-cron')!;
+    const hook = specs.find((s) => s.slug === 'capped-hook')!;
+    expect([cron.maxRunsPerHour, cron.maxRunsPerDay]).toEqual([2, 3]);
+    expect([hook.maxRunsPerHour, hook.maxRunsPerDay]).toEqual([10, undefined]);
+    const entry = triggerSpecToTomlEntry(cron);
+    expect([entry.max_runs_per_hour, entry.max_runs_per_day]).toEqual([2, 3]);
+    const reparsed = extractTriggers(parseManifestString(serializeManifest(parsed))).specs;
+    expect(reparsed.find((s) => s.slug === 'capped-cron')!.maxRunsPerDay).toBe(3);
+  });
+
+  test('a cap that is not a whole number of at least 1 is rejected, naming the field', () => {
+    for (const [field, value] of [['max_runs_per_hour', '0'], ['max_runs_per_day', '1.5'], ['max_runs_per_hour', '"10"']]) {
+      const { specs, errors } = extractTriggers(
+        parseManifestString(manifestWith(`
+[[triggers]]
+slug = "bad-cap"
+type = "cron"
+cron = "0 * * * * *"
+prompt = "x"
+${field} = ${value}
+`)),
+      );
+      expect(specs).toEqual([]);
+      expect(errors[0]!.error).toBe(`${field} must be a whole number of at least 1`);
+    }
+  });
+
+  test('unset caps stay off the spec and off the entry', () => {
+    const { specs } = extractTriggers(
+      parseManifestString(manifestWith(`
+[[triggers]]
+slug = "uncapped"
+type = "cron"
+cron = "0 * * * * *"
+prompt = "x"
+`)),
+    );
+    expect('maxRunsPerHour' in specs[0]!).toBe(false);
+    expect('maxRunsPerDay' in specs[0]!).toBe(false);
+    const entry = triggerSpecToTomlEntry(specs[0]!);
+    expect('max_runs_per_hour' in entry).toBe(false);
+  });
+});
+
 /**
  * `session_key` alone IS the opt-in to keyed sessions — writing both
  * `session_mode = "keyed"` and `session_key = "…"` was redundant ceremony. An

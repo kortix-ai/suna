@@ -1203,8 +1203,12 @@
     "stopNotAllowed": "Nur das Mitglied, das diesen Lauf gestartet hat, der Inhaber der Sitzung oder ein Manager des Projekts kann ihn stoppen."
   },
   "genui": {
+    "call": "Anrufen",
     "chartTapHint": "Tippen, um einen Wert zu lesen",
     "checklistReady": "{{done}}/{{total}} erledigt",
+    "directions": "Route",
+    "imageCount_one": "{{count}} Bild",
+    "imageCount_other": "{{count}} Bilder",
     "map": "Karte",
     "mapUnavailable": "Karte nicht verfügbar",
     "openImage": "Bild öffnen",
@@ -1212,7 +1216,9 @@
     "pick": "Empfehlung",
     "pieFocus": "{{label}} macht {{percent}} % der Summe aus",
     "pieOfTotal": "{{value}} von {{total}}",
-    "showData": "Daten anzeigen"
+    "showData": "Daten anzeigen",
+    "unavailable": "Dieser Inhalt konnte nicht angezeigt werden.",
+    "website": "Website"
   },
   "updateRequired": {
     "title": "Update erforderlich",

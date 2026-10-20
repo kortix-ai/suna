@@ -6,14 +6,14 @@
  * the parent passes only the selection and the workspace rows.
  */
 
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@kortix/ui/badge';
+import { ScrollArea } from '@kortix/ui/scroll-area';
+import { Separator } from '@kortix/ui/separator';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import type { ProjectFileEntry } from '@kortix/sdk';
 import { useQuery } from '@tanstack/react-query';
-import { FileText } from 'lucide-react';
+import { FileTextIcon } from '@phosphor-icons/react';
 
 function fmtSize(size: unknown): string | null {
   if (typeof size !== 'number' || !Number.isFinite(size)) return null;
@@ -44,7 +44,7 @@ export function FileViewer({
   return (
     <>
       <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-xs">
-        <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+        <FileTextIcon className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate font-mono text-foreground">{path}</span>
         {size && (
           <Badge

@@ -342,6 +342,15 @@ export async function setDesktopBadgeCount(count: number): Promise<void> {
 }
 
 /**
+ * Open the desktop shell's application menu (About, Settings, Check for
+ * Updates, Change Kortix Instance, File, Edit, View, Go, Window) below the
+ * point (x, y) in page CSS px. Windows only: its window has no menu bar.
+ */
+export async function showDesktopAppMenu(x: number, y: number): Promise<void> {
+  await desktopCommand('show_app_menu', { x, y });
+}
+
+/**
  * Like `desktopCommand`, but a failure the desktop app reports rejects with its
  * message instead of reading as "not the desktop app". `null` = not desktop.
  */
@@ -474,6 +483,10 @@ export const setDesktopQuickEntryShortcut = (shortcut: string | null) =>
  * Inline script run in <head> before hydration. Sets `data-desktop` and
  * `data-desktop-platform` on <html> so CSS can react before first paint —
  * eliminates the layout shift you'd get from a useEffect-driven flag.
+ * `data-desktop-titlebar="overlay"` comes from the shell itself
+ * (apps/desktop-electron/src/preload.js): the Windows window draws only its
+ * caption buttons over the page, and an older shell with the native title bar
+ * never sets it.
  */
 export const DESKTOP_INIT_SCRIPT = `
 (function() {
@@ -487,6 +500,8 @@ export const DESKTOP_INIT_SCRIPT = `
     if (p.indexOf('Mac') === 0) platform = 'macos';
     else if (p.indexOf('Win') === 0) platform = 'windows';
     html.setAttribute('data-desktop-platform', platform);
+    var shell = window.kortixDesktop;
+    if (shell && shell.titlebar === 'overlay') html.setAttribute('data-desktop-titlebar', 'overlay');
   } catch (e) {}
 })();
 `.trim();

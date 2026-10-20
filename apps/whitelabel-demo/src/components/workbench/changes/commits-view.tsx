@@ -1,6 +1,6 @@
 'use client';
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
 /**
  * The "Commits" tab of the workbench changes panel: the "Commit session changes"
@@ -10,28 +10,29 @@ import Loading from '@/components/ui/loading';
  * `@kortix/sdk` facade — no raw HTTP.
  */
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@kortix/ui/card';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalHeader,
+  ModalTitle,
+} from '@kortix/ui/modal';
+import { ScrollArea } from '@kortix/ui/scroll-area';
+import { Separator } from '@kortix/ui/separator';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Textarea } from '@kortix/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
 import type { ProjectBranch, ProjectCommit } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, GitBranch, GitCommitHorizontal, Scale } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
 import { DiffStat, DiffView } from './diff-view';
+import { errorToast, infoToast, successToast } from '@kortix/ui/toast';
+import { CheckIcon, GitBranchIcon, GitCommitIcon, ScalesIcon } from '@phosphor-icons/react';
 
 function CompareToBaseCard({
   projectId,
@@ -68,7 +69,7 @@ function CompareToBaseCard({
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between gap-2 text-sm">
           <span className="flex items-center gap-2">
-            <Scale className="size-4 text-muted-foreground" />
+            <ScalesIcon className="size-4 text-muted-foreground" />
             Compare to base
           </span>
           <Button
@@ -126,9 +127,9 @@ function CommitSessionCard({
         .commit(message.trim() ? { message: message.trim() } : undefined),
     onSuccess: (res) => {
       if (res.nothing_to_do) {
-        toast.info('Nothing to commit');
+        infoToast('Nothing to commit');
       } else {
-        toast.success(
+        successToast(
           res.pushed ? 'Committed and pushed session changes' : 'Committed session changes',
         );
       }
@@ -136,7 +137,7 @@ function CommitSessionCard({
       qc.invalidateQueries({ queryKey: ['project-commits', projectId] });
       qc.invalidateQueries({ queryKey: ['project-branches', projectId] });
     },
-    onError: () => toast.error('Could not commit session changes'),
+    onError: () => errorToast('Could not commit session changes'),
   });
 
   return (
@@ -144,7 +145,7 @@ function CommitSessionCard({
       {/* Commit session changes */}
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <GitCommitHorizontal className="size-4 text-muted-foreground" />
+          <GitCommitIcon className="size-4 text-muted-foreground" />
           Commit session changes
         </CardTitle>
       </CardHeader>
@@ -168,7 +169,7 @@ function CommitSessionCard({
             {commitSession.isPending ? (
               <Loading className="size-3.5" />
             ) : (
-              <Check className="size-3.5" />
+              <CheckIcon className="size-3.5" />
             )}
             Commit
           </Button>
@@ -189,7 +190,7 @@ function BranchBadges({
     <div className="shrink-0">
       {/* Branches */}
       <div className="mb-1.5 flex items-center gap-1.5 px-0.5 text-xs font-medium text-muted-foreground">
-        <GitBranch className="size-3.5" />
+        <GitBranchIcon className="size-3.5" />
         Branches
       </div>
       {isLoading ? (
@@ -203,7 +204,7 @@ function BranchBadges({
               className="gap-1 font-mono"
               title={`${b.subject ?? ''} · ${b.committer_name ?? ''}`}
             >
-              <GitBranch className="size-3" />
+              <GitBranchIcon className="size-3" />
               {b.name}
               {b.is_default && <span className="opacity-70">(default)</span>}
             </Badge>
@@ -246,7 +247,7 @@ function CommitList({
               onClick={() => onOpen(c.hash)}
               className="h-auto w-full items-start justify-start gap-2 whitespace-normal rounded-lg bg-card/50 px-2.5 py-2 text-left hover:bg-card"
             >
-              <GitCommitHorizontal className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+              <GitCommitIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-xs font-medium text-foreground">
                   {c.subject || '(no message)'}
@@ -299,7 +300,7 @@ export function CommitsView({
 
       {/* Commit list */}
       <div className="mb-1.5 flex items-center gap-1.5 px-0.5 text-xs font-medium text-muted-foreground">
-        <GitCommitHorizontal className="size-3.5" />
+        <GitCommitIcon className="size-3.5" />
         Commits
       </div>
       <CommitList items={commitItems} isLoading={commits.isLoading} onOpen={setOpenSha} />
@@ -335,44 +336,45 @@ function CommitDetailDialog({
   const files = d?.files ?? [];
 
   return (
-    <Dialog open={!!sha} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col">
-        <DialogHeader>
-          <DialogTitle className="truncate">{d?.subject ?? 'Commit'}</DialogTitle>
-          <DialogDescription className="flex flex-wrap items-center gap-2 font-mono text-xs">
+    <Modal open={!!sha} onOpenChange={(o) => !o && onClose()}>
+      <ModalContent className="flex max-h-[85vh] lg:max-w-3xl flex-col">
+        <ModalHeader>
+          <ModalTitle className="truncate">{d?.subject ?? 'Commit'}</ModalTitle>
+          <ModalDescription className="flex flex-wrap items-center gap-2 font-mono text-xs">
             <span>{d?.short_hash ?? sha?.slice(0, 7)}</span>
             {d?.author_name && <span>· {d.author_name}</span>}
             {d?.committed_at && <span>· {relativeTime(d.committed_at)}</span>}
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
+        <ModalBody className="flex min-h-0 flex-col">
+          {d?.body && <p className="whitespace-pre-wrap text-xs text-muted-foreground">{d.body}</p>}
 
-        {d?.body && <p className="whitespace-pre-wrap text-xs text-muted-foreground">{d.body}</p>}
-
-        {files.length > 0 && (
-          <div className="space-y-0.5 rounded-md border border-border p-2">
-            {files.map((f, i) => (
-              <div
-                key={`${f.path}-${i}`}
-                className="flex items-center justify-between gap-2 text-xs"
-              >
-                <span className="truncate font-mono text-foreground/80">
-                  <span className="mr-1.5 text-muted-foreground">[{f.status}]</span>
-                  {f.path}
-                </span>
-                <DiffStat additions={f.additions} deletions={f.deletions} />
-              </div>
-            ))}
-          </div>
-        )}
-
-        <ScrollArea className="min-h-0 flex-1">
-          {diff.isLoading ? (
-            <Skeleton className="h-40 w-full" />
-          ) : (
-            <DiffView patch={diff.data?.patch} />
+          {files.length > 0 && (
+            <div className="space-y-0.5 rounded-md border border-border p-2">
+              {files.map((f, i) => (
+                <div
+                  key={`${f.path}-${i}`}
+                  className="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span className="truncate font-mono text-foreground/80">
+                    <span className="mr-1.5 text-muted-foreground">[{f.status}]</span>
+                    {f.path}
+                  </span>
+                  <DiffStat additions={f.additions} deletions={f.deletions} />
+                </div>
+              ))}
+            </div>
           )}
-        </ScrollArea>
-      </DialogContent>
-    </Dialog>
+
+          <ScrollArea className="min-h-0 flex-1">
+            {diff.isLoading ? (
+              <Skeleton className="h-40 w-full" />
+            ) : (
+              <DiffView patch={diff.data?.patch} />
+            )}
+          </ScrollArea>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
   );
 }

@@ -179,6 +179,67 @@ export async function disconnectSlack(projectId: string): Promise<void> {
   if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect');
 }
 
+/** A project's Telegram bot (the `connectors_v2` feature flag). */
+export interface TelegramInstallation {
+  bot_id: string;
+  username: string | null;
+  /** Telegram user ids allowed to talk to the bot; anyone else gets a pairing reply. */
+  allowed_user_ids: string[];
+}
+
+/** The project's Telegram bot, or null when none is connected (or the flag is off). */
+export async function getTelegramInstallation(projectId: string): Promise<TelegramInstallation | null> {
+  const res = await backendApi.get<TelegramInstallation | null>(
+    `/projects/${encodeURIComponent(projectId)}/channels/telegram/installation`,
+    { showErrors: false },
+  );
+  if (!res.success) return null;
+  return res.data ?? null;
+}
+
+export interface ConnectTelegramInput {
+  /** The token BotFather gave you: `<bot id>:<secret>`. */
+  bot_token: string;
+  allowed_user_ids?: string[];
+}
+
+/** Connect a Telegram bot: Kortix registers its webhook and stores the token server-side. */
+export async function connectTelegram(
+  projectId: string,
+  input: ConnectTelegramInput,
+): Promise<TelegramInstallation> {
+  return unwrap(
+    await backendApi.post<TelegramInstallation>(
+      `/projects/${encodeURIComponent(projectId)}/channels/telegram/connect`,
+      input,
+      { showErrors: false },
+    ),
+    'Failed to connect Telegram',
+  );
+}
+
+/** Replace the Telegram user ids allowed to talk to the bot. */
+export async function setTelegramAllowedUsers(
+  projectId: string,
+  userIds: string[],
+): Promise<TelegramInstallation> {
+  return unwrap(
+    await backendApi.put<TelegramInstallation>(
+      `/projects/${encodeURIComponent(projectId)}/channels/telegram/allowed-users`,
+      { user_ids: userIds },
+      { showErrors: false },
+    ),
+    'Failed to update allowed Telegram users',
+  );
+}
+
+export async function disconnectTelegram(projectId: string): Promise<void> {
+  const res = await backendApi.delete(`/projects/${encodeURIComponent(projectId)}/channels/telegram`, {
+    showErrors: false,
+  });
+  if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect Telegram');
+}
+
 /**
  * Download a Slack-hosted file through the server-side proxy (SSRF-guarded to
  * `*.slack.com`) — the bot token never reaches the sandbox. Backs `slack download`.

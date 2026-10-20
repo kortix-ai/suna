@@ -16,10 +16,9 @@ import {
 } from '@/components/chat/scope-bar/chip';
 import { CallSnippet } from '@/components/dev/call-snippet';
 import type { ConnectorBindingChoice } from '@/server/bindable-connections';
-import { AlertTriangle } from 'lucide-react';
-import { Plug } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { type ScopeBarConnectors, hasScopeDraft, scopeControl } from '../scope-bar-model';
+import { PlugIcon, WarningIcon } from '@phosphor-icons/react';
 
 /** The rows this session is bound to, with each unavailable alias's reason. */
 function ConnectionRows({ connections }: { connections: ScopeBarConnectors }) {
@@ -42,7 +41,7 @@ function ConnectionRows({ connections }: { connections: ScopeBarConnectors }) {
               refused for it outright. */}
           {row.notice && (
             <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-2">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+              <WarningIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
               <div className="min-w-0">
                 <div className="text-xs">{row.notice.title}</div>
                 <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
@@ -83,7 +82,7 @@ export function ConnectionsScopeChip({
 }) {
   return (
     <ScopeChip
-      icon={<Plug className="size-3" />}
+      icon={<PlugIcon className="size-3" />}
       label="Connections"
       value={connections.summary}
       title="Connections"

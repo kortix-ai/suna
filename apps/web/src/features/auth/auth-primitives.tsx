@@ -21,7 +21,9 @@ import {
   CODE_LENGTH,
   insertDigits,
 } from '@/features/auth/code-input-logic';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
+import Link from 'next/link';
 
 export const AUTH_EASE = [0.23, 1, 0.32, 1] as const;
 
@@ -55,14 +57,27 @@ export function Rise({
  * same optical edge as the fields below it. The parent surface must be
  * `relative`. Desktop keeps the inline mark inside `StepHeader`.
  *
+ * It is a LINK home: the desktop shell's Back control does not render here,
+ * so on a phone this corner mark was the only exit — and it was a bare glyph
+ * with no name (KRTX-1793). The hit-area extension lifts the 22px glyph to
+ * the 44px touch floor.
+ *
  * `kx-auth-mobile-logo` lets globals.css move the mark below the title-bar
  * band in a narrow desktop-shell window, where that corner holds the macOS
  * traffic lights and the frame's Back control.
  */
 export function AuthMobileLogo() {
+  // Same key the marketing navbar's brand link uses.
+  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="kx-auth-mobile-logo absolute top-6 left-6 z-10 md:hidden">
-      <KortixLogo variant="icon" size={22} className="text-foreground" />
+      <Link
+        href="/"
+        aria-label={tHardcodedUi.raw('i18nComplete.text7ecec93ed268')}
+        className="hit-area-3 inline-flex"
+      >
+        <KortixLogo variant="icon" size={22} className="text-foreground" />
+      </Link>
     </div>
   );
 }

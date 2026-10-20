@@ -1167,8 +1167,29 @@
     {
       "idx": 166,
       "version": "7",
-      "when": 1792317054688,
-      "tag": "20261018095054_krtx_2763_spend_audit_indexes",
+      "when": 1792378345572,
+      "tag": "20261019025225_trigger_event_polls",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1792436141586,
+      "tag": "20261019185541_account_automations_paused",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1792450743208,
+      "tag": "20261019225903_session_lifecycle_claimable_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1792479566444,
+      "tag": "20261020065926_krtx_2763_spend_audit_indexes",
       "breakpoints": true
     }
   ]

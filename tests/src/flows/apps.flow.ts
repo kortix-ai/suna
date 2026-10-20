@@ -541,6 +541,7 @@ flow(
       "PUT /v1/admin/api/projects/:id/features",
       "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
       "GET /v1/projects/:projectId/apps/:appId",
       "PATCH /v1/projects/:projectId/apps/:appId",
       "PATCH /v1/projects/:projectId/apps/:appId/access",
@@ -629,6 +630,14 @@ flow(
       if (!visible.includes(appId)) {
         throw new Error(`project-wide App ${appId} was hidden from a teammate`);
       }
+
+      // A listed App is one the teammate can open: the card mints this session.
+      const session = await teammate.post(
+        "/v1/projects/:projectId/apps/:appId/access-session",
+        {},
+        { params: { ...projectParams, appId } },
+      );
+      session.status(200).body().exists("$.url").exists("$.expires_at");
     });
 
     await ctx.step(

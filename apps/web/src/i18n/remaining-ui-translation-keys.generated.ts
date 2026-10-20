@@ -411,6 +411,7 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Requests are checked against the saved secret .': 'textc6fbb4b00507',
   'research/': 'text2f80158a9d89',
   'Reserving your computer': 'texta7d795204fda',
+  Reminders: 'text7971dd752669',
   Review: 'textaff0766a5290',
   Revoked: 'textf6f738d04392',
   Routing: 'textbcba696f3eb1',
@@ -870,8 +871,8 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Yes. Bring your own API key for any major provider, or sign in with the ChatGPT subscription you already pay for, or use the managed gateway and bring no key at all. The model is a line of configuration in your repo, so switching provider is a diff rather than a migration.':
     'text055026a9c10e',
   'What does it cost?': 'texte8dc9deba44c',
-  'Free is $0 — one project, 500 credits a month, managed models and every feature, with your own key for any other model. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.':
-    'text12836c0e435d',
+  'Free is $0 — one project, 500 credits a month and every feature, with your own key or ChatGPT subscription for models. Kortix-managed models need a paid plan. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole account. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.':
+    'text79c0703d2226',
   'Why we are building it': 'text7ee5a6d5e8ad',
   'Read the source': 'text625b22ba31d0',
   'who does the work': 'textf16b8eb8dbdc',

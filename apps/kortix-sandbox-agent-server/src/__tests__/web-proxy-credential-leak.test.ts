@@ -75,7 +75,6 @@ function proxiedUserRequestHeaders(): Record<string, string> {
     Authorization: `Bearer ${SERVICE_KEY}`,
     'X-Kortix-User-Context': 'signed.payload',
     'X-Daytona-Preview-Token': 'daytona-preview-secret',
-    'e2b-traffic-access-token': 'e2b-secret',
     Cookie: '__preview_session=secret',
     'X-Kortix-Service-Call': '1',
     'User-Agent': 'kortix-test',
@@ -102,7 +101,6 @@ describe('/web-proxy does not forward our credentials to the target', () => {
       'authorization',
       'x-kortix-user-context',
       'x-daytona-preview-token',
-      'e2b-traffic-access-token',
       'cookie',
       'x-kortix-service-call',
     ].filter((name) => lastHeaders()?.get(name) != null)

@@ -1,6 +1,12 @@
 'use client';
+import { invalidateConnections } from '../invalidate-connections';
 
-import { createConnector, getDiscoverConnector, type AdminConnector } from '@kortix/sdk';
+import {
+  checkMcpServerSignIn,
+  createConnector,
+  getDiscoverConnector,
+  type AdminConnector,
+} from '@kortix/sdk';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
@@ -13,7 +19,6 @@ import {
   connectorHref,
   type AppRef,
 } from '@/features/workspace/capabilities/connectors/connector-routes';
-import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
 import { useTranslations } from '@/i18n/use-translations';
 
 import {
@@ -51,15 +56,16 @@ export function useInstall(
   const install = useCallback(
     (
       target: InstallTarget,
-      options: { connectors: readonly AdminConnector[]; app: AppRef | null },
+      options: {
+        connectors: readonly AdminConnector[];
+        app: AppRef | null;
+        /** Open "Add account" on the connector page. False for a server with
+         *  nothing to sign in to: its project account is the connection. */
+        addAccount?: boolean;
+      },
     ) => {
       /** Settles when every invalidated query has refetched. Never rejects. */
-      const refresh = () =>
-        Promise.all(
-          connectorConnectionQueryKeys(projectId).map((key) =>
-            queryClient.invalidateQueries({ queryKey: key }).catch(() => undefined),
-          ),
-        );
+      const refresh = () => invalidateConnections(queryClient, projectId);
       setPendingKey(options.app?.slug ?? target.appName);
       void runInstall(sdkInstallDeps, { projectId, target, connectors: options.connectors })
         .then(async (result) => {
@@ -74,7 +80,10 @@ export function useInstall(
             successToast(t('installed', { name: target.appName }));
           }
           router.push(
-            connectorHref(projectId, result.slug, { app: options.app, addAccount: !failed }),
+            connectorHref(projectId, result.slug, {
+              app: options.app,
+              addAccount: !failed && options.addAccount !== false,
+            }),
           );
         })
         .catch(async (error: Error) => {
@@ -119,12 +128,30 @@ export function useInstall(
           queryFn: () => getDiscoverConnector(projectId, entry.connector.id),
           staleTime: 15 * 60_000,
         })
-        .then((detail) => {
+        .then(async (detail) => {
           const variant = pickSurface(detail.variants);
           if (!variant) {
             // Nothing installable from here: the app page shows its surfaces.
             setPendingKey(null);
             router.push(appHref(projectId, app));
+            return;
+          }
+          const mcpUrl = variant.kind === 'mcp' ? variant.template.url : undefined;
+          // A Kortix catalogue app (connectors_v2) is its vendor's MCP server:
+          // a one-click sign-in opens the one-step MCP dialog, a public server
+          // installs with no account to add, anything else installs as before.
+          if (entry.connector.feeds.includes('kortix') && mcpUrl && onMcpServer) {
+            const check = await checkMcpServerSignIn(projectId, mcpUrl).catch(() => null);
+            if (check?.one_click) {
+              setPendingKey(null);
+              onMcpServer({ name: entry.name, url: mcpUrl });
+              return;
+            }
+            install(discoverInstallTarget(entry.name, variant), {
+              connectors,
+              app,
+              addAccount: check?.requires_sign_in !== false,
+            });
             return;
           }
           install(discoverInstallTarget(entry.name, variant), { connectors, app });

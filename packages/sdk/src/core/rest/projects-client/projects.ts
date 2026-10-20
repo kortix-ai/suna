@@ -80,6 +80,7 @@ export type FeatureFlagKey =
   | 'ephemeral_sandboxes'
   | 'session_log'
   | 'session_log_restore'
+  | 'connectors_v2'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -124,6 +125,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'drives',
   'session_log',
   'session_log_restore',
+  'connectors_v2',
 ] as const;
 
 /**
@@ -899,6 +901,31 @@ export async function provisionProjectStream(
     });
   }
   return settled;
+}
+
+export interface ProjectQuota {
+  /** True when the account cannot create another project right now. */
+  capped: boolean;
+  /** The active-project cap. `Number.MAX_SAFE_INTEGER` when the plan does not cap. */
+  limit: number;
+  /** Active projects in the account; null when the plan does not cap (no count ran). */
+  count: number | null;
+  /** The denial message a create would answer with; null when not capped. */
+  message: string | null;
+}
+
+/**
+ * The account's project-cap state — `GET /projects/quota`. Lets a create UI
+ * pre-check whether `provisionProject` would be denied by the plan cap
+ * BEFORE the user fills the form and hits the 403, so the page can show the
+ * cap reason up front and keep the submit disabled. Omit `accountId` to
+ * resolve the same default account the create itself targets (the server's
+ * `resolveProjectAccount` default); pass the account when the UI has already
+ * resolved one.
+ */
+export async function getProjectQuota(options?: { accountId?: string }): Promise<ProjectQuota> {
+  const query = options?.accountId ? `?account_id=${encodeURIComponent(options.accountId)}` : '';
+  return unwrap(await backendApi.get<ProjectQuota>(`/projects/quota${query}`));
 }
 
 export interface ManagedGitStatus {

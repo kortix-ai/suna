@@ -245,6 +245,13 @@ export interface GatewayDeps {
   loadDefaultMode?(projectId: string): Promise<DefaultMode>;
   /** Records the audit row; returns the new execution id used in the approval URL. */
   recordExecution(rec: ExecutionRecord): Promise<string | null>;
+  /** Set (`true`) or clear (`false`) `metadata.credential_rejected_at` on a
+   *  connection: the upstream answered 401 to its stored credential. Optional:
+   *  absent = the mark is never written. */
+  markCredentialRejected?(connectionId: string, rejected: boolean): Promise<void>;
+  /** `connection_credentials.kind` of the connection's stored credential, or
+   *  null when it has none. Read only after an upstream 401, to name the fix. */
+  credentialKind?(connectionId: string): Promise<string | null>;
   /** Approval carry-over: atomically claim a recent human approval for this
    *  exact request. The callback asks the session to continue, and its next
    *  attempt consumes the approval once instead of creating another gate. */
@@ -1239,6 +1246,11 @@ async function runConnectorAction(
         return { status: 'denied', reason, message };
       }
     }
+    const markedRejected = Boolean(connector.connectionMetadata?.credential_rejected_at);
+    const credentialRejected = await rejectedCredentialAccount(deps, connector, result, markedRejected);
+    if (connector.connectionId && (credentialRejected ? !markedRejected : markedRejected && result.ok)) {
+      await deps.markCredentialRejected?.(connector.connectionId, Boolean(credentialRejected)).catch(() => {});
+    }
     if (result.ok) {
       if (attachmentClaim?.claimToken) {
         await deps.attachmentStore
@@ -1276,11 +1288,13 @@ async function runConnectorAction(
     // An upstream that echoes the rejected body would echo the file's base64.
     const upstream = upstreamReason(result);
     const reason =
+      credentialRejected +
       teamsReadConsentHint(connector, result) +
       (attachmentRefs.length > 0 ? redactInlineBytes(upstream) : upstream) +
       fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
       http_status: result.status,
+      ...(credentialRejected ? { error_code: CREDENTIAL_REJECTED } : {}),
       reason: reason.slice(0, 500),
     });
     const message = `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`;
@@ -1576,6 +1590,50 @@ function upstreamReason(result: ExecResult): string {
     }
   }
   return `upstream_${result.status}`;
+}
+
+const CREDENTIAL_REJECTED = 'credential_rejected';
+
+/**
+ * An upstream 401 to the credential Kortix stored for this account: the key
+ * expired, was revoked, or is wrong. The bare upstream body (`api_key_expired`)
+ * reads like a Kortix auth failure, so name the account and the fix. Empty
+ * for any other result, and for a channel: it sends the platform install
+ * token, not an account credential. A later ok call clears the mark, so one
+ * stray 401 does not leave a working account flagged.
+ */
+async function rejectedCredentialAccount(
+  deps: GatewayDeps,
+  connector: GatewayConnector,
+  result: ExecResult,
+  markedRejected: boolean,
+): Promise<string> {
+  if (result.status !== 401 || !connector.hasAuth || !connector.connectionId || connector.provider === 'channel') {
+    return '';
+  }
+  const label = connector.connectionLabel || connector.connectionId;
+  const kind = await deps.credentialKind?.(connector.connectionId).catch(() => null);
+  let fix: string;
+  if (kind === 'secret') {
+    fix =
+      'A project member replaces it in Connectors, or runs ' +
+      `\`kortix connectors connections credential ${connector.connectionId} -\` with the new value on stdin.`;
+  } else if (!kind && connector.authSecret) {
+    fix = `A project member replaces the value of the project secret ${connector.authSecret} in Secrets.`;
+  } else if (kind?.startsWith('oauth2_')) {
+    // OAuth refreshes the token before expiry, so its 401 means the grant was revoked.
+    fix = `A project member signs in to account "${label}" again in Connectors.`;
+  } else if (connector.provider === 'pipedream') {
+    fix = `A project member reconnects it: \`kortix connectors connect ${connector.slug}\`.`;
+  } else {
+    fix = 'A project member replaces or reconnects it in Connectors.';
+  }
+  return (
+    `${CREDENTIAL_REJECTED}: ${connector.slug} rejected the credential stored in account "${label}" (HTTP 401): ` +
+    `it expired, was revoked, or is wrong. ${fix} ` +
+    (markedRejected ? 'Retrying returns this error until the credential is replaced. ' : '') +
+    'Upstream: '
+  );
 }
 
 /**

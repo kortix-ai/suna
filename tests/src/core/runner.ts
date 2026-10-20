@@ -93,10 +93,6 @@ function selected(f: RegisteredFlow, o: RunOptions): boolean {
 class StepCollector implements StepRecorder {
   requests: Captured[] = [];
   assertions: Assertion[] = [];
-  routesHit: Set<string>;
-  constructor(shared: Set<string>) {
-    this.routesHit = shared;
-  }
   pushRequest(c: Captured) {
     this.requests.push(c);
   }
@@ -111,11 +107,68 @@ class SkipSignal extends Error {
   }
 }
 
+/**
+ * The attempt-scoped context a flow runs against: a fresh client, the run's
+ * principals, and fixture factories bound to this attempt's stack, names and
+ * abort signal.
+ */
+function mkFlowContext(
+  env: Env,
+  world: World,
+  stack: ReturnType<World["newStack"]>,
+  steps: StepResult[],
+  attempt: number,
+  signal: AbortSignal,
+): FlowContext {
+  return {
+    // Every flow's client retries gateway-generated transient 502/503/504
+    // (incl. the Cloudflare worker's MAINTENANCE_MODE laundering of an
+    // overloaded staging origin — see accounts.flow.ts and
+    // isKe2eTransientGatewayResponse). This is SAFE because that classifier
+    // requires the response to carry NO x-request-id; a genuine app 5xx does
+    // carry one and is never retried. Retrying at the request layer (not just
+    // on .status() gates) also self-heals body-only assertions that would
+    // otherwise surface the laundered 503 as a hard AssertionError.
+    client: new Client(env.apiUrl).withTransientGatewayRetries(
+      Number(process.env.KE2E_GATEWAY_RETRIES ?? 3),
+    ),
+    P: world.principals,
+    env,
+    track: (kind, id, meta) => stack.push(kind, id, meta),
+    skip: (reason) => {
+      throw new SkipSignal(reason);
+    },
+    // Attempt-scoped: a retry must not re-derive the SAME names its failed
+    // predecessor already committed (see world.ts attemptSuffix).
+    fixtures: world.makeFixtures(stack, attempt, signal),
+    step: async (name, fn) => {
+      const collector = new StepCollector();
+      const start = performance.now();
+      try {
+        const out = await withRecorder(collector, fn);
+        steps.push(stepResult(name, "pass", start, collector));
+        return out;
+      } catch (err) {
+        // A ctx.skip() fired inside this step: the step did not FAIL — it
+        // asserted what it could (its passing assertions are recorded) and
+        // then declared the rest unreachable on this target. Recording it
+        // as "fail" made every one-step assert-then-skip flow (CHN-6) count
+        // as an unasserted skip under --require-all (run 32344222963
+        // shard 1: 34/35 passed, 0 failed, exit 1).
+        steps.push(
+          stepResult(name, err instanceof SkipSignal ? "skip" : "fail", start, collector,
+            err instanceof SkipSignal ? undefined : err),
+        );
+        throw err;
+      }
+    },
+  };
+}
+
 async function runOneFlow(
   f: RegisteredFlow,
   env: Env,
   world: World,
-  routesHit: Set<string>,
 ): Promise<FlowResult> {
   const steps: StepResult[] = [];
   const flowStart = performance.now();
@@ -147,49 +200,7 @@ async function runOneFlow(
     // Aborted when this attempt ends for any reason, so fixture work it left
     // behind (a queued or rate-limited provision) stops with it.
     const attemptController = new AbortController();
-    const ctx: FlowContext = {
-      // Every flow's client retries gateway-generated transient 502/503/504
-      // (incl. the Cloudflare worker's MAINTENANCE_MODE laundering of an
-      // overloaded staging origin — see accounts.flow.ts and
-      // isKe2eTransientGatewayResponse). This is SAFE because that classifier
-      // requires the response to carry NO x-request-id; a genuine app 5xx does
-      // carry one and is never retried. Retrying at the request layer (not just
-      // on .status() gates) also self-heals body-only assertions that would
-      // otherwise surface the laundered 503 as a hard AssertionError.
-      client: new Client(env.apiUrl).withTransientGatewayRetries(
-        Number(process.env.KE2E_GATEWAY_RETRIES ?? 3),
-      ),
-      P: world.principals,
-      env,
-      track: (kind, id, meta) => stack.push(kind, id, meta),
-      skip: (reason) => {
-        throw new SkipSignal(reason);
-      },
-      // Attempt-scoped: a retry must not re-derive the SAME names its failed
-      // predecessor already committed (see world.ts attemptSuffix).
-      fixtures: world.makeFixtures(stack, attempt, attemptController.signal),
-      step: async (name, fn) => {
-        const collector = new StepCollector(routesHit);
-        const start = performance.now();
-        try {
-          const out = await withRecorder(collector, fn);
-          steps.push(stepResult(name, "pass", start, collector));
-          return out;
-        } catch (err) {
-          // A ctx.skip() fired inside this step: the step did not FAIL — it
-          // asserted what it could (its passing assertions are recorded) and
-          // then declared the rest unreachable on this target. Recording it
-          // as "fail" made every one-step assert-then-skip flow (CHN-6) count
-          // as an unasserted skip under --require-all (run 32344222963
-          // shard 1: 34/35 passed, 0 failed, exit 1).
-          steps.push(
-            stepResult(name, err instanceof SkipSignal ? "skip" : "fail", start, collector,
-              err instanceof SkipSignal ? undefined : err),
-          );
-          throw err;
-        }
-      },
-    };
+    const ctx = mkFlowContext(env, world, stack, steps, attempt, attemptController.signal);
 
     try {
       await withFlowDeadline(f.fn(ctx), resolveFlowTimeoutMs(f.meta.timeoutMs), f.id, attemptController);
@@ -294,7 +305,6 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
         `${localPlan.excluded.length} external/todo excluded`,
     );
   }
-  const routesHit = new Set<string>();
   const startedAt = new Date().toISOString();
   const start = performance.now();
 
@@ -303,8 +313,8 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
   try {
     // Cold provider images can take longer than a flow's runtime deadline. Build
     // one through the real session route before measuring concurrent user flows.
-    if (env.capabilities.daytona && flows.some((f) =>
-      f.meta.requires?.includes('daytona') && f.meta.requires.includes('funded'))) {
+    if (env.capabilities.sandbox && flows.some((f) =>
+      f.meta.requires?.includes('sandbox') && f.meta.requires.includes('funded'))) {
       const stack = world.newStack();
       try {
         const fixtures = world.makeFixtures(stack);
@@ -387,7 +397,7 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
       started += 1;
       log.step(`[${started}/${flows.length}] START ${flow.id}`);
       try {
-        const result = await runOneFlow(flow, env, world, routesHit);
+        const result = await runOneFlow(flow, env, world);
         completed += 1;
         const progress = formatFlowProgress(result, completed, flows.length);
         if (result.status === "pass") log.pass(progress);
@@ -452,7 +462,6 @@ export async function runSuite(opts: RunOptions): Promise<RunResult> {
       profile: opts.profile ?? "all",
       excludedFlows: localPlan?.excluded ?? [],
       fixtureStats: world.fixtureStats(),
-      routesHit: [...routesHit].sort(),
       flows: out,
       summary: summarize(out, durationMs),
     };

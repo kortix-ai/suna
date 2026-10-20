@@ -3,6 +3,7 @@ import { tierGrantsAllModels } from '../billing/services/tiers';
 let accountTier = 'credits';
 let billingCalls = 0;
 let budgetCalls = 0;
+let budgetActions: Array<string | undefined> = [];
 
 // authorizeRequest() is the standalone/out-of-process gateway's combined
 // auth+billing+budget RPC (backs POST /internal/gateway/authorize). Before the
@@ -36,8 +37,8 @@ mock.module('../billing/services/entitlements', () => ({
   accountHasEntitlement: async () => false,
   getCachedAccountTier: async () => accountTier,
   // Mirrors the real resolver's tier-derived default (no operator override in
-  // these fixtures). Uses the REAL tiers helper so 'free' vs paid semantics
-  // can't drift from production.
+  // these fixtures). Uses the REAL tiers helper so 'none' vs managed-model
+  // tier semantics can't drift from production.
   accountMayUseManagedModels: async () => tierGrantsAllModels(accountTier),
 }));
 
@@ -78,13 +79,31 @@ mock.module('../repositories/account-tokens', () => ({
         : { isValid: false, ...(accountTokenExtra ?? {}) },
 }));
 
+// The order of the trace row write and the budget checks, per test.
+let calls: string[] = [];
+
+// Settlement stops at the usage write.
+mock.module('../shared/usage-events', () => ({
+  recordUsageEvent: async () => {
+    throw new Error('usage write not under test');
+  },
+}));
+
+mock.module('../shared/gateway-logs', () => ({
+  recordGatewayTrace: async () => {
+    calls.push('trace row');
+  },
+}));
+
 mock.module('./resolution/default-model', () => ({
   resolveDefaultModelForPrincipal: async () => undefined,
 }));
 
 mock.module('./budgets', () => ({
-  checkBudget: async () => {
+  checkBudget: async (_principal: unknown, action?: string) => {
     budgetCalls += 1;
+    budgetActions.push(action);
+    calls.push(`checkBudget ${action ?? 'block'}`);
     return { exceeded: false };
   },
   releaseBudgetReservation: () => {},
@@ -111,7 +130,8 @@ mock.module('../billing/services/billing-gate', () => ({
   },
 }));
 
-const { authorizeRequest, assertLlmBillingActive, authenticatePrincipal } = await import('./hooks');
+const { authorizeRequest, assertLlmBillingActive, authenticatePrincipal, recordGatewayUsage, persistGatewayTrace } =
+  await import('./hooks');
 const { BillingGateError } = await import('../billing/services/billing-gate');
 
 describe('authorizeRequest — billing 402 carries the real reason, not a hardcoded constant', () => {
@@ -144,8 +164,9 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     if (!result.ok) expect(result.errorCode).toBe('subscription_required');
   });
 
-  test('a free tier wallet never receives an LLM admission hold', async () => {
-    accountTier = 'free';
+  // `none` and `free` are the plans without managed models.
+  test.each(['none', 'free'])('the %s tier (no managed models) never receives an LLM admission hold', async (tier) => {
+    accountTier = tier;
 
     const result = await authorizeRequest('good');
 
@@ -157,7 +178,7 @@ describe('authorizeRequest — billing 402 carries the real reason, not a hardco
     }
   });
 
-  test('a paid tier keeps the LLM admission hold', async () => {
+  test('the credits tier keeps the LLM admission hold', async () => {
     accountTier = 'credits';
 
     const result = await authorizeRequest('good');
@@ -293,30 +314,96 @@ describe('assertLlmBillingActive — the wallet floor follows the credits reques
   });
 
   test('an entitlement-less account skips the gate for a request that spends nothing', async () => {
-    accountTier = 'free';
+    accountTier = 'none';
 
     await assertLlmBillingActive('acct-1');
 
     expect(billingCalls).toBe(0);
   });
 
-  // KRTX-1067: the platform default is the ONE managed model an
-  // entitlement-less account can run, and it settles as credits — so the
-  // deferred gateway path (which calls this only for a Kortix-billed request
-  // it already resolved) must take the admission hold for it too. Without
-  // this, a drained free wallet runs platform-default turns with no floor and
-  // the settle drives the balance negative.
-  test('a Kortix-billed request takes the hold for an entitlement-less account', async () => {
-    accountTier = 'free';
+  // The second managed-models gate: only managed models bill credits, so a
+  // Kortix-billed request from an account without the entitlement is refused
+  // at admission even if model resolution let it through.
+  test.each(['none', 'free'])('a Kortix-billed request from the %s plan is refused at admission', async (tier) => {
+    accountTier = tier;
 
-    await assertLlmBillingActive('acct-1', { creditsRequest: true });
-
-    expect(billingCalls).toBe(1);
+    await expect(assertLlmBillingActive('acct-1', { creditsRequest: true })).rejects.toMatchObject({
+      reason: 'plan_upgrade_required',
+    });
+    expect(billingCalls).toBe(0);
   });
 
   test('a Kortix-billed request still gates when the account is entitled', async () => {
     await assertLlmBillingActive('acct-1', { creditsRequest: true });
 
     expect(billingCalls).toBe(1);
+  });
+});
+
+describe('warn budgets run after the trace row is written, not at admission', () => {
+  const usage = { promptTokens: 10, completionTokens: 5, cachedTokens: 0, cacheWriteTokens: 0 };
+  const settled = {
+    accountId: 'acct-1',
+    actorUserId: 'user-1',
+    projectId: 'proj-1',
+    provider: 'kortix',
+    model: 'm',
+    ...usage,
+    upstreamCost: 0.01,
+    finalCost: 0.01,
+    billingMode: 'credits' as const,
+    streaming: true,
+    requestId: 'req-1',
+  };
+  const trace = {
+    requestId: 'req-1',
+    startedAt: new Date(0).toISOString(),
+    accountId: 'acct-1',
+    actorUserId: 'user-1',
+    projectId: 'proj-1',
+    requestedModel: 'm',
+    resolvedModel: 'm',
+    provider: 'kortix',
+    billingMode: 'credits' as const,
+    streaming: true,
+    status: 200,
+    ok: true,
+    latencyMs: 1,
+    attempts: 1,
+    candidatesTried: ['kortix'],
+    usage,
+    upstreamCost: 0.01,
+    finalCost: 0.01,
+    request: {},
+    response: {},
+    metadata: {},
+  };
+
+  beforeEach(() => {
+    budgetActions = [];
+    calls = [];
+    billingThrow = null;
+  });
+
+  test('admission evaluates block budgets only', async () => {
+    expect((await authorizeRequest('good', { deferBilling: true })).ok).toBe(true);
+    expect(budgetActions).toEqual([undefined]);
+  });
+
+  // The spend query reads gateway_request_logs. The check must run after this
+  // request's row exists, or the request that crosses a threshold is not counted.
+  test('a persisted trace evaluates the warn budgets after its row is written', async () => {
+    await persistGatewayTrace(trace);
+    expect(calls).toEqual(['trace row', 'checkBudget warn']);
+  });
+
+  test('a trace that adds no spend evaluates nothing', async () => {
+    await persistGatewayTrace({ ...trace, ok: false, status: 502, upstreamCost: 0, finalCost: 0 });
+    expect(calls).toEqual(['trace row']);
+  });
+
+  test('the usage write evaluates no budget: its trace row does not exist yet', async () => {
+    await recordGatewayUsage(settled).catch(() => {});
+    expect(budgetActions).toEqual([]);
   });
 });

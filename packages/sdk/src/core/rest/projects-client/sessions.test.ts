@@ -167,6 +167,26 @@ test('listProjectSessionsPage reads the continuation token from X-Next-Cursor', 
   expect(page.next_cursor).toBe('NEXT1');
 });
 
+test('listProjectSessionsPage never routes a failure to the host global error handler', async () => {
+  // The project shell prefetches this list before the access gate knows the
+  // caller may read the project, and the sidebar re-polls it every 5s. With
+  // `showErrors` at its TRUE default a non-member's 403 toasted "You do not
+  // have access to this account" over the access-request screen that already
+  // says so. The list's own query state reports the failure.
+  const errors: unknown[] = [];
+  configureKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+    onError: (err: unknown) => errors.push(err),
+  });
+
+  nextResponse = { status: 403, body: { error: 'You do not have access to this account' } };
+  await expect(listProjectSessionsPage('P1')).rejects.toMatchObject({ status: 403 });
+  expect(errors).toEqual([]);
+
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+});
+
 test('listProjectSessionsPage reports the last page as next_cursor null', async () => {
   // No header means the server folded the list to its end. A client that
   // treated "missing" as "unknown" and kept asking would loop forever.
@@ -1965,6 +1985,16 @@ describe('session pin and archive', () => {
     await listProjectSessions('P1');
     expect(last().url).not.toContain('pinned=');
     expect(last().url).not.toContain('archived=');
+  });
+
+  // KRTX-2853: Recently deleted, the deleted sessions the caller may restore.
+  test('listProjectSessionsPage sends view deleted as deleted=only, alone', async () => {
+    nextResponse = { status: 200, body: [] };
+    await listProjectSessionsPage('P1', { view: 'deleted' });
+    const params = new URL(last().url).searchParams;
+    expect(params.get('deleted')).toBe('only');
+    expect(params.get('pinned')).toBeNull();
+    expect(params.get('archived')).toBeNull();
   });
 
   test('setSessionPinned PUTs { pinned } and returns the stored state', async () => {

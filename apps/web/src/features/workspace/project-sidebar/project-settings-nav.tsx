@@ -1,29 +1,29 @@
 'use client';
 
-import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { ProjectNavRow } from '@/features/workspace/project-sidebar/project-nav-row';
+
+import { CustomizeGlyph } from '@/features/icon/icons/customize';
+export { CustomizeGlyph } from '@/features/icon/icons/customize';
+
 import { useTranslations } from '@/i18n/use-translations';
 import { useParams, usePathname } from 'next/navigation';
-import { useCallback } from 'react';
 
-import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
+import { CountBadge } from '@/components/ui/count-badge';
 import {
   activeCapabilityTab,
   capabilityTabHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import { useProjectDrive } from '@/hooks/drives/use-drives';
-import { useIsMobile } from '@/hooks/utils';
-import { useFeatureFlag } from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useFeatureFlag } from '@kortix/sdk/react';
 import { useProjectPageCans, type CanResult } from '@/lib/use-project-can';
-import { CountBadge } from '@/components/ui/count-badge';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 
 /**
  * The one project-configuration entry in the sidebar:
  * ProjectCustomizeNavItem, top of the panel under New session, navigating to
  * the capability pages (Models / Connectors / Agents / Skills / Triggers /
- * Secrets / Settings). Gated, because those pages can 403.
+ * Reminders / Secrets / Settings). Gated, because those pages can 403.
  *
  * The bottom-of-footer "Settings" row that used to sit beside it is gone
  * (Jay, 2026-08-17): it opened the same User Settings overlay a click on the
@@ -39,9 +39,9 @@ import { useReviewSessionSummary } from '@/features/review-center/hooks/use-revi
 
 /**
  * The tab the Customize row lands on, in preference order. **This mirrors
- * `CAPABILITY_TABS` and a test asserts it does** — the row should land on the
- * first tab of the bar it navigates into, so reordering the bar cannot leave
- * this pointing at the second one.
+ * `CAPABILITY_TABS`** — the row should land on the first tab of the bar it
+ * navigates into, so reordering the bar cannot leave this pointing at the
+ * second one.
  *
  * The fallbacks exist because each tab carries its own IAM leaf: a caller
  * denied `project.connector.read` but allowed `project.skill.read` still gets
@@ -100,6 +100,17 @@ export const TAB_PREFERENCE: readonly {
       PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
     ],
   },
+  // A reminder is a trigger scoped to one session: the Triggers rule. A plain
+  // member still sees and manages their own reminders from the session header.
+  {
+    key: 'reminders',
+    action: PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+    manage: [
+      PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
+    ],
+  },
   // The Models tab is model routing.
   {
     key: 'models',
@@ -111,10 +122,9 @@ export const TAB_PREFERENCE: readonly {
     action: PROJECT_ACTIONS.PROJECT_SECRET_READ,
     manage: [PROJECT_ACTIONS.PROJECT_SECRET_WRITE],
   },
-  // Files is the project's shared folders: content, not configuration. Anyone
-  // who can read the project may open it; what each person sees in it follows
-  // folder access, decided by the drives API per folder.
-  { key: 'files', action: PROJECT_ACTIONS.PROJECT_READ },
+  // Repo (key `files`) is the project's git repo: admins only, and only with
+  // Volumes on. The shared folders are Drive, a sidebar row of their own.
+  { key: 'files', action: PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE },
   // The Review inbox is for the people who decide: approve a change request,
   // answer an agent. Reading without acting is not a reason to show it.
   {
@@ -151,21 +161,29 @@ export interface CapabilityAccess {
  *
  * A failed probe counts as settled and denied: the bar fails closed.
  *
- * `drives` is the project's `drives` flag, `undefined` while it loads. Files
- * exists only with it on, so the rule (not each surface) drops the tab.
+ * `flags` are the project's `drives` and `reminders` flags, `undefined` while
+ * they load. Repo exists only with `drives` on and Reminders only with
+ * `reminders` on, so the rule (not each surface) drops the tab.
  */
+export interface CapabilityFlags {
+  drives: boolean | undefined;
+  reminders: boolean | undefined;
+}
+
 export function capabilityAccess(
   caps: Record<string, CanResult>,
-  drives: boolean | undefined,
+  flags: CapabilityFlags,
 ): CapabilityAccess {
   const settled =
-    drives !== undefined &&
+    flags.drives !== undefined &&
+    flags.reminders !== undefined &&
     CAPABILITY_TAB_ACTIONS.every((action) => caps[action] && !caps[action].isLoading);
   if (!settled) return { settled, tabs: [] };
   const allowed = (action: string) => caps[action]?.allowed === true;
   const tabs = TAB_PREFERENCE.filter(
     (tab) =>
-      (drives || tab.key !== 'files') &&
+      (flags.drives || tab.key !== 'files') &&
+      (flags.reminders || tab.key !== 'reminders') &&
       allowed(tab.action) &&
       (!tab.manage || tab.manage.some(allowed)),
   ).map((tab) => tab.key);
@@ -175,42 +193,45 @@ export function capabilityAccess(
 export function useCapabilityAccess(projectId: string | undefined): CapabilityAccess {
   const caps = useProjectPageCans(projectId);
   const drives = useFeatureFlag(projectId, 'drives');
-  return capabilityAccess(caps, drives.isLoading ? undefined : drives.enabled);
+  const reminders = useFeatureFlag(projectId, 'reminders');
+  return capabilityAccess(caps, {
+    drives: drives.isLoading ? undefined : drives.enabled,
+    reminders: reminders.isLoading ? undefined : reminders.enabled,
+  });
 }
 
 /**
- * The two sidebar rows that can lead to Files, decided together.
+ * The sidebar's Customize and file rows, decided together.
  *
- * The Files row is the repo browser for a caller who can read the repo
- * (`project.file.read`). With `drives` on, the shared folders are also a
- * Customize tab. A caller who cannot read the repo reaches the folders from
- * the Files row (`folders`) instead, and Customize then needs a tab other
- * than Files: a plain member never gets a Customize row that holds only their
- * folders.
+ * With `drives` on, the file row is Drive (the shared folders) for everyone
+ * who can read the project: what each person sees follows folder access. The
+ * repo browser is then Customize → Repo, admins only. With `drives` off, the
+ * file row is the repo browser, for a caller who can read it
+ * (`project.file.read`).
  *
- * `customize` is the tab the Customize row lands on, `files` what the Files
+ * `customize` is the tab the Customize row lands on, `files` what the file
  * row opens; null means no row. Neither row shows before the batch and the
  * flag settle.
  */
 export interface ProjectNavRows {
   customize: CapabilityTab['key'] | null;
-  files: 'repo' | 'folders' | null;
+  files: 'repo' | 'drive' | null;
 }
 
 export function projectNavRows(
   access: CapabilityAccess,
   readRepo: CanResult | undefined,
+  drives: boolean,
 ): ProjectNavRows {
   if (!access.settled || !readRepo || readRepo.isLoading) return { customize: null, files: null };
-  const files =
-    readRepo.allowed === true ? 'repo' : access.tabs.includes('files') ? 'folders' : null;
-  const customize = access.tabs.find((tab) => files !== 'folders' || tab !== 'files') ?? null;
-  return { customize, files };
+  const files = drives ? 'drive' : readRepo.allowed === true ? 'repo' : null;
+  return { customize: access.tabs[0] ?? null, files };
 }
 
 export function useProjectNavRows(projectId: string | undefined): ProjectNavRows {
   const readRepo = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
-  return projectNavRows(useCapabilityAccess(projectId), readRepo);
+  const drives = useFeatureFlag(projectId, 'drives').enabled;
+  return projectNavRows(useCapabilityAccess(projectId), readRepo, drives);
 }
 
 /**
@@ -243,8 +264,6 @@ export function ProjectCustomizeNavItem() {
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
-  const isMobile = useIsMobile();
-  const { setOpenMobile } = useSidebar();
   const access = useCapabilityAccess(projectId);
   const rows = useProjectNavRows(projectId);
   const tab = rows.customize;
@@ -252,80 +271,33 @@ export function ProjectCustomizeNavItem() {
   // this row: the same `needs_you` count the session row dots read.
   const needsYou = useReviewSessionSummary(projectId ?? '', { enabled: !!projectId }).totalNeedsYou;
   const reviewCount = access.tabs.includes('review') ? needsYou : 0;
-  // The shared folders' open conflict copies (in folders the caller can see)
-  // badge the row that leads to them: this one, unless the Files row does.
-  const tDrives = useTranslations('drives');
-  const foldersHere = access.tabs.includes('files') && rows.files !== 'folders';
-  const drive = useProjectDrive(projectId, foldersHere);
-  const conflicts = foldersHere ? (drive.data?.openConflicts ?? 0) : 0;
   // Active on the legacy index (`/customize`, for the instant before it
   // redirects) AND on any capability tab — the row stays lit while browsing
-  // Connectors or one agent's page, not just on the landing tab. Not on the
-  // folders when the Files row is the one that opens them.
-  const here = pathname ? activeCapabilityTab(pathname) : null;
+  // Connectors or one agent's page, not just on the landing tab.
   const isActive =
     !!pathname &&
-    (pathname === `/projects/${projectId}/customize` ||
-      (here !== null && (here !== 'files' || rows.files !== 'folders')));
-
-  const handleClick = useCallback(() => {
-    if (isMobile) setOpenMobile(false);
-  }, [isMobile, setOpenMobile]);
+    (pathname === `/projects/${projectId}/customize` || activeCapabilityTab(pathname) !== null);
 
   if (!tab) return null;
   // No project id means no valid href, so there is nothing to render.
   if (!projectId) return null;
 
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        asChild
-        isActive={isActive}
-        tooltip={t('customize')}
-        className="group/menu-button text-sidebar-foreground relative"
-      >
-        <HoverPrefetchLink href={capabilityTabHref(projectId, tab)} prefetch onClick={handleClick}>
-          <span className="shrink-0">
-            <CustomizeGlyph />
-          </span>
-          {t('customize')}
-          {reviewCount > 0 || conflicts > 0 ? (
-            <span className="ml-auto flex shrink-0 items-center gap-1">
-              {reviewCount > 0 ? <CountBadge count={reviewCount} tone="waiting" /> : null}
-              {conflicts > 0 ? (
-                <CountBadge
-                  count={conflicts}
-                  tone="conflict"
-                  aria-label={tDrives('conflictCount', { count: conflicts })}
-                />
-              ) : null}
-            </span>
-          ) : null}
-        </HoverPrefetchLink>
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
-}
-
-/** The Customize row's glyph, shared with the Customize sidebar modal. */
-export function CustomizeGlyph({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      width="24"
-      height="24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <ProjectNavRow
+      active={isActive}
+      label={t('customize')}
+      href={capabilityTabHref(projectId, tab)}
+      prefetch
     >
-      <path d="M15.37 9.73C15.9 10 16.6 10 18 10C19.4 10 20.1 10 20.64 9.73C21.11 9.49 21.49 9.11 21.73 8.63C22 8.1 22 7.4 22 6C22 4.6 22 3.9 21.73 3.37C21.49 2.89 21.11 2.51 20.64 2.27C20.1 2 19.4 2 18 2C16.6 2 15.9 2 15.37 2.27C14.89 2.51 14.51 2.89 14.27 3.37C14 3.9 14 4.6 14 6C14 7.4 14 8.1 14.27 8.63C14.51 9.11 14.89 9.49 15.37 9.73Z" />
-      <path d="M10 14V10C10 8.6 10 7.9 9.73 7.37C9.49 6.89 9.11 6.51 8.63 6.27C8.1 6 7.4 6 6 6C4.6 6 3.9 6 3.37 6.27C2.89 6.51 2.51 6.89 2.27 7.37C2 7.9 2 8.6 2 10V14H10Z" />
-      <path d="M10 14H2V17C2 19.36 2 20.54 2.73 21.27C3.46 22 4.64 22 7 22H10V14Z" />
-      <path d="M14 14H10V22H14C15.4 22 16.1 22 16.64 21.73C17.11 21.49 17.49 21.11 17.73 20.64C18 20.1 18 19.4 18 18C18 16.6 18 15.9 17.73 15.37C17.49 14.89 17.11 14.51 16.64 14.27C16.1 14 15.4 14 14 14Z" />
-    </svg>
+      <span className="shrink-0">
+        <CustomizeGlyph />
+      </span>
+      {t('customize')}
+      {reviewCount > 0 ? (
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          <CountBadge count={reviewCount} tone="waiting" />
+        </span>
+      ) : null}
+    </ProjectNavRow>
   );
 }

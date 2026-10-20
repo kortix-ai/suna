@@ -1,86 +1,59 @@
-import { expect, test } from 'bun:test';
+import { afterEach, beforeEach, expect, setSystemTime, test } from 'bun:test';
 import { managedPricingRoutes, refreshManagedPricingRoutes } from './managed-pricing-routes';
 
-test('quotes only enabled routes and includes the customer markup', () => {
-  const quotes = managedPricingRoutes(['deepseek-v4.1-flash'], 1.2, true);
+// The quoted OpenRouter members follow the subprocessor dates
+// (`inferenceHostCleared`): Fireworks is in effect, DeepInfra, Together,
+// Parasail and Modal from 2026-11-24, unlisted hosts never.
+beforeEach(() => setSystemTime(new Date('2026-10-20T12:00:00Z')));
+afterEach(() => setSystemTime());
+
+const routes = (quotes: Record<string, { route: string }[]>, id: string) => quotes[id]?.map((quote) => quote.route);
+
+test('quotes only routes a request may reach today, with the customer markup', () => {
+  const quotes = managedPricingRoutes(['deepseek-v4.1-flash', 'glm-5.3-flash'], 1.2, true);
   expect(quotes['deepseek-v4.1-flash']).toEqual([
     { route: 'morph', role: 'preferred', input: 0.18, cacheRead: 0.0036, output: 0.72 },
-    { route: 'morph/fp8', role: 'eligible', input: 0.108, cacheRead: 0.0096, output: 0.66 },
   ]);
   expect(quotes['glm-5.3-flash']).toEqual([
-    { route: 'decart/fp4', role: 'eligible', input: 0.153, cacheRead: 0.0306, output: 0.51 },
-    { route: 'coreweave/nvfp4', role: 'eligible', input: 0.18, cacheRead: 0.06, output: 0.6 },
+    { route: 'morph', role: 'preferred', input: 0.12, cacheRead: 0.024, output: 0.42 },
+    { route: 'fireworks', role: 'eligible', input: 0.18, cacheRead: 0.036, output: 0.6 },
   ]);
 });
 
-test('quotes OpenRouter routes when direct Morph has no credential', () => {
-  const quotes = managedPricingRoutes(['kimi-k3'], 1.2, false);
-  expect(quotes['kimi-k3']).toEqual([
-    { route: 'fireworks/us', role: 'eligible', input: 3.96, cacheRead: 0.396, output: 19.8 },
-  ]);
-});
-
-test('quotes direct Morph for GLM only after explicit selection', () => {
-  const quotes = managedPricingRoutes(['glm-5.3-flash'], 1.2, true);
-  expect(quotes['glm-5.3-flash']?.[0]).toEqual({
-    route: 'morph', role: 'preferred', input: 0.12, cacheRead: 0.024, output: 0.42,
-  });
-  expect(quotes['glm-5.3-flash']?.map((route) => route.route)).toEqual([
-    'morph', 'decart/fp4', 'coreweave/nvfp4',
-  ]);
+test('a host joins the quote on its subprocessor date, an unlisted host never does', () => {
+  setSystemTime(new Date('2026-11-25T12:00:00Z'));
+  const quotes = managedPricingRoutes([], 1.2, false);
+  expect(routes(quotes, 'deepseek-v4.1-flash')).toEqual(['deepinfra/fp8', 'deepinfra/fp8/priority']);
+  expect(routes(quotes, 'glm-5.3-flash')).toEqual(['fireworks', 'deepinfra/fp4', 'together', 'parasail/fp4', 'modal/nvfp4']);
 });
 
 test('omits OpenRouter quotes when its credential is absent', () => {
   const quotes = managedPricingRoutes(['deepseek-v4.1-flash'], 1.2, true, false);
-  expect(quotes['deepseek-v4.1-flash']).toEqual([
-    { route: 'morph', role: 'preferred', input: 0.18, cacheRead: 0.0036, output: 0.72 },
-  ]);
+  expect(routes(quotes, 'deepseek-v4.1-flash')).toEqual(['morph']);
   expect(quotes['glm-5.3-flash']).toBeUndefined();
 });
 
-test('refreshes an eligible OpenRouter endpoint from per-token public pricing', async () => {
+const feed = (endpoints: object[]) => async (url: RequestInfo | URL) =>
+  Response.json({ data: { endpoints: String(url).includes('glm-5.3-flash') ? endpoints : [] } });
+
+test('refreshes an allowed endpoint from live per-token pricing; a price equal to the cap stays', async () => {
   const quoted = await refreshManagedPricingRoutes([], 1.2, false, {
     baseUrl: 'https://openrouter.test/api/v1', apiKey: 'test-key',
-    fetchImpl: async (url) => {
-      const model = String(url);
-      return Response.json({ data: { endpoints: model.includes('glm-5.3-flash') ? [
-        { tag: 'decart/fp4', pricing: { prompt: '0.0000001', input_cache_read: '0.00000002', completion: '0.0000004' } },
-      ] : [] } });
-    },
+    // 0.00000015 * 1e6 is 0.15000000000000002 in float math; the cap is 0.15.
+    fetchImpl: feed([{ tag: 'fireworks', pricing: { prompt: '0.00000015', input_cache_read: '0.00000002', completion: '0.0000004' } }]),
   });
-  expect(quoted['glm-5.3-flash']?.[0]).toEqual({
-    route: 'decart/fp4', role: 'eligible', input: 0.12, cacheRead: 0.024, output: 0.48,
-  });
-  expect(quoted['glm-5.3-flash']?.[1]?.input).toBe(0.18);
+  expect(quoted['glm-5.3-flash']).toEqual([{ route: 'fireworks', role: 'eligible', input: 0.18, cacheRead: 0.024, output: 0.48 }]);
 });
 
-test('retains the verified price table when OpenRouter pricing is unavailable', async () => {
-  const quoted = await refreshManagedPricingRoutes([], 1.2, false, {
+test('omits an endpoint whose live price exceeds the cap, and keeps the table when the feed fails', async () => {
+  const over = await refreshManagedPricingRoutes([], 1.2, false, {
+    baseUrl: 'https://openrouter.test/api/v1', apiKey: 'test-key',
+    fetchImpl: feed([{ tag: 'fireworks', pricing: { prompt: '0.00001', input_cache_read: '0.00000002', completion: '0.00001' } }]),
+  });
+  expect(routes(over, 'glm-5.3-flash')).toEqual([]);
+  const down = await refreshManagedPricingRoutes([], 1.2, false, {
     baseUrl: 'https://openrouter.test/api/v1', apiKey: 'test-key',
     fetchImpl: async () => new Response(null, { status: 503 }),
   });
-  expect(quoted['glm-5.3-flash']?.[0]?.input).toBe(0.153);
-});
-
-test('omits an endpoint when its live price exceeds the gateway cap', async () => {
-  const quoted = await refreshManagedPricingRoutes([], 1.2, false, {
-    baseUrl: 'https://openrouter.test/api/v1', apiKey: 'test-key',
-    fetchImpl: async (url) => Response.json({ data: { endpoints: String(url).includes('glm-5.3-flash') ? [
-      { tag: 'decart/fp4', pricing: { prompt: '0.00001', input_cache_read: '0.00000002', completion: '0.00001' } },
-    ] : [] } }),
-  });
-  expect(quoted['glm-5.3-flash']?.map((route) => route.route)).toEqual(['coreweave/nvfp4']);
-});
-
-test('keeps an endpoint whose live price equals the gateway cap', async () => {
-  // 0.0000033 * 1e6 is 3.3000000000000003 in float math; the cap is 3.3.
-  const quoted = await refreshManagedPricingRoutes([], 1.2, false, {
-    baseUrl: 'https://openrouter.test/api/v1', apiKey: 'test-key',
-    fetchImpl: async (url) => Response.json({ data: { endpoints: String(url).includes('kimi-k3') ? [
-      { tag: 'fireworks/us', pricing: { prompt: '0.0000033', input_cache_read: '0.00000033', completion: '0.0000165' } },
-    ] : [] } }),
-  });
-  expect(quoted['kimi-k3']).toEqual([
-    { route: 'fireworks/us', role: 'eligible', input: 3.96, cacheRead: 0.396, output: 19.8 },
-  ]);
+  expect(down['glm-5.3-flash']?.[0]?.input).toBe(0.18);
 });

@@ -17,6 +17,7 @@ import {
 import { inferAuditSource, runAuditedTransaction } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { loadProjectConfig } from '../git';
+import { allowStaleMirrorReads } from '../git/mirror';
 import { requestPersonalOwner } from '../lib/personal-resources';
 import {
   encryptProjectSecret,
@@ -173,6 +174,9 @@ export function registerSecretsRoutes(): void {
     // manifest read instead of adding to it (measured prod: git 383ms/14 ops
     // dominates this route's server time).
     const personalOwnerPromise = requestPersonalOwner(c, loaded);
+    // A page view (the model picker and Customize → Secrets wait on it): read
+    // the manifest from the warm git mirror and refresh it behind the response.
+    allowStaleMirrorReads();
     try {
       const gitRow = await withProjectGitAuth(loaded.row);
       stages.git_auth = Math.round(performance.now() - started);

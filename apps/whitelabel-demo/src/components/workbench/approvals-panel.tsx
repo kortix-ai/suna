@@ -19,21 +19,22 @@
  * in an `always_run` policy rule, authored deliberately.
  */
 
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 
 import { CallSnippet } from '@/components/dev/call-snippet';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   approvalFailure,
   sessionApprovalsView,
   type ApprovalFailure,
 } from '@/components/workbench/approvals-model';
 import { kortix } from '@/lib/kortix';
-import { cn, relativeTime } from '@/lib/utils';
+import { relativeTime } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, ShieldCheck, ShieldQuestion, X } from 'lucide-react';
 import { useState } from 'react';
+import { cn } from '@kortix/ui/lib/utils';
+import { CheckIcon, ShieldCheckIcon, ShieldWarningIcon, XIcon } from '@phosphor-icons/react';
 
 /** Query key kept local: `lib/query-keys.ts` is shared by every panel and this
  *  is the only reader of the session audit. */
@@ -42,16 +43,19 @@ const auditKey = (projectId: string, sessionId: string) =>
 
 const RISK_BADGE: Record<string, string> = {
   destructive: 'bg-destructive/15 text-destructive',
-  write: 'bg-amber-500/15 text-amber-500',
+  write: 'bg-kortix-orange/15 text-kortix-orange',
   read: 'bg-muted text-muted-foreground',
 };
 
 export function SessionApprovals({
   projectId,
   sessionId,
+  waitingInChat = 0,
 }: {
   projectId: string;
   sessionId: string;
+  /** Open question and permission prompts in the transcript (`useSession`). They are human decisions too. */
+  waitingInChat?: number;
 }) {
   const qc = useQueryClient();
   const [failure, setFailure] = useState<ApprovalFailure | null>(null);
@@ -86,7 +90,7 @@ export function SessionApprovals({
   if (audit.isError) {
     return (
       <Strip>
-        <ShieldQuestion className="size-3.5 shrink-0" />
+        <ShieldWarningIcon className="size-3.5 shrink-0" />
         Approvals could not be read for this session just now.
       </Strip>
     );
@@ -102,14 +106,23 @@ export function SessionApprovals({
 
   const view = sessionApprovalsView(audit.data);
 
+  if (view.pending.length === 0 && waitingInChat > 0) {
+    return (
+      <Strip>
+        <ShieldWarningIcon className="size-3.5 shrink-0" />
+        The agent is waiting on your answer in the conversation below.
+      </Strip>
+    );
+  }
+
   if (view.pending.length === 0) {
     return (
       <Strip>
-        <ShieldCheck className="size-3.5 shrink-0" />
+        <ShieldCheckIcon className="size-3.5 shrink-0" />
         <span>
           Nothing is waiting on a human decision.
           {view.trailLimited
-            ? ' The full action trail is an Enterprise feature, so only pending gates are shown here.'
+            ? ' Only pending approvals are shown here.'
             : view.recent.length > 0
               ? ` ${view.recent.length} governed action${view.recent.length === 1 ? '' : 's'} so far, most recently ${view.recent[0]!.action}.`
               : ''}
@@ -119,10 +132,10 @@ export function SessionApprovals({
   }
 
   return (
-    <div className="shrink-0 border-b border-amber-500/30 bg-amber-500/5 px-5 py-3">
+    <div className="shrink-0 border-b border-border bg-kortix-orange/15 px-5 py-3">
       <div className="mx-auto max-w-3xl space-y-2">
-        <div className="flex items-center gap-2 text-xs font-medium text-amber-500">
-          <ShieldQuestion className="size-3.5 shrink-0" />
+        <div className="flex items-center gap-2 text-xs font-medium text-kortix-orange">
+          <ShieldWarningIcon className="size-3.5 shrink-0" />
           {view.pending.length} action{view.pending.length === 1 ? '' : 's'} waiting on a human
           decision — the agent is blocked until you decide.
         </div>
@@ -155,7 +168,7 @@ export function SessionApprovals({
                   resolve.mutate({ executionId: row.executionId, decision: 'approve' })
                 }
               >
-                {busy ? <Loading className="size-3" /> : <Check className="size-3" />}
+                {busy ? <Loading className="size-3" /> : <CheckIcon className="size-3" />}
                 Approve
               </Button>
               <Button
@@ -166,7 +179,7 @@ export function SessionApprovals({
                   resolve.mutate({ executionId: row.executionId, decision: 'deny' })
                 }
               >
-                <X className="size-3" />
+                <XIcon className="size-3" />
                 Deny
               </Button>
             </div>

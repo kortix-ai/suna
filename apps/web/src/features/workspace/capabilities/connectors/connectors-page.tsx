@@ -79,6 +79,7 @@ import {
   filterConnectors,
   type ConnectorScope,
 } from './connector-filter';
+import { ConnectorMovesBanner } from './connector-moves-banner';
 import { appHref, appRefFromEntry, connectorHref, legacyDetailRedirect } from './connector-routes';
 import type { McpServerApp } from './install/mcp-first';
 import { useInstall } from './install/use-install';
@@ -266,55 +267,8 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const tSharing = useI18nTranslations('accessSharing');
   const tPages = useI18nTranslations('connectorPages');
 
-  const search = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
-
-  // `?c=<slug>` named the open connector before connectors had pages, and an
-  // OAuth grant started then returns to that URL. Forward it, result intact.
-  const legacyHref = legacyDetailRedirect(projectId, search);
-  useEffect(() => {
-    if (legacyHref) router.replace(legacyHref);
-  }, [legacyHref, router]);
-
-  const replaceParams = useCallback(
-    (mutate: (params: URLSearchParams) => void) => {
-      const params = new URLSearchParams(search?.toString() ?? '');
-      mutate(params);
-      const suffix = params.toString();
-      router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
-    },
-    [pathname, router, search],
-  );
-
-  // Which scope the strip is on, held in the URL rather than in state.
-  //
-  // It has to be addressable: `/projects/<id>/channels` was a real route until
-  // Channels folded into this page, and every bookmark and every legacy nav id
-  // pointing at it now redirects to `?scope=channels`. A tab that only local
-  // state can reach is a tab nothing can link to.
-  //
-  // All is the landing scope and writes NO param — see the `SCOPES`
-  // block for why it is constant rather than derived. Omitting it keeps the
-  // bare URL bare, so the common case still shares as `…/connectors`.
-  const setScope = useCallback(
-    (next: ConnectorScope) =>
-      replaceParams((params) =>
-        next === 'all' ? params.delete('scope') : params.set('scope', next),
-      ),
-    [replaceParams],
-  );
-
-  // Global rules — project-wide connector approval policy. Held in `?rules=1`
-  // rather than component state: this is the one deep-linkable surface on the
-  // page (`proj-connectors-policies` in `menu-registry.ts` navigates straight
-  // to it).
-  const rulesOpen = search?.get('rules') === '1';
-  const setRulesOpen = useCallback(
-    (open: boolean) =>
-      replaceParams((params) => (open ? params.set('rules', '1') : params.delete('rules'))),
-    [replaceParams],
-  );
+  const { search, router, pathname, replaceParams, setScope, rulesOpen, setRulesOpen } =
+    useConnectorNavigation(projectId);
 
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
@@ -359,7 +313,9 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // `qk.project.detail(projectId)` entry `projectQuery` above holds, so this is
   // the same fetch and the same fail-closed semantics — `projectQuery` stays
   // only to surface a load FAILURE and drive Retry (see `isError`/`retry`).
-  const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
+  // `connectors_v2`: the catalogue is Kortix's own MCP apps, on the Discover routes.
+  const mcpApps = useFeatureFlag(projectId, 'connectors_v2').enabled;
+  const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled || mcpApps;
   const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
 
   // One catalogue: managed apps for browsing, plus API/MCP apps in search
@@ -441,6 +397,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const catalog = useCatalog(projectId, query, {
     enabled: catalogActive,
     discoverEnabled,
+    mcpApps,
     computers: computersEnabled,
   });
 
@@ -449,7 +406,36 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     [connectors, query, describeConnector],
   );
 
+  // The All tab shows the project's own connectors too (KRTX-2531): a
+  // connector added minutes ago must be findable on the default tab — and
+  // searchable by its exact slug — instead of living one tab away on
+  // Connected. Computers stay out: the catalogue's native Computers card
+  // already carries them (and a machineless one is not in `connectors`).
+  const ownMatches = useMemo(
+    () => filtered.filter((connector) => connector.provider !== 'computer'),
+    [filtered],
+  );
+
   const emptyKind = catalogEmptyKind(connectors.length, filtered.length);
+
+  // One card shape for the project's own connectors: the Connected tab's grid
+  // and the All tab's "Your connectors" section (KRTX-2531) render it alike.
+  const ownConnectorCard = (connector: (typeof connectors)[number]) => (
+    <CatalogCard
+      key={connector.slug}
+      variant="plain"
+      leading={<ConnectorAppIcon connector={connector} size="lg" />}
+      title={connectorDisplayName(connector)}
+      subtitle={
+        <span className="text-muted-foreground text-xs">{describeConnector(connector)}</span>
+      }
+      badges={<ConnectorStatusBadge connector={connector} />}
+      trailing={
+        connectorSetupStatus(connector) === 'connected' ? <ConnectorConnectedMark /> : undefined
+      }
+      href={connectorHref(projectId, connector.slug)}
+    />
+  );
 
   // The Computer card opens the existing computer connector once there is
   // one: adding a computer is adding an account to it.
@@ -591,70 +577,76 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
            one column, the one heading and the one scroll container now. */
             <ChannelsSection projectId={projectId} />
           ) : catalogActive ? (
-            <ConnectorBrowse
-              state={catalog}
-              connectedKeys={connectedKeys}
-              hrefFor={catalogHref}
-              onOpen={openComputer}
-              install={catalogInstall}
-              emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
-              emptyDescription={tI18nComplete.raw('textf652a621153e')}
-            />
+            <>
+              {ownMatches.length > 0 ? (
+                <div className="space-y-3">
+                  <h2 className="text-sm font-medium">{tPages('yourConnectors')}</h2>
+                  {/* Rendered only once the page has settled (ownMatches is
+                  non-empty), so the grid needs no loading/error/empty state:
+                  the page-level ones cover it. */}
+                  <CatalogGrid
+                    dense
+                    isLoading={false}
+                    isError={false}
+                    onRetry={retry}
+                    isEmpty={false}
+                    empty={null}
+                  >
+                    {ownMatches.map(ownConnectorCard)}
+                  </CatalogGrid>
+                </div>
+              ) : null}
+              <ConnectorBrowse
+                state={catalog}
+                connectedKeys={connectedKeys}
+                hrefFor={catalogHref}
+                onOpen={openComputer}
+                install={catalogInstall}
+                emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
+                emptyDescription={tI18nComplete.raw('textf652a621153e')}
+                // A slug search that only the project's own connector answers
+                // must not ALSO read "No matches" under its card (KRTX-2531).
+                suppressNoMatch={ownMatches.length > 0}
+              />
+            </>
           ) : (
-            <CatalogGrid
-              dense
-              // `!settled`, not `connectorsQuery.isLoading`: the empty state's
-              // wording depends on `projectQuery` too. Same gate as the filter row.
-              isLoading={!settled}
-              isError={isError}
-              error={connectorsQuery.error ?? projectQuery.error}
-              onRetry={retry}
-              isEmpty={emptyKind !== null}
-              empty={
-                emptyKind === 'no-match' ? (
-                  <CatalogNoMatch query={query} />
-                ) : (
-                  <EmptyState
-                    icon={PlugIcon}
-                    size="sm"
-                    title={tI18nComplete.raw('text51ae0a7e3783')}
-                    description={tI18nComplete.raw('texta3487dfc2132')}
-                    // The CTA goes with the tab it opens. With no catalogue on this
-                    // deployment it would be a button to a tab that is not there;
-                    // `+` is the remaining way in, and it is already in the header.
-                    action={
-                      catalogueAvailable ? (
-                        <Button size="sm" variant="secondary" onClick={() => setScope('all')}>
-                          {tI18nComplete.raw('text45bfe4f17af7')}
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                )
-              }
-            >
-              {filtered.map((connector) => (
-                <CatalogCard
-                  key={connector.slug}
-                  // The All tab's card: logo and title on the page, one quiet line.
-                  variant="plain"
-                  leading={<ConnectorAppIcon connector={connector} size="lg" />}
-                  title={connectorDisplayName(connector)}
-                  subtitle={
-                    <span className="text-muted-foreground text-xs">
-                      {describeConnector(connector)}
-                    </span>
-                  }
-                  badges={<ConnectorStatusBadge connector={connector} />}
-                  trailing={
-                    connectorSetupStatus(connector) === 'connected' ? (
-                      <ConnectorConnectedMark />
-                    ) : undefined
-                  }
-                  href={connectorHref(projectId, connector.slug)}
-                />
-              ))}
-            </CatalogGrid>
+            <>
+              <ConnectorMovesBanner projectId={projectId} />
+              <CatalogGrid
+                dense
+                // `!settled`, not `connectorsQuery.isLoading`: the empty state's
+                // wording depends on `projectQuery` too. Same gate as the filter row.
+                isLoading={!settled}
+                isError={isError}
+                error={connectorsQuery.error ?? projectQuery.error}
+                onRetry={retry}
+                isEmpty={emptyKind !== null}
+                empty={
+                  emptyKind === 'no-match' ? (
+                    <CatalogNoMatch query={query} />
+                  ) : (
+                    <EmptyState
+                      icon={PlugIcon}
+                      size="sm"
+                      title={tI18nComplete.raw('text51ae0a7e3783')}
+                      description={tI18nComplete.raw('texta3487dfc2132')}
+                      // The CTA goes with the tab it opens. With no catalogue on this
+                      // deployment it would be a button to a tab that is not there;
+                      // `+` is the remaining way in, and it is already in the header.
+                      action={
+                        catalogueAvailable ? (
+                          <Button size="sm" variant="secondary" onClick={() => setScope('all')}>
+                            {tI18nComplete.raw('text45bfe4f17af7')}
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+                  )
+                }
+              >
+                {filtered.map(ownConnectorCard)}
+              </CatalogGrid>
+            </>
           )}
 
           {/* Computers are accounts, not profiles: the card pairs the caller's own
@@ -718,4 +710,58 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       </SplitSheetContent>
     </SplitSheet>
   );
+}
+
+function useConnectorNavigation(projectId: string) {
+  const search = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // `?c=<slug>` named the open connector before connectors had pages, and an
+  // OAuth grant started then returns to that URL. Forward it, result intact.
+  const legacyHref = legacyDetailRedirect(projectId, search);
+  useEffect(() => {
+    if (legacyHref) router.replace(legacyHref);
+  }, [legacyHref, router]);
+
+  const replaceParams = useCallback(
+    (mutate: (params: URLSearchParams) => void) => {
+      const params = new URLSearchParams(search?.toString() ?? '');
+      mutate(params);
+      const suffix = params.toString();
+      router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
+    },
+    [pathname, router, search],
+  );
+
+  // Which scope the strip is on, held in the URL rather than in state.
+  //
+  // It has to be addressable: `/projects/<id>/channels` was a real route until
+  // Channels folded into this page, and every bookmark and every legacy nav id
+  // pointing at it now redirects to `?scope=channels`. A tab that only local
+  // state can reach is a tab nothing can link to.
+  //
+  // All is the landing scope and writes NO param — see the `SCOPES`
+  // block for why it is constant rather than derived. Omitting it keeps the
+  // bare URL bare, so the common case still shares as `…/connectors`.
+  const setScope = useCallback(
+    (next: ConnectorScope) =>
+      replaceParams((params) =>
+        next === 'all' ? params.delete('scope') : params.set('scope', next),
+      ),
+    [replaceParams],
+  );
+
+  // Global rules — project-wide connector approval policy. Held in `?rules=1`
+  // rather than component state: this is the one deep-linkable surface on the
+  // page (`proj-connectors-policies` in `menu-registry.ts` navigates straight
+  // to it).
+  const rulesOpen = search?.get('rules') === '1';
+  const setRulesOpen = useCallback(
+    (open: boolean) =>
+      replaceParams((params) => (open ? params.set('rules', '1') : params.delete('rules'))),
+    [replaceParams],
+  );
+
+  return { search, router, pathname, replaceParams, setScope, rulesOpen, setRulesOpen };
 }

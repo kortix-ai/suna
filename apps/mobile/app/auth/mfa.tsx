@@ -11,7 +11,7 @@
 
 import * as React from 'react';
 import { View } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,17 +22,17 @@ import { CODE_LENGTH, CodeCells } from '@/components/kortix/code-cells';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { useAuthContext } from '@/contexts';
+import { useSignOutAndRoute } from '@/hooks/useSignOutAndRoute';
 
 export default function MfaScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const { t } = useTranslation();
-  const { verifyTotp, signOut } = useAuthContext();
+  const { verifyTotp } = useAuthContext();
 
   const [code, setCode] = React.useState('');
   const [verifying, setVerifying] = React.useState(false);
-  const [signingOut, setSigningOut] = React.useState(false);
+  const { signingOut, signOutAndRoute } = useSignOutAndRoute();
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   // `codeArg` lets the field submit the digits it just received, before the
@@ -69,13 +69,9 @@ export default function MfaScreen() {
     [handleVerify, verifying]
   );
 
-  const handleSignOut = React.useCallback(async () => {
-    if (signingOut) return;
-    setSigningOut(true);
-    const result = await signOut().catch(() => null);
-    setSigningOut(false);
-    if (result?.success) router.replace('/auth');
-  }, [router, signOut, signingOut]);
+  const handleSignOut = React.useCallback(() => {
+    void signOutAndRoute();
+  }, [signOutAndRoute]);
 
   const busy = verifying || signingOut;
 

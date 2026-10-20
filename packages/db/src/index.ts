@@ -62,6 +62,7 @@ export {
   projectSecretScopeEnum,
   projectTriggerRuntime,
   projectTriggerEventSubscriptions,
+  projectTriggerEventPolls,
   projectTriggerSessionAccessGrants,
   projectTriggerExecutions,
   projectMonitorEvents,

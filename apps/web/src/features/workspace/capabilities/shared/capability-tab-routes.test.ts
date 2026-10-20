@@ -22,6 +22,7 @@ describe('CAPABILITY_TABS', () => {
       'skills',
       'connectors',
       'triggers',
+      'reminders',
       'models',
       'secrets',
       'files',

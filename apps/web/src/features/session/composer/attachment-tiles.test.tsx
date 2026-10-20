@@ -133,7 +133,10 @@ describe('subscribeWhenDue', () => {
   test('notifies once at the due time, and re-arms when a timer fires early', () => {
     const clock = manualTimers();
     let notified = 0;
-    subscribeWhenDue(400, clock.timers)(() => {
+    subscribeWhenDue(
+      400,
+      clock.timers,
+    )(() => {
       notified += 1;
     });
     expect(clock.pending()).toBe(1);
@@ -420,7 +423,7 @@ describe('AttachmentTiles', () => {
     expect(button).not.toContain('opacity-60');
     // …and still there for keyboard focus and for touch, where hover does not exist.
     expect(button).toContain('focus-visible:opacity-100');
-    expect(button).toContain('[@media(pointer:coarse)]:opacity-100');
+    expect(button).toContain('pointer-coarse:opacity-100');
   });
 
   test('multiple attachments each get their own remove button', () => {
@@ -536,7 +539,8 @@ describe('pasted-text tiles in the tray', () => {
       <AttachmentTiles files={[]} onRemove={() => {}} pastes={[paste, { ...paste, id: 'b' }]} />,
     );
     const ul = /<ul class="([^"]*)"/.exec(markup)?.[1] ?? '';
-    for (const cls of ['overflow-x-auto', 'scrollbar-hide', 'pt-1.5']) expect(ul.split(' ')).toContain(cls);
+    for (const cls of ['overflow-x-auto', 'scrollbar-hide', 'pt-1.5'])
+      expect(ul.split(' ')).toContain(cls);
     expect(ul).not.toContain('flex-wrap');
   });
 });

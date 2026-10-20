@@ -79,7 +79,7 @@ function startFakeGateway() {
   /** The chat messages of each request, so a test reads what the model was sent. */
   const sent: Array<Array<{ role: string; content: unknown }>> = []
   /** The sampling fields of each request body. */
-  const sampling: Array<{ temperature?: number; top_p?: number; tool_choice?: unknown; tools: number; toolNames: string[] }> = []
+  const sampling: Array<{ temperature?: number; top_p?: number; tool_choice?: unknown; tools: number; toolNames: string[]; reasoning_effort?: string }> = []
   const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
     `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
   const server = Bun.serve({
@@ -87,9 +87,9 @@ function startFakeGateway() {
     async fetch(req) {
       const url = new URL(req.url)
       if (req.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
-      const json = (await req.json()) as { messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: Array<{ function?: { name?: string } }> }
+      const json = (await req.json()) as { messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: Array<{ function?: { name?: string } }>; reasoning_effort?: string }
       sent.push(json.messages)
-      sampling.push({ temperature: json.temperature, top_p: json.top_p, tool_choice: json.tool_choice, tools: json.tools?.length ?? 0, toolNames: (json.tools ?? []).map((t) => String(t.function?.name)) })
+      sampling.push({ temperature: json.temperature, top_p: json.top_p, tool_choice: json.tool_choice, tools: json.tools?.length ?? 0, toolNames: (json.tools ?? []).map((t) => String(t.function?.name)), reasoning_effort: json.reasoning_effort })
       requests.push({ path: url.pathname, auth: req.headers.get('authorization') })
       const step: Step = script.shift() ?? { text: '' }
       calls += 1
@@ -326,6 +326,25 @@ describe('pi harness', () => {
     expect(probe.turn_end).toBe('failed')
     const text = await readSse(events, (value) => value.includes('event: session.error') && value.includes('event: session.idle'))
     expect(text).toContain('The session made no progress')
+  })
+  test('a synthetic prompt part reaches the transcript as harness context (KRTX-2597)', async () => {
+    const r = await boot({ script: [{ text: 'done' }] })
+    const root = r.service.runtime()!.rootId
+    const continuation = 'msg_0198e2a4b0f0ABCDEFGHIJKLMN'
+    const mixed = 'msg_0198e2a4b0f0BCDEFGHIJKLMNO'
+    expect((await prompt(r, root, { messageID: continuation, parts: [{ type: 'text', text: '[auto-recovery] Continue from where you left off.', synthetic: true }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy(), 3_000)
+    // The person's prompt mixing harness context with their own words is NOT
+    // internal: the flag is a per-part mark, and only an all-synthetic text
+    // body is a continuation.
+    const mixedRes = await prompt(r, root, { messageID: mixed, parts: [{ type: 'text', text: 'harness note', synthetic: true }, { type: 'text', text: 'my real question' }] })
+    expect(mixedRes.status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy(), 3_000)
+    const rows = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info?: { id?: string; role?: string }; parts?: Array<Record<string, unknown>> }>
+    expect(rows.find((row) => row.info?.id === continuation)?.parts?.[0]).toMatchObject({ type: 'text', synthetic: true })
+    const mixedRow = rows.find((row) => row.info?.id === mixed)
+    expect(mixedRow?.parts?.[0]).toMatchObject({ type: 'text' })
+    expect(mixedRow?.parts?.[0]).not.toHaveProperty('synthetic', true)
   })
   test('health reports the pi runtime before and after start', async () => {
     const r = await boot({ script: [{ text: 'hi' }], start: false })
@@ -644,6 +663,33 @@ describe('pi harness', () => {
       { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 14, toolNames: expect.arrayContaining(['bash', 'codemode']) },
       { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 14, toolNames: expect.arrayContaining(['bash', 'codemode']) },
     ])
+  })
+
+  test('an agent or prompt variant reaches the gateway as the reasoning_effort the catalog offers', async () => {
+    // The gateway catalog states effort as `reasoning_options` values, not `variants` keys.
+    // Prod 2026-10-19: pi read only the option's `type` ('effort'), so every variant ran with thinking off.
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    writeFileSync(join(workspace, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: {
+      name: 'Test Model', reasoning: true, limit: { context: 64_000, output: 4_096 },
+      reasoning_options: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
+    } } }))
+    const r = await boot({
+      workspace,
+      script: [{ text: 'one' }, { text: 'two' }, { text: 'three' }],
+      env: {
+        KORTIX_LLM_CATALOG_FILE: join(workspace, 'catalog.json'),
+        KORTIX_AGENT_NAME: 'lens',
+        KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { lens: { prompt: 'You judge.', variant: 'high' } } }),
+      },
+    })
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sampling.length
+    for (const body of [{}, { variant: 'max' }, { variant: 'medium' }]) {
+      expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }], ...body })).status).toBe(204)
+      await waitFor(() => !r.service.runtime()!.busy())
+    }
+    // `medium` is not offered by this model, so the turn runs at the provider default.
+    expect(gateway.sampling.slice(before).map((s) => s.reasoning_effort)).toEqual(['high', 'max', undefined])
   })
 
   test('a permission policy of ask pauses the tool until the product replies', async () => {

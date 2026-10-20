@@ -63,6 +63,7 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/contexts': { useAuthContext: () => ({ isAuthenticated: true, mfaRequired: false }) },
   '@/lib/logger': { log: { warn() {}, log() {}, error() {} } },
   '@/lib/notifications/registration': {
+    flushPendingRelease: async () => {},
     getNotifications: () => Notifications,
     remotePushSupported: () => false,
     syncPushPreferences: async () => {},

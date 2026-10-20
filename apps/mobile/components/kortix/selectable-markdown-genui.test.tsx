@@ -82,7 +82,7 @@ mock.module('@/components/markdown/markdown-image', () => ({
   MarkdownImagesContext: ImagesContext,
 }));
 mock.module('@/lib/markdown/markdown-image', () => ({ groupImageBlocks: (blocks: string[]) => blocks.map((text, index) => ({ kind: 'markdown', index, text })), imageSourceKey: String }));
-mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {} }));
+mock.module('@/lib/utils/open-link', () => ({ openLink: async () => {}, openExternalLink: () => {} }));
 mock.module('@/components/genui/genui-message-block', () => ({ GenuiMessageBlock: host('genui-block') }));
 
 let SelectableMarkdownText: typeof import('./selectable-markdown').SelectableMarkdownText;

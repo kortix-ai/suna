@@ -218,7 +218,6 @@ async function recordOversightSessionRead(input: {
 type VisibleSessionRequest = {
   row: ProjectRow;
   userId: string;
-  adminBypass?: boolean;
   actor?: Actor | null;
 };
 
@@ -330,21 +329,7 @@ async function sessionReadAccess(
   ) {
     visible = true;
   }
-  if (!visible) {
-    // A platform-admin bypass already verified for the parent project (see
-    // loadProjectForUser) also covers a session that would otherwise be
-    // invisible (private / not-my-grant). Audit every use — this is a real
-    // support/investigation escape hatch, not a standing grant.
-    if (!loaded.adminBypass) return null;
-    await recordAuditEvent({
-      accountId: loaded.row.accountId,
-      actorUserId: loaded.userId,
-      action: 'project.admin_bypass_session_read',
-      resourceType: 'project_session',
-      resourceId: sessionId,
-      metadata: { via: 'admin_bypass_header', sessionVisibility: row.visibility },
-    });
-  }
+  if (!visible) return null;
   let isOwner = row.createdBy === loaded.userId;
   if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
     // Spec §2: never the launcher's standing. Checked after the ordinary
@@ -395,7 +380,6 @@ export async function loadVisibleSession(
   loaded: {
     row: ProjectRow;
     userId: string;
-    adminBypass?: boolean;
     /** The request's canonical principal. Absent only in tests that build a
      *  `loaded` shape by hand; the members.manage probe below then declines
      *  rather than widening. */
@@ -445,7 +429,7 @@ export async function loadVisibleSession(
  * for every row), and the grants in one batched read. The per-row verdicts then
  * run through the SAME `sessionReadAccess` rules as the single path — one copy
  * of the security decision, shared — and the rare per-row escape hatches
- * (trigger authorization, oversight, admin-bypass audit) stay exactly where
+ * (trigger authorization, oversight) stay exactly where
  * they were: per row, only when a verdict was refused without them.
  *
  * The owner probe (`service_accounts` lookup) stays memoized per creator, so a

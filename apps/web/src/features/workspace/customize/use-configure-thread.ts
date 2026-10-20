@@ -15,14 +15,17 @@
 
 import { useCallback, useState } from 'react';
 
+import type { PendingSessionPrompt } from '@kortix/sdk';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 export { editConfigPrompt, newConfigPrompt, type ConfigureKind } from '@kortix/shared';
 
 export interface ConfigureThread {
-  /** Spin up a configure session for `prompt`, then close Customize + navigate. */
-  start: (prompt: string) => void;
+  /** Spin up a configure session for `prompt`, then close Customize + navigate.
+   *  A bare string becomes the default durable payload; a `PendingSessionPrompt`
+   *  (see `pendingUpgradePrompt`) is passed through unchanged. */
+  start: (prompt: string | PendingSessionPrompt) => void;
   /**
    * True while a session is being created. Creating one is a network round-trip
    * (same as the project-home composer), so callers should show a spinner +
@@ -37,7 +40,9 @@ export function useConfigureThread(projectId: string): ConfigureThread {
   const newSession = useNewProjectSession(projectId);
 
   const start = useCallback(
-    (prompt: string) => {
+    (prompt: string | PendingSessionPrompt) => {
+      const pendingPrompt: PendingSessionPrompt =
+        typeof prompt === 'string' ? { text: prompt, agent: null, model: null, variant: null } : prompt;
       // Guard re-entry: ignore extra clicks while a session is being minted so
       // we don't fire two creates (two billed sessions for one click).
       if (pending) return;
@@ -53,7 +58,7 @@ export function useConfigureThread(projectId: string): ConfigureThread {
         // converts `pending_prompt` inside the session-create transaction, so
         // a closed tab between here and the workbench cannot lose it. No
         // start-stash: there are no picks to hand off.
-        create: { pending_prompt: { text: prompt, agent: null, model: null, variant: null } },
+        create: { pending_prompt: pendingPrompt },
         onNavigate: () => {
           closeCustomize();
         },

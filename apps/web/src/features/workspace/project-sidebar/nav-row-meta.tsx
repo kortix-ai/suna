@@ -9,13 +9,7 @@ import {
 } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { useTranslations } from '@/i18n/use-translations';
 import type { SidebarNavItemId } from '@/stores/sidebar-nav-store';
-import { useFeatureFlag } from '@kortix/sdk/react';
-import {
-  AlarmIcon,
-  AppWindowIcon,
-  FoldersIcon,
-  GitBranchIcon,
-} from '@phosphor-icons/react';
+import { AppWindowIcon, FoldersIcon, HardDrivesIcon } from '@phosphor-icons/react';
 import { useMemo, type ReactNode } from 'react';
 
 export interface NavRowMeta {
@@ -35,15 +29,13 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { customize: customizeTab, files: filesTarget } = useProjectNavRows(projectId);
   const appsVisible = useAppsRowVisible(projectId);
-  const reminders = useFeatureFlag(projectId, 'reminders');
-  const volumes = useFeatureFlag(projectId, 'drives');
 
   // Memoized on the gates, not rebuilt per render: the Customize sidebar
   // modal memoizes its rows on this object, and a fresh one per render would
   // re-render every row on every drag frame.
   return useMemo(() => {
     const base = `/projects/${projectId}`;
-    const files = filesTarget ? filesRow(projectId, filesTarget, volumes.enabled) : null;
+    const files = filesTarget ? filesRow(projectId, filesTarget) : null;
     return {
       ...(customizeTab
         ? {
@@ -63,27 +55,15 @@ export function useNavRowMeta(projectId: string): Partial<Record<SidebarNavItemI
             },
           }
         : {}),
-      ...(reminders.enabled
-        ? { reminders: { label: t('reminders'), icon: <AlarmIcon />, href: `${base}/reminders` } }
-        : {}),
       ...(files
         ? {
             files: {
               label: t(files.label),
-              icon: files.label === 'repo' ? <GitBranchIcon /> : <FoldersIcon />,
+              icon: files.label === 'drive' ? <HardDrivesIcon /> : <FoldersIcon />,
               href: files.href,
             },
           }
         : {}),
     };
-  }, [
-    t,
-    tI18nComplete,
-    projectId,
-    customizeTab,
-    appsVisible,
-    reminders.enabled,
-    filesTarget,
-    volumes.enabled,
-  ]);
+  }, [t, tI18nComplete, projectId, customizeTab, appsVisible, filesTarget]);
 }

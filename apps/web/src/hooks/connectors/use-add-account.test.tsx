@@ -65,11 +65,13 @@ mock.module('@/features/workspace/customize/sections/connector-oauth2-start', ()
     return null;
   },
 }));
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   successToast: () => undefined,
   warningToast: (message: string) => calls.push(`warning:${message}`),
   errorToast: (message: string) => calls.push(`error:${message}`),
-}));
+});
+mock.module('@/components/ui/toast', uiToastMock);
+mock.module('@kortix/ui/toast', uiToastMock);
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => Object.assign((key: string) => key, { raw: (key: string) => key }),
 }));

@@ -719,14 +719,13 @@ flow('GW-MANAGED-1', {
   });
 
   let managed: string[] = [];
-  await ctx.step('the picker offers Kimi K3, DeepSeek V4.1 Flash and GLM 5.3 Flash as image-capable managed models, and no OpenAI or Anthropic model', async () => {
+  await ctx.step('the picker offers DeepSeek V4.1 Flash and GLM 5.3 Flash as image-capable managed models, not the retired Kimi K3, and no OpenAI or Anthropic model', async () => {
     const picker = await owner.get('/v1/projects/:projectId/model-picker', { params });
     picker.status(200);
     const models = picker.json<{ models: Record<string, { name?: string; attachment?: boolean; enabled?: boolean }> }>()
       .models;
     managed = Object.keys(models).filter((id) => !id.includes('/'));
     for (const [id, name] of [
-      ['kimi-k3', 'Kimi K3 2.8T'],
       ['deepseek-v4.1-flash', 'DeepSeek V4.1 Flash'],
       ['glm-5.3-flash', 'GLM 5.3 Flash'],
     ] as const) {
@@ -735,6 +734,9 @@ flow('GW-MANAGED-1', {
         throw new Error(`picker does not offer ${id} as an enabled image-capable managed model: ${JSON.stringify(model)}`);
       }
     }
+    // #10286 retired Kimi K3 (2026-10-19): `kimi-k3` is an alias of the
+    // default now, never a model of its own in the picker.
+    if ('kimi-k3' in models) throw new Error(`picker still offers the retired kimi-k3: ${JSON.stringify(models['kimi-k3'])}`);
     const vendor = managed.filter((id) => /^(gpt|claude|o\d)/.test(id));
     if (vendor.length > 0) throw new Error(`picker offers OpenAI or Anthropic models as managed: ${vendor.join(', ')}`);
   });
@@ -770,23 +772,12 @@ flow('GW-MANAGED-1', {
       }
       return { model, status, detail };
     };
-    // Known defect, 2026-10-09: OpenRouter raised fireworks/us for kimi-k3 to
-    // $4.50/$22.50 per million, above the catalog max_price ($3.30/$16.50), so
-    // every kimi-k3 call answers 503 model_unavailable. The pricing decision is
-    // open. Remove this skip when packages/llm-catalog kimi-k3 routes again.
-    const knownUnavailable = process.env.KE2E_TARGET === 'staging' ? new Set(['kimi-k3']) : new Set<string>();
-    for (const id of managed.filter((m) => knownUnavailable.has(m))) {
-      log.warn(`GW-MANAGED-1: ${id} skipped, known upstream price-cap defect (2026-10-09)`);
-    }
-    const results = await Promise.all(managed.filter((m) => !knownUnavailable.has(m)).map(ask));
+    const results = await Promise.all(managed.map(ask));
     const answered = results.filter((r) => r.status === 200 && /\bred\b/i.test(r.detail));
     // The gateway answers a model it cannot route with the documented
-    // `503 model_unavailable` (llm-gateway/pipeline/public-identity.ts). `kimi-k3`
-    // does so on 6 of the last 17 gate runs: since 2026-10-09 its only route is
-    // above the catalog max_price (an open pricing decision in
-    // packages/llm-catalog), yet the picker still offers it. The gate must not
-    // depend on one upstream provider, so the answer counts beside at least one
-    // model that answered, and the run logs it. Any other status (400 for an
+    // `503 model_unavailable` (llm-gateway/pipeline/public-identity.ts). The
+    // gate must not depend on one upstream provider, so the answer counts
+    // beside at least one model that answered, and the run logs it. Any other status (400 for an
     // image the model refuses, 401, 404, 500) fails, and so does a gateway where
     // no model answers.
     const unavailable = (r: { status: number; detail: string }) =>

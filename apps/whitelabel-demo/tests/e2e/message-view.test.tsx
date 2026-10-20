@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { SessionLogMessage } from '@kortix/sdk';
-import { MessageView } from '../../src/components/chat/message-view';
+import { MessageView } from '@kortix/ui/chat';
 
 const message = (blocks: SessionLogMessage['blocks']): SessionLogMessage => ({
   schema: 'kortix.session/2', v: 1, message_id: 'message', thread_id: 'thread', seq: 1,

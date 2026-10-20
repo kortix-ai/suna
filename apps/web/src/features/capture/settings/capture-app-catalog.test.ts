@@ -49,7 +49,11 @@ describe('capture app catalog', () => {
     expect(unnamed).toEqual([]);
   });
 
-  test('category-only apps are never offered as common apps', () => {
-    expect(catalogSuggestions([], '1pass')).toEqual([]);
+  test('apps outside the common list are offered only when searched by name', () => {
+    expect(catalogSuggestions([], '').some((a) => a.name === '1Password' || a.name === 'AutoCAD')).toBe(false);
+    expect(catalogSuggestions([], '1pass').map((a) => a.name)).toEqual(['1Password']);
+    expect(catalogSuggestions([], 'autocad').map((a) => a.ids)).toEqual([
+      ['acad.exe', 'acadlt.exe', 'com.autodesk.autocad*', 'autocad*'],
+    ]);
   });
 });

@@ -166,7 +166,7 @@ Install Docker in your Dockerfile, for example `RUN curl -fsSL https://get.docke
 
 The runtime layer adds the `kortix` user to the `docker` group and starts `dockerd` at boot. Its log is `/var/log/dockerd.log`. If `dockerd` stops, start it again with `sudo sh -c 'nohup dockerd >/var/log/dockerd.log 2>&1 &'`.
 
-On Platinum, `container_runtime` also adds the kernel modules Docker needs for its networks and storage. E2B fails the build with `container_runtime is not supported on E2B`.
+On Platinum, `container_runtime` also adds the kernel modules Docker needs for its networks and storage.
 
 ## Environment variables
 
@@ -201,13 +201,16 @@ Kortix sets these variables in every session sandbox.
 
 ## Sandbox providers
 
-Kortix runs sandboxes on three providers. The operator of the Kortix instance decides which ones are on.
+Platinum is the reference sandbox provider. New sessions run on Platinum by default. The operator of the Kortix instance decides which providers are on.
 
 | Provider | Id | Docker in the sandbox | Persistent machines and shared folders | US region |
 | --- | --- | --- | --- | --- |
-| Daytona | `daytona` | Yes | No | No |
 | Platinum | `platinum` | Yes | Yes | Yes, with the **US Region** flag |
-| E2B | `e2b` | No. A template with `container_runtime: true` fails to build. | No | No |
+| Daytona (legacy) | `daytona` | Yes | No | No |
+
+<Callout type="warning">
+**Legacy: Daytona.** Daytona is a legacy fallback provider. Its removal is scheduled. Existing Daytona sessions keep working for now, but Daytona gets no new features and no support guarantee. Use Platinum. E2B support is discontinued.
+</Callout>
 
 A new session gets its provider in this order:
 
