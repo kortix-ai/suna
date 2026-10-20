@@ -22,18 +22,23 @@ import type * as kit from "../kit.js";
 import type * as kitInstall from "../kitInstall.js";
 import type * as kortix from "../kortix.js";
 import type * as lib_cite from "../lib/cite.js";
+import type * as lib_columns from "../lib/columns.js";
 import type * as lib_segment from "../lib/segment.js";
+import type * as lib_template from "../lib/template.js";
+import type * as library from "../library.js";
 import type * as lumenAgent from "../lumenAgent.js";
 import type * as matters from "../matters.js";
 import type * as memberTokens from "../memberTokens.js";
 import type * as members from "../members.js";
 import type * as operator from "../operator.js";
+import type * as reviews from "../reviews.js";
 import type * as runs from "../runs.js";
 import type * as seats from "../seats.js";
 import type * as seed from "../seed.js";
 import type * as tags from "../tags.js";
 import type * as threads from "../threads.js";
 import type * as usage from "../usage.js";
+import type * as workflows from "../workflows.js";
 
 import type {
   ApiFromModules,
@@ -56,18 +61,23 @@ declare const fullApi: ApiFromModules<{
   kitInstall: typeof kitInstall;
   kortix: typeof kortix;
   "lib/cite": typeof lib_cite;
+  "lib/columns": typeof lib_columns;
   "lib/segment": typeof lib_segment;
+  "lib/template": typeof lib_template;
+  library: typeof library;
   lumenAgent: typeof lumenAgent;
   matters: typeof matters;
   memberTokens: typeof memberTokens;
   members: typeof members;
   operator: typeof operator;
+  reviews: typeof reviews;
   runs: typeof runs;
   seats: typeof seats;
   seed: typeof seed;
   tags: typeof tags;
   threads: typeof threads;
   usage: typeof usage;
+  workflows: typeof workflows;
 }>;
 
 /**

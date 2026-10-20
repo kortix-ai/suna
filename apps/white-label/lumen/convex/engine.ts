@@ -17,11 +17,10 @@ import { KIT } from "./kit/bundle.generated";
 import { ensureKit } from "./kitInstall";
 import { RUNS_ROOT, sandboxPath } from "./lumenAgent";
 import { asOperator, errorText, operator, sandboxProvider, withRetry } from "./operator";
-import { LIMITS, NO_PROGRESS_MS, RUN_TIMEOUT_MS } from "./runs";
+import { LIMITS, NO_PROGRESS_MS, RUN_TIMEOUT_MS, inputKind, resultContract } from "./runs";
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 for (const s of Object.values(KIT.schemas)) ajv.addSchema(s as object);
-const SCHEMA_FOR_KIND: Record<string, string> = { review: "review-row", ask: "answer" };
 
 /** Poll fast while a session boots and works, then slow down. */
 const pollDelay = (startedAt: number | undefined) => (startedAt && Date.now() - startedAt < 2 * 60_000 ? 5_000 : 15_000);
@@ -45,23 +44,32 @@ type Prep = {
   columns: Doc<"reviews">["columns"] | null;
   batches: Doc<"runBatches">[];
   docs: Doc<"documents">[];
+  library: { name: string; body: string } | null;
 };
+
+/** The firm's playbook or template, copied into the batch folder at start: the run reads the version it started with. */
+const libraryFile = (kind: string) => (kind === "contract_review" ? "in/playbook.md" : "in/template.md");
 
 function inputFor(p: Prep, b: Doc<"runBatches">) {
   const docs = b.documentIds.map((id) => p.docs.find((d) => d._id === id)!).filter(Boolean);
+  const dir = sandboxPath(batchDir(p.run._id, b._id));
+  const kind = p.run.kind;
   return {
     schema: "input/1",
     run_id: p.run._id,
     batch_id: b._id,
     kit_version: KIT.version,
-    kind: p.run.kind,
+    kind: inputKind(kind, b.phase),
     matter_dir: sandboxPath(p.matter.driveFolder),
-    batch_dir: sandboxPath(batchDir(p.run._id, b._id)),
+    batch_dir: dir,
     documents: docs.map((d) => ({
       doc_id: d._id, filename: d.filename, text_path: sandboxPath(d.textFile!), original_path: sandboxPath(d.driveFile!),
     })),
-    ...(p.columns ? { columns: p.columns } : {}),
+    ...(p.columns && b.phase !== "reduce" ? { columns: p.columns } : {}),
     ...(p.run.question ? { question: p.run.question } : {}),
+    ...(kind === "contract_review" ? { playbook_path: `${dir}/${libraryFile(kind)}`, perspective: p.run.perspective ?? "our client" } : {}),
+    ...(kind === "draft" ? { template_path: `${dir}/${libraryFile(kind)}`, fields: p.run.fields ?? {} } : {}),
+    ...(b.phase === "reduce" ? { rows_dir: `${dir}/in/rows` } : {}),
   };
 }
 
@@ -71,6 +79,10 @@ export const prepare = internalAction({
   returns: v.null(),
   handler: async (ctx, { runId }) => {
     const p = (await ctx.runQuery(internal.runs.forPrepare, { runId })) as Prep | null;
+    if (p && (p.run.kind === "contract_review" || p.run.kind === "draft") && !p.library) {
+      await ctx.runMutation(internal.runs.markRun, { runId, status: "failed", error: "The playbook or template was deleted" });
+      return null;
+    }
     if (!p || !p.firm.kortixProjectId || !p.firm.kortixDriveId) {
       if (p) await ctx.runMutation(internal.runs.markRun, { runId, status: "failed", error: "The firm workspace is not ready" });
       return null;
@@ -92,6 +104,11 @@ export const prepare = internalAction({
           await ensureFolder(driveId, dir);
           const body = new TextEncoder().encode(JSON.stringify(inputFor(p, b), null, 1));
           await withRetry(() => uploadDriveFile(driveId, `${dir}/input.json`, body));
+          if (p.library) {
+            await ensureFolder(driveId, `${dir}/in`);
+            const md = new TextEncoder().encode(p.library.body);
+            await withRetry(() => uploadDriveFile(driveId, `${dir}/${libraryFile(p.run.kind)}`, md));
+          }
         }
       });
     } catch (err) {
@@ -109,10 +126,26 @@ export const prepare = internalAction({
 const launchPrompt = (inputPath: string) =>
   `Run this Lumen batch now. Input: ${inputPath}\nRead it, do the task your instructions describe for its "kind", write every result with \`lumen result write\`, and finish with \`lumen result done\`.`;
 
+const KIND_NAME: Record<string, string> = {
+  review: "Review", column: "Review", ask: "Ask", contract_review: "Contract review", diligence: "Due diligence", draft: "Draft",
+};
+
+/** A reduce batch reads the checklist rows Lumen accepted: Convex writes them into the batch folder, never the map agents. */
+async function writeReduceRows(ctx: ActionCtx, run: Doc<"runs">, b: Doc<"runBatches">, driveId: string) {
+  const rows = await ctx.runQuery(internal.runs.reduceRows, { runId: run._id });
+  const dir = `${batchDir(run._id, b._id)}/in/rows`;
+  await ensureFolder(driveId, `${batchDir(run._id, b._id)}/in`);
+  await ensureFolder(driveId, dir);
+  for (const r of rows) {
+    await withRetry(() => uploadDriveFile(driveId, `${dir}/${r.docId}.json`, new TextEncoder().encode(JSON.stringify(r.row, null, 1))));
+  }
+  return rows.length;
+}
+
 async function startSession(b: Doc<"runBatches">, run: Doc<"runs">, firm: Doc<"firms">) {
   const session = await withRetry(() =>
     createProjectSession(firm.kortixProjectId!, {
-      name: `${run.kind === "ask" ? "Ask" : "Review"}: ${run.title}`.slice(0, 120) + (run.kind === "review" ? ` (batch ${b.index + 1})` : ""),
+      name: `${KIND_NAME[run.kind] ?? "Run"}: ${run.title}`.slice(0, 110) + (b.phase === "reduce" ? " (report)" : run.documentIds.length > 4 && b.agent === "lumen-extractor" ? ` (batch ${b.index + 1})` : ""),
       agent_name: b.agent,
       labels: [`lumen-firm:${firm._id}`, `lumen-matter:${run.matterId}`, `lumen-user:${run.createdBy}`, `lumen-run:${run._id}`].map((l) => l.slice(0, 64)),
       metadata: { lumen_firm_id: firm._id, lumen_matter_id: run.matterId, lumen_user_id: run.createdBy, lumen_run_id: run._id, lumen_batch_id: b._id },
@@ -131,12 +164,23 @@ export const launch = internalAction({
     const c = await ctx.runQuery(internal.runs.batchContext, { batchId });
     if (!c || c.batch.status !== "starting" || c.run.status !== "running") return null;
     try {
+      if (c.batch.phase === "reduce") {
+        const n = await asOperator(() => writeReduceRows(ctx, c.run, c.batch, c.firm.kortixDriveId!));
+        await ctx.runMutation(internal.runs.updateBatch, { batchId, patch: {}, event: { type: "rows", detail: `Report: ${n} checklist rows handed over` } });
+      }
       const sid = await asOperator(() => startSession(c.batch, c.run, c.firm));
       const now = Date.now();
       const live = await ctx.runMutation(internal.runs.updateBatch, {
         batchId,
         patch: { status: "working", kortixSessionId: sid, startedAt: now, lastProgressAt: now, lastPromptAt: now },
-        event: { type: "working", detail: `Batch ${c.batch.index + 1}: the agent is reading ${c.batch.documentIds.length} document${c.batch.documentIds.length === 1 ? "" : "s"}` },
+        event: {
+          type: "working",
+          detail: c.batch.phase === "reduce"
+            ? "Report: the agent is writing the report from the checklist"
+            : c.run.kind === "draft"
+              ? `The agent is drafting${c.batch.documentIds.length ? ` from ${c.batch.documentIds.length} source document${c.batch.documentIds.length === 1 ? "" : "s"}` : ""}`
+              : `Batch ${c.batch.index + 1}: the agent is reading ${c.batch.documentIds.length} document${c.batch.documentIds.length === 1 ? "" : "s"}`,
+        },
       });
       if (live) await ctx.scheduler.runAfter(pollDelay(now), internal.engine.poll, { batchId });
       else await asOperator(() => stop(c.firm.kortixProjectId!, sid));
@@ -205,11 +249,34 @@ function schemaErrors(name: string, value: unknown): string[] {
   return (validate.errors ?? []).slice(0, 10).map((e) => `${e.instancePath || "$"} ${e.message ?? "is invalid"}`);
 }
 
-/** What the batch still owes: the documents with no accepted row, or the missing answer. */
+/** What the batch still owes: the documents with no accepted row, or its one result file. */
 function missing(c: { run: Doc<"runs">; batch: Doc<"runBatches"> }, accepted: Set<string>): string[] {
-  if (c.run.kind === "ask") return accepted.has("out/answer.json") ? [] : ["out/answer.json"];
+  const { file } = resultContract(c.run.kind, c.batch.phase);
+  if (file) return accepted.has(file) ? [] : [file];
   return c.batch.documentIds.filter((id) => !accepted.has(`out/rows/${id}.json`)).map((id) => `out/rows/${id}.json`);
 }
+
+/** The files a result names (redline.docx, draft.docx), read from Drive into Lumen's storage. Null while one has not synced yet. */
+async function storeFiles(ctx: ActionCtx, driveId: string, dir: string, names: string[]) {
+  const out = [];
+  for (const name of names.slice(0, 5)) {
+    if (!/^[A-Za-z0-9_.-]{1,80}$/.test(name)) continue;
+    let blob: Blob;
+    try {
+      blob = (await readDriveFile(driveId, `${dir}/out/${name}`)).blob;
+    } catch (err) {
+      if ((err as { status?: number }).status === 404) return null;
+      throw err;
+    }
+    const type = name.endsWith(".docx") ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : blob.type;
+    const storageId = await ctx.storage.store(new Blob([await blob.arrayBuffer()], { type }));
+    out.push({ name, storageId, bytes: blob.size });
+  }
+  return out;
+}
+
+/** A named file that has not reached Drive this long after its result is reported as missing. */
+const FILE_SYNC_MS = 90_000;
 
 async function prompt(ctx: ActionCtx, c: { firm: Doc<"firms">; batch: Doc<"runBatches"> }, text: string) {
   await asOperator(() => operator().kortix.session(c.firm.kortixProjectId!, c.batch.kortixSessionId!).send(text, { agent: c.batch.agent }));
@@ -240,8 +307,13 @@ export const poll = internalAction({
     const fail = (error: string) => settle("failed", error);
     const again = () => ctx.scheduler.runAfter(pollDelay(batch.startedAt), internal.engine.poll, { batchId });
     try {
-      const { files, done } = await asOperator(() => listOutputs(driveId, dir));
+      const listed = await asOperator(() => listOutputs(driveId, dir));
+      // Only the files the contract names are results: a scratch JSON the agent leaves in out/ is not one.
+      const { file: resultFile } = resultContract(run.kind, batch.phase);
+      const files = listed.files.filter((f) => (resultFile ? f.path === resultFile : /^out\/rows\/[^/]+\.json$/.test(f.path)));
+      const done = listed.done;
       const rejected: string[] = [];
+      let waiting = false;
       for (const f of files) {
         // Each version is read once. A rejected file is reported once; the agent's next write is a new version.
         if (seen.get(f.path)?.version === f.version) continue;
@@ -252,13 +324,26 @@ export const poll = internalAction({
           // A file caught mid-write: the next poll reads it again.
           continue;
         }
-        const errors = schemaErrors(SCHEMA_FOR_KIND[run.kind], value);
+        const errors = schemaErrors(resultContract(run.kind, batch.phase).schema, value);
         if (errors.length) {
           await ctx.runMutation(internal.runs.recordFile, { batchId, path: f.path, version: f.version, status: "rejected", errors });
           rejected.push(...errors.map((e) => `${f.path}: ${e}`));
           continue;
         }
-        const problems = await ctx.runMutation(internal.runs.ingestResult, { batchId, path: f.path, version: f.version, value });
+        const named = Array.isArray((value as { files?: unknown }).files) ? ((value as { files: string[] }).files) : [];
+        const stored = named.length ? await asOperator(() => storeFiles(ctx, driveId, dir, named)) : [];
+        if (!stored) {
+          // The result names a file Drive does not have yet: read the result again next poll.
+          const since = await ctx.runMutation(internal.runs.markWaiting, { batchId });
+          if (Date.now() - since > FILE_SYNC_MS) {
+            // Report it once, then give the repaired write a fresh window.
+            await ctx.runMutation(internal.runs.markWaiting, { batchId, reset: true });
+            rejected.push(`${f.path}: it lists ${named.join(", ")}, but ${named.length === 1 ? "that file is" : "those files are"} not in out/. Write ${named.length === 1 ? "it" : "them"} to ${sandboxPath(dir)}/out/.`);
+          }
+          waiting = true;
+          continue;
+        }
+        const problems = await ctx.runMutation(internal.runs.ingestResult, { batchId, path: f.path, version: f.version, value, files: stored });
         rejected.push(...problems);
         seen.set(f.path, { version: f.version, status: "accepted" });
       }
@@ -269,17 +354,21 @@ export const poll = internalAction({
       if (now - (run.startedAt ?? now) > RUN_TIMEOUT_MS) return void (await fail("The run took longer than 60 minutes"));
       if (now - (batch.lastProgressAt ?? now) > NO_PROGRESS_MS) return void (await fail("No progress for 20 minutes"));
 
-      if (done && seen.get("done.json")?.version !== done.version) {
+      if (waiting && rejected.length === 0) return void (await again());
+      const doneIsNew = !!done && seen.get("done.json")?.version !== done.version;
+      if (done && doneIsNew) {
         const d = (await asOperator(() => readJson(driveId, `${dir}/done.json`)).catch(() => null)) as { status?: string; error?: string } | null;
         await ctx.runMutation(internal.runs.recordFile, { batchId, path: "done.json", version: done.version, status: "accepted" });
         if (d?.status === "failed" && owed.length === 0) return void (await settle("succeeded"));
         if (d?.status === "failed") return void (await fail(`The agent stopped: ${String(d.error ?? "no reason given").slice(0, 300)}`));
-        if (owed.length === 0 && rejected.length === 0) {
-          await ctx.runMutation(internal.runs.updateBatch, { batchId, patch: { status: "validating" }, event: { type: "validating", detail: `Batch ${batch.index + 1}: results checked` } });
-          return void (await settle("succeeded"));
-        }
-        rejected.push(...owed.map((p) => `${p} is missing`));
-      } else if (!done && owed.length === 0 && rejected.length === 0 && files.length > 0) {
+      }
+      if (done && owed.length === 0 && rejected.length === 0) {
+        // done.json is in (now or before a repair) and every result is accepted.
+        await ctx.runMutation(internal.runs.updateBatch, { batchId, patch: { status: "validating" }, event: { type: "validating", detail: `${batch.phase === "reduce" ? "Report" : `Batch ${batch.index + 1}`}: results checked` } });
+        return void (await settle("succeeded"));
+      }
+      if (doneIsNew) rejected.push(...owed.map((p) => `${p} is missing`));
+      else if (!done && owed.length === 0 && rejected.length === 0 && files.length > 0) {
         // Every result is in; done.json may still be on its way. Give it the grace period, then accept.
         if (now - (batch.lastProgressAt ?? now) > PROMPT_GRACE_MS) return void (await settle("succeeded"));
       }

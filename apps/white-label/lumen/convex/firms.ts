@@ -6,6 +6,7 @@ import { isAdminRole, requireFirm, requireFirmAdmin, requireMember } from "./acc
 import { audit } from "./audit";
 import { stripeConfigured, trialSeats } from "./billing";
 import { firmStatus, plan, sizeBand } from "./schema";
+import { seedLibrary } from "./library";
 
 const TRIAL_DAYS = 14;
 
@@ -75,6 +76,7 @@ export const create = mutation({
       createdBy: userId,
     });
     await audit(ctx, { firm: { _id: firmId, orgId: args.orgId }, actorId: userId, action: "firm.create", detail: name });
+    await seedLibrary(ctx, firmId, userId);
     await ctx.scheduler.runAfter(0, internal.kortix.provisionFirm, { firmId });
     return firmId;
   },

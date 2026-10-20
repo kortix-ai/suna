@@ -319,3 +319,192 @@ describe('citations, human work, cancel', () => {
     expect(docs).toHaveLength(2);
   });
 });
+
+const PLAYBOOK = '# Example playbook\n\n## Rule NDA-01: Confidentiality term\nPosition: at most 3 years.\nFallback: none.\nSeverity if missed: high\n';
+const TEMPLATE = '# Mutual NDA\n\nMade on {{effective_date}} between {{party_a}} and {{party_b}}, governed by {{governing_law}}.\n';
+
+async function libraryOf(t: T, firmId: Id<'firms'>) {
+  return t.run(async (ctx) => ({
+    playbookId: await ctx.db.insert('libraryItems', { firmId, kind: 'playbook', name: 'Example playbook', body: PLAYBOOK, updatedBy: 'u', updatedAt: 0 }),
+    templateId: await ctx.db.insert('libraryItems', { firmId, kind: 'template', name: 'Mutual NDA', body: TEMPLATE, updatedBy: 'u', updatedAt: 0 }),
+  }));
+}
+
+const issuesJson = (docId: string) => ({
+  schema: 'issues/1', doc_id: docId, playbook: 'Example playbook', perspective: 'Brightwater', summary: 'One high-severity deviation.',
+  issues: [{
+    rule_id: 'NDA-01', title: 'Confidentiality term', status: 'deviates', severity: 'high', finding: 'Clause 1.1 sets 7 years; the maximum is 3.',
+    redline: { a: 'p1.1', from: 'every column', to: 'three years', comment: 'Rule NDA-01: max 3 years.' },
+    citations: [{ doc_id: docId, a: 'p1.1', quote: 'The clause of document 1' }],
+  }],
+  unmatched: [{ title: 'Odd clause', finding: 'Favours the counterparty.', citations: [{ doc_id: docId, a: 'p1.1', quote: 'not in the source' }] }],
+  files: ['redline.docx'],
+});
+
+describe('workflows: contract review, due diligence, draft', () => {
+  test('contract review: the playbook is copied into the run, issues are checked, redline.docx lands in Lumen storage, decisions are audited', async () => {
+    const { t, owner, firmId, matterId, docs } = await world(1);
+    const { playbookId } = await libraryOf(t, firmId);
+    fake.script.onStart = (s) => {
+      fake.write(`${dirOf(s)}/out/redline.docx`, 'PK fake docx');
+      fake.write(`${dirOf(s)}/out/issues.json`, issuesJson(docs[0]));
+      fake.write(`${dirOf(s)}/done.json`, { status: 'succeeded', outputs: [] });
+    };
+    const runId = await owner.as.mutation(api.workflows.startContractReview, { matterId, documentId: docs[0], playbookId });
+    await finish(t);
+    expect((await t.run((ctx) => ctx.db.get(runId)))?.status).toBe('succeeded');
+    const s = fake.sessions[0];
+    expect(s.agent).toBe('lumen-reviewer');
+    const input = JSON.parse(fake.drive.get(s.inputPath)!.data);
+    expect(input).toMatchObject({ kind: 'contract_review', perspective: 'Brightwater Example Holdings' });
+    expect(input.playbook_path).toMatch(/^\/drives\/company\/Lumen\/Runs\/.+\/in\/playbook\.md$/);
+    expect(fake.drive.get(`${dirOf(s)}/in/playbook.md`)!.data).toBe(PLAYBOOK);
+    const view = await owner.as.query(api.runs.get, { runId });
+    expect(view!.issues.map((i) => [i.ruleId, i.assessment, i.severity, i.citations[0].status])).toEqual([
+      ['NDA-01', 'deviates', 'high', 'verified'], ['unmatched', 'unmatched', 'medium', 'unverified'],
+    ]);
+    expect(view!.result).toMatchObject({ kind: 'issues', summary: 'One high-severity deviation.', files: [{ name: 'redline.docx', bytes: 12 }] });
+    const bytes = await owner.as.action(api.workflows.fileBytes, { runId, name: 'redline.docx' });
+    expect(new TextDecoder().decode(bytes)).toBe('PK fake docx');
+    const stranger = await signedInUser(t, 'stranger@example.com');
+    await expect(stranger.as.action(api.workflows.fileBytes, { runId, name: 'redline.docx' })).rejects.toThrow(/403/);
+    await owner.as.mutation(api.workflows.decideIssue, { issueId: view!.issues[0]._id, decision: 'accepted' });
+    const audit = await t.run((ctx) => ctx.db.query('auditEvents').collect());
+    expect(audit.map((e) => e.action)).toContain('issue.accept');
+  });
+
+  test('contract review: a result whose redline.docx never reaches Drive is repaired with a prompt that names the file', async () => {
+    const { t, firmId, matterId, docs } = await world(1);
+    const { playbookId } = await libraryOf(t, firmId);
+    fake.script.onStart = (s) => {
+      fake.write(`${dirOf(s)}/out/issues.json`, issuesJson(docs[0]));
+      fake.write(`${dirOf(s)}/done.json`, { status: 'succeeded', outputs: [] });
+    };
+    fake.script.onSend = (s, text) => {
+      expect(text).toContain('redline.docx');
+      fake.write(`${dirOf(s)}/out/redline.docx`, 'PK late');
+    };
+    const runId = await t.mutation(internal.workflows.startContractReviewAsOwner, { matterId, documentId: docs[0], playbookId });
+    await finish(t);
+    const batch = await t.run((ctx) => ctx.db.query('runBatches').withIndex('by_run', (q) => q.eq('runId', runId)).first());
+    expect(batch).toMatchObject({ status: 'succeeded', attempts: { repair: 1 } });
+  });
+
+  test('due diligence: map batches fill the checklist, then one reduce batch gets the checked rows and writes a cited report', async () => {
+    const { t, owner, matterId, docs } = await world(5);
+    docs.forEach((d, i) => docIndex.set(d, i + 1));
+    let mapsDoneAtReduce = -1;
+    fake.script.onStart = (s) => {
+      if (s.agent === 'lumen-extractor') return writeAll(s);
+      mapsDoneAtReduce = fake.stopped.length;
+      const input = JSON.parse(fake.drive.get(s.inputPath)!.data);
+      expect(input).toMatchObject({ kind: 'diligence_reduce' });
+      expect(input.columns).toBeUndefined();
+      const rows = [...fake.drive.keys()].filter((p) => p.startsWith(`${dirOf(s)}/in/rows/`));
+      expect(rows).toHaveLength(5);
+      const row = JSON.parse(fake.drive.get(rows[0])!.data);
+      expect(row.cells.doc_type).toMatchObject({ label: 'Type', citations: [{ a: 'p1.1' }] });
+      fake.write(`${dirOf(s)}/out/report.json`, {
+        schema: 'diligence-report/1',
+        sections: [{ heading: 'Overview', body_md: 'Five agreements.', citations: [{ doc_id: docs[0], a: 'p1.1', quote: 'The clause of document 1' }] }],
+        red_flags: [{ title: 'Uncapped liability', severity: 'high', doc_id: docs[2], citations: [{ doc_id: docs[2], a: 'p1.1', quote: 'The clause of document 3' }] }],
+      });
+      fake.write(`${dirOf(s)}/done.json`, { status: 'succeeded', outputs: [] });
+    };
+    const runId = await owner.as.mutation(api.workflows.startDiligence, { matterId });
+    await finish(t);
+    expect((await t.run((ctx) => ctx.db.get(runId)))?.status).toBe('succeeded');
+    expect(fake.sessions.map((s) => s.agent)).toEqual(['lumen-extractor', 'lumen-extractor', 'lumen-counsel']);
+    expect(mapsDoneAtReduce).toBe(2);
+    const view = await owner.as.query(api.runs.get, { runId });
+    expect(view!.result).toMatchObject({
+      kind: 'report', sections: [{ heading: 'Overview', citations: [{ status: 'verified' }] }],
+      redFlags: [{ title: 'Uncapped liability', filename: 'doc-3.pdf', citations: [{ status: 'verified' }] }],
+    });
+    expect(view!.cells).toHaveLength(5 * 8);
+  });
+
+  test('draft: unknown fields are dropped, the template is copied, draft.json + draft.docx are stored', async () => {
+    const { t, owner, firmId, matterId } = await world(0);
+    const { templateId } = await libraryOf(t, firmId);
+    fake.script.onStart = (s) => {
+      const input = JSON.parse(fake.drive.get(s.inputPath)!.data);
+      expect(input.fields).toEqual({ party_a: 'Alpha Example Ltd', party_b: 'Beta Example Inc.' });
+      expect(fake.drive.get(`${dirOf(s)}/in/template.md`)!.data).toBe(TEMPLATE);
+      fake.write(`${dirOf(s)}/out/draft.docx`, 'PK draft');
+      fake.write(`${dirOf(s)}/out/draft.json`, {
+        schema: 'draft/1', title: 'Mutual NDA', markdown: '# Mutual NDA\n\nMade on [[CONFIRM: effective_date]] between Alpha Example Ltd and Beta Example Inc., governed by [[CONFIRM: governing_law]].',
+        unfilled: ['effective_date', 'governing_law'], citations: [], files: ['draft.docx'],
+      });
+      fake.write(`${dirOf(s)}/done.json`, { status: 'succeeded', outputs: [] });
+    };
+    const runId = await owner.as.mutation(api.workflows.startDraft, {
+      matterId, templateId, fields: { party_a: 'Alpha Example Ltd', party_b: 'Beta Example Inc.', evil: 'x', governing_law: '  ' },
+    });
+    await finish(t);
+    expect(fake.sessions[0].agent).toBe('lumen-drafter');
+    const view = await owner.as.query(api.runs.get, { runId });
+    expect(view!.run.status).toBe('succeeded');
+    expect(view!.result).toMatchObject({ kind: 'draft', unfilled: ['effective_date', 'governing_law'], files: [{ name: 'draft.docx' }] });
+  });
+});
+
+test('draft: a field with no value and no source document must stay a [[CONFIRM]] marker, or the draft is repaired', async () => {
+  const { t, firmId, matterId } = await world(0);
+  const { templateId } = await libraryOf(t, firmId);
+  const draft = (md: string, unfilled: string[]) => ({ schema: 'draft/1', title: 'Mutual NDA', markdown: md, unfilled, citations: [], files: ['draft.docx'] });
+  fake.script.onStart = (s) => {
+    fake.write(`${dirOf(s)}/out/draft.docx`, 'PK');
+    // The agent invents a governing law it was never given.
+    fake.write(`${dirOf(s)}/out/draft.json`, draft('Made on 2026-10-20 between A and B, governed by Novaria.', []));
+    fake.write(`${dirOf(s)}/done.json`, { status: 'succeeded', outputs: [] });
+  };
+  fake.script.onSend = (s, text) => {
+    expect(text).toContain('governing_law is not in "fields"');
+    fake.write(`${dirOf(s)}/out/draft.json`, draft('Made on 2026-10-20 between A and B, governed by [[CONFIRM: governing_law]].', ['governing_law']));
+  };
+  const runId = await t.mutation(internal.workflows.startDraftAsOwner, {
+    matterId, templateId, fields: { party_a: 'A', party_b: 'B', effective_date: '2026-10-20' },
+  });
+  await finish(t);
+  const batch = await t.run((ctx) => ctx.db.query('runBatches').withIndex('by_run', (q) => q.eq('runId', runId)).first());
+  expect(batch).toMatchObject({ status: 'succeeded', attempts: { repair: 1 } });
+  const result = await t.run((ctx) => ctx.db.query('runResults').withIndex('by_run', (q) => q.eq('runId', runId)).first());
+  expect(result?.unfilled).toEqual(['governing_law']);
+});
+
+describe('reviews: add a column, re-run a column, lawyer decisions', () => {
+  test('a new column runs alone; a re-run keeps verified and edited cells; every decision is audited', async () => {
+    const { t, owner, matterId, docs } = await world(2);
+    docs.forEach((d, i) => docIndex.set(d, i + 1));
+    fake.script.onStart = writeAll;
+    const { reviewId } = await owner.as.mutation(api.reviews.create, { matterId });
+    await finish(t);
+
+    await owner.as.mutation(api.reviews.setCell, { reviewId, documentId: docs[0], columnKey: 'term', action: 'verify' });
+    await owner.as.mutation(api.reviews.setCell, { reviewId, documentId: docs[1], columnKey: 'term', action: 'edit', value: 'Five years' });
+
+    const before = fake.sessions.length;
+    const colRun = await owner.as.mutation(api.reviews.addColumns, {
+      reviewId, columns: [{ key: 'non_solicit', label: 'Non-solicit', prompt: 'Is there a non-solicitation clause?', format: 'yes_no' }],
+    });
+    await finish(t);
+    expect(inputOf(fake.sessions[before]).columns.map((c) => c.key)).toEqual(['non_solicit']);
+    expect((await t.run((ctx) => ctx.db.get(colRun)))).toMatchObject({ kind: 'column', status: 'succeeded', columnKeys: ['non_solicit'] });
+
+    await owner.as.mutation(api.reviews.rerunColumn, { reviewId, columnKey: 'term' });
+    await finish(t);
+    const view = (await owner.as.query(api.reviews.get, { reviewId }))!;
+    expect(view.columns).toHaveLength(9);
+    expect(view.cells.filter((c) => c.state === 'filled')).toHaveLength(18);
+    const term = (d: Id<'documents'>) => view.cells.find((c) => c.columnKey === 'term' && c.documentId === d)!;
+    expect(term(docs[0])).toMatchObject({ reviewStatus: 'verified', value: 'answer term', aiValue: 'answer term' });
+    expect(term(docs[1])).toMatchObject({ edited: true, value: 'Five years' });
+    const actions = (await t.run((ctx) => ctx.db.query('auditEvents').collect())).map((e) => e.action);
+    expect(actions).toEqual(expect.arrayContaining(['cell.verify', 'cell.edit']));
+
+    // One run at a time per review.
+    await owner.as.mutation(api.reviews.rerunColumn, { reviewId, columnKey: 'parties' });
+    await expect(owner.as.mutation(api.reviews.rerunColumn, { reviewId, columnKey: 'term' })).rejects.toThrow(/409/);
+  });
+});

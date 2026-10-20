@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { bundleSource, kitHash } from '../../scripts/kit-bundle';
+import { bundleSource, kitHash, librarySource } from '../../scripts/kit-bundle';
 
 const APP = join(import.meta.dir, '..', '..');
 
@@ -12,6 +12,14 @@ describe('agent kit bundle', () => {
 
   test('convex/kit/bundle.generated.ts matches agent-kit/', () => {
     expect(readFileSync(join(APP, 'convex', 'kit', 'bundle.generated.ts'), 'utf8')).toBe(bundleSource());
+  });
+
+  test('convex/kit/library.generated.ts matches demo-data/dist/ (1 playbook, 2 templates)', async () => {
+    expect(readFileSync(join(APP, 'convex', 'kit', 'library.generated.ts'), 'utf8')).toBe(librarySource());
+    const { DEFAULT_LIBRARY } = await import('../../convex/kit/library.generated');
+    expect(DEFAULT_LIBRARY.map((i) => `${i.kind}:${i.name}`)).toEqual([
+      'playbook:Lumen standard NDA playbook', 'template:Engagement Letter', 'template:Mutual Non-Disclosure Agreement',
+    ]);
   });
 
   test('every agent prompt starts with the shared rules and never names the platform', async () => {

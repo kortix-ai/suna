@@ -4,6 +4,8 @@
 
 export const COUNSEL_AGENT = "lumen-counsel";
 export const EXTRACTOR_AGENT = "lumen-extractor";
+export const REVIEWER_AGENT = "lumen-reviewer";
+export const DRAFTER_AGENT = "lumen-drafter";
 
 /** The skills each agent may load (besides the stock project skills). */
 export const AGENT_SKILLS: Record<string, readonly string[]> = {

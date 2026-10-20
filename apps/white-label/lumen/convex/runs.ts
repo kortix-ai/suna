@@ -14,8 +14,10 @@ import { type MutationCtx, type QueryCtx, internalMutation, internalQuery, mutat
 import { requireMatterAccess } from "./access";
 import { audit } from "./audit";
 import { type Citation, verifyCitation } from "./lib/cite";
-import { COUNSEL_AGENT, EXTRACTOR_AGENT } from "./lumenAgent";
-import { batchStatus, cellState, checkedCitation, column, runKind, runStatus } from "./schema";
+import { DD_COLUMNS, PRESET_COLUMNS } from "./lib/columns";
+import { templateFields } from "./lib/template";
+import { COUNSEL_AGENT, DRAFTER_AGENT, EXTRACTOR_AGENT, REVIEWER_AGENT } from "./lumenAgent";
+import { batchStatus, cellState, checkedCitation, column, runKind, runStatus, severity } from "./schema";
 
 export const DOCS_PER_BATCH = 4;
 export const MAX_RUNNING_PER_RUN = 4;
@@ -26,24 +28,7 @@ export const RUN_TIMEOUT_MS = 60 * 60_000;
 
 type Column = Infer<typeof column>;
 
-/** The "Commercial contract basics" preset. Keys are stable: the eval answer key uses them. */
-export const PRESET_COLUMNS: Column[] = [
-  { key: "parties", label: "Parties", prompt: "Who are the parties to the agreement, and what role does each have?", format: "text" },
-  { key: "term", label: "Term", prompt: "How long does the agreement, or its main obligation, last?", format: "text" },
-  { key: "auto_renewal", label: "Auto-renewal", prompt: "Does the agreement renew automatically?", format: "yes_no" },
-  {
-    key: "termination_convenience", label: "Termination for convenience",
-    prompt: "Can a party terminate without cause (for convenience, for any reason, or under a break clause)?", format: "yes_no",
-  },
-  { key: "liability_cap", label: "Liability cap", prompt: "Is liability capped, and at what amount?", format: "text" },
-  { key: "governing_law", label: "Governing law", prompt: "Which law governs the agreement?", format: "text" },
-  { key: "assignment", label: "Assignment", prompt: "Can a party assign the agreement, and on what condition?", format: "text" },
-  {
-    key: "change_of_control", label: "Change of control",
-    prompt: "Does the agreement contain a change-of-control provision: a consent requirement, condition or termination right triggered by a change of control of a party or of the target?",
-    format: "yes_no",
-  },
-];
+export { DD_COLUMNS, PRESET_COLUMNS };
 
 const TERMINAL_RUN = new Set(["succeeded", "partial", "failed", "canceled"]);
 const TERMINAL_BATCH = new Set(["succeeded", "failed", "canceled"]);
@@ -63,32 +48,72 @@ async function readyDocs(ctx: QueryCtx, matterId: Id<"matters">, ids: Id<"docume
   return picked as Doc<"documents">[];
 }
 
-async function createRun(
-  ctx: MutationCtx,
-  a: { matter: Doc<"matters">; firm: Doc<"firms">; userId: string; kind: "review" | "ask"; title: string; docs: Doc<"documents">[];
-    reviewId?: Id<"reviews">; question?: string },
-) {
-  if (a.docs.length === 0) throw new Error("400: add documents to the vault first");
+type RunKind = Infer<typeof runKind>;
+type RunInput = {
+  matter: Doc<"matters">; firm: Doc<"firms">; userId: string; kind: RunKind; title: string; docs: Doc<"documents">[];
+  reviewId?: Id<"reviews">; question?: string; columnKeys?: string[]; libraryItemId?: Id<"libraryItems">; perspective?: string;
+  fields?: Record<string, string>;
+};
+
+/** The agent and the batches each kind runs as. A draft may have no source documents; every other kind needs one. */
+function plan(a: RunInput): Array<{ agent: string; docs: Doc<"documents">[]; phase?: "map" | "reduce" }> {
+  switch (a.kind) {
+    case "ask":
+      return [{ agent: COUNSEL_AGENT, docs: a.docs }];
+    case "contract_review":
+      return [{ agent: REVIEWER_AGENT, docs: a.docs }];
+    case "draft":
+      return [{ agent: DRAFTER_AGENT, docs: a.docs }];
+    case "diligence":
+      return [
+        ...chunk(a.docs, DOCS_PER_BATCH).map((docs) => ({ agent: EXTRACTOR_AGENT, docs, phase: "map" as const })),
+        { agent: COUNSEL_AGENT, docs: a.docs, phase: "reduce" },
+      ];
+    default:
+      return chunk(a.docs, DOCS_PER_BATCH).map((docs) => ({ agent: EXTRACTOR_AGENT, docs }));
+  }
+}
+
+export async function createRun(ctx: MutationCtx, a: RunInput) {
+  if (a.docs.length === 0 && a.kind !== "draft") throw new Error("400: add documents to the vault first");
   const runId = await ctx.db.insert("runs", {
     firmId: a.firm._id, matterId: a.matter._id, kind: a.kind, title: a.title, status: "queued", reviewId: a.reviewId,
-    question: a.question, documentIds: a.docs.map((d) => d._id), createdBy: a.userId,
+    question: a.question, columnKeys: a.columnKeys, libraryItemId: a.libraryItemId, perspective: a.perspective, fields: a.fields,
+    documentIds: a.docs.map((d) => d._id), createdBy: a.userId,
   });
-  const groups = a.kind === "ask" ? [a.docs] : chunk(a.docs, DOCS_PER_BATCH);
-  for (const [index, group] of groups.entries()) {
+  const batches = plan(a);
+  for (const [index, b] of batches.entries()) {
     await ctx.db.insert("runBatches", {
-      runId, firmId: a.firm._id, index, agent: a.kind === "ask" ? COUNSEL_AGENT : EXTRACTOR_AGENT, status: "pending",
-      documentIds: group.map((d) => d._id), attempts: { repair: 0, nudge: 0, relaunch: 0 },
+      runId, firmId: a.firm._id, index, agent: b.agent, phase: b.phase, status: "pending",
+      documentIds: b.docs.map((d) => d._id), attempts: { repair: 0, nudge: 0, relaunch: 0 },
     });
   }
-  await event(ctx, runId, "queued", `${a.docs.length} documents in ${groups.length} batch${groups.length === 1 ? "" : "es"}`);
+  const n = batches.length;
+  await event(ctx, runId, "queued", `${a.docs.length} document${a.docs.length === 1 ? "" : "s"} in ${n} batch${n === 1 ? "" : "es"}`);
   await audit(ctx, { firm: a.firm, actorId: a.userId, action: "run.start", matterId: a.matter._id, detail: `${a.kind}: ${a.title}` });
   await ctx.scheduler.runAfter(0, internal.engine.prepare, { runId });
   return runId;
 }
 
+/** The result schema a batch writes, and the file the batch owes when it writes one file. */
+export function resultContract(kind: RunKind, phase: "map" | "reduce" | undefined): { schema: string; file?: string } {
+  if (kind === "ask") return { schema: "answer", file: "out/answer.json" };
+  if (kind === "contract_review") return { schema: "issues", file: "out/issues.json" };
+  if (kind === "draft") return { schema: "draft", file: "out/draft.json" };
+  if (kind === "diligence" && phase === "reduce") return { schema: "diligence-report", file: "out/report.json" };
+  return { schema: "review-row" };
+}
+
+/** What a batch's input.json calls its kind. */
+export function inputKind(kind: RunKind, phase: "map" | "reduce" | undefined) {
+  return kind === "diligence" ? (phase === "reduce" ? "diligence_reduce" : "diligence_map") : kind;
+}
+
 const chunk = <T,>(xs: T[], n: number) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
 
 type Actor = { matter: Doc<"matters">; firm: Doc<"firms">; userId: string };
+export type { Actor };
+export { readyDocs };
 const reviewArgs = {
   matterId: v.id("matters"),
   title: v.optional(v.string()),
@@ -97,15 +122,13 @@ const reviewArgs = {
 };
 const askArgs = { matterId: v.id("matters"), question: v.string(), documentIds: v.optional(v.array(v.id("documents"))) };
 
-async function startReviewFor(
+/** A review and its pending cells: one row per document, one column per question (default: the commercial preset). */
+export async function createReview(
   ctx: MutationCtx, { matter, firm, userId }: Actor, a: { title?: string; documentIds?: Id<"documents">[]; columns?: Column[] },
 ) {
   const docs = await readyDocs(ctx, matter._id, a.documentIds);
-  const columns = a.columns ?? PRESET_COLUMNS;
-  if (columns.length === 0 || columns.length > 20 || new Set(columns.map((c) => c.key)).size !== columns.length) {
-    throw new Error("400: 1-20 columns with distinct keys");
-  }
-  if (columns.some((c) => !/^[a-z][a-z0-9_]{0,39}$/.test(c.key))) throw new Error("400: column keys are lower_snake_case");
+  if (docs.length === 0) throw new Error("400: add documents to the vault first");
+  const columns = checkColumns(a.columns ?? PRESET_COLUMNS);
   const title = a.title?.trim().slice(0, 120) || "Commercial contract basics";
   const reviewId = await ctx.db.insert("reviews", {
     firmId: firm._id, matterId: matter._id, title, documentIds: docs.map((d) => d._id), columns, createdBy: userId,
@@ -115,8 +138,29 @@ async function startReviewFor(
       await ctx.db.insert("reviewCells", { reviewId, documentId: d._id, columnKey: c.key, state: "pending", citations: [], reviewStatus: "none" });
     }
   }
-  const runId = await createRun(ctx, { matter, firm, userId, kind: "review", title, docs, reviewId });
+  return { reviewId, docs, title };
+}
+
+export async function startReviewFor(ctx: MutationCtx, actor: Actor, a: { title?: string; documentIds?: Id<"documents">[]; columns?: Column[] }) {
+  const { reviewId, docs, title } = await createReview(ctx, actor, a);
+  const runId = await createRun(ctx, { ...actor, kind: "review", title, docs, reviewId });
   return { runId, reviewId };
+}
+
+/** 1-20 columns with distinct lower_snake_case keys, labels and questions; a tag column lists its options. */
+export function checkColumns(columns: Column[]): Column[] {
+  if (columns.length === 0 || columns.length > 20 || new Set(columns.map((c) => c.key)).size !== columns.length) {
+    throw new Error("400: 1-20 columns with distinct keys");
+  }
+  if (columns.some((c) => !/^[a-z][a-z0-9_]{0,39}$/.test(c.key))) throw new Error("400: column keys are lower_snake_case");
+  return columns.map((c) => {
+    const label = c.label.trim().slice(0, 60);
+    const prompt = c.prompt.trim().slice(0, 500);
+    if (!label || prompt.length < 3) throw new Error("400: every column needs a label and a question");
+    const options = c.options?.map((o) => o.trim()).filter(Boolean).slice(0, 20);
+    if (c.format === "tag" && !options?.length) throw new Error(`400: the tag column "${label}" needs options`);
+    return { key: c.key, label, prompt, format: c.format, ...(c.format === "tag" ? { options } : {}) };
+  });
 }
 
 async function askFor(ctx: MutationCtx, { matter, firm, userId }: Actor, a: { question: string; documentIds?: Id<"documents">[] }) {
@@ -141,7 +185,7 @@ export const ask = mutation({
 });
 
 /** The operator's entry points (seed and eval scripts, admin key only): the same code path, acting as the firm's owner. */
-async function asOwner(ctx: MutationCtx, matterId: Id<"matters">): Promise<Actor> {
+export async function asOwner(ctx: MutationCtx, matterId: Id<"matters">): Promise<Actor> {
   const matter = await ctx.db.get(matterId);
   const firm = matter && (await ctx.db.get(matter.firmId));
   if (!matter || !firm) throw new Error("404: matter not found");
@@ -158,7 +202,7 @@ export const askAsOwner = internalMutation({
   handler: async (ctx, a) => askFor(ctx, await asOwner(ctx, a.matterId), a),
 });
 
-async function requireRun(ctx: QueryCtx, runId: Id<"runs">) {
+export async function requireRun(ctx: QueryCtx, runId: Id<"runs">) {
   const run = await ctx.db.get(runId);
   if (!run) throw new Error("404: run not found");
   return { run, ...(await requireMatterAccess(ctx, run.matterId)) };
@@ -266,7 +310,7 @@ export const get = query({
       error: v.optional(v.string()),
       question: v.optional(v.string()),
       batches: v.array(v.object({
-        _id: v.id("runBatches"), index: v.number(), status: batchStatus, documentCount: v.number(), error: v.optional(v.string()),
+        _id: v.id("runBatches"), index: v.number(), phase: v.optional(v.string()), status: batchStatus, documentCount: v.number(), error: v.optional(v.string()),
         attempts: v.object({ repair: v.number(), nudge: v.number(), relaunch: v.number() }), startedAt: v.optional(v.number()),
         finishedAt: v.optional(v.number()),
       })),
@@ -278,6 +322,23 @@ export const get = query({
         confidence: v.optional(v.string()), citations: v.array(citationView),
       })),
       answer: v.union(v.null(), v.object({ addressed: v.boolean(), answerMd: v.string(), citations: v.array(citationView) })),
+      issues: v.array(v.object({
+        _id: v.id("issues"), ruleId: v.string(), title: v.string(), assessment: v.string(), severity, finding: v.string(),
+        redline: v.optional(v.object({ a: v.string(), from: v.string(), to: v.string(), comment: v.string() })),
+        citations: v.array(citationView), decision: v.union(v.literal("open"), v.literal("accepted"), v.literal("dismissed")),
+      })),
+      result: v.union(v.null(), v.object({
+        kind: v.string(), title: v.optional(v.string()), summary: v.optional(v.string()), markdown: v.optional(v.string()),
+        unfilled: v.optional(v.array(v.string())),
+        sections: v.optional(v.array(v.object({ heading: v.string(), bodyMd: v.string(), citations: v.array(citationView) }))),
+        redFlags: v.optional(v.array(v.object({
+          title: v.string(), severity, filename: v.optional(v.string()), citations: v.array(citationView),
+        }))),
+        citations: v.optional(v.array(citationView)),
+        files: v.array(v.object({ name: v.string(), bytes: v.number() })),
+      })),
+      libraryItem: v.union(v.null(), v.object({ name: v.string(), kind: v.string() })),
+      perspective: v.optional(v.string()),
     }),
   ),
   handler: async (ctx, { runId }) => {
@@ -301,22 +362,43 @@ export const get = query({
       ? await ctx.db.query("reviewCells").withIndex("by_review", (q) => q.eq("reviewId", review._id)).collect()
       : [];
     const answer = await ctx.db.query("answers").withIndex("by_run", (q) => q.eq("runId", runId)).first();
+    const issues = await ctx.db.query("issues").withIndex("by_run", (q) => q.eq("runId", runId)).collect();
+    const result = await ctx.db.query("runResults").withIndex("by_run", (q) => q.eq("runId", runId)).first();
+    const item = run.libraryItemId ? await ctx.db.get(run.libraryItemId) : null;
     return {
       run: await rowOf(ctx, run),
       error: run.error,
       question: run.question,
       batches: batches.map((b) => ({
-        _id: b._id, index: b.index, status: b.status, documentCount: b.documentIds.length, error: b.error, attempts: b.attempts,
+        _id: b._id, index: b.index, phase: b.phase, status: b.status, documentCount: b.documentIds.length, error: b.error, attempts: b.attempts,
         startedAt: b.startedAt, finishedAt: b.finishedAt,
       })),
       events: events.reverse().map((e) => ({ at: e.at, type: e.type, detail: e.detail, batchIndex: e.batchId ? indexOf.get(e.batchId) : undefined })),
       documents: run.documentIds.map((id) => ({ _id: id, filename: names.get(id) ?? "Document" })),
-      columns: review?.columns ?? [],
+      columns: (review?.columns ?? []).filter((c) => !run.columnKeys || run.columnKeys.includes(c.key)),
       cells: await Promise.all(cells.map(async (c) => ({
         documentId: c.documentId, columnKey: c.columnKey, state: c.state, value: c.editedValue ?? c.value, note: c.note,
         confidence: c.confidence, citations: await Promise.all(c.citations.map(paraText)),
       }))),
       answer: answer ? { addressed: answer.addressed, answerMd: answer.answerMd, citations: await Promise.all(answer.citations.map(paraText)) } : null,
+      issues: await Promise.all(issues.map(async (i) => ({
+        _id: i._id, ruleId: i.ruleId, title: i.title, assessment: i.assessment, severity: i.severity, finding: i.finding, redline: i.redline,
+        citations: await Promise.all(i.citations.map(paraText)), decision: i.decision,
+      }))),
+      result: result
+        ? {
+            kind: result.kind, title: result.title, summary: result.summary, markdown: result.markdown, unfilled: result.unfilled,
+            sections: result.sections && await Promise.all(result.sections.map(async (x) => ({ ...x, citations: await Promise.all(x.citations.map(paraText)) }))),
+            redFlags: result.redFlags && await Promise.all(result.redFlags.map(async (f) => ({
+              title: f.title, severity: f.severity, filename: f.documentId ? names.get(f.documentId) : undefined,
+              citations: await Promise.all(f.citations.map(paraText)),
+            }))),
+            citations: result.citations && await Promise.all(result.citations.map(paraText)),
+            files: result.files.map((f) => ({ name: f.name, bytes: f.bytes })),
+          }
+        : null,
+      libraryItem: item ? { name: item.name, kind: item.kind } : null,
+      perspective: run.perspective,
     };
   },
 });
@@ -333,7 +415,9 @@ export const forPrepare = internalQuery({
     const review = run.reviewId ? await ctx.db.get(run.reviewId) : null;
     const batches = await batchesOf(ctx, runId);
     const docs = await Promise.all(run.documentIds.map((id) => ctx.db.get(id)));
-    return { run, firm, matter, columns: review?.columns ?? null, batches, docs: docs.filter(Boolean) };
+    const columns = review ? review.columns.filter((c) => !run.columnKeys || run.columnKeys.includes(c.key)) : null;
+    const item = run.libraryItemId ? await ctx.db.get(run.libraryItemId) : null;
+    return { run, firm, matter, columns, batches, docs: docs.filter(Boolean), library: item ? { name: item.name, body: item.body } : null };
   },
 });
 
@@ -372,11 +456,21 @@ export const schedule = internalMutation({
     }
     const batches = await batchesOf(ctx, runId);
     let runRunning = batches.filter((b) => (RUNNING_BATCH as readonly string[]).includes(b.status)).length;
+    const maps = batches.filter((b) => b.phase === "map");
+    const mapsDone = maps.every((b) => TERMINAL_BATCH.has(b.status));
     for (const b of batches) {
       if (b.status !== "pending") continue;
+      if (b.phase === "reduce") {
+        // The report needs the whole checklist: it waits for every map batch, and fails when none succeeded.
+        if (!mapsDone) continue;
+        if (!maps.some((m) => m.status === "succeeded")) {
+          await ctx.scheduler.runAfter(0, internal.runs.settleBatch, { batchId: b._id, status: "failed", error: "No checklist rows to report on" });
+          continue;
+        }
+      }
       if (runRunning >= MAX_RUNNING_PER_RUN || firmRunning >= MAX_RUNNING_PER_FIRM) break;
       await ctx.db.patch(b._id, { status: "starting" });
-      await event(ctx, runId, "starting", `Batch ${b.index + 1}: starting a workspace`, b._id);
+      await event(ctx, runId, "starting", b.phase === "reduce" ? "Report: starting a workspace" : `Batch ${b.index + 1}: starting a workspace`, b._id);
       await ctx.scheduler.runAfter(0, internal.engine.launch, { batchId: b._id });
       runRunning++;
       firmRunning++;
@@ -455,75 +549,200 @@ async function checkCitations(ctx: MutationCtx, raw: Citation[], allowed: Set<st
   return { citations: out, dropped: raw.length - out.length };
 }
 
+type Checked = Infer<typeof checkedCitation>;
+type Ctx = { run: Doc<"runs">; batch: Doc<"runBatches">; allowed: Set<string>; unverified: number };
+const fileArg = v.object({ name: v.string(), storageId: v.id("_storage"), bytes: v.number() });
+
+async function cite(ctx: MutationCtx, c: Ctx, raw: Citation[] | undefined): Promise<Checked[]> {
+  const { citations, dropped } = await checkCitations(ctx, raw ?? [], c.allowed);
+  c.unverified += dropped + citations.filter((x) => x.status === "unverified").length;
+  return citations;
+}
+
+/** One review row: every column of the review (a column run: only its columns). Verified or edited cells keep their value. */
+async function ingestRow(ctx: MutationCtx, c: Ctx, value: any, problems: string[]) {
+  const review = c.run.reviewId && (await ctx.db.get(c.run.reviewId));
+  const documentId = ctx.db.normalizeId("documents", value.doc_id);
+  if (!review || !documentId || !c.allowed.has(documentId)) return void problems.push(`doc_id ${value.doc_id} is not a document of this batch`);
+  const keys = new Set(c.run.columnKeys ?? review.columns.map((col) => col.key));
+  for (const col of review.columns.filter((x) => keys.has(x.key))) {
+    const cell = value.cells?.[col.key];
+    const row = await ctx.db
+      .query("reviewCells")
+      .withIndex("by_review_doc_col", (q) => q.eq("reviewId", review._id).eq("documentId", documentId).eq("columnKey", col.key))
+      .unique();
+    if (!row) continue;
+    if (!cell) {
+      problems.push(`row ${value.doc_id}: no cell for column ${col.key}`);
+      continue;
+    }
+    const citations = await cite(ctx, c, cell.citations);
+    const supported = citations.some((x) => x.status !== "unverified");
+    const state = cell.not_found ? "not_found" : supported ? "filled" : "needs_review";
+    const human = row.reviewStatus === "verified" || row.editedValue !== undefined;
+    await ctx.db.patch(row._id, {
+      // A human-checked cell keeps its value and state; the new AI answer waits beside it.
+      ...(human ? { aiValue: cell.value ?? null } : { state, value: cell.value, aiValue: undefined }),
+      note: cell.note, confidence: cell.confidence, citations, runId: c.run._id,
+    });
+  }
+  await event(ctx, c.run._id, "row", `Row ready: ${(await ctx.db.get(documentId))?.filename ?? value.doc_id}`, c.batch._id);
+}
+
+async function putResult(ctx: MutationCtx, run: Doc<"runs">, row: Omit<Doc<"runResults">, "_id" | "_creationTime">) {
+  const old = await ctx.db.query("runResults").withIndex("by_run", (q) => q.eq("runId", run._id)).first();
+  if (old) {
+    for (const f of old.files) if (!row.files.some((n) => n.storageId === f.storageId)) await ctx.storage.delete(f.storageId).catch(() => undefined);
+    await ctx.db.replace(old._id, row);
+  } else await ctx.db.insert("runResults", row);
+}
+
+async function ingestIssues(ctx: MutationCtx, c: Ctx, value: any, files: Array<Infer<typeof fileArg>>) {
+  const documentId = c.run.documentIds[0];
+  for (const old of await ctx.db.query("issues").withIndex("by_run", (q) => q.eq("runId", c.run._id)).collect()) await ctx.db.delete(old._id);
+  let order = 0;
+  for (const i of value.issues as any[]) {
+    await ctx.db.insert("issues", {
+      runId: c.run._id, matterId: c.run.matterId, documentId, ruleId: String(i.rule_id).slice(0, 40), title: String(i.title).slice(0, 200),
+      assessment: i.status, severity: i.severity, finding: String(i.finding).slice(0, 600), redline: i.redline ?? undefined,
+      citations: await cite(ctx, c, i.citations), decision: "open", order: order++,
+    });
+  }
+  for (const u of value.unmatched as any[]) {
+    await ctx.db.insert("issues", {
+      runId: c.run._id, matterId: c.run.matterId, documentId, ruleId: "unmatched", title: String(u.title).slice(0, 200),
+      assessment: "unmatched", severity: "medium", finding: String(u.finding).slice(0, 600), citations: await cite(ctx, c, u.citations),
+      decision: "open", order: order++,
+    });
+  }
+  await putResult(ctx, c.run, { runId: c.run._id, matterId: c.run.matterId, kind: "issues", summary: String(value.summary).slice(0, 1200), files });
+  const deviating = (value.issues as any[]).filter((i) => i.status !== "aligned").length;
+  await event(ctx, c.run._id, "issues", `${deviating} of ${value.issues.length} rules need attention`, c.batch._id);
+}
+
+async function ingestReport(ctx: MutationCtx, c: Ctx, value: any) {
+  const sections = [];
+  for (const s of value.sections as any[]) {
+    sections.push({ heading: String(s.heading).slice(0, 120), bodyMd: String(s.body_md).slice(0, 8000), citations: await cite(ctx, c, s.citations) });
+  }
+  const redFlags = [];
+  for (const f of value.red_flags as any[]) {
+    const documentId = ctx.db.normalizeId("documents", f.doc_id);
+    redFlags.push({
+      title: String(f.title).slice(0, 200), severity: f.severity, documentId: documentId && c.allowed.has(documentId) ? documentId : undefined,
+      citations: await cite(ctx, c, f.citations),
+    });
+  }
+  await putResult(ctx, c.run, { runId: c.run._id, matterId: c.run.matterId, kind: "report", sections, redFlags, files: [] });
+  await event(ctx, c.run._id, "report", `Report ready: ${sections.length} sections, ${redFlags.length} red flags`, c.batch._id);
+}
+
+async function ingestDraft(ctx: MutationCtx, c: Ctx, value: any, files: Array<Infer<typeof fileArg>>, problems: string[]) {
+  // With no source documents, a field the lawyer left empty has nowhere to come from: it must stay a [[CONFIRM]] marker.
+  if (c.run.documentIds.length === 0 && c.run.libraryItemId) {
+    const template = await ctx.db.get(c.run.libraryItemId);
+    const given = new Set(Object.keys(c.run.fields ?? {}));
+    const invented = templateFields(template?.body ?? "").filter((f) => !given.has(f) && !String(value.markdown).includes(`[[CONFIRM: ${f}]]`));
+    if (invented.length) {
+      problems.push(`out/draft.json: ${invented.join(", ")} ${invented.length === 1 ? "is" : "are"} not in "fields" and this draft has no source documents. Leave ${invented.length === 1 ? "it" : "them"} empty so the renderer writes [[CONFIRM: <field>]], render draft.docx again, and list ${invented.length === 1 ? "it" : "them"} in "unfilled".`);
+      return;
+    }
+  }
+  await putResult(ctx, c.run, {
+    runId: c.run._id, matterId: c.run.matterId, kind: "draft", title: String(value.title).slice(0, 200),
+    markdown: String(value.markdown).slice(0, 60_000), unfilled: (value.unfilled as string[]).slice(0, 40),
+    citations: await cite(ctx, c, value.citations), files,
+  });
+  await event(ctx, c.run._id, "draft", value.unfilled.length ? `Draft ready: ${value.unfilled.length} field(s) to confirm` : "Draft ready", c.batch._id);
+}
+
 /**
- * Accept one schema-valid result file (the action ran ajv). Returns problems
- * the schema cannot see (a row for a document outside the batch). Verified or
- * edited cells keep their value; the new AI answer goes to aiValue.
+ * Accept one schema-valid result file (the action ran ajv and stored the files it
+ * names). Every citation is checked against Lumen's own paragraphs before a value
+ * is written. Returns problems the schema cannot see (a row for a document outside the batch).
  */
 export const ingestResult = internalMutation({
-  args: { batchId: v.id("runBatches"), path: v.string(), version: v.string(), value: v.any() },
+  args: { batchId: v.id("runBatches"), path: v.string(), version: v.string(), value: v.any(), files: v.optional(v.array(fileArg)) },
   returns: v.array(v.string()),
-  handler: async (ctx, { batchId, path, version, value }) => {
-    const b = await ctx.db.get(batchId);
-    const run = b && (await ctx.db.get(b.runId));
-    if (!b || !run || TERMINAL_BATCH.has(b.status)) return [];
-    const allowed = new Set<string>(b.documentIds);
+  handler: async (ctx, { batchId, path, version, value, files = [] }) => {
+    const batch = await ctx.db.get(batchId);
+    const run = batch && (await ctx.db.get(batch.runId));
+    if (!batch || !run || TERMINAL_BATCH.has(batch.status)) return [];
+    const c: Ctx = { run, batch, allowed: new Set<string>(batch.documentIds), unverified: 0 };
     const problems: string[] = [];
-    let unverified = 0;
-    if (run.kind === "review" && value.schema === "review-row/1") {
-      const review = run.reviewId && (await ctx.db.get(run.reviewId));
-      const documentId = ctx.db.normalizeId("documents", value.doc_id);
-      if (!review || !documentId || !allowed.has(documentId)) return [`doc_id ${value.doc_id} is not a document of this batch`];
-      for (const col of review.columns) {
-        const cell = value.cells?.[col.key];
-        const row = await ctx.db
-          .query("reviewCells")
-          .withIndex("by_review_doc_col", (q) => q.eq("reviewId", review._id).eq("documentId", documentId).eq("columnKey", col.key))
-          .unique();
-        if (!row) continue;
-        if (!cell) {
-          problems.push(`row ${value.doc_id}: no cell for column ${col.key}`);
-          continue;
-        }
-        const { citations, dropped } = await checkCitations(ctx, cell.citations ?? [], allowed);
-        unverified += dropped + citations.filter((c) => c.status === "unverified").length;
-        const supported = citations.some((c) => c.status !== "unverified");
-        const state = cell.not_found ? "not_found" : supported ? "filled" : "needs_review";
-        const human = row.reviewStatus === "verified" || row.editedValue !== undefined;
-        await ctx.db.patch(row._id, {
-          state: human ? row.state : state,
-          ...(human ? { aiValue: cell.value } : { value: cell.value, aiValue: undefined }),
-          note: cell.note, confidence: cell.confidence, citations, runId: run._id,
-        });
-      }
-      await event(ctx, run._id, "row", `Row ready: ${(await ctx.db.get(documentId))?.filename ?? value.doc_id}`, batchId);
-    } else if (run.kind === "ask" && value.schema === "answer/1") {
-      const { citations, dropped } = await checkCitations(ctx, value.citations ?? [], allowed);
-      unverified += dropped + citations.filter((c) => c.status === "unverified").length;
+    const expected = resultContract(run.kind, batch.phase).schema;
+    const got = String(value.schema ?? "").split("/")[0];
+    if (got !== expected) return [`${path}: a ${got} result does not belong here; write a ${expected} result`];
+    if (got === "review-row") await ingestRow(ctx, c, value, problems);
+    else if (got === "answer") {
+      const citations = await cite(ctx, c, value.citations);
       const old = await ctx.db.query("answers").withIndex("by_run", (q) => q.eq("runId", run._id)).first();
       const row = { runId: run._id, matterId: run.matterId, question: run.question ?? "", addressed: !!value.addressed,
         answerMd: String(value.answer_md).slice(0, 6000), citations };
       if (old) await ctx.db.replace(old._id, row);
       else await ctx.db.insert("answers", row);
       await event(ctx, run._id, "answer", value.addressed ? "Answer ready" : "Answer ready: the documents do not address this", batchId);
-    } else {
-      return [`${path}: a ${value.schema} result does not belong to a ${run.kind} run`];
-    }
-    if (unverified) await event(ctx, run._id, "citations", `${unverified} citation${unverified === 1 ? "" : "s"} not found in the source`, batchId);
+    } else if (got === "issues") await ingestIssues(ctx, c, value, files);
+    else if (got === "diligence-report") await ingestReport(ctx, c, value);
+    else if (got === "draft") await ingestDraft(ctx, c, value, files, problems);
+    if (problems.length && got === "draft") return problems;
+    if (c.unverified) await event(ctx, run._id, "citations", `${c.unverified} citation${c.unverified === 1 ? "" : "s"} not found in the source`, batchId);
     const old = await ctx.db.query("runFiles").withIndex("by_batch_path", (q) => q.eq("batchId", batchId).eq("path", path)).unique();
     const fileRow = { batchId, path, version, status: "accepted" as const, errors: problems.length ? problems : undefined };
     if (old) await ctx.db.patch(old._id, fileRow);
     else await ctx.db.insert("runFiles", fileRow);
-    await ctx.db.patch(batchId, { lastProgressAt: Date.now() });
+    await ctx.db.patch(batchId, { lastProgressAt: Date.now(), waitingSince: undefined });
     return problems;
+  },
+});
+
+/** A result waits for a file it names (the agent writes it to Drive, which syncs it a few seconds later). */
+export const markWaiting = internalMutation({
+  args: { batchId: v.id("runBatches"), reset: v.optional(v.boolean()) },
+  returns: v.number(),
+  handler: async (ctx, { batchId, reset }) => {
+    const b = await ctx.db.get(batchId);
+    if (!b) return 0;
+    if (b.waitingSince && !reset) return b.waitingSince;
+    const now = Date.now();
+    await ctx.db.patch(batchId, { waitingSince: now });
+    return now;
+  },
+});
+
+/** The validated checklist rows a diligence reduce batch reads: only cells with a verified or relocated citation, or not_found. */
+export const reduceRows = internalQuery({
+  args: { runId: v.id("runs") },
+  returns: v.array(v.object({ docId: v.string(), row: v.any() })),
+  handler: async (ctx, { runId }) => {
+    const run = await ctx.db.get(runId);
+    if (!run?.reviewId) return [];
+    const review = await ctx.db.get(run.reviewId);
+    const cells = await ctx.db.query("reviewCells").withIndex("by_review", (q) => q.eq("reviewId", run.reviewId!)).collect();
+    const out = [];
+    for (const id of run.documentIds) {
+      const doc = await ctx.db.get(id);
+      const mine = cells.filter((c) => c.documentId === id && (c.state === "filled" || c.state === "not_found"));
+      if (!doc || !mine.length) continue;
+      const row: Record<string, unknown> = {};
+      for (const c of mine) {
+        row[c.columnKey] = {
+          label: review?.columns.find((x) => x.key === c.columnKey)?.label, value: c.editedValue ?? c.value ?? null, not_found: c.state === "not_found",
+          note: c.note, citations: c.citations.filter((x) => x.status !== "unverified").map((x) => ({ doc_id: id, a: `p${x.page}.${x.para}`, quote: x.quote })),
+        };
+      }
+      out.push({ docId: id, row: { schema: "review-row/1", doc_id: id, filename: doc.filename, cells: row } });
+    }
+    return out;
   },
 });
 
 async function failPendingCells(ctx: MutationCtx, run: Doc<"runs">, documentIds: Id<"documents">[]) {
   if (!run.reviewId) return;
   const ids = new Set<string>(documentIds);
+  const keys = run.columnKeys && new Set(run.columnKeys);
   for (const c of await ctx.db.query("reviewCells").withIndex("by_review", (q) => q.eq("reviewId", run.reviewId!)).collect()) {
-    if (c.state === "pending" && ids.has(c.documentId)) await ctx.db.patch(c._id, { state: "error", note: "This document could not be read in this run." });
+    if (c.state === "pending" && ids.has(c.documentId) && (!keys || keys.has(c.columnKey))) await ctx.db.patch(c._id, { state: "error", note: "This document could not be read in this run." });
   }
 }
 
@@ -555,9 +774,10 @@ export const settleBatch = internalMutation({
     const run = b && (await ctx.db.get(b.runId));
     if (!b || !run || TERMINAL_BATCH.has(b.status)) return null;
     await ctx.db.patch(batchId, { status, error, finishedAt: Date.now() });
+    const name = b.phase === "reduce" ? "Report" : `Batch ${b.index + 1}`;
     await event(ctx, run._id, status === "succeeded" ? "batch_done" : "batch_failed",
-      status === "succeeded" ? `Batch ${b.index + 1} done` : `Batch ${b.index + 1} failed: ${error ?? "no reason given"}`, batchId);
-    if (status === "failed") await failPendingCells(ctx, run, b.documentIds);
+      status === "succeeded" ? `${name} done` : `${name} failed: ${error ?? "no reason given"}`, batchId);
+    if (status === "failed" && b.phase !== "reduce") await failPendingCells(ctx, run, b.documentIds);
     if (TERMINAL_RUN.has(run.status)) return null;
     const batches = await batchesOf(ctx, run._id);
     if (batches.every((x) => TERMINAL_BATCH.has(x.status))) {
