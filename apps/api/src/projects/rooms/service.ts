@@ -1,5 +1,5 @@
 /**
- * Rooms: named, durable channels of a project (`dev`, `platinum/dev`) where
+ * Rooms: named, durable chat rooms of a project (`dev`, `platinum/dev`) where
  * agent sessions and people post (flag `agent_rooms`). Anyone with
  * project.room.read can find and read a room; its members get its messages.
  *
@@ -148,11 +148,32 @@ export async function conversationsOf(ref: MemberRef, projectId: string | null) 
     .where(and(...conditions))
     .orderBy(desc(rooms.updatedAt))
     .limit(500);
+  const unread = await unreadTopLevel(ref, rows.map((r) => r.room.roomId));
   return rows.map(({ room, membership }) => ({
     room,
     membership,
-    unread: membership.memberKind === 'person' ? Math.max(0, room.lastSeq - membership.lastReadSeq) : 0,
+    unread: unread.get(room.roomId) ?? 0,
   }));
+}
+
+/**
+ * A person's unread messages per room: messages from others after their read
+ * cursor, thread replies left out (as in Slack, a reply counts in its thread).
+ */
+async function unreadTopLevel(ref: MemberRef, roomIds: string[]): Promise<Map<string, number>> {
+  if (ref.kind !== 'person' || roomIds.length === 0) return new Map();
+  const rows = await db
+    .select({ roomId: roomMessages.roomId, count: sql<number>`count(*)::int` })
+    .from(roomMessages)
+    .innerJoin(roomMembers, and(eq(roomMembers.roomId, roomMessages.roomId), eq(roomMembers.userId, ref.userId)))
+    .where(and(
+      inArray(roomMessages.roomId, roomIds),
+      gt(roomMessages.seq, roomMembers.lastReadSeq),
+      isNull(roomMessages.replyToSeq),
+      sql`not (${roomMessages.senderKind} = 'member' and ${roomMessages.senderUserId} = ${ref.userId})`,
+    ))
+    .groupBy(roomMessages.roomId);
+  return new Map(rows.map((row) => [row.roomId, row.count]));
 }
 
 export async function listRoomMembers(roomId: string) {
@@ -180,9 +201,17 @@ export async function listRoomMembers(roomId: string) {
 /** Messages in seq order. `after` reads forward (tailing); `before` pages back; neither = the newest `limit`. */
 export async function readRoomMessages(
   roomId: string,
-  page: { after?: number; before?: number; limit: number },
+  page: { after?: number; before?: number; limit: number; top?: boolean; thread?: number },
 ): Promise<RoomMessageRow[]> {
   const conditions = [eq(roomMessages.roomId, roomId)];
+  // `top`: the room's timeline without thread replies. `thread`: one thread,
+  // its root first, oldest first.
+  if (page.top) conditions.push(isNull(roomMessages.replyToSeq));
+  if (page.thread !== undefined) {
+    conditions.push(sql`(${roomMessages.seq} = ${page.thread} or ${roomMessages.replyToSeq} = ${page.thread})`);
+    if (page.after !== undefined) conditions.push(gt(roomMessages.seq, page.after));
+    return db.select().from(roomMessages).where(and(...conditions)).orderBy(asc(roomMessages.seq)).limit(page.limit);
+  }
   if (page.after !== undefined) {
     conditions.push(gt(roomMessages.seq, page.after));
     return db.select().from(roomMessages).where(and(...conditions)).orderBy(asc(roomMessages.seq)).limit(page.limit);
@@ -190,6 +219,17 @@ export async function readRoomMessages(
   if (page.before !== undefined) conditions.push(lt(roomMessages.seq, page.before));
   const rows = await db.select().from(roomMessages).where(and(...conditions)).orderBy(desc(roomMessages.seq)).limit(page.limit);
   return rows.reverse();
+}
+
+/** Reply count and newest reply time of each thread root among `seqs`. */
+export async function threadStats(roomId: string, seqs: number[]): Promise<Map<number, { count: number; lastAt: Date }>> {
+  if (seqs.length === 0) return new Map();
+  const rows = await db
+    .select({ root: roomMessages.replyToSeq, count: sql<number>`count(*)::int`, lastAt: sql<Date>`max(${roomMessages.createdAt})` })
+    .from(roomMessages)
+    .where(and(eq(roomMessages.roomId, roomId), inArray(roomMessages.replyToSeq, seqs)))
+    .groupBy(roomMessages.replyToSeq);
+  return new Map(rows.map((row) => [row.root!, { count: row.count, lastAt: new Date(row.lastAt) }]));
 }
 
 /** A session's project, account, agent and metadata — where it lives. */
@@ -330,8 +370,8 @@ export async function postRoomMessage(input: {
     db.select({ count: sql<number>`count(*)::int` }).from(roomMessages)
       .where(and(eq(roomMessages.roomId, room.roomId), senderFilter, gte(roomMessages.createdAt, new Date(Date.now() - 60_000)))),
     input.replyToSeq === null
-      ? Promise.resolve([] as { senderSessionId: string | null; senderUserId: string | null; senderKind: string }[])
-      : db.select({ senderSessionId: roomMessages.senderSessionId, senderUserId: roomMessages.senderUserId, senderKind: roomMessages.senderKind }).from(roomMessages)
+      ? Promise.resolve([] as { replyToSeq: number | null }[])
+      : db.select({ replyToSeq: roomMessages.replyToSeq }).from(roomMessages)
         .where(and(eq(roomMessages.roomId, room.roomId), eq(roomMessages.seq, input.replyToSeq))).limit(1),
   ]);
   if ((rate?.count ?? 0) >= SENDER_MESSAGES_PER_MINUTE) {
@@ -340,9 +380,19 @@ export async function postRoomMessage(input: {
   if (previous && previous.text === input.text && Date.now() - previous.createdAt.getTime() < DUPLICATE_WINDOW_MS) {
     throw new RoomError(409, 'You sent this exact message less than a minute ago', 'duplicate_message');
   }
-  if (input.replyToSeq !== null && input.replyToSeq > room.lastSeq) {
-    throw new RoomError(400, `reply_to #${input.replyToSeq} does not exist in this conversation`, 'reply_to_unknown');
+  if (input.replyToSeq !== null && !repliedTo) {
+    throw new RoomError(400, `reply_to #${input.replyToSeq} does not exist in this room`, 'reply_to_unknown');
   }
+  // Threads, like Slack: a reply joins the thread of the message it answers,
+  // so `reply_to_seq` is always the thread's root. Everyone who posted in the
+  // thread (the root's sender included) is addressed by a reply in it.
+  const threadRoot = input.replyToSeq === null ? null : repliedTo!.replyToSeq ?? input.replyToSeq;
+  const participants = threadRoot === null ? new Set<string>() : new Set(
+    (await db.select({ kind: roomMessages.senderKind, userId: roomMessages.senderUserId, sessionId: roomMessages.senderSessionId })
+      .from(roomMessages)
+      .where(and(eq(roomMessages.roomId, room.roomId), sql`(${roomMessages.seq} = ${threadRoot} or ${roomMessages.replyToSeq} = ${threadRoot})`)))
+      .map((row) => (row.kind === 'session' ? `s:${row.sessionId}` : `u:${row.userId}`)),
+  );
   let members = await listRoomMembers(room.roomId);
   // No laundering: a message reaches a session only when the person vouching
   // for the sender could prompt that session themselves — the person who
@@ -392,17 +442,17 @@ export async function postRoomMessage(input: {
     const names = member.memberKind === 'session'
       ? [member.agentName, sessionDisplayName(member.metadata)]
       : [person?.email, person?.displayName];
-    // Addressed to this member: an @-mention, or a reply to a message it
-    // sent. `mentions` never filters an addressed message.
+    // Addressed to this member: an @-mention, or a reply in a thread it
+    // posted in. `mentions` never filters an addressed message.
     const addressed = mentionsMember(tokens, {
       ids: [member.sessionId ?? member.userId ?? ''],
       names: names.filter((v): v is string => !!v && v !== 'default'),
-    })
-      || (!!member.sessionId && repliedTo?.senderSessionId === member.sessionId)
-      || (!!member.userId && repliedTo?.senderKind === 'member' && repliedTo.senderUserId === member.userId);
+    }) || participants.has(memberKey(ref));
     if (memberKey(ref) === self) verdict('skipped', 'sender');
     else if (member.notify === 'none') verdict('skipped', 'notify_none');
     else if (member.notify === 'mentions' && !addressed) verdict('skipped', 'not_mentioned');
+    // A thread reply stays in its thread for anyone not in it, as in Slack.
+    else if (threadRoot !== null && !addressed) verdict('skipped', 'thread');
     else if (member.memberKind === 'person') {
       if (!peopleAllowed.has(member.userId!)) verdict('skipped', 'no_access');
       else {
@@ -438,7 +488,7 @@ export async function postRoomMessage(input: {
       senderSessionId: sender.kind === 'session' ? sender.sessionId : null,
       senderLabel: sender.label,
       text: input.text,
-      replyToSeq: input.replyToSeq,
+      replyToSeq: threadRoot,
     }).returning();
     // A person has read their own message.
     if (sender.kind === 'member') {
@@ -461,7 +511,7 @@ export async function postRoomMessage(input: {
             senderKind: sender.kind,
             senderLabel: sender.label,
             text: input.text,
-            replyToSeq: input.replyToSeq,
+            replyToSeq: threadRoot,
             roomProjectId: member.projectId === room.projectId ? null : room.projectId,
           }),
           idempotencyKey,
@@ -612,6 +662,7 @@ async function notifyPeople(
     accountId: room.accountId,
     projectId: room.projectId,
     roomId: room.roomId,
+    roomThreadSeq: message.replyToSeq,
     title: `${room.name} · ${sender.label}`,
     body: message.text,
     actorUserId: sender.kind === 'member' ? sender.userId : null,

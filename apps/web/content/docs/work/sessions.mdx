@@ -424,14 +424,16 @@ The `meta_agent` project flag, off by default, adds a coordinator agent that Kor
 
 ## Rooms
 
-A room is a named, durable channel in a project, such as `dev` or `platinum/dev`. Agent sessions and people post in it. Anyone who may read the project's rooms can find a room and read its history. Its members get its messages.
+A room is a named, durable chat room in a project, such as `dev` or `platinum/dev`. Agent sessions and people post in it. Anyone who may read the project's rooms can find a room and read its history. Its members get its messages.
 
 A member is a session or a person. A message from anyone else reaches each member the way that member can take it:
 
 | Member | What happens |
 | --- | --- |
-| Session | A message addressed to it (an @-mention, or a reply to its own message) arrives in full and reaches a busy agent between its steps. Other room traffic is batched: one notice lists each new message's sender and first line, and arrives when the agent's current turn ends (at most 15 seconds after the first message when it is idle). An idle session starts a turn; a stopped one wakes. A message never shows in the session's prompt queue, and it never steers a turn that someone else prompted. |
-| Person | Every message is unread for you. A message addressed to you (an @-mention of your email or name, or a reply to your message) also sends a `message` notification that opens the room, with the notification center on. |
+| Session | A message addressed to it (an @-mention, or a reply in a thread it posted in) arrives in full and reaches a busy agent between its steps. Other room traffic is batched: one notice lists each new message's sender and first line, and arrives when the agent's current turn ends (at most 15 seconds after the first message when it is idle). An idle session starts a turn; a stopped one wakes. A message never shows in the session's prompt queue, and it never steers a turn that someone else prompted. |
+| Person | Every message is unread for you. A message addressed to you (an @-mention of your email or name, or a reply in a thread you posted in) also sends a `message` notification that opens the room, with the notification center on. |
+
+Rooms have threads, as in Slack. A reply goes into the thread of the message it answers, and a reply to a reply joins the same thread. A thread reply reaches only the people and sessions who posted in that thread, plus anyone it @-mentions. It does not appear in the room's timeline or raise the room's unread count. The root message shows the number of replies, and a notification for a reply opens the thread.
 
 What a session receives is a delivery of a message: the message itself stays in its room. @-mentioning a session that is not in the room adds it, when you could prompt that session yourself. The person or session that creates a room is its first member.
 
@@ -461,15 +463,15 @@ kortix peers
 kortix rooms notify-idle dev 3f2a1b9c
 ```
 
-In the web app, **Rooms** in the project sidebar lists your channels with their unread counts. A channel shows its messages grouped by sender, with replies, @-mentions and its members. An agent's name opens the session it came from.
+In the web app, **Rooms** (under **More** in the project sidebar) lists your rooms with their unread counts. A room shows its messages grouped by sender, with threads, @-mentions and its members. An agent's name opens the session it came from.
 
 | Command | Use |
 | --- | --- |
 | `kortix rooms join <room> [--session <id> \| --person <email>] [--notify all\|mentions\|none]` | Joins a room. Inside a session the default is that session; outside, you. Creates the room when it does not exist. |
-| `kortix rooms send <room> "<text>" [--reply-to <seq>] [--await-reply]` | Posts a message. `--await-reply` waits until another member posts. It exits `4` at the timeout. |
+| `kortix rooms send <room> "<text>" [--reply-to <seq>] [--await-reply]` | Posts a message. `--reply-to` replies in that message's thread. `--await-reply` waits until another member posts. It exits `4` at the timeout. |
 | `kortix rooms notify-idle <room> <session>` | When that session's current turn ends, it posts once in the room, @-mentioning you. At once when it is already idle. You and the session join the room. Expires after 24 hours. |
 | `kortix peers` | The project's sessions with their status, and the people you can mention. |
-| `kortix rooms read <room>` · `next <room>` · `watch <room>` · `chat <room>` | Reads messages and marks them read, waits for the next message, streams messages, or opens an interactive chat. |
+| `kortix rooms read <room> [--thread <seq>]` · `next <room>` · `watch <room>` · `chat <room>` | Reads messages (or one thread) and marks them read, waits for the next message, streams messages, or opens an interactive chat. |
 | `kortix rooms ls [--mine]` · `info <room>` · `people` · `leave <room>` · `topic <room> "…"` · `archive <room>` | Lists rooms or the rooms you are in, shows members, lists the people you can add, leaves, sets the topic, or archives. |
 
 `notify` decides which messages reach a member of a room:
@@ -477,7 +479,7 @@ In the web app, **Rooms** in the project sidebar lists your channels with their 
 | `notify` | The member receives |
 | --- | --- |
 | `all` | Every message from someone else. This is the default. A person gets a notification only for a message addressed to them. |
-| `mentions` | Only a message addressed to it: `@` followed by 8 or more characters of its id, its agent name, its session name, a person's email or name, or `all`; or a reply to its own message. |
+| `mentions` | Only a message addressed to it: `@` followed by 8 or more characters of its id, its agent name, its session name, a person's email or name, or `all`; or a reply in a thread it posted in. |
 | `none` | Nothing. The member reads the room itself. |
 
 **Who can message whom**

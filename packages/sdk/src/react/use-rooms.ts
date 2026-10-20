@@ -53,11 +53,15 @@ export function useRoom(projectId: string | null | undefined, roomId: string | n
  * The newest messages of one conversation, polled while the page is visible,
  * with `post` and `markRead` (a person member's read cursor).
  */
-export function useRoomMessages(projectId: string | null | undefined, roomId: string | null | undefined) {
+export function useRoomMessages(
+  projectId: string | null | undefined,
+  roomId: string | null | undefined,
+  options: { top?: boolean } = {},
+) {
   const queryClient = useQueryClient();
   const query = useQuery({
-    queryKey: qk.project.roomMessages(projectId ?? '', roomId ?? ''),
-    queryFn: () => listRoomMessages(projectId as string, roomId as string, { limit: 200 }),
+    queryKey: qk.project.roomMessages(projectId ?? '', roomId ?? '', options.top ? 'top' : 'all'),
+    queryFn: () => listRoomMessages(projectId as string, roomId as string, { limit: 200, top: options.top }),
     enabled: !!projectId && !!roomId,
     ...contract('inventory'),
     refetchInterval: THREAD_POLL_MS,
@@ -73,4 +77,25 @@ export function useRoomMessages(projectId: string | null | undefined, roomId: st
     onSuccess: invalidate,
   });
   return { ...query, post, markRead };
+}
+
+/**
+ * One thread of a room (Slack-style): the root message and its replies, plus
+ * `post` to reply in it. Off while `rootSeq` is null.
+ */
+export function useRoomThread(projectId: string | null | undefined, roomId: string | null | undefined, rootSeq: number | null) {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: qk.project.roomThread(projectId ?? '', roomId ?? '', rootSeq ?? 0),
+    queryFn: () => listRoomMessages(projectId as string, roomId as string, { thread: rootSeq as number, limit: 200 }),
+    enabled: !!projectId && !!roomId && rootSeq !== null,
+    ...contract('inventory'),
+    refetchInterval: THREAD_POLL_MS,
+    refetchIntervalInBackground: false,
+  });
+  const post = useMutation({
+    mutationFn: (text: string) => postRoomMessage(projectId as string, roomId as string, { text, reply_to: rootSeq }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.rooms(projectId ?? '') }),
+  });
+  return { ...query, post };
 }

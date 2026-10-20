@@ -1,4 +1,4 @@
-// Rooms: named, durable channels of a project (`dev`, `platinum/dev`) where
+// Rooms: named, durable chat rooms of a project (`dev`, `platinum/dev`) where
 // agent sessions and people post (project flag `agent_rooms`). A member is a
 // session or a person. A message addressed to a member session (an @-mention,
 // a reply to it) steers its turn; other traffic reaches it as one digest when
@@ -61,7 +61,11 @@ export interface RoomMessage {
   sender_session_id: string | null;
   sender_label: string;
   text: string;
+  /** The thread's root seq; null for a top-level message. */
   reply_to_seq: number | null;
+  /** Replies in the thread this message starts; 0 for a reply. */
+  reply_count: number;
+  last_reply_at: string | null;
   created_at: string;
 }
 
@@ -115,6 +119,10 @@ export interface RoomMessagePageQuery {
   before?: number;
   /** Default 50, max 200. */
   limit?: number;
+  /** The room's timeline without thread replies. */
+  top?: boolean;
+  /** One thread: its root, then its replies, oldest first. */
+  thread?: number;
 }
 
 const rooms = (projectId: string) => `/projects/${projectId}/rooms`;
@@ -151,7 +159,7 @@ export async function updateRoom(projectId: string, roomId: string, input: { top
 export async function listRoomMessages(projectId: string, roomId: string, page: RoomMessagePageQuery = {}) {
   return unwrap(
     await backendApi.get<RoomMessagePage>(
-      `${rooms(projectId)}/${roomId}/messages${query({ after: page.after, before: page.before, limit: page.limit })}`,
+      `${rooms(projectId)}/${roomId}/messages${query({ after: page.after, before: page.before, limit: page.limit, top: page.top, thread: page.thread })}`,
     ),
   );
 }

@@ -472,7 +472,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'agent_rooms',
     name: 'Agent Rooms',
     description:
-      'Rooms: named channels per goal or topic where agent sessions and people post (`kortix rooms`, `kortix peers`). Every message is stored in its room. A member session gets a message addressed to it (an @-mention, a reply to it) between its steps; other room traffic arrives as one batched notice when its turn ends. A stopped session wakes. A member person gets every message as unread and, with the notification center on, a notification for one addressed to them. Off ⇒ the room routes answer 403 and nothing is delivered.',
+      'Rooms: named chat rooms per goal or topic where agent sessions and people post (`kortix rooms`, `kortix peers`). Every message is stored in its room. A member session gets a message addressed to it (an @-mention, a reply to it) between its steps; other room traffic arrives as one batched notice when its turn ends; a thread reply reaches only the thread participants. A stopped session wakes. A member person gets every message as unread and, with the notification center on, a notification for one addressed to them. Off ⇒ the room routes answer 403 and nothing is delivered.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,

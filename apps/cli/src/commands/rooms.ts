@@ -1,5 +1,5 @@
 /**
- * `kortix rooms` — named, durable channels where agent sessions and people
+ * `kortix rooms` — named, durable chat rooms where agent sessions and people
  * post (flag `agent_rooms`).
  *
  * A member is a session or a person. A message addressed to a member session
@@ -28,7 +28,7 @@ import { C, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix rooms <subcommand> [options]
 
-Rooms are channels where agent sessions and people message each other, one
+Rooms are chat rooms where agent sessions and people message each other, one
 per goal or topic (\`dev\`, \`platinum/dev\`). Every message is stored in its
 room. A member is a session or a person:
   session   a message addressed to it (an @-mention, a reply to its own
@@ -58,10 +58,14 @@ Subcommands:
   leave <room>               Leave (default: this session, or you).
                              --session <id> or --person <email|user-id>.
   send <room> ["<text>"]     Post; reads stdin when no text is given.
-                             --reply-to <seq>; --await-reply waits until another
-                             member posts and prints that message.
+                             --reply-to <seq> replies in that message's thread
+                             (as in Slack; everyone in the thread is notified).
+                             --await-reply waits until another member posts and
+                             prints that message.
   read <room>                Print messages and mark them read. --after <seq>,
-                             --limit <n> (default 20, max 200).
+                             --limit <n> (default 20, max 200). --thread <seq>
+                             prints one thread: its first message and replies.
+                             A reply shows ↳#<seq> of its thread.
   next <room>                Block until another member posts, print it, exit.
                              --after <seq> (default: now). Exit 4 on
                              --timeout <secs> (default 300).
@@ -161,6 +165,7 @@ interface Flags {
   person?: string;
   notify?: string;
   replyTo?: string;
+  thread?: string;
   after?: string;
   limit?: string;
   timeout?: string;
@@ -239,6 +244,7 @@ export async function runRooms(argv: string[]): Promise<number> {
       person: takeFlagValue(rest, ['--person']),
       notify: takeFlagValue(rest, ['--notify']),
       replyTo: takeFlagValue(rest, ['--reply-to']),
+      thread: takeFlagValue(rest, ['--thread']),
       after: takeFlagValue(rest, ['--after']),
       limit: takeFlagValue(rest, ['--limit']),
       timeout: takeFlagValue(rest, ['--timeout']),
@@ -697,6 +703,11 @@ async function readMessages(ctx: Ctx, room: Room, flags: Flags): Promise<number>
   if (!Number.isInteger(limit) || limit < 1 || limit > 200) return fail('--limit takes 1..200.');
   const query = new URLSearchParams({ limit: String(limit) });
   if (flags.after !== undefined) query.set('after', flags.after.replace(/^#/, ''));
+  if (flags.thread !== undefined) {
+    const root = Number(flags.thread.replace(/^#/, ''));
+    if (!Number.isInteger(root) || root < 1) return fail('--thread takes a message seq, e.g. --thread 42.');
+    query.set('thread', String(root));
+  }
   const page = await ctx.client.get<{ messages: RoomMessage[]; last_seq: number }>(`${messagesPath(ctx, room)}?${query}`);
   await markRead(ctx, room, page.messages.at(-1)?.seq ?? 0);
   if (flags.json) {

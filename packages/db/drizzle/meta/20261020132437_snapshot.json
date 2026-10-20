@@ -1,5 +1,5 @@
 {
-  "id": "19844e30-67db-40b5-8ca1-3660f8c1a762",
+  "id": "c52214fc-577d-41d1-91c1-5babee0404be",
   "prevId": "1b70322d-6086-4c20-b401-570717e305b5",
   "version": "7",
   "dialect": "postgresql",
@@ -13868,6 +13868,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "room_thread_seq": {
+          "name": "room_thread_seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -21556,6 +21562,28 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_room_messages_room_thread": {
+          "name": "idx_room_messages_room_thread",
+          "columns": [
+            {
+              "expression": "room_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reply_to_seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"room_messages\".\"reply_to_seq\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

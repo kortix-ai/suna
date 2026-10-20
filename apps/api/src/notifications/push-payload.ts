@@ -56,6 +56,7 @@ export function notificationUrl(input: {
   sessionId: string | null;
   triggerSlug: string | null;
   roomId?: string | null;
+  roomThreadSeq?: number | null;
   kind?: string;
   accountId?: string;
 }): string {
@@ -64,9 +65,10 @@ export function notificationUrl(input: {
   if (input.kind?.startsWith('capture_device_') && input.accountId) {
     return `/capture/${encodeURIComponent(input.accountId)}/devices${query}`;
   }
-  // A conversation message opens its room.
+  // A room message opens its room; a thread reply opens its thread.
   if (input.projectId && input.roomId) {
-    return `/projects/${encodeURIComponent(input.projectId)}/rooms/${encodeURIComponent(input.roomId)}${query}`;
+    const thread = input.roomThreadSeq ? `?thread=${input.roomThreadSeq}&${query.slice(1)}` : query;
+    return `/projects/${encodeURIComponent(input.projectId)}/rooms/${encodeURIComponent(input.roomId)}${thread}`;
   }
   if (input.projectId && input.sessionId) {
     return `/projects/${encodeURIComponent(input.projectId)}/sessions/${encodeURIComponent(input.sessionId)}${query}`;
@@ -94,6 +96,7 @@ export function buildPushContent(input: {
   sessionId: string | null;
   triggerSlug: string | null;
   roomId?: string | null;
+  roomThreadSeq?: number | null;
   accountId?: string;
 }): NotificationPushContent {
   return {

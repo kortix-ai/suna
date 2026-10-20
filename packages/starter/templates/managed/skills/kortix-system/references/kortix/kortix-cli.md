@@ -395,7 +395,7 @@ deleted or failed the reminder pauses itself. Max 20 active per session, 200 per
 
 ### Rooms — talk to other sessions and people
 
-Agents and people talk in **rooms**: named, durable channels of a project
+Agents and people talk in **rooms**: named, durable chat rooms of a project
 (`dev`, `platinum/dev`), one per goal or shared resource. A member is a
 session or a person. Inside a sandbox, these commands act as
 `$KORTIX_SESSION_ID`. Behind the per-project `agent_rooms` feature flag (off
@@ -405,7 +405,7 @@ messages: to ask one session or person, @-mention them in the room the
 question belongs to.
 
 How a message reaches you: a message addressed to you — an @-mention of you,
-or a reply to your own message — arrives in full between your steps while you
+or a reply in a thread you posted in — arrives in full between your steps while you
 work. Other room traffic arrives batched: one notice
 (`[room dev · #12–#14 · 3 new messages]`) listing each sender and first line,
 when your current turn ends. Read the full messages with the command it gives
@@ -419,9 +419,9 @@ in the room adds it, when you could prompt it.
 | --- | --- |
 | `kortix peers` | Who you can @-mention: this project's sessions (`@<8+ chars of the id>`) with their status, and its people (`@<email>`). |
 | `kortix rooms join <room> [--topic "…"] [--notify all\|mentions\|none]` | Listen in a room (creates it when missing). `--session <id>` adds a session you may prompt; `--person <email>` adds a person. |
-| `kortix rooms send <room-or-id> "<text>" [--reply-to <seq>]` | Post. Text can come on stdin. `--await-reply [--timeout 300]` blocks until another member posts (exit 4 on timeout). |
+| `kortix rooms send <room-or-id> "<text>" [--reply-to <seq>]` | Post. `--reply-to` replies in that message's thread (Slack-style): it reaches only the thread's participants and anyone you @-mention. Text can come on stdin. `--await-reply [--timeout 300]` blocks until another member posts (exit 4 on timeout). |
 | `kortix rooms notify-idle <room> <session-id>` | Get ONE message in the room, @-mentioning you, when that session's current turn ends (at once if it is idle). Use it instead of polling `kortix sessions wait-for`. |
-| `kortix rooms read <room-or-id> [--after <seq>] [--json]` | The newest messages, or every message after a seq. |
+| `kortix rooms read <room-or-id> [--after <seq>] [--thread <seq>] [--json]` | The newest messages, every message after a seq, or one thread. A reply shows `↳#<root>`. |
 | `kortix rooms next <room-or-id> [--timeout <secs>]` | Block until someone else posts; print it; exit 4 on timeout. |
 | `kortix rooms ls [--mine]` · `info <room>` · `people [<query>]` | Rooms, the rooms you are in, members, and the people you can add. |
 | `kortix rooms leave <room>` | Stop listening. Do it once the work the room is about is done. |
@@ -429,7 +429,7 @@ in the room adds it, when you could prompt it.
 A delivered message looks like this:
 
 ```
-[room dev · #42 · from agent session 3f2a1b9c (builder) "Fix CI", replying to #41]
+[room dev · #42 · from agent session 3f2a1b9c (builder) "Fix CI", in thread #41]
 
 <text>
 
@@ -455,6 +455,9 @@ Rules for an agent:
   worker, run `kortix rooms notify-idle <room> <worker>` (or have the worker
   post `@<you> result: …` in the room) and end your turn; you wake when it is
   done.
+- **Answer in the thread.** Reply with the `--reply-to <seq>` the delivered
+  message gives you: the answer stays in that thread, so it does not wake every
+  other session in the room.
 - **Answer only with something useful.** No acknowledgements, no "thanks".
   Each message you post reaches every other session in the room and costs
   their credits.

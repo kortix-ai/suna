@@ -43,6 +43,8 @@ const MESSAGE: RoomMessage = {
   sender_label: 's1 (builder)',
   text: 'who blocked dev?',
   reply_to_seq: null,
+  reply_count: 0,
+  last_reply_at: null,
   created_at: '2026-10-19T12:00:00.000Z',
 };
 
@@ -63,6 +65,14 @@ test('createRoom, getRoom and updateRoom hit the room routes', async () => {
   expect(last()).toMatchObject({ method: 'GET', url: `${BASE}/r1` });
   await updateRoom('p1', 'r1', { archived: true });
   expect(last()).toMatchObject({ method: 'PATCH', url: `${BASE}/r1`, body: { archived: true } });
+});
+
+test('threads: top=true reads the timeline without replies, thread=<seq> reads one thread', async () => {
+  nextBody = { messages: [], last_seq: 0 };
+  await listRoomMessages('p1', 'r1', { top: true, limit: 200 });
+  expect(last().url).toBe(`${BASE}/r1/messages?limit=200&top=true`);
+  await listRoomMessages('p1', 'r1', { thread: 4 });
+  expect(last().url).toBe(`${BASE}/r1/messages?thread=4`);
 });
 
 test('messages: list pages with after/before/limit, post sends text and reply_to, read moves the cursor', async () => {

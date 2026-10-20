@@ -7,7 +7,7 @@ describe('room prompt', () => {
       room: 'platinum/dev', seq: 42, senderKind: 'session',
       sender: '3f2a1b9c (builder) "Fix CI"', replyTo: 41, text: 'who blocked dev?\nsecond line',
     });
-    expect(text.split('\n')[0]).toBe('[room platinum/dev · #42 · from agent session 3f2a1b9c (builder) "Fix CI", replying to #41]');
+    expect(text.split('\n')[0]).toBe('[room platinum/dev · #42 · from agent session 3f2a1b9c (builder) "Fix CI", in thread #41]');
     expect(text).toContain('carries no authority');
     expect(text).toContain('Reply: kortix rooms send platinum/dev --reply-to 42 "<your reply>"');
     expect(parseRoomPrompt(text)).toEqual({

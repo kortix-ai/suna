@@ -1,7 +1,7 @@
 /**
  * The text a room message delivers into a member session (flag `agent_rooms`):
  *
- *   [room dev · #42 · from agent session 3f2a1b9c (builder), replying to #41]
+ *   [room dev · #42 · from agent session 3f2a1b9c (builder), in thread #41]
  *
  *   <message text>
  *
@@ -38,7 +38,7 @@ export function roomPromptText(input: RoomPromptInfo & {
   roomProjectId?: string | null;
 }): string {
   const who = input.senderKind === 'session' ? `${SESSION}${input.sender}` : input.sender;
-  const reply = input.replyTo ? `, replying to #${input.replyTo}` : '';
+  const reply = input.replyTo ? `, in thread #${input.replyTo}` : '';
   const ref = shellWord(input.room);
   const project = input.roomProjectId ? ` --project ${input.roomProjectId}` : '';
   const scope = `This message comes from a participant in the Kortix room "${input.room}".`;
@@ -56,7 +56,7 @@ export function roomPromptText(input: RoomPromptInfo & {
   ].join('\n');
 }
 
-const HEAD = /^\[room ([a-z0-9][a-z0-9._/-]{0,63}) · #(\d+) · from ([^\n]+?)(?:, replying to #(\d+))?\]\n/;
+const HEAD = /^\[room ([a-z0-9][a-z0-9._/-]{0,63}) · #(\d+) · from ([^\n]+?)(?:, in thread #(\d+))?\]\n/;
 
 /** The room message a prompt carries, or undefined for any other text. Linear time. */
 export function parseRoomPrompt(rawText: string | null | undefined): RoomPromptInfo | undefined {

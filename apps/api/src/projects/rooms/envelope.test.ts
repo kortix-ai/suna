@@ -41,7 +41,7 @@ describe('roomMessagePrompt', () => {
       room: { name: 'platinum/dev', roomId: 'r-1' },
       seq: 42, senderKind: 'session', senderLabel: '3f2a1b9c (builder)', text: 'who blocked dev?', replyToSeq: 41,
     });
-    expect(text.split('\n')[0]).toBe('[room platinum/dev · #42 · from agent session 3f2a1b9c (builder), replying to #41]');
+    expect(text.split('\n')[0]).toBe('[room platinum/dev · #42 · from agent session 3f2a1b9c (builder), in thread #41]');
     expect(text).toContain('Reply: kortix rooms send platinum/dev --reply-to 42 "<your reply>"');
   });
 

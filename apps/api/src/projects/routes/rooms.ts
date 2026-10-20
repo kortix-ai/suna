@@ -1,4 +1,4 @@
-// Rooms (flag `agent_rooms`): named, durable channels of a project where
+// Rooms (flag `agent_rooms`): named, durable chat rooms of a project where
 // agent sessions and people post. Logic lives in
 // `projects/rooms/service.ts`.
 //
@@ -57,6 +57,7 @@ import {
   participantRoom,
   postRoomMessage,
   readRoomMessages,
+  threadStats,
   removeMember,
   sessionDisplayName,
   sessionHome,
@@ -82,6 +83,8 @@ const PageQuery = z.object({
   after: z.coerce.number().int().min(0).optional(),
   before: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
+  top: z.enum(['true', 'false']).optional().openapi({ description: '`true`: the timeline without thread replies.' }),
+  thread: z.coerce.number().int().min(1).optional().openapi({ description: 'One thread: its root, then its replies, oldest first.' }),
 });
 
 const RoomSchema = z.object({
@@ -112,7 +115,9 @@ const RoomMessageSchema = z.object({
   sender_session_id: z.string().nullable(),
   sender_label: z.string(),
   text: z.string(),
-  reply_to_seq: z.number().nullable(),
+  reply_to_seq: z.number().nullable().openapi({ description: "The thread's root seq; null for a top-level message." }),
+  reply_count: z.number().openapi({ description: 'Replies in the thread this message starts; 0 for a reply.' }),
+  last_reply_at: z.string().nullable(),
   created_at: z.string(),
 }).openapi('RoomMessage');
 
@@ -157,7 +162,7 @@ const PatchBody = z.object({
 });
 const PostBody = z.object({
   text: z.string().min(1).max(ROOM_MESSAGE_MAX_CHARS),
-  reply_to: z.number().int().positive().nullable().optional(),
+  reply_to: z.number().int().positive().nullable().optional().openapi({ description: 'Reply in the thread of this message (a reply to a reply joins the same thread).' }),
 });
 const JoinBody = z.object({ notify: Notify.optional() });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -182,7 +187,7 @@ function serializeRoom(row: RoomRow, memberCount?: number) {
   };
 }
 
-function serializeMessage(row: RoomMessageRow) {
+function serializeMessage(row: RoomMessageRow, thread?: { count: number; lastAt: Date }) {
   return {
     message_id: row.messageId,
     room_id: row.roomId,
@@ -193,6 +198,8 @@ function serializeMessage(row: RoomMessageRow) {
     sender_label: row.senderLabel,
     text: row.text,
     reply_to_seq: row.replyToSeq,
+    reply_count: thread?.count ?? 0,
+    last_reply_at: thread ? thread.lastAt.toISOString() : null,
     created_at: row.createdAt.toISOString(),
   };
 }
@@ -285,8 +292,11 @@ async function mayJoinProject(scope: { accountId: string; projectId: string }, u
 }
 
 async function messagesPage(room: RoomRow, page: z.infer<typeof PageQuery>) {
-  const rows = await readRoomMessages(room.roomId, { after: page.after, before: page.before, limit: page.limit ?? 50 });
-  return { messages: rows.map(serializeMessage), last_seq: room.lastSeq };
+  const rows = await readRoomMessages(room.roomId, {
+    after: page.after, before: page.before, limit: page.limit ?? 50, top: page.top === 'true', thread: page.thread,
+  });
+  const stats = await threadStats(room.roomId, rows.filter((row) => row.replyToSeq === null).map((row) => row.seq));
+  return { messages: rows.map((row) => serializeMessage(row, stats.get(row.seq))), last_seq: room.lastSeq };
 }
 
 async function postAs(c: Context, room: RoomRow, userId: string, body: z.infer<typeof PostBody>) {

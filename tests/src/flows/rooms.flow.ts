@@ -258,11 +258,22 @@ flow(
         if (delivery(result, beta).state !== 'batched') throw new Error('Beta not batched');
         if (delivery(result, alpha).reason !== 'sender') throw new Error('Alpha not skipped as sender');
       });
-      await ctx.step("a reply to Alpha's own message is addressed to Alpha: delivered in full (queued), not batched", async () => {
+      let replySeq = 0;
+      await ctx.step("a reply in the thread of Alpha's message is addressed to Alpha (queued); Beta, not in the thread, gets nothing", async () => {
         const res = await owner.post(MESSAGES, { text: 'thanks, which run?', reply_to: 1 }, { params: r });
         res.status(201);
+        replySeq = res.json<PostResult>().message.seq;
         if (delivery(res.json<PostResult>(), alpha).state !== 'queued') throw new Error(`reply not addressed to Alpha: ${res.text()}`);
-        if (delivery(res.json<PostResult>(), beta).state !== 'batched') throw new Error('Beta should get the reply batched');
+        const b = delivery(res.json<PostResult>(), beta);
+        if (b.state !== 'skipped' || b.reason !== 'thread') throw new Error(`Beta should not get a thread it is not in: ${res.text()}`);
+      });
+      await ctx.step('a reply to a reply joins the same thread; top=true leaves replies out; thread=<root> reads the thread with reply_count', async () => {
+        const res = await asAlpha.post(MESSAGES, { text: 'run 412', reply_to: replySeq }, { params: r });
+        res.status(201).body().has('$.message.reply_to_seq', 1);
+        const top = (await owner.get(`${MESSAGES}?top=true`, { params: r })).json<{ messages: { seq: number; reply_to_seq: number | null; reply_count: number }[] }>().messages;
+        if (top.some((m) => m.reply_to_seq !== null) || top.find((m) => m.seq === 1)?.reply_count !== 2) throw new Error(JSON.stringify(top));
+        const thread = (await owner.get(`${MESSAGES}?thread=1`, { params: r })).json<{ messages: { seq: number }[] }>().messages.map((m) => m.seq);
+        if (thread[0] !== 1 || thread.length !== 3) throw new Error(JSON.stringify(thread));
       });
       await ctx.step('after 20 consecutive session messages the next one is stored but paused; a person posting resumes', async () => {
         let last: PostResult | null = null;
@@ -400,8 +411,11 @@ flow(
         if (read.messages[0]?.text !== 'who blocked dev?') throw new Error(JSON.stringify(read));
         const sent = JSON.parse(ok(await run(asAlpha, ['rooms', 'send', 'dev', '--reply-to', '1', '--json'], 'I did, reverting'), 'reply').stdout);
         if (sent.message.sender_session_id !== alpha || sent.message.reply_to_seq !== 1) throw new Error(JSON.stringify(sent));
+        // A thread reply counts in its thread, not as room unread (Slack).
         const mine = JSON.parse(ok(await run(person, ['rooms', 'ls', '--mine', '--json']), 'ls mine').stdout);
-        if (mine.rooms.find((r: Conversation) => r.name === 'dev')?.unread !== 1) throw new Error(`unread not 1: ${JSON.stringify(mine)}`);
+        if (mine.rooms.find((r: Conversation) => r.name === 'dev')?.unread !== 0) throw new Error(`unread not 0: ${JSON.stringify(mine)}`);
+        const thread = JSON.parse(ok(await run(person, ['rooms', 'read', 'dev', '--thread', '1', '--json']), 'read thread').stdout);
+        if (thread.messages.length !== 2 || thread.messages[1].text !== 'I did, reverting') throw new Error(JSON.stringify(thread));
       });
       await ctx.step("the person: `rooms next dev --after 1 --json` prints Alpha's reply and marks it read; nothing newer → exit 4", async () => {
         const next = JSON.parse(ok(await run(person, ['rooms', 'next', 'dev', '--after', '1', '--timeout', '5', '--json']), 'next').stdout);

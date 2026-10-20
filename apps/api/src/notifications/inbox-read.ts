@@ -30,6 +30,7 @@ export interface InboxRowForFilter {
   triggerSlug: string | null;
   /** Set on a conversation message (`kind = 'message'`). */
   roomId?: string | null;
+  roomThreadSeq?: number | null;
   kind: string;
 }
 
@@ -79,6 +80,7 @@ const ROW = {
   sessionId: notifications.sessionId,
   triggerSlug: notifications.triggerSlug,
   roomId: notifications.roomId,
+  roomThreadSeq: notifications.roomThreadSeq,
   kind: notifications.kind,
   title: notifications.title,
   body: notifications.body,
@@ -276,6 +278,7 @@ export async function listInbox(
         sessionId: row.sessionId,
         triggerSlug: row.triggerSlug,
         roomId: row.roomId,
+        roomThreadSeq: row.roomThreadSeq,
         kind: row.kind,
         accountId: row.accountId,
       }),

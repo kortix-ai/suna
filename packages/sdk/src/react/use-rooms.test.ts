@@ -13,7 +13,7 @@ mock.module('@tanstack/react-query', () => ({
   }),
 }));
 
-const { useRooms, useRoomConversations, useRoom, useRoomMessages } = await import('./use-rooms');
+const { useRooms, useRoomConversations, useRoom, useRoomMessages, useRoomThread } = await import('./use-rooms');
 const { qk } = await import('./query-keys');
 
 beforeEach(() => {
@@ -28,6 +28,8 @@ describe('room hooks', () => {
       (useRoomConversations('p1') as any).queryKey,
       (useRoom('p1', 'r1') as any).queryKey,
       (useRoomMessages('p1', 'r1') as any).queryKey,
+      (useRoomMessages('p1', 'r1', { top: true }) as any).queryKey,
+      (useRoomThread('p1', 'r1', 4) as any).queryKey,
     ]) {
       expect(key.slice(0, root.length)).toEqual([...root]);
     }
@@ -51,5 +53,11 @@ describe('room hooks', () => {
     messages.post.onSuccess();
     messages.markRead.onSuccess();
     expect(invalidated).toEqual([[...qk.project.rooms('p1')], [...qk.project.rooms('p1')]]);
+  });
+
+  test('the timeline and a thread are separate reads; a thread is off until a root is chosen', () => {
+    expect((useRoomMessages('p1', 'r1', { top: true }) as any).queryKey).not.toEqual((useRoomMessages('p1', 'r1') as any).queryKey);
+    expect((useRoomThread('p1', 'r1', null) as any).enabled).toBe(false);
+    expect((useRoomThread('p1', 'r1', 4) as any).enabled).toBe(true);
   });
 });

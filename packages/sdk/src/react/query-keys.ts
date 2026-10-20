@@ -534,7 +534,9 @@ export const qk = {
     /** `getRoom` — one conversation and its members. */
     room: (id: string, roomId: string) => [...qk.project.rooms(id), 'room', roomId] as const,
     /** `listRoomMessages` — the newest messages of one conversation. */
-    roomMessages: (id: string, roomId: string) => [...qk.project.rooms(id), 'messages', roomId] as const,
+    roomMessages: (id: string, roomId: string, view: 'all' | 'top' = 'all') => [...qk.project.rooms(id), 'messages', roomId, view] as const,
+    /** `listRoomMessages(…, { thread })` — one thread. */
+    roomThread: (id: string, roomId: string, root: number) => [...qk.project.rooms(id), 'thread', roomId, root] as const,
 
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
      *  of every `sessionReminders` key, so invalidating it refreshes the

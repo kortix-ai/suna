@@ -7948,6 +7948,8 @@ export const notifications = kortixSchema.table('notifications', {
   // A conversation message (`kind = 'message'`): the room it was posted in.
   // No FK, like session_id: the read filter hides a row whose room is gone.
   roomId: uuid('room_id'),
+  // A thread reply: the thread's root seq, so the link opens the thread.
+  roomThreadSeq: bigint('room_thread_seq', { mode: 'number' }),
   kind: text('kind').notNull(),
   title: text('title').notNull(),
   body: text('body').default('').notNull(),
@@ -8018,7 +8020,7 @@ export const triggerWatchers = kortixSchema.table('trigger_watchers', {
 ]);
 
 /**
- * A room: a named, durable channel of a project (`dev`, `platinum/dev`) that
+ * A room: a named, durable chat room of a project (`dev`, `platinum/dev`) that
  * agent sessions and people post in; anyone with `project.room.read` can find
  * it. `last_seq` numbers the messages; a post takes the next value under the
  * row lock, so `seq` is gap-free per room.
@@ -8056,6 +8058,8 @@ export const roomMessages = kortixSchema.table('room_messages', {
 }, (table) => [
   foreignKey({ columns: [table.roomId], foreignColumns: [rooms.roomId], name: 'room_messages_room_fk' }).onDelete('cascade'),
   uniqueIndex('idx_room_messages_room_seq').on(table.roomId, table.seq),
+  // A thread: its replies by root.
+  index('idx_room_messages_room_thread').on(table.roomId, table.replyToSeq).where(sql`${table.replyToSeq} is not null`),
   check('room_messages_sender_kind_check', sql`${table.senderKind} in ('member', 'session')`),
 ]);
 
