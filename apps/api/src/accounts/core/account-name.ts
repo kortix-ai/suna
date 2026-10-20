@@ -6,17 +6,14 @@
  * console for every user who never renamed it. In order of preference:
  *
  *   1. the person's first name       → "Ada's workspace"
- *   2. the email's local part, as is → "ada.lovelace42"   (ada.lovelace42@gmail.com)
- *   3. nothing usable                → "My workspace"
+ *   2. no profile name              → "My workspace"
  *
  * The DOMAIN is never used: most people sign up with a consumer address, and
  * an account called "Gmail" is wrong for all of them.
  *
- * A new user confirms or changes this on the onboarding name step
- * (`/projects`), so it is a suggestion, not a final name.
+ * Existing chosen account names are preserved by the callers.
  */
 export function suggestAccountName({
-  email,
   fullName,
 }: {
   email?: string | null;
@@ -24,9 +21,6 @@ export function suggestAccountName({
 }): string {
   const firstName = fullName?.trim().split(/\s+/)[0];
   if (firstName) return `${capitalize(firstName)}'s workspace`;
-
-  const local = email?.trim().split("@")[0]?.trim();
-  if (local) return local;
 
   return "My workspace";
 }
