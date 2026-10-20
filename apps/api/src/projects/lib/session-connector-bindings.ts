@@ -774,11 +774,12 @@ export async function loadSessionConnectorResolutionData(input: {
 }
 
 async function loadSessionConnectorBoundRows(input: {
+  alias?: string;
   accountId: string;
   projectId: string;
   sessionId: string;
 }) {
-  return db
+  const query = db
       .select({
         alias: projectSessionConnectorBindings.connectorAlias,
         connectionId: connectorConnections.connectionId,
@@ -814,10 +815,10 @@ async function loadSessionConnectorBoundRows(input: {
           eq(projectSessionConnectorBindings.sessionId, input.sessionId),
           eq(projectSessionConnectorBindings.accountId, input.accountId),
           eq(projectSessionConnectorBindings.projectId, input.projectId),
-
+          input.alias === undefined ? undefined : eq(projectSessionConnectorBindings.connectorAlias, input.alias),
         ),
-      )
-;
+      );
+  return input.alias === undefined ? query : query.limit(1);
 }
 
 export async function resolveSessionConnectorConnectionOutcome(input: {
@@ -872,8 +873,7 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
 
     const bound = input.preloaded
       ? input.preloaded.bindings.find((row) => row.alias === alias)
-      : (await loadSessionConnectorBoundRows({ ...input, sessionId: input.sessionId }))
-          .find((row) => row.alias === alias);
+      : (await loadSessionConnectorBoundRows({ ...input, sessionId: input.sessionId, alias }))[0];
     if (bound) {
       const connector: ConnectorRequirementRow = {
         connectorId: bound.connectorId,
