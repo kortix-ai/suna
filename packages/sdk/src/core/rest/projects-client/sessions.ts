@@ -65,6 +65,8 @@ export interface ProjectSessionInitiator {
 }
 
 export interface ProjectSession {
+  /** Conversation model from the durable log; creation pin until one is recorded. Absent on older APIs. */
+  model?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;
@@ -236,6 +238,8 @@ export interface PendingSessionPrompt {
  * The later `/start` call is an idempotent readiness/resume operation.
  */
 export interface CreateProjectSessionInput {
+  /** Authorized platform session whose saved conversation is copied before boot. */
+  fork_from_session_id?: string;
   base_ref?: string;
   agent_name?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */
@@ -726,7 +730,7 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   // `session_id` is exactly the route param those navigations land on.
   // Skip when an initial_prompt is set: those sessions get a server-side reply,
   // so they must mount the real chat to stream it (the shell would hold it back).
-  if (!input?.initial_prompt) {
+  if (!input?.initial_prompt && !input?.fork_from_session_id) {
     markSessionFresh((session as ProjectSession | undefined)?.session_id);
   }
   return session;

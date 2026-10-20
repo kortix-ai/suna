@@ -439,9 +439,10 @@ these as standing rules whenever you touch the data/runtime layer:
   The sandbox provider and the harness are server-side concerns. Host code
   must not implement a second transport.
 - **Build on the Kortix contract, not on OpenCode.** A session runs one of two
-  harnesses inside kortixd: OpenCode (the default today) or pi (the
-  `pi_harness` project flag or `runtime: pi` in `kortix.yaml`, and only with
-  the LLM gateway on). pi replaces OpenCode; OpenCode support is temporary.
+  harnesses inside kortixd: pi (the default since 2026-10-20: the
+  `pi_harness` project flag, on by default, or `runtime: pi` in
+  `kortix.yaml`, and only with the LLM gateway on) or OpenCode (the flag off,
+  or the gateway off). A flag change applies to new sessions only. pi replaces OpenCode; OpenCode support is temporary.
   Both serve the same daemon routes (`/kortix/runtime/*`), the same transcript
   (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
   same events. New code reads those, never an OpenCode route, type, file or

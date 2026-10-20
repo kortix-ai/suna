@@ -44,6 +44,7 @@ import { notifySessionShared } from '../lib/notification-recipients';
 import { notificationsEnabled } from '../../notifications/enabled';
 import { createSession, deleteSession, restoreSession } from '../session-lifecycle';
 import { sessionRestoreUntil } from '../session-log-purge';
+import { readSessionConversationModels } from '../session-log-read';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
@@ -103,16 +104,18 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
   // The same owner resolution the list uses: without it a read-by-id reported
   // owner_type 'unknown' and no owner name for the very session the list named.
   const personId = personUserId(c, loaded);
-  const [owners, userStates, working] = await Promise.all([
+  const [owners, userStates, conversationModels, working] = await Promise.all([
     visible.row.createdBy
       ? resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)
       : undefined,
     personId ? loadSessionUserStates([sessionId], personId) : undefined,
+    readSessionConversationModels([sessionId]),
     readSessionsWorking([sessionId]),
   ]);
   const owner = visible.row.createdBy ? owners?.get(visible.row.createdBy) : undefined;
   return c.json({ ...serializeSession(visible.row, {
     grants: visible.grants,
+    conversationModel: conversationModels.get(sessionId),
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
     ownerIsMachine: visible.ownerIsMachine,
@@ -202,6 +205,14 @@ export function registerProjectSessionsRoutes(): void {
     }
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (body.fork_from_session_id !== undefined) {
+      const forkInput = SessionCreateInputSchema.shape.fork_from_session_id.safeParse(body.fork_from_session_id);
+      if (!forkInput.success || !forkInput.data) return c.json({ error: 'Invalid fork source' }, 400);
+      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+      const source = await loadVisibleSession(loaded, forkInput.data, c.get('sessionId') ?? null, callerKortixSessionId(c));
+      if (!source || sessionIsTombstoned(source.row)) return c.json({ error: 'Not found' }, 404);
+    }
+
     // Per-agent gate: starting a session provisions compute. A scoped agent token
     // must hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
@@ -489,6 +500,9 @@ export function registerProjectSessionsRoutes(): void {
       return c.json({ error: 'Project manager access is required to list every session' }, 403);
     }
 
+    const conversationModels = await readSessionConversationModels(
+      inventory.items.filter((item) => item.canAccess).map((item) => item.row.sessionId),
+    );
     const working = await readSessionsWorking(inventory.items.filter(item => item.canAccess).map(item => item.row.sessionId));
     const body = inventory.items.map((item) => {
       const row = item.row;
@@ -513,6 +527,7 @@ export function registerProjectSessionsRoutes(): void {
         // The inventory listing drops the write-only heavy metadata keys. The
         // single-session read below still returns metadata whole.
         trimListMetadata: true,
+        conversationModel: conversationModels.get(row.sessionId),
       }), working: working.get(row.sessionId) };
       if (query.parent !== 'root') return serialized;
       return {

@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test';
 import type { ReactNode } from 'react';
+import messages from '../../../../../translations/en.json';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 // The app's Bun tests have no DOM and Radix's portal renders nothing under
@@ -113,6 +114,12 @@ describe('ProfileTabView', () => {
     expect(html()).toContain('data-slot="settings-row-group"');
   });
 
+  test('the deletion entry point explains the cancellable default before confirmation', () => {
+    const out = renderToStaticMarkup(<ProfileTabView copy={messages.settings.profile} />);
+    expect(out).toContain('Schedule account deletion. You can cancel before the scheduled date.');
+    expect(out).not.toContain('This cannot be undone.');
+  });
+
   test('the delete action is destructive', () => {
     expect(html()).toContain('destructive');
   });
@@ -147,7 +154,7 @@ describe('ProfileTabView', () => {
     expect(html().toLowerCase()).not.toContain('password');
   });
 
-  /** KRTX-1403: with the 30-day option selected the banner read "Your account
+  /** KRTX-1403: with the grace-period option selected the banner read "Your account
    *  is scheduled for deletion…" — present tense, an already-done state —
    *  while GET /v1/account/deletion-status concurrently reported
    *  `has_pending_deletion:false`. The line must describe what CHOOSING the
@@ -155,8 +162,10 @@ describe('ProfileTabView', () => {
    *  present-tense form again. */
   test('the grace-period banner states the consequence, not an already-scheduled deletion', () => {
     const out = renderToStaticMarkup(<ProfileTabView showDeleteDialog />);
-    expect(out).toContain('will be scheduled for deletion after a 30-day grace period');
-    expect(out).not.toContain('is scheduled for deletion after a 30-day grace period');
+    expect(out).toContain('will be scheduled for deletion after a grace period');
+    expect(out).not.toContain('is scheduled for deletion after a grace period');
+    expect(out).not.toContain('30-day');
+    expect(out).toContain('You can cancel before the scheduled date.');
   });
 
   /** The immediate option's banner was already conditional; pin it so the two

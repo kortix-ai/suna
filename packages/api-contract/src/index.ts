@@ -984,6 +984,8 @@ export const SESSION_INITIAL_CONTEXT_MAX_CHARS = 8_192;
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
+    /** Copy the authorized platform session history into a new independent session. */
+    fork_from_session_id: z.string().min(1).max(255).optional(),
     base_ref: z.string().min(1).optional(),
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
@@ -1112,6 +1114,8 @@ export const SessionWorkingSchema = z.object({
 export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
 
 export const ProjectSessionSchema = z.object({
+  /** Durable conversation selection, falling back to the creation pin before a log exists. */
+  model: z.string().nullable().optional(),
   /** Work activity, independent of the computer lifecycle status. Older servers may omit it. */
   working: SessionWorkingSchema.optional(),
   session_id: z.string(),

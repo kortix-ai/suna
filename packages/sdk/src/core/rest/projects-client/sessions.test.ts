@@ -2068,3 +2068,10 @@ describe('getSessionLogPage', () => {
     await expect(getSessionLogPage('P1', 'S1')).rejects.toThrow('not a session log page');
   });
 });
+
+test('fork create retains saved history instead of mounting the empty fresh shell', async () => {
+  nextResponse.body = { session_id: 'synthetic-fork' };
+  await createProjectSession('synthetic-project', { fork_from_session_id: 'synthetic-source' });
+  expect(calls[0]?.body).toEqual({ fork_from_session_id: 'synthetic-source' });
+  expect(isSessionFresh('synthetic-fork')).toBe(false);
+});

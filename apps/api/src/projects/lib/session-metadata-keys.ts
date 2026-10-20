@@ -17,6 +17,7 @@ import { WARM_SESSION_LOCATION_KEY } from './warm-sessions';
 
 export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Soft delete (`deleteSession`).
+  'forkedFromSessionId',
   'deletedAt',
   'deletedBy',
   // Model pin (`opencode_model` body field and `PUT …/model`). `_repointed_from`

@@ -36,10 +36,11 @@ export function HighlightedCode({
   /** Plain-text fallback before the grammar is ready. Defaults to `code`. */
   children?: React.ReactNode;
   /**
-   * Skip Shiki's length clamp. Chat/markdown code blocks keep the clamp — it
-   * guards perf against Streamdown remounting this component per streamed
-   * token. A surface whose purpose IS showing the complete content (e.g. a
-   * request/response log) must never render less than what it actually holds.
+   * Highlight past Shiki's length limit. Without it, code over the limit
+   * renders whole as plain text — the limit guards perf against Streamdown
+   * remounting this component per streamed token. A surface whose purpose IS
+   * showing the complete content (e.g. a request/response log) sets it to
+   * keep colour at any length.
    */
   unbounded?: boolean;
   /**

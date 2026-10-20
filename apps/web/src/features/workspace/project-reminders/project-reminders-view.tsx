@@ -17,7 +17,6 @@ import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
 import { useTranslations } from '@/i18n/use-translations';
-import type { SessionReminderState } from '@kortix/sdk';
 import { useFeatureFlag, useProjectReminders } from '@kortix/sdk/react';
 import { AlarmIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
@@ -44,6 +43,7 @@ import {
 } from './reminders-toolbar';
 import { CalendarStoreContext, createCalendarStore } from './use-calendar-scroll';
 import { useNow, useRefetchAfterFire } from '@kortix/ui/internal/reminders/use-refetch-after-fire';
+import { useReminderTab } from './use-reminder-tab';
 import {
   createRemindersUrlStore,
   RemindersUrlContext,
@@ -124,7 +124,7 @@ function RemindersPage({ projectId }: { projectId: string }) {
   const reminders = useProjectReminders(gate.enabled ? projectId : null);
   useRefetchAfterFire(reminders.data?.reminders, reminders.refetch);
   const now = useNow();
-  const [tab, setTab] = useState<SessionReminderState>('active');
+  const [tab, setTab] = useReminderTab(reminders.refetch);
   // The calendar position: read from `?date=` once, written back as the grid settles.
   const [calendar] = useState(() => createCalendarStore(parseDateParam(url.date, now), url.set));
   useEffect(() => calendar.dispose, [calendar]);

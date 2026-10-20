@@ -35,7 +35,6 @@ import {
 import { SessionPendingApprovalsIndicator } from './session-pending-approvals-indicator';
 import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from './session-title-input';
-import { childSessionHref } from '../tool/tools/session-spawn-urls';
 import { SubagentHoverCard, subagentTitle } from './subagent-hover-card';
 import { Copy } from '../../icons/copy';
 import { Home } from '../../internal/icons/home';
@@ -62,10 +61,9 @@ import {
   useReadyChip,
   useToggleActionPanel,
 } from '../../internal/stores/kortix-computer-store';
-import { directSubsessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
+import { createProjectSession, directSubsessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import {
   qk,
-  useForkSession,
   useProjectSession,
   useRuntimeSupports,
   useSessionParticipants,
@@ -304,11 +302,14 @@ export function SessionSiteHeader({
   });
   const canStop = !!projectSession && sessionCanBeStopped(projectSession) && canManageLifecycle;
 
-  // Fork this conversation into a new one in the same sandbox: the runtime's
-  // own `session.fork` (a capability, so a pi session shows no item). The fork
-  // carries the copied history; open it on the same project-session route.
+  // The capability gates the action; history is copied into an independent
+  // platform session rather than another runtime thread in this sandbox.
   const canFork = useRuntimeSupports('session.fork') && isProjectSession;
-  const forkSession = useForkSession();
+  const forkSession = useMutation({
+    mutationFn: ({ sessionId }: { sessionId: string }) =>
+      createProjectSession(projectId!, { fork_from_session_id: sessionId }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId ?? '') }),
+  });
 
   // Hoisted so the chip and the ⋯ item share one pending state and one confirm
   // dialog. `canManageLifecycle` is the client mirror of the reload route's own
@@ -440,14 +441,15 @@ export function SessionSiteHeader({
               disabled={forkSession.isPending}
               onClick={() =>
                 forkSession.mutate(
-                  { sessionId },
+                  { sessionId: projectSessionId! },
                   {
                     onSuccess: (fork) => {
                       successToast('Conversation forked');
                       if (projectId && projectSessionId) {
-                        router.push(
-                          childSessionHref(uiRoutes().session(projectId, projectSessionId), fork.id),
-                        );
+                        const href = uiRoutes().session(projectId, fork.session_id);
+                        router.prefetch(href);
+                        // nav-contract: prefetch-only — the new platform id exists only after create succeeds.
+                        router.push(href);
                       }
                     },
                     onError: (err) => {

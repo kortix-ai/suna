@@ -87,6 +87,7 @@ import {
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '../../internal/stores/session-switch-store';
 import {
   directSubsessions,
+  createProjectSession,
   listChangeRequests,
   restartProjectSession,
   sessionParentId,
@@ -96,7 +97,6 @@ import {
 } from '@kortix/sdk';
 import {
   qk,
-  useForkSession,
   useProjectSession,
   useProjectSessions,
   useRuntimeSupports,
@@ -394,14 +394,14 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     },
   });
 
-  // Fork the open session's conversation from its row: the runtime's own
-  // `session.fork`, same as the session header's item. Only the row of the
-  // session you are viewing gets it — the runtime client is bound to that
-  // session's box, so a fork fired from any other row would hit the wrong
-  // sandbox and fail (or worse, fork another box's conversation). The fork
-  // opens on the same row's route.
+  // Fork the open conversation into an independent platform session. The
+  // runtime capability gates exposure; creation and navigation use platform ids.
   const runtimeForks = useRuntimeSupports('session.fork');
-  const forkSession = useForkSession();
+  const forkSession = useMutation({
+    mutationFn: ({ sessionId }: { sessionId: string }) =>
+      createProjectSession(projectId!, { fork_from_session_id: sessionId }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId ?? '') }),
+  });
 
   // Unsorted on purpose: nothing here reads the order. The two consumers are
   // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
@@ -497,15 +497,15 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           isForking={
             forkSession.isPending &&
             forkSession.variables?.sessionId ===
-              (session.runtime_session_id ?? session.opencode_session_id)
+              session.session_id
           }
-          onFork={(runtimeSessionId, href) =>
+          onFork={() =>
             forkSession.mutate(
-              { sessionId: runtimeSessionId },
+              { sessionId: session.session_id },
               {
                 onSuccess: (fork) => {
                   successToast('Conversation forked');
-                  router.push(childSessionHref(href, fork.id));
+                  router.push(uiRoutes().session(projectId, fork.session_id));
                 },
                 onError: (err) => {
                   errorToast(
