@@ -56,6 +56,8 @@ const ghost = {
 };
 /** Overridden by the all-dead test; null falls back to the standard fixture. */
 let mineFixture: unknown[] | null = null;
+/** The token the CLI itself authenticates with, as `/accounts/me` reports it. */
+let meTokenId: string | null = 'tok_self';
 
 let tmp: string;
 let runner: string;
@@ -63,6 +65,9 @@ let api: FakeApi | null = null;
 
 const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   const p = url.pathname;
+  if (p === '/v1/accounts/me' && req.method === 'GET') {
+    return Response.json({ user_id: 'user_1', email: 'user@example.test', token_context: { auth_type: 'pat', token_id: meTokenId } });
+  }
   if (p === '/v1/accounts/tokens' && req.method === 'GET') {
     const mine = url.searchParams.get('mine') === 'true';
     if (mine) return Response.json(mineFixture ?? [laptop, ci, ghost]);
@@ -197,6 +202,7 @@ describe('kortix tokens', () => {
     api?.stop();
     api = null;
     mineFixture = null;
+    meTokenId = 'tok_self';
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -386,12 +392,13 @@ describe('kortix tokens', () => {
     const config = boot();
     const ok = await runCommand(runner, ['rm', 'tok_a', '-y'], { cwd: tmp, configFile: config });
     expect(ok.code).toBe(0);
-    expect(api!.requests[1]).toMatchObject({
+    const revoke = api!.requests.find((r) => r.method === 'DELETE');
+    expect(revoke).toMatchObject({
       method: 'DELETE',
       path: '/v1/accounts/tokens/tok_a',
     });
     expect(api!.requests[0]!.query).toContain(`account_id=${ACCOUNT}`);
-    expect(api!.requests[1]!.query).not.toContain('delete_revoked=true');
+    expect(revoke!.query).not.toContain('delete_revoked=true');
 
     expect(ok.stdout).toContain('Revoked');
     const deleted = await runCommand(runner, ['rm', 'tok_b', '-y'], { cwd: tmp, configFile: config });
@@ -404,6 +411,30 @@ describe('kortix tokens', () => {
     });
     expect(miss.code).toBe(1);
     expect(miss.stderr).toContain('token not found or already revoked');
+  });
+
+  // KRTX-1842: `rm <active-id> -y` revoked the key the CLI itself signs in
+  // with, and every next command failed with "token rejected".
+  test('rm refuses the key this CLI is signed in with, even with -y; --force revokes it', async () => {
+    const config = boot();
+    meTokenId = 'tok_a';
+    const refused = await runCommand(runner, ['rm', 'tok_a', '-y'], { cwd: tmp, configFile: config });
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toContain('signed in with');
+    expect(refused.stderr).toContain('--force');
+    expect(api!.requests.some((r) => r.method === 'DELETE')).toBe(false);
+
+    const forced = await runCommand(runner, ['rm', 'tok_a', '-y', '--force'], { cwd: tmp, configFile: config });
+    expect(forced.code).toBe(0);
+    expect(api!.requests.find((r) => r.method === 'DELETE')).toMatchObject({ path: '/v1/accounts/tokens/tok_a' });
+  });
+
+  test('rm revokes as before when the API does not name the calling token', async () => {
+    const config = boot();
+    meTokenId = null;
+    const r = await runCommand(runner, ['rm', 'tok_a', '-y'], { cwd: tmp, configFile: config });
+    expect(r.code).toBe(0);
+    expect(api!.requests.find((q) => q.method === 'DELETE')).toMatchObject({ path: '/v1/accounts/tokens/tok_a' });
   });
 
   test('service-accounts ls/new/disable/rm hit the IAM routes', async () => {
