@@ -152,12 +152,15 @@ async function decidedByLabel(userId: string, teamId: string): Promise<string> {
   return link ? `<@${link.platformUserId}>` : 'a teammate in Kortix';
 }
 
-/** Replace a posted card's buttons with the outcome. No card, no-op. */
+const OUTCOME_LABEL = { approve: 'Approved', deny: 'Denied', expired: 'Expired' } as const;
+
+/** Replace a posted card's buttons with the outcome. No card, no-op.
+ *  `expired`: the approval window closed with no decision (the expiry worker). */
 export async function markApprovalCardDecided(input: {
   projectId: string;
   /** The decided call: its PRE-decision row (the card ref rides on the summary). */
   row: PendingApprovalRow;
-  decision: ApprovalDecision;
+  decision: ApprovalDecision | 'expired';
   note: string;
   actorUserId: string;
 }): Promise<void> {
@@ -181,7 +184,7 @@ export async function markApprovalCardDecided(input: {
   const blocks = buildApprovalOutcomeBlocks({
     actionPath,
     decision: input.decision,
-    decidedBy: await decidedByLabel(input.actorUserId, card.team_id),
+    decidedBy: input.decision === 'expired' ? '' : await decidedByLabel(input.actorUserId, card.team_id),
     note: input.note,
     approvalContext: typeof summary?.approval_context === 'string' ? summary.approval_context : null,
   });
@@ -189,7 +192,7 @@ export async function markApprovalCardDecided(input: {
     token,
     card.channel,
     card.ts,
-    `${input.decision === 'approve' ? 'Approved' : 'Denied'}: ${actionPath}`,
+    `${OUTCOME_LABEL[input.decision]}: ${actionPath}`,
     blocks,
   );
 }

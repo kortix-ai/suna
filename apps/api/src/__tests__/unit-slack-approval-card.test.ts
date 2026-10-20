@@ -109,6 +109,19 @@ describe('buildApprovalOutcomeBlocks', () => {
     expect(rendered).toContain('> Ask about Thursday instead.');
     expect(actionIds(blocks)).toEqual([]);
   });
+
+  test('an expired approval says so, with no buttons and no decider', () => {
+    const blocks = buildApprovalOutcomeBlocks({
+      actionPath: 'gmail.send_draft',
+      decision: 'expired',
+      decidedBy: '',
+      note: '',
+      approvalContext: null,
+    });
+    expect(text(blocks)).toContain('This approval expired.');
+    expect(text(blocks)).not.toContain(' by ');
+    expect(actionIds(blocks)).toEqual([]);
+  });
 });
 
 describe('reply modal', () => {

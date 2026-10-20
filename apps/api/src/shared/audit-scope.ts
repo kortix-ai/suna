@@ -50,7 +50,7 @@ import { clientIpFromHeaders } from './client-ip';
 const getRequestContext = () => requestContext.getRequestContext();
 
 export type AuditScopeActorType = 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
-export type AuditScopeOutcome = 'success' | 'failure' | 'denied' | 'pending';
+export type AuditScopeOutcome = 'success' | 'failure' | 'denied' | 'pending' | 'expired';
 
 /**
  * Where the request entered the process. `http` is the Hono app; the others

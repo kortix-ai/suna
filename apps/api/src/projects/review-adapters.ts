@@ -52,7 +52,11 @@ const CALL_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']>
 export function connectorCallToReviewItem(
   ex: ConnectorCallRow,
   options: { canResolve?: boolean; resolvers?: ApprovalResolvers } = {},
-): ReviewItemDTO & { can_resolve: boolean; resolvers: ApprovalResolvers | null } {
+): ReviewItemDTO & {
+  can_resolve: boolean;
+  resolvers: ApprovalResolvers | null;
+  expires_at: string | null;
+} {
   const includeArgsPreview = options.canResolve === true;
   const summary =
     ex.resultSummary && typeof ex.resultSummary === 'object' && !Array.isArray(ex.resultSummary)
@@ -107,6 +111,8 @@ export function connectorCallToReviewItem(
     metadata: { source: 'connector_call' },
     created_at: ex.createdAt.toISOString(),
     updated_at: ex.createdAt.toISOString(),
+    /** When the approval stops being decidable; null = never. */
+    expires_at: ex.expiresAt?.toISOString() ?? null,
   };
 }
 

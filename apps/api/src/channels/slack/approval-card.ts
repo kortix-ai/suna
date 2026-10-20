@@ -202,21 +202,17 @@ export function buildApprovalCardBlocks(card: ApprovalCardInput, names?: Readonl
 /** What replaces the buttons once anyone decided — here, in Kortix, or on the link page. */
 export function buildApprovalOutcomeBlocks(outcome: {
   actionPath: string;
-  decision: ApprovalDecision;
+  decision: ApprovalDecision | 'expired';
   decidedBy: string;
   note: string;
   approvalContext: string | null;
 }): unknown[] {
-  const verb = outcome.decision === 'approve' ? ':white_check_mark: *Approved*' : ':no_entry: *Denied*';
-  const blocks: unknown[] = [
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `${verb} \`${escapeMrkdwn(outcome.actionPath)}\` — by ${outcome.decidedBy}`,
-      },
-    },
-  ];
+  const action = `\`${escapeMrkdwn(outcome.actionPath)}\``;
+  const text =
+    outcome.decision === 'expired'
+      ? `:hourglass: *Expired* ${action} — This approval expired.`
+      : `${outcome.decision === 'approve' ? ':white_check_mark: *Approved*' : ':no_entry: *Denied*'} ${action} — by ${outcome.decidedBy}`;
+  const blocks: unknown[] = [{ type: 'section', text: { type: 'mrkdwn', text } }];
   if (outcome.approvalContext) {
     blocks.push({
       type: 'context',

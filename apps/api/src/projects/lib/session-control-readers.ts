@@ -1,5 +1,6 @@
 import { connectorCalls, projectSecrets, projectSessions, sessionSandboxes, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
 import { and, count, eq, isNull, max } from 'drizzle-orm';
+import { approvalNotExpired } from '../../connectors/approval-expiry';
 import { db } from '../../shared/db';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { wakeLadderBudgetOf } from '../session-lifecycle/attended-wake-ladder';
@@ -195,6 +196,7 @@ export async function readSessionAuditWatermark(
         eq(connectorCalls.sessionId, sessionId),
         eq(connectorCalls.status, 'pending_approval'),
         isNull(connectorCalls.resolvedAt),
+        approvalNotExpired,
       ),
     );
   const [stamps] = await db

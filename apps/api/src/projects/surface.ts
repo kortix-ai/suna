@@ -57,7 +57,7 @@ export { assertProjectCapability, loadProjectForUser } from './lib/access';
 // so the approval page refuses exactly whom the resolve route refuses).
 export { mayResolveApproval } from './lib/approval-authority';
 export { approvalCallerOf } from './lib/http-approval-caller';
-export { approvalTargetSession } from './lib/connector-approval-decision';
+export { approvalTargetSession, expireDueApprovals } from './lib/connector-approval-decision';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
 export { listResolvedProjectSecrets } from './secrets';

@@ -23,6 +23,7 @@
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { connectorCalls, connectors } from '@kortix/db';
 import { db } from '../../shared/db';
+import { approvalNotExpired, isApprovalExpired } from '../../connectors/approval-expiry';
 import { approvalPageUrl } from '../../setup-links/token';
 import { lookupEmailsByUserIds } from '../lib/access';
 
@@ -84,6 +85,7 @@ export async function readSessionAuditActions(
       approvedBy: connectorCalls.approvedBy,
       createdAt: connectorCalls.createdAt,
       resolvedAt: connectorCalls.resolvedAt,
+      expiresAt: connectorCalls.expiresAt,
     })
     .from(connectorCalls)
     .where(
@@ -96,6 +98,7 @@ export async function readSessionAuditActions(
               eq(connectorCalls.status, 'pending_approval'),
               isNull(connectorCalls.approvedBy),
               isNull(connectorCalls.resolvedAt),
+              approvalNotExpired,
             ]),
       ),
     )
@@ -127,7 +130,7 @@ export async function readSessionAuditActions(
   // The resolve route's own pending test (`isPendingApproval`): a decided row
   // has nothing left to resolve, so it never offers a decision.
   const isPending = (r: (typeof rows)[number]) =>
-    r.status === 'pending_approval' && !r.approvedBy && !r.resolvedAt;
+    r.status === 'pending_approval' && !r.approvedBy && !r.resolvedAt && !isApprovalExpired(r);
   const callerMayResolve = rows.some(isPending) ? await canResolve() : false;
 
   return {
@@ -140,7 +143,8 @@ export async function readSessionAuditActions(
       action: r.actionPath,
       connector_id: r.connectorId,
       connector: r.connectorId ? (slugByConnector.get(r.connectorId) ?? null) : null,
-      status: r.status,
+      // A pending row past its window reads as expired before the worker flips it.
+      status: isApprovalExpired(r) ? 'expired' : r.status,
       risk: r.risk,
       acted_by: r.actingUserId,
       acted_by_email: r.actingUserId ? (emailByUser.get(r.actingUserId) ?? null) : null,
@@ -153,10 +157,7 @@ export async function readSessionAuditActions(
       // full (redacted) arguments and decides. Minted here so the in-session
       // notice can link straight to it without a second round trip. Only for
       // pending rows: a resolved row has nothing left to decide.
-      approval_url:
-        r.status === 'pending_approval' && !r.resolvedAt
-          ? approvalPageUrl(projectId, r.executionId, sessionId)
-          : null,
+      approval_url: isPending(r) ? approvalPageUrl(projectId, r.executionId, sessionId) : null,
       // KRTX-1724: true only when THIS caller's POST would succeed, so a
       // client offers Approve / Deny to the people who can use them.
       can_resolve: isPending(r) && callerMayResolve,

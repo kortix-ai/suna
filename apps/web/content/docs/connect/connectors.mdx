@@ -536,6 +536,7 @@ A held call returns `202` with `status: "pending_approval"`, `approval_url`, `ap
 
 - An approval covers one exact request: the same connector, action, arguments and account. A changed argument needs a new approval.
 - After an approval, the identical call runs once when it repeats within 15 minutes.
+- A held call expires when nobody decides it within 24 hours, or within the project's [`approvals.ttl`](/docs/project/manifest#policy-and-policies). An expired call leaves **Review → Needs you**, its chat card shows **Expired**, and `POST /v1/projects/<project_id>/approvals/<execution_id>` returns `409` with `code: "APPROVAL_EXPIRED"`. The session does not resume. The agent asks again with a new call.
 - There is no session-wide approval. An action that must run unattended needs an **Allow** rule.
 - A project manager or the person who started the session decides a held call. A session started with an API token (the CLI, a service account) is decided by project managers only.
 - Anyone else who can open the session sees the call and who decides it, with no **Approve** or **Deny**. They can copy `approval_url` and send it to that person: the approval page answers them with `403` too. In **Review**, the call is under **Waiting** for them, not **Needs you**.

@@ -30,8 +30,11 @@ import {
   normalizeApprovalNote,
 } from '../lib/connector-approval-decision';
 import { markApprovalCardDecided } from '../../channels/approval-card-relay';
+import { approvalNotExpired, isApprovalExpired } from '../../connectors/approval-expiry';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { approvalCallerOf } from '../lib/http-approval-caller';
+
+const APPROVAL_EXPIRED_BODY = { error: 'This approval expired', code: 'APPROVAL_EXPIRED' };
 
 export function registerApprovalsRoutes(): void {
   // GET /v1/projects/:projectId/approvals
@@ -81,6 +84,7 @@ export function registerApprovalsRoutes(): void {
           actingUserId: connectorCalls.actingUserId,
           resultSummary: connectorCalls.resultSummary,
           createdAt: connectorCalls.createdAt,
+          expiresAt: connectorCalls.expiresAt,
         })
         .from(connectorCalls)
         .where(
@@ -89,6 +93,7 @@ export function registerApprovalsRoutes(): void {
             eq(connectorCalls.status, 'pending_approval'),
             isNull(connectorCalls.approvedBy),
             isNull(connectorCalls.resolvedAt),
+            approvalNotExpired,
           ),
         )
         .orderBy(desc(connectorCalls.createdAt))
@@ -109,6 +114,7 @@ export function registerApprovalsRoutes(): void {
           requested_by: r.actingUserId,
           requested_by_email: r.actingUserId ? (emailByUser.get(r.actingUserId) ?? null) : null,
           requested_at: r.createdAt.toISOString(),
+          expires_at: r.expiresAt?.toISOString() ?? null,
           detail: r.resultSummary ?? null,
         })),
       });
@@ -170,6 +176,7 @@ export function registerApprovalsRoutes(): void {
             eq(connectorCalls.status, 'pending_approval'),
             isNull(connectorCalls.approvedBy),
             isNull(connectorCalls.resolvedAt),
+            approvalNotExpired,
           ),
         );
 
@@ -300,6 +307,7 @@ export function registerApprovalsRoutes(): void {
 
       const row = await loadApprovalRow(projectId, executionId);
       if (!row) return c.json({ error: 'Not found' }, 404);
+      if (isApprovalExpired(row)) return c.json(APPROVAL_EXPIRED_BODY, 409);
       if (!isPendingApproval(row)) {
         return c.json({ error: 'Approval already resolved' }, 409);
       }
@@ -352,6 +360,7 @@ export function registerApprovalsRoutes(): void {
           409,
         );
       }
+      if (outcome === 'expired') return c.json(APPROVAL_EXPIRED_BODY, 409);
       if (outcome === 'already_resolved') {
         return c.json({ error: 'Approval already resolved' }, 409);
       }

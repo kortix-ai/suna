@@ -10,6 +10,7 @@
 
 import { changeRequests, connectorCalls, projectSessions, reviewItems } from '@kortix/db';
 import { type AnyColumn, type SQL, and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
+import { approvalNotExpired, isApprovalExpired } from '../connectors/approval-expiry';
 import { captureException } from '../lib/sentry';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
@@ -367,6 +368,8 @@ async function pendingConnectorCalls(
   projectId: string,
   view: ReadView,
   sessionId?: string,
+  /** One call by id, expired or not: the by-id read reports `expired`. */
+  executionId?: string,
 ): Promise<PendingConnectorCall[]> {
   const rows = await db
     .select({
@@ -386,7 +389,12 @@ async function pendingConnectorCalls(
     .where(
       and(
         eq(connectorCalls.projectId, projectId),
-        eq(connectorCalls.status, 'pending_approval'),
+        executionId
+          ? and(
+              eq(connectorCalls.executionId, executionId),
+              inArray(connectorCalls.status, ['pending_approval', 'expired']),
+            )
+          : and(eq(connectorCalls.status, 'pending_approval'), approvalNotExpired),
         sessionId ? sql`${connectorCalls.sessionId}::text = ${sessionId}` : undefined,
         view.where(sql`${connectorCalls.sessionId}::text`, connectorCalls.actingUserId),
       ),
@@ -505,15 +513,15 @@ export async function listInboxItems(
  * it: a native id, `cr:<cr_id>` or `call:<execution_id>`. The list is
  * bounded, so a link to an item (a change request's `?id=cr:…`) must not
  * depend on that item being on a loaded page. A connector call is in the
- * inbox only while it is pending; null for anything else, and for an id that
- * is not a uuid.
+ * inbox while it is pending, and reads `expired` once its window closed; null
+ * for anything else, and for an id that is not a uuid.
  */
 export async function getInboxItem(
   projectId: string,
   id: string,
   resolveCaller: () => Promise<ApprovalCaller>,
   view: ReadView,
-): Promise<InboxItem | null> {
+): Promise<InboxItem | (Omit<InboxItem, 'status'> & { status: 'expired' }) | null> {
   const source = adapterSourceForId(id);
   const rawId = source ? id.slice(id.indexOf(':') + 1) : id;
   if (!isUuid(rawId)) return null;
@@ -527,10 +535,12 @@ export async function getInboxItem(
     return changeRequestToReviewItem(row);
   }
   if (source === 'call') {
-    const call = (await pendingConnectorCalls(projectId, view)).find((row) => row.executionId === rawId);
+    const [call] = await pendingConnectorCalls(projectId, view, undefined, rawId);
     if (!call) return null;
     const verdict = await connectorCallVerdicts([call], resolveCaller);
-    return connectorCallToReviewItem(call, verdict(call));
+    const item = connectorCallToReviewItem(call, verdict(call));
+    // Past its window: nobody can decide it any more (connectors/approval-expiry.ts).
+    return isApprovalExpired(call) ? { ...item, status: 'expired', can_resolve: false } : item;
   }
   const row = await getReviewItemById(rawId, projectId);
   if (!row || !(await view.allows({ sessionId: row.originSessionId, createdBy: row.createdBy }))) return null;

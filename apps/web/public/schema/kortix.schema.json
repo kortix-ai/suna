@@ -6427,6 +6427,17 @@
           "policies": {
             "type": "array"
           },
+          "approvals": {
+            "type": "object",
+            "properties": {
+              "ttl": {
+                "type": "string",
+                "pattern": "^[0-9]+[mhd]$",
+                "description": "How long a held connector call waits for a decision: `30m`, `4h`, `7d`. Clamped to 5m..30d. Default 24h."
+              }
+            },
+            "additionalProperties": false
+          },
           "agents": {
             "type": "object",
             "minProperties": 1,

@@ -5,9 +5,11 @@
  * proves a human with `mayResolveApproval` / `humanMayResolveApproval` first.
  */
 import { connectorCalls, projectSessions, sessionLifecycleCommands } from '@kortix/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { approvalNotExpired, isApprovalExpired } from '../../connectors/approval-expiry';
 import { approvalPreviewReviewable } from '../../connectors/args-preview';
-import { approvalResolvedAuditEvent } from '../../connectors/call-audit';
+import { approvalExpiredAuditEvent, approvalResolvedAuditEvent } from '../../connectors/call-audit';
+import { logger } from '../../lib/logger';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
@@ -25,6 +27,7 @@ export interface PendingApprovalRow {
   approvedBy: string | null;
   resolvedAt: Date | null;
   resultSummary: unknown;
+  expiresAt: Date | null;
 }
 
 export async function loadApprovalRow(
@@ -42,6 +45,7 @@ export async function loadApprovalRow(
       approvedBy: connectorCalls.approvedBy,
       resolvedAt: connectorCalls.resolvedAt,
       resultSummary: connectorCalls.resultSummary,
+      expiresAt: connectorCalls.expiresAt,
     })
     .from(connectorCalls)
     .where(and(eq(connectorCalls.executionId, executionId), eq(connectorCalls.projectId, projectId)))
@@ -80,7 +84,7 @@ export function normalizeApprovalNote(value: unknown): string {
   return typeof value === 'string' ? value.trim().slice(0, 4_000) : '';
 }
 
-export type DecideOutcome = 'resolved' | 'already_resolved' | 'preview_unavailable';
+export type DecideOutcome = 'resolved' | 'already_resolved' | 'preview_unavailable' | 'expired';
 
 /**
  * Apply one human decision. `resume: 'queue'` enqueues the durable
@@ -103,6 +107,8 @@ export async function decideConnectorApproval(input: {
   updateStaleCard?: () => Promise<void>;
 }): Promise<DecideOutcome> {
   const { projectId, row, decision, note } = input;
+  // Past its window the call is no longer decidable (connectors/approval-expiry.ts).
+  if (isApprovalExpired(row)) return 'expired';
   const existingDetail =
     typeof row.resultSummary === 'object' && row.resultSummary
       ? (row.resultSummary as Record<string, unknown>)
@@ -155,6 +161,7 @@ export async function decideConnectorApproval(input: {
           eq(connectorCalls.status, 'pending_approval'),
           isNull(connectorCalls.approvedBy),
           isNull(connectorCalls.resolvedAt),
+          approvalNotExpired,
         ),
       )
       .returning({ id: connectorCalls.executionId });
@@ -166,7 +173,8 @@ export async function decideConnectorApproval(input: {
     }
     return updated;
   });
-  if (resolved.length === 0) return 'already_resolved';
+  // A lost race against the window closing reads as expired, not decided.
+  if (resolved.length === 0) return isApprovalExpired(row) ? 'expired' : 'already_resolved';
 
   try {
     await recordAuditEvent(
@@ -205,4 +213,70 @@ export async function decideConnectorApproval(input: {
   );
 
   return 'resolved';
+}
+
+const EXPIRY_BATCH = 200;
+
+/**
+ * Close every pending approval past its `expires_at`: status `expired`,
+ * `resolved_at` now, one audit event each, and each chat card replaced through
+ * `updateCard` (the caller owns the channels edge). Never resumes a session:
+ * the gateway does not wait on the decision. Batches of 200 until none is due.
+ */
+export async function expireDueApprovals(
+  updateCard?: (projectId: string, row: PendingApprovalRow) => Promise<void>,
+): Promise<number> {
+  let total = 0;
+  for (;;) {
+    const due = db
+      .select({ id: connectorCalls.executionId })
+      .from(connectorCalls)
+      .where(and(eq(connectorCalls.status, 'pending_approval'), lt(connectorCalls.expiresAt, sql`now()`)))
+      .limit(EXPIRY_BATCH)
+      .for('update', { skipLocked: true });
+    const rows = await db
+      .update(connectorCalls)
+      .set({ status: 'expired', resolvedAt: sql`now()` })
+      .where(
+        and(
+          inArray(connectorCalls.executionId, due),
+          eq(connectorCalls.status, 'pending_approval'),
+        ),
+      )
+      .returning({
+        accountId: connectorCalls.accountId,
+        projectId: connectorCalls.projectId,
+        executionId: connectorCalls.executionId,
+        sessionId: connectorCalls.sessionId,
+        actingUserId: connectorCalls.actingUserId,
+        connectorId: connectorCalls.connectorId,
+        actionPath: connectorCalls.actionPath,
+        status: connectorCalls.status,
+        approvedBy: connectorCalls.approvedBy,
+        resolvedAt: connectorCalls.resolvedAt,
+        resultSummary: connectorCalls.resultSummary,
+        expiresAt: connectorCalls.expiresAt,
+      });
+    for (const { accountId, projectId, ...row } of rows) {
+      try {
+        await recordAuditEvent(
+          approvalExpiredAuditEvent({
+            accountId,
+            projectId,
+            sessionId: row.sessionId,
+            executionId: row.executionId,
+            actionPath: row.actionPath,
+            connectorId: row.connectorId,
+          }),
+        );
+      } catch (error) {
+        logger.warn('[approvals] failed to record expiry audit event', { error: String(error) });
+      }
+      void updateCard?.(projectId, row).catch((error) =>
+        logger.warn('[approvals] expired approval card update failed', { error: String(error) }),
+      );
+    }
+    total += rows.length;
+    if (rows.length < EXPIRY_BATCH) return total;
+  }
 }

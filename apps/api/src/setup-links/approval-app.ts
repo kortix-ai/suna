@@ -29,6 +29,7 @@ import { composioToolkitLogo } from '../connectors/composio';
 import { and, eq } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { isApprovalExpired } from '../connectors/approval-expiry';
 import { isPlainRecord, summarizeArgsPreview } from '../connectors/args-preview';
 import {
   approvalCallerOf,
@@ -108,6 +109,7 @@ approvalLinksApp.openapi(createRoute({
       resultSummary: connectorCalls.resultSummary,
       createdAt: connectorCalls.createdAt,
       resolvedAt: connectorCalls.resolvedAt,
+      expiresAt: connectorCalls.expiresAt,
     })
     .from(connectorCalls)
     .where(
@@ -176,6 +178,7 @@ approvalLinksApp.openapi(createRoute({
           : null;
   }
 
+  const expired = isApprovalExpired(row);
   const summary =
     typeof row.resultSummary === 'object' && row.resultSummary
       ? (row.resultSummary as Record<string, unknown>)
@@ -198,8 +201,9 @@ approvalLinksApp.openapi(createRoute({
     risk: row.risk,
     // 'pending_approval' is actionable. Every terminal status renders a
     // read-only outcome instead of buttons that would return 409.
-    status: row.status,
-    pending: row.status === 'pending_approval' && !row.resolvedAt,
+    // A pending row past its window reads as expired before the worker flips it.
+    status: expired ? 'expired' : row.status,
+    pending: row.status === 'pending_approval' && !row.resolvedAt && !expired,
     args_preview: argsPreview,
     review_complete: summary.args_preview_complete === true,
     args_summary: summarizeArgsPreview(argsPreview),
@@ -210,7 +214,10 @@ approvalLinksApp.openapi(createRoute({
     policy_source: typeof summary.policy_source === 'string' ? summary.policy_source : null,
     requested_at: row.createdAt.toISOString(),
     resolved_at: row.resolvedAt?.toISOString() ?? null,
-    expires_at: new Date(resolved.payload.exp).toISOString(),
+    // The earlier of the link token's expiry and the approval's own window.
+    expires_at: new Date(
+      Math.min(resolved.payload.exp, row.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY),
+    ).toISOString(),
   });
 });
 

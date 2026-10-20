@@ -66,6 +66,7 @@ const baseCall: ConnectorCallRow = {
   approvedBy: null,
   createdAt: new Date('2026-06-30T09:00:00.000Z'),
   resolvedAt: null,
+  expiresAt: null,
 };
 
 describe('connectorCallToReviewItem', () => {

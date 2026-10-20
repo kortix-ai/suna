@@ -1,5 +1,12 @@
 /** DB-backed GatewayDeps for one principal (makeDbGatewayDeps) and the approval carry-over reads it uses. */
-import { connectionCredentials, connectorConnections, connectorActions, connectors, connectorCalls } from '@kortix/db';
+import {
+  connectionCredentials,
+  connectorConnections,
+  connectorActions,
+  connectors,
+  connectorCalls,
+  connectorProjectSettings,
+} from '@kortix/db';
 import { appAuthorizationForConnectorCall } from '../apps/connector-assertion';
 import { and, desc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
 import { resolveAgentMailApiKey } from '../channels/agentmail-api';
@@ -28,6 +35,7 @@ import {
 } from '../projects/lib/session-connector-bindings';
 import { db } from '../shared/db';
 import { executeComputerCall } from '../tunnel/core/rpc-core';
+import { DEFAULT_APPROVAL_TTL_SECONDS, approvalNotExpired } from './approval-expiry';
 import { connectorAttachmentStore } from './attachments';
 import { gateChannelRead } from './channel-read-scope';
 import { gateChannelWrite } from './channel-write-scope';
@@ -172,6 +180,7 @@ export async function isPendingApprovalExecution(input: {
         eq(connectorCalls.status, 'pending_approval'),
         isNull(connectorCalls.approvedBy),
         isNull(connectorCalls.resolvedAt),
+        approvalNotExpired,
       ),
     )
     .limit(1);
@@ -486,6 +495,11 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
           // denied) resolves at insert. Leaving pending rows unresolved is what lets
           // the inbox query surface exactly the actions still waiting on a decision.
           resolvedAt: rec.status === 'pending_approval' ? null : new Date(),
+          // The decision window: the project's `approvals.ttl`, else 24 h.
+          expiresAt:
+            rec.status === 'pending_approval'
+              ? sql`now() + make_interval(secs => coalesce((select ${connectorProjectSettings.approvalTtlSeconds} from ${connectorProjectSettings} where ${connectorProjectSettings.projectId} = ${rec.projectId}), ${DEFAULT_APPROVAL_TTL_SECONDS}))`
+              : null,
         })
         .returning({ id: connectorCalls.executionId });
       if (!row?.id) return null;
