@@ -369,13 +369,15 @@ export function useModelStore(
     [store.sessionModelAt],
   );
 
-  const setSessionModel = useCallback((sessionId: string, model: ModelKey | undefined) => {
+  /** `seeded`: the pick was carried over (a start hand-off), not made now, so it records no time. */
+  const setSessionModel = useCallback((sessionId: string, model: ModelKey | undefined, options?: { seeded?: boolean }) => {
     const s = getStore();
     const next = { ...s.sessionModel };
     const at = { ...s.sessionModelAt };
     if (model) {
       next[sessionId] = model;
-      at[sessionId] = Date.now();
+      if (options?.seeded) delete at[sessionId];
+      else at[sessionId] = Date.now();
     } else {
       delete next[sessionId];
       delete at[sessionId];

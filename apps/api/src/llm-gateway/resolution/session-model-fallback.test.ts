@@ -35,13 +35,16 @@ describe('fallbackSwitchOf', () => {
     });
   });
 
-  test('a held route of an unavailable model switches too', () => {
-    expect(fallbackSwitchOf(answered(failure('held', 'provider_reauth_required')))?.reason).toBe('provider_reauth_required');
+  test('a login that needs reconnection switches too', () => {
+    expect(fallbackSwitchOf(answered(failure('resolve', 'provider_reauth_required')))?.reason).toBe('provider_reauth_required');
   });
 
-  test('a one-off transient failure does not switch, at dispatch or held', () => {
+  test('a one-off transient failure does not switch', () => {
     expect(fallbackSwitchOf(answered(failure('dispatch', 'provider_pool_rate_limited')))).toBeNull();
-    expect(fallbackSwitchOf(answered(failure('held', 'model_busy')))).toBeNull();
+  });
+
+  test('a held route does not switch: it replays an old failure and outlives a revert', () => {
+    expect(fallbackSwitchOf(answered(failure('held', 'provider_pool_rate_limited')))).toBeNull();
   });
 
   test('no session, no fallback, or a failed request: nothing to switch', () => {

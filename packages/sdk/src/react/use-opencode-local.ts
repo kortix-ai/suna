@@ -540,7 +540,9 @@ export function useRuntimeLocal({
       }
       // Also persist per-session so the selection survives page reload
       if (scopedSessionModelKey && next) {
-        modelStore.setSessionModel(scopedSessionModelKey, next);
+        // A seed is the pick made before this session existed: it must not
+        // outrank a fallback switch that happened since.
+        modelStore.setSessionModel(scopedSessionModelKey, next, options?.autoSeed ? { seeded: true } : undefined);
       }
       if (options?.recent && model) {
         modelStore.pushRecent(model);

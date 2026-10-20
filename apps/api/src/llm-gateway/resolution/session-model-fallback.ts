@@ -8,10 +8,16 @@
  *
  * THE RULE. When a session's request is answered by a fallback because the
  * model it named is UNAVAILABLE (the gateway started the chain without it at
- * `resolve`, or a held route says it failed that way moments ago), the session
- * row records the fallback as its model, with source `fallback` and the model
- * it stood in for. The composer shows it and sends it from the next prompt on.
- * A one-off transient failure (`dispatch`: 429, 5xx, busy) does not switch.
+ * `resolve`: a resting pool, a login that needs reconnection, a retired
+ * model), the session row records the fallback as its model, with source
+ * `fallback` and the model it stood in for. The composer shows it and sends it
+ * from the next prompt on. A one-off transient failure (`dispatch`: 429, 5xx,
+ * busy) does not switch. Neither does a `held` route: it replays a failure
+ * from up to 10 minutes ago (pipeline/route-memory.ts) and outlives a revert,
+ * so switching on it moved a session back to the fallback seconds after the
+ * original model served again (measured on a local session). The session's
+ * first request for a resting model resolves fresh, because the hold is per
+ * session, so a `resolve` failure always comes first.
  * When a turn ends, `projects/lib/session-model-fallback-revert.ts` moves the
  * session back once the original model can serve again.
  *
@@ -60,7 +66,7 @@ export function fallbackSwitchOf(
 ): FallbackSwitch | null {
   if (!trace.ok || !trace.sessionId || !trace.projectId || !trace.servedModel || !trace.fallbackFrom) return null;
   const first = trace.attemptFailures?.[0];
-  if (!first || (first.stage !== 'resolve' && first.stage !== 'held')) return null;
+  if (first?.stage !== 'resolve') return null;
   if (!UNAVAILABLE_CODES.has(String(first.code))) return null;
   const from = toOpencodeModelRef(trace.requestedModel);
   const to = toOpencodeModelRef(trace.servedModel);
