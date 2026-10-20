@@ -1182,9 +1182,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     if (!browserPresence || !presenceTabId || !projectId || !sessionId) return;
     const tab_id = presenceTabId;
     const handle = createKortix(platformConfig()).session(projectId, sessionId);
+    // A deleted session has no lease left to renew or end: every PUT would 404.
+    let deleted = false;
+    const offDeleted = onSessionDeleted((id) => {
+      if (id === sessionId) deleted = true;
+    });
     // Without page exit, an absent PUT goes without `keepalive`, as before
     // KRTX-1742: a closing page may cancel it, and the lease then expires.
     const reporter = presenceReporter(({ active, alerts }) => {
+      if (deleted) return;
       // A human coming back to a stopped session is a fresh visit: release the
       // stop hold and re-open (`presenceReturnReopensSession`). Presence-gated
       // on purpose — a background tab never reports a return, so it never
@@ -1231,6 +1237,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       window.clearInterval(refresh);
       presenceReporterRef.current = null;
       stop();
+      offDeleted();
     };
   }, [browserPresence, presenceTabId, projectId, sessionId, queryClient]);
   useEffect(() => {
