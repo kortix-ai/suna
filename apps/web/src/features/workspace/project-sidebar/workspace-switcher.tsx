@@ -72,7 +72,7 @@ import { COMPUTER_SETUP_EVENT } from '@kortix/ui/internal/tunnel/computer-connec
 import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
 import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-param';
 import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
-import { PROJECT_ACTIONS } from '@kortix/ui/workspace';
+import { PROJECT_ACTIONS } from '@kortix/sdk';
 import { useProjectCan } from '@kortix/ui/internal/lib/use-project-can';
 import { projectSettingsSectionHref } from '@kortix/ui/customize/project-settings/project-settings-sections';
 import { WorkspaceMenuSection } from '@kortix/ui/workspace/sidebar/workspace-menu-section';

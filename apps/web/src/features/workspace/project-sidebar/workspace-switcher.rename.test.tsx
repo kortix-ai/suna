@@ -1,5 +1,5 @@
 import { qk } from '@kortix/sdk/react';
-import { PROJECT_ACTIONS } from '@kortix/ui/workspace';
+import { PROJECT_ACTIONS } from '@kortix/sdk';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { expect, mock, test } from 'bun:test';
 import { Window } from 'happy-dom';
@@ -31,8 +31,10 @@ mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => Object.assign((key: string) => key, { raw: (key: string) => key }),
 }));
 const children = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
-const uiDropdownMenuMock = () =>
-  Object.fromEntries(
+const realDropdownMenu = await import('@kortix/ui/dropdown-menu');
+const uiDropdownMenuMock = () => ({
+  ...realDropdownMenu,
+  ...Object.fromEntries(
     [
       'DropdownMenu',
       'DropdownMenuContent',
@@ -46,7 +48,8 @@ const uiDropdownMenuMock = () =>
       'DropdownMenuSubTrigger',
       'DropdownMenuTrigger',
     ].map((name) => [name, children]),
-  );
+  ),
+});
 mock.module('@/components/ui/dropdown-menu', uiDropdownMenuMock);
 mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
 const { createContext } = await import('react');
