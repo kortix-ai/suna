@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { accessSync, closeSync, constants, existsSync, openSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { enabledFeatureFlags } from '@/lib/config/feature-flags'
 import { logger } from '@/lib/log/logger'
 
 /**
@@ -15,7 +16,9 @@ import { logger } from '@/lib/log/logger'
  * Without a hook, a session that coordinates a goal (a goal.json under
  * /drives/<folder>/Goals/<slug>/ listing it as coordinator) runs
  * `kortix goals check --enforce --quiet` instead: live runs showed the model
- * skips installing the hook, so the check does not depend on it.
+ * skips installing the hook, so the check does not depend on it. Only in a box
+ * whose project has the `goals` flag (KORTIX_FEATURE_FLAGS); off, Goals does
+ * not exist in the box.
  */
 export const ON_IDLE_HOOK = join(homedir(), '.kortix', 'hooks', 'on-idle')
 export const GOAL_CHECK_COMMAND = 'kortix goals check --enforce --quiet'
@@ -40,7 +43,7 @@ export function coordinatesGoal(sessionId: string | undefined, drivesRoot = '/dr
 
 export function runOnIdleHook(
   turn: { status: 'idle' | 'error'; messageId: string | null },
-  opts: { path?: string; logPath?: string; drivesRoot?: string; sessionId?: string } = {},
+  opts: { path?: string; logPath?: string; drivesRoot?: string; sessionId?: string; env?: NodeJS.ProcessEnv } = {},
 ): boolean {
   const path = opts.path ?? ON_IDLE_HOOK
   let command: string
@@ -48,6 +51,7 @@ export function runOnIdleHook(
     accessSync(path, constants.X_OK)
     command = JSON.stringify(path)
   } catch {
+    if (!enabledFeatureFlags(opts.env ?? process.env).has('goals')) return false
     if (!coordinatesGoal(opts.sessionId ?? process.env.KORTIX_SESSION_ID, opts.drivesRoot)) return false
     command = GOAL_CHECK_COMMAND
   }

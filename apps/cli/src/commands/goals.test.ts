@@ -129,3 +129,23 @@ test('check reports fields code does not read, in goal.json and in items', () =>
   expect(v).toContain('unknown field(s) constraints');
   expect(v).toContain('item i1: unknown field(s) nag_every');
 });
+
+test('the goals flag gates the real CLI in a box: off hides and refuses kortix goals, on shows and runs it', () => {
+  const cli = (args: string[], flags: string) =>
+    Bun.spawnSync(['bun', join(import.meta.dir, '..', 'index.ts'), ...args], {
+      env: { ...process.env, KORTIX_FEATURE_FLAGS: flags, KORTIX_DRIVES_ROOT: join(tmpdir(), 'no-drives-here') },
+    });
+  const out = (r: ReturnType<typeof cli>) => r.stdout.toString() + r.stderr.toString();
+
+  const offHelp = cli(['--help'], 'volumes,reminders');
+  expect(out(offHelp)).not.toMatch(/^\s+goals\s/m);
+  const off = cli(['goals', 'ls'], 'volumes,reminders');
+  expect(off.exitCode).not.toBe(0);
+  expect(out(off)).toContain('kortix projects features enable goals');
+
+  const onHelp = cli(['--help'], 'volumes,reminders,goals');
+  expect(out(onHelp)).toMatch(/^\s+goals\s/m);
+  const on = cli(['goals', '--help'], 'volumes,reminders,goals');
+  expect(on.exitCode).toBe(0);
+  expect(out(on)).toContain('Usage: kortix goals');
+});
