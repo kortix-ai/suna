@@ -16,14 +16,29 @@ import { act, create } from 'react-test-renderer';
  * by `profile-tab.test.tsx`.
  */
 
+const uploadAvatar = mock(
+  async (_path: string, _file: File, _options: { cacheControl: string; upsert: boolean }) => ({
+    error: null,
+  }),
+);
 const getUser = async () => ({
-  data: { user: { user_metadata: {}, email: 'demo@example.test' } },
+  data: { user: { id: 'synthetic-user', user_metadata: {} } },
   error: null,
 });
 
 mock.module('@/lib/supabase/client', () => ({
-  createClient: () => ({ auth: { getUser, updateUser: async () => ({ error: null }) } }),
+  createClient: () => ({
+    auth: { getUser, updateUser: async () => ({ error: null }) },
+    storage: {
+      from: () => ({
+        list: async () => ({ data: [], error: null }),
+        upload: uploadAvatar,
+        getPublicUrl: () => ({ data: { publicUrl: 'https://storage.example.test/avatar.png' } }),
+      }),
+    },
+  }),
 }));
+mock.module('@/components/ui/toast', () => ({ successToast: () => {}, errorToast: () => {} }));
 mock.module('@/lib/config', () => ({ isBillingEnabled: () => true }));
 /** The deletion-status hook's answer, mutable per test. The dialog test
  *  mounts with the supported answer; the fail-closed test swaps in the error
@@ -304,4 +319,30 @@ describe('ProfileTab — deletion date before consent', () => {
       jest.useRealTimers();
     }
   });
+});
+
+test('avatar upload requires revalidation so deletion cannot leave an hour-long fresh response', async () => {
+  const { renderer, client } = await mountTab();
+  const originalCreate = URL.createObjectURL;
+  const originalRevoke = URL.revokeObjectURL;
+  URL.createObjectURL = () => 'blob:synthetic-avatar';
+  URL.revokeObjectURL = () => {};
+  uploadAvatar.mockClear();
+  try {
+    const { ProfileTabView } = await import('./profile-tab');
+    const file = new File(['synthetic-image'], 'avatar.png', { type: 'image/png' });
+    await act(async () => {
+      renderer.root
+        .findByType(ProfileTabView)
+        .props.onAvatarFileChange({ target: { files: [file], value: '' } });
+    });
+    expect(uploadAvatar).toHaveBeenCalledTimes(1);
+    expect(uploadAvatar.mock.calls[0]?.[1]).toBe(file);
+    expect(uploadAvatar.mock.calls[0]?.[2]).toEqual({ cacheControl: '0', upsert: true });
+  } finally {
+    await act(async () => renderer.unmount());
+    client.clear();
+    URL.createObjectURL = originalCreate;
+    URL.revokeObjectURL = originalRevoke;
+  }
 });
