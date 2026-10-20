@@ -1,7 +1,10 @@
 import { cn } from '@kortix/ui';
 
 // Product vignettes for the marketing page: small, static renders of each
-// module on fictional data, drawn with the app's own tokens.
+// module, drawn with the app's own tokens. Every value is the real answer on the
+// synthetic demo dataset (demo-data/: Project Aster): page counts from
+// manifest.json, clause numbers and quotes from demo-data/src. Change the
+// dataset, change these.
 
 function Frame({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
   return (
@@ -27,7 +30,7 @@ export function AssistantVignette() {
       <div className="ml-auto w-fit max-w-[85%] rounded-lg bg-muted px-3 py-2">Which agreements have uncapped liability?</div>
       <div className="mt-3 space-y-2">
         <p>
-          One agreement leaves liability uncapped: the <b>Master Services Agreement</b> with Quillon Analytics. Clause 12.1 excludes
+          One agreement leaves liability uncapped: the <b>Master Services Agreement</b> with Quillon Analytics. Clause 11.1 excludes
           any limit for either party
           <Chip n={1} />.
         </p>
@@ -38,10 +41,10 @@ export function AssistantVignette() {
       </div>
       <div className="mt-3 rounded-lg border border-border bg-background p-3">
         <p className="text-[11px] text-muted-foreground">
-          <span className="font-mono text-brand">[1]</span> msa-brightwater-quillon.pdf · p. 3 · §12.1
+          <span className="font-mono text-brand">[1]</span> msa-brightwater-quillon.pdf · p. 2 · §11.1
         </p>
         <p className="mt-1 border-l-2 border-brand pl-2">
-          <mark className="bg-brand/15 text-foreground">Neither party&apos;s liability under this Agreement shall be limited</mark> in amount…
+          Neither party&apos;s liability under or in connection with this Agreement … <mark className="bg-brand/15 text-foreground">shall be limited or capped in amount</mark>.
         </p>
       </div>
     </Frame>
@@ -49,10 +52,10 @@ export function AssistantVignette() {
 }
 
 const DOCS = [
-  ['Master Services Agreement', 'PDF', 6],
-  ['Office Lease, Cedar Row', 'PDF', 8],
-  ['Share Purchase Agreement (excerpt)', 'PDF', 5],
-  ['Data Processing Addendum', 'DOCX', 4],
+  ['Master Services Agreement', 'PDF', 3],
+  ['Office Lease, Cedar Row', 'PDF', 2],
+  ['Share Purchase Agreement (excerpt)', 'PDF', 2],
+  ['Data Processing Agreement', 'DOCX', 1],
 ] as const;
 
 export function VaultVignette() {
@@ -60,7 +63,7 @@ export function VaultVignette() {
     <Frame title="Project Aster · Vault">
       <div className="mb-3 flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-muted-foreground">
         <span className="text-foreground">indemnif</span>
-        <span className="ml-auto text-[11px]">7 passages in 3 documents</span>
+        <span className="ml-auto text-[11px]">3 documents, 3 pages</span>
       </div>
       <ul className="divide-y divide-border">
         {DOCS.map(([name, type, pages]) => (
@@ -77,9 +80,9 @@ export function VaultVignette() {
 }
 
 const GRID = [
-  ['MSA · Quillon', 'Uncapped', 'Novaria', 'Yes'],
-  ['SaaS · Lattice', '12 months’ fees', 'England', 'No'],
-  ['Supply · Meridian', '2× annual fees', 'England', 'Consent'],
+  ['MSA · Quillon', 'Uncapped', 'New York', 'Consent'],
+  ['SaaS · Lattice', '12 months’ fees', 'England and Wales', 'Consent'],
+  ['Supply · Meridian', 'GBP 2,000,000 a year', 'England and Wales', 'Consent'],
 ] as const;
 
 export function ReviewVignette() {
@@ -110,7 +113,7 @@ export function ReviewVignette() {
           ))}
         </tbody>
       </table>
-      <p className="mt-3 font-mono text-[11px] text-muted-foreground">24 / 24 cells · every value cited</p>
+      <p className="mt-3 font-mono text-[11px] text-muted-foreground">48 / 48 cells · every value cited</p>
     </Frame>
   );
 }
