@@ -22,11 +22,9 @@ import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { getProject, requestProjectAccess } from '@kortix/sdk';
-import { prefetchSessionOpen, useAdminImpersonate } from '@kortix/sdk/react';
+import { prefetchSessionOpen, qk, useAdminImpersonate } from '@kortix/sdk/react';
 import { prefetchSessionRouteReads } from '@/features/session/session-route-prefetch';
 import { prefetchProjectShellReads } from '@/components/projects/project-shell-prefetch';
-
-const QUERY_KEY = 'project-access-boundary';
 
 /** How often the waiting screen re-checks whether a manager approved the request. */
 const APPROVAL_POLL_MS = 15_000;
@@ -231,8 +229,11 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   // user a fresh request form for a request they already sent.
   const [waiting, setWaiting] = useState<WaitingGateState | null>(null);
 
+  // The shell's canonical `getProject` slot, so the shell, ⌘K and settings read
+  // this answer instead of asking again (2 GETs per load before). A user switch
+  // empties the cache before the new user is published (`resetClientState`).
   const query = useQuery({
-    queryKey: [QUERY_KEY, projectId, user?.id],
+    queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId, { showErrors: false }),
     enabled: authReady && !!projectId,
     retry: false,
@@ -416,7 +417,7 @@ function AccessGateScreen({
         return;
       }
       // already_has_access — the project is readable now, so show the project.
-      void queryClient.invalidateQueries({ queryKey: [QUERY_KEY, projectId] });
+      void queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
     },
     onError: (error: Error) =>
       setInlineError(error.message || t.raw('projectAccessBoundary.requestFailed')),

@@ -72,7 +72,7 @@ afterAll(() => {
 
 const USER = 'user-a';
 const STORAGE_KEY = `kortix.query-cache:${USER}`;
-const gateKey = ['project-access-boundary', 'project-1', USER];
+const gateKey = qk.project.summary('project-1');
 const listKey = qk.project.sessionsPaged('project-1');
 const messagesKey = qk.project.messages('project-1', 'session-1');
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -141,7 +141,7 @@ function sessionRow(n: number) {
 // the skeleton instead of its kept conversation (journey 34, release 0.14.3).
 describe('adopt runs before the query client registers (#10344)', () => {
   const user = 'user-early';
-  const gate = ['project-access-boundary', 'project-early', user];
+  const gate = qk.project.summary('project-early');
   const opensOn = (pathname: string) => Object.assign(pageWindow, { location: { pathname } });
 
   test('registers the saved-copy store and prefetches the opened session with no client yet', async () => {

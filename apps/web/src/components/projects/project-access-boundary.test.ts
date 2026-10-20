@@ -41,11 +41,10 @@ function copyBlock(locale: string): Record<string, string> {
 const en = copyBlock('en');
 
 describe('project access waits for the authenticated identity', () => {
-  test('the query waits for auth hydration and is isolated by user', () => {
+  test('the query waits for auth hydration', () => {
     expect(componentSource).toContain('const { user, isLoading: isAuthLoading } = useAuth();');
     expect(componentSource).toContain('const authReady = !isAuthLoading && !!user?.id;');
     expect(componentSource).toContain('enabled: authReady && !!projectId');
-    expect(componentSource).toContain('queryKey: [QUERY_KEY, projectId, user?.id]');
   });
 
   test('the boundary renders what resolveBoundaryView decides', () => {
