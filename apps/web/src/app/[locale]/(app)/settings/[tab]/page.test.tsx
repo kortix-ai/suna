@@ -8,7 +8,19 @@ let pending = false;
 let failed = false;
 let accounts: { account_id: string }[] = [];
 let retries = 0;
+let authLoading = false;
+let lastProjectId: string | null = null;
+const lastProjectReads: (string | null | undefined)[] = [];
 const replacements: string[] = [];
+mock.module('@/features/providers/auth-provider', () => ({
+  useAuth: () => ({ user: authLoading ? null : { id: 'synthetic-user' }, isLoading: authLoading }),
+}));
+mock.module('@/lib/onboarding/last-project-cookie', () => ({
+  readLastProjectId: (userId: string | null | undefined) => {
+    lastProjectReads.push(userId);
+    return userId === 'synthetic-user' ? lastProjectId : null;
+  },
+}));
 mock.module('next/navigation', () => ({
   useParams: () => ({ tab: segment }),
   useRouter: () => ({ replace: (href: string) => replacements.push(href) }),
@@ -111,7 +123,6 @@ test('live, renamed, unknown and project-only segments open their standalone tab
     ['api-keys', 'tokens'],
     ['tokens', 'tokens'],
     ['unknown', 'profile'],
-    ['secrets', 'profile'],
   ]) {
     segment = raw;
     replacements.length = 0;
@@ -126,4 +137,60 @@ test('live, renamed, unknown and project-only segments open their standalone tab
       root?.unmount();
     });
   }
+});
+
+// KRTX-2865: a stale `/settings/computers` link rendered Profile under a
+// computers URL. A segment that needs a project opens in the project this
+// browser had open last, and in the project list when it remembers none.
+test('a segment that needs a project opens in the last project, never Profile', async () => {
+  accounts = [];
+  pending = false;
+  failed = false;
+  for (const [raw, remembered, expected] of [
+    ['computers', 'p1', '/projects/p1/customize/connectors'],
+    ['computer', 'p1', '/projects/p1/settings/computer'],
+    ['secrets', 'p1', '/projects/p1/customize/secrets'],
+    ['computers', null, '/projects'],
+  ] as const) {
+    segment = raw;
+    lastProjectId = remembered;
+    replacements.length = 0;
+    let root: ReturnType<typeof create> | undefined;
+    await act(async () => {
+      root = create(createElement(SettingsTabPage));
+    });
+    if (!root) throw new Error('Settings route did not render');
+    expect(replacements).toEqual([expected]);
+    expect(JSON.stringify(root.toJSON())).not.toContain('profile');
+    await act(async () => {
+      root?.unmount();
+    });
+  }
+});
+
+test('a project segment waits for the signed-in user before it reads the last project', async () => {
+  accounts = [];
+  pending = false;
+  failed = false;
+  segment = 'computers';
+  lastProjectId = 'p1';
+  authLoading = true;
+  replacements.length = 0;
+  lastProjectReads.length = 0;
+  let root: ReturnType<typeof create> | undefined;
+  await act(async () => {
+    root = create(createElement(SettingsTabPage));
+  });
+  if (!root) throw new Error('Settings route did not render');
+  expect(replacements).toEqual([]);
+  expect(lastProjectReads).toEqual([]);
+  expect(JSON.stringify(root.toJSON())).toContain('Loading');
+  authLoading = false;
+  await act(async () => {
+    root?.update(createElement(SettingsTabPage));
+  });
+  expect(replacements).toEqual(['/projects/p1/customize/connectors']);
+  await act(async () => {
+    root?.unmount();
+  });
 });

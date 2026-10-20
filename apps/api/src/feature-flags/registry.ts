@@ -247,18 +247,11 @@ const FLAGS: readonly FeatureFlagDef[] = [
     name: 'Warm Sessions',
     description:
       'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, until you use it or it expires. Turn this off to trade instant starts for lower cost.',
-    // The surface is small and server-owned, but the cost tradeoff is real and
-    // the presence model is new. `beta` says "we intend this on for everyone,
-    // and we expect to tune the grant".
     stability: 'beta',
     available: () => true,
-    // On by default: an instant session start is the point of the product, and
-    // the cost is bounded per project by `findWarmProjectSession` (one live
-    // warm session per user per project, matched by query, not by a unique
-    // index — see projects/routes/warm-sessions.ts) plus the sandbox deadline.
-    // A replenish also excludes the session the caller just took
-    // (`exclude_session_id`), so it never hands that same session back.
-    platformDefault: () => true,
+    // Idle compute requires explicit opt-in. Opening a project or sending its
+    // first prompt must not create an unused replacement sandbox by default.
+    platformDefault: () => false,
     // NOT 'ui-only'. A flag that only hid client surface would let any other
     // caller keep booting billed sandboxes, which defeats the reason someone
     // turns this off.

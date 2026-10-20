@@ -103,7 +103,7 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     // `project.app.admin` (20261009115640000, which also removed the two
     // `project.backend.*` leaves #9264 had added). Then Kortix Capture's
     // `capture.read_all` and `capture.manage` (20261015003000001). Then rooms'
-    // `project.room.read` and `project.room.write` (20261020013411200).
+    // `project.room.read` and `project.room.write` (20261020130102200).
     expect(seeded).toHaveLength(82);
     expect(seeded.filter((a) => a.startsWith('project.customize.'))).toEqual([]);
     // The decisions, stated positively so a regression is unambiguous.
@@ -167,7 +167,7 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     // Manager: +4 topic leaves from the customize split (agent.write it held),
     // +1 project.app.admin (mirrors project.app.write), -2 retired
     // project.customize.* (20261017134834494). Both: +2 project.room.*
-    // (20261020013411200).
+    // (20261020130102200).
     expect([manager.length, member.length]).toEqual([51, 17]);
     expect(member.filter((a) => !manager.includes(a))).toEqual([]);
     // The floor role is read + RUN: it starts sessions and fires triggers, and

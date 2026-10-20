@@ -1278,6 +1278,13 @@
             "type": "integer",
             "minimum": 1
           },
+          "overlap": {
+            "type": "string",
+            "enum": [
+              "skip",
+              "allow"
+            ]
+          },
           "secret_env": {
             "type": "string",
             "pattern": "^[A-Z_][A-Z0-9_]*$"

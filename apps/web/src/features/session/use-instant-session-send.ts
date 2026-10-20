@@ -372,13 +372,22 @@ function useFirstPromptSources({
   const previewSubmission = useFirstPromptPreviewStore(
     (s) => s.previewBySession[sessionId] ?? null,
   );
-  const effectiveSubmission = resolveFirstPromptSubmission({
+  const resolved = resolveFirstPromptSubmission({
     submission,
     previewSubmission,
     pendingRowSubmission,
     stashedSubmission,
     rememberedAttachments: firstPromptAttachments(sessionId),
   });
+  // Latched: once the shell has drawn the first prompt it keeps it. Every
+  // source empties during the hand-off (the chat clears the preview, the inbox
+  // drops the delivered row, the home stash carries no text), and a shell
+  // that lost it fell back to the home look (wallpaper, centred composer)
+  // while it still faded out over the chat (KRTX-2931). Compared by text:
+  // the resolver returns a new object each render.
+  const [latched, setLatched] = useState<FirstPromptSubmission | null>(null);
+  if (resolved && resolved.text !== latched?.text) setLatched(resolved);
+  const effectiveSubmission = resolved ?? latched;
   const submitted = effectiveSubmission?.text ?? null;
   return { submitted, effectiveSubmission };
 }

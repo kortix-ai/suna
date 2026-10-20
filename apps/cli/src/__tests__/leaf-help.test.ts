@@ -25,6 +25,7 @@ const GROUPS = [
   'channels',
   'connectors',
   'cr',
+  'drive',
   'env',
   'files',
   'gateway',

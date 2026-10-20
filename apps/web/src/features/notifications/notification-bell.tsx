@@ -315,16 +315,20 @@ export function NotificationBell({
   const notificationsOn = useWebNotificationStore((s) => s.preferences.enabled);
   const permission = useWebNotificationStore((s) => s.permission);
   const promptDismissed = useWebNotificationStore((s) => s.promptDismissed);
-  const toggleEnabled = useWebNotificationStore((s) => s.toggleEnabled);
+  const requestPermission = useWebNotificationStore((s) => s.requestPermission);
+  const setPreference = useWebNotificationStore((s) => s.setPreference);
   const dismissPrompt = useWebNotificationStore((s) => s.dismissPrompt);
   if (!user || !notificationCenter) return null;
 
   const count = inbox.unreadCount;
   const needsYou = tabUnreadCount(inbox.data?.notifications ?? [], 'needs') > 0;
   const label = count > 0 ? t('bell.unreadLabel', { count }) : t('bell.label');
-  // Browser notifications are off here, and the browser would still ask.
+  // A fresh profile enables notifications before OS permission is granted.
   const offerTurnOn =
-    isNotificationSupported() && !notificationsOn && permission !== 'denied' && !promptDismissed;
+    isNotificationSupported() &&
+    (!notificationsOn || permission === 'default') &&
+    permission !== 'denied' &&
+    !promptDismissed;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -364,7 +368,9 @@ export function NotificationBell({
           onRetry={() => void inbox.refetch()}
           // From the click itself: the browser asks for permission only
           // inside a user gesture.
-          onTurnOn={() => void toggleEnabled()}
+          onTurnOn={async () => {
+            if ((await requestPermission()) === 'granted') setPreference('enabled', true);
+          }}
           onDismissPrompt={dismissPrompt}
         />
       </PopoverContent>

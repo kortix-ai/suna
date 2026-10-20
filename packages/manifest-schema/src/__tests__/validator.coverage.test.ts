@@ -408,6 +408,20 @@ describe('validateManifest — trigger edge cases', () => {
     }
   });
 
+  // KRTX-1721: `overlap` is skip or allow, on any trigger type.
+  test('overlap takes skip or allow; anything else is rejected, naming the field', () => {
+    for (const value of ['"skip"', '"allow"']) {
+      const paths = errorPaths(`kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.cron}\nprompt = "go"\noverlap = ${value}`);
+      expect(paths).not.toContain('triggers[0].overlap');
+    }
+    for (const value of ['"queue"', 'true', '1']) {
+      const issue = validateManifest(
+        `kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.cron}\nprompt = "go"\noverlap = ${value}`,
+      ).issues.find((i) => i.path === 'triggers[0].overlap' && i.severity === 'error');
+      expect({ value, message: issue?.message }).toEqual({ value, message: 'overlap must be "skip" or "allow".' });
+    }
+  });
+
   // KRTX-1721: `filter` takes a value (equals) or one operator per path.
   test('a filter with equality and every operator is accepted', () => {
     const paths = errorPaths(
