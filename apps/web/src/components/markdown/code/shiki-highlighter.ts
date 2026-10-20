@@ -140,13 +140,12 @@ function ensureLangLoaded(h: HighlighterCore, lang: string): Promise<void> {
   return p;
 }
 
-// `unbounded` skips the clamp entirely — for a surface whose whole point is
-// showing the real, complete content (e.g. a request/response log), a clipped
-// "preview" masquerading as the highlighted code is worse than plain text.
-function clampCode(code: string, unbounded?: boolean): string {
-  return !unbounded && code.length > SHIKI_MAX_LENGTH
-    ? code.slice(0, SHIKI_MAX_LENGTH) + '\n// ... (truncated for highlighting)'
-    : code;
+// Code over SHIKI_MAX_LENGTH is not highlighted: both entry points return null
+// and the caller renders its plain fallback, so every line stays visible.
+// `unbounded` lifts the limit — for a surface whose whole point is showing the
+// real, complete content (e.g. a request/response log) in colour.
+function tooLong(code: string, unbounded?: boolean): boolean {
+  return !unbounded && code.length > SHIKI_MAX_LENGTH;
 }
 
 // Bounded cache keyed by (lang, theme, rendering mode, content hash). Survives remounts, so a
@@ -186,8 +185,8 @@ function cacheHtml(key: string, html: string) {
   }
 }
 
-function render(h: HighlighterCore, code: string, lang: string, theme: CodeThemeName, unbounded?: boolean) {
-  return h.codeToHtml(clampCode(code, unbounded), {
+function render(h: HighlighterCore, code: string, lang: string, theme: CodeThemeName) {
+  return h.codeToHtml(code, {
     lang: PLAIN_LANGS.has(lang) ? 'text' : lang,
     theme,
     transformers: shikiTransformers,
@@ -200,6 +199,7 @@ export function highlightSync(
   theme: CodeThemeName,
   opts?: { unbounded?: boolean },
 ): string | null {
+  if (tooLong(code, opts?.unbounded)) return null;
   const lang = normalizeLanguage(language);
   const key = shikiKey(code, lang, theme, opts?.unbounded);
   const cached = shikiCache.get(key);
@@ -211,7 +211,7 @@ export function highlightSync(
   }
   if (!PLAIN_LANGS.has(lang) && !loadedLangs.has(lang)) return null;
   try {
-    const html = render(highlighterReady, code, lang, theme, opts?.unbounded);
+    const html = render(highlighterReady, code, lang, theme);
     cacheHtml(key, html);
     return html;
   } catch {
@@ -225,6 +225,7 @@ export function highlightAsync(
   theme: CodeThemeName,
   opts?: { unbounded?: boolean },
 ): Promise<string | null> {
+  if (tooLong(code, opts?.unbounded)) return Promise.resolve(null);
   const lang = normalizeLanguage(language);
   const key = shikiKey(code, lang, theme, opts?.unbounded);
   const cached = shikiCache.get(key);
@@ -246,7 +247,7 @@ export function highlightAsync(
         );
         return null;
       }
-      return render(h, code, lang, theme, opts?.unbounded);
+      return render(h, code, lang, theme);
     })
     .then((html) => {
       // null = the highlighter or grammar isn't available (yet) — don't
@@ -270,7 +271,7 @@ export const SHIKI_RESET = cn(
   '[&_.line]:m-0 [&_.line]:p-0 [&_.line]:border-none [&_.line]:outline-none [&_.line]:shadow-none',
 );
 
-export { clampCode, shikiKey };
+export { shikiKey };
 export const __testing = {
   shikiCache,
   SHIKI_CACHE_MAX,
