@@ -54,21 +54,26 @@
 import type { ReviewItemsQuery } from '../core/rest/projects-client/review';
 import type { ListProjectSessionsOptions } from '../core/rest/projects-client/sessions';
 
-type SessionListFilters = Pick<ListProjectSessionsOptions, 'parent' | 'startedBy' | 'q' | 'labels' | 'view'>;
+type SessionListFilters = Pick<
+  ListProjectSessionsOptions,
+  'parent' | 'startedBy' | 'q' | 'labels' | 'view' | 'spaceId'
+>;
 
 /** The filter fields that change the server response, or undefined when none is set. */
 function normalizeSessionListFilters(filters?: SessionListFilters) {
   const q = filters?.q?.trim();
   const labels = filters?.labels?.length ? [...filters.labels].sort() : null;
   const view = filters?.view;
-  if (!filters?.parent && !filters?.startedBy && !q && !labels && !view) return undefined;
+  const spaceId = filters?.spaceId;
+  if (!filters?.parent && !filters?.startedBy && !q && !labels && !view && !spaceId) return undefined;
   return {
     parent: filters?.parent ?? null,
     startedBy: filters?.startedBy ?? null,
     q: q ?? null,
-    // Only present when set, so pre-label and pre-view keys stay byte-identical.
+    // Only present when set, so pre-label, pre-view and pre-space keys stay byte-identical.
     ...(labels ? { labels } : {}),
     ...(view ? { view } : {}),
+    ...(spaceId ? { spaceId } : {}),
   };
 }
 
@@ -527,6 +532,8 @@ export const qk = {
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */
     reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
+    /** `listProjectSpaces` — the project's channels and the caller's DMs. */
+    spaces: (id: string) => [...qk.project.scope(id), 'spaces'] as const,
     /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
     sessionReminders: (id: string, sessionId: string) =>
       [...qk.project.reminders(id), 'session', sessionId] as const,

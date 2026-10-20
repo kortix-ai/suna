@@ -67,6 +67,10 @@ export interface ProjectSessionInitiator {
 export interface ProjectSession {
   /** Conversation model from the durable log; creation pin until one is recorded. Absent on older APIs. */
   model?: string | null;
+  /** The space (channel or DM) the session is filed in; null outside every space. Absent on older APIs. */
+  space_id?: string | null;
+  /** The text of the session's first prompt, or null before one is sent. Absent on older APIs. */
+  first_prompt?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;
@@ -240,6 +244,11 @@ export interface PendingSessionPrompt {
 export interface CreateProjectSessionInput {
   /** Authorized platform session whose saved conversation is copied before boot. */
   fork_from_session_id?: string;
+  /**
+   * The space (channel or DM, `listProjectSpaces`) to file the session in. Needs
+   * the project's `project_channels` flag. Omitted with the flag on: `#general`.
+   */
+  space_id?: string;
   base_ref?: string;
   agent_name?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */
@@ -381,6 +390,8 @@ export interface ListProjectSessionsOptions {
    *  deleted, the deleted sessions the caller may restore
    *  (`restoreProjectSession`) inside their window, each with `restore_until`. */
   view?: 'pinned' | 'archived' | 'deleted';
+  /** Only the sessions filed in this space (`ProjectSession.space_id`). Sent as `space_id`. */
+  spaceId?: string;
 }
 
 /** One keyset page of a project's sessions. */
@@ -401,6 +412,7 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   if (q) params.set('q', q);
   for (const label of options?.labels ?? []) params.append('label', label);
   if (options?.view) params.set(options.view, 'only');
+  if (options?.spaceId) params.set('space_id', options.spaceId);
   return params.size > 0 ? `?${params}` : '';
 }
 

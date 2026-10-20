@@ -116,3 +116,17 @@ test('project(id).triggers reaches run history, fire with a payload, and replay 
   ]);
   expect(calls[2]!.body).toEqual({ dry_run: true });
 });
+
+test('project(id).spaces lists, creates, updates and opens a DM', async () => {
+  const spaces = kortix.project('P1').spaces;
+  await spaces.list();
+  await spaces.create({ name: 'Design' });
+  await spaces.update('S1', { name: 'Design team' });
+  await spaces.dm('kortix');
+  expect(calls).toEqual([
+    { method: 'GET', url: 'http://test.local/projects/P1/spaces', body: undefined },
+    { method: 'POST', url: 'http://test.local/projects/P1/spaces', body: { name: 'Design' } },
+    { method: 'PATCH', url: 'http://test.local/projects/P1/spaces/S1', body: { name: 'Design team' } },
+    { method: 'POST', url: 'http://test.local/projects/P1/spaces/dm', body: { agent_name: 'kortix' } },
+  ]);
+});

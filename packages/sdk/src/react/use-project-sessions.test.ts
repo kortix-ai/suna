@@ -216,3 +216,33 @@ describe('useProjectSessions reads past empty pages (KRTX-1727)', () => {
     expect(list.sessions.map((s) => s.session_id)).toEqual(['S-old']);
   });
 });
+
+describe('useProjectSessions spaceId', () => {
+  test('lists one space: sends space_id and caches under the space key', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+    const urls: string[] = [];
+    globalThis.fetch = mock(async (url: unknown) => {
+      urls.push(String(url));
+      return Response.json([{ session_id: 'S1', space_id: 'SPACE-1' }]);
+    }) as unknown as typeof fetch;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let list: ReturnType<typeof useProjectSessions> | undefined;
+    function Probe() {
+      list = useProjectSessions('P1', { parent: 'root', spaceId: 'SPACE-1' });
+      return null;
+    }
+    let root: ReturnType<typeof create> | undefined;
+    await act(async () => {
+      root = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(new URL(urls[0]!).searchParams.get('space_id')).toBe('SPACE-1');
+    expect(list?.sessions.map((s) => s.session_id)).toEqual(['S1']);
+    const key = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', spaceId: 'SPACE-1' });
+    expect(client.getQueryData(key)).toBeDefined();
+    await act(async () => root!.unmount());
+  });
+});

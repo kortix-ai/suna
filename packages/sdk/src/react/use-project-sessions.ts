@@ -84,7 +84,10 @@ export function shouldScanPastEmptySessionPages(
 }
 
 export interface UseProjectSessionsOptions
-  extends Pick<ListProjectSessionsOptions, 'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels' | 'view'> {
+  extends Pick<
+    ListProjectSessionsOptions,
+    'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels' | 'view' | 'spaceId'
+  > {
   enabled?: boolean;
   /** Milliseconds, or false. Evaluated against the sessions loaded SO FAR. */
   refetchInterval?: number | false | ((sessions: ProjectSession[]) => number | false);
@@ -99,9 +102,9 @@ export interface UseProjectSessionsOptions
  */
 export function useProjectSessions(projectId: string, options?: UseProjectSessionsOptions) {
   const scope = options?.scope ?? 'visible';
-  const { parent, startedBy, q, labels, view } = options ?? {};
+  const { parent, startedBy, q, labels, view, spaceId } = options ?? {};
   const query = useInfiniteQuery({
-    queryKey: qk.project.sessionsPaged(projectId, scope, { parent, startedBy, q, labels, view }),
+    queryKey: qk.project.sessionsPaged(projectId, scope, { parent, startedBy, q, labels, view, spaceId }),
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) =>
       listProjectSessionsPage(projectId, {
@@ -113,6 +116,7 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
         q,
         labels,
         view,
+        spaceId,
       }),
     getNextPageParam: projectSessionsPageParam,
     enabled: options?.enabled ?? true,

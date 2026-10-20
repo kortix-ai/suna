@@ -19,6 +19,7 @@ export * from './prompt-attachments';
 export * from './git-history';
 export * from './change-requests';
 export * from './sessions';
+export * from './spaces';
 export * from './session-prompt-actions';
 export * from './triggers';
 export * from './session-sandbox';
