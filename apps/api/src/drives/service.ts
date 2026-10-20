@@ -435,7 +435,7 @@ export interface SkippedDrive {
 
 export interface SessionDriveMounts {
   /** The Platinum create body's `volumes`, keyed by mount path. */
-  volumes: Record<string, { volume: string; read_only?: boolean; subdir?: string }>;
+  volumes: Record<string, { volume: string; read_only?: boolean; subdir?: string; share: 'node' }>;
   mounts: RecordedDriveMount[];
   slots: number;
   skipped: SkippedDrive[];
@@ -654,7 +654,7 @@ export async function sessionVolumeMounts(input: {
   }
   const out: SessionDriveMounts = { volumes: {}, mounts: [], skipped, slots };
   for (const p of plan.mounts) {
-    out.volumes[p.mountPath] = { volume, ...(p.readOnly ? { read_only: true } : {}), subdir: p.path };
+    out.volumes[p.mountPath] = { volume, ...(p.readOnly ? { read_only: true } : {}), subdir: p.path, share: 'node' };
     out.mounts.push(toRecorded(plan.drive, p));
   }
   return out;

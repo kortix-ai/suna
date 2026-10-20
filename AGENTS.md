@@ -757,8 +757,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 | Surface | Read before changing UI | Implemented source |
 |---|---|---|
-| Web (`apps/web`) | `.agents/skills/kortix-brand/SKILL.md` (the router: values, voice, claims, decision history), then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens (generated from `.agents/skills/kortix-brand/references/visual/visual-system.json`), `packages/ui/src/components/ui/` (`@kortix/ui`; `apps/web/src/components/ui/<name>.tsx` is a one-line re-export shim, never edit it), the live `/design-system` route |
-| `@kortix/ui` hosts (Kortix Apps, `apps/whitelabel-demo`, SDK customer apps) | `packages/ui/skills/kortix-ui/SKILL.md` (setup, which component, white-label theming, the `SessionThread` chat), then the web row for Kortix-owned surfaces | `packages/ui/src/` (components, `chat/`, `styles/tokens.css` + `theme.css`, prebuilt `dist/styles.css`); white-label = CSS variable overrides, never a forked component |
+| Web (`apps/web`) | `.agents/skills/kortix-brand/SKILL.md` (the router: values, voice, claims, decision history), then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens (generated from `.agents/skills/kortix-brand/references/visual/visual-system.json`), `packages/ui/src/primitives/` (apps/web imports each one as `@kortix/ui/<name>`; apps/web has no re-export shims, `tests/unit/web-no-ui-shims.test.ts` enforces it), the live `/design-system` route |
+| `@kortix/ui` hosts (Kortix Apps, `apps/whitelabel-demo`, SDK customer apps) | `packages/ui/skills/kortix-ui/SKILL.md` (setup, which component, white-label theming, the `SessionThread` chat), then the web row for Kortix-owned surfaces | `packages/ui/src/` (components, `session/` for the `SessionThread` chat, `styles/tokens.css` + `theme.css`, prebuilt `dist/styles.css`); white-label = CSS variable overrides, never a forked component |
 | Desktop (Electron shell) | The web row — the shell renders `apps/web` — plus `apps/desktop-electron/README.md` for the shell boundary, then the parity gate below | `apps/web` rendered by the shell; native window geometry in the shell's titlebar classes |
 | Mobile (`apps/mobile`) | `apps/mobile/design.md` for screens, `apps/mobile/AGENTS.md` for primitives | `apps/mobile/global.css` colors, `apps/mobile/components/ui/`; stock Tailwind spacing for touch targets |
 
@@ -798,12 +798,12 @@ gate, not polish:
   then run `scripts/generate-tokens.ts`. Never edit a generated region of
   `globals.css` by hand.
 - Read `.agents/skills/kortix-design-system/SKILL.md` next and compose existing
-  primitives from `@/components/ui/*` before inventing local chrome.
+  primitives from `@kortix/ui/*` before inventing local chrome.
 - Match the current Jay Suthar / Kortix product aesthetic: calm neutral surfaces,
   dense-but-legible UI, black/white plus one earned accent, token-driven spacing,
   and no decorative color, glow, or one-off rounded boxes.
 - Use recent product surfaces as references before editing: `/design-system`,
-  `apps/web/src/features/workspace/project-layout/project-home.tsx`,
+  `packages/ui/src/workspace/layout/project-home.tsx`,
   `apps/web/src/components/ui/wallpaper-background.tsx`, and the account/IAM
   screens called out by the design-system skill.
 - Verify visual work in the browser and include the exact lint/typecheck commands

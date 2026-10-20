@@ -29,7 +29,7 @@
  *   4. Another hand-written copy in that package's projects.test.ts
  *   5. An entry below, DECLARING its enforcement mode
  *   6. One `useFeatureFlag` call + one map entry in
- *      apps/web/src/lib/use-project-feature-flags.ts (and move the trailing
+ *      packages/ui/src/internal/lib/use-project-feature-flags.ts (and move the trailing
  *      `isLoading:` to the newly-last hook)
  *
  * Then gate its routes with `requireFeatureFlag` (enforcement: 'routes'), or
@@ -236,8 +236,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
     stability: 'beta',
     available: () => true,
-    // Per-project opt-in while the surface settles.
-    platformDefault: () => false,
+    // On by default (2026-10-19): goals wake on a heartbeat reminder (kortix-goals).
+    platformDefault: () => true,
     // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
     // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
     enforcement: 'routes',
@@ -384,6 +384,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
+    // Explicit opt-in. A project with `goals` needs it on.
     platformDefault: () => false,
     enforcement: 'behavioral',
     enforcementNote:
@@ -410,6 +411,21 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(drives/routes.ts). Reads by drive id stay open, so a file a session already ' +
       'wrote under /drives still opens. BEHAVIORAL: session provisioning mounts no ' +
       'folder when off (drives/service.ts sessionVolumeMounts).',
+  },
+  {
+    key: 'goals',
+    name: 'Goals',
+    description:
+      'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on.',
+    stability: 'experimental',
+    // A goal keeps its state in Files, and every drive is a Platinum volume.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    enforcement: 'ui-only',
+    enforcementNote:
+      'CLI only: `kortix goals new` refuses to create a goal while it is off (apps/cli/src/commands/goals.ts). ' +
+      'The server parts goals use (reminders, unattended question release, reminder successors) are generic ' +
+      'and stay on for every project; a goal that already exists keeps running when the flag is turned off.',
   },
   {
     key: 'session_log',

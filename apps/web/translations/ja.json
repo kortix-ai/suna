@@ -9010,7 +9010,7 @@
     "autoAppPublicMarketingDesignSystemPageJsxTextModalBody7732d54c": "モーダル本文のコンテンツがここに入ります。",
     "autoAppPublicMarketingDesignSystemPageJsxTextEphemeralNotifications64698ef7": "非同期の結果とフィードバックに関する一時的な通知。使用",
     "autoAppPublicMarketingDesignSystemPageJsxTextAndd93e251a": "、そして",
-    "autoAppPublicMarketingDesignSystemPageJsxTextComponentsUi3eb49cdd": "@/components/ui/toast",
+    "autoAppPublicMarketingDesignSystemPageJsxTextComponentsUi3eb49cdd": "@kortix/ui/toast",
     "autoAppPublicMarketingDesignSystemPageJsxTextNotRaw7f6d0bf8": "— 生のソナーコールではありません。",
     "autoAppPublicMarketingDesignSystemPageJsxTextLoadingSuccessde0ea42f": "読み込み→成功",
     "autoAppPublicMarketingDesignSystemPageJsxTextLoadingErrorda06eee7": "読み込み中 → エラー",
@@ -14031,7 +14031,7 @@
       "text76aee83bb47b": "ライブセッションの状態",
       "text76afda83081b": "グループはEnterprise機能です",
       "text76b6a1f12306": "API / SDK",
-      "text76bb44782d37": "@phosphor-icons/reactのみを使用します。アプリ全体のウェイトはsrc/lib/icons/icon-config.tsの1行で設定され、IconProviderによって適用されます。status/solidアイコンは明示的なweight=\"fill\"で対象外になります。このプレビュー切り替えはページ単位です。",
+      "text76bb44782d37": "@phosphor-icons/reactのみを使用します。アプリ全体のウェイトはpackages/ui/src/lib/icon-config.tsの1行で設定され、IconProviderによって適用されます。status/solidアイコンは明示的なweight=\"fill\"で対象外になります。このプレビュー切り替えはページ単位です。",
       "text76bf191d6426": "削除できませんでした",
       "text76c02b7eddca": "スキルを検索",
       "text76c5699eadb4": "- 投稿前の承認ゲートで一旦停止する",
@@ -19774,6 +19774,7 @@
       "text73112526c03a": "エージェントのターンが失敗しました。理由は報告されていません。",
       "text0e5f7f6732e0": "会話をフォーク",
       "text32ad3abe4479": "会話のフォークに失敗しました",
+      "text95de71e25038": "会話をフォークしました",
       "text85b7a59cdbd5": "プラットフォームエージェント",
       "textd9c0c74b514b": "Meta は作業を統括するプラットフォームエージェントです。設定は固定されています。Meta とのセッションは開始できますが、ここでは設定できません。",
       "text6c4af31cd4ab": "このデバイスではサインアウトしましたが、サーバーがサインアウトを確認できませんでした。",
@@ -21488,14 +21489,14 @@
     "teamFolders": "Team folders",
     "adminSection": "Admin",
     "newTeamFolder": "New team folder",
-    "audienceQuestion": "Who can open it?",
+    "audienceQuestion": "誰が開けますか？",
     "badgeEveryone": "Everyone",
     "badgePeople": "{count, plural, one {# person} other {# people}}",
-    "privateNote": "Your files stay private, even from admins. Share a folder to give someone access.",
-    "noTeamFolders": "No team folders yet.",
+    "privateNote": "マイファイルを開けるのはあなただけです。管理者も開けません。フォルダーを共有すると、他のユーザーにアクセス権を付与できます。",
+    "noTeamFolders": "チームフォルダーはまだありません。",
     "sessionFilesName": "Files",
-    "sessionFilesHint": "Folders it can open",
-    "sessionFilesDescription": "The Drive folders this session mounts, and where the agent sees them. Share a folder in Drive to add it; stop sharing to take it away.",
+    "sessionFilesHint": "開けるフォルダー",
+    "sessionFilesDescription": "このセッションがマウントするドライブのフォルダーと、エージェントから見える場所です。追加するにはドライブでフォルダーを共有し、外すには共有を停止します。",
     "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
     "driveLabel": "Drive"
@@ -22038,5 +22039,9 @@
   "triggerAutoPause": {
     "title": "実行上限に達したため自動で一時停止しました",
     "description": "1 時間あたりの実行上限で 2 時間連続して実行されたため、実行の開始を停止しました。何が起動し続けているかを確認してから再開してください。"
+  },
+  "featureGate": {
+    "enable": "{name}を有効にする",
+    "enabling": "有効化中…"
   }
 }

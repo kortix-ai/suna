@@ -38,6 +38,8 @@ export {
   gatewayRequestLogs,
   gatewayApiKeys,
   gatewayBudgets,
+  gatewaySpendDaily,
+  gatewaySpendPendingDays,
   gatewayOtelConfigs,
   // Kortix tables
   projects,

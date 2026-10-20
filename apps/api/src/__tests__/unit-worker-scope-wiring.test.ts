@@ -65,6 +65,7 @@ const WORKERS: Record<string, string> = {
   'notification-digest': 'workers/notification-worker.ts',
   'session-log-purge': 'workers/session-log-purge-worker.ts',
   'session-log-backfill': 'workers/session-log-backfill-worker.ts',
+  'gateway-spend-backfill': 'workers/gateway-spend-backfill-worker.ts',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
@@ -115,6 +116,7 @@ const STARTS: Record<string, string> = {
   startNotificationWorker: 'notification-digest',
   startSessionLogPurgeWorker: 'session-log-purge',
   startSessionLogBackfillWorker: 'session-log-backfill',
+  startGatewaySpendBackfillWorker: 'gateway-spend-backfill',
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
   startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
   startSessionLifecycleWorker: 'session-lifecycle',

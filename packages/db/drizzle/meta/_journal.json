@@ -1202,6 +1202,13 @@
     {
       "idx": 171,
       "version": "7",
+      "when": 1792499131052,
+      "tag": "20261020122531_gateway_spend_daily",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
       "when": 1792503112423,
       "tag": "20261020133152_cli_device_grants",
       "breakpoints": true

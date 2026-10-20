@@ -2,6 +2,7 @@
 
 import { BRAND, resolveApiUrl } from '@/config/brand';
 import { configureKortix, createKortix } from '@kortix/sdk';
+import { setUiRoutes } from '@kortix/ui';
 import { getSessionToken } from './session';
 
 /**
@@ -34,6 +35,18 @@ export function clearApiKey(): void {
  * below can safely re-point the same `kortix` object at the wrapper proxy
  * later — no consumer needs to re-import or re-create anything.
  */
+// The pages Lumen serves: the project home, the session list and a session
+// (the @kortix/ui defaults). @kortix/ui hides every link to the pages it does not
+// serve: files, drive, apps, members, sandbox settings and the capability pages.
+setUiRoutes({
+  files: () => null,
+  drive: () => null,
+  apps: () => null,
+  members: () => null,
+  sandboxSettings: () => null,
+  customize: () => null,
+});
+
 export const kortix = createKortix({
   backendUrl: BRAND.apiUrl,
   getToken: async () => getApiKey(),

@@ -1,6 +1,6 @@
 {
   "id": "f04c1b5b-14fc-4d4a-8de2-ab00b262a836",
-  "prevId": "1b70322d-6086-4c20-b401-570717e305b5",
+  "prevId": "6e8eb084-392c-4369-bf82-a7399bc79e0c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -27543,6 +27543,101 @@
           ]
         }
       },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.gateway_spend_daily": {
+      "name": "gateway_spend_daily",
+      "schema": "kortix",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requests": {
+          "name": "requests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_cost": {
+          "name": "total_cost",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "tokens": {
+          "name": "tokens",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "gateway_spend_daily_project_id_projects_project_id_fk": {
+          "name": "gateway_spend_daily_project_id_projects_project_id_fk",
+          "tableFrom": "gateway_spend_daily",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "gateway_spend_daily_project_id_day_actor_user_id_pk": {
+          "name": "gateway_spend_daily_project_id_day_actor_user_id_pk",
+          "columns": [
+            "project_id",
+            "day",
+            "actor_user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.gateway_spend_pending_days": {
+      "name": "gateway_spend_pending_days",
+      "schema": "kortix",
+      "columns": {
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": true,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

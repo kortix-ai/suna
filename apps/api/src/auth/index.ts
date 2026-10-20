@@ -19,7 +19,6 @@ import type { AppEnv } from '../types';
 import { auditLogout } from '../middleware/auth-audit';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { gotrue } from './gotrue';
-import { forgetJwtLiveness } from '../shared/jwt-liveness';
 import { readJsonObject } from '../shared/http-body';
 import { bearerToken } from '../shared/bearer-token';
 
@@ -67,14 +66,13 @@ authRouter.openapi(
   // typically have one account context per session, but multi-tenant
   // dashboards can hit several — the safe move is to revoke them all
   // on explicit logout.
-  // GoTrue revocation prevents refresh; this replica also drops its cached
-  // liveness verdict. Other replicas re-ask within the configured TTL.
+  // GoTrue deletes the auth.sessions row, so the next request with this
+  // bearer is refused on every replica (shared/jwt-liveness.ts).
   const logoutBearer = c.req.header('Authorization')?.replace(/^Bearer\s+/, '');
   if (logoutBearer && c.get('authType') === 'supabase') {
     const result = await gotrue('/logout', { method: 'POST', bearer: logoutBearer, body: {}, query: { scope: 'local' } });
     if (!result.ok) return c.json({ error: 'auth_unavailable', error_description: 'Session revocation failed' }, 503);
   }
-  if (logoutBearer) forgetJwtLiveness(logoutBearer);
   let revokedCount = 0;
   if (sessionId) {
     const rows = await db
@@ -313,7 +311,6 @@ authRouter.openapi(
       // Best effort: the local revoke below is what the Kortix gate reads.
       await gotrue('/logout', { method: 'POST', bearer: token, body: {}, query: { scope } });
     }
-    if (token) forgetJwtLiveness(token);
     const userId = c.get('userId') as string;
     const sessionId = (c as unknown as { get(k: string): unknown }).get('sessionId') as string | undefined;
     const accountId = ((c as unknown as { get(k: string): unknown }).get('accountId') as string | undefined) ?? null;

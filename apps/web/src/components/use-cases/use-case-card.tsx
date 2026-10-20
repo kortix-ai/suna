@@ -3,11 +3,11 @@
 import Image from 'next/image';
 import Link from 'next/link';
 
-import { InlineMeta } from '@/components/ui/inline-meta';
-import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
+import { InlineMeta } from '@kortix/ui/inline-meta';
+import { KortixAsterisk } from '@kortix/ui/kortix-asterisk';
 import { useTranslations } from '@/i18n/use-translations';
 import { formatPostDate, type Post } from '@/lib/blog';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { USE_CASE_COVERS } from './covers';
 
 /**

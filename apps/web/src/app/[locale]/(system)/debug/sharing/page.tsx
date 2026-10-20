@@ -9,7 +9,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
+import { SharingPicker, type SharingSelection } from '@kortix/ui/access/sharing-picker';
 import type { ProjectAccessResponse } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 

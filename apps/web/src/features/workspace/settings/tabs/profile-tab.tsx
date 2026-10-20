@@ -15,7 +15,7 @@ import { removeProfileAvatar } from './profile-avatar';
  * opens on its heading and a hairline rule, then rows: label on the left, its
  * control on the right, consecutive rows sharing ONE bordered box separated by
  * hairlines — `SettingsRowGroup` / `SettingsRow`
- * (`components/ui/settings-row.tsx`, whose header explains the rationale).
+ * (`packages/ui/src/primitives/settings-row.tsx`, whose header explains the rationale).
  * Sections between groups are a plain small label, not a card header. Three
  * consequences worth naming, because each replaced something that used to be
  * here:
@@ -59,14 +59,14 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Avatar, AvatarFallback, AvatarImage } from '@kortix/ui/avatar';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Input } from '@kortix/ui/input';
+import { KortixLoader } from '@kortix/ui/kortix-loader';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -74,11 +74,11 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/modal';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import {
   useAccountDeletionStatus,
   useCancelAccountDeletion,
@@ -86,8 +86,8 @@ import {
   useRequestAccountDeletion,
 } from '@/hooks/account/use-account-deletion';
 import { createClient } from '@/lib/supabase/client';
-import { cn } from '@/lib/utils';
-import { SettingsTabHeader } from '../settings-tab-header';
+import { cn } from '@kortix/ui';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 import {
   type AccountMembership,
   type AccountMembershipsCopy,

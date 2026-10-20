@@ -9010,7 +9010,7 @@
     "autoAppPublicMarketingDesignSystemPageJsxTextModalBody7732d54c": "模态正文内容位于此处。",
     "autoAppPublicMarketingDesignSystemPageJsxTextEphemeralNotifications64698ef7": "异步结果和反馈的临时通知。使用",
     "autoAppPublicMarketingDesignSystemPageJsxTextAndd93e251a": ", 和",
-    "autoAppPublicMarketingDesignSystemPageJsxTextComponentsUi3eb49cdd": "@/components/ui/toast",
+    "autoAppPublicMarketingDesignSystemPageJsxTextComponentsUi3eb49cdd": "@kortix/ui/toast",
     "autoAppPublicMarketingDesignSystemPageJsxTextNotRaw7f6d0bf8": "— 不是原始的sonner 电话。",
     "autoAppPublicMarketingDesignSystemPageJsxTextLoadingSuccessde0ea42f": "加载→成功",
     "autoAppPublicMarketingDesignSystemPageJsxTextLoadingErrorda06eee7": "正在加载 → 错误",
@@ -14031,7 +14031,7 @@
       "text76aee83bb47b": "实时会话状态",
       "text76afda83081b": "群组是 Enterprise 功能",
       "text76b6a1f12306": "API / SDK",
-      "text76bb44782d37": "仅使用 @phosphor-icons/react。全应用的字重在 src/lib/icons/icon-config.ts 中统一设置，并由 IconProvider 应用；状态图标/实心图标通过显式的 weight=\"fill\" 排除在外。此预览开关仅限当前页面。",
+      "text76bb44782d37": "仅使用 @phosphor-icons/react。全应用的字重在 packages/ui/src/lib/icon-config.ts 中统一设置，并由 IconProvider 应用；状态图标/实心图标通过显式的 weight=\"fill\" 排除在外。此预览开关仅限当前页面。",
       "text76bf191d6426": "无法删除",
       "text76c02b7eddca": "搜索技能",
       "text76c5699eadb4": "- 发布任何内容前在审批关卡暂停",
@@ -19774,6 +19774,7 @@
       "text73112526c03a": "智能体这一轮运行失败，未报告原因。",
       "text0e5f7f6732e0": "分叉对话",
       "text32ad3abe4479": "分叉对话失败",
+      "text95de71e25038": "对话已分叉",
       "text85b7a59cdbd5": "平台智能体",
       "textd9c0c74b514b": "Meta 是协调你工作的平台智能体。它的设置是固定的：你可以与它开始会话，但无法在这里配置它。",
       "text6c4af31cd4ab": "已在此设备上退出登录，但服务器未能确认退出操作。",
@@ -21488,14 +21489,14 @@
     "teamFolders": "Team folders",
     "adminSection": "Admin",
     "newTeamFolder": "New team folder",
-    "audienceQuestion": "Who can open it?",
+    "audienceQuestion": "谁可以打开它？",
     "badgeEveryone": "Everyone",
     "badgePeople": "{count, plural, one {# person} other {# people}}",
-    "privateNote": "Your files stay private, even from admins. Share a folder to give someone access.",
-    "noTeamFolders": "No team folders yet.",
+    "privateNote": "只有你可以打开“我的文件”，管理员也不行。共享文件夹即可让他人访问。",
+    "noTeamFolders": "还没有团队文件夹。",
     "sessionFilesName": "Files",
-    "sessionFilesHint": "Folders it can open",
-    "sessionFilesDescription": "The Drive folders this session mounts, and where the agent sees them. Share a folder in Drive to add it; stop sharing to take it away.",
+    "sessionFilesHint": "可打开的文件夹",
+    "sessionFilesDescription": "此会话挂载的云盘文件夹，以及智能体看到它们的位置。在云盘中共享文件夹即可添加；停止共享即可移除。",
     "readWrite": "Read & write",
     "folderHint": "A folder inside {name}",
     "driveLabel": "Drive"
@@ -22038,5 +22039,9 @@
   "triggerAutoPause": {
     "title": "已在运行上限处自动暂停",
     "description": "它连续 2 小时达到每小时运行上限，因此已停止启动运行。找出持续触发它的原因，然后恢复它。"
+  },
+  "featureGate": {
+    "enable": "启用{name}",
+    "enabling": "正在启用…"
   }
 }
