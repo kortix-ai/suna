@@ -71,6 +71,13 @@ describe('ProviderConnectView — two groups, rows open the sheet', () => {
     expect(out).toContain('API key · 14 models');
   });
 
+  test('Free managed models never claim included or paid-from-credits access', () => {
+    const out = render({ inUse: [], available: [{ ...KORTIX, modelCount: 0, status: 'none' }] });
+    expect(out).not.toContain('Paid from credits');
+    expect(out).not.toContain('aria-label="Included"');
+    expect(out).toContain('connect your own provider');
+  });
+
   test('a connected two-way provider says how it is connected, not how it could be', () => {
     const openai = row({ id: 'openai', label: 'OpenAI', method: 'signInOrKey', status: 'connected', modelCount: 53 });
     expect(render({ inUse: [{ ...openai, via: 'signIn' }] })).toContain('ChatGPT Plus or Pro plan · 53 models');

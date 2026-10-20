@@ -46,7 +46,6 @@ import {
 import { eq } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
@@ -324,7 +323,6 @@ export function registerAgentConfigRoutes(): void {
       const harness = selectSessionHarness({
         piHarnessFlag: resolveFeatureFlag(loaded.row.metadata, 'pi_harness'),
         runtime: manifestRuntime(manifest.raw),
-        llmGateway: projectLlmGatewayEnabled(loaded.row.metadata),
       });
 
       return c.json({

@@ -170,11 +170,9 @@ flow(
       if (!managed || managed.can_use !== false) throw new Error('owner could not see ungranted resource metadata');
       (await owner.del(`${resourcePath}/:secretId`, { params: { ...resourceParams, secretId: id } })).status(200);
     });
-    await ctx.step('enable gateway and pool flags; select two keys', async () => {
-      for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-        (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
-          { params: { projectId: project.id } })).status(200);
-      }
+    await ctx.step('enable the pool flag; select two keys', async () => {
+      (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true },
+        { params: { projectId: project.id } })).status(200);
       const selected = await owner.put(poolPath, { secret_ids: ids }, { params: poolParams });
       if (selected.statusCode !== 200) throw new Error(`pool selection returned ${selected.statusCode}: ${selected.text()}`);
       selected.body().has('$.configured', true).has('$.secret_ids', ids);
@@ -428,10 +426,8 @@ flow('SEC-POOL-4', {
   await ctx.step('flag off rejects a project-scoped credential', async () => {
     (await owner.post(path, input, { params })).status(403);
   });
-  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
-      { params: { projectId: project.id } })).status(200);
-  }
+  (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true },
+    { params: { projectId: project.id } })).status(200);
   let secretId = '';
   await ctx.step('new key defaults to everyone in the project', async () => {
     const created = await owner.post(path, input, { params });
@@ -444,10 +440,8 @@ flow('SEC-POOL-4', {
     const other = await owner.get(`${path}?project_id=${otherProject.id}`, { params });
     other.status(200);
     if ((other.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId)) throw new Error('key leaked into another project');
-    for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-      (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true },
-        { params: { projectId: otherProject.id } })).status(200);
-    }
+    (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true },
+      { params: { projectId: otherProject.id } })).status(200);
     (await owner.post('/v1/projects/:projectId/sessions', {
       agent_name: 'kortix', provider_secret_pools: { anthropic: [secretId] },
     }, { params: { projectId: otherProject.id } })).status(403)
@@ -523,9 +517,7 @@ flow('SEC-POOL-5', {
     (await asMember.post(startPath, { resource_label: 'ChatGPT · Member', sharing: { mode: 'private', ownerId: member.userId } },
       { params: startParams })).status(403);
   });
-  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: project.id } })).status(200);
-  }
+  (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true }, { params: { projectId: project.id } })).status(200);
 
   await ctx.step('a member cannot share a ChatGPT account with the project or another member', async () => {
     (await asMember.post(startPath, { resource_label: 'Team ChatGPT', sharing: { mode: 'project' } }, { params: startParams }))
@@ -621,9 +613,7 @@ flow('SEC-POOL-6', {
   await team.grantProjectRole(project.id, member.userId!, 'user');
   const owner = ctx.client.as(ctx.P.OWNER);
   const asMember = ctx.client.as(member);
-  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: project.id } })).status(200);
-  }
+  (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true }, { params: { projectId: project.id } })).status(200);
   const sessionId = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: member.userId! });
   const minted = await asMember.post('/v1/accounts/tokens', { name: 'ChatGPT reconnection', account_id: team.id });
   minted.status(201);
@@ -738,9 +728,7 @@ flow('SEC-POOL-3', {
   const owner = ctx.client.as(ctx.P.OWNER);
   const first = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
   const sibling = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
-  for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-    (await owner.patch('/v1/projects/:projectId/features', { feature, enabled: true }, { params: { projectId: project.id } })).status(200);
-  }
+  (await owner.patch('/v1/projects/:projectId/features', { feature: 'pooled_provider_secrets', enabled: true }, { params: { projectId: project.id } })).status(200);
   const minted = await owner.post('/v1/accounts/tokens', { name: 'Pool session isolation', account_id: team.id });
   minted.status(201);
   const credential = minted.json<{ token_id: string; secret_key: string }>();
