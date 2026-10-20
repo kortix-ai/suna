@@ -14,7 +14,7 @@ import { notFound, usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,21 +22,21 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import Hint from '@/components/ui/hint';
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
+} from '@kortix/ui/dropdown-menu';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import Hint from '@kortix/ui/hint';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
+import Loading from '@kortix/ui/loading';
+import { errorToast } from '@kortix/ui/toast';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
 import { ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
-import { hubTarget } from '@/stores/account-panel-store';
+import { cn } from '@kortix/ui';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 
 import {
   CAPTURE_SECTIONS,
@@ -44,7 +44,7 @@ import {
   rememberCaptureAccount,
   sectionOf,
   useCaptureArea,
-} from './use-capture-area';
+} from '@kortix/ui/internal/capture/use-capture-area';
 
 /**
  * The frame of Kortix Capture: its own top bar (wordmark, Devices, the

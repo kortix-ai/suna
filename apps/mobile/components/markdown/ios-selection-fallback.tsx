@@ -22,6 +22,7 @@ import {
   darkMarkdownStyle,
 } from '@/lib/utils/live-markdown-config';
 import { THEME } from '@/lib/utils/theme';
+import { TYPE } from '@/lib/markdown/markdown-layout';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { log } from '@/lib/logger';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
@@ -173,8 +174,8 @@ const drawerStyles = StyleSheet.create({
     fontFamily: 'Roobert-Medium',
   },
   textContent: {
-    fontSize: 16,
-    lineHeight: 26,
+    fontSize: TYPE.body.fontSize,
+    lineHeight: TYPE.body.lineHeight,
     fontFamily: 'Roobert-Regular',
   },
 });

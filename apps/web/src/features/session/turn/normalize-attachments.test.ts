@@ -2,7 +2,7 @@ import { sessionLogOfV1Rows, type SessionLogBlock } from '@kortix/sdk';
 import { sanitizePromptUploadFilename } from '@kortix/shared';
 import { describe, expect, test } from 'bun:test';
 
-import { mergeSentAttachments, normalizeAttachments } from './user-message';
+import { mergeSentAttachments, normalizeAttachments } from '@kortix/ui/session';
 
 // The bug this guards: an upload reaches the transcript as a
 // `<file path mime filename>` TAG in the message text (uploaded-file-refs.ts),

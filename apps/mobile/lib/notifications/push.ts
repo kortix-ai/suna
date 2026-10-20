@@ -121,6 +121,28 @@ export function parsePushData(raw: unknown): PushData | null {
   };
 }
 
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True when the push names a sending backend (`data.origin`, the API's
+ * KORTIX_URL) whose host is not the host of `backendUrl`, the backend this
+ * app is signed in to. Its tap is ignored (KRTX-2938: a local or dev stack
+ * that holds this phone's token). A push with no `origin` is from this
+ * backend: servers before KRTX-2938 send none.
+ */
+export function pushFromOtherBackend(raw: unknown, backendUrl: string): boolean {
+  const origin = raw && typeof raw === 'object' ? (raw as Record<string, unknown>).origin : undefined;
+  if (!nonEmptyString(origin)) return false;
+  const from = hostOf(origin);
+  return from !== null && from !== hostOf(backendUrl);
+}
+
 /**
  * Foreground rule. The app is active and shows that session: no banner and
  * no sound (the live stream's in-app cue already plays). Otherwise: show it.

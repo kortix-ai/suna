@@ -1,10 +1,11 @@
-import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { CAPABILITY_TABS } from '@kortix/ui/internal/lib/capability-tab-routes';
 import { settingsPaletteGroups } from '@/features/workspace/settings-palette-items';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
 import { join, resolve } from 'node:path';
 import { menuRegistry } from './menu-registry';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 /**
  * `requiresFlag` is only a gate if EVERY consumer honours it. Before this, the
@@ -16,7 +17,7 @@ import { menuRegistry } from './menu-registry';
  */
 const root = resolve(import.meta.dir, '..');
 const registrySource = readFileSync(join(root, 'lib/menu-registry.ts'), 'utf8');
-const flagMapSource = readFileSync(join(root, 'lib/use-project-feature-flags.ts'), 'utf8');
+const flagMapSource = readFileSync(uiSourcePath('internal/lib/use-project-feature-flags.ts'), 'utf8');
 const paletteSource = readFileSync(join(root, 'features/workspace/command-palette.tsx'), 'utf8');
 
 describe('menu registry feature-flag gating', () => {

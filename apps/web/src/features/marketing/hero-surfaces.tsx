@@ -1,15 +1,15 @@
 'use client';
 
-import { CopyButton } from '@/components/markdown/copy-button';
+import { CopyButton } from '@kortix/ui/markdown';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
-import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
-import { Slack } from '@/features/icon/icons/slack';
+import { MicrosoftTeams } from '@kortix/ui/internal/icons/microsoft-teams';
+import { Slack } from '@kortix/ui/internal/icons/slack';
 import { SdkSurface, SurfaceLink } from '@/features/marketing/landing/code-panels';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
-import { cn } from '@/lib/utils';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@kortix/ui/internal/lib/kortix-cli';
+import { cn } from '@kortix/ui';
 import {
   CodeSimpleIcon as Code2,
   EnvelopeSimpleIcon as EnvelopeIcon,

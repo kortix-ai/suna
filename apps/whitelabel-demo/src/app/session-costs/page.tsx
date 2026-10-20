@@ -61,7 +61,7 @@ function SessionCostsDashboard() {
       <main className="mx-auto max-w-4xl px-5 py-8">
         <div className="flex items-center gap-2">
           <ReceiptIcon className="size-5 text-muted-foreground" />
-          <h1 className="text-xl font-semibold tracking-tight">Session costs</h1>
+          <h1 className="font-display text-3xl tracking-tight">Session costs</h1>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
           Each row represents one Kortix session. The wrapper applies its configured markup to that

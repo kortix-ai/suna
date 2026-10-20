@@ -1,4 +1,4 @@
-import type { createTranslator } from 'next-intl';
+import type { createTranslator } from '@kortix/ui/i18n';
 
 import type messages from '../../translations/en.json';
 

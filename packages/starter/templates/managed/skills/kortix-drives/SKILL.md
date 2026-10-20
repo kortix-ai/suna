@@ -48,6 +48,29 @@ one version stays at the path and the other is saved beside it as
   `app (conflict ...).db`.
 </conflicts>
 
+<commands>
+`kortix drive` reaches all of Files over the API, as the user who started this
+session and with their folder access, including folders not mounted here.
+Paths are Files paths (`/Company/plan.md`), not `/drives` paths.
+
+| Command | What it does |
+| --- | --- |
+| `kortix drive ls [<path>]` | List a folder (default: the top of Files) |
+| `kortix drive cat <path>` | Print a file |
+| `kortix drive put <local> <path>` | Upload a local file |
+| `kortix drive mkdir <path>` | Create a folder |
+| `kortix drive mv <from> <to>` | Move or rename |
+| `kortix drive rm <path> [-r]` | Delete a file, or a folder with `-r` |
+| `kortix drive access <path>` | Who has access to a folder, with grant ids |
+| `kortix drive share <path> (--everyone \| --user <email> \| --agent <name>) [--write]` | Share a folder (read, or write) |
+| `kortix drive unshare <path> <grantId>` | Stop one share |
+
+- Every command takes `--json`.
+- `kortix drive` works only in the user's own private session. In a shared,
+  chat or scheduled session it answers 403: use the folders mounted in the
+  session, or ask the user to make the change in Files.
+</commands>
+
 <limits>
 - A file written here is visible elsewhere within seconds, not instantly.
   Avoid two sessions editing one file at once.

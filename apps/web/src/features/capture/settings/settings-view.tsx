@@ -12,28 +12,28 @@ import {
 import { useCapturePolicy, useSetCapturePolicy } from '@kortix/sdk/react';
 import { useId, useState, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Field, FieldDescription } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Button } from '@kortix/ui/button';
+import { Field, FieldDescription } from '@kortix/ui/field';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
+import { Textarea } from '@kortix/ui/textarea';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { ErrorState } from '@kortix/ui/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { relativeTime } from '@/lib/relative-time';
-import { useCaptureArea } from '../area/use-capture-area';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
+import { useCaptureArea } from '@kortix/ui/internal/capture/use-capture-area';
 import { ExclusionsEditor, IncludedEditor } from './exclusions-editor';
 import { applyToPrivacy, fromPolicy, includedView } from './exclusions-model';
 

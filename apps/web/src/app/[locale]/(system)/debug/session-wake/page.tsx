@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { SessionConnectingBanner, SessionStartingLoader } from '@/features/session/session-starting-loader';
+import { SessionConnectingBanner, SessionStartingLoader } from '@kortix/ui/session';
 
 /**
  * /debug/session-wake

@@ -112,6 +112,8 @@ export function serializeSession(
   ctx?: {
     /** The grants on this session (for restricted visibility). */
     grants?: SecretGrant[];
+    /** Model selected by the durable conversation log, not the creation pin. */
+    conversationModel?: string | null;
     /** The viewing user, to compute is_owner / can_manage_*. */
     viewerId?: string;
     /** Viewer can manage the project (account owner/admin, or a project manager). */
@@ -177,6 +179,11 @@ export function serializeSession(
   // live, but never a user rename.
   const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.runtimeSessionId);
   return {
+    model: canAccess
+      ? (ctx?.conversationModel ?? (typeof row.metadata?.opencode_model === 'string'
+        ? row.metadata.opencode_model.trim() || null
+        : null))
+      : null,
     session_id: row.sessionId,
     account_id: row.accountId,
     project_id: row.projectId,

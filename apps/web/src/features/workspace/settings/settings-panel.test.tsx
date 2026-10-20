@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { Modal } from '@/components/ui/modal';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { railGroups } from './rail';
-import { DEFAULT_SETTINGS_RAIL_CHROME_COPY } from './rail-copy-context';
+import { Modal } from '@kortix/ui/modal';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
+import { railGroups } from '@kortix/ui/customize/settings/rail';
+import { DEFAULT_SETTINGS_RAIL_CHROME_COPY } from '@kortix/ui/customize/settings/rail-copy-context';
 import {
   ACCOUNT_SCOPED_SETTINGS_TABS,
   SettingsPanelShell,
@@ -15,8 +15,8 @@ import {
   buildSettingsPanelSettingsNav,
   isSettingsTabAllowed,
 } from './settings-panel-body';
-import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS } from './settings-tabs';
-import type { RailItem } from './type';
+import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS } from '@kortix/ui/customize/settings/settings-tabs';
+import type { RailItem } from '@kortix/ui/customize/settings/type';
 
 /**
  * `SettingsPanelShell` is the innermost presentational layer — no hooks, no
@@ -144,7 +144,7 @@ describe('SettingsPanelShell — desktop rail', () => {
       expect(html).toContain('Mirkos Org');
       // `?accountId=acc-1`, not `/accounts/acc-1`: the account hub has no
       // route — it is a modal addressed by a query param on whatever page it
-      // opens over (`stores/account-panel-store.ts`). Rendered with no router
+      // opens over (`packages/ui/src/internal/stores/account-panel-store.ts`). Rendered with no router
       // context, as this shell deliberately is, `HubLink` emits the
       // query-only relative form, which resolves against the current page.
       expect(html).toContain('href="?accountId=acc-1"');

@@ -3,8 +3,8 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
 
-import { UnifiedMarkdown } from '@/components/markdown';
-import Loading from '@/components/ui/loading';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import Loading from '@kortix/ui/loading';
 import { getMarketplaceItemFile } from '@/lib/marketplace-client';
 
 function isMarkdown(path: string): boolean {

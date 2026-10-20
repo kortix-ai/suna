@@ -5,16 +5,16 @@ import { ArrowSquareOutIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useCallback, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { IconInbox } from '@/components/ui/kortix-icons';
+import { Button } from '@kortix/ui/button';
+import { IconInbox } from '@kortix/ui/kortix-icons';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -22,16 +22,16 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { EmptyState } from '@/features/layout/section/empty-state';
+} from '@kortix/ui/table';
+import { EmptyState } from '@kortix/ui/empty-state';
 import {
   useAdminProjects,
   type AdminProjectsSortBy,
   type AdminProjectsSortDir,
 } from '@/hooks/admin/use-admin-projects';
-import { useDebounce } from '@/hooks/use-debounced-value';
-import { relativeTime } from '@/lib/relative-time';
-import { cn } from '@/lib/utils';
+import { useDebounce } from '@kortix/ui/internal/hooks/use-debounced-value';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
+import { cn } from '@kortix/ui';
 
 import { AdminPageShell, AdminRefreshButton } from '../_components/admin-page-shell';
 import { AdminEmptyFrame, AdminTableFrame } from '../_components/admin-panel';
