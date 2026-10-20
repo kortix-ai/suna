@@ -3,22 +3,21 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import { ProjectHome } from '@kortix/ui/workspace';
+import { uiRoutes } from '@kortix/ui';
 import { useAccountState } from '@kortix/ui/internal/billing/index';
-import { useProjectCanRun } from '@kortix/ui/internal/hooks/projects/use-project-can-run';
-import { usePendingSnapshot } from '@/hooks/use-pending-snapshot';
 import {
   billingDialogArgs,
-  billingStateAllowsRun,
   resolveBillingState,
 } from '@kortix/ui/internal/lib/billing/billing-gate-state';
+import { useProjectSendGate } from '@/hooks/projects/use-project-send-gate';
 import { isBillingEnabled } from '@/lib/config';
 import { useComposerPrefillStore } from '@kortix/ui/internal/stores/composer-prefill-store';
 import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, useProjectSpaces } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { promptFromSearchParams } from './prompt-from-search-params';
 
@@ -38,15 +37,21 @@ export default function ProjectIndexPage() {
     ...contract('config'),
   });
   const projectAccountId = projectDetail?.project?.account_id ?? undefined;
-  const { canRun, isLoading: billingLoading } = useProjectCanRun(projectId);
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
+  // The send itself is the package's (`useProjectHomeSend` inside
+  // ProjectHome). This gate runs first and refuses a send the account cannot run.
+  const beforeSend = useProjectSendGate(projectId);
 
-  // The account answer the send path waits on, readable after an await.
-  const billing = usePendingSnapshot(isBillingEnabled() ? billingLoading : false, {
-    accountState,
-    projectAccountId,
-  });
+  // Channels on: home is the default channel. It can be renamed, so it is
+  // found by `is_default`, never by the slug `general`. A `?q=` prompt seeded
+  // below rides along in the prefill store and lands in that channel's composer.
+  const channels = useFeatureFlag(projectId, 'project_channels');
+  const spaces = useProjectSpaces(projectId, { enabled: channels.enabled });
+  const defaultSlug = spaces.data?.find((space) => space.kind === 'channel' && space.is_default)?.slug;
+  useEffect(() => {
+    if (defaultSlug) router.replace(uiRoutes().channel(projectId, defaultSlug));
+  }, [defaultSlug, projectId, router]);
 
   // One-time "you're on Free" onboarding pitch. Keyed off the SAME resolved
   // billing state every other surface uses — the old `tier_key === 'free'`
@@ -86,41 +91,8 @@ export default function ProjectIndexPage() {
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [searchParams, pathname, projectId, router]);
 
-  // The send itself is the package's (`useProjectHomeSend` inside
-  // ProjectHome). This gate runs first and refuses a send the account cannot run.
-  const beforeSend = useCallback(async () => {
-    // WAIT for the account's answer; never refuse over its absence. This
-    // used to `throw new Error('Account access is still loading')`, which
-    // the composer swallows into a draft restore — so an Enter pressed
-    // before `/projects/:id/detail` + `/billing/account-state` landed
-    // dropped the prompt silently and nothing retried. Project home paints
-    // a focusable composer ~1.1s after navigation; on the staging release
-    // gate those two calls still had 4.5s and 5.9s to run at that moment
-    // (run 35242868705). The answer is one round trip away and the user has
-    // already committed, so hold the send instead of losing it.
-    // Bounded: a wedged query must refuse (as it always did) rather than
-    // leave the composer waiting with nothing on screen.
-    if (isBillingEnabled() && !(await billing.settled())) {
-      throw new Error('Account access is still loading');
-    }
-
-    // Read through the snapshot, not this closure: after the await we are
-    // running in a render that predates the answer, where `accountState` is
-    // still undefined — see `usePendingSnapshot`.
-    const { accountState: currentAccountState, projectAccountId: currentProjectAccountId } =
-      billing.current();
-
-    // Gate accounts that cannot run before navigating so we never strand the
-    // user on a shell that cannot provision. Free accounts with the monthly
-    // sandbox grant are allowed through because their state is `active`.
-    const billingState = isBillingEnabled() ? resolveBillingState(currentAccountState) : null;
-    if (isBillingEnabled() && !billingStateAllowsRun(billingState)) {
-      openUpgradeDialog(
-        billingDialogArgs(billingState, currentAccountState, currentProjectAccountId, tI18nComplete),
-      );
-      throw new Error('Account cannot start a session');
-    }
-  }, [billing, openUpgradeDialog, tI18nComplete]);
-
+  // Until the redirect lands, draw nothing: home would flash under it. A
+  // failed channel list, or one with no default channel, keeps today's home.
+  if (channels.enabled && !spaces.isError && (!spaces.data || defaultSlug)) return null;
   return <ProjectHome projectId={projectId} beforeSend={beforeSend} />;
 }

@@ -76,6 +76,7 @@ mock.module('@kortix/sdk/react', () => ({
   }),
   useVisibleAgents: () => [{ name: 'kortix' }, { name: 'meta' }],
   useCreateProjectSpace: () => ({ mutate: () => undefined, isPending: false }),
+  useUpdateProjectSpace: () => ({ mutate: () => undefined, isPending: false }),
 }));
 mock.module('@kortix/ui/internal/hooks/projects/new-session-guard', () => ({
   useIsCreatingProjectSession: () => false,

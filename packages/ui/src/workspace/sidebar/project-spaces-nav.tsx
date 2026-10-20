@@ -1,7 +1,6 @@
 'use client';
 
 import { useProjectSpaces, useVisibleAgents } from '@kortix/sdk/react';
-import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
 import { CaretRightIcon, HashIcon, PlusIcon, RobotIcon } from '@phosphor-icons/react';
 import { useMemo, useState, type ReactNode } from 'react';
 
@@ -20,6 +19,7 @@ import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '../../primitives/sidebar';
 import { useUiPathname } from '../../providers/ui-provider';
 import { CreateChannelDialog } from '../spaces/create-channel-dialog';
+import { agentLabel } from '../spaces/space-timeline';
 
 /** Collapse state lives in the persisted session-filter store, beside the session sections. */
 const CHANNELS_SECTION_ID = 'section:channels';
@@ -85,16 +85,15 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
           </SidebarMenuItem>
         </SpacesSection>
       ) : null}
-      {agents.length > 0 ? (
+      {/* Waits for the channels: drawn first, the agents jumped down when the channels arrived. */}
+      {spaces.data && agents.length > 0 ? (
         <SpacesSection
           title={t('spaces.directMessages')}
           open={!collapsed.has(DMS_SECTION_ID)}
           onToggle={() => toggleSectionCollapsed(projectId, DMS_SECTION_ID)}
         >
           {agents.map((agent) => {
-            const name = isMetaAgentName(agent.name)
-              ? META_AGENT_DISPLAY_NAME
-              : capitalizeWords(agent.name);
+            const name = agentLabel(agent.name);
             const href = uiRoutes().dm(projectId, agent.name);
             return (
               <ProjectNavRow
