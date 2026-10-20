@@ -1,6 +1,6 @@
 'use client';
 
-import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { HoverPrefetchLink } from '@kortix/ui/internal/components/hover-prefetch-link';
 import { Button } from '@/components/ui/marketing/button';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { CodePanel } from '@/features/marketing/company-as-code/code-panel';
@@ -14,7 +14,7 @@ import { FPS } from '@/app/[locale]/presentations/film/engine/time';
 import { launchFilm } from '@/app/[locale]/presentations/film/films/launch';
 import { useTranslations } from '@/i18n/use-translations';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { ArrowRightIcon, ArrowUpRightIcon, GithubLogoIcon } from '@phosphor-icons/react';
 import { useCallback, useRef, useState } from 'react';
 import { hero, kit, pillars, start } from './content';

@@ -40,7 +40,7 @@ import {
 import { isAwsRegion } from './aws-region';
 
 // Bedrock is the one native-transport BYOK provider whose credential is
-// multi-field (see apps/web/src/lib/llm-providers.ts's env-vars-per-provider
+// multi-field (see packages/ui/src/internal/lib/llm-providers.ts's env-vars-per-provider
 // doc comment): AWS_BEARER_TOKEN_BEDROCK (fetched below via `byok.envVar`,
 // same as every other BYOK provider) PLUS the project's own AWS_REGION, which
 // no other BYOK provider needs — every other provider publishes a static

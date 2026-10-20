@@ -9,14 +9,14 @@
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
-import { Skeleton } from '@/components/ui/skeleton';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { DetailPanel, DetailRow, OutcomeTitle } from '@/features/auth/auth-consent';
-import { Rise, StepHeader } from '@/features/auth/auth-primitives';
-import { Github } from '@/features/icon/icons/github';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { SessionDotMatrix } from '@kortix/ui/dot-matrix/session-dot-matrix';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { DetailPanel, DetailRow, OutcomeTitle } from '@kortix/ui/internal/auth/auth-consent';
+import { Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
+import { Github } from '@kortix/ui/internal/icons/github';
 import type { LinkableGitHubInstallation } from '@kortix/sdk';
 
 export type GitHubSetupState =

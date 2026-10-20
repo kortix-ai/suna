@@ -29,11 +29,11 @@ import {
   gatedRuntimeError,
   runtimeErrorPresentation,
   sessionErrorSurfaceReady,
-} from './session-load-state';
+} from '@kortix/ui/session/status/session-load-state';
 import {
   canRenderCachedTranscriptWhileSandboxDown,
   type StoppedSandboxCacheState,
-} from './session-terminal-state';
+} from '@kortix/ui/session/status/session-terminal-state';
 
 /** The literal shape a benign wake-race 503 arrives in — same fixture the SDK's own `derivePhase` tests use. */
 const WAKE_RACE_503 = { status: 503, body: { error: 'sandbox not ready (status: stopped)' } };

@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -17,8 +17,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/dialog';
+import Loading from '@kortix/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { OPENCODE_VERSION } from '@kortix/shared';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
 import { config } from '../config';
+import { logger } from '../lib/logger';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
 import { recentlyBuiltStrict } from './builder-log';
 import type { EnsureSandboxImageResult, SnapshotBuildSource, SandboxImageSpec } from './builder';
@@ -117,6 +118,14 @@ async function reapSupersededEnvironmentRuntimeSnapshots(
   keepName: string,
   recentLookup: (names: string[], withinMs: number) => Promise<Set<string>>,
 ): Promise<void> {
+  // A local stack shares dev's namespace and provider organisation, and its
+  // protection lookup reads a database that has never seen dev's builds: its
+  // reap would delete the image deployed dev boots from (KRTX-2546). Deployed
+  // dev's own reap tidies the images local stacks leave behind.
+  if (config.KORTIX_LOCAL_DEV) {
+    logger.info(`[snapshots] ${logLabel}: reap skipped: a local stack never deletes shared images`);
+    return;
+  }
   try {
     const mine = `${snapshotPrefix}-${config.INTERNAL_KORTIX_ENV}-`;
     const candidates = (await provider.listSnapshots())

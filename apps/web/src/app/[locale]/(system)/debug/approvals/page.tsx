@@ -1,8 +1,8 @@
 'use client';
 
-import { Composer } from '@/features/session/composer/composer';
-import { SessionApprovalNotice } from '@/features/session/session-approval-prompt';
-import { approvalNoticeRows, type DecidedApproval } from '@/features/session/session-approval-review';
+import { Composer } from '@kortix/ui/composer';
+import { SessionApprovalNotice } from '@kortix/ui/session';
+import { approvalNoticeRows, type DecidedApproval } from '@kortix/ui/session/prompts/session-approval-review';
 import { SESSION_NOTICE, type SessionAuditAction } from '@kortix/sdk';
 import { useState } from 'react';
 

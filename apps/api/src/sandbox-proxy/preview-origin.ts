@@ -121,7 +121,7 @@ export function isPreviewHost(req: Request, url: URL): boolean {
 }
 
 /** Query parameters that carry a one-shot credential, never forwarded upstream. */
-const CREDENTIAL_PARAMS = ['token', 'public_share'] as const;
+const CREDENTIAL_PARAMS = ['token', 'public_share', 'preview_ticket'] as const;
 
 function jsonError(status: number, message: string, origin: string): Response {
   return new Response(JSON.stringify({ error: message }), {
@@ -418,8 +418,9 @@ export async function handlePreviewOriginRequest(
   // there, which is what keeps the local iframe preview working.
   const secure = proto === 'https' || target.local;
 
-  let session = sessionFromCookies(req, target);
-  let setCookies: string[] = [];
+  const ticketSession = verifyPreviewSession(url.searchParams.get('preview_ticket'), target, 'ticket');
+  let session = ticketSession || sessionFromCookies(req, target);
+  let setCookies: string[] = ticketSession ? cookiesForSession(ticketSession, secure) : [];
 
   if (!session) {
     const established = await establishPreviewSession(req, url, target);

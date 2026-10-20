@@ -1,9 +1,9 @@
 'use client';
 
 import { Reveal } from '@/components/home/reveal';
-import { Github } from '@/features/icon/icons/github';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { cn } from '@/lib/utils';
+import { Github } from '@kortix/ui/internal/icons/github';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
 import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 import { openSource } from './content';

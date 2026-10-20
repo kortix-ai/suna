@@ -8,6 +8,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { sandboxEnvValue } from '../api/sandbox-env.ts';
 import { C, help, pad, status } from '../style.ts';
 
 // `kortix review` — the CLI face of the Review Center, the per-project
@@ -96,8 +97,9 @@ Submit options:
   --risk <r>         ${RISKS.join(' | ')} (default: none).
   --detail <json>    Structured payload, a JSON object.
   --agent <name>     Which agent produced it.
-  --session <id>     Originating session. Ignored when it is not this
-                     project's session.
+  --session <id>     Originating session; it must be one of this
+                     project's sessions. Inside a session it defaults to
+                     $KORTIX_SESSION_ID when that session is in this project.
 
 Global options:
   --project <id>     Operate on this project id (default: linked).
@@ -507,8 +509,21 @@ async function reviewSubmit(f: Record<string, string | undefined>, json: boolean
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
 
-  // Inside a sandbox the agent already knows which session it runs in.
-  const sessionId = f.session ?? process.env.KORTIX_SESSION_ID;
+  // Inside a sandbox the agent already knows which session it runs in. That
+  // session belongs to the sandbox's own project: for an item in another
+  // project (another host, or --project) it is not an origin the API can
+  // find, so it is dropped with a notice instead of failing the submit
+  // with "Session not found" (KRTX-2864).
+  let sessionId = f.session;
+  const ambientSession = process.env.KORTIX_SESSION_ID;
+  if (!sessionId && ambientSession) {
+    const ambientProject = sandboxEnvValue('KORTIX_PROJECT_ID');
+    if (!ambientProject || ambientProject === ctx.projectId) sessionId = ambientSession;
+    else
+      process.stderr.write(
+        `  ${C.dim}$KORTIX_SESSION_ID is a session of another project; submitting without an origin session. Pass --session <id> to link one.${C.reset}\n`,
+      );
+  }
 
   let item: ReviewItem;
   try {
@@ -536,7 +551,7 @@ async function reviewSubmit(f: Record<string, string | undefined>, json: boolean
   return 0;
 }
 
-// ── id routing (mirrors apps/web/src/features/review-center/review-actions.ts) ─
+// ── id routing (mirrors packages/ui/src/workspace/review/review-actions.ts) ─
 
 /** Strip a namespace prefix, or null when `id` does not carry it. */
 function strip(id: string, prefix: string): string | null {
