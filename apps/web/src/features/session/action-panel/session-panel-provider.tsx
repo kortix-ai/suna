@@ -34,8 +34,6 @@ import { useIsMobile } from '@/hooks/utils/use-mobile';
 import { track } from '@/lib/track';
 import { parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import {
-  useClearFocusedToolCall,
-  useFocusedToolCallId,
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
@@ -48,7 +46,7 @@ import {
 } from '@/stores/session-panel-memory-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { getProjectSession, SANDBOX_PORTS } from '@kortix/sdk';
-import { qk, useSessionLogThread } from '@kortix/sdk/react';
+import { qk } from '@kortix/sdk/react';
 import { FileTextIcon as FileText } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -61,29 +59,18 @@ import {
   useRef,
   useState,
 } from 'react';
-import { samePartsList } from '../turn/same-parts';
 import { AppPreview } from './easy/app-preview';
 import type { Detail } from './easy/detail-view';
 import {
-  deriveIsRunning,
   isWideDeliverable,
   neighborOutputs,
   outputKey,
-  pathOutput,
   quickBrowserOutput,
-  shouldAutoExpandOutputs,
-  shouldAutoOpenPayoff,
-  stepForCallId,
 } from './easy/easy-panel-logic';
 import { FilePreview, reportsIntrinsicSize } from './easy/file-preview';
-import { StepDetailBody } from './easy/step-detail-body';
-import { StepIcon } from './easy/step-icon';
-import { collectAllToolCalls } from './shared/collect-tool-parts';
-import { deriveContext, deriveOutputs, type OutputItem } from './shared/derive-panels';
-import { groupSteps } from './shared/group-steps';
-import { latestRunMessages } from './shared/latest-run';
-import { selectPrimaryDeliverable, sortOutputs } from './shared/output-priority';
-import { deriveRunOutcome } from './shared/run-outcome';
+import { type deriveContext, type OutputItem } from './shared/derive-panels';
+import { usePanelDerivations } from './shared/use-panel-derivations';
+import { usePanelHandoffs } from './shared/use-panel-handoffs';
 import { useDeliverableReadiness } from './shared/use-deliverable-readiness';
 
 /** Where an open was triggered from. Telemetry only (W5) — never read for
@@ -139,13 +126,6 @@ export function useOptionalSessionPanel(): SessionPanelValue | null {
   return useContext(SessionPanelContext);
 }
 
-/** The previous list while its elements are unchanged, so memos keyed on it hold across a text delta. */
-function useSameList<T>(next: T[]): T[] {
-  const ref = useRef(next);
-  if (!samePartsList(ref.current, next)) ref.current = next;
-  return ref.current;
-}
-
 export function SessionPanelProvider({
   sessionId,
   isSessionBusy = false,
@@ -165,57 +145,9 @@ export function SessionPanelProvider({
   children: ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // The root thread's messages: the `fromV1` live view of the v1 rows while
-  // v2 is off, the API's session log on v2. Tool calls and message info only:
-  // a streamed text delta replaces its message, never the message's tool-call
-  // blocks, so the call lists below keep their identity (`useSameList`), every
-  // memo on them holds, and nothing under the provider re-renders per delta.
-  const thread = useSessionLogThread({
-    projectId: projectId ?? '',
-    sessionId: projectSessionId ?? '',
-    runtimeSessionId: sessionId,
+  const { steps, outputs, context, apps, files, isRunning, outcome } = usePanelDerivations({
+    sessionId, projectId, projectSessionId, isSessionBusy,
   });
-  const messages = thread?.messages;
-  const calls = useSameList(useMemo(() => collectAllToolCalls(messages), [messages]));
-  const steps = useMemo(() => groupSteps(calls), [calls]);
-  const latestCalls = useSameList(
-    useMemo(() => collectAllToolCalls(latestRunMessages(messages)), [messages]),
-  );
-  const latestIds = useMemo(() => new Set(latestCalls.map((c) => c.call_id)), [latestCalls]);
-  const outputs = useMemo(() => deriveOutputs(calls, { latestRun: latestIds }), [calls, latestIds]);
-  const context = useMemo(() => deriveContext(calls), [calls]);
-
-  // The latest run's own steps, not the session's — read by `outcome` below (a
-  // text-only turn must never inherit a verdict from an old errored run
-  // further back in the session).
-  const latestSteps = useMemo(() => groupSteps(latestCalls), [latestCalls]);
-
-  // A running app is not "one of" the outputs — it's the thing the user asked
-  // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
-  // never wanted. It gets its own card; Outputs keeps the files.
-  const apps = useMemo(() => outputs.filter((o) => o.kind === 'app'), [outputs]);
-  // Sorted, not filtered: everything the agent produced is still here, but the
-  // report leads and the twelve files it took to build the report follow. See
-  // `sortOutputs` — chronological order buries the answer under its scaffolding.
-  //
-  // Fresh-first inside the human ranking: the latest run's deliverables lead,
-  // then everything the session has ever produced, each group in sortOutputs
-  // order. A returning user sees what's new without losing what's old.
-  const files = useMemo(() => {
-    const nonApps = outputs.filter((o) => o.kind !== 'app');
-    return [
-      ...sortOutputs(nonApps.filter((o) => o.fresh)),
-      ...sortOutputs(nonApps.filter((o) => !o.fresh)),
-    ];
-  }, [outputs]);
-
-  // Part-derived alone flickers between tool calls (assistant text streams
-  // with no part running/pending) — OR it with the session's own status so
-  // Outputs only auto-expands at the real finish. See `deriveIsRunning`.
-  const isRunning = deriveIsRunning(
-    steps.some((s) => s.status === 'running'),
-    isSessionBusy,
-  );
 
   // The provider owns the detail because the two surfaces that need it are in
   // different subtrees — see this file's header.
@@ -564,148 +496,9 @@ export function SessionPanelProvider({
     ],
   );
 
-  const outcome = useMemo(
-    () => deriveRunOutcome(messages, latestSteps[latestSteps.length - 1]?.status),
-    [messages, latestSteps],
-  );
-
   // W1/W9 — announce finished deliverables and blocked-on-you states while the
   // panel is closed. Headless: writes the ready chip; the header renders it.
   useDeliverableReadiness(sessionId, { isRunning, outcome, outputs });
-
-  // Auto-expand Outputs the moment a run finishes with something to show —
-  // never on every render of an already-finished (or still-running) run, and
-  // never on a failed one: a pile of half-written files is not a celebration.
-  const wasRunningRef = useRef(isRunning);
-  const [outputsDefaultOpen, setOutputsDefaultOpen] = useState(false);
-  useEffect(() => {
-    if (
-      outcome === 'succeeded' &&
-      shouldAutoExpandOutputs(wasRunningRef.current, isRunning, files.length)
-    ) {
-      setOutputsDefaultOpen(true);
-    }
-    wasRunningRef.current = isRunning;
-  }, [isRunning, files.length, outcome]);
-
-  // Payoff (W2): present the primary deliverable exactly once, at the finish,
-  // and only when the user hasn't taken the wheel themselves this run.
-  //
-  // No longer gated on the panel already being open (Jay's call): the detail
-  // panel is content-driven now, so the payoff opening it IS the presentation.
-  // Replay is still impossible — the predicate fires only on the running→idle
-  // EDGE, only on success, only with no detail already up, and only when the
-  // user hasn't opened something themselves this run.
-  const interactedThisRunRef = useRef(false);
-  useEffect(() => {
-    if (detail !== null) interactedThisRunRef.current = true;
-  }, [detail]);
-  const prevRunningRef = useRef(isRunning);
-  useEffect(() => {
-    const wasRunning = prevRunningRef.current;
-    if (!wasRunning && isRunning) interactedThisRunRef.current = false;
-    prevRunningRef.current = isRunning;
-    // Fresh-only (unlike the chip-consume effect below): the payoff is this
-    // run's reward for THIS run's work. Without this filter,
-    // selectPrimaryDeliverable's stale fallback fires on every text-only turn
-    // in a session with history, auto-opening a deliverable from a run the
-    // user already saw.
-    const freshApps = apps.filter((a) => a.fresh);
-    const freshFiles = files.filter((f) => f.fresh);
-    const primary = selectPrimaryDeliverable(freshApps, freshFiles);
-    if (
-      shouldAutoOpenPayoff({
-        wasRunning,
-        isRunning,
-        outcome,
-        hasPrimary: primary !== null,
-        detailOpen: detail !== null,
-        interactedThisRun: interactedThisRunRef.current,
-      }) &&
-      primary
-    ) {
-      // The primary came from whichever list `selectPrimaryDeliverable`
-      // actually picked it from — nav must page through that same list.
-      handleOpenOutput(primary, primary.kind === 'app' ? apps : files, 'auto');
-    }
-  }, [isRunning, outcome, detail, apps, files, handleOpenOutput]);
-
-  // Chip tap (W1→W2 handoff): the header asked us to open the primary
-  // deliverable. Subscribe to the pending-request VALUE, not the (stable)
-  // consume action — see this file's header note 1. `consumePrimaryOpen` keeps
-  // it one-shot.
-  const pendingPrimaryOpenSessionId = useKortixComputerStore((s) => s.pendingPrimaryOpenSessionId);
-  useEffect(() => {
-    if (pendingPrimaryOpenSessionId !== sessionId) return;
-    if (!useKortixComputerStore.getState().consumePrimaryOpen(sessionId)) return;
-    // Unfiltered (unlike the payoff effect above): the chip was already
-    // earned by a real finish, possibly in an earlier render than this one —
-    // the stale fallback is this path's legitimate purpose, so a user who
-    // taps a chip after navigating away still lands on something.
-    const primary = selectPrimaryDeliverable(apps, files);
-    if (primary) handleOpenOutput(primary, primary.kind === 'app' ? apps : files, 'chip');
-  }, [pendingPrimaryOpenSessionId, sessionId, apps, files, handleOpenOutput]);
-
-  // A file path clicked in the chat, or in a read/write/edit tool card, lands
-  // here. Same one-shot handoff shape as the chip- and quick-view-consume
-  // effects, and for the same reason (header note 1).
-  //
-  // The nonce, not the path, is the guard: clicking the same file twice must
-  // re-open it, and `requestFileOpenSilently` bumps the nonce on every call.
-  // A ref rather than state — consuming must not itself schedule a render.
-  const fileOpenRequest = useSessionBrowserStore((s) => s.fileOpenBySession[sessionId]);
-  const lastFileOpenNonce = useRef(0);
-  useEffect(() => {
-    if (!fileOpenRequest || fileOpenRequest.nonce === lastFileOpenNonce.current) return;
-    lastFileOpenNonce.current = fileOpenRequest.nonce;
-    // No siblings: a path clicked in prose belongs to no list, so there is
-    // nothing for prev/next to page through and the detail earns no nav row.
-    handleOpenOutput(pathOutput(fileOpenRequest.path), undefined, 'row');
-  }, [fileOpenRequest, handleOpenOutput]);
-
-  const pendingQuickView = useKortixComputerStore((s) => s.pendingQuickView);
-
-  /**
-   * A tool call clicked in the CHAT opens that tool's real view in the panel.
-   *
-   * This is the last escape hatch to the raw truth in Easy mode, and it costs
-   * nothing: the affordance lives in the chat, so there is no new thing to
-   * click here and no new way to get lost. The user asked to see one specific
-   * thing; they see that thing.
-   *
-   * `panel_opened` is tracked in `session-chat.tsx`'s `handleToolActivate`,
-   * NOT here (MINOR SWEEP c): by the time this effect runs, the store's
-   * `focusToolCall` action has already flipped `isSidePanelOpen` to true, so
-   * a "was it already open?" read at this point would always answer "yes"
-   * and the event would never fire honestly. `handleToolActivate` is the
-   * only point in the flow where the pre-open state is still observable.
-   */
-  const focusedToolCallId = useFocusedToolCallId();
-  const clearFocusedToolCall = useClearFocusedToolCall();
-  useEffect(() => {
-    if (!focusedToolCallId) return;
-    const step = stepForCallId(steps, focusedToolCallId);
-    if (step) {
-      openDetail({
-        // The call id is part of the key on purpose: a step is a GROUP, and
-        // two clicks on different commands inside it produce the same
-        // `step:<id>`. Deduped on that key, the second click was a no-op and
-        // the panel kept showing whatever it showed before.
-        key: `step:${step.id}:${focusedToolCallId}`,
-        title: step.label,
-        icon: <StepIcon family={step.family} status={step.status} />,
-        padded: false,
-        body: (
-          <StepDetailBody
-            calls={step.parts}
-            sessionId={sessionId}
-            focusCallId={focusedToolCallId}
-          />
-        ),
-      });
-    }
-    clearFocusedToolCall();
-  }, [focusedToolCallId, steps, clearFocusedToolCall, sessionId, openDetail]);
 
   const openAudit = useCallback(() => {
     openDetail({
@@ -772,35 +565,10 @@ export function SessionPanelProvider({
     [apps, handleOpenOutput],
   );
 
-  // Command palette / header "Open Terminal"/"Open Audit"/"Open Browser"/
-  // "Open Files" (W1→W2-shaped handoff): subscribe to the pending request
-  // VALUE, not the stable `consumeQuickView` action — see header note 1.
-  // Audit with no project context (booting/transient session) is a
-  // deliberate no-op: there's nothing to drill into yet.
-  useEffect(() => {
-    if (pendingQuickView?.sessionId !== sessionId) return;
-    const request = useKortixComputerStore.getState().consumeQuickView(sessionId);
-    if (!request) return;
-    const { view, target } = request;
-    if (view === 'terminal') {
-      openTerminal();
-    } else if (view === 'audit' && projectId && projectSessionId) {
-      openAudit();
-    } else if (view === 'browser') {
-      openBrowser(target);
-    } else if (view === 'files') {
-      openFiles(target?.changes);
-    }
-  }, [
-    pendingQuickView,
-    sessionId,
-    projectId,
-    projectSessionId,
-    openTerminal,
-    openAudit,
-    openBrowser,
-    openFiles,
-  ]);
+  const { outputsDefaultOpen, pendingQuickView } = usePanelHandoffs({
+    sessionId, projectId, projectSessionId, isRunning, outcome, apps, files, steps,
+    detail, handleOpenOutput, openDetail, openTerminal, openAudit, openBrowser, openFiles,
+  });
 
   // The panel comes back with the session: what it showed is remembered while
   // it is open, and reopened on the way back while the session still runs.

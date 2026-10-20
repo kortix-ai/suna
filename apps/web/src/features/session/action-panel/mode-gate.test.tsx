@@ -1,4 +1,5 @@
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterAll, describe, expect, test } from 'bun:test';
@@ -135,15 +136,27 @@ describe('pending panel requests', () => {
       const runtime = `ses_mode_gate_${mode}`;
       useSessionStateStore.getState().hydrate(runtime, messages);
       let renderer: ReturnType<typeof create>;
-      await act(async () => {
-        renderer = create(withQueryClient(
+      let busy = true;
+      const client = new QueryClient();
+      const tree = () => (
+        <QueryClientProvider client={client}>
           <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-            <SessionPanelProvider sessionId={runtime}>
+            <SessionPanelProvider sessionId={runtime} isSessionBusy={busy}>
               <ActionPanel /><Observe />
             </SessionPanelProvider>
-          </NextIntlClientProvider>,
-        ));
+          </NextIntlClientProvider>
+        </QueryClientProvider>
+      );
+      await act(async () => {
+        renderer = create(tree());
       });
+      expect(opened).toEqual([]);
+      busy = false;
+      await act(async () => { renderer.update(tree()); });
+      expect(opened).toContain('file:/a/report.pdf');
+      await act(async () => { useKortixComputerStore.getState().focusToolCall('c1'); });
+      expect(opened).toContain('step:c1:c1');
+      expect(useKortixComputerStore.getState().focusedToolCallId).toBeNull();
       await act(async () => { useKortixComputerStore.getState().requestPrimaryOpen(runtime); });
       expect(opened).toContain('file:/a/report.pdf');
       await act(async () => { useKortixComputerStore.getState().requestQuickView('terminal', runtime); });
@@ -151,4 +164,50 @@ describe('pending panel requests', () => {
       await act(async () => { renderer!.unmount(); });
     });
   }
+});
+
+
+describe('provider handoff characterization', () => {
+  test('file requests reopen the same path and ignore other sessions', async () => {
+    useKortixComputerStore.getState().reset();
+    const runtime = 'ses_file_handoff';
+    let panel: SessionPanelValue | null = null;
+    function Observe() {
+      panel = useOptionalSessionPanel();
+      return null;
+    }
+    let renderer: ReturnType<typeof create> | undefined;
+    try {
+      await act(async () => {
+        renderer = create(withQueryClient(
+          <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+            <SessionPanelProvider sessionId={runtime}><Observe /></SessionPanelProvider>
+          </NextIntlClientProvider>,
+        ));
+      });
+      const current = (): SessionPanelValue => {
+        if (!panel) throw new Error('provider did not publish its context');
+        return panel;
+      };
+      for (let request = 0; request < 2; request++) {
+        await act(async () => {
+          useSessionBrowserStore.getState().requestFileOpenSilently(runtime, '/a/report.pdf');
+        });
+        expect(current().detail?.key).toBe('file:/a/report.pdf');
+        expect(current().detail?.nav).toBeUndefined();
+        expect(useKortixComputerStore.getState().isSidePanelOpen).toBe(true);
+        await act(async () => { current().closeDetail(); });
+        expect(current().detail).toBeNull();
+      }
+      await act(async () => {
+        useSessionBrowserStore.getState().requestFileOpenSilently('ses_other_handoff', '/a/other.pdf');
+      });
+      expect(current().detail).toBeNull();
+      await act(async () => { useKortixComputerStore.getState().focusToolCall('missing-call'); });
+      expect(current().detail).toBeNull();
+      expect(useKortixComputerStore.getState().focusedToolCallId).toBeNull();
+    } finally {
+      await act(async () => { renderer?.unmount(); });
+    }
+  });
 });
