@@ -57,7 +57,7 @@ const CHOSEN_PIN_SOURCES = new Set(['explicit', 'repointed', 'fallback']);
 /**
  * The gateway moved this session to a fallback model because its own model
  * could not serve (a resting ChatGPT pool, a login that needs reconnecting, a
- * retired model). The server moves it back at a turn end once `from` serves.
+ * retired model). The server moves it back once `from` serves again.
  */
 export interface SessionModelFallback {
   /** The model that answered, which the session now runs on. */
@@ -90,14 +90,17 @@ export function sessionModelFallback(
 
 /**
  * Does a pick this browser made for the session still outrank the server's
- * record? A pick made before a fallback switch does not: sending it would
- * name the model that cannot serve again. A pick made after it does.
+ * record? `pickedOverAtMs` is the `atMs` of the switch the composer showed
+ * when the pick was made (undefined: none). A pick made before a switch does
+ * not stand: sending it would name the model that cannot serve again. A pick
+ * made while this switch was shown does. Both times are the server's, so a
+ * browser clock that runs behind or ahead cannot lock the picker.
  */
 export function sessionPickStands(
-  pickedAtMs: number | undefined,
+  pickedOverAtMs: number | undefined,
   fallback: SessionModelFallback | undefined,
 ): boolean {
-  return !fallback || (pickedAtMs ?? 0) > fallback.atMs;
+  return !fallback || (pickedOverAtMs ?? -1) >= fallback.atMs;
 }
 
 /**

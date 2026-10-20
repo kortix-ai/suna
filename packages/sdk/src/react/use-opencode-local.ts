@@ -441,7 +441,7 @@ export function useRuntimeLocal({
     ],
   );
   const sessionPick = (key: string | undefined): ModelKey | undefined =>
-    key && sessionPickStands(modelStore.getSessionModelPickedAt(key), sessionFallback)
+    key && sessionPickStands(modelStore.getSessionModelFallbackAt(key), sessionFallback)
       ? modelStore.getSessionModel(key)
       : undefined;
 
@@ -540,9 +540,10 @@ export function useRuntimeLocal({
       }
       // Also persist per-session so the selection survives page reload
       if (scopedSessionModelKey && next) {
-        // A seed is the pick made before this session existed: it must not
-        // outrank a fallback switch that happened since.
-        modelStore.setSessionModel(scopedSessionModelKey, next, options?.autoSeed ? { seeded: true } : undefined);
+        // A person's pick records the switch it was made over, so it outranks
+        // that switch and no newer one. A seed was picked before this session
+        // existed: it records none and never outranks a switch.
+        modelStore.setSessionModel(scopedSessionModelKey, next, options?.autoSeed ? undefined : sessionFallback?.atMs);
       }
       if (options?.recent && model) {
         modelStore.pushRecent(model);
@@ -552,7 +553,7 @@ export function useRuntimeLocal({
         // for NEW sessions even when they change model in an existing session.
       }
     },
-    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid],
+    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid, sessionFallback?.atMs],
   );
 
   // ---- Agent set (matching SolidJS local.tsx:52-63) ----

@@ -50,8 +50,8 @@ interface ModelStore {
   lastAgentName?: string;
   /** Per-session model selection — keyed by sessionId so each session remembers its own model across reloads */
   sessionModel?: Record<string, ModelKey | undefined>;
-  /** When each `sessionModel` pick was made, epoch ms. A server fallback switch outranks an older pick. */
-  sessionModelAt?: Record<string, number>;
+  /** The server's `atMs` of the fallback switch each `sessionModel` pick was made over. A newer switch outranks the pick. */
+  sessionModelFallbackAt?: Record<string, number>;
   /**
    * User-chosen global default model (set during onboarding setup wizard).
    * Takes priority over agent.model but yields to per-session and per-agent selections.
@@ -104,7 +104,7 @@ export function sanitizeModelStore(raw: unknown): ModelStore {
   if (isObj(raw.sessionAgentName)) out.sessionAgentName = raw.sessionAgentName as ModelStore['sessionAgentName'];
   if (typeof raw.lastAgentName === 'string') out.lastAgentName = raw.lastAgentName;
   if (isObj(raw.sessionModel)) out.sessionModel = raw.sessionModel as ModelStore['sessionModel'];
-  if (isObj(raw.sessionModelAt)) out.sessionModelAt = raw.sessionModelAt as ModelStore['sessionModelAt'];
+  if (isObj(raw.sessionModelFallbackAt)) out.sessionModelFallbackAt = raw.sessionModelFallbackAt as ModelStore['sessionModelFallbackAt'];
   if (isObj(raw.globalDefault)) out.globalDefault = raw.globalDefault as ModelStore['globalDefault'];
   return out;
 }
@@ -133,7 +133,7 @@ function setStore(next: ModelStore) {
   const capped = {
     ...next,
     sessionModel: capSessionMap(next.sessionModel),
-    sessionModelAt: capSessionMap(next.sessionModelAt),
+    sessionModelFallbackAt: capSessionMap(next.sessionModelFallbackAt),
     sessionAgentName: capSessionMap(next.sessionAgentName),
   };
   _store = capped;
@@ -364,25 +364,21 @@ export function useModelStore(
     [store.sessionModel],
   );
 
-  const getSessionModelPickedAt = useCallback(
-    (sessionId: string): number | undefined => store.sessionModelAt?.[sessionId],
-    [store.sessionModelAt],
+  const getSessionModelFallbackAt = useCallback(
+    (sessionId: string): number | undefined => store.sessionModelFallbackAt?.[sessionId],
+    [store.sessionModelFallbackAt],
   );
 
-  /** `seeded`: the pick was carried over (a start hand-off), not made now, so it records no time. */
-  const setSessionModel = useCallback((sessionId: string, model: ModelKey | undefined, options?: { seeded?: boolean }) => {
+  /** `fallbackAtMs`: the `atMs` of the fallback switch the composer showed when this pick was made, if any. */
+  const setSessionModel = useCallback((sessionId: string, model: ModelKey | undefined, fallbackAtMs?: number) => {
     const s = getStore();
     const next = { ...s.sessionModel };
-    const at = { ...s.sessionModelAt };
-    if (model) {
-      next[sessionId] = model;
-      if (options?.seeded) delete at[sessionId];
-      else at[sessionId] = Date.now();
-    } else {
-      delete next[sessionId];
-      delete at[sessionId];
-    }
-    setStore({ ...s, sessionModel: next, sessionModelAt: at });
+    const over = { ...s.sessionModelFallbackAt };
+    if (model) next[sessionId] = model;
+    else delete next[sessionId];
+    if (model && fallbackAtMs !== undefined) over[sessionId] = fallbackAtMs;
+    else delete over[sessionId];
+    setStore({ ...s, sessionModel: next, sessionModelFallbackAt: over });
   }, []);
 
   // Global default model (set during onboarding setup wizard)
@@ -399,7 +395,7 @@ export function useModelStore(
       globalDefault: model,
       selectedModel: {},
       sessionModel: {},
-      sessionModelAt: {},
+      sessionModelFallbackAt: {},
     });
   }, []);
 
@@ -419,7 +415,7 @@ export function useModelStore(
     lastAgentName,
     setLastAgentName,
     getSessionModel,
-    getSessionModelPickedAt,
+    getSessionModelFallbackAt,
     setSessionModel,
     globalDefault,
     setGlobalDefault,

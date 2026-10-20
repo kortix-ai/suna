@@ -59,8 +59,8 @@ describe('sanitizeModelStore', () => {
     expect(s.recent).toHaveLength(1);
   });
 
-  test('the time of each session pick survives a reload; a wrong-typed map is dropped', () => {
-    expect(sanitizeModelStore({ sessionModelAt: { 'gateway:s1': 1_000 } }).sessionModelAt).toEqual({ 'gateway:s1': 1_000 });
-    expect(sanitizeModelStore({ sessionModelAt: [1] }).sessionModelAt).toBeUndefined();
+  test('the switch each session pick was made against survives a reload; a wrong-typed map is dropped', () => {
+    expect(sanitizeModelStore({ sessionModelFallbackAt: { 'gateway:s1': 1_000 } }).sessionModelFallbackAt).toEqual({ 'gateway:s1': 1_000 });
+    expect(sanitizeModelStore({ sessionModelFallbackAt: [1] }).sessionModelFallbackAt).toBeUndefined();
   });
 });

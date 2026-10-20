@@ -474,11 +474,15 @@ describe('sessionModelFallback', () => {
     ).toEqual({ providerID: 'kortix', modelID: 'deepseek-v4.1-flash' });
   });
 
-  test("this browser's pick stands only when it was made after the switch", () => {
+  test("this browser's pick stands only when it was made against this switch, whatever the browser clock says", () => {
     const fallback = sessionModelFallback(fallbackSession(), true);
-    expect(sessionPickStands(500, fallback)).toBe(false);
+    // Made before any switch (or a seed): it records no switch, so it loses.
     expect(sessionPickStands(undefined, fallback)).toBe(false);
-    expect(sessionPickStands(1_500, fallback)).toBe(true);
+    // Made while an OLDER switch was shown: a newer switch outranks it.
+    expect(sessionPickStands(500, fallback)).toBe(false);
+    // Made while this switch was shown ('Use Sol', or any pick): it stands,
+    // even when the browser clock runs minutes behind the API's.
+    expect(sessionPickStands(1_000, fallback)).toBe(true);
     expect(sessionPickStands(undefined, undefined)).toBe(true);
   });
 });
