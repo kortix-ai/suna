@@ -14,7 +14,7 @@ import {
 } from '../../session/prompts/approval-request';
 import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
-import { InfoBanner } from '../../primitives/info-banner';
+import { Alert, AlertDescription } from '../../primitives/alert';
 import { Skeleton } from '../../primitives/skeleton';
 import { errorToast, successToast } from '../../primitives/toast';
 import { AuthFrame } from '../../internal/auth/auth-card-shell';
@@ -22,7 +22,7 @@ import { DetailPanel, DetailRow, OutcomeTitle } from '../../internal/auth/auth-c
 import { ErrorStrip, Rise, StepHeader } from '../../internal/auth/auth-primitives';
 import { useTranslations } from '../../i18n';
 import { type ApprovalLinkDetails, getApprovalLink, resolveApproval } from '@kortix/sdk';
-import { ArrowUpRightIcon, ClockIcon, ShieldWarningIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { UiLink as Link, useUiRouter } from '../../providers/ui-provider';
 import { useEffect, useState } from 'react';
 
@@ -70,7 +70,7 @@ const RISK_LABEL_KEY: Record<string, string> = {
  * access level, the project, the time. The agent's description follows when
  * there is one, then the parameters (`ApprovalParameters`, shared with the
  * session notice and the Review Center, so all three show the same redacted
- * values). A call with no parameters says so in the same box.
+ * values). A call with no parameters shows no parameters section.
  *
  * A decided call leads with its outcome: the words at the leading edge and a
  * filled mark at the trailing edge, in the outcome's colour. Never colour alone.
@@ -411,9 +411,9 @@ export function ApprovalDecisionPanel({
 
           <ApprovalAgentContext context={details.approval_context} className="rounded-md border" />
 
-          {/* Always shown, empty or not: a hidden box let a `draft_id`-only
-              call be approved blind. A viewer who may not see arguments gets
-              the warning below instead of "nothing was recorded". */}
+          {/* Renders nothing when the call recorded nothing and nothing was
+              loaded: the warning below then says it cannot be reviewed. A
+              viewer who may not see arguments gets that warning too. */}
           {hasParameters || previewAuthorized ? (
             <ApprovalParameters
               argsPreview={details.args_preview}
@@ -429,9 +429,9 @@ export function ApprovalDecisionPanel({
 
           {expired ? (
             <>
-              <InfoBanner tone="neutral" icon={ClockIcon}>
-                {tHardcodedUi('approvalPage.expiredHint')}
-              </InfoBanner>
+              <Alert>
+                <AlertDescription>{tHardcodedUi('approvalPage.expiredHint')}</AlertDescription>
+              </Alert>
               {onDecision ? (
                 <ApprovalDecisionActions
                   onDecision={onDecision}
@@ -445,11 +445,13 @@ export function ApprovalDecisionPanel({
           ) : details.pending && !resolved && onDecision ? (
             <>
               {reviewable ? null : (
-                <InfoBanner tone="warning" icon={ShieldWarningIcon}>
-                  {previewAuthorized
-                    ? tI18nComplete.raw('text7c4a3e7e2251')
-                    : tI18nComplete.raw('textf7873b149941')}
-                </InfoBanner>
+                <Alert variant="warning">
+                  <AlertDescription>
+                    {previewAuthorized
+                      ? tI18nComplete.raw('text7c4a3e7e2251')
+                      : tI18nComplete.raw('textf7873b149941')}
+                  </AlertDescription>
+                </Alert>
               )}
               <ApprovalDecisionActions
                 onDecision={onDecision}

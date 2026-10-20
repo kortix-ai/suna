@@ -187,13 +187,11 @@ describe('ApprovalDecisionView', () => {
     expect(html).toContain('>Write<');
   });
 
-  // A Gmail "send draft" call carried only `draft_id`; the hidden empty box
-  // left the reviewer approving blind. The section always renders now.
-  test('a call with no parameters still shows the parameters section, and keeps the agent description', () => {
+  // Nothing recorded and nothing loaded: no empty "Parameters" box.
+  test('a call with no parameters shows no parameters section, and keeps the agent description', () => {
     const html = render({ details: { ...pending, args_preview: null } });
-    expect(html).toContain('>Parameters<');
-    expect(html).toContain('No parameters were recorded for this call.');
-    expect(html).toContain('Any description from the agent is unverified.');
+    expect(html).not.toContain('>Parameters<');
+    expect(html).not.toContain('No parameters were recorded for this call.');
     expect(html).toContain('Merge pull request #482 into main');
     // Nothing was withheld, so the call is still decidable.
     expect(html).toContain('Approve this call');
@@ -220,6 +218,8 @@ describe('ApprovalDecisionView', () => {
     expect(loaded).toContain('Loaded from Gmail');
     expect(loaded).toContain('Draft body');
     expect(loaded).not.toContain('Any description from the agent is unverified.');
+    expect(loaded).not.toContain('This call shows no content to check');
+    expect(loaded).not.toContain('>Parameters<');
 
     const failed = render({ details: { ...draftCall, resolved_preview: null, resolved_error: 'unavailable' } });
     expect(failed).toContain('Couldn&#x27;t load the draft.');
@@ -248,12 +248,12 @@ describe('ApprovalDecisionView', () => {
     expect(html).not.toContain('Any description from the agent is unverified.');
   });
 
-  test('no agent description: the parameters section still shows', () => {
+  test('no agent description and no parameters: neither section renders', () => {
     const html = render({
       details: { ...pending, args_preview: null, approval_context: null },
     });
     expect(html).not.toContain('Agent&#x27;s description');
-    expect(html).toContain('>Parameters<');
+    expect(html).not.toContain('>Parameters<');
   });
 });
 
@@ -325,9 +325,13 @@ describe('ApprovalDecisionPanel', () => {
     const html = panel({ details: { ...pending, status: 'expired', pending: false } });
     expect(html).toContain('Expired');
     expect(html).toContain('This approval expired. Ask the agent to request it again.');
+    expect(html).toContain('data-slot="alert"');
     expect(html).not.toContain('An agent needs your approval');
     // Deny, Approve and the note: each one carries the disabled attribute.
-    const controls = html.match(/<(button|textarea)[^>]*>/g) ?? [];
+    // The description's info trigger is not a decision control.
+    const controls = (html.match(/<(button|textarea)[^>]*>/g) ?? []).filter(
+      (tag) => !tag.includes('hover-card-trigger'),
+    );
     expect(controls).toHaveLength(3);
     expect(controls.every((tag) => / disabled=""/.test(tag))).toBe(true);
     expect(html).toContain('Approve this call');
@@ -350,6 +354,15 @@ describe('ApprovalDecisionPanel', () => {
     });
     expect(html).not.toContain('Approve this call');
     expect(html).toContain('text-kortix-orange');
+    expect(html).toContain('data-slot="alert"');
     expect(html).not.toContain('No parameters were recorded');
+  });
+
+  test('a call with nothing recorded warns in the design-system Alert', () => {
+    const html = panel({ details: { ...pending, args_preview: null, review_complete: false } });
+    expect(html).toContain('data-slot="alert"');
+    expect(html).toContain('bg-kortix-orange/15');
+    expect(html).toContain('cannot be reviewed here');
+    expect(html).not.toContain('>Parameters<');
   });
 });
