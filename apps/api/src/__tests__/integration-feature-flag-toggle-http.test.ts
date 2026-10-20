@@ -120,8 +120,8 @@ describe('PATCH /v1/projects/:projectId/features', () => {
 
     const cleared = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'reminders', enabled: null }));
     expect(cleared.status).toBe(200);
-    // reminders' platform default is off, so clearing the override lands back on false.
-    expect((await cleared.json()).experimental.reminders).toBe(false);
+    // reminders' platform default is on, so clearing the override lands back on true.
+    expect((await cleared.json()).experimental.reminders).toBe(true);
     expect(await storedOverrides(PROJECT)).toBeUndefined();
   });
 

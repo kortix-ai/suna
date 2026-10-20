@@ -625,6 +625,30 @@ flow(
   },
 );
 
+flow('CLI-ROLE-CHANGE', { domain: 'cli', routes: [
+  'POST /v1/accounts/:accountId/iam/assignments', 'GET /v1/projects/:projectId/access',
+] }, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  const project = await team.project();
+  const member = await team.addMember('member');
+  const sandbox = await authenticatedCli(ctx, 'role-change');
+  if (!member.userId) throw new Error('fixture member has no user identity');
+  const userId = member.userId;
+  try {
+    for (const role of ['manager', 'member']) {
+      await ctx.step(`grant --user ${role} replaces the previous project role`, async () => {
+        requireExit(await sandbox.run(['access', 'grant', '--user', userId,
+          '--role', role, '--project', project.id, '--json']), 0, 'access grant');
+        const listing = parseJson<{ members: Array<{ user_id: string; effective_project_role: string }> }>(
+          await sandbox.run(['access', 'ls', '--project', project.id, '--json']), 'access ls');
+        if (listing.members.find((item) => item.user_id === member.userId)?.effective_project_role !== role) {
+          throw new Error('effective project role did not match the successful grant');
+        }
+      });
+    }
+  } finally { sandbox.dispose(); }
+});
+
 flow('CLI-MODEL-CATALOG', {
   domain: 'cli',
   routes: ['GET /v1/projects/:projectId/model-picker'],

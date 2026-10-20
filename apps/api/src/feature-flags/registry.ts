@@ -35,6 +35,28 @@
  * Then gate its routes with `requireFeatureFlag` (enforcement: 'routes'), or
  * its runtime behavior on `resolveFeatureFlag` (enforcement: 'behavioral').
  *
+ * ## A flag gates EVERY surface
+ *
+ * Off, nothing of the feature exists in the project except the fact that its
+ * flag is off. On, everything shows and loads. Each surface has one mechanism:
+ *
+ *   • API — `requireFeatureFlag` on its routes (403 `feature_disabled`).
+ *   • Session box — the API lists the enabled flags in KORTIX_FEATURE_FLAGS
+ *     (projects/lib/feature-flag-env.ts). Boot-only; a change retires warm
+ *     sessions (toggle-effects.ts) and reaches the next new box.
+ *   • Managed skill — put the feature's agent docs in their own skill under
+ *     packages/starter/templates/managed/skills, with `metadata:
+ *     kortix-feature-flag: <key>` in its frontmatter. kortixd withholds it from a
+ *     box without the flag; the project's skill list hides it. Never describe a
+ *     flagged feature inside an unflagged skill (kortix-system, kortix-cli).
+ *   • CLI command — `featureFlag: '<key>'` on its apps/cli/src/command-table.ts
+ *     entry: hidden from help unless the box lists the flag, refused in a box
+ *     that does not.
+ *   • Web — `useFeatureFlag` hides every entry point (sidebar row, More menu,
+ *     palette via `requiresFlag`, permission group via `featureFlag` in
+ *     agent-editor-catalog.ts); a page a deep link still reaches renders
+ *     `FeatureGateScreen` and loads no data.
+ *
  * FOUR separate tests guard those six sites, each in its own package, so each
  * one fails only when that package's suite runs — they surface one CI round at
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
@@ -214,8 +236,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
     stability: 'beta',
     available: () => true,
-    // Per-project opt-in while the surface settles.
-    platformDefault: () => false,
+    // On by default (2026-10-19): goals wake on a heartbeat reminder (kortix-goals).
+    platformDefault: () => true,
     // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
     // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
     enforcement: 'routes',
@@ -294,7 +316,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
-      'Read at session provisioning (projects/lib/genui-env.ts → KORTIX_GENUI). An in-place restart keeps the sandbox env, so a running or restarted session keeps its skill list until a new session starts. kortixd hides the kortix-genui skill while the flag is off (OpenCode: kortixd does not write the skill files, and removes a copy a reused config release still holds, because the `"*": "allow"` of a project config outranks any skill deny; pi: the skill is dropped from its list); the catalog is never in the system prompt. A flag change deletes every unclaimed warm session of the project (pre-created by the web client before the user types, projects/lib/warm-sessions.ts; feature-flags/toggle-effects.ts → retireWarmProjectSessions), so the next prompt starts a session with the new value. The deletion runs in the background after the change is saved: a warm session claimed before it runs keeps the old value. The API kill switch GENUI_ENABLED=false forces it off for every project; it is read at API boot, and a warm session provisioned before an API restart keeps its old value until it is used or idles out.',
+      'Read at session provisioning (projects/lib/feature-flag-env.ts → KORTIX_GENUI). An in-place restart keeps the sandbox env, so a running or restarted session keeps its skill list until a new session starts. kortixd hides the kortix-genui skill while the flag is off (OpenCode: kortixd does not write the skill files, and removes a copy a reused config release still holds, because the `"*": "allow"` of a project config outranks any skill deny; pi: the skill is dropped from its list); the catalog is never in the system prompt. A flag change deletes every unclaimed warm session of the project (pre-created by the web client before the user types, projects/lib/warm-sessions.ts; feature-flags/toggle-effects.ts → retireWarmProjectSessions), so the next prompt starts a session with the new value. The deletion runs in the background after the change is saved: a warm session claimed before it runs keeps the old value. The API kill switch GENUI_ENABLED=false forces it off for every project; it is read at API boot, and a warm session provisioned before an API restart keeps its old value until it is used or idles out.',
   },
   {
     key: 'us_region',
@@ -362,6 +384,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
+    // Explicit opt-in. A project with `goals` needs it on.
     platformDefault: () => false,
     enforcement: 'behavioral',
     enforcementNote:
@@ -388,6 +411,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(drives/routes.ts). Reads by drive id stay open, so a file a session already ' +
       'wrote under /drives still opens. BEHAVIORAL: session provisioning mounts no ' +
       'folder when off (drives/service.ts sessionVolumeMounts).',
+  },
+  {
+    key: 'goals',
+    name: 'Goals',
+    description:
+      'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on.',
+    stability: 'experimental',
+    // A goal keeps its state in Files, and every drive is a Platinum volume.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    enforcement: 'ui-only',
+    enforcementNote:
+      'BOX: off, a session box has no kortix-goals skill and its CLI hides and refuses `kortix goals` ' +
+      '(KORTIX_FEATURE_FLAGS → kortixd, apps/cli/src/command-table.ts), so a goal that already exists stops ' +
+      'being worked when the flag is turned off; its folder in Files stays. `kortix goals new` also checks the ' +
+      'flag through the API outside a box (apps/cli/src/commands/goals.ts). The server parts goals use ' +
+      '(reminders, unattended question release, reminder successors) are generic and stay on for every project.',
   },
   {
     key: 'session_log',
@@ -448,6 +488,18 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'catalog while on (connectors/routes/catalogues.ts). The `mcp` app-event source exists only ' +
       'while on (projects/trigger-events/registry.ts); turning it off moves those triggers to error ' +
       'and drops their poll streams (feature-flags/toggle-effects.ts).',
+  },
+  {
+    key: 'agent_rooms',
+    name: 'Rooms',
+    description:
+      'Named chat rooms per goal or topic where agent sessions and people post (`kortix rooms`, `kortix peers`). Every message is stored in its room. A member session gets a message addressed to it (an @-mention, a reply in its thread) between its steps; other room traffic arrives as one batched notice when its turn ends; a thread reply reaches only the thread participants. A stopped session wakes. A member person gets every message as unread and, with the notification center on, a notification for one addressed to them.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box, and retires warm sessions (feature-flags/toggle-effects.ts). WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen.',
   },
 ];
 

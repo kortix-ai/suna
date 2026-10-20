@@ -15,6 +15,8 @@ import type { AgentGrantSetV2 } from '@kortix/sdk';
 import { CheckIcon } from '@phosphor-icons/react';
 import { type ReactNode, useState } from 'react';
 import { KORTIX_PERMISSIONS_CATALOG } from './agent-editor-catalog';
+import { useUiParams } from '../../../providers/ui-provider';
+import { useProjectFeatureFlags } from '../../../internal/lib/use-project-feature-flags';
 
 export type GrantMode = 'all' | 'pick' | 'none';
 
@@ -237,6 +239,9 @@ export function KortixPermissionsField({
   onChange: (v: AgentGrantSetV2) => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const params = useUiParams();
+  const { flags } = useProjectFeatureFlags(typeof params.id === 'string' ? params.id : null);
+  const groups = KORTIX_PERMISSIONS_CATALOG.filter((grp) => !grp.featureFlag || flags[grp.featureFlag] === true);
   return (
     <GrantModeField
       value={value}
@@ -246,7 +251,7 @@ export function KortixPermissionsField({
     >
       {({ selected, toggle }) => (
         <div className="border-border/60 max-h-64 space-y-3 overflow-y-auto rounded-md border p-2.5">
-          {KORTIX_PERMISSIONS_CATALOG.map((grp) => (
+          {groups.map((grp) => (
             <div key={grp.group} className="space-y-1.5">
               <p className="text-muted-foreground text-xs font-medium">{grp.group}</p>
               <div className="flex flex-wrap gap-1">

@@ -1,4 +1,15 @@
 {
+  "repositoryDisconnected": {
+    "title": "GitHub déconnecté",
+    "reconnect": "Reconnecter GitHub",
+    "openSettings": "Ouvrir les paramètres Git",
+    "reconnectError": "Impossible d’ouvrir la page d’installation GitHub. Réessayez.",
+    "reasons": {
+      "app_uninstalled": "La GitHub App Kortix a été désinstallée de {owner} : Kortix ne peut plus accéder à {repository}. Un propriétaire GitHub de {owner} doit la réinstaller.",
+      "app_suspended": "La GitHub App Kortix est suspendue sur {owner} : Kortix ne peut plus accéder à {repository}. Un propriétaire GitHub de {owner} doit la réactiver dans les paramètres GitHub.",
+      "repo_not_accessible": "Kortix ne peut plus accéder à {repository}. Le dépôt a été supprimé, renommé ou retiré de la GitHub App Kortix. Un propriétaire GitHub de {owner} doit l’ajouter à nouveau."
+    }
+  },
   "repositoryChange": {
     "changedToast": "Dépôt modifié. Les nouvelles sessions utiliseront le nouveau dépôt.",
     "verifyError": "Impossible de vérifier l’accès à GitHub.",
@@ -1486,6 +1497,7 @@
     }
   },
   "sidebar": {
+    "rooms": "Salons",
     "referAndEarn": "Parrainer et Gagner",
     "referralShareTitle": "Parrainer des Amis",
     "referralShareSubtitle": "Gagnez 400 crédits",
@@ -3028,7 +3040,8 @@
       "automation_failed": "Alerte d'échec",
       "automation_recovered": "Alerte de rétablissement",
       "capture_device_down": "Ordinateur Capture arrêté",
-      "capture_device_recovered": "Ordinateur Capture à nouveau en marche"
+      "capture_device_recovered": "Ordinateur Capture à nouveau en marche",
+      "message": "Message"
     },
     "kindDescription": {
       "turn_done": "Un tour se termine.",
@@ -3039,7 +3052,8 @@
       "automation_failed": "Un déclencheur ou un rappel commence à échouer.",
       "automation_recovered": "Un déclencheur ou un rappel en échec fonctionne de nouveau.",
       "capture_device_down": "Un ordinateur Kortix Capture n’enregistre pas. Envoyé aux personnes qui gèrent Capture.",
-      "capture_device_recovered": "Un ordinateur Kortix Capture arrêté enregistre à nouveau."
+      "capture_device_recovered": "Un ordinateur Kortix Capture arrêté enregistre à nouveau.",
+      "message": "Quelqu’un vous écrit dans une conversation ou dans un salon que vous avez rejoint."
     },
     "bell": {
       "label": "Notifications",
@@ -3062,7 +3076,8 @@
       "inProject": "{kind} dans {project}",
       "openSession": "Ouvrir la session",
       "openReminders": "Ouvrir les rappels",
-      "openTriggers": "Ouvrir les déclencheurs"
+      "openTriggers": "Ouvrir les déclencheurs",
+      "openConversation": "Ouvrir la conversation"
     },
     "session": {
       "mute": "Mettre les notifications en sourdine",
@@ -22037,5 +22052,105 @@
   "triggerAutoPause": {
     "title": "S’est mis en pause à sa limite d’exécutions",
     "description": "Il a tourné à sa limite d’exécutions horaire pendant 2 heures d’affilée, il ne lance donc plus d’exécutions. Trouvez ce qui le déclenche sans cesse, puis reprenez-le."
+  },
+  "featureGate": {
+    "enable": "Activer {name}",
+    "enabling": "Activation…"
+  },
+  "rooms": {
+    "title": "Salons",
+    "memberCount": "{count, plural, one {# membre} other {# membres}}",
+    "members": "Membres",
+    "agent": "Agent",
+    "agentSender": "Agent {name}",
+    "empty": "Les salons que vous rejoignez apparaîtront ici",
+    "emptyHint": "Créez un salon, puis ajoutez-y des personnes et des agents.",
+    "loadError": "Impossible de charger les salons. Réessayez.",
+    "roomLoadError": "Impossible de charger ce salon. Réessayez.",
+    "messagesLoadError": "Impossible de charger les messages. Réessayez.",
+    "retry": "Réessayer",
+    "back": "Retour aux salons",
+    "send": "Envoyer le message",
+    "sendFailed": "Impossible d'envoyer le message",
+    "peopleLoadError": "Impossible de charger les personnes. Réessayez.",
+    "cardRoom": "Salon {name}",
+    "digestCount": "{count, plural, one {# nouveau message} other {# nouveaux messages}}",
+    "digestMore": "… et {count} de plus",
+    "cardFrom": "De",
+    "cardMessage": "Message",
+    "cardReplyTo": "Réponse à",
+    "addRooms": "Ajouter des salons",
+    "addFailed": "Impossible d'ajouter le membre",
+    "addMembers": "Ajouter des personnes et des agents",
+    "addMembersDescription": "Les membres reçoivent les messages publiés ici. Une session d'agent les lit à sa prochaine étape.",
+    "addTopic": "Ajouter un sujet",
+    "agents": "Agents",
+    "browseRoomsDescription": "Tous les salons de ce projet. Ouvrez-en un pour le lire ou le rejoindre.",
+    "cancel": "Annuler",
+    "roomName": "Nom",
+    "roomNameHint": "Minuscules, chiffres et . _ / -, jusqu'à 64 caractères.",
+    "roomNamePlaceholder": "dev",
+    "closeMembers": "Fermer les membres",
+    "copied": "Copié",
+    "copyText": "Copier le texte du message",
+    "createRoom": "Créer un salon",
+    "createRoomDescription": "Un salon réunit la conversation sur un sujet, pour les personnes et les agents.",
+    "createFailed": "Impossible de créer le salon",
+    "editTopic": "Modifier le sujet",
+    "inThisRoom": "Dans ce salon",
+    "introRoom": "Voici le début du salon #{name}.",
+    "joinRoom": "Rejoindre le salon",
+    "joinFailed": "Impossible de rejoindre le salon",
+    "joined": "Rejoint",
+    "jumpToLatest": "Aller au plus récent",
+    "leaveRoom": "Quitter le salon",
+    "memberActions": "Actions pour {name}",
+    "memberAdded": "{name} ajouté",
+    "memberRemoved": "Membre retiré",
+    "mentionHere": "Tout le monde dans #{name}",
+    "mentionSomeone": "Mentionner quelqu'un",
+    "mentionSuggestions": "Suggestions de mentions",
+    "messageRoom": "Message à #{name}",
+    "messages": "Messages",
+    "new": "Nouveau",
+    "newLineHint": "Maj + Entrée pour une nouvelle ligne",
+    "noRooms": "Aucun salon correspondant",
+    "noMatches": "Aucun résultat",
+    "people": "Personnes",
+    "pickRoom": "Ouvrez un salon depuis la liste",
+    "remove": "Retirer",
+    "removeAgentDescription": "La session d'agent ne reçoit plus les messages de ce salon. Pour la rétablir, ajoutez de nouveau l'agent.",
+    "removeFailed": "Impossible de retirer le membre",
+    "removePersonDescription": "Ce membre ne reçoit plus les messages de ce salon. Pour le rétablir, ajoutez-le de nouveau.",
+    "removeTitle": "Retirer {name} de ce salon ?",
+    "searchRooms": "Rechercher des salons",
+    "searchPeopleAndAgents": "Rechercher des personnes et des agents",
+    "today": "Aujourd'hui",
+    "topic": "Sujet",
+    "topicFailed": "Impossible d'enregistrer le sujet",
+    "topicOptional": "Sujet (facultatif)",
+    "topicPlaceholder": "L'objet de ce salon",
+    "viewMembers": "Voir les membres",
+    "viewMembersCount": "Voir {count, plural, one {# membre} other {# membres}}",
+    "viewingRoom": "Vous consultez #{name}",
+    "yesterday": "Hier",
+    "you": "{name} (vous)",
+    "status": {
+      "running": "En cours",
+      "starting": "Démarrage",
+      "stopped": "Arrêtée",
+      "failed": "Échec"
+    },
+    "replyInThread": "Répondre dans le fil",
+    "thread": "Fil",
+    "closeThread": "Fermer le fil",
+    "backToRoom": "Retour au salon",
+    "replyPlaceholder": "Répondre…",
+    "replyCount": "{count, plural, one {# réponse} other {# réponses}}",
+    "lastReply": "Dernière réponse {time}",
+    "threadLoadError": "Impossible de charger ce fil. Réessayez.",
+    "join": "Rejoindre",
+    "openRoom": "Ouvrir",
+    "gateDescription": "Activez les Salons pour que les sessions d’agents et les personnes de ce projet échangent dans des salons nommés."
   }
 }

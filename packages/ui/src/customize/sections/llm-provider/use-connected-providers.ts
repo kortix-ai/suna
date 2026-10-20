@@ -4,7 +4,7 @@ import { LLM_PROVIDERS, type LlmProviderEntry } from '../../../internal/lib/llm-
 import { isProviderAuthSatisfied } from '@kortix/llm-catalog';
 import { listProjectSecrets } from '@kortix/sdk';
 import { useUiHostConfig } from '../../../providers/ui-provider';
-import { contract, qk, useRuntimeProviders } from '@kortix/sdk/react';
+import { contract, qk, useProjectModelPickerCatalog, useRuntimeProviders } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -48,20 +48,26 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   const { managedModelsEnabled } = useUiHostConfig();
   const { data: ocProviders } = runtimeProvidersQuery;
 
+  const pickerCatalog = useProjectModelPickerCatalog(enabled ? projectId : null);
   const kortixProvider = useMemo<LlmProviderEntry | null>(() => {
-    // CLOUD-ONLY: the served catalog already excludes every managed model on a
-    // self-host (KORTIX_MANAGED_PROVIDER_ENABLED off), which would leave this
-    // entry with `models: []` — check the public flag directly so the
-    // "Managed · Included with your plan" row simply doesn't render instead of
-    // showing a managed provider with zero models.
-    if (!managedModelsEnabled) return null;
-    // The builder also refuses the cloud state the flag cannot see: a plan-gated
-    // catalog serving ZERO managed models (free tier with no servable platform
-    // default — KRTX-1482) is not a connected managed provider. The model picker
-    // shows "No models available — Upgrade" over the same catalog; the Providers
-    // tab must not claim the opposite.
-    return buildKortixManagedProvider(ocProviders, MANAGED_MODEL_ID_SET, tI18nComplete.raw('texte0a770200f93'));
-  }, [managedModelsEnabled, ocProviders, tI18nComplete]);
+    if (!managedModelsEnabled || !pickerCatalog) return null;
+    // Read the picker's live cache, not the independently cached runtime projection.
+    return buildKortixManagedProvider(
+      {
+        connected: ['kortix'],
+        all: [
+          {
+            id: 'kortix',
+            models: Object.fromEntries(
+              Object.entries(pickerCatalog.models).filter(([, model]) => model.enabled !== false),
+            ),
+          },
+        ],
+      },
+      MANAGED_MODEL_ID_SET,
+      tI18nComplete.raw('texte0a770200f93'),
+    );
+  }, [managedModelsEnabled, pickerCatalog, tI18nComplete]);
 
   const connectedProviders = useMemo(() => {
     const hasCodexSubscription =

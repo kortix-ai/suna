@@ -88,6 +88,7 @@ import {
   shouldPaintTerminalCard,
 } from '@kortix/ui/terminal';
 import { useAccountState } from '@kortix/ui/internal/billing/index';
+import { ReconnectGitHubButton, useRepositoryDisconnect } from '@kortix/ui/workspace/repository-disconnected';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import {
   useRecoverLostSession,
@@ -113,6 +114,7 @@ import {
   clearSessionFresh,
   formatRuntimeError,
   getProjectDetail,
+  isRepositoryDisconnectedError,
   isSessionFresh,
   sessionStartKey,
   setActiveInstanceCookie,
@@ -190,6 +192,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   useSessionAudit(projectId, sessionId, { poll: true, silent: true, limit: 100 });
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tSessionPage = useTranslations('sessionPage');
+  const tRepository = useTranslations('repositoryDisconnected');
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -603,6 +606,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (session.messages.length > 0) setSawTranscript(true);
   }, [session.messages.length]);
   const hasTranscript = session.messages.length > 0 || sawTranscript;
+  const repositoryDisconnect = useRepositoryDisconnect(projectId);
   // A session whose clone predates a repository replacement still has its
   // transcript. Do not replace a readable conversation with a failure card.
   const previousRepositoryHistoryAvailable = hasTranscript && usesPreviousRepository;
@@ -940,6 +944,23 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // nothing to read.
     let notice: SessionNoticeProps | null = null;
 
+    // The project's GitHub repository cannot be reached (KRTX-2955): the
+    // start failed with the cause, and no retry can help until GitHub is
+    // reconnected. Say that, with the one fix, instead of a machine failure.
+    if (session.startError && isRepositoryDisconnectedError(session.startError)) {
+      const message = repositoryDisconnect
+        ? tRepository(`reasons.${repositoryDisconnect.reason}`, {
+            owner: repositoryDisconnect.owner,
+            repository: repositoryDisconnect.repository,
+          })
+        : session.startError.message;
+      const action = <ReconnectGitHubButton projectId={projectId} />;
+      if (!hasTranscript) {
+        return <InlineSessionError title={tRepository('title')} message={message} action={action} />;
+      }
+      notice = { tone: 'warning', title: tRepository('title'), message, action };
+    }
+
     // The wake ladder is still working: a session with rungs left is not a dead
     // end, and painting one is the exact defect this replaces — the card fired
     // while the box was seconds from ready. The transcript mirror keeps
@@ -960,7 +981,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           </HeaderlessSessionSurface>
         );
       }
-    } else if (recoverableFailure) {
+    } else if (recoverableFailure && !notice) {
       // A dead end that cannot say what was already attempted invites the
       // user to repeat it by hand. `wake.summary` names every rung the ladder
       // used before giving up. It rides in the MESSAGE, not in `detail`: that

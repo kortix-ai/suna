@@ -254,9 +254,9 @@ Options:
 Requires project.settings.write. A flag the platform marks unavailable stays
 off regardless of the project override.
 
-Internal-only flags (session_log, session_log_restore) are listed only while
-they are on, with origin "kortix". Only Kortix changes them: enable, disable
-and reset answer feature_operator_only. Contact Kortix to change one.
+Internal-only flags are listed only while they are on, with origin "kortix".
+Only Kortix changes them: enable, disable and reset are refused. Contact
+Kortix to change one.
 `;
 
 interface FeatureFlagRow {
@@ -1376,6 +1376,26 @@ function renderProjectTable(
   }
 }
 
+interface GitConnectionState {
+  state: 'connected' | 'reconnect_required' | 'unavailable' | 'not_connected';
+  reason?: string;
+  disconnected_reason?: string;
+  message?: string;
+  install_url?: string | null;
+}
+
+/** The `git` line of `projects info`, plus the cause and the fix when the repository is disconnected. */
+export function gitConnectionLines(git: GitConnectionState): string {
+  const label = `  ${C.dim}git        ${C.reset}`;
+  if (git.state === 'connected') return `${label}connected\n`;
+  if (git.state === 'not_connected') return `${label}not connected\n`;
+  const why = git.disconnected_reason ?? git.reason;
+  let out = `${label}${C.yellow}${git.disconnected_reason ? 'disconnected' : git.state.replace('_', ' ')}${why ? ` (${why})` : ''}${C.reset}\n`;
+  if (git.message) out += `             ${git.message}\n`;
+  if (git.install_url) out += `  ${C.dim}reconnect  ${C.reset}${git.install_url}\n`;
+  return out;
+}
+
 async function projectsInfo(arg?: string, json = false, hostArg?: string): Promise<number> {
   const id = resolveProjectId(arg, { hostScoped: !hostArg, hostArg });
   if (!id) {
@@ -1391,9 +1411,14 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   );
   if (!located) return 1;
   const p = located.located.project;
+  // Whether Kortix can reach the repository (KRTX-2955). Best effort: an
+  // older server without the route prints no git line.
+  const git = await located.located.client
+    .get<GitConnectionState>(`/projects/${p.project_id}/git/connection`)
+    .catch(() => null);
   if (json) {
     // The API's wire name for the id is `project_id`; scripts read `.id`.
-    emitJson({ id: p.project_id, ...p });
+    emitJson({ id: p.project_id, ...p, ...(git ? { git_connection_state: git } : {}) });
     return 0;
   }
   process.stdout.write('\n');
@@ -1405,8 +1430,9 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   process.stdout.write(`  ${C.dim}manifest   ${C.reset}${p.manifest_path}\n`);
   process.stdout.write(`  ${C.dim}status     ${C.reset}${p.status}\n`);
   process.stdout.write(`  ${C.dim}updated    ${C.reset}${formatRelative(p.updated_at)}\n`);
-  // Internal-only surfaces Kortix turned on (apps). Agents read this
-  // to know `kortix apps` works here.
+  if (git) process.stdout.write(gitConnectionLines(git));
+  // Internal-only flags Kortix turned on. Agents read this to know which
+  // Kortix-managed surfaces work here.
   const managed = featureRows(p as unknown as Record<string, unknown>)
     .filter((r) => r.operator_only && r.enabled)
     .map((r) => r.key);

@@ -22,6 +22,7 @@ import { ProjectMcpNavItem } from './footer/project-mcp-nav';
 import { ProjectComputerNavItem } from './footer/project-computer-nav';
 import { ProjectManifestUpgradeAlert } from './footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
+import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
 import { CustomizeSidebarModal } from './customize-sidebar-modal';
 import { ProjectNavItems } from './project-nav-items';
 import { ProjectSessionList } from './project-session-list';
@@ -308,6 +309,7 @@ export function ProjectSidebar({
               {/* Status only, then the two connect rows (Jay, 2026-10-12).
                   Navigation lives in the top group. The ChatGPT connect row
                   left the sidebar: it stays in Settings → Connected. */}
+              <ProjectRepositoryDisconnectedAlert projectId={projectId} />
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectManifestUpgradeAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />

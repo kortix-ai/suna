@@ -90,6 +90,18 @@ export function sanitizeGeneratedTitle(raw: string | null | undefined): string |
   return title;
 }
 
+/** A prompt this short is already its own best title. Given so little topic,
+ * a model titles the message instead: "Say a" became "Incomplete Request To
+ * Say A" (KRTX-2651). The character bound keeps a long prompt in a script
+ * without spaces (Chinese, Japanese) on the model path. */
+const SHORT_PROMPT_MAX_WORDS = 3;
+const SHORT_PROMPT_MAX_CHARS = 20;
+
+function isShortPrompt(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length <= SHORT_PROMPT_MAX_CHARS && trimmed.split(/\s+/).length <= SHORT_PROMPT_MAX_WORDS;
+}
+
 /** Last-resort title when every configured model fails. Keep the first prompt
  * recognizable, but bound it to a sidebar-sized phrase. */
 function deterministicTitleFromPrompt(raw: string): string | null {
@@ -507,12 +519,17 @@ export async function generateSessionTitleFromFirstPrompt(
     // goes stale the moment the model is switched. Both are known-servable —
     // one is being served right now, the other was validated at create — so
     // only the last resort has to prove itself.
-    const model = input.modelHint?.trim() || sessionModel(row) || (await fallbackModel(input)) || null;
+    const shortPrompt = isShortPrompt(promptText);
+    const model = shortPrompt
+      ? null
+      : input.modelHint?.trim() || sessionModel(row) || (await fallbackModel(input)) || null;
     let title: string | null = null;
     if (!model) {
-      appLogger.warn('[title-generate] no servable model to title with', {
-        sessionId: input.sessionId,
-      });
+      if (!shortPrompt) {
+        appLogger.warn('[title-generate] no servable model to title with', {
+          sessionId: input.sessionId,
+        });
+      }
     } else {
       const minted = await mint(input.accountId, input.projectId, input.userId);
       if (minted) {
@@ -554,7 +571,7 @@ export async function generateSessionTitleFromFirstPrompt(
     }
     if (!title) {
       title = deterministicTitleFromPrompt(promptText);
-      if (title) {
+      if (title && !shortPrompt) {
         appLogger.warn('[title-generate] using deterministic prompt fallback', {
           sessionId: input.sessionId,
         });

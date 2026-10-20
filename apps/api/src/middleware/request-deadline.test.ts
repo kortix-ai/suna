@@ -75,7 +75,7 @@ describe('requestDeadline exempts the streaming secret relay', () => {
     // too generic silently un-bounds half the API.
     for (const path of [
       `${project}/secrets`,
-      `${project}/sessions`,
+      `${project}/sessions/session-1`,
       '/v1/accounts/relayed-billing',
     ]) {
       expect(isExempt(ctx(path))).toBe(false);
