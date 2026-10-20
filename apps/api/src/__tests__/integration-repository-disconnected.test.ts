@@ -10,13 +10,14 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
-import { accountGithubInstallations, projectGitConnections, projects } from '@kortix/db';
+import { accountGithubInstallations, projectGitConnections, projectTriggerExecutions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
 import { assertRepositoryConnected, resolveProjectGitAuth, resolveProjectUpstream } from '../projects/lib/git';
 import { upsertAccountGitHubInstallation } from '../projects/routes/github-installations';
 import { db } from '../shared/db';
 import { RepositoryDisconnectedError } from '../shared/repository-health';
+import { drainTriggerExecutionQueue } from '../projects/lib/trigger-scheduler';
 import { seedAccount } from './helpers/integration-fixtures';
 
 const OWNER = 'acme-disconnect';
@@ -172,5 +173,35 @@ describe('repository disconnected state', () => {
     expect(healed.lastErrorCode).toBeNull();
     expect(healed.lastErrorMessage).toBeNull();
     await expect(assertRepositoryConnected(await row(projectId))).resolves.toBeUndefined();
+  });
+
+  test('a scheduled run of a disconnected project is skipped with the cause, not retried', async () => {
+    const projectId = await seedByoProject('7108', 'scheduled');
+    answers.set('7108', { status: 404 });
+    await resolveProjectGitAuth(await row(projectId));
+    await db.insert(projectTriggerExecutions).values({
+      projectId,
+      slug: 'nightly',
+      scheduleRevision: 'd'.repeat(64),
+      scheduledFor: new Date(Date.now() - 60_000),
+      status: 'queued',
+      spec: {
+        slug: 'nightly', path: 'kortix.yaml#triggers.nightly', name: 'nightly', type: 'cron', agent: 'default',
+        model: null, enabled: true, promptTemplate: 'Run it.', cron: '0 0 * * * *', runAt: null, timezone: 'UTC',
+        secretEnv: null, sessionMode: 'fresh', pinnedSessionId: null, sessionKey: null, filter: null,
+      },
+      payload: { trigger: { slug: 'nightly', type: 'cron', kind: 'git' } },
+      availableAt: new Date(Date.now() - 1_000),
+    });
+
+    await drainTriggerExecutionQueue(new Date());
+
+    const [execution] = await db
+      .select({ status: projectTriggerExecutions.status, lastError: projectTriggerExecutions.lastError, sessionId: projectTriggerExecutions.sessionId, attempts: projectTriggerExecutions.attempts })
+      .from(projectTriggerExecutions)
+      .where(eq(projectTriggerExecutions.projectId, projectId));
+    expect(execution?.status).toBe('skipped');
+    expect(execution?.lastError).toStartWith('repository_disconnected: Kortix cannot reach acme-disconnect/scheduled');
+    expect(execution?.sessionId).toBeNull();
   });
 });
