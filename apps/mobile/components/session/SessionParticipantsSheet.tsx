@@ -38,6 +38,8 @@ export const SessionParticipantsSheet = React.forwardRef<SheetRef, SessionPartic
         ref={modalRef}
         enableDynamicSizing
         title="People"
+        // A count, not a button: no Liquid Glass behind it.
+        titleTrailingGlass={false}
         titleTrailing={
           <View className="h-10 min-w-10 items-center justify-center">
             <Text variant="muted" style={{ fontVariant: ['tabular-nums'] }}>

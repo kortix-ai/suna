@@ -5,9 +5,9 @@ import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/marketing/button';
 import { UseCaseCard } from '@/components/use-cases/use-case-card';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { EmptyState } from '@kortix/ui/empty-state';
 import type { Post } from '@/lib/blog';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 const ALL = 'All';
 

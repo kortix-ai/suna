@@ -1,7 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable } from 'react-native';
-import Animated, { Easing, Keyframe } from 'react-native-reanimated';
+import Animated, { Easing, Keyframe, LayoutAnimationConfig } from 'react-native-reanimated';
 
 import { Icon } from '@/components/ui/icon';
 import { haptics } from '@/lib/haptics';
@@ -10,7 +10,7 @@ import { log } from '@/lib/logger';
 import { CODE_BLOCK } from '@/lib/markdown/markdown-layout';
 import { MOTION } from '@/lib/utils/theme';
 
-/** Spread to the 44pt minimum touch target around the 25.76pt visible button. */
+/** Spread to the 44pt minimum touch target around the 32pt visible button. */
 const HIT_SLOP = (44 - CODE_BLOCK.copyButtonSize) / 2;
 
 /**
@@ -68,18 +68,24 @@ export function CopyButton({ code, color }: { code: string; color: string }) {
       hitSlop={HIT_SLOP}
       accessibilityRole="button"
       accessibilityLabel={copied ? 'Copied' : 'Copy code'}
-      className="items-center justify-center rounded-md active:bg-accent"
+      className="items-center justify-center rounded-full active:bg-accent"
       style={{ width: CODE_BLOCK.copyButtonSize, height: CODE_BLOCK.copyButtonSize }}
     >
-      {/* Absolute, so the outgoing and incoming glyphs overlap instead of stacking. */}
-      <Animated.View
-        key={copied ? 'check' : 'copy'}
-        entering={swapped.current ? SWAP_IN : undefined}
-        exiting={SWAP_OUT}
-        style={{ position: 'absolute' }}
-      >
-        <Icon as={copied ? CheckIcon : CopyIcon} size={CODE_BLOCK.copyIconSize} color={color} />
-      </Animated.View>
+      {/* Absolute, so the outgoing and incoming glyphs overlap instead of stacking.
+          `skipExiting` (KRTX-2879): the glyph exits only on a swap. Reanimated
+          runs a removed subtree's nested `exiting` animations and keeps the
+          whole subtree mounted until they end, so without it every transcript
+          turn with a code block lingers when the list virtualizes it away. */}
+      <LayoutAnimationConfig skipExiting>
+        <Animated.View
+          key={copied ? 'check' : 'copy'}
+          entering={swapped.current ? SWAP_IN : undefined}
+          exiting={SWAP_OUT}
+          style={{ position: 'absolute' }}
+        >
+          <Icon as={copied ? CheckIcon : CopyIcon} size={CODE_BLOCK.copyIconSize} color={color} />
+        </Animated.View>
+      </LayoutAnimationConfig>
     </Pressable>
   );
 }

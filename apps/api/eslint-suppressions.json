@@ -3042,11 +3042,6 @@
       "count": 1
     }
   },
-  "src/shared/jwt-liveness.ts": {
-    "kortix-api/replica-local": {
-      "count": 2
-    }
-  },
   "src/shared/jwt-verify.ts": {
     "kortix-api/replica-local": {
       "count": 1

@@ -22,7 +22,7 @@ Change the code and the spec together.
   contract end set or clear it.
 - **Prices live in code once.** Credits: `billing/services/tiers.ts`. Compute:
   `platform/providers/compute-rates.ts`, mirrored by
-  `apps/web/src/features/billing/compute-pricing.ts`. Model fee:
+  `packages/ui/src/internal/billing/compute-pricing.ts`. Model fee:
   `LLM_PLATFORM_FEE_PERCENT`.
 - **Customers always see their state.** A new plan state needs an
   account-state field and a visible label.

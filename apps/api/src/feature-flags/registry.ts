@@ -29,7 +29,7 @@
  *   4. Another hand-written copy in that package's projects.test.ts
  *   5. An entry below, DECLARING its enforcement mode
  *   6. One `useFeatureFlag` call + one map entry in
- *      apps/web/src/lib/use-project-feature-flags.ts (and move the trailing
+ *      packages/ui/src/internal/lib/use-project-feature-flags.ts (and move the trailing
  *      `isLoading:` to the newly-last hook)
  *
  * Then gate its routes with `requireFeatureFlag` (enforcement: 'routes'), or
@@ -236,8 +236,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
     stability: 'beta',
     available: () => true,
-    // Per-project opt-in while the surface settles.
-    platformDefault: () => false,
+    // On by default (2026-10-19): goals wake on a heartbeat reminder (kortix-goals).
+    platformDefault: () => true,
     // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
     // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
     enforcement: 'routes',
@@ -292,14 +292,17 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'pi_harness',
     name: 'Pi Harness (in-sandbox)',
     description:
-      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. pi calls models only through the LLM gateway: with `llm_gateway` off, sessions boot OpenCode.',
+      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On by default. On ⇒ every new session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. An existing session keeps its sandbox and so its harness. pi calls models only through the LLM gateway: with `llm_gateway` off, sessions boot OpenCode.',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
+    // On by default (2026-10-20). PI_HARNESS_DEFAULT_ENABLED=false turns the default off for a deployment.
+    platformDefault: () => config.PI_HARNESS_DEFAULT_ENABLED,
     enforcement: 'behavioral',
     enforcementNote:
       'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
-      'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
+      'selectSessionHarness). An established session keeps its sandbox (runtime-identity.ts), and a ' +
+      'restart reuses that sandbox and its env, so it keeps its harness. Only a lost or restored session ' +
+      'gets a new sandbox, and that one restores its history from the session log in either harness.',
   },
   {
     key: 'genui',
@@ -381,6 +384,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
+    // Explicit opt-in. A project with `goals` needs it on.
     platformDefault: () => false,
     enforcement: 'behavioral',
     enforcementNote:
@@ -407,6 +411,21 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(drives/routes.ts). Reads by drive id stay open, so a file a session already ' +
       'wrote under /drives still opens. BEHAVIORAL: session provisioning mounts no ' +
       'folder when off (drives/service.ts sessionVolumeMounts).',
+  },
+  {
+    key: 'goals',
+    name: 'Goals',
+    description:
+      'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on.',
+    stability: 'experimental',
+    // A goal keeps its state in Files, and every drive is a Platinum volume.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    enforcement: 'ui-only',
+    enforcementNote:
+      'CLI only: `kortix goals new` refuses to create a goal while it is off (apps/cli/src/commands/goals.ts). ' +
+      'The server parts goals use (reminders, unattended question release, reminder successors) are generic ' +
+      'and stay on for every project; a goal that already exists keeps running when the flag is turned off.',
   },
   {
     key: 'session_log',

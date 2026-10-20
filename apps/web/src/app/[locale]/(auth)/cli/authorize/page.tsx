@@ -1,21 +1,23 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
+
+import { callbackTimeoutMessage, callbackUnreachableMessage } from './callback-errors';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import {
   AuthPendingScreen,
   AuthStatusScreen,
   CopyCommand,
   DetailPanel,
   DetailRow,
-} from '@/features/auth/auth-consent';
-import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
+} from '@kortix/ui/internal/auth/auth-consent';
+import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { createAccountToken, revokeAccountToken } from '@kortix/sdk';
 import { validateCallback } from './validate-callback';
@@ -125,13 +127,9 @@ function CliAuthorizeInner() {
         // leave a dead token in the DB after a failed delivery.
         revokeAccountToken(minted.token_id).catch(() => {});
         if ((err as Error).name === 'AbortError') {
-          throw new Error(
-            `Timed out delivering the API key to ${new URL(callback).host}. Is the \`kortix login\` process still running in your terminal?`,
-          );
+          throw new Error(callbackTimeoutMessage(new URL(callback).host));
         }
-        throw new Error(
-          `Could not reach ${new URL(callback).host}: ${(err as Error).message}. Make sure \`kortix login\` is running in your terminal and try again.`,
-        );
+        throw new Error(callbackUnreachableMessage(new URL(callback).host, (err as Error).message));
       } finally {
         clearTimeout(callbackTimer);
       }
@@ -209,7 +207,7 @@ function CliAuthorizeInner() {
           <p>
             <Link
               href="/"
-              className="hover:text-foreground -my-2 inline-block py-2 underline-offset-4 transition-colors hover:underline"
+              className="hover:text-foreground -my-2 inline-block py-2 transition-colors"
             >
               {tI18nComplete.raw('text19766ed6ccb2')}
             </Link>

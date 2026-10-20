@@ -352,7 +352,7 @@ export async function listAccountTokens(
  * Only (1) belongs on a person's own settings page, so this filters to it by
  * the three columns that DEFINE the other two rather than by a name heuristic:
  * the browser used to guess with `name.startsWith('Connector Session ')`
- * (`components/iam/api-key-rows.ts`) because the list payload carried no
+ * (`packages/ui/src/access/iam/api-key-rows.ts`) because the list payload carried no
  * `session_id`. A person's key is theirs alone — the caller only ever gets
  * their own rows back, never another member's.
  */
