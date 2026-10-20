@@ -4,10 +4,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 // The sidebar primitives are layout slots; stub them as plain elements that
 // keep their className so the badge's own classes can be read.
-const slot =
-  (tag: string, marker: string) =>
-  ({ className, children }: { className?: string; children?: ReactNode }) =>
-    createElement(tag, { className, 'data-slot': marker }, children);
+function slot(tag: string, marker: string) {
+  function Slot({ className, children }: { className?: string; children?: ReactNode }) {
+    return createElement(tag, { className, 'data-slot': marker }, children);
+  }
+  return Slot;
+}
 mock.module('@/components/ui/sidebar', () => ({
   SidebarMenuItem: slot('li', 'item'),
   SidebarMenuButton: slot('button', 'button'),
