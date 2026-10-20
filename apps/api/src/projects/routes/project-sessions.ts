@@ -199,6 +199,13 @@ export function registerProjectSessionsRoutes(): void {
     }
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (body.fork_from_session_id !== undefined) {
+      const forkInput = SessionCreateInputSchema.shape.fork_from_session_id.safeParse(body.fork_from_session_id);
+      if (!forkInput.success || !forkInput.data) return c.json({ error: 'Invalid fork source' }, 400);
+      const source = await loadVisibleSession(loaded, forkInput.data, c.get('sessionId') ?? null, callerKortixSessionId(c));
+      if (!source || sessionIsTombstoned(source.row)) return c.json({ error: 'Not found' }, 404);
+    }
+
     // Per-agent gate: starting a session provisions compute. A scoped agent token
     // must hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
