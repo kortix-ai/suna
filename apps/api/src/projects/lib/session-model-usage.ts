@@ -48,7 +48,7 @@ const logs = gatewayRequestLogs;
 // row is read from its own columns: `resolved_model` is a route id only on a
 // Kortix-served row (on an own key or ChatGPT plan it is the upstream's id),
 // and a fallback always left a failed attempt behind.
-const servedModelSql = sql<string>`coalesce(
+export const servedModelSql = sql<string>`coalesce(
   ${logs.metadata}->>'servedModel',
   case when ${logs.provider} = 'kortix' then ${logs.resolvedModel} else ${logs.requestedModel} end
 )`;

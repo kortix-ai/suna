@@ -40,10 +40,11 @@ import {
   type ShareSubject,
 } from '../../connectors/share';
 import { db } from '../../shared/db';
+import { servedModelSql } from './session-model-usage';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { hasAccountSessionOversight } from '../../iam/session-oversight';
 
-import { accountGroupMembers, projectSessionGrants, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountGroupMembers, projectSessionGrants, projectSessions, sessionSandboxes, sessionLogMessages, sessionLogThreads, sessionTranscriptMessages, gatewayRequestLogs } from '@kortix/db';
 import { and, desc, eq, getTableColumns, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { SessionStartedByFilter } from './session-initiator';
@@ -738,6 +739,37 @@ export async function loadProjectSessionInventory(input: {
     scannedRows,
     foldRows,
   });
+
+  // Read only the visible page, in batched indexed lookups. Never rewrite
+  // the boot pin: the transcript describes past turns, not the next choice.
+  const readableIds = items.filter((item) => item.canAccess).map((item) => item.row.sessionId);
+  if (readableIds.length) {
+    const [logs, mirrors, served] = await Promise.all([
+      db.selectDistinctOn([sessionLogMessages.sessionId], {
+        sessionId: sessionLogMessages.sessionId,
+        provider: sql<string | null>`${sessionLogMessages.record}#>>'{model,provider}'`,
+        model: sql<string | null>`${sessionLogMessages.record}#>>'{model,model}'`,
+      }).from(sessionLogMessages)
+        .innerJoin(sessionLogThreads, and(eq(sessionLogThreads.sessionId, sessionLogMessages.sessionId), eq(sessionLogThreads.threadId, sessionLogMessages.threadId)))
+        .where(and(inArray(sessionLogMessages.sessionId, readableIds), isNull(sessionLogThreads.parentThreadId), isNull(sessionLogMessages.deletedAt), eq(sessionLogMessages.role, 'assistant')))
+        .orderBy(sessionLogMessages.sessionId, desc(sessionLogMessages.createdAt), desc(sessionLogMessages.seq), desc(sessionLogMessages.messageId)),
+      db.selectDistinctOn([sessionTranscriptMessages.sessionId], {
+        sessionId: sessionTranscriptMessages.sessionId,
+        provider: sql<string | null>`${sessionTranscriptMessages.info}->>'providerID'`,
+        model: sql<string | null>`${sessionTranscriptMessages.info}->>'modelID'`,
+      }).from(sessionTranscriptMessages)
+        .innerJoin(projectSessions, eq(projectSessions.sessionId, sessionTranscriptMessages.sessionId))
+        .where(and(inArray(sessionTranscriptMessages.sessionId, readableIds), eq(sessionTranscriptMessages.role, 'assistant'), eq(sessionTranscriptMessages.runtimeSessionId, projectSessions.runtimeSessionId)))
+        .orderBy(sessionTranscriptMessages.sessionId, sql`${sessionTranscriptMessages.messageCreatedAt} DESC NULLS LAST`, desc(sessionTranscriptMessages.messageId)),
+      db.selectDistinctOn([gatewayRequestLogs.sessionId], { sessionId: gatewayRequestLogs.sessionId, model: servedModelSql })
+        .from(gatewayRequestLogs)
+        .where(and(inArray(gatewayRequestLogs.sessionId, readableIds), eq(gatewayRequestLogs.projectId, input.projectId), eq(gatewayRequestLogs.accountId, input.accountId), eq(gatewayRequestLogs.ok, true)))
+        .orderBy(gatewayRequestLogs.sessionId, desc(gatewayRequestLogs.createdAt), desc(gatewayRequestLogs.requestId)),
+    ]);
+    const models = new Map([...mirrors, ...logs].filter((row) => row.provider && row.model).map((row) => [row.sessionId, `${row.provider}/${row.model}`]));
+    for (const row of served) if (row.sessionId && row.model) models.set(row.sessionId, row.model.startsWith('kortix/') ? row.model : `kortix/${row.model}`);
+    for (const item of items) item.row.model = models.get(item.row.sessionId) ?? null;
+  }
 
   const childCounts = await loadChildCounts({ projectId: input.projectId, accountId: input.accountId, filter, items });
   const initiatorNames = new Map<string, string>();

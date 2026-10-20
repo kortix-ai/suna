@@ -6,6 +6,7 @@ let billing: Record<string, unknown> = { ok: true };
 let inserted: Record<string, unknown> | undefined;
 /** The billing entitlement under test. False = free tier (KRTX-1067). */
 let mayUseManagedModels = true;
+let resolvedDefault: { model: string | null; source: 'platform' | 'project' } = { model: null, source: 'platform' };
 
 mock.module('../../billing/services/billing-gate', () => ({ checkBillingAdmission: async () => billing }));
 mock.module('../../billing/services/entitlements', () => ({ accountMayUseManagedModels: async () => mayUseManagedModels }));
@@ -46,7 +47,7 @@ mock.module('./session-runtime-context', () => ({
 // stored, so it resolves to "the platform default applies".
 mock.module('../../llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async () => true,
-  resolveEffectiveModel: async () => ({ model: null, source: 'platform' as const }),
+  resolveEffectiveModel: async () => resolvedDefault,
 }));
 mock.module('../../llm-gateway/models/served-managed-models', () => ({
   platformDefaultModelId: () => 'deepseek-v4.1-flash',
@@ -62,7 +63,9 @@ const project = {
 
 const originalKortixUrl = config.KORTIX_URL;
 const originalDefaultModel = config.LLM_GATEWAY_DEFAULT_MODEL;
+const originalGatewayEnabled = config.LLM_GATEWAY_ENABLED;
 beforeEach(() => {
+  resolvedDefault = { model: null, source: 'platform' };
   billing = { ok: true };
   inserted = undefined;
   mayUseManagedModels = true;
@@ -74,6 +77,7 @@ beforeEach(() => {
 afterAll(() => {
   config.KORTIX_URL = originalKortixUrl;
   config.LLM_GATEWAY_DEFAULT_MODEL = originalDefaultModel;
+  config.LLM_GATEWAY_ENABLED = originalGatewayEnabled;
 });
 
 test('billing 402 is the only create gate and inserts nothing', async () => {
@@ -148,4 +152,13 @@ test('a paid account keeps the raw operator config as its boot fallback', async 
     opencode_model: 'kortix/glm-5.3-flash',
     opencode_model_source: 'platform',
   });
+});
+
+test('a project default is persisted for session-list serialization instead of the platform fallback', async () => {
+  config.LLM_GATEWAY_ENABLED = true;
+  config.LLM_GATEWAY_DEFAULT_MODEL = 'deepseek-v4.1-flash';
+  resolvedDefault = { model: 'glm-5.3-flash', source: 'project' };
+  const result = await createProjectSession({ project, userId: 'synthetic-user', requestingPrincipalType: 'human', body: {} });
+  expect(result.error).toBeUndefined();
+  expect(inserted?.metadata).toMatchObject({ opencode_model: 'kortix/glm-5.3-flash', opencode_model_source: 'project' });
 });

@@ -6,11 +6,12 @@ import {
   type SecretGrant,
   type ShareSubject,
 } from '../../connectors/share';
-import type { projectSessions, sessionSandboxes } from '@kortix/db';
+import type { sessionSandboxes } from '@kortix/db';
 import { isWarmProjectSession } from './warm-sessions';
 import { sessionRestoreUntil } from '../session-log-purge';
 
-type ProjectSessionRow = typeof projectSessions.$inferSelect;
+import type { ProjectSessionRow } from './serializers';
+
 type RuntimeStatus = typeof sessionSandboxes.$inferSelect.status;
 
 export type ProjectSessionListScope = 'visible' | 'project';

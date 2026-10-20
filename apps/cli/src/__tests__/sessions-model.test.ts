@@ -1,7 +1,5 @@
-// `sessions ls --json` and `sessions status --json` carry the session's
-// resolved model id — the stored pin (`metadata.opencode_model`, the same
-// `provider/model` ref `sessions new --model` takes), or null when the row
-// holds none (the session follows the default chain). KRTX-1695.
+// The server conversation model outranks a stale creation pin. Older servers
+// remain compatible through the stored-pin fallback. KRTX-2697.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -41,7 +39,8 @@ const row = (id: string, over: Record<string, unknown> = {}) => ({
 
 const PINNED = row(PINNED_ID, {
   status: "running",
-  metadata: { opencode_model: "kortix/glm-5.3-flash", opencode_model_source: "project" },
+  model: "kortix/glm-5.3-flash",
+  metadata: { opencode_model: "kortix/deepseek-v4.1-flash", opencode_model_source: "project" },
 });
 const UNPINNED = row(UNPINNED_ID);
 const BYOK = row(BYOK_ID, { metadata: { opencode_model: "openai/gpt-4o" } });
@@ -103,7 +102,7 @@ afterEach(() => {
 });
 
 describe("kortix sessions model field in --json output", () => {
-  test("ls --json carries the stored pin per session and null when unpinned", async () => {
+  test("ls --json prefers the conversation model and falls back for older servers", async () => {
     const r = await runCli(["sessions", "ls", "--json"]);
     expect(r.code).toBe(0);
     const rows = JSON.parse(r.stdout) as Array<Record<string, unknown>>;
@@ -113,7 +112,7 @@ describe("kortix sessions model field in --json output", () => {
     expect(rows.find((x) => x.session_id === UNPINNED_ID)).toMatchObject({ model: null });
   });
 
-  test("status --json carries the model per session", async () => {
+  test("status --json prefers the conversation model and falls back for older servers", async () => {
     const r = await runCli(["sessions", "status", "--all", "--json"]);
     expect(r.code).toBe(0);
     const rows = JSON.parse(r.stdout) as Array<Record<string, unknown>>;

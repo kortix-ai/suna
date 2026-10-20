@@ -1805,3 +1805,5 @@ the synthetic account and auth user. Fail if cleanup fails.
 The [evaluation and runbook](../../.agents/skills/testing/references/e2e-evaluation.md)
 defines the pilot's scope and promotion criteria. Existing route-coverage and
 release contracts remain required.
+
+`SESS-57` Session-list conversation model. Two real CLI `sessions ls --json` reads report the saved root assistant's provider/model, rather than independently choosing a default. The SQL regression suite also covers stale creation pins, an unprompted project-default pin, subagent exclusion, tombstones, and inaccessible-row redaction.

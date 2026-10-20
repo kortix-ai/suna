@@ -51,7 +51,7 @@ export type ProjectGitConnectionRow = typeof projectGitConnections.$inferSelect;
 
 export type ProjectGitCredentialRow = typeof projectGitCredentials.$inferSelect;
 
-export type ProjectSessionRow = typeof projectSessions.$inferSelect;
+export type ProjectSessionRow = typeof projectSessions.$inferSelect & { model?: string | null };
 
 export type RequestAuditContext = {
   method: string;
@@ -178,6 +178,7 @@ export function serializeSession(
   // live, but never a user rename.
   const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.runtimeSessionId);
   return {
+    model: canAccess ? (row.model ?? (typeof row.metadata?.opencode_model === 'string' ? row.metadata.opencode_model : null)) : null,
     session_id: row.sessionId,
     account_id: row.accountId,
     project_id: row.projectId,

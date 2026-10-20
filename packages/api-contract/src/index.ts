@@ -1094,6 +1094,8 @@ export const RuntimeSessionSnapshotSchema = z.object({
 export type RuntimeSessionSnapshot = z.infer<typeof RuntimeSessionSnapshotSchema>;
 
 export const ProjectSessionSchema = z.object({
+  /** Latest recorded conversation model, falling back to the creation pin before any answer. */
+  model: z.string().nullable().optional(),
   session_id: z.string(),
   account_id: z.string(),
   project_id: z.string(),

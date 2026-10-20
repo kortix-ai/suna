@@ -145,6 +145,8 @@ export type OauthPollResponse =
 // ── Sessions ──────────────────────────────────────────────────────────────
 
 export interface ProjectSession {
+  /** Latest conversation model returned by current servers. */
+  model?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;

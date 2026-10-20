@@ -65,6 +65,8 @@ export interface ProjectSessionInitiator {
 }
 
 export interface ProjectSession {
+  /** Latest recorded conversation model; absent on older servers. */
+  model?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;
