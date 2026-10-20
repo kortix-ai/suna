@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { parseChannelMessage } from './channel-message';
-import { ChannelMessage, ChannelOrigin } from './user-message';
+import { parseChannelMessage } from '@kortix/ui/session/turn/channel-message';
+import { ChannelMessage } from '@kortix/ui/session/turn/user-message';
+import { ChannelOrigin } from '@kortix/ui/session';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const slack = (text: string) =>

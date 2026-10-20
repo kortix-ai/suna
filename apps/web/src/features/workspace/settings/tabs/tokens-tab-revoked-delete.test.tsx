@@ -58,7 +58,7 @@ mock.module('@/lib/iam-client', () => ({
   getPatPolicy: async () => null,
 }));
 
-mock.module('@/lib/use-permission', () => ({
+mock.module('@kortix/ui/internal/lib/use-permission', () => ({
   usePermission: () => ({ allowed: true, isLoading: false }),
 }));
 
@@ -66,7 +66,6 @@ const uiToastMock = () => ({
   successToast: () => {},
   errorToast: () => {},
 });
-mock.module('@/components/ui/toast', uiToastMock);
 mock.module('@kortix/ui/toast', uiToastMock);
 
 // The real Modal and ConfirmDialog are Radix portals; the wiring under test is
@@ -81,7 +80,6 @@ const uiModalMock = () => ({
   ModalHeader: Pass,
   ModalTitle: Pass,
 });
-mock.module('@/components/ui/modal', uiModalMock);
 mock.module('@kortix/ui/modal', uiModalMock);
 const uiConfirmDialogMock = () => ({
   ConfirmDialog: ({
@@ -97,7 +95,6 @@ const uiConfirmDialogMock = () => ({
       ? createElement('button', { onClick: onConfirm, 'data-testid': 'confirm-action' }, confirmLabel ?? 'confirm')
       : null,
 });
-mock.module('@/components/ui/confirm-dialog', uiConfirmDialogMock);
 mock.module('@kortix/ui/confirm-dialog', uiConfirmDialogMock);
 
 function makeKebab() {
@@ -105,26 +102,28 @@ function makeKebab() {
   return Kebab;
 }
 const RowKebabMock = makeKebab();
-mock.module('@/features/workspace/shared/access/access-row', () => ({ RowKebab: RowKebabMock }));
-mock.module('@/features/workspace/shared/access', () => ({ CopyRow: Pass }));
+mock.module('@kortix/ui/access/access/access-row', () => ({ RowKebab: RowKebabMock }));
+mock.module('@kortix/ui/access/access/index', () => ({ CopyRow: Pass }));
 
-mock.module('./connected-apps', () => ({ ConnectedApps: () => null }));
-mock.module('../settings-tab-header', () => ({ SettingsTabHeader: () => null }));
-mock.module('@/features/accounts/hub/account-hub-location', () => ({
+mock.module('@kortix/ui/customize/settings/tabs/connected-apps', () => ({ ConnectedApps: () => null }));
+mock.module('@kortix/ui/customize/settings/settings-tab-header', () => ({ SettingsTabHeader: () => null }));
+mock.module('@kortix/ui/internal/account-hub/account-hub-location', () => ({
   HubLink: ({ children }: { children?: ReactNode }) => createElement(Fragment, null, children),
 }));
 
 const translate = (key: string) => key.split('.').pop() || key;
-mock.module('@/i18n/use-translations', () => ({
+const translationsMock = () => ({
   useLocale: () => 'en',
   useTranslations: () =>
     Object.assign((key: string) => translate(key), {
       raw: translate,
       rich: (key: string) => translate(key),
     }),
-}));
+});
+mock.module('@/i18n/use-translations', translationsMock);
+mock.module('@kortix/ui/i18n', translationsMock);
 
-const { TokensTab } = await import('./tokens-tab');
+const { TokensTab } = await import('@kortix/ui/customize/settings/tabs/tokens-tab');
 
 function Pass({ children }: { children?: ReactNode }) {
   return createElement(Fragment, null, children);

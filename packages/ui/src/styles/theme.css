@@ -20,10 +20,15 @@
  * --font-mono-system). A host that skips tokens.css and leaves those unset falls
  * back to the generic ui-sans-serif / ui-monospace stacks. */
 
-/* Tailwind scans the package source for class names. */
+/* Tailwind scans the package source for class names. The i18n catalog is
+   copy, not markup: its words must not become utilities. */
 @source "../";
+@source not "../i18n/en.ts";
 
 @import './dotmatrix-loader.css';
+@import './components.css';
+/* Cmd+P: the session transcript and a markdown file as a document. */
+@import './print.css';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -97,8 +102,14 @@
   --color-foreground: var(--foreground);
   --color-foreground-strong: var(--foreground-strong);
   --color-foreground-weak: var(--foreground-weak);
-  --font-sans: var(--font-roobert, var(--font-sans-system, ui-sans-serif, system-ui, sans-serif));
-  --font-mono: var(--font-roobert-mono, var(--font-mono-system, ui-monospace, monospace));
+  /* --font-family-sans / --font-family-mono are the host's font override
+     (themeToCss sets them). Unset, the chain is Roobert on Kortix surfaces,
+     then the system stack. */
+  --font-sans: var(
+    --font-family-sans,
+    var(--font-roobert, var(--font-sans-system, ui-sans-serif, system-ui, sans-serif))
+  );
+  --font-mono: var(--font-family-mono, var(--font-roobert-mono, var(--font-mono-system, ui-monospace, monospace)));
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -130,6 +141,12 @@
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
+  /* The default Button fill. Unset, it is ink on paper (foreground /
+     background), the Kortix primary action. A host recolors it with the
+     theme's `action` / `actionForeground`. The fallback resolves where the
+     class is used, so a scoped `.dark` keeps working. */
+  --color-action: var(--action, var(--foreground));
+  --color-action-foreground: var(--action-foreground, var(--background));
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);
@@ -150,40 +167,62 @@
      theme, because it mirrors a real shell — so these are literals, not
      light/dark pairs. Chrome around it (the connect bar, the panel shell, the
      connection status) is app UI and paints Kortix tokens. `terminalTheme` in
-     features/session/pty-terminal.tsx must keep `background` equal to
+     packages/ui/src/terminal/pty-terminal.tsx must keep `background` equal to
      --terminal-surface and `foreground` equal to --terminal-fg: xterm's ITheme
      needs concrete colors, not CSS vars. */
   --color-terminal-surface: var(--terminal-surface);
   --color-terminal-fg: var(--terminal-fg);
   --color-terminal-border: var(--terminal-border);
+}
+
+/* Steps a host re-themes through a variable of the same name (--text-sm,
+   --ease-default, --shadow-md). `reference` stops Tailwind from also emitting
+   them into :root, where `--text-sm: var(--text-sm, …)` would be a cycle. */
+@theme inline reference {
+  /* Bare `rounded` (4px at the default --radius). */
+  --radius: calc(var(--radius) - 6px);
+  /* Line width of `border`, `border-t|x|…` and `divide-*` with no value
+     (1px unless a host sets --border-width). Heavier strokes in the components
+     are multiples of it: border-[length:calc(var(--border-width,1px)*1.5)]. */
+  --default-border-width: var(--border-width, 1px);
+  /* Elevation. Tailwind's default shadow values, read through a variable so a
+     host can flatten or deepen every shadow-* step. The fallback keeps
+     --tw-shadow-color, so shadow-black/20 still tints the default. */
+  --shadow-2xs: var(--shadow-2xs, 0 1px var(--tw-shadow-color, rgb(0 0 0 / 0.05)));
+  --shadow-xs: var(--shadow-xs, 0 1px 2px 0 var(--tw-shadow-color, rgb(0 0 0 / 0.05)));
+  --shadow-sm: var(--shadow-sm, 0 1px 3px 0 var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 1px 2px -1px var(--tw-shadow-color, rgb(0 0 0 / 0.1)));
+  --shadow-md: var(--shadow-md, 0 4px 6px -1px var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 2px 4px -2px var(--tw-shadow-color, rgb(0 0 0 / 0.1)));
+  --shadow-lg: var(--shadow-lg, 0 10px 15px -3px var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 4px 6px -4px var(--tw-shadow-color, rgb(0 0 0 / 0.1)));
+  --shadow-xl: var(--shadow-xl, 0 20px 25px -5px var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 8px 10px -6px var(--tw-shadow-color, rgb(0 0 0 / 0.1)));
+  --shadow-2xl: var(--shadow-2xl, 0 25px 50px -12px var(--tw-shadow-color, rgb(0 0 0 / 0.25)));
   /* @generated kortix-brand:start theme — edit .agents/skills/kortix-brand/references/visual/visual-system.json, then run generate-tokens.ts */
   /* Type scale. Roles and surfaces are in references/visual/typography.md. */
-  --text-xs: 0.8125rem;
-  --text-xs--line-height: calc(1 / 0.8125);
-  --text-sm: 0.875rem;
-  --text-sm--line-height: calc(1.25 / 0.875);
-  --text-md: 0.9rem;
-  --text-md--line-height: calc(1.375 / 0.9375);
-  --text-base: 1rem;
-  --text-base--line-height: calc(1.5 / 1);
-  --text-lg: 1.125rem;
-  --text-lg--line-height: calc(1.75 / 1.125);
-  --text-xl: 1.25rem;
-  --text-xl--line-height: calc(1.75 / 1.25);
-  --text-2xl: 1.5rem;
-  --text-2xl--line-height: calc(2 / 1.5);
-  --text-3xl: 1.875rem;
-  --text-3xl--line-height: calc(2.25 / 1.875);
-  --text-4xl: 2.25rem;
-  --text-4xl--line-height: calc(2.5 / 2.25);
-  --text-5xl: 3rem;
-  --text-5xl--line-height: 1;
-  --text-6xl: 3.75rem;
-  --text-6xl--line-height: 1;
-  --text-7xl: 4.5rem;
-  --text-7xl--line-height: 1;
-  --text-8xl: 6rem;
-  --text-8xl--line-height: 1;
+  --text-xs: var(--text-xs, 0.8125rem);
+  --text-xs--line-height: var(--text-xs--line-height, calc(1 / 0.8125));
+  --text-sm: var(--text-sm, 0.875rem);
+  --text-sm--line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
+  --text-md: var(--text-md, 0.9rem);
+  --text-md--line-height: var(--text-md--line-height, calc(1.375 / 0.9375));
+  --text-base: var(--text-base, 1rem);
+  --text-base--line-height: var(--text-base--line-height, calc(1.5 / 1));
+  --text-lg: var(--text-lg, 1.125rem);
+  --text-lg--line-height: var(--text-lg--line-height, calc(1.75 / 1.125));
+  --text-xl: var(--text-xl, 1.25rem);
+  --text-xl--line-height: var(--text-xl--line-height, calc(1.75 / 1.25));
+  --text-2xl: var(--text-2xl, 1.5rem);
+  --text-2xl--line-height: var(--text-2xl--line-height, calc(2 / 1.5));
+  --text-3xl: var(--text-3xl, 1.875rem);
+  --text-3xl--line-height: var(--text-3xl--line-height, calc(2.25 / 1.875));
+  --text-4xl: var(--text-4xl, 2.25rem);
+  --text-4xl--line-height: var(--text-4xl--line-height, calc(2.5 / 2.25));
+  --text-5xl: var(--text-5xl, 3rem);
+  --text-5xl--line-height: var(--text-5xl--line-height, 1);
+  --text-6xl: var(--text-6xl, 3.75rem);
+  --text-6xl--line-height: var(--text-6xl--line-height, 1);
+  --text-7xl: var(--text-7xl, 4.5rem);
+  --text-7xl--line-height: var(--text-7xl--line-height, 1);
+  --text-8xl: var(--text-8xl, 6rem);
+  --text-8xl--line-height: var(--text-8xl--line-height, 1);
   /* Emoji-picker active cell. Hues are DERIVED from the glyph (emoji-tint.ts) and must stay stable. Fill stays pale; the 1px inset ring carries WCAG 1.4.11 3:1 against --popover (measured 3.03-3.19:1). Emitted as light-dark() in @theme. */
   --color-emoji-fill-red: light-dark(hsl(4 46% 88%), hsl(4 28% 26%));
   --color-emoji-fill-amber: light-dark(hsl(32 52% 87%), hsl(32 30% 25%));
@@ -215,16 +254,19 @@
   --color-glyph-ring-purple: light-dark(hsl(275 34% 56%), hsl(275 34% 61%));
   --color-glyph-ring-magenta: light-dark(hsl(318 40% 52%), hsl(318 40% 61%));
   /* Motion. Tailwind 4 reads duration utilities from --transition-duration-*. */
-  --transition-duration-fast: 100ms;
-  --transition-duration-normal: 150ms;
-  --transition-duration-moderate: 200ms;
-  --transition-duration-slow: 300ms;
-  --transition-duration-slower: 500ms;
-  --ease-default: cubic-bezier(0.2, 0, 0, 1);
-  --ease-out: cubic-bezier(0, 0, 0.2, 1);
-  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --transition-duration-fast: var(--duration-fast, 100ms);
+  --transition-duration-normal: var(--duration-normal, 150ms);
+  --transition-duration-moderate: var(--duration-moderate, 200ms);
+  --transition-duration-slow: var(--duration-slow, 300ms);
+  --transition-duration-slower: var(--duration-slower, 500ms);
+  --ease-default: var(--ease-default, cubic-bezier(0.2, 0, 0, 1));
+  --ease-out: var(--ease-out, cubic-bezier(0, 0, 0.2, 1));
+  --ease-in-out: var(--ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
+  --ease-in: var(--ease-in, cubic-bezier(0.4, 0, 1, 1));
   /* @generated kortix-brand:end */
+}
+
+@theme inline {
   /* App typography scale. Keep html at 100% so browser and OS zoom
   /* Standard border radius values */
   --radius-sm: calc(var(--radius) - 4px);
@@ -232,8 +274,7 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   /* Standard radius for all main form elements and UI components */
-  --radius-2xl: 1rem;
-  --border-width: 1.5px;
+  --radius-2xl: calc(var(--radius) + 6px);
   --spacing-sidebar: 1.5rem;
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;

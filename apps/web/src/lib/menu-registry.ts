@@ -19,13 +19,14 @@
 
 import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
-import { SidebarToggle as PanelLeftClose } from '@/features/icon/icons/sidebar-toggle';
+import { SidebarGlyph as PanelLeftClose } from '@kortix/ui/icons';
 import { Sun } from '@/features/icon/icons/sun';
 import type { UiTranslator } from '@/i18n/translator';
 import { TERMINAL_THEMES, type InterfaceThemeId } from '@/lib/interface-themes';
 import { MENU_TRANSLATION_KEYS } from '@/lib/menu-translation-keys.generated';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { WALLPAPERS } from '@/lib/wallpapers';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import type { SettingsTabId } from '@kortix/ui/internal/lib/settings-tab-id';
+import { WALLPAPERS } from '@kortix/ui/theme';
 import type { FeatureFlagKey } from '@kortix/sdk';
 import type { RuntimeCapability } from '@kortix/sdk';
 import {
@@ -100,23 +101,13 @@ export type MenuItemKind =
   /**
    * Opens the account hub modal. NOT `navigate`: the hub has no route — it is
    * `?accountId=` on whatever page you are already on
-   * (`stores/account-panel-store.ts`), so there is no href to give. The
+   * (`packages/ui/src/internal/stores/account-panel-store.ts`), so there is no href to give. The
    * destination is `accountTab` below, and the account is whichever one is
    * selected at the moment the row is chosen.
    */
   | 'account';
 
-export type SettingsTabId =
-  | 'general'
-  | 'security'
-  | 'appearance'
-  | 'sounds'
-  | 'notifications'
-  | 'billing'
-  | 'transactions'
-  | 'referrals'
-  | 'tokens'
-  | 'shortcuts';
+export type { SettingsTabId };
 
 /** The group / section a menu item belongs to. */
 export type MenuGroup =
@@ -178,7 +169,7 @@ export interface MenuItemDef {
   /**
    * For kind='account': which hub section to open (`?accountTab=`), or omitted
    * for the hub's account list. Values come from `VALID_TABS` in
-   * `features/accounts/hub/sections.ts`, which
+   * `packages/ui/src/internal/account-hub/sections.ts`, which
    * `menu-registry-destinations.test.ts` checks this against.
    */
   accountTab?: string;
@@ -1103,7 +1094,7 @@ export const menuRegistry: MenuItemDef[] = [
   // These eight rows are the palette's only route to the account-scoped
   // surfaces. They spent one release as settings tabs, derived from
   // `railGroups()` like every other tab; they are not settings tabs any more
-  // (`ACCOUNT_GRADUATED` in `features/workspace/settings/settings-tabs.ts`
+  // (`ACCOUNT_GRADUATED` in `packages/ui/src/customize/settings/settings-tabs.ts`
   // redirects every stale `/settings/<id>` bookmark onto this page), so the
   // derived list cannot produce them and they are hand-written here — the same
   // arrangement `proj-triggers` uses for the same reason.

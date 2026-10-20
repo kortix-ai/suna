@@ -14,12 +14,12 @@ import {
 } from './mermaid-html';
 
 const WEB_RENDERER = readFileSync(
-  path.resolve(import.meta.dir, '../../../../../packages/ui/src/components/ui/mermaid-renderer.tsx'),
+  path.resolve(import.meta.dir, '../../../../../packages/ui/src/primitives/mermaid-renderer.tsx'),
   'utf8',
 );
 // The web renderer initializes with `MERMAID_CONFIG` from mermaid-render.ts.
 const WEB_MERMAID_CONFIG = readFileSync(
-  path.resolve(import.meta.dir, '../../../../../packages/ui/src/components/ui/mermaid-render.ts'),
+  path.resolve(import.meta.dir, '../../../../../packages/ui/src/primitives/mermaid-render.ts'),
   'utf8',
 );
 

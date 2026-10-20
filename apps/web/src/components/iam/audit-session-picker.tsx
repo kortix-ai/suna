@@ -13,11 +13,11 @@ import {
   CommandPopover,
   CommandPopoverContent,
   CommandPopoverTrigger,
-} from '@/components/ui/command';
-import { TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE, triggerVariants } from '@/components/ui/trigger-variants';
-import { useDebounce } from '@/hooks/use-debounced-value';
+} from '@kortix/ui/command';
+import { TRIGGER_CARET_CLASS, TRIGGER_ICON_SIZE, triggerVariants } from '@kortix/ui/trigger-variants';
+import { useDebounce } from '@kortix/ui/internal/hooks/use-debounced-value';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /** Rows one page of a search shows. Load more reads the next page. */
 export const AUDIT_SESSION_SEARCH_LIMIT = 20;

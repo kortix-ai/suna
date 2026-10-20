@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,31 +8,28 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
+import { Skeleton } from '@kortix/ui/skeleton';
 import {
   createFilesStore,
   useFilesStore,
   useFilesStoreApi,
-} from '@/features/file-browser/store/files-store';
-import { Home } from '@/features/icon/icons/home';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/internal/stores/files-store';
+import { Home } from '@kortix/ui/internal/icons/home';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   DriveExplorer,
   FileExplorerSourceProvider,
   FilesStoreProvider,
-} from '@/features/project-files';
-import { useAuth } from '@/features/providers/auth-provider';
-import {
   useDriveAvailability,
   useDriveFolder,
   useFolderAccess,
   useProjectDrive,
-} from '@/hooks/drives/use-drives';
-import { useDebounce } from '@/hooks/use-debounce';
+} from '@kortix/ui/files';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { type Drive, getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
@@ -46,6 +43,7 @@ import {
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useDebounce } from '@kortix/ui';
 import { type ComponentType, type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { DriveConflictsBar } from './drive-conflicts-bar';

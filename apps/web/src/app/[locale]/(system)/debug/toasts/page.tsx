@@ -13,7 +13,7 @@
 
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   customToast,
   errorToast,
@@ -25,8 +25,8 @@ import {
   undoToast,
   warningToast,
   type ToastVariant,
-} from '@/components/ui/toast';
-import { SessionFailedCard, SessionStackCard } from '@/features/notifications/session-toast-cards';
+} from '@kortix/ui/toast';
+import { SessionFailedCard, SessionStackCard } from '@kortix/ui/internal/notifications/session-toast-cards';
 import { extractGatewayErrorDetails, unwrapError } from '@kortix/sdk';
 import { CheckCircleIcon, ClockIcon, XCircleIcon } from '@phosphor-icons/react';
 

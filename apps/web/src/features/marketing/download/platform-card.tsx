@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/marketing/button';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 

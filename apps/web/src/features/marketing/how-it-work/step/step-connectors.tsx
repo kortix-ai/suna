@@ -1,7 +1,7 @@
 'use client';
 
-import { faviconUrlForHostname } from '@/lib/favicon';
-import { KortixLogo } from '@/components/ui/kortix-logo';
+import { faviconUrlForHostname } from '@kortix/ui';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
 import { IconFrame } from '@/components/ui/marketing/icon-frame';
 import { m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';

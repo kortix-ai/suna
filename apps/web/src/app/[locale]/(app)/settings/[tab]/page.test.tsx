@@ -15,7 +15,7 @@ const replacements: string[] = [];
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({ user: authLoading ? null : { id: 'synthetic-user' }, isLoading: authLoading }),
 }));
-mock.module('@/lib/onboarding/last-project-cookie', () => ({
+mock.module('@kortix/ui/internal/lib/onboarding/last-project-cookie', () => ({
   readLastProjectId: (userId: string | null | undefined) => {
     lastProjectReads.push(userId);
     return userId === 'synthetic-user' ? lastProjectId : null;
@@ -31,7 +31,7 @@ mock.module('@/hooks/account/use-ensure-selected-account', () => ({
 mock.module('@/features/workspace/settings/use-settings-account-id', () => ({
   useSettingsAccountId: () => 'stale-account',
 }));
-mock.module('@/hooks/account/use-accounts-list', () => ({
+mock.module('@kortix/ui/internal/hooks/account/use-accounts-list', () => ({
   useAccountsList: () => ({
     data: accounts,
     isPending: pending,
@@ -46,7 +46,7 @@ mock.module('@/features/workspace/settings/standalone-settings-route', () => ({
   STANDALONE_DEFAULT_SETTINGS_TAB: 'profile',
   StandaloneSettingsRoute: ({ tab }: { tab: string }) => createElement('main', null, tab),
 }));
-mock.module('@/features/layout/section/error-state', () => ({
+mock.module('@kortix/ui/error-state', () => ({
   ErrorState: ({ title, action }: { title: string; action: React.ReactNode }) =>
     createElement('section', null, title, action),
 }));
@@ -54,7 +54,6 @@ const uiButtonMock = () => ({
   Button: ({ onClick, children }: { onClick: () => void; children: React.ReactNode }) =>
     createElement('button', { onClick }, children),
 });
-mock.module('@/components/ui/button', uiButtonMock);
 mock.module('@kortix/ui/button', uiButtonMock);
 mock.module('@/components/common/route-loading', () => ({
   RouteLoadingFallback: () => createElement('p', null, 'Loading'),

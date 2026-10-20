@@ -16,13 +16,13 @@ import {
   monthlyCreditsForUsd,
   PLATFORM_FEE_PERCENT,
   TOP_UP_BONUS_STEPS,
-} from '@/features/billing/compute-pricing';
+} from '@kortix/ui/internal/billing/compute-pricing';
 import { CreditTierSelect } from '@/features/billing/credit-tier-select';
 import { PricingPlanCard } from '@/features/billing/pricing-plan-card';
 import type { PricingPlan, PricingPlanId } from '@/features/billing/pricing-plans';
 import { usePricingPlans } from '@/features/billing/use-pricing-plans';
 import { FaqSection, type FaqItem } from '@/features/marketing/faq';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { ArrowRightIcon, CheckCircleIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
