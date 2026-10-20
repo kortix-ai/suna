@@ -82,6 +82,10 @@ Subcommands:
                                     link across runs — do not re-mint/re-post
                                     while one is unexpired. Warns when this
                                     session's agent will not receive a name.
+    --show                          Re-show the unexpired link saved on this
+                                    device for the same names, scope, host,
+                                    project and credential. Never mints.
+                                    Links minted elsewhere are not available.
                                     --scope runtime|connector  --expires <min>
                                     connector by default: server-side only,
                                     never in the sandbox env. Use runtime
