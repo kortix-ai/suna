@@ -253,9 +253,13 @@ describe('the inbox row', () => {
     await db.execute(sql`
       UPDATE kortix.session_lifecycle_commands
          SET available_at = now() + interval '5 minutes',
-             result = '{"admission_reason":"turn_active"}'::jsonb
+             result = '{"admission_reason":"turn_active","admission_refusals":500}'::jsonb
        WHERE command_id IN (${first.commandId}::uuid, ${second.commandId}::uuid)`);
     expect(await promoteNextInboxRow(SESSION_ID)).toBe(first.idempotencyKey);
+    // The kick resets the refusal count: the woken row is back on the 300ms
+    // curve, not on the stale-wait minute.
+    expect((await readRow(first.commandId)).result).toEqual({ admission_reason: 'turn_active' });
+    expect((await readRow(second.commandId)).result).toMatchObject({ admission_refusals: 500 });
   });
 });
 

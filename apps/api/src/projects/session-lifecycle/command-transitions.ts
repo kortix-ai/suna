@@ -211,7 +211,13 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
   if (!next) return null;
   await db
     .update(sessionLifecycleCommands)
-    .set({ availableAt: new Date(), updatedAt: new Date() })
+    // A woken row starts the backoff curve again, so it never sits out the
+    // stale-wait minute (`INBOX_STALE_ORDER_BACKOFF_MS`) after its kick.
+    .set({
+      availableAt: new Date(),
+      result: sql`${sessionLifecycleCommands.result} - 'admission_refusals'`,
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(sessionLifecycleCommands.commandId, next.commandId),

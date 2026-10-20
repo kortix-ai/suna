@@ -68,6 +68,15 @@ export const INBOX_ORDER_BACKOFF_MS = 300;
  * 75s of dead air behind ~1s deliveries.
  */
 export const INBOX_ORDER_MAX_BACKOFF_MS = 2_000;
+/**
+ * A row refused this many times behind an older prompt (~2 min at the 2s cap)
+ * waits on a head that is not moving: a failed or stopped session whose head
+ * sits out the runtime-unreachable ladder. It re-polls once a minute instead.
+ * The head going out still promotes it at once (`promoteNextInboxRow`). Prod
+ * 2026-10-20: ~200 such rows were refused 28 times a second.
+ */
+export const INBOX_STALE_ORDER_REFUSALS = 64;
+export const INBOX_STALE_ORDER_BACKOFF_MS = 60_000;
 const INBOX_BACKOFF_FREE_REFUSALS = 4;
 
 /** `base * 2^(refusals - free)`, capped. Pure, so the curve is testable. */
@@ -431,6 +440,8 @@ export async function admitInboxPrompt(
     INBOX_ORDER_MAX_BACKOFF_MS,
     refusals,
   );
+  const waitBackoffMs =
+    refusals >= INBOX_STALE_ORDER_REFUSALS ? INBOX_STALE_ORDER_BACKOFF_MS : orderBackoffMs;
 
   // THE THREE READS THIS GATE ASKS FOR ARE INDEPENDENT, so they go out
   // together. Awaiting them one at a time cost three sequential round trips on
@@ -503,7 +514,7 @@ export async function admitInboxPrompt(
   // one session, and OpenCode orders what it receives by ARRIVAL — so the loser
   // of that race is the message the user typed FIRST.
   if (await inFlightRead) {
-    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
+    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: waitBackoffMs };
   }
 
   // "Send now"/retry stamps `promoted`: the user pointed at ONE row and asked
@@ -512,7 +523,7 @@ export async function admitInboxPrompt(
   // about which message goes first.
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
   if (!promoted && (await olderRead)) {
-    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
+    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: waitBackoffMs };
   }
 
   return { admit: true };

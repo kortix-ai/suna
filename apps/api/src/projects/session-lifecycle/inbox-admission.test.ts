@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   INBOX_ORDER_BACKOFF_MS,
   INBOX_ORDER_MAX_BACKOFF_MS,
+  INBOX_STALE_ORDER_BACKOFF_MS,
+  INBOX_STALE_ORDER_REFUSALS,
   QUEUE_BOUNDARY_FALLBACK_MS,
   admissionBackoffMs,
   admitInboxPrompt,
@@ -98,7 +100,7 @@ describe('admitInboxPrompt', () => {
 
   test('the refusal counter is what makes a waiting row back off further', async () => {
     const admission = await admitInboxPrompt(
-      row({ result: { admission_reason: 'older_prompt_pending', admission_refusals: 99 } }),
+      row({ result: { admission_reason: 'older_prompt_pending', admission_refusals: 20 } }),
       {
         readSandbox: async () => null,
         hasInFlightPrompt: async () => false,
@@ -110,6 +112,36 @@ describe('admitInboxPrompt', () => {
       reason: 'older_prompt_pending',
       retryAfterMs: INBOX_ORDER_MAX_BACKOFF_MS,
     });
+  });
+
+  test('a row stuck behind an older prompt for ~2 min re-polls once a minute, not every 2s', async () => {
+    // Prod 2026-10-20: ~200 rows queued behind heads that never delivered
+    // (failed or stopped sessions) were refused 28 times a second, ~0.6 of a
+    // database core in claims and sibling reads. Their next prompt is made due
+    // by `promoteNextInboxRow` when the head goes out, so the clock is only the
+    // lost-kick fallback.
+    const deps = (older: boolean, inFlight: boolean) => ({
+      readSandbox: async () => null,
+      hasInFlightPrompt: async () => inFlight,
+      hasOlderPendingPrompt: async () => older,
+    });
+    const stuck = row({
+      result: { admission_reason: 'older_prompt_pending', admission_refusals: INBOX_STALE_ORDER_REFUSALS },
+    });
+    for (const [older, inFlight] of [[true, false], [false, true]] as const) {
+      expect(await admitInboxPrompt(stuck, deps(older, inFlight))).toEqual({
+        admit: false,
+        reason: 'older_prompt_pending',
+        retryAfterMs: INBOX_STALE_ORDER_BACKOFF_MS,
+      });
+    }
+    expect(INBOX_STALE_ORDER_BACKOFF_MS).toBe(60_000);
+    // A live turn still re-polls at the 2s cap however long it has waited.
+    const live = await admitInboxPrompt(
+      row({ result: { admission_reason: 'turn_active', admission_refusals: 10_000 } }),
+      { ...deps(false, false), readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }) },
+    );
+    expect(live).toMatchObject({ reason: 'turn_active', retryAfterMs: INBOX_ORDER_MAX_BACKOFF_MS });
   });
 
   test('a command with no session id is admitted — the drain fails it honestly', async () => {
