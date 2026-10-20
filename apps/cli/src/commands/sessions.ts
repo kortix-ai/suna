@@ -250,7 +250,7 @@ Subcommands:
                                     A session with no keys for the new
                                     model's provider gets every key you may
                                     use there.
-  compact <session-id>              Summarize the conversation and continue
+  compact <session-id>              Summarize the conversation; wakes a stopped session first
                                     from the summary.
   update [<session-id>]             Change labels and metadata. --label <l>
                                     adds, --unlabel <l> removes,

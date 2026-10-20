@@ -36,6 +36,7 @@ import {
   resolveSessionRuntime,
   SessionRuntimeError,
   type SessionRuntime,
+  type NotRunningPolicy,
 } from '../session-runtime.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
@@ -65,7 +66,7 @@ export async function loadSessionForChat(
   sessionId: string,
   opts: CtxOpts,
   cliCommand = 'sessions chat',
-  options: { requireRunning?: boolean } = {},
+  options: { onNotRunning?: NotRunningPolicy; onStarting?: (session: ProjectSession) => void } = {},
 ): Promise<ResolvedSession | null> {
   const found = await locateSessionAnywhere(
     sessionId,
@@ -92,7 +93,8 @@ export async function loadSessionForChat(
       client,
       projectId,
       session,
-      onNotRunning: options.requireRunning === false ? 'ignore' : 'fail',
+      onNotRunning: options.onNotRunning,
+      onStarting: options.onStarting,
     });
   } catch (error) {
     if (error instanceof SessionRuntimeError && error.kind === 'not-running') {
@@ -102,7 +104,11 @@ export async function loadSessionForChat(
       );
       return null;
     }
-    surfaceApiError(error instanceof SessionRuntimeError ? error.cause : error);
+    if (error instanceof SessionRuntimeError && error.cause === undefined) {
+      process.stderr.write(`${status.err(error.message)}\n`);
+    } else {
+      surfaceApiError(error instanceof SessionRuntimeError ? error.cause : error);
+    }
     return null;
   }
   return { ...runtime, ctx };
