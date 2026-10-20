@@ -15,7 +15,7 @@ import { Button } from '@kortix/ui/button';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { EmptyState } from '@kortix/ui/empty-state';
 import { ErrorState } from '@kortix/ui/error-state';
-import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
+import { FeatureGateScreen } from '@kortix/ui/customize/shared/feature-gate-screen';
 import { useTranslations } from '@/i18n/use-translations';
 import { useFeatureFlag, useProjectReminders } from '@kortix/sdk/react';
 import { AlarmIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
@@ -145,7 +145,7 @@ function RemindersPage({ projectId }: { projectId: string }) {
   if (gate.isLoading) {
     body = <Skeleton className="m-4 h-14 rounded-md" />;
   } else if (!gate.enabled) {
-    body = <FeatureGateScreen featureName={t('title')} description={t('gateDescription')} />;
+    body = <FeatureGateScreen featureKey="reminders" featureName={t('title')} description={t('gateDescription')} />;
   } else if (loaded && all.length === 0 && !url.session) {
     body = <RemindersEmpty />;
   } else {

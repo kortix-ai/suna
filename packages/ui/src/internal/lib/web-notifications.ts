@@ -82,7 +82,8 @@ export type WebNotificationType =
   | 'automation_failed'
   | 'automation_recovered'
   | 'capture_device_down'
-  | 'capture_device_recovered';
+  | 'capture_device_recovered'
+  | 'message';
 
 export interface WebNotificationPayload {
   /** Which category this notification belongs to */
@@ -141,6 +142,7 @@ const TYPE_TO_KIND: Record<WebNotificationType, InboxNotificationKind> = {
   automation_recovered: 'automation_recovered',
   capture_device_down: 'capture_device_down',
   capture_device_recovered: 'capture_device_recovered',
+  message: 'message',
 };
 
 /**
@@ -199,6 +201,7 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
   automation_recovered: 'completion',
   capture_device_down: 'error',
   capture_device_recovered: 'completion',
+  message: 'notification',
 };
 
 // ============================================================================
@@ -500,6 +503,7 @@ const NOTIFICATION_TOAST_VARIANT: Record<WebNotificationType, 'success' | 'error
   automation_recovered: 'success',
   capture_device_down: 'error',
   capture_device_recovered: 'success',
+  message: 'info',
 };
 
 /** Open what the notification is about: its session, or its `href`. */
@@ -665,7 +669,9 @@ function showSessionToast(payload: WebNotificationPayload, sessionId: string) {
  * that suffix is dropped.
  */
 export function sessionDisplayName(sessionTitle: string | undefined, sessionId: string): string {
-  const title = sessionTitle?.replace(/\s+-\s+\d{4}-\d{2}-\d{2}T[\d:.]+Z$/, '').trim();
+  // One `\s` before `-`, not `\s+`: `.trim()` drops the rest of the run, and
+  // `\s+-` backtracks quadratically on a long space run (CodeQL js/polynomial-redos).
+  const title = sessionTitle?.replace(/\s-\s+\d{4}-\d{2}-\d{2}T[\d:.]+Z$/, '').trim();
   return title ? title.slice(0, 80) : `Session ${sessionId.slice(0, 8)}`;
 }
 

@@ -38,5 +38,7 @@ export function pickerModelName(
   model: Pick<FlatModel, 'modelID' | 'modelName'> & { provider?: string | null },
 ): string {
   if (!isSubscriptionModel(model)) return model.modelName;
-  return model.modelName.replace(/\s*\(ChatGPT\)\s*$/, '').trim() || model.modelName;
+  // No leading `\s*`: `.trim()` drops those spaces, and `\s*\(` backtracks
+  // quadratically on a long space run (CodeQL js/polynomial-redos).
+  return model.modelName.replace(/\(ChatGPT\)\s*$/, '').trim() || model.modelName;
 }

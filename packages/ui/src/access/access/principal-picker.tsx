@@ -89,7 +89,10 @@ export function isPrincipalSelectionEmpty(value: PrincipalSelection): boolean {
   return principalSelectionCount(value) === 0;
 }
 
-export const INVITE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// The domain splits at its first `.` after the first character, so no two
+// repetitions compete for a character (CodeQL js/polynomial-redos). It accepts
+// the same strings as `/^[^\s@]+@[^\s@]+\.[^\s@]+$/`.
+export const INVITE_EMAIL_RE = /^[^\s@]+@[^\s@][^\s@.]*\.[^\s@]+$/;
 
 export function isInviteEmail(value: string): boolean {
   return INVITE_EMAIL_RE.test(value.trim().toLowerCase());

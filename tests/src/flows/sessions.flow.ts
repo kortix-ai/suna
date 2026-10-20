@@ -1328,6 +1328,28 @@ flow(
       if (JSON.stringify(r.json()) !== JSON.stringify(same)) throw new Error('the two routes answered different bodies');
     });
 
+    await ctx.step('detail reads report the persisted runtime status, including after a restart', async () => {
+      const { Client } = await import('pg');
+      const database = new Client({ connectionString: ctx.env.databaseUrl });
+      await database.connect();
+      try {
+        await database.query(
+          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+           VALUES ($1::uuid, $1, $2, $3, 'active')`,
+          [sharedId, team.id, project.id],
+        );
+        for (const status of ['active', 'stopped', 'active']) {
+          await database.query('UPDATE kortix.session_sandboxes SET status = $2 WHERE session_id = $1', [sharedId, status]);
+          (await owner.get(byId, { params: { sessionId: sharedId } })).status(200).body().has('$.runtime_status', status);
+          (await owner.get(inProject, { params: { projectId: project.id, sessionId: sharedId } })).status(200).body().has('$.runtime_status', status);
+        }
+        (await owner.get(byId, { params: { sessionId: privateId } })).status(200).body().has('$.runtime_status', null);
+      } finally {
+        await database.query('DELETE FROM kortix.session_sandboxes WHERE session_id = $1', [sharedId]);
+        await database.end();
+      }
+    });
+
     await ctx.step('a project member reads a project-visible session by id → 200', async () => {
       (await ctx.client.as(member).get(byId, { params: { sessionId: sharedId } }))
         .status(200)

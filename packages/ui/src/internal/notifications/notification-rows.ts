@@ -86,9 +86,11 @@ export function notificationTag(row: InboxNotification): string {
 
 /**
  * Where a row's open action goes, named by the page its `url` opens: its
- * session, the Reminders page (a reminder alert), or the Triggers page.
+ * conversation (a message), its session, the Reminders page (a reminder
+ * alert), or the Triggers page.
  */
-export function rowDestination(row: InboxNotification): 'session' | 'reminders' | 'triggers' {
+export function rowDestination(row: InboxNotification): 'room' | 'session' | 'reminders' | 'triggers' {
+  if (row.room_id) return 'room';
   if (row.session_id) return 'session';
   return new URL(row.url, 'http://kortix.invalid').pathname.endsWith('/reminders') ? 'reminders' : 'triggers';
 }
