@@ -202,13 +202,22 @@ export function useAutoScroll({
     const turns = prompts.length ? prompts : content.querySelectorAll<HTMLElement>('[data-turn-id]');
     const isPending = (i: number) => turns[i].querySelector('[data-turn-pending]') !== null;
     const previous = lastAnchorRef.current;
-    const index = pickAnchorIndex(
-      turns.length,
-      isPending,
-      previous
-        ? { index: Array.prototype.indexOf.call(turns, previous.el), reached: previous.reached }
-        : null,
-    );
+    // The first prompt's stand-in (`OptimisticTurn`) stays above server turn 0
+    // until the hand-off. Anchoring turn 0 pushed the bubble the reader just
+    // sent off the top, and the view glided back when the stand-in left
+    // (KRTX-2931). While it exists it is the anchor; turn 0 then takes its place.
+    const standIn = content.querySelector('[data-turn-id="optimistic"]');
+    const standInIndex = standIn ? Array.prototype.indexOf.call(turns, standIn) : -1;
+    const index =
+      standInIndex >= 0
+        ? standInIndex
+        : pickAnchorIndex(
+            turns.length,
+            isPending,
+            previous
+              ? { index: Array.prototype.indexOf.call(turns, previous.el), reached: previous.reached }
+              : null,
+          );
     const anchor = index >= 0 ? turns[index] : null;
     // The end of the CONTENT is the spacer's own top edge — the spacer lives
     // inside the content box, so measuring to the box's bottom would include
