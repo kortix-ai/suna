@@ -68,6 +68,10 @@ for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies']
   }
 }
 
+//    devDependencies are never installed from the registry, and theirs still hold
+//    `workspace:` ranges (@kortix/ui → @kortix/shared). Drop them.
+delete pkg.devDependencies;
+
 // 4) Validate that every published entrypoint and executable exists — a missing
 //    target means the build did not emit or include what the manifest advertises,
 //    which would publish a broken package. Fail loudly instead.

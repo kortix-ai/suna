@@ -1,3 +1,4 @@
+import { resolvePinnedEgress, UnsafeEgressError } from '@kortix/shared/ssrf-guard';
 import type { UpstreamDescriptor } from '../domain';
 import { ClientAbortError, UpstreamHttpError, UpstreamMisconfiguredError } from '../errors';
 import type { AiSdkFetch } from '../transports/ai-sdk';
@@ -89,7 +90,7 @@ function toStrictChat(body: Record<string, any>): Record<string, unknown> {
   return out;
 }
 
-function directOpenAiRequest(
+async function directOpenAiRequest(
   body: Record<string, unknown>,
   descriptor: UpstreamDescriptor,
   opts: CallUpstreamOptions,
@@ -106,12 +107,22 @@ function directOpenAiRequest(
   if (descriptor.resolvedModel) payload = { ...payload, model: descriptor.resolvedModel };
 
   const fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
-  return fetchImpl(`${trimTrailingSlash(descriptor.baseUrl)}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-    signal: opts.signal,
-  });
+  const url = `${trimTrailingSlash(descriptor.baseUrl)}/chat/completions`;
+  const init: RequestInit = { method: 'POST', headers, body: JSON.stringify(payload), signal: opts.signal };
+  if (!descriptor.egress) return fetchImpl(url, init);
+  let pinned: Awaited<ReturnType<typeof resolvePinnedEgress>>;
+  try {
+    pinned = await resolvePinnedEgress(url, { allowHttp: true, allowPrivateHosts: descriptor.egress.allowPrivateHosts });
+  } catch (error) {
+    if (!(error instanceof UnsafeEgressError)) throw error;
+    throw new UpstreamMisconfiguredError(descriptor.provider, `the base URL is not reachable from the gateway (${error.message})`);
+  }
+  if (pinned.host) headers.host = pinned.host;
+  return fetchImpl(pinned.url, {
+    ...init,
+    redirect: 'manual',
+    ...(pinned.serverName ? { tls: { serverName: pinned.serverName } } : {}),
+  } as RequestInit);
 }
 
 /**

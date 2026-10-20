@@ -110,7 +110,12 @@ export default function SessionFixturePage() {
                         ? 'mt-3'
                         : 'mt-12';
                   return (
-                    <TurnViewport key={id} turnId={id} className={gap}>
+                    <TurnViewport
+                      key={id}
+                      turnId={id}
+                      className={gap}
+                      continues={compaction !== null || turn.continues !== null}
+                    >
                       {suppressed ? null : (
                         <SessionTurn
                           turn={turn}
