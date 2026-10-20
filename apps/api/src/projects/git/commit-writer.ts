@@ -363,6 +363,8 @@ async function buildCommit(
 /** Options for {@link commitMultipleFilesToBranch}: what to write, where, and
  *  the revisions the caller read it from. */
 interface CommitFilesOptions {
+  /** Require the exact snapshot used to enumerate destructive edits. */
+  expectedCommit?: string;
   files?: Array<{ path: string; content: string }>;
   /** Repo-relative paths to remove from the tree in the same commit. */
   deletes?: string[];
@@ -407,6 +409,12 @@ export async function commitMultipleFilesToBranch(
 
   const tip = await runGitCapture(['rev-parse', '--verify', `refs/heads/${branch}`], repoPath);
   const parentSha = tip.exitCode === 0 ? tip.stdout.trim() : null;
+  if (opts.expectedCommit !== undefined && parentSha !== opts.expectedCommit) {
+    throw new GitFileRevisionConflictError(opts.expectedFileRevision?.path ?? branch);
+  }
+  if (opts.expectedCommit !== undefined && !opts.expectedFileRevision) {
+    throw new Error('expectedCommit requires expectedFileRevision for the push lease');
+  }
   const expectedFileRevision = normalizeExpectedFileRevision(opts);
   await assertExpectedRevisions(repoPath, parentSha, expectedFileRevision, opts);
 

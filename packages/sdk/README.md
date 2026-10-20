@@ -1483,3 +1483,8 @@ It converts blocks inside blockquotes and list items too. For a reply that is st
 Install the optional peers: `npm i zod @openuidev/lang-core@0.3.1`. `@openuidev/lang-core`
 sends one pseudonymous PostHog event at install time; set `OPENUI_TELEMETRY_DISABLED=1` or
 `DO_NOT_TRACK=1` to turn it off. Runtime telemetry is off unless you opt in.
+
+Delete a project skill with `await kortix.project(projectId).skills.delete(skillName)`
+(or `deleteProjectSkill(projectId, skillName)`). Pass the exact catalog name, not a
+slug or file path. Deletion removes the skill folder, assets, and agent assignments.
+Platform-managed skills cannot be deleted. Requires `project.skill.write`.

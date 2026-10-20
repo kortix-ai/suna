@@ -4,6 +4,8 @@ import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-enti
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import {
   InputGroupSearch,
@@ -19,10 +21,10 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { getProjectDetail } from '@kortix/sdk';
+import { deleteProjectSkill, getProjectDetail } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon, SparkleIcon } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/catalog-card';
@@ -35,7 +37,7 @@ import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/ca
 import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
 import { EntityDetailModal } from '@/features/workspace/capabilities/shared/entity/entity-modal';
 import { NewSkillModal } from '@/features/workspace/capabilities/skills/new-skill-modal';
-import { filterSkills, type SkillScope } from './skill-scope';
+import { filterSkills, skillScope, type SkillScope } from './skill-scope';
 import { useSlashFocus } from '@/hooks/utils';
 
 type ScopeFilter = SkillScope | 'all';
@@ -80,6 +82,18 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   const [scope, setScope] = useState<ScopeFilter>('all');
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [deleteName, setDeleteName] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const deleteMutation = useMutation({
+    mutationFn: (name: string) => deleteProjectSkill(projectId, name),
+    onSuccess: () => {
+      successToast('Skill deleted');
+      void queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+      setDeleteName(null);
+      setSelectedPath(null);
+    },
+    onError: (error: Error) => errorToast(error.message),
+  });
 
   const detailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
@@ -109,6 +123,8 @@ export function SkillsPage({ projectId }: { projectId: string }) {
     record: skills.find((skill) => skill.path === selectedPath),
     isSuccess: detailQuery.isSuccess,
   });
+
+  const selectedSkillName = detail.record?.name;
 
   // The one honest auto-close: the config came back and this skill is not in
   // it, so it really was deleted or renamed.
@@ -229,10 +245,37 @@ export function SkillsPage({ projectId }: { projectId: string }) {
         projectId={projectId}
         entity={detail.record}
         kind="skill"
+        aside={canWrite && selectedSkillName !== undefined && skillScope(selectedSkillName) === 'project' ? (
+          <Button
+            variant="outline-ghost"
+            size="sm"
+            disabled={deleteMutation.isPending}
+            onClick={() => setDeleteName(selectedSkillName)}
+          >
+            Delete skill
+          </Button>
+        ) : undefined}
         open={detail.open}
         isResolving={detail.isResolving}
         onOpenChange={(next) => {
           if (!next) setSelectedPath(null);
+        }}
+      />
+      <ConfirmDialog
+        open={deleteName !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) setDeleteName(null);
+        }}
+        title={`Delete “${deleteName ?? ''}”?`}
+        description="This permanently deletes the skill and its assets, and removes its agent assignments."
+        confirmLabel="Delete skill"
+        confirmVariant="destructive"
+        isPending={deleteMutation.isPending}
+        confirmDisabled={!canWrite || deleteName === null || skillScope(deleteName) !== 'project'}
+        onConfirm={() => {
+          if (canWrite && deleteName !== null && skillScope(deleteName) === 'project') {
+            deleteMutation.mutate(deleteName);
+          }
         }}
       />
       <NewSkillModal projectId={projectId} open={formOpen} onOpenChange={setFormOpen} />

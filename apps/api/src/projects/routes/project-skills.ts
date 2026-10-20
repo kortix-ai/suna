@@ -23,14 +23,19 @@ import type { AppEnv } from '../../types';
 
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { auth, errors, json } from '../../openapi';
-import { GitFileRevisionConflictError, commitFileToBranch } from '../git/branches';
-import { isRepoFileNotFoundError, readRepoFile } from '../git/files';
+import { GitFileRevisionConflictError, commitFileToBranch, commitMultipleFilesToBranch } from '../git/branches';
+import { isRepoFileNotFoundError, readRepoFile, listRepoFiles } from '../git/files';
 import { isRemotePushPolicyRejection } from '../git/mirror';
 import {
   assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
   loadProjectForUser,
 } from '../lib/access';
+import { loadProjectConfig } from '../git/config';
+import { listManagedSkills } from '../../skills/catalog';
+import { loadManifestForEdit } from '../lib/triggers';
+import { manifestWrites } from '../triggers';
+import { prepareSkillDeletion } from '../lib/skill-delete';
 import { projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 
@@ -180,4 +185,57 @@ export function registerProjectSkillsRoutes(): void {
     return c.json({ ok: true as const, slug, path }, 201);
   },
 );
+  projectsApp.openapi(createRoute({
+    method: 'delete',
+    path: '/{projectId}/skills/{skillName}',
+    tags: ['projects'],
+    summary: 'Delete a project skill on the default branch',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), skillName: z.string() }) },
+    responses: { 200: json(z.object({ ok: z.literal(true) }), 'Deleted skill'), ...errors(400, 403, 404, 409, 502) },
+  }), async (c: Context<AppEnv>) => {
+    const projectId = c.req.param('projectId');
+    const name = c.req.param('skillName');
+    if (!projectId || !name) return c.json({ error: 'Not found' }, 404);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SKILL_WRITE);
+    if (listManagedSkills().some(skill => skill.name === name)) {
+      return c.json({ error: 'Managed skills cannot be deleted' }, 403);
+    }
+    try {
+      const gitProject = await withProjectGitAuth(loaded.row);
+      // Force-refresh through the manifest editor before reading the catalog.
+      const manifest = await loadManifestForEdit(gitProject);
+      if (!manifest.commit || manifest.revision === undefined) {
+        return c.json({ error: 'A committed manifest snapshot is required' }, 409);
+      }
+      const repoFiles = await listRepoFiles(gitProject, manifest.commit);
+      const config = await loadProjectConfig(gitProject, repoFiles);
+      const edit = prepareSkillDeletion(name, config.skills, repoFiles, manifest);
+      if (!edit.ok) return c.json({ error: edit.error }, edit.status);
+      const writes = manifestWrites({ ...manifest, raw: edit.raw });
+      if (writes.files.some(file => edit.deletes.includes(file.path))) {
+        return c.json({ error: 'Skill overlaps a manifest file' }, 409);
+      }
+      await commitMultipleFilesToBranch(gitProject, {
+        ...writes,
+        expectedCommit: manifest.commit,
+        deletes: edit.deletes,
+        message: `chore: delete skill ${name.replace(/[\r\n]/g, ' ')}`,
+        branch: loaded.row.defaultBranch,
+        expectedFileRevision: {
+          path: manifest.path, sha: manifest.revision, candidatePaths: manifest.candidatePaths,
+        },
+      });
+      return c.json({ ok: true as const });
+    } catch (err) {
+      if (err instanceof GitFileRevisionConflictError || isRemotePushPolicyRejection(err)) {
+        return c.json({ error: 'Repository changed or rejected the push' }, 409);
+      }
+      return c.json({ error: `Failed to delete skill: ${(err as Error).message || String(err)}` }, 502);
+    }
+  });
+
 }

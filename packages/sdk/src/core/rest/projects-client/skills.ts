@@ -34,3 +34,17 @@ export async function createProjectSkill(
     }),
   );
 }
+
+/** Delete a project skill by its exact catalog name, including its assets and assignments. */
+export async function deleteProjectSkill(
+  projectId: string,
+  skillName: string,
+  options?: ApiClientOptions,
+): Promise<{ ok: true }> {
+  return unwrap(
+    await backendApi.delete<{ ok: true }>(
+      `/projects/${projectId}/skills/${encodeURIComponent(skillName)}`,
+      { showErrors: false, ...options },
+    ),
+  );
+}

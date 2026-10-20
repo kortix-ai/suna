@@ -228,6 +228,7 @@ React (`@kortix/sdk/react`): `useCaptureWorkspace`, `useSetCaptureEnabled`, `use
 | `validateManifest(raw)` | Validate `kortix.yaml` text on the server, with the schema a merge uses. |
 | `audit(options?)` | The project's audit timeline. |
 | `skills.create(input)` | Write a skill file to the default branch. |
+| `skills.delete(skillName)` | Delete a project skill by exact catalog name, including its assets and agent assignments. Platform-managed skills cannot be deleted. |
 | `attachments.upload(…)` · `.delete(…)` · `.createController(options?)` | Prompt attachments, and a controller that tracks uploads for a composer. |
 | `onboardingComplete(…)` | Mark project onboarding done. |
 | `connector(slug)` · `session(sessionId)` | One connector handle · the session handle. |
