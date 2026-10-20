@@ -308,20 +308,19 @@ describe('ApprovalParameters rendering', () => {
         action="gmail.send_email"
         argsPreview={{ to: 'sam@example.test', subject: 'Hi', body: 'Text', user_id: 'me' }}
         resolvedPreview={{ from: 'ops@example.test' }}
-        resolvedFrom="gmail"
       />,
     );
     expect(html.indexOf('ops@example.test')).toBeGreaterThan(html.indexOf('>From<'));
     expect(html.indexOf('ops@example.test')).toBeLessThan(html.indexOf('>To<'));
-    // The caption names the connector, capitalised, below the body.
-    expect(html.indexOf('Loaded from Gmail')).toBeGreaterThan(html.indexOf('Text'));
+    // No note says where the content was loaded from.
+    expect(html).not.toContain('Loaded from');
     expect(html).not.toContain('>from<');
     expect(html).not.toContain('>user_id<');
   });
 
   test('an empty resolved preview counts as absent', () => {
     const html = renderToStaticMarkup(
-      <ApprovalParameters argsPreview={{ draft_id: 'r-1' }} resolvedPreview={{}} resolvedFrom="Gmail" />,
+      <ApprovalParameters argsPreview={{ draft_id: 'r-1' }} resolvedPreview={{}} />,
     );
     expect(html).not.toContain('Loaded from');
     expect(html).toContain('Any description from the agent is unverified.');
@@ -373,10 +372,9 @@ describe('ApprovalParameters rendering', () => {
           body: 'Draft body',
           attachments: ['q3.pdf'],
         }}
-        resolvedFrom="Gmail"
       />,
     );
-    const order = ['>From<', '>To<', '>Bcc<', '>Subject<', 'Draft body', 'Loaded from Gmail'].map((n) =>
+    const order = ['>From<', '>To<', '>Bcc<', '>Subject<', 'Draft body'].map((n) =>
       html.indexOf(n),
     );
     expect(order.every((index) => index > -1)).toBe(true);
@@ -399,7 +397,7 @@ describe('ApprovalParameters rendering', () => {
         onDecision={() => undefined}
       />,
     );
-    expect(html).toContain('Loaded from the connector');
+    expect(html).not.toContain('Loaded from');
     expect(html).toContain('Loaded');
   });
 });

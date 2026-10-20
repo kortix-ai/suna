@@ -150,7 +150,6 @@ export function approvalRequestFromAction(
       summary?.resolved_preview && typeof summary.resolved_preview === 'object' && !Array.isArray(summary.resolved_preview)
         ? (summary.resolved_preview as Record<string, unknown>)
         : null,
-    resolvedFrom: action.action.split('.')[0] || null,
     resolvedError: typeof summary?.resolved_error === 'string' ? summary.resolved_error : null,
     // `!summary` used to count as complete, so a pending row that recorded
     // NOTHING offered an Approve button the server answers with 409

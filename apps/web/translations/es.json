@@ -20460,8 +20460,6 @@
       "from": "De",
       "none": "Ninguno",
       "attachments": "Adjuntos",
-      "loadedFrom": "Cargado desde {connector}",
-      "loadedFromConnector": "Cargado desde el conector",
       "idsOnlyHint": "Esta llamada no muestra contenido que revisar. Cualquier descripción del agente no está verificada.",
       "resolvedUnavailable": "No se pudo cargar el borrador. Revisa con cuidado la descripción del agente.",
       "aboutDescription": "Acerca de esta descripción",

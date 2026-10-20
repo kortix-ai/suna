@@ -61,8 +61,6 @@ export interface ApprovalRequestData {
   /** Content the server loaded for the reviewer (the draft behind a
    *  `draft_id`). Shown above the call's own arguments. */
   resolvedPreview?: Record<string, unknown> | null;
-  /** The connector name `resolvedPreview` was loaded from. */
-  resolvedFrom?: string | null;
   /** Set when the server could not load that content (`unavailable`). */
   resolvedError?: string | null;
   resolution?: ApprovalDecisionValue | null;
@@ -511,18 +509,15 @@ function PreviewValues({
  * The email a send call delivers: From, To, Cc, Bcc and Subject rows (From,
  * To and Subject always present, an empty one reads "None"; Cc and Bcc only
  * when set), a divider, then the body.
- * `caption` names where loaded content came from ("Loaded from Gmail").
  */
 function EmailCard({
   email,
-  caption,
   incomplete = null,
   hint = null,
   dense = false,
   channelNames,
 }: DenseProp & {
   email: NonNullable<ReturnType<typeof emailView>>;
-  caption?: string | null;
   /** The preview was shortened: the line that says elisions are marked in place. */
   incomplete?: string | null;
   /** A warning: content the server could not load. */
@@ -573,7 +568,6 @@ function EmailCard({
           {hint}
         </p>
       ) : null}
-      {caption ? <p className="text-muted-foreground mt-3 text-xs">{caption}</p> : null}
     </div>
   );
 }
@@ -686,8 +680,10 @@ function NativeMerge({ view }: { view: NonNullable<ReturnType<typeof mergeView>>
             <PullRequestFact icon={<FileIcon aria-hidden className="text-muted-foreground size-4" />}>
               <span>{t('prFiles', { count: view.files })}</span>
               {view.additions !== null && view.deletions !== null ? (
-                <span className="font-mono tabular-nums">
-                  +{view.additions} −{view.deletions}
+                // Diff counts read like GitHub's: additions green, deletions red (owner call).
+                <span className="flex gap-1.5 font-mono tabular-nums">
+                  <span className="text-kortix-green">+{view.additions}</span>
+                  <span className="text-kortix-red">−{view.deletions}</span>
                 </span>
               ) : null}
             </PullRequestFact>
@@ -789,8 +785,8 @@ function NativeIssue({ view }: { view: NonNullable<ReturnType<typeof issueView>>
  *
  * `resolvedPreview`: content the server loaded for the reviewer (the draft a
  * `draft_id` points at). A mail send (`action`) renders as ONE email
- * (`EmailCard`): the loaded content merged over the arguments, captioned with
- * the connector it came from (`resolvedFrom`), with no section headers. The
+ * (`EmailCard`): the loaded content merged over the arguments, with no section
+ * headers and no note of where it was loaded from. The
  * arguments outside the email follow it as a key/value list, except
  * `draft_id`, `user_id` and `is_html`. Other loaded content renders above the
  * arguments. An empty record counts as absent. `resolvedError`: the server
@@ -805,7 +801,6 @@ export function ApprovalParameters({
   argsPreview,
   reviewComplete = true,
   resolvedPreview = null,
-  resolvedFrom = null,
   resolvedError = null,
   dense = false,
   native = false,
@@ -821,7 +816,6 @@ export function ApprovalParameters({
   argsPreview: Record<string, unknown> | null;
   reviewComplete?: boolean;
   resolvedPreview?: Record<string, unknown> | null;
-  resolvedFrom?: string | null;
   resolvedError?: string | null;
   channelNames?: ReadonlyMap<string, string>;
   className?: string;
@@ -834,13 +828,6 @@ export function ApprovalParameters({
   // surface says the call cannot be reviewed.
   if (empty && !loaded) return null;
   const email = emailView(action, argsPreview, loaded);
-  // A display name, never the bare slug: `gmail` reads "Gmail".
-  const connector = resolvedFrom ? resolvedFrom.charAt(0).toUpperCase() + resolvedFrom.slice(1) : null;
-  const caption = loaded
-    ? connector
-      ? t('loadedFrom', { connector })
-      : t('loadedFromConnector')
-    : null;
   const frame = cn(
     'divide-border divide-y',
     dense ? 'border-border overflow-hidden rounded-sm border' : 'border-border border-t',
@@ -865,7 +852,6 @@ export function ApprovalParameters({
                 <>
                   {incomplete ? <PreviewNote>{incomplete}</PreviewNote> : null}
                   {unavailable ? <PreviewNote warn>{unavailable}</PreviewNote> : null}
-                  {caption ? <PreviewNote>{caption}</PreviewNote> : null}
                 </>
               }
             />
@@ -882,10 +868,9 @@ export function ApprovalParameters({
         <div className={cn(card, className)}>
           <div>{merge ? <NativeMerge view={merge} /> : issue ? <NativeIssue view={issue} /> : null}</div>
           <PreviewValues preview={view.rest} channelNames={channelNames} />
-          {reviewComplete && !caption ? null : (
+          {reviewComplete ? null : (
             <div className="flex flex-col gap-1.5 px-4 py-2.5">
-              {reviewComplete ? null : <PreviewNote>{tI18nComplete.raw('text877c39a121a9')}</PreviewNote>}
-              {caption ? <PreviewNote>{caption}</PreviewNote> : null}
+              <PreviewNote>{tI18nComplete.raw('text877c39a121a9')}</PreviewNote>
             </div>
           )}
         </div>
@@ -899,7 +884,6 @@ export function ApprovalParameters({
       <div className={frame}>
         <EmailCard
           email={email}
-          caption={caption}
           incomplete={reviewComplete ? null : tI18nComplete.raw('text877c39a121a9')}
           hint={
             resolvedError
@@ -922,12 +906,7 @@ export function ApprovalParameters({
 
   return (
     <div className={frame}>
-      {loaded ? (
-        <>
-          <ParametersStrip dense={dense} title={caption ?? ''} />
-          <PreviewValues preview={loaded} dense={dense} channelNames={channelNames} />
-        </>
-      ) : null}
+      {loaded ? <PreviewValues preview={loaded} dense={dense} channelNames={channelNames} /> : null}
       {!empty ? (
         <>
           <ParametersStrip
@@ -1276,7 +1255,6 @@ export function ApprovalRequest({
         argsPreview={request.argsPreview}
         reviewComplete={reviewComplete}
         resolvedPreview={request.resolvedPreview}
-        resolvedFrom={request.resolvedFrom}
         resolvedError={request.resolvedError}
       />
 

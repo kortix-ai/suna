@@ -411,7 +411,6 @@ export function SessionApprovalNotice({
               argsPreview={request.argsPreview}
               reviewComplete={request.reviewComplete !== false}
               resolvedPreview={request.resolvedPreview}
-              resolvedFrom={request.resolvedFrom}
               resolvedError={request.resolvedError}
               channelNames={channelNames}
             />

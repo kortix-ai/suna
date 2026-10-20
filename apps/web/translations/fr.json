@@ -20460,8 +20460,6 @@
       "from": "De",
       "none": "Aucun",
       "attachments": "Pièces jointes",
-      "loadedFrom": "Chargé depuis {connector}",
-      "loadedFromConnector": "Chargé depuis le connecteur",
       "idsOnlyHint": "Cet appel ne montre aucun contenu à vérifier. Toute description de l’agent n’est pas vérifiée.",
       "resolvedUnavailable": "Impossible de charger le brouillon. Vérifiez attentivement la description de l’agent.",
       "aboutDescription": "À propos de cette description",

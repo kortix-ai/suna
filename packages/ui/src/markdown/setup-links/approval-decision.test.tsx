@@ -314,11 +314,11 @@ describe('ApprovalDecisionPanel body', () => {
     expect(html).toContain('Fix stale cache on project switch #482');
     expect(html).toContain('fix/stale-cache');
     expect(html).toContain('6 files');
-    expect(html).toContain('+128 −41');
+    // React splits "+" and the count with a comment node in static markup.
+    expect(html).toMatch(/<span class="text-kortix-green">\+(<!-- -->)?128<\/span>/);
+    expect(html).toMatch(/<span class="text-kortix-red">−(<!-- -->)?41<\/span>/);
     expect(html).toContain('3 commits by octo-dev');
     expect(html).toContain('Draft pull request');
-    // Counts are ink, not status colour.
-    expect(html).not.toContain('text-kortix-green');
     // Loaded fields never fall into the leftover argument list.
     expect(html).not.toContain('>head_sha<');
     // Not a draft: no warning line.

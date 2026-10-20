@@ -93,7 +93,6 @@ describe('approvalRequestFromAction', () => {
       argsPreview: { subject: 'Weekly report', to: ['sam@example.test'] },
       approvalContext: null,
       resolvedPreview: null,
-      resolvedFrom: 'gmail',
       resolvedError: null,
       reviewComplete: true,
       resolution: null,
@@ -125,7 +124,6 @@ describe('approvalRequestFromAction', () => {
     );
     expect(loaded).toMatchObject({
       resolvedPreview: { to: 'a@example.test', body: 'Hi' },
-      resolvedFrom: 'gmail',
       resolvedError: null,
     });
     const failed = approvalRequestFromAction(
