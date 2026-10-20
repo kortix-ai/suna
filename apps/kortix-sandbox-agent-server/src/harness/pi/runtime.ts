@@ -515,6 +515,11 @@ export class PiRuntime {
     return this.cfg.projectTarget || this.cfg.workspace || '/workspace'
   }
 
+  /** The project's base branch (`KORTIX_DEFAULT_BRANCH`): the Changes diff compares against it. */
+  get defaultBranch(): string {
+    return this.cfg.defaultBranch
+  }
+
   get sessionId(): string {
     return (this.env.KORTIX_SESSION_ID ?? '').trim() || 'session-local'
   }
