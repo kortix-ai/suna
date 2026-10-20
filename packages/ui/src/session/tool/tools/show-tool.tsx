@@ -221,6 +221,20 @@ export function ShowTool({ call, sessionId }: ToolProps) {
   );
   if (!running && hasNothingToShow) return null;
 
+  const unavailable = isShowContentUnavailable({
+    running,
+    isCarousel,
+    contentStatus,
+    isWebsitePreview,
+    previewHasError: preview.hasError,
+    previewIsLinkOnly,
+  });
+  // A file-backed show learns it recovered only from `ShowContentRenderer`'s
+  // `onStatusChange`. Unmounting the renderer on 'error' left nothing to report
+  // 'ready' again, so Refresh refetched the file and the note stayed until a
+  // hard reload (KRTX-2941). The renderer stays mounted, hidden, under the note.
+  const fileUnavailable = unavailable && !isWebsitePreview;
+
   let body: ReactNode;
 
   if (running && !type && !items) {
@@ -236,27 +250,12 @@ export function ShowTool({ call, sessionId }: ToolProps) {
         </div>
       </div>
     ) : null;
-  } else if (
-    isShowContentUnavailable({
-      running,
-      isCarousel,
-      contentStatus,
-      isWebsitePreview,
-      previewHasError: preview.hasError,
-      previewIsLinkOnly,
-    })
-  ) {
+  } else if (unavailable && isWebsitePreview) {
     // The artifact didn't load (renamed/deleted file, dead preview). Never
     // vanish — an invisible `show` reads as "the tool never ran". A quiet
     // one-line note keeps the action in the transcript without resurrecting
     // the big "File not found" card this gate was built to avoid (#3966).
-    body = (
-      <ShowUnavailableNote
-        isWebsitePreview={isWebsitePreview}
-        href={isWebsitePreview ? null : safeHttpUrl(activeUrl)}
-        fill={fill}
-      />
-    );
+    body = <ShowUnavailableNote isWebsitePreview href={null} fill={fill} />;
   } else {
     body = (
       <div className={cn('overflow-hidden', fill ? 'flex h-full flex-col' : 'min-h-0 flex-1')}>
@@ -265,8 +264,8 @@ export function ShowTool({ call, sessionId }: ToolProps) {
         {isWebsitePreview && fill && (
           <div className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-4 py-1">
             <div className="flex min-w-0 flex-1 items-center gap-2">
-              <Globe className="text-muted-foreground/50 size-3.5 shrink-0" />
-              <span className="text-foreground/80 truncate text-xs font-medium">
+              <Globe className="text-muted-foreground size-3.5 shrink-0" />
+              <span className="text-foreground truncate text-xs font-medium">
                 {preview.displayLabel}
               </span>
             </div>
@@ -291,7 +290,16 @@ export function ShowTool({ call, sessionId }: ToolProps) {
             <ServicePreviewViewport preview={preview} />
           ) : (
             <>
-              <div className={cn(fill && 'min-h-0 flex-1 overflow-hidden')}>
+              {fileUnavailable && (
+                <ShowUnavailableNote
+                  isWebsitePreview={false}
+                  href={safeHttpUrl(activeUrl)}
+                  fill={fill}
+                />
+              )}
+              <div
+                className={cn(fill && 'min-h-0 flex-1 overflow-hidden', fileUnavailable && 'hidden')}
+              >
                 <ShowContentRenderer
                   type={type}
                   title={title}
@@ -308,9 +316,9 @@ export function ShowTool({ call, sessionId }: ToolProps) {
                   toolbarActions={fill ? fileActions : undefined}
                 />
               </div>
-              {description && !title && (
+              {description && !title && !fileUnavailable && (
                 <div className="border-border/15 shrink-0 border-t px-5 py-3">
-                  <p className="text-muted-foreground/70 text-xs">{description}</p>
+                  <p className="text-muted-foreground text-xs">{description}</p>
                 </div>
               )}
             </>

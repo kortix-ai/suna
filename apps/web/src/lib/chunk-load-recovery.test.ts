@@ -4,7 +4,7 @@ import {
   CHUNK_RELOAD_WINDOW_MS,
   isChunkLoadError,
   reloadForChunkLoadError,
-} from './chunk-load-recovery';
+} from '@kortix/ui/internal/lib/chunk-load-recovery';
 
 const webpackChunkError = (message: string, stack?: string) => {
   const err = new Error(message);
