@@ -88,8 +88,7 @@ import type confetti from 'canvas-confetti';
  * "Are we on the client yet?", without a `setState` in an effect.
  *
  * `useSyncExternalStore` with a no-op subscribe is this repo's shape for a
- * client-only value (`features/workspace/project-layout/home/
- * setup-checklist.tsx`): the server snapshot is `false`, so hydration matches,
+ * client-only value: the server snapshot is `false`, so hydration matches,
  * and the client snapshot is `true`. The alternative — `useState(false)` plus
  * an effect that sets it — trips `react-hooks/set-state-in-effect` and costs an
  * extra render for the same answer.

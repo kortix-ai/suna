@@ -53,7 +53,7 @@ export interface ProjectHomeSendOptions extends ComposerOptions {
  *
  * This component owns the composer's WIRING — which sandbox, which agent, what
  * a send carries, what a prefill does. Everything it renders is a component of
- * its own under `../../../../../apps/web/src/features/workspace/project-layout/home/`, and the column's layout lives in
+ * its own under `../home/`, and the column's layout lives in
  * `ProjectHomeWelcomeBody` because the instant session shell renders that same
  * column with none of this wiring.
  */

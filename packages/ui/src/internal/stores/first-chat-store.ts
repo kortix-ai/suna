@@ -9,7 +9,7 @@ import { registerPersistedStore, resetPersistedStore } from './persisted-store-r
  * Projects that have a first chat.
  *
  * Onboarding starts it, and it stays. `firstChatHref` opens the welcome chat
- * (`project-layout/home/first-chat.tsx`), and the sidebar keeps one "Your first
+ * (`workspace/home/first-chat.tsx`), and the sidebar keeps one "Your first
  * chat with Kortix" row at the bottom of the sessions. Each send from it starts a new
  * session; the welcome chat is never replaced by one. `finish` remains for
  * sign-out cleanup and tests.

@@ -656,7 +656,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
            * dispatches a ProseMirror transaction carrying `.scrollIntoView()`.
            * ProseMirror then walks EVERY scrollable ancestor and scrolls the
            * caret into view. On project home that ancestor is the hero column's
-           * own `overflow-y-auto` wrapper (`project-layout/home/welcome-body.tsx`),
+           * own `overflow-y-auto` wrapper (`workspace/home/welcome-body.tsx`),
            * and the scroll is computed in the same frame the card is growing by
            * several lines of freshly-inserted text — so it lands against a box
            * that is mid-reflow and yanks the column.
