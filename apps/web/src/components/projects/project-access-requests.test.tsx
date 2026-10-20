@@ -49,7 +49,7 @@ test.each([403, 404])('denied project (%s) makes only the access request, includ
     urls.push(String(input));
     return Response.json({ message: 'Access denied' }, { status });
   }, { preconnect: originalFetch.preconnect });
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 5 * 60 * 1000 } } });
   client = queryClient;
   queryClient.setQueryData(qk.project.summary('synthetic-project'), { project_id: 'synthetic-project' });
   const container = document.createElement('div');
@@ -75,7 +75,7 @@ test('authorized project waits for access, then warms shell and session reads', 
     }
     return Response.json({});
   }, { preconnect: originalFetch.preconnect });
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 5 * 60 * 1000 } } });
   client = queryClient;
   const container = document.createElement('div');
   document.body.appendChild(container);

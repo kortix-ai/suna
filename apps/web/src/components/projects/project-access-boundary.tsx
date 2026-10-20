@@ -245,6 +245,8 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
 
   const query = useQuery({
     ...projectGateQuery(projectId),
+    // A fresh cached summary is not a current access verdict after revocation.
+    refetchOnMount: 'always',
     enabled: authReady && !!projectId,
   });
 
