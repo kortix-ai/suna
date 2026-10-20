@@ -686,3 +686,36 @@ describe('a public share on its own origin', () => {
     expect(forwarded).toBe(0);
   });
 });
+
+describe('preview navigation tickets', () => {
+  test('exchanges a header credential for a short-lived preview-only ticket', async () => {
+    const { previewTicket } = await import('./routes/preview-ticket');
+    const minted = await previewTicket.request('http://api.local/', {
+      method: 'POST', headers: { Authorization: 'Bearer good', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preview_url: `http://${HOST}/` }),
+    });
+    expect(minted?.status).toBe(200);
+    const { ticket } = await minted!.json();
+    expect(ticket).not.toContain('good');
+    const { verifyPreviewSession } = await import('./preview-session');
+    const grant = verifyPreviewSession(ticket, { sandboxLabel: 'sbx-known', port: 8081 });
+    expect(grant?.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    expect(grant!.exp).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 60);
+    expect(verifyPreviewSession(ticket, { sandboxLabel: 'other', port: 8081 })).toBeNull();
+    expect(verifyPreviewSession(ticket, { sandboxLabel: 'sbx-known', port: 8082 })).toBeNull();
+    const opened = await handlePreviewOriginRequest(...request('/?preview_ticket=' + encodeURIComponent(ticket), {
+      headers: { 'sec-fetch-dest': 'document' },
+    }));
+    expect(opened?.status).toBe(302);
+    expect(opened?.headers.get('location')).toBe('/');
+    expect(opened!.headers.getSetCookie()).toHaveLength(2);
+    expect(forwarded).toBe(0);
+  });
+  test('refuses unauthenticated ticket minting and invalid navigation tickets', async () => {
+    const { previewTicket } = await import('./routes/preview-ticket');
+    expect((await previewTicket.request('http://api.local/', { method: 'POST' })).status).toBe(401);
+    expect((await previewTicket.request('http://api.local/', { method: 'POST', headers: { Authorization: 'Bearer bad', 'Content-Type': 'application/json' }, body: JSON.stringify({ preview_url: `http://${HOST}/` }) })).status).toBe(401);
+    expect((await handlePreviewOriginRequest(...request('/?preview_ticket=forged')))?.status).toBe(401);
+    expect(forwarded).toBe(0);
+  });
+});

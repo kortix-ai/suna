@@ -31,7 +31,7 @@ import { confirm } from '../prompts.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth, sdkBackendUrl, withKortixScope } from '../api/sdk.ts';
 import {
-  appendPreviewToken,
+  authorizePreviewUrl,
   isSubdomainPreviewUrl,
   loadPreviewUrlTemplate,
   rewriteLocalhostUrl,
@@ -1016,9 +1016,8 @@ async function sessionsPreview(
   // DNS record on any deployed environment. `GET /v1/p/config` states the
   // template; the SDK substitutes it (label-encoding `_` → `-`) and falls back
   // to the localhost or path proxy when the deployment serves none. The
-  // one-shot `?token=` is accepted only on a preview origin (it mints the
-  // preview cookie there); the path proxy rejects query tokens, so it stays
-  // off that form.
+  // short-lived preview ticket is accepted only on a preview origin.
+  // The personal credential stays in the authenticated ticket request header.
   const url = await withKortixScope(auth, async () => {
     const backendUrl = sdkBackendUrl(auth.api_base);
     const template = await loadPreviewUrlTemplate(backendUrl);
@@ -1029,7 +1028,7 @@ async function sessionsPreview(
       backendPort: Number(parsed.port) || (parsed.protocol === 'https:' ? 443 : 80),
       previewUrlTemplate: template,
     });
-    return isSubdomainPreviewUrl(origin) ? appendPreviewToken(origin, auth.token) : origin;
+    return isSubdomainPreviewUrl(origin) ? authorizePreviewUrl(origin) : origin;
   });
 
   if (json) {

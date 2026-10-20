@@ -207,6 +207,9 @@ function startServer(): string {
           sandbox_url: 'http://127.0.0.1/v1/p/sbx_parity/8000',
         });
       }
+      if (method === 'POST' && path === '/v1/p/ticket') {
+        return Response.json({ ticket: 'scoped-preview-ticket' });
+      }
       if (method === 'GET' && path === '/v1/p/config') {
         return Response.json(previewConfig);
       }
@@ -1177,7 +1180,8 @@ describe('kortix sessions preview — the printed URL resolves', () => {
     expect(seen.some((s) => s.method === 'GET' && s.path === '/v1/p/config')).toBe(true);
     const out = JSON.parse(r.stdout);
     expect(out.sandbox).toBe('sbx_parity');
-    expect(out.url).toBe('https://dev-p3000-sbx-parity.p.kortix.com/?token=kortix_pat_parity');
+    expect(out.url).not.toContain('kortix_pat_parity');
+    expect(new URL(out.url).searchParams.get('preview_ticket')).toBe('scoped-preview-ticket');
   });
 
   test('no preview domain on a local api: label-encoded localhost origin with the token', async () => {
@@ -1185,7 +1189,8 @@ describe('kortix sessions preview — the printed URL resolves', () => {
     expect(r.code).toBe(0);
     const out = JSON.parse(r.stdout);
     const port = new URL(apiBase).port;
-    expect(out.url).toBe(`http://p3000-sandbox-parity.localhost:${port}/?token=kortix_pat_parity`);
+    expect(out.url).not.toContain('kortix_pat_parity');
+    expect(new URL(out.url).searchParams.get('preview_ticket')).toBe('scoped-preview-ticket');
   });
 
   test('no preview domain on a remote api: the path proxy, never a token in the url', async () => {
