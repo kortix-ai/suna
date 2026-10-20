@@ -781,6 +781,7 @@ mock.module('../shared/db', () => ({
     // matching the auth admin mock above.
     execute: async (query: unknown) =>
       authUsersRows(query, () => ({ email: 'contract@example.test' })) ?? [],
+    selectDistinctOn: () => ({ from: () => ({ where: () => ({ orderBy: async () => [] }) }) }),
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => {
         // The `/start` prologue and every long-poll tick read session + sandbox
@@ -806,7 +807,7 @@ mock.module('../shared/db', () => ({
           }),
           where: (predicate?: unknown) => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
-            Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
+            Promise.resolve(table === projectSecrets ? secretRows : table === sessionSandboxes ? sessionSandboxRows : []).then(resolve, reject);
           },
           orderBy: () => {
             if (table === sessionLifecycleCommands) {

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type SessionWorking,
   ConnectorAuthorizationStrategySchema,
   ConnectionSchema,
   ConnectionMetadataSchema,
@@ -363,6 +364,15 @@ describe('ProjectSchema.icon_glyph', () => {
 });
 
 describe('ProjectSessionSchema', () => {
+  test('working is additive and survives parsing independently of lifecycle status', () => {
+    const working: SessionWorking = { state: 'idle', since: null, turn_token: null, pending_delivery: false };
+    const parsed = ProjectSessionSchema.parse(sessionFixture({ working }));
+    expect(parsed.working).toEqual(working);
+    expect(String(parsed.status)).toBe(sessionFixture().status);
+    expect(ProjectSessionSchema.parse(sessionFixture()).working).toBeUndefined();
+    expect(ProjectSessionSchema.safeParse(sessionFixture({ working: { ...working, state: 'running' } })).success).toBe(false);
+  });
+
   test('accepts a full serialized session', () => {
     expect(() => ProjectSessionSchema.strict().parse(sessionFixture())).not.toThrow();
   });
