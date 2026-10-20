@@ -168,7 +168,24 @@ export async function bulkActReviewItems(
   input: { ids: string[]; verdict: ReviewVerdict },
 ) {
   return unwrap(
-    await backendApi.post<{ updated: number; review_items: ApiReviewItem[] }>(
+    await backendApi.post<{
+      updated: number;
+      review_items: ApiReviewItem[];
+      /** One entry per requested id, in request order. Native ids and
+       *  `call:<execution_id>` ids are decided; a refusal carries `code`.
+       *  Absent from an API older than this field. */
+      results?: Array<{
+        id: string;
+        ok: boolean;
+        code?:
+          | 'expired'
+          | 'already_resolved'
+          | 'preview_unavailable'
+          | 'forbidden'
+          | 'not_found'
+          | 'not_bulk_actionable';
+      }>;
+    }>(
       `/projects/${projectId}/review/bulk`,
       input,
     ),
