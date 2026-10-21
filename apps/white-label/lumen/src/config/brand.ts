@@ -7,9 +7,9 @@ export const BRAND = {
   /** Product name shown in the UI. */
   name: 'Lumen',
   /** One-line tagline on the auth/landing screen. */
-  tagline: 'AI for legal teams.',
+  tagline: 'The AI workspace for legal work.',
   /** The marketing subline. */
-  subline: 'Review a data room in an afternoon. Every answer cites the clause.',
+  subline: 'Lumen reviews, researches and drafts with your team, and every answer points to the clause it came from.',
   /**
    * A subprocessor line for the Security page, for a partner whose contracts
    * name its infrastructure providers (for example "Agent sessions run on
