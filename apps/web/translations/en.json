@@ -22417,6 +22417,18 @@
       "people": "People",
       "agents": "Agents",
       "membersHint": "Everyone who started a thread here, and every agent that answered one, in the threads loaded so far."
+    },
+    "folder": {
+      "memory": "Memory",
+      "loadError": "Couldn't load this folder",
+      "memoryNoteChannel": "What agents in {place} remember. Agents read this at the start of every thread.",
+      "memoryNoteDm": "What {agent} remembers from this DM. It reads this at the start of every thread.",
+      "off": {
+        "title": "Turn on Drive",
+        "description": "Files and memory for {place} live in Drive. Turn on Volumes in Feature flags to use them.",
+        "descriptionMember": "Files and memory for {place} live in Drive. Ask a project admin to turn it on.",
+        "action": "Open feature flags"
+      }
     }
   }
 }

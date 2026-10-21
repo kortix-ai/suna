@@ -1,5 +1,5 @@
 
-import { projectSessions, projects } from '@kortix/db';
+import { projectSessions, projectSpaces, projects } from '@kortix/db';
 import { COMPILED_AGENT_CONFIG_ENV, fitsInEnvString } from '@kortix/api-contract/compiled-agent-config-env';
 import { and, eq } from 'drizzle-orm';
 
@@ -52,7 +52,7 @@ export { proxyGitUrl };
 
 
 
-import { sessionChannelEnvFromMetadata } from './session-channel-env';
+import { sessionChannelEnvFromMetadata, sessionSpaceEnv } from './session-channel-env';
 
 
 
@@ -69,15 +69,31 @@ import { buildPlatformMetaOpenCodeConfig } from './platform-meta-agent';
 import { resolveSessionPersonalOwner } from './personal-resources';
 
 
-/** Re-derive persisted channel env so every cold reprovision restores it. */
+/**
+ * Re-derive persisted channel env so every cold reprovision restores it, and
+ * the channel or DM the session is a thread of (`project_channels` on).
+ */
 async function buildSessionChannelEnv(sessionId: string): Promise<Record<string, string>> {
   try {
     const [row] = await db
-      .select({ metadata: projectSessions.metadata })
+      .select({
+        metadata: projectSessions.metadata,
+        projectMetadata: projects.metadata,
+        spaceId: projectSpaces.spaceId,
+        kind: projectSpaces.kind,
+        slug: projectSpaces.slug,
+        dmAgentName: projectSpaces.dmAgentName,
+      })
       .from(projectSessions)
+      .leftJoin(projects, eq(projects.projectId, projectSessions.projectId))
+      .leftJoin(projectSpaces, eq(projectSpaces.spaceId, projectSessions.spaceId))
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
-    return sessionChannelEnvFromMetadata(row?.metadata);
+    const space =
+      row?.spaceId && row.kind && resolveFeatureFlag(row.projectMetadata, 'project_channels')
+        ? { spaceId: row.spaceId, kind: row.kind, slug: row.slug, dmAgentName: row.dmAgentName }
+        : null;
+    return { ...sessionChannelEnvFromMetadata(row?.metadata), ...sessionSpaceEnv(space) };
   } catch (err) {
     console.warn('[session-env] failed to restore channel binding', {
       sessionId,

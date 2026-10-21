@@ -21,7 +21,8 @@ export type SpaceError = {
   status: 400 | 404 | 409;
   body: { error: string; code: string; space_id?: string; archived?: boolean };
 };
-export type SpaceResult = { space: SpaceRow } | { error: SpaceError };
+/** `renamedFrom`: the slug a rename replaced. */
+export type SpaceResult = { space: SpaceRow; renamedFrom?: string } | { error: SpaceError };
 
 const DEFAULT_SLUG = 'general';
 const SLUG_INDEX = 'uniq_project_spaces_channel_slug';
@@ -245,7 +246,8 @@ export async function updateChannel(
       .set({ ...patch, updatedAt: new Date() })
       .where(and(eq(projectSpaces.projectId, projectId), eq(projectSpaces.spaceId, spaceId)))
       .returning();
-    return { space: updated ?? row };
+    const space = updated ?? row;
+    return row.slug && space.slug !== row.slug ? { space, renamedFrom: row.slug } : { space };
   } catch (error) {
     if (uniqueViolationConstraint(error) !== SLUG_INDEX) throw error;
     return slugTaken(projectId, patch.slug!);

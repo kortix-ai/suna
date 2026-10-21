@@ -22417,6 +22417,18 @@
       "people": "Pessoas",
       "agents": "Agentes",
       "membersHint": "Todos que iniciaram uma thread aqui e todos os agentes que responderam a uma, nas threads carregadas até agora."
+    },
+    "folder": {
+      "memory": "Memória",
+      "loadError": "Não foi possível carregar esta pasta",
+      "memoryNoteChannel": "O que os agentes em {place} lembram. Os agentes leem isto no início de cada thread.",
+      "memoryNoteDm": "O que {agent} lembra desta DM. Ele lê isto no início de cada thread.",
+      "off": {
+        "title": "Ative o Drive",
+        "description": "Os arquivos e a memória de {place} ficam no Drive. Ative Volumes em Feature flags para usá-los.",
+        "descriptionMember": "Os arquivos e a memória de {place} ficam no Drive. Peça a um administrador do projeto para ativá-lo.",
+        "action": "Abrir Feature flags"
+      }
     }
   }
 }

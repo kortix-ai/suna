@@ -11,6 +11,8 @@
 //   its owner shares it.
 // - `/` and `/Users` hold the tree together and cannot be granted.
 
+import { spaceDriveFolders } from '@kortix/shared';
+
 export type FolderLevel = 'read' | 'write' | 'manage';
 export type FolderAccess = 'none' | FolderLevel;
 
@@ -266,3 +268,52 @@ export function personalFolderName(email: string | null | undefined, userId: str
 
 /** Code-point order: the same on every server, whatever its locale. */
 const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+// ─── The thread's channel or DM in the notes file ─────────────────────────
+
+/** A mount as the notes file needs it. */
+export interface NotesMount {
+  mountPath: string;
+  /** The drive folder it shows. */
+  subdir: string;
+  role?: 'me' | 'drive';
+}
+
+/** Where `path` shows in the sandbox, through the deepest mount that holds it; null when none does. */
+function mountedAt(path: string, mounts: readonly NotesMount[]): string | null {
+  const m = mounts
+    .filter((x) => pathWithinFolder(path, x.subdir || '/'))
+    .sort((a, b) => (b.subdir ?? '').length - (a.subdir ?? '').length)[0];
+  if (!m) return null;
+  const rel = m.subdir && m.subdir !== '/' ? path.slice(m.subdir.length) : path;
+  return `${m.mountPath}${rel}`;
+}
+
+/**
+ * The "This thread's channel" (or DM) section of /drives/README.md: the
+ * space's files and memory folders as this sandbox mounts them, and the rule
+ * to read the memory first. `name` is the channel slug or the DM's agent.
+ */
+export function spaceNotesLines(space: { kind: 'channel' | 'dm'; name: string }, mounts: readonly NotesMount[]): string[] {
+  const me = mounts.find((m) => m.role === 'me');
+  const folders = spaceDriveFolders(space.kind, space.name, me?.subdir ?? null);
+  const files = folders && mountedAt(folders.files, mounts);
+  const memory = folders && mountedAt(folders.memory, mounts);
+  const place = space.kind === 'channel' ? `#${space.name}` : `your DM with ${space.name}`;
+  const lines = [
+    space.kind === 'channel' ? `## This thread’s channel: #${space.name}` : `## This thread’s DM with ${space.name}`,
+    '',
+  ];
+  if (!files || !memory) {
+    lines.push(`The folders of ${place} are not mounted in this thread.`, '');
+    return lines;
+  }
+  lines.push(
+    `- Files of ${place}: ${files}/ (shown in the Files tab)`,
+    `- Memory of ${place}: ${memory}/ (shown in the Memory tab)`,
+    '',
+    `Read ${memory}/ at the start of the thread (\`MEMORY.md\` first when it exists). When you learn something the next thread in ${place} should know, write durable facts there in the same turn (\`mkdir -p\` it if missing). Keep one fact per bullet; no secrets.`,
+    '',
+  );
+  return lines;
+}

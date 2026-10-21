@@ -22417,6 +22417,18 @@
       "people": "人",
       "agents": "智能体",
       "membersHint": "在目前已加载的话题中，在这里发起话题的人以及回复过话题的智能体。"
+    },
+    "folder": {
+      "memory": "记忆",
+      "loadError": "无法加载此文件夹",
+      "memoryNoteChannel": "{place} 中的智能体记住的内容。智能体在每个话题开始时都会读取。",
+      "memoryNoteDm": "{agent} 从这个私信中记住的内容。它在每个话题开始时都会读取。",
+      "off": {
+        "title": "开启 Drive",
+        "description": "{place} 的文件和记忆保存在 Drive 中。在 Feature flags 中开启 Volumes 即可使用。",
+        "descriptionMember": "{place} 的文件和记忆保存在 Drive 中。请项目管理员开启它。",
+        "action": "打开 Feature flags"
+      }
     }
   }
 }

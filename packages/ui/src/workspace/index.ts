@@ -56,7 +56,7 @@ export {
   type SessionWorkspaceProps,
 } from './session-workspace';
 export { ProjectSessionsView } from './sessions/project-sessions-view';
-export { SpaceView, type SpaceTarget, type SpaceViewProps } from './spaces/space-view';
+export { SpaceView, type SpaceFolder, type SpaceTarget, type SpaceViewProps } from './spaces/space-view';
 export { ProjectSessionList } from './sidebar/project-session-list';
 export { ProjectSidebar } from './sidebar/project-sidebar';
 export { ShareSessionModal } from './sidebar/modal/share-session-modal';

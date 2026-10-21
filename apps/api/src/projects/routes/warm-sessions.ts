@@ -520,6 +520,15 @@ export function registerWarmSessionsRoutes(): void {
           409,
         );
       }
+      // Filed into `#general` after its box booted: rewrite /drives/README.md so
+      // it names the channel's folders. Best effort, off the response path.
+      if (defaultSpaceId && claimed.spaceId) {
+        void import('../../drives/service')
+          .then(async ({ refreshDriveNotes, sessionDrivesEnabled }) => {
+            if (await sessionDrivesEnabled(projectId)) await refreshDriveNotes(sessionId);
+          })
+          .catch(() => undefined);
+      }
       // The box is warm and running — nudge the drain so the first prompt goes
       // out now instead of on the next scheduler tick.
       if (conversion?.rowValues?.idempotencyKey) {

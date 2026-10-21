@@ -22417,6 +22417,18 @@
       "people": "Personen",
       "agents": "Agenten",
       "membersHint": "Alle, die hier einen Thread gestartet haben, und alle Agenten, die einen beantwortet haben, in den bisher geladenen Threads."
+    },
+    "folder": {
+      "memory": "Speicher",
+      "loadError": "Dieser Ordner konnte nicht geladen werden",
+      "memoryNoteChannel": "Was sich Agenten in {place} merken. Agenten lesen das zu Beginn jedes Threads.",
+      "memoryNoteDm": "Was sich {agent} aus dieser DM merkt. Der Agent liest das zu Beginn jedes Threads.",
+      "off": {
+        "title": "Drive aktivieren",
+        "description": "Dateien und Speicher für {place} liegen in Drive. Aktiviere Volumes unter Feature-Flags, um sie zu nutzen.",
+        "descriptionMember": "Dateien und Speicher für {place} liegen in Drive. Bitte einen Projekt-Admin, es zu aktivieren.",
+        "action": "Feature-Flags öffnen"
+      }
     }
   }
 }

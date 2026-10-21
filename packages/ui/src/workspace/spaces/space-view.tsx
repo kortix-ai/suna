@@ -3,7 +3,7 @@
 import type { ProjectSession, ProjectSpace } from '@kortix/sdk';
 import { useOpenProjectDm, useProjectSpaces, useSession, useUpdateProjectSpace } from '@kortix/sdk/react';
 import { CaretDownIcon, HashIcon, RobotIcon } from '@phosphor-icons/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useTranslations } from '../../i18n';
 import { Close } from '../../icons/close';
@@ -46,6 +46,18 @@ export interface SpaceViewProps {
   target: SpaceTarget;
   /** Runs first on every send. Throw to refuse it: the composer keeps the draft (apps/web checks billing here). */
   beforeSend?: () => Promise<void>;
+  /**
+   * The Files and Memory tabs: the host's Drive folder view for the space
+   * (apps/web passes its Drive explorer). Absent: those tabs show their empty state.
+   */
+  renderFolder?: (folder: SpaceFolder) => ReactNode;
+}
+
+/** What a host's folder view draws: one space's Files or Memory tab. `place` is "#general" or the DM's agent. */
+export interface SpaceFolder {
+  space: ProjectSpace;
+  tab: 'files' | 'memory';
+  place: string;
 }
 
 /** The query key of the open thread: it survives a reload and can be linked. */
@@ -77,7 +89,7 @@ export function SpaceView(props: SpaceViewProps) {
   );
 }
 
-function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
+function SpaceViewBody({ projectId, target, beforeSend, renderFolder }: SpaceViewProps) {
   const t = useTranslations('spaces.view');
   const router = useUiRouter();
   const pathname = useUiPathname();
@@ -218,6 +230,7 @@ function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
             threadId={threadId}
             onOpenThread={openThread}
             beforeSend={beforeSend}
+            renderFolder={renderFolder}
           />
         </Tabs>
       </ComposerDropZone>
@@ -237,9 +250,10 @@ function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
 }
 
 /**
- * The tab panels. Chat and Threads read the space's threads. The others
- * draw their empty state until their data is wired: each says what will
- * appear there and shows its action, disabled.
+ * The tab panels. Chat and Threads read the space's threads; Files and
+ * Memory are the host's folder view. The others draw their empty state until
+ * their data is wired: each says what will appear there and shows its
+ * action, disabled.
  */
 function SpaceTabs({
   projectId,
@@ -249,6 +263,7 @@ function SpaceTabs({
   threadId,
   onOpenThread,
   beforeSend,
+  renderFolder,
 }: {
   projectId: string;
   space: ProjectSpace;
@@ -258,6 +273,7 @@ function SpaceTabs({
   threadId: string | null;
   onOpenThread: (sessionId: string) => void;
   beforeSend?: () => Promise<void>;
+  renderFolder?: (folder: SpaceFolder) => ReactNode;
 }) {
   const t = useTranslations('spaces.view');
   return (
@@ -271,22 +287,28 @@ function SpaceTabs({
       </TabsContent>
       {spaceTabs(space.kind)
         .filter((tab): tab is Exclude<SpaceTab, 'chat' | 'threads'> => tab !== 'chat' && tab !== 'threads')
-        .map((tab) => (
-          <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
-            <div className="px-5 py-16">
-              <EmptyState
-                size="sm"
-                title={t(`empty.${tab}.title`)}
-                description={t(`empty.${tab}.description`, { place })}
-                action={
-                  <Button variant="outline" size="sm" disabled>
-                    {t(`empty.${tab}.action`)}
-                  </Button>
-                }
-              />
-            </div>
-          </TabsContent>
-        ))}
+        .map((tab) =>
+          renderFolder && (tab === 'files' || tab === 'memory') ? (
+            <TabsContent key={tab} value={tab} className="flex min-h-0 flex-col">
+              {renderFolder({ space, tab, place })}
+            </TabsContent>
+          ) : (
+            <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
+              <div className="px-5 py-16">
+                <EmptyState
+                  size="sm"
+                  title={t(`empty.${tab}.title`)}
+                  description={t(`empty.${tab}.description`, { place })}
+                  action={
+                    <Button variant="outline" size="sm" disabled>
+                      {t(`empty.${tab}.action`)}
+                    </Button>
+                  }
+                />
+              </div>
+            </TabsContent>
+          ),
+        )}
     </>
   );
 }

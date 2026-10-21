@@ -22417,6 +22417,18 @@
       "people": "人",
       "agents": "エージェント",
       "membersHint": "これまでに読み込んだスレッドで、ここでスレッドを始めた人と、返信したエージェントです。"
+    },
+    "folder": {
+      "memory": "メモリ",
+      "loadError": "このフォルダを読み込めませんでした",
+      "memoryNoteChannel": "{place} のエージェントが覚えていること。エージェントはスレッドの開始時に毎回これを読みます。",
+      "memoryNoteDm": "{agent} がこの DM から覚えていること。スレッドの開始時に毎回これを読みます。",
+      "off": {
+        "title": "Drive をオンにする",
+        "description": "{place} のファイルとメモリは Drive にあります。使うには Feature flags で Volumes をオンにしてください。",
+        "descriptionMember": "{place} のファイルとメモリは Drive にあります。プロジェクト管理者にオンにするよう依頼してください。",
+        "action": "Feature flags を開く"
+      }
     }
   }
 }

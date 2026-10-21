@@ -13,7 +13,7 @@
 // agent can become root).
 
 import { logger } from '../lib/logger';
-import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, projectSpaces, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { and, asc, count, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { SYSTEM_ACTOR, assignRole, revokeAssignment } from '../iam/assignments';
@@ -40,6 +40,7 @@ import {
   pathWithinFolder,
   personalFolderName,
   planFolderMounts,
+  spaceNotesLines,
 } from './folders';
 import {
   DriveStorageError,
@@ -49,6 +50,7 @@ import {
   execInSandbox,
   getDriveVolume,
   isMissingVolume,
+  moveVolumeFile,
   openDriveVolume,
   sandboxMountLimit,
   sandboxMountPaths,
@@ -58,6 +60,8 @@ import {
   type VolumeInfo,
 } from './volumes';
 import { isDriveSyncBox } from './sync';
+import { moveFolderGrants } from './queries';
+import { spaceDriveFolders } from '@kortix/shared';
 
 export type DriveRow = typeof drives.$inferSelect;
 
@@ -240,6 +244,50 @@ export async function writeDriveVolume<T>(drive: DriveRow, op: (volume: string) 
   } catch (err) {
     if (!isMissingVolume(err)) throw err;
     return op(await openVolumeFor(drive));
+  }
+}
+
+/** The project has Files: storage configured and its `drives` flag on. */
+async function projectFilesOn(projectId: string): Promise<boolean> {
+  return driveStorageAvailable() && (await projectFeatureFlagEnabled(projectId, 'drives'));
+}
+
+/**
+ * A new channel's folder and its Memory folder in Files. Best effort: a
+ * failure is logged and the Files tab makes the folder when it is opened.
+ */
+export async function makeChannelFolders(accountId: string, projectId: string, slug: string): Promise<void> {
+  try {
+    if (!(await projectFilesOn(projectId))) return;
+    const drive = await ensureProjectDrive(accountId, projectId);
+    const { memory } = spaceDriveFolders('channel', slug, null)!;
+    // The marker inside Memory makes both folders; one that exists answers 409.
+    await writeDriveVolume(drive, (volume) =>
+      writeVolumeFile(volume, `${memory}/.keep`, new Uint8Array(), { overwrite: false }),
+    ).catch((err) => {
+      if (!(err instanceof DriveStorageError && err.status === 409)) throw err;
+    });
+  } catch (err) {
+    logger.warn(`[drives] the folders of channel #${slug} in project ${projectId} were not made`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/** A renamed channel's folder follows its new slug, with any sharing on it. Best effort, logged. */
+export async function moveChannelFolder(projectId: string, fromSlug: string, toSlug: string): Promise<void> {
+  try {
+    if (!(await projectFilesOn(projectId))) return;
+    const drive = await findProjectDrive(projectId);
+    if (!drive) return;
+    const from = spaceDriveFolders('channel', fromSlug, null)!.files;
+    const to = spaceDriveFolders('channel', toSlug, null)!.files;
+    await readDriveVolume(drive, (volume) => moveVolumeFile(volume, from, to), () => undefined);
+    await moveFolderGrants(drive, from, to);
+  } catch (err) {
+    logger.warn(`[drives] the folder of channel #${fromSlug} in project ${projectId} did not move to #${toSlug}`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -967,6 +1015,7 @@ export function renderDriveNotes(
   mounts: SessionDriveView[],
   conflicts: Array<{ mountPath: string; path: string }>,
   skippedMessage?: string | null,
+  spaceLines: readonly string[] = [],
 ): string {
   const lines = [
     '# Files in this session',
@@ -989,6 +1038,7 @@ export function renderDriveNotes(
       '',
     );
   }
+  lines.push(...spaceLines);
   lines.push(
     'A folder that is not listed here is not available to this session. Ask the user to share it with you in Files.',
     '',
@@ -1028,7 +1078,26 @@ export async function sessionDriveNotes(sessionId: string): Promise<{ mounts: Se
     return [{ mountPath: m.mountPath, path: rel }];
   });
   const { message: skippedMessage } = await readSkippedSessionDrives(sessionId);
-  return { mounts, text: renderDriveNotes(mounts, conflicts, skippedMessage) };
+  const space = await sessionNotesSpace(sessionId);
+  return { mounts, text: renderDriveNotes(mounts, conflicts, skippedMessage, space ? spaceNotesLines(space, mounts) : []) };
+}
+
+/** The channel or DM a session is a thread of, with `project_channels` on; else null. */
+async function sessionNotesSpace(sessionId: string): Promise<{ kind: 'channel' | 'dm'; name: string } | null> {
+  const [row] = await db
+    .select({
+      projectId: projectSessions.projectId,
+      kind: projectSpaces.kind,
+      slug: projectSpaces.slug,
+      agent: projectSpaces.dmAgentName,
+    })
+    .from(projectSessions)
+    .innerJoin(projectSpaces, eq(projectSpaces.spaceId, projectSessions.spaceId))
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  const name = row?.kind === 'channel' ? row.slug : row?.agent;
+  if (!row || !name || !(await projectFeatureFlagEnabled(row.projectId, 'project_channels'))) return null;
+  return { kind: row.kind, name };
 }
 
 /**

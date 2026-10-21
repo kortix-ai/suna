@@ -12,6 +12,7 @@ import {
   SpaceSchema,
   SpaceUpdateInputSchema,
 } from '@kortix/api-contract';
+import { makeChannelFolders, moveChannelFolder } from '../../drives/service';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { auth, errors, json } from '../../openapi';
 import { isUuid } from '../../shared/validate';
@@ -80,6 +81,8 @@ export function registerProjectSpacesRoutes(): void {
       const { row, userId } = loaded;
       const result = await createChannel(row.projectId, row.accountId, userId, c.req.valid('json'));
       if ('error' in result) return c.json(result.error.body, result.error.status);
+      // Its Files folder and Memory folder, best effort and off the response path.
+      void makeChannelFolders(row.accountId, row.projectId, result.space.slug!);
       return c.json(serializeSpace(result.space), 201);
     },
   );
@@ -145,6 +148,15 @@ export function registerProjectSpacesRoutes(): void {
       if (!isUuid(spaceId)) return c.json({ error: 'Channel not found', code: 'space_not_found' }, 404);
       const result = await updateChannel(loaded.row.projectId, loaded.userId, spaceId, c.req.valid('json'));
       if ('error' in result) return c.json(result.error.body, result.error.status);
+      // The channel's folder follows a rename, best effort (it logs a failure).
+      // Waited for, up to 10 s: the Files tab of the new slug would otherwise
+      // make an empty folder first, and the move would refuse to overwrite it.
+      if (result.renamedFrom) {
+        await Promise.race([
+          moveChannelFolder(loaded.row.projectId, result.renamedFrom, result.space.slug!),
+          new Promise((resolve) => setTimeout(resolve, 10_000)),
+        ]);
+      }
       return c.json(serializeSpace(result.space), 200);
     },
   );

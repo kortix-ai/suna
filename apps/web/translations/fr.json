@@ -22417,6 +22417,18 @@
       "people": "Personnes",
       "agents": "Agents",
       "membersHint": "Toutes les personnes qui ont lancé un fil ici et tous les agents qui en ont répondu un, dans les fils chargés jusqu’ici."
+    },
+    "folder": {
+      "memory": "Mémoire",
+      "loadError": "Impossible de charger ce dossier",
+      "memoryNoteChannel": "Ce dont se souviennent les agents dans {place}. Les agents le lisent au début de chaque fil.",
+      "memoryNoteDm": "Ce dont {agent} se souvient de ce DM. Il le lit au début de chaque fil.",
+      "off": {
+        "title": "Activer Drive",
+        "description": "Les fichiers et la mémoire de {place} sont dans Drive. Activez Volumes dans Feature flags pour les utiliser.",
+        "descriptionMember": "Les fichiers et la mémoire de {place} sont dans Drive. Demandez à un administrateur du projet de l'activer.",
+        "action": "Ouvrir Feature flags"
+      }
     }
   }
 }
