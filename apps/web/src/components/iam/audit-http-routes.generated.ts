@@ -55,6 +55,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|accounts|:accountId",
   "PATCH|v1|accounts|:accountId",
   "GET|v1|accounts|:accountId|audit",
+  "GET|v1|accounts|:accountId|audit|activity",
   "GET|v1|accounts|:accountId|audit|export",
   "POST|v1|accounts|:accountId|audit|reconcile",
   "GET|v1|accounts|:accountId|audit|webhooks",

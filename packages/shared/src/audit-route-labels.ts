@@ -80,6 +80,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'PATCH /v1/accounts/:accountId': { action: 'account.update', title: 'Renamed account' },
   'GET /v1/accounts/:accountId/audit': { action: 'iam.audit.list', title: 'Viewed audit log' },
   'GET /v1/accounts/:accountId/audit/export': { action: 'iam.audit.export', title: 'Exported audit log' },
+  'GET /v1/accounts/:accountId/audit/activity': { action: 'iam.audit.activity', title: 'Viewed account activity' },
   'POST /v1/accounts/:accountId/audit/reconcile': { action: 'iam.audit.reconcile', title: 'Reconciled audit log' },
   'GET /v1/accounts/:accountId/audit/webhooks': { action: 'iam.audit.webhook.list', title: 'Listed audit webhooks' },
   'POST /v1/accounts/:accountId/audit/webhooks': { action: 'iam.audit.webhook.create', title: 'Created audit webhook' },

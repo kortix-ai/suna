@@ -138,6 +138,7 @@ Methods: `signUp`, `signInWithPassword`, `sendMagicLink`, `verifyOtp`, `signInWi
 | `secretResources.list` · `.create` · `.rotate` · `.retry` · `.remove` · `.grant` · `.revoke` · `.setAccess` | Account-level provider secrets and which projects may use them. |
 | `branding.get(accountId)` · `.update(accountId, { app_name })` · `.uploadAsset(accountId, kind, file)` · `.removeAsset(accountId, kind)` · `.reset(accountId)` | Organization branding. `kind`: `logo`, `icon`, `favicon`, or `logo_dark`, `icon_dark`, `favicon_dark`. |
 | `audit.log(accountId, filters?)` · `audit.export(accountId, { format: 'csv' \| 'jsonl', …filters })` | The audit log, filtered by project, session, actor, source, outcome, request, resource, action or time · the same events as a file. |
+| `audit.activity(accountId, { since?, until?, projectId?, actor?, client?, actorType?, credentialKind? })` | Who was active and how often, per UTC day: per user, the active days, distinct active hours and events. `client: 'browser'` keeps only a person in a web page. |
 | `audit.webhooks.list` · `.create` · `.update` · `.remove` | Signed webhooks that stream audit events to a SIEM. |
 
 Account features are explained in [Accounts & access](/docs/accounts), keys in [API keys and tokens](/docs/accounts/identity#api-keys-and-tokens).
