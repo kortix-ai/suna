@@ -659,6 +659,24 @@ async function ingestDraft(ctx: MutationCtx, c: Ctx, value: any, files: Array<In
   await event(ctx, c.run._id, "draft", value.unfilled.length ? `Draft ready: ${value.unfilled.length} field(s) to confirm` : "Draft ready", c.batch._id);
 }
 
+/** Sandbox paths a lawyer must never read: out/…, input.json, /workspace/…, /tmp/…, <batch_dir>. */
+const WORKING_PATH = /(?:^|[\s(`"'])(?:out\/[\w.-]*\w|\/?(?:workspace|tmp)\/[\w./-]*\w|input\.json|<batch_dir>)/;
+const PROSE_KEY = /^(?:summary|finding|answer_md|.+_md)$/;
+
+/** Prose fields of a result that name a working file. Each one is a repair request for the agent. */
+export function leakedPaths(value: unknown, at = ""): string[] {
+  if (Array.isArray(value)) return value.flatMap((v, i) => leakedPaths(v, `${at}[${i}]`));
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value).flatMap(([k, v]) => {
+    const here = at ? `${at}.${k}` : k;
+    if (typeof v === "string" && PROSE_KEY.test(k)) {
+      const m = v.match(WORKING_PATH);
+      return m ? [`"${here}" names the working file "${m[0].trim().replace(/^[(`"']/, "")}". A lawyer reads this text: write "the redline", "the draft" or the document's filename instead.`] : [];
+    }
+    return typeof v === "object" ? leakedPaths(v, here) : [];
+  });
+}
+
 /**
  * Accept one schema-valid result file (the action ran ajv and stored the files it
  * names). Every citation is checked against Lumen's own paragraphs before a value
@@ -676,6 +694,8 @@ export const ingestResult = internalMutation({
     const expected = resultContract(run.kind, batch.phase).schema;
     const got = String(value.schema ?? "").split("/")[0];
     if (got !== expected) return [`${path}: a ${got} result does not belong here; write a ${expected} result`];
+    const leaks = leakedPaths(value);
+    if (leaks.length) return leaks.map((l) => `${path}: ${l}`);
     if (got === "review-row") await ingestRow(ctx, c, value, problems);
     else if (got === "answer") {
       const citations = await cite(ctx, c, value.citations);

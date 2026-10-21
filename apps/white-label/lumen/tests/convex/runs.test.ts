@@ -439,6 +439,26 @@ describe('workflows: contract review, due diligence, draft', () => {
     expect(batch).toMatchObject({ status: 'succeeded', attempts: { repair: 1 } });
   });
 
+  test('contract review: a summary that names a working file is sent back before a lawyer sees it', async () => {
+    const { t, owner, firmId, matterId, docs } = await world(1);
+    const { playbookId } = await libraryOf(t, firmId);
+    fake.script.onStart = (s) => {
+      fake.write(`${dirOf(s)}/out/redline.docx`, 'PK fake docx');
+      fake.write(`${dirOf(s)}/out/issues.json`, { ...issuesJson(docs[0]), summary: 'One high-severity deviation. The redline is at out/redline.docx.' });
+      fake.write(`${dirOf(s)}/done.json`, { status: 'succeeded', outputs: [] });
+    };
+    const prompts: string[] = [];
+    fake.script.onSend = (s, text) => {
+      prompts.push(text);
+      fake.write(`${dirOf(s)}/out/issues.json`, issuesJson(docs[0]));
+    };
+    const runId = await owner.as.mutation(api.workflows.startContractReview, { matterId, documentId: docs[0], playbookId });
+    await finish(t);
+    expect(prompts.join("\n")).toContain('"summary" names the working file "out/redline.docx"');
+    const view = await owner.as.query(api.runs.get, { runId });
+    expect(view!.result).toMatchObject({ kind: 'issues', summary: 'One high-severity deviation.' });
+  });
+
   test('due diligence: map batches fill the checklist, then one reduce batch gets the checked rows and writes a cited report', async () => {
     const { t, owner, matterId, docs } = await world(5);
     docs.forEach((d, i) => docIndex.set(d, i + 1));
