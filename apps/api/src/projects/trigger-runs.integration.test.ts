@@ -3,13 +3,13 @@
  *
  * Proves, with an injected clock: a manual or webhook fire writes one run row
  * with its source and status; a rejected webhook delivery is stored unverified;
- * a payload over 64 KiB is stored as a size marker; a turn end closes the
- * oldest open run of its session (by session id); `max_lateness` turns a stale cron slot into
+ * a payload over 64 KiB is stored as a size marker; a run closes from its
+ * turn's `session_turns` row, on any terminal relay and in maintenance; `max_lateness` turns a stale cron slot into
  * a skipped run and advances `next_fire_at`; without it the slot fires once;
  * retention deletes old non-cron and rejected runs and keeps cron rows.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { accounts, projectSessions, projectTriggerExecutions, projectTriggerRuntime, projects } from '@kortix/db';
+import { accounts, projectSessions, projectTriggerExecutions, projectTriggerRuntime, projects, sessionTurns } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
@@ -19,7 +19,7 @@ import {
   recordTriggerRun,
   triggerRunFromFire,
 } from './trigger-execution-store';
-import { recordTriggerRunEnd } from './lib/trigger-run-outcome';
+import { recordTriggerRunEnd, settleTriggerRunsFromTurns } from './lib/trigger-run-outcome';
 import { nextTriggerScheduleSlot, triggerScheduleRevision } from './trigger-schedule';
 import type { GitTriggerSpec } from './triggers';
 
@@ -90,6 +90,42 @@ async function seedSession(): Promise<string> {
   return sessionId;
 }
 
+/** One manual fire that reached `sessionId`, stamped `at`. */
+async function fire(sessionId: string, at: string) {
+  return recordTriggerRun({
+    projectId: PROJECT, slug: SLUG, source: 'manual', spec: cronSpec, payload: {},
+    status: 'succeeded', sessionId, now: new Date(at),
+  });
+}
+
+/** One `session_turns` ledger row; open unless `endedAt` is given. */
+async function seedTurn(
+  sessionId: string,
+  turn: { startedAt: string; endedAt?: string; endReason?: string; endError?: { name: string; message: string } },
+): Promise<string> {
+  const turnToken = crypto.randomUUID();
+  await db.insert(sessionTurns).values({
+    turnToken,
+    sessionId,
+    sandboxId: crypto.randomUUID(),
+    projectId: PROJECT,
+    accountId: ACCOUNT,
+    state: turn.endedAt ? 'ended' : 'active',
+    endReason: turn.endReason ?? null,
+    endError: turn.endError ?? null,
+    startedAt: new Date(turn.startedAt),
+    endedAt: turn.endedAt ? new Date(turn.endedAt) : null,
+  });
+  return turnToken;
+}
+
+async function endTurn(turnToken: string, endReason: string, endedAt: string, endError?: { name: string; message: string }) {
+  await db
+    .update(sessionTurns)
+    .set({ state: 'ended', endReason, endError: endError ?? null, endedAt: new Date(endedAt) })
+    .where(eq(sessionTurns.turnToken, turnToken));
+}
+
 async function seedCron(spec: GitTriggerSpec, nextFireAt: Date) {
   await db.insert(projectTriggerRuntime).values({
     projectId: PROJECT,
@@ -113,6 +149,7 @@ async function runtime() {
 }
 
 async function cleanup() {
+  await db.delete(sessionTurns).where(eq(sessionTurns.projectId, PROJECT));
   await db.delete(projects).where(eq(projects.projectId, PROJECT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 }
@@ -239,17 +276,10 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
     expect((await run(kept!)).payload).toEqual(atLimit);
   });
 
-  test('a turn end closes the oldest open run of its session with the outcome', async () => {
+  test('a turn end closes the run whose turn ended, with the outcome the turn ledger recorded', async () => {
     const sessionId = await seedSession();
-    const older = await recordTriggerRun({
-      projectId: PROJECT, slug: SLUG, source: 'manual', spec: cronSpec, payload: {},
-      status: 'succeeded', sessionId, now: new Date('2026-10-16T10:00:00.000Z'),
-    });
-    const newer = await recordTriggerRun({
-      projectId: PROJECT, slug: SLUG, source: 'manual', spec: cronSpec, payload: {},
-      status: 'succeeded', sessionId, now: new Date('2026-10-16T10:01:00.000Z'),
-    });
-    const endedAt = new Date('2026-10-16T10:05:00.000Z');
+    const older = await fire(sessionId, '2026-10-16T10:00:00.000Z');
+    const newer = await fire(sessionId, '2026-10-16T10:01:00.000Z');
     const end = {
       projectId: PROJECT,
       accountId: ACCOUNT,
@@ -258,52 +288,107 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
       outcome: 'closed' as const,
       childSession: false,
     };
+    await seedTurn(sessionId, {
+      startedAt: '2026-10-16T10:00:01.000Z',
+      endedAt: '2026-10-16T10:05:00.000Z',
+      endReason: 'failed',
+      endError: { name: 'APIError', message: 'Payment Required: Insufficient credits.' },
+    });
+    const newerTurn = await seedTurn(sessionId, { startedAt: '2026-10-16T10:05:01.000Z' });
     await recordTriggerRunEnd(
-      { ...end, status: 'error', error: { name: 'APIError', message: 'Payment Required: Insufficient credits.' }, now: endedAt },
+      { ...end, status: 'error', error: { name: 'APIError', message: 'Payment Required: Insufficient credits.' } },
       noPush,
     );
-    // First in, first out: the first closed turn is the older fire's.
     expect(await run(older!)).toMatchObject({
       runStatus: 'failed',
       runError: 'Out of credits: Payment Required: Insufficient credits.',
     });
-    expect((await run(older!)).runEndedAt?.toISOString()).toBe(endedAt.toISOString());
+    expect((await run(older!)).runEndedAt?.toISOString()).toBe('2026-10-16T10:05:00.000Z');
+    // The newer fire's turn is still going.
     expect(await run(newer!)).toMatchObject({ runStatus: 'running', runEndedAt: null });
 
-    const secondEnd = new Date('2026-10-16T10:09:00.000Z');
-    await recordTriggerRunEnd({ ...end, status: 'idle', now: secondEnd }, noPush);
+    await endTurn(newerTurn, 'completed', '2026-10-16T10:09:00.000Z');
+    await recordTriggerRunEnd({ ...end, status: 'idle' }, noPush);
     expect(await run(newer!)).toMatchObject({ runStatus: 'succeeded', runError: null });
-    expect((await run(newer!)).runEndedAt?.toISOString()).toBe(secondEnd.toISOString());
+    expect((await run(newer!)).runEndedAt?.toISOString()).toBe('2026-10-16T10:09:00.000Z');
     // A closed run keeps its first outcome.
     expect(await run(older!)).toMatchObject({ runStatus: 'failed' });
 
     // A pinned trigger's (or a reminder's) session carries no trigger
     // metadata; its run still closes.
-    const pinned = await recordTriggerRun({
-      projectId: PROJECT, slug: SLUG, source: 'manual', spec: cronSpec, payload: {},
-      status: 'succeeded', sessionId, now: new Date('2026-10-16T10:09:30.000Z'),
-    });
-    await recordTriggerRunEnd({ ...end, metadata: {}, status: 'idle', now: secondEnd }, noPush);
+    const pinned = await fire(sessionId, '2026-10-16T10:09:30.000Z');
+    await seedTurn(sessionId, { startedAt: '2026-10-16T10:09:31.000Z', endedAt: '2026-10-16T10:10:00.000Z', endReason: 'completed' });
+    await recordTriggerRunEnd({ ...end, metadata: {}, status: 'idle' }, noPush);
     expect(await run(pinned!)).toMatchObject({ runStatus: 'succeeded' });
 
     // A subagent turn says nothing about the run.
-    const third = await recordTriggerRun({
-      projectId: PROJECT, slug: SLUG, source: 'manual', spec: cronSpec, payload: {},
-      status: 'succeeded', sessionId, now: new Date('2026-10-16T10:10:00.000Z'),
-    });
-    await recordTriggerRunEnd({ ...end, status: 'idle', childSession: true, now: secondEnd }, noPush);
+    const third = await fire(sessionId, '2026-10-16T10:10:30.000Z');
+    const thirdTurn = await seedTurn(sessionId, { startedAt: '2026-10-16T10:10:31.000Z' });
+    await recordTriggerRunEnd({ ...end, status: 'idle', childSession: true }, noPush);
     expect(await run(third!)).toMatchObject({ runStatus: 'running', runEndedAt: null });
 
     // A stopped turn closes the run as failed with "stopped", and is still
     // not a trigger run outcome: the trigger runtime is not touched.
-    const stoppedAt = new Date('2026-10-16T10:12:00.000Z');
+    await endTurn(thirdTurn, 'failed', '2026-10-16T10:12:00.000Z', { name: 'MessageAbortedError', message: 'aborted' });
     const result = await recordTriggerRunEnd(
-      { ...end, status: 'error', error: { name: 'MessageAbortedError', message: 'aborted' }, now: stoppedAt },
+      { ...end, status: 'error', error: { name: 'MessageAbortedError', message: 'aborted' } },
       noPush,
     );
     expect(result).toBe('not_a_trigger_run');
     expect(await run(third!)).toMatchObject({ runStatus: 'failed', runError: 'stopped' });
-    expect((await run(third!)).runEndedAt?.toISOString()).toBe(stoppedAt.toISOString());
+    expect((await run(third!)).runEndedAt?.toISOString()).toBe('2026-10-16T10:12:00.000Z');
+  });
+
+  test('a run whose turn another path closed is not left running, and the next run is not blamed for it', async () => {
+    // Prod, 2026-10-21: the turn ended, but the terminal relay did not answer
+    // `closed` (the turn was already settled), so the run stayed "Running".
+    // The next fire into the same session then closed THAT run with its own
+    // outcome, and its own run stayed "Running" instead.
+    const sessionId = await seedSession();
+    const first = await fire(sessionId, '2026-10-21T13:06:57.000Z');
+    await seedTurn(sessionId, { startedAt: '2026-10-21T13:06:58.000Z', endedAt: '2026-10-21T13:17:04.000Z', endReason: 'completed' });
+    const end = {
+      projectId: PROJECT,
+      accountId: ACCOUNT,
+      sessionId,
+      metadata: { trigger_kind: 'git', trigger_slug: SLUG },
+      status: 'idle' as const,
+      childSession: false,
+    };
+    await recordTriggerRunEnd({ ...end, outcome: 'already_closed' }, noPush);
+    expect(await run(first!)).toMatchObject({ runStatus: 'succeeded', runError: null });
+    expect((await run(first!)).runEndedAt?.toISOString()).toBe('2026-10-21T13:17:04.000Z');
+
+    const second = await fire(sessionId, '2026-10-21T13:38:26.000Z');
+    const secondTurn = await seedTurn(sessionId, { startedAt: '2026-10-21T13:38:27.000Z' });
+    expect(await run(second!)).toMatchObject({ runStatus: 'running', runEndedAt: null });
+    await endTurn(secondTurn, 'failed', '2026-10-21T13:50:00.000Z', { name: 'APIError', message: 'Bad Gateway' });
+    await recordTriggerRunEnd({ ...end, status: 'error', error: { name: 'APIError', message: 'Bad Gateway' }, outcome: 'closed' }, noPush);
+    expect(await run(second!)).toMatchObject({ runStatus: 'failed' });
+    expect((await run(second!)).runEndedAt?.toISOString()).toBe('2026-10-21T13:50:00.000Z');
+    expect(await run(first!)).toMatchObject({ runStatus: 'succeeded' });
+  });
+
+  test('the maintenance settle closes runs whose turn ended with no relay at all', async () => {
+    const sessionId = await seedSession();
+    const gone = await fire(sessionId, '2026-10-21T10:00:00.000Z');
+    await seedTurn(sessionId, { startedAt: '2026-10-21T10:00:01.000Z', endedAt: '2026-10-21T10:20:00.000Z', endReason: 'runtime_gone' });
+    const live = await fire(sessionId, '2026-10-21T10:30:00.000Z');
+    await seedTurn(sessionId, { startedAt: '2026-10-21T10:30:01.000Z' });
+    const otherSession = await seedSession();
+    const undelivered = await fire(otherSession, '2026-10-21T10:00:00.000Z');
+
+    expect(await settleTriggerRunsFromTurns()).toBe(1);
+    expect(await run(gone!)).toMatchObject({
+      runStatus: 'failed',
+      runError: 'The sandbox stopped before the turn ended.',
+    });
+    expect((await run(gone!)).runEndedAt?.toISOString()).toBe('2026-10-21T10:20:00.000Z');
+    // A turn still going, and a fire whose prompt has not started a turn, stay open.
+    expect(await run(live!)).toMatchObject({ runStatus: 'running', runEndedAt: null });
+    expect(await run(undelivered!)).toMatchObject({ runStatus: 'running', runEndedAt: null });
+    // Idempotent: nothing left to settle.
+    expect(await settleTriggerRunsFromTurns()).toBe(0);
   });
 
   test('max_lateness skips a stale slot as a run and advances next_fire_at to the next future slot', async () => {

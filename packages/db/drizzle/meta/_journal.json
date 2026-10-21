@@ -1233,6 +1233,13 @@
       "when": 1792544465606,
       "tag": "20261021010105_connector_call_status_expired_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1792590218826,
+      "tag": "20261021134338_open_trigger_runs_index_snapshot",
+      "breakpoints": true
     }
   ]
 }

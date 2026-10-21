@@ -2023,6 +2023,9 @@ export const projectTriggerExecutions = kortixSchema.table(
     index('idx_project_trigger_executions_noncron_created')
       .on(table.createdAt)
       .where(sql`${table.source} <> 'cron'`),
+    index('idx_project_trigger_executions_open_run')
+      .on(table.createdAt)
+      .where(sql`${table.runStatus} = 'running'`),
   ],
 );
 
