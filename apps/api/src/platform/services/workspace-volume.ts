@@ -3,8 +3,10 @@
  * of stateless sandboxes.
  *
  * One volume per session, `kws-<session_id>`, mounted at /workspace when the box
- * is created, so the mount exists before kortixd starts. The box still stops and
- * resumes in place; nothing here deletes a box. kortixd fills the empty volume
+ * is created, so the mount exists before kortixd starts. The box stops and
+ * resumes in place; a box stopped for KORTIX_SANDBOX_IDLE_DELETE_MINUTES is
+ * removed (reaping/idle-volume-retire.ts) and the next open boots a fresh box
+ * on the same volume. kortixd fills the empty volume
  * on the first boot with its usual Git or S3 transports and adopts the checkout
  * on every later boot (KORTIX_WORKSPACE_VOLUME=1, services/workspace-provider).
  *
@@ -121,7 +123,11 @@ export async function resolveWorkspaceVolume(input: {
  * checkout is the session's only copy (kortixd refuses it too).
  */
 export function applyWorkspaceVolume(create: CreateSandboxOpts, volume: WorkspaceVolume): void {
-  create.volumes = { ...create.volumes, [WORKSPACE_VOLUME_MOUNT]: { volume: volume.name } };
+  // One writer per session: a private mount, never a node-shared one (drives use those).
+  create.volumes = { ...create.volumes, [WORKSPACE_VOLUME_MOUNT]: { volume: volume.name, share: 'private' } };
+  // The session's state is on the volume, so Platinum's hourly whole-box
+  // backup would only pause the box to upload a disposable disk.
+  create.volumesRequired = true;
   create.location = volume.location ?? undefined;
   if (volume.location) create.locationRequired = true;
   const { KORTIX_SESSION_BRANCH_RESTORE: _restore, ...env } = create.envVars ?? {};

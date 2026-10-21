@@ -758,6 +758,10 @@ const envSchema = z.object({
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: optInt(15),
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(720), // 12 hours
   KORTIX_SANDBOX_AUTODELETE_MINUTES: optInt(-1), // never auto-delete
+  // Stateless sandboxes: a session whose /workspace is a Platinum volume loses
+  // its stopped box after this many minutes (projects/reaping/idle-volume-retire.ts);
+  // the next open boots a fresh box on the volume. -1 keeps every stopped box.
+  KORTIX_SANDBOX_IDLE_DELETE_MINUTES: optInt(60),
   // The PROVIDER-NATIVE idle timer (Daytona autoStopInterval / Platinum
   // auto_stop_minutes) — a LAST-RESORT backstop for boxes this API can no
   // longer reach, NOT the primary stop. It used to be derived from
@@ -1442,6 +1446,7 @@ export const config = {
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
+  KORTIX_SANDBOX_IDLE_DELETE_MINUTES: env.KORTIX_SANDBOX_IDLE_DELETE_MINUTES,
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,

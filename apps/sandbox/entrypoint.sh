@@ -251,6 +251,9 @@ DEADLINE_S=120
 # brief post-exec flap is already tolerated — 2 probes is enough to clear the
 # Daytona overlayfs init race without paying a flat 2s on every boot.
 STABLE_REQUIRED=2
+# A /workspace volume is mounted before the guest runs (Platinum reports the box
+# running only after the guest mount), so the overlay race does not apply.
+if [ "${KORTIX_WORKSPACE_VOLUME:-}" = "1" ]; then STABLE_REQUIRED=1; fi
 INTERVAL_S=0.25
 
 start=$(date +%s)

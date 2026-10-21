@@ -372,6 +372,9 @@ interface SessionProvisionState {
   // /workspace on a Platinum volume (workspace-volume.ts): resolved on the
   // first Platinum attempt, undefined until then, null for a box-disk session.
   workspaceVolume: WorkspaceVolume | null | undefined;
+  // Started with the provisioning (startWorkspaceVolume), so the volume open
+  // runs alongside row+tokens and the env build instead of before the create.
+  workspaceVolumePromise: Promise<WorkspaceVolume | null> | undefined;
 }
 
 /** What the detached provisioning loop reads but never changes. */
@@ -547,6 +550,7 @@ export async function provisionSessionSandbox(opts: {
     driveMounts: undefined,
     driveMountsResolved: false,
     workspaceVolume: undefined,
+    workspaceVolumePromise: undefined,
   };
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
@@ -600,6 +604,16 @@ export async function provisionSessionSandbox(opts: {
   // Swallow the unhandled-rejection warning; the IIFE's try/catch owns the error
   // when it awaits the promise.
   state.firstImagePromise?.catch(() => {});
+
+  // The /workspace volume opens in parallel with row+tokens and the env build:
+  // it needs only the session row, which exists before provisioning starts.
+  // The first Platinum attempt awaits it (prepareAttemptVolumes).
+  if (state.providerName === 'platinum' && slug !== META_SANDBOX_SLUG) {
+    state.workspaceVolumePromise = import('./workspace-volume').then(({ resolveWorkspaceVolume }) =>
+      resolveWorkspaceVolume({ sessionId: sandboxId, projectMetadata: opts.projectMetadata, location }),
+    );
+    state.workspaceVolumePromise.catch(() => {});
+  }
 
   // Sandbox-row insert + tokens + credit lookup all run in parallel. None of
   // them depend on the others — `sandboxId` is known up front, so even the
@@ -823,11 +837,15 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
   }
   const { applyWorkspaceVolume, resolveWorkspaceVolume } = await import('./workspace-volume');
   if (state.workspaceVolume === undefined) {
-    state.workspaceVolume = await resolveWorkspaceVolume({
-      sessionId: sandbox.sandboxId,
-      projectMetadata: opts.projectMetadata,
-      location: providerCreateInput.location,
-    });
+    // The early open is used once: a retry after it failed opens again.
+    const early = state.workspaceVolumePromise;
+    state.workspaceVolumePromise = undefined;
+    state.workspaceVolume = await (early ??
+      resolveWorkspaceVolume({
+        sessionId: sandbox.sandboxId,
+        projectMetadata: opts.projectMetadata,
+        location: providerCreateInput.location,
+      }));
     if (state.workspaceVolume) ctx.tl.mark('workspace-volume');
   }
   if (!state.driveMountsResolved) {
