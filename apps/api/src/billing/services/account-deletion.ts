@@ -17,6 +17,7 @@ import {
   oauthAuthorizationCodes,
   oauthRefreshTokens,
   scimTokens,
+  serviceAccounts,
   impersonationGrants,
   kortixApiKeys,
   legacySandboxMigrations,
@@ -107,6 +108,9 @@ export async function requestAccountDeletion(
         .where(eq(oauthRefreshTokens.accountId, accountId));
       await db.update(scimTokens).set({ revokedAt: new Date() })
         .where(eq(scimTokens.accountId, accountId));
+      await db.update(serviceAccounts)
+        .set({ status: 'disabled', disabledAt: new Date(), disabledBy: userId })
+        .where(and(eq(serviceAccounts.accountId, accountId), eq(serviceAccounts.status, 'active')));
       // A personal-account deletion ends existing sign-ins, not the identity:
       // a fresh sign-in can still cancel during the grace period. Deleting a
       // team account must not end the owner's access to their other accounts.

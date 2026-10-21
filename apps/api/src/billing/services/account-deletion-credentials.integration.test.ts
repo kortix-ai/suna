@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
-import { accounts, accountTokens, accountDeletionRequests, kortixApiKeys, oauthClients, oauthAuthorizationCodes, oauthAccessTokens, oauthRefreshTokens, scimTokens, gatewayApiKeys, projects } from '@kortix/db';
+import { accounts, accountTokens, accountDeletionRequests, kortixApiKeys, oauthClients, oauthAuthorizationCodes, oauthAccessTokens, oauthRefreshTokens, scimTokens, gatewayApiKeys, projects, serviceAccounts } from '@kortix/db';
 import { db } from '../../shared/db';
 import { requestAccountDeletion, cancelAccountDeletion } from './account-deletion';
 import { PgClient } from '../../__tests__/helpers/pg-client';
@@ -20,6 +20,7 @@ test('scheduling revokes existing credentials, not data or a fresh recovery sign
   for (const accountId of [user, neighbor]) {
     await db.insert(accountTokens).values({ accountId, userId: accountId, name: 'test', publicKey: crypto.randomUUID(), secretKeyHash: 'synthetic-hash' });
   }
+  await db.insert(serviceAccounts).values([user, neighbor].map(accountId => ({ accountId, name: 'synthetic', publicPrefix: 'kortix_sa_test', secretHash: crypto.randomUUID() })));
   await db.insert(kortixApiKeys).values({ accountId: user, sandboxId: crypto.randomUUID(), publicKey: crypto.randomUUID(), secretKeyHash: 'synthetic-api-key', title: 'test' });
   const clientId = crypto.randomUUID();
   const projectId = crypto.randomUUID();
@@ -35,6 +36,11 @@ test('scheduling revokes existing credentials, not data or a fresh recovery sign
   try {
     const result = await requestAccountDeletion(user, user);
     expect(result.can_cancel).toBe(true);
+    const [disabled] = await db.select().from(serviceAccounts).where(eq(serviceAccounts.accountId, user));
+    expect(disabled?.status).toBe('disabled');
+    expect(disabled?.disabledAt).toBeInstanceOf(Date);
+    expect(disabled?.disabledBy).toBe(user);
+    expect((await db.select().from(serviceAccounts).where(eq(serviceAccounts.accountId, neighbor)))[0]?.status).toBe('active');
     const [old] = await db.select().from(accountTokens).where(eq(accountTokens.accountId, user));
     expect(old?.status).toBe('revoked');
     expect(old?.revokedAt).not.toBeNull();
@@ -53,6 +59,7 @@ test('scheduling revokes existing credentials, not data or a fresh recovery sign
     await admin.query('INSERT INTO auth.sessions (id, user_id) VALUES ($1, $2)', [fresh, user]);
     await cancelAccountDeletion(user);
     expect((await admin.query('SELECT id FROM auth.sessions WHERE id = $1', [fresh])).rows).toHaveLength(1);
+    expect((await db.select().from(serviceAccounts).where(eq(serviceAccounts.accountId, user)))[0]?.status).toBe('disabled');
     expect((await db.select().from(accountDeletionRequests).where(eq(accountDeletionRequests.accountId, user)))[0]?.status).toBe('cancelled');
     expect((await db.select().from(accountTokens).where(eq(accountTokens.accountId, user)))[0]?.status).toBe('revoked');
   } finally {
@@ -88,19 +95,24 @@ test('team deletion preserves the owner sign-in and personal credentials', async
 
 test('a revocation failure rolls back the pending deletion and earlier revocations', async () => {
   const user = crypto.randomUUID();
+  await admin.query('INSERT INTO auth.users (id) VALUES ($1)', [user]);
+  await admin.query('INSERT INTO auth.sessions (id, user_id) VALUES ($1, $2)', [crypto.randomUUID(), user]);
   await db.insert(accounts).values({ accountId: user, name: 'rollback' });
+  await db.insert(serviceAccounts).values({ accountId: user, name: 'rollback', publicPrefix: 'kortix_sa_test', secretHash: crypto.randomUUID() });
   await db.insert(accountTokens).values({ accountId: user, userId: user, name: 'test', publicKey: crypto.randomUUID(), secretKeyHash: crypto.randomUUID() });
   await db.insert(kortixApiKeys).values({ accountId: user, sandboxId: crypto.randomUUID(), publicKey: crypto.randomUUID(), secretKeyHash: crypto.randomUUID(), title: 'rollback' });
   await admin.query(`CREATE FUNCTION kortix.reject_test_revocation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic revocation failure'; END $$`);
-  await admin.query(`CREATE TRIGGER reject_test_revocation BEFORE UPDATE ON kortix.api_keys FOR EACH ROW EXECUTE FUNCTION kortix.reject_test_revocation()`);
+  await admin.query(`CREATE TRIGGER reject_test_revocation BEFORE DELETE ON auth.sessions FOR EACH ROW EXECUTE FUNCTION kortix.reject_test_revocation()`);
   try {
     await expect(requestAccountDeletion(user, user)).rejects.toThrow();
+    expect((await db.select().from(serviceAccounts).where(eq(serviceAccounts.accountId, user)))[0]?.status).toBe('active');
     expect(await db.select().from(accountDeletionRequests).where(eq(accountDeletionRequests.accountId, user))).toHaveLength(0);
     expect((await db.select().from(accountTokens).where(eq(accountTokens.accountId, user)))[0]?.status).toBe('active');
   } finally {
-    await admin.query('DROP TRIGGER reject_test_revocation ON kortix.api_keys');
+    await admin.query('DROP TRIGGER reject_test_revocation ON auth.sessions');
     await admin.query('DROP FUNCTION kortix.reject_test_revocation()');
     await db.delete(kortixApiKeys).where(eq(kortixApiKeys.accountId, user));
     await db.delete(accounts).where(eq(accounts.accountId, user));
+    await admin.query('DELETE FROM auth.users WHERE id = $1', [user]);
   }
 });
