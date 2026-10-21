@@ -9,7 +9,8 @@
  * 4. Anything outside the session surface is refused (`blockedReason`).
  * 5. `forwardKortixRequest` forwards with the member token and streams the
  *    response (REST, SSE, runtime routes alike). Only the request headers
- *    Kortix needs leave Lumen (`forwardedHeaders`), and responses that name
+ *    Kortix needs leave Lumen (`forwardedHeaders`), only the response headers
+ *    a browser needs come back (`browserHeaders`), and responses that name
  *    the operator's Kortix user lose those names (`redactIdentity`).
  * 6. A new session gets Lumen's tags and becomes a Lumen thread
  *    (`createSession`), whichever screen created it. A session update keeps
@@ -30,6 +31,7 @@ import {
   SESSION_CREATE,
   SESSION_ONE,
   blockedReason,
+  browserHeaders,
   forwardedHeaders,
   localAnswer,
   memberSessionCreateBody,
@@ -51,8 +53,9 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[]
   const { path = [] } = await ctx.params;
   const built = buildUpstreamPath(path);
   const res = await route(req, built);
-  if (!res.ok) return redactedError(res);
-  return built.ok && redactsIdentity(built.path) ? redacted(res, built.path) : res;
+  const out = !res.ok ? await redactedError(res) : built.ok && redactsIdentity(built.path) ? await redacted(res, built.path) : res;
+  // One exit for every path: only the allowlisted response headers reach the browser.
+  return new Response(out.body, { status: out.status, statusText: out.statusText, headers: browserHeaders(out.headers) });
 }
 
 async function route(req: NextRequest, built: ReturnType<typeof buildUpstreamPath>): Promise<Response> {

@@ -192,6 +192,24 @@ export function forwardedHeaders(headers: Headers): Headers {
   return out;
 }
 
+// The response headers a browser gets back. Everything else (every `x-kortix-*`,
+// `access-control-*`, `server-timing`, `traceparent`, `x-request-id`,
+// `x-ratelimit-*`) names the platform or its internals. The SDK reads the
+// proxy hop and upstream status from the health body when the header is absent.
+const RETURNED_HEADERS = [
+  'content-type', 'content-disposition', 'content-range', 'accept-ranges', 'cache-control', 'etag',
+  'last-modified', 'vary', 'retry-after', 'x-next-cursor', 'x-accel-buffering',
+];
+
+export function browserHeaders(headers: Headers): Headers {
+  const out = new Headers();
+  for (const name of RETURNED_HEADERS) {
+    const value = headers.get(name);
+    if (value !== null) out.set(name, value);
+  }
+  return out;
+}
+
 // Responses that name the session's Kortix owner: the session record (create,
 // read, rename), the open-session snapshot, and the transcript's authors.
 const SESSION_RECORD = new RegExp(`^projects/${PROJECT}/sessions(?:/${SESSION})?$`);

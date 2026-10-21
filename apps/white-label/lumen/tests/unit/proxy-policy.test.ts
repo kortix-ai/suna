@@ -3,6 +3,7 @@ import {
   SESSION_CREATE,
   SESSION_ONE,
   blockedReason,
+  browserHeaders,
   forwardedHeaders,
   localAnswer,
   memberSessionCreateBody,
@@ -471,5 +472,33 @@ describe('proxy policy: a member session create carries only member keys', () =>
       session_id: 's', sandbox_slug: 'b', model: 'm', provider_secret_pools: {},
     });
     expect(body).toEqual({ name: 'x', labels: ['a'], metadata: { k: 1 }, agent_name: 'lumen-counsel', initial_prompt: 'hi' });
+  });
+});
+
+describe('proxy response headers: the browser never sees the platform', () => {
+  test('content and paging headers pass; Kortix-named, CORS, timing and trace headers do not', () => {
+    const out = browserHeaders(
+      new Headers({
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        etag: 'W/"7"',
+        'x-next-cursor': 'c2',
+        'content-disposition': 'attachment; filename="draft.docx"',
+        'access-control-expose-headers': 'X-Kortix-Proxy-Hop,Server-Timing',
+        'x-kortix-proxy-hop': 'control_plane',
+        'x-kortix-upstream-status': '502',
+        'server-timing': 'total;dur=6, iam;dur=1;desc="n=3"',
+        traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
+        'x-request-id': 'mvhc1',
+        'x-ratelimit-remaining': '99',
+      }),
+    );
+    expect(Object.fromEntries(out.entries())).toEqual({
+      'cache-control': 'no-cache',
+      'content-disposition': 'attachment; filename="draft.docx"',
+      'content-type': 'text/event-stream',
+      etag: 'W/"7"',
+      'x-next-cursor': 'c2',
+    });
   });
 });
