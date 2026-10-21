@@ -16,7 +16,18 @@ export function yesNo(value: unknown): boolean | null {
   return null;
 }
 
-/** The value as a lawyer reads it. `{amount, currency}` money, ISO dates and durations stay as the agent wrote them. */
+/** A money amount as a number, or null: a number, or a numeric string with optional thousands separators. */
+export function moneyAmount(amount: unknown): number | null {
+  if (typeof amount === 'number') return Number.isFinite(amount) ? amount : null;
+  if (typeof amount === 'string' && /^-?[\d,]+(\.\d+)?$/.test(amount.trim())) return Number(amount.replace(/,/g, ''));
+  return null;
+}
+
+const WHOLE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+const CENTS = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const grouped = (n: number) => (Number.isInteger(n) ? WHOLE : CENTS).format(n);
+
+/** The value as a lawyer reads it. `{amount, currency}` money reads "EUR 1,500,000"; ISO dates and durations stay as the agent wrote them. */
 export function valueText(value: unknown, format: CellFormat): string {
   if (value === null || value === undefined || value === '') return '';
   if (format === 'yes_no') {
@@ -27,7 +38,10 @@ export function valueText(value: unknown, format: CellFormat): string {
   if (format === 'percent' && typeof value === 'number') return `${value}%`;
   if (typeof value === 'object') {
     const m = value as { amount?: unknown; currency?: unknown };
-    if (m.amount !== undefined) return `${m.currency ?? ''} ${m.amount}`.trim();
+    if (m.amount !== undefined) {
+      const n = moneyAmount(m.amount);
+      return `${m.currency ?? ''} ${n === null ? m.amount : grouped(n)}`.trim();
+    }
     return JSON.stringify(value);
   }
   return String(value);
@@ -68,14 +82,21 @@ export function reviewCsv(
   return [header, ...rows];
 }
 
-/** A cell's value as a typed spreadsheet cell: numbers stay numbers, percentages and ISO dates keep their type. */
-export function typedValue(cell: CellLike | undefined, format: CellFormat): string | number | { pct: number } | { date: string } {
+/** A cell's value as a typed spreadsheet cell: numbers stay numbers; money, percentages and ISO dates keep their type. */
+export function typedValue(
+  cell: CellLike | undefined, format: CellFormat,
+): string | number | { pct: number } | { date: string } | { money: number; currency?: string } {
   if (!cell || cell.state === 'pending' || cell.state === 'error') return cellText(cell, format);
   if (cell.state === 'not_found' && !cell.edited) return 'Not addressed';
   const v = cell.value;
   const num = typeof v === 'number' ? v : typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v.trim()) ? Number(v) : null;
   if (format === 'number' && num !== null) return num;
   if (format === 'percent' && num !== null) return { pct: num };
+  if (v && typeof v === 'object' && !Array.isArray(v) && 'amount' in v) {
+    const m = v as { amount?: unknown; currency?: unknown };
+    const n = moneyAmount(m.amount);
+    if (n !== null) return { money: n, currency: typeof m.currency === 'string' && m.currency.trim() ? m.currency.trim() : undefined };
+  }
   if (format === 'date' && typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return { date: v.trim() };
   return valueText(v, format);
 }

@@ -1,15 +1,17 @@
-// A minimal .xlsx writer: inline strings, numbers, percentages and dates, a
-// bold frozen header row. Enough for a review export; no styles beyond that.
+// A minimal .xlsx writer: inline strings, numbers, money, percentages and dates,
+// a bold frozen header row. Enough for a review export; no styles beyond that.
 import JSZip from 'jszip';
 
-export type XCell = string | number | boolean | null | undefined | { pct: number } | { date: string };
+export type XCell = string | number | boolean | null | undefined | { pct: number } | { date: string } | { money: number; currency?: string };
 export type Sheet = { name: string; rows: XCell[][]; widths?: number[] };
 
-// Style ids in styles.xml: 0 normal, 1 percent, 2 date, 3 wrapped text, 4 bold header.
+// Style ids in styles.xml: 0 normal, 1 percent, 2 date, 3 wrapped text, 4 bold header,
+// 5 money with no currency, then one money style per currency (5 + n, number format 164 + n).
 const PCT = 1;
 const DATE = 2;
 const WRAP = 3;
 const HEAD = 4;
+const MONEY = 5;
 
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
@@ -33,11 +35,15 @@ export function excelDate(iso: string): number | null {
   return Number.isNaN(t) ? null : t / 86_400_000 + 25569;
 }
 
-function cellXml(v: XCell, ref: string, header: boolean): string {
+/** The style id of a money cell: its currency's own style, so Excel shows "EUR 1,500,000.00" and sums the number. */
+type MoneyStyles = (currency: string | undefined) => number;
+
+function cellXml(v: XCell, ref: string, header: boolean, money: MoneyStyles): string {
   if (v === null || v === undefined || v === '') return '';
   if (header) return `<c r="${ref}" s="${HEAD}" t="inlineStr"><is><t>${esc(String(v))}</t></is></c>`;
   if (typeof v === 'number') return Number.isFinite(v) ? `<c r="${ref}"><v>${v}</v></c>` : '';
   if (typeof v === 'boolean') return `<c r="${ref}" t="inlineStr"><is><t>${v ? 'Yes' : 'No'}</t></is></c>`;
+  if (typeof v === 'object' && 'money' in v) return Number.isFinite(v.money) ? `<c r="${ref}" s="${money(v.currency)}"><v>${v.money}</v></c>` : '';
   if (typeof v === 'object' && 'pct' in v) return `<c r="${ref}" s="${PCT}"><v>${v.pct / 100}</v></c>`;
   if (typeof v === 'object' && 'date' in v) {
     const serial = excelDate(v.date);
@@ -47,12 +53,12 @@ function cellXml(v: XCell, ref: string, header: boolean): string {
   return `<c r="${ref}" s="${WRAP}" t="inlineStr"><is><t xml:space="preserve">${esc(String(v))}</t></is></c>`;
 }
 
-function sheetXml(sheet: Sheet): string {
+function sheetXml(sheet: Sheet, money: MoneyStyles): string {
   const cols = sheet.widths?.length
     ? `<cols>${sheet.widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>`
     : '';
   const rows = sheet.rows
-    .map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => cellXml(v, `${colName(ci)}${ri + 1}`, ri === 0)).join('')}</row>`)
+    .map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => cellXml(v, `${colName(ci)}${ri + 1}`, ri === 0, money)).join('')}</row>`)
     .join('');
   return (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -62,19 +68,24 @@ function sheetXml(sheet: Sheet): string {
   );
 }
 
-const STYLES =
+const styles = (currencies: string[]) =>
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
   '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+  (currencies.length
+    ? `<numFmts count="${currencies.length}">${currencies.map((c, i) => `<numFmt numFmtId="${164 + i}" formatCode="${esc(`"${c.replace(/"/g, '')} "#,##0.00`)}"/>`).join('')}</numFmts>`
+    : '') +
   '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
   '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
   '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
   '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-  '<cellXfs count="5">' +
+  `<cellXfs count="${6 + currencies.length}">` +
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
   '<xf numFmtId="9" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
   '<xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
   '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>' +
   '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+  '<xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+  currencies.map((_, i) => `<xf numFmtId="${164 + i}" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>`).join('') +
   '</cellXfs></styleSheet>';
 
 /** The workbook as bytes. Sheet names are trimmed to Excel's 31 characters and made unique. */
@@ -112,7 +123,13 @@ export async function xlsxBytes(sheets: Sheet[]): Promise<Uint8Array> {
       names.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('') +
       `<Relationship Id="rId${names.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
   );
-  zip.file('xl/styles.xml', STYLES);
-  sheets.forEach((s, i) => zip.file(`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s)));
+  const currencies: string[] = [];
+  const money: MoneyStyles = (c) => {
+    if (!c) return MONEY;
+    if (!currencies.includes(c)) currencies.push(c);
+    return MONEY + 1 + currencies.indexOf(c);
+  };
+  sheets.forEach((s, i) => zip.file(`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s, money)));
+  zip.file('xl/styles.xml', styles(currencies));
   return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
 }

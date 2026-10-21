@@ -29,14 +29,18 @@ describe('review export to Excel', () => {
     expect(excelDate('P2Y')).toBeNull();
   });
 
-  test('typed cells: money as text, percent and date typed, lists joined, a silent document says so; citations on their own sheet', async () => {
+  test('typed cells: money a number with its currency format, percent and date typed, lists joined, a silent document says so; citations on their own sheet', async () => {
     const zip = await JSZip.loadAsync(await xlsxBytes(reviewSheets(view)));
     const wb = await zip.file('xl/workbook.xml')!.async('string');
     // Excel forbids ':' in a sheet name.
     expect(wb).toContain('name="Project Aster  key terms"');
     expect(wb).toContain('name="Citations"');
     const s1 = await zip.file('xl/worksheets/sheet1.xml')!.async('string');
-    expect(s1).toContain('<c r="B2" s="3" t="inlineStr"><is><t xml:space="preserve">GBP 2000000</t></is></c>');
+    expect(s1).toContain('<c r="B2" s="6"><v>2000000</v></c>');
+    const styles = await zip.file('xl/styles.xml')!.async('string');
+    expect(styles).toContain('<numFmt numFmtId="164" formatCode="&quot;GBP &quot;#,##0.00"/>');
+    expect(styles).toContain('<cellXfs count="7">');
+    expect(styles).toContain('<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>');
     expect(s1).toContain('<c r="C2" s="3" t="inlineStr"><is><t xml:space="preserve">verified</t></is></c>');
     expect(s1).toContain('<c r="D2" s="1"><v>0.08</v></c>');
     expect(s1).toContain('<c r="F2" s="2"><v>46113</v></c>');

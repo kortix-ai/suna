@@ -37,6 +37,8 @@ describe('review CSV export', () => {
 
   test('yes/no reads booleans and yes/no strings; other text stays text', () => {
     expect([yesNo(true), yesNo('Yes, 90 days'), yesNo('no'), yesNo('Unclear')]).toEqual([true, true, false, null]);
-    expect(cellText({ documentId: 'x', columnKey: 'k', state: 'filled', value: { amount: 500000, currency: 'EUR' }, citations: [] }, 'money')).toBe('EUR 500000');
+    expect(cellText({ documentId: 'x', columnKey: 'k', state: 'filled', value: { amount: 500000, currency: 'EUR' }, citations: [] }, 'money')).toBe('EUR 500,000');
+    expect(cellText({ documentId: 'x', columnKey: 'k', state: 'filled', value: { amount: 1500000.5, currency: 'EUR' }, citations: [] }, 'money')).toBe('EUR 1,500,000.50');
+    expect(cellText({ documentId: 'x', columnKey: 'k', state: 'filled', value: { amount: 'unlimited', currency: 'EUR' }, citations: [] }, 'money')).toBe('EUR unlimited');
   });
 });
