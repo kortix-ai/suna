@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 879,
+  "count": 880,
   "routes": [
     {
       "method": "GET",
@@ -3037,6 +3037,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/snapshots/rebuild"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/transfer"
     },
     {
       "method": "GET",
