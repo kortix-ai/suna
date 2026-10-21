@@ -49,6 +49,7 @@ export function ComposerChatInput({
   disabled,
   autoFocus,
   placeholder,
+  hint,
   prefill,
   onPrefillApplied,
   aboveSlot,
@@ -98,6 +99,8 @@ export function ComposerChatInput({
   clearOnSend?: ComposerSendReset;
   autoFocus?: boolean;
   placeholder?: string;
+  /** Static copy that replaces the rotating placeholder. See `SessionChatInputProps.hint`. */
+  hint?: string;
   prefill?: {
     text: string;
     id: number;
@@ -298,6 +301,7 @@ export function ComposerChatInput({
       disabled={disabled}
       autoFocus={autoFocus}
       placeholder={placeholder}
+      hint={hint}
       prefill={deliveredPrefill}
       onPrefillApplied={onPrefillApplied}
       aboveSlot={aboveSlot}

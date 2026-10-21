@@ -6,6 +6,8 @@ import { getFileCategory } from '../../files/viewer/preview-policy';
 import { uiRoutes } from '../../lib/routes';
 import { MessageSenderAbove } from '../participants/session-participants';
 import { MessageAuthorLabel } from './message-author-label';
+import { MESSAGE_TEXT_CLASS, RowToolbar } from './message-row';
+import { TranscriptRowsContext } from '../thread/transcript-rows';
 import { errorToast } from '../../primitives/toast';
 import {
   fetchSessionAttachment,
@@ -27,7 +29,7 @@ import {
   splitPastedContent,
   type PastedContent,
 } from '@kortix/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   PencilSimpleIcon,
@@ -1261,7 +1263,14 @@ export function UserMessageActions({
   onRewind,
   rewindDisabled,
   deliveryStatus,
+  toolbar = false,
 }: {
+  /**
+   * A message row (`TranscriptRowsContext`): the row's header shows the time,
+   * so the buttons float in its toolbar and only the delivery status stays in
+   * the flow.
+   */
+  toolbar?: boolean;
   /** Epoch milliseconds, or `null` when the backend never stamped one. */
   timestamp: number | null;
   /** Omitted when there is nothing to copy — the row then carries meta alone
@@ -1286,6 +1295,44 @@ export function UserMessageActions({
 
   // Nothing to say and nothing to do — don't leave an empty row behind.
   if (!hasMeta && !copyText && !deliveryStatus) return null;
+
+  const buttons = copyText ? (
+    <div className="flex shrink-0 items-center gap-0.5">
+      {canRewind && (
+        <Hint label={tI18nComplete.raw('textc72e5d059e24')} side="top" align="center">
+          <Button
+            type="button"
+            variant="ghost"
+            size={toolbar ? 'icon-md' : 'icon-xs'}
+            // 24px visible, 40px target — grown with a pseudo-element so the
+            // dense action row keeps its rhythm.
+            className={toolbar ? undefined : 'hit-area-2'}
+            aria-label={tI18nComplete.raw('text673d6a594efa')}
+            onClick={() => onRewind?.(messageId as string, rewindPromptText ?? '')}
+          >
+            <PencilSimpleIcon weight="regular" className="text-foreground size-4" />
+          </Button>
+        </Hint>
+      )}
+
+      <CopyButton
+        code={copyText}
+        size={toolbar ? 'lg' : 'sm'}
+        className={toolbar ? 'focus-visible:ring-ring focus-visible:ring-2' : undefined}
+        hintSide="top"
+        label={tI18nComplete.raw('texte21f935f11d7')}
+      />
+    </div>
+  ) : null;
+
+  if (toolbar) {
+    return (
+      <>
+        {deliveryStatus}
+        {buttons ? <RowToolbar>{buttons}</RowToolbar> : null}
+      </>
+    );
+  }
 
   return (
     // The fade sits on the ROW, so the timestamp and the buttons reveal
@@ -1331,33 +1378,7 @@ export function UserMessageActions({
             {timestamp !== null && <MessageTimeLabel timestamp={timestamp} />}
           </InlineMeta>
         )}
-        {copyText && (
-          <div className="flex shrink-0 items-center gap-0.5">
-            {canRewind && (
-              <Hint label={tI18nComplete.raw('textc72e5d059e24')} side="top" align="center">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  // 24px visible, 40px target — grown with a pseudo-element so the
-                  // dense action row keeps its rhythm.
-                  className="hit-area-2"
-                  aria-label={tI18nComplete.raw('text673d6a594efa')}
-                  onClick={() => onRewind?.(messageId as string, rewindPromptText ?? '')}
-                >
-                  <PencilSimpleIcon weight="regular" className="text-foreground size-4" />
-                </Button>
-              </Hint>
-            )}
-
-            <CopyButton
-              code={copyText}
-              size="sm"
-              hintSide="top"
-              label={tI18nComplete.raw('texte21f935f11d7')}
-            />
-          </div>
-        )}
+        {buttons}
       </div>
       {deliveryStatus}
     </div>
@@ -1749,8 +1770,10 @@ export function UserMessage({
   // `copyText` is gated on `onRewind` to keep the buttons exactly as they were:
   // a read-only turn shows no controls. The row itself still renders, because
   // the timestamp is meta, not a control, and should not vanish with them.
+  const rows = useContext(TranscriptRowsContext) !== null;
   const actions = (
     <UserMessageActions
+      toolbar={rows}
       timestamp={Number.isFinite(createdAt) && createdAt > 0 ? createdAt : null}
       copyText={copyText && onRewind ? copyText : undefined}
       messageId={message.message_id}
@@ -1993,6 +2016,42 @@ export function UserMessage({
   // branch returned before the main path — silently dropped the message's
   // attachments. A command is now just a message whose first token is a chip,
   // so it falls through to the one bubble below.
+
+  // A message row: the row draws the author and the time, so the message is
+  // its text, left-aligned and unboxed, with its files under it.
+  if (rows) {
+    return (
+      <div className="flex w-full min-w-0 flex-col items-start gap-1.5">
+        {(bodyText || quotedPieces || effectiveCommandInfo) && (
+          <div className={cn(MESSAGE_TEXT_CLASS, 'w-full min-w-0 whitespace-pre-wrap wrap-anywhere select-text')}>
+            {quotedPieces ? (
+              <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
+            ) : (
+              <>
+                {commandLead}
+                {renderSegments(segments)}
+              </>
+            )}
+          </div>
+        )}
+        {(allAttachments.length > 0 || uploadStatus?.state === 'failed') && (
+          <MessageAttachments
+            attachments={allAttachments}
+            status={uploadStatus}
+            onOpenPastedContent={onOpenPastedContent}
+          />
+        )}
+        {systemNotifications.length > 0 && !effectiveCommandInfo && (
+          <div className="flex w-full flex-col gap-1.5">
+            {withContentKeys(systemNotifications, (n) => `mixed-${n.tag}`).map(({ key, item }) => (
+              <SystemNotificationCard key={key} notification={item} />
+            ))}
+          </div>
+        )}
+        {actions}
+      </div>
+    );
+  }
 
   return (
     // The whole message is ONE right-aligned column capped at 80%, so the

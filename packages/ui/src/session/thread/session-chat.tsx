@@ -56,7 +56,8 @@ import {
   useUiSearchParams,
   useUiViewerId,
 } from '../../providers/ui-provider';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { TranscriptRowsContext } from './transcript-rows';
 import { createPortal } from 'react-dom';
 import {
   AUTHOR_RETRY_DELAYS_MS,
@@ -463,6 +464,8 @@ export function SessionChat({
   deferComposerFocus,
 }: SessionChatProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  // A channel's thread panel: turns are message rows, full width, end-anchored.
+  const transcriptRows = useContext(TranscriptRowsContext) !== null;
   const tQueue = useTranslations('threads');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const onboardingActive = useOnboardingModeStore((s) => s.active);
@@ -1554,6 +1557,7 @@ export function SessionChat({
     startAtTop,
   } = useAutoScroll({
     hasContent: messageCount > 0,
+    room: !transcriptRows,
   });
   // Cmd/Ctrl+P prints the WHOLE conversation. The shortcut is intercepted
   // because neither half of what printing needs can be done in CSS: the
@@ -4250,7 +4254,8 @@ export function SessionChat({
                   // message is the auto-scroll spacer's job alone. The `pb-32`
                   // that used to sit here stacked 128px of dead space on top of
                   // it — the "extra inset at the bottom of the session".
-                  className={SESSION_TRANSCRIPT_CLASS}
+                  // Rows run edge to edge: each row owns its gutters and its hover fill.
+                  className={transcriptRows ? 'w-full min-w-0 pt-4' : SESSION_TRANSCRIPT_CLASS}
                 >
                   <div className="flex min-w-0 flex-col">
                     {/* Print only — `print.css` keeps this hidden on screen.
@@ -4453,7 +4458,7 @@ export function SessionChat({
                               // (Failed compaction rows need no stacking rule any
                               // more — at most one is visible at a time.)
                               viewportClassName={
-                                turnIndex === 0
+                                turnIndex === 0 || transcriptRows
                                   ? ''
                                   : // A compaction and the work after it continue the turn above.
                                     turn.compaction || turn.continues
@@ -4669,12 +4674,14 @@ export function SessionChat({
                 </div>
               )}
 
-              {/* Chat Minimap */}
-              <ChatMinimap
-                turns={turns}
-                scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
-                contentRef={contentRef as React.RefObject<HTMLDivElement>}
-              />
+              {/* Chat Minimap. Not in a thread panel: its rail would sit on the rows' avatars. */}
+              {transcriptRows ? null : (
+                <ChatMinimap
+                  turns={turns}
+                  scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
+                  contentRef={contentRef as React.RefObject<HTMLDivElement>}
+                />
+              )}
 
               <div
                 className={cn(
@@ -4733,8 +4740,9 @@ export function SessionChat({
                 // Up from the first row takes the queue back; the placeholder
                 // says so while there is something to take.
                 onArrowUpAtStart={() => queueEdit.takeBack()}
+                // A host placeholder ("Reply…") is static: the rotating tips would replace it.
                 hint={
-                  canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : undefined
+                  canTakeBackQueue ? tHardcodedUi.raw('i18nComplete.text03a01dd53ffa') : composerPlaceholder
                 }
                 // Editing a queued message: the send saves it back into the
                 // queue, so the control says Submit, never Stop.
