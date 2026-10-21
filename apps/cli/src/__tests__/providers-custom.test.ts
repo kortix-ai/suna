@@ -23,6 +23,15 @@ const SAVED = {
   has_key: false,
   configured: true,
 };
+const KEYED = {
+  id: 'team-llm',
+  name: 'Team LLM',
+  base_url: 'https://team.example.test/v1',
+  models: [{ id: 'm1', name: 'm1' }],
+  secret_name: 'CUSTOM_TEAM_LLM_API_KEY',
+  has_key: true,
+  configured: true,
+};
 const LEGACY = {
   id: 'old',
   name: 'old',
@@ -35,6 +44,17 @@ const LEGACY = {
 
 let server: ReturnType<typeof Bun.serve>;
 let captured: Array<{ method: string; path: string; body: Record<string, unknown> }> = [];
+/** Every secret-resources request with its query, for `providers retry`. */
+let resourceRequests: Array<{ method: string; url: URL }> = [];
+const ACCOUNT_ID = 'acc-1';
+/** A ChatGPT login stored on the project, still resting after a rate limit. */
+const COOLING = {
+  secret_id: 'sec-1',
+  label: 'ChatGPT',
+  provider_id: 'codex',
+  project_id: PROJECT_ID,
+  cooldown_until: '2999-01-01T00:00:00.000Z',
+};
 
 function json(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { 'content-type': 'application/json' } });
@@ -48,17 +68,31 @@ beforeAll(() => {
       const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
       captured.push({ method: req.method, path: url.pathname, body });
       if (url.pathname === `${BASE}/custom-providers` && req.method === 'GET') {
-        return json({ providers: [SAVED, LEGACY] });
+        return json({ providers: [SAVED, KEYED, LEGACY] });
       }
       if (url.pathname === `${BASE}/custom-providers/my-vllm` && req.method === 'PUT') return json(SAVED);
-      if (url.pathname === `${BASE}/custom-providers/my-vllm` && req.method === 'DELETE') {
+      if (
+        (url.pathname === `${BASE}/custom-providers/my-vllm` || url.pathname === `${BASE}/custom-providers/team-llm`) &&
+        req.method === 'DELETE'
+      ) {
         return new Response(null, { status: 204 });
+      }
+      // The secrets route answers 200 whether or not the secret existed.
+      if (url.pathname.startsWith(`${BASE}/secrets/`) && req.method === 'DELETE') {
+        return json({ ok: true });
       }
       if (url.pathname === `${BASE}/custom-providers/nope` && req.method === 'DELETE') {
         return json({ error: 'Custom provider not found' }, 404);
       }
       if (url.pathname === `${BASE}/secrets` && req.method === 'POST') {
         return json({ identifier: body.name, name: body.name });
+      }
+      if (url.pathname.startsWith(`/v1/accounts/${ACCOUNT_ID}/secret-resources`)) {
+        resourceRequests.push({ method: req.method, url });
+        if (req.method === 'POST') return json({ ...COOLING, cooldown_until: null });
+        // Like the API: without project_id only account-wide (null-project) rows.
+        const projectId = url.searchParams.get('project_id');
+        return json({ secrets: projectId === COOLING.project_id ? [COOLING] : [] });
       }
       if (url.pathname === BASE) return json({ project_id: PROJECT_ID, account_id: 'acc-1' });
       return json({ error: 'unexpected' }, 500);
@@ -92,7 +126,7 @@ async function runCli(args: string[], stdin?: string) {
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
   ]);
-  const calls = captured.filter((c) => c.path.includes('/custom-providers') || c.path.endsWith('/secrets'));
+  const calls = captured.filter((c) => c.path.includes('/custom-providers') || c.path.includes('/secrets'));
   return { code, stdout, stderr, calls };
 }
 
@@ -155,16 +189,46 @@ describe('kortix providers custom', () => {
     expect(table.stdout).toContain('qwen-3, llama-5');
     expect(table.stdout).toContain('no endpoint (kortix providers custom set old');
     const listed = await runCli(['ls', '--json']);
-    expect(JSON.parse(listed.stdout)).toEqual({ providers: [SAVED, LEGACY] });
+    expect(JSON.parse(listed.stdout)).toEqual({ providers: [SAVED, KEYED, LEGACY] });
   });
 
-  test('rm DELETEs the provider; a 404 is nothing to remove', async () => {
+  // KRTX-2992: the DELETE route removes the definition only; the key is the
+  // project secret CUSTOM_<ID>_API_KEY, deleted through the secrets route
+  // (the SDK's deleteCustomLlmProvider does the same two calls).
+  test('rm DELETEs the definition and its CUSTOM_<ID>_API_KEY secret', async () => {
+    const removed = await runCli(['rm', 'team-llm']);
+    expect(removed.code).toBe(0);
+    expect(removed.calls).toEqual([
+      { method: 'GET', path: `${BASE}/custom-providers`, body: {} },
+      { method: 'DELETE', path: `${BASE}/custom-providers/team-llm`, body: {} },
+      { method: 'DELETE', path: `${BASE}/secrets/CUSTOM_TEAM_LLM_API_KEY`, body: {} },
+    ]);
+    expect(removed.stdout).toContain('Removed custom provider team-llm and its key CUSTOM_TEAM_LLM_API_KEY');
+  });
+
+  test('rm of an endpoint with no key deletes only the definition', async () => {
     const removed = await runCli(['rm', 'my-vllm']);
     expect(removed.code).toBe(0);
-    expect(removed.calls).toEqual([{ method: 'DELETE', path: `${BASE}/custom-providers/my-vllm`, body: {} }]);
+    expect(removed.calls.filter((c) => c.method === 'DELETE')).toEqual([
+      { method: 'DELETE', path: `${BASE}/custom-providers/my-vllm`, body: {} },
+    ]);
     expect(removed.stdout).toContain('Removed custom provider my-vllm');
+    expect(removed.stdout).not.toContain('key');
+  });
+
+  test('rm of a legacy key with no endpoint deletes only the key', async () => {
+    const removed = await runCli(['rm', 'old']);
+    expect(removed.code).toBe(0);
+    expect(removed.calls.filter((c) => c.method === 'DELETE')).toEqual([
+      { method: 'DELETE', path: `${BASE}/secrets/CUSTOM_OLD_API_KEY`, body: {} },
+    ]);
+    expect(removed.stdout).toContain('Removed key CUSTOM_OLD_API_KEY');
+  });
+
+  test('rm of an unknown id removes nothing', async () => {
     const absent = await runCli(['rm', 'nope']);
     expect(absent.code).toBe(0);
+    expect(absent.calls.filter((c) => c.method === 'DELETE')).toEqual([]);
     expect(absent.stdout).toContain('Nothing to remove for "nope"');
   });
 
@@ -173,5 +237,50 @@ describe('kortix providers custom', () => {
     expect(code).toBe(2);
     expect(stderr).toContain('Usage: kortix providers');
     expect(calls).toEqual([]);
+  });
+});
+
+// KRTX-2992: GET /accounts/:id/secret-resources without `project_id` lists only
+// account-wide rows (apps/api/src/accounts/secret-resources.ts), but a ChatGPT
+// login is stored on its project, so `retry` never found it.
+describe('kortix providers retry', () => {
+  async function runRetry(args: string[]) {
+    resourceRequests = [];
+    const proc = Bun.spawn({
+      cmd: [process.execPath, CLI_ENTRY, 'providers', 'retry', ...args, '--account', ACCOUNT_ID],
+      cwd: CLI_ROOT,
+      env: {
+        ...(process.env as Record<string, string>),
+        KORTIX_TOKEN: 'kortix_pat_test',
+        KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1`,
+        KORTIX_PROJECT_ID: PROJECT_ID,
+        KORTIX_NO_UPDATE_CHECK: '1',
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+        NO_COLOR: '1',
+        FORCE_COLOR: '0',
+      },
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [code, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+    return { code, stdout };
+  }
+
+  test('lists the linked project\'s logins and ends the cooldown of the ChatGPT one', async () => {
+    const r = await runRetry(['openai']);
+    expect(r.code).toBe(0);
+    expect(resourceRequests[0]?.url.searchParams.get('project_id')).toBe(PROJECT_ID);
+    expect(resourceRequests.map((q) => `${q.method} ${q.url.pathname}`)).toEqual([
+      `GET /v1/accounts/${ACCOUNT_ID}/secret-resources`,
+      `POST /v1/accounts/${ACCOUNT_ID}/secret-resources/sec-1/retry`,
+    ]);
+    expect(r.stdout).toContain('ChatGPT (codex) is usable again');
+  });
+
+  test('--project names the project to read', async () => {
+    const r = await runRetry(['--project', 'proj-other']);
+    expect(r.code).toBe(0);
+    expect(resourceRequests[0]?.url.searchParams.get('project_id')).toBe('proj-other');
   });
 });

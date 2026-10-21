@@ -6,6 +6,7 @@ import {
   hasEnvTokenHost,
   type Host,
 } from './api/config.ts';
+import { sandboxEnvValue } from './api/sandbox-env.ts';
 import { cachedTokenIdentity } from './api/token-identity.ts';
 import { resolveProjectAuth } from './command-helpers.ts';
 import { loadLink } from './project-link.ts';
@@ -128,11 +129,14 @@ function activeAccountLabel(): string | null {
 }
 
 /** Active project: the cwd's directory link wins over the global default. */
-function activeProjectLabel(): { label: string; source: 'linked' | 'default' } | null {
+function activeProjectLabel(): { label: string; source: 'linked' | 'default' | 'session' } | null {
   const link = loadLink();
   if (link?.project_id) {
     return { label: idPrefix(link.project_id), source: 'linked' };
   }
+  // A session box without the repository has no link file; its project is injected.
+  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
+  if (envProjectId) return { label: idPrefix(envProjectId), source: 'session' };
   const def = defaultProject();
   if (def) return { label: def.name || idPrefix(def.project_id), source: 'default' };
   return null;

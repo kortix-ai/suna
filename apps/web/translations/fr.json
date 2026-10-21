@@ -1322,6 +1322,7 @@
     },
     "credits": {
       "loadFailed": "Impossible de charger ce compte.",
+      "resetAt": "Les crédits du forfait sont réinitialisés le",
       "availableBalance": "Solde disponible",
       "creditCount": "{count, plural, one {{formatted} crédit} other {{formatted} crédits}}",
       "owed": "dus",
@@ -1597,6 +1598,10 @@
       "showMore": "Afficher plus",
       "brief": {
         "status": "État",
+        "subAgent": "Sous-agent",
+        "spawned": "Session lancée",
+        "subAgentCount": "{count, plural, one {# sous-agent} other {# sous-agents}}",
+        "spawnedCount": "{count, plural, one {# session lancée} other {# sessions lancées}}",
         "created": "Créée",
         "source": "Source",
         "changeRequests": "Demandes de modification",
@@ -1610,11 +1615,12 @@
         }
       },
       "status": {
-        "needsYou": "Votre intervention requise",
-        "starting": "Démarrage",
+        "needsYou": "À vérifier",
+        "needsInput": "Réponse requise",
+        "starting": "Réveil",
         "running": "En cours",
-        "done": "Terminée",
-        "stopped": "Arrêtée",
+        "done": "Prête",
+        "stopped": "En veille",
         "failed": "Échouée",
         "legacy": "Ancienne"
       }
@@ -2211,6 +2217,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Membres",
+      "unlimitedMembers": "Membres illimités",
+      "loadingMembers": "Chargement des membres…",
+      "membersUnavailable": "Nombre de membres indisponible",
+      "memberCount": "{count, plural, one {# membre} other {# membres}}",
       "cancels": "Résiliation le {date}",
       "cancelsAtPeriodEnd": "Résiliation à la fin de la période",
       "renews": "Renouvellement le {date}",
@@ -3071,7 +3082,7 @@
       "automation_recovered": "Un déclencheur ou un rappel en échec fonctionne de nouveau.",
       "capture_device_down": "Un ordinateur Kortix Capture n’enregistre pas. Envoyé aux personnes qui gèrent Capture.",
       "capture_device_recovered": "Un ordinateur Kortix Capture arrêté enregistre à nouveau.",
-      "message": "Quelqu’un vous écrit dans une conversation ou dans un salon que vous avez rejoint."
+      "message": "Quelqu’un vous mentionne avec @, ou répond dans un fil où vous avez écrit, dans un salon."
     },
     "bell": {
       "label": "Notifications",
@@ -20320,6 +20331,12 @@
       "texta0990a4a86dc": "Marque blanche : votre produit d’IA sur le calcul Platinum.dev",
       "text6189ab6313de": "Forkez Kortix, apposez votre marque et vendez-le comme votre produit. La licence est gratuite. Seule condition : votre calcul tourne sur Platinum.dev.",
       "text7971dd752669": "Rappels",
+      "text724b09397472": "Ajout de {name} à {project}",
+      "text1e007c47254d": "La configuration se fait en arrière-plan. Vous recevrez une notification une fois terminée.",
+      "text57f57edb6f16": "La demande de modification #{number} est prête à être examinée.",
+      "texta8597db6f24b": "Supprimer la compétence",
+      "text5f6ba69d66d1": "Compétence supprimée",
+      "textcb8d6b0c94c9": " et tous ses fichiers, modifications comprises, et retire la compétence de chaque agent qui l'utilise. Un commit sur la branche par défaut.",
       "openThreadAction": "Ouvrir le fil",
       "untitledThread": "Fil sans titre"
     },
@@ -20387,7 +20404,7 @@
       "wantsEmailOthers": "{agent} veut envoyer un e-mail à {recipient} et {count, plural, one {# autre personne} other {# autres personnes}}",
       "wantsMerge": "{agent} veut fusionner la PR #{number} dans {base}",
       "wantsMergePr": "{agent} veut fusionner la PR #{number}",
-      "wantsIssue": "{agent} veut créer un ticket de priorité {priority} pour {team}",
+      "wantsIssue": "{agent} veut créer {article, select, other {un}} ticket de priorité {priority} pour {team}",
       "wantsCreateIssue": "{agent} veut créer un ticket",
       "wantsAction": "{agent} veut : {action}",
       "wantsCall": "{agent} veut exécuter {action}",

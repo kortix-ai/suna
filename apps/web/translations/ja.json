@@ -1322,6 +1322,7 @@
     },
     "credits": {
       "loadFailed": "このアカウントを読み込めませんでした。",
+      "resetAt": "プランのクレジットのリセット日時",
       "availableBalance": "利用可能残高",
       "creditCount": "{count, plural, one {{formatted} クレジット} other {{formatted} クレジット}}",
       "owed": "未払い",
@@ -1597,6 +1598,10 @@
       "showMore": "さらに表示",
       "brief": {
         "status": "状態",
+        "subAgent": "サブエージェント",
+        "spawned": "起動されたセッション",
+        "subAgentCount": "{count, plural, other {サブエージェント #件}}",
+        "spawnedCount": "{count, plural, other {起動されたセッション #件}}",
         "created": "作成日時",
         "source": "ソース",
         "changeRequests": "変更リクエスト",
@@ -1610,11 +1615,12 @@
         }
       },
       "status": {
-        "needsYou": "対応が必要",
-        "starting": "開始中",
-        "running": "実行中",
-        "done": "完了",
-        "stopped": "停止",
+        "needsYou": "レビュー待ち",
+        "needsInput": "回答待ち",
+        "starting": "起動中",
+        "running": "作業中",
+        "done": "準備完了",
+        "stopped": "スリープ中",
         "failed": "失敗",
         "legacy": "旧形式"
       }
@@ -2211,6 +2217,11 @@
   },
   "billing": {
     "plan": {
+      "members": "メンバー",
+      "unlimitedMembers": "メンバー数は無制限",
+      "loadingMembers": "メンバーを読み込み中…",
+      "membersUnavailable": "メンバー数を取得できません",
+      "memberCount": "{count}人のメンバー",
       "cancels": "{date} に解約",
       "cancelsAtPeriodEnd": "期間終了時に解約",
       "renews": "{date} に更新",
@@ -3071,7 +3082,7 @@
       "automation_recovered": "失敗していたトリガーまたはリマインダーが再び動作します。",
       "capture_device_down": "Kortix Capture のコンピューターが記録していません。Capture の管理者に送られます。",
       "capture_device_recovered": "停止していた Kortix Capture のコンピューターが再び記録しています。",
-      "message": "会話、または参加したルームで誰かがあなたにメッセージを送ったとき。"
+      "message": "ルームで誰かがあなたを @ でメンションするか、あなたが投稿したスレッドに返信したとき。"
     },
     "bell": {
       "label": "通知",
@@ -20320,6 +20331,12 @@
       "texta0990a4a86dc": "ホワイトラベル:Platinum.dev のコンピュートで動く自社 AI プロダクト",
       "text6189ab6313de": "Kortix をフォークし、自社ブランドで自社製品として販売できます。ライセンスは無料。唯一の条件は、コンピュートを Platinum.dev で実行することです。",
       "text7971dd752669": "リマインダー",
+      "text724b09397472": "{name} を {project} に追加しています",
+      "text1e007c47254d": "バックグラウンドでセットアップします。完了すると通知が届きます。",
+      "text57f57edb6f16": "変更リクエスト #{number} のレビュー準備ができました。",
+      "texta8597db6f24b": "スキルを削除",
+      "text5f6ba69d66d1": "スキルを削除しました",
+      "textcb8d6b0c94c9": " とその中のすべてのファイル（編集内容を含む）。このスキルを使うすべてのエージェントからも外します。デフォルトブランチへの 1 回のコミットです。",
       "openThreadAction": "スレッドを開く",
       "untitledThread": "無題のスレッド"
     },
@@ -20384,10 +20401,10 @@
       "anAgent": "エージェント",
       "anAgentLower": "エージェント",
       "wantsEmail": "{agent} が {recipient} にメールを送信しようとしています",
-      "wantsEmailOthers": "{agent} が {recipient} ほか {count} 名にメールを送信しようとしています",
+      "wantsEmailOthers": "{agent} が {recipient} ほか {count, plural, other {# 名}}にメールを送信しようとしています",
       "wantsMerge": "{agent} が PR #{number} を {base} にマージしようとしています",
       "wantsMergePr": "{agent} が PR #{number} をマージしようとしています",
-      "wantsIssue": "{agent} が {team} に優先度 {priority} の課題を作成しようとしています",
+      "wantsIssue": "{agent} が {team} に優先度 {priority} の課題{article, select, other {}}を作成しようとしています",
       "wantsCreateIssue": "{agent} が課題を作成しようとしています",
       "wantsAction": "{agent} が次を実行しようとしています: {action}",
       "wantsCall": "{agent} が {action} を実行しようとしています",
@@ -20418,9 +20435,9 @@
       "priority3": "中",
       "priority4": "低",
       "canOnlyBeDenied": "拒否のみ可能",
-      "prFiles": "{count} 個のファイル",
-      "prCommits": "{count} 件のコミット",
-      "prCommitsBy": "{author} による {count} 件のコミット",
+      "prFiles": "{count, plural, other {# 個のファイル}}",
+      "prCommits": "{count, plural, other {# 件のコミット}}",
+      "prCommitsBy": "{author} による {count, plural, other {# 件のコミット}}",
       "prDraft": "ドラフトのプルリクエスト"
     },
     "reviewBulk": {
@@ -20432,13 +20449,13 @@
       "approving": "{count} 件を承認中…",
       "denying": "{count} 件を拒否中…",
       "dismissing": "{count} 件を閉じています…",
-      "approveTitle": "{count} 件のアクションを承認しますか？",
+      "approveTitle": "{count, plural, other {# 件のアクション}}を承認しますか？",
       "approveDescription": "承認する前に各アクションの詳細を確認してください。",
       "approveConfirm": "{count} 件を承認",
-      "denyTitle": "{count} 件のアクションを拒否しますか？",
+      "denyTitle": "{count, plural, other {# 件のアクション}}を拒否しますか？",
       "denyDescription": "エージェントはこれらのアクションを実行しません。",
       "denyConfirm": "{count} 件を拒否",
-      "dismissTitle": "{count} 件の項目を閉じますか？",
+      "dismissTitle": "{count, plural, other {# 件の項目}}を閉じますか？",
       "dismissDescription": "完了に移動します。",
       "dismissConfirm": "{count} 件を閉じる",
       "riskNone": "リスクなし",

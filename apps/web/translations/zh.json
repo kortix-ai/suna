@@ -1322,6 +1322,7 @@
     },
     "credits": {
       "loadFailed": "无法加载此帐户。",
+      "resetAt": "套餐积分重置时间",
       "availableBalance": "可用余额",
       "creditCount": "{count, plural, one {{formatted} 个积分} other {{formatted} 个积分}}",
       "owed": "欠款",
@@ -1597,6 +1598,10 @@
       "showMore": "显示更多",
       "brief": {
         "status": "状态",
+        "subAgent": "子代理",
+        "spawned": "派生会话",
+        "subAgentCount": "{count, plural, other {# 个子代理}}",
+        "spawnedCount": "{count, plural, other {# 个派生会话}}",
         "created": "创建时间",
         "source": "来源",
         "changeRequests": "更改请求",
@@ -1610,11 +1615,12 @@
         }
       },
       "status": {
-        "needsYou": "需要你处理",
-        "starting": "正在启动",
-        "running": "运行中",
-        "done": "已完成",
-        "stopped": "已停止",
+        "needsYou": "待审核",
+        "needsInput": "等待你的回复",
+        "starting": "正在唤醒",
+        "running": "工作中",
+        "done": "就绪",
+        "stopped": "休眠中",
         "failed": "失败",
         "legacy": "旧版"
       }
@@ -2211,6 +2217,11 @@
   },
   "billing": {
     "plan": {
+      "members": "成员",
+      "unlimitedMembers": "成员数量不限",
+      "loadingMembers": "正在加载成员…",
+      "membersUnavailable": "成员数量不可用",
+      "memberCount": "{count} 位成员",
       "cancels": "将于 {date} 取消",
       "cancelsAtPeriodEnd": "将在周期结束时取消",
       "renews": "将于 {date} 续订",
@@ -3071,7 +3082,7 @@
       "automation_recovered": "失败的触发器或提醒恢复正常。",
       "capture_device_down": "有一台 Kortix Capture 电脑未在录制。发送给管理 Capture 的人员。",
       "capture_device_recovered": "停止的 Kortix Capture 电脑已重新录制。",
-      "message": "有人在对话中或你加入的房间里给你发消息。"
+      "message": "有人在聊天室中 @ 提及你，或在你发过言的话题中回复。"
     },
     "bell": {
       "label": "通知",
@@ -20320,6 +20331,12 @@
       "texta0990a4a86dc": "白标:运行在 Platinum.dev 算力上的你的 AI 产品",
       "text6189ab6313de": "Fork Kortix,打上你的品牌,作为你自己的产品出售。许可证免费。唯一的要求是你的算力运行在 Platinum.dev 上。",
       "text7971dd752669": "提醒",
+      "text724b09397472": "正在将 {name} 添加到 {project}",
+      "text1e007c47254d": "它会在后台完成设置，完成后你会收到通知。",
+      "text57f57edb6f16": "变更请求 #{number} 已可审阅。",
+      "texta8597db6f24b": "移除技能",
+      "text5f6ba69d66d1": "技能已移除",
+      "textcb8d6b0c94c9": " 及其中的所有文件（包括修改），并从所有使用该技能的代理中移除它。在默认分支上提交一次。",
       "openThreadAction": "打开话题",
       "untitledThread": "未命名话题"
     },
@@ -20384,10 +20401,10 @@
       "anAgent": "一个智能体",
       "anAgentLower": "一个智能体",
       "wantsEmail": "{agent} 想给 {recipient} 发送邮件",
-      "wantsEmailOthers": "{agent} 想给 {recipient} 和另外 {count} 人发送邮件",
+      "wantsEmailOthers": "{agent} 想给 {recipient} 和另外 {count, plural, other {# 人}}发送邮件",
       "wantsMerge": "{agent} 想将 PR #{number} 合并到 {base}",
       "wantsMergePr": "{agent} 想合并 PR #{number}",
-      "wantsIssue": "{agent} 想为 {team} 创建一个 {priority} 优先级的问题",
+      "wantsIssue": "{agent} 想为 {team} 创建{article, select, other {一个}} {priority} 优先级的问题",
       "wantsCreateIssue": "{agent} 想创建一个问题",
       "wantsAction": "{agent} 想执行：{action}",
       "wantsCall": "{agent} 想运行 {action}",
@@ -20418,9 +20435,9 @@
       "priority3": "中",
       "priority4": "低",
       "canOnlyBeDenied": "只能拒绝",
-      "prFiles": "{count} 个文件",
-      "prCommits": "{count} 个提交",
-      "prCommitsBy": "{author} 的 {count} 个提交",
+      "prFiles": "{count, plural, other {# 个文件}}",
+      "prCommits": "{count, plural, other {# 个提交}}",
+      "prCommitsBy": "{author} 的 {count, plural, other {# 个提交}}",
       "prDraft": "草稿拉取请求"
     },
     "reviewBulk": {
@@ -20432,13 +20449,13 @@
       "approving": "正在批准 {count} 项…",
       "denying": "正在拒绝 {count} 项…",
       "dismissing": "正在关闭 {count} 项…",
-      "approveTitle": "批准 {count} 个操作？",
+      "approveTitle": "批准 {count, plural, other {# 个操作}}？",
       "approveDescription": "批准前请检查每个操作的详细信息。",
       "approveConfirm": "批准 {count} 项",
-      "denyTitle": "拒绝 {count} 个操作？",
+      "denyTitle": "拒绝 {count, plural, other {# 个操作}}？",
       "denyDescription": "代理不会执行这些操作。",
       "denyConfirm": "拒绝 {count} 项",
-      "dismissTitle": "关闭 {count} 项？",
+      "dismissTitle": "关闭 {count, plural, other {# 项}}？",
       "dismissDescription": "它们将移至已完成。",
       "dismissConfirm": "关闭 {count} 项",
       "riskNone": "无风险",

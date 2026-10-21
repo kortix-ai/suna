@@ -1322,6 +1322,7 @@
     },
     "credits": {
       "loadFailed": "Овај налог није могао да се учита.",
+      "resetAt": "Кредити плана се ресетују",
       "availableBalance": "Расположиво стање",
       "creditCount": "{count, plural, one {{formatted} кредит} other {{formatted} кредита}}",
       "owed": "дуговање",
@@ -1597,6 +1598,10 @@
       "showMore": "Prikaži više",
       "brief": {
         "status": "Статус",
+        "subAgent": "Подагент",
+        "spawned": "Покренута сесија",
+        "subAgentCount": "{count, plural, one {# подагент} few {# подагента} other {# подагената}}",
+        "spawnedCount": "{count, plural, one {# покренута сесија} few {# покренуте сесије} other {# покренутих сесија}}",
         "created": "Креирано",
         "source": "Извор",
         "changeRequests": "Захтеви за измену",
@@ -1610,11 +1615,12 @@
         }
       },
       "status": {
-        "needsYou": "Захтева вашу пажњу",
-        "starting": "Покретање",
-        "running": "У току",
-        "done": "Завршено",
-        "stopped": "Заустављено",
+        "needsYou": "Чека преглед",
+        "needsInput": "Чека ваш одговор",
+        "starting": "Буди се",
+        "running": "Ради",
+        "done": "Спремно",
+        "stopped": "Мирује",
         "failed": "Неуспело",
         "legacy": "Застарело"
       }
@@ -2211,6 +2217,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Članovi",
+      "unlimitedMembers": "Neograničen broj članova",
+      "loadingMembers": "Učitavanje članova…",
+      "membersUnavailable": "Broj članova nije dostupan",
+      "memberCount": "{count, plural, one {# član} few {# člana} other {# članova}}",
       "cancels": "Отказује се {date}",
       "cancelsAtPeriodEnd": "Отказује се на крају периода",
       "renews": "Обнавља се {date}",
@@ -3071,7 +3082,7 @@
       "automation_recovered": "Окидач или подсетник који није успевао поново ради.",
       "capture_device_down": "Kortix Capture рачунар не снима. Шаље се људима који управљају Capture-ом.",
       "capture_device_recovered": "Kortix Capture рачунар који је стао поново снима.",
-      "message": "Neko vam piše u razgovoru ili u sobi kojoj ste se pridružili."
+      "message": "Neko vas pomene sa @ ili odgovori u niti u kojoj ste pisali, u sobi."
     },
     "bell": {
       "label": "Обавештења",
@@ -20320,6 +20331,12 @@
       "texta0990a4a86dc": "Вајт-лејбл: ваш AI производ на Platinum.dev compute-у",
       "text6189ab6313de": "Форкујте Kortix, ставите свој бренд и продајте га као свој производ. Лиценца је бесплатна. Једини услов: ваш compute ради на Platinum.dev-у.",
       "text7971dd752669": "Подсетници",
+      "text724b09397472": "Dodavanje {name} u {project}",
+      "text1e007c47254d": "Podešavanje radi u pozadini. Dobićete obaveštenje kada bude gotovo.",
+      "text57f57edb6f16": "Zahtev za izmenu #{number} je spreman za pregled.",
+      "texta8597db6f24b": "Уклони вештину",
+      "text5f6ba69d66d1": "Вештина је уклоњена",
+      "textcb8d6b0c94c9": " и све датотеке у њој, укључујући измене, и уклања вештину из сваког агента који је користи. Један commit на подразумеваној грани.",
       "openThreadAction": "Отвори тему",
       "untitledThread": "Тема без наслова"
     },
@@ -20387,7 +20404,7 @@
       "wantsEmailOthers": "{agent} želi da pošalje imejl na {recipient} i još {count, plural, one {# osobi} few {# osobe} other {# osoba}}",
       "wantsMerge": "{agent} želi da spoji PR #{number} u {base}",
       "wantsMergePr": "{agent} želi da spoji PR #{number}",
-      "wantsIssue": "{agent} želi da napravi problem prioriteta {priority} za {team}",
+      "wantsIssue": "{agent} želi da napravi{article, select, other {}} problem prioriteta {priority} za {team}",
       "wantsCreateIssue": "{agent} želi da napravi problem",
       "wantsAction": "{agent} želi: {action}",
       "wantsCall": "{agent} želi da pokrene {action}",
@@ -20477,8 +20494,13 @@
       "cc": "Копија",
       "bcc": "Скривена копија",
       "subject": "Тема",
+      "from": "Од",
+      "none": "Нема",
+      "attachments": "Прилози",
       "idsOnlyHint": "Овај позив не приказује садржај за проверу. Опис агента није проверен.",
       "resolvedUnavailable": "Нацрт није могуће учитати. Пажљиво проверите опис агента.",
+      "aboutDescription": "О овом опису",
+      "senderUnavailable": "Налог пошиљаоца није могуће учитати. Проверите ред Од.",
       "quoted": "„{text}“"
     }
   },

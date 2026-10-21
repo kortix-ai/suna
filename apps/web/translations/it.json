@@ -1322,6 +1322,7 @@
     },
     "credits": {
       "loadFailed": "Impossibile caricare questo account.",
+      "resetAt": "I crediti del piano si azzerano il",
       "availableBalance": "Saldo disponibile",
       "creditCount": "{count, plural, one {{formatted} credito} other {{formatted} crediti}}",
       "owed": "dovuti",
@@ -1597,6 +1598,10 @@
       "showMore": "Mostra altro",
       "brief": {
         "status": "Stato",
+        "subAgent": "Sub-agente",
+        "spawned": "Sessione avviata",
+        "subAgentCount": "{count, plural, one {# sub-agente} other {# sub-agenti}}",
+        "spawnedCount": "{count, plural, one {# sessione avviata} other {# sessioni avviate}}",
         "created": "Creata",
         "source": "Origine",
         "changeRequests": "Richieste di modifica",
@@ -1610,11 +1615,12 @@
         }
       },
       "status": {
-        "needsYou": "Richiede la tua attenzione",
-        "starting": "Avvio in corso",
-        "running": "In esecuzione",
-        "done": "Completata",
-        "stopped": "Interrotta",
+        "needsYou": "Da rivedere",
+        "needsInput": "Serve una risposta",
+        "starting": "Risveglio",
+        "running": "Al lavoro",
+        "done": "Pronta",
+        "stopped": "Inattiva",
         "failed": "Non riuscita",
         "legacy": "Precedente"
       }
@@ -2211,6 +2217,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Membri",
+      "unlimitedMembers": "Membri illimitati",
+      "loadingMembers": "Caricamento membri…",
+      "membersUnavailable": "Numero di membri non disponibile",
+      "memberCount": "{count, plural, one {# membro} other {# membri}}",
       "cancels": "Termina il {date}",
       "cancelsAtPeriodEnd": "Termina alla fine del periodo",
       "renews": "Si rinnova il {date}",
@@ -3071,7 +3082,7 @@
       "automation_recovered": "Un trigger o un promemoria che falliva torna a funzionare.",
       "capture_device_down": "Un computer Kortix Capture non registra. Inviato a chi gestisce Capture.",
       "capture_device_recovered": "Un computer Kortix Capture che si era fermato registra di nuovo.",
-      "message": "Qualcuno ti scrive in una conversazione o in una stanza a cui ti sei unito."
+      "message": "Qualcuno ti menziona con @, o risponde in un thread in cui hai scritto, in una stanza."
     },
     "bell": {
       "label": "Notifiche",
@@ -20320,6 +20331,12 @@
       "texta0990a4a86dc": "White-label: il tuo prodotto di IA sul calcolo di Platinum.dev",
       "text6189ab6313de": "Fai il fork di Kortix, applica il tuo marchio e vendilo come tuo prodotto. La licenza è gratuita. Unico requisito: il tuo calcolo gira su Platinum.dev.",
       "text7971dd752669": "Promemoria",
+      "text724b09397472": "Aggiunta di {name} a {project}",
+      "text1e007c47254d": "La configurazione avviene in background. Riceverai una notifica al termine.",
+      "text57f57edb6f16": "La richiesta di modifica #{number} è pronta per la revisione.",
+      "texta8597db6f24b": "Rimuovi competenza",
+      "text5f6ba69d66d1": "Competenza rimossa",
+      "textcb8d6b0c94c9": " e tutti i suoi file, modifiche incluse, e rimuove la competenza da ogni agente che la usa. Un commit sul branch predefinito.",
       "openThreadAction": "Apri thread",
       "untitledThread": "Thread senza titolo"
     },
@@ -20387,7 +20404,7 @@
       "wantsEmailOthers": "{agent} vuole inviare un’email a {recipient} e {count, plural, one {# altra persona} other {# altre persone}}",
       "wantsMerge": "{agent} vuole unire la PR #{number} in {base}",
       "wantsMergePr": "{agent} vuole unire la PR #{number}",
-      "wantsIssue": "{agent} vuole creare un issue con priorità {priority} per {team}",
+      "wantsIssue": "{agent} vuole creare {article, select, other {un}} issue con priorità {priority} per {team}",
       "wantsCreateIssue": "{agent} vuole creare un issue",
       "wantsAction": "{agent} vuole: {action}",
       "wantsCall": "{agent} vuole eseguire {action}",

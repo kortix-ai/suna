@@ -19,13 +19,12 @@ kortix cr open --head tighten-triage --title "Tighten the triage prompt"
 
 ## Your project's repository
 
-A project has one of three kinds of repository. All three work the same way after the project exists.
+A project has one of two kinds of repository. Both work the same way after the project exists.
 
 | Kind | What it is | How you get it |
 | --- | --- | --- |
 | Managed | Kortix creates and manages a private repository. You need no GitHub account. | Pick **Kortix managed** under **Git account** when you create a project. Or run `kortix ship` in a folder with no `origin` remote, or `kortix ship --origin managed`. |
 | GitHub | A repository in your GitHub account or organization. Kortix reaches it through the Kortix GitHub App, which you install under **Account settings → Git**, or through a GitHub token. | Pick a GitHub account under **Git account**, then **Create a new repository** or **Import an existing repository**. Or run `kortix ship` in a folder whose `origin` is on GitHub. |
-| Other git host | A repository at any other git URL. | Run `kortix ship` in a folder with that `origin`, or `kortix ship --origin <git-url>`. |
 
 On a self-hosted instance, a platform admin sets up managed repositories in the admin console. `GET /v1/projects/managed-git/status` returns `configured: false` until then, and the new-project form says "Kortix-managed repositories are not available on this instance." See [Self-hosting](/docs/host).
 
@@ -167,12 +166,12 @@ A folder with no `.kortix/link.json` gets a new project. Ship picks the reposito
 | `origin` of the folder | What ship creates |
 | --- | --- |
 | A GitHub URL | A GitHub project through the Kortix GitHub App. If the App is not installed, ship prints an install link and asks you to retry after you install it. With `-y` it stops instead. `--github-token <PAT>` links without the App; the token needs repository Contents read and write. |
-| Another URL | A project for that URL. |
+| Another URL (GitLab, Bitbucket, plain git) | Nothing. Kortix links GitHub repositories only, so ship stops before any request and suggests `--origin managed`. |
 | None, or `--origin managed` | A managed repository. Ship sets `origin` to the git origin and installs the credential helper. |
 
-For a GitHub or other URL, the first ship pushes to your existing `origin` with your own git credentials.
+For a GitHub URL, the first ship pushes to your existing `origin` with your own git credentials.
 
-`--origin <git-url>` sets `origin` to that URL first. `--account <id|slug>` picks the account, and `--name` the project name.
+`--origin <github-url>` sets `origin` to that GitHub URL first. `--account <id|slug>` picks the account, and `--name` the project name.
 
 Ship writes `.kortix/link.json` the moment the project exists, and `git add -A` commits it. A teammate with push access (`project.gitops.push`, the Manager role) who clones the repository can then run `kortix ship` too. Later ships set `origin` to the project's git origin and install the credential helper.
 
@@ -414,6 +413,7 @@ A session runs the current config release of its base branch: `kortix.yaml`, age
 - Each commit on the base branch is a new config release. A running session converges to it at the start of its next turn. A push or a merge also starts the convergence in the background.
 - To apply it at once, select **Reload config** in the session menu, or run `kortix sessions reload <session_id>`. It restarts the agent runtime. `--force` reloads during a turn and ends that turn; it asks first unless you pass `--yes`. `--no-repo` skips the git pull in `/workspace`. `--status` only reports whether the session is behind.
 - To test config before a merge, create a session with `base_ref` set to your branch. Its change requests target that branch too.
+- Such a session runs the branch's agent behavior: prompts, tools, skills and harness files. Governance still comes from the default branch: which agents are declared, and their secret, connector and permission grants. A branch cannot widen what an agent may use before it merges. When the project requires declared agents, an agent declared only on the branch is refused with `400` `AGENT_NOT_DECLARED`.
 
 When a release fails to load, the session runs the last release that worked, or else the platform default config. The session header shows **Config failed to load**. Fix the config on the base branch. See [Sandboxes & previews](/docs/work/runtime) for troubleshooting.
 

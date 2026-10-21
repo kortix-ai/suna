@@ -43,6 +43,7 @@ import {
   isPaperShaderImageUniformNoise,
   isPaperShaderNullContextNoise,
   isPaperShaderWebGLUnsupportedNoise,
+  isPlayNotSupportedRejectionNoise,
   isRedefineInjectedWalletNoise,
   isRedefineWebdriverNoise,
   isRuntimeNotReadyNoiseMessage,
@@ -12529,6 +12530,81 @@ test('the runtime gate does not drop the play() NotAllowedError rejection (sentr
   // negative guards there; the frame-aware beforeSend hook is the safe gate.
   assert.equal(
     shouldIgnoreBrowserRuntimeNoise({ reason: { message: PLAY_NOT_ALLOWED, name: 'NotAllowedError' } }),
+    false,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// `NotSupportedError: The media resource indicated by the src attribute or
+// assigned media provider object was not suitable.` — Firefox's message for
+// an `HTMLMediaElement.play()` promise that rejects because the element has
+// no playable source. Better Stack pattern `1b3195a9…` (Kortix Frontend prod,
+// application_id 2346967, KRTX-2998): 1 occurrence, 0 identified users,
+// first=last 2026-10-21T09:54:06Z, call site unknown, release unknown. Every
+// first-party play() promise has a `.catch` (`film.tsx`, `sounds.ts`,
+// `video-renderer.tsx`), so a frameless uncaught one is not ours. Same guards
+// as the play() NotAllowedError rule: any first-party or resolvable frame
+// keeps the event reporting.
+// ---------------------------------------------------------------------------
+
+const PLAY_NOT_SUPPORTED = 'The media resource indicated by the src attribute or assigned media provider object was not suitable.';
+
+test('suppresses the frameless play() NotSupportedError rejection via the beforeSend gate', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            type: 'NotSupportedError',
+            value: PLAY_NOT_SUPPORTED,
+            mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
+          },
+        ],
+      },
+    }),
+    true,
+  );
+  assert.equal(isPlayNotSupportedRejectionNoise({ message: PLAY_NOT_SUPPORTED, frames: [] }), true);
+});
+
+test('does NOT suppress the play() NotSupportedError rejection when a first-party or resolvable frame is present', () => {
+  for (const frames of [
+    [{ filename: 'app:///apps/web/src/lib/sounds.ts', function: 'playSound' }],
+    [{ filename: 'app:///_next/static/chunks/123-abc.js', function: 'x' }],
+    [{ filename: 'https://cdn.example.com/player.js', function: 'play' }],
+  ]) {
+    assert.equal(
+      isPlayNotSupportedRejectionNoise({ message: PLAY_NOT_SUPPORTED, frames }),
+      false,
+      `expected attributable play() NotSupportedError rejection from ${JSON.stringify(frames)} to keep reporting`,
+    );
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: PLAY_NOT_SUPPORTED, stacktrace: { frames } }] },
+      }),
+      false,
+    );
+  }
+});
+
+test('the play() NotSupportedError matcher anchors on the exact message', () => {
+  for (const message of [
+    'NotSupportedError',
+    'The element has no supported sources.',
+    'The operation is not supported.',
+    `${PLAY_NOT_SUPPORTED} (extra)`,
+  ]) {
+    assert.equal(
+      isPlayNotSupportedRejectionNoise({ message, frames: [] }),
+      false,
+      `expected "${message}" not to match the play() NotSupportedError noise class`,
+    );
+  }
+});
+
+test('the runtime gate does not drop the play() NotSupportedError rejection (sentry-only rule)', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({ reason: { message: PLAY_NOT_SUPPORTED, name: 'NotSupportedError' } }),
     false,
   );
 });

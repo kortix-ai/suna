@@ -22,10 +22,6 @@ export function textPart(id: string, text: string, synthetic = false) {
   return { id, sessionID: 's1', messageID: 'm', type: 'text', text, synthetic };
 }
 
-export function reasoningPart(id: string, text: string) {
-  return { id, sessionID: 's1', messageID: 'm', type: 'reasoning', text, time: { start: 0 } };
-}
-
 export function toolPart(
   id: string,
   tool: string,

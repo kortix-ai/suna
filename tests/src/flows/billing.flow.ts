@@ -6,6 +6,8 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { flow } from '../core/flow';
 import { subscribe } from '../fixtures/billing';
+import { PASSWORD } from '../fixtures/principals';
+import { passwordGrantSession } from '../fixtures/supabase';
 
 flow(
   'BILL-1',
@@ -685,7 +687,12 @@ flow(
   async (ctx) => {
     // Throwaway user whose only account is its own personal account.
     const victim = await ctx.fixtures.user({ label: 'DEL-2' });
-    const asVictim = ctx.client.as(victim);
+    let asVictim = ctx.client.as(victim);
+    const signInAgain = async () => {
+      if (!victim.email) throw new Error('synthetic deletion user has no email');
+      const grant = await passwordGrantSession(ctx.env, victim.email, PASSWORD);
+      asVictim = ctx.client.as({ ...victim, auth: { mode: 'bearer', token: grant.accessToken } });
+    };
 
     await ctx.step('ANON cannot read deletion status → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).get('/v1/account/deletion-status');
@@ -694,6 +701,8 @@ flow(
     await ctx.step('throwaway user schedules deletion (/account mount) → 200', async () => {
       const r = await asVictim.post('/v1/account/request-deletion', { reason: 'ke2e' });
       r.status(200);
+      (await asVictim.get('/v1/account/deletion-status')).status(401);
+      await signInAgain();
     });
     await ctx.step(
       'deletion-status reflects the pending request',
@@ -717,6 +726,7 @@ flow(
     await ctx.step('scheduling again after a cancel → 200, and the status reads pending', async () => {
       const r = await asVictim.post('/v1/account/request-deletion', { reason: 'after-cancel' });
       r.status(200);
+      await signInAgain();
       const status = await asVictim.get('/v1/account/deletion-status');
       status.status(200);
       const body = status.json<{ has_pending_deletion: boolean }>();
@@ -740,9 +750,10 @@ flow(
         asVictim.post('/v1/account/request-deletion', { reason: 'race-b' }),
       ]);
       const statuses = [a.statusCode, b.statusCode].sort();
-      if (statuses[0] !== 200 || statuses[1] !== 400) {
-        throw new Error(`expected [200, 400], got ${JSON.stringify(statuses)}`);
+      if (!statuses.includes(200) || !statuses.some(status => status === 400 || status === 401)) {
+        throw new Error(`expected one 200 and one 400/401, got ${JSON.stringify(statuses)}`);
       }
+      await signInAgain();
       const cleanup = await asVictim.post('/v1/account/cancel-deletion', {});
       cleanup.status(200);
     });

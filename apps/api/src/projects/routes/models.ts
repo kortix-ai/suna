@@ -79,6 +79,18 @@ async function loadModelDefaultsWriter(
   return { ownerAccountId: loaded.row.accountId, userId: loaded.userId, row: loaded.row };
 }
 
+// The default that model-access reports and protects from a disable: a configured
+// project/account preference, even while its provider is disconnected; otherwise the
+// plan-eligible effective model (never the paid platform default for a free account).
+async function modelAccessDefault(userId: string, accountId: string, projectId: string, personalUserId: string | null): Promise<string | undefined> {
+  const defaults = await getAccountModelDefaults(accountId, projectId);
+  const configured = defaults.projects[projectId] ?? defaults.account;
+  if (configured) return toWireModel(configured);
+  const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
+  const resolved = await resolveEffectiveModel({ userId, accountId, projectId, freeModelsOnly, personalUserId });
+  return resolved.model ?? (freeModelsOnly ? undefined : platformDefaultModelId());
+}
+
 export function registerModelsRoutes(): void {
   // GET /v1/projects/:projectId/llm-catalog
   // Server-side source of truth for the gateway model catalog. The seed daemon
@@ -211,10 +223,10 @@ export function registerModelsRoutes(): void {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
+    const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId, await requestPersonalOwner(c, loaded));
     return c.json({
       ...readModelAccess(loaded.row.metadata),
-      defaultModel: toWireModel(defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '') || undefined,
+      defaultModel,
       // Always true since the gateway is the only model path; kept for older clients.
       enforced: true,
     });
@@ -243,8 +255,7 @@ export function registerModelsRoutes(): void {
         return c.json({ error: 'Use a concrete model id', code: 'invalid_body' }, 400);
       }
     }
-    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-    const defaultModel = toWireModel(defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '') || undefined;
+    const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId, await requestPersonalOwner(c, loaded));
     const result = await changeProjectModelAccess({ projectId, updatedBy: c.get('userId'), defaultModel, change });
     if (result.conflict) return c.json({
       error: 'Change the project default to another enabled provider or model first.',

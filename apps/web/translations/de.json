@@ -1322,6 +1322,7 @@
     },
     "credits": {
       "loadFailed": "Dieses Konto konnte nicht geladen werden.",
+      "resetAt": "Planguthaben wird zurückgesetzt am",
       "availableBalance": "Verfügbares Guthaben",
       "creditCount": "{count, plural, one {{formatted} Credit} other {{formatted} Credits}}",
       "owed": "offen",
@@ -1597,6 +1598,10 @@
       "showMore": "Mehr anzeigen",
       "brief": {
         "status": "Status",
+        "subAgent": "Sub-Agent",
+        "spawned": "Gestartete Sitzung",
+        "subAgentCount": "{count, plural, one {# Sub-Agent} other {# Sub-Agents}}",
+        "spawnedCount": "{count, plural, one {# gestartete Sitzung} other {# gestartete Sitzungen}}",
         "created": "Erstellt",
         "source": "Quelle",
         "changeRequests": "Änderungsanfragen",
@@ -1610,11 +1615,12 @@
         }
       },
       "status": {
-        "needsYou": "Benötigt dich",
-        "starting": "Wird gestartet",
-        "running": "Läuft",
-        "done": "Fertig",
-        "stopped": "Gestoppt",
+        "needsYou": "Prüfung nötig",
+        "needsInput": "Eingabe nötig",
+        "starting": "Wird geweckt",
+        "running": "Arbeitet",
+        "done": "Bereit",
+        "stopped": "Schläft",
         "failed": "Fehlgeschlagen",
         "legacy": "Veraltet"
       }
@@ -2211,6 +2217,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Mitglieder",
+      "unlimitedMembers": "Unbegrenzt viele Mitglieder",
+      "loadingMembers": "Mitglieder werden geladen…",
+      "membersUnavailable": "Mitgliederzahl nicht verfügbar",
+      "memberCount": "{count, plural, one {# Mitglied} other {# Mitglieder}}",
       "cancels": "Endet am {date}",
       "cancelsAtPeriodEnd": "Endet am Periodenende",
       "renews": "Verlängert sich am {date}",
@@ -3071,7 +3082,7 @@
       "automation_recovered": "Ein fehlschlagender Trigger oder eine Erinnerung funktioniert wieder.",
       "capture_device_down": "Ein Kortix-Capture-Computer nimmt nicht auf. Geht an Personen, die Capture verwalten.",
       "capture_device_recovered": "Ein gestoppter Kortix-Capture-Computer nimmt wieder auf.",
-      "message": "Jemand schreibt dir in einer Unterhaltung oder in einem Raum, dem du beigetreten bist."
+      "message": "Jemand erwähnt dich mit @ oder antwortet in einem Thread, in dem du geschrieben hast, in einem Raum."
     },
     "bell": {
       "label": "Benachrichtigungen",
@@ -20320,6 +20331,12 @@
       "texta0990a4a86dc": "White-Label: Ihr KI-Produkt auf Rechenleistung von Platinum.dev",
       "text6189ab6313de": "Forken Sie Kortix, versehen Sie es mit Ihrer Marke und verkaufen Sie es als eigenes Produkt. Die Lizenz ist kostenlos. Einzige Bedingung: Ihre Rechenleistung läuft auf Platinum.dev.",
       "text7971dd752669": "Erinnerungen",
+      "text724b09397472": "{name} wird zu {project} hinzugefügt",
+      "text1e007c47254d": "Die Einrichtung läuft im Hintergrund. Sie erhalten eine Benachrichtigung, wenn sie fertig ist.",
+      "text57f57edb6f16": "Änderungsanfrage #{number} ist bereit zur Prüfung.",
+      "texta8597db6f24b": "Skill entfernen",
+      "text5f6ba69d66d1": "Skill entfernt",
+      "textcb8d6b0c94c9": " und alle Dateien darin, einschließlich Änderungen, und entfernt den Skill aus jedem Agenten, der ihn verwendet. Ein Commit auf dem Standard-Branch.",
       "openThreadAction": "Thread öffnen",
       "untitledThread": "Thread ohne Titel"
     },
@@ -20387,7 +20404,7 @@
       "wantsEmailOthers": "{agent} möchte eine E-Mail an {recipient} und {count, plural, one {# weitere Person} other {# weitere Personen}} senden",
       "wantsMerge": "{agent} möchte PR #{number} in {base} mergen",
       "wantsMergePr": "{agent} möchte PR #{number} mergen",
-      "wantsIssue": "{agent} möchte ein Issue mit Priorität {priority} für {team} anlegen",
+      "wantsIssue": "{agent} möchte {article, select, other {ein}} Issue mit Priorität {priority} für {team} anlegen",
       "wantsCreateIssue": "{agent} möchte ein Issue anlegen",
       "wantsAction": "{agent} möchte: {action}",
       "wantsCall": "{agent} möchte {action} ausführen",

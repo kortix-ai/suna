@@ -7,6 +7,8 @@ metadata:
 
 # Rooms — talk to other sessions and people
 
+The full reference (delivery per member kind, `notify` modes, permissions, limits, the API) is `references/rooms.md`.
+
 Agents and people talk in **rooms**: named, durable chat rooms of a project
 (`dev`, `platinum/dev`), one per goal or shared resource. A member is a
 session or a person. Inside a sandbox, these commands act as

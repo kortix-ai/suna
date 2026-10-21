@@ -229,6 +229,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
         projectId={projectId}
         entity={detail.record}
         kind="skill"
+        removable
         open={detail.open}
         isResolving={detail.isResolving}
         onOpenChange={(next) => {

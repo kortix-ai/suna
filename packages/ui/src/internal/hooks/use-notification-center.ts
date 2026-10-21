@@ -78,15 +78,15 @@ export function anyCachedNotificationCenter(client: QueryClient): boolean {
 }
 
 /**
- * `anyCachedNotificationCenter`, reactive. Subscribes to the cache only while
- * `scan`. The cache reports synchronously, also when another component's
+ * A `useSyncExternalStore` subscription to the query cache, live only while
+ * `active`. The cache reports synchronously, also when another component's
  * `useQuery` builds its query during render; the re-check waits for a
  * microtask so this component never updates in the middle of that render.
  */
-function useAnyCachedNotificationCenter(client: QueryClient, scan: boolean): boolean {
-  const subscribe = useCallback(
+function useCacheSubscription(client: QueryClient, active: boolean) {
+  return useCallback(
     (onChange: () => void) => {
-      if (!scan) return () => {};
+      if (!active) return () => {};
       let live = true;
       const unsubscribe = client.getQueryCache().subscribe(() => {
         queueMicrotask(() => {
@@ -98,10 +98,14 @@ function useAnyCachedNotificationCenter(client: QueryClient, scan: boolean): boo
         unsubscribe();
       };
     },
-    [client, scan],
+    [client, active],
   );
+}
+
+/** `anyCachedNotificationCenter`, reactive. Subscribes to the cache only while `scan`. */
+function useAnyCachedNotificationCenter(client: QueryClient, scan: boolean): boolean {
   return useSyncExternalStore(
-    subscribe,
+    useCacheSubscription(client, scan),
     () => scan && anyCachedNotificationCenter(client),
     () => false,
   );
@@ -123,8 +127,21 @@ export function useNotificationCenter(projectId?: string | null): boolean {
  * load of a project page starts off.
  */
 export function useNotificationHostGate(projectId?: string | null): boolean {
-  const flag = useFeatureFlag(projectId, NOTIFICATION_CENTER_FLAG);
   const client = useQueryClient();
+  // The global host sits outside the access boundary. Read the shell's detail
+  // entry from the cache: no request for a potentially revoked project, and no
+  // observer. An observer added a detail query without a queryFn (also for the
+  // empty id of a page outside any project), and every refetch of it logged
+  // "No queryFn was passed".
+  const detail = useSyncExternalStore(
+    useCacheSubscription(client, !!projectId),
+    () => (projectId ? client.getQueryState<{ project?: FlagHolder }>(qk.project.detail(projectId)) : undefined),
+    () => undefined,
+  );
+  const flag = {
+    isLoading: !detail || detail.status === 'pending',
+    enabled: notificationCenterOn(detail?.data?.project),
+  };
   const anyProject = useAnyCachedNotificationCenter(client, !projectId);
   const [previous, setPrevious] = useState(false);
   let answer = anyProject;

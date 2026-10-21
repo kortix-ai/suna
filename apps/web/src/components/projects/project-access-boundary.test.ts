@@ -504,7 +504,7 @@ describe('house dialect', () => {
   });
 });
 
-describe('session open read starts beside getProject', () => {
+describe('session route parameters', () => {
   test('routeSessionIdFromParams reads the [sessionId] segment only', () => {
     expect(routeSessionIdFromParams({ id: 'p', sessionId: 's' })).toBe('s');
     expect(routeSessionIdFromParams({ id: 'p' })).toBeNull();

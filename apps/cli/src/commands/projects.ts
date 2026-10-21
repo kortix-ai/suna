@@ -612,9 +612,10 @@ Options:
   -y, --yes            rm: skip the confirmation.
   -h, --help           Show this help.
 
-ls needs project read; new and rm need project.credentials.issue. A
-session-bound token can neither mint nor revoke project tokens (403). The
-account's PAT policy (require expiry, maximum lifetime) applies to new tokens.
+ls, new and rm need project.credentials.issue: the list names every member's
+project tokens. A session-bound token can neither mint nor revoke project
+tokens (403). The account's PAT policy (require expiry, maximum lifetime)
+applies to new tokens.
 `;
 
 interface CliTokenRow {
@@ -1808,6 +1809,9 @@ async function projectsRm(args: string[]): Promise<number> {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 function surface(err: unknown): number {
+  // A denial goes through the shared formatter so the CLI's tail names the
+  // refused identity and the right remedy.
+  if (err instanceof ApiError && err.status === 403) return surfaceApiError(err);
   if (err instanceof ApiError) {
     if (err.status === 401) {
       process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);

@@ -66,7 +66,7 @@ flow(
   {
     domain: 'rooms',
     requires: ['database'],
-    routes: ['GET /v1/projects/:projectId/rooms', 'POST /v1/projects/:projectId/rooms', 'PATCH /v1/projects/:projectId/rooms/:roomId'],
+    routes: ['GET /v1/projects/:projectId/rooms', 'POST /v1/projects/:projectId/rooms', 'PATCH /v1/projects/:projectId/rooms/:roomId', 'GET /v1/accounts/:accountId/iam/permissions'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -76,11 +76,18 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const p = { projectId: project.id };
 
-    await ctx.step('flag agent_rooms off (the default): list and create → 403 feature_disabled', async () => {
+    const roomActions = async () => (await owner.get('/v1/accounts/:accountId/iam/permissions', { params: { accountId: team.id } }))
+      .status(200).json<{ permissions: Array<{ action: string }> }>().permissions.map((row) => row.action).filter((action) => action.startsWith('project.room.'));
+    await ctx.step('flag agent_rooms off (the default): list and create → 403 feature_disabled; the account permission catalog has no project.room.*', async () => {
       (await owner.get(ROOMS, { params: p })).status(403).body().has('$.code', 'feature_disabled');
       (await owner.post(ROOMS, { name: 'dev' }, { params: p })).status(403).body().has('$.code', 'feature_disabled');
+      if ((await roomActions()).length !== 0) throw new Error('room permissions offered while agent_rooms is off in every project');
     });
     await setDatabaseProjectFeature(ctx.env, project.id, 'agent_rooms', true);
+    await ctx.step('agent_rooms on in one project → the account permission catalog offers project.room.read and .write', async () => {
+      const actions = await roomActions();
+      if (actions.sort().join(',') !== 'project.room.read,project.room.write') throw new Error(JSON.stringify(actions));
+    });
 
     let roomId = '';
     await ctx.step('owner creates platinum/dev → 201; the same name again → 200 with the same room_id', async () => {
@@ -537,6 +544,7 @@ flow(
       'POST /v1/projects/:projectId/rooms/:roomId/read',
       'PUT /v1/projects/:projectId/rooms/:roomId/members/people/:userId',
       'DELETE /v1/projects/:projectId/rooms/:roomId/members/people/:userId',
+      'GET /v1/notifications/preferences',
     ],
   },
   async (ctx) => {
@@ -557,6 +565,11 @@ flow(
       res.status(200);
       const ids = res.json<{ people: { user_id: string }[] }>().people.map((x) => x.user_id);
       if (!ids.includes(ada.userId!) || !ids.includes(bob.userId!) || ids.includes(outsider.userId!)) throw new Error(JSON.stringify(ids));
+    });
+
+    const hiddenKinds = async () => (await asAda.get('/v1/notifications/preferences')).status(200).json<{ hidden_kinds: string[] }>().hidden_kinds;
+    await ctx.step('Ada is in no room yet → her notification settings hide the message kind', async () => {
+      if (!(await hiddenKinds()).includes('message')) throw new Error('message kind shown to a person in no room');
     });
 
     let roomId = '';
@@ -594,12 +607,15 @@ flow(
       // A thread reply notifies; it does not count as room unread (Slack).
       (await owner.get(`${ROOMS}?mine=true`, { params: p })).status(200).body().has('$.rooms[0].unread', 0);
     });
-    await ctx.step('agent_rooms off → Ada\'s room notifications leave her inbox; on again → they return', async () => {
+    await ctx.step('agent_rooms off → Ada\'s room notifications leave her inbox and the message kind leaves her settings; on again → both return', async () => {
+      if ((await hiddenKinds()).includes('message')) throw new Error('message kind hidden from a room member');
       await setDatabaseProjectFeature(ctx.env, project.id, 'agent_rooms', false);
       if ((await messageNotes()).length !== 0) throw new Error('a room notification shows while agent_rooms is off');
+      if (!(await hiddenKinds()).includes('message')) throw new Error('message kind shown while agent_rooms is off');
       (await asAda.get(`${ROOMS}?mine=true`, { params: p })).status(403).body().has('$.code', 'feature_disabled');
       await setDatabaseProjectFeature(ctx.env, project.id, 'agent_rooms', true);
       if ((await messageNotes()).length === 0) throw new Error('room notifications did not return with agent_rooms on');
+      if ((await hiddenKinds()).includes('message')) throw new Error('message kind still hidden with agent_rooms on');
     });
     await ctx.step('there are no direct conversations: POST /rooms/direct → 404', async () => {
       (await owner.post('/v1/projects/:projectId/rooms/direct', { email: ada.email }, { params: p })).status(404);

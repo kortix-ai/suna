@@ -358,6 +358,13 @@ flow(
       (await asMember.get(path(R.search), { params, query: { q: '"incident review"', kinds: 'screen' } })).status(200).body().has('$.hits[0].app', 'Editor');
     });
 
+    await ctx.step('search with day= keeps to that UTC day: the fixture day has hits, a day with no capture has none, a malformed day → 400 (KRTX-2983)', async () => {
+      const onDay = (await asMember.get(path(R.search), { params, query: { q: 'quarterly or roadmap', day: day.day } })).status(200).json<{ hits: Hit[] }>().hits;
+      if (onDay.length === 0) throw new Error('no hits on the fixture day');
+      (await asMember.get(path(R.search), { params, query: { q: 'quarterly or roadmap', day: '2001-01-01' } })).status(200).body().has('$.hits', []);
+      (await asMember.get(path(R.search), { params, query: { q: 'roadmap', day: '20-10-2026' } })).status(400).body().has('$.code', 'capture_bad_window');
+    });
+
     await ctx.step('a frame opens with its full on-screen text, a signed URL whose bytes match the uploaded video, and offset_ms = frame_index seconds', async () => {
       const frameId = hits.find((h) => h.kind === 'screen')!.id;
       const detail = (await asMember.get(path(R.frame), { params: { ...params, frameId } })).status(200).json<any>();

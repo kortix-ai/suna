@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { invalidateProjectMirror, refreshMirror } from './mirror';
+import { invalidateProjectMirror, refreshMirror, transientGitMirrorCause } from './mirror';
 
 const exec = promisify(execFile);
 const previousCache = process.env.KORTIX_GIT_CACHE_DIR;
@@ -74,8 +74,14 @@ test('continuous invalidation fails a fresh read instead of fetching indefinitel
     return original(...args);
   });
   try {
-    await expect(refreshMirror(project, true)).rejects.toThrow('changed repeatedly');
-    expect(moves).toBeLessThan(12);
+    const failure = await refreshMirror(project, true).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(transientGitMirrorCause(failure)).not.toBeNull();
+    expect(transientGitMirrorCause(new Error('Project mirror changed repeatedly during refresh'))).toBeNull();
+    expect(moves).toBe(4);
+    touch.mockRestore();
+    const recovered = await refreshMirror(project, true);
+    expect(await exec('git', ['-C', recovered, 'rev-parse', '--is-bare-repository']).then(({ stdout }) => stdout.trim())).toBe('true');
   } finally {
     touch.mockRestore();
   }

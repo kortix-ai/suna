@@ -872,6 +872,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/skills': { action: 'skill.system.list', title: 'Listed Kortix system skills' },
   'GET /v1/skills/:name': { action: 'skill.system.read', title: 'Viewed Kortix system skill' },
   'GET /v1/skills/:name/file': { action: 'skill.system.file.read', title: 'Viewed Kortix system skill file' },
+  'POST /v1/projects/:projectId/skills/remove': { action: 'skill.remove', title: 'Removed project skill' },
   'POST /v1/projects/:projectId/skills': { action: 'skill.create', title: 'Created project skill' },
   'GET /v1/clients/mobile': { action: 'client.mobile_policy.read', title: 'Viewed mobile release policy' },
   'POST /v1/system/demo-request': { action: 'system.demo_request.create', title: 'Submitted demo request' },
