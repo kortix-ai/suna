@@ -299,6 +299,22 @@ export default function ToastsDebugPage() {
           </div>
         </Section>
 
+        <Section title="Marketplace install started: the page stays, the toast offers the session">
+          <Slot>
+            <ToastCard
+              message="Adding building blog to Website"
+              icon={toastIcon('success')}
+              variant="success"
+              options={{
+                description:
+                  'It sets up in the background. You get a notification when it is done.',
+                actions: [{ label: 'Open session', onClick: noop }],
+              }}
+              onDismiss={noop}
+            />
+          </Slot>
+        </Section>
+
         <Section title="Several turns at once">
           <Slot>
             <SessionStackCard

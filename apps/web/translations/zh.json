@@ -20310,6 +20310,8 @@
       "texta0990a4a86dc": "白标:运行在 Platinum.dev 算力上的你的 AI 产品",
       "text6189ab6313de": "Fork Kortix,打上你的品牌,作为你自己的产品出售。许可证免费。唯一的要求是你的算力运行在 Platinum.dev 上。",
       "text7971dd752669": "提醒",
+      "text724b09397472": "正在将 {name} 添加到 {project}",
+      "text1e007c47254d": "它会在后台完成设置，完成后你会收到通知。",
       "text57f57edb6f16": "变更请求 #{number} 已可审阅。"
     },
     "publicShareConfirm": {
