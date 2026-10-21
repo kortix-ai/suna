@@ -20375,7 +20375,7 @@
       "wantsEmailOthers": "{agent} želi da pošalje imejl na {recipient} i još {count, plural, one {# osobi} few {# osobe} other {# osoba}}",
       "wantsMerge": "{agent} želi da spoji PR #{number} u {base}",
       "wantsMergePr": "{agent} želi da spoji PR #{number}",
-      "wantsIssue": "{agent} želi da napravi problem prioriteta {priority} za {team}",
+      "wantsIssue": "{agent} želi da napravi {article, select, an {jedan} other {jedan}} problem prioriteta {priority} za {team}",
       "wantsCreateIssue": "{agent} želi da napravi problem",
       "wantsAction": "{agent} želi: {action}",
       "wantsCall": "{agent} želi da pokrene {action}",
@@ -20465,8 +20465,13 @@
       "cc": "Копија",
       "bcc": "Скривена копија",
       "subject": "Тема",
+      "from": "Од",
+      "none": "Ништа",
+      "attachments": "Прилози",
       "idsOnlyHint": "Овај позив не приказује садржај за проверу. Опис агента није проверен.",
       "resolvedUnavailable": "Нацрт није могуће учитати. Пажљиво проверите опис агента.",
+      "aboutDescription": "О овом опису",
+      "senderUnavailable": "Није могуће учитати налог за слање. Проверите ред „Од“.",
       "quoted": "„{text}“"
     }
   },

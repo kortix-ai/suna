@@ -20375,7 +20375,7 @@
       "wantsEmailOthers": "{agent} möchte eine E-Mail an {recipient} und {count, plural, one {# weitere Person} other {# weitere Personen}} senden",
       "wantsMerge": "{agent} möchte PR #{number} in {base} mergen",
       "wantsMergePr": "{agent} möchte PR #{number} mergen",
-      "wantsIssue": "{agent} möchte ein Issue mit Priorität {priority} für {team} anlegen",
+      "wantsIssue": "{agent} möchte {article, select, an {ein} other {ein}} Issue mit Priorität {priority} für {team} anlegen",
       "wantsCreateIssue": "{agent} möchte ein Issue anlegen",
       "wantsAction": "{agent} möchte: {action}",
       "wantsCall": "{agent} möchte {action} ausführen",

@@ -20375,7 +20375,7 @@
       "wantsEmailOthers": "{agent} veut envoyer un e-mail à {recipient} et {count, plural, one {# autre personne} other {# autres personnes}}",
       "wantsMerge": "{agent} veut fusionner la PR #{number} dans {base}",
       "wantsMergePr": "{agent} veut fusionner la PR #{number}",
-      "wantsIssue": "{agent} veut créer un ticket de priorité {priority} pour {team}",
+      "wantsIssue": "{agent} veut créer {article, select, an {un} other {un}} ticket de priorité {priority} pour {team}",
       "wantsCreateIssue": "{agent} veut créer un ticket",
       "wantsAction": "{agent} veut : {action}",
       "wantsCall": "{agent} veut exécuter {action}",
