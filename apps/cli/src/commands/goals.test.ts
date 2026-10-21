@@ -61,14 +61,14 @@ test('the real CLI lists and shows goals from the mounted folders', async () => 
   mkdirSync(folder, { recursive: true });
   writeFileSync(join(folder, 'goal.json'), JSON.stringify({ ...base, summary: 'Closure requested.', next_wake_at: '2026-10-20T09:00:00Z' }));
   const run = (args: string[]) =>
-    Bun.spawnSync(['bun', join(import.meta.dir, '..', 'index.ts'), 'goals', ...args], { env: { ...process.env, KORTIX_DRIVES_ROOT: root } });
+    Bun.spawnSync(['bun', join(import.meta.dir, '..', 'index.ts'), 'goals', ...args], { env: { ...process.env, KORTIX_FEATURE_FLAGS: 'goals', KORTIX_DRIVES_ROOT: root } });
   const ls = run(['ls', '--json']);
   expect(ls.exitCode).toBe(0);
   expect(JSON.parse(ls.stdout.toString()).goals[0]).toMatchObject({ slug: 'rho-close', status: 'active', criteria_total: 1, criteria_met: 0 });
   const st = run(['status', 'rho-close']);
   expect(st.exitCode).toBe(0);
   expect(st.stdout.toString()).toContain('Approve 2FA');
-  const missingRoot = Bun.spawnSync(['bun', join(import.meta.dir, '..', 'index.ts'), 'goals', 'ls'], { env: { ...process.env, KORTIX_DRIVES_ROOT: join(root, 'nope') } });
+  const missingRoot = Bun.spawnSync(['bun', join(import.meta.dir, '..', 'index.ts'), 'goals', 'ls'], { env: { ...process.env, KORTIX_FEATURE_FLAGS: 'goals', KORTIX_DRIVES_ROOT: join(root, 'nope') } });
   expect(missingRoot.exitCode).toBe(2);
   expect(missingRoot.stderr.toString() + missingRoot.stdout.toString()).toContain('Files is not mounted here');
 });
