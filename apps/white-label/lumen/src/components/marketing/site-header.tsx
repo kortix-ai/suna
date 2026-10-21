@@ -41,6 +41,11 @@ export function SiteHeader() {
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navRef = useRef<HTMLElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const mobilePanelRef = useRef<HTMLDivElement>(null);
+  const openRef = useRef(open);
+  openRef.current = open;
+  const mobileRef = useRef(mobile);
+  mobileRef.current = mobile;
 
   useEffect(() => {
     try {
@@ -51,7 +56,16 @@ export function SiteHeader() {
     const onScroll = () => setScrolled(window.scrollY > 24);
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && (setOpen(null), setMobile(false));
+    // Escape closes a menu. When focus was inside it, focus goes back to the control that opened it (UXR3-4).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const k = openRef.current;
+      const at = document.activeElement;
+      if (k && panelRef.current?.contains(at)) navRef.current?.querySelector<HTMLElement>(`[data-menu="${k}"]`)?.focus();
+      if (mobileRef.current && mobilePanelRef.current?.contains(at)) headerRef.current?.querySelector<HTMLElement>('[data-mobile-toggle]')?.focus();
+      setOpen(null);
+      setMobile(false);
+    };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('scroll', onScroll);
@@ -248,6 +262,7 @@ export function SiteHeader() {
               size="icon"
               aria-label={mobile ? 'Close menu' : 'Open menu'}
               aria-expanded={mobile}
+              data-mobile-toggle
               onClick={toggleMobile}
               className={cn('size-9 lg:hidden', transparent && 'text-white hover:bg-white/10')}
             >
@@ -299,7 +314,7 @@ export function SiteHeader() {
       />
 
       {mobile && (
-        <div style={{ top: menuTop }} className="fixed inset-x-0 bottom-0 z-40 overflow-y-auto bg-background px-6 pt-6 pb-10 lg:hidden">
+        <div ref={mobilePanelRef} style={{ top: menuTop }} className="fixed inset-x-0 bottom-0 z-40 overflow-y-auto bg-background px-6 pt-6 pb-10 lg:hidden">
           {(
             [
               ['Platform', NAV.platform],

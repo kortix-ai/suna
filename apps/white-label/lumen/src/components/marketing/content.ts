@@ -451,7 +451,7 @@ export const SECURITY_PRINCIPLES = [
   { icon: 'quotes', title: 'Citations checked', body: 'Lumen checks every quote against the source before it is shown, and marks the ones it cannot find.' },
   { icon: 'users', title: 'Roles and walls', body: 'Owners, admins and lawyers. A restricted matter is visible only to the people added to it.' },
   { icon: 'list', title: 'An audit log nobody edits', body: 'Members, matters, runs, exports and billing are recorded. Entries cannot be changed or deleted.' },
-  { icon: 'key', title: 'Credentials stay on the server', body: 'Members reach the agent workspace only through Lumen’s server, with short-lived access tied to the matter.' },
+  { icon: 'key', title: 'Credentials stay on the server', body: 'Members reach the agent workspace only through Lumen’s server. The firm’s credentials never leave it, and every request is checked against the member’s access to the matter.' },
 ] as const;
 
 export const NEWS = [
