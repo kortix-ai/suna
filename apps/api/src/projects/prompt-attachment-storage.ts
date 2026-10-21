@@ -5,6 +5,7 @@ import { eq, notExists } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../shared/db';
 import { config } from '../config';
+import { logger } from '../lib/logger';
 
 const BUCKET = 'staged-files';
 export const STORAGE_TIMEOUT_MS = 20_000;
@@ -138,12 +139,67 @@ export function noReferences() {
       .where(eq(promptAttachmentReferences.attachmentId, promptAttachments.attachmentId)),
   );
 }
+/** Storage answers a missing object with 404 or with 400 + `statusCode: '404'`. */
+export function isMissingObject(error: unknown): boolean {
+  const { status, statusCode } = (error ?? {}) as { status?: number; statusCode?: string };
+  return status === 404 || statusCode === '404' || statusCode === 'not_found';
+}
+
+/** The Storage error fields we read: status, its body `statusCode`, message. */
+function storageErrorFields(error: unknown) {
+  return (error ?? {}) as { status?: number; statusCode?: string; message?: string };
+}
+
+/**
+ * A Storage write or sign that failed (KRTX-2980). A size refusal is the
+ * file's (the deployment's bucket limit is below it), so it answers 413 and
+ * a retry of the same file cannot help; anything else is logged and keeps the
+ * retryable 503.
+ */
+export function storageWriteFailure(error: unknown, message?: string): PromptAttachmentError {
+  const { status, statusCode, message: detail } = storageErrorFields(error);
+  if (status === 413 || statusCode === '413')
+    return new PromptAttachmentError(
+      'attachment_size_limit',
+      'Storage refused the attachment size. Attach a smaller file.',
+      413,
+    );
+  logger.warn('[prompt-attachments] storage write failed', { status, statusCode, message: detail });
+  return storageUnavailable(message);
+}
+
+/** A short-lived signed download URL. A missing object is 404, never a retry. */
+export async function signedDownloadUrl(path: string, expiresInSeconds: number): Promise<string> {
+  const { data, error } = await storage().createSignedUrl(path, expiresInSeconds);
+  if (data?.signedUrl) return data.signedUrl;
+  if (isMissingObject(error))
+    throw new PromptAttachmentError(
+      'attachment_not_found',
+      'Attachment not found. Attach the file again.',
+      404,
+    );
+  const { status, statusCode, message } = storageErrorFields(error);
+  logger.warn('[prompt-attachments] storage sign failed', { status, statusCode, message });
+  throw new PromptAttachmentError('attachment_storage_unavailable', 'Attachment storage is unavailable.', 503);
+}
+
 export async function download(path: string): Promise<Uint8Array> {
   const { data, error } = await storage().download(
     path,
     {},
     { signal: AbortSignal.timeout(STORAGE_TIMEOUT_MS) },
   );
-  if (error || !data) throw storageUnavailable();
+  if (error || !data) {
+    // A missing object never comes back: a retry of the same file cannot work.
+    if (isMissingObject(error))
+      throw new PromptAttachmentError(
+        'attachment_not_found',
+        'Attachment not found. Attach the file again.',
+        404,
+      );
+    const { status, statusCode, message } = storageErrorFields(error);
+    logger.warn('[prompt-attachments] storage download failed', { status, statusCode, message });
+    throw storageUnavailable();
+  }
   return new Uint8Array(await data.arrayBuffer());
 }

@@ -544,7 +544,7 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
   describe('reset', () => {
     test('replaces the expiring bucket and keeps non-expiring credit up to the balance', async () => {
       const id = newAccount({ daily: 1, expiring: 3, nonExpiring: 4 });
-      await wallet.reset({ accountId: id, amount: 50, description: 'Monthly renewal', key: { event: 'in_1' } });
+      await wallet.reset({ accountId: id, amount: 50, description: 'Monthly renewal', expiresAt: '2026-11-20T10:00:00.000Z', key: { event: 'in_1' } });
       const [row] = ledger(id);
       expect(row).toMatchObject({
         type: 'tier_grant',
@@ -557,8 +557,14 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
         processing_source: 'atomic_function',
         metadata: { renewal: true, non_expiring_preserved: 4, previous_balance: 8 },
       });
-      expect(row!.expires_at).not.toBeNull();
+      expect(new Date(row!.expires_at!).toISOString()).toBe('2026-11-20T10:00:00.000Z');
       expect(account(id)).toMatchObject({ balance: 54, expiring: 50, non_expiring: 4, daily: 1 });
+    });
+
+    test('does not invent an expiry when the caller has no schedule', async () => {
+      const id = newAccount({ expiring: 3 });
+      await wallet.reset({ accountId: id, amount: 5, description: 'Renewal', key: { event: 'in_unknown_expiry' } });
+      expect(ledger(id)[0]!.expires_at).toBeNull();
     });
 
     // reset_expiring_credits used NUMERIC(10, 2) variables: a preserved

@@ -1330,6 +1330,7 @@
     },
     "credits": {
       "loadFailed": "无法加载此帐户。",
+      "resetAt": "套餐积分重置时间",
       "availableBalance": "可用余额",
       "creditCount": "{count, plural, one {{formatted} 个积分} other {{formatted} 个积分}}",
       "owed": "欠款",
@@ -1605,6 +1606,10 @@
       "showMore": "显示更多",
       "brief": {
         "status": "状态",
+        "subAgent": "子代理",
+        "spawned": "派生会话",
+        "subAgentCount": "{count, plural, other {# 个子代理}}",
+        "spawnedCount": "{count, plural, other {# 个派生会话}}",
         "created": "创建时间",
         "source": "来源",
         "changeRequests": "更改请求",
@@ -1618,11 +1623,12 @@
         }
       },
       "status": {
-        "needsYou": "需要你处理",
-        "starting": "正在启动",
-        "running": "运行中",
-        "done": "已完成",
-        "stopped": "已停止",
+        "needsYou": "待审核",
+        "needsInput": "等待你的回复",
+        "starting": "正在唤醒",
+        "running": "工作中",
+        "done": "就绪",
+        "stopped": "休眠中",
         "failed": "失败",
         "legacy": "旧版"
       }
@@ -2213,6 +2219,11 @@
   },
   "billing": {
     "plan": {
+      "members": "成员",
+      "unlimitedMembers": "成员数量不限",
+      "loadingMembers": "正在加载成员…",
+      "membersUnavailable": "成员数量不可用",
+      "memberCount": "{count} 位成员",
       "cancels": "将于 {date} 取消",
       "cancelsAtPeriodEnd": "将在周期结束时取消",
       "renews": "将于 {date} 续订",
@@ -20322,7 +20333,13 @@
       "text08f3c151d323": "咨询定制条款",
       "texta0990a4a86dc": "白标:运行在 Platinum.dev 算力上的你的 AI 产品",
       "text6189ab6313de": "Fork Kortix,打上你的品牌,作为你自己的产品出售。许可证免费。唯一的要求是你的算力运行在 Platinum.dev 上。",
-      "text7971dd752669": "提醒"
+      "text7971dd752669": "提醒",
+      "text724b09397472": "正在将 {name} 添加到 {project}",
+      "text1e007c47254d": "它会在后台完成设置，完成后你会收到通知。",
+      "text57f57edb6f16": "变更请求 #{number} 已可审阅。",
+      "texta8597db6f24b": "移除技能",
+      "text5f6ba69d66d1": "技能已移除",
+      "textcb8d6b0c94c9": " 及其中的所有文件（包括修改），并从所有使用该技能的代理中移除它。在默认分支上提交一次。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

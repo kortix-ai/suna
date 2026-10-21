@@ -1975,6 +1975,8 @@ export const projectTriggerExecutions = kortixSchema.table(
     runStatus: varchar('run_status', { length: 16 }),
     runError: text('run_error'),
     runEndedAt: timestamp('run_ended_at', { withTimezone: true }),
+    // The `session_turns` row that closed this run. A turn closes one run only.
+    runTurnToken: text('run_turn_token'),
   },
   (table) => [
     foreignKey({
@@ -2023,6 +2025,9 @@ export const projectTriggerExecutions = kortixSchema.table(
     index('idx_project_trigger_executions_noncron_created')
       .on(table.createdAt)
       .where(sql`${table.source} <> 'cron'`),
+    index('idx_project_trigger_executions_open_run')
+      .on(table.sessionId)
+      .where(sql`${table.runStatus} = 'running'`),
   ],
 );
 

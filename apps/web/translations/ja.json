@@ -1330,6 +1330,7 @@
     },
     "credits": {
       "loadFailed": "このアカウントを読み込めませんでした。",
+      "resetAt": "プランのクレジットのリセット日時",
       "availableBalance": "利用可能残高",
       "creditCount": "{count, plural, one {{formatted} クレジット} other {{formatted} クレジット}}",
       "owed": "未払い",
@@ -1605,6 +1606,10 @@
       "showMore": "さらに表示",
       "brief": {
         "status": "状態",
+        "subAgent": "サブエージェント",
+        "spawned": "起動されたセッション",
+        "subAgentCount": "{count, plural, other {サブエージェント #件}}",
+        "spawnedCount": "{count, plural, other {起動されたセッション #件}}",
         "created": "作成日時",
         "source": "ソース",
         "changeRequests": "変更リクエスト",
@@ -1618,11 +1623,12 @@
         }
       },
       "status": {
-        "needsYou": "対応が必要",
-        "starting": "開始中",
-        "running": "実行中",
-        "done": "完了",
-        "stopped": "停止",
+        "needsYou": "レビュー待ち",
+        "needsInput": "回答待ち",
+        "starting": "起動中",
+        "running": "作業中",
+        "done": "準備完了",
+        "stopped": "スリープ中",
         "failed": "失敗",
         "legacy": "旧形式"
       }
@@ -2213,6 +2219,11 @@
   },
   "billing": {
     "plan": {
+      "members": "メンバー",
+      "unlimitedMembers": "メンバー数は無制限",
+      "loadingMembers": "メンバーを読み込み中…",
+      "membersUnavailable": "メンバー数を取得できません",
+      "memberCount": "{count}人のメンバー",
       "cancels": "{date} に解約",
       "cancelsAtPeriodEnd": "期間終了時に解約",
       "renews": "{date} に更新",
@@ -20322,7 +20333,13 @@
       "text08f3c151d323": "個別条件を相談する",
       "texta0990a4a86dc": "ホワイトラベル:Platinum.dev のコンピュートで動く自社 AI プロダクト",
       "text6189ab6313de": "Kortix をフォークし、自社ブランドで自社製品として販売できます。ライセンスは無料。唯一の条件は、コンピュートを Platinum.dev で実行することです。",
-      "text7971dd752669": "リマインダー"
+      "text7971dd752669": "リマインダー",
+      "text724b09397472": "{name} を {project} に追加しています",
+      "text1e007c47254d": "バックグラウンドでセットアップします。完了すると通知が届きます。",
+      "text57f57edb6f16": "変更リクエスト #{number} のレビュー準備ができました。",
+      "texta8597db6f24b": "スキルを削除",
+      "text5f6ba69d66d1": "スキルを削除しました",
+      "textcb8d6b0c94c9": " とその中のすべてのファイル（編集内容を含む）。このスキルを使うすべてのエージェントからも外します。デフォルトブランチへの 1 回のコミットです。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

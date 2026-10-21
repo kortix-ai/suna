@@ -4045,6 +4045,12 @@ export function SessionChat({
     },
     [readOnly, pathname, searchParams, shallowNavigate],
   );
+  // A session tab stays mounted, so a later `?cr=` (the turn-done toast's
+  // Review) must open the dialog too, not only the one read at mount.
+  const crParam = readOnly ? null : (searchParams?.get('cr') ?? null);
+  useEffect(() => {
+    if (crParam) setOpenCrIdState(crParam);
+  }, [crParam]);
   const handleOpenOutcome = useCallback(
     (outcome: Outcome) => {
       // Change requests are the only kind a turn produces. `external` exists on
