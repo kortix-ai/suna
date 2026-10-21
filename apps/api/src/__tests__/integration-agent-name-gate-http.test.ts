@@ -19,10 +19,9 @@
  * that has since been removed from the manifest is the cleanup path.
  */
 import { describe, expect, test, afterAll } from 'bun:test';
-// deepseek-v4.1-flash, the model pinned below, is served by Morph direct; no
-// OpenRouter endpoint of it is a cleared subprocessor yet (#10286). A
-// placeholder key makes this deployment serve it, as prod does. Never reached.
-process.env.MORPH_API_KEY = 'not-a-real-morph-key-agent-name-gate';
+// deepseek-v4.1-flash, the model pinned below, is served by Platinum inference.
+// A placeholder key makes this deployment serve it, as prod does. Never reached.
+process.env.PLATINUM_INFERENCE_API_KEY = 'not-a-real-platinum-key-agent-name-gate';
 const { db } = await import('../shared/db');
 const { app } = await import('../index');
 const { eq, sql } = await import('drizzle-orm');

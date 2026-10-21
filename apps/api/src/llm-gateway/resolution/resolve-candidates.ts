@@ -426,10 +426,9 @@ async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveMod
     const tier = await getCachedAccountTier(principal.accountId);
     throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
   }
-  return managedCandidates(managed).map((candidate) => {
-    const headers = opencodeHeaders(candidate.baseUrl, principal);
-    return headers ? { ...candidate, headers } : candidate;
-  });
+  // Platinum keys its upstream prompt caches by this id: the conversation.
+  const session = principal.sessionId ?? principal.keyId ?? principal.userId;
+  return managedCandidates(managed).map((candidate) => ({ ...candidate, headers: { 'x-platinum-session': session } }));
 }
 
 function noManagedModelsError(model: string, tierIsPaid: boolean): GatewayResolutionError {

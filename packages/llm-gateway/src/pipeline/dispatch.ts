@@ -27,8 +27,7 @@ import { publicUpstreamError, shownModel, shownProvider } from './public-identit
  * 1. A variant of the same candidate: without `reasoning_effort` when a Bedrock
  *    model refuses that parameter, or the `global.` then `us.` inference
  *    profile when Bedrock refuses a bare model id.
- * 2. The next candidate of the same model: the next pool key after a 429, or
- *    the next provider when the candidates opted into `failover`.
+ * 2. The next candidate of the same model: the next pool key after a 429.
  * 3. The first candidate of the next fallback model, when the failure matches
  *    `fallbackOn`. A BYOK request (an own key or ChatGPT plan, billing `none`)
  *    falls back to a Kortix-billed model only when the project chose that chain
@@ -218,10 +217,9 @@ function isPoolPeer(head: UpstreamDescriptor, candidate: UpstreamDescriptor): bo
 }
 
 // Whether `candidate`, a later candidate of the same model, takes over after
-// `failure`. Failover candidates take any failure; pool keys take a 429, and
-// a 401 from a login that stayed refused after its refresh.
+// `failure`. Pool keys take a 429, and a 401 from a login that stayed refused
+// after its refresh.
 function peerTakesOver(head: UpstreamDescriptor, candidate: UpstreamDescriptor, failure: Failure): boolean {
-  if (head.failover && candidate.failover) return true;
   if (!isPoolPeer(head, candidate)) return false;
   return failure.status === 429 || (failure.status === 401 && Boolean(failure.attempt.descriptor.refreshableCredential));
 }
@@ -350,7 +348,7 @@ export async function dispatch(
     (isBedrock(primary) && typeof firstBody.reasoning_effort === 'string') ||
     plan.candidates
       .slice(1)
-      .some((candidate) => (primary.failover ? candidate.failover : isPoolPeer(primary, candidate)))
+      .some((candidate) => isPoolPeer(primary, candidate))
       ? body
       : null;
   body = null;

@@ -38,7 +38,7 @@ describe('gatewayModelCatalog — served catalog', () => {
       tool_call: true,
       temperature: true,
       limit: { context: 1_000_000, output: 65_536 },
-      cost: { input: 0.2, output: 0.65, cache_read: 0.03 },
+      cost: { input: 0.15, output: 0.6, cache_read: 0.003 },
     });
   });
 

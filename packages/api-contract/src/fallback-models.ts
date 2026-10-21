@@ -78,13 +78,13 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     name: 'DeepSeek V4.1 Flash', provider: 'kortix', reasoning: true, tool_call: true,
     attachment: true, temperature: true, modalities: { input: ['text', 'image'], output: ['text'] },
     reasoning_options: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
-    limit: { context: 1_000_000, output: 65_536 }, cost: { input: 0.2, output: 0.65, cache_read: 0.03 },
+    limit: { context: 1_000_000, output: 65_536 }, cost: { input: 0.15, output: 0.6, cache_read: 0.003 },
   },
   'glm-5.3-flash': {
     name: 'GLM 5.3 Flash', provider: 'kortix', reasoning: true, tool_call: true,
     attachment: true, temperature: true, modalities: { input: ['text', 'image'], output: ['text'] },
     reasoning_options: [{ type: 'effort', values: ['low', 'high', 'max'] }],
-    limit: { context: 1_000_000, output: 65_536 }, cost: { input: 0.15, output: 0.5, cache_read: 0.05 },
+    limit: { context: 1_000_000, output: 65_536 }, cost: { input: 0.1, output: 0.35, cache_read: 0.02 },
   },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',

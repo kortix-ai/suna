@@ -24,13 +24,10 @@ import { removeSeeded, seedProject, type SeededProject } from './helpers/integra
 const managedModel = (id: string) => ({
   id,
   name: id,
-  upstreamModelId: `vendor/${id}`,
-  transport: 'openrouter' as const,
   pricingRef: `vendor/${id}`,
   tier: 'balanced' as const,
   vision: true,
   limit: { context: 200_000, output: 32_000 },
-  openrouterProvider: { only: ['x'], allow_fallbacks: false, zdr: true as const, data_collection: 'deny' as const },
 });
 
 mock.module('../llm-gateway/models/served-managed-models', () => ({

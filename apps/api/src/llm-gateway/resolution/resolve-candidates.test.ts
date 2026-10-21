@@ -560,14 +560,20 @@ describe('resolveCandidates — BYOK billing', () => {
 });
 
 describe('resolveCandidates — managed model tier gating', () => {
-  test('managed descriptor is returned unchanged without reading project keys', async () => {
+  test('managed descriptor carries the conversation as x-platinum-session, without reading project keys', async () => {
     runtimeManagedModel = { id: 'glm-5.3-flash' };
-    const candidates = await resolveCandidates(principal(), 'glm-5.3-flash');
+    const candidates = await resolveCandidates(principal({ sessionId: 'ses_1' }), 'glm-5.3-flash');
     expect(candidates).toEqual([{
       provider: 'kortix-managed', kind: 'bedrock', baseUrl: 'https://managed.test',
       apiKey: 'm', billingMode: 'credits', markup: 1, resolvedModel: 'glm-5.3-flash',
+      headers: { 'x-platinum-session': 'ses_1' },
     }]);
     expect(resolveProjectSecretsForConsumer).not.toHaveBeenCalled();
+    // A gateway API-key call has no session: the key, then the user, stands in.
+    expect((await resolveCandidates(principal({ keyId: 'key_1' }), 'glm-5.3-flash'))[0]?.headers)
+      .toEqual({ 'x-platinum-session': 'key_1' });
+    expect((await resolveCandidates(principal(), 'glm-5.3-flash'))[0]?.headers)
+      .toEqual({ 'x-platinum-session': 'u1' });
   });
 
   test('freeModelsOnly principal throws plan_upgrade_required before any tier lookup', async () => {

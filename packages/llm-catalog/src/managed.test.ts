@@ -5,7 +5,6 @@ import {
   MANAGED_FLAGSHIP_MODEL_ID,
   MANAGED_MODELS,
   PLATFORM_DEFAULT_MODEL_ID,
-  VERIFIED_MANAGED_ENDPOINTS,
   catalogModelForWireModel,
   getManagedModel,
   isManagedModelId,
@@ -16,8 +15,7 @@ const served = [
   'glm-5.3-flash',
 ];
 
-// Every bundled route pins endpoints from OpenRouter's ZDR feed that passed the
-// 2026-10-19 probes (README). Vision is per model.
+// Kortix Platinum inference serves every managed model (README). Vision is per model.
 describe('managed catalog', () => {
   test('serves the selected managed models', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual(served);
@@ -33,60 +31,19 @@ describe('managed catalog', () => {
     }
   });
 
-  test('direct Morph fallback prices match the current public rate card', () => {
-    expect(getManagedModel('deepseek-v4.1-flash')?.morphPricing).toEqual({
+  // Platinum's price list: the gateway bills Platinum's usage.cost and falls
+  // back to this table. A change here is a price change for every customer.
+  test('managed prices match the Platinum inference price list', () => {
+    expect(getManagedModel('deepseek-v4.1-flash')?.pricing).toEqual({
       inputPerMillion: 0.15,
       cachedInputPerMillion: 0.003,
       outputPerMillion: 0.6,
     });
-    expect(getManagedModel('glm-5.3-flash')?.morphPricing).toEqual({
+    expect(getManagedModel('glm-5.3-flash')?.pricing).toEqual({
       inputPerMillion: 0.1,
       cachedInputPerMillion: 0.02,
       outputPerMillion: 0.35,
     });
-  });
-
-  test('every managed route pins verified ZDR endpoints and excludes Morph', () => {
-    for (const model of MANAGED_MODELS) {
-      expect(model.transport).toBe('openrouter');
-      const route = model.openrouterProvider as {
-        only: string[]; allow_fallbacks: boolean; zdr: boolean; data_collection: string;
-        max_price: { prompt: number; completion: number };
-      };
-      expect(route).toMatchObject({ allow_fallbacks: true, zdr: true, data_collection: 'deny' });
-      expect(route.only.length, model.id).toBeGreaterThanOrEqual(1);
-      for (const tag of route.only) expect(VERIFIED_MANAGED_ENDPOINTS as readonly string[], `${model.id} ${tag}`).toContain(tag);
-      expect(route.only.some((tag) => tag.startsWith('morph')), model.id).toBe(false);
-      expect(new Set(route.only).size, model.id).toBe(route.only.length);
-      expect(route.max_price.prompt).toBeGreaterThanOrEqual(model.pricing!.inputPerMillion);
-      expect(route.max_price.completion).toBeGreaterThanOrEqual(model.pricing!.outputPerMillion);
-    }
-  });
-
-  test('fallback billing covers every allowed OpenRouter endpoint price', () => {
-    for (const model of MANAGED_MODELS) {
-      const allowed = (model.openrouterProvider as { only: string[] }).only;
-      expect(Object.keys(model.openrouterEndpointPricing ?? {})).toEqual(allowed);
-      for (const tag of allowed) {
-        const endpoint = model.openrouterEndpointPricing?.[tag];
-        expect(endpoint, `${model.id} ${tag}`).toBeDefined();
-        expect(model.pricing!.inputPerMillion).toBeGreaterThanOrEqual(endpoint!.inputPerMillion);
-        expect(model.pricing!.cachedInputPerMillion!).toBeGreaterThanOrEqual(endpoint!.cachedInputPerMillion);
-        expect(model.pricing!.outputPerMillion).toBeGreaterThanOrEqual(endpoint!.outputPerMillion);
-      }
-    }
-  });
-
-  test('fallback pools exclude endpoints that failed the 2026-10-19 probes', () => {
-    const only = (id: string) => (getManagedModel(id)?.openrouterProvider as { only: string[] }).only;
-    // 429 from a shared pool on most requests.
-    for (const tag of ['coreweave/fp8', 'coreweave/nvfp4', 'decart/fp4', 'baseten', 'baseten/fp8', 'baseten/fp8/us']) {
-      expect(only('deepseek-v4.1-flash'), tag).not.toContain(tag);
-      expect(only('glm-5.3-flash'), tag).not.toContain(tag);
-    }
-    // Garbled text (GLM) or failed image input.
-    expect(only('deepseek-v4.1-flash')).not.toContain('relace');
-    for (const tag of ['relace', 'digitalocean', 'sail-research/us', 'sail-research/fp4']) expect(only('glm-5.3-flash')).not.toContain(tag);
     expect(getManagedModel('kimi-k3')).toBeUndefined();
     expect(getManagedModel('morph-dsv4flash')).toBeUndefined();
   });
@@ -110,15 +67,13 @@ describe('managed catalog', () => {
 // turn. `limit.context` equalled the endpoint window, so OpenCode's compaction
 // point was the rejection point and the step that crossed it was refused.
 //
-// The smallest window each route that serves the model accepted, probed on
-// 2026-09-30 with synthetic prompts at the edge (README, "Context windows").
+// The smallest window any serving upstream accepted, probed on 2026-09-30 with
+// synthetic prompts at the edge. A Platinum upstream change needs a new probe.
 // A new managed model needs a measured entry before it ships.
 const MEASURED_CONTEXT_WINDOW: Record<string, number> = {
-  // Zen, prompt only. OpenRouter Decart and CoreWeave: prompt + max_tokens <= 1,048,576.
   'glm-5.3-flash': 1_048_573,
-  // OpenRouter Morph, 1017 snapshot (2026-10-18): prompt + max_tokens <= 1,048,576.
+  // 1017 snapshot (2026-10-18): prompt + max_tokens <= 1,048,576.
   'deepseek-v4.1-flash': 1_048_576,
-  // OpenRouter Fireworks, prompt only. Morph answered 429 to every probe.
   'kimi-k3': 1_048_575,
 };
 
@@ -149,9 +104,9 @@ describe('managed context windows', () => {
 // ChatGPT plan (`codex/…`), never through Kortix credits. Claude Opus 5.5,
 // GPT-6 Sol, GPT-6 Luna and GPT-6 Astra were each added as managed and removed.
 describe('OpenAI and Anthropic models are never Kortix-managed', () => {
-  test('no managed model routes to an OpenAI or Anthropic upstream', () => {
+  test('no managed model is an OpenAI or Anthropic model', () => {
     for (const model of MANAGED_MODELS) {
-      expect(model.upstreamModelId, model.id).not.toMatch(/^(openai|anthropic)\//);
+      expect(model.pricingRef, model.id).not.toMatch(/^(openai|anthropic)\//);
       expect(model.id, model.id).not.toMatch(/^(gpt|claude|o\d)/);
     }
   });

@@ -481,20 +481,12 @@ export const CATALOG_PROVIDER_ENV = providerEnvJson as ReadonlyArray<{ id: strin
 export interface ManagedModel {
   id: string;
   name: string;
-  // OpenRouter model ID used by the managed route.
-  upstreamModelId: string;
-  transport: 'openrouter';
-  // Both fields are required when MORPH_MANAGED_MODELS selects this model.
-  morphModelId?: string;
-  morphPricing?: { inputPerMillion: number; cachedInputPerMillion?: number; outputPerMillion: number };
-  // Public per-endpoint OpenRouter rates checked 2026-09-26. Only entries in openrouterProvider.only
-  // are eligible. The gateway still settles from upstream usage.cost when sent.
-  openrouterEndpointPricing?: Record<string, { inputPerMillion: number; cachedInputPerMillion: number; outputPerMillion: number }>;
   // Omit this to keep the model grouped under Kortix in the picker.
   providerBrand?: string;
   // Catalog lookup hint. Managed pricing below is the routing authority.
   pricingRef: string;
-  // Explicit upstream per-million-token prices for credit billing.
+  // Platinum inference's per-million-token price. The gateway bills Platinum's
+  // `usage.cost`; this table applies only when a response carries none.
   pricing?: {
     inputPerMillion: number;
     outputPerMillion: number;
@@ -520,8 +512,6 @@ export interface ManagedModel {
   // smallest window a serving route accepts: enough for one more step to fit.
   // managed.test.ts holds the measured windows and the margin.
   limit: { context: number; output: number };
-  // OpenRouter provider routing: the allowed endpoint pool and privacy constraints.
-  openrouterProvider?: Record<string, unknown>;
 }
 
 // A managed model's `pricingRef` is supposed to be the model's real
@@ -545,96 +535,23 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
 }
 
 // Managed IDs are bare gateway model IDs. OpenCode uses `kortix/<id>`, so the
-// picker shows Kortix whichever upstream serves the request.
-//
-// Upstream order per model (apps/api `managedCandidates`): OpenCode Zen, Morph
-// direct, then the OpenRouter endpoint pool below. Every pool member was in
-// OpenRouter's ZDR feed and passed, on 2026-10-19 through OpenRouter pinned to
-// that endpoint: 12/12 text + tool-call requests (~30k-token context), 3/3 image
-// reads, first token p50 under 6 s, and a price at or below `pricing`. The
-// gateway sends a request to a member only when its host is a subprocessor in
-// effect (`inferenceHostCleared`, @kortix/shared/subprocessors), so a host joins
-// on its notice date by itself. `allow_fallbacks: true` lets OpenRouter move
-// between members; `only` keeps it inside the pool. packages/llm-catalog/README.md
-// records the probe results.
-const OPENROUTER_POOL_PRIVACY = { allow_fallbacks: true, zdr: true, data_collection: 'deny' } as const;
-
-// Resolver uses this list for operator overlays too; an unknown endpoint fails closed.
-export const VERIFIED_MANAGED_ENDPOINTS = [
-  'deepinfra/fp8', 'deepinfra/fp8/priority', 'inference-net/fp8', 'wafer/mxfp4', 'cloudflare',
-  'fireworks', 'deepinfra/fp4', 'together', 'parasail/fp4', 'modal/nvfp4', 'crusoe/fp4',
-  'inference-net/fp4', 'makora', 'near-ai/fp8', 'open-inference/fp4', 'primeintellect',
-  'siliconflow/fp8', 'venice',
-] as const;
-
-// Customer-facing name of the inference provider behind each route. The
-// picker shows this name, never the aggregator or the quantization tag.
-// `morph` is the direct Morph route (MORPH_MANAGED_MODELS).
-export const MANAGED_ENDPOINT_PROVIDERS: Record<(typeof VERIFIED_MANAGED_ENDPOINTS)[number] | 'morph', string> = {
-  'deepinfra/fp8': 'DeepInfra', 'deepinfra/fp8/priority': 'DeepInfra', 'deepinfra/fp4': 'DeepInfra',
-  'inference-net/fp8': 'Inference.net', 'inference-net/fp4': 'Inference.net',
-  'wafer/mxfp4': 'Wafer', cloudflare: 'Cloudflare', fireworks: 'Fireworks', together: 'Together',
-  'parasail/fp4': 'Parasail', 'modal/nvfp4': 'Modal', 'crusoe/fp4': 'Crusoe', makora: 'Makora',
-  'near-ai/fp8': 'NEAR AI', 'open-inference/fp4': 'Open Inference', primeintellect: 'Prime Intellect',
-  'siliconflow/fp8': 'SiliconFlow', venice: 'Venice',
-  morph: 'Morph',
-};
-
+// picker shows Kortix. Kortix Platinum inference serves every managed model
+// (apps/api `managedCandidates`); Platinum owns the upstreams and their privacy terms.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
-    id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', upstreamModelId: 'deepseek/deepseek-v4.1-flash-1017',
-    transport: 'openrouter', morphModelId: 'morph-dsv41flash-1017',
-    morphPricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.003, outputPerMillion: 0.6 },
+    id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash',
     pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
-    pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 },
-    openrouterEndpointPricing: {
-      'deepinfra/fp8': { inputPerMillion: 0.098, cachedInputPerMillion: 0.00294, outputPerMillion: 0.294 },
-      'deepinfra/fp8/priority': { inputPerMillion: 0.147, cachedInputPerMillion: 0.00441, outputPerMillion: 0.441 },
-      'inference-net/fp8': { inputPerMillion: 0.08, cachedInputPerMillion: 0.008, outputPerMillion: 0.5 },
-      'wafer/mxfp4': { inputPerMillion: 0.1, cachedInputPerMillion: 0.003, outputPerMillion: 0.5 },
-      cloudflare: { inputPerMillion: 0.1, cachedInputPerMillion: 0.003, outputPerMillion: 0.6 },
-    },
+    pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.003, outputPerMillion: 0.6 },
     tier: 'balanced', vision: true, limit: { context: 1_000_000, output: 65_536 },
     reasoningOptions: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
-    openrouterProvider: {
-      only: ['deepinfra/fp8', 'deepinfra/fp8/priority', 'inference-net/fp8', 'wafer/mxfp4', 'cloudflare'],
-      ...OPENROUTER_POOL_PRIVACY,
-      max_price: { prompt: 0.3, completion: 1.2 },
-    },
   },
   {
-    id: 'glm-5.3-flash', name: 'GLM 5.3 Flash', upstreamModelId: 'z-ai/glm-5.3-flash',
-    transport: 'openrouter', morphModelId: 'morph-glm53flash',
-    morphPricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
+    id: 'glm-5.3-flash', name: 'GLM 5.3 Flash',
     pricingRef: 'openrouter/z-ai/glm-5.3-flash',
-    pricing: { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
-    openrouterEndpointPricing: {
-      fireworks: { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      'deepinfra/fp4': { inputPerMillion: 0.075, cachedInputPerMillion: 0.015, outputPerMillion: 0.25 },
-      together: { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      'parasail/fp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      'modal/nvfp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      'crusoe/fp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      'inference-net/fp4': { inputPerMillion: 0.12, cachedInputPerMillion: 0.032, outputPerMillion: 0.388 },
-      makora: { inputPerMillion: 0.14, cachedInputPerMillion: 0.024, outputPerMillion: 0.47 },
-      'near-ai/fp8': { inputPerMillion: 0.08, cachedInputPerMillion: 0.012, outputPerMillion: 0.5 },
-      'open-inference/fp4': { inputPerMillion: 0.048, cachedInputPerMillion: 0.006, outputPerMillion: 0.16 },
-      primeintellect: { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      'siliconflow/fp8': { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-      venice: { inputPerMillion: 0.15, cachedInputPerMillion: 0.03, outputPerMillion: 0.5 },
-    },
+    pricing: { inputPerMillion: 0.1, cachedInputPerMillion: 0.02, outputPerMillion: 0.35 },
     tier: 'fast', vision: true, limit: { context: 1_000_000, output: 65_536 },
     // `none` returns 400 upstream, so GLM has no off switch.
     reasoningOptions: [{ type: 'effort', values: ['low', 'high', 'max'] }],
-    openrouterProvider: {
-      only: [
-        'fireworks', 'deepinfra/fp4', 'together', 'parasail/fp4', 'modal/nvfp4', 'crusoe/fp4',
-        'inference-net/fp4', 'makora', 'near-ai/fp8', 'open-inference/fp4', 'primeintellect',
-        'siliconflow/fp8', 'venice',
-      ],
-      ...OPENROUTER_POOL_PRIVACY,
-      max_price: { prompt: 0.15, completion: 0.5 },
-    },
   },
 ];
 

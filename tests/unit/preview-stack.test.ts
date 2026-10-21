@@ -152,8 +152,7 @@ describe('ephemeral self-host preview stack', () => {
       'MANAGED_GIT_GITHUB_INSTALL_ID',
       'MANAGED_GIT_GITHUB_OWNER',
       'MANAGED_GIT_GITHUB_TOKEN',
-      'OPENROUTER_API_KEY',
-      'MORPH_API_KEY',
+      'PLATINUM_INFERENCE_API_KEY',
       'PLATINUM_API_KEY',
     ]);
     expect(() =>
@@ -195,8 +194,7 @@ describe('ephemeral self-host preview stack', () => {
         KORTIX_GITHUB_APP_SLUG: 'kortix-preview-test',
         MANAGED_GIT_GITHUB_INSTALL_ID: '67890',
         MANAGED_GIT_GITHUB_OWNER: 'kortix-preview',
-        OPENROUTER_API_KEY: 'openrouter',
-        MORPH_API_KEY: 'morph',
+        PLATINUM_INFERENCE_API_KEY: 'pt_live_inference',
         PLATINUM_API_KEY: 'pt_live_example',
       },
     );
@@ -208,7 +206,7 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
     expect(configured.runtimeEnv).toContain('KORTIX_INSTANCE_ID=kortix-preview-pr-6337');
-    expect(configured.runtimeEnv).toContain('MORPH_API_KEY=morph');
+    expect(configured.runtimeEnv).toContain('PLATINUM_INFERENCE_API_KEY=pt_live_inference');
     // The preview edge drops request bodies above ~124 KiB, Storage uploads included.
     expect(configured.runtimeEnv).toContain('PROMPT_ATTACHMENT_UPLOAD_MODE=chunked');
     expect(configured.runtimeEnv).toContain('KORTIX_FRONTEND_MEMORY_LIMIT=2048m');

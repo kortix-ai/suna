@@ -109,15 +109,15 @@ mock.module('../llm-gateway/credentials/codex', () => ({
 // below are derived from the same stub — `managedTransportAvailable` is
 // `managedCandidates(...).length > 0` in the real module and the mock must not
 // be able to contradict itself.
-const mockManagedCandidates = (managed: { id: string; upstreamModelId?: string }) => [
+const mockManagedCandidates = (managed: { id: string }) => [
   {
-    provider: 'openrouter',
-    kind: 'openai-chat',
-    baseUrl: 'https://openrouter.ai/api/v1',
+    provider: 'platinum',
+    kind: 'openai-compat',
+    baseUrl: 'https://platinum.example/v1/inference',
     apiKey: 'managed-key',
     billingMode: 'credits',
     markup: 1.2,
-    resolvedModel: managed.upstreamModelId ?? managed.id,
+    resolvedModel: managed.id,
   },
 ];
 
@@ -137,7 +137,7 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
   // `catalog-models.ts` (which resolve-candidates.ts imports) imports that — so
   // omitting it makes the whole file fail to link with
   // `SyntaxError: Export named 'managedTransportAvailable' not found`.
-  managedTransportAvailable: (managed: { id: string; upstreamModelId?: string }) =>
+  managedTransportAvailable: (managed: { id: string }) =>
     mockManagedCandidates(managed).length > 0,
   // resolve-candidates.ts's Bedrock BYOK branch imports this unconditionally
   // (only CALLS it for kind:'bedrock' candidates, which this file never

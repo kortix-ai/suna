@@ -26,8 +26,8 @@ const fallbackPoliciesSchema = z.array(fallbackPolicySchema).superRefine((polici
 });
 
 export const DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES = JSON.stringify([
-  // The two managed models back each other up. Each already tries three
-  // upstreams (Morph direct, Zen, OpenRouter) before its fallback model.
+  // The two managed models back each other up. Platinum inference already
+  // fails over between upstreams before the gateway falls back to the other model.
   {
     id: 'platform-default-resilience',
     models: ['deepseek-v4.1-flash'],

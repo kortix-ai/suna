@@ -9,9 +9,7 @@ mock.module('../../repositories/project-model-access', () => ({
 const configuredModels = [
   {
     id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash',
-    upstreamModelId: 'deepseek/deepseek-v4.1-flash', transport: 'openrouter',
     pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash', tier: 'balanced', vision: true,
-    openrouterProvider: { only: ['test-endpoint'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
     limit: { context: 1_048_576, output: 16_384 },
   },
 ];
@@ -31,10 +29,8 @@ mock.module('../../config', () => ({
         if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'deepseek-v4.1-flash';
         if (key === 'LLM_GATEWAY_VISION_MODEL') return undefined;
         if (key === 'LLM_GATEWAY_FALLBACK_POLICIES') return [];
-        if (key === 'AWS_BEDROCK_API_KEY') return 'bedrock-key';
-        if (key === 'OPENROUTER_API_KEY') return undefined;
-        if (key === 'MORPH_API_KEY') return undefined;
-        if (key === 'OPENROUTER_API_URL') return 'https://openrouter.ai/api/v1';
+        if (key === 'PLATINUM_INFERENCE_API_KEY') return undefined;
+        if (key === 'PLATINUM_INFERENCE_URL') return 'https://api.platinum.dev/v1/inference';
         return target[key];
       },
     },
@@ -81,7 +77,7 @@ const { gatewayModelCatalog, managedModels } = await import('./catalog-models');
 await import('./picker-catalog');
 const { resolveCandidates } = await import('../resolution/resolve-candidates');
 
-describe('an OpenRouter model without a credential is not offered', () => {
+describe('a managed model without the Platinum inference key is not offered', () => {
   test('removes the model from every served catalog', () => {
     expect(RUNTIME_MANAGED_MODELS.map((model) => model.id)).toContain('deepseek-v4.1-flash');
     expect(SERVED_MANAGED_MODELS).toEqual([]);
