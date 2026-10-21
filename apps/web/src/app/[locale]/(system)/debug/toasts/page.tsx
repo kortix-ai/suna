@@ -28,7 +28,7 @@ import {
 } from '@kortix/ui/toast';
 import { SessionFailedCard, SessionStackCard } from '@kortix/ui/internal/notifications/session-toast-cards';
 import { extractGatewayErrorDetails, unwrapError } from '@kortix/sdk';
-import { CheckCircleIcon, ClockIcon, XCircleIcon } from '@phosphor-icons/react';
+import { CheckCircleIcon, ClockIcon, GitPullRequestIcon, XCircleIcon } from '@phosphor-icons/react';
 
 const noop = () => {};
 
@@ -266,6 +266,36 @@ export default function ToastsDebugPage() {
                 </Slot>
               </div>
             ))}
+          </div>
+        </Section>
+
+        <Section title="Turn opened a change request: Review, then Open session">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Slot>
+              <ToastCard
+                message="Task complete"
+                icon={toastIcon('success')}
+                variant="success"
+                options={{
+                  entity: { icon: <GitPullRequestIcon />, label: 'Add building-blog' },
+                  description: 'Change request #1 is ready to review.',
+                  actions: [
+                    { label: 'Review', onClick: noop },
+                    { label: 'Open session', onClick: noop },
+                  ],
+                }}
+                onDismiss={noop}
+              />
+            </Slot>
+            <Slot>
+              <ToastCard
+                message="Task complete"
+                icon={toastIcon('success')}
+                variant="success"
+                options={{ description: 'Change request #1 is ready to review.' }}
+                onDismiss={noop}
+              />
+            </Slot>
           </div>
         </Section>
 
