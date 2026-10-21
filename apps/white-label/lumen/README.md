@@ -384,8 +384,8 @@ writes on each session (below). No Kortix API has a Lumen concept in it.
   `src/server/proxy-policy.ts`): the session record and snapshot lose `owner_name`,
   `owner_email`, `owner_avatar_url` and the initiator label, and `message-authors` loses its
   member entries.
-- Git history names Lumen as every author and committer (`scrubGit`). A failed turn's error copy
-  names Lumen (`scrubTurn`). The slash-command list leaves out the platform's own commands and
+- The project repository (files, branches, commits, history, diffs) is refused (Credential
+  flow 5). A failed turn's error copy names Lumen (`scrubTurn`). The slash-command list leaves out the platform's own commands and
   names Lumen in the rest; so does the snapshot's runtime state (`scrubWord`) and the project
   record (`scrubPlatform`). The live event stream is not rewritten: a turn that fails while the page is open
   can show the platform's error copy until the next reload.
