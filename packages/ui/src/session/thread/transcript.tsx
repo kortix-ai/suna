@@ -296,7 +296,7 @@ const STATUS_STALL_AFTER_MS = 20_000;
  *
  * The abort's `AbortReason` is deliberately NOT read: every abort — a user
  * Stop, an untagged wire `MessageAbortedError`, a `'runtime-disposed'`
- * respawn — renders nothing, so the reason changes no outcome.
+ * respawn — gets the same quiet stopped marker, not an error banner.
  */
 export function deriveTurnErrorAbortState(
   turn: Pick<SessionLogTurn, 'user' | 'assistant'>,
@@ -1784,7 +1784,8 @@ export function TurnAssistantBlock(
     tHardcodedUi: ReturnType<typeof useTranslations>;
   },
 ) {
-  const { model, answered, userContent, tHardcodedUi } = props;
+  const { turn, model, answered, userContent, tHardcodedUi } = props;
+  const stopped = deriveTurnErrorAbortState(turn).isAbort;
   const { working, hasSteps, hasReasoning, response } = model;
   const { shouldUseInlineContent, inlineContentParts } = answered;
   return (
@@ -1794,7 +1795,7 @@ export function TurnAssistantBlock(
         every turn in the DOM, so select-all across the transcript copied each
         answer twice. The visible markdown is already in the a11y tree. */}
     <div className="sr-only" aria-live="polite">
-      {!working && response ? tHardcodedUi.raw('i18nComplete.text7889d06f7235') : ''}
+      {!working && response && !stopped ? tHardcodedUi.raw('i18nComplete.text7889d06f7235') : ''}
     </div>
     {/* Inline content: text and answered questions rendered in natural order.
 			    Works both during streaming and after completion. */}
@@ -1933,13 +1934,14 @@ function TurnSettledResponse({
   );
 }
 
-/** A turn someone else stopped names them, quietly, in the activity lane. */
-function TurnStoppedBy({ name }: { name: string }) {
+/** A stopped turn names its author when known, otherwise it records the stop. */
+function TurnStoppedBy({ name }: { name?: string }) {
   const t = useTranslations('threads');
+  const tUi = useTranslations('hardcodedUi');
   return (
-    <div role="note" className="flex w-full items-center gap-3 text-left text-sm">
+    <div role="status" className="flex w-full items-center gap-3 text-left text-sm">
       <StopCircleIcon className="text-muted-foreground size-4 flex-none" />
-      <span className="text-muted-foreground min-w-0 wrap-anywhere">{t('stoppedBy', { name })}</span>
+      <span className="text-muted-foreground min-w-0 wrap-anywhere">{name ? t('stoppedBy', { name }) : tUi('i18nComplete.text1a4f630ac1b6')}</span>
     </div>
   );
 }
@@ -2006,8 +2008,8 @@ function TurnFooter(
     {turnErrorRow.text && !turnErrorRow.isAbort && !turn.autoRetry?.continued && !!turn.autoRetry?.retries && (
       <TurnAutoRetryNote count={turn.autoRetry.retries} />
     )}
-    {/* ── Who stopped it, when it was someone else: an own stop is not news ── */}
-    {!working && stoppedBy && <TurnStoppedBy name={stoppedBy} />}
+    {/* A stopped turn remains distinct from a completed answer, including an own stop. */}
+    {!working && !turn.autoRetry?.continued && (stoppedBy || errors.turnErrorIsAbort) && <TurnStoppedBy name={stoppedBy ?? undefined} />}
     {/* ── Outcomes — what this turn left behind ──
         Always visible, unlike the hover-revealed action bar below. A hidden
         record of a change request is a trust bug: the point of

@@ -159,6 +159,21 @@ async function visible<T extends InboxRowForFilter>(
 }
 
 /**
+ * The kinds that cannot reach `userId` now, so a settings screen hides their
+ * rows. `message` comes only from a room, so it is hidden unless the person is
+ * a member of a room in a project whose `agent_rooms` flag is on.
+ */
+export async function hiddenNotificationKinds(userId: string): Promise<NotificationKindName[]> {
+  const memberships = await db
+    .select({ metadata: projects.metadata })
+    .from(roomMembers)
+    .innerJoin(rooms, eq(rooms.roomId, roomMembers.roomId))
+    .innerJoin(projects, eq(projects.projectId, rooms.projectId))
+    .where(eq(roomMembers.userId, userId));
+  return memberships.some((row) => resolveFeatureFlag(row.metadata, 'agent_rooms')) ? [] : ['message'];
+}
+
+/**
  * The rooms among `rows` whose messages `userId` may still read: a person member, with
  * project.room.read, in a project whose `agent_rooms` flag is on (off, its room rows vanish).
  */

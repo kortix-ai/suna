@@ -39,7 +39,7 @@ test('an explicit project is not called the default', async () => {
   const result = await run(['--project', 'explicit-project']);
   expect(result.code).toBe(1);
   expect(result.stderr).not.toContain('Default project');
-  expect(result.stderr).toContain('Not found');
+  expect(result.stderr).toContain('Project "explicit-project" was not found');
 });
 
 test('other errors retain their meaning', async () => {

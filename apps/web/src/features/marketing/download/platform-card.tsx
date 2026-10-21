@@ -49,7 +49,7 @@ export function PlatformCard({
 }: {
   image: React.ReactNode;
   title: string;
-  description: string;
+  description: React.ReactNode;
   rows: CardRow[];
   filled: Platform | null;
   /** A row-shaped block above the platform rows, e.g. the mobile QR code. */

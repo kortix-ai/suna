@@ -36,6 +36,7 @@ Read the active account's plan, credits and spend. Read-only: plan changes,
 top-ups and payment methods are dashboard flows.
 Credit balances and transaction amounts use 100 credits per USD, including --json.
 Prices, fields named *_usd, and costs JSON/CSV remain in USD.
+JSON credit objects include a units map for their monetary fields.
 
 Subcommands:
   status                            Plan, credits, subscription. --json.
@@ -174,9 +175,13 @@ interface AccountStateView {
     billing_period?: string | null;
     cancel_at_period_end?: boolean;
     current_period_end?: number | null;
+    scheduled_change?: {
+      current_tier?: { name?: string; display_name?: string; monthly_credits?: number; monthly_usd?: number };
+      target_tier?: { name?: string; display_name?: string; monthly_credits?: number; monthly_usd?: number };
+    } | null;
     has_scheduled_change?: boolean;
   };
-  tier?: { name?: string; display_name?: string };
+  tier?: { name?: string; display_name?: string; monthly_credits?: number };
   can_manage_billing?: boolean;
   auto_topup?: { enabled?: boolean; threshold?: number; amount?: number };
   usage_this_period?: { compute_usd?: number; llm_usd?: number; total_usd?: number } | null;
@@ -191,7 +196,10 @@ function creditAmounts<T extends object>(data: T, keys: readonly (keyof T)[]): T
       Object.assign(result, { [key]: value * CREDITS_PER_DOLLAR });
     }
   }
-  return result;
+  return {
+    ...result,
+    units: Object.fromEntries(keys.map((key) => [key, 'credits'])),
+  };
 }
 
 function row(label: string, value: string): string {
@@ -213,6 +221,29 @@ async function statusCommand(ctx: AccountContext, f: Flags): Promise<number> {
   if (f.json) {
     emitJson({
       ...state,
+      ...(state.tier && {
+        tier: { ...state.tier, units: { monthly_credits: 'USD' } },
+      }),
+      ...(state.subscription?.scheduled_change && {
+        subscription: {
+          ...state.subscription,
+          scheduled_change: {
+            ...state.subscription.scheduled_change,
+            ...(state.subscription.scheduled_change.current_tier && {
+              current_tier: {
+                ...state.subscription.scheduled_change.current_tier,
+                units: { monthly_credits: 'credits', monthly_usd: 'USD' },
+              },
+            }),
+            ...(state.subscription.scheduled_change.target_tier && {
+              target_tier: {
+                ...state.subscription.scheduled_change.target_tier,
+                units: { monthly_credits: 'credits', monthly_usd: 'USD' },
+              },
+            }),
+          },
+        },
+      }),
       ...(state.credits && {
         credits: creditAmounts(state.credits, [
           'total',
@@ -224,7 +255,12 @@ async function statusCommand(ctx: AccountContext, f: Flags): Promise<number> {
           'lifetime_used',
         ]),
       }),
-      ...(state.auto_topup && { auto_topup: creditAmounts(state.auto_topup, ['threshold']) }),
+      ...(state.auto_topup && {
+        auto_topup: {
+          ...creditAmounts(state.auto_topup, ['threshold']),
+          units: { threshold: 'credits', amount: 'USD' },
+        },
+      }),
     });
     return 0;
   }

@@ -216,11 +216,12 @@ describe('accounts route uuid params (KRTX-211)', () => {
 
   test('a valid uuid still flows through to the detail route', async () => {
     const res = await createApp().request(`/v1/accounts/${ACCOUNT_ID}`);
-    // Whatever the handler's own verdict is on an absent account (404 here),
-    // the point is that validation did not reject a well-formed uuid and no
-    // cast error surfaced as 400/500.
+    // Whatever the handler's own verdict is (403 here: the caller is no member,
+    // KRTX-2402), the point is that validation did not reject a well-formed uuid
+    // and no cast error surfaced as 400/500. The handler's first read is the
+    // membership check (KRTX-2402 moved it before the account row read).
     expect([400, 500]).not.toContain(res.status);
-    expect(dbReads.length).toBeGreaterThan(0);
+    expect(readModelCalls).toBeGreaterThan(0);
   });
 
   test('the `?account_id=` resolver guard answers the clean 403 (tokens route)', async () => {

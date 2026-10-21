@@ -53,6 +53,10 @@ export interface ApprovalCardInput {
   risk: string | null;
   argsPreview: Record<string, unknown> | null;
   approvalContext: string | null;
+  /** Content Kortix read from the provider (approval-enrichers.ts), redacted. */
+  resolvedPreview?: Record<string, unknown> | null;
+  /** Set when that read failed: the approver relies on the description. */
+  resolvedError?: string | null;
   approvalUrl: string | null;
   /** False when the call recorded nothing to review — Approve is not offered. */
   approvable: boolean;
@@ -126,6 +130,21 @@ export function buildApprovalCardBlocks(card: ApprovalCardInput, names?: Readonl
       },
     });
   }
+  if (card.resolvedPreview && Object.keys(card.resolvedPreview).length > 0) {
+    const connector = card.actionPath.split('.')[0] ?? card.actionPath;
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Loaded from ${escapeMrkdwn(connector)}*\n${parameterLines(card.resolvedPreview, names)}`,
+      },
+    });
+  } else if (card.resolvedError) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: ":warning: Couldn't load the draft. Review the agent's description carefully." }],
+    });
+  }
   blocks.push({
     type: 'section',
     text: { type: 'mrkdwn', text: `*Parameters the connector will receive*\n${parameterLines(card.argsPreview, names)}` },
@@ -183,21 +202,17 @@ export function buildApprovalCardBlocks(card: ApprovalCardInput, names?: Readonl
 /** What replaces the buttons once anyone decided — here, in Kortix, or on the link page. */
 export function buildApprovalOutcomeBlocks(outcome: {
   actionPath: string;
-  decision: ApprovalDecision;
+  decision: ApprovalDecision | 'expired';
   decidedBy: string;
   note: string;
   approvalContext: string | null;
 }): unknown[] {
-  const verb = outcome.decision === 'approve' ? ':white_check_mark: *Approved*' : ':no_entry: *Denied*';
-  const blocks: unknown[] = [
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `${verb} \`${escapeMrkdwn(outcome.actionPath)}\` — by ${outcome.decidedBy}`,
-      },
-    },
-  ];
+  const action = `\`${escapeMrkdwn(outcome.actionPath)}\``;
+  const text =
+    outcome.decision === 'expired'
+      ? `:hourglass: *Expired* ${action} — This approval expired.`
+      : `${outcome.decision === 'approve' ? ':white_check_mark: *Approved*' : ':no_entry: *Denied*'} ${action} — by ${outcome.decidedBy}`;
+  const blocks: unknown[] = [{ type: 'section', text: { type: 'mrkdwn', text } }];
   if (outcome.approvalContext) {
     blocks.push({
       type: 'context',

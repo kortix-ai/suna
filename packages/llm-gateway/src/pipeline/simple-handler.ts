@@ -468,7 +468,7 @@ export async function handleChatCompletions(
       if (!candidates.length) continue;
       logger.warn(`[gateway] ${id}: ${routeModel} is unavailable (${resolution.code}); the project's chain starts at ${model}`);
       const resting = resolution.code === 'provider_pool_rate_limited';
-      const holdSeconds = Math.min(resting ? (resolution.retryAfterSeconds ?? MAX_HOLD_SECONDS) : SETUP_HOLD_SECONDS, MAX_HOLD_SECONDS);
+      const holdSeconds = Math.min(resting ? (resolution.restSeconds ?? resolution.retryAfterSeconds ?? MAX_HOLD_SECONDS) : SETUP_HOLD_SECONDS, MAX_HOLD_SECONDS);
       const failure: GatewayAttemptFailure = {
         attempt: 1,
         provider: routeModel.split('/')[0] || routeModel,

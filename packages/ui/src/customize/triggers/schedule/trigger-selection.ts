@@ -5,32 +5,7 @@
  * (concurrency 1) to avoid commit conflicts.
  */
 
-/** Toggle one slug. */
-export function toggleSlug(selected: ReadonlySet<string>, slug: string): Set<string> {
-  const next = new Set(selected);
-  if (next.has(slug)) next.delete(slug);
-  else next.add(slug);
-  return next;
-}
-
-/**
- * Shift-click: add every slug between the anchor and the target, both
- * included, in list order. Without an anchor in the list it toggles the target.
- */
-export function selectRange(
-  selected: ReadonlySet<string>,
-  ordered: readonly string[],
-  anchor: string | null,
-  target: string,
-): Set<string> {
-  const from = anchor ? ordered.indexOf(anchor) : -1;
-  const to = ordered.indexOf(target);
-  if (from < 0 || to < 0) return toggleSlug(selected, target);
-  const [lo, hi] = from < to ? [from, to] : [to, from];
-  const next = new Set(selected);
-  for (const slug of ordered.slice(lo, hi + 1)) next.add(slug);
-  return next;
-}
+export { selectRange, toggleId as toggleSlug } from '../../../internal/selection/selection';
 
 /** Select all: every trigger the current filter and search show. */
 export function selectAllShown(shown: readonly { slug: string }[]): Set<string> {

@@ -19,6 +19,7 @@ import { connectLinkEligibility } from '../../connectors/db-deps';
 import { pipedreamConfigured } from '../../connectors/pipedream';
 import { composioConfigured } from '../../connectors/composio';
 import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
+import { mintSecretLink } from '../../setup-links/mint-secret-link';
 import { isValidSecretName } from '../secrets';
 import { sessionWithheldSecrets, withheldSecretsFix } from '../lib/session-secret-reach';
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
@@ -116,7 +117,7 @@ export function registerSetupLinksRoutes(): void {
       // Runtime delivery remains available only through an explicit opt-in.
       const scope = requestedScope === 'runtime' ? 'runtime' : 'connector';
       const sessionId = (c.get('sessionId') as string | undefined) ?? null;
-      const { token, expiresAt } = mintSetupLink(
+      const { token, expiresAt } = await mintSecretLink(
         projectId,
         { kind: 'secret', fields, scope, uid: loaded.userId, sid: sessionId },
         { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },

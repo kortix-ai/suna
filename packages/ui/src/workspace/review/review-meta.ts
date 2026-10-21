@@ -103,6 +103,7 @@ export const STATUS_META: Record<ReviewStatus, { label: string; badge: BadgeVari
   rejected: { label: 'Rejected', badge: 'destructive' },
   done: { label: 'Done', badge: 'success' },
   dismissed: { label: 'Dismissed', badge: 'muted' },
+  expired: { label: 'Expired', badge: 'muted' },
 };
 
 export const SOURCE_META: Record<ReviewSource, { label: string; icon: IconCmp }> = {

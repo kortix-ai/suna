@@ -75,8 +75,36 @@ function isPublicDocsUpToDate() {
  */
 export function buildBlumeDocs() {
   if (isPublicDocsUpToDate()) return;
-  execFileSync('npx', ['blume', 'build'], { cwd: WEB_ROOT, stdio: 'inherit' });
-  fs.rmSync(PUBLIC_DOCS, { recursive: true, force: true });
-  fs.mkdirSync(PUBLIC_DOCS, { recursive: true });
-  fs.cpSync(DIST, PUBLIC_DOCS, { recursive: true });
+  // Two processes that both see stale output (parallel test files, `next build`
+  // workers) would run `blume build` into one dist/ at once and break each
+  // other's chunks. mkdir is atomic: one process builds, the others wait and
+  // then find the output fresh.
+  const lock = path.join(WEB_ROOT, '.blume-build.lock');
+  const deadline = Date.now() + BUILD_LOCK_WAIT_MS;
+  while (true) {
+    try {
+      fs.mkdirSync(lock);
+      break;
+    } catch (err) {
+      if (err?.code !== 'EEXIST') throw err;
+      // ponytail: a lock older than the wait budget belongs to a dead process.
+      if (Date.now() - fs.statSync(lock, { throwIfNoEntry: false })?.mtimeMs > BUILD_LOCK_WAIT_MS) {
+        fs.rmSync(lock, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() > deadline) throw new Error(`blume docs build lock held longer than ${BUILD_LOCK_WAIT_MS} ms: ${lock}`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+    }
+  }
+  try {
+    if (isPublicDocsUpToDate()) return;
+    execFileSync('npx', ['blume', 'build'], { cwd: WEB_ROOT, stdio: 'inherit' });
+    fs.rmSync(PUBLIC_DOCS, { recursive: true, force: true });
+    fs.mkdirSync(PUBLIC_DOCS, { recursive: true });
+    fs.cpSync(DIST, PUBLIC_DOCS, { recursive: true });
+  } finally {
+    fs.rmSync(lock, { recursive: true, force: true });
+  }
 }
+
+const BUILD_LOCK_WAIT_MS = 180_000;

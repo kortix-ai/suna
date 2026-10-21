@@ -475,7 +475,7 @@ export function registerProjectAuditRoutes(): void {
           source: z.string().optional(),
           credential_kind: z.string().optional(),
           phase: z.string().optional(),
-          outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
+          outcome: z.enum(['success', 'failure', 'denied', 'pending', 'expired']).optional(),
           request_id: z.string().optional(),
           correlation_id: z.string().optional(),
           resource_type: z.string().optional(),

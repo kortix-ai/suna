@@ -123,3 +123,13 @@ describe("the viewer's own broken override (KRTX-1719)", () => {
     expect(deleted).toBe(1);
   });
 });
+
+test('secret audit rows retain agent grants independently of people sharing', () => {
+  const [row] = buildRows([{
+    identifier: 'AUDIT_KEY', name: 'AUDIT_KEY', project_id: 'p1', secret_id: 's1',
+    created_by: null, created_at: null, updated_at: null, configured: true,
+    mine: null, effective_source: 'shared', can_manage_shared: true,
+    agents: ['audit-agent'],
+  }]);
+  expect(row).toMatchObject({ agents: ['audit-agent'], sharedWith: [], usable: true });
+});

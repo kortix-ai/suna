@@ -1,5 +1,6 @@
 import { AppleMark, LinuxMark, PlayStoreMark, WindowsMark } from '@/components/brand/brand-logos';
 import { useTranslations } from '@/i18n/use-translations';
+import Link from '@/components/site-link';
 
 import { DesktopCardImage, MobileCardImage } from './card-images';
 import { localizedDownloadContent } from './content';
@@ -41,6 +42,7 @@ export function DownloadOptions({
   sizes?: Partial<Record<DesktopOs, string>>;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tComputers = useTranslations('computers');
   const { desktopCard, mobileCard, desktopRows, mobileRows } =
     localizedDownloadContent(tI18nComplete);
   const onPhone = isMobilePlatform(detected);
@@ -51,7 +53,17 @@ export function DownloadOptions({
         <PlatformCard
           image={<DesktopCardImage />}
           title={desktopCard.title}
-          description={desktopCard.description}
+          description={
+            <>
+              {desktopCard.description}{' '}
+              <Link
+                href="/settings/computer"
+                className="text-foreground underline underline-offset-4"
+              >
+                {tComputers('connectYourComputer')}
+              </Link>
+            </>
+          }
           rows={DESKTOP_ORDER.map((os) => ({
             id: os,
             label: desktopRows[os].label,

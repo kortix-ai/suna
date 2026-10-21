@@ -83,6 +83,21 @@ test('a resting ChatGPT pool is resolved once per hold, not on every request of 
   expect(gw.resolved).toEqual(['primary', 'fallback']);
 });
 
+test('a usage limit with no retry hint is held for its reset, not the 600 s cap', async () => {
+  const gw = gateway({
+    policyId: 'project:default',
+    primary: () => {
+      throw new GatewayResolutionError('provider_pool_rate_limited', 'Resting.', 'Wait.', undefined, 180);
+    },
+    respond: ok,
+  });
+  expect((await gw.send()).trace.attemptFailures?.[0]).toMatchObject({ stage: 'resolve', holdSeconds: 180 });
+  gw.advance(181);
+  gw.reset();
+  await gw.send();
+  expect(gw.resolved).toEqual(['primary', 'fallback']);
+});
+
 test('a busy managed model is skipped for the hold after a fallback answered', async () => {
   const gw = gateway({
     policyId: 'platform-default-resilience',
