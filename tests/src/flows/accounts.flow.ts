@@ -135,7 +135,7 @@ flow('TOK-2', { domain: 'accounts', routes: ['POST /v1/accounts/tokens'] }, asyn
   });
 });
 
-flow('ACCT-4', { domain: 'accounts', routes: ['PATCH /v1/accounts/:accountId'] }, async (ctx) => {
+flow('ACCT-4', { domain: 'accounts', routes: ['PATCH /v1/accounts/:accountId', 'POST /v1/accounts', 'GET /v1/accounts'] }, async (ctx) => {
   const team = await ctx.fixtures.team();
   await ctx.step('OWNER renames account → 200 with the new name', async () => {
     const name = ctx.fixtures.name('renamed');
@@ -143,6 +143,16 @@ flow('ACCT-4', { domain: 'accounts', routes: ['PATCH /v1/accounts/:accountId'] }
       .as(ctx.P.OWNER)
       .patch('/v1/accounts/:accountId', { name }, { params: { accountId: team.id } });
     r.status(200).body().has('$.name', name);
+  });
+  await ctx.step('a name with markup or a control character → 400 on rename and on create; the name is unchanged', async () => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    for (const name of ['<h1>PenTest</h1>', 'a>b', 'line\nbreak']) {
+      (await owner.patch('/v1/accounts/:accountId', { name }, { params: { accountId: team.id } })).status(400);
+      (await owner.post('/v1/accounts', { name })).status([400, 403]);
+    }
+    const accounts = (await owner.get('/v1/accounts')).status(200).json<Array<{ account_id: string; name: string }>>();
+    const current = accounts.find((a) => a.account_id === team.id)?.name ?? '';
+    if (/[<>\n]/.test(current)) throw new Error(`the account name changed to ${JSON.stringify(current)}`);
   });
   await ctx.step('MEMBER cannot rename → 403', async () => {
     const member = await team.addMember('member');

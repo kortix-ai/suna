@@ -1,6 +1,6 @@
 ---
 name: compliance
-description: "Customer-facing compliance duties that code runs: the subprocessor list and its automatic 30-day DPA notice, and the audit evidence it leaves. Load WHENEVER you add, remove or change a subprocessor (a new model provider, host, email or analytics vendor), route customer data to a new third party, touch apps/web/.../legal/subprocessors, packages/shared/src/subprocessors.ts or apps/api/src/billing/services/subprocessor-notices.ts, or need proof for an auditor that customers were notified. Load too for staff access to a customer account: act-as impersonation, 'Open as admin', and its audit trail."
+description: "Customer-facing compliance duties that code runs: the subprocessor list and its automatic 30-day DPA notice, and the audit evidence it leaves. Load WHENEVER you add, remove or change a subprocessor (a new model provider, host, email or analytics vendor), route customer data to a new third party, touch apps/web/.../legal/subprocessors, packages/shared/src/subprocessors.ts or apps/api/src/billing/services/subprocessor-notices.ts, or need proof for an auditor that customers were notified. Load too for staff access to a customer account: act-as impersonation, 'Open as admin', and its audit trail; and for a penetration test report: the status of each finding and the risks Kortix accepts."
 ---
 
 # Compliance
@@ -96,3 +96,22 @@ order by created_at desc;
 ```
 
 Contract: flows `IMP-1` and `IMP-2` (`pnpm test -- --id IMP-2`).
+
+## Penetration test findings
+
+The register of third-party pentest findings. One row per finding, with its
+status and the evidence. An accepted risk names the reason and the control
+that limits it. The report itself stays out of the repository: it holds
+tokens and account ids.
+
+### Web app pentest, July 2026 (scope: dev.kortix.com, dev-api.kortix.com)
+
+| # | Finding | Status | Evidence |
+|---|---|---|---|
+| 1 | BOLA: `GET /v1/billing/account-state` returned the billing state on membership alone (Medium, CVSS 5.3) | Fixed 2026-10-21 | The route returns the money fields only when `authorize` grants `billing.read`. Every other caller gets the gating view (`can_run`, plan, entitlements). Flow `BILL-21`. Since 2026-08-19 every built-in account role holds `billing.read`, so a plain member reading the state is intended. |
+| 2 | Account name accepts HTML (Informational) | Fixed 2026-10-21 | `accountNameError` refuses `<`, `>` and control characters on create and rename. Every email template escapes the name (`escapeHtml`). Flow `ACCT-4`. |
+| 3 | JWTs signed with HS256 (Informational) | Fixed on dev and staging; prod to confirm | Dev and staging GoTrue sign ES256 (checked 2026-10-21 by decoding a fresh token's header). The API verifies asymmetric tokens against JWKS (`apps/api/src/shared/jwt-verify.ts`). Prod: confirm the current key in the Supabase dashboard (Settings → JWT Keys), then revoke the legacy secret and drop `SUPABASE_JWT_SECRET`. |
+| 4 | Concurrent logins allowed (Informational) | Accepted | Users run the web app, desktop, CLI and mobile at once; a one-session rule breaks that. Controls: account MFA enforcement, SSO enforcement, admins list and revoke any member session (`GET /v1/accounts/:accountId/iam/sessions`, `POST …/iam/sessions/:sessionId/revoke`). |
+| 5 | Session cookie without `Secure` (Informational) | Fixed | `apps/web/src/lib/supabase/client.ts` and `server.ts` set `Secure` on HTTPS. HSTS is on at the edge. |
+| 6 | Session cookie without `HttpOnly` (Informational) | Accepted | The Supabase browser client reads the session from JavaScript (`client.ts` comment). Controls: React output encoding, server-side input validation (#2), `SameSite=Lax`, short-lived access tokens. Removing it means a server-only session, a separate project. |
+
