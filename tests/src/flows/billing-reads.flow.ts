@@ -12,6 +12,7 @@
  * apps/api/src/billing/routes/.
  */
 import { flow } from "../core/flow";
+import { withDb } from "../fixtures/chat";
 
 // OWNER reads succeed (200) on a billing-enabled deployment; 404 when the
 // billing internal gate is disabled (self-hosted / local).
@@ -168,3 +169,38 @@ flow(
   },
 );
 
+// BILL-15 — a team's balance is read through account_id (KRTX-2989). The two
+// credit routes used the caller's personal account, so a team member saw their
+// own zero balance as the team's, and a non-member could not be refused.
+flow(
+  "BILL-15",
+  {
+    domain: "billing",
+    requires: ["database"],
+    routes: ["GET /v1/billing/credit-breakdown", "GET /v1/billing/usage-history"],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember("member");
+    await ctx.step("the team account holds a known balance", async () => {
+      await withDb(ctx, (db) =>
+        db.query(
+          `INSERT INTO kortix.credit_accounts (account_id, balance_precise) VALUES ($1, 12.5)
+           ON CONFLICT (account_id) DO UPDATE SET balance_precise = 12.5`,
+          [team.id],
+        ),
+      );
+    });
+    await ctx.step("a team member reads the team's balance with account_id → 200, total 12.5", async () => {
+      (await ctx.client.as(member).get("/v1/billing/credit-breakdown", { query: { account_id: team.id } }))
+        .status(200)
+        .body()
+        .has("$.total", 12.5);
+    });
+    await ctx.step("a non-member naming the team → 403 on both routes", async () => {
+      for (const path of ["/v1/billing/credit-breakdown", "/v1/billing/usage-history"]) {
+        (await ctx.client.as(ctx.P.NONMEMBER).get(path, { query: { account_id: team.id } })).status(403);
+      }
+    });
+  },
+);
