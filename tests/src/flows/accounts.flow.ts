@@ -10,6 +10,7 @@ import type { Principal } from '../core/types';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { waitFor } from '../core/poll';
 import { adminCreateUser, adminDeleteUser, passwordGrant } from '../fixtures/supabase';
+import { withDb } from '../fixtures/chat';
 
 flow(
   'ME-1',
@@ -949,7 +950,8 @@ flow(
 // the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
 // own personal account (never OWNER/team accounts other flows depend on).
 // Immediate self-deletion removes the auth identity, invalidates its token and
-// removes the account row itself: the account answers 404 to a nonmember.
+// removes the account row itself. A nonmember gets the same 403 as for any
+// foreign or nonexistent account (KRTX-2402); the row check needs `database`.
 flow(
   'DEL-4',
   {
@@ -1001,12 +1003,16 @@ flow(
       (await asVictim.get('/v1/accounts/me')).status(401);
       (await asVictim.get('/v1/account/deletion-status')).status(401);
     });
-    await ctx.step('the deleted account is gone for a nonmember → 404', async () => {
-      (
-        await ctx.client
-          .as(ctx.P.OWNER)
-          .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } })
-      ).status(404);
+    await ctx.step('the deleted account answers a nonmember like any foreign account → 403, and its row is gone', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } });
+      r.status(403).body().has('$', { error: 'Forbidden' });
+      if (!ctx.env.capabilities.database) return;
+      const left = await withDb(ctx, (db) =>
+        db.query('SELECT 1 FROM kortix.accounts WHERE account_id = $1', [victimAccountId]),
+      );
+      if (left.rowCount !== 0) throw new Error(`the deleted account row still exists: ${victimAccountId}`);
     });
     await ctx.step('repeated deletion cannot restore old-token access → 401', async () => {
       (await asVictim.del('/v1/account/delete-immediately')).status(401);
