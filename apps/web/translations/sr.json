@@ -3061,7 +3061,7 @@
       "automation_recovered": "Окидач или подсетник који није успевао поново ради.",
       "capture_device_down": "Kortix Capture рачунар не снима. Шаље се људима који управљају Capture-ом.",
       "capture_device_recovered": "Kortix Capture рачунар који је стао поново снима.",
-      "message": "Neko vam piše u razgovoru ili u sobi kojoj ste se pridružili."
+      "message": "Neko vas pomene sa @ ili odgovori u niti u kojoj ste pisali, u sobi."
     },
     "bell": {
       "label": "Обавештења",

@@ -1,6 +1,6 @@
 {
   "id": "f04c1b5b-14fc-4d4a-8de2-ab00b262a836",
-  "prevId": "9e3af71f-6ca6-4a0e-bdca-4700e40c1941",
+  "prevId": "dc251bf6-99a6-4401-9a41-918beb4150c0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -28406,7 +28406,8 @@
         "ok",
         "error",
         "denied",
-        "pending_approval"
+        "pending_approval",
+        "expired"
       ]
     },
     "kortix.connector_connection_owner_type": {

@@ -26,7 +26,7 @@ import { TranscriptTurnRow } from '../index';
  */
 const FAILED = { name: 'APIError', data: { message: 'Model host exploded', statusCode: 503, isRetryable: false } };
 
-function rowsFor(shape: 'chain-ok' | 'chain-ends-in-failure' | 'plain' | 'single-failure') {
+function rowsFor(shape: 'chain-ok' | 'chain-ends-in-failure' | 'plain' | 'single-failure' | 'stopped'): Parameters<typeof sessionLogOfV1Rows>[2] {
   if (shape === 'chain-ok') {
     return [
       { info: { id: 'u1', role: 'user', time: { created: 1 } }, parts: [{ id: 't1', type: 'text', text: 'run the deploy' }] },
@@ -45,6 +45,12 @@ function rowsFor(shape: 'chain-ok' | 'chain-ends-in-failure' | 'plain' | 'single
       { info: { id: 'a2', role: 'assistant', parentID: 'u2', time: { created: 5, completed: 6 }, error: FAILED }, parts: [] },
     ] as never[];
   }
+  if (shape === 'stopped') {
+    return [
+      { info: { id: 'u1', sessionID: 'rs', role: 'user', agent: 'build', model: { providerID: 'test', modelID: 'test' }, time: { created: 1 } }, parts: [{ id: 't1', sessionID: 'rs', messageID: 'u1', type: 'text', text: 'count slowly' }] },
+      { info: { id: 'a1', sessionID: 'rs', role: 'assistant', agent: 'build', modelID: 'test', providerID: 'test', mode: 'build', path: { cwd: '/', root: '/' }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, parentID: 'u1', time: { created: 2, completed: 3 }, error: { name: 'MessageAbortedError', data: { message: 'Aborted' } } }, parts: [{ id: 'r1', sessionID: 'rs', messageID: 'a1', type: 'text', text: '1, 2' }] },
+    ];
+  }
   if (shape === 'single-failure') {
     return [
       { info: { id: 'u1', role: 'user', time: { created: 1 } }, parts: [{ id: 't1', type: 'text', text: 'run the deploy' }] },
@@ -58,7 +64,7 @@ function rowsFor(shape: 'chain-ok' | 'chain-ends-in-failure' | 'plain' | 'single
 }
 
 const flows: Record<string, SessionLogTurn[]> = Object.fromEntries(
-  (['chain-ok', 'chain-ends-in-failure', 'plain', 'single-failure'] as const).map((shape) => [
+  (['chain-ok', 'chain-ends-in-failure', 'plain', 'single-failure', 'stopped'] as const).map((shape) => [
     shape,
     sessionLogTurns(sessionLogOfV1Rows('p', 'rs', rowsFor(shape)).threads[0]!),
   ]),
@@ -152,4 +158,11 @@ describe('an automatic provider-error recovery chain renders as one story (KRTX-
     expect(html).toContain('Model host exploded');
     expect(html).not.toContain('data-auto-retry-note');
   });
+});
+
+test('a stopped turn keeps partial text and announces Stopped, never Response complete', () => {
+  const html = renderRow(turnOf('stopped', 'u1'));
+  expect(html).toContain('1, 2');
+  expect(html).toContain('Stopped');
+  expect(html).not.toContain('Response complete');
 });

@@ -3061,7 +3061,7 @@
       "automation_recovered": "Um trigger ou lembrete que falhava volta a funcionar.",
       "capture_device_down": "Um computador do Kortix Capture não está gravando. Enviado a quem gerencia o Capture.",
       "capture_device_recovered": "Um computador do Kortix Capture que parou voltou a gravar.",
-      "message": "Alguém escreve para você em uma conversa ou em uma sala em que você entrou."
+      "message": "Alguém menciona você com @, ou responde em um tópico em que você escreveu, em uma sala."
     },
     "bell": {
       "label": "Notificações",

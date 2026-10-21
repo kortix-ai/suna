@@ -52,7 +52,7 @@ import { isAwsRegion } from './aws-region';
 const BEDROCK_REGION_ENV_VAR = 'AWS_REGION';
 
 const PLAN_UPGRADE_SUGGESTION =
-  'Upgrade your plan to use this model, or choose a model available on your current plan.';
+  'Your plan includes no Kortix-managed models. Upgrade to Credits, or connect your own provider key or ChatGPT account. List connected models with /v1/llm/v1/models?scope=picker in your project.';
 
 /**
  * The same block, for a plan that is PAID but simply does not include managed
@@ -101,7 +101,8 @@ function codexGrantAllowed(principal: AuthedPrincipal) {
  */
 function chatGptAccountsResting(subject: string, retryAfterSeconds: number | undefined, suggestion: string) {
   if (retryAfterSeconds === undefined || retryAfterSeconds <= 60) {
-    return new GatewayResolutionError('provider_pool_rate_limited', `${subject} are cooling down.`, suggestion, retryAfterSeconds);
+    return new GatewayResolutionError('provider_pool_rate_limited', `${subject} are cooling down.`, suggestion,
+      retryAfterSeconds, retryAfterSeconds);
   }
   const hours = retryAfterSeconds / 3600;
   // Rounded: a floor read 4 days less a few seconds as "3 days".
@@ -110,7 +111,7 @@ function chatGptAccountsResting(subject: string, retryAfterSeconds: number | und
     : `${Math.ceil(retryAfterSeconds / 60)} minutes`;
   return new GatewayResolutionError('provider_pool_rate_limited',
     `${subject} reached their usage limit. The first resets in ${wait}.`,
-    'Choose another model, or connect another ChatGPT account.');
+    'Choose another model, or connect another ChatGPT account.', undefined, retryAfterSeconds);
 }
 
 function codexGrantRefusal() {
@@ -238,6 +239,15 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
     const personal = await resolveDefaultCodexAccountSecret(principal.accountId, principal.projectId, personalUserId);
     if (personal) {
       if (!codexGrantAllowed(principal)) throw codexGrantRefusal();
+      // Resting after a rate or usage limit: a shared account may serve,
+      // else the routed model is unavailable and the project's chain takes
+      // over, instead of every request being refused by ChatGPT again.
+      if (personal.restingSeconds) {
+        const shared = await codexSharedCandidates(context);
+        if (Array.isArray(shared)) return shared;
+        throw chatGptAccountsResting('Your ChatGPT connections', personal.restingSeconds,
+          'Retry after the cooldown, or connect another ChatGPT account.');
+      }
       try {
         const credential = await resolveCodexAccountCredential({
           projectId: principal.projectId, accountId: principal.accountId,
@@ -245,7 +255,9 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
           secretId: personal.secretId, value: personal.value, updatedAt: personal.updatedAt,
           probe: context.options?.probe,
         });
-        if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId, refreshableCredential: true }];
+        // `poolSecretId`: a 429 records this account's rest, which the next
+        // resolution reads (above).
+        if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId, poolSecretId: personal.secretId, refreshableCredential: true }];
       } catch (err) {
         if (!(err instanceof CodexRefreshError)) throw err;
       }

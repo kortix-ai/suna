@@ -245,6 +245,37 @@ flow(
       if (!/# Release Notes/.test(content)) throw new Error('the body must start with the skill title');
     });
 
+    for (const [index, body] of ['# Instructions\n\n  Keep indentation.\n', '', ' \n '].entries()) {
+      await ctx.step(`custom or blank body ${index} persists the expected Markdown`, async () => {
+        const name = `Body Sample ${index}`;
+        const created = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/skills',
+          { name, description: 'A body sample', body },
+          { params: { projectId: p.id } },
+        );
+        created.status(201);
+        const { path } = created.json<{ path: string }>();
+        const read = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/files/content', {
+          params: { projectId: p.id }, query: { path },
+        });
+        read.status(200);
+        const { content } = read.json<{ content: string }>();
+        const markdown = content.split('---\n\n').slice(1).join('---\n\n');
+        const expected = body.trim() ? body : `# ${name}\n\nA body sample\n\nDescribe when the agent should load this skill and what to do. Edit this file\nin the repo, or ask an agent in chat to extend it.\n`;
+        if (markdown !== expected) throw new Error('Skill body did not round-trip unchanged or use the starter template');
+      });
+    }
+
+    for (const body of [null, 42, {}]) {
+      await ctx.step('a non-string body is rejected', async () => {
+        const response = await ctx.client.as(ctx.P.OWNER).post(
+          '/v1/projects/:projectId/skills', { name: 'Invalid Body', body },
+          { params: { projectId: p.id } },
+        );
+        response.status(400);
+      });
+    }
+
     await ctx.step('the same slug again → 409', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

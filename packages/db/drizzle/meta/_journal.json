@@ -1230,8 +1230,15 @@
     {
       "idx": 175,
       "version": "7",
-      "when": 1792527604539,
-      "tag": "20261020202004_cli_device_grants",
+      "when": 1792544465606,
+      "tag": "20261021010105_connector_call_status_expired_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1792544750897,
+      "tag": "20261021010550_cli_device_grants",
       "breakpoints": true
     }
   ]

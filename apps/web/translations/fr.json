@@ -3061,7 +3061,7 @@
       "automation_recovered": "Un déclencheur ou un rappel en échec fonctionne de nouveau.",
       "capture_device_down": "Un ordinateur Kortix Capture n’enregistre pas. Envoyé aux personnes qui gèrent Capture.",
       "capture_device_recovered": "Un ordinateur Kortix Capture arrêté enregistre à nouveau.",
-      "message": "Quelqu’un vous écrit dans une conversation ou dans un salon que vous avez rejoint."
+      "message": "Quelqu’un vous mentionne avec @, ou répond dans un fil où vous avez écrit, dans un salon."
     },
     "bell": {
       "label": "Notifications",
