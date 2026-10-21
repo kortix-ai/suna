@@ -4,7 +4,6 @@ import {
   enrollmentUrl,
   expiryDate,
   installCommand,
-  msiCommand,
   parseDomains,
   parseLimit,
   personLabel,
@@ -41,12 +40,6 @@ describe('IT rollout model', () => {
       'https://github.com/kortix-ai/suna/releases/download/capture-dev-latest/KortixCapture-x64.msi',
     );
     expect(installCommand('windows', 'https://api.kortix.com', 'kortix_enr_x')).toBe(cmd);
-  });
-
-  test('the silent install names the URL and the token', () => {
-    expect(msiCommand('https://api.kortix.com', 'kortix_enr_x')).toBe(
-      'msiexec /i KortixCapture-x64.msi /qn KORTIX_URL=https://api.kortix.com ENROLLMENT_TOKEN=kortix_enr_x',
-    );
   });
 
   test('a computer limit is a whole number from 1, else no limit', () => {
