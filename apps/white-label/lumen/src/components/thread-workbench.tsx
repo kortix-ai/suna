@@ -12,7 +12,7 @@ import { useSession } from '@kortix/sdk/react';
 import { SessionThread } from '@kortix/ui/session';
 import { successToast } from '@kortix/ui/toast';
 import { useAction } from 'convex/react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /** One thread: the Kortix session behind it, streamed through Lumen's proxy. */
 export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId: string; sessionId: string; matterId: Id<'matters'> }) {
@@ -24,6 +24,8 @@ export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId:
   // One automatic restart when a connected runtime drops.
   useRuntimeRecovery(session);
   useOutputsToDocuments(matterId, session.isBusy);
+  // A cited passage the lawyer sends back into the conversation ("Cite" in the Source panel).
+  const [quote, setQuote] = useState<{ id: number; text: string } | null>(null);
 
   return (
     <>
@@ -49,8 +51,8 @@ export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId:
         // A lawyer sees the conversation and its sources: @kortix/ui's
         // SessionThread (the thread apps/web renders) over the one useSession
         // result. No repo views, no scope chips, no second chat hook.
-        <CitationLayer matterId={matterId}>
-          <SessionThread session={session} hideHeader className="flex-1" />
+        <CitationLayer matterId={matterId} onCite={(text) => setQuote((q) => ({ id: (q?.id ?? 0) + 1, text }))}>
+          <SessionThread session={session} hideHeader quote={quote} className="flex-1" />
         </CitationLayer>
       )}
     </>

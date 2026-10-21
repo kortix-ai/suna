@@ -38,16 +38,22 @@ export function Marked({ text, mark }: { text: string; mark?: string }) {
   );
 }
 
+/** The quote's first words: enough to find it on the page, short enough to stay inside one line break. */
+const firstWords = (quote: string) => quote.replace(/[“”"]/g, ' ').trim().split(/\s+/).slice(0, 7).join(' ');
+
 /** A Vault document on the right: the original (PDF / DOCX / text renderer) and the extracted, anchored text. */
 export function DocumentPanel({ documentId, focus, onClose }: { documentId: string; focus?: DocFocus; onClose?: () => void }) {
   const doc = useQuery(api.documents.detail, { documentId });
   const [tab, setTab] = useState(focus ? 'text' : 'preview');
   const source = useVaultFileSource(doc?._id ?? null, doc?.mime ?? 'application/octet-stream');
   const textRef = useRef<HTMLDivElement>(null);
+  // A PDF original can find and highlight the quoted words on its page; other originals cannot,
+  // so a quote in a DOCX or TXT opens on the Text tab, where its paragraph is marked.
+  const findInOriginal = doc?.mime === 'application/pdf' && focus?.mark ? firstWords(focus.mark) : undefined;
 
   // Re-focus only when the target changes, not on every parent render.
   const focusKey = focus ? `${focus.page ?? ''}|${focus.a ?? ''}|${focus.mark ?? ''}` : '';
-  useEffect(() => setTab(focusKey ? 'text' : 'preview'), [documentId, focusKey]);
+  useEffect(() => setTab(focusKey && !findInOriginal ? 'text' : 'preview'), [documentId, focusKey, findInOriginal]);
   useEffect(() => {
     if (tab !== 'text' || !doc || !focus) return;
     const root = textRef.current;
@@ -95,7 +101,15 @@ export function DocumentPanel({ documentId, focus, onClose }: { documentId: stri
           <>
             <TabsContent value="preview" className="min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
               <FileSourceProvider value={source}>
-                <FileContentRenderer key={source.id} filePath={doc.filename} readOnly showHeader={false} fitOnOpen className="h-full" />
+                <FileContentRenderer
+                  key={source.id}
+                  filePath={doc.filename}
+                  readOnly
+                  showHeader={false}
+                  fitOnOpen
+                  findText={findInOriginal}
+                  className="h-full"
+                />
               </FileSourceProvider>
             </TabsContent>
             <TabsContent value="text" className="min-h-0 flex-1 overflow-y-auto data-[state=inactive]:hidden">

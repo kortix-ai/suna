@@ -12,14 +12,23 @@ import { DocumentPanel } from '@/components/vault/document-panel';
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
 import { Button } from '@kortix/ui/button';
-import { XIcon } from '@phosphor-icons/react';
+import { QuotesIcon, XIcon } from '@phosphor-icons/react';
 import { useQuery } from 'convex/react';
 import { useEffect, useRef, useState } from 'react';
 import { type Cite, CITE_SELECTOR as SELECTOR, hasUnlinkedCitations, parseCite } from '@/lib/cite-link';
 
 const keyOf = (c: Cite) => `${c.d}|${c.a}|${c.q}`;
 
-export function CitationLayer({ matterId, children }: { matterId: Id<'matters'>; children: React.ReactNode }) {
+export function CitationLayer({
+  matterId,
+  onCite,
+  children,
+}: {
+  matterId: Id<'matters'>;
+  /** "Cite": the passage goes into the composer as a quote for the next question. */
+  onCite?: (text: string) => void;
+  children: React.ReactNode;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [cites, setCites] = useState<Cite[]>([]);
   const [unlinked, setUnlinked] = useState(false);
@@ -108,8 +117,18 @@ export function CitationLayer({ matterId, children }: { matterId: Id<'matters'>;
           data-testid="source-panel"
           className="fixed inset-0 z-40 flex flex-col bg-background lg:static lg:z-auto lg:w-[44%] lg:max-w-xl lg:shrink-0 lg:border-l lg:border-border"
         >
-          <div className="flex items-center justify-between px-4 pt-3">
-            <h2 className="text-sm font-medium">Source</h2>
+          <div className="flex items-center gap-2 px-4 pt-3">
+            <h2 className="flex-1 text-sm font-medium">Source</h2>
+            {onCite && shown && shown.status !== 'unverified' && (
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="cite-into-composer"
+                onClick={() => onCite(`“${shown.quote}” (${shown.filename}, p. ${shown.page})`)}
+              >
+                <QuotesIcon className="size-4" /> Cite
+              </Button>
+            )}
             <Button variant="ghost" size="icon-sm" aria-label="Close the source" onClick={() => setActive(null)}>
               <XIcon className="size-4" />
             </Button>

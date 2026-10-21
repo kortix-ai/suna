@@ -129,6 +129,9 @@ export type PDFViewerProps = {
   showUpload?: boolean;
   src?: string;
   toolbarActions?: React.ReactNode;
+  /** Search the document for this text once it opens: hits are highlighted and the
+   *  first is scrolled into view, as if typed into the toolbar's search. */
+  findText?: string;
   pageClassName?: (pageNumber: number) => string | undefined;
   renderPageOverlay?: (props: PDFViewerPageOverlayProps) => React.ReactNode;
   onActivePageChange?: (pageNumber: number) => void;
@@ -665,9 +668,12 @@ function PDFViewerPageNumberControl({
 function PDFViewerSearchControl({
   documentId,
   controlsDisabled,
+  initialSearch,
 }: {
   documentId: string;
   controlsDisabled: boolean;
+  /** Typed into the search box once the search plugin is ready (`PDFViewerProps.findText`). */
+  initialSearch?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { state, provides } = useSearch(documentId);
@@ -716,6 +722,12 @@ function PDFViewerSearchControl({
     providesRef.current = provides;
     scrollRef.current = scroll;
   }, [provides, scroll]);
+
+  // A host's `findText`: search once the plugin is ready, and again when the text changes.
+  React.useEffect(() => {
+    const text = initialSearch?.trim();
+    if (text && provides && scroll) setSearchDraft(text);
+  }, [initialSearch, provides, scroll]);
 
   const runSearch = React.useCallback((rawQuery: string) => {
     const query = rawQuery.trim();
@@ -1726,6 +1738,7 @@ type PDFViewerInnerProps = {
   showRotateControls: boolean;
   showUpload: boolean;
   toolbarActions?: React.ReactNode;
+  findText?: string;
   pageClassName?: (pageNumber: number) => string | undefined;
   renderPageOverlay?: (props: PDFViewerPageOverlayProps) => React.ReactNode;
   onActivePageChange?: (pageNumber: number) => void;
@@ -1750,6 +1763,7 @@ function PDFViewerInner({
   showRotateControls,
   showUpload,
   toolbarActions,
+  findText,
   pageClassName,
   renderPageOverlay,
   onActivePageChange,
@@ -2306,6 +2320,7 @@ function PDFViewerInner({
                 key={documentId}
                 documentId={documentId}
                 controlsDisabled={controlsDisabled}
+                initialSearch={findText}
               />
               {toolbarActions ? (
                 <>
@@ -2498,6 +2513,7 @@ export const PDFViewer = React.forwardRef<PDFViewerHandle, PDFViewerProps>(funct
     showUpload = true,
     src,
     toolbarActions,
+    findText,
     pageClassName,
     renderPageOverlay,
     onActivePageChange,
@@ -2620,6 +2636,7 @@ export const PDFViewer = React.forwardRef<PDFViewerHandle, PDFViewerProps>(funct
         showRotateControls={showRotateControls}
         showUpload={showUpload}
         toolbarActions={toolbarActions}
+        findText={findText}
         pageClassName={pageClassName}
         renderPageOverlay={renderPageOverlay}
         onActivePageChange={onActivePageChange}
