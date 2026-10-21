@@ -20309,7 +20309,9 @@
       "text08f3c151d323": "Richiedi condizioni personalizzate",
       "texta0990a4a86dc": "White-label: il tuo prodotto di IA sul calcolo di Platinum.dev",
       "text6189ab6313de": "Fai il fork di Kortix, applica il tuo marchio e vendilo come tuo prodotto. La licenza è gratuita. Unico requisito: il tuo calcolo gira su Platinum.dev.",
-      "text7971dd752669": "Promemoria"
+      "text7971dd752669": "Promemoria",
+      "text724b09397472": "Aggiunta di {name} a {project}",
+      "text1e007c47254d": "La configurazione avviene in background. Riceverai una notifica al termine."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
