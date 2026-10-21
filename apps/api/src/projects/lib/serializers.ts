@@ -41,6 +41,7 @@ import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './open
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { probeProjectSecret } from '../secrets/envelope';
+import { isDeprecatedProvider } from '../../platform/providers/deprecated';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -340,6 +341,7 @@ export function serializeProject(
         ?.default_sandbox_provider;
       if (
         typeof pin !== 'string' ||
+        isDeprecatedProvider(pin) ||
         !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(pin)
       ) {
         return null;
@@ -348,8 +350,8 @@ export function serializeProject(
       const provider = pin as SandboxProviderName;
       return config.isProviderEnabled(provider) ? provider : null;
     })(),
-    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) =>
-      config.isProviderEnabled(p),
+    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter(
+      (p) => config.isProviderEnabled(p) && !isDeprecatedProvider(p),
     ),
   };
 }

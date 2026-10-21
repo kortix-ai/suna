@@ -424,12 +424,6 @@ const catalog = {
         "kortixDefault": "Kortix default",
         "definedIn": "Defined in"
       },
-      "routing": {
-        "title": "Routing",
-        "automatic": "Automatic",
-        "pinned": "Pinned",
-        "pinnedWithProvider": "Pinned · {provider}"
-      },
       "toasts": {
         "rebuildStarted": "Rebuild started for “{name}”",
         "buildFailed": "Failed to start build",
@@ -447,9 +441,7 @@ const catalog = {
         "building": "Building",
         "failed": "Failed",
         "notReady": "Not ready",
-        "unavailable": "Unavailable",
-        "selected": "Selected",
-        "selectedAria": "selected"
+        "unavailable": "Unavailable"
       },
       "defaultBadge": "Default",
       "runtime": "Session runtime",
@@ -460,14 +452,6 @@ const catalog = {
         "confirm": "Delete"
       },
       "provider": {
-        "label": "Sandbox provider",
-        "experimental": "Experimental",
-        "description": "Pin this project to a specific sandbox provider, overriding the platform default. New sessions here run on the chosen provider — “Automatic” follows the platform default.",
-        "preparing": "Preparing {provider}… this can take a few minutes",
-        "fallback": "the sandbox provider",
-        "switched": "Switched to {provider}",
-        "switchFailed": "Sandbox provider switch failed",
-        "updateFailed": "Failed to update sandbox provider",
         "legacy": "Legacy",
         "legacyNote": "Daytona is a legacy fallback provider. Its removal is scheduled. Existing Daytona sessions keep working for now, but Daytona gets no new features and no support guarantee. Use Platinum."
       },
@@ -2449,7 +2433,6 @@ const catalog = {
       "text1bbab8923e0a": "/path/to/folder",
       "text1bc7a47dada1": "Dockerfile.ml",
       "text1bfa15228ca8": "Slack connected",
-      "text1c145081eddd": "Switched to {provider}",
       "text1c57f31d6315": "Hidden credential",
       "text1c6225ec7092": "Budget",
       "text1c791e8c04de": "Audit logs are an Enterprise feature",
@@ -2526,7 +2509,6 @@ const catalog = {
       "text221ff19c904c": "Schedules",
       "text22206bc67806": "Exit selection",
       "text222b8d57e366": "Failed to save overrides",
-      "text22412aa281cb": "the sandbox provider",
       "text226f2b1f08a3": "An open runtime today, pluggable by design. The sandbox is yours to read and replace.",
       "text2283269ca150": "Channel connection",
       "text22965568d22a": "Connected",
@@ -2722,7 +2704,6 @@ const catalog = {
       "text32ae9b80f832": "No skills yet",
       "text32c6817c8380": "Review the exact parameters. Your decision applies to this call only.",
       "text32d61a2331fe": "Product deck",
-      "text32f14aa9ea33": "Preparing {provider}… this can take a few minutes",
       "text330010f40240": "Not ready",
       "text331551b0de41": "Pending",
       "text3329a9bb48b9": "Applying…",
@@ -2814,7 +2795,6 @@ const catalog = {
       "text3af0e55ccc96": "OpenCode",
       "text3af4d559fa0a": "Loading schema…",
       "text3b13192b9d88": "Discard your changes?",
-      "text3b3c31642567": "Pinned provider",
       "text3b4153c0d3c8": "Pick a date and time",
       "text3b41ba9c7cb8": "No data",
       "text3b61c181f516": "Add a separate AgentMail inbox connection for support, sales, founders, or any mailbox the agent should run.",
@@ -3847,7 +3827,6 @@ const catalog = {
       "text910ab2c6e011": "Per provider",
       "text911a1cde90bc": "OAuth 2.0 device connection failed",
       "text91273d498d36": "These",
-      "text914be6d9bb89": "Failed to update sandbox provider",
       "text914d43beac26": "Remove access?",
       "text91721aa63069": "Service errors",
       "text9173e2705c5b": "You need the manage-keys permission to view gateway keys.",
@@ -4656,7 +4635,6 @@ const catalog = {
       "textd432610668ee": "The identifier selects this credential. Access decides whether agent code can read the value, and who else may spend it.",
       "textd440cfc72edc": "branding logo icon favicon product name app name white label whitelabel theme identity",
       "textd45336ed23b4": "We couldn't reach the runtime to ask whether a turn is running. Reloading restarts it, and if one is in flight it will be lost.",
-      "textd461a493a375": "Automatic",
       "textd4673300c1d2": "Notifications are working correctly!",
       "textd46dc6f5e3e3": "Copied \"{value0}\" to clipboard",
       "textd4707c58c4a4": "The sandbox is starting. This file will load automatically.",
@@ -4970,7 +4948,6 @@ const catalog = {
       "texte99baf469ca8": "to this project. You connect an account right after.",
       "texte9b7cf835375": "In your words",
       "texte9bef0b0f3c2": "Keyboard shortcuts",
-      "texte9ca8360a34d": "Sandbox provider switch failed",
       "texte9d6212ef873": "Setting up...",
       "texte9ec6c0ad396": "Managed by Kortix",
       "textea13cd34d9e0": "billed as Kortix credits",

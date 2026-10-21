@@ -6,7 +6,6 @@ import { Badge } from '../../../primitives/badge';
 import {
   formatSandboxProvider,
   isLegacySandboxProvider,
-  sandboxProviderRank,
 } from '../../../internal/lib/sandbox-providers';
 
 export type ProviderCoverageEntry = NonNullable<SandboxTemplate['provider_coverage']>[number];
@@ -28,20 +27,6 @@ export function SandboxProviderLabel({ provider }: { provider: string }) {
       ) : null}
     </span>
   );
-}
-
-export function describeProviderMode(
-  mode: SandboxProviderMode,
-  selectedProvider: SandboxProvider | null,
-  tI18nComplete: UiTranslator,
-): { label: string; selectedProvider: string | null } {
-  if (mode === 'automatic')
-    return { label: tI18nComplete.raw('textd461a493a375'), selectedProvider: null };
-  const selected = selectedProvider ? formatSandboxProvider(selectedProvider) : null;
-  return {
-    label: tI18nComplete.raw('text3b3c31642567'),
-    selectedProvider: selected,
-  };
 }
 
 export function describeProviderCoverage(
@@ -69,16 +54,15 @@ export function describeProviderCoverage(
 
 export interface SandboxProviderBadgeCopy {
   states?: Partial<Record<ProviderCoverageStatus, string>>;
-  selected?: string;
-  selectedAria?: string;
 }
 
+/** Every sandbox runs on Platinum: a deprecated provider's coverage is not shown. */
 export function availableProviderCoverage(
   coverage: SandboxTemplate['provider_coverage'] | null | undefined,
 ): ProviderCoverageEntry[] {
-  return (coverage ?? [])
-    .filter((item) => item.available)
-    .sort((a, b) => sandboxProviderRank(a.provider) - sandboxProviderRank(b.provider));
+  return (coverage ?? []).filter(
+    (item) => item.available && !isLegacySandboxProvider(item.provider),
+  );
 }
 
 function providerCoverageVariant(
@@ -113,29 +97,16 @@ export function latestObservedAt(
  *
  * It replaces `SandboxTemplateProviderCoverage`, which baked its own
  * "Session runtime" label, its badge list and its "Checked …" stamp into one
- * `flex` block. That composite could only ever be dropped into a layout whole,
- * so `sandbox-tab.tsx` ended up nesting a labelled row inside another labelled
- * row — two labels and an un-positionable timestamp in a single wrapping
- * footer. Owning just the badge lets the caller build the row.
- *
- * `SandboxTemplateProviderModeBadge` is gone with it: routing mode is static
- * configuration, not live status, so the card states it as a labelled fact in
- * the spec grid (`describeProviderMode` still supplies the words) rather than
- * floating a bare badge in the runtime strip.
+ * `flex` block. Owning just the badge lets the caller build the row.
  */
 export function SandboxProviderBadge({
   item,
-  selected = false,
   copy = {},
 }: {
   item: ProviderCoverageEntry;
-  /** Pinned mode only — marks the provider sessions actually route to. */
-  selected?: boolean;
   copy?: SandboxProviderBadgeCopy;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const t = useTranslations('settings.sandbox');
-  const legacy = isLegacySandboxProvider(item.provider);
   const state = describeProviderCoverage(item.status, tI18nComplete);
   const stateLabel = copy.states?.[item.status] ?? state.label;
   const provider = formatSandboxProvider(item.provider);
@@ -144,25 +115,9 @@ export function SandboxProviderBadge({
     <Badge
       variant={providerCoverageVariant(state.tone)}
       size="xs"
-      aria-label={`${provider}${legacy ? ` ${t('provider.legacy')}` : ''}${selected ? ` ${copy.selectedAria ?? 'selected'}` : ''}: ${stateLabel}`}
+      aria-label={`${provider}: ${stateLabel}`}
     >
       {provider}
-      {legacy ? (
-        <>
-          <span className="opacity-50" aria-hidden="true">
-            {tI18nComplete.raw('text3b9453dad42b')}
-          </span>
-          {t('provider.legacy')}
-        </>
-      ) : null}
-      {selected ? (
-        <>
-          <span className="opacity-50" aria-hidden="true">
-            {tI18nComplete.raw('text3b9453dad42b')}
-          </span>
-          {copy.selected ?? 'Selected'}
-        </>
-      ) : null}
       <span className="opacity-50" aria-hidden="true">
         {tI18nComplete.raw('text3b9453dad42b')}
       </span>
