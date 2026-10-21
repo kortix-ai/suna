@@ -186,6 +186,8 @@ export interface NotificationPreferences {
   kinds: Record<InboxNotificationKind, { push: boolean; email: boolean }>;
   /** False when this deployment sends no email: hide the email choices. */
   email_available: boolean;
+  /** Kinds that cannot reach the caller now (their feature is off everywhere they are): hide their rows. Absent from older APIs. */
+  hidden_kinds?: InboxNotificationKind[];
 }
 
 /** A partial update: only the kinds and channels named change. */

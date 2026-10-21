@@ -271,7 +271,11 @@ export function SessionApprovalNotice({
   // NOT the same test. A shortened value is still a reviewable one — see
   // `approvalReviewable`. Only a call with nothing to show loses the Approve
   // button, and it loses the button rather than wearing a disabled one.
-  const reviewable = approvalReviewable(request.argsPreview, request.reviewComplete);
+  const reviewable = approvalReviewable(
+    request.argsPreview,
+    request.reviewComplete,
+    request.resolvedPreview,
+  );
   const panelId = `${executionId}-approval-panel`;
   const collapsedLabel = [action.action, summary].filter(Boolean).join(' · ');
 
@@ -403,8 +407,11 @@ export function SessionApprovalNotice({
             <ApprovalAgentContext dense context={request.approvalContext} />
             <ApprovalParameters
               dense
+              action={request.action}
               argsPreview={request.argsPreview}
               reviewComplete={request.reviewComplete !== false}
+              resolvedPreview={request.resolvedPreview}
+              resolvedError={request.resolvedError}
               channelNames={channelNames}
             />
             {action.can_resolve === false ? (

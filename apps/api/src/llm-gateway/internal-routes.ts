@@ -18,6 +18,7 @@ import {
 } from './hooks';
 import { matchesInternalToken, weakInternalTokenWarnings } from './internal-auth';
 import { gatewayModelCatalog } from './models/catalog-models';
+import { unavailableCatalog } from './models/picker-catalog';
 import { servableProjectCatalog } from './models/servable-catalog';
 import { codexConversationHeaders, resolveCandidates } from './resolution/resolve-candidates';
 import { MAX_ACCOUNT_SECRET_REST_SECONDS, coolDownAccountSecret } from '../secrets/account-resource';
@@ -191,11 +192,20 @@ export function createInternalGatewayRoutes() {
     // — the compact managed lineup a sandbox fetches on boot. Dropping the
     // projectId is what selects MANAGED_ONLY. An account without the
     // managed-models entitlement gets an empty set.
-    return c.json({
+    if (managedOnly === true || scope === 'picker') return c.json({
       models: gatewayModelCatalog(managedOnly === true ? undefined : p.projectId, {
         freeManagedOnly: !!p.freeModelsOnly,
       }),
     });
+    // The full catalog is discovery, not proof of a connected credential.
+    // Keep plan-blocked managed entries discoverable, with an explicit reason.
+    const full = gatewayModelCatalog(p.projectId);
+    const unavailable = unavailableCatalog(full, gatewayModelCatalog(undefined, {
+      freeManagedOnly: !!p.freeModelsOnly,
+    }));
+    return c.json({ models: Object.fromEntries(Object.entries(full).map(([id, model]) => [
+      id, { ...model, availability: unavailable[id]?.availability ?? 'available' },
+    ])) });
   });
 
   app.post('/billing', async (c) => {

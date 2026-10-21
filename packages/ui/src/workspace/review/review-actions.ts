@@ -8,8 +8,10 @@
  * endpoint, which 409s on them by design (see review-center-connected.tsx).
  */
 
+import type { ReviewVerdict } from '@kortix/sdk';
 import { uiRoutes } from '../../lib/routes';
-import type { ReviewItem, ReviewRisk } from './types';
+import { approvalReviewable } from '../../session/prompts/session-approval-review';
+import { type ReviewItem, type ReviewRisk, segmentForStatus } from './types';
 
 export const CR_ID_PREFIX = 'cr:';
 export const CALL_ID_PREFIX = 'call:';
@@ -51,31 +53,6 @@ export function itemDeepLink(
 ): string | null {
   if (!projectId || !sessionId) return null;
   return uiRoutes().session(projectId, sessionId);
-}
-
-/**
- * Split a set of selected ids into the ones a bulk verdict can cover
- * natively (`/review/bulk`) vs. ones that need their own per-item resolve
- * review (connector approvals) vs. ones with no bulk path at all (Change
- * Requests — merging in bulk needs full diff context per item, so they're
- * excluded rather than silently no-op'd).
- */
-export interface BulkActionPlan {
-  native: string[];
-  resolvable: string[];
-  unsupported: string[];
-}
-
-export function planBulkAction(ids: Iterable<string>): BulkActionPlan {
-  const native: string[] = [];
-  const resolvable: string[] = [];
-  const unsupported: string[] = [];
-  for (const id of ids) {
-    if (connectorCallId(id) !== null) resolvable.push(id);
-    else if (crChangeRequestId(id) !== null) unsupported.push(id);
-    else native.push(id);
-  }
-  return { native, resolvable, unsupported };
 }
 
 /**
@@ -139,6 +116,100 @@ export function bulkSkipMessage(outcome: BulkOutcome): string {
   return parts.join('. ');
 }
 
+/** A verb of the select-mode bar. */
+export type BulkVerb = 'approve' | 'deny' | 'dismiss';
+
+/** The most ids one `/review/bulk` request takes (the API answers 400 above it). */
+export const BULK_MAX = 50;
+
+export const BULK_VERDICT: Record<BulkVerb, ReviewVerdict> = {
+  approve: 'approve',
+  deny: 'reject',
+  dismiss: 'dismiss',
+};
+
+/**
+ * Whether a bar verb acts on `item`, decided before the request so the bar
+ * never sends an id the server must refuse. Approve and Deny decide a pending
+ * approval; Approve also needs a call this viewer could review
+ * (`approvalReviewable`) that has not expired. Dismiss acts on native items only. A `cr:` id takes no verb.
+ */
+export function bulkSupports(
+  item: ReviewItem,
+  verb: BulkVerb,
+  allows: (item: ReviewItem, verdict: ReviewVerdict) => boolean,
+  now = Date.now(),
+): boolean {
+  if (segmentForStatus(item.status) !== 'needs_you') return false;
+  if (crChangeRequestId(item.id) !== null || !allows(item, BULK_VERDICT[verb])) return false;
+  if (verb === 'dismiss') return connectorCallId(item.id) === null;
+  if (item.kind !== 'approval') return false;
+  if (item.expiresAt && Date.parse(item.expiresAt) <= now) return false;
+  const call = item.detail.actions?.[0];
+  if (call?.canResolve === false) return false;
+  if (verb === 'deny') return true;
+  if (call?.previewAuthorized === false) return false;
+  return approvalReviewable(call?.rawArgsPreview, call?.reviewComplete, call?.resolvedPreview);
+}
+
+/** True when any bar verb acts on `item`: the row shows a checkbox. */
+export function bulkSelectable(
+  item: ReviewItem,
+  allows: (item: ReviewItem, verdict: ReviewVerdict) => boolean,
+): boolean {
+  return (['approve', 'deny', 'dismiss'] as const).some((verb) => bulkSupports(item, verb, allows));
+}
+
+/** One `/review/bulk` result. */
+export interface BulkResult {
+  id: string;
+  ok: boolean;
+  code?: string;
+}
+
+const BULK_DONE_KEY = { approve: 'approved', deny: 'denied', dismiss: 'dismissed' } as const;
+const BULK_REASON_KEY: Record<string, BulkReasonKey | undefined> = {
+  expired: 'reasonExpired',
+  already_resolved: 'reasonAlreadyResolved',
+  preview_unavailable: 'reasonPreviewUnavailable',
+  forbidden: 'reasonForbidden',
+  not_found: 'reasonNotFound',
+  not_bulk_actionable: 'reasonNotBulkActionable',
+};
+type BulkReasonKey =
+  | 'reasonExpired'
+  | 'reasonAlreadyResolved'
+  | 'reasonPreviewUnavailable'
+  | 'reasonForbidden'
+  | 'reasonNotFound'
+  | 'reasonNotBulkActionable';
+/** The `hardcodedUi.reviewBulk` keys the result line reads. */
+export type BulkResultTranslator = (
+  key: (typeof BULK_DONE_KEY)[BulkVerb] | BulkReasonKey | 'skipped',
+  values?: Record<string, string | number>,
+) => string;
+
+/** The toast after a bulk verb: "Approved 4 · 1 skipped (expired)". */
+export function bulkResultMessage(
+  t: BulkResultTranslator,
+  verb: BulkVerb,
+  results: readonly BulkResult[],
+): string {
+  const ok = results.filter((r) => r.ok).length;
+  const skipped = results.filter((r) => !r.ok);
+  const parts = ok > 0 || skipped.length === 0 ? [t(BULK_DONE_KEY[verb], { count: ok })] : [];
+  if (skipped.length > 0) {
+    const reasons = [...new Set(skipped.map((r) => r.code ?? 'not_found'))]
+      .map((code) => {
+        const key = BULK_REASON_KEY[code];
+        return key ? t(key) : code;
+      })
+      .join(', ');
+    parts.push(t('skipped', { count: skipped.length, reasons }));
+  }
+  return parts.join(' · ');
+}
+
 /** Relative age like "7m", "3h", "2d" — the compact inbox-row idiom (see
  *  `TimeAgo` in review-center.tsx, which renders this client-only to avoid
  *  an SSR/hydration mismatch on `Date.now()`). */
@@ -148,6 +219,27 @@ export function formatItemAge(iso: string, now = Date.now()): string {
   const hrs = Math.round(mins / 60);
   if (hrs < 24) return `${hrs}h`;
   return `${Math.round(hrs / 24)}d`;
+}
+
+/** Time left on a pending approval, in the row's compact idiom ("3h"), and
+ *  whether it is under one hour. Null when it has no expiry or already passed. */
+export function formatExpiresIn(
+  iso: string | undefined,
+  now = Date.now(),
+): { time: string; soon: boolean } | null {
+  const left = iso ? new Date(iso).getTime() - now : Number.NaN;
+  if (!(left > 0)) return null;
+  // Floored at every step: time left never reads longer than it is, so the
+  // under-one-hour glyph never sits beside "1h".
+  const mins = Math.max(1, Math.floor(left / 60_000));
+  const hrs = Math.floor(mins / 60);
+  const time = mins < 60 ? `${mins}m` : hrs < 24 ? `${hrs}h` : `${Math.floor(hrs / 24)}d`;
+  return { time, soon: left < 3_600_000 };
+}
+
+/** True when the API reports the approval expired before this decision (HTTP 409). */
+export function isApprovalExpiredError(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === 'APPROVAL_EXPIRED';
 }
 
 /** Longer relative age with a trailing "ago" — the detail-modal idiom (see

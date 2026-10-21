@@ -49,7 +49,7 @@ flow('ACCT-1', { domain: 'accounts', routes: ['GET /v1/accounts'] }, async (ctx)
 
 flow(
   'ACCT-2',
-  { domain: 'accounts', tags: ['deployed'], routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId'] },
+  { domain: 'accounts', tags: ['deployed'], routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId', 'GET /v1/accounts/:accountId/members'] },
   async (ctx) => {
     let accountId = '';
     await ctx.step('create team account → caller is owner', async () => {
@@ -64,13 +64,24 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId', { params: { accountId } });
-      r.status(200).body().has('$.account_id', accountId);
+      r.status(200).body()
+        .has('$.account_id', accountId)
+        .has('$.name', ctx.fixtures.name('team'))
+        .has('$.member_count', 1)
+        .has('$.project_count', 0)
+        .has('$.role', 'owner');
     });
-    await ctx.step('NONMEMBER cannot read it → 403', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId', { params: { accountId } });
-      r.status(403);
+    await ctx.step('foreign and nonexistent accounts have identical denials on detail and members', async () => {
+      for (const targetId of [accountId, crypto.randomUUID()]) {
+        for (const route of ['/v1/accounts/:accountId', '/v1/accounts/:accountId/members']) {
+          const r = await ctx.client.as(ctx.P.NONMEMBER)
+            .get(route, { params: { accountId: targetId } });
+          r.status(403).body().has('$', { error: 'Forbidden' });
+          if (r.text() !== '{"error":"Forbidden"}') {
+            throw new Error('Account denial envelope differs from the members route');
+          }
+        }
+      }
     });
     await ctx.step('create without a name → 400 Validation failed; a 256-character name → 400 name is too long', async () => {
       (await ctx.client.as(ctx.P.OWNER).post('/v1/accounts', {})).status(400).body().has('$.message', 'Validation failed');

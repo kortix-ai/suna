@@ -280,15 +280,15 @@ export function registerAccountRoutes(): void {
       const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
 
+      const membership = await getMembership(userId, accountId);
+      if (!membership) return c.json({ error: 'Forbidden' }, 403);
+
       const [row] = await db
         .select()
         .from(accounts)
         .where(eq(accounts.accountId, accountId))
         .limit(1);
       if (!row) return c.json({ error: 'Not found' }, 404);
-
-      const membership = await getMembership(userId, accountId);
-      if (!membership) return c.json({ error: 'Forbidden' }, 403);
 
       // Member count EXCLUDING phantom self-memberships (user_id == account_id with
       // no auth user) — same definition as billing/countActiveMembers and the

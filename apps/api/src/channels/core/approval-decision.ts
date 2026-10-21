@@ -17,9 +17,12 @@ import {
   isPendingApproval,
   loadApprovalRow,
 } from '../../projects/lib/connector-approval-decision';
+import { isApprovalExpired } from '../../connectors/approval-expiry';
 import { markApprovalCardDecided } from '../approval-card-relay';
 import { db } from '../../shared/db';
 import { type ChatUser, resolveChatActor } from './identity';
+
+const APPROVAL_EXPIRED = 'This approval expired.';
 
 export async function decideChatApproval(input: {
   user: ChatUser;
@@ -36,6 +39,7 @@ export async function decideChatApproval(input: {
   if (!row || !input.sessionId || row.sessionId !== input.sessionId) {
     return { refusal: 'That approval is no longer available.' };
   }
+  if (isApprovalExpired(row)) return { refusal: APPROVAL_EXPIRED };
   if (!isPendingApproval(row)) return { refusal: 'That call was already decided.' };
   const [project] = await db
     .select({ accountId: projects.accountId })
@@ -99,6 +103,7 @@ export async function decideChatApproval(input: {
   if (outcome === 'preview_unavailable') {
     return { refusal: 'This call recorded no parameters to review, so it can only be denied.' };
   }
+  if (outcome === 'expired') return { refusal: APPROVAL_EXPIRED };
   if (outcome === 'already_resolved') return { refusal: 'That call was already decided.' };
   return { row };
 }

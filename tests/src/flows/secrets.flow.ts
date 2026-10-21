@@ -1624,6 +1624,28 @@ flow(
       if (!token) throw new Error(`could not extract token from mint url: ${url}`);
     });
 
+    await ctx.step("re-mint retires the old link, including an already-open form", async () => {
+      const unrelated = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/secret-requests", { names: ["SEC7_UNRELATED_KEY"] }, { params: { projectId: p.id } },
+      );
+      unrelated.status(200);
+      const unrelatedToken = unrelated.json<{ url: string }>().url.split("/").pop() ?? "";
+      const previous = token;
+      (await ctx.client.as(ctx.P.ANON).get("/v1/setup-links/secret/:token", { params: { token: previous } })).status(200);
+      const minted = await ctx.client.as(ctx.P.OWNER).post(
+        "/v1/projects/:projectId/secret-requests",
+        { names: ["SEC7_TEST_KEY"] }, { params: { projectId: p.id } },
+      );
+      minted.status(200);
+      (await ctx.client.as(ctx.P.ANON).get("/v1/setup-links/secret/:token", { params: { token: unrelatedToken } })).status(200);
+      token = minted.json<{ url: string }>().url.split("/").pop() ?? "";
+      (await ctx.client.as(ctx.P.ANON).get("/v1/setup-links/secret/:token", { params: { token: previous } })).status(409);
+      (await ctx.client.as(ctx.P.ANON).post(
+        "/v1/setup-links/secret/:token", { values: { SEC7_TEST_KEY: "retired-value" } },
+        { params: { token: previous } },
+      )).status(409);
+    });
+
     await ctx.step("mint rejects a KORTIX_* reserved name → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

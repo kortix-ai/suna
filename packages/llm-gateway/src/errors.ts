@@ -105,6 +105,12 @@ export class GatewayResolutionError extends Error {
     message: string,
     readonly suggestion: string,
     readonly retryAfterSeconds?: number,
+    /**
+     * How long the routed upstream rests: a ChatGPT usage limit lasts hours or
+     * days. Not a retry hint (a client gets `retryAfterSeconds` only); the
+     * gateway holds the route this long (pipeline/route-memory.ts).
+     */
+    readonly restSeconds?: number,
   ) {
     super(message);
     this.name = 'GatewayResolutionError';

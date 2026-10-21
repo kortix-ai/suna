@@ -49,6 +49,7 @@ export const ACCOUNT_PANEL_PARAM = 'accountId';
 const HUB_PARAM_ALIASES = {
   /** Which section: an `AccountSection` from `hub/sections.ts`. */
   tab: 'accountTab',
+  transactions: 'accountTransactions',
   /** Drill-downs, each replacing its section's list with one entity's panel. */
   member: 'accountMember',
   group: 'accountGroup',

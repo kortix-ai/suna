@@ -39,7 +39,10 @@ describe('coordinatesGoal', () => {
     require('node:fs').mkdirSync(folder, { recursive: true })
     writeFileSync(join(folder, 'goal.json'), JSON.stringify({ sessions: [{ id: 'coord', role: 'coordinator' }] }))
     const logPath = join(root, 'log')
-    expect(runOnIdleHook({ status: 'idle', messageId: 'm' }, { path: join(root, 'no-hook'), logPath, drivesRoot: root, sessionId: 'coord' })).toBe(true)
-    expect(runOnIdleHook({ status: 'idle', messageId: 'm' }, { path: join(root, 'no-hook'), logPath, drivesRoot: root, sessionId: 'other' })).toBe(false)
+    const env = { KORTIX_FEATURE_FLAGS: 'volumes,goals,reminders' }
+    expect(runOnIdleHook({ status: 'idle', messageId: 'm' }, { path: join(root, 'no-hook'), logPath, drivesRoot: root, sessionId: 'coord', env })).toBe(true)
+    expect(runOnIdleHook({ status: 'idle', messageId: 'm' }, { path: join(root, 'no-hook'), logPath, drivesRoot: root, sessionId: 'other', env })).toBe(false)
+    // goals off in this box: no goal check, even for a coordinator.
+    expect(runOnIdleHook({ status: 'idle', messageId: 'm' }, { path: join(root, 'no-hook'), logPath, drivesRoot: root, sessionId: 'coord', env: { KORTIX_FEATURE_FLAGS: 'volumes,reminders' } })).toBe(false)
   })
 })
