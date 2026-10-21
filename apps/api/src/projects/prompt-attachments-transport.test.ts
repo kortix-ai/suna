@@ -101,6 +101,8 @@ let object: Uint8Array | undefined;
 const stored = new Map<string, Uint8Array>();
 /** A Storage DELETE that never answers. */
 let hangDelete = false;
+/** A Storage GET that fails as an outage (5xx), not as a missing object. */
+let failGet = false;
 const bucketPath = (path: string) => path.slice(path.indexOf('/staged-files/'));
 const originalFetch = globalThis.fetch;
 globalThis.fetch = Object.assign(
@@ -122,6 +124,7 @@ globalThis.fetch = Object.assign(
       return Response.json([]);
     }
     if (request.method === 'GET') {
+      if (failGet) return Response.json({ statusCode: '500', error: 'internal' }, { status: 500 });
       const bytes = stored.get(bucketPath(path)) ?? object;
       if (!bytes) return Response.json({ statusCode: '404', error: 'not_found' }, { status: 400 });
       return new Response(
@@ -159,6 +162,7 @@ beforeEach(() => {
   object = undefined;
   stored.clear();
   hangDelete = false;
+  failGet = false;
   config.PROMPT_ATTACHMENT_UPLOAD_MODE = 'direct';
   config.PROMPT_ATTACHMENT_CHUNK_BYTES = 65536;
 });
@@ -397,4 +401,17 @@ test('the chunk route is refused in direct mode', () => {
   expect(refusal).toMatchObject({ status: 409, code: 'attachment_upload_mode' });
   config.PROMPT_ATTACHMENT_UPLOAD_MODE = 'chunked';
   expect(() => attachments.assertChunkedPromptAttachmentUpload()).not.toThrow();
+});
+
+// KRTX-2974: delivery and chunk assembly read through download(). A missing
+// object is permanent; telling the person to retry the same file never works.
+test('download answers a missing object with 404 attachment_not_found', async () => {
+  const { download } = await import('./prompt-attachment-storage');
+  await expect(download('a/b/c/file')).rejects.toMatchObject({ status: 404, code: 'attachment_not_found' });
+});
+
+test('download keeps the 503 retry for a storage outage', async () => {
+  const { download } = await import('./prompt-attachment-storage');
+  failGet = true;
+  await expect(download('a/b/c/file')).rejects.toMatchObject({ status: 503, code: 'attachment_storage_unavailable' });
 });

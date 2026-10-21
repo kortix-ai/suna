@@ -5,6 +5,7 @@ import { eq, notExists } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../shared/db';
 import { config } from '../config';
+import { logger } from '../lib/logger';
 
 const BUCKET = 'staged-files';
 export const STORAGE_TIMEOUT_MS = 20_000;
@@ -138,12 +139,33 @@ export function noReferences() {
       .where(eq(promptAttachmentReferences.attachmentId, promptAttachments.attachmentId)),
   );
 }
+/** Storage answers a missing object with 404 or with 400 + `statusCode: '404'`. */
+export function isMissingObject(error: unknown): boolean {
+  const { status, statusCode } = (error ?? {}) as { status?: number; statusCode?: string };
+  return status === 404 || statusCode === '404' || statusCode === 'not_found';
+}
+
 export async function download(path: string): Promise<Uint8Array> {
   const { data, error } = await storage().download(
     path,
     {},
     { signal: AbortSignal.timeout(STORAGE_TIMEOUT_MS) },
   );
-  if (error || !data) throw storageUnavailable();
+  if (error || !data) {
+    // A missing object never comes back: a retry of the same file cannot work.
+    if (isMissingObject(error))
+      throw new PromptAttachmentError(
+        'attachment_not_found',
+        'Attachment not found. Attach the file again.',
+        404,
+      );
+    const { status, statusCode, message } = (error ?? {}) as {
+      status?: number;
+      statusCode?: string;
+      message?: string;
+    };
+    logger.warn('[prompt-attachments] storage download failed', { status, statusCode, message });
+    throw storageUnavailable();
+  }
   return new Uint8Array(await data.arrayBuffer());
 }
