@@ -1,8 +1,10 @@
 'use client';
 
-import type { CaptureStorageInput, CaptureStorageView } from '@kortix/sdk';
+import type { CaptureStorageView } from '@kortix/sdk';
 import { useCaptureStorage, useSetCaptureStorage } from '@kortix/sdk/react';
 import { useId, useState } from 'react';
+
+import { toDraft, toInput, validStorageDraft, type CredKind, type StorageDraft } from './storage-model';
 
 import { Button } from '@kortix/ui/button';
 import { Field, FieldDescription } from '@kortix/ui/field';
@@ -49,63 +51,11 @@ function TextField({
   );
 }
 
-type CredKind = 'role' | 'keys';
-
-interface Draft {
-  mode: 'kortix' | 's3';
-  endpoint: string;
-  region: string;
-  bucket: string;
-  forcePathStyle: boolean;
-  credKind: CredKind;
-  roleArn: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-}
-
-function toDraft(view: CaptureStorageView): Draft {
-  if (view.mode !== 's3') {
-    return { mode: 'kortix', endpoint: '', region: 'us-east-1', bucket: '', forcePathStyle: false, credKind: 'role', roleArn: '', accessKeyId: '', secretAccessKey: '' };
-  }
-  return {
-    mode: 's3',
-    endpoint: view.endpoint,
-    region: view.region,
-    bucket: view.bucket,
-    forcePathStyle: view.force_path_style,
-    credKind: view.role_arn ? 'role' : 'keys',
-    roleArn: view.role_arn,
-    accessKeyId: view.access_key_id,
-    secretAccessKey: '',
-  };
-}
-
-function toInput(draft: Draft): CaptureStorageInput {
-  if (draft.mode !== 's3') return { mode: 'kortix' };
-  const common = {
-    mode: 's3' as const,
-    endpoint: draft.endpoint.trim(),
-    region: draft.region.trim(),
-    bucket: draft.bucket.trim(),
-    force_path_style: draft.forcePathStyle,
-  };
-  return draft.credKind === 'role'
-    ? { ...common, role_arn: draft.roleArn.trim() }
-    : { ...common, access_key_id: draft.accessKeyId.trim(), secret_access_key: draft.secretAccessKey };
-}
-
-/** True when the draft is complete enough to save (mirrors the API's credential rule). */
-function valid(draft: Draft): boolean {
-  if (draft.mode !== 's3') return true;
-  if (!draft.region.trim() || !draft.bucket.trim()) return false;
-  return draft.credKind === 'role' ? !!draft.roleArn.trim() : !!(draft.accessKeyId.trim() && draft.secretAccessKey);
-}
-
 function StorageForm({ accountId, view }: { accountId: string; view: CaptureStorageView }) {
   const t = useTranslations('capture.settings.storage');
   const save = useSetCaptureStorage(accountId);
-  const [draft, setDraft] = useState<Draft>(() => toDraft(view));
-  const set = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
+  const [draft, setDraft] = useState<StorageDraft>(() => toDraft(view));
+  const set = (patch: Partial<StorageDraft>) => setDraft((current) => ({ ...current, ...patch }));
 
   const submit = async () => {
     try {
@@ -126,7 +76,7 @@ function StorageForm({ accountId, view }: { accountId: string; view: CaptureStor
 
       <RadioGroup
         value={draft.mode}
-        onValueChange={(mode) => set({ mode: mode as Draft['mode'] })}
+        onValueChange={(mode) => set({ mode: mode as StorageDraft['mode'] })}
         className="gap-0 overflow-hidden rounded-md border"
       >
         <label className="flex items-start gap-3 border-b px-4 py-3">
@@ -191,7 +141,7 @@ function StorageForm({ accountId, view }: { accountId: string; view: CaptureStor
       )}
 
       <div className="flex justify-end">
-        <Button size="sm" disabled={save.isPending || !valid(draft)} aria-busy={save.isPending} onClick={submit}>
+        <Button size="sm" disabled={save.isPending || !validStorageDraft(draft)} aria-busy={save.isPending} onClick={submit}>
           {t('save')}
         </Button>
       </div>
