@@ -8,7 +8,7 @@
 // which checks every citation before a value reaches the UI. The browser is
 // never in the loop: polling is Convex scheduled functions only.
 
-import { createProjectSession, getSessionTurn, listDriveFolder, readDriveFile, uploadDriveFile } from "@kortix/sdk";
+import { createProjectSession, getSessionTranscript, getSessionTurn, listDriveFolder, readDriveFile, uploadDriveFile } from "@kortix/sdk";
 import Ajv2020 from "ajv/dist/2020";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -28,6 +28,21 @@ for (const s of Object.values(KIT.schemas)) ajv.addSchema(s as object);
 const pollDelay = (startedAt: number | undefined) => (startedAt && Date.now() - startedAt < 2 * 60_000 ? 5_000 : 15_000);
 /** A session gets this long after a prompt before Lumen reads an idle session as stopped. */
 const PROMPT_GRACE_MS = 45_000;
+/** An open turn whose transcript has not changed for this long has stalled: Lumen aborts it and prompts again. */
+export const STALL_MS = 5 * 60_000;
+/** Activity says "still working" at most this often while the transcript moves. */
+const HEARTBEAT_MS = 2 * 60_000;
+
+/**
+ * A fingerprint of the session's transcript tail: it changes when a message
+ * starts, grows, ends, or a tool call starts or finishes. Null when the read
+ * cannot tell (no live transcript): Lumen then never reads the turn as stalled.
+ */
+async function transcriptSig(f: FirmContext, sessionId: string): Promise<string | null> {
+  const t = await asFirm(f.secret, () => getSessionTranscript(f.projectId, sessionId, { limit: 3, chars: 4000 })).catch(() => null);
+  if (!t?.available) return null;
+  return JSON.stringify([t.message_count, t.messages.map((m) => [m.created, m.completed, m.text.length, m.tools.map((x) => x.status)])]);
+}
 
 /** The run's folder: fixed at prepare (`runs.driveDir`); a run from before that field kept the firm's Runs folder. */
 const runDir = (run: Doc<"runs">) => run.driveDir ?? `${RUNS_ROOT(run.firmId)}/${run._id}`;
@@ -305,7 +320,7 @@ async function prompt(f: FirmContext, batch: Doc<"runBatches">, text: string) {
  * One poll of a working batch: ingest new result files, then decide.
  * - invalid file or done.json with rows missing → repair prompt (≤ 2)
  * - session idle with no done.json → nudge prompt (≤ 2)
- * - session failed → a new session (≤ 1)
+ * - session failed, or its open turn stalled (no transcript change for 5 min) → a new session, or an aborted turn and a new prompt (≤ 1 between them)
  * - 20 min with no new file, or 60 min for the run → failed
  */
 export const poll = internalAction({
@@ -409,6 +424,29 @@ export const poll = internalAction({
         const turn = await asFirm(f.secret, () => getSessionTurn(f.projectId, batch.kortixSessionId!, { showErrors: false }));
         const ended = turn.last_ended?.ended_at ? Date.parse(turn.last_ended.ended_at) : 0;
         const idle = turn.turns.length === 0 && ended > (batch.lastPromptAt ?? 0);
+        if (!idle && turn.turns.length > 0) {
+          const label = batch.phase === "reduce" ? "Report" : `Batch ${batch.index + 1}`;
+          const sig = await transcriptSig(f, batch.kortixSessionId!);
+          const a = batch.activity;
+          if (sig !== null && sig !== a?.sig) {
+            // The agent moved. Say so in Activity at most every 2 minutes.
+            const note = now - (a?.noted ?? batch.lastPromptAt ?? now) >= HEARTBEAT_MS;
+            await ctx.runMutation(internal.runs.updateBatch, {
+              batchId, patch: { activity: { sig, at: now, noted: note ? now : (a?.noted ?? now) } },
+              event: note ? { type: "working", detail: `${label}: the agent is still working` } : undefined,
+            });
+          } else if (sig !== null && now - Math.max(a?.at ?? 0, batch.lastPromptAt ?? now) > STALL_MS) {
+            // The turn is open and nothing changed for 5 minutes: abort it and prompt again (once), then give up.
+            if (batch.attempts.relaunch >= LIMITS.relaunch) return void (await fail("The agent stopped responding twice"));
+            await firmClient(f.secret).kortix.session(f.projectId, batch.kortixSessionId!).abort().catch(() => undefined);
+            await prompt(f, batch, `Your last step stopped responding and Lumen ended it. Continue from where you are. Still missing: ${owed.join(", ") || "done.json"}. Write the missing results with \`lumen result write\`, then run \`lumen result done\`. Do not ask questions.`);
+            await ctx.runMutation(internal.runs.updateBatch, {
+              batchId,
+              patch: { attempts: { ...batch.attempts, relaunch: batch.attempts.relaunch + 1 }, lastPromptAt: now, activity: { sig: "", at: now, noted: now } },
+              event: { type: "relaunch", detail: `${label}: the agent stopped responding; Lumen restarted its step` },
+            });
+          }
+        }
         if (idle) {
           const failed = turn.last_ended?.error || turn.last_ended?.end_reason === "error";
           if (failed) {

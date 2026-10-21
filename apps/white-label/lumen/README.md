@@ -284,7 +284,8 @@ started with.
 run    queued → preparing (kit current, input.json per batch in Drive) → running → succeeded | partial | failed   (any → canceled)
 batch  pending → starting → working → succeeded | failed                                                  (any → canceled)
        working: invalid result → repair prompt (≤ 2) · idle without done.json → nudge (≤ 2)
-                failed session → new session (≤ 1) · 20 min without a new file, or 60 min per run → failed
+                failed session → new session, or an open turn with no transcript change for 5 min → aborted
+                and prompted again (≤ 1 between them) · 20 min without a new file, or 60 min per run → failed
 watchdog (convex/crons.ts, every 5 min): a run that a deploy or restart interrupted is settled:
        queued/preparing 10 min with no event → failed (Retry runs it) · starting 10 min → batch failed
        working past 25 min with no new file → batch failed · running past 65 min → failed

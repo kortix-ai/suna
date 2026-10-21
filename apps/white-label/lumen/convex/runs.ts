@@ -17,7 +17,7 @@ import { type Citation, sectionCitations, verifyCitation } from "./lib/cite";
 import { DD_COLUMNS, PRESET_COLUMNS } from "./lib/columns";
 import { templateFields } from "./lib/template";
 import { COUNSEL_ROLE, DRAFTER_ROLE, EXTRACTOR_ROLE, REVIEWER_ROLE, sessionAgent } from "./lumenAgent";
-import { batchStatus, cellState, checkedCitation, column, runKind, runStatus, severity } from "./schema";
+import { batchActivity, batchStatus, cellState, checkedCitation, column, runKind, runStatus, severity } from "./schema";
 
 export const DOCS_PER_BATCH = 4;
 export const MAX_RUNNING_PER_RUN = 4;
@@ -516,6 +516,7 @@ export const updateBatch = internalMutation({
       lastProgressAt: v.optional(v.number()),
       lastPromptAt: v.optional(v.number()),
       attempts: v.optional(v.object({ repair: v.number(), nudge: v.number(), relaunch: v.number() })),
+      activity: v.optional(batchActivity),
     }),
     event: v.optional(v.object({ type: v.string(), detail: v.optional(v.string()) })),
   },

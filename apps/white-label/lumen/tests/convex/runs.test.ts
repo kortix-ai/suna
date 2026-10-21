@@ -18,10 +18,13 @@ const fake = vi.hoisted(() => {
     onSend: (_s: Session, _text: string) => {},
     turn: (_s: Session): { turns: unknown[]; last_ended?: { ended_at: string; end_reason: string; error?: { name: string; message: string } } } =>
       ({ turns: [{}] }),
+    /** The live transcript tail. Null = not available (Lumen never reads the turn as stalled). */
+    transcript: (_s: Session): unknown[] | null => null,
   };
+  const aborted: string[] = [];
   let clock = 0;
   const write = (path: string, value: unknown) => drive.set(path, { data: typeof value === 'string' ? value : JSON.stringify(value), mtime: ++clock });
-  return { drive, sessions, created, stopped, script, write };
+  return { drive, sessions, created, stopped, aborted, script, write };
 });
 
 vi.mock('@kortix/sdk', () => ({
@@ -37,6 +40,10 @@ vi.mock('@kortix/sdk', () => ({
     return { session_id: s.id };
   },
   getSessionTurn: async (_pid: string, sid: string) => fake.script.turn(fake.sessions.find((s) => s.id === sid)!),
+  getSessionTranscript: async (_pid: string, sid: string) => {
+    const messages = fake.script.transcript(fake.sessions.find((s) => s.id === sid)!);
+    return messages ? { available: true, message_count: messages.length, messages } : { available: false, message_count: 0, messages: [] };
+  },
   makeDriveFolder: async (_d: string, path: string) => ({ path }),
   uploadDriveFile: async (_d: string, path: string, body: Uint8Array) => {
     fake.write(path, new TextDecoder().decode(body));
@@ -68,7 +75,7 @@ vi.mock('@kortix/sdk/server', () => ({
         s.sends.push(text);
         fake.script.onSend(s, text);
       },
-      abort: async () => {},
+      abort: async () => void fake.aborted.push(sid),
       stop: async () => void fake.stopped.push(sid),
     }),
   }),
@@ -82,6 +89,8 @@ beforeEach(() => {
   fake.sessions.length = 0;
   fake.created.length = 0;
   fake.stopped.length = 0;
+  fake.aborted.length = 0;
+  fake.script.transcript = () => null;
   fake.script.onStart = () => {};
   fake.script.onSend = () => {};
   fake.script.turn = () => ({ turns: [{}] });
@@ -241,6 +250,40 @@ describe('run engine: fan-out, validation, repair, nudge, relaunch, limits', () 
     const batch = await t.run((ctx) => ctx.db.query('runBatches').withIndex('by_run', (q) => q.eq('runId', runId)).first());
     expect(batch).toMatchObject({ status: 'succeeded', attempts: { repair: 0, nudge: 1, relaunch: 0 } });
     expect(fake.sessions[0].sends[0]).toContain('You stopped before the batch was finished');
+  });
+
+  test('an open turn whose transcript stops changing for 5 min is aborted and prompted again, then finishes', async () => {
+    const { t, matterId, docs } = await world(1);
+    // The agent made a few tool calls, then its next message never moved.
+    fake.script.transcript = () => [{ role: 'assistant', created: 't0', completed: null, text: '', tools: [{ tool: 'bash', status: 'completed' }] }];
+    fake.script.onSend = (s) => {
+      if (!s.sends.at(-1)!.includes('stopped responding')) return;
+      fake.script.turn = idleNow;
+      writeAll(s);
+    };
+    const { runId } = await startReview(t, matterId, docs);
+    await finish(t);
+    const batch = await t.run((ctx) => ctx.db.query('runBatches').withIndex('by_run', (q) => q.eq('runId', runId)).first());
+    expect(batch).toMatchObject({ status: 'succeeded', attempts: { repair: 0, nudge: 0, relaunch: 1 } });
+    expect(fake.aborted).toContain('sess_1');
+    const view = await t.run((ctx) => ctx.db.query('runEvents').withIndex('by_run', (q) => q.eq('runId', runId)).collect());
+    const relaunch = view.find((e) => e.type === 'relaunch')!;
+    expect(relaunch.detail).toBe('Batch 1: the agent stopped responding; Lumen restarted its step');
+    // First read at the 45 s prompt grace, then 5 min without a change, plus one poll: far before the 20-minute no-progress limit.
+    expect(relaunch.at - batch!.startedAt!).toBeLessThanOrEqual(7 * 60_000);
+  });
+
+  test('a turn that stalls twice fails the batch with a reason, and a moving transcript says "still working"', async () => {
+    const { t, matterId, docs } = await world(1);
+    let tick = 0;
+    // Moves for the first 3 minutes (one new tool call per poll), then freezes for good.
+    fake.script.transcript = () => [{ role: 'assistant', created: 't0', completed: null, text: '', tools: Array.from({ length: Math.min(++tick, 30) }, () => ({ tool: 'bash', status: 'completed' })) }];
+    const { runId } = await startReview(t, matterId, docs);
+    await finish(t);
+    const batch = await t.run((ctx) => ctx.db.query('runBatches').withIndex('by_run', (q) => q.eq('runId', runId)).first());
+    expect(batch).toMatchObject({ status: 'failed', error: 'The agent stopped responding twice', attempts: { relaunch: 1 } });
+    const events = await t.run((ctx) => ctx.db.query('runEvents').withIndex('by_run', (q) => q.eq('runId', runId)).collect());
+    expect(events.some((e) => e.detail === 'Batch 1: the agent is still working')).toBe(true);
   });
 
   test('a failed session is replaced once by a new session', async () => {

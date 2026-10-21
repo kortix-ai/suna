@@ -37,6 +37,7 @@ export const auditAction = v.union(
   v.literal("assistant.output"), v.literal("assistant.download"),
 );
 
+export const batchActivity = v.object({ sig: v.string(), at: v.number(), noted: v.number() });
 export const documentStatus = v.union(v.literal("uploading"), v.literal("extracting"), v.literal("ready"), v.literal("failed"));
 export const runKind = v.union(
   v.literal("review"), v.literal("column"), v.literal("ask"), v.literal("contract_review"), v.literal("diligence"), v.literal("draft"),
@@ -305,6 +306,8 @@ export default defineSchema({
     error: v.optional(v.string()),
     /** Since when an accepted-schema result waits for a file it names (redline.docx) to reach Drive. */
     waitingSince: v.optional(v.number()),
+    /** The open turn's transcript tail: its fingerprint, when it last changed, when Activity last said "still working". */
+    activity: v.optional(batchActivity),
   })
     .index("by_run", ["runId", "index"])
     .index("by_firm_status", ["firmId", "status"]),
