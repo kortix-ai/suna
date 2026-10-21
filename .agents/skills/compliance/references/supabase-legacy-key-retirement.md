@@ -59,10 +59,19 @@ invalid` from `/auth/v1/user` and 401 from the Kortix API; a real sign-in
 still issues an ES256 token that the API accepts. Undo: set the key back to
 `standby` (Supabase throttles key changes for about 5 minutes).
 
-## 4. Clean up
+## 4. The API's own HS256 check
 
-`SUPABASE_JWT_SECRET` stays in the env bundles because
-`.github/workflows/deploy-staging.yml` requires it. It cannot authenticate
-anything after step 3: the API confirms every token with GoTrue
-(`apps/api/src/shared/jwt-liveness.ts`), and GoTrue refuses HS256. Self-hosted
-Supabase still signs HS256, so the HS256 path in `jwt-verify.ts` stays.
+`apps/api/src/shared/jwt-verify.ts` checks an HS256 token's signature locally
+with `SUPABASE_JWT_SECRET`, then checks the session in `auth.sessions`
+(`jwt-liveness.ts`). GoTrue never sees the token, so a Supabase revoke alone
+does not stop the API: on 2026-10-21 staging accepted (200) a token signed with
+the revoked secret for a real live session while Supabase refused it (403).
+
+Every hosted env (`kortix-dev-env`, `kortix-staging-env`, `kortix-prod-env`
+and `apps/api/.env.<env>`) therefore holds a random `SUPABASE_JWT_SECRET` since
+2026-10-21 that matches no key. An HS256 token then fails the local check as
+inconclusive and goes to GoTrue, which applies Supabase's revoke. The value
+stays non-empty because `.github/workflows/deploy-staging.yml` requires it and
+prod maps it per key into the ECS task. Never restore the real legacy secret
+there. Proof after the change on staging: the same forged token → 401, a real
+session → 200. Self-hosted Supabase still signs HS256, so the code path stays.
