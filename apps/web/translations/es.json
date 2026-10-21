@@ -20319,7 +20319,9 @@
       "text08f3c151d323": "Solicitar condiciones personalizadas",
       "texta0990a4a86dc": "Marca blanca: tu producto de IA sobre el cómputo de Platinum.dev",
       "text6189ab6313de": "Haz un fork de Kortix, ponle tu marca y véndelo como tu producto. La licencia es gratuita. El único requisito: tu cómputo se ejecuta en Platinum.dev.",
-      "text7971dd752669": "Recordatorios"
+      "text7971dd752669": "Recordatorios",
+      "openThreadAction": "Abrir hilo",
+      "untitledThread": "Hilo sin título"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -22376,6 +22378,11 @@
         "starting": "Iniciando el ordenador de este hilo. Tu mensaje se enviará automáticamente.",
         "idle": "El ordenador de este hilo está en reposo. Tu próximo mensaje lo despierta y se entrega.",
         "waking": "Despertando el ordenador de este hilo. Los mensajes que envíes quedan en cola y salen automáticamente."
+      },
+      "boot": {
+        "starting": "Iniciando este hilo",
+        "progress": "Progreso de inicio del hilo",
+        "restart": "Reiniciar hilo"
       }
     },
     "details": {

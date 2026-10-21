@@ -20319,7 +20319,9 @@
       "text08f3c151d323": "Richiedi condizioni personalizzate",
       "texta0990a4a86dc": "White-label: il tuo prodotto di IA sul calcolo di Platinum.dev",
       "text6189ab6313de": "Fai il fork di Kortix, applica il tuo marchio e vendilo come tuo prodotto. La licenza è gratuita. Unico requisito: il tuo calcolo gira su Platinum.dev.",
-      "text7971dd752669": "Promemoria"
+      "text7971dd752669": "Promemoria",
+      "openThreadAction": "Apri thread",
+      "untitledThread": "Thread senza titolo"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -22376,6 +22378,11 @@
         "starting": "Avvio del computer di questo thread. Il tuo messaggio verrà inviato automaticamente.",
         "idle": "Il computer di questo thread è in sospensione. Il tuo prossimo messaggio lo risveglia e viene consegnato.",
         "waking": "Risveglio del computer di questo thread. I messaggi inviati sono in coda e partono automaticamente."
+      },
+      "boot": {
+        "starting": "Avvio di questo thread",
+        "progress": "Avanzamento avvio del thread",
+        "restart": "Riavvia il thread"
       }
     },
     "details": {

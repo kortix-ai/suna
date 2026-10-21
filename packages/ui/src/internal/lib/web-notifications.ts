@@ -117,6 +117,11 @@ export interface WebNotificationPayload {
   preview?: string;
   /** Localized "Open session" for the finished-turn toast. */
   openSessionLabel?: string;
+  /**
+   * Set when the turn ended while a channel or DM page was on screen: its
+   * thread opens in that page's panel (`?thread=`), not on the session page.
+   */
+  threadHref?: string;
   /** Localized "{count} tasks finished" for the stack several turns collapse into. */
   stackTitle?: (count: number) => string;
   /** A row of the notification inbox. Inbox rows exist only for projects with `notification_center` on. */
@@ -278,6 +283,19 @@ export function isTabHidden(): boolean {
  * Shared with TurnAttentionBadge, which clears the favicon badge for
  * whatever session the user is looking at.
  */
+/**
+ * A channel or DM page (`/projects/<id>/c/<slug>`, `/projects/<id>/dm/<agent>`)
+ * opens a thread in its panel: the same page with `?thread=<id>`. Null on
+ * any other page.
+ */
+export function spacesThreadHref(pathname: string, search: string, sessionId: string): string | null {
+  // An optional two-letter locale segment leads (`/de/projects/…`).
+  if (!/^(?:\/[a-z]{2})?\/projects\/[^/]+\/(c|dm)\/[^/]+\/?$/.test(normalizeAppPathname(pathname))) return null;
+  const params = new URLSearchParams(search);
+  params.set('thread', sessionId);
+  return `${pathname}?${params.toString()}`;
+}
+
 export function isViewingSession(sessionId: string): boolean {
   // Dashboard: the active tab ID is the session ID for session tabs. The
   // persisted tab ID can outlive navigation (the store never clears it when
@@ -298,6 +316,8 @@ export function isViewingSession(sessionId: string): boolean {
   if (typeof window !== 'undefined') {
     const path = normalizeAppPathname(window.location.pathname);
     if (path.includes(sessionId)) return true;
+    // A channel or DM page with the thread open in its panel.
+    if (new URLSearchParams(window.location.search).get('thread') === sessionId) return true;
     if (path.startsWith('/onboarding')) return true;
   }
   return false;
@@ -508,7 +528,9 @@ const NOTIFICATION_TOAST_VARIANT: Record<WebNotificationType, 'success' | 'error
 
 /** Open what the notification is about: its session, or its `href`. */
 function openPayload(payload: WebNotificationPayload, forceNavigation: boolean) {
-  if (payload.sessionId) {
+  if (payload.threadHref) {
+    softNavigate(payload.threadHref);
+  } else if (payload.sessionId) {
     navigateToSession(payload.sessionId, payload.body, {
       forceNavigation,
       projectId: payload.projectId,
@@ -725,13 +747,24 @@ export function notifyTaskCompleteFor(
   tI18nComplete: UiTranslator,
 ) {
   noteTurnCompleteShown(sessionId);
-  const name = sessionDisplayName(sessionTitle, sessionId);
-  const label = sessionTitle ? `"${name.slice(0, 60)}"` : name;
+  // On a channel or DM page the turn is a thread: it says "thread" and opens
+  // in the page's panel. A default title ("New session - <time>") names nothing.
+  const threadHref =
+    typeof window === 'undefined'
+      ? null
+      : spacesThreadHref(window.location.pathname, window.location.search, sessionId);
+  const defaultTitle = !sessionTitle || /^New session(\s-\s|$)/.test(sessionTitle);
+  const name =
+    threadHref && defaultTitle
+      ? tI18nComplete.raw('untitledThread')
+      : sessionDisplayName(sessionTitle, sessionId);
+  const label = sessionTitle && !(threadHref && defaultTitle) ? `"${name.slice(0, 60)}"` : name;
 
   sendWebNotification({
     type: 'completion',
     entityLabel: name,
-    openSessionLabel: tI18nComplete.raw('textb205bb47f81a'),
+    openSessionLabel: threadHref ? tI18nComplete.raw('openThreadAction') : tI18nComplete.raw('textb205bb47f81a'),
+    threadHref: threadHref ?? undefined,
     stackTitle: (count) => tI18nComplete('textc0589750863c', { count }),
     title: tI18nComplete.raw('text107f1806b5d7'),
     body: tI18nComplete('text27d628c8b427', { label }),

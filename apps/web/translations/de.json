@@ -20319,7 +20319,9 @@
       "text08f3c151d323": "Individuelle Bedingungen anfragen",
       "texta0990a4a86dc": "White-Label: Ihr KI-Produkt auf Rechenleistung von Platinum.dev",
       "text6189ab6313de": "Forken Sie Kortix, versehen Sie es mit Ihrer Marke und verkaufen Sie es als eigenes Produkt. Die Lizenz ist kostenlos. Einzige Bedingung: Ihre Rechenleistung läuft auf Platinum.dev.",
-      "text7971dd752669": "Erinnerungen"
+      "text7971dd752669": "Erinnerungen",
+      "openThreadAction": "Thread öffnen",
+      "untitledThread": "Thread ohne Titel"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -22376,6 +22378,11 @@
         "starting": "Der Computer dieses Threads startet. Deine Nachricht wird automatisch gesendet.",
         "idle": "Der Computer dieses Threads schläft. Deine nächste Nachricht weckt ihn und wird zugestellt.",
         "waking": "Der Computer dieses Threads wird geweckt. Gesendete Nachrichten warten und gehen automatisch raus."
+      },
+      "boot": {
+        "starting": "Dieser Thread startet",
+        "progress": "Startfortschritt des Threads",
+        "restart": "Thread neu starten"
       }
     },
     "details": {

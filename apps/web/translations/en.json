@@ -20330,7 +20330,9 @@
       "text08f3c151d323": "Ask for custom terms",
       "texta0990a4a86dc": "White-label: your AI product on Platinum.dev compute",
       "text6189ab6313de": "Fork Kortix, put your brand on it, and sell it as your own product. The license is free. The one requirement is that your compute runs on Platinum.dev.",
-      "text7971dd752669": "Reminders"
+      "text7971dd752669": "Reminders",
+      "openThreadAction": "Open thread",
+      "untitledThread": "Untitled thread"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -22376,6 +22378,11 @@
         "starting": "Starting this thread's computer. Your message sends automatically.",
         "idle": "This thread's computer is asleep. Your next message wakes it up and is delivered.",
         "waking": "Waking this thread's computer. Messages you send are queued and go out automatically."
+      },
+      "boot": {
+        "starting": "Starting this thread",
+        "progress": "Thread startup progress",
+        "restart": "Restart thread"
       }
     },
     "details": {

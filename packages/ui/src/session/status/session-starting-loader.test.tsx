@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { STEPS, activeStep, canOfferBootRestart } from './session-starting-loader';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createElement, type ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+import { TranscriptRowsContext } from '../thread/transcript-rows';
+import { RestartFallback, STEPS, SessionStartingLoader, activeStep, canOfferBootRestart } from './session-starting-loader';
 
 const STARTING_SUBSTEP_ELAPSED = 5_000;
 
@@ -121,5 +126,42 @@ describe('restart wiring — the source the components actually render', () => {
     expect(loaderBody).toContain('canOfferBootRestart(session, projectId, sessionId)');
     expect(bannerBody).toContain('canOfferBootRestart(session, projectId, sessionId)');
     expect(code).not.toContain('canRestart = !!projectId && !!sessionId');
+  });
+});
+
+describe('a channel thread panel words the boot loader as a thread', () => {
+  const rows = {
+    agent: 'Kortix',
+    owner: null,
+    unknownAuthor: 'Someone',
+    labels: { starting: 'Starting this thread', startupProgress: 'Thread startup progress', restart: 'Restart thread' },
+  };
+  const render = (node: ReactNode, inPanel: boolean) =>
+    renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client: new QueryClient() },
+        inPanel ? createElement(TranscriptRowsContext.Provider, { value: rows }, node) : node,
+      ),
+    );
+
+  test('the heading and the progress bar say thread inside the panel', () => {
+    const html = render(createElement(SessionStartingLoader, { delayMs: 0 }), true);
+    expect(html).toContain('Starting this thread');
+    expect(html).toContain('aria-label="Thread startup progress"');
+    expect(html).not.toMatch(/session/i);
+  });
+
+  test('the stuck-boot restart button says thread inside the panel', () => {
+    const html = render(createElement(RestartFallback, { show: true, pending: false, onRestart: () => undefined }), true);
+    expect(html).toContain('Restart thread');
+    expect(html).not.toMatch(/session/i);
+  });
+
+  test('the session page keeps its words', () => {
+    expect(render(createElement(SessionStartingLoader, { delayMs: 0 }), false)).toContain('Starting your session');
+    expect(
+      render(createElement(RestartFallback, { show: true, pending: false, onRestart: () => undefined }), false),
+    ).toContain('Restart session');
   });
 });

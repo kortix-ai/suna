@@ -20319,7 +20319,9 @@
       "text08f3c151d323": "Demander des conditions sur mesure",
       "texta0990a4a86dc": "Marque blanche : votre produit d’IA sur le calcul Platinum.dev",
       "text6189ab6313de": "Forkez Kortix, apposez votre marque et vendez-le comme votre produit. La licence est gratuite. Seule condition : votre calcul tourne sur Platinum.dev.",
-      "text7971dd752669": "Rappels"
+      "text7971dd752669": "Rappels",
+      "openThreadAction": "Ouvrir le fil",
+      "untitledThread": "Fil sans titre"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -22376,6 +22378,11 @@
         "starting": "Démarrage de l’ordinateur de ce fil. Votre message partira automatiquement.",
         "idle": "L’ordinateur de ce fil est en veille. Votre prochain message le réveille et est distribué.",
         "waking": "Réveil de l’ordinateur de ce fil. Les messages envoyés sont mis en file d’attente et partent automatiquement."
+      },
+      "boot": {
+        "starting": "Démarrage de ce fil",
+        "progress": "Progression du démarrage du fil",
+        "restart": "Redémarrer le fil"
       }
     },
     "details": {

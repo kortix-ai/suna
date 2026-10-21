@@ -9,7 +9,8 @@ import { cn } from '../../lib/utils';
 import { type SessionStartResult, type SessionStartStage } from '@kortix/sdk';
 import { useProjectSession } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { TranscriptRowsContext } from '../thread/transcript-rows';
 
 /**
  * The ONE loader shown while a session's Kortix Computer comes up — full-screen
@@ -178,6 +179,8 @@ export function RestartFallback({
   buttonClassName?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // A channel's thread panel says "thread", not "session" (`TranscriptRows.labels`).
+  const labels = useContext(TranscriptRowsContext)?.labels;
   if (!show) return null;
 
   return (
@@ -198,7 +201,7 @@ export function RestartFallback({
         ) : (
           <RotateCcw className="size-3.5 shrink-0" />
         )}
-        {pending ? tI18nComplete.raw('text75d0f1469d16') : tI18nComplete.raw('textcb886371afc6')}
+        {pending ? tI18nComplete.raw('text75d0f1469d16') : (labels?.restart ?? tI18nComplete.raw('textcb886371afc6'))}
       </Button>
     </div>
   );
@@ -230,6 +233,7 @@ function QuietProgressLoader({
   stuck,
 }: QuietProgressLoaderProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const labels = useContext(TranscriptRowsContext)?.labels;
   const steps = useLocalizedUiCatalog(STEPS);
   const step = steps[Math.min(active, steps.length - 1)];
 
@@ -243,13 +247,13 @@ function QuietProgressLoader({
           />
           <div className="min-w-0 flex-1">
             <h2 className="text-foreground text-sm font-medium text-balance">
-              {tI18nComplete.raw('textac4e05b19878')}
+              {labels?.starting ?? tI18nComplete.raw('textac4e05b19878')}
             </h2>
             <p className="text-muted-foreground mt-1 text-xs text-pretty">{note ?? step.label}</p>
 
             <div
               role="progressbar"
-              aria-label={tI18nComplete.raw('text4cbf9c0d5628')}
+              aria-label={labels?.startupProgress ?? tI18nComplete.raw('text4cbf9c0d5628')}
               aria-valuemin={1}
               aria-valuemax={steps.length}
               aria-valuenow={active + 1}

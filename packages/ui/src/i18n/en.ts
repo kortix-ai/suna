@@ -5592,7 +5592,9 @@ const catalog = {
       "text815464994ec4": "Telegram connected",
       "textdfea5351a743": "Telegram disconnected",
       "text2f95b1c9ee2b": "Allowed users saved",
-      "text7971dd752669": "Reminders"
+      "text7971dd752669": "Reminders",
+      "openThreadAction": "Open thread",
+      "untitledThread": "Untitled thread"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -7035,6 +7037,11 @@ const catalog = {
         "starting": "Starting this thread's computer. Your message sends automatically.",
         "idle": "This thread's computer is asleep. Your next message wakes it up and is delivered.",
         "waking": "Waking this thread's computer. Messages you send are queued and go out automatically."
+      },
+      "boot": {
+        "starting": "Starting this thread",
+        "progress": "Thread startup progress",
+        "restart": "Restart thread"
       }
     },
     "details": {
