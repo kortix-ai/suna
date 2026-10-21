@@ -13,8 +13,8 @@
 // agent can become root).
 
 import { logger } from '../lib/logger';
-import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, projectSpaces, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
-import { and, asc, count, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, projectSpaceLinks, projectSpaces, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { and, asc, count, desc, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { SYSTEM_ACTOR, assignRole, revokeAssignment } from '../iam/assignments';
 import { resolvePrincipal } from '../iam/authorize';
@@ -40,6 +40,8 @@ import {
   pathWithinFolder,
   personalFolderName,
   planFolderMounts,
+  SPACE_NOTES_LINKS,
+  type SpaceNotesLink,
   spaceNotesLines,
 } from './folders';
 import {
@@ -1070,11 +1072,14 @@ export async function sessionDriveNotes(sessionId: string): Promise<{ mounts: Se
   return { mounts, text: renderDriveNotes(mounts, conflicts, skippedMessage, space ? spaceNotesLines(space, mounts) : []) };
 }
 
-/** The channel or DM a session is a thread of, with `project_channels` on; else null. */
-async function sessionNotesSpace(sessionId: string): Promise<{ kind: 'channel' | 'dm'; name: string } | null> {
+/** The channel or DM a session is a thread of (a channel with its newest links), with `project_channels` on; else null. */
+async function sessionNotesSpace(
+  sessionId: string,
+): Promise<{ kind: 'channel' | 'dm'; name: string; links: SpaceNotesLink[] } | null> {
   const [row] = await db
     .select({
       projectId: projectSessions.projectId,
+      spaceId: projectSpaces.spaceId,
       kind: projectSpaces.kind,
       slug: projectSpaces.slug,
       agent: projectSpaces.dmAgentName,
@@ -1085,7 +1090,16 @@ async function sessionNotesSpace(sessionId: string): Promise<{ kind: 'channel' |
     .limit(1);
   const name = row?.kind === 'channel' ? row.slug : row?.agent;
   if (!row || !name || !(await projectFeatureFlagEnabled(row.projectId, 'project_channels'))) return null;
-  return { kind: row.kind, name };
+  const links =
+    row.kind === 'channel'
+      ? await db
+          .select({ url: projectSpaceLinks.url, title: projectSpaceLinks.title })
+          .from(projectSpaceLinks)
+          .where(eq(projectSpaceLinks.spaceId, row.spaceId))
+          .orderBy(desc(projectSpaceLinks.createdAt))
+          .limit(SPACE_NOTES_LINKS)
+      : [];
+  return { kind: row.kind, name, links };
 }
 
 /**

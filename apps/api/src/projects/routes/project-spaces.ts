@@ -8,20 +8,31 @@ import { createRoute, z } from '@hono/zod-openapi';
 import {
   SpaceCreateInputSchema,
   SpaceDmInputSchema,
+  SpaceLinkCreateInputSchema,
+  SpaceLinkListSchema,
+  SpaceLinkSchema,
   SpaceListSchema,
   SpaceSchema,
+  SpaceSummarySchema,
   SpaceUpdateInputSchema,
 } from '@kortix/api-contract';
+import type { Context } from 'hono';
+import { AppObject, appsJson } from '../../apps/serialize';
+import { spaceApps } from '../../apps/space-apps';
 import { makeChannelFolders, moveChannelFolder } from '../../drives/space-folders';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { PROJECT_ACTIONS } from '../../iam';
+import type { AppEnv } from '../../types';
 import { auth, errors, json } from '../../openapi';
 import { isUuid } from '../../shared/validate';
 import { DEFAULT_AGENT_SENTINEL, isLaunchableAgentName, loadProjectAgents } from '../agents';
-import { loadProjectForUser } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { projectsApp } from '../lib/app';
+import { addSpaceLink, countSpaceLinks, deleteSpaceLink, listSpaceLinks, type LinkViewer } from '../lib/project-space-links';
 import {
   createChannel,
+  findLiveChannel,
   getOrCreateDm,
   listSpacesForUser,
   serializeSpace,
@@ -29,6 +40,33 @@ import {
 } from '../lib/project-spaces';
 
 const projectParams = z.object({ projectId: z.string() });
+const spaceParams = projectParams.extend({ spaceId: z.string() });
+const CHANNEL_NOT_FOUND = { error: 'Channel not found', code: 'space_not_found' } as const;
+
+/**
+ * The project (`session` access), the `project_channels` flag, then a live
+ * channel of the project: the gate of every `/spaces/:spaceId/*` tab route.
+ * A DM, an archived channel or an unknown id answers 404.
+ */
+async function loadChannel(c: Context<AppEnv>) {
+  const loaded = await loadProjectForUser(c, c.req.param('projectId')!, 'session');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const gate = requireFeatureFlag(c, loaded.row.metadata, 'project_channels');
+  if (gate) return gate;
+  const spaceId = c.req.param('spaceId')!;
+  const space = isUuid(spaceId) ? await findLiveChannel(loaded.row.projectId, spaceId) : null;
+  if (!space) return c.json(CHANNEL_NOT_FOUND, 404);
+  return { loaded, space };
+}
+
+type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
+
+/** A project manager may delete any link; anyone else only their own. */
+async function linkViewer(c: Context<AppEnv>, loaded: LoadedProject): Promise<LinkViewer> {
+  const { userId, row } = loaded;
+  const manager = await projectCapabilityAllowed(c, userId, row.accountId, row.projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
+  return { userId, manager };
+}
 
 export function registerProjectSpacesRoutes(): void {
   // GET /v1/projects/:projectId/spaces — creates `#general` on first read.
@@ -153,6 +191,129 @@ export function registerProjectSpacesRoutes(): void {
       // the Files tab can never make an empty folder there first and block it.
       if (result.renamedFrom) await moveChannelFolder(loaded.row.projectId, result.renamedFrom, result.space.slug!);
       return c.json(serializeSpace(result.space), 200);
+    },
+  );
+
+  // GET /v1/projects/:projectId/spaces/:spaceId/apps — Apps deployed from the channel's threads.
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/spaces/{spaceId}/apps',
+      tags: ['spaces'],
+      summary: 'List the Apps of a channel',
+      description:
+        'The live Apps of the project with a deployment made from a thread of this channel, filtered like ' +
+        '`GET /projects/:id/apps`: only the Apps the caller may open. An App never deployed from a thread is in no channel.',
+      ...auth,
+      request: { params: spaceParams },
+      responses: {
+        200: json(z.object({ apps: z.array(AppObject) }), 'The channel’s Apps, newest first'),
+        ...errors(403, 404),
+      },
+    }),
+    async (c) => {
+      const channel = await loadChannel(c);
+      if (channel instanceof Response) return channel;
+      const { loaded, space } = channel;
+      const { userId, row } = loaded;
+      await assertProjectCapability(c, userId, row.accountId, row.projectId, PROJECT_ACTIONS.PROJECT_APP_READ);
+      const found = await spaceApps(row.projectId, space.spaceId, userId);
+      return c.json({ apps: await appsJson(found.rows, userId, found.openable) }, 200);
+    },
+  );
+
+  // GET /v1/projects/:projectId/spaces/:spaceId/links — the channel's links, newest first.
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/spaces/{spaceId}/links',
+      tags: ['spaces'],
+      summary: 'List the links of a channel',
+      ...auth,
+      request: { params: spaceParams },
+      responses: { 200: json(SpaceLinkListSchema, 'The channel’s links, newest first'), ...errors(403, 404) },
+    }),
+    async (c) => {
+      const channel = await loadChannel(c);
+      if (channel instanceof Response) return channel;
+      const { loaded, space } = channel;
+      const links = await listSpaceLinks(space.spaceId, loaded.row.accountId, await linkViewer(c, loaded));
+      return c.json({ links }, 200);
+    },
+  );
+
+  // POST /v1/projects/:projectId/spaces/:spaceId/links — pin a link to the channel.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/spaces/{spaceId}/links',
+      tags: ['spaces'],
+      summary: 'Add a link to a channel',
+      ...auth,
+      request: {
+        params: spaceParams,
+        body: { content: { 'application/json': { schema: SpaceLinkCreateInputSchema } } },
+      },
+      responses: { 201: json(SpaceLinkSchema, 'The added link'), ...errors(400, 403, 404) },
+    }),
+    async (c) => {
+      const channel = await loadChannel(c);
+      if (channel instanceof Response) return channel;
+      const { loaded, space } = channel;
+      const viewer = await linkViewer(c, loaded);
+      const link = await addSpaceLink(loaded.row.projectId, space.spaceId, loaded.row.accountId, viewer, c.req.valid('json'));
+      return c.json(link, 201);
+    },
+  );
+
+  // DELETE /v1/projects/:projectId/spaces/:spaceId/links/:linkId — the link's creator or a project manager.
+  projectsApp.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/{projectId}/spaces/{spaceId}/links/{linkId}',
+      tags: ['spaces'],
+      summary: 'Remove a link from a channel',
+      ...auth,
+      request: { params: spaceParams.extend({ linkId: z.string() }) },
+      responses: { 200: json(z.object({ ok: z.literal(true) }), 'Removed'), ...errors(403, 404) },
+    }),
+    async (c) => {
+      const channel = await loadChannel(c);
+      if (channel instanceof Response) return channel;
+      const { loaded, space } = channel;
+      const linkId = c.req.param('linkId');
+      const result = isUuid(linkId) ? await deleteSpaceLink(space.spaceId, linkId, await linkViewer(c, loaded)) : 'not_found';
+      if (result === 'not_found') return c.json({ error: 'Link not found', code: 'link_not_found' }, 404);
+      if (result === 'forbidden') {
+        return c.json({ error: 'Only the person who added the link or a project manager can remove it.', code: 'forbidden' }, 403);
+      }
+      return c.json({ ok: true as const }, 200);
+    },
+  );
+
+  // GET /v1/projects/:projectId/spaces/:spaceId/summary — the counts beside the tab labels.
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/spaces/{spaceId}/summary',
+      tags: ['spaces'],
+      summary: 'Count the Apps and links of a channel',
+      description: '`apps` is 0 for a caller without the App read permission. Later fields are added, never renamed.',
+      ...auth,
+      request: { params: spaceParams },
+      responses: { 200: json(SpaceSummarySchema, 'The tab counts'), ...errors(403, 404) },
+    }),
+    async (c) => {
+      const channel = await loadChannel(c);
+      if (channel instanceof Response) return channel;
+      const { loaded, space } = channel;
+      const { userId, row } = loaded;
+      const [appsAllowed, links] = await Promise.all([
+        projectCapabilityAllowed(c, userId, row.accountId, row.projectId, PROJECT_ACTIONS.PROJECT_APP_READ),
+        countSpaceLinks(space.spaceId),
+      ]);
+      const apps = appsAllowed ? (await spaceApps(row.projectId, space.spaceId, userId)).rows.length : 0;
+      return c.json({ apps, links }, 200);
     },
   );
 }

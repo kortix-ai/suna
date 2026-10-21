@@ -22366,13 +22366,11 @@
         },
         "apps": {
           "title": "Ancora nessuna app",
-          "description": "Le app create in {place} compaiono qui.",
-          "action": "Aggiungi un'app"
+          "description": "Le app create in {place} compaiono qui."
         },
         "links": {
           "title": "Ancora nessun link",
-          "description": "I link condivisi in {place} compaiono qui.",
-          "action": "Aggiungi un link"
+          "description": "I link condivisi in {place} compaiono qui."
         },
         "triggers": {
           "title": "Ancora nessun trigger",
@@ -22400,7 +22398,25 @@
         "starting": "Avvio di questo thread",
         "progress": "Avanzamento avvio del thread",
         "restart": "Riavvia il thread"
-      }
+      },
+      "links": {
+        "add": "Aggiungi link",
+        "addDescription": "Fissa un link in {place}. Gli agenti leggono i link del canale all’inizio di ogni thread.",
+        "urlLabel": "URL",
+        "titleLabel": "Titolo (facoltativo)",
+        "titlePlaceholder": "Di cosa si tratta",
+        "invalidUrl": "Inserisci un link che inizia con http:// o https://.",
+        "addFailed": "Impossibile aggiungere il link. Riprova.",
+        "added": "Link aggiunto",
+        "addedBy": "{name} · {time}",
+        "remove": "Rimuovi link",
+        "removeTitle": "Rimuovere questo link?",
+        "removeDescription": "{link} viene rimosso da {place} per tutti.",
+        "removed": "Link rimosso",
+        "removeFailed": "Impossibile rimuovere il link. Riprova.",
+        "loadError": "Impossibile caricare i link."
+      },
+      "appsLoadError": "Impossibile caricare le app."
     },
     "details": {
       "about": "Informazioni",

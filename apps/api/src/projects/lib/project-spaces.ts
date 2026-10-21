@@ -180,6 +180,23 @@ export async function findSessionSpace(projectId: string, spaceId: string, userI
   return row ?? null;
 }
 
+/** A live channel of the project; a DM, an archived or a foreign channel is null. Every member sees every channel. */
+export async function findLiveChannel(projectId: string, spaceId: string): Promise<SpaceRow | null> {
+  const [row] = await db
+    .select()
+    .from(projectSpaces)
+    .where(
+      and(
+        eq(projectSpaces.projectId, projectId),
+        eq(projectSpaces.spaceId, spaceId),
+        eq(projectSpaces.kind, 'channel'),
+        isNull(projectSpaces.archivedAt),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 type SessionVisibility = 'private' | 'project' | 'restricted';
 
 /**

@@ -22366,13 +22366,11 @@
         },
         "apps": {
           "title": "No apps yet",
-          "description": "Apps built in {place} show up here.",
-          "action": "Add an app"
+          "description": "Apps built in {place} show up here."
         },
         "links": {
           "title": "No links yet",
-          "description": "Links shared in {place} show up here.",
-          "action": "Add a link"
+          "description": "Links shared in {place} show up here."
         },
         "triggers": {
           "title": "No triggers yet",
@@ -22400,7 +22398,25 @@
         "starting": "Starting this thread",
         "progress": "Thread startup progress",
         "restart": "Restart thread"
-      }
+      },
+      "links": {
+        "add": "Add link",
+        "addDescription": "Pin a link to {place}. Agents read the channel's links at the start of every thread.",
+        "urlLabel": "URL",
+        "titleLabel": "Title (optional)",
+        "titlePlaceholder": "What it is",
+        "invalidUrl": "Enter a link that starts with http:// or https://.",
+        "addFailed": "Could not add the link. Try again.",
+        "added": "Link added",
+        "addedBy": "{name} · {time}",
+        "remove": "Remove link",
+        "removeTitle": "Remove this link?",
+        "removeDescription": "{link} is removed from {place} for everyone.",
+        "removed": "Link removed",
+        "removeFailed": "Could not remove the link. Try again.",
+        "loadError": "Could not load the links."
+      },
+      "appsLoadError": "Could not load the apps."
     },
     "details": {
       "about": "About",

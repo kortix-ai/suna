@@ -553,6 +553,12 @@ export const qk = {
     reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
     /** `listProjectSpaces` — the project's channels and the caller's DMs. */
     spaces: (id: string) => [...qk.project.scope(id), 'spaces'] as const,
+    /** `listProjectSpaceApps` — one channel's Apps. Under `spaces`, so a spaces refetch includes it. */
+    spaceApps: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'apps'] as const,
+    /** `listProjectSpaceLinks` — one channel's links. */
+    spaceLinks: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'links'] as const,
+    /** `getProjectSpaceSummary` — one channel's tab counts. */
+    spaceSummary: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'summary'] as const,
     /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
     sessionReminders: (id: string, sessionId: string) =>
       [...qk.project.reminders(id), 'session', sessionId] as const,

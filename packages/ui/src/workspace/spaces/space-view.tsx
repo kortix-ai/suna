@@ -1,7 +1,13 @@
 'use client';
 
 import type { ProjectSession, ProjectSpace } from '@kortix/sdk';
-import { useOpenProjectDm, useProjectSpaces, useSession, useUpdateProjectSpace } from '@kortix/sdk/react';
+import {
+  useOpenProjectDm,
+  useProjectSpaces,
+  useProjectSpaceSummary,
+  useSession,
+  useUpdateProjectSpace,
+} from '@kortix/sdk/react';
 import { CaretDownIcon, HashIcon, RobotIcon } from '@phosphor-icons/react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -16,6 +22,7 @@ import { uiRoutes } from '../../lib/routes';
 import { AvatarGroup } from '../../primitives/avatar';
 import { Button } from '../../primitives/button';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
+import { CountBadge } from '../../primitives/count-badge';
 import { EmptyState } from '../../primitives/empty-state';
 import { EntityAvatar } from '../../primitives/entity-avatar';
 import { ErrorState } from '../../primitives/error-state';
@@ -34,6 +41,7 @@ import { SessionThread } from '../../session/thread/session-thread';
 import { TranscriptRowsContext } from '../../session/thread/transcript-rows';
 import { useProjectHomeSend } from '../layout/use-project-home-send';
 import { CreateChannelDialog } from './create-channel-dialog';
+import { SpaceLinks } from './space-links';
 import { SpaceDetailsDialog, type SpaceDetailsTab } from './space-details-dialog';
 import { agentLabel, spaceRoster, spaceTabFromParam, spaceTabs, type SpaceTab } from './space-timeline';
 import { SpaceThreadList, SpaceTimeline, useSpaceThreads, type SpaceThreads } from './space-timeline-view';
@@ -51,6 +59,8 @@ export interface SpaceViewProps {
    * (apps/web passes its Drive explorer). Absent: those tabs show their empty state.
    */
   renderFolder?: (folder: SpaceFolder) => ReactNode;
+  /** A channel's Apps tab: the host's App gallery for the channel. Absent: its empty state. */
+  renderApps?: (space: ProjectSpace) => ReactNode;
 }
 
 /** What a host's folder view draws: one space's Files or Memory tab. `place` is "#general" or the DM's agent. */
@@ -89,7 +99,7 @@ export function SpaceView(props: SpaceViewProps) {
   );
 }
 
-function SpaceViewBody({ projectId, target, beforeSend, renderFolder }: SpaceViewProps) {
+function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps }: SpaceViewProps) {
   const t = useTranslations('spaces.view');
   const router = useUiRouter();
   const pathname = useUiPathname();
@@ -120,6 +130,8 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder }: SpaceVie
   }, [dmAgent, spaces.data, listedDm, openDmMutate]);
 
   const threads = useSpaceThreads(projectId, space?.space_id);
+  // The counts beside the Apps and Links labels; a DM has neither tab.
+  const summary = useProjectSpaceSummary(projectId, space?.kind === 'channel' ? space.space_id : null);
   const threadId = searchParams.get(THREAD_PARAM);
   const tab = spaceTabFromParam(searchParams.get(TAB_PARAM), target.kind);
   const setParams = useCallback(
@@ -219,6 +231,9 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder }: SpaceVie
             {spaceTabs(space.kind).map((value) => (
               <TabsTrigger key={value} value={value} className="w-fit flex-none">
                 {t(`tab.${value}`)}
+                {(value === 'apps' || value === 'links') && summary.data?.[value] ? (
+                  <CountBadge count={summary.data[value]} />
+                ) : null}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -231,6 +246,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder }: SpaceVie
             onOpenThread={openThread}
             beforeSend={beforeSend}
             renderFolder={renderFolder}
+            renderApps={renderApps}
           />
         </Tabs>
       </ComposerDropZone>
@@ -251,9 +267,9 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder }: SpaceVie
 
 /**
  * The tab panels. Chat and Threads read the space's threads; Files and
- * Memory are the host's folder view. The others draw their empty state until
- * their data is wired: each says what will appear there and shows its
- * action, disabled.
+ * Memory are the host's folder view, Apps the host's App gallery, Links the
+ * channel's links. Triggers draws its empty state until its data is wired:
+ * it says what will appear there and shows its action, disabled.
  */
 function SpaceTabs({
   projectId,
@@ -264,6 +280,7 @@ function SpaceTabs({
   onOpenThread,
   beforeSend,
   renderFolder,
+  renderApps,
 }: {
   projectId: string;
   space: ProjectSpace;
@@ -274,6 +291,7 @@ function SpaceTabs({
   onOpenThread: (sessionId: string) => void;
   beforeSend?: () => Promise<void>;
   renderFolder?: (folder: SpaceFolder) => ReactNode;
+  renderApps?: (space: ProjectSpace) => ReactNode;
 }) {
   const t = useTranslations('spaces.view');
   return (
@@ -291,6 +309,18 @@ function SpaceTabs({
           renderFolder && (tab === 'files' || tab === 'memory') ? (
             <TabsContent key={tab} value={tab} className="flex min-h-0 flex-col">
               {renderFolder({ space, tab, place })}
+            </TabsContent>
+          ) : tab === 'links' ? (
+            <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
+              <SpaceLinks projectId={projectId} space={space} place={place} />
+            </TabsContent>
+          ) : tab === 'apps' ? (
+            <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
+              {renderApps?.(space) ?? (
+                <div className="px-5 py-16">
+                  <EmptyState size="sm" title={t('empty.apps.title')} description={t('empty.apps.description', { place })} />
+                </div>
+              )}
             </TabsContent>
           ) : (
             <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">

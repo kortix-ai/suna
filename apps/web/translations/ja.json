@@ -22366,13 +22366,11 @@
         },
         "apps": {
           "title": "まだアプリはありません",
-          "description": "{place} で作られたアプリがここに表示されます。",
-          "action": "アプリを追加"
+          "description": "{place} で作られたアプリがここに表示されます。"
         },
         "links": {
           "title": "まだリンクはありません",
-          "description": "{place} で共有されたリンクがここに表示されます。",
-          "action": "リンクを追加"
+          "description": "{place} で共有されたリンクがここに表示されます。"
         },
         "triggers": {
           "title": "まだトリガーはありません",
@@ -22400,7 +22398,25 @@
         "starting": "このスレッドを開始しています",
         "progress": "スレッドの起動の進行状況",
         "restart": "スレッドを再起動"
-      }
+      },
+      "links": {
+        "add": "リンクを追加",
+        "addDescription": "{place} にリンクを固定します。エージェントは各スレッドの開始時にチャンネルのリンクを読みます。",
+        "urlLabel": "URL",
+        "titleLabel": "タイトル（任意）",
+        "titlePlaceholder": "内容",
+        "invalidUrl": "http:// または https:// で始まるリンクを入力してください。",
+        "addFailed": "リンクを追加できませんでした。もう一度お試しください。",
+        "added": "リンクを追加しました",
+        "addedBy": "{name} · {time}",
+        "remove": "リンクを削除",
+        "removeTitle": "このリンクを削除しますか？",
+        "removeDescription": "{link} は全員の {place} から削除されます。",
+        "removed": "リンクを削除しました",
+        "removeFailed": "リンクを削除できませんでした。もう一度お試しください。",
+        "loadError": "リンクを読み込めませんでした。"
+      },
+      "appsLoadError": "アプリを読み込めませんでした。"
     },
     "details": {
       "about": "概要",

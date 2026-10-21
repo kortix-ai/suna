@@ -13,9 +13,17 @@ mock.module('@tanstack/react-query', () => ({
   }),
 }));
 
-const { useCreateProjectSpace, useOpenProjectDm, useProjectSpaces, useUpdateProjectSpace } = await import(
-  './use-project-spaces'
-);
+const {
+  useAddProjectSpaceLink,
+  useCreateProjectSpace,
+  useOpenProjectDm,
+  useProjectSpaceApps,
+  useProjectSpaceLinks,
+  useProjectSpaces,
+  useProjectSpaceSummary,
+  useRemoveProjectSpaceLink,
+  useUpdateProjectSpace,
+} = await import('./use-project-spaces');
 const { qk } = await import('./query-keys');
 const { configureKortix } = await import('../core/http/config');
 
@@ -67,5 +75,52 @@ describe('space mutations', () => {
     dm.onSuccess();
     const key = [...qk.project.spaces('P1')];
     expect(invalidated).toEqual([key, key, key]);
+  });
+});
+
+describe('channel tabs', () => {
+  test('apps, links and summary read under the spaces key, per channel', async () => {
+    const apps = useProjectSpaceApps('P1', 'S1') as any;
+    const links = useProjectSpaceLinks('P1', 'S1') as any;
+    const summary = useProjectSpaceSummary('P1', 'S1') as any;
+    const scope = [...qk.project.spaces('P1')];
+    for (const query of [apps, links, summary]) {
+      expect(query.queryKey.slice(0, scope.length)).toEqual(scope);
+      expect(query.enabled).toBe(true);
+    }
+    expect(apps.queryKey).toEqual(qk.project.spaceApps('P1', 'S1'));
+    expect(links.queryKey).toEqual(qk.project.spaceLinks('P1', 'S1'));
+    expect(summary.queryKey).toEqual(qk.project.spaceSummary('P1', 'S1'));
+    expect(summary.queryKey).not.toEqual(qk.project.spaceSummary('P1', 'S2'));
+    await apps.queryFn();
+    await links.queryFn();
+    await summary.queryFn();
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      'GET http://test.local/projects/P1/spaces/S1/apps',
+      'GET http://test.local/projects/P1/spaces/S1/links',
+      'GET http://test.local/projects/P1/spaces/S1/summary',
+    ]);
+  });
+
+  test('is disabled without a channel id', () => {
+    expect((useProjectSpaceApps('P1', null) as any).enabled).toBe(false);
+    expect((useProjectSpaceLinks('P1', undefined) as any).enabled).toBe(false);
+    expect((useProjectSpaceSummary(null, 'S1') as any).enabled).toBe(false);
+  });
+
+  test('adding or removing a link refetches the links and the summary', async () => {
+    const add = useAddProjectSpaceLink('P1', 'S1') as any;
+    const remove = useRemoveProjectSpaceLink('P1', 'S1') as any;
+    await add.mutationFn({ url: 'https://example.test', title: 'Ex' });
+    await remove.mutationFn('L1');
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      'POST http://test.local/projects/P1/spaces/S1/links',
+      'DELETE http://test.local/projects/P1/spaces/S1/links/L1',
+    ]);
+    expect(calls[0]!.body).toEqual({ url: 'https://example.test', title: 'Ex' });
+    await add.onSuccess();
+    await remove.onSuccess();
+    const both = [[...qk.project.spaceLinks('P1', 'S1')], [...qk.project.spaceSummary('P1', 'S1')]];
+    expect(invalidated).toEqual([...both, ...both]);
   });
 });

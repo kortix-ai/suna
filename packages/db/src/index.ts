@@ -85,6 +85,7 @@ export {
   chatUserIdentities,
   projectSessions,
   projectSpaces,
+  projectSpaceLinks,
   projectSpaceKindEnum,
   sessionPresenceLeases,
   projectSessionRuntimeContexts,

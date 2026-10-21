@@ -2,10 +2,16 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  addProjectSpaceLink,
   createProjectSpace,
   getOrCreateProjectDm,
+  getProjectSpaceSummary,
+  listProjectSpaceApps,
+  listProjectSpaceLinks,
   listProjectSpaces,
+  removeProjectSpaceLink,
   updateProjectSpace,
+  type AddProjectSpaceLinkInput,
   type UpdateProjectSpaceInput,
 } from '../core/rest/projects-client/spaces';
 import { contract } from './query-contracts';
@@ -54,6 +60,65 @@ export function useOpenProjectDm(projectId: string) {
   const invalidate = useInvalidateSpaces(projectId);
   return useMutation({
     mutationFn: (agentName: string) => getOrCreateProjectDm(projectId, agentName),
+    onSuccess: invalidate,
+  });
+}
+
+type Id = string | null | undefined;
+
+/** A channel's Apps (deployed from one of its threads). `inventory` tier, like the project's Apps. */
+export function useProjectSpaceApps(projectId: Id, spaceId: Id) {
+  return useQuery({
+    queryKey: qk.project.spaceApps(projectId ?? '', spaceId ?? ''),
+    queryFn: () => listProjectSpaceApps(projectId as string, spaceId as string),
+    enabled: !!projectId && !!spaceId,
+    ...contract('inventory'),
+  });
+}
+
+/** A channel's links, newest first. */
+export function useProjectSpaceLinks(projectId: Id, spaceId: Id) {
+  return useQuery({
+    queryKey: qk.project.spaceLinks(projectId ?? '', spaceId ?? ''),
+    queryFn: () => listProjectSpaceLinks(projectId as string, spaceId as string),
+    enabled: !!projectId && !!spaceId,
+    ...contract('inventory'),
+  });
+}
+
+/** The counts beside a channel's tab labels. */
+export function useProjectSpaceSummary(projectId: Id, spaceId: Id) {
+  return useQuery({
+    queryKey: qk.project.spaceSummary(projectId ?? '', spaceId ?? ''),
+    queryFn: () => getProjectSpaceSummary(projectId as string, spaceId as string),
+    enabled: !!projectId && !!spaceId,
+    ...contract('inventory'),
+  });
+}
+
+function useInvalidateSpaceLinks(projectId: string, spaceId: string) {
+  const queryClient = useQueryClient();
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: qk.project.spaceLinks(projectId, spaceId) }),
+      queryClient.invalidateQueries({ queryKey: qk.project.spaceSummary(projectId, spaceId) }),
+    ]);
+}
+
+/** Pin a link to a channel. A bad URL rejects with `ApiError` status 400 (see `addProjectSpaceLink`). */
+export function useAddProjectSpaceLink(projectId: string, spaceId: string) {
+  const invalidate = useInvalidateSpaceLinks(projectId, spaceId);
+  return useMutation({
+    mutationFn: (input: AddProjectSpaceLinkInput) => addProjectSpaceLink(projectId, spaceId, input),
+    onSuccess: invalidate,
+  });
+}
+
+/** Remove a link from a channel. */
+export function useRemoveProjectSpaceLink(projectId: string, spaceId: string) {
+  const invalidate = useInvalidateSpaceLinks(projectId, spaceId);
+  return useMutation({
+    mutationFn: (linkId: string) => removeProjectSpaceLink(projectId, spaceId, linkId),
     onSuccess: invalidate,
   });
 }

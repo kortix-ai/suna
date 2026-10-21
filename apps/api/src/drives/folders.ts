@@ -293,8 +293,12 @@ function mountedAt(path: string, mounts: readonly NotesMount[]): string | null {
  * The "This thread's channel" (or DM) section of /drives/README.md: the
  * space's files and memory folders as this sandbox mounts them, and the rule
  * to read the memory first. `name` is the channel slug or the DM's agent.
+ * A channel's links follow, newest first, at most `SPACE_NOTES_LINKS`.
  */
-export function spaceNotesLines(space: { kind: 'channel' | 'dm'; name: string }, mounts: readonly NotesMount[]): string[] {
+export function spaceNotesLines(
+  space: { kind: 'channel' | 'dm'; name: string; links?: readonly SpaceNotesLink[] },
+  mounts: readonly NotesMount[],
+): string[] {
   const me = mounts.find((m) => m.role === 'me');
   const folders = spaceDriveFolders(space.kind, space.name, me?.subdir ?? null);
   const files = folders && mountedAt(folders.files, mounts);
@@ -306,7 +310,7 @@ export function spaceNotesLines(space: { kind: 'channel' | 'dm'; name: string },
   ];
   if (!files || !memory) {
     lines.push(`The folders of ${place} are not mounted in this thread.`, '');
-    return lines;
+    return [...lines, ...linkLines(place, space.links)];
   }
   lines.push(
     `- Files of ${place}: ${files}/ (shown in the Files tab)`,
@@ -315,5 +319,26 @@ export function spaceNotesLines(space: { kind: 'channel' | 'dm'; name: string },
     `Read ${memory}/ at the start of the thread (\`MEMORY.md\` first when it exists). When you learn something the next thread in ${place} should know, write durable facts there in the same turn (\`mkdir -p\` it if missing). Keep one fact per bullet; no secrets.`,
     '',
   );
-  return lines;
+  return [...lines, ...linkLines(place, space.links)];
+}
+
+/** A link pinned to the channel (its Links tab). */
+export interface SpaceNotesLink {
+  url: string;
+  title: string | null;
+}
+
+/** How many of a channel's links the notes file lists. */
+export const SPACE_NOTES_LINKS = 20;
+
+/** Member-typed text on one line: no newline or control character can start a heading. */
+const oneLine = (text: string) => text.replace(/[\s\u0000-\u001f\u007f]+/g, ' ').trim();
+
+function linkLines(place: string, links: readonly SpaceNotesLink[] = []): string[] {
+  if (links.length === 0) return [];
+  const items = links.slice(0, SPACE_NOTES_LINKS).map(({ url, title }) => {
+    const label = title ? oneLine(title) : '';
+    return label ? `- ${label}: ${oneLine(url)}` : `- ${oneLine(url)}`;
+  });
+  return [`Links of ${place} (shown in the Links tab), as context for this thread:`, '', ...items, ''];
 }

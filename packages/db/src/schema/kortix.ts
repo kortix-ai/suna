@@ -1151,6 +1151,26 @@ export const projectSpaces = kortixSchema.table(
   ],
 );
 
+/** A link a member pinned to a channel (the channel's Links tab). */
+export const projectSpaceLinks = kortixSchema.table(
+  'project_space_links',
+  {
+    linkId: uuid('link_id').defaultRandom().primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => projectSpaces.spaceId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** http(s) only, at most 2,048 characters (checked by the API). */
+    url: text('url').notNull(),
+    title: text('title'),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_project_space_links_space').on(table.spaceId, table.createdAt.desc())],
+);
+
 // Who started a session's RUN (the whole spawn tree), for attribution and the
 // session list's "mine / shared / automated" split. Server-derived at create and
 // copied from the parent for a spawned session — see session-initiator.ts.

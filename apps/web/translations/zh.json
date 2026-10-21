@@ -22366,13 +22366,11 @@
         },
         "apps": {
           "title": "还没有应用",
-          "description": "在 {place} 中构建的应用会显示在这里。",
-          "action": "添加应用"
+          "description": "在 {place} 中构建的应用会显示在这里。"
         },
         "links": {
           "title": "还没有链接",
-          "description": "在 {place} 中分享的链接会显示在这里。",
-          "action": "添加链接"
+          "description": "在 {place} 中分享的链接会显示在这里。"
         },
         "triggers": {
           "title": "还没有触发器",
@@ -22400,7 +22398,25 @@
         "starting": "正在启动此话题",
         "progress": "话题启动进度",
         "restart": "重启话题"
-      }
+      },
+      "links": {
+        "add": "添加链接",
+        "addDescription": "在 {place} 中固定一个链接。智能体会在每个线程开始时读取频道的链接。",
+        "urlLabel": "URL",
+        "titleLabel": "标题（可选）",
+        "titlePlaceholder": "它是什么",
+        "invalidUrl": "请输入以 http:// 或 https:// 开头的链接。",
+        "addFailed": "无法添加链接，请重试。",
+        "added": "已添加链接",
+        "addedBy": "{name} · {time}",
+        "remove": "移除链接",
+        "removeTitle": "移除此链接？",
+        "removeDescription": "{link} 将从 {place} 中移除，对所有人生效。",
+        "removed": "已移除链接",
+        "removeFailed": "无法移除链接，请重试。",
+        "loadError": "无法加载链接。"
+      },
+      "appsLoadError": "无法加载应用。"
     },
     "details": {
       "about": "关于",

@@ -251,9 +251,14 @@ export * from './use-project-session';
 export * from './use-session-participants';
 export * from './use-project-sessions';
 export {
+  useAddProjectSpaceLink,
   useCreateProjectSpace,
   useOpenProjectDm,
+  useProjectSpaceApps,
+  useProjectSpaceLinks,
   useProjectSpaces,
+  useProjectSpaceSummary,
+  useRemoveProjectSpaceLink,
   useUpdateProjectSpace,
 } from './use-project-spaces';
 export * from './use-sessions-needing-input';

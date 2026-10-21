@@ -23,7 +23,7 @@ import type { KortixAccount } from './core/rest/projects-client/accounts';
 import type { ChangeRequest } from './core/rest/projects-client/change-requests';
 import type { KortixProject } from './core/rest/projects-client/projects';
 import type { SessionStartResult } from './core/rest/projects-client/session-sandbox';
-import type { ProjectSpace } from './core/rest/projects-client/spaces';
+import type { ProjectSpace, ProjectSpaceLink, ProjectSpaceSummary } from './core/rest/projects-client/spaces';
 import type {
   CreateSessionPromptResult,
   ProjectSession,
@@ -73,6 +73,12 @@ export function contractDrift(): void {
 
   fits<ProjectSpace>(wire<C.Space>());
   noPhantom<NoPhantom<ProjectSpace, C.Space>>();
+
+  fits<ProjectSpaceLink>(wire<C.SpaceLink>());
+  noPhantom<NoPhantom<ProjectSpaceLink, C.SpaceLink>>();
+
+  fits<ProjectSpaceSummary>(wire<C.SpaceSummary>());
+  noPhantom<NoPhantom<ProjectSpaceSummary, C.SpaceSummary>>();
 
   fits<SessionStartResult>(wire<C.SessionStartResult>());
   noPhantom<NoPhantom<SessionStartResult, C.SessionStartResult>>();

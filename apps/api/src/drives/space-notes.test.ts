@@ -72,4 +72,27 @@ describe('spaceNotesLines', () => {
       expect(text).not.toContain('/drives/me/');
     }
   });
+
+  test('a channel thread lists the channel’s links, one line each, flattened, at most 20', () => {
+    const links = [
+      { url: 'https://example.test/spec', title: 'Launch spec' },
+      { url: 'https://example.test/board', title: null },
+      { url: 'https://example.test/x', title: 'evil\n## injected' },
+      ...Array.from({ length: 25 }, (_, i) => ({ url: `https://example.test/${i}`, title: null })),
+    ];
+    const text = spaceNotesLines({ kind: 'channel', name: 'launch', links }, [me, company]).join('\n');
+    expect(text).toContain('Links of #launch');
+    expect(text).toContain('- Launch spec: https://example.test/spec');
+    expect(text).toContain('- https://example.test/board');
+    expect(text).toContain('- evil ## injected: https://example.test/x');
+    expect(text).not.toContain('\n## injected');
+    expect(text.split('\n').filter((line) => line.startsWith('- ') && line.includes('https://example.test/')).length).toBe(20);
+  });
+
+  test('a channel with no links, or folders not mounted, still says what it can', () => {
+    expect(spaceNotesLines({ kind: 'channel', name: 'launch', links: [] }, [me, company]).join('\n')).not.toContain('Links of');
+    const unmounted = spaceNotesLines({ kind: 'channel', name: 'launch', links: [{ url: 'https://example.test/a', title: 'A' }] }, [me]).join('\n');
+    expect(unmounted).toContain('not mounted in this thread');
+    expect(unmounted).toContain('- A: https://example.test/a');
+  });
 });

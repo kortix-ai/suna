@@ -28,6 +28,16 @@ export function bindProjectOperationsReview(projectId: string) {
       update: (...a: DropFirst<Parameters<typeof P.updateProjectSpace>>) => P.updateProjectSpace(projectId, ...a),
       /** The caller's DM with an agent, created on the first call. */
       dm: (agentName: string) => P.getOrCreateProjectDm(projectId, agentName),
+      /** The channel's Apps: deployed from one of its threads, only those the caller may open. */
+      apps: (spaceId: string) => P.listProjectSpaceApps(projectId, spaceId),
+      /** Links pinned to a channel. Only the creator or a project manager may remove one. */
+      links: {
+        list: (spaceId: string) => P.listProjectSpaceLinks(projectId, spaceId),
+        add: (...a: DropFirst<Parameters<typeof P.addProjectSpaceLink>>) => P.addProjectSpaceLink(projectId, ...a),
+        remove: (...a: DropFirst<Parameters<typeof P.removeProjectSpaceLink>>) => P.removeProjectSpaceLink(projectId, ...a),
+      },
+      /** The counts beside the channel's tab labels. */
+      summary: (spaceId: string) => P.getProjectSpaceSummary(projectId, spaceId),
     },
 
     /** Review Center — the per-project human-in-the-loop inbox (change requests, tool approvals, agent outputs/decisions). */

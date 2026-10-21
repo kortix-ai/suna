@@ -22366,13 +22366,11 @@
         },
         "apps": {
           "title": "Noch keine Apps",
-          "description": "Apps, die in {place} gebaut werden, erscheinen hier.",
-          "action": "App hinzufügen"
+          "description": "Apps, die in {place} gebaut werden, erscheinen hier."
         },
         "links": {
           "title": "Noch keine Links",
-          "description": "Links, die in {place} geteilt werden, erscheinen hier.",
-          "action": "Link hinzufügen"
+          "description": "Links, die in {place} geteilt werden, erscheinen hier."
         },
         "triggers": {
           "title": "Noch keine Trigger",
@@ -22400,7 +22398,25 @@
         "starting": "Dieser Thread startet",
         "progress": "Startfortschritt des Threads",
         "restart": "Thread neu starten"
-      }
+      },
+      "links": {
+        "add": "Link hinzufügen",
+        "addDescription": "Hefte einen Link an {place}. Agents lesen die Links des Kanals zu Beginn jedes Threads.",
+        "urlLabel": "URL",
+        "titleLabel": "Titel (optional)",
+        "titlePlaceholder": "Worum es geht",
+        "invalidUrl": "Gib einen Link ein, der mit http:// oder https:// beginnt.",
+        "addFailed": "Der Link konnte nicht hinzugefügt werden. Versuche es erneut.",
+        "added": "Link hinzugefügt",
+        "addedBy": "{name} · {time}",
+        "remove": "Link entfernen",
+        "removeTitle": "Diesen Link entfernen?",
+        "removeDescription": "{link} wird für alle aus {place} entfernt.",
+        "removed": "Link entfernt",
+        "removeFailed": "Der Link konnte nicht entfernt werden. Versuche es erneut.",
+        "loadError": "Die Links konnten nicht geladen werden."
+      },
+      "appsLoadError": "Die Apps konnten nicht geladen werden."
     },
     "details": {
       "about": "Info",

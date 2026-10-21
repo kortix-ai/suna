@@ -22366,13 +22366,11 @@
         },
         "apps": {
           "title": "Aún no hay apps",
-          "description": "Las apps creadas en {place} aparecen aquí.",
-          "action": "Añadir una app"
+          "description": "Las apps creadas en {place} aparecen aquí."
         },
         "links": {
           "title": "Aún no hay enlaces",
-          "description": "Los enlaces compartidos en {place} aparecen aquí.",
-          "action": "Añadir un enlace"
+          "description": "Los enlaces compartidos en {place} aparecen aquí."
         },
         "triggers": {
           "title": "Aún no hay activadores",
@@ -22400,7 +22398,25 @@
         "starting": "Iniciando este hilo",
         "progress": "Progreso de inicio del hilo",
         "restart": "Reiniciar hilo"
-      }
+      },
+      "links": {
+        "add": "Añadir enlace",
+        "addDescription": "Fija un enlace en {place}. Los agentes leen los enlaces del canal al inicio de cada hilo.",
+        "urlLabel": "URL",
+        "titleLabel": "Título (opcional)",
+        "titlePlaceholder": "Qué es",
+        "invalidUrl": "Introduce un enlace que empiece por http:// o https://.",
+        "addFailed": "No se pudo añadir el enlace. Inténtalo de nuevo.",
+        "added": "Enlace añadido",
+        "addedBy": "{name} · {time}",
+        "remove": "Quitar enlace",
+        "removeTitle": "¿Quitar este enlace?",
+        "removeDescription": "{link} se quita de {place} para todos.",
+        "removed": "Enlace quitado",
+        "removeFailed": "No se pudo quitar el enlace. Inténtalo de nuevo.",
+        "loadError": "No se pudieron cargar los enlaces."
+      },
+      "appsLoadError": "No se pudieron cargar las apps."
     },
     "details": {
       "about": "Información",

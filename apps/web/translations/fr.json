@@ -22366,13 +22366,11 @@
         },
         "apps": {
           "title": "Aucune app pour le moment",
-          "description": "Les apps créées dans {place} apparaissent ici.",
-          "action": "Ajouter une app"
+          "description": "Les apps créées dans {place} apparaissent ici."
         },
         "links": {
           "title": "Aucun lien pour le moment",
-          "description": "Les liens partagés dans {place} apparaissent ici.",
-          "action": "Ajouter un lien"
+          "description": "Les liens partagés dans {place} apparaissent ici."
         },
         "triggers": {
           "title": "Aucun déclencheur pour le moment",
@@ -22400,7 +22398,25 @@
         "starting": "Démarrage de ce fil",
         "progress": "Progression du démarrage du fil",
         "restart": "Redémarrer le fil"
-      }
+      },
+      "links": {
+        "add": "Ajouter un lien",
+        "addDescription": "Épinglez un lien dans {place}. Les agents lisent les liens du canal au début de chaque fil.",
+        "urlLabel": "URL",
+        "titleLabel": "Titre (facultatif)",
+        "titlePlaceholder": "De quoi il s’agit",
+        "invalidUrl": "Saisissez un lien qui commence par http:// ou https://.",
+        "addFailed": "Impossible d’ajouter le lien. Réessayez.",
+        "added": "Lien ajouté",
+        "addedBy": "{name} · {time}",
+        "remove": "Retirer le lien",
+        "removeTitle": "Retirer ce lien ?",
+        "removeDescription": "{link} est retiré de {place} pour tout le monde.",
+        "removed": "Lien retiré",
+        "removeFailed": "Impossible de retirer le lien. Réessayez.",
+        "loadError": "Impossible de charger les liens."
+      },
+      "appsLoadError": "Impossible de charger les apps."
     },
     "details": {
       "about": "À propos",

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 881,
+  "count": 886,
   "routes": [
     {
       "method": "GET",
@@ -3041,6 +3041,26 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/spaces/:spaceId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/apps"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/links/:linkId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/spaces/:spaceId/summary"
     },
     {
       "method": "POST",

@@ -130,3 +130,20 @@ test('project(id).spaces lists, creates, updates and opens a DM', async () => {
     { method: 'POST', url: 'http://test.local/projects/P1/spaces/dm', body: { agent_name: 'kortix' } },
   ]);
 });
+
+test('project(id).spaces reaches a channel’s apps, links and summary', async () => {
+  const spaces = kortix.project('P1').spaces;
+  await spaces.apps('S1');
+  await spaces.links.list('S1');
+  await spaces.links.add('S1', { url: 'https://example.test' });
+  await spaces.links.remove('S1', 'L1');
+  await spaces.summary('S1');
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    'GET http://test.local/projects/P1/spaces/S1/apps',
+    'GET http://test.local/projects/P1/spaces/S1/links',
+    'POST http://test.local/projects/P1/spaces/S1/links',
+    'DELETE http://test.local/projects/P1/spaces/S1/links/L1',
+    'GET http://test.local/projects/P1/spaces/S1/summary',
+  ]);
+  expect(calls[2]!.body).toEqual({ url: 'https://example.test' });
+});

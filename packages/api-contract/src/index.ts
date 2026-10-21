@@ -1305,6 +1305,52 @@ export type SpaceUpdateInput = z.infer<typeof SpaceUpdateInputSchema>;
 export const SpaceDmInputSchema = z.object({ agent_name: z.string().trim().min(1).max(200) }).strict();
 export type SpaceDmInput = z.infer<typeof SpaceDmInputSchema>;
 
+/** A link pinned to a channel: `/projects/:id/spaces/:spaceId/links`. */
+export const SpaceLinkSchema = z
+  .object({
+    link_id: z.string(),
+    space_id: z.string(),
+    url: z.string(),
+    title: z.string().nullable(),
+    created_by: z.string().nullable(),
+    /** The creator's display name or email; null when unknown. */
+    created_by_name: z.string().nullable(),
+    created_at: z.string(),
+    /** The caller may delete it: they added it, or they manage the project. */
+    can_delete: z.boolean(),
+  })
+  .strict();
+export type SpaceLink = z.infer<typeof SpaceLinkSchema>;
+
+export const SpaceLinkListSchema = z.object({ links: z.array(SpaceLinkSchema) }).strict();
+export type SpaceLinkList = z.infer<typeof SpaceLinkListSchema>;
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export const SpaceLinkCreateInputSchema = z
+  .object({
+    url: z.string().trim().min(1).max(2048).refine(isHttpUrl, 'url must be an http(s) URL'),
+    title: z.string().trim().max(200).optional(),
+  })
+  .strict();
+export type SpaceLinkCreateInput = z.infer<typeof SpaceLinkCreateInputSchema>;
+
+/** The counts beside a channel's tab labels. Fields are added, never renamed. */
+export const SpaceSummarySchema = z
+  .object({
+    apps: z.number().int(),
+    links: z.number().int(),
+  })
+  .strict();
+export type SpaceSummary = z.infer<typeof SpaceSummarySchema>;
+
 export const SESSION_SANDBOX_STATUSES = [
   'provisioning',
   'active',

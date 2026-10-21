@@ -5,7 +5,7 @@
  * projects/lib/project-spaces.ts + feature-flags/toggle-effects.ts.
  */
 import { randomUUID } from 'node:crypto';
-import { SpaceListSchema, SpaceSchema } from '@kortix/api-contract';
+import { SpaceLinkListSchema, SpaceLinkSchema, SpaceListSchema, SpaceSchema, SpaceSummarySchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
 import type { FlowContext, FlowMeta } from '../core/types';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
@@ -16,6 +16,17 @@ const ROUTES = {
   update: 'PATCH /v1/projects/:projectId/spaces/:spaceId',
   dm: 'POST /v1/projects/:projectId/spaces/dm',
 };
+const TAB_ROUTES = {
+  apps: 'GET /v1/projects/:projectId/spaces/:spaceId/apps',
+  links: 'GET /v1/projects/:projectId/spaces/:spaceId/links',
+  addLink: 'POST /v1/projects/:projectId/spaces/:spaceId/links',
+  removeLink: 'DELETE /v1/projects/:projectId/spaces/:spaceId/links/:linkId',
+  summary: 'GET /v1/projects/:projectId/spaces/:spaceId/summary',
+};
+const SPACE_APPS = '/v1/projects/:projectId/spaces/:spaceId/apps';
+const SPACE_LINKS = '/v1/projects/:projectId/spaces/:spaceId/links';
+const SPACE_LINK = '/v1/projects/:projectId/spaces/:spaceId/links/:linkId';
+const SPACE_SUMMARY = '/v1/projects/:projectId/spaces/:spaceId/summary';
 const FEATURES_ROUTE = 'PATCH /v1/projects/:projectId/features';
 const SESSION_ROUTES = {
   create: 'POST /v1/projects/:projectId/sessions',
@@ -685,6 +696,178 @@ flow('SPACE-13', createMeta([ROUTES.list, SESSION_ROUTES.create, SESSION_ROUTES.
         throw new Error(`the fork is ${forked.visibility} in ${forked.space_id}, expected project in the channel`);
       }
     });
+  } finally {
+    await world.close();
+  }
+});
+
+flow('SPACE-14', meta([...Object.values(TAB_ROUTES), FEATURES_ROUTE]), async (ctx) => {
+  const { project, world } = await openWorld(ctx);
+  const params = { projectId: project.id, spaceId: randomUUID() };
+  try {
+    await ctx.step('with project_channels off, the apps, links and summary routes → 403 feature_disabled', async () => {
+      for (const r of [
+        await world.owner.get(SPACE_APPS, { params }),
+        await world.owner.get(SPACE_LINKS, { params }),
+        await world.owner.post(SPACE_LINKS, { url: 'https://example.test' }, { params }),
+        await world.owner.del(SPACE_LINK, { params: { ...params, linkId: randomUUID() } }),
+        await world.owner.get(SPACE_SUMMARY, { params }),
+      ]) {
+        r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'project_channels');
+      }
+    });
+  } finally {
+    await world.close();
+  }
+});
+
+/** One App of the project with one deployment made from `sourceSessionId`. */
+async function insertAppDeployedFrom(world: AgentPrincipalsWorld, sourceSessionId: string, slug: string): Promise<string> {
+  const { rows } = await world.db.query<{ app_id: string }>(
+    `INSERT INTO kortix.apps (account_id, project_id, slug, name, route_key, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING app_id`,
+    [world.accountId, world.projectId, slug, slug, randomUUID().replace(/-/g, '').slice(0, 20), world.ownerUserId],
+  );
+  const appId = rows[0]!.app_id;
+  await world.db.query(
+    `INSERT INTO kortix.app_deployments (app_id, version, source_kind, runtime_version, created_by, source_session_id)
+     VALUES ($1, 1, 'static', 'ke2e', $2, $3)`,
+    [appId, world.ownerUserId, sourceSessionId],
+  );
+  return appId;
+}
+
+flow('SPACE-15', meta([TAB_ROUTES.apps, ROUTES.create, ROUTES.dm, FEATURES_ROUTE]), async (ctx) => {
+  const { project, world } = await openWorld(ctx, { manifest: true });
+  const params = { projectId: project.id };
+  try {
+    await world.setFeature('project_channels', true);
+    const general = await generalSpaceId(world, project.id);
+    const channel = (await world.owner.post(SPACES, { name: 'Builds' }, { params })).status(201).json<Space>().space_id;
+    const appIds: string[] = [];
+
+    await ctx.step('a channel with no App deployed from its threads lists none', async () => {
+      (await world.owner.get(SPACE_APPS, { params: { ...params, spaceId: channel } })).status(200).body().has('$.apps.length', 0);
+    });
+
+    await ctx.step('an App deployed from a channel thread lists in that channel only; one from #general does not', async () => {
+      const inChannel = await insertAppDeployedFrom(world, await insertSession(world, world.ownerUserId, 'project', { spaceId: channel }), 'ke2e-channel-app');
+      const inGeneral = await insertAppDeployedFrom(world, await insertSession(world, world.ownerUserId, 'project', { spaceId: general }), 'ke2e-general-app');
+      appIds.push(inChannel, inGeneral);
+      (await world.owner.get(SPACE_APPS, { params: { ...params, spaceId: channel } }))
+        .status(200).body().has('$.apps.length', 1).has('$.apps[0].app_id', inChannel);
+      (await world.owner.get(SPACE_APPS, { params: { ...params, spaceId: general } }))
+        .status(200).body().has('$.apps.length', 1).has('$.apps[0].app_id', inGeneral);
+    });
+
+    await ctx.step('a DM, an unknown id and a malformed id → 404 space_not_found', async () => {
+      const dm = (await world.owner.post(DM, { agent_name: 'kortix' }, { params })).status(200).json<Space>().space_id;
+      for (const spaceId of [dm, randomUUID(), 'not-a-uuid']) {
+        (await world.owner.get(SPACE_APPS, { params: { ...params, spaceId } })).status(404).body().has('$.code', 'space_not_found');
+      }
+    });
+
+    await world.db.query('DELETE FROM kortix.apps WHERE app_id = ANY($1::uuid[])', [appIds]);
+  } finally {
+    await world.close();
+  }
+});
+
+flow('SPACE-16', meta([TAB_ROUTES.links, TAB_ROUTES.addLink, TAB_ROUTES.removeLink, ROUTES.create, ROUTES.update, FEATURES_ROUTE]), async (ctx) => {
+  const { team, project, world } = await openWorld(ctx);
+  const params = { projectId: project.id };
+  try {
+    await world.setFeature('project_channels', true);
+    const channel = (await world.owner.post(SPACES, { name: 'Research' }, { params })).status(201).json<Space>().space_id;
+    const at = { ...params, spaceId: channel };
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const asMember = ctx.client.as(member);
+    let ownerLink = '';
+    let memberLink = '';
+
+    await ctx.step('a member adds a link → 201 with its url, title and creator; the owner adds one without a title', async () => {
+      const r = await asMember.post(SPACE_LINKS, { url: 'https://example.test/spec', title: 'Launch spec' }, { params: at });
+      r.status(201).body().schema(SpaceLinkSchema)
+        .has('$.url', 'https://example.test/spec').has('$.title', 'Launch spec')
+        .has('$.created_by', member.userId!).has('$.can_delete', true);
+      memberLink = r.json<{ link_id: string }>().link_id;
+      const o = await world.owner.post(SPACE_LINKS, { url: 'http://example.test/board' }, { params: at });
+      o.status(201).body().has('$.title', null);
+      ownerLink = o.json<{ link_id: string }>().link_id;
+    });
+
+    await ctx.step('the list is newest first; can_delete is true for the creator and for a project manager only', async () => {
+      (await world.owner.get(SPACE_LINKS, { params: at })).status(200).body().schema(SpaceLinkListSchema)
+        .has('$.links.length', 2).has('$.links[0].link_id', ownerLink).has('$.links[1].link_id', memberLink)
+        .has('$.links[0].can_delete', true).has('$.links[1].can_delete', true);
+      (await asMember.get(SPACE_LINKS, { params: at })).status(200).body()
+        .has('$.links[0].link_id', ownerLink).has('$.links[0].can_delete', false).has('$.links[1].can_delete', true);
+    });
+
+    await ctx.step('bad input → 400: not http(s), not a URL, over 2,048 characters, a title over 200, an unknown field', async () => {
+      for (const body of [
+        { url: 'javascript:alert(1)' },
+        { url: 'ftp://example.test/file' },
+        { url: 'not a url' },
+        { url: `https://example.test/${'a'.repeat(2048)}` },
+        { url: 'https://example.test', title: 'x'.repeat(201) },
+        { url: 'https://example.test', pinned: true },
+      ]) {
+        (await world.owner.post(SPACE_LINKS, body, { params: at })).status(400);
+      }
+    });
+
+    await ctx.step('a member who did not add the link → 403 forbidden; the link stays', async () => {
+      (await asMember.del(SPACE_LINK, { params: { ...at, linkId: ownerLink } })).status(403).body().has('$.code', 'forbidden');
+      (await world.owner.get(SPACE_LINKS, { params: at })).status(200).body().has('$.links.length', 2);
+    });
+
+    await ctx.step('the creator removes their link → 200; a second delete → 404 link_not_found', async () => {
+      (await asMember.del(SPACE_LINK, { params: { ...at, linkId: memberLink } })).status(200).body().has('$.ok', true);
+      (await asMember.del(SPACE_LINK, { params: { ...at, linkId: memberLink } })).status(404).body().has('$.code', 'link_not_found');
+    });
+
+    await ctx.step('a project manager removes another member’s link → 200', async () => {
+      const r = await asMember.post(SPACE_LINKS, { url: 'https://example.test/notes' }, { params: at });
+      const id = r.status(201).json<{ link_id: string }>().link_id;
+      (await world.owner.del(SPACE_LINK, { params: { ...at, linkId: id } })).status(200);
+      (await world.owner.get(SPACE_LINKS, { params: at })).status(200).body().has('$.links.length', 1).has('$.links[0].link_id', ownerLink);
+    });
+
+    await ctx.step('an archived channel → 404 space_not_found on list and add', async () => {
+      (await world.owner.patch(SPACE, { archived: true }, { params: at })).status(200);
+      (await world.owner.get(SPACE_LINKS, { params: at })).status(404).body().has('$.code', 'space_not_found');
+      (await world.owner.post(SPACE_LINKS, { url: 'https://example.test' }, { params: at })).status(404);
+    });
+  } finally {
+    await world.close();
+  }
+});
+
+flow('SPACE-17', meta([TAB_ROUTES.summary, TAB_ROUTES.addLink, TAB_ROUTES.removeLink, ROUTES.create, FEATURES_ROUTE]), async (ctx) => {
+  const { project, world } = await openWorld(ctx);
+  const params = { projectId: project.id };
+  try {
+    await world.setFeature('project_channels', true);
+    const channel = (await world.owner.post(SPACES, { name: 'Counts' }, { params })).status(201).json<Space>().space_id;
+    const at = { ...params, spaceId: channel };
+    let appId = '';
+
+    await ctx.step('a new channel → { apps: 0, links: 0 }', async () => {
+      (await world.owner.get(SPACE_SUMMARY, { params: at })).status(200).body().schema(SpaceSummarySchema).has('$.apps', 0).has('$.links', 0);
+    });
+
+    await ctx.step('two links and an App deployed from a channel thread → { apps: 1, links: 2 }; removing a link → links 1', async () => {
+      const first = (await world.owner.post(SPACE_LINKS, { url: 'https://example.test/a' }, { params: at })).status(201).json<{ link_id: string }>();
+      (await world.owner.post(SPACE_LINKS, { url: 'https://example.test/b' }, { params: at })).status(201);
+      appId = await insertAppDeployedFrom(world, await insertSession(world, world.ownerUserId, 'project', { spaceId: channel }), 'ke2e-count-app');
+      (await world.owner.get(SPACE_SUMMARY, { params: at })).status(200).body().has('$.apps', 1).has('$.links', 2);
+      (await world.owner.del(SPACE_LINK, { params: { ...at, linkId: first.link_id } })).status(200);
+      (await world.owner.get(SPACE_SUMMARY, { params: at })).status(200).body().has('$.links', 1);
+    });
+
+    await world.db.query('DELETE FROM kortix.apps WHERE app_id = $1', [appId]);
   } finally {
     await world.close();
   }
