@@ -1,12 +1,13 @@
 'use client';
 
 import type { SessionDisplayStatus } from '../../session/actions/session-label';
-import { ClockCounterClockwiseIcon, GitDiffIcon } from '@phosphor-icons/react';
+import { ClockCounterClockwiseIcon, GitDiffIcon, QuestionIcon } from '@phosphor-icons/react';
 
 /**
- * Color says who acts: gray nobody, green the agent, yellow you, red broken.
+ * Color says who acts: gray nobody, green the agent, blue you (yellow once it waits
+ * over 24h), red broken.
  * `starting` draws the stopped ring: a wake is meant to be instant, so it gets
- * no state of its own, and yellow stays reserved for `needs-you`.
+ * no state of its own, and blue and yellow stay reserved for `needs-you`.
  */
 const RING_STATUS_STYLE: Record<
   'starting' | 'stopped' | 'failed',
@@ -49,7 +50,7 @@ function ReadyGlyph() {
       {DOTS.map((dot, i) => (
         <circle key={i} data-dot="" cx={dot.cx} cy={dot.cy} r="1" fill="currentColor" />
       ))}
-      <circle data-core="" cx="8" cy="8" r="3" fill="currentColor" />
+      <circle data-core="" cx="8" cy="8" r="3.6" fill="currentColor" />
     </svg>
   );
 }
@@ -73,17 +74,55 @@ function WorkingGlyph() {
   );
 }
 
+const REVIEW_OVERDUE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A review is overdue when an open change request has not moved for 24h.
+ * The row then turns the review glyph from blue (your turn) to yellow (still
+ * waiting on you). Merged and closed requests never count.
+ */
+export function isReviewOverdue(
+  changeRequests: readonly { status: string; updated_at: string }[],
+  now = Date.now(),
+): boolean {
+  return changeRequests.some(
+    (cr) => cr.status === 'open' && now - Date.parse(cr.updated_at) >= REVIEW_OVERDUE_MS,
+  );
+}
+
 /** A status glyph with stable 16px geometry across every session state. */
-export function SessionStatusMark({ status }: { status: SessionDisplayStatus }) {
+export function SessionStatusMark({
+  status,
+  waitingOn = 'review',
+  overdue = false,
+}: {
+  status: SessionDisplayStatus;
+  /** `needs-you` only: an agent question or permission (`answer`) or a change
+   *  request (`review`). An answer blocks the agent, so callers pass it first. */
+  waitingOn?: 'answer' | 'review';
+  /** `needs-you` review only: it has waited too long, see `isReviewOverdue`. */
+  overdue?: boolean;
+}) {
   if (status === 'done') return <ReadyGlyph />;
   if (status === 'running') return <WorkingGlyph />;
+
+  if (status === 'needs-you' && waitingOn === 'answer') {
+    return (
+      <QuestionIcon
+        data-glyph="question"
+        className="size-4 shrink-0"
+        style={{ color: 'var(--kortix-blue)' }}
+        aria-hidden
+      />
+    );
+  }
 
   if (status === 'needs-you') {
     return (
       <GitDiffIcon
         data-glyph="review"
         className="size-4 shrink-0"
-        style={{ color: 'var(--kortix-yellow)' }}
+        style={{ color: overdue ? 'var(--kortix-yellow)' : 'var(--kortix-blue)' }}
         aria-hidden
       />
     );

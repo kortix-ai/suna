@@ -1594,6 +1594,10 @@
       "showMore": "显示更多",
       "brief": {
         "status": "状态",
+        "subAgent": "子代理",
+        "spawned": "派生会话",
+        "subAgentCount": "{count, plural, other {# 个子代理}}",
+        "spawnedCount": "{count, plural, other {# 个派生会话}}",
         "created": "创建时间",
         "source": "来源",
         "changeRequests": "更改请求",
@@ -1607,11 +1611,12 @@
         }
       },
       "status": {
-        "needsYou": "需要你处理",
-        "starting": "正在启动",
-        "running": "运行中",
-        "done": "已完成",
-        "stopped": "已停止",
+        "needsYou": "待审核",
+        "needsInput": "等待你的回复",
+        "starting": "正在唤醒",
+        "running": "工作中",
+        "done": "就绪",
+        "stopped": "休眠中",
         "failed": "失败",
         "legacy": "旧版"
       }

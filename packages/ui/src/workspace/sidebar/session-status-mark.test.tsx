@@ -1,7 +1,26 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { SessionStatusMark } from './session-status-mark';
+import { isReviewOverdue, SessionStatusMark } from './session-status-mark';
+
+const NOW = Date.parse('2026-10-21T12:00:00Z');
+const cr = (status: 'open' | 'merged' | 'closed', updated_at: string) => ({ status, updated_at });
+
+describe('isReviewOverdue', () => {
+  test('an open change request untouched for 24h or more is overdue', () => {
+    expect(isReviewOverdue([cr('open', '2026-10-20T12:00:00Z')], NOW)).toBe(true);
+  });
+
+  test('an open change request under 24h old is not overdue', () => {
+    expect(isReviewOverdue([cr('open', '2026-10-20T12:00:01Z')], NOW)).toBe(false);
+  });
+
+  test('merged and closed change requests never count, however old', () => {
+    expect(
+      isReviewOverdue([cr('merged', '2026-01-01T00:00:00Z'), cr('closed', '2026-01-01T00:00:00Z')], NOW),
+    ).toBe(false);
+  });
+});
 
 const render = (status: Parameters<typeof SessionStatusMark>[0]['status']) =>
   renderToStaticMarkup(<SessionStatusMark status={status} />);
@@ -25,10 +44,23 @@ describe('SessionStatusMark', () => {
     expect(html).not.toContain('animate-');
   });
 
-  test('needs-you is the yellow change-request glyph', () => {
+  test('needs-you is the blue change-request glyph', () => {
     const html = render('needs-you');
     expect(html).toContain('data-glyph="review"');
+    expect(html).toContain('var(--kortix-blue)');
+  });
+
+  test('needs-you turns yellow once a review is overdue', () => {
+    const html = renderToStaticMarkup(<SessionStatusMark status="needs-you" overdue />);
+    expect(html).toContain('data-glyph="review"');
     expect(html).toContain('var(--kortix-yellow)');
+  });
+
+  test('needs-you waiting on an answer is the blue question glyph, never the change-request glyph', () => {
+    const html = renderToStaticMarkup(<SessionStatusMark status="needs-you" waitingOn="answer" overdue />);
+    expect(html).toContain('data-glyph="question"');
+    expect(html).not.toContain('data-glyph="review"');
+    expect(html).toContain('var(--kortix-blue)');
   });
 
   test('starting draws the same gray ring as stopped', () => {

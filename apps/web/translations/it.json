@@ -1594,6 +1594,10 @@
       "showMore": "Mostra altro",
       "brief": {
         "status": "Stato",
+        "subAgent": "Sub-agente",
+        "spawned": "Sessione avviata",
+        "subAgentCount": "{count, plural, one {# sub-agente} other {# sub-agenti}}",
+        "spawnedCount": "{count, plural, one {# sessione avviata} other {# sessioni avviate}}",
         "created": "Creata",
         "source": "Origine",
         "changeRequests": "Richieste di modifica",
@@ -1607,11 +1611,12 @@
         }
       },
       "status": {
-        "needsYou": "Richiede la tua attenzione",
-        "starting": "Avvio in corso",
-        "running": "In esecuzione",
-        "done": "Completata",
-        "stopped": "Interrotta",
+        "needsYou": "Da rivedere",
+        "needsInput": "Serve una risposta",
+        "starting": "Risveglio",
+        "running": "Al lavoro",
+        "done": "Pronta",
+        "stopped": "Inattiva",
         "failed": "Non riuscita",
         "legacy": "Precedente"
       }
