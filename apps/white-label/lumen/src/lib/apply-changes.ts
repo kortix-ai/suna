@@ -72,6 +72,15 @@ export function renumberAdded(paras: Array<{ text: string; added: boolean }>): s
 
 const ADDED = '\u0000lumen-added\u0000';
 
+/** Clauses added to one anchor, in the redline's order: by their own clause number (stable for equal numbers). */
+const clauseNo = (t: string) => (CLAUSE.exec(t)?.[0].trim().replace(/\.$/, '').split('.').map(Number) ?? []);
+export function byClause(a: string, b: string): number {
+  const x = clauseNo(a);
+  const y = clauseNo(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? -1) !== (y[i] ?? -1)) return (x[i] ?? -1) - (y[i] ?? -1);
+  return 0;
+}
+
 function rebuild(p: string, text: string): string {
   const open = /^<w:p(?:\s[^>]*)?>/.exec(p)?.[0] ?? '<w:p>';
   const ppr = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(p)?.[0] ?? '';
@@ -84,18 +93,30 @@ export function applyToDocumentXml(xml: string, changes: Change[]): { xml: strin
   let out = xml;
   let applied = 0;
   const missing: string[] = [];
+  // Added clauses wait by their anchor paragraph's index and go in after it in the
+  // redline's order (their own clause numbers), whatever order the lawyer accepted them in.
+  const adds = new Map<number, string[]>();
   for (const c of changes) {
     let done = false;
+    let i = -1;
     out = out.replace(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g, (p) => {
+      i += 1;
       if (done) return p;
       const r = applyToText(paragraphText(p), c);
       if (!r) return p;
       done = true;
-      return r.added ? `${p}${rebuild(p, ADDED + r.added)}` : rebuild(p, r.text);
+      if (!r.added) return rebuild(p, r.text);
+      adds.set(i, [...(adds.get(i) ?? []), r.added]);
+      return p;
     });
     if (done) applied += 1;
     else missing.push(c.from);
   }
+  let k = -1;
+  out = out.replace(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g, (p) => {
+    k += 1;
+    return p + [...(adds.get(k) ?? [])].sort(byClause).map((t) => rebuild(p, ADDED + t)).join('');
+  });
   const ps = [...out.matchAll(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g)].map((m) => m[0]);
   const texts = renumberAdded(ps.map((p) => {
     const t = paragraphText(p);
@@ -133,7 +154,12 @@ export async function applyChanges(
       continue;
     }
     const r = applyToText(rows[i].text, c)!;
-    if (r.added) rows.splice(i + 1, 0, { text: r.added, added: true });
+    if (r.added) {
+      // After the anchor and any clause added to it that comes first in the redline.
+      let j = i + 1;
+      while (rows[j]?.added && byClause(rows[j].text, r.added) <= 0) j += 1;
+      rows.splice(j, 0, { text: r.added, added: true });
+    }
     else rows[i] = { ...rows[i], text: r.text };
     applied += 1;
   }

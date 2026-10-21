@@ -57,4 +57,19 @@ describe('accepted changes into a new version of the contract', () => {
     expect(docXml).toContain('2. Exclusions.');
     expect(docXml).toContain('2.2 Residuals.');
   });
+
+  test('two new clauses on one anchor keep the redline order, whatever order they were accepted in (PE2E-R3-3)', async () => {
+    const three = '3. Liability. Capped at EUR 900,000.';
+    const exclusions = { from: three, to: `${three} 6. Exclusions. Public information is excluded.` };
+    const compelled = { from: three, to: `${three} 7. Compelled Disclosure. Notice comes first.` };
+    const xml = body(P('1. Term.'), P('2. Law.'), P(three), P('4. Notices.'));
+    for (const order of [[exclusions, compelled], [compelled, exclusions]]) {
+      const texts = [...applyToDocumentXml(xml, order).xml.matchAll(/<w:p>[\s\S]*?<\/w:p>/g)].map((m) => paragraphText(m[0]));
+      expect(texts).toEqual(['1. Term.', '2. Law.', three, '4. Exclusions. Public information is excluded.', '5. Compelled Disclosure. Notice comes first.', '4. Notices.']);
+      const out = await applyChanges({ bytes: new ArrayBuffer(0), filename: 'nda.txt', mime: 'text/plain', paras: [{ text: '1. Term.' }, { text: three }] }, order);
+      const docXml = await (await JSZip.loadAsync(await out.blob.arrayBuffer())).file('word/document.xml')!.async('string');
+      expect(docXml.indexOf('4. Exclusions.')).toBeGreaterThan(0);
+      expect(docXml.indexOf('5. Compelled Disclosure.')).toBeGreaterThan(docXml.indexOf('4. Exclusions.'));
+    }
+  });
 });
