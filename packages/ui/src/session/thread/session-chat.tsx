@@ -1901,6 +1901,7 @@ export function SessionChat({
       held: heldTurnIds,
       pricing: pricingLookup,
       hideOutOfContext,
+      foldCompactions: true,
     }),
     [lastTurnWorking, heldTurnIds, pricingLookup, hideOutOfContext],
   );
@@ -2425,7 +2426,7 @@ export function SessionChat({
   // A compaction turn of any state (`turn.compaction`), so a failed attempt's
   // turn suppresses the optimistic "Compacting…" marker instead of leaving it
   // shimmering beside the failure row.
-  const hasCompactionTurn = useMemo(() => turns.some((turn) => turn.compaction !== null), [turns]);
+  const hasCompactionTurn = useMemo(() => turns.some((turn) => turn.compaction !== null || turn.blocks.some((block) => block.type === 'compaction')), [turns]);
   // Index of the LAST compaction turn (any state). Every FAILED attempt
   // before it is history the reader retried past — a run of retries renders
   // as ONE failure row (the latest), not a stack of near-identical lines.

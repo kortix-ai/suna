@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { sessionLogOfV1Rows, sessionLogTurns, type SessionLogTurn } from '@kortix/sdk';
+import { sessionLogOfV1Rows, sessionLogTurns, SESSION_LOG_SCHEMA, SESSION_LOG_MINOR, type SessionLogMessage, type SessionLogTurn } from '@kortix/sdk';
 
-import { TranscriptTurnRow, openTextBlock } from './transcript';
+import { SessionTurn, TranscriptTurnRow, openTextBlock } from './transcript';
 
 /**
  * `TranscriptTurnRow` is the only production site that decides WHICH turns
@@ -102,4 +103,33 @@ describe('openTextBlock: only the text block still being written streams (KRTX-2
     expect(openTextBlock(false, reply([text('b1')], null))).toBeNull();
     expect(openTextBlock(true, undefined)).toBeNull();
   });
+});
+
+// KRTX-3034: exercise the real transcript, not a reconstruction of its JSX.
+test('one settled turn folds activity before and after compaction behind one Worked row', () => {
+  const message = (id: string, role: 'user' | 'assistant', blocks: SessionLogMessage['blocks'], extra: Partial<SessionLogMessage> = {}): SessionLogMessage => ({
+    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, message_id: id, thread_id: 'synthetic', seq: 1,
+    role, kind: 'turn', status: 'complete', in_context: true, model: null, usage: null,
+    finish: null, error: null, created_at: '2026-01-01T00:00:00Z', completed_at: '2026-01-01T00:00:08Z',
+    producer: { harness: 'pi', harness_version: '1', adapter_version: '1' }, blocks, ...extra,
+  });
+  const turns = sessionLogTurns({ schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, thread_id: 'synthetic', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '', messages: [
+    message('prompt', 'user', [{ type: 'text', id: 'q', text: 'Check synthetic grouping' }]),
+    message('before', 'assistant', [{ type: 'reasoning', id: 'thinking', text: 'Work before compaction' }], { reply_to: 'prompt' }),
+    message('marker', 'user', [{ type: 'compaction', id: 'cp', summary: 'Synthetic retained context', first_kept_message_id: null }], { kind: 'compaction' }),
+    message('after', 'assistant', [{ type: 'text', id: 'answer', text: 'Synthetic final answer' }], { reply_to: 'prompt' }),
+  ] }, { foldCompactions: true });
+  const turn = turns[0];
+  if (!turn) throw new Error('Missing synthetic turn');
+  expect(turns).toHaveLength(1);
+  const html = renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient(), children: createElement(SessionTurn, {
+    turn, turnOutcome: {}, sessionId: 'synthetic', sessionStatus: undefined, isLast: true, ownsPlan: false,
+    permissions: [], questions: [], sessionWorking: false, isWorkingTurn: false,
+    suppressBusyIndicator: false, awaitingUser: false, pending: false, isFirstTurn: true,
+    onPermissionReply: async () => {}, onRewind: () => {}, rewindDisabled: true,
+  }) }));
+  expect(html.match(/group\/work/g)).toHaveLength(1);
+  expect(html).toContain('Synthetic final answer');
+  expect(html).not.toContain('Context automatically compacted');
+  expect(html).not.toContain('Synthetic retained context');
 });
