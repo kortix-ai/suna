@@ -1,6 +1,6 @@
 /**
  * The scan scaffold both app SDK-boundary lints share (`apps/web/scripts/
- * sdk-boundary.mjs` and `apps/white-label/lumen/scripts/sdk-boundary.mjs`).
+ * sdk-boundary.mjs` and `apps/white-label/{lumen,reskin}/scripts/sdk-boundary.mjs`).
  * One directory walker, one line counter, one static-fetch-target extractor —
  * hoisted here so the two lints cannot drift apart in how they read source.
  */

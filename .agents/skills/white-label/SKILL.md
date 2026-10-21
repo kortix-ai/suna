@@ -74,10 +74,18 @@ and the browser-tab title use these values after the account loads.
 | Product name in UI copy | `apps/web/translations/*.json` |
 | Email sender | `EMAIL_FROM` and `SMTP_SENDER_NAME` in the instance env |
 
-**C. Own frontend on `@kortix/sdk`.** Two patterns live under
+**C. Own frontend on `@kortix/sdk`.** Three patterns live under
 `apps/white-label/`. `apps/white-label/README.md` compares them and has the
 id map.
 
+- **Reskin the Kortix workspace:** `apps/white-label/reskin` (Lumen
+  Workspace). Next.js. The Kortix product screens (`@kortix/ui` session,
+  workspace and files modules) under your own typed theme, mark and fonts.
+  Direct mode: each person pastes a Kortix PAT and the browser calls the
+  Kortix API (the API must allow the origin through CORS). Wrapper mode:
+  `KORTIX_API_KEY` stays on your server, people sign in to your app, and a
+  same-origin proxy with a deny-by-default policy calls Kortix. Name and
+  tagline: `src/config/brand.ts`. Colors, radius, fonts: `src/config/theme.ts`.
 - **Wrap Kortix for your own team:** `apps/white-label/team-console`. A Vite
   static Kortix App. People sign in with their Kortix login (the App viewer
   identity). Kortix is the identity and the data. No backend.

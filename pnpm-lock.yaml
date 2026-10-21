@@ -1502,6 +1502,55 @@ importers:
         specifier: 3.2.7
         version: 3.2.7(@types/node@20.19.43)(happy-dom@20.14.5)
 
+  apps/white-label/reskin:
+    dependencies:
+      '@kortix/sdk':
+        specifier: workspace:*
+        version: link:../../../packages/sdk
+      '@kortix/ui':
+        specifier: workspace:*
+        version: link:../../../packages/ui
+      '@phosphor-icons/react':
+        specifier: 2.1.10
+        version: 2.1.10(react-dom@19.3.0)(react@19.3.0)
+      '@tanstack/react-query':
+        specifier: ^5.75.2
+        version: 5.103.0(react@19.3.0)
+      next:
+        specifier: 16.4.0
+        version: 16.4.0(@babel/core@7.29.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.63.0)(@types/node@20.19.43)(react-dom@19.3.0)(react@19.3.0)
+      react:
+        specifier: ^19.1.0
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.3.0(react@19.3.0)
+    devDependencies:
+      '@tailwindcss/postcss':
+        specifier: ^4.1.4
+        version: 4.3.3
+      '@types/node':
+        specifier: ^20
+        version: 20.19.43
+      '@types/react':
+        specifier: 19.2.18
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: 19.2.3
+        version: 19.2.3(@types/react@19.2.18)
+      '@typescript/native-preview':
+        specifier: 7.0.0-dev.20260707.2
+        version: 7.0.0-dev.20260707.2
+      happy-dom:
+        specifier: ^20.14.5
+        version: 20.14.5
+      tailwindcss:
+        specifier: ^4
+        version: 4.3.3
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
   apps/white-label/team-console:
     dependencies:
       '@kortix/sdk':

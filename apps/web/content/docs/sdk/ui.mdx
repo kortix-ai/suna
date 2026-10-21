@@ -707,7 +707,10 @@ createRoot(document.getElementById('root')!).render(
 
 - `useProjectSessions`, `useProjectApps`, `useProjectTriggers`, `useChangeRequests`, `useGatewayOverview` and `useCan` add more data ([Hooks](/docs/sdk/react#hooks)).
 - Never `fetch` the Kortix API yourself. If the SDK lacks a call you need, that is an SDK gap to report.
-- The [white-label demo](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/lumen) is a full Next.js product built this way, in its own brand.
+- Three white-label examples are built this way ([overview](https://github.com/kortix-ai/suna/tree/dev/apps/white-label)):
+  - [Lumen Workspace](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/reskin) (reskin): the Kortix workspace UI under its own theme, with the browser on a Kortix API key (direct mode) or behind its own server (wrapper mode).
+  - [Team Console](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/team-console) (internal tool): a static Kortix App over one account, signed in as the viewer.
+  - [Lumen](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/lumen) (your own SaaS): a legal AI product with its own users, data and billing, and Kortix as the agent backend.
 
 ## For agents
 
