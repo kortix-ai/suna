@@ -16,6 +16,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `useCustomLlmProviders(projectId)` (`@kortix/sdk/react`): `{ providers, isLoading, error, save,
   remove, isSaving }`. Writes refresh the list and both model-picker caches.
 
+### Deprecated (managed models are served by Kortix Platinum inference)
+- `ProjectLlmCatalogResponse.managedPricingRoutes`: the API no longer sends it. Every managed
+  model has one price, its `cost` in `models`. `platformFeePercent` is unchanged.
+
 ### Deprecated (the LLM gateway is the only model path)
 - `FeatureFlagKey` `'llm_gateway'` graduated: absent from `FEATURE_FLAG_KEYS`, and
   `useFeatureFlag(id, 'llm_gateway')` reports `enabled: true`.

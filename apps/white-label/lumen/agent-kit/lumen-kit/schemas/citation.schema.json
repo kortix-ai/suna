@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "citation",
+  "type": "object",
+  "required": ["doc_id", "a", "quote"],
+  "additionalProperties": false,
+  "properties": {
+    "doc_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "a": { "type": "string", "pattern": "^p\\d+\\.\\d+$" },
+    "quote": { "type": "string", "minLength": 1, "maxLength": 300 }
+  }
+}

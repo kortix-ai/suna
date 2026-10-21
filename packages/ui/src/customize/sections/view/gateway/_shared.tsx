@@ -1,6 +1,5 @@
 'use client';
 
-import { getManagedModel } from '@kortix/llm-catalog';
 import { CheckIcon as Check } from '@phosphor-icons/react';
 import { Copy } from '../../../../icons/copy';
 import { useTranslations } from '../../../../i18n';
@@ -22,7 +21,7 @@ export function modelLabel(id: string): string {
 }
 
 export function displayModel(id: string): string {
-  return getManagedModel(id)?.name ?? id.split('/').pop() ?? id;
+  return id.split('/').pop() ?? id;
 }
 
 export function tint(accent: string, pct: number): string {

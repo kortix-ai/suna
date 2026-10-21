@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { CATALOG, bedrockInferenceProfileRank } from '@kortix/llm-catalog';
-import { RUNTIME_MANAGED_MODELS } from './managed-models';
+import { TEST_MANAGED_LINEUP } from '../../__tests__/fixtures/managed-lineup';
+import { __setManagedLineupForTest } from './managed-models';
 import {
   connectedByokPickerModels,
   flagshipRefForEnvVar,
@@ -51,7 +52,8 @@ describe('providerFlagship', () => {
 
 describe('labelForModelRef', () => {
   test('managed ref (kortix/<id>) → the managed display name', () => {
-    const glm = RUNTIME_MANAGED_MODELS.find((m) => m.id === 'glm-5.3-flash');
+    __setManagedLineupForTest(TEST_MANAGED_LINEUP);
+    const glm = TEST_MANAGED_LINEUP.find((m) => m.id === 'glm-5.3-flash');
     expect(labelForModelRef('kortix/glm-5.3-flash')).toBe(glm!.name);
     // bare managed id resolves too
     expect(labelForModelRef('glm-5.3-flash')).toBe(glm!.name);

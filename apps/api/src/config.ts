@@ -1,4 +1,3 @@
-import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
 import { hydrateEnvironmentSecret } from '@kortix/shared';
 import { z } from '@hono/zod-openapi';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
@@ -102,32 +101,6 @@ const optFallbackPolicies = z
 //   - REQUIRED:    server will not start without these
 //   - CONDITIONAL: required when a related feature is enabled
 //   - OPTIONAL:    graceful degradation or sane default if missing
-
-/**
- * Managed model ids served by Morph direct (signed ZDR terms) FIRST, then Zen,
- * then the OpenRouter pool (`managedCandidates`). From 2026-10-16 22:00 to
- * 10-19 04:00 UTC the OpenRouter pool alone (one shared endpoint) answered
- * 60-80% of DeepSeek requests with 429. Measured 2026-10-19 at ~150k-token
- * prompts, streaming, tool calls, first token p50: DeepSeek 1017 2.9 s (8
- * parallel), 8.0 s (40 parallel, 40/40 OK); GLM 7.9 s. The
- * gateway fails over only on errors and a 90 s header timeout, never on a slow
- * first byte. An empty list is the kill switch.
- */
-export const MORPH_MANAGED_MODELS_DEFAULT = 'deepseek-v4.1-flash,glm-5.3-flash';
-
-/**
- * OpenCode Zen (https://opencode.ai/docs/zen: US-hosted, zero retention)
- * serves these managed models after Morph direct and before the OpenRouter
- * pool. At ~160k-token prompts Zen served 60 concurrent sessions
- * (239/240, 404 req/min, 2026-09-29) and 40 parallel DeepSeek requests 40/40
- * (first token p50 10.5 s, 2026-10-19). Without
- * OPENCODE_ZEN_API_KEY the list has no effect; an empty list is the kill switch.
- */
-export const OPENCODE_ZEN_MANAGED_MODELS_DEFAULT = 'glm-5.3-flash,deepseek-v4.1-flash';
-
-export function parseMorphManagedModels(value: string): string[] {
-  return value.split(',').map((id) => id.trim()).filter(Boolean);
-}
 
 const envSchema = z.object({
   // ── Core (required) ──────────────────────────────────────────────────────
@@ -506,28 +479,20 @@ const envSchema = z.object({
   TEAMS_APP_NAME: optStrDefault('Kortix'),
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
-  OPENROUTER_API_URL: optUrl('https://openrouter.ai/api/v1'),
-  // OpenRouter remains available for the router and project BYOK connections.
-  OPENROUTER_API_KEY: optStr,
-  MORPH_API_URL: optUrl('https://api.morphllm.com/v1'),
-  MORPH_API_KEY: optStr,
-  // Managed model IDs that use Morph direct first
-  // (see MORPH_MANAGED_MODELS_DEFAULT). An empty value disables Morph.
-  MORPH_MANAGED_MODELS: z.string().default(MORPH_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
-  OPENCODE_ZEN_API_URL: optUrl('https://opencode.ai/zen/v1'),
-  OPENCODE_ZEN_API_KEY: optStr,
-  // Managed model IDs served by OpenCode Zen after Morph (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
-  OPENCODE_ZEN_MANAGED_MODELS: z.string().default(OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
+  // Kortix Platinum inference: the one upstream of every Kortix-managed model
+  // (`managedCandidates`). The key is a pt_live_ key with `inference:write`.
+  PLATINUM_INFERENCE_URL: optUrl('https://api.platinum.dev/v1/inference'),
+  PLATINUM_INFERENCE_API_KEY: optStr,
   // CLOUD-ONLY. Whether KORTIX's own managed model lineup exists on this
-  // deployment. The lineup routes through Kortix's shared Bedrock and
-  // OpenRouter credentials. Kortix bills each route as platform credits.
+  // deployment. The lineup is served by Platinum inference on Kortix's key.
+  // Kortix bills each request as platform credits.
   // A self-host still runs the gateway for its own
   // BYOK routing (every sandbox model call goes through `/v1/llm`), it just
   // must never see or route to Kortix's shared credentials. When unset it
   // follows KORTIX_BILLING_INTERNAL_ENABLED (derived below): billing on =
   // managed cloud where the managed lineup is the product; billing off =
   // self-host where it must stay dark. An explicit true/false always wins.
-  // See RUNTIME_MANAGED_MODELS (managed-models.ts) and managedCandidates()
+  // See loadManagedLineup (managed-models.ts) and managedCandidates()
   // (descriptors.ts) — both are gated on this and read no managed credentials
   // when off.
   KORTIX_MANAGED_PROVIDER_ENABLED: optBoolUnset,
@@ -537,14 +502,12 @@ const envSchema = z.object({
   // Runtime routing is control-plane configuration, not a model-catalog
   // constant baked into the gateway binary. Operators can replace the default
   // and define any number of exact-match fallback policies without code changes.
-  LLM_GATEWAY_DEFAULT_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
-  // Image-capable managed model used when the default receives an image.
-  LLM_GATEWAY_VISION_MODEL: optStrDefault('deepseek-v4.1-flash'),
+  // Empty = the first model Platinum Inference lists (platformDefaultModelId).
+  LLM_GATEWAY_DEFAULT_MODEL: optStr,
+  // Model used when the default receives an image. Empty = the first managed
+  // model that reads images (platformVisionModelId).
+  LLM_GATEWAY_VISION_MODEL: optStr,
   LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
-  // Optional JSON array replacing the platform managed-model overlay (transport,
-  // upstream id, pricing ref, capabilities). Empty uses the bundled last-known
-  // defaults; managed routes are otherwise fully operator-defined.
-  LLM_GATEWAY_MANAGED_MODELS: optStr,
   // Runtime source for provider/model metadata. The API keeps the last known
   // snapshot if this source is temporarily unavailable.
   LLM_GATEWAY_CATALOG_URL: optUrl('https://models.dev/api.json'),
@@ -1184,17 +1147,10 @@ function validateEnv(): z.infer<typeof envSchema> {
   }
 
   // ── Warnings (non-fatal but worth knowing) ─────────────────────────────
-  if (!raw.OPENROUTER_API_KEY) {
+  if (raw.KORTIX_MANAGED_PROVIDER_ENABLED === 'true' && !raw.PLATINUM_INFERENCE_API_KEY) {
     issues.push({
-      var: 'OPENROUTER_API_KEY',
-      message: 'Not set — the optional OpenRouter router is unavailable',
-      level: 'warn',
-    });
-  }
-  if (raw.KORTIX_MANAGED_PROVIDER_ENABLED === 'true' && !raw.OPENROUTER_API_KEY) {
-    issues.push({
-      var: 'OPENROUTER_API_KEY',
-      message: 'Managed models are on but OPENROUTER_API_KEY is unset — Kortix managed models are unavailable',
+      var: 'PLATINUM_INFERENCE_API_KEY',
+      message: 'Managed models are on but PLATINUM_INFERENCE_API_KEY is unset — Kortix managed models are unavailable',
       level: 'warn',
     });
   }
@@ -1393,14 +1349,8 @@ export const config = {
   TEAMS_APP_NAME: env.TEAMS_APP_NAME,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
-  OPENROUTER_API_URL: env.OPENROUTER_API_URL,
-  OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
-  MORPH_API_URL: env.MORPH_API_URL,
-  MORPH_API_KEY: env.MORPH_API_KEY,
-  MORPH_MANAGED_MODELS: env.MORPH_MANAGED_MODELS,
-  OPENCODE_ZEN_API_URL: env.OPENCODE_ZEN_API_URL,
-  OPENCODE_ZEN_API_KEY: env.OPENCODE_ZEN_API_KEY,
-  OPENCODE_ZEN_MANAGED_MODELS: env.OPENCODE_ZEN_MANAGED_MODELS,
+  PLATINUM_INFERENCE_URL: env.PLATINUM_INFERENCE_URL,
+  PLATINUM_INFERENCE_API_KEY: env.PLATINUM_INFERENCE_API_KEY,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
   // blob misses the var; self-host stays off). Explicit value always wins.
   KORTIX_MANAGED_PROVIDER_ENABLED:
@@ -1409,7 +1359,6 @@ export const config = {
   LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,
   LLM_GATEWAY_VISION_MODEL: env.LLM_GATEWAY_VISION_MODEL,
   LLM_GATEWAY_FALLBACK_POLICIES: env.LLM_GATEWAY_FALLBACK_POLICIES,
-  LLM_GATEWAY_MANAGED_MODELS: env.LLM_GATEWAY_MANAGED_MODELS,
   LLM_GATEWAY_CATALOG_URL: env.LLM_GATEWAY_CATALOG_URL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,

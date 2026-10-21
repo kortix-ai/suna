@@ -2,7 +2,7 @@ import { type Catalog, type CatalogModel, autoSeedDefaultModel } from '@kortix/l
 import { toWireModel } from '../resolution/effective';
 import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
-import { RUNTIME_MANAGED_MODELS } from './managed-models';
+import { getRuntimeManagedModel } from './managed-models';
 
 // PURE catalog logic for the model picker — no DB, no config, so it's unit-
 // testable in isolation. The DB-touching assembly (connected BYOK providers +
@@ -136,7 +136,7 @@ export function flagshipRefForEnvVar(envVar: string): string | null {
 export function labelForModelRef(ref: string): string {
   const modelById = catalogState().modelById;
   const wire = toWireModel(ref);
-  const managed = RUNTIME_MANAGED_MODELS.find((m) => m.id === wire);
+  const managed = getRuntimeManagedModel(wire);
   if (managed) return managed.name;
   if (wire.startsWith('codex/')) {
     const inner = wire.slice('codex/'.length);
