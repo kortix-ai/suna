@@ -1,6 +1,6 @@
 import { cn } from '@kortix/ui';
 import type { ReactNode } from 'react';
-import { Eyebrow } from './shared';
+import { Eyebrow } from '../component/section-primitives';
 import type { RoleArtifact } from './types';
 
 /**
