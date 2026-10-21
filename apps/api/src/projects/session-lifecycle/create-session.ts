@@ -3,6 +3,7 @@
  * drain executes, followed by the command's post-create actions.
  */
 
+import { isRepositoryDisconnectedError, repositoryDisconnectedBody } from '../../shared/repository-health';
 import { projectSessions, projects, serviceAccounts } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { adoptChatThreads, bindChatThread } from '../../channels/core/threads';
@@ -182,6 +183,18 @@ async function runInlineCreate(
     // immediately, and the row is queued for backoff / dead-lettered per the
     // normal 5-attempt budget rather than left dangling on a lease.
     const message = err instanceof Error ? err.message : String(err);
+    // A disconnected repository is not retried: no attempt can succeed until a
+    // person reconnects GitHub, and the caller needs the cause, not a 503.
+    if (isRepositoryDisconnectedError(err)) {
+      await markCommandFailed(row, message, { retryable: false, attempts: row.attempts + 1 });
+      return {
+        status: 'failed',
+        commandId: row.commandId,
+        retryable: false,
+        requeued: false,
+        error: { status: 409, body: repositoryDisconnectedBody(err) },
+      };
+    }
     const outcome = await markCommandFailed(row, message, {
       retryable: true,
       attempts: row.attempts + 1,

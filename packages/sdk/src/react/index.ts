@@ -152,6 +152,7 @@ export {
   type TriggerRunsQueryOptions,
 } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
+export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms } from './use-rooms';
 export {
   useApproveCaptureDevice,
   useApproveCaptureEnrollment,
@@ -282,6 +283,7 @@ export {
 } from './use-kortix-app-viewer';
 
 export { useModelAccess } from './use-model-access';
+export { useCustomLlmProviders } from './use-custom-llm-providers';
 
 // The sandbox-image load state: the SDK owns the raw-file URL, the HEAD probe,
 // the auth headers, the size gate, the probe cache and the one fresh-token

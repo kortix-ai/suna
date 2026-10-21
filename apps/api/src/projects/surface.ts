@@ -16,6 +16,9 @@ export {
   type GitProxyAuth,
 } from './lib/git';
 
+// Idle sessions off a fallback model (consumed by workers/session-model-fallback-worker).
+export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert';
+
 // A person's pins and archive (consumed by account erasure and offboarding).
 export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';
 
@@ -57,7 +60,7 @@ export { assertProjectCapability, loadProjectForUser } from './lib/access';
 // so the approval page refuses exactly whom the resolve route refuses).
 export { mayResolveApproval } from './lib/approval-authority';
 export { approvalCallerOf } from './lib/http-approval-caller';
-export { approvalTargetSession } from './lib/connector-approval-decision';
+export { approvalTargetSession, expireDueApprovals } from './lib/connector-approval-decision';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
 export { listResolvedProjectSecrets } from './secrets';

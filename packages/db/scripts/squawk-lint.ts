@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { loadFileSet } from './load-file-set';
 /**
  * Run squawk (https://squawkhq.com) — a deterministic Postgres migration
  * linter — against every migration file that is NOT in
@@ -98,14 +99,6 @@ async function ensureSquawkBinary(): Promise<string> {
   return cachedPath;
 }
 
-function loadGrandfatherSet(): Set<string> {
-  try {
-    const data = JSON.parse(readFileSync(GRANDFATHER_FILE, 'utf8')) as { files: string[] };
-    return new Set(data.files);
-  } catch {
-    return new Set();
-  }
-}
 
 export interface SquawkWaiver {
   file: string;
@@ -133,7 +126,7 @@ export function loadWaivers(): SquawkWaiver[] {
 
 async function main(): Promise<void> {
   const lintAll = process.argv.includes('--all');
-  const grandfathered = loadGrandfatherSet();
+  const grandfathered = loadFileSet(GRANDFATHER_FILE);
 
   const { readdirSync } = await import('node:fs');
   const allSqlFiles = readdirSync(MIGRATIONS_DIR)

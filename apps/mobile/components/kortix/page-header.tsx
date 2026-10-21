@@ -21,7 +21,7 @@
  * shape, not the size of an older Sessions-page title row.
  *
  * `onAdd` puts the page's one create action in the right column, before
- * `···`. Every control is a 40pt `icon` ghost button; the first and the last
+ * `···`. Every control is a `HEADER_BUTTON_SIZE` ghost button (44pt iOS, 40pt Android); the first and the last
  * sit on the 16pt padding edge (`-ml-2.5` on the hamburger, `-mr-2.5` on the
  * last button), like the floating header.
  *
@@ -49,6 +49,7 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { CaretLeftIcon, PlusIcon } from '@/lib/icons';
+import { HEADER_BUTTON_SIZE, HEADER_ICON_SIZE } from '@/components/kortix/header-button';
 import { BackButton } from '@/components/kortix/back-button';
 import { MenuButton } from '@/components/kortix/menu-button';
 import { THEME } from '@/lib/utils/theme';
@@ -88,8 +89,6 @@ interface PageHeaderProps {
   /** Optional className passed to the outer View (e.g. to override bg). */
   className?: string;
 }
-
-const ICON_SIZE = 20;
 
 export function PageHeader({
   title,
@@ -140,12 +139,12 @@ export function PageHeader({
             {onAdd ? (
               <Button
                 variant="ghost"
-                size="icon"
+                size={HEADER_BUTTON_SIZE}
                 className="rounded-full"
                 onPress={onAdd}
                 accessibilityLabel={addLabel}
                 hitSlop={{ top: 10, bottom: 10 }}>
-                <Icon as={PlusIcon} size={ICON_SIZE} className="text-foreground" />
+                <Icon as={PlusIcon} size={HEADER_ICON_SIZE} className="text-foreground" />
               </Button>
             ) : null}
           </View>

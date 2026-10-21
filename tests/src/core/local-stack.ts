@@ -582,6 +582,8 @@ export function localApiEnvironment(options: {
     // Only this exact host is exempt from the connector egress check;
     // every other private address stays refused.
     KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: "127.0.0.1",
+    // GW-CUSTOM-1 stands up a loopback OpenAI-compatible model the gateway calls.
+    KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS: "127.0.0.1",
     // CONN-CALL-1 waits out the connector upstream deadline (60 s by default).
     KORTIX_CONNECTOR_CALL_TIMEOUT_MS: "15000",
     // TRG-19 and SCOPE-6 push kortix.yaml and poll until the API's git
@@ -660,7 +662,6 @@ export function localApiEnvironment(options: {
     SLACK_CLIENT_ID: "local-flow-runner-disabled",
     SLACK_CLIENT_SECRET: "local-flow-runner-disabled",
     SLACK_SIGNING_SECRET: "local-flow-runner-disabled",
-    LLM_GATEWAY_ENABLED: "true",
     LLM_GATEWAY_BASE_URL: "",
     LLM_GATEWAY_PROXY_PORT: String(gatewayPort),
     GATEWAY_INTERNAL_TOKEN: LOCAL_GATEWAY_INTERNAL_TOKEN,

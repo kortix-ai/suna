@@ -3,6 +3,8 @@
  * so the modal file stays focused on composition. Pure data, no React.
  */
 
+import type { FeatureFlagKey } from '@kortix/sdk';
+
 export const AGENT_MODES = ['primary', 'subagent', 'all'] as const;
 /** Display names — the raw values are lowercase manifest keys, and a Select
  *  trigger renders the value verbatim (no `capitalize` reaches it). */
@@ -144,7 +146,8 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
  * project-bound token before an agent's grant is even consulted (see
  * `iam/engine-v2.ts`'s `computeTokenScope`).
  */
-export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[] }[] = [
+/** `featureFlag`: the group is offered only while that project flag is on. */
+export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[]; featureFlag?: FeatureFlagKey }[] = [
   { group: 'Project', actions: ['project.read', 'project.write', 'project.delete'] },
   {
     group: 'Sessions',
@@ -234,5 +237,10 @@ export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[] }[] 
   {
     group: 'Review',
     actions: ['project.review.read', 'project.review.submit', 'project.review.act'],
+  },
+  {
+    group: 'Rooms',
+    actions: ['project.room.read', 'project.room.write'],
+    featureFlag: 'agent_rooms',
   },
 ];

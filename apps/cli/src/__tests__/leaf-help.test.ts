@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { commandFeatureFlag } from '../command-table.ts';
 
 // The root help promises `kortix <cmd> <subcommand> --help`. This asserts the
 // promise for EVERY group command and EVERY subcommand its own `--help` block
@@ -29,6 +30,7 @@ const GROUPS = [
   'env',
   'files',
   'gateway',
+  'goals',
   'grants',
   'groups',
   'hosts',
@@ -40,6 +42,7 @@ const GROUPS = [
   'providers',
   'review',
   'roles',
+  'rooms',
   'sandboxes',
   'secrets',
   'sessions',
@@ -53,9 +56,10 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let apiBase = '';
 let requests: string[] = [];
 
-function runCli(args: string[]) {
+function runCli(args: string[], extraEnv: Record<string, string> = {}) {
   const env: Record<string, string | undefined> = {
     ...process.env,
+    ...extraEnv,
     KORTIX_NO_UPDATE_CHECK: '1',
     NO_COLOR: '1',
     FORCE_COLOR: '0',
@@ -65,7 +69,7 @@ function runCli(args: string[]) {
     // Any HTTP the CLI attempts lands on the recorder, never on a real host.
     KORTIX_API_URL: apiBase,
   };
-  for (const key of ['KORTIX_CLI_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN', 'BASH_ENV']) {
+  for (const key of ['KORTIX_CLI_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN', 'BASH_ENV', ...(extraEnv.KORTIX_FEATURE_FLAGS === undefined ? ['KORTIX_FEATURE_FLAGS'] : [])]) {
     delete env[key];
   }
   const proc = Bun.spawn({
@@ -161,9 +165,20 @@ describe('kortix <group> <subcommand> --help', () => {
   });
 
   for (const group of GROUPS) {
+    // A command behind a feature flag exists only where its flag is on: run it as a box that lists it.
+    const flag = commandFeatureFlag(group);
+    const flagEnv: Record<string, string> = flag ? { KORTIX_FEATURE_FLAGS: flag } : {};
+    if (flag) {
+      test(`${group}: with its flag \`${flag}\` off, --help prints only that the flag is off`, async () => {
+        const off = await runCli([group, '--help'], { KORTIX_FEATURE_FLAGS: '' });
+        expect(off.code).toBe(1);
+        expect(off.stderr).toContain(`behind the \`${flag}\` feature flag`);
+        expect(off.stdout).not.toContain(`Usage: kortix ${group}`);
+      });
+    }
     test(`${group}: every documented subcommand prints help, exit 0, no auth, no HTTP`, async () => {
       const before = requests.length;
-      const groupHelp = await runCli([group, '--help']);
+      const groupHelp = await runCli([group, '--help'], flagEnv);
       expect(groupHelp.code).toBe(0);
       expect(groupHelp.stdout).toContain(`Usage: kortix ${group}`);
 
@@ -172,7 +187,7 @@ describe('kortix <group> <subcommand> --help', () => {
 
       const results = await mapWithConcurrency(subs, 4, async (sub) => ({
         sub,
-        ...(await runCli([group, sub, '--help'])),
+        ...(await runCli([group, sub, '--help'], flagEnv)),
       }));
 
       for (const r of results) {

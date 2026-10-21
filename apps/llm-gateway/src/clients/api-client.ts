@@ -85,6 +85,7 @@ interface ResolutionErrorBody {
   message: string;
   suggestion: string;
   retryAfterSeconds?: number;
+  restSeconds?: number;
 }
 
 interface BillingBody {
@@ -94,8 +95,8 @@ interface BillingBody {
   holdUsd?: number;
 }
 
-function resolutionError({ code, message, suggestion, retryAfterSeconds }: ResolutionErrorBody) {
-  return new GatewayResolutionError(code, message, suggestion, retryAfterSeconds);
+function resolutionError({ code, message, suggestion, retryAfterSeconds, restSeconds }: ResolutionErrorBody) {
+  return new GatewayResolutionError(code, message, suggestion, retryAfterSeconds, restSeconds);
 }
 
 /** `/billing`'s answer as `assertBillingActive` returns or throws it. */

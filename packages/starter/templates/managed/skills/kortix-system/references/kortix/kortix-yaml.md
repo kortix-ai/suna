@@ -590,8 +590,7 @@ The harness a session boots inside its sandbox. **Optional.** Root-only.
 | `pi` | pi, inside the sandbox daemon process. |
 
 Kortix reads the key when a session is created, in this order: the
-project's `llm_gateway` flag off → OpenCode; the project's `pi_harness` flag
-on (the default) → pi; `runtime: pi` → pi; anything else → OpenCode. pi calls
+project's `pi_harness` flag on (the default) → pi; `runtime: pi` → pi; anything else → OpenCode. pi calls
 models only through the LLM gateway. Any other value fails `kortix validate`. `../pi/overview.md` lists what pi supports.
 
 ## `pi:` in version 2

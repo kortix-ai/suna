@@ -6,7 +6,7 @@ export interface ProjectModelAccess {
   disabledProviders: string[];
   disabledModels: string[];
   defaultModel?: string;
-  /** False for a native runtime that bypasses the Kortix gateway. */
+  /** @deprecated Always true: the LLM gateway enforces access for every project. Removed in the next major. */
   enforced?: boolean;
 }
 

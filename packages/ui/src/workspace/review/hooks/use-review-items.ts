@@ -7,10 +7,11 @@ import {
   type ReviewVerdict,
   actReviewItem,
   bulkActReviewItems,
+  getReviewItem,
   resolveApproval,
 } from '@kortix/sdk';
 import { qk, useReviewItemPages } from '@kortix/sdk/react';
-import { type QueryClient, useMutation, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 /**
  * One segment of the active project's inbox, a page at a time (KRTX-2316):
@@ -28,6 +29,38 @@ export function useReviewItems(
     projectId,
     { segment },
     { enabled: options?.enabled, refetchInterval: options?.refetchInterval ?? 8_000 },
+  );
+}
+
+/**
+ * One inbox item read by id (`GET review/items/{id}`). Two callers: a link to
+ * an item past the loaded pages, and an opened connector approval. For the
+ * second, the read is what runs the server's one-time content load
+ * (`enrichPendingCallOnce`), so a call held before its action had an enricher
+ * shows the loaded draft or pull request once this answers.
+ */
+export function useReviewItemById(projectId: string, id: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: [...qk.project.reviewItemsScope(projectId), 'item', id ?? ''],
+    queryFn: async () => (await getReviewItem(projectId, id!)).review_item,
+    enabled: Boolean(projectId) && Boolean(id) && enabled,
+    staleTime: 5_000,
+    retry: false,
+  });
+}
+
+/**
+ * The list rows with an opened connector call's detail swapped for the copy
+ * read by id. Only the detail: the row's status stays the list's, so a
+ * decision the list already shows is never undone by an older by-id read.
+ */
+export function withFreshApprovalDetail(
+  rows: ApiReviewItem[],
+  fresh: ApiReviewItem | undefined,
+): ApiReviewItem[] {
+  if (!fresh || !fresh.review_item_id.startsWith('call:')) return rows;
+  return rows.map((row) =>
+    row.review_item_id === fresh.review_item_id ? { ...row, detail: fresh.detail } : row,
   );
 }
 
@@ -68,12 +101,16 @@ export function useBulkActReviewItems() {
   const projectId = ctx?.projectId ?? '';
   const invalidate = useInvalidate(projectId);
   return useMutation<
-    { updated: number; review_items: ApiReviewItem[] },
+    Awaited<ReturnType<typeof bulkActReviewItems>>,
     Error,
     { ids: string[]; verdict: ReviewVerdict }
   >({
     mutationFn: ({ ids, verdict }) => bulkActReviewItems(projectId, { ids, verdict }),
-    onSuccess: invalidate,
+    // A refused id can leave the inbox (expired, decided elsewhere): refetch on
+    // failure too. The caller toasts the error; the no-op keeps the client's
+    // default mutation toast from adding a second one (see the resolve hook).
+    onSettled: invalidate,
+    onError: () => {},
   });
 }
 

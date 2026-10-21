@@ -869,11 +869,9 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           await cancelRepository.click();
           await expect(repositoryDialog).toBeHidden();
         }
-        for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-          await api(session.access_token, 'PATCH', `/projects/${project.id}/features`, {
-            feature, enabled: true,
-          });
-        }
+        await api(session.access_token, 'PATCH', `/projects/${project.id}/features`, {
+          feature: 'pooled_provider_secrets', enabled: true,
+        });
         const key = await api<{ secret_id: string }>(
           session.access_token, 'POST', `/accounts/${accountId}/secret-resources`, {
             label: 'Desktop pooled key', provider_id: 'anthropic', name: 'ANTHROPIC_API_KEY',
@@ -947,10 +945,6 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           // A saved test credential makes a real catalog model selectable.
           // This journey verifies pending submission, not model execution.
           const base = `/projects/${project.id}`;
-          await api(auth.access_token, "PATCH", `${base}/experimental`, {
-            feature: "llm_gateway",
-            enabled: true,
-          });
           await api(
             auth.access_token,
             "POST",

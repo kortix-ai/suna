@@ -233,6 +233,8 @@ export async function isModelServableForAccount(params: {
    * session, which reaches only keys shared with the whole project.
    */
   personalUserId?: string | null;
+  /** `false`: a pool that is cooling down counts as unservable (a fallback asks "can it serve NOW?"). */
+  restingIsServable?: boolean;
 }): Promise<boolean> {
   if (params.model === 'auto' || params.model === 'kortix/auto') return false;
   // Accept either the opencode ref (`kortix/<id>`) or the bare wire id — the
@@ -257,7 +259,9 @@ export async function isModelServableForAccount(params: {
     // and pauses only for a while. Calling it unservable degraded the default
     // off `project:default` (so the project's chain never ran) and refused new
     // sessions and channel turns; the request path handles the pause itself.
-    if (err instanceof GatewayResolutionError) return err.code === 'provider_pool_rate_limited';
+    if (err instanceof GatewayResolutionError) {
+      return params.restingIsServable !== false && err.code === 'provider_pool_rate_limited';
+    }
     throw err;
   }
 }

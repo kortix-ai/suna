@@ -1,3 +1,4 @@
+import { ApiError } from '../api/client.ts';
 import {
   describeConfigStatus,
   describeReloadOutcome,
@@ -71,6 +72,7 @@ import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
 import { runSessionsShell } from './sessions-shell.ts';
 import { parseMetaPair, runSessionsUpdate } from './sessions-update.ts';
 import { runSessionsWaitFor } from './sessions-wait.ts';
+import { requireConnectedModel } from './session-model-access.ts';
 
 const HELP = help`Usage: kortix sessions <subcommand> [options]
 
@@ -558,6 +560,12 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
       `/projects/${ctx.projectId}/sessions${sessionListQuery(flags, parentId)}`,
     );
   } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      const hostFlag = opts.hostArg ? ` --host ${opts.hostArg}` : '';
+      process.stderr.write(`${status.err(`${ctx.defaultProject ? 'Default project' : 'Project'} "${ctx.projectId}" was not found or is no longer accessible.`)} Run ` +
+        `\`kortix projects ls${hostFlag}\`, then \`kortix projects use <id>${hostFlag}\` to select an available project.\n`);
+      return 1;
+    }
     return surfaceApiError(err);
   }
 
@@ -659,6 +667,12 @@ async function sessionsNew(
 ): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
+
+  try {
+    await requireConnectedModel(ctx.client, ctx.projectId);
+  } catch (error) {
+    return surfaceApiError(error);
+  }
 
   // --with-file: uploads need a live sandbox, and the prompt must go out AFTER
   // the files land (an initial_prompt would race the uploads). So validate the
