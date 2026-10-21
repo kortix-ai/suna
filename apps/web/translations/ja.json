@@ -1594,6 +1594,10 @@
       "showMore": "さらに表示",
       "brief": {
         "status": "状態",
+        "subAgent": "サブエージェント",
+        "spawned": "起動されたセッション",
+        "subAgentCount": "{count, plural, other {サブエージェント #件}}",
+        "spawnedCount": "{count, plural, other {起動されたセッション #件}}",
         "created": "作成日時",
         "source": "ソース",
         "changeRequests": "変更リクエスト",
@@ -1607,11 +1611,12 @@
         }
       },
       "status": {
-        "needsYou": "対応が必要",
-        "starting": "開始中",
-        "running": "実行中",
-        "done": "完了",
-        "stopped": "停止",
+        "needsYou": "レビュー待ち",
+        "needsInput": "回答待ち",
+        "starting": "起動中",
+        "running": "作業中",
+        "done": "準備完了",
+        "stopped": "スリープ中",
         "failed": "失敗",
         "legacy": "旧形式"
       }

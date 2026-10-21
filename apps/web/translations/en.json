@@ -1594,6 +1594,10 @@
       "showMore": "Show more",
       "brief": {
         "status": "Status",
+        "subAgent": "Sub-agent",
+        "spawned": "Spawned session",
+        "subAgentCount": "{count, plural, one {# sub-agent} other {# sub-agents}}",
+        "spawnedCount": "{count, plural, one {# spawned session} other {# spawned sessions}}",
         "created": "Created",
         "source": "Source",
         "changeRequests": "Change requests",
@@ -1607,11 +1611,12 @@
         }
       },
       "status": {
-        "needsYou": "Needs you",
-        "starting": "Starting",
-        "running": "Running",
-        "done": "Done",
-        "stopped": "Stopped",
+        "needsYou": "Needs review",
+        "needsInput": "Needs input",
+        "starting": "Waking",
+        "running": "Working",
+        "done": "Ready",
+        "stopped": "Asleep",
         "failed": "Failed",
         "legacy": "Legacy"
       }
