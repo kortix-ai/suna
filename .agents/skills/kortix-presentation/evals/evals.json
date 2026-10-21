@@ -11,7 +11,7 @@
         "Imports copy from features/marketing/connectors/content.ts rather than retyping claims.",
         "Names its chapters in a const and renders them through <Spine chapters={…} active={n} />.",
         "Attaches the spoken script as `notes`, as an array where a slide has build steps.",
-        "Verifies with `npx tsc --noEmit` and `npx eslint src/app/presentations`, then drives the deck in a browser."
+        "Verifies with `pnpm --filter Kortix-Computer-Frontend typecheck` and `npx eslint src/app/presentations`, then drives the deck in a browser."
       ]
     },
     {
