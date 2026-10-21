@@ -231,7 +231,8 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
             {spaceTabs(space.kind).map((value) => (
               <TabsTrigger key={value} value={value} className="w-fit flex-none">
                 {t(`tab.${value}`)}
-                {(value === 'apps' || value === 'links') && summary.data?.[value] ? (
+                {/* Apps counts the host's cards: no host gallery, no count over the empty state. */}
+                {(value === 'links' || (value === 'apps' && renderApps)) && summary.data?.[value] ? (
                   <CountBadge count={summary.data[value]} />
                 ) : null}
               </TabsTrigger>

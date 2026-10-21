@@ -835,6 +835,25 @@ flow('SPACE-16', meta([TAB_ROUTES.links, TAB_ROUTES.addLink, TAB_ROUTES.removeLi
       (await world.owner.get(SPACE_LINKS, { params: at })).status(200).body().has('$.links.length', 1).has('$.links[0].link_id', ownerLink);
     });
 
+    await ctx.step('the stored url is the parsed form: a space in the path is percent-encoded', async () => {
+      const r = await world.owner.post(SPACE_LINKS, { url: 'https://example.test/a b' }, { params: at });
+      r.status(201).body().has('$.url', 'https://example.test/a%20b');
+      (await world.owner.del(SPACE_LINK, { params: { ...at, linkId: r.json<{ link_id: string }>().link_id } })).status(200);
+    });
+
+    await ctx.step('a channel holds at most 200 links: the 201st add → 409 link_limit', async () => {
+      // 199 more rows beside the owner's one, written directly: 199 POSTs would only slow the flow.
+      await world.db.query(
+        `INSERT INTO kortix.project_space_links (space_id, project_id, url, created_by)
+         SELECT $1, $2, 'https://example.test/' || n, $3 FROM generate_series(1, 199) AS n`,
+        [channel, project.id, world.ownerUserId],
+      );
+      (await asMember.post(SPACE_LINKS, { url: 'https://example.test/one-more' }, { params: at }))
+        .status(409).body().has('$.code', 'link_limit');
+      await world.db.query(`DELETE FROM kortix.project_space_links WHERE space_id = $1 AND link_id <> $2`, [channel, ownerLink]);
+      (await asMember.post(SPACE_LINKS, { url: 'https://example.test/after' }, { params: at })).status(201);
+    });
+
     await ctx.step('an archived channel → 404 space_not_found on list and add', async () => {
       (await world.owner.patch(SPACE, { archived: true }, { params: at })).status(200);
       (await world.owner.get(SPACE_LINKS, { params: at })).status(404).body().has('$.code', 'space_not_found');
@@ -845,7 +864,7 @@ flow('SPACE-16', meta([TAB_ROUTES.links, TAB_ROUTES.addLink, TAB_ROUTES.removeLi
   }
 });
 
-flow('SPACE-17', meta([TAB_ROUTES.summary, TAB_ROUTES.addLink, TAB_ROUTES.removeLink, ROUTES.create, FEATURES_ROUTE]), async (ctx) => {
+flow('SPACE-17', meta([TAB_ROUTES.summary, TAB_ROUTES.apps, TAB_ROUTES.addLink, TAB_ROUTES.removeLink, ROUTES.create, FEATURES_ROUTE]), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
@@ -867,7 +886,15 @@ flow('SPACE-17', meta([TAB_ROUTES.summary, TAB_ROUTES.addLink, TAB_ROUTES.remove
       (await world.owner.get(SPACE_SUMMARY, { params: at })).status(200).body().has('$.links', 1);
     });
 
-    await world.db.query('DELETE FROM kortix.apps WHERE app_id = $1', [appId]);
+    let unlistedId = '';
+    await ctx.step('an App the grid hides (display.listed: false) leaves apps unchanged: the count is the cards', async () => {
+      unlistedId = await insertAppDeployedFrom(world, await insertSession(world, world.ownerUserId, 'project', { spaceId: channel }), 'ke2e-hidden-app');
+      await world.db.query(`UPDATE kortix.apps SET display = '{"listed": false}'::jsonb WHERE app_id = $1`, [unlistedId]);
+      (await world.owner.get(SPACE_APPS, { params: at })).status(200).body().has('$.apps.length', 2);
+      (await world.owner.get(SPACE_SUMMARY, { params: at })).status(200).body().has('$.apps', 1);
+    });
+
+    await world.db.query('DELETE FROM kortix.apps WHERE app_id = ANY($1::uuid[])', [[appId, unlistedId].filter(Boolean)]);
   } finally {
     await world.close();
   }

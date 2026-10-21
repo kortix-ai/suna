@@ -22407,6 +22407,7 @@
         "titlePlaceholder": "Do que se trata",
         "invalidUrl": "Digite um link que comece com http:// ou https://.",
         "addFailed": "Não foi possível adicionar o link. Tente de novo.",
+        "limit": "Este canal já tem 200 links. Remova um primeiro.",
         "added": "Link adicionado",
         "addedBy": "{name} · {time}",
         "remove": "Remover link",

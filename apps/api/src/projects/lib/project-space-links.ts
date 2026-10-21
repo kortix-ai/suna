@@ -11,6 +11,9 @@ import { resolveSessionOwnerIdentities } from './user-identity';
 
 type LinkRow = typeof projectSpaceLinks.$inferSelect;
 
+/** The most links one channel holds; a member adding past it gets 409 `link_limit`. */
+export const SPACE_LINKS_MAX = 200;
+
 /** Who asks: their id, and whether they manage the project (they may delete any link). */
 export type LinkViewer = { userId: string; manager: boolean };
 
@@ -43,16 +46,24 @@ export async function listSpaceLinks(spaceId: string, accountId: string, viewer:
   return serializeLinks(rows, viewer, accountId);
 }
 
+/**
+ * Pin a link. The URL is stored as the URL parser serializes it (the schema
+ * already checked it parses as http(s)), so spaces and the like reach the
+ * README and the `href` encoded. `link_limit` at `SPACE_LINKS_MAX`.
+ */
 export async function addSpaceLink(
   projectId: string,
   spaceId: string,
   accountId: string,
   viewer: LinkViewer,
   input: SpaceLinkCreateInput,
-): Promise<SpaceLink> {
+): Promise<SpaceLink | 'link_limit'> {
+  // ponytail: count-then-insert, so two concurrent adds can pass 200 by one each; a per-space lock if that matters.
+  if ((await countSpaceLinks(spaceId)) >= SPACE_LINKS_MAX) return 'link_limit';
+  const url = new URL(input.url).href;
   const [row] = await db
     .insert(projectSpaceLinks)
-    .values({ projectId, spaceId, url: input.url, title: input.title || null, createdBy: viewer.userId })
+    .values({ projectId, spaceId, url, title: input.title || null, createdBy: viewer.userId })
     .returning();
   const [link] = await serializeLinks([row!], viewer, accountId);
   return link!;

@@ -429,7 +429,7 @@ const dm = await p.spaces.dm("kortix"); // the caller's DM, created on the first
 
 // A channel's tabs (channels only; a DM, an archived or unknown id → 404 space_not_found)
 const apps = await p.spaces.apps(ch.space_id); // Apps deployed from its threads, only those the caller may open
-const link = await p.spaces.links.add(ch.space_id, { url: "https://example.com/spec", title: "Spec" }); // http(s) only, ≤ 2,048 chars; title ≤ 200; else 400
+const link = await p.spaces.links.add(ch.space_id, { url: "https://example.com/spec", title: "Spec" }); // http(s) only, ≤ 2,048 chars; title ≤ 200; else 400; 200 links per channel, then 409 link_limit
 await p.spaces.links.list(ch.space_id); // newest first; `can_delete` per link
 await p.spaces.links.remove(ch.space_id, link.link_id); // its creator or a project manager; else 403 forbidden
 await p.spaces.summary(ch.space_id); // { apps, links }: the tab counts

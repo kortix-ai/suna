@@ -1,6 +1,6 @@
 'use client';
 
-import type { ProjectSpace, ProjectSpaceLink } from '@kortix/sdk';
+import { ApiError, type ProjectSpace, type ProjectSpaceLink } from '@kortix/sdk';
 import { useAddProjectSpaceLink, useProjectSpaceLinks, useRemoveProjectSpaceLink } from '@kortix/sdk/react';
 import { PlusIcon, TrashIcon } from '@phosphor-icons/react';
 import { useId, useState } from 'react';
@@ -139,7 +139,8 @@ function LinkRow({ link, onRemove }: { link: ProjectSpaceLink; onRemove: () => v
     <li className="group hover:bg-hover relative -mx-2 flex items-center gap-3 rounded-md px-2 py-2">
       <div className="min-w-0 flex-1">
         <a
-          href={link.url}
+          // A row another writer stored with a non-http(s) URL is shown, never linked.
+          href={isHttpUrl(link.url) ? link.url : undefined}
           target="_blank"
           rel="noopener noreferrer"
           className="focus-visible:ring-ring block truncate text-sm font-medium outline-none after:absolute after:inset-0 after:rounded-md focus-visible:ring-2"
@@ -158,8 +159,8 @@ function LinkRow({ link, onRemove }: { link: ProjectSpaceLink; onRemove: () => v
             size="icon-sm"
             aria-label={t('links.remove')}
             onClick={onRemove}
-            // Above the row's stretched link; shown on hover or keyboard focus.
-            className="relative z-10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            // Above the row's stretched link; shown on hover, keyboard focus, or always without hover (touch).
+            className="relative z-10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 [@media(hover:none)]:opacity-100"
           >
             <TrashIcon aria-hidden />
           </Button>
@@ -188,7 +189,7 @@ function AddLinkModal({
   const add = useAddProjectSpaceLink(projectId, space.space_id);
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
-  const [error, setError] = useState<'invalid' | 'failed' | null>(null);
+  const [error, setError] = useState<'invalid' | 'limit' | 'failed' | null>(null);
 
   const close = () => {
     if (add.isPending) return;
@@ -212,7 +213,7 @@ function AddLinkModal({
           setError(null);
           onOpenChange(false);
         },
-        onError: () => setError('failed'),
+        onError: (err) => setError(err instanceof ApiError && err.code === 'link_limit' ? 'limit' : 'failed'),
       },
     );
   };
@@ -255,7 +256,13 @@ function AddLinkModal({
                 />
                 <FieldDescription id={`${id}-url-hint`} className="text-destructive">
                   <span aria-live="polite">
-                    {error === 'invalid' ? t('links.invalidUrl') : error === 'failed' ? t('links.addFailed') : null}
+                    {error === 'invalid'
+                      ? t('links.invalidUrl')
+                      : error === 'limit'
+                        ? t('links.limit')
+                        : error === 'failed'
+                          ? t('links.addFailed')
+                          : null}
                   </span>
                 </FieldDescription>
               </Field>

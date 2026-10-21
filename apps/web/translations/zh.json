@@ -22407,6 +22407,7 @@
         "titlePlaceholder": "它是什么",
         "invalidUrl": "请输入以 http:// 或 https:// 开头的链接。",
         "addFailed": "无法添加链接，请重试。",
+        "limit": "此频道已有 200 个链接。请先移除一个。",
         "added": "已添加链接",
         "addedBy": "{name} · {time}",
         "remove": "移除链接",

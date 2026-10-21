@@ -16,6 +16,7 @@ import {
   SpaceSummarySchema,
   SpaceUpdateInputSchema,
 } from '@kortix/api-contract';
+import { gridApps } from '@kortix/shared/app-config';
 import type { Context } from 'hono';
 import { AppObject, appsJson } from '../../apps/serialize';
 import { spaceApps } from '../../apps/space-apps';
@@ -29,7 +30,14 @@ import { DEFAULT_AGENT_SENTINEL, isLaunchableAgentName, loadProjectAgents } from
 import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { projectsApp } from '../lib/app';
-import { addSpaceLink, countSpaceLinks, deleteSpaceLink, listSpaceLinks, type LinkViewer } from '../lib/project-space-links';
+import {
+  addSpaceLink,
+  countSpaceLinks,
+  deleteSpaceLink,
+  listSpaceLinks,
+  SPACE_LINKS_MAX,
+  type LinkViewer,
+} from '../lib/project-space-links';
 import {
   createChannel,
   findLiveChannel,
@@ -254,7 +262,7 @@ export function registerProjectSpacesRoutes(): void {
         params: spaceParams,
         body: { content: { 'application/json': { schema: SpaceLinkCreateInputSchema } } },
       },
-      responses: { 201: json(SpaceLinkSchema, 'The added link'), ...errors(400, 403, 404) },
+      responses: { 201: json(SpaceLinkSchema, 'The added link'), ...errors(400, 403, 404, 409) },
     }),
     async (c) => {
       const channel = await loadChannel(c);
@@ -262,6 +270,9 @@ export function registerProjectSpacesRoutes(): void {
       const { loaded, space } = channel;
       const viewer = await linkViewer(c, loaded);
       const link = await addSpaceLink(loaded.row.projectId, space.spaceId, loaded.row.accountId, viewer, c.req.valid('json'));
+      if (link === 'link_limit') {
+        return c.json({ error: `A channel holds at most ${SPACE_LINKS_MAX} links. Remove one first.`, code: 'link_limit' }, 409);
+      }
       return c.json(link, 201);
     },
   );
@@ -298,7 +309,9 @@ export function registerProjectSpacesRoutes(): void {
       path: '/{projectId}/spaces/{spaceId}/summary',
       tags: ['spaces'],
       summary: 'Count the Apps and links of a channel',
-      description: '`apps` is 0 for a caller without the App read permission. Later fields are added, never renamed.',
+      description:
+        '`apps` counts the cards the channel’s Apps tab shows (the Apps grid rule); 0 for a caller without the App read permission. ' +
+        'Later fields are added, never renamed.',
       ...auth,
       request: { params: spaceParams },
       responses: { 200: json(SpaceSummarySchema, 'The tab counts'), ...errors(403, 404) },
@@ -308,11 +321,18 @@ export function registerProjectSpacesRoutes(): void {
       if (channel instanceof Response) return channel;
       const { loaded, space } = channel;
       const { userId, row } = loaded;
-      const [appsAllowed, links] = await Promise.all([
-        projectCapabilityAllowed(c, userId, row.accountId, row.projectId, PROJECT_ACTIONS.PROJECT_APP_READ),
+      const allowed = (action: string) => projectCapabilityAllowed(c, userId, row.accountId, row.projectId, action);
+      const [appsAllowed, appAdmin, links] = await Promise.all([
+        allowed(PROJECT_ACTIONS.PROJECT_APP_READ),
+        allowed(PROJECT_ACTIONS.PROJECT_APP_ADMIN),
         countSpaceLinks(space.spaceId),
       ]);
-      const apps = appsAllowed ? (await spaceApps(row.projectId, space.spaceId, userId)).rows.length : 0;
+      let apps = 0;
+      if (appsAllowed) {
+        // The cards the Apps tab shows: the grid's rule over the same list, with the web's `canAdmin` leaf.
+        const found = await spaceApps(row.projectId, space.spaceId, userId);
+        apps = gridApps(await appsJson(found.rows, userId, found.openable), appAdmin).length;
+      }
       return c.json({ apps, links }, 200);
     },
   );

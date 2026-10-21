@@ -83,11 +83,14 @@ describe('channel tabs', () => {
     const apps = useProjectSpaceApps('P1', 'S1') as any;
     const links = useProjectSpaceLinks('P1', 'S1') as any;
     const summary = useProjectSpaceSummary('P1', 'S1') as any;
+    // Links and the summary sit under the spaces key; a channel's Apps under the App list key.
     const scope = [...qk.project.spaces('P1')];
-    for (const query of [apps, links, summary]) {
+    for (const query of [links, summary]) {
       expect(query.queryKey.slice(0, scope.length)).toEqual(scope);
-      expect(query.enabled).toBe(true);
     }
+    const appsScope = [...qk.project.apps('P1')];
+    expect(apps.queryKey.slice(0, appsScope.length)).toEqual(appsScope);
+    for (const query of [apps, links, summary]) expect(query.enabled).toBe(true);
     expect(apps.queryKey).toEqual(qk.project.spaceApps('P1', 'S1'));
     expect(links.queryKey).toEqual(qk.project.spaceLinks('P1', 'S1'));
     expect(summary.queryKey).toEqual(qk.project.spaceSummary('P1', 'S1'));

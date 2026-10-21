@@ -7059,6 +7059,7 @@ const catalog = {
         "titlePlaceholder": "What it is",
         "invalidUrl": "Enter a link that starts with http:// or https://.",
         "addFailed": "Could not add the link. Try again.",
+        "limit": "This channel already has 200 links. Remove one first.",
         "added": "Link added",
         "addedBy": "{name} · {time}",
         "remove": "Remove link",

@@ -137,7 +137,9 @@ export async function listProjectSpaceLinks(projectId: string, spaceId: string):
 
 /**
  * Pin a link to a channel. A URL that is not http(s), longer than 2,048
- * characters, or a title over 200 rejects with 400. The caller shows it.
+ * characters, or a title over 200 rejects with 400. A channel that already
+ * holds 200 links rejects with 409 `link_limit`. The caller shows both. The
+ * stored `url` is the parsed form (`new URL(url).href`).
  */
 export async function addProjectSpaceLink(projectId: string, spaceId: string, input: AddProjectSpaceLinkInput) {
   return unwrap(

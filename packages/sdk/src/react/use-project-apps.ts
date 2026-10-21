@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createAppVolumeSnapshot,
   destroyAppMachine,
@@ -46,6 +46,17 @@ export const appDeploymentKey = (
   deploymentId: string | null | undefined,
 ) => qk.project.appDeployment(projectId ?? '', appId ?? '', deploymentId ?? '');
 
+/**
+ * The project's App list, which also covers every channel's Apps
+ * (`qk.project.spaceApps`), and every channel's Apps count.
+ */
+function invalidateProjectApps(queryClient: QueryClient, projectId: string | null | undefined) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: projectAppsKey(projectId) }),
+    queryClient.invalidateQueries({ queryKey: qk.project.spaceSummaries(projectId ?? '') }),
+  ]);
+}
+
 const SETTLED_DEPLOYMENT = new Set(['ready', 'failed', 'cancelled']);
 
 /** Project App inventory (only the Apps the caller may open; a project manager: every App) and lifecycle mutations. */
@@ -58,7 +69,7 @@ export function useProjectApps(projectId: string | null | undefined) {
     enabled: !!projectId,
     ...contract('inventory'),
   });
-  const invalidate = () => queryClient.invalidateQueries({ queryKey });
+  const invalidate = () => invalidateProjectApps(queryClient, projectId);
 
   const create = useMutation({
     mutationFn: (input: Parameters<typeof createApp>[1]) => createApp(projectId as string, input),
@@ -92,7 +103,6 @@ export function useAppDeployments(
 ) {
   const queryClient = useQueryClient();
   const queryKey = appDeploymentsKey(projectId, appId);
-  const appsKey = projectAppsKey(projectId);
   const query = useQuery({
     queryKey,
     queryFn: () => listAppDeployments(projectId as string, appId as string),
@@ -101,7 +111,7 @@ export function useAppDeployments(
     refetchInterval: 5_000,
   });
   const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: appsKey });
+    void invalidateProjectApps(queryClient, projectId);
     void queryClient.invalidateQueries({ queryKey });
   };
 
@@ -195,7 +205,7 @@ export function useAppAccess(
       await Promise.all([
         queryClient.invalidateQueries({ queryKey }),
         queryClient.invalidateQueries({ queryKey: sessionQueryKey }),
-        queryClient.invalidateQueries({ queryKey: qk.project.apps(projectId ?? '') }),
+        invalidateProjectApps(queryClient, projectId),
       ]);
     },
   });
@@ -220,7 +230,7 @@ export function useAppMachines(projectId: string | null | undefined, appId: stri
   });
   const invalidate = () => Promise.all([
     queryClient.invalidateQueries({ queryKey }),
-    queryClient.invalidateQueries({ queryKey: projectAppsKey(projectId) }),
+    invalidateProjectApps(queryClient, projectId),
   ]);
   const start = useMutation({
     mutationFn: (machineId: string) => startAppMachine(projectId as string, appId as string, machineId),
