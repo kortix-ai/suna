@@ -491,3 +491,24 @@ describe('POST /admit — authorize, route, resolve and billing in one call', ()
     billingAnswer = async () => undefined;
   });
 });
+
+test('full discovery labels managed plan access separately from external credentials', async () => {
+  const res = await app().request('/models', authedRequest({
+    principal: { userId: 'u', accountId: 'a', projectId: 'p', freeModelsOnly: true },
+  }));
+  expect(res.status).toBe(200);
+  const { models } = await res.json();
+  expect(models['glm-5.3-flash']).toMatchObject({ availability: 'plan' });
+  expect(models['anthropic/claude-opus-4-8']).toMatchObject({ availability: 'provider' });
+  expect(models['codex/gpt-5.6-sol']).toMatchObject({ availability: 'login' });
+});
+
+test('paid full discovery marks managed access available without claiming external credentials', async () => {
+  const res = await app().request('/models', authedRequest({
+    principal: { userId: 'u', accountId: 'a', projectId: 'p', freeModelsOnly: false },
+  }));
+  const { models } = await res.json();
+  expect(res.status).toBe(200);
+  expect(models['glm-5.3-flash']).toMatchObject({ availability: 'available' });
+  expect(models['anthropic/claude-opus-4-8']).toMatchObject({ availability: 'provider' });
+});

@@ -12,6 +12,7 @@ import { disconnectedProjectConfig } from '../git/config';
 import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { allowStaleMirrorReads } from '../git/mirror';
 import {
+  agentSessionWorkspaceAllowsRepository,
   assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
   loadProjectForUser,
@@ -68,7 +69,9 @@ export function registerProjectDetailRoutes(): void {
 
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
+      // The record is name, flags and role: a session without repository
+      // access reads it too (its CLI needs the flags), minus every repository field.
+      const repositoryVisible = await agentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
 
       // The open stamp is a page-view counter: the project selector and the
       // command palette sort by it, and nothing in this request reads it back.
@@ -88,11 +91,14 @@ export function registerProjectDetailRoutes(): void {
           });
         });
 
+      const project = serializeProject(loaded.row, {
+        projectRole: loaded.projectRole,
+        effectiveRole: loaded.effectiveRole,
+      });
       return c.json(
-        serializeProject(loaded.row, {
-          projectRole: loaded.projectRole,
-          effectiveRole: loaded.effectiveRole,
-        }),
+        repositoryVisible
+          ? project
+          : { ...project, repo_url: '', git_origin_url: '', default_branch: '', manifest_path: '' },
       );
     },
   );

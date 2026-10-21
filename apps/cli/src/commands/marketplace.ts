@@ -10,6 +10,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { C, help, status } from '../style.ts';
 
 interface CatalogItem {
@@ -45,17 +46,19 @@ interface MarketplaceFlags {
   type?: string;
   source?: string;
   json: boolean;
+  yes: boolean;
   timeout?: string;
 }
 
 const HELP = help`Usage: kortix marketplace <subcommand> [options]
 
-Browse the Kortix marketplace.
+Browse the Kortix marketplace; remove installed project skills by folder.
 
 Subcommands:
   search [query]       Search marketplace items.
   list                 List marketplace items.
   show <id|name>       Show one marketplace item.
+  uninstall <folder>  Remove a project skill folder (including edits); requires --yes.
   install <id|name>    Wait for an agent import and verify default-branch files.
 
 Options:
@@ -63,8 +66,9 @@ Options:
   --type <type>        Filter by item type, e.g. skill.
   --source <source>    Filter by marketplace/source, e.g. kortix.
   --host <name>        Use a configured Kortix host.
-  --project <id>       Install into this project id (default: linked).
+  --project <id>       Use this project id (default: linked).
   --timeout <seconds>  Install deadline (default: 300).
+  --yes                Confirm deletion of the selected whole skill folder, including edits.
   --json               Machine-readable output.
   -h, --help           Show this help.
 
@@ -80,6 +84,7 @@ function parseFlags(argv: string[]): MarketplaceFlags {
     query: takeFlagValue(argv, ['--query', '-q']),
     type: takeFlagValue(argv, ['--type']),
     source: takeFlagValue(argv, ['--source']),
+    yes: takeFlagBool(argv, ['--yes']),
     json: takeFlagBool(argv, ['--json']),
   };
 }
@@ -450,6 +455,24 @@ export async function runMarketplace(argv: string[]): Promise<number> {
     case 'show':
     case 'view':
       return marketplaceShow(rest, flags);
+    case 'uninstall': {
+      const folder = rest[0];
+      if (!folder || !flags.yes) {
+        process.stderr.write(`${status.err('Use marketplace uninstall <project-skill-folder> --yes. This deletes the whole folder, including edits; shared assets are preserved.')}\n`);
+        return 2;
+      }
+      const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+      if (!ctx) return 1;
+      try {
+        const result = await withKortixScope(ctx.auth, () => kortixFromAuth(ctx.auth).project(ctx.projectId).skills.remove({ folder, confirm: true }));
+        if (flags.json) emitJson(result);
+        else process.stdout.write(`${status.ok(`Removed ${folder} (${result.removed.length} files). Shared assets were preserved.`)}\n`);
+        return 0;
+      } catch (error) {
+        process.stderr.write(`${status.err(error instanceof Error ? error.message : String(error))}\n`);
+        return 1;
+      }
+    }
     case 'install':
       return marketplaceInstall(rest, flags);
     default:

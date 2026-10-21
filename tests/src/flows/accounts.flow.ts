@@ -10,6 +10,7 @@ import type { Principal } from '../core/types';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { waitFor } from '../core/poll';
 import { adminCreateUser, adminDeleteUser, passwordGrant } from '../fixtures/supabase';
+import { withDb } from '../fixtures/chat';
 
 flow(
   'ME-1',
@@ -49,7 +50,7 @@ flow('ACCT-1', { domain: 'accounts', routes: ['GET /v1/accounts'] }, async (ctx)
 
 flow(
   'ACCT-2',
-  { domain: 'accounts', tags: ['deployed'], routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId'] },
+  { domain: 'accounts', tags: ['deployed'], routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId', 'GET /v1/accounts/:accountId/members'] },
   async (ctx) => {
     let accountId = '';
     await ctx.step('create team account → caller is owner', async () => {
@@ -64,13 +65,24 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId', { params: { accountId } });
-      r.status(200).body().has('$.account_id', accountId);
+      r.status(200).body()
+        .has('$.account_id', accountId)
+        .has('$.name', ctx.fixtures.name('team'))
+        .has('$.member_count', 1)
+        .has('$.project_count', 0)
+        .has('$.role', 'owner');
     });
-    await ctx.step('NONMEMBER cannot read it → 403', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId', { params: { accountId } });
-      r.status(403);
+    await ctx.step('foreign and nonexistent accounts have identical denials on detail and members', async () => {
+      for (const targetId of [accountId, crypto.randomUUID()]) {
+        for (const route of ['/v1/accounts/:accountId', '/v1/accounts/:accountId/members']) {
+          const r = await ctx.client.as(ctx.P.NONMEMBER)
+            .get(route, { params: { accountId: targetId } });
+          r.status(403).body().has('$', { error: 'Forbidden' });
+          if (r.text() !== '{"error":"Forbidden"}') {
+            throw new Error('Account denial envelope differs from the members route');
+          }
+        }
+      }
     });
     await ctx.step('create without a name → 400 Validation failed; a 256-character name → 400 name is too long', async () => {
       (await ctx.client.as(ctx.P.OWNER).post('/v1/accounts', {})).status(400).body().has('$.message', 'Validation failed');
@@ -938,7 +950,8 @@ flow(
 // the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
 // own personal account (never OWNER/team accounts other flows depend on).
 // Immediate self-deletion removes the auth identity, invalidates its token and
-// removes the account row itself: the account answers 404 to a nonmember.
+// removes the account row itself. A nonmember gets the same 403 as for any
+// foreign or nonexistent account (KRTX-2402); the row check needs `database`.
 flow(
   'DEL-4',
   {
@@ -990,12 +1003,16 @@ flow(
       (await asVictim.get('/v1/accounts/me')).status(401);
       (await asVictim.get('/v1/account/deletion-status')).status(401);
     });
-    await ctx.step('the deleted account is gone for a nonmember → 404', async () => {
-      (
-        await ctx.client
-          .as(ctx.P.OWNER)
-          .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } })
-      ).status(404);
+    await ctx.step('the deleted account answers a nonmember like any foreign account → 403, and its row is gone', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } });
+      r.status(403).body().has('$', { error: 'Forbidden' });
+      if (!ctx.env.capabilities.database) return;
+      const left = await withDb(ctx, (db) =>
+        db.query('SELECT 1 FROM kortix.accounts WHERE account_id = $1', [victimAccountId]),
+      );
+      if (left.rowCount !== 0) throw new Error(`the deleted account row still exists: ${victimAccountId}`);
     });
     await ctx.step('repeated deletion cannot restore old-token access → 401', async () => {
       (await asVictim.del('/v1/account/delete-immediately')).status(401);

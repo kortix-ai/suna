@@ -61,14 +61,14 @@ test('the real CLI lists and shows goals from the mounted folders', async () => 
   mkdirSync(folder, { recursive: true });
   writeFileSync(join(folder, 'goal.json'), JSON.stringify({ ...base, summary: 'Closure requested.', next_wake_at: '2026-10-20T09:00:00Z' }));
   const run = (args: string[]) =>
-    Bun.spawnSync(['bun', join(import.meta.dir, '..', 'index.ts'), 'goals', ...args], { env: { ...process.env, KORTIX_DRIVES_ROOT: root } });
+    Bun.spawnSync(['bun', join(import.meta.dir, '..', 'index.ts'), 'goals', ...args], { env: { ...process.env, KORTIX_FEATURE_FLAGS: 'goals', KORTIX_DRIVES_ROOT: root } });
   const ls = run(['ls', '--json']);
   expect(ls.exitCode).toBe(0);
   expect(JSON.parse(ls.stdout.toString()).goals[0]).toMatchObject({ slug: 'rho-close', status: 'active', criteria_total: 1, criteria_met: 0 });
   const st = run(['status', 'rho-close']);
   expect(st.exitCode).toBe(0);
   expect(st.stdout.toString()).toContain('Approve 2FA');
-  const missingRoot = Bun.spawnSync(['bun', join(import.meta.dir, '..', 'index.ts'), 'goals', 'ls'], { env: { ...process.env, KORTIX_DRIVES_ROOT: join(root, 'nope') } });
+  const missingRoot = Bun.spawnSync(['bun', join(import.meta.dir, '..', 'index.ts'), 'goals', 'ls'], { env: { ...process.env, KORTIX_FEATURE_FLAGS: 'goals', KORTIX_DRIVES_ROOT: join(root, 'nope') } });
   expect(missingRoot.exitCode).toBe(2);
   expect(missingRoot.stderr.toString() + missingRoot.stdout.toString()).toContain('Files is not mounted here');
 });
@@ -128,4 +128,69 @@ test('check reports fields code does not read, in goal.json and in items', () =>
   const v = goalViolations({ ...base, constraints: ['x'], items: [{ ...base.items[0], nag_every: '1d' }] }, healthy).join('\n');
   expect(v).toContain('unknown field(s) constraints');
   expect(v).toContain('item i1: unknown field(s) nag_every');
+});
+
+test('the goals flag gates the real CLI in a box: off hides and refuses kortix goals, on shows and runs it', () => {
+  const cli = (args: string[], flags: string) =>
+    Bun.spawnSync(['bun', join(import.meta.dir, '..', 'index.ts'), ...args], {
+      env: { ...process.env, KORTIX_FEATURE_FLAGS: flags, KORTIX_DRIVES_ROOT: join(tmpdir(), 'no-drives-here') },
+    });
+  const out = (r: ReturnType<typeof cli>) => r.stdout.toString() + r.stderr.toString();
+
+  const offHelp = cli(['--help'], 'volumes,reminders');
+  expect(out(offHelp)).not.toMatch(/^\s+goals\s/m);
+  const off = cli(['goals', 'ls'], 'volumes,reminders');
+  expect(off.exitCode).not.toBe(0);
+  expect(out(off)).toContain('kortix projects features enable goals');
+
+  const onHelp = cli(['--help'], 'volumes,reminders,goals');
+  expect(out(onHelp)).toMatch(/^\s+goals\s/m);
+  const on = cli(['goals', '--help'], 'volumes,reminders,goals');
+  expect(on.exitCode).toBe(0);
+  expect(out(on)).toContain('Usage: kortix goals');
+});
+
+test('goals new in a box without repository access: flags come from the box, the project record is never read', async () => {
+  const requests: string[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch(req) {
+      const { pathname } = new URL(req.url);
+      requests.push(`${req.method} ${pathname}`);
+      if (req.method === 'GET' && pathname === '/v1/projects/p1') {
+        return Response.json({ error: true, message: 'session workspace does not allow repository access', status: 403 }, { status: 403 });
+      }
+      if (req.method === 'PATCH' && pathname === '/v1/projects/p1/sessions/s1') return Response.json({});
+      if (req.method === 'POST' && pathname === '/v1/projects/p1/sessions/s1/reminders') {
+        return Response.json({ id: 'reminder.x', next_fire_at: '2026-10-22T00:00:00Z' });
+      }
+      return Response.json({ error: 'unexpected' }, { status: 500 });
+    },
+  });
+  const root = mkdtempSync(join(tmpdir(), 'goals-norepo-'));
+  mkdirSync(join(root, 'drives', 'company'), { recursive: true });
+  try {
+    const proc = Bun.spawn(['bun', join(import.meta.dir, '..', 'index.ts'), 'goals', 'new', 'Probe objective', '--shared'], {
+      env: {
+        ...process.env,
+        HOME: root,
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+        KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1`,
+        KORTIX_TOKEN: 'kortix_pat_session',
+        KORTIX_PROJECT_ID: 'p1',
+        KORTIX_SESSION_ID: 's1',
+        KORTIX_FEATURE_FLAGS: 'goals,reminders,volumes',
+        KORTIX_DRIVES_ROOT: join(root, 'drives'),
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    expect(`${code} ${stdout}${stderr}`).toContain('0 ');
+    expect(stdout).toContain('Goal created');
+    expect(requests).not.toContain('GET /v1/projects/p1');
+    expect(requests).toContain('POST /v1/projects/p1/sessions/s1/reminders');
+  } finally {
+    server.stop(true);
+  }
 });

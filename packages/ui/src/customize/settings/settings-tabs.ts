@@ -415,6 +415,7 @@ export function legacySectionRedirect(
       projectId ? `/projects/${projectId}` : '/projects',
       hubTarget(accountId, {
         tab: ACCOUNT_GRADUATED[rawSection],
+        transactions: rawSection === 'credits' ? 'credit-ledger' : undefined,
         project: rawSection === 'members' ? projectId : undefined,
       }),
     );

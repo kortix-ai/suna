@@ -310,14 +310,17 @@ export default {
     'Give each item its own title so the user can tell them apart while paging.',
   parameters: showParameters,
   async execute(args: Record<string, any>, { directory: dir }: ToolContext): Promise<string> {
+    let parsed: unknown = null
     if (args.items) {
-      let parsed: unknown
       try {
         parsed = JSON.parse(args.items)
       } catch {
         throw new Error("Invalid JSON in 'items' parameter. Must be a JSON array of objects.")
       }
-      if (!Array.isArray(parsed) || parsed.length === 0) throw new Error("'items' must be a non-empty JSON array.")
+    }
+    // A model fills the unused optional `items` with "null" or "[]" beside a single item: that is single-item mode.
+    if (parsed !== null && !(Array.isArray(parsed) && parsed.length === 0)) {
+      if (!Array.isArray(parsed)) throw new Error("'items' must be a non-empty JSON array.")
       const entries: ShowEntry[] = []
       const errors: string[] = []
       parsed.forEach((item, i) => {

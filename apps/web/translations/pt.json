@@ -3061,7 +3061,7 @@
       "automation_recovered": "Um trigger ou lembrete que falhava volta a funcionar.",
       "capture_device_down": "Um computador do Kortix Capture não está gravando. Enviado a quem gerencia o Capture.",
       "capture_device_recovered": "Um computador do Kortix Capture que parou voltou a gravar.",
-      "message": "Alguém escreve para você em uma conversa ou em uma sala em que você entrou."
+      "message": "Alguém menciona você com @, ou responde em um tópico em que você escreveu, em uma sala."
     },
     "bell": {
       "label": "Notificações",
@@ -20375,7 +20375,7 @@
       "wantsEmailOthers": "{agent} quer enviar um e-mail para {recipient} e {count, plural, one {# outra pessoa} other {# outras pessoas}}",
       "wantsMerge": "{agent} quer mesclar o PR #{number} em {base}",
       "wantsMergePr": "{agent} quer mesclar o PR #{number}",
-      "wantsIssue": "{agent} quer criar uma issue de prioridade {priority} para {team}",
+      "wantsIssue": "{agent} quer criar {article, select, other {uma}} issue de prioridade {priority} para {team}",
       "wantsCreateIssue": "{agent} quer criar uma issue",
       "wantsAction": "{agent} quer: {action}",
       "wantsCall": "{agent} quer executar {action}",

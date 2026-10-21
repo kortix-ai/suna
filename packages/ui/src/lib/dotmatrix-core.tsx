@@ -1,6 +1,8 @@
 'use client';
 
 import type { CSSProperties } from 'react';
+import { cx } from './utils';
+export { cx } from './utils';
 
 import { useCyclePhase, useDotMatrixPhases, usePrefersReducedMotion, useSteppedCycle } from './dotmatrix-hooks';
 import { useMemo } from 'react';
@@ -137,10 +139,6 @@ interface DotAnimationState {
 }
 
 export type DotAnimationResolver = (ctx: DotAnimationContext) => DotAnimationState;
-
-export function cx(...values: Array<string | undefined | null | false>): string {
-  return values.filter(Boolean).join(' ');
-}
 
 export const MATRIX_SIZE = 5;
 const CENTER = Math.floor(MATRIX_SIZE / 2);

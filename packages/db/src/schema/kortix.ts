@@ -1004,6 +1004,13 @@ export const projectSecretTombstones = kortixSchema.table(
   (table) => [primaryKey({ columns: [table.projectId, table.name] })],
 );
 
+/** The current intake capability for each project secret name. */
+export const projectSecretRequests = kortixSchema.table('project_secret_requests', {
+  projectId: uuid('project_id').notNull().references(() => projects.projectId, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 64 }).notNull(),
+  nonce: text('nonce').notNull(),
+}, (table) => [primaryKey({ columns: [table.projectId, table.name] })]);
+
 /** Account-owned secret resource. Member grants, rather than a user or project
  * binding, authorize use. The value stays encrypted in the API data plane. */
 export const accountSecretResources = kortixSchema.table('account_secret_resources', {
