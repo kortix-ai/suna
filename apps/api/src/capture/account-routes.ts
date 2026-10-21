@@ -235,7 +235,8 @@ const subjectQuery = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
 });
-const searchQuery = subjectQuery.extend({
+// Search does not filter by display, so it does not declare `display_id`.
+const searchQuery = subjectQuery.omit({ display_id: true }).extend({
   q: z.string().min(1),
   scope: z.enum(['mine', 'account']).optional().describe('account: every member (capture.read_all; audited as capture.account_view)'),
   kinds: z.string().optional().describe('Comma list of screen, actions, audio (default all)'),
@@ -271,17 +272,31 @@ interface SearchQuery {
   kinds?: string;
   app?: string;
   limit?: string;
+  day?: string;
   from?: string;
   to?: string;
   device_id?: string;
 }
 
+/** The search window: one UTC day when `day` is given (it wins over from/to,
+ * as on the timeline), else from/to with all of time as the default (KRTX-2983). */
+function searchWindow(query: SearchQuery): { from: Date; to: Date } | null {
+  if (query.day) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(query.day)) return null;
+    const from = new Date(`${query.day}T00:00:00.000Z`);
+    return Number.isNaN(from.getTime()) ? null : { from, to: new Date(from.getTime() + 86_400_000) };
+  }
+  const from = query.from ? new Date(query.from) : new Date(0);
+  const to = query.to ? new Date(query.to) : new Date(Date.now() + 86_400_000);
+  return Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) ? null : { from, to };
+}
+
 async function searchResponse(c: Ctx, access: Access, query: SearchQuery) {
     const q = query.q.trim().slice(0, 500);
     if (!q) return refuse(c, 400, 'capture_bad_query', 'q is required');
-    const from = query.from ? new Date(query.from) : new Date(0);
-    const to = query.to ? new Date(query.to) : new Date(Date.now() + 86_400_000);
-    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return refuse(c, 400, 'capture_bad_window', 'from/to must be ISO instants');
+    const span = searchWindow(query);
+    if (!span) return refuse(c, 400, 'capture_bad_window', 'Give day=YYYY-MM-DD, or from/to as ISO instants');
+    const { from, to } = span;
     const kinds = new Set((query.kinds ?? CAPTURE_LAYERS.join(',')).split(',').map((k) => k.trim())) as Set<SearchKind>;
     if (!CAPTURE_LAYERS.some((k) => kinds.has(k))) {
       return refuse(c, 400, 'capture_bad_query', 'kinds must name screen, actions or audio');

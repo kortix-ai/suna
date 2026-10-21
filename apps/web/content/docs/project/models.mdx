@@ -177,6 +177,7 @@ kortix gateway routing reset
 - `--fallback-on transient` moves on after a network error, a timeout, any 5xx, or a `402`, `403`, `404` or `429`. `any-error` moves on after every failure.
 - The project's chain also runs when every key or ChatGPT account that the request may use is paused after a rate limit. With `--fallback-on any-error`, it also runs when the login needs reconnection.
 - `--vision-model` takes a request that carries images when the default model accepts only text.
+- `set` changes only the flags you pass. The rest of the policy, the generation defaults included, stays as stored. `set --file policy.json` replaces the whole policy; a file without `modelGenerationConfig` keeps the stored generation defaults.
 
 **Billing in a fallback.** A request on your own key moves to a Kortix-billed model only when your project's chain names that model and the account can pay for it. Kortix's own platform chain never moves your request onto credits. On Kortix Cloud, the platform chain moves `deepseek-v4.1-flash` to `glm-5.3-flash` on transient errors.
 

@@ -400,3 +400,23 @@ test('creation dismisses onboarding even if credential resolution fails before t
     '/v1/projects/created_workspace/git-token',
   ]);
 });
+
+// KRTX-2992: POST /v1/projects accepts only GitHub repository URLs
+// (normalizeRepoUrl in apps/api/src/projects/lib/serializers.ts). A first ship
+// that promised to "register + push" any other origin always ended in a 400.
+test.each([
+  ['an existing origin remote', [] as string[]],
+  ['--origin <url>', ['--origin', 'https://git.example.test/other.git']],
+])('first ship refuses a non-GitHub origin before any request: %s', async (_label, extra) => {
+  clearDefaults();
+  if (extra.length === 0) {
+    expect(
+      Bun.spawnSync(['git', 'remote', 'add', 'origin', 'https://git.example.test/workspace.git'], { cwd }).exitCode,
+    ).toBe(0);
+  }
+  const result = await cli(['ship', '--no-verify', '--no-env', '--no-connect', '-y', ...extra]);
+  expect(result.code).toBe(2);
+  expect(result.stderr).toContain('links GitHub repositories only');
+  expect(result.stderr).toContain('--origin managed');
+  expect(hits).toEqual([]);
+});

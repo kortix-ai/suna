@@ -102,6 +102,7 @@ export {
   isNonErrorObjectNotFoundRejectionNoise,
   isNonErrorUndefinedRejectionNoise,
   isOperationErrorPopErrorScopeNoise,
+  isPlayNotSupportedRejectionNoise,
   isSupabaseTokenExpiredNoise,
 } from './browser-noise/rules/rejections';
 export {

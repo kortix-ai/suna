@@ -5,7 +5,7 @@
  * (concurrency 1) to avoid commit conflicts.
  */
 
-export { selectRange, toggleId as toggleSlug } from '../../../workspace/selection/selection';
+export { selectRange, toggleId as toggleSlug } from '../../../internal/selection/selection';
 
 /** Select all: every trigger the current filter and search show. */
 export function selectAllShown(shown: readonly { slug: string }[]): Set<string> {

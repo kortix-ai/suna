@@ -49,11 +49,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
  *     summary — the run did exactly what it was told to do.
  */
 
-/** What a model hands back when it has nowhere to run. Revealed word by word,
- *  because the thing being dramatised is that text is the entire output. */
-const ANSWER =
-  'Add exponential backoff, cap it at five attempts, and skip the retry entirely for 4xx responses — those will never succeed. Worth logging the attempt count too.';
-
 type Outcome = 'done' | 'denied';
 
 const STEPS: { id: string; label: string; detail?: string; outcome: Outcome }[] = [

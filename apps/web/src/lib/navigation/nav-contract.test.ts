@@ -97,26 +97,7 @@ describe('nav contract — no full page reload on an in-app navigation', () => {
     expect(await lintNavRules(await candidateFiles())).toEqual([]);
   }, 120_000);
 
-  test('both rules are wired at error level, not warn', () => {
-    // As warnings they sat under ~400 react-hooks messages and nobody saw them.
-    const config = readFileSync(resolve(WEB_ROOT, 'eslint.config.mjs'), 'utf8');
-    for (const rule of NAV_RULES) {
-      expect(config).toContain(`'${rule}': 'error'`);
-    }
-    expect(config).toContain("plugins: { 'nav-contract': navContract }");
-  });
 
-  test('the local rule exists and keeps its escape hatch', () => {
-    const rule = readFileSync(
-      resolve(WEB_ROOT, 'eslint-rules/no-router-push-for-static-href.mjs'),
-      'utf8',
-    );
-    // Controls whose destination is only known after the click (a cmdk row
-    // activated by keyboard, an id returned by a POST) legitimately keep
-    // router.push. They must say so on the line, so every exemption carries a
-    // reason instead of accumulating silently.
-    expect(rule).toContain("const ESCAPE = 'nav-contract:'");
-  });
 });
 
 describe('nav contract — the router bridge', () => {

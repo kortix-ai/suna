@@ -1,21 +1,18 @@
 'use client';
 
 import { KortixAsterisk } from '@kortix/ui/kortix-asterisk';
-import { KortixLogo } from '@kortix/ui/kortix-logo';
 import { useMediaQuery } from '@kortix/ui';
 import { cn } from '@kortix/ui';
 import { m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { LAYERS, getLocalizedHowItWorksContent, type Layer } from './how-it-works-content';
+import { getLocalizedHowItWorksContent, type Layer } from './how-it-works-content';
 import { StepComputer } from './step/step-computer';
 import { StepConnectors } from './step/step-connectors';
 import { StepControlPlane } from './step/step-control-plane';
 import { StepHarness } from './step/step-harness';
 import { StepModels } from './step/step-models';
 import { StepSourceOfTruth } from './step/step-source-of-truth';
-
-const LAST = LAYERS.length - 1;
 
 /** The rail indicator slides between items on a snappy UI spring — no bounce. */
 const RAIL_SPRING = { type: 'spring', stiffness: 400, damping: 34 } as const;
@@ -34,28 +31,7 @@ function LayerShowcase({ layer }: { layer: Layer }): ReactNode {
       return <StepComputer />;
     case 'control-plane':
       return <StepControlPlane />;
-    // The closing step draws its own body — a mark and a line, no panel.
-    case 'kortix':
-      return null;
   }
-}
-
-/** The closing step: the six layers add up to one thing. No product panel. */
-function ClosingPane({ layer, className }: { layer: Layer; className?: string }): ReactNode {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { LAYERS: localizedLayers } = getLocalizedHowItWorksContent(tI18nComplete);
-  return (
-    <div className={cn('flex flex-col items-center justify-center gap-5 text-center', className)}>
-      <KortixLogo size={64} variant="icon" className="text-foreground" />
-      <p className="text-foreground max-w-md text-balance">{layer.description}</p>
-      <p className="text-muted-foreground/60 font-mono text-[10px] tracking-widest tabular-nums">
-        {localizedLayers
-          .slice(0, LAST)
-          .map((l) => l.ordinal)
-          .join(' · ')}
-      </p>
-    </div>
-  );
 }
 
 /**
@@ -65,10 +41,6 @@ function ClosingPane({ layer, className }: { layer: Layer; className?: string })
  * layers don't collapse when they are no longer filling a pinned viewport.
  */
 function StepPane({ layer, index }: { layer: Layer; index: number }): ReactNode {
-  if (layer.id === 'kortix') {
-    return <ClosingPane layer={layer} className="py-24" />;
-  }
-
   return (
     <div className="flex min-h-0 flex-col space-y-10">
       <p className="max-w-2xl text-lg leading-snug tracking-tight text-pretty sm:text-xl">
@@ -103,8 +75,6 @@ function StepPane({ layer, index }: { layer: Layer; index: number }): ReactNode 
  * viewport under `prefers-reduced-motion`. Same copy, same panels, no pin.
  */
 function MobileCard({ layer, index }: { layer: Layer; index: number }): ReactNode {
-  const isClosing = layer.id === 'kortix';
-
   return (
     <article
       data-stack-layer={layer.id}
@@ -119,35 +89,24 @@ function MobileCard({ layer, index }: { layer: Layer; index: number }): ReactNod
         </h3>
       </div>
 
-      <div
-        className={cn(
-          'border-border bg-muted/40 dark:bg-muted/15 border-t p-2',
-          !isClosing && 'flex flex-col gap-3',
-        )}
-      >
-        {isClosing ? (
-          <ClosingPane layer={layer} className="py-16" />
-        ) : (
-          <>
-            <div className="flex min-w-0 flex-col gap-2.5 px-2 pt-2">
-              <p className="text-muted-foreground text-[13px] leading-relaxed">
-                {layer.description}
-              </p>
-              <ul className="text-muted-foreground space-y-1.5 text-[12.5px] leading-relaxed">
-                {layer.bullets.map((bullet) => (
-                  <li key={bullet} className="flex gap-2">
-                    <KortixAsterisk index={index} parentClass="mt-0 size-4" />
-                    <span>{bullet}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+      <div className="border-border bg-muted/40 dark:bg-muted/15 border-t p-2 flex flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-2.5 px-2 pt-2">
+        <p className="text-muted-foreground text-[13px] leading-relaxed">
+          {layer.description}
+        </p>
+        <ul className="text-muted-foreground space-y-1.5 text-[12.5px] leading-relaxed">
+          {layer.bullets.map((bullet) => (
+            <li key={bullet} className="flex gap-2">
+              <KortixAsterisk index={index} parentClass="mt-0 size-4" />
+              <span>{bullet}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
 
-            <div className="flex h-[16rem] min-h-0 w-full flex-col sm:h-[19rem]">
-              <LayerShowcase layer={layer} />
-            </div>
-          </>
-        )}
+      <div className="flex h-[16rem] min-h-0 w-full flex-col sm:h-[19rem]">
+        <LayerShowcase layer={layer} />
+      </div>
       </div>
     </article>
   );

@@ -78,7 +78,7 @@ patchedDependencies:
     hash: bw5g3bgyrs6h7lakof5ye2m344
     path: patches/postgres@3.4.9.patch
   shaders@2.5.135:
-    hash: eaej5q3lhsnrsoz6e7zxio5l2e
+    hash: w62sovffz6xvbvqx66sjk5qgeq
     path: patches/shaders@2.5.135.patch
 
 importers:
@@ -1200,8 +1200,8 @@ importers:
         specifier: 16.14.0
         version: 16.14.0(@types/react@19.2.18)(lucide-react@1.51.0)(next@16.4.0)(react-dom@19.3.0)(react@19.3.0)(zod@3.25.76)
       fumadocs-mdx:
-        specifier: 15.2.1
-        version: 15.2.1(@types/react@19.2.18)(fumadocs-core@16.14.0)(next@16.4.0)(react@19.3.0)(vite@8.3.4)
+        specifier: 15.2.3
+        version: 15.2.3(@types/react@19.2.18)(fumadocs-core@16.14.0)(next@16.4.0)(react@19.3.0)(vite@8.3.4)
       heic2any:
         specifier: 0.0.4
         version: 0.0.4
@@ -1306,7 +1306,7 @@ importers:
         version: 0.0.1
       shaders:
         specifier: ^2.5.94
-        version: 2.5.135(patch_hash=eaej5q3lhsnrsoz6e7zxio5l2e)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.5.135(patch_hash=w62sovffz6xvbvqx66sjk5qgeq)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.1)(vue@3.5.43)
       sonner:
         specifier: ^2.0.3
         version: 2.0.8(@types/react@19.2.18)(react-dom@19.3.0)(react@19.3.0)
@@ -2084,7 +2084,7 @@ importers:
         version: 11.1.2
       shaders:
         specifier: ^2.5.94
-        version: 2.5.135(patch_hash=eaej5q3lhsnrsoz6e7zxio5l2e)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.1)(vue@3.5.43)
+        version: 2.5.135(patch_hash=w62sovffz6xvbvqx66sjk5qgeq)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.1)(vue@3.5.43)
       shiki:
         specifier: ^3.12.0
         version: 3.23.0
@@ -21968,8 +21968,8 @@ packages:
       - supports-color
     dev: false
 
-  /fumadocs-mdx@15.2.1(@types/react@19.2.18)(fumadocs-core@16.14.0)(next@16.4.0)(react@19.3.0)(vite@8.3.4):
-    resolution: {integrity: sha512-lyx35MAFAj9yuLPudNoRGGvauZlT1xRLLw17P0jnvhXikrJNC8mAeg/4WIity5K+3V6ZetBQ2PYIcnli450vMg==}
+  /fumadocs-mdx@15.2.3(@types/react@19.2.18)(fumadocs-core@16.14.0)(next@16.4.0)(react@19.3.0)(vite@8.3.4):
+    resolution: {integrity: sha512-zulK4WKXZcnbiipdvWtKcBClZn8/RekIjZu+/MmuMX3lpiXki485ABhJiJqFQmtD8W59WBN+V/4ydr4TvSoLkQ==}
     hasBin: true
     peerDependencies:
       '@fumadocs/satteri': 0.x.x
@@ -29921,7 +29921,7 @@ packages:
     resolution: {integrity: sha512-TPbeg0b7ylrswdGCji8FRGFAKuqbpQlLbL8SOle3j1iHSs5Ob5mhvMAxWN2UItOjgALAB5Zp3fmMfj8mbWvXKw==}
     engines: {node: '>=10'}
 
-  /shaders@2.5.135(patch_hash=eaej5q3lhsnrsoz6e7zxio5l2e)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.1)(vue@3.5.43):
+  /shaders@2.5.135(patch_hash=w62sovffz6xvbvqx66sjk5qgeq)(react-dom@19.3.0)(react@19.3.0)(solid-js@1.9.15)(svelte@5.57.1)(vue@3.5.43):
     resolution: {integrity: sha512-1Fb68wq9I5yJMkpfeiestXNbb1NT0tgcXIuiQCEUzyTgNR/kVq5mzw25BmK5MTHZGjye6o5O8W9iprjPDHphwg==}
     hasBin: true
     peerDependencies:

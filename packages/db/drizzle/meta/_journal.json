@@ -1226,6 +1226,20 @@
       "when": 1792526100000,
       "tag": "20261020195500_secret_request_rotation",
       "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1792544465606,
+      "tag": "20261021010105_connector_call_status_expired_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1792592891819,
+      "tag": "20261021142811_trigger_run_turn_token",
+      "breakpoints": true
     }
   ]
 }

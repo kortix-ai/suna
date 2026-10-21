@@ -48,7 +48,6 @@
  * the Stripe portal are the Plan pane's subject and are not duplicated here.
  */
 
-import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
@@ -57,6 +56,7 @@ import { Button } from '@kortix/ui/button';
 import { Label } from '@kortix/ui/label';
 import { Progress } from '@kortix/ui/progress';
 import { Skeleton } from '@kortix/ui/skeleton';
+import { CreditExpiry } from '@/features/billing/credit-expiry';
 import { formatUsd } from '@/features/billing/account-overview';
 import { TopupControls } from '@/features/billing/topup-controls';
 import { useAccountState } from '@kortix/ui/internal/billing/use-account-state';
@@ -295,6 +295,7 @@ export function CreditsView({
               ≈ {formatUsd(Math.abs(balance), locale)}
               {isNegative ? ` ${t('owed')}` : ''}
             </p>
+            {state.credits.monthly > 0 && <CreditExpiry expiresAt={state.credits.expires_at} />}
           </div>
         </div>
 

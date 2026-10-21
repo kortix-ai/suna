@@ -13,20 +13,24 @@ import { type ModelKey, modelRefToKey, wireToModelKey } from './model-key';
 
 /**
  * The gateway's configured default for an agent, from
- * `GET /projects/:id/model-defaults`: agent → project → account → platform.
- * An account without managed models gets no platform default from the API
- * (`resolvedForCaller` is null), and an unoffered model is skipped by the
- * caller's `isOfferedModel` validation either way.
+ * `GET /projects/:id/model-defaults`: the agent's own default, else
+ * `resolvedForCaller` — project → account → platform, with a default the
+ * caller cannot run (a ChatGPT model without a login) already replaced by one
+ * they can (KRTX-3011). An API older than that field gets the raw chain. An
+ * account without managed models gets no platform default (`resolvedForCaller`
+ * is null), and an unoffered model is skipped by the caller's `isOfferedModel`
+ * validation either way.
  */
 export function resolveModelDefault(
   data: ModelDefaultsResponse | undefined,
   agentName: string | undefined,
 ): ModelKey | undefined {
+  const agentDefault = agentName ? data?.agentDefaults?.[agentName] : undefined;
   const wire =
-    (agentName ? data?.agentDefaults?.[agentName] : undefined) ??
-    data?.projectDefault ??
-    data?.accountDefault ??
-    (data?.freeTier ? undefined : data?.platformDefault);
+    agentDefault ??
+    (data?.resolvedForCaller !== undefined
+      ? data.resolvedForCaller
+      : (data?.projectDefault ?? data?.accountDefault ?? (data?.freeTier ? undefined : data?.platformDefault)));
   return wire ? wireToModelKey(wire) : undefined;
 }
 

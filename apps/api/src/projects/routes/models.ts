@@ -79,7 +79,13 @@ async function loadModelDefaultsWriter(
   return { ownerAccountId: loaded.row.accountId, userId: loaded.userId, row: loaded.row };
 }
 
+// The default that model-access reports and protects from a disable: a configured
+// project/account preference, even while its provider is disconnected; otherwise the
+// plan-eligible effective model (never the paid platform default for a free account).
 async function modelAccessDefault(userId: string, accountId: string, projectId: string, personalUserId: string | null): Promise<string | undefined> {
+  const defaults = await getAccountModelDefaults(accountId, projectId);
+  const configured = defaults.projects[projectId] ?? defaults.account;
+  if (configured) return toWireModel(configured);
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
   const resolved = await resolveEffectiveModel({ userId, accountId, projectId, freeModelsOnly, personalUserId });
   return resolved.model ?? (freeModelsOnly ? undefined : platformDefaultModelId());
@@ -250,11 +256,7 @@ export function registerModelsRoutes(): void {
       }
     }
     const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId, await requestPersonalOwner(c, loaded));
-    // Protect stored preferences even if their provider is temporarily disconnected.
-    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-    const configuredDefault = defaults.projects[projectId] ?? defaults.account;
-    const protectedDefault = configuredDefault ? toWireModel(configuredDefault) : defaultModel;
-    const result = await changeProjectModelAccess({ projectId, updatedBy: c.get('userId'), defaultModel: protectedDefault, change });
+    const result = await changeProjectModelAccess({ projectId, updatedBy: c.get('userId'), defaultModel, change });
     if (result.conflict) return c.json({
       error: 'Change the project default to another enabled provider or model first.',
       code: 'cannot_disable_default', defaultModel,
