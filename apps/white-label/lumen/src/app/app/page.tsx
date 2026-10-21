@@ -7,6 +7,7 @@ import { PageBody } from '@/components/page';
 import { HistoryList } from '@/components/runs/history-list';
 import { Spine, toneFor } from '@/components/spine';
 import { type FirmWorkflow, UseWorkflow, useFirmWorkflows, workflowPrompt } from '@/components/workflows/firm-workflows';
+import { BUILT_IN_WORKFLOWS, builtInHref } from '@/components/workflows/slash-workflows';
 import { authClient } from '@/lib/auth-client';
 import { STATUS_LABEL } from '@/lib/roles';
 import { errorText, relativeTime } from '@/lib/utils';
@@ -35,13 +36,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-/** Lumen's own workflows, as they appear in the "/" menu and the quick actions. */
-const BUILT_IN = [
-  { kind: 'contract', name: 'Review a contract', icon: ListChecksIcon, hint: 'Against a firm playbook' },
-  { kind: 'diligence', name: 'Due diligence', icon: FileMagnifyingGlassIcon, hint: 'Report with red flags' },
-  { kind: 'draft', name: 'Draft from template', icon: PenNibIcon, hint: 'A Word file from a precedent' },
-  { kind: 'review', name: 'Tabular review', icon: TableIcon, hint: 'Documents × questions' },
-] as const;
+/** Lumen's own workflows, as they appear in the "/" menu and the quick actions (the chat "/" menu lists the same). */
+const ICONS = { contract: ListChecksIcon, diligence: FileMagnifyingGlassIcon, draft: PenNibIcon, review: TableIcon } as const;
+const BUILT_IN = BUILT_IN_WORKFLOWS.map((b) => ({ ...b, icon: ICONS[b.kind] }));
 
 type MenuItem = { id: string; name: string; hint: string; builtin?: (typeof BUILT_IN)[number]; workflow?: FirmWorkflow };
 
@@ -79,7 +76,7 @@ export default function Home() {
 
   function runBuiltin(b: (typeof BUILT_IN)[number]) {
     if (!matterId) return infoToast('Choose a matter first', { description: 'Pick the matter in the composer, then the workflow.' });
-    router.push(b.kind === 'review' ? `/app/matters/${matterId}/reviews/new` : `/app/matters/${matterId}/workflows?open=${b.kind}`);
+    router.push(builtInHref(b.kind, matterId));
   }
 
   function pick(item: MenuItem) {

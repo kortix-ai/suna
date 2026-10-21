@@ -258,6 +258,13 @@ export default function WorkflowsPage() {
   const item = CATALOG.find((c) => c.kind === open);
   const firmWorkflows = useFirmWorkflows();
   const [using, setUsing] = useState<FirmWorkflow | null>(null);
+  // "/" in a chat opens a firm workflow here: `?use=<workflowId>`.
+  const use = useSearchParams().get('use');
+  const [usedParam, setUsedParam] = useState(false);
+  if (!usedParam && use && firmWorkflows) {
+    setUsedParam(true);
+    setUsing(firmWorkflows.find((w) => w._id === use) ?? null);
+  }
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
       <div className="mb-4">

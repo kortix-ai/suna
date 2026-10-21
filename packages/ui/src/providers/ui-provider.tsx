@@ -292,6 +292,31 @@ export interface UiHostConfig {
   takeFiles?: (files: File[]) => void;
   /** The attach picker's `accept` list. Unset: images, PDF, text and code files. */
   attachAccept?: string;
+  /**
+   * The composer's `/` menu lists the session runtime's skills and commands,
+   * and the Compact session action. A host that hides the harness from its
+   * users sets false. Default: true.
+   */
+  runtimeSlashEnabled: boolean;
+  /**
+   * Rows the host adds to the composer's `/` menu, under their own headings.
+   * A hook, so it may read the host's own data. Unset: none.
+   */
+  useSlashActions?: () => readonly UiSlashAction[];
+}
+
+/**
+ * A row the host adds to the composer's `/` menu. Selecting it deletes the
+ * `/` text and calls `onSelect`. When `onSelect` returns `{ insertText }`,
+ * the composer inserts that text at the caret.
+ */
+export interface UiSlashAction {
+  id: string;
+  label: string;
+  description: string;
+  /** The heading the row sits under, for example "Workflows". */
+  group: string;
+  onSelect: () => void | { insertText: string };
 }
 
 /** What the session browser frames: a port and path inside the session's sandbox, or a URL. */
@@ -326,6 +351,7 @@ export const defaultUiHostConfig: UiHostConfig = {
   modelPickerEnabled: true,
   contextMeterEnabled: true,
   sessionOverridesEnabled: true,
+  runtimeSlashEnabled: true,
 };
 
 const useNoViewer = (): string | undefined => undefined;

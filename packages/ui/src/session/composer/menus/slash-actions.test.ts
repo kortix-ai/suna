@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { SLASH_ACTIONS, controlToOpenFor, filterSlashActions } from './slash-actions';
+import { SLASH_ACTIONS, controlToOpenFor, filterSlashActions, hostSlashActions, slashActionShown } from './slash-actions';
 
 describe('SLASH_ACTIONS', () => {
   test('every action has a unique id', () => {
@@ -100,5 +100,23 @@ describe('controlToOpenFor', () => {
       'switch-agent:agent',
       'switch-model:model',
     ]);
+  });
+});
+
+describe('slashActionShown: a row whose control the host hides is dropped', () => {
+  const all = { modelPickerEnabled: true, contextMeterEnabled: true, runtimeSlashEnabled: true };
+  test('every row shows by default', () => {
+    expect(SLASH_ACTIONS.filter((a) => slashActionShown(a.id, all)).map((a) => a.id)).toEqual(SLASH_ACTIONS.map((a) => a.id));
+  });
+  test('a host with no model picker, context meter or runtime commands keeps agent and attach only', () => {
+    const none = { modelPickerEnabled: false, contextMeterEnabled: false, runtimeSlashEnabled: false };
+    expect(SLASH_ACTIONS.filter((a) => slashActionShown(a.id, none)).map((a) => a.id)).toEqual(['switch-agent', 'attach-file']);
+  });
+  test('host rows become host:<id> actions that open no control', () => {
+    const onSelect = () => ({ insertText: 'x' });
+    const [row] = hostSlashActions([{ id: 'w1', label: 'NDA triage', description: 'Firm workflow', group: 'Workflows', onSelect }]);
+    expect(row).toMatchObject({ id: 'host:w1', label: 'NDA triage', group: 'Workflows' });
+    expect(row!.onSelect).toBe(onSelect);
+    expect(controlToOpenFor(row!.id)).toBeNull();
   });
 });

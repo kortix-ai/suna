@@ -1,6 +1,7 @@
 'use client';
 
 import { setUiRoutes, UiProvider, type UiHostConfig, type UiNavigation } from '@kortix/ui';
+import { useLumenSlashActions } from '@/components/workflows/slash-workflows';
 import { defaultUiMessages, type UiI18nHost } from '@kortix/ui/i18n';
 import { IconProvider } from '@kortix/ui/icon-provider';
 import { TooltipProvider } from '@kortix/ui/tooltip';
@@ -97,6 +98,9 @@ const config: Partial<UiHostConfig> = {
   contextMeterEnabled: false,
   sessionOverridesEnabled: false,
   agentLabels,
+  // "/" lists Lumen's workflows, never the harness's commands or Compact session (UXR3-1).
+  runtimeSlashEnabled: false,
+  useSlashActions: useLumenSlashActions,
   // A file attached in a chat goes into the matter's Documents, the one path that reads,
   // anchors and indexes it: only a vault document can be cited. Nothing reaches the session's own store.
   takeFiles: (files) => void addToDocuments(files),

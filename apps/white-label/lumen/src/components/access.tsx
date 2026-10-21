@@ -60,6 +60,11 @@ export function Notice({ icon: Icon, title, body, href = '/app', cta = 'Back to 
 const FirmContext = createContext<Firm | null>(null);
 
 /** The firm of the active organization, inside /app. */
+/** The firm, or null outside /app (a component that also renders elsewhere). */
+export function useFirmOrNull(): Firm | null {
+  return useContext(FirmContext);
+}
+
 export function useFirm(): Firm {
   const firm = useContext(FirmContext);
   if (!firm) throw new Error('useFirm outside /app');
