@@ -159,6 +159,16 @@ export default defineSchema({
 
   stripeEvents: defineTable({ eventId: v.string() }).index("by_eventId", ["eventId"]),
 
+  /** Demo requests from the public site. Read by the operator (`npx convex data demoRequests`). */
+  demoRequests: defineTable({
+    name: v.string(),
+    email: v.string(),
+    firm: v.string(),
+    size: sizeBand,
+    role: v.optional(v.string()),
+    message: v.optional(v.string()),
+  }).index("by_email", ["email"]),
+
   // ── Vault ──
   documents: defineTable({
     firmId: v.id("firms"),

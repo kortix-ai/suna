@@ -27,6 +27,7 @@ import type * as lib_segment from "../lib/segment.js";
 import type * as lib_template from "../lib/template.js";
 import type * as library from "../library.js";
 import type * as lumenAgent from "../lumenAgent.js";
+import type * as marketing from "../marketing.js";
 import type * as matters from "../matters.js";
 import type * as members from "../members.js";
 import type * as operator from "../operator.js";
@@ -65,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   "lib/template": typeof lib_template;
   library: typeof library;
   lumenAgent: typeof lumenAgent;
+  marketing: typeof marketing;
   matters: typeof matters;
   members: typeof members;
   operator: typeof operator;
