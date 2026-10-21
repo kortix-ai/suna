@@ -4,7 +4,7 @@
 // lives only in Convex env (KORTIX_OPERATOR_TOKEN); Next.js and the browser
 // never hold it. Members get short-lived project-scoped tokens minted here.
 
-import { getProjectDrive, makeDriveFolder, updateFeatureFlag } from "@kortix/sdk";
+import { getProjectDrive, updateFeatureFlag } from "@kortix/sdk";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -12,7 +12,7 @@ import { type ActionCtx, action, internalAction } from "./_generated/server";
 import { requireProxy } from "./access";
 import { ensureKit } from "./kitInstall";
 import { COUNSEL_AGENT, FIRM_FOLDERS } from "./lumenAgent";
-import { asOperator, operator, sandboxProvider } from "./operator";
+import { asOperator, operator, sandboxProvider, ensureFolder } from "./operator";
 import { lumenSessionTags } from "./tags";
 
 const MEMBER_TOKEN_TTL_MS = 60 * 60_000;
@@ -29,13 +29,12 @@ async function mintScopedToken(ctx: ActionCtx, name: string, projectId: string, 
   return { tokenId: minted.token_id, secret: minted.secret_key, expiresAt };
 }
 
-/** mkdir that treats "already exists" as done, so a re-run of provisioning is a no-op. */
-async function ensureFolder(driveId: string, path: string) {
-  try {
-    await makeDriveFolder(driveId, path);
-  } catch (err) {
-    if ((err as { status?: number }).status !== 409) throw err;
-  }
+/** A thread title of at most 120 characters, cut at a word with "…"; the UI truncates further with CSS. */
+function shortTitle(text: string): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  if (t.length <= 120) return t;
+  const cut = t.slice(0, 119);
+  return `${cut.slice(0, cut.lastIndexOf(" ") > 60 ? cut.lastIndexOf(" ") : 119).replace(/[\s,;:.-]+$/, "")}…`;
 }
 
 /**
@@ -105,7 +104,7 @@ export const createThread = action({
     { matterId, title, prompt },
   ): Promise<{ threadId: Id<"threads">; kortixProjectId: string; kortixSessionId: string }> => {
     const a = await ctx.runQuery(internal.matters.access, { matterId });
-    const clean = title.trim().replace(/\s+/g, " ").slice(0, 120) || "New thread";
+    const clean = shortTitle(title) || "New thread";
     // A firm whose agent kit is behind upgrades in the background; this thread starts on the installed version.
     await ctx.scheduler.runAfter(0, internal.kitInstall.ensure, { firmId: a.firmId });
     const session = await operator().kortix.projects.createSession(a.kortixProjectId, {

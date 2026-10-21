@@ -3,6 +3,7 @@
 // The operator credential and the retry rule every Kortix call shares.
 // KORTIX_OPERATOR_TOKEN lives only in Convex env; Next.js and the browser never hold it.
 
+import { makeDriveFolder } from "@kortix/sdk";
 import { createScopedKortix, runWithKortix } from "@kortix/sdk/server";
 
 export function operator() {
@@ -39,6 +40,18 @@ export async function withRetry<T>(fn: () => Promise<T>, delays = [1000, 4000, 1
       if ((status !== undefined && status < 500) || attempt >= delays.length) throw err;
       await new Promise((r) => setTimeout(r, delays[attempt]));
     }
+  }
+}
+
+/**
+ * mkdir with the shared retry. "Already exists" (409) is done, so re-runs are no-ops.
+ * A transient 5xx (e.g. Drive 503) is retried, never surfaced as a failed upload.
+ */
+export async function ensureFolder(driveId: string, path: string): Promise<void> {
+  try {
+    await withRetry(() => makeDriveFolder(driveId, path));
+  } catch (err) {
+    if (statusOf(err) !== 409) throw err;
   }
 }
 

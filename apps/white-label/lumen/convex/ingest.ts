@@ -5,7 +5,7 @@
 // the original + Text/<docId>.md + the matter's index.json in the firm's Drive.
 
 import { createHash } from "node:crypto";
-import { deleteDriveFile, makeDriveFolder, uploadDriveFile } from "@kortix/sdk";
+import { deleteDriveFile, uploadDriveFile } from "@kortix/sdk";
 import mammoth from "mammoth";
 import { extractText, getDocumentProxy } from "unpdf";
 import { v } from "convex/values";
@@ -13,15 +13,7 @@ import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 import { extOf } from "./documents";
 import { renderText, sectionsFromText, segment } from "./lib/segment";
-import { asOperator, errorText, withRetry } from "./operator";
-
-async function ensureFolder(driveId: string, path: string) {
-  try {
-    await makeDriveFolder(driveId, path);
-  } catch (err) {
-    if ((err as { status?: number }).status !== 409) throw err;
-  }
-}
+import { asOperator, errorText, withRetry, ensureFolder } from "./operator";
 
 /** Raw text per page. DOCX and TXT have no pages, so a page is a ~3,000-character section. */
 async function pagesOf(filename: string, bytes: Uint8Array): Promise<string[]> {

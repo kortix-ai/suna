@@ -7,7 +7,7 @@
 // which checks every citation before a value reaches the UI. The browser is
 // never in the loop: polling is Convex scheduled functions only.
 
-import { createProjectSession, getSessionTurn, listDriveFolder, makeDriveFolder, readDriveFile, uploadDriveFile } from "@kortix/sdk";
+import { createProjectSession, getSessionTurn, listDriveFolder, readDriveFile, uploadDriveFile } from "@kortix/sdk";
 import Ajv2020 from "ajv/dist/2020";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -16,7 +16,7 @@ import { type ActionCtx, internalAction } from "./_generated/server";
 import { KIT } from "./kit/bundle.generated";
 import { ensureKit } from "./kitInstall";
 import { RUNS_ROOT, sandboxPath } from "./lumenAgent";
-import { asOperator, errorText, operator, sandboxProvider, withRetry } from "./operator";
+import { asOperator, errorText, operator, sandboxProvider, withRetry, ensureFolder } from "./operator";
 import { LIMITS, NO_PROGRESS_MS, RUN_TIMEOUT_MS, inputKind, resultContract } from "./runs";
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
@@ -28,14 +28,6 @@ const pollDelay = (startedAt: number | undefined) => (startedAt && Date.now() - 
 const PROMPT_GRACE_MS = 45_000;
 
 const batchDir = (runId: string, batchId: string) => `${RUNS_ROOT}/${runId}/${batchId}`;
-
-async function ensureFolder(driveId: string, path: string) {
-  try {
-    await makeDriveFolder(driveId, path);
-  } catch (err) {
-    if ((err as { status?: number }).status !== 409) throw err;
-  }
-}
 
 type Prep = {
   run: Doc<"runs">;
