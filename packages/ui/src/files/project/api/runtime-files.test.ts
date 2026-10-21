@@ -81,20 +81,22 @@ test('a heic photo reports binary without fetching — the blob pipeline owns it
 test('a text file still reads the JSON content route', async () => {
   routes['/files/content'] = {
     status: 200,
-    body: JSON.stringify({ path: 'notes.md', ref: 'main', content: '# hi' }),
+    body: JSON.stringify({ path: 'notes.md', ref: 'main', content: '# hi', revision: 'a'.repeat(40) }),
     contentType: 'application/json',
   };
   const result = await readFile('P1', 'main', '/workspace/notes.md');
   expect(calls.some((c) => c.includes('/files/content'))).toBe(true);
-  expect(result).toEqual({ type: 'text', content: '# hi' });
+  expect(result).toEqual({ type: 'text', content: '# hi', revision: 'a'.repeat(40) });
 });
 
 test('an extensionless text file (LICENSE) reads bytes and classifies as text', async () => {
   stubRaw('/files/raw', new Uint8Array([0x4d, 0x49, 0x54, 0x20, 0x6c, 0x69, 0x63])); // "MIT lic"
+  routes['/files/content'] = { status: 200, body: JSON.stringify({ content: 'MIT lic', revision: 'a'.repeat(40) }), contentType: 'application/json' };
   const result = await readFile('P1', 'main', '/workspace/LICENSE');
   expect(result).toEqual({
     type: 'text',
     content: 'MIT lic',
+    revision: 'a'.repeat(40),
     mimeType: 'text/plain; charset=utf-8',
   });
 });
@@ -108,9 +110,11 @@ test('an unknown-extension binary file (data.bin) reports binary, never mojibake
 
 test('an svg still reads as text source, matching the sandbox daemon', async () => {
   stubRaw('/files/raw', new Uint8Array([0x3c, 0x73, 0x76, 0x67, 0x3e])); // "<svg>"
+  routes['/files/content'] = { status: 200, body: JSON.stringify({ content: '<svg>', revision: 'b'.repeat(40) }), contentType: 'application/json' };
   const result = await readFile('P1', 'main', '/workspace/brand.svg');
   expect(result.type).toBe('text');
   expect(result.content).toBe('<svg>');
+  expect(result.revision).toBe('b'.repeat(40));
 });
 
 test('readFileAsBlob returns the exact bytes of a binary file', async () => {
