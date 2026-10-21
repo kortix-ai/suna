@@ -1309,7 +1309,8 @@ awaiting archive. Access policy — `GET/PATCH …/:appId/access` read and persi
 mode; `restricted` without any member or group → 400; `project` persists and
 reads back; `POST …/:appId/access-session` returns a signed URL + expiry for a
 member. `POST …/:appId/deployments` requires a ready artifact and an
-exact source-kind match. Deployment list/detail/logs expose durable state.
+exact source-kind match, and refuses `provider: "daytona"` with 400
+`sandbox_provider_deprecated` (no deployment is created). Deployment list/detail/logs expose durable state.
 Unknown deployment detail and logs return 404.
 Rollback accepts only a ready deployment. Start and stop require an active
 deployment. Finalizing an OCI artifact, using a mismatched OCI image, rolling
