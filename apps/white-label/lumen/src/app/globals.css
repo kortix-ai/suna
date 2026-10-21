@@ -47,6 +47,15 @@
   }
 }
 
+/* Keyboard focus on every @kortix/ui Button: a 2 px ring in --ring, 2 px off the
+   control, so the page shows between the fill and the ring in both themes. The
+   shared 0.6 px ring is the fill's own color on a primary Button and cannot be
+   seen (WCAG 2.4.7). Unlayered, so it wins over the utility classes. */
+[data-slot="button"]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 /* The serif scale. Rule: one light weight; hierarchy from size; tight tracking
    that loosens as the size drops. Newsreader's optical size follows the size. */
 @utility display-xl {

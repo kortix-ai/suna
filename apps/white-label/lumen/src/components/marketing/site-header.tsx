@@ -25,6 +25,7 @@ const LINKS = [
 /** Pages whose first band is the brand surface: the header starts transparent over it. */
 const ON_BRAND = new Set(['/', '/security']);
 const ANNOUNCE_KEY = 'lumen:announce-1.3';
+const HOVER_CLICK_MS = 400;
 
 /**
  * The public header: announcement bar, wordmark, centred nav with mega-menus
@@ -72,6 +73,24 @@ export function SiteHeader() {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     setOpen(k);
   };
+  // A pointer that hovers a menu open and then clicks its label means "open", not "close":
+  // the click toggles only when the menu was already open before the hover (UXR2-2).
+  const hoverOpenedAt = useRef(0);
+  const hover = (k: MenuKey) => {
+    if (open !== k) hoverOpenedAt.current = Date.now();
+    clear(k);
+  };
+  const toggle = (k: MenuKey) => {
+    if (open === k && Date.now() - hoverOpenedAt.current < HOVER_CLICK_MS) return;
+    clear(open === k ? null : k);
+  };
+  // The mobile menu starts at the header's real bottom: the announcement bar above it moves it down (UXR2-1).
+  const headerRef = useRef<HTMLElement>(null);
+  const [menuTop, setMenuTop] = useState(72);
+  const toggleMobile = () => {
+    setMenuTop(Math.max(0, headerRef.current?.getBoundingClientRect().bottom ?? 72));
+    setMobile((m) => !m);
+  };
   const leave = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     closeTimer.current = setTimeout(() => setOpen(null), 160);
@@ -118,7 +137,7 @@ export function SiteHeader() {
       {announce && (
         <div className="relative z-40 flex h-9 items-center justify-center bg-navy px-10 text-[13px] text-white md:text-[14px]">
           <Link href="/blog/lumen-1-3" className="group flex min-w-0 items-center gap-2 truncate">
-            <span className="truncate">Lumen 1.3: every firm in one workspace, onboarded in seconds</span>
+            <span className="truncate">Lumen 1.3: new firms onboard in seconds, each behind its own walls</span>
             <ArrowRightIcon className="size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5" />
           </Link>
           <Button
@@ -133,6 +152,7 @@ export function SiteHeader() {
         </div>
       )}
       <header
+        ref={headerRef}
         onMouseLeave={leave}
         className={cn(
           'sticky top-0 z-40 transition-colors duration-200',
@@ -153,8 +173,8 @@ export function SiteHeader() {
                 aria-expanded={open === m.key}
                 aria-controls="site-mega-menu"
                 onKeyDown={onTriggerKey(m.key)}
-                onMouseEnter={() => clear(m.key)}
-                onClick={() => clear(open === m.key ? null : m.key)}
+                onMouseEnter={() => hover(m.key)}
+                onClick={() => toggle(m.key)}
                 className={cn(
                   'h-9 gap-1 rounded-full px-3.5 text-[14px] font-medium',
                   transparent ? 'text-white/85 hover:bg-white/10 hover:text-white' : open === m.key ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
@@ -183,8 +203,8 @@ export function SiteHeader() {
               aria-expanded={open === 'resources'}
               aria-controls="site-mega-menu"
               onKeyDown={onTriggerKey('resources')}
-              onMouseEnter={() => clear('resources')}
-              onClick={() => clear(open === 'resources' ? null : 'resources')}
+              onMouseEnter={() => hover('resources')}
+              onClick={() => toggle('resources')}
               className={cn(
                 'h-9 gap-1 rounded-full px-3.5 text-[14px] font-medium',
                 transparent ? 'text-white/85 hover:bg-white/10 hover:text-white' : open === 'resources' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
@@ -228,7 +248,7 @@ export function SiteHeader() {
               size="icon"
               aria-label={mobile ? 'Close menu' : 'Open menu'}
               aria-expanded={mobile}
-              onClick={() => setMobile((m) => !m)}
+              onClick={toggleMobile}
               className={cn('size-9 lg:hidden', transparent && 'text-white hover:bg-white/10')}
             >
               {mobile ? <XIcon className="size-5" /> : <ListIcon className="size-5" />}
@@ -279,7 +299,7 @@ export function SiteHeader() {
       />
 
       {mobile && (
-        <div className="fixed inset-x-0 top-[72px] bottom-0 z-40 overflow-y-auto bg-background px-6 pt-6 pb-10 lg:hidden">
+        <div style={{ top: menuTop }} className="fixed inset-x-0 bottom-0 z-40 overflow-y-auto bg-background px-6 pt-6 pb-10 lg:hidden">
           {(
             [
               ['Platform', NAV.platform],

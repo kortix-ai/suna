@@ -455,7 +455,7 @@ export const SECURITY_PRINCIPLES = [
 ] as const;
 
 export const NEWS = [
-  { title: 'Lumen 1.3: one workspace for every firm', date: 'Oct 21, 2026', tag: 'Product', slug: 'lumen-1-3' },
+  { title: 'Lumen 1.3: new firms onboard in seconds', date: 'Oct 21, 2026', tag: 'Product', slug: 'lumen-1-3' },
   { title: 'How Lumen checks a citation before you see it', date: 'Oct 14, 2026', tag: 'Engineering', slug: 'how-lumen-checks-a-citation' },
   { title: 'Tabular review gets typed columns and Excel export', date: 'Oct 2, 2026', tag: 'Product', slug: 'typed-columns' },
   { title: 'Playbooks: one source of truth for the firm’s positions', date: 'Sep 18, 2026', tag: 'Product', slug: 'playbooks' },
@@ -502,15 +502,16 @@ export const POSTS: Post[] = [
   },
   {
     slug: 'lumen-1-3',
-    title: 'Lumen 1.3: one workspace for every firm',
+    title: 'Lumen 1.3: new firms onboard in seconds',
     date: 'Oct 21, 2026',
     tag: 'Product',
-    lead: 'Lumen 1.3 runs every firm in one platform workspace, each walled into its own folder, agent and credentials. Onboarding a firm now takes seconds.',
+    lead: 'A new firm is ready to work in seconds, and each firm stays behind its own walls: its own documents, its own agent, its own credentials.',
     sections: [
       {
         heading: 'What changed',
         paragraphs: [
-          'A new firm used to get its own copy of the whole workspace. Now each firm gets its own folder, its own agent and its own credentials inside one shared deployment, and the agent kit is installed once for everyone.',
+          'Setting up a firm used to take minutes, because Lumen built a whole new environment for it. Now a firm gets its own walled document store, its own agent and its own server-held credentials the moment it signs up, and the legal agent kit is installed once and read-only for everyone.',
+          'A restricted matter goes one step further: it gets its own store and its own agent, so not even the rest of the firm’s conversations can open it.',
           'In our tests a second firm could not mount, list or read the first firm’s documents or conversations.',
         ],
       },
