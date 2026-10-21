@@ -150,7 +150,45 @@ class Redline(unittest.TestCase):
             self.assertEqual((r["ok"], r["insertions"], r["deletions"], r["comments"]), (True, 1, 1, 1))
             text = Document(out).paragraphs[0]._p.xml
             self.assertIn('w:author="Lumen"', text)
-            self.assertIn("seven (7) years", text)
+            self.assertIn("seven (7)", text)
+            self.assertNotIn("<w:delText xml:space=\"preserve\">seven (7) years", text)
+
+    def test_missing_clause_is_its_own_inserted_paragraph(self):
+        from docx import Document
+        from docx.oxml.ns import qn
+        from lumen_kit import redline
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "nda.docx")
+            d = Document()
+            d.add_paragraph("3.3 The Recipient may disclose information where required by law, after notice where lawful.")
+            d.add_paragraph("4.1 Term.")
+            d.save(src)
+            anchor = "3.3 The Recipient may disclose information where required by law, after notice where lawful."
+            added = " 3.4 Nothing in this Agreement restricts the use of general knowledge retained in unaided memory."
+            out = os.path.join(tmp, "redline.docx")
+            r = redline.redline(src, [{"a": "p1.1", "from": anchor, "to": anchor + added, "comment": "Rule NDA-02: residuals."}], out)
+            self.assertEqual((r["ok"], r["insertions"], r["deletions"], r["comments"]), (True, 2, 0, 1))
+            paras = Document(out).paragraphs
+            self.assertEqual([p.text for p in paras], [anchor, "", "4.1 Term."])  # .text skips the w:ins run: the new paragraph reads empty
+            new_p = paras[0]._p.getnext()
+            self.assertIn("3.4 Nothing in this Agreement", new_p.xml)
+            self.assertIsNotNone(new_p.find(qn("w:pPr") + "/" + qn("w:rPr") + "/" + qn("w:ins")))
+            self.assertEqual(paras[0]._p.findall(".//" + qn("w:del")), [])
+
+    def test_only_changed_words_are_marked(self):
+        from docx import Document
+        from docx.oxml.ns import qn
+        from lumen_kit import redline
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "dpa.docx")
+            d = Document()
+            d.add_paragraph("4.1 The Processor gives at least ten (10) days notice of a new subprocessor.")
+            d.save(src)
+            out = os.path.join(tmp, "r.docx")
+            redline.redline(src, [{"from": "at least ten (10) days notice", "to": "at least thirty (30) days notice"}], out)
+            p = Document(out).paragraphs[0]._p
+            self.assertEqual([t.text for t in p.iter(qn("w:delText"))], ["ten (10)"])
+            self.assertEqual([t.text for t in p.iter(qn("w:t"))][1:2], ["thirty (30)"])
 
     def test_converted_copy_for_pdf(self):
         from lumen_kit import redline

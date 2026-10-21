@@ -13,6 +13,7 @@ import unicodedata
 
 # A firm session mounts its own firm folder at /drives/<firmId> (and the read-only kit at /drives/kit):
 # the glob reaches that firm's matters only, because no other firm's folder is in the sandbox.
+# A restricted matter's session mounts only that matter, at /drives/<matterId>.
 DRIVE_ROOT = os.environ.get("LUMEN_DRIVE_ROOT", "/drives/*")
 MAX_QUOTE = 300
 
@@ -72,7 +73,9 @@ def text_path(doc_id: str, matter: str | None = None) -> str:
         path = os.path.join(matter, "Text", f"{doc_id}.md")
         if os.path.exists(path):
             return path
-    hits = glob.glob(os.path.join(DRIVE_ROOT, "Matters", "*", "Text", f"{doc_id}.md"))
+    hits = glob.glob(os.path.join(DRIVE_ROOT, "Matters", "*", "Text", f"{doc_id}.md")) or glob.glob(
+        os.path.join(DRIVE_ROOT, "Text", f"{doc_id}.md")
+    )
     if not hits:
         raise KitError(f"unknown_doc: {doc_id}")
     return hits[0]
