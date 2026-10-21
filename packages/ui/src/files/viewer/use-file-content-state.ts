@@ -93,6 +93,12 @@ export function useFileContentState({
   const fetchRevision = useContentRevision(dataUpdatedAt || undefined);
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // A refetch may replace server content while CodeEditor retains a dirty draft.
+  // CAS must compare against the revision that draft started from.
+  const draftRevisionRef = useRef(fileContent?.revision);
+  useEffect(() => {
+    if (!hasUnsavedChanges) draftRevisionRef.current = fileContent?.revision;
+  }, [hasUnsavedChanges, fileContent?.revision]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveFlash, setSaveFlash] = useState(false);
   // Tracks the latest editor content so we can save from the header button.
@@ -242,7 +248,7 @@ export function useFileContentState({
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const file = new File([blob], fileName, { type: 'text/plain' });
         if (source.save) {
-          await source.save(filePath, file, fileContent?.revision);
+          await source.save(filePath, file, draftRevisionRef.current);
         } else {
           const parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
           await source.upload(file, parentPath || undefined);
@@ -271,7 +277,7 @@ export function useFileContentState({
         setIsSaving(false);
       }
     },
-    [filePath, fileName, refetch, onSaved, readOnly, source, fileContent?.revision],
+    [filePath, fileName, refetch, onSaved, readOnly, source],
   );
 
   // Discard handler — force-remounts CodeEditor so it re-initialises from fileContent.content.
