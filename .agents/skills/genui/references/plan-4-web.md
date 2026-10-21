@@ -194,11 +194,11 @@ Destructure `trust` in the function parameters.
 - [ ] **Step 5: Run tests to verify they pass**
 
 ```bash
-cd apps/web && bun test src/components/markdown/code/markdown-code.test.tsx src/components/markdown/unified-markdown.test.tsx src/components/markdown/stream-words.test.ts
-npx tsc --noEmit -p . 2>&1 | rg -v "preview-fit.test|easy-panel-logic.test" | rg "error TS" | head
+(cd apps/web && bun test src/components/markdown/code/markdown-code.test.tsx src/components/markdown/unified-markdown.test.tsx src/components/markdown/stream-words.test.ts)
+pnpm --filter Kortix-Computer-Frontend typecheck   # from the repo root; tsgo, incremental
 ```
 
-Expected: tests PASS; no new `error TS` lines (the ~15 known errors in the 2 listed test files are filtered).
+Expected: tests PASS; the typecheck adds no `error TS` line in the touched files (compare against `origin/dev`).
 
 - [ ] **Step 6: Commit**
 
@@ -1350,7 +1350,7 @@ Remove the two lines from the `genui` registry entry. Run `cd apps/api && bun te
 - [ ] **Step 2: Typecheck and lint the touched packages**
 
 ```bash
-pnpm --filter ./apps/web exec tsc --noEmit
+pnpm --filter Kortix-Computer-Frontend typecheck   # from the repo root; tsgo, incremental
 ```
 
 Expected: exit 0. The full suite runs on the staging pull request.

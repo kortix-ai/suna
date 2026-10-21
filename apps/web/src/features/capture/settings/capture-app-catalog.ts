@@ -152,27 +152,25 @@ export interface NamedRow {
   name: string;
   /** The ids, shown under the name. */
   detail: string;
-  locked: boolean;
 }
 
 /** A list of app ids as rows: one row per catalog app (by name), one per other id. */
-export function namedAppRows(rows: { id: string; locked: boolean }[]): NamedRow[] {
+export function namedAppRows(rows: { id: string }[]): NamedRow[] {
   const out: NamedRow[] = [];
   const seen = new Map<CatalogApp, NamedRow>();
   for (const row of rows) {
     const app = catalogApp(row.id);
     if (!app) {
-      out.push({ ids: [row.id], name: row.id, detail: '', locked: row.locked });
+      out.push({ ids: [row.id], name: row.id, detail: '' });
       continue;
     }
     const existing = seen.get(app);
     if (existing) {
       existing.ids.push(row.id);
       existing.detail = existing.ids.join(', ');
-      existing.locked ||= row.locked;
       continue;
     }
-    const named = { ids: [row.id], name: app.name, detail: row.id, locked: row.locked };
+    const named = { ids: [row.id], name: app.name, detail: row.id };
     seen.set(app, named);
     out.push(named);
   }

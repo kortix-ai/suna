@@ -73,7 +73,8 @@ Modes:
 Options:
   --mode <mode>      private | project | members.
   --member <id|email>  Member allowed in members mode (repeatable). An email
-                     resolves through the project's member list.
+                     resolves through the project members you can see: a
+                     plain member sees only themselves, so pass a user id.
   --group <id>       Account group allowed in members mode (repeatable).
   --show             Print the current setting and exit.
   --project <id>     Operate on this project id (default: linked).
@@ -99,8 +100,8 @@ Subcommands:
   revoke <share-id>  Kill a link.
 
 Create options:
-  --port <n>         Preview port (default 3000). Refused for 22, 8000 and the
-                     opencode ports.
+  --port <n>         Preview port (default 3000). Refused for 22, 3211 (the
+                     file-share server), 8000 and the opencode ports.
   --path <p>         Path inside the preview (default /).
   --preview <id>     Named candidate instead of --port/--path: web | vite |
                      dev-server | api-docs (see \`sessions preview --list\`).
@@ -124,7 +125,9 @@ Examples:
 `;
 
 /** Resolve a `--member` value: a bare id passes through, an email is looked up
- *  in the project's member list (the same list `kortix access ls` prints). */
+ *  in the project's member list (the same list `kortix access ls` prints).
+ *  That list shows a plain member only themselves (directory-visibility.ts),
+ *  so a miss does not prove the person is absent. */
 async function resolveMemberIds(
   client: ApiClient,
   projectId: string,
@@ -148,7 +151,11 @@ async function resolveMemberIds(
     }
     const hit = members.find((m) => m.email?.toLowerCase() === value.toLowerCase());
     if (!hit) {
-      process.stderr.write(`${status.err(`No project member with email "${value}".`)}\n`);
+      process.stderr.write(
+        `${status.err(`No project member with email "${value}" in the member list you can see.`)}\n` +
+          `  ${C.dim}If they are a member, you may not be allowed to see this person. ` +
+          `Pass ${C.reset}${C.cyan}--member <user-id>${C.reset}${C.dim} instead.${C.reset}\n`,
+      );
       return null;
     }
     out.push(hit.user_id);
