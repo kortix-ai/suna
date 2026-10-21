@@ -274,6 +274,7 @@ const ALLOWED_PROXY_ORIGINS =
       ];
 
 const nextConfig = (): NextConfig => ({
+  poweredByHeader: false,
   // The frontend data layer lives in the @kortix/sdk workspace package (TS
   // source), so Next must transpile it.
   transpilePackages: ['@kortix/sdk', '@kortix/ui'],

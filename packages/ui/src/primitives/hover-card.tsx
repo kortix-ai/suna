@@ -5,6 +5,7 @@ import * as React from 'react';
 
 import { withPortalContainer } from '../lib/portal-container';
 import { cn } from '../lib/utils';
+import { floatingZ, useDialogDepth } from '../lib/z-stack';
 import { FLOATING_PANEL, FLOATING_PANEL_SURFACE } from './menu-recipe';
 
 const HoverCardPortal = withPortalContainer(HoverCardPrimitive.Portal);
@@ -42,8 +43,11 @@ function HoverCardContent({
   align = 'center',
   sideOffset = 4,
   animated = true,
+  style,
   ...props
 }: React.ComponentProps<typeof HoverCardPrimitive.Content> & { animated?: boolean }) {
+  // Inside a dialog the card stacks above it, as a popover does (`floatingZ`).
+  const depth = useDialogDepth();
   return (
     <HoverCardPortal data-slot="hover-card-portal">
       <HoverCardPrimitive.Content
@@ -52,9 +56,10 @@ function HoverCardContent({
         sideOffset={sideOffset}
         className={cn(
           animated ? FLOATING_PANEL : FLOATING_PANEL_SURFACE,
-          'z-50 w-64 origin-(--radix-hover-card-content-transform-origin) p-4 outline-hidden motion-reduce:animate-none motion-reduce:transition-none',
+          'w-64 origin-(--radix-hover-card-content-transform-origin) p-4 outline-hidden motion-reduce:animate-none motion-reduce:transition-none',
           className,
         )}
+        style={{ zIndex: floatingZ(depth), ...style }}
         {...props}
       />
     </HoverCardPortal>

@@ -22,11 +22,9 @@ import { forgetLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-pro
 import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
 import { focusWithoutScroll } from '@kortix/ui/internal/lib/utils/focus-without-scroll';
 import { getProject, requestProjectAccess } from '@kortix/sdk';
-import { prefetchSessionOpen, useAdminImpersonate } from '@kortix/sdk/react';
+import { prefetchSessionOpen, qk, useAdminImpersonate } from '@kortix/sdk/react';
 import { prefetchSessionRouteReads } from '@kortix/ui/session/status/session-route-prefetch';
 import { prefetchProjectShellReads } from '@/components/projects/project-shell-prefetch';
-
-const QUERY_KEY = 'project-access-boundary';
 
 /** How often the waiting screen re-checks whether a manager approved the request. */
 const APPROVAL_POLL_MS = 15_000;
@@ -210,6 +208,20 @@ export function routeSessionIdFromParams(params: Record<string, unknown> | null 
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+/**
+ * The gate's read. It uses the shell's canonical `getProject` slot, so the
+ * shell, ⌘K and settings read this answer instead of asking again (2 GETs per
+ * load before). A user switch empties the cache before the new user is
+ * published (`resetClientState`).
+ */
+export function projectGateQuery(projectId: string) {
+  return {
+    queryKey: qk.project.summary(projectId),
+    queryFn: () => getProject(projectId, { showErrors: false }),
+    retry: false,
+  } as const;
+}
+
 // ─── Boundary ────────────────────────────────────────────────────────────────
 
 interface ProjectAccessBoundaryProps {
@@ -232,39 +244,27 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   const [waiting, setWaiting] = useState<WaitingGateState | null>(null);
 
   const query = useQuery({
-    queryKey: [QUERY_KEY, projectId, user?.id],
-    queryFn: () => getProject(projectId, { showErrors: false }),
+    ...projectGateQuery(projectId),
     enabled: authReady && !!projectId,
-    retry: false,
+    // Keep a gone verdict across remounts; transient errors may recover.
+    retryOnMount: (query) => errorStatus(query.state.error) !== 404,
+    refetchOnMount: (query) => errorStatus(query.state.error) === 404 ? false : 'always',
   });
 
-  // A session route's open read needs only the two route ids, so it starts
-  // HERE, beside `getProject`, instead of after this boundary renders the
-  // session page. Staging HAR (cold open): the snapshot waited 1.68 s for
-  // `GET /projects/<id>` before it could start. Read-only — it never wakes a
-  // sandbox — and a project this user cannot read answers 403 to it as well.
-  //
-  // `prefetchSessionRouteReads` (config/scope) rides the SAME signal: those
-  // reads also only need the route ids, and were waiting on
-  // `ProjectSessionView`'s own chunk to mount. `/start` is not prefetched:
-  // see `session-route-prefetch.ts`.
+  // Do not speculate on inaccessible projects: a deleted URL must settle
+  // from the access check alone, without a burst of shell/session 404s.
   const queryClient = useQueryClient();
   const routeSessionId = routeSessionIdFromParams(useParams());
   useEffect(() => {
-    if (!authReady || !routeSessionId) return;
+    if (!authReady || !query.isSuccess || !query.isFetchedAfterMount || !routeSessionId) return;
     void prefetchSessionOpen(queryClient, projectId, routeSessionId);
     prefetchSessionRouteReads(queryClient, projectId, routeSessionId);
-  }, [authReady, projectId, routeSessionId, queryClient]);
+  }, [authReady, query.isSuccess, query.isFetchedAfterMount, projectId, routeSessionId, queryClient]);
 
-  // The project SHELL's own reads (detail, sessions list, sandbox health, and
-  // — once detail says the gateway is on — the model picker) need only
-  // `projectId`, exactly like `getProject` above, so they start here too
-  // instead of waiting for `getProject` to resolve AND `ProjectShell`'s own
-  // chunk to mount. See `project-shell-prefetch.ts`.
   useEffect(() => {
-    if (!authReady || !projectId) return;
+    if (!authReady || !query.isSuccess || !query.isFetchedAfterMount || !projectId) return;
     prefetchProjectShellReads(queryClient, projectId);
-  }, [authReady, projectId, queryClient]);
+  }, [authReady, query.isSuccess, query.isFetchedAfterMount, projectId, queryClient]);
 
   const { refetch } = query;
   // Background poll: silent, and must never touch the button's pending state.
@@ -331,6 +331,9 @@ function ProjectAccessForUser({ projectId, children }: ProjectAccessBoundaryProp
   // token publication before interpreting any result as an access decision.
   const view = resolveBoundaryView({
     authReady,
+    // A project this device kept renders at once while the mount refetch
+    // revalidates it (spec 34, instant loads). A 404 or 403 from that refetch
+    // still replaces it with the gate.
     isPending: query.isPending,
     hasData: query.data !== undefined,
     errorState,
@@ -416,7 +419,7 @@ function AccessGateScreen({
         return;
       }
       // already_has_access — the project is readable now, so show the project.
-      void queryClient.invalidateQueries({ queryKey: [QUERY_KEY, projectId] });
+      void queryClient.invalidateQueries({ queryKey: qk.project.summary(projectId) });
     },
     onError: (error: Error) =>
       setInlineError(error.message || t.raw('projectAccessBoundary.requestFailed')),

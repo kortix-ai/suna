@@ -12,7 +12,7 @@
  */
 
 import { ArrowUpRightIcon, LinkSimpleIcon } from '@phosphor-icons/react';
-import { platformConfig } from '@kortix/sdk';
+import { platformConfig, stripTrailingSlashes } from '@kortix/sdk';
 import { UiLink as Link } from '../../providers/ui-provider';
 import type { ComponentType } from 'react';
 
@@ -30,7 +30,7 @@ import { cn } from '../lib/utils';
 
 /** The MCP endpoint: `<api origin>/v1/mcp`. */
 export function mcpUrl(backendUrl: string | undefined): string {
-  const base = (backendUrl || 'https://api.kortix.com/v1').replace(/\/+$/, '');
+  const base = stripTrailingSlashes(backendUrl || 'https://api.kortix.com/v1');
   return `${base.endsWith('/v1') ? base : `${base}/v1`}/mcp`;
 }
 
@@ -124,6 +124,10 @@ export function ConnectMcpModal({
               <ModalTitle className="text-lg font-medium text-balance">{t('title')}</ModalTitle>
               <ModalDescription className="text-pretty">{t('description')}</ModalDescription>
             </header>
+            <div className="bg-muted flex min-w-0 items-center gap-3 rounded-md border p-3">
+              <code className="min-w-0 flex-1 text-xs break-all select-text">{url}</code>
+              <ClientAction client={CLIENTS[0]} url={url} />
+            </div>
             <ul className="divide-border divide-y">
               {CLIENTS.map((client) => (
                 <li key={client.id} className="flex items-center gap-3 py-2.5">

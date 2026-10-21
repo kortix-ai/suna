@@ -83,6 +83,8 @@ export interface ComposerCardDerived {
   handleAttachClick: () => void;
   primaryAgents: Agent[];
   availableSelectedModel: { providerID: string; modelID: string } | null;
+  agentMenuOpen: boolean;
+  setAgentMenuOpen: Dispatch<SetStateAction<boolean>>;
   modelMenuOpen: boolean;
   setModelMenuOpen: Dispatch<SetStateAction<boolean>>;
   reasoningMenuOpen: boolean;
@@ -135,6 +137,8 @@ export function ComposerCard({
   handleAttachClick,
   primaryAgents,
   availableSelectedModel,
+  agentMenuOpen,
+  setAgentMenuOpen,
   modelMenuOpen,
   setModelMenuOpen,
   reasoningMenuOpen,
@@ -364,6 +368,8 @@ export function ComposerCard({
                   agents={primaryAgents}
                   selectedAgent={selectedAgent}
                   onAgentChange={onAgentChange}
+                  agentMenuOpen={agentMenuOpen}
+                  onAgentMenuOpenChange={setAgentMenuOpen}
                   noAccessibleAgents={noAccessibleAgents}
                   messages={messages}
                   models={models}
@@ -446,6 +452,8 @@ export function ComposerCard({
         agents={primaryAgents}
         selectedAgent={selectedAgent}
         onAgentChange={onAgentChange}
+                  agentMenuOpen={agentMenuOpen}
+                  onAgentMenuOpenChange={setAgentMenuOpen}
         noAccessibleAgents={noAccessibleAgents}
         messages={messages}
         models={models}

@@ -44,14 +44,14 @@ export const DEFAULT_FLOW_WEIGHT_MS = 120_000;
  * whole duration while the other workers idle, so it costs the shard that many
  * worker-seconds. Must equal the `KE2E_API_WORKERS` the release gate gives each
  * API shard (`tests-release.yml`), or a projected load no longer converts to a
- * wall-clock ceiling by the same divisor on every shard. It was 3 while the gate
- * ran 3 API workers; the gate now runs 2.
+ * wall-clock ceiling by the same divisor on every shard. `tests/unit/shard.test.ts`
+ * reads the gate's value and fails when the two differ.
  *
  * This value cannot change the partition. Rule 1 gives the serial tail its own
  * shard, so the only load it inflates is a shard that receives no bin-packed
  * work — it is a reporting constant, not a packing input.
  */
-export const SERIAL_WORKER_PENALTY = 2;
+export const SERIAL_WORKER_PENALTY = 4;
 
 export interface ShardSpec {
   current: number;

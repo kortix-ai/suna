@@ -5,11 +5,13 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 
 `@kortix/ui` is the React component library that the Kortix web app renders, and the whole Kortix session experience as modules: the session workspace (thread plus side panel), the composer, files and the file viewer, the terminal, the project home and the session list. The same package serves Kortix Apps, white-label hosts and your own app, so a button, a chat thread or a session screen looks and behaves the same everywhere. Components are Tailwind CSS v4 class strings that read CSS variables. You re-theme them with a typed theme (`@kortix/ui/theme`) or by overriding the variables, never by copying a component.
 
-<Callout type="warning">
-`@kortix/ui` is not on npm yet. Today it is a workspace package of the [kortix-ai/suna](https://github.com/kortix-ai/suna) repository: inside that repository, add `"@kortix/ui": "workspace:*"` to your package's dependencies. This page describes the package as it ships there.
-</Callout>
-
 ## Install
+
+```bash
+npm i @kortix/ui @kortix/sdk
+```
+
+`@kortix/ui` and `@kortix/sdk` carry the Kortix release version. Install the same version of each. The module entries (`@kortix/ui/session`, `/workspace`, `/theme` and the others in [Modules](#modules)) ship from 0.14.4. 0.14.3 has the root, the component subpaths and the stylesheets. Inside the [kortix-ai/suna](https://github.com/kortix-ai/suna) repository, add `"@kortix/ui": "workspace:*"` to your package's dependencies instead.
 
 | Import | Holds |
 | --- | --- |
@@ -29,7 +31,7 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | `@kortix/ui/session`, or any module entry that renders project or session data | `@kortix/sdk` and `@tanstack/react-query` 5, plus one `QueryClientProvider` ([React setup of the SDK](/docs/sdk/react#set-up)). Without `@tanstack/react-query`, the bundler fails on an import inside `@kortix/sdk/react`. |
 | The session thread (it renders [generative UI](/docs/sdk/genui) blocks) | `@openuidev/lang-core@0.3.1` and `zod`, the optional `@kortix/sdk` peers of `@kortix/sdk/genui`. Without them, `vite build` fails with `Missing export` in `@kortix/sdk/dist/genui`. |
 
-After the first npm release:
+The full install for a session host:
 
 ```bash
 npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod @phosphor-icons/react@2.1.10 react@19 react-dom@19

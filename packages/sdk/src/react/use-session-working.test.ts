@@ -424,7 +424,7 @@ describe('readSessionTurnObservation', () => {
       queue: { known: true, prompts: [], held: false },
       transcript: { known: true, requested: false },
       config: { known: true },
-      models: { known: false, reason: 'llm_gateway_disabled' },
+      models: { known: false, reason: 'read_failed' },
       session: { session_id: 'S1' },
     }));
     openSessionBundle('P1', 'S1');

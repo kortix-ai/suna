@@ -8,13 +8,8 @@
  * for `kortix:open-file-search` to be summoned onto its Files page; this is
  * the same door onto its root page.
  *
- * The request is BUFFERED, not just dispatched. The search button paints as
- * soon as the sidebar does, which is before the palette's lazy chunk has
- * finished loading — a plain event fired in that window reaches no listener
- * and the click does nothing. (⌘K has the same gap and gets away with it:
- * nobody reaches for a shortcut in the first paint, and a dead keystroke
- * reads as "I mistyped", while a dead button reads as broken.) The flag is
- * consumed on mount, so an early click opens the palette the moment it exists.
+ * The request is buffered while the palette chunk loads. The eager Suspense
+ * fallback reads it without consuming it; the loaded palette consumes it.
  */
 
 export const OPEN_COMMAND_PALETTE_EVENT = 'kortix:open-command-palette';
@@ -25,6 +20,11 @@ export function openCommandPalette(): void {
   if (typeof window === 'undefined') return;
   requested = true;
   window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT));
+}
+
+/** Read without consuming, so the loading dialog can hand off to the palette. */
+export function hasPendingCommandPalette(): boolean {
+  return requested;
 }
 
 /**

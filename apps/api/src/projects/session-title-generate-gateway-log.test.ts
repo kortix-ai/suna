@@ -70,8 +70,7 @@ describe('title-generate gateway log fields', () => {
           persist: async () => {},
           // No retry model: one gateway attempt, one warn.
           fallbackModel: async () => null,
-          resolveLlmGatewayEnabled: async () => true,
-        },
+          },
       );
     } finally {
       globalThis.fetch = realFetch;

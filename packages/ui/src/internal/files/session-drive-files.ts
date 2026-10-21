@@ -19,7 +19,7 @@
 
 import type { FileContent } from './types';
 import { attachmentMime } from '../lib/attachment-mime';
-import { readDriveFile, type SessionDrive } from '@kortix/sdk';
+import { readDriveFile, stripTrailingSlashes, type SessionDrive } from '@kortix/sdk';
 import { sessionDrivesQueryOptions } from '@kortix/sdk/react';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useLayoutEffect } from 'react';
@@ -31,8 +31,6 @@ export interface SessionDriveFile {
 }
 
 type DriveMount = Pick<SessionDrive, 'driveId' | 'mountPath' | 'subdir'>;
-
-const trimSlashes = (p: string) => p.replace(/\/+$/, '');
 
 /**
  * `/drives/me/a.gif`, or the relative `drives/me/a.gif` an agent writes, as the
@@ -57,13 +55,13 @@ export function resolveSessionDriveFile(
   if (!abs) return null;
   let best: DriveMount | null = null;
   for (const mount of mounts) {
-    const root = trimSlashes(mount.mountPath);
+    const root = stripTrailingSlashes(mount.mountPath);
     if (!root || (abs !== root && !abs.startsWith(`${root}/`))) continue;
-    if (!best || root.length > trimSlashes(best.mountPath).length) best = mount;
+    if (!best || root.length > stripTrailingSlashes(best.mountPath).length) best = mount;
   }
   if (!best) return null;
-  const rest = abs.slice(trimSlashes(best.mountPath).length);
-  return { driveId: best.driveId, path: `${trimSlashes(best.subdir)}${rest}` || '/' };
+  const rest = abs.slice(stripTrailingSlashes(best.mountPath).length);
+  return { driveId: best.driveId, path: `${stripTrailingSlashes(best.subdir)}${rest}` || '/' };
 }
 
 interface DriveFilesScope {

@@ -1,3 +1,4 @@
+import { ApiError } from '../api/client.ts';
 import {
   describeConfigStatus,
   describeReloadOutcome,
@@ -71,6 +72,7 @@ import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
 import { runSessionsShell } from './sessions-shell.ts';
 import { parseMetaPair, runSessionsUpdate } from './sessions-update.ts';
 import { runSessionsWaitFor } from './sessions-wait.ts';
+import { requireConnectedModel } from './session-model-access.ts';
 
 const HELP = help`Usage: kortix sessions <subcommand> [options]
 
@@ -250,7 +252,7 @@ Subcommands:
                                     A session with no keys for the new
                                     model's provider gets every key you may
                                     use there.
-  compact <session-id>              Summarize the conversation and continue
+  compact <session-id>              Summarize the conversation; wakes a stopped session first
                                     from the summary.
   update [<session-id>]             Change labels and metadata. --label <l>
                                     adds, --unlabel <l> removes,
@@ -558,6 +560,12 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
       `/projects/${ctx.projectId}/sessions${sessionListQuery(flags, parentId)}`,
     );
   } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      const hostFlag = opts.hostArg ? ` --host ${opts.hostArg}` : '';
+      process.stderr.write(`${status.err(`${ctx.defaultProject ? 'Default project' : 'Project'} "${ctx.projectId}" was not found or is no longer accessible.`)} Run ` +
+        `\`kortix projects ls${hostFlag}\`, then \`kortix projects use <id>${hostFlag}\` to select an available project.\n`);
+      return 1;
+    }
     return surfaceApiError(err);
   }
 
@@ -660,6 +668,12 @@ async function sessionsNew(
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
+  try {
+    await requireConnectedModel(ctx.client, ctx.projectId);
+  } catch (error) {
+    return surfaceApiError(error);
+  }
+
   // --with-file: uploads need a live sandbox, and the prompt must go out AFTER
   // the files land (an initial_prompt would race the uploads). So validate the
   // local files up front, force the readiness wait, and defer the prompt.
@@ -718,9 +732,8 @@ async function sessionsNew(
   // Shared by --wait (readiness before returning) and the post-create connect
   // path (attach needs a live runtime).
   const awaitReadiness = async (): Promise<boolean> => {
-    if (!json) {
-      process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
-    }
+    process.stderr.write(`Session ${created.session_id}: created (${created.status}); waiting for readiness…\n`);
+    let previousStage = '';
     let ready = false;
     for (let i = 0; i < 75; i += 1) {
       if (i > 0) await new Promise((r) => setTimeout(r, 4000));
@@ -729,6 +742,10 @@ async function sessionsNew(
           stage: 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
           reason?: string;
         }>(`/projects/${ctx.projectId}/sessions/${created.session_id}/start`, {});
+        if (start.stage !== previousStage) {
+          process.stderr.write(`Session ${created.session_id}: ${start.stage}\n`);
+          previousStage = start.stage;
+        }
         created = await ctx.client.get<ProjectSession>(
           `/projects/${ctx.projectId}/sessions/${created.session_id}`,
         );

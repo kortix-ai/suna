@@ -54,8 +54,14 @@ interface Range {
  */
 const MENTION_REGEX = /(^|\s)@(\S+)/g;
 
-/** Trailing punctuation is sentence, not name: `@README.md,` ends at `md`. */
-const TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/;
+/** Trailing punctuation is sentence, not name: `@README.md,` ends at `md`. A
+ *  loop, not `/[…]+$/`: that regex backtracks quadratically on a long
+ *  punctuation run (CodeQL js/polynomial-redos). */
+function trimTrailingPunctuation(token: string): string {
+  let end = token.length;
+  while (end > 0 && '.,;:!?)]}\'"'.includes(token[end - 1])) end -= 1;
+  return token.slice(0, end);
+}
 
 function overlaps(ranges: Range[], start: number, end: number): boolean {
   return ranges.some((r) => start < r.end && end > r.start);
@@ -122,7 +128,7 @@ export function buildMentionSegments({
   let match: RegExpExecArray | null;
   while ((match = MENTION_REGEX.exec(text)) !== null) {
     const start = match.index + match[1].length;
-    const token = match[2].replace(TRAILING_PUNCTUATION, '');
+    const token = trimTrailingPunctuation(match[2]);
     if (!token) continue;
     const end = start + 1 + token.length;
     if (overlaps(ranges, start, end)) continue;

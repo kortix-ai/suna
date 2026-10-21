@@ -44,7 +44,7 @@ paymentsRouter.openapi(
     },
     responses: {
       200: json(z.object({ checkout_url: z.string().nullable() }), 'Stripe checkout URL'),
-      ...errors(400),
+      ...errors(400, 429),
     },
   }),
   async (c) => {
@@ -273,6 +273,7 @@ paymentsRouter.openapi(
     },
     responses: {
       200: json(OpaqueSchema, 'Auto-topup configuration result'),
+      ...errors(429),
     },
   }),
   async (c) => {

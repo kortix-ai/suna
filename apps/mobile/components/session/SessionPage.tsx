@@ -921,19 +921,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // session set from the CLI, the SDK or Slack on its model (`useResolvedConfig`).
   const lastPromptModel = useMemo(() => latestPromptModel(storeThread?.messages), [storeThread]);
   // Models: the project's list (`useComposerModels`), the same one project home
-  // and web show; the sandbox's `/provider` joins it off-gateway.
+  // and web show.
   const {
-    gatewayEnabled,
     providers,
     models,
     modelDefaults,
     isLoading: modelsLoading,
     refetchModelCount,
   } = useComposerModels(projectId ?? null);
-  // A gateway project that offers no model: Send opens the connect sheet
-  // instead of posting (KRTX-251). Gateway off never blocks.
+  // A project that offers no model: Send opens the connect sheet instead of
+  // posting (KRTX-251).
   const modelUnavailable = isModelUnavailable({
-    hasCatalog: gatewayEnabled,
     loading: modelsLoading,
     modelCount: offeredModelCount(models),
   });
@@ -978,7 +976,6 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     sessionKey: projectSessionId ?? sessionId,
     session: projectSession,
     lastPromptModel,
-    gatewayEnabled,
   });
 
   // The composer lists only the commands the selected agent may run. The

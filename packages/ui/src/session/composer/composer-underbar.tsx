@@ -43,6 +43,8 @@ export interface ComposerUnderbarProps {
    *  composer.tsx) — this component does no further filtering. */
   agents: Agent[];
   selectedAgent: string | null;
+  agentMenuOpen?: boolean;
+  onAgentMenuOpenChange?: (open: boolean) => void;
   onAgentChange?: (agentName: string | null) => void;
   /**
    * The roster loaded and this user may run NOTHING here (deny-by-default
@@ -74,6 +76,8 @@ export function ComposerUnderbar({
   onAttachClick,
   agents,
   selectedAgent,
+  agentMenuOpen,
+  onAgentMenuOpenChange,
   onAgentChange,
   noAccessibleAgents = false,
   messages,
@@ -146,6 +150,8 @@ export function ComposerUnderbar({
         <AgentSelector
           agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
           selectedAgent={selectedAgent}
+          open={agentMenuOpen}
+          onOpenChange={onAgentMenuOpenChange}
           onSelect={onAgentChange ?? NO_AGENT_SELECT}
           triggerLabelClassName="max-w-[7rem]"
           unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}

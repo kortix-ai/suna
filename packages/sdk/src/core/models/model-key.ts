@@ -32,21 +32,13 @@ export function wireToModelKey(wire: string): ModelKey {
 
 /**
  * A STORED model ref (a session pin, a channel binding, a trigger, an agent's
- * `model`) as the picker's `ModelKey`, in the project's gateway mode.
+ * `model`) as the picker's `ModelKey`. The ref is a gateway wire id;
+ * `kortix/<wire>` (the form a session pin keeps) and `<wire>` name the same
+ * model under `kortix`.
  *
- *  • Gateway on — the ref is a gateway wire id; `kortix/<wire>` (the form a
- *    session pin keeps) and `<wire>` name the same model under `kortix`.
- *  • Gateway off — the ref is the native `provider/model`, split on the FIRST
- *    slash (`openrouter/z-ai/glm-4.7-flash`). A ref with no provider falls
- *    back to the gateway shape, which fails the catalog lookup (renders unset).
+ * @param _gatewayEnabled Deprecated and ignored: the LLM gateway is the only
+ *   model path for every project. Removed in the next major.
  */
-export function modelRefToKey(ref: string, gatewayEnabled: boolean): ModelKey {
-  const wire = ref.startsWith('kortix/') ? ref.slice('kortix/'.length) : ref;
-  if (!gatewayEnabled) {
-    const slash = wire.indexOf('/');
-    if (slash > 0 && slash < wire.length - 1) {
-      return { providerID: wire.slice(0, slash), modelID: wire.slice(slash + 1) };
-    }
-  }
-  return wireToModelKey(wire);
+export function modelRefToKey(ref: string, _gatewayEnabled?: boolean): ModelKey {
+  return wireToModelKey(ref.startsWith('kortix/') ? ref.slice('kortix/'.length) : ref);
 }

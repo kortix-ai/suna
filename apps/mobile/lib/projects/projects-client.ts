@@ -118,7 +118,6 @@ export {
   getModelDefaults,
   getProjectDetail,
   getProjectLlmCatalog,
-  getProjectLlmCatalogProviders,
   getProjectModelPicker,
 } from '@kortix/sdk';
 

@@ -23,7 +23,7 @@ import { errorToast, successToast } from '../../../primitives/toast';
 import { cn } from '../../../internal/lib/utils';
 import { copyToClipboard } from '../../../internal/lib/utils/clipboard';
 import { CheckIcon, CopyIcon, PlusIcon, TrashIcon } from '@phosphor-icons/react';
-import { AnimatePresence, m } from 'motion/react';
+import { AnimatedCopyIcon } from '../../../animated-copy-icon';
 import { type ReactNode, useState } from 'react';
 
 import {
@@ -129,22 +129,13 @@ export function CopyBlock({
         )}
       >
         <span className="relative inline-flex size-3.5 items-center justify-center">
-          <AnimatePresence initial={false} mode="popLayout">
-            <m.span
-              key={copied ? 'check' : 'copy'}
-              initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-              animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
-              exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
-              transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-              className="absolute inset-0 inline-flex items-center justify-center"
-            >
-              {copied ? (
-                <CheckIcon className="text-kortix-green size-3.5" />
-              ) : (
-                <CopyIcon className="size-3.5" />
-              )}
-            </m.span>
-          </AnimatePresence>
+          <AnimatedCopyIcon copied={copied}>
+            {copied ? (
+              <CheckIcon className="text-kortix-green size-3.5" />
+            ) : (
+              <CopyIcon className="size-3.5" />
+            )}
+          </AnimatedCopyIcon>
         </span>
       </button>
     </div>

@@ -56,6 +56,8 @@ export function AgentSelector({
   disabled = false,
   triggerLabelClassName,
   unavailableHint,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   agents: Agent[];
   selectedAgent: string | null;
@@ -70,10 +72,14 @@ export function AgentSelector({
    * says nothing, because there is nothing true to say yet.
    */
   unavailableHint?: string | null;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('threads');
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
   const [search, setSearch] = useState('');
 
   const { offeredAgents, agentLabels } = useUiHostConfig();

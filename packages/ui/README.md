@@ -11,8 +11,11 @@ product in its own brand. Every screen is a module of this package.
 
 <p align="center"><img src="https://github.com/kortix-ai/suna/raw/dev/apps/white-label/lumen/public/screenshots/assistant-source.png" width="720" alt="Lumen: the @kortix/ui session thread in Lumen's brand, with a cited answer and its source" /></p>
 
-Install: not on npm yet. Inside kortix-ai/suna: `"@kortix/ui": "workspace:*"`.
-After the first npm release: `npm i @kortix/ui`.
+Install: `npm i @kortix/ui @kortix/sdk`. Both packages carry the Kortix release
+version, so install the same version of each. The module entries (`session`,
+`workspace`, `theme` and the others below) ship from 0.14.4. 0.14.3 has the root,
+the component subpaths and the stylesheets. Inside kortix-ai/suna:
+`"@kortix/ui": "workspace:*"`.
 `react` and `react-dom` 19 are peers (the PowerPoint preview needs React 19.2.7 or later).
 
 - Public docs: `apps/web/content/docs/sdk/ui.mdx` (https://kortix.com/docs/sdk/ui).

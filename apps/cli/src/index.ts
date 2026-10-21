@@ -2,7 +2,8 @@
 import { loadAuth } from './api/auth.ts';
 import { printBanner } from './banner.ts';
 import { liftLeadingGlobalFlags } from './command-argv.ts';
-import { type Command, TIERS } from './command-table.ts';
+import { type Command, commandFeatureFlag, TIERS } from './command-table.ts';
+import { enabledFeatureFlags, featureOffMessage, featureShown } from './feature-flags.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
@@ -35,6 +36,7 @@ import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runReminders } from './commands/reminders.ts';
+import { runGoals } from './commands/goals.ts';
 import { runReview } from './commands/review.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
@@ -49,6 +51,7 @@ import { runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
 import { runTools } from './commands/tools.ts';
 import { runTriggers } from './commands/triggers.ts';
+import { runPeers, runRooms } from './commands/rooms.ts';
 import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -77,8 +80,9 @@ function tierBand(label: string): string {
   return `  ${C.faded}${label} ${'─'.repeat(dashes)}${C.reset}`;
 }
 
-function renderHelp(): string {
-  const visibleCommands = (commands: readonly Command[]) => commands;
+function renderHelp(flags: Set<string> | null): string {
+  // A flagged command is listed only where its flag is known on (feature-flags.ts).
+  const visibleCommands = (commands: readonly Command[]) => commands.filter((c) => featureShown(c.featureFlag, flags));
   const allCommands = TIERS.flatMap((t) => t.sections.flatMap((s) => visibleCommands(s.commands)));
   const labelWidth = Math.max(
     ...allCommands.map((c) => (c.args ? `${c.name} ${c.args}` : c.name).length),
@@ -111,6 +115,11 @@ function renderHelp(): string {
     '  --debug  Print resolved host, account and credential source to stderr (also KORTIX_DEBUG=1).',
   );
   lines.push('');
+  lines.push('  Inside a Kortix sandbox, plain commands use the delegated session identity,');
+  lines.push('  not stored host credentials. KORTIX_DISABLE_SANDBOX_ENV_FILE=1 disables the');
+  lines.push('  sandbox env-file fallback. To use stored credentials, also unset exported KORTIX_TOKEN,');
+  lines.push('  KORTIX_API_URL, KORTIX_FRONTEND_URL and KORTIX_PROJECT_ID for that invocation.');
+  lines.push('');
   return lines.join('\n');
 }
 
@@ -124,7 +133,7 @@ function printVersion(): void {
 // banner/context" surprise. The one difference is that BARE `kortix` may stop
 // at the update notice to ask (see offerInteractiveUpdate) — an explicit help
 // request stays a pure, non-blocking render.
-async function printLanding(opts: { offerUpdate: boolean }): Promise<void> {
+async function printLanding(opts: { offerUpdate: boolean; argv?: readonly string[] }): Promise<void> {
   printBanner();
   // Always surface what host/account/project commands will act on.
   process.stdout.write(`${renderContext()}\n`);
@@ -134,7 +143,9 @@ async function printLanding(opts: { offerUpdate: boolean }): Promise<void> {
     const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
     if (notice) process.stdout.write(`${notice}\n`);
   }
-  process.stdout.write(renderHelp());
+  // The linked project's flags decide which flagged commands are listed; a slow
+  // or absent answer hides them rather than delaying the help screen.
+  process.stdout.write(renderHelp(await enabledFeatureFlags(opts.argv ?? [], { timeoutMs: 1500 })));
 }
 
 /** Can we actually ask a question here? `resolveUpdateStatus` already rules out
@@ -238,6 +249,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   review: (rest) => runReview(rest),
   triggers: (rest) => runTriggers(rest),
   reminders: (rest) => runReminders(rest),
+  goals: (rest) => runGoals(rest),
   capture: (rest) => runCapture(rest),
   remind: (rest) => runReminders(rest, true),
   connectors: (rest) => runConnectors(rest),
@@ -269,6 +281,8 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   grants: (rest) => runGrants(rest),
   update: (rest) => runUpdate(rest),
   uninstall: (rest) => runUninstall(rest),
+  rooms: (rest) => runRooms(rest),
+  peers: (rest) => runPeers(rest),
 };
 
 async function main(rawArgv: string[]): Promise<number> {
@@ -316,12 +330,12 @@ async function main(rawArgv: string[]): Promise<number> {
   if (argv.length === 0 || argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
     const topic = argv[0] === 'help' ? argv[1] : undefined;
     if (!topic || topic.startsWith('-')) {
-      await printLanding({ offerUpdate: argv.length === 0 });
+      await printLanding({ offerUpdate: argv.length === 0, argv });
       return 0;
     }
     if (topic === 'help') {
       // `kortix help help` — the landing screen IS the help about help.
-      await printLanding({ offerUpdate: false });
+      await printLanding({ offerUpdate: false, argv });
       return 0;
     }
     if (topic === 'version') {
@@ -329,6 +343,14 @@ async function main(rawArgv: string[]): Promise<number> {
       return 0;
     }
     const topicHandler = COMMAND_HANDLERS[topic];
+    const topicFlag = commandFeatureFlag(topic);
+    if (topicFlag) {
+      const flags = await enabledFeatureFlags(argv.slice(2));
+      if (!featureShown(topicFlag, flags)) {
+        process.stderr.write(`${C.red}kortix:${C.reset} ${featureOffMessage(`\`kortix ${topic}\``, topicFlag, flags)}\n`);
+        return 1;
+      }
+    }
     if (topicHandler) return topicHandler(['--help'], topic);
     const topicSuggestion = closestCommand(topic);
     const topicLines = [`${C.red}kortix:${C.reset} unknown help topic \`${topic}\``];
@@ -343,7 +365,7 @@ async function main(rawArgv: string[]): Promise<number> {
   // the verbs — there is nothing else to report, and blaming a flag the CLI
   // just honored would be absurd.
   if (liftedGlobals > 0 && argv[0]?.startsWith('-')) {
-    await printLanding({ offerUpdate: false });
+    await printLanding({ offerUpdate: false, argv });
     return 0;
   }
   if (argv[0] === 'version') {
@@ -389,6 +411,14 @@ async function main(rawArgv: string[]): Promise<number> {
   // tie, so this order must match the old KNOWN_COMMANDS list exactly.
   const handler = COMMAND_HANDLERS[argv[0]];
   if (handler) {
+    const flag = commandFeatureFlag(argv[0]);
+    if (flag) {
+      const flags = await enabledFeatureFlags(argv.slice(1));
+      if (!featureShown(flag, flags)) {
+        process.stderr.write(`${C.red}kortix:${C.reset} ${featureOffMessage(`\`kortix ${argv[0]}\``, flag, flags)}\n`);
+        return 1;
+      }
+    }
     return handler(argv.slice(1), argv[0]);
   }
   // Anything else is an unknown command. This must NEVER fall through to a
@@ -410,7 +440,9 @@ async function main(rawArgv: string[]): Promise<number> {
  *  edit distance still resolves to the first candidate — the exact behavior
  *  of the pre-1341 KNOWN_COMMANDS list. */
 const SUGGESTION_CANDIDATES: readonly string[] = [
-  ...Object.keys(COMMAND_HANDLERS),
+  // A command behind a feature flag is never suggested: whether it exists here
+  // is the project's flag, which a typo suggestion does not read.
+  ...Object.keys(COMMAND_HANDLERS).filter((name) => !commandFeatureFlag(name)),
   'help',
   'version',
 ];
