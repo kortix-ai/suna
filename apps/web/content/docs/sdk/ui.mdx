@@ -156,7 +156,7 @@ const brand: KortixTheme = {
 // <html><head><style>{themeToCss(brand)}</style></head>…
 ```
 
-`themeToCss` is a pure function, so it runs on the server and the first paint is already on brand. Its blocks out-rank `tokens.css`, so the `<style>` can sit anywhere in the page. The white-label demo does exactly this: `apps/whitelabel-demo/src/config/theme.ts` is its whole re-skin (indigo accent, indigo hairlines, a 4px radius, its own sans and mono stacks).
+`themeToCss` is a pure function, so it runs on the server and the first paint is already on brand. Its blocks out-rank `tokens.css`, so the `<style>` can sit anywhere in the page. The white-label demo does exactly this: `apps/white-label/lumen/src/config/theme.ts` is its whole re-skin.
 
 ### The API
 
@@ -707,7 +707,7 @@ createRoot(document.getElementById('root')!).render(
 
 - `useProjectSessions`, `useProjectApps`, `useProjectTriggers`, `useChangeRequests`, `useGatewayOverview` and `useCan` add more data ([Hooks](/docs/sdk/react#hooks)).
 - Never `fetch` the Kortix API yourself. If the SDK lacks a call you need, that is an SDK gap to report.
-- The [white-label demo](https://github.com/kortix-ai/suna/tree/dev/apps/whitelabel-demo) is a full Next.js product built this way, in its own brand.
+- The [white-label demo](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/lumen) is a full Next.js product built this way, in its own brand.
 
 ## For agents
 

@@ -171,7 +171,7 @@ export function buildSlashSections({
   const filteredFiles = filterSlashFiles(files, query);
   const fileCap = q ? FILE_LIMIT : FILE_PREVIEW_LIMIT;
 
-  // Render order: Actions, Outputs, Context, Skills, Commands, MCP.
+  // Render order: Actions, the host's groups, Outputs, Context, Skills, Commands, MCP.
   //
   // Actions moved from last to first. They are the fixed, always-present rows
   // (switch model, attach a file, …) — the same six every time, in the same
@@ -188,17 +188,34 @@ export function buildSlashSections({
   let index = 0;
   const sections: SlashSection[] = [];
 
-  if (filteredActions.length) {
+  const builtIn = filteredActions.filter((a) => !a.group);
+  if (builtIn.length) {
     sections.push({
       heading: actionsHeading,
       hideHeading: true,
-      rows: filteredActions.map((action) => ({
+      rows: builtIn.map((action) => ({
         index: index++,
         type: 'action' as const,
         name: action.label,
         description: action.description,
         hint: action.hint,
         value: action.value,
+        action,
+      })),
+    });
+  }
+
+  // The host's rows (`UiHostConfig.useSlashActions`), under their own headings, in the order given.
+  const hostGroups = [...new Set(filteredActions.filter((a) => a.group).map((a) => a.group!))];
+  for (const heading of hostGroups) {
+    sections.push({
+      heading,
+      rows: filteredActions.filter((a) => a.group === heading).map((action) => ({
+        index: index++,
+        type: 'action' as const,
+        name: action.label,
+        description: action.description,
+        hint: action.hint,
         action,
       })),
     });

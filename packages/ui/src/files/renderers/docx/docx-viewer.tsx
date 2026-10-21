@@ -1411,6 +1411,14 @@ function DocxViewerContent({
                 className={cn('origin-top', effectiveIsDark && 'docx-night-reader-shell')}
                 style={{ zoom: zoomScale / 100 }}
               >
+                {/* react-docx 0.7.6 night reader: it inverts each page's content
+                    (the filter below) but gives the page surface the dark theme's
+                    light text color, so body text without its own color inverts to
+                    dark grey on a dark page. The inverted content's default text is
+                    black, as Word draws it, and the inversion makes it light. */}
+                {effectiveIsDark && (
+                  <style>{'.docx-night-reader-shell [style*="hue-rotate(180deg)"]{color:#000}'}</style>
+                )}
                 <DocxEditorViewer
                   editor={editor}
                   mode="read-only"

@@ -372,6 +372,8 @@ const STOP_HOLD_DEADLINE_MS = 1500;
 
 interface SessionChatProps {
   sessionId: string;
+  /** A host's reply quote (`SessionThreadProps.quote`): each new id adds its text to the composer's quotes. */
+  hostQuote?: { id: number; text: string } | null;
   /** Durable Kortix project session id used by project-session APIs. */
   projectSessionId?: string;
   /** Complete SDK state for the root session. Omit for a read-only child session. */
@@ -458,6 +460,7 @@ export function SessionChat({
   savedHistoryScope,
   onContentReady,
   deferComposerFocus,
+  hostQuote,
 }: SessionChatProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tQueue = useTranslations('threads');
@@ -588,6 +591,17 @@ export function SessionChat({
     }
     lastScrollTopRef.current = top;
   }, []);
+
+  // A host's quote: each new id is one more request, like a "Reply" click.
+  const hostQuoteIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const text = hostQuote?.text.trim();
+    if (!hostQuote || !text || hostQuoteIdRef.current === hostQuote.id) return;
+    hostQuoteIdRef.current = hostQuote.id;
+    quoteRequestIdRef.current += 1;
+    const request = { id: quoteRequestIdRef.current, text };
+    setQuoteRequests((current) => [...current, request]);
+  }, [hostQuote]);
 
   // When user clicks "Reply" in the popup
   const handleSelectionReply = useCallback(() => {

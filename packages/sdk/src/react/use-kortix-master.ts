@@ -17,7 +17,7 @@
  * used to partition query-cache keys and to stamp audit/authorship fields on
  * ticket mutations) is threaded through as an explicit `identity` parameter
  * (`KortixMasterIdentity`) instead — see that type below. Any host (web,
- * mobile, whitelabel-demo, …) supplies its own identity and gets the same
+ * mobile, white-label/lumen, …) supplies its own identity and gets the same
  * hooks.
  *
  * The "active server" resolution (which sandbox these calls hit) does NOT
