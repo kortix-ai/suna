@@ -125,7 +125,8 @@ export function ComposerUnderbar({
     <div
       className={
         inline
-          ? 'kortix-composer-underbar flex min-w-0 items-center gap-1'
+          ? // `shrink-0`: the model name truncates first (`ModelSelector`), never the agent.
+            'kortix-composer-underbar flex shrink-0 items-center gap-1'
           : 'kortix-composer-underbar flex items-center justify-between gap-2 px-px pt-1.5 pb-2'
       }
     >

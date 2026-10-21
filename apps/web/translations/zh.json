@@ -22367,7 +22367,16 @@
       "rosterAgents": "{count, plural, other {# 个智能体}}",
       "rosterHint": "此频道话题中的人和智能体",
       "copyLink": "复制话题链接",
-      "linkCopied": "链接已复制"
+      "linkCopied": "链接已复制",
+      "started": "{time}开始",
+      "notice": {
+        "unreachable": "与此话题的计算机失去连接。你发送的消息会排队，直到重新连接。",
+        "unreachableMidTurn": "在一轮对话仍未结束时与此话题的计算机失去连接。你发送的消息会继续排队，直到它响应。",
+        "stalled": "唤醒此话题的计算机比平时更久。你发送的消息已排队。",
+        "starting": "正在启动此话题的计算机。你的消息会自动发送。",
+        "idle": "此话题的计算机正在休眠。你的下一条消息会唤醒它并送达。",
+        "waking": "正在唤醒此话题的计算机。你发送的消息会排队并自动发出。"
+      }
     },
     "details": {
       "about": "关于",

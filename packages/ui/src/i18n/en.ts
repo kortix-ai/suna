@@ -7026,7 +7026,16 @@ const catalog = {
       "rosterAgents": "{count, plural, one {# agent} other {# agents}}",
       "rosterHint": "People and agents in this channel's threads",
       "copyLink": "Copy link to thread",
-      "linkCopied": "Link copied"
+      "linkCopied": "Link copied",
+      "started": "Started {time}",
+      "notice": {
+        "unreachable": "Lost contact with this thread's computer. Messages you send are queued until it reconnects.",
+        "unreachableMidTurn": "Lost contact with this thread's computer while a turn is still open. Messages you send stay queued until it answers.",
+        "stalled": "Waking this thread's computer is taking longer than usual. Messages you send are queued.",
+        "starting": "Starting this thread's computer. Your message sends automatically.",
+        "idle": "This thread's computer is asleep. Your next message wakes it up and is delivered.",
+        "waking": "Waking this thread's computer. Messages you send are queued and go out automatically."
+      }
     },
     "details": {
       "about": "About",

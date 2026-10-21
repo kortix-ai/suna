@@ -22367,7 +22367,16 @@
       "rosterAgents": "{count, plural, one {# agent} other {# agents}}",
       "rosterHint": "Personnes et agents des fils de ce canal",
       "copyLink": "Copier le lien du fil",
-      "linkCopied": "Lien copié"
+      "linkCopied": "Lien copié",
+      "started": "Lancé {time}",
+      "notice": {
+        "unreachable": "Contact perdu avec l’ordinateur de ce fil. Les messages envoyés restent en file d’attente jusqu’à la reconnexion.",
+        "unreachableMidTurn": "Contact perdu avec l’ordinateur de ce fil alors qu’un tour est encore ouvert. Les messages envoyés restent en file d’attente jusqu’à sa réponse.",
+        "stalled": "Le réveil de l’ordinateur de ce fil prend plus de temps que d’habitude. Les messages envoyés sont mis en file d’attente.",
+        "starting": "Démarrage de l’ordinateur de ce fil. Votre message partira automatiquement.",
+        "idle": "L’ordinateur de ce fil est en veille. Votre prochain message le réveille et est distribué.",
+        "waking": "Réveil de l’ordinateur de ce fil. Les messages envoyés sont mis en file d’attente et partent automatiquement."
+      }
     },
     "details": {
       "about": "À propos",

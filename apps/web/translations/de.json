@@ -22367,7 +22367,16 @@
       "rosterAgents": "{count, plural, one {# Agent} other {# Agenten}}",
       "rosterHint": "Personen und Agenten in den Threads dieses Kanals",
       "copyLink": "Link zum Thread kopieren",
-      "linkCopied": "Link kopiert"
+      "linkCopied": "Link kopiert",
+      "started": "Gestartet {time}",
+      "notice": {
+        "unreachable": "Keine Verbindung zum Computer dieses Threads. Gesendete Nachrichten warten, bis er wieder verbunden ist.",
+        "unreachableMidTurn": "Keine Verbindung zum Computer dieses Threads, während eine Runde noch offen ist. Gesendete Nachrichten warten, bis er antwortet.",
+        "stalled": "Das Aufwecken des Computers dieses Threads dauert länger als üblich. Gesendete Nachrichten warten in der Warteschlange.",
+        "starting": "Der Computer dieses Threads startet. Deine Nachricht wird automatisch gesendet.",
+        "idle": "Der Computer dieses Threads schläft. Deine nächste Nachricht weckt ihn und wird zugestellt.",
+        "waking": "Der Computer dieses Threads wird geweckt. Gesendete Nachrichten warten und gehen automatisch raus."
+      }
     },
     "details": {
       "about": "Info",

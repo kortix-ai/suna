@@ -22367,7 +22367,16 @@
       "rosterAgents": "{count, plural, one {# agente} other {# agentes}}",
       "rosterHint": "Pessoas e agentes nas threads deste canal",
       "copyLink": "Copiar link da thread",
-      "linkCopied": "Link copiado"
+      "linkCopied": "Link copiado",
+      "started": "Iniciada {time}",
+      "notice": {
+        "unreachable": "Perdemos o contato com o computador desta thread. As mensagens que você enviar ficam na fila até ele reconectar.",
+        "unreachableMidTurn": "Perdemos o contato com o computador desta thread com um turno ainda aberto. As mensagens que você enviar ficam na fila até ele responder.",
+        "stalled": "Acordar o computador desta thread está demorando mais que o normal. As mensagens que você enviar ficam na fila.",
+        "starting": "Iniciando o computador desta thread. Sua mensagem será enviada automaticamente.",
+        "idle": "O computador desta thread está dormindo. Sua próxima mensagem o acorda e é entregue.",
+        "waking": "Acordando o computador desta thread. As mensagens que você enviar ficam na fila e saem automaticamente."
+      }
     },
     "details": {
       "about": "Sobre",

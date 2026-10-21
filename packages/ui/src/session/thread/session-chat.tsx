@@ -57,7 +57,8 @@ import {
   useUiViewerId,
 } from '../../providers/ui-provider';
 import { memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { TranscriptRowsContext } from './transcript-rows';
+import { TranscriptRowsContext, type TranscriptRows } from './transcript-rows';
+import { useIsMobile } from '../../internal/hooks';
 import { createPortal } from 'react-dom';
 import {
   AUTHOR_RETRY_DELAYS_MS,
@@ -205,7 +206,7 @@ import { openTabAndNavigate, useTabStore } from '../../internal/stores/tab-store
 import { projectSessionHref } from '../../internal/lib/navigation/session-href';
 import { type Command, type QuestionRequest, getRetryInfo } from '../../internal/session-types';
 import { useModelPricingLookup } from '../../internal/lib/model-pricing';
-import { isAbortError, latestPromptModel, turnEndNotice } from '@kortix/sdk';
+import { isAbortError, latestPromptModel, SESSION_NOTICE, turnEndNotice } from '@kortix/sdk';
 import {
   failureShownByTurn,
   failureSupersededByTurn,
@@ -447,6 +448,15 @@ const DETACHED_SESSION_MESSAGES = { projectId: '', sessionId: '', runtimeSession
 
 const NO_FULL_TEXTS: ReadonlyMap<string, string> = new Map();
 
+/** The composer notice in the host's words (`TranscriptRows.notices`), else the SDK's. */
+function hostNotice(notice: string | null, notices: TranscriptRows['notices']): string | null {
+  if (!notice || !notices) return notice;
+  const key = (Object.keys(SESSION_NOTICE) as (keyof typeof SESSION_NOTICE)[]).find(
+    (candidate) => SESSION_NOTICE[candidate] === notice,
+  );
+  return (key && notices[key]) || notice;
+}
+
 export function SessionChat({
   sessionId,
   projectSessionId,
@@ -465,7 +475,9 @@ export function SessionChat({
 }: SessionChatProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // A channel's thread panel: turns are message rows, full width, end-anchored.
-  const transcriptRows = useContext(TranscriptRowsContext) !== null;
+  const rowsContext = useContext(TranscriptRowsContext);
+  const transcriptRows = rowsContext !== null;
+  const isMobile = useIsMobile();
   const tQueue = useTranslations('threads');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
   const onboardingActive = useOnboardingModeStore((s) => s.active);
@@ -1468,7 +1480,7 @@ export function SessionChat({
       const undoToastId = `queue-undo-${sessionId}-${removed.prompt_id}`;
       undoToast(tHardcodedUi.raw('i18nComplete.text2c6041fda32c'), {
         id: undoToastId,
-        duration: 5000,
+        duration: 5000, // audit:allow a toast lifetime in ms, not motion/react seconds
         undoLabel: tHardcodedUi.raw('i18nComplete.texta737e54996f8'),
         // The SAME `clientMessageId`, so an undo re-creates ONE row and a
             // double-click cannot create two. A FRESH wire id, because
@@ -4721,7 +4733,6 @@ export function SessionChat({
                 // viewport rule (>= 640px) still decides, so this never forces
                 // focus onto a phone keyboard.
                 autoFocus={deferComposerFocus ? false : undefined}
-                placeholder={composerPlaceholder}
                 onSend={async (text, files, mentions, attachments, placement) => {
                   if (await queueEdit.save(text)) return;
                   // Enter while a turn runs steers it (D9.1); Cmd/Ctrl+Enter is Queue List.
@@ -4816,7 +4827,10 @@ export function SessionChat({
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.
-                notice={composerReadiness.notice}
+                notice={hostNotice(composerReadiness.notice, rowsContext?.notices)}
+                noticeAsleep={composerReadiness.notice === SESSION_NOTICE.idle}
+                // Inside the thread panel's bordered box, as the channel composer.
+                underbarPlacement={transcriptRows && !isMobile ? 'inline' : undefined}
                 onNoticeRetry={
                   composerReadiness.notice && composerReadiness.retryable
                     ? requestRuntimeReconnect

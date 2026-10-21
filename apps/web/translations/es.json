@@ -22367,7 +22367,16 @@
       "rosterAgents": "{count, plural, one {# agente} other {# agentes}}",
       "rosterHint": "Personas y agentes de los hilos de este canal",
       "copyLink": "Copiar enlace al hilo",
-      "linkCopied": "Enlace copiado"
+      "linkCopied": "Enlace copiado",
+      "started": "Iniciado {time}",
+      "notice": {
+        "unreachable": "Se perdió el contacto con el ordenador de este hilo. Los mensajes que envíes quedan en cola hasta que se reconecte.",
+        "unreachableMidTurn": "Se perdió el contacto con el ordenador de este hilo con un turno aún abierto. Los mensajes que envíes siguen en cola hasta que responda.",
+        "stalled": "Despertar el ordenador de este hilo está tardando más de lo habitual. Los mensajes que envíes quedan en cola.",
+        "starting": "Iniciando el ordenador de este hilo. Tu mensaje se enviará automáticamente.",
+        "idle": "El ordenador de este hilo está en reposo. Tu próximo mensaje lo despierta y se entrega.",
+        "waking": "Despertando el ordenador de este hilo. Los mensajes que envíes quedan en cola y salen automáticamente."
+      }
     },
     "details": {
       "about": "Información",

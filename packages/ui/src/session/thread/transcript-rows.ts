@@ -1,5 +1,6 @@
 'use client';
 
+import type { SESSION_NOTICE } from '@kortix/sdk';
 import { createContext } from 'react';
 
 /**
@@ -15,6 +16,11 @@ export interface TranscriptRows {
   owner: { name: string | null; email: string | null; avatarUrl: string | null } | null;
   /** The name of a prompt whose author nobody recorded and with no owner ("Someone"). */
   unknownAuthor: string;
+  /**
+   * The composer's computer notices in the host's words, by `SESSION_NOTICE`
+   * key: a channel thread says "this thread's computer", not "session".
+   */
+  notices?: Partial<Record<keyof typeof SESSION_NOTICE, string>>;
 }
 
 export const TranscriptRowsContext = createContext<TranscriptRows | null>(null);

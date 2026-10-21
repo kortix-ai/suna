@@ -266,6 +266,11 @@ export interface SessionChatInputProps {
    */
   notice?: string | null;
   /**
+   * The notice reports a sleeping computer: a moon, not a spinner. Default:
+   * `notice` is `SESSION_NOTICE.idle`. A host that rewords the notice says it.
+   */
+  noticeAsleep?: boolean;
+  /**
    * Renders a "Retry" action inline in the notice bar when set. Wired to
    * `requestRuntimeReconnect()` for a confirmed-unreachable runtime, or a
    * runtime that has been booting/connecting past a sane ceiling with no

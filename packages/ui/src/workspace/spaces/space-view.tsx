@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from '../../i18n';
 import { Close } from '../../icons/close';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
+import { useIsMobile } from '../../internal/hooks';
 import { ProjectScope } from '../../internal/project-scope';
 import { useComposerPrefillStore } from '../../internal/stores/composer-prefill-store';
 import { cn } from '../../lib/utils';
@@ -502,6 +503,7 @@ function SpaceComposer({
   beforeSend?: () => Promise<void>;
 }) {
   const t = useTranslations('spaces.view');
+  const isMobile = useIsMobile();
   const spaceSend = useMemo(() => ({ spaceId: space.space_id, onOpen: onOpenThread }), [space.space_id, onOpenThread]);
   const { send, sending } = useProjectHomeSend(projectId, { beforeSend, space: spaceSend });
   const draftScope = useMemo<DraftScope>(() => ({ kind: 'space', spaceId: space.space_id }), [space.space_id]);
@@ -551,7 +553,9 @@ function SpaceComposer({
           agent ? t('messageAgent', { agent: agentLabel(agent) }) : t('messageChannel', { name: space.slug ?? space.name })
         }
         prefill={prefill}
-        underbarPlacement="below"
+        // Attach, agent and settings inside the bordered box. A phone's toolbar
+        // is too narrow beside the model selector, so it keeps the row beneath.
+        underbarPlacement={isMobile ? 'below' : 'inline'}
         slashMenuPlacement="above"
         // The timeline's width and side margins, not the centred session column.
         parentClassName="max-w-none px-5"
@@ -610,6 +614,15 @@ function ThreadPanel({
         ? { name: thread.owner_name ?? null, email: thread.owner_email ?? null, avatarUrl: thread.owner_avatar_url ?? null }
         : null,
       unknownAuthor: t('authorFallback'),
+      // The composer's computer notices say "thread", never "session".
+      notices: {
+        unreachable: t('notice.unreachable'),
+        unreachableMidTurn: t('notice.unreachableMidTurn'),
+        stalled: t('notice.stalled'),
+        starting: t('notice.starting'),
+        idle: t('notice.idle'),
+        waking: t('notice.waking'),
+      },
     }),
     [agentName, thread, t],
   );
