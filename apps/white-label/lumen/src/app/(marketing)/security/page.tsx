@@ -35,7 +35,7 @@ export default function SecurityPage() {
     <>
       <section className="pattern-laid -mt-[72px] px-6 pt-[calc(72px+6rem)] pb-28 text-center text-white md:pt-[calc(72px+9rem)] md:pb-40">
         <p className="text-[15px] text-white/65">Security</p>
-        <h1 className="display-lg mx-auto mt-6 max-w-4xl text-balance">Security built for privileged work</h1>
+        <h1 className="display-lg mx-auto mt-6 max-w-4xl text-balance">How Lumen keeps a matter confidential</h1>
         <p className="mx-auto mt-8 max-w-lg text-[18px] leading-[1.4] text-white/70">
           How Lumen handles your firm’s documents, in plain words. We make no claim here that we cannot back.
         </p>
@@ -44,7 +44,7 @@ export default function SecurityPage() {
       <section className="bg-navy text-white">
         <Container className="grid gap-14 border-t border-white/10 py-24 lg:grid-cols-2">
           <div>
-            <h2 className="display-sm max-w-md">All your matters, walled by default</h2>
+            <h2 className="display-sm max-w-md">Each firm sealed off from every other</h2>
             <p className="mt-6 max-w-sm text-[17px] leading-[1.4] text-white/65">Six controls are on for every firm, every matter and every run.</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

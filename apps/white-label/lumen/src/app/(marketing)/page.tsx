@@ -21,7 +21,7 @@ export default function MarketingHome() {
     <>
       {/* The hero sits under the transparent header. */}
       <section className="pattern-laid -mt-[72px] flex min-h-[640px] flex-col items-center justify-center px-6 pt-[72px] text-center text-white md:min-h-[860px]">
-        <h1 className="display-xl">Built for law</h1>
+        <h1 className="display-xl">Legal work, checked at the source</h1>
         <p className="mt-8 max-w-xl text-[18px] leading-[1.35] tracking-[-0.015em] text-white/75 md:text-[20px]">{BRAND.subline}</p>
         <div className="mt-10 flex flex-wrap items-center justify-center gap-5">
           <PillLink href="/demo" variant="glass" arrow>
@@ -37,7 +37,7 @@ export default function MarketingHome() {
 
       <Section>
         <Container>
-          <SectionTitle>The future of legal work</SectionTitle>
+          <SectionTitle>Every answer, traced to the page</SectionTitle>
           <div className="mt-20">
             <StickyList items={FUTURE} media={media} />
           </div>
@@ -64,7 +64,7 @@ export default function MarketingHome() {
       <Section>
         <Container>
           <div className="flex items-end justify-between gap-6">
-            <h2 className="display-sm max-w-xl">How firms work with Lumen</h2>
+            <h2 className="display-sm max-w-xl">A matter, start to finish, in Lumen</h2>
             <ArrowLink href="/customers" tone="muted" className="hidden sm:inline-flex">
               All stories
             </ArrowLink>

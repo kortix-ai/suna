@@ -666,17 +666,15 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 | `convex/reviews.ts`, `convex/lib/columns.ts` | Reviews: create, add, edit, delete and re-run columns, verify / flag / edit; the presets, the clause library and `promptFor` |
 | `convex/customWorkflows.ts`, `src/components/workflows/firm-workflows.tsx` | The firm's workflows: list (shared + own private), save, remove; the editor and the Use dialog |
 | `convex/marketing.ts`, `src/components/marketing/` | The demo form; the public site's content (`content.ts`), parts, bands, mocks, header and footer |
-| `src/lib/xlsx.ts`, `src/lib/review-cells.ts` | The Excel writer and the review's typed cells and sheets |
+| `src/lib/xlsx.ts`, `src/lib/review-cells.ts` | The Excel writer; the review's typed cells, cell text, sheets and CSV |
 | `convex/workflows.ts` | Contract review, due diligence, draft; issue decisions; run files; the matter history |
 | `convex/library.ts`, `convex/kit/library.generated.ts` | Playbooks and templates; the defaults every firm starts with |
 | `src/components/runs/workflow-results.tsx` | The issues, report and draft screens |
-| `src/lib/review-cells.ts` | Cell text and the review CSV |
 | `convex/seed.ts`, `scripts/seed-demo.ts`, `scripts/run-watch.ts` | Operator scripts (admin key): demo data, start and watch a run |
 | `demo-data/` | The synthetic dataset: Markdown sources, `build.py`, rendered PDF/DOCX/TXT in `dist/` |
-| `convex/lumenAgent.ts` | Agent names, skill grants and the firm's Drive folders |
 | `convex/tags.ts` | Lumen's ids as session labels and metadata |
-| `src/server/member.ts` | Bearer + cookie → member token (Convex), cached per minute |
-| `src/server/proxy-policy.ts` | What a member token may do through the proxy, the reads Lumen answers itself, and the redaction |
+| `src/server/member.ts` | Bearer + cookie → firm credential (Convex), cached per minute |
+| `src/server/proxy-policy.ts` | What a firm credential may do through the proxy, the reads Lumen answers itself, and the redaction |
 | `src/app/api/kortix/[...path]/route.ts` | The same-origin proxy; matter check, session tagging and thread records |
 | `src/components/access.tsx` | Signed-in, firm and matter gates |
 | `src/components/app-shell.tsx` | Sidebar (a sheet below 768 px), firm switcher, command palette, setup banner |
@@ -721,8 +719,10 @@ cd apps/white-label/lumen/agent-kit/lumen-kit && python3 -m lumen_kit.selftest
   outcomes, protected human edits, ask answers, cancel.
 - `cd agent-kit/lumen-kit && python3 -m lumen_kit.selftest`: the `lumen` CLI (anchors, search,
   cite check, validator, result files, redline round trip).
-- `tests/convex/backend.test.ts` (vitest + `convex-test`, with the Better Auth component): member
-  tokens per matter (mint, reuse, revoke, refusals including a restricted matter), matter
+- `tests/convex/backend.test.ts` (vitest + `convex-test`, with the Better Auth component): the
+  firm credential per matter (the firm service-account secret and the firm agent; two firms get
+  two credentials; refusals for a non-member, a restricted matter, a provisioning firm and a
+  wrong secret), matter
   visibility and roles, firm setup and admin gates, provisioning (project, flag, folders, generic
   failure), the seat rule, `setPlan`, the Stripe signature and webhook idempotency, thread records
   through the proxy. The Kortix SDK is replaced at the module edge there.
@@ -732,8 +732,8 @@ cd apps/white-label/lumen/agent-kit/lumen-kit && python3 -m lumen_kit.selftest
 - Name, tagline and subline: `src/config/brand.ts`.
 - Look: `src/config/theme.ts`, a typed `KortixTheme` (`@kortix/ui/theme`). `src/app/layout.tsx`
   compiles it with `themeToCss` into one `<style>` in `<head>`.
-- Fonts: `next/font` in `src/app/layout.tsx` (Instrument Sans, Instrument Serif as
-  `font-display`, JetBrains Mono). Never load `@kortix/ui/fonts.css`.
+- Fonts: `next/font` in `src/app/layout.tsx` (Geist as sans, Newsreader as `font-display`,
+  Geist Mono). Never load `@kortix/ui/fonts.css`.
 - Mark: `src/components/brand-mark.tsx`. `LUMEN_UI_BRAND` goes to `UiProvider useBrand`.
 - Pages Lumen does not serve: `setUiRoutes` in `src/app/providers.tsx` maps them to `null`.
 - Never fork a `@kortix/ui` component. A missing primitive is added to `packages/ui`.

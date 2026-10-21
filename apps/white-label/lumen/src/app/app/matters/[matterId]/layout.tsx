@@ -43,6 +43,8 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
   const { matter } = useMatter();
   const path = usePathname();
   const base = `/app/matters/${matter._id}`;
+  // In a thread on a phone, the header shrinks to the title and the tabs: the conversation gets the height.
+  const inThread = /^\/assistant\/[^/]+/.test(path.slice(base.length));
   const update = useMutation(api.matters.update);
   // The active tab is always in view on a phone, and a fade marks tabs past the right edge.
   const tabs = useRef<HTMLElement>(null);
@@ -59,17 +61,17 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="shrink-0 border-b border-border">
-        <div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6">
-        <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className={cn('mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6', inThread && 'max-sm:pt-2')}>
+        <nav aria-label="Breadcrumb" className={cn('flex items-center gap-1.5 text-xs text-muted-foreground', inThread && 'max-sm:hidden')}>
           <Link href="/app/matters" className="hover:text-foreground">
             Matters
           </Link>
           <CaretRightIcon className="size-3" />
           <span className="truncate text-foreground">{matter.name}</span>
         </nav>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h1 className="min-w-0 truncate font-display text-[28px] leading-tight font-[380] tracking-[-0.03em]">{matter.name}</h1>
-          {matter.number && <span className="font-mono text-xs text-muted-foreground">{matter.number}</span>}
+        <div className={cn('mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1', inThread && 'max-sm:mt-0 max-sm:flex-nowrap')}>
+          <h1 className={cn('min-w-0 truncate font-display text-[28px] leading-tight font-[380] tracking-[-0.03em]', inThread && 'max-sm:text-[19px]')}>{matter.name}</h1>
+          {matter.number && <span className={cn('font-mono text-xs text-muted-foreground', inThread && 'max-sm:hidden')}>{matter.number}</span>}
           {matter.visibility === 'restricted' && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <LockSimpleIcon className="size-3.5" /> Restricted
@@ -96,13 +98,14 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        {matter.client && <p className="mt-0.5 text-sm text-muted-foreground">{matter.client}</p>}
+        {matter.client && <p className={cn('mt-0.5 text-sm text-muted-foreground', inThread && 'max-sm:hidden')}>{matter.client}</p>}
         <nav
           ref={tabs}
           onScroll={edge}
           aria-label="Matter"
           className={cn(
             'scrollbar-none -mx-4 mt-3 flex gap-4 overflow-x-auto px-4 sm:mx-0 sm:px-0',
+            inThread && 'max-sm:mt-1.5',
             // More tabs to the right than fit (390 px): fade the edge so the strip reads as scrollable.
             more && '[mask-image:linear-gradient(to_right,black_80%,transparent)]',
           )}

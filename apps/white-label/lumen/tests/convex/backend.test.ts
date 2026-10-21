@@ -496,6 +496,13 @@ describe('vault reads: search, preview, citation check, delete', () => {
     expect(await bob.as.query(api.documents.search, { matterId: walled, q: 'indemnify' })).toBeNull();
   });
 
+  test('search leaves out an earlier version: its old text never shows under the current name', async () => {
+    const { t, alice, bob, firm, matter } = await world();
+    const v1 = await withDoc(t, firm, matter, alice.userId);
+    await t.run((ctx) => ctx.db.patch(v1, { superseded: true }));
+    expect(await bob.as.query(api.documents.search, { matterId: matter, q: 'indemnify' })).toEqual([]);
+  });
+
   test('detail and bytes return the anchored paragraphs and the original, only to someone who sees the matter', async () => {
     const { t, alice, mallory, firm, matter } = await world();
     const doc = await withDoc(t, firm, matter, alice.userId);

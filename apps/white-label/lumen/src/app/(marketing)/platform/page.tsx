@@ -23,7 +23,7 @@ export default function PlatformPage() {
       <Section rule={false} className="pt-20! pb-0! md:pt-28!">
         <Container className="flex flex-col items-center text-center">
           <Eyebrow>Platform overview</Eyebrow>
-          <h1 className="display-lg mt-6 max-w-5xl text-balance">Built for real legal work</h1>
+          <h1 className="display-lg mt-6 max-w-5xl text-balance">One workspace for the whole matter</h1>
           <Lead className="mt-8 max-w-xl">
             A legal AI workspace that reads the whole matter, answers with its sources and keeps the firm in control of every run.
           </Lead>

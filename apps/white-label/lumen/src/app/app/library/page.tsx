@@ -115,7 +115,7 @@ export default function LibraryPage() {
             <span className="flex items-center gap-2"><BookOpenTextIcon className="size-4" /> Choose a playbook or template</span>
           </div>
         ) : (
-          <Tabs defaultValue={admin ? 'edit' : 'preview'} key={String(selected)}>
+          <Tabs defaultValue={creating ? 'edit' : 'preview'} key={String(selected)}>
             <header className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3">
               {admin ? (
                 <Input aria-label="Name" value={name} onChange={(e) => setName(e.target.value)} className="h-8 w-full min-w-0 font-medium sm:w-72" />
@@ -128,8 +128,8 @@ export default function LibraryPage() {
                 {admin && <TabsTrigger value="edit">Edit</TabsTrigger>}
                 <TabsTrigger value="preview">Preview</TabsTrigger>
               </TabsList>
-              {admin && (
-                <Button size="sm" disabled={pending || (!dirty && !creating)} onClick={submit} data-testid="library-save">
+              {admin && (dirty || creating) && (
+                <Button size="sm" disabled={pending} onClick={submit} data-testid="library-save">
                   {pending && <Loading className="size-4" />} {creating ? 'Create' : 'Save'}
                 </Button>
               )}
@@ -151,14 +151,57 @@ export default function LibraryPage() {
               </TabsContent>
             )}
             <TabsContent value="preview" className="m-0">
-              <article className="max-w-[72ch] p-6 text-[15px] leading-relaxed">
-                <UnifiedMarkdown content={body} trust="agent" />
-              </article>
+              {kind === 'playbook' && parseRules(body).length > 0 ? (
+                <PlaybookRules body={body} />
+              ) : (
+                <article className="max-w-[72ch] p-6 text-[15px] leading-relaxed">
+                  <UnifiedMarkdown content={body} trust="agent" />
+                </article>
+              )}
             </TabsContent>
           </Tabs>
         )}
         {!admin && <p className="border-t border-border px-5 py-2 text-xs text-muted-foreground">Owners and admins edit the firm library.</p>}
       </section>
+    </div>
+  );
+}
+
+type Rule = { id: string; title: string; position: string; fallback: string; severity: string };
+
+/** The rules of a playbook: one "## Rule <id>: <title>" section each, with Position, Fallback and Severity lines. */
+function parseRules(body: string): Rule[] {
+  return body
+    .split(/^## Rule /m)
+    .slice(1)
+    .map((section) => {
+      const [head, ...lines] = section.split('\n');
+      const field = (label: string) => lines.find((l) => l.startsWith(`${label}:`))?.slice(label.length + 1).trim() ?? '';
+      const [id, ...title] = head.split(':');
+      return { id: id.trim(), title: title.join(':').trim(), position: field('Position'), fallback: field('Fallback'), severity: field('Severity if missed') };
+    });
+}
+
+const SEVERITY_TONE: Record<string, string> = { high: 'text-risk', medium: 'text-flag', low: 'text-muted-foreground' };
+
+function PlaybookRules({ body }: { body: string }) {
+  const intro = body.split(/^## Rule /m)[0].replace(/^# .*$/m, '').trim();
+  return (
+    <div className="p-6">
+      {intro && <p className="max-w-[72ch] text-[15px] leading-relaxed text-muted-foreground">{intro}</p>}
+      <ol className="mt-4 divide-y divide-border border-y border-border" data-testid="playbook-rules">
+        {parseRules(body).map((r) => (
+          <li key={r.id} className="grid gap-x-6 gap-y-1 py-4 md:grid-cols-[7rem_minmax(0,1fr)_5rem]">
+            <span className="font-mono text-[12px] text-muted-foreground">{r.id}</span>
+            <div className="min-w-0 space-y-1.5">
+              <p className="text-sm font-medium">{r.title}</p>
+              <p className="text-[13px] leading-relaxed"><span className="text-muted-foreground">Position </span>{r.position}</p>
+              <p className="text-[13px] leading-relaxed"><span className="text-muted-foreground">Fallback </span>{r.fallback}</p>
+            </div>
+            <span className={cn('text-[13px] capitalize md:text-right', SEVERITY_TONE[r.severity.toLowerCase()] ?? 'text-muted-foreground')}>{r.severity || '—'}</span>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

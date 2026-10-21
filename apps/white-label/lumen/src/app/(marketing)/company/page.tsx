@@ -61,7 +61,7 @@ export default function CompanyPage() {
           ))}
         </Container>
       </Section>
-      <CtaBand title="Help us build the future of legal work" />
+      <CtaBand title="Come build the tools lawyers can check" />
     </>
   );
 }

@@ -182,11 +182,11 @@ const DOCS = [
 
 function VaultMock() {
   return (
-    <Card className="p-3">
-      <div className="mb-2 flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-muted-foreground">
-        <MagnifyingGlassIcon className="size-3.5" />
-        <span className="text-foreground">change of control</span>
-        <span className="ml-auto font-mono text-[10.5px]">3 docs · 4 pages</span>
+    <Card className="min-w-0 overflow-hidden p-3">
+      <div className="mb-2 flex min-w-0 items-center gap-2 rounded-full border border-border px-3 py-1.5 text-muted-foreground">
+        <MagnifyingGlassIcon className="size-3.5 shrink-0" />
+        <span className="min-w-0 truncate text-foreground">change of control</span>
+        <span className="ml-auto shrink-0 font-mono text-[10.5px]">3 docs · 4 pages</span>
       </div>
       <div className="divide-y divide-border">
         {DOCS.map(([n, t, v, s]) => (
@@ -676,7 +676,7 @@ export function AppWindow({ className }: { className?: string }) {
           ))}
         </div>
         <div className="flex min-w-0 flex-1 flex-col items-center justify-center bg-pane p-6">
-          <p className="display-xs text-center text-[26px]! text-foreground/80">What can Lumen do for you?</p>
+          <p className="display-xs text-center text-[26px]! text-foreground/80">Where should we start?</p>
           <div className="mt-5 w-full max-w-[440px] rounded-[10px] border border-border bg-card p-3 shadow-md">
             <p className="text-muted-foreground">Ask about a matter, a clause or a party…</p>
             <div className="mt-6 flex items-center gap-2 text-muted-foreground">

@@ -257,9 +257,9 @@ export default function VaultPage() {
                     <TableHead>Name</TableHead>
                     <TableHead className="w-20">Version</TableHead>
                     <TableHead className="hidden w-24 text-right sm:table-cell">Pages</TableHead>
-                    <TableHead className="hidden w-24 text-right sm:table-cell">Size</TableHead>
-                    <TableHead className="hidden w-28 md:table-cell">Added</TableHead>
-                    <TableHead className="w-28 sm:w-44">Status</TableHead>
+                    <TableHead className={cn('hidden w-24 text-right', !open && 'sm:table-cell')}>Size</TableHead>
+                    <TableHead className={cn('hidden w-28', !open && 'md:table-cell')}>Added</TableHead>
+                    <TableHead className={cn('w-28', !open && 'sm:w-44')}>Status</TableHead>
                     <TableHead className="w-10" />
                   </TableRow>
                 </TableHeader>
@@ -269,8 +269,8 @@ export default function VaultPage() {
                       <TableCell className="font-medium">{name}</TableCell>
                       <TableCell />
                       <TableCell className="hidden sm:table-cell" />
-                      <TableCell className="hidden sm:table-cell" />
-                      <TableCell className="hidden md:table-cell" />
+                      <TableCell className={cn('hidden', !open && 'sm:table-cell')} />
+                      <TableCell className={cn('hidden', !open && 'md:table-cell')} />
                       <TableCell>
                         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <Loading className="size-3.5" /> {p < 1 ? 'Uploading…' : 'Extracting…'}
@@ -322,8 +322,8 @@ export default function VaultPage() {
                           )}
                         </TableCell>
                         <TableCell className="hidden text-right font-mono text-xs tabular-nums sm:table-cell">{d.pages ?? '—'}</TableCell>
-                        <TableCell className="hidden text-right font-mono text-xs tabular-nums text-muted-foreground sm:table-cell">{kb(d.bytes)}</TableCell>
-                        <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
+                        <TableCell className={cn('hidden text-right font-mono text-xs tabular-nums text-muted-foreground', !open && 'sm:table-cell')}>{kb(d.bytes)}</TableCell>
+                        <TableCell className={cn('hidden text-xs text-muted-foreground', !open && 'md:table-cell')}>
                           {relativeTime(new Date(d._creationTime).toISOString())}
                         </TableCell>
                         <TableCell>

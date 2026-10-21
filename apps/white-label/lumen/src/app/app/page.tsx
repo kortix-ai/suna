@@ -115,7 +115,7 @@ export default function Home() {
           {greeting()}
           {first ? `, ${first}` : ''}
         </p>
-        <h1 className="mt-3 font-display text-[34px] leading-[1.05] font-[380] tracking-[-0.035em] text-balance sm:text-[44px]">What can Lumen do for you?</h1>
+        <h1 className="mt-3 font-display text-[34px] leading-[1.05] font-[380] tracking-[-0.035em] text-balance sm:text-[44px]">Where should we start?</h1>
       </div>
 
       <div className="relative mx-auto mt-8 max-w-2xl">

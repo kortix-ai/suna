@@ -71,7 +71,7 @@ export default async function PricingPage() {
       <Container>
         <div className="grid border-t border-hairline md:grid-cols-3">
           {PLANS.map((p, i) => (
-            <div key={p.id} className={cn('flex flex-col border-b border-hairline py-10 md:border-b-0 md:px-10', i > 0 && 'md:border-l', i === 0 && 'md:pl-0')}>
+            <div key={p.id} className={cn('flex flex-col border-b border-hairline py-10 md:border-b-0 md:px-10', i > 0 && 'md:border-l')}>
               <div className="flex items-baseline justify-between">
                 <h2 className="display-xs">{p.name}</h2>
                 {'featured' in p && <span className="rounded-full bg-lamp/15 px-2.5 py-0.5 text-[12px] font-medium">Most firms</span>}

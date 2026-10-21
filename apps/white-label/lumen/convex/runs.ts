@@ -282,20 +282,6 @@ async function rowOf(ctx: QueryCtx, r: Doc<"runs">) {
   };
 }
 
-export const listForMatter = query({
-  args: { matterId: v.id("matters") },
-  returns: v.union(v.null(), v.array(runRow)),
-  handler: async (ctx, { matterId }) => {
-    try {
-      await requireMatterAccess(ctx, matterId);
-    } catch {
-      return null;
-    }
-    const runs = await ctx.db.query("runs").withIndex("by_matter", (q) => q.eq("matterId", matterId)).order("desc").take(50);
-    return await Promise.all(runs.map((r) => rowOf(ctx, r)));
-  },
-});
-
 const citationView = v.object({
   documentId: v.id("documents"), filename: v.string(), page: v.number(), para: v.number(), quote: v.string(),
   status: v.union(v.literal("verified"), v.literal("relocated"), v.literal("unverified")), text: v.string(),

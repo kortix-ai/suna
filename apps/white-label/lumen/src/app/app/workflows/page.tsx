@@ -56,8 +56,13 @@ function WorkflowsLibrary() {
   const own = (workflows ?? []).filter(
     (w) => (tab === 'all' || tab === w.type) && (!term || `${w.name} ${w.description ?? ''} ${w.practiceArea ?? ''}`.toLowerCase().includes(term)),
   );
-  const builtins = tab === 'all' || tab === 'builtin' ? BUILT_IN.filter((b) => !term || b.name.toLowerCase().includes(term)) : [];
-  const counts = { all: (workflows?.length ?? 0) + BUILT_IN.length, assistant: workflows?.filter((w) => w.type === 'assistant').length ?? 0, tabular: workflows?.filter((w) => w.type === 'tabular').length ?? 0, builtin: BUILT_IN.length };
+  // A built-in workflow has a type too: the Assistant and Tabular filters list and count it.
+  const builtinType = (b: (typeof BUILT_IN)[number]) => b.type.toLowerCase() as 'assistant' | 'tabular';
+  const builtins = BUILT_IN.filter(
+    (b) => (tab === 'all' || tab === 'builtin' || tab === builtinType(b)) && (!term || `${b.name} ${b.body}`.toLowerCase().includes(term)),
+  );
+  const ofType = (t: 'assistant' | 'tabular') => (workflows?.filter((w) => w.type === t).length ?? 0) + BUILT_IN.filter((b) => builtinType(b) === t).length;
+  const counts = { all: (workflows?.length ?? 0) + BUILT_IN.length, assistant: ofType('assistant'), tabular: ofType('tabular'), builtin: BUILT_IN.length };
 
   return (
     <PageBody>

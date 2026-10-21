@@ -20,7 +20,7 @@ export function SecurityBand({ className }: { className?: string }) {
     <section className={cn('bg-navy text-white', className)}>
       <Container className="grid gap-14 py-24 md:py-32 lg:grid-cols-2">
         <div>
-          <h2 className="display-sm max-w-md">Your matters, protected by default</h2>
+          <h2 className="display-sm max-w-md">Privilege stays inside the firm</h2>
           <p className="mt-6 max-w-sm text-[17px] leading-[1.4] text-white/65">
             Each firm works in its own walled workspace, every task in its own isolated environment, and every citation is checked before it is
             shown.

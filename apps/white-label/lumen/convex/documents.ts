@@ -147,16 +147,6 @@ export async function insertDocument(
   return documentId;
 }
 
-/** Record an uploaded file and start its ingest. PDF, DOCX or TXT, at most 50 MiB. */
-export const add = mutation({
-  args: { matterId: v.id("matters"), storageId: v.id("_storage"), filename: v.string() },
-  returns: v.id("documents"),
-  handler: async (ctx, { matterId, storageId, filename }) => {
-    const { matter, firm, userId } = await requireMatterAccess(ctx, matterId);
-    return await insertDocument(ctx, { firm, matter, userId, storageId, filename });
-  },
-});
-
 // ── internal: the ingest action and the run engine ──
 
 export const forIngest = internalQuery({
@@ -308,22 +298,6 @@ export const matterIndex = internalQuery({
   },
 });
 
-/** Every paragraph of these documents, for citation checks. */
-export const parasOf = internalQuery({
-  args: { documentIds: v.array(v.id("documents")) },
-  returns: v.array(v.object({ documentId: v.id("documents"), page: v.number(), para: v.number(), text: v.string() })),
-  handler: async (ctx, { documentIds }) => {
-    const out = [];
-    for (const documentId of documentIds) {
-      for (const p of await ctx.db.query("documentParas").withIndex("by_doc_para", (q) => q.eq("documentId", documentId)).collect()) {
-        out.push({ documentId, page: p.page, para: p.para, text: p.text });
-      }
-    }
-    return out;
-  },
-});
-
-
 // ── Vault reads: search, preview, delete ──
 
 /** `text` around the first hit of any query term, ≤ ~200 chars. */
@@ -356,13 +330,18 @@ export const search = query({
     const pages = await ctx.db
       .query("documentPages")
       .withSearchIndex("search_text", (s) => s.search("text", term).eq("matterId", matterId))
-      .take(20);
-    const names = new Map<Id<"documents">, string>();
+      .take(40);
+    // Only current versions: an earlier version's page would show old text under the current name.
+    const names = new Map<Id<"documents">, string | null>();
     const out = [];
     for (const p of pages) {
-      if (!names.has(p.documentId)) names.set(p.documentId, (await ctx.db.get(p.documentId))?.filename ?? "");
-      const filename = names.get(p.documentId)!;
+      if (!names.has(p.documentId)) {
+        const d = await ctx.db.get(p.documentId);
+        names.set(p.documentId, d && !d.superseded ? d.filename : null);
+      }
+      const filename = names.get(p.documentId);
       if (filename) out.push({ documentId: p.documentId, filename, page: p.page, snippet: snippetOf(p.text, term) });
+      if (out.length === 20) break;
     }
     return out;
   },

@@ -175,7 +175,7 @@ feature controls (`<button>`, `<input>`, …) and feature-level spinners.
 - `src/components/workbench/`: the thread's header, approvals strip, boot screen and runtime recovery.
 - `src/app/**`: Route components.
 - `src/app/api/**`: Same-origin server endpoints.
-- `src/server/**`: Better Auth helpers, member token resolution, and the proxy policy.
+- `src/server/**`: Better Auth helpers, firm credential resolution, and the proxy policy.
 - `convex/**`: Lumen's backend (schema, auth, firms, matters, threads, billing, audit, Kortix actions).
 - `tests/unit/**`: unit tests under bun (proxy policy, tagging, member cache, boundary, UI helpers).
 - `tests/convex/**`: Convex backend tests under vitest + `convex-test`.

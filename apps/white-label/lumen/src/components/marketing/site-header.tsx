@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ArrowRightIcon, CaretDownIcon, ListIcon, XIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from 'react';
 import { NAV } from './content';
 
 type MenuKey = 'platform' | 'solutions' | 'resources';
@@ -38,6 +38,8 @@ export function SiteHeader() {
   const [scrolled, setScrolled] = useState(false);
   const [announce, setAnnounce] = useState(true);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
@@ -73,6 +75,32 @@ export function SiteHeader() {
   const leave = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     closeTimer.current = setTimeout(() => setOpen(null), 160);
+  };
+
+  // Keyboard: Tab from an open menu's trigger enters its panel; Tab past the panel's
+  // last link goes on to the next nav item; Shift+Tab from the first link returns to the trigger.
+  const trigger = (k: MenuKey) => navRef.current?.querySelector<HTMLElement>(`[data-menu="${k}"]`) ?? null;
+  const onTriggerKey = (k: MenuKey) => (e: ReactKeyboardEvent) => {
+    if (e.key !== 'Tab' || e.shiftKey || open !== k) return;
+    const first = panelRef.current?.querySelector<HTMLElement>('a');
+    if (!first) return;
+    e.preventDefault();
+    first.focus();
+  };
+  const onPanelKey = (e: ReactKeyboardEvent) => {
+    if (e.key !== 'Tab' || !open) return;
+    const links = [...(panelRef.current?.querySelectorAll<HTMLElement>('a') ?? [])];
+    const at = links.indexOf(document.activeElement as HTMLElement);
+    if (e.shiftKey && at === 0) {
+      e.preventDefault();
+      trigger(open)?.focus();
+    } else if (!e.shiftKey && at === links.length - 1) {
+      e.preventDefault();
+      const items = [...(navRef.current?.querySelectorAll<HTMLElement>('a, button') ?? [])];
+      const next = items[items.indexOf(trigger(open)!) + 1];
+      setOpen(null);
+      next?.focus();
+    }
   };
 
   const transparent = ON_BRAND.has(path) && !scrolled && !open && !mobile;
@@ -116,12 +144,15 @@ export function SiteHeader() {
             <BrandMark className={cn('text-[21px]', transparent && 'text-white')} />
           </Link>
 
-          <nav aria-label="Site" className="mx-auto hidden items-center gap-1 lg:flex">
+          <nav ref={navRef} aria-label="Site" className="mx-auto hidden items-center gap-1 lg:flex">
             {MENUS.map((m) => (
               <Button
                 key={m.key}
                 variant="ghost"
+                data-menu={m.key}
                 aria-expanded={open === m.key}
+                aria-controls="site-mega-menu"
+                onKeyDown={onTriggerKey(m.key)}
                 onMouseEnter={() => clear(m.key)}
                 onClick={() => clear(open === m.key ? null : m.key)}
                 className={cn(
@@ -148,7 +179,10 @@ export function SiteHeader() {
             ))}
             <Button
               variant="ghost"
+              data-menu="resources"
               aria-expanded={open === 'resources'}
+              aria-controls="site-mega-menu"
+              onKeyDown={onTriggerKey('resources')}
               onMouseEnter={() => clear('resources')}
               onClick={() => clear(open === 'resources' ? null : 'resources')}
               className={cn(
@@ -204,6 +238,9 @@ export function SiteHeader() {
 
         {/* Mega-menu: page names in the display serif, two columns. */}
         <div
+          id="site-mega-menu"
+          ref={panelRef}
+          onKeyDown={onPanelKey}
           onMouseEnter={() => closeTimer.current && clearTimeout(closeTimer.current)}
           className={cn(
             'absolute inset-x-0 top-full hidden border-b border-hairline bg-background text-foreground transition-[opacity,transform] duration-200 lg:block',
@@ -275,7 +312,7 @@ export function SiteHeader() {
 
 function MenuNote({ k }: { k: MenuKey }) {
   const notes: Record<MenuKey, { title: string; body: string; href: string; cta: string }> = {
-    platform: { title: 'Built for real legal work', body: 'One workspace for review, research and drafting. Every answer points to its source.', href: '/platform', cta: 'Platform overview' },
+    platform: { title: 'One workspace for the whole matter', body: 'One workspace for review, research and drafting. Every answer points to its source.', href: '/platform', cta: 'Platform overview' },
     solutions: { title: 'For the way your team works', body: 'Firms, in-house teams, disputes and deals: the same platform, set up for your practice.', href: '/customers', cta: 'Customer stories' },
     resources: { title: 'How Lumen checks a citation', body: 'Every quote is matched against the source before you see it.', href: '/blog/how-lumen-checks-a-citation', cta: 'Read the post' },
   };

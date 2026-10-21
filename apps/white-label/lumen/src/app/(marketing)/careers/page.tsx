@@ -17,7 +17,7 @@ export default function CareersPage() {
     <>
       <Section rule={false} className="pt-20! pb-16! md:pt-28!">
         <Container className="flex flex-col items-center text-center">
-          <h1 className="display-lg max-w-4xl text-balance">Help us build the next era of legal work</h1>
+          <h1 className="display-lg max-w-4xl text-balance">Build the tools lawyers can check</h1>
           <Lead className="mt-8 max-w-lg">We are a small team of engineers, designers and lawyers. Come and do the best work of your career.</Lead>
           <ArrowLink href="#roles" className="mt-10">
             See open roles

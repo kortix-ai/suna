@@ -440,7 +440,7 @@ export const storyBySlug = (slug: string) => STORIES.find((s) => s.slug === slug
 
 /** Measured results, from Lumen's own evaluation runs (README, agent-kit/evals). */
 export const RESULTS = [
-  { value: '93', unit: '/93', caption: 'quotes found at the cited paragraph in the latest evaluation run' },
+  { value: '168', unit: '/168', caption: 'quotes found at the cited paragraph in the agent kit 1.3.1 evaluation run' },
   { value: '4', unit: '/4', caption: 'planted red flags found and cited in a six-document diligence run' },
   { value: '66', unit: 's', caption: 'to fill and cite 48 review cells: six agreements by eight questions' },
 ];
@@ -491,7 +491,7 @@ export const POSTS: Post[] = [
         heading: 'The quote is checked, not trusted',
         paragraphs: [
           'Before an answer reaches the screen, Lumen looks for the quoted words in the cited paragraph. If they are there, the chip is verified. If they are in a nearby paragraph, the citation is moved there and marked as relocated. If they are nowhere in the document, the chip is struck through and labelled unverified.',
-          'On the latest evaluation run, 93 of 93 quotes were found at the cited paragraph.',
+          'On the agent kit 1.3.1 evaluation run, 168 of 168 quotes were found at the cited paragraph.',
         ],
       },
       {
