@@ -1,7 +1,7 @@
 import { getProjectGatewayResolution } from '../../repositories/project-model-access';
 import { modelAccessAllows } from '../model-access';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { listProjectSecretNamesForConsumer } from '../../projects/secrets';
+import { getProjectSecretValueForConsumer, listProjectSecretNamesForConsumer } from '../../projects/secrets';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 import { resolveEnablement } from '../model-enablement';
@@ -12,6 +12,7 @@ import { platformDefaultModelId } from './served-managed-models';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { listGrantedGatewaySecretNames } from '../../secrets/account-resource';
 import { customProviderCatalog } from '../custom-providers';
+import { PLATINUM_PROVIDER } from '@kortix/llm-catalog';
 import { platinumByokCatalog } from './platinum-byok-models';
 
 type GatewayModel = ReturnType<typeof gatewayModelCatalog>[string];
@@ -96,8 +97,12 @@ export async function servableProjectCatalog(input: {
   const custom = customProviderCatalog(resolution.customProviders ?? []);
   // Platinum (BYOK): its models are whatever Platinum lists for the project's
   // own key, on by default like a custom endpoint (no release date to rank).
-  const platinum = secrets.includes('PLATINUM_API_KEY')
-    ? await platinumByokCatalog({ projectId, accountId, personalUserId, actorUserId: principalUserId })
+  const platinumKeyName = PLATINUM_PROVIDER.env![0]!;
+  const platinum = secrets.includes(platinumKeyName)
+    ? await platinumByokCatalog(await getProjectSecretValueForConsumer({
+      projectId, accountId, principalUserId: personalUserId, actorUserId: principalUserId,
+      name: platinumKeyName, consumer: 'llm_gateway', probe: true,
+    }).catch(() => null))
     : {};
   const models = {
     ...projectPickerCatalog(

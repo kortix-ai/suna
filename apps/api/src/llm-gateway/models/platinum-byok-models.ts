@@ -1,5 +1,4 @@
 import { PLATINUM_PROVIDER } from '@kortix/llm-catalog';
-import { getProjectSecretValueForConsumer } from '../../projects/surface';
 import { logger } from '../../lib/logger';
 import { fetchPlatinumModels, PlatinumModelsError, type ManagedModel } from './managed-models';
 import { platinumGatewayModel } from './catalog-models';
@@ -35,14 +34,8 @@ export function __clearPlatinumByokCacheForTest(): void {
   cache.clear();
 }
 
-/** The project's Platinum models as `platinum/<id>` catalog entries, when its PLATINUM_API_KEY is set. */
-export async function platinumByokCatalog(input: {
-  projectId: string; accountId: string; personalUserId: string | null; actorUserId: string | null | undefined;
-}): Promise<Record<string, GatewayModel>> {
-  const key = await getProjectSecretValueForConsumer({
-    projectId: input.projectId, accountId: input.accountId, principalUserId: input.personalUserId,
-    actorUserId: input.actorUserId, name: PLATINUM_PROVIDER.env![0]!, consumer: 'llm_gateway', probe: true,
-  }).catch(() => null);
+/** The models a Platinum key may call, as `platinum/<id>` catalog entries. */
+export async function platinumByokCatalog(key: string | null): Promise<Record<string, GatewayModel>> {
   if (!key) return {};
   const out: Record<string, GatewayModel> = {};
   for (const m of await platinumModelsForKey(key)) {

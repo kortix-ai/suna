@@ -63,7 +63,7 @@ export { approvalCallerOf } from './lib/http-approval-caller';
 export { approvalTargetSession, expireDueApprovals } from './lib/connector-approval-decision';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
-export { listResolvedProjectSecrets, getProjectSecretValueForConsumer } from './secrets';
+export { listResolvedProjectSecrets } from './secrets';
 export { currentInstanceId } from './instance-scope';
 
 // What account erasure deletes outside the database (consumed by
