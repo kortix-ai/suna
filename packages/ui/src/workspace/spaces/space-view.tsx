@@ -632,7 +632,7 @@ function ThreadPanel({
     [agentName, thread, t],
   );
   return (
-    <aside aria-label={t('threadTitle')} className="bg-background flex min-h-0 w-full flex-col lg:w-115 lg:shrink-0 lg:border-l">
+    <aside aria-label={t('threadTitle')} className="bg-background flex min-h-0 w-full flex-col lg:w-125 lg:shrink-0 lg:border-l">
       <div className="kx-titlebar-row relative flex shrink-0 items-center gap-2 border-b px-2">
         <div className="kx-titlebar-tabs flex h-12 min-w-0 flex-1 items-center px-3">
           <div className="flex min-w-0 items-baseline gap-2">

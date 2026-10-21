@@ -12,12 +12,13 @@ import {
   CommandPopoverTrigger,
   CommandSeparator,
 } from '../../primitives/command';
+import { EntityAvatar } from '../../primitives/entity-avatar';
 import Hint from '../../primitives/hint';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import type { Agent } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
-import { CaretDownIcon, CheckIcon, SparkleIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, CheckIcon, RobotIcon, SparkleIcon } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
 import { composerSelectableAgents } from './composer-agent-access';
 
@@ -57,7 +58,10 @@ export function AgentSelector({
   unavailableHint,
   open: controlledOpen,
   onOpenChange,
+  compact = false,
 }: {
+  /** The trigger shows the agent's tile alone, no caret; the name is its tooltip. */
+  compact?: boolean;
   agents: Agent[];
   selectedAgent: string | null;
   onSelect: (agentName: string | null) => void;
@@ -248,26 +252,43 @@ export function AgentSelector({
     );
   }
 
+  const trigger = (
+    <CommandPopoverTrigger>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label={compact ? `${t('selectAgent')}: ${displayName}` : t('selectAgent')}
+        className={cn('text-muted-foreground rounded-lg hit-area-y-3', compact && 'px-1.5')}
+      >
+        {compact ? (
+          // The tile alone: the name is the tooltip and the menu's checked row.
+          <EntityAvatar icon={metaSelected ? SparkleIcon : RobotIcon} label={displayName} size="xs" />
+        ) : (
+          <>
+            {metaSelected && <SparkleIcon className="size-3.5 shrink-0" weight="fill" />}
+            <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
+            <CaretDownIcon
+              className={cn(
+                'size-3 transition-transform duration-moderate ease-out',
+                open && 'rotate-180',
+              )}
+            />
+          </>
+        )}
+      </Button>
+    </CommandPopoverTrigger>
+  );
+
   return (
     <CommandPopover open={open} onOpenChange={setOpen}>
-      <CommandPopoverTrigger>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-label={t('selectAgent')}
-          className="text-foreground/70 rounded-lg hit-area-y-3"
-        >
-          {metaSelected && <SparkleIcon className="size-3.5 shrink-0" weight="fill" />}
-          <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
-          <CaretDownIcon
-            className={cn(
-              'size-3 transition-transform duration-200 ease-out',
-              open && 'rotate-180',
-            )}
-          />
-        </Button>
-      </CommandPopoverTrigger>
+      {compact ? (
+        <Hint side="top" label={displayName}>
+          {trigger}
+        </Hint>
+      ) : (
+        trigger
+      )}
 
       {/* `min(...)`, not a hard `300px`: on a 320px viewport a fixed 300px
           popover plus the trigger's own inset pushed the panel off-screen.
@@ -332,7 +353,7 @@ export function AgentSelector({
 
           {/* No results */}
           {filteredPrimary.length === 0 && search.trim() && (
-            <div className="text-muted-foreground/50 py-8 text-center text-xs">
+            <div className="text-muted-foreground py-8 text-center text-xs">
               {tHardcodedUi.raw(
                 'componentsSessionSessionChatInput.line273JsxTextNoAgentsMatchLdquo',
               )}

@@ -68,6 +68,8 @@ export interface ComposerUnderbarProps {
    * duplicated for it — same component, different packing.
    */
   variant?: 'row' | 'inline';
+  /** See `SessionChatInputProps.agentPickerCompact`. */
+  agentPickerCompact?: boolean;
   toolbarSlot?: React.ReactNode;
 }
 
@@ -84,6 +86,7 @@ export function ComposerUnderbar({
   selectedModel,
   onContextClick,
   variant = 'row',
+  agentPickerCompact = false,
   toolbarSlot,
 }: ComposerUnderbarProps) {
   const t = useTranslations('threads');
@@ -147,6 +150,7 @@ export function ComposerUnderbar({
         </Hint>
 
         <AgentSelector
+          compact={agentPickerCompact}
           agents={noAccessibleAgents ? EMPTY_AGENTS : agents}
           selectedAgent={selectedAgent}
           open={agentMenuOpen}

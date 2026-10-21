@@ -4831,6 +4831,8 @@ export function SessionChat({
                 noticeAsleep={composerReadiness.notice === SESSION_NOTICE.idle}
                 // Inside the thread panel's bordered box, as the channel composer.
                 underbarPlacement={transcriptRows && !isMobile ? 'inline' : undefined}
+                // The panel's toolbar is narrow: the agent is its tile, the model keeps its name.
+                agentPickerCompact={transcriptRows && !isMobile}
                 onNoticeRetry={
                   composerReadiness.notice && composerReadiness.retryable
                     ? requestRuntimeReconnect
