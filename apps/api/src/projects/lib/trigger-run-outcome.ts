@@ -1,5 +1,5 @@
-import { projectSessions, projectTriggerExecutions, projectTriggerRuntime } from '@kortix/db';
-import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { projectSessions, projectTriggerExecutions, projectTriggerRuntime, sessionTurns } from '@kortix/db';
+import { and, asc, eq, gte, isNotNull, isNull, sql } from 'drizzle-orm';
 import { classifyTurnError } from '../../channels/slack/errors';
 import { projectNotificationsEnabled } from '../../notifications/enabled';
 import { notifySessionPushLegacy } from '../../notifications/session-push-legacy';
@@ -68,72 +68,200 @@ const RUN_ERROR_BY_END_REASON: Record<string, string> = {
   unknown: 'The turn ended without an outcome.',
 };
 
-type EndedTurn = { end_reason: string | null; end_error: { name?: string | null; message?: string | null } | null };
-type EndedRunTurn = EndedTurn & { execution_id: string; ended_at: string | Date | null };
+/** A run whose prompt never started a turn fails after this long. */
+const RUN_WITHOUT_TURN_MS = 6 * 60 * 60_000;
 
-function runOutcomeOf(turn: EndedTurn): { runStatus: 'succeeded' | 'failed'; runError: string | null } {
-  if (turn.end_reason === 'completed') return { runStatus: 'succeeded', runError: null };
-  const name = turn.end_error?.name ?? '';
+/** Which ledger row of one prompt names its outcome: a real end beats a lost delivery. */
+const END_REASON_RANK = ['completed', 'failed', 'runtime_gone', 'unknown', 'abandoned'];
+
+type TurnEnd = { endReason: string | null; endError: { name?: string | null; message?: string | null } | null };
+
+function runOutcomeOf(turn: TurnEnd): { runStatus: 'succeeded' | 'failed'; runError: string | null } {
+  if (turn.endReason === 'completed') return { runStatus: 'succeeded', runError: null };
+  const name = turn.endError?.name ?? '';
   if (ABORT_END_ERROR_NAMES.includes(name) || isRequestedStopName(name)) return { runStatus: 'failed', runError: 'stopped' };
-  if (turn.end_reason !== 'failed') {
-    return { runStatus: 'failed', runError: RUN_ERROR_BY_END_REASON[turn.end_reason ?? ''] ?? RUN_ERROR_BY_END_REASON.unknown! };
+  if (turn.endReason !== 'failed') {
+    return { runStatus: 'failed', runError: RUN_ERROR_BY_END_REASON[turn.endReason ?? ''] ?? RUN_ERROR_BY_END_REASON.unknown! };
   }
   return {
     runStatus: 'failed',
-    runError: triggerRunFailureText({ name: turn.end_error?.name ?? undefined, message: turn.end_error?.message ?? undefined }),
+    runError: triggerRunFailureText({ name: turn.endError?.name ?? undefined, message: turn.endError?.message ?? undefined }),
   };
 }
 
+/** One prompt's turn: the ledger can hold two rows for it, a few ms apart, with one message id. */
+interface PromptTurn extends TurnEnd {
+  tokens: string[];
+  startedAt: Date;
+  endedAt: Date | null;
+}
+
+function promptTurns(rows: Array<typeof sessionTurns.$inferSelect>): PromptTurn[] {
+  const byKey = new Map<string, Array<typeof sessionTurns.$inferSelect>>();
+  for (const row of rows) {
+    const key = row.messageId ?? row.turnToken;
+    byKey.set(key, [...(byKey.get(key) ?? []), row]);
+  }
+  return [...byKey.values()]
+    .map((group) => {
+      const open = group.some((row) => row.state !== 'ended');
+      const decisive = [...group].sort(
+        (a, b) => END_REASON_RANK.indexOf(a.endReason ?? '') - END_REASON_RANK.indexOf(b.endReason ?? ''),
+      )[0]!;
+      const endedAt = Math.max(...group.map((row) => row.endedAt?.getTime() ?? 0));
+      return {
+        tokens: group.map((row) => row.turnToken),
+        startedAt: group[0]!.startedAt,
+        endedAt: open ? null : new Date(endedAt),
+        endReason: decisive.endReason,
+        endError: decisive.endError,
+      };
+    })
+    .sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
+}
+
 /**
- * Close every open run whose turn has ended, from the turn ledger
- * (`session_turns`). A run's turn is the first turn of its session that
- * started at or after the fire. Queued prompts run one turn each, in order,
- * so each fire gets its own turn's outcome. Returns the runs closed.
+ * Close the open runs of one session from its turn ledger (`session_turns`).
+ * Runs and turns pair in order: each run takes the first turn that started
+ * at or after its fire and that no earlier run took, and a turn closes one
+ * run only (`run_turn_token`). Queued prompts run one turn each, in order, so
+ * two fires that land before the first prompt starts still get one turn each.
+ * A run waits while its turn is open, and so does every later run.
+ */
+async function settleSessionRuns(sessionId: string): Promise<number> {
+  const t = projectTriggerExecutions;
+  const runStart = sql<Date>`coalesce(${t.claimedAt}, ${t.createdAt})`.mapWith(t.createdAt);
+  const open = await db
+    .select({ executionId: t.executionId, startedAt: runStart })
+    .from(t)
+    .where(and(eq(t.sessionId, sessionId), eq(t.runStatus, 'running'), isNull(t.runEndedAt)))
+    .orderBy(runStart, t.executionId);
+  if (open.length === 0) return 0;
+  const [rows, taken] = await Promise.all([
+    db
+      .select()
+      .from(sessionTurns)
+      .where(and(eq(sessionTurns.sessionId, sessionId), gte(sessionTurns.startedAt, open[0]!.startedAt)))
+      .orderBy(asc(sessionTurns.startedAt), asc(sessionTurns.turnToken)),
+    db
+      .select({ token: t.runTurnToken })
+      .from(t)
+      .where(and(eq(t.sessionId, sessionId), isNotNull(t.runTurnToken))),
+  ]);
+  const takenTokens = new Set(taken.map((row) => row.token));
+  const turns = promptTurns(rows).filter((turn) => !turn.tokens.some((token) => takenTokens.has(token)));
+  let closed = 0;
+  let next = 0;
+  for (const run of open) {
+    // A turn that started before this fire is not its turn: a person's prompt.
+    while (next < turns.length && turns[next]!.startedAt < run.startedAt) next += 1;
+    const turn = turns[next];
+    if (!turn?.endedAt) break;
+    next += 1;
+    const updated = await db
+      .update(t)
+      .set({ ...runOutcomeOf(turn), runEndedAt: turn.endedAt, runTurnToken: turn.tokens[0]!, updatedAt: new Date() })
+      .where(and(eq(t.executionId, run.executionId), eq(t.runStatus, 'running'), isNull(t.runEndedAt)))
+      .returning({ executionId: t.executionId });
+    closed += updated.length;
+  }
+  return closed;
+}
+
+/**
+ * Close every open run whose turn has ended, from the turn ledger. Returns
+ * the runs closed.
  *
  * The ledger, not the terminal relay, is the truth: a turn also ends through
  * the reaper, a stop, a box that went away, or a relay that arrives after
  * another path settled it (`already_closed`). Closing a run only on a
  * `closed` relay left it "Running" for good, and the next fire's turn end
- * then closed it with the wrong outcome (prod, 2026-10-21).
+ * then closed it with the wrong outcome (KRTX-3007).
  *
  * The match is by session only: a pinned trigger's or a reminder's session
  * carries no trigger metadata, and its runs must close too. Without
- * `sessionId` it settles every project (the maintenance backstop).
+ * `sessionId` it settles every open run (the maintenance backstop), and fails
+ * runs whose prompt never started a turn within RUN_WITHOUT_TURN_MS.
  */
-export async function settleTriggerRunsFromTurns(sessionId?: string): Promise<number> {
-  const ended = await db.execute<EndedRunTurn>(sql`
-    SELECT r.execution_id, t.end_reason, t.end_error, t.ended_at
-      FROM kortix.project_trigger_executions r
-      CROSS JOIN LATERAL (
-        SELECT st.state, st.end_reason, st.end_error, st.ended_at
-          FROM kortix.session_turns st
-         WHERE st.session_id = r.session_id
-           AND st.started_at >= coalesce(r.claimed_at, r.created_at)
-         ORDER BY st.started_at
-         LIMIT 1) t
+export async function settleTriggerRunsFromTurns(sessionId?: string, now = new Date()): Promise<number> {
+  const failedCreates = await linkQueuedCreateRuns(sessionId);
+  if (sessionId) return failedCreates + (await settleSessionRuns(sessionId));
+  const t = projectTriggerExecutions;
+  const sessions = await db
+    .selectDistinct({ sessionId: t.sessionId })
+    .from(t)
+    .where(and(eq(t.runStatus, 'running'), isNull(t.runEndedAt), isNotNull(t.sessionId)))
+    .limit(500);
+  let closed = failedCreates;
+  for (const row of sessions) closed += await settleSessionRuns(row.sessionId!);
+  return closed + (await failRunsWithoutTurns(now));
+}
+
+/**
+ * A fire queued as a session create (provisioning backpressure, a requeued
+ * create) has a `command_id` and no session yet. When the create succeeds,
+ * the run takes the session it started, so its turn can close it. When the
+ * create dead-letters, no session will ever exist: the run fails with the
+ * command's error. Returns the runs failed that way (KRTX-3026).
+ */
+async function linkQueuedCreateRuns(sessionId?: string): Promise<number> {
+  const scope = sessionId ? sql`AND c.session_id = ${sessionId}` : sql``;
+  await db.execute(sql`
+    UPDATE kortix.project_trigger_executions r
+       SET session_id = c.session_id,
+           status = CASE WHEN r.status = 'requeued' THEN 'succeeded' ELSE r.status END,
+           updated_at = now()
+      FROM kortix.session_lifecycle_commands c
+     WHERE c.command_id = r.command_id
+       AND r.run_status = 'running'
+       AND r.session_id IS NULL
+       AND c.status = 'succeeded'
+       AND c.session_id IS NOT NULL
+       ${scope}`);
+  if (sessionId) return 0;
+  const failed = await db.execute<{ execution_id: string }>(sql`
+    UPDATE kortix.project_trigger_executions r
+       SET status = CASE WHEN r.status = 'requeued' THEN 'failed' ELSE r.status END,
+           run_status = 'failed',
+           run_error = coalesce(left(c.last_error, 1000), 'The session was never created.'),
+           run_ended_at = c.updated_at,
+           updated_at = now()
+      FROM kortix.session_lifecycle_commands c
+     WHERE c.command_id = r.command_id
+       AND r.run_status = 'running'
+       AND r.session_id IS NULL
+       AND c.status = 'dead_lettered'
+    RETURNING r.execution_id`);
+  return ((failed as unknown as { rows?: unknown[] }).rows ?? (failed as unknown as unknown[])).length;
+}
+
+/**
+ * A run open for RUN_WITHOUT_TURN_MS with no turn of its own fails: its
+ * prompt was dropped, its session was deleted, or its create never ran.
+ * A run whose turn started stays open while that turn runs.
+ */
+async function failRunsWithoutTurns(now: Date): Promise<number> {
+  const cutoff = new Date(now.getTime() - RUN_WITHOUT_TURN_MS).toISOString();
+  const failed = await db.execute<{ execution_id: string }>(sql`
+    UPDATE kortix.project_trigger_executions r
+       SET status = CASE WHEN r.status = 'requeued' THEN 'failed' ELSE r.status END,
+           run_status = 'failed',
+           run_error = 'No turn ran for this fire.',
+           run_ended_at = ${now.toISOString()}::timestamptz,
+           updated_at = now()
      WHERE r.run_status = 'running'
        AND r.run_ended_at IS NULL
-       ${sessionId ? sql`AND r.session_id = ${sessionId}` : sql``}
-       AND t.state = 'ended'
-     LIMIT 500`);
-  const rows = (ended as unknown as { rows?: EndedRunTurn[] }).rows ?? ended;
-  let closed = 0;
-  for (const row of rows as EndedRunTurn[]) {
-    const endedAt = row.ended_at ? new Date(row.ended_at) : new Date();
-    const updated = await db
-      .update(projectTriggerExecutions)
-      .set({ ...runOutcomeOf(row), runEndedAt: endedAt, updatedAt: new Date() })
-      .where(
-        and(
-          eq(projectTriggerExecutions.executionId, row.execution_id),
-          eq(projectTriggerExecutions.runStatus, 'running'),
-          isNull(projectTriggerExecutions.runEndedAt),
-        ),
-      )
-      .returning({ executionId: projectTriggerExecutions.executionId });
-    closed += updated.length;
-  }
-  return closed;
+       AND coalesce(r.claimed_at, r.created_at) < ${cutoff}::timestamptz
+       AND NOT EXISTS (
+         SELECT 1 FROM kortix.session_turns st
+          WHERE st.session_id = r.session_id
+            AND st.started_at >= coalesce(r.claimed_at, r.created_at)
+            AND NOT EXISTS (
+              SELECT 1 FROM kortix.project_trigger_executions other
+               WHERE other.session_id = r.session_id
+                 AND other.run_turn_token = st.turn_token))
+    RETURNING r.execution_id`);
+  return ((failed as unknown as { rows?: unknown[] }).rows ?? (failed as unknown as unknown[])).length;
 }
 
 export async function recordTriggerRunEnd(

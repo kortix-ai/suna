@@ -45,9 +45,10 @@
 export const shorthands = undefined;
 
 // The trigger-run settle (apps/api/src/projects/lib/trigger-run-outcome.ts)
-// reads every open run (`run_status = 'running'`) on each project maintenance
-// pass. Open runs are a handful of rows; cron slot rows are kept for good, so
-// a partial index keeps that sweep off a scan of the whole run history.
+// reads a session's open runs (`run_status = 'running'`) on every turn end,
+// and every open run on each maintenance pass. Open runs are a handful of
+// rows; cron slot rows are kept for good, so a partial index keeps both off a
+// scan of the whole run history.
 /** @param {import('node-pg-migrate').MigrationBuilder} pgm */
 export const up = (pgm) => {
   pgm.noTransaction();
@@ -57,7 +58,7 @@ export const up = (pgm) => {
   pgm.sql(`set statement_timeout = '30min'`);
   pgm.sql(`
     create index concurrently if not exists idx_project_trigger_executions_open_run
-      on kortix.project_trigger_executions using btree (created_at)
+      on kortix.project_trigger_executions using btree (session_id)
       where run_status = 'running'
   `);
 };

@@ -1,5 +1,5 @@
 {
-  "id": "ee2c3449-da5c-4a95-a540-be8074130450",
+  "id": "08a4e29e-1d2d-4c74-b811-fcc830ab48f8",
   "prevId": "dc251bf6-99a6-4401-9a41-918beb4150c0",
   "version": "7",
   "dialect": "postgresql",
@@ -19153,6 +19153,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "run_turn_token": {
+          "name": "run_turn_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -19343,7 +19349,7 @@
           "name": "idx_project_trigger_executions_open_run",
           "columns": [
             {
-              "expression": "created_at",
+              "expression": "session_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
