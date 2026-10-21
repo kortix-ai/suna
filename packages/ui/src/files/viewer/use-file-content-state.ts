@@ -191,12 +191,12 @@ export function useFileContentState({
 
   const displayContent = fileContent?.content ?? '';
 
-  // Keep latestContentRef in sync with loaded content
+  // Refresh clean content only; header Save must keep the visible dirty draft.
   useEffect(() => {
-    if (fileContent?.content) {
-      latestContentRef.current = fileContent.content;
+    if (!hasUnsavedChanges) {
+      latestContentRef.current = fileContent?.content ?? '';
     }
-  }, [fileContent?.content]);
+  }, [fileContent?.content, hasUnsavedChanges]);
 
   // Reset state when the FILE changes — markdown defaults to rendered preview.
   //
