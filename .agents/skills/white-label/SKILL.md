@@ -83,9 +83,13 @@ id map.
   identity). Kortix is the identity and the data. No backend.
 - **Wrap Kortix as a SaaS you sell:** `apps/white-label/lumen` (AI for legal
   teams). Lumen owns customers, accounts, firms, plans, seats and data
-  (Next.js + Convex + Better Auth). Each firm is one Kortix project. Members
-  reach Kortix only through Lumen's same-origin proxy with a server-held,
-  1 h, project-scoped token. Name and tagline: `src/config/brand.ts`. Colors,
+  (Next.js + Convex + Better Auth). One Kortix project is the whole backend:
+  each firm is a Drive folder, an agent (grants: that folder + the read-only
+  kit; no repository, no Kortix permissions) and a service account (project
+  role `member`, owns the firm's sessions). Members reach Kortix only through
+  Lumen's same-origin proxy, which holds the firm's credential, pins the
+  firm's agent and binds every session and sandbox to the matter. The
+  isolation table: `apps/white-label/lumen/README.md` "One project, many firms". Name and tagline: `src/config/brand.ts`. Colors,
   radius, fonts: `src/config/theme.ts`.
 
 ## 4. Stay compliant

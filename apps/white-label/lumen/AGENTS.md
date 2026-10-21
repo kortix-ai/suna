@@ -49,25 +49,42 @@ scan: it catches these forms, not every way to write them.
   (`src/server/member.ts`). Never take a project id from the client as the
   key to a credential.
 - The operator credential lives only in Convex env (`KORTIX_OPERATOR_TOKEN`).
-  Next.js never reads it. Member tokens never reach a response body.
+  Next.js never reads it. The firm credential (its service-account secret)
+  never reaches a response body.
 - The proxy allowlists reads and writes. A new proxied route is an explicit
   entry in `src/server/proxy-policy.ts` with a test in
   `tests/unit/proxy-policy.test.ts`. Never allow an account route, a credential
-  route or a member list: the member token is the operator's user.
+  route or a member list. A session create always runs on the member's firm
+  agent and a prompt carries no agent (`memberSessionCreateBody`,
+  `memberPromptBody`): Kortix lets a service account start any agent. A route
+  with a session id checks `sessionInMatter`, a runtime route
+  `sandboxInMatter`.
 - Never return a Kortix token to the browser, a preview URL included. A
   preview is a public preview share (`/api/preview-url`).
 
 ## Convex boundary
 
-- Every Kortix call with the operator credential is a `"use node"` action:
-  `convex/kortix.ts` (projects, threads, tokens), `convex/kitInstall.ts` (the
-  agent kit), `convex/ingest.ts` (Drive copies of documents) and
-  `convex/engine.ts` (run sessions). They share `convex/operator.ts`
-  (credential, `withRetry`). Other Convex files never import `@kortix/sdk`.
+- One Kortix project serves every firm (README "One project, many firms").
+  A firm is a folder `/Lumen/Firms/<firmId>`, an agent `lumen-f-<firmId>`
+  (grants: that folder `write`, `/Lumen/Kit` `read`; no repository, no
+  Kortix permissions) and a service account `lumen-firm-<firmId>` (project
+  role `member`). Never give a Kortix project, folder grant or agent to more
+  than one firm, and never add a grant that reaches every session (the
+  `/Company` project grant is removed on purpose).
+- Every Kortix call is a `"use node"` action: `convex/kortix.ts` (the shared
+  project and kit, firm onboarding, threads, the proxy's credential lookup),
+  `convex/ingest.ts` (Drive copies of documents) and `convex/engine.ts` (run
+  sessions). They share `convex/operator.ts` (the operator credential,
+  `asFirm` for a firm's service account, `withRetry`). Other Convex files
+  never import `@kortix/sdk`.
+- The operator credential sets up the project and writes Drive files. It
+  never creates or drives a session: every session is created and driven
+  with the firm's service account (`asFirm`), on the firm's agent.
 - The agent kit lives in `agent-kit/`. After any edit there, run
   `bun scripts/kit-bundle.ts` (it rewrites `convex/kit/bundle.generated.ts` and
   the hash in `kit.json`) and bump `kit.json` `version`; `tests/unit/kit-bundle.test.ts`
-  fails on a stale bundle. Firms upgrade on their next run.
+  fails on a stale bundle. The next thread or run uploads it once to
+  `/Lumen/Kit/<version>/` for every firm. Write kit paths as `{{KIT}}/…`.
 - Run state changes go through `convex/runs.ts` mutations and write a
   `runEvents` row; Convex re-checks every citation (`convex/lib/cite.ts`)
   before a value reaches the UI. `convex/lib/segment.ts` is the only segmenter.

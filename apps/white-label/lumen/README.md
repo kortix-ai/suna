@@ -38,7 +38,7 @@ Everything in this folder is synthetic: invented parties ("Brightwater Example H
 
 | You have | Do this |
 |---|---|
-| This repo and a Kortix operator token | Follow [Run it](#run-it) (local Convex, no Convex account) and set `KORTIX_UPSTREAM` and `KORTIX_OPERATOR_TOKEN` in Convex. Sign up and pick **Add the sample matter** in onboarding. Your firm gets its own Kortix project and Lumen's agent kit, and the matter arrives with six synthetic agreements, ready to search and ask about. Without the token, sign-up and matters work, but documents stay unprocessed and the Assistant stays off ("Workspace setup failed"). |
+| This repo and a Kortix operator token | Follow [Run it](#run-it) (local Convex, no Convex account) and set `KORTIX_UPSTREAM` and `KORTIX_OPERATOR_TOKEN` in Convex. Sign up and pick **Add the sample matter** in onboarding. Your firm gets its own folder, agent and service account in Lumen's one Kortix project, and the matter arrives with six synthetic agreements, ready to search and ask about. Without the token, sign-up and matters work, but documents stay unprocessed and the Assistant stays off ("Workspace setup failed"). |
 | Stripe test keys | Set the five `STRIPE_*` values (see [Billing](#billing)). Upgrade, seats and the customer portal turn on. Without them Lumen runs on trial seats. |
 | Ten contracts to measure on | `pnpm --filter @kortix/white-label-lumen eval` runs the real engine on the synthetic dataset and scores it against an answer key ([Quality, measured](#quality-measured)). |
 
@@ -56,7 +56,7 @@ PDF or Word file.
 
 ### Assistant with checked citations
 
-Ask a question about the matter. The answer comes from Lumen's `lumen-counsel` agent, which reads
+Ask a question about the matter. The answer comes from Lumen's counsel role, run on your firm's own agent, which reads
 the vault with Lumen's own tools and cites every claim as document, page, paragraph and quote.
 Lumen checks each quote against the paragraph it cites before it draws the chip. A click opens the
 Source panel with the quote marked. A quote the document does not contain shows as **Not found in
@@ -129,49 +129,106 @@ open full screen.
 
 ```
                  Lumen (the partner's stack)                                   Kortix (the agent backend)
- ┌──────────────────────────────────────────────────────────────┐          ┌──────────────────────────────────┐
- │ Next.js   site · app · /api/kortix proxy (member tokens)     │──SDK───▶ │ project per firm                 │
- │ Convex    firms · matters · documents · reviews · runs ·     │          │   Drive  /Company/Lumen/...      │
- │           audit · billing · the run engine · the agent kit   │──SDK───▶ │   agents lumen-* · skills · CLI  │
- │ Better Auth  users · organizations (firms) · roles · invites │          │   sessions, one sandbox each     │
- └──────────────────────────────────────────────────────────────┘          └──────────────────────────────────┘
-         Lumen ids in URLs; Kortix ids only as foreign keys on Lumen rows and as session labels
+ ┌──────────────────────────────────────────────────────────────┐          ┌───────────────────────────────────────┐
+ │ Next.js   site · app · /api/kortix proxy (firm credential)   │──SDK───▶ │ ONE project for every firm            │
+ │ Convex    firms · matters · documents · reviews · runs ·     │          │  Drive /Lumen/Kit/<v>/  (read-only)   │
+ │           audit · billing · the run engine · the agent kit   │──SDK───▶ │        /Lumen/Firms/<firmId>/ per firm│
+ │ Better Auth  users · organizations (firms) · roles · invites │          │  agent + service account per firm     │
+ └──────────────────────────────────────────────────────────────┘          │  sessions, one sandbox each           │
+         Lumen ids in URLs; Kortix ids only as foreign keys on        └───────────────────────────────────────┘
+         Lumen rows and as session labels
 ```
 
 | Lumen | Kortix | Stored in |
 |---|---|---|
-| firm (Better Auth organization) | project | `firms.kortixProjectId` |
-| firm | project Drive | `firms.kortixDriveId` |
-| matter | Drive folder `/Company/Lumen/Matters/<matterId>/` | `matters.driveFolder` |
+| deployment | one project and its Drive, shared by every firm | `deployment` (`projectId`, `driveId`, `kitVersion`) |
+| firm (Better Auth organization) | folder `/Lumen/Firms/<firmId>/`, agent `lumen-f-<firmId>`, service account `lumen-firm-<firmId>` | `firms.kortixAgent`, `firms.kortixServiceAccountId`, `firmCredentials` (internal) |
+| matter | Drive folder `/Lumen/Firms/<firmId>/Matters/<matterId>/` | `matters.driveFolder` |
 | document | Drive file `…/Docs/<docId>-<name>` + anchored text `…/Text/<docId>.md` | `documents.driveFile` |
-| thread | session on agent `lumen-counsel` | `threads.kortixSessionId` |
-| run | 1..N sessions, one per batch, and `/Company/Lumen/Runs/<runId>/<batchId>/` | `runBatches.kortixSessionId` |
-| agent kit version | commits on the project's default branch | `firms.kitVersion`, `kitInstalls` |
-| member | a 1 h project-scoped token, server-held | `memberTokens` |
+| thread | session on the firm's agent, created by the firm's service account | `threads.kortixSessionId` |
+| run | 1..N sessions, one per batch, and `/Lumen/Firms/<firmId>/Runs/<runId>/<batchId>/` | `runBatches.kortixSessionId` |
+| agent kit version | files in `/Lumen/Kit/<version>/`, `/Lumen/Kit/CURRENT` | `deployment.kitVersion`, `deployment.kitHash` |
+| member | the firm's service-account secret, server-held | `firmCredentials` (never in a public query) |
 
 The full tables (who writes each id, the session labels and metadata) are in [Id mapping](#id-mapping).
+
+## One project, many firms
+
+Lumen runs every firm in one Kortix project. The project is a backend Lumen configures once;
+a firm is three Kortix primitives in it, created at onboarding (`kortix.provisionFirm`, 10.8 s
+measured locally):
+
+1. **A folder**, `/Lumen/Firms/<firmId>/` (`Matters/`, `Runs/`, `Library/`), shared `write` with
+   the firm's agent only.
+2. **An agent**, `lumen-f-<firmId>`: `kortix_permissions: none`, `repository_access: false`, the
+   counsel prompt from the kit, and two folder grants: its firm folder (`write`) and
+   `/Lumen/Kit` (`read`).
+3. **A service account**, `lumen-firm-<firmId>`, project role `member`, plus an `agent-user`
+   object grant on the firm's agent. It creates and drives every session of the firm. Its secret
+   is in `firmCredentials` (an internal Convex table) and reaches the Next.js server per request.
+
+The project itself (`kortix.ensure`, run by the first onboarding or by
+`npx convex run kortix:ensure`; single-flight, idempotent): the project (`KORTIX_PROJECT_ID`, or
+one provisioned with idempotency key `lumen-deployment`), Files on, the default "/Company for
+everyone" grant removed, the default agent `lumen-none` (no grants, no repository), the
+starter template's agents disabled and locked down, and the agent kit uploaded to
+`/Lumen/Kit/<version>/` with `/Lumen/Kit/CURRENT`. A new kit version re-runs it once (32 s
+measured locally, 94 s for the first bootstrap).
+
+| # | Guarantee | Enforced by | Verified (local stack, Platinum, 2026-10-21) |
+|---|---|---|---|
+| I1 | A firm session mounts its firm folder and the kit, nothing else | Kortix: a session mounts the grants that reach its agent | Firm A's thread sandbox: `/drives/kit ro`, `/drives/<firmA> rw`. `ls /drives/<firmB>`: "No such file or directory". `grep -r <firmB id>` over `/`: no hit |
+| I2 | Nothing reaches every session | Bootstrap removes the `/Company` project grant | `getFolderAccess(/Company)` → `grants: []` |
+| I3 | The kit is read-only | `read` grant → `ro` mount | `echo x > /drives/kit/evil.txt` → "Read-only file system" |
+| I4 | Firm A's credential cannot read or drive firm B's sessions | Kortix: a backend-created session is private to its creator | Firm A's service account: firm B's session `404`, its transcript `404`, its sandbox `/p/<sbx>/8000/kortix/health` `403` (firm B's own: `200`) |
+| I5 | The sandbox token reaches nothing | The firm agent has `kortix_permissions: none` | From inside firm A's sandbox: another session `403`, the session list `403`, `/drives` `403` |
+| I6 | No session sees another firm's repository work | Every agent in the project has `repository_access: false` | `/workspace` is not a git repository |
+| I7 | A firm's credential cannot change the project | Service account role `member` | `GET …/secrets` `403` |
+| I8 | A member's session runs on their firm's agent | The proxy overwrites `agent_name` and drops every per-prompt agent (`memberSessionCreateBody`, `memberPromptBody`) | `POST /api/kortix/…/sessions` with firm B's agent from a firm A member → `agent_name: lumen-f-<firmA>` |
+| I9 | A member reads only their firm's agent | The proxy scopes the project detail (`redactIdentity`) | `GET /api/kortix/…/detail` → `agents: [lumen-f-<firmA>]`, no manifest, no files |
+| I10 | A member reaches only their matter's sessions and sandboxes | `sessionInMatter` (thread row), `sandboxInMatter` (the firm's sessions labelled `lumen-matter:<matterId>`) | Firm B's session through firm A's proxy `404`, firm B's sandbox `404`, firm B's matter bearer `403` |
+
+The one boundary Lumen still holds itself is I8: Kortix lets a service account start a session on
+any agent of the project (it filters agent object grants only for human members). A leaked firm
+secret, used outside Lumen, could start a session on another firm's agent and so mount that
+firm's folder. Proposals for Kortix, all generic (no Lumen or legal field), none needed for this
+design:
+
+- **G1** A service account with project role `member` gets agent objects filtered like a human
+  member (deny by default, object grants decide). This moves I8 into Kortix.
+- **G2** `POST /accounts/:id/iam/service-accounts/:saId/rotate-secret`: a new secret for the same
+  principal. Today a secret never expires and cannot rotate without losing the sessions it owns.
+- **G3** Compile only the selected agent's config into a session (a repository-access session
+  compiles every agent's, and the boot fails past 128 KiB).
+- **G4** Enforce a folder grant change only on the sessions it reaches (today every running
+  session of the project: 5-7 s per share call with 4 running sessions).
+- **G5** Deliver an agent's declared skills without repository access (the kit's role files point
+  at `/drives/kit/<v>/skills/` instead).
 
 ## The agent kit and the run engine
 
 Lumen's "custom harness" is two layers Lumen owns, on top of Kortix's unchanged runtime. No legal
 code is in the Kortix platform.
 
-**1. The agent kit** (`agent-kit/`, version `kit.json`), installed into every firm's Kortix
-project through `@kortix/sdk`:
+**1. The agent kit** (`agent-kit/`, version `kit.json`), installed once into the shared Kortix
+project's Drive through `@kortix/sdk`, read-only for every firm:
 
 | Part | What |
 |---|---|
-| `agents/` | `lumen-counsel` (questions, reports), `lumen-extractor` (review tables), `lumen-reviewer` (playbook review), `lumen-drafter` (templates). One shared rule set: cite every claim (document, anchor, verbatim quote), never guess, name the governing law, never name the platform. |
+| `agents/` | Four roles: `lumen-counsel` (questions, reports), `lumen-extractor` (review tables), `lumen-reviewer` (playbook review), `lumen-drafter` (templates). A role is a prompt file, not a Kortix agent: every firm runs all four on its one agent. The firm agent's prompt is the counsel role; a run's `input.json` names its role file (`role_path`). One shared rule set: cite every claim (document, anchor, verbatim quote), never guess, name the governing law, never name the platform. |
 | `skills/` | `lumen-citations`, `lumen-research-method`, `lumen-clause-extraction`, `lumen-playbook-review`, `lumen-redlining`, `lumen-due-diligence` |
 | `lumen-kit/` | The `lumen` tool CLI the agents run with `bash`: `docs`, `read`, `search` (SQLite FTS5, BM25), `cite check`, `result write` / `result done` (schema-validated, atomic), `redline` (DOCX tracked changes + comments), `draft render`, `ocr`. Stdlib Python plus the sandbox's `python-docx`, `pandoc` and `tesseract`. |
 | `lumen-kit/schemas/` | JSON Schemas for every result (`review-row`, `answer`, `issues`, `diligence-report`, `draft`, `done`, `input`) |
 | `evals/` | The answer key for the synthetic dataset and the scorer |
 
-Install (`convex/kitInstall.ts`): a short session writes the skills and the CLI into the project
-repo, commits, opens a change request and merges it; then each agent is written with
-`updateAgentConfig` and `lumen-counsel` becomes the default. Measured locally: 56-63 s per firm,
-once. Provisioning installs it; every run checks `kit.json` version + hash first and upgrades a
-firm that is behind (single flight per firm). Running sessions keep the kit they started with.
+Install (`kortix.ensure` in `convex/kortix.ts`): Convex uploads the role files, the skills and the
+CLI to `/Lumen/Kit/<version>/` and writes `/Lumen/Kit/CURRENT`. Every firm agent reads it at
+`/drives/kit/<version>/` (`{{KIT}}` in the kit sources; `scripts/kit-bundle.ts` substitutes it):
+`python3 /drives/kit/<version>/lumen-kit/bin/lumen`, and skill `<name>` is the file
+`/drives/kit/<version>/skills/<name>/SKILL.md`. Every thread and run checks `kit.json` version +
+hash first: a new kit uploads once for the whole project, then each firm agent's prompt is
+rewritten once on its next thread or run (`ensureFirmAgent`). Running sessions keep the kit they
+started with.
 
 **2. The run engine** (`convex/runs.ts`, `convex/engine.ts`), Convex only, no browser in the loop:
 
@@ -187,7 +244,8 @@ watchdog (convex/crons.ts, every 5 min): a run that a deploy or restart interrup
 
 - Fan-out: a review of N documents is ⌈N/4⌉ batches. At most 4 run at once per run and 8 per firm;
   a finished batch wakes every waiting run of the firm.
-- The contract per batch is a Drive folder `/Company/Lumen/Runs/<runId>/<batchId>/`: Lumen writes
+- The contract per batch is a Drive folder `/Lumen/Firms/<firmId>/Runs/<runId>/<batchId>/`
+  (`/drives/<firmId>/Runs/…` in the session): Lumen writes
   `input.json`; the agent writes `out/*.json` (one row per document, as soon as it is done) and
   `done.json` last.
 - Convex polls the folder (5 s, then 15 s), validates each new file with ajv against the kit's
@@ -241,6 +299,13 @@ Kit 1.1.4 (2026-10-21, `--suite qa,refusal`, 19 runs, wall 197 s): QA 14/14 fact
 questions cover a cross-document reference ("Is the Main Agreement that the Lattice DPA refers
 to in this matter?", answer: the SaaS agreement) and indemnities across three agreements.
 
+Kit 1.3.0 (2026-10-21, the one shared project, two firms, every session on a firm agent):
+firm A `--suite extraction,citations,refusal` (7 runs, wall 103 s): cells 80/80, planted absences
+26/26, cited correct values 54/54, citations 74/74 at the cited anchor, refusals 5/5. Firm B
+`--suite qa` (14 runs, wall 191 s): fact recall 14/14, cited-document recall 14/14, citations
+78/78. Firm B contract review (59 s): 12 issues, 12/12 citations verified, `redline.docx`; draft
+(38 s): `draft.docx`, 3 fields left as `[[CONFIRM]]`.
+
 ## Who owns what
 
 | Concern | Owner | Where |
@@ -248,17 +313,18 @@ to in this matter?", answer: the SaaS agreement) and indemnities across three ag
 | Users, passwords, sessions | Lumen | Better Auth tables in the Convex component `convex/betterAuth/` |
 | Firms (organizations), members, invitations, roles | Lumen | Better Auth `organization` plugin + `firms` table |
 | Matters, threads, plans, seats, audit log | Lumen | `convex/schema.ts` |
-| Agents, sandboxes, sessions, transcripts, files | Kortix | One Kortix project per firm |
-| The Kortix credential | Lumen's operator | `KORTIX_OPERATOR_TOKEN`, Convex env only |
+| Agents, sandboxes, sessions, transcripts, files | Kortix | One Kortix project for every firm |
+| The operator credential (project setup, Drive writes) | Lumen's operator | `KORTIX_OPERATOR_TOKEN`, Convex env only |
+| A firm's credential (its sessions) | Lumen | The firm service account's secret, `firmCredentials` in Convex |
 
-Kortix sees one account: Lumen's operator account. It knows nothing about Lumen's users, firms
-or matters except the generic labels and metadata Lumen writes on each session (below). No
-Kortix API has a Lumen concept in it.
+Kortix sees one account: Lumen's operator account, with one service account per firm. It knows
+nothing about Lumen's users, firms or matters except the generic labels and metadata Lumen
+writes on each session (below). No Kortix API has a Lumen concept in it.
 
 ### What a member can see
 
-- Every member token belongs to the operator's Kortix user, so Kortix names that user as each
-  session's owner and each prompt's author. The proxy removes those names (`redactIdentity` in
+- Every member of a firm acts as the firm's service account, so Kortix names that account as
+  each session's owner and each prompt's author. The proxy removes those names (`redactIdentity` in
   `src/server/proxy-policy.ts`): the session record and snapshot lose `owner_name`,
   `owner_email`, `owner_avatar_url` and the initiator label, and `message-authors` loses its
   member entries.
@@ -286,17 +352,21 @@ credential reaches: the server resolves it from Lumen's ids.
 
 | Lumen | Kortix | Stored in | Written by |
 |---|---|---|---|
-| firm (`firms._id`, one Better Auth organization) | project (`project_id`) | `firms.kortixProjectId` | `kortix.provisionFirm`, idempotency key `lumen-firm-<firmId>` |
-| firm | project Drive | `firms.kortixDriveId` | `kortix.provisionFirm` (enables the project's `volumes` flag, creates `/Company/Lumen/{Matters,Runs,Library}`) |
-| matter (`matters._id`) | Drive folder `/Company/Lumen/Matters/<matterId>` | `matters.driveFolder` | `matters.create` |
-| thread (`threads._id`) | session (`session_id`) | `threads.kortixSessionId` | `kortix.createThread`, or the proxy for a session the session UI creates |
-| member (`user._id`) | project-scoped token (`token_id`), 1 h | `memberTokens` (server-only) | `kortix.memberToken` |
-| Lumen's counsel agent | agent `lumen-counsel`, the project default | — | `kortix.provisionFirm` (`updateAgentConfig`, `updateProjectDefaultAgent`) |
+| deployment (one per Lumen install) | project (`project_id`), its account and Drive | `deployment.projectId`, `.accountId`, `.driveId` | `kortix.ensure`: `KORTIX_PROJECT_ID`, else idempotency key `lumen-deployment` |
+| agent kit | Drive files `/Lumen/Kit/<version>/…`, `/Lumen/Kit/CURRENT` | `deployment.kitVersion`, `.kitHash` | `kortix.ensure` |
+| firm (`firms._id`, one Better Auth organization) | Drive folder `/Lumen/Firms/<firmId>/{Matters,Runs,Library}` | derived from the firm id (`FIRM_ROOT` in `convex/lumenAgent.ts`) | `kortix.provisionFirm` |
+| firm | agent `lumen-f-<firmId>` + 2 folder grants | `firms.kortixAgent`, `firms.agentConfig` (kit hash + model it was written with) | `kortix.provisionFirm`, `ensureFirmAgent` |
+| firm | service account `lumen-firm-<firmId>` (project role `member`) and its secret | `firms.kortixServiceAccountId`, `firmCredentials` (internal) | `kortix.provisionFirm` |
+| matter (`matters._id`) | Drive folder `/Lumen/Firms/<firmId>/Matters/<matterId>` | `matters.driveFolder` | `matters.create` |
+| thread (`threads._id`) | session (`session_id`), created by the firm's service account on the firm's agent | `threads.kortixSessionId` | `kortix.createThread`, or the proxy for a session the session UI creates |
+| run batch (`runBatches._id`) | session, same creator and agent; `input.json` names the kit role | `runBatches.kortixSessionId`, `runBatches.role` | `engine.launch` |
+| Lumen's default agent | agent `lumen-none`, the project default (no grants, no repository) | — | `kortix.ensure` |
 
 Each Kortix session carries Lumen's ids as generic data, so the operator can trace a session
 back from the Kortix side:
 
-- `labels`: `lumen-firm:<firmId>`, `lumen-matter:<matterId>`, `lumen-user:<userId>`
+- `labels`: `lumen-firm:<firmId>`, `lumen-matter:<matterId>`, `lumen-user:<userId>` (runs add
+  `lumen-run:<runId>`). `sandboxInMatter` reads `lumen-matter:` to bind a sandbox to a matter.
 - `metadata`: `lumen_org_id`, `lumen_firm_id`, `lumen_matter_id`, `lumen_user_id`
 
 ## Credential flow
@@ -305,36 +375,38 @@ back from the Kortix side:
 browser ── Bearer matter.<matterId> + Better Auth cookie ──▶ Next.js /api/kortix/*
 Next.js ── user JWT + LUMEN_PROXY_SECRET ──▶ Convex kortix.memberToken
 Convex  ── firm membership + matter access (requireMatterAccess)
-        ── reuse the stored token, or mint one with KORTIX_OPERATOR_TOKEN:
-           POST /v1/accounts/tokens { project_id, expires_at: now + 1 h }
-Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session runtime
+        ── the firm's service-account secret + the firm's agent + the shared project id
+Next.js ── forwardKortixRequest(firm secret) ──▶ Kortix API / session runtime
 ```
 
 1. The operator credential exists only in Convex env. Next.js and the browser
-   never see it.
+   never see it. It sets up the project and writes firm files; it never creates
+   or drives a session (the project owner gets `404` on a service account's
+   session, and an operator session would mount the operator's own folder).
 2. The browser bearer is `matter.<matterId>`. It is not a secret. Identity is
    the Better Auth cookie, which the SDK sends because `backendUrl` is the
    same-origin path `/api/kortix`.
-3. Convex checks firm membership and matter access on every token request,
-   so a lawyer who is not on a restricted matter is refused (`403`). The
-   Next.js proxy re-checks each (user, matter) pair at least once a minute.
-   One token serves all of a member's matters in a firm (one per firm and
-   member). Every `projects/<id>/sessions/<sid>/…` call also checks that the
+3. Convex checks firm membership and matter access on every credential
+   request, so a lawyer who is not on a restricted matter is refused (`403`).
+   The Next.js proxy re-checks each (user, matter) pair at least once a minute.
+   Every member of a firm uses the firm's one credential. Every `projects/<id>/sessions/<sid>/…` call also checks that the
    session is a thread of the bearer's matter (`threads.bySession`), else
-   `404`. A session create forwards only `name`, `labels`, `metadata`,
-   `agent_name` and `initial_prompt` (`memberSessionCreateBody`), so
-   `fork_from_session_id` cannot copy another matter's thread. The side route
+   `404`. A session create forwards only `name`, `labels`, `metadata` and
+   `initial_prompt`, and sets `agent_name` to the firm's agent
+   (`memberSessionCreateBody`), so `fork_from_session_id` cannot copy another
+   matter's thread and a member cannot pick another firm's agent. A prompt
+   loses `agent`, `overrides.agent` and `@agent` parts (`memberPromptBody`). The side route
    that takes a session id, `/api/preview-url`, runs the same check (`resolveMemberForSession` in
-   `src/server/member.ts`). The runtime routes (`p/<sandbox>/8000/…`) are not tied to a matter:
-   restricted visibility is an application rule, not a wall inside the firm's
-   project (see Limits).
-4. The member token is project-scoped. Kortix refuses it on every other
-   project (`403 Project-scoped token cannot access a different project`), on
-   `GET /projects` and on most account routes. It does NOT refuse
-   `GET /accounts/me` (the operator's user id, email and accounts) or the
-   project's member and access lists.
-5. A project-scoped token carries its minter's role on that project (owner).
-   `src/server/proxy-policy.ts` therefore names each route the session UI
+   `src/server/member.ts`). A runtime route (`p/<sandbox>/8000/…`) needs a sandbox of
+   one of the matter's sessions (`sandboxInMatter`: the firm's sessions with
+   the `lumen-matter:<matterId>` label), else `404`.
+4. The firm credential is a service account with project role `member`.
+   Kortix refuses it on project configuration (agents, secrets, tokens) and
+   on every other firm's sessions and sandboxes. It does NOT refuse
+   `GET /accounts/me`, the project detail (which lists every firm's agent:
+   the proxy scopes it to the caller's, I9) or a session on another firm's
+   agent (the proxy pins the agent, I8).
+5. `src/server/proxy-policy.ts` names each route the session UI
    calls, by method, measured from the customer journey: the project card,
    model picker, change requests;
    session start and restart,
@@ -371,32 +443,28 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
    the configuration reads (agent config, connectors) the proxy refuses.
 7. A new session gets Lumen's labels first; a client label in the `lumen-`
    namespace is dropped (`tagSessionCreate`, `convex/tags.ts`).
-8. Every token Lumen mints is revoked at its expiry by a scheduled Convex
-   action (`kortix.revokeToken`). No token Lumen mints reaches the browser. A
+8. No Kortix credential reaches the browser. A
    preview iframe gets a Kortix public preview share instead
    (`/api/preview-url`): it opens one port of one session's sandbox, expires
    after 15 minutes and grants nothing on the Kortix API. Kortix refuses shares
    of the runtime ports (8000 and the harness ports). Lumen offers no other
    public link: Kortix would serve it under the Kortix brand with no expiry.
 9. A member removed from a firm is refused within 60 s (the proxy's
-   membership cache). Their stored member token stays valid until its expiry
-   (at most 1 h), but it never left the server.
+   membership cache). The firm credential never left the server, so there is
+   nothing to revoke. A firm that leaves: disable its service account
+   (`disableServiceAccountApi`), then remove its two folder grants.
 10. A session delete needs the thread's creator or a firm owner/admin
     (`threads.deleteFromProxy`, checked before the Kortix call). It drops the
     thread record and writes a `thread.delete` audit event.
-11. Known gap, in Kortix: the agent runs with the sandbox's own Kortix token
-    (`KORTIX_TOKEN`, a project-scoped token with the owner role) in its
-    environment. A member who prompts the agent to print it gets a credential
-    that works on the Kortix API for that project, outside Lumen. Lumen did
-    not mint it and cannot revoke it; its expiry is not verified. The proxy closes the direct routes (shell, terminal, file reads
-    outside `/workspace`); it cannot stop the agent from reading its own
-    environment. The fix belongs in Kortix: keep the sandbox token out of the
-    agent's tool environment, or narrow it to what the agent needs.
+11. The agent runs with the sandbox's own Kortix token (`KORTIX_TOKEN`) in
+    its environment. A governed agent authorizes as itself, and the firm
+    agent has `kortix_permissions: none`: from inside a firm sandbox the token
+    gets `403` on other sessions, the session list and `/drives` (I5).
 12. Only the request headers Kortix needs leave Lumen (`forwardedHeaders`):
     `accept`, `content-type`, `last-event-id`, `if-none-match` and
     `x-kortix-client-version`. Cookies, user agent, referer, `Origin`, client
     hints and forwarded-for headers stay in Lumen; the proxy sets
-    `authorization` to the member token.
+    `authorization` to the firm credential.
 13. Responses lose the operator's Kortix identity and plumbing
     (`redactIdentity`): the session, snapshot, project and change-request
     records drop `account_id`, `created_by`, owner ids, the managed repository
@@ -407,16 +475,16 @@ Next.js ── forwardKortixRequest(member token) ──▶ Kortix API / session
 14. A rename through the proxy also renames the Lumen thread
     (`threads.renameFromProxy`), so the thread list shows the new title.
 15. The Assistant shows no infrastructure. `UiProvider` turns off the model
-    and effort pickers, the context ring and the session-overrides gear, and
-    offers one agent, `lumen-counsel`, as "Counsel" (`modelPickerEnabled`,
-    `contextMeterEnabled`, `sessionOverridesEnabled`, `offeredAgents`,
-    `agentLabels` in `src/app/providers.tsx`). The reviewer, extractor and
-    drafter take an `input.json` from the engine, not a conversation.
+    and effort pickers, the context ring and the session-overrides gear. The
+    project detail lists only the firm's agent, and `agentLabels` names every
+    `lumen-f-*` agent "Counsel" (`src/app/providers.tsx`). The reviewer,
+    extractor and drafter are kit roles a run names in `input.json`.
 
 ## Run it
 
 Prerequisites: a Kortix API URL and an operator token for the Kortix account that will own
-Lumen's projects (an account-level PAT or a service-account key).
+Lumen's project (an account-level PAT: it creates the project, the folder grants, the agents and
+one service account per firm).
 
 ```bash
 pnpm install
@@ -436,6 +504,10 @@ npx convex env set LUMEN_PROXY_SECRET "$(openssl rand -hex 24)"
 
 #    Optional: the sandbox provider for Lumen's sessions.
 npx convex env set KORTIX_SANDBOX_PROVIDER platinum
+#    Optional: an existing project to use (else Lumen provisions one, idempotency key lumen-deployment).
+npx convex env set KORTIX_PROJECT_ID <project id>
+#    Optional: set the project up now (the first onboarding does it otherwise; ~1.5 min once).
+npx convex run kortix:ensure
 
 # 4. Next.js.
 WHITELABEL_PORT=3020 pnpm --filter @kortix/white-label-lumen dev
@@ -509,11 +581,15 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 
 ## Limits
 
-- Matters are separated by Lumen's access control: Convex queries, the proxy's matter check and
-  the agent prompt. A sandbox in the firm's project can technically read another matter's Drive
-  folder. A walled matter (its own Kortix project) is planned.
-- The agent runs with its sandbox's own project token in its environment (a Kortix gap; see
-  item 11 above, under Credential flow). A member who makes the agent print it gets a credential for the firm's project.
+- Matters inside one firm share the firm folder mount. A restricted matter is separated by
+  Lumen's access control (Convex queries, the proxy's matter checks, the agent rules), not by a
+  mount: a firm session can technically read another matter of the same firm. Per-matter mounts
+  would need one agent per matter.
+- I8 (the agent pin) is held by Lumen, not Kortix, until proposal G1 lands. A firm secret used
+  outside Lumen could start a session on another firm's agent.
+- All firms share one Kortix account wallet and rate budget. Per-firm usage comes from the
+  session labels (`lumen-firm:<firmId>`).
+- A firm's service-account secret has no expiry and no rotate route (proposal G2).
 
 ## Screens
 
@@ -543,20 +619,22 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 
 | Path | What |
 |---|---|
-| `convex/schema.ts` | 21 tables. Firm and access: `firms`, `matters`, `matterMembers`, `threads`, `memberTokens`, `auditEvents`, `stripeEvents`. Vault: `documents`, `documentPages`, `documentParas`. Kit: `kitInstalls`. Engine: `runs`, `runBatches`, `runFiles`, `runEvents`, `runResults`. Results: `reviews`, `reviewCells`, `answers`, `issues`. Library: `libraryItems` |
+| `convex/schema.ts` | 21 tables. Deployment: `deployment` (the shared project, the kit version), `firmCredentials` (internal). Firm and access: `firms`, `matters`, `matterMembers`, `threads`, `auditEvents`, `stripeEvents`. Vault: `documents`, `documentPages`, `documentParas`. Engine: `runs`, `runBatches`, `runFiles`, `runEvents`, `runResults`. Results: `reviews`, `reviewCells`, `answers`, `issues`. Library: `libraryItems` |
 | `convex/access.ts` | `requireFirm`, `requireFirmAdmin`, `requireMatterAccess` |
 | `convex/auth.ts`, `convex/betterAuth/` | Better Auth as a local Convex component, organizations, the seat and audit hooks |
 | `convex/firms.ts`, `convex/matters.ts`, `convex/threads.ts`, `convex/members.ts` | Queries and mutations |
 | `convex/billing.ts`, `convex/seats.ts` | Plans, seats, Stripe checkout, portal and webhook |
 | `convex/audit.ts`, `convex/usage.ts` | The audit log and usage |
-| `convex/kortix.ts` | Operator calls to Kortix (`"use node"`): provision, create thread, member token, revoke |
-| `convex/operator.ts` | The operator credential, `withRetry` (network and 5xx: 1 s, 4 s, 15 s) |
+| `convex/kortix.ts` | Kortix setup (`"use node"`): the shared project and kit (`ensure`), firm onboarding, create thread, the proxy's credential lookup |
+| `convex/deployment.ts` | The deployment row and its single-flight claim, firm credentials, `firmContext` |
+| `convex/lumenAgent.ts` | The Drive layout (`/Lumen/Kit`, `/Lumen/Firms/<firmId>`), agent and service-account names, `sandboxPath` |
+| `convex/operator.ts` | The operator credential, the firm client (`asFirm`), `withRetry` (network and 5xx: 1 s, 4 s, 15 s) |
 | `convex/documents.ts`, `convex/ingest.ts` | The Vault: upload, extract (`unpdf`, `mammoth`), segment, Drive copies, `index.json` |
 | `convex/lib/segment.ts`, `convex/lib/cite.ts` | The one segmenter (anchors `p<page>.<n>`) and the citation check |
 | `convex/citations.ts`, `src/components/chat/citation-layer.tsx` | Citation links in Assistant answers: checked, drawn as chips, opened in the Source panel |
 | `src/components/vault/` | The document panel (original + anchored text) and its read-only `FileSource` |
 | `scripts/copy-viewer-wasm.mjs` | Copies the PDF/DOCX/XLSX viewer engines into `public/`, and the sample matter's documents into `public/sample/`, before `dev` and `build` |
-| `agent-kit/`, `convex/kit.ts`, `convex/kitInstall.ts` | The agent kit and its versioned install per firm |
+| `agent-kit/`, `scripts/kit-bundle.ts` | The agent kit, bundled into Convex and uploaded once per version to `/Lumen/Kit/<version>/` |
 | `convex/runs.ts`, `convex/engine.ts` | The run engine: state, fan-out, map + reduce, polling, repair, result files, citation checks |
 | `convex/reviews.ts`, `convex/lib/columns.ts` | Reviews: create, add columns, re-run a column, verify / flag / edit; the column presets |
 | `convex/workflows.ts` | Contract review, due diligence, draft; issue decisions; run files; the matter history |

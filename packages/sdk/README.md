@@ -887,9 +887,10 @@ app.use(async (req, res, next) => {
 
 A runnable version of the pattern is `examples/03-server-wrapper.ts`, and the
 full production-shaped reference is `apps/white-label/lumen` (Lumen): its own
-users and orgs (Convex + Better Auth), one Kortix project per workspace,
-short-lived project-scoped member tokens minted server-side, and a same-origin
-proxy built on `forwardKortixRequest` — see its README.
+users and orgs (Convex + Better Auth), one Kortix project shared by every
+customer firm (a Drive folder, an agent and a service account per firm), the
+firm's service-account secret held server-side, and a same-origin proxy built
+on `forwardKortixRequest` — see its README.
 
 ## Rendering chat (the headless chat kit)
 
