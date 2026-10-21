@@ -420,7 +420,7 @@ export type {
 export {
   // The functions behind `kortix.auth.*` — exported so `Kortix`'s inferred type
   // stays nameable from the root entry (TS2742 in a consumer's declaration
-  // emit otherwise, e.g. apps/whitelabel-demo `next build`).
+  // emit otherwise, e.g. apps/white-label/lumen `next build`).
   signUp,
   signInWithPassword,
   sendMagicLink,

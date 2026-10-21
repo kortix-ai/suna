@@ -125,6 +125,44 @@ esac
       .toBe('${KORTIX_FRONTEND_MEMORY_LIMIT:-512m}');
   });
 
+  test('switching to an external capture store drops the on-box MinIO and survives re-init', async () => {
+    expect((await run(['init', '--yes'])).code).toBe(0);
+    // Default: the bundled MinIO store and its generated root pair.
+    expect(readCompose().services['capture-store']).toBeDefined();
+    expect(readEnv().CAPTURE_STORE_ROOT_USER).toBeTruthy();
+    expect(readEnv().KORTIX_CAPTURE_STORE).toBe('bundled');
+
+    const set = await run([
+      'env', 'set',
+      'KORTIX_CAPTURE_STORE=external',
+      'KORTIX_CAPTURE_S3_BUCKET=acme-capture',
+      'KORTIX_CAPTURE_STS_ROLE_ARN=arn:aws:iam::123456789012:role/kortix-capture-device',
+    ]);
+    expect(set.code).toBe(0);
+
+    // .env holds the durable switch + external values; the dead MinIO root pair
+    // is shed so it never persists on an external instance.
+    const env = readEnv();
+    expect(env.KORTIX_CAPTURE_STORE).toBe('external');
+    expect(env.KORTIX_CAPTURE_S3_BUCKET).toBe('acme-capture');
+    expect(env.CAPTURE_STORE_ROOT_USER).toBeUndefined();
+    expect(env.CAPTURE_STORE_ROOT_PASSWORD).toBeUndefined();
+
+    // Compose: no on-box store; the API reads the operator's S3 from .env and
+    // never creates the bucket.
+    const after = readCompose();
+    expect(after.services['capture-store']).toBeUndefined();
+    const apiEnv = (after.services['kortix-api'] as { environment: Record<string, string> }).environment;
+    expect(apiEnv.KORTIX_CAPTURE_S3_BUCKET).toBe('${KORTIX_CAPTURE_S3_BUCKET:-}');
+    expect(apiEnv.KORTIX_CAPTURE_S3_CREATE_BUCKET).toBe('false');
+    expect(apiEnv).not.toHaveProperty('KORTIX_CAPTURE_S3_PROXY_TARGET');
+
+    // Durable across `update`: a later re-init keeps the external mode.
+    expect((await run(['init', '--yes'])).code).toBe(0);
+    expect(readEnv().KORTIX_CAPTURE_STORE).toBe('external');
+    expect(readCompose().services['capture-store']).toBeUndefined();
+  });
+
   test('init defaults to the shared auth+sandbox defaults and the stable channel', async () => {
     const { code } = await run(['init', '--yes']);
     expect(code).toBe(0);

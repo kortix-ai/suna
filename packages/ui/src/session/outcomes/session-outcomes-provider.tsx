@@ -39,12 +39,17 @@
  * parameter. Task 5 mounts it.
  */
 
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '../../i18n';
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
 
+import { useProjectContext } from '../../files/project/context';
 // NOT `@kortix/sdk/react`'s change-request hook. See the note above — this is
 // a cache-coherence requirement, not a style preference.
-import { useSessionChangeRequests } from '../../files/project/hooks/use-change-requests';
+import {
+  invalidateChangeRequestReads,
+  useSessionChangeRequests,
+} from '../../files/project/hooks/use-change-requests';
 
 import { anchorOutcomes, type TurnSpan } from './anchor-outcomes';
 import { changeRequestOutcomes } from './change-request-outcomes';
@@ -58,15 +63,22 @@ interface OutcomesValue {
 const EMPTY: Outcome[] = [];
 const OutcomesContext = createContext<OutcomesValue | null>(null);
 
+/** A change request the agent opens as its turn closes can land after the
+ *  turn-end read: read once more after this delay. */
+const CHANGE_REQUEST_SETTLE_MS = 2_500;
+
 export function SessionOutcomesProvider({
   projectSessionId,
   turnSpans,
+  busy,
   onOpen,
   children,
 }: {
   /** The git session id a change request records as `origin_session_id`. */
   projectSessionId: string | undefined;
   turnSpans: TurnSpan[];
+  /** The session is working. Its end re-reads the change requests. */
+  busy: boolean;
   onOpen: (outcome: Outcome) => void;
   children: ReactNode;
 }) {
@@ -78,6 +90,7 @@ export function SessionOutcomesProvider({
   // Only THIS session's change requests, filtered by the server; the key sits
   // under the project-files list scope the dialog's mutations invalidate.
   const { data } = useSessionChangeRequests(projectSessionId, { refetchInterval: 60_000 });
+  useRefreshChangeRequestsOnTurnEnd(busy);
 
   const all = useMemo(
     // Change requests are the only outcome a turn produces. The derived
@@ -93,6 +106,28 @@ export function SessionOutcomesProvider({
   const value = useMemo<OutcomesValue>(() => ({ byTurn, onOpen }), [byTurn, onOpen]);
 
   return <OutcomesContext.Provider value={value}>{children}</OutcomesContext.Provider>;
+}
+
+/**
+ * The agent opens and closes change requests from its sandbox, and nothing
+ * tells the browser. Without this, the cards and the sidebar kept a closed
+ * proposal as "Review" and missed a new one until the 60 s poll or a reload
+ * (KRTX-3009, KRTX-3010). Only the busy -> idle edge reads: mounting an idle
+ * session already fetches.
+ */
+function useRefreshChangeRequestsOnTurnEnd(busy: boolean): void {
+  const qc = useQueryClient();
+  const projectId = useProjectContext()?.projectId ?? '';
+  const refresh = useCallback(() => invalidateChangeRequestReads(qc, projectId), [qc, projectId]);
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    const ended = wasBusy.current && !busy;
+    wasBusy.current = busy;
+    if (!ended) return;
+    refresh();
+    const timer = setTimeout(refresh, CHANGE_REQUEST_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [busy, refresh]);
 }
 
 /** A turn's outcomes, oldest first. `EMPTY` is a module constant so a turn with

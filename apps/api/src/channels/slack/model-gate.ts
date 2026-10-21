@@ -49,7 +49,7 @@ export async function projectModelContext(project: {
   // This channel used to derive the answer itself, as
   // `accountIsFreeTierForModels(getAccountTier(...))` — a tier-string check
   // that silently ignored the operator's managed-models override, so an
-  // account granted managed models by an operator still saw a Zen-only picker
+  // account granted managed models by an operator still saw a reduced picker
   // in Slack while every other surface showed it the full lineup (and an
   // account force-restricted to BYOK still saw managed models here).
   // `accountMayUseManagedModels` already returns true when internal billing is

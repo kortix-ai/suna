@@ -83,7 +83,8 @@ Where a verdict lands, by item id:
               note back to the agent that opened it (--message required).
   call:<id>   approve = let the tool call run, reject = deny it. A connector
               approval takes no other verdict — read its arguments first with
-              \`kortix review show\`.
+              \`kortix review show\`. --message reaches the agent with the
+              decision.
   otherwise   the native act endpoint, which takes every verdict.
 
 \`bulk\` acts on native ids only. A connector approval needs its own parameter
@@ -339,9 +340,11 @@ async function reviewAct(
         return 2;
       }
       const decision = verdict === 'approve' ? 'approve' : 'deny';
+      // `note` rides into the agent's resume prompt, so a deny can steer.
+      const note = f.message?.trim();
       const resp = await ctx.client.post<Record<string, unknown>>(
         `${base}/approvals/${encodeURIComponent(executionId)}`,
-        { decision },
+        { decision, ...(note ? { note } : {}) },
       );
       if (json) {
         emitJson({ id, decision, ...resp });

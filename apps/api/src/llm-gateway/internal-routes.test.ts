@@ -99,6 +99,10 @@ mock.module('../secrets/account-resource', () => ({
 
 const { createInternalGatewayRoutes } = await import('./internal-routes');
 const { gatewayModelCatalog } = await import('./models/catalog-models');
+// The lineup Platinum Inference would list.
+(await import('./models/managed-models')).__setManagedLineupForTest(
+  (await import('../__tests__/fixtures/managed-lineup')).TEST_MANAGED_LINEUP,
+);
 
 const TOKEN = 'test-internal-token-aaaaaaaaaaaaaaaaaaaaaaaa';
 

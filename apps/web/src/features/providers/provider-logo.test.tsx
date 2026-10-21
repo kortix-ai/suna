@@ -51,3 +51,19 @@ describe('ProviderLogo tone="light"', () => {
     expect(html).toContain('text-black');
   });
 });
+
+describe('ProviderLogo platinum', () => {
+  test('draws the Platinum square (platinum.dev favicon geometry) on the provider tile, no remote image', () => {
+    const html = render({ providerID: 'platinum', name: 'Platinum', size: 'medium' });
+    expect(html).toContain('<rect x="5" y="5" width="14" height="14" fill="currentColor">');
+    expect(html).toContain('bg-muted');
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('PL');
+  });
+
+  test('tone="light" paints the square black on the white tile', () => {
+    const html = render({ providerID: 'platinum', size: 'medium', tone: 'light' });
+    expect(html).toContain('bg-white');
+    expect(html).toContain('text-black');
+  });
+});

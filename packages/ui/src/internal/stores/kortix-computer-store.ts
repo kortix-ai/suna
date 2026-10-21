@@ -22,7 +22,7 @@ export interface ReadyChipState {
 }
 
 /** The panel surfaces reachable from outside the panel. */
-export type QuickView = 'terminal' | 'audit' | 'browser' | 'files';
+export type QuickView = 'terminal' | 'audit' | 'browser' | 'files' | 'reminders';
 
 /**
  * Extra aim for a quick-view request — "open the browser" vs "open the browser

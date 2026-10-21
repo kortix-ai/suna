@@ -245,7 +245,7 @@ export function NotificationPanel({
  * (16px → 12px), centred on the glyph's bottom-right corner where the count
  * sits. At full size it would tint the whole bell.
  */
-const BELL_REFLECTION_MASK = 'radial-gradient(circle 12px at 100% 100%, #000 35%, transparent 100%)';
+export const BELL_REFLECTION_MASK = 'radial-gradient(circle 12px at 100% 100%, #000 35%, transparent 100%)';
 
 export function BellMark({
   count,

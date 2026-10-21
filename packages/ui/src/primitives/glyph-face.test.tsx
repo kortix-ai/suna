@@ -40,7 +40,7 @@ describe('glyphFace', () => {
     expect(glyphComponent('NoSuchGlyph')).toBeNull();
   });
 
-  test('the generated paths are current: regenerate with bun apps/web/scripts/generate-glyph-paths.tsx', () => {
+  test('the generated paths are current: regenerate with bun packages/ui/scripts/generate-glyph-paths.tsx', () => {
     expect(GLYPH_PATHS_WEIGHT).toBe(DEFAULT_ICON_WEIGHT);
     expect(Object.keys(GLYPH_PATHS).sort()).toEqual(Object.keys(GLYPH_COMPONENTS).sort());
     const onDisk = readFileSync(join(import.meta.dir, 'glyph-paths.generated.ts'), 'utf8');

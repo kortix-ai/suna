@@ -85,6 +85,7 @@ const NOT_WORKERS: Record<string, string> = {
   'workers/access-control-cache-worker.ts': 'refreshes the in-memory access-control cache',
   'workers/app-deployment-worker.ts': 'timer that calls triggerAppDeploymentWorker, which wraps itself',
   'workers/event-loop-lag-worker.ts': 'measures event-loop lag',
+  'workers/managed-lineup-worker.ts': 'refreshes the in-memory managed lineup from Platinum Inference',
   'workers/session-lifecycle-worker.ts': 'timer that calls drainSessionLifecycleQueue, which wraps itself',
   'workers/teams-bot-token-refresh-worker.ts': 'refreshes the in-memory Teams bot token',
   'workers/tmp-reaper-worker.ts': 'deletes stale local tmp directories; no database writes',
@@ -126,6 +127,7 @@ const STARTS: Record<string, string> = {
   startSessionLifecycleWorker: 'session-lifecycle',
   startTunnelService: 'tunnel-cleanup',
   startAccessControlCache: 'not a worker: in-memory cache',
+  startManagedLineupRefresh: 'not a worker: in-memory managed lineup',
   startTmpReaper: 'not a worker: local tmp directories only',
   startConfigBaseMoveBroadcast:
     'not a worker: one LISTEN connection, event-driven, no timer and no tick',

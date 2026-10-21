@@ -22,12 +22,14 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '../../primitiv
 import { BrowserPanel } from '../../browser/browser-panel';
 import { CloseButton } from './easy/detail-view';
 import { SessionAuditPanel } from './session-audit-panel';
+import { SessionRemindersPanel } from './session-reminders-panel';
 import { SessionFilesExplorer } from './session-files-explorer';
 import { SessionTerminalPanel } from '../../terminal/session-terminal-panel';
 import { useLocalizedUiCatalog } from '../../i18n/ui-catalog/use-localized-ui-catalog';
 import { useKortixComputerStore, type QuickView } from '../../internal/stores/kortix-computer-store';
 import { sessionPreviewTabId } from '../../internal/stores/session-browser-store';
 import {
+  AlarmIcon,
   FolderOpenIcon,
   GlobeIcon,
   ScrollIcon,
@@ -40,6 +42,7 @@ const TOOL_META: Record<QuickView, { label: string; Icon: Icon }> = {
   browser: { label: 'Browser', Icon: GlobeIcon },
   files: { label: 'Files', Icon: FolderOpenIcon },
   audit: { label: 'Audit', Icon: ScrollIcon },
+  reminders: { label: 'Reminders', Icon: AlarmIcon },
 };
 
 export function MobileToolDrawer({
@@ -92,6 +95,11 @@ export function MobileToolDrawer({
           )}
           {view === 'audit' && (
             <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />
+          )}
+          {view === 'reminders' && (
+            <div className="h-full overflow-y-auto p-4">
+              <SessionRemindersPanel projectId={projectId} projectSessionId={projectSessionId} />
+            </div>
           )}
         </div>
       </DrawerContent>

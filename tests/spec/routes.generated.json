@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 878,
+  "count": 880,
   "routes": [
     {
       "method": "GET",
@@ -349,6 +349,14 @@
     {
       "method": "GET",
       "path": "/v1/accounts/:accountId/capture/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/storage"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/capture/storage"
     },
     {
       "method": "GET",

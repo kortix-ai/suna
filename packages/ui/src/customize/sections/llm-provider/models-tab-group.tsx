@@ -13,16 +13,19 @@ import { ModelsTabRow, type ModelContext } from './models-tab-row';
 import type { ModelGroup } from './model-rows';
 
 export function ModelsTabGroup({
-  group, access, enablement, defaults, pickerCatalog, canWrite, holdsDataClaim, platformFee,
+  group, access, enablement, defaults, canWrite, platformFee,
 }: ModelContext & { group: ModelGroup; platformFee: number | undefined }) {
   const tAccess = useTranslations('modelAccess');
   const tList = useTranslations('modelsList');
   const providerDisabled =
     access.data?.disabledProviders.includes(group.providerID) ?? false;
   const groupOn = group.rows.filter(({ model }) => model.enabled).length;
+  // Platinum Inference serves every model it lists on zero-retention terms:
+  // the Kortix managed models and the Platinum provider alike.
   const dataClaim =
-    group.providerID === 'kortix' &&
-    group.rows.every(({ model }) => holdsDataClaim(model.modelID));
+    group.providerID === 'platinum' ||
+    (group.providerID === 'kortix' &&
+      group.rows.every(({ model }) => !model.modelID.includes('/')));
   return (
     <section
       key={group.providerID}
@@ -46,7 +49,7 @@ export function ModelsTabGroup({
           <p className="text-foreground truncate text-sm font-medium">
             {group.providerName}
           </p>
-          {/* One quiet line, not a green panel: both facts are
+          {/* One quiet line, not a green panel: the fact is
               reassurance, and the detail lives one hover away.
               `tabIndex` keeps each hint reachable by keyboard. */}
           {group.providerID === 'kortix' && platformFee !== undefined ? (
@@ -59,12 +62,6 @@ export function ModelsTabGroup({
               <Hint label={tAccess('zdrDescription')} side="top" className="max-w-xs">
                 <span tabIndex={0} className="cursor-help">
                   {tAccess('zdrTitle')}
-                </span>
-              </Hint>
-              {' · '}
-              <Hint label={tAccess('usProvidersDescription')} side="top" className="max-w-xs">
-                <span tabIndex={0} className="cursor-help">
-                  {tAccess('usProvidersTitle')}
                 </span>
               </Hint>
             </p>
@@ -91,9 +88,7 @@ export function ModelsTabGroup({
           access={access}
           enablement={enablement}
           defaults={defaults}
-          pickerCatalog={pickerCatalog}
           canWrite={canWrite}
-          holdsDataClaim={holdsDataClaim}
         />
       ))}
     </section>

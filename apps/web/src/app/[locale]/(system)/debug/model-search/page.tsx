@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ModelSearchEmpty } from '../../../../../../../../packages/ui/src/session/models/model-search-empty';
+import { ModelSearchEmpty } from '@kortix/ui/session/models/model-search-empty';
 
 /** KRTX-1863: deterministic picker states, without a paid inference account. */
 export default function ModelSearchDebugPage() {

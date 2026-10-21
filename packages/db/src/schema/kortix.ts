@@ -1975,6 +1975,8 @@ export const projectTriggerExecutions = kortixSchema.table(
     runStatus: varchar('run_status', { length: 16 }),
     runError: text('run_error'),
     runEndedAt: timestamp('run_ended_at', { withTimezone: true }),
+    // The `session_turns` row that closed this run. A turn closes one run only.
+    runTurnToken: text('run_turn_token'),
   },
   (table) => [
     foreignKey({
@@ -2023,6 +2025,9 @@ export const projectTriggerExecutions = kortixSchema.table(
     index('idx_project_trigger_executions_noncron_created')
       .on(table.createdAt)
       .where(sql`${table.source} <> 'cron'`),
+    index('idx_project_trigger_executions_open_run')
+      .on(table.sessionId)
+      .where(sql`${table.runStatus} = 'running'`),
   ],
 );
 
@@ -7556,6 +7561,13 @@ export const captureWorkspaces = kortixSchema.table('capture_workspaces', {
     .references(() => accounts.accountId, { onDelete: 'cascade' }),
   enabled: boolean('enabled').default(false).notNull(),
   policy: jsonb('policy').$type<Record<string, unknown>>().default({}).notNull(),
+  /**
+   * Where this account's recordings are stored. `{}` or `{mode:'kortix'}` means
+   * the deployment-default store. `{mode:'s3', …}` is the account's own
+   * S3-compatible bucket; any static secret inside is encrypted. Server-only,
+   * never published to the bucket (unlike `policy`).
+   */
+  storage: jsonb('storage').$type<Record<string, unknown>>().default({}).notNull(),
   updatedBy: uuid('updated_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

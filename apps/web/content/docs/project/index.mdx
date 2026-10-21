@@ -61,6 +61,7 @@ To create a project, follow the [Quickstart](/docs/quickstart).
 - `agents.<name>.file`, `opencode.config_dir` and `pi.config_dir` in `kortix.yaml` move an agent file or a harness folder to another path.
 - The manifest path is a project setting, `kortix.yaml` by default. See [File and schema](/docs/project/manifest#file-and-schema).
 - A project that keeps agents and skills under `.kortix/opencode/` and memory under `.kortix/memory/` works unchanged. Every reader accepts both layouts.
+- To remove a project skill, open its card under **Customize → Skills** and select **Remove**, or run `kortix marketplace uninstall skills/<name> --yes`. One commit on the default branch deletes the folder with every file in it and takes the skill off every agent's `skills` list. The platform `kortix-*` skills have no **Remove**.
 
 ## What a new project contains
 

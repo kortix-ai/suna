@@ -3,8 +3,17 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { qk } from '@kortix/sdk/react';
+import { QueryClient } from '@tanstack/react-query';
+
 import type { ChangeRequest } from '../api/change-requests';
-import { findCachedChangeRequest, type CachedListEntry } from './use-change-requests';
+import {
+  changeRequestKeys,
+  findCachedChangeRequest,
+  invalidateAfterChangeRequestWrite,
+  invalidateChangeRequestReads,
+  type CachedListEntry,
+} from './use-change-requests';
 
 /**
  * Opening a proposed change used to cost two SERIAL round trips before its
@@ -133,5 +142,72 @@ describe("the shared 'open' change-request entry", () => {
       for (const _ of hits ?? []) owners.push(file);
     }
     expect(owners).toEqual(['files/project/hooks/use-change-requests.ts']);
+  });
+});
+
+/**
+ * KRTX-3012: applying a change request that rewrote kortix.yaml left New
+ * session offering the removed agents, with the removed default still
+ * selected, until a reload. The project detail entry holds both the agent list
+ * (`[...detail, 'agents']`) and `default_agent`, and nothing invalidated it.
+ */
+describe('invalidateAfterChangeRequestWrite', () => {
+  test('marks the project detail and its agent list stale, and leaves other projects alone', () => {
+    const qc = new QueryClient();
+    const detail = qk.project.detail('p1');
+    const agents = [...detail, 'agents'];
+    const otherDetail = qk.project.detail('p2');
+    qc.setQueryData(detail, { default_agent: 'company-operator' });
+    qc.setQueryData(agents, [{ name: 'company-operator' }]);
+    qc.setQueryData(otherDetail, { default_agent: 'kortix' });
+
+    invalidateAfterChangeRequestWrite(qc, 'p1');
+
+    expect(qc.getQueryState(detail)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(agents)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(otherDetail)?.isInvalidated).toBe(false);
+  });
+});
+
+/**
+ * KRTX-3009 / KRTX-3010: an agent opens and closes change requests from its
+ * sandbox through the REST API, and the browser hears nothing. At turn end the
+ * session's list still held the closed #2 and not the new #3, so Review opened
+ * #2, or showed nothing for a new one, and the sidebar kept #2 as pending.
+ * The turn-end refresh marks every change-request read of the project stale,
+ * plus the review summary the sidebar's "Needs you" counts read.
+ */
+describe('invalidateChangeRequestReads', () => {
+  test('marks the session list, the sidebar list and the review summary stale', () => {
+    const qc = new QueryClient();
+    const session = changeRequestKeys.sessionList('p1', 's1');
+    const recent = [...changeRequestKeys.listScope('p1'), 'recent'];
+    const summary = qk.project.reviewSummary('p1');
+    const otherSession = changeRequestKeys.sessionList('p2', 's9');
+    for (const key of [session, recent, summary, otherSession]) qc.setQueryData(key, { seeded: true });
+
+    invalidateChangeRequestReads(qc, 'p1');
+
+    expect(qc.getQueryState(session)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(recent)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(summary)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(otherSession)?.isInvalidated).toBe(false);
+  });
+
+  test('an empty project id touches nothing', () => {
+    const qc = new QueryClient();
+    const summary = qk.project.reviewSummary('p1');
+    qc.setQueryData(summary, { seeded: true });
+    invalidateChangeRequestReads(qc, '');
+    expect(qc.getQueryState(summary)?.isInvalidated).toBe(false);
+  });
+
+  // KRTX-3019: a merge or close in the dialog left the sidebar on "Needs you".
+  test('a change-request write also refreshes the review summary', () => {
+    const qc = new QueryClient();
+    const summary = qk.project.reviewSummary('p1');
+    qc.setQueryData(summary, { seeded: true });
+    invalidateAfterChangeRequestWrite(qc, 'p1');
+    expect(qc.getQueryState(summary)?.isInvalidated).toBe(true);
   });
 });

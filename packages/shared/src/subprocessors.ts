@@ -20,12 +20,6 @@ export type Subprocessor = {
   location: string;
   /** `YYYY-MM-DD`: the day the row merged. Set on a newly added row only. */
   addedOn?: string;
-  /**
-   * OpenRouter provider slugs (the part of an endpoint tag before `/`) this row
-   * covers. The gateway sends a managed-model request to an OpenRouter endpoint
-   * only when its slug is here and the row is in effect (`inferenceHostCleared`).
-   */
-  inferenceHosts?: readonly string[];
 };
 
 /** The notice the DPA promises (section 7.3). */
@@ -43,18 +37,6 @@ export function subprocessorEffectiveDate(row: Subprocessor): string | null {
     date.getUTCDate() + SUBPROCESSOR_NOTICE_DAYS + SUBPROCESSOR_RELEASE_DAYS,
   );
   return date.toISOString().slice(0, 10);
-}
-
-/** Whether customer data may reach OpenRouter provider `host` on `today` (`YYYY-MM-DD`). */
-export function inferenceHostCleared(
-  host: string,
-  today: string = new Date().toISOString().slice(0, 10),
-): boolean {
-  return SUBPROCESSORS_CORE.some((row) => {
-    if (!row.inferenceHosts?.includes(host)) return false;
-    const effective = subprocessorEffectiveDate(row);
-    return effective === null || effective <= today;
-  });
 }
 
 /** `2026-11-24` → `November 24, 2026`. */
@@ -119,7 +101,6 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
     purpose:
       "Inference for Kortix-managed AI models, reached through OpenRouter",
     location: "United States",
-    inferenceHosts: ["coreweave", "fireworks", "decart"],
   },
   {
     name: "OpenCode Zen; Morph",
@@ -132,8 +113,6 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
       "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
     location: "United States",
     addedOn: "2026-10-18",
-
-    inferenceHosts: ["deepinfra"],
   },
   {
     name: "Together Computer Inc.",
@@ -141,8 +120,6 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
       "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
     location: "United States",
     addedOn: "2026-10-18",
-
-    inferenceHosts: ["together"],
   },
   {
     name: "Baseten Labs, Inc.",
@@ -150,8 +127,6 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
       "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
     location: "United States",
     addedOn: "2026-10-18",
-
-    inferenceHosts: ["baseten"],
   },
   {
     name: "Parasail",
@@ -159,8 +134,6 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
       "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
     location: "United States",
     addedOn: "2026-10-18",
-
-    inferenceHosts: ["parasail"],
   },
   {
     name: "Modal Labs, Inc.",
@@ -168,8 +141,6 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
       "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
     location: "United States",
     addedOn: "2026-10-18",
-
-    inferenceHosts: ["modal"],
   },
   {
     name: "Groq, Inc.",
@@ -177,8 +148,6 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
       "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
     location: "United States",
     addedOn: "2026-10-18",
-
-    inferenceHosts: ["groq"],
   },
   {
     name: "Cerebras Systems Inc.",
@@ -186,8 +155,6 @@ export const SUBPROCESSORS_CORE: readonly Subprocessor[] = [
       "Inference for Kortix-managed AI models, reached through OpenRouter or directly",
     location: "United States",
     addedOn: "2026-10-18",
-
-    inferenceHosts: ["cerebras"],
   },
   {
     name: "GitHub, Inc.",
