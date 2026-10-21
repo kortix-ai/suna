@@ -428,7 +428,7 @@ A warm session is a pre-booted session that waits for your first prompt, so the 
 
 - A warm session waits at most 60 minutes.
 - It uses compute while it waits.
-- The per-project `warm_sessions` flag controls it. Run `kortix projects features ls` to see its state, and change it in **Customize → Settings → Feature flags**.
+- The per-project `warm_sessions` flag is off by default. Turn it on only if you want to spend idle compute for faster starts. Run `kortix projects features ls` to see its state, and change it in **Customize → Settings → Feature flags**.
 
 ```bash
 kortix sessions warm                        # create or reuse your warm session

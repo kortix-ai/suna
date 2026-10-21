@@ -24,7 +24,7 @@ import type { SecurityDiagramContent } from '../decks/security-diagram-content';
  * inside the sandbox, which is the one claim this deck rests on.
  */
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { AnimatePresence, m } from 'motion/react';
 import type { ReactNode } from 'react';
 

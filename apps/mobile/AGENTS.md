@@ -30,7 +30,7 @@ Kortix-specific: 39 files, built on top of `components/ui/`. **There is no
 | Alert dialog (confirm/cancel) | `@/components/ui/alert-dialog` → `<AlertDialog>` + parts; a plain title · description · Cancel · action confirm is `useConfirmDialog()` from `@/components/kortix/confirm-dialog` | `Alert.alert`, custom confirm overlays |
 | Badge | `@/components/ui/badge` → `<Badge variant="…">` | ad-hoc pill `View` |
 | Skeleton loading state | `@/components/ui/skeleton` → `<Skeleton>` | ad-hoc `animate-pulse` boxes — see also **Loading** rule below |
-| Switch | `@/components/ui/switch` → `<Switch>` | raw RN `Switch` styled ad-hoc |
+| Switch | `@/components/kortix/switch` → `<Switch checked onCheckedChange>`: native `UISwitch` on iOS, the registry `@/components/ui/switch` on Android (Jay, 2026-10-20) | importing `@/components/ui/switch` or RN `Switch` in a screen |
 | Tabs | `@/components/ui/tabs` → `<Tabs>` + `TabsList` / `TabsTrigger` / `TabsContent` | custom tab bars |
 | Select | `@/components/ui/select` → `<Select>` + parts | custom picker menus |
 | Popover | `@/components/ui/popover` → `<Popover>` + parts | custom anchored overlays |
@@ -38,7 +38,7 @@ Kortix-specific: 39 files, built on top of `components/ui/`. **There is no
 | Separator | `@/components/ui/separator` → `<Separator>` | ad-hoc `border-b` / hairline `View`s |
 | Avatar (3-part composition) | `@/components/ui/avatar` → `<Avatar>` + `AvatarImage` / `AvatarFallback` | see **Avatar** section — most screens want `@/components/kortix/avatar` instead |
 | Native-only animated wrapper | `@/components/ui/native-only-animated-view` → `<NativeOnlyAnimatedView>` | animating a view that must also render inertly on web |
-| Context menu (long press, anchored to its trigger) | `@/components/ui/context-menu` → `<ContextMenu relativeTo="trigger">` + `ContextMenuTrigger` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuLabel` (the user message menu, `turn/user-message.tsx`) | a bottom sheet for a short action list on one element; `react-native-context-menu-view` (native module, absent in Expo Go) |
+| Context menu (long press, anchored to its trigger) | `@/components/ui/context-menu` → `<ContextMenu relativeTo="trigger">` + `ContextMenuTrigger` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuLabel` (Android; on iOS the user message menu, `turn/user-message.tsx`, is the system context menu: `NativeContextMenu` from the local module `modules/kortix-context-menu`, a plain UIKit container with `UIContextMenuInteraction` around the React Native bubble, Liquid Glass on iOS 26. A binary without the module keeps the RNR menu. Never `@expo/ui` `ContextMenu` + `RNHostView` around a transcript row: SwiftUI sized the row a pass late and broke the thread's layout twice — Jay, 2026-10-20) | a bottom sheet for a short action list on one element; `react-native-context-menu-view` (native module, absent in Expo Go) |
 
 ## Kortix-specific components — `components/kortix/` (39 files)
 
@@ -117,13 +117,17 @@ children.
 - Variants: `default` `secondary` `destructive` `outline` `ghost` `link`.
   Gone: `secondary-outline` `accent` `card` `transparent` `inverted` `white`
   `black` — do not reintroduce them.
-- Sizes: `default` (`h-10`) `sm` (`h-9`) `lg` (`h-11`) `xl` (`h-12`) `icon` (`h-10 w-10`) `icon-md` (`h-9 w-9`) `icon-sm` (`h-7 w-7`).
+- Sizes: `default` (`h-10`) `sm` (`h-9`) `lg` (`h-11`) `xl` (`h-12`) `icon` (`h-10 w-10`) `icon-lg` (`h-11 w-11`) `icon-md` (`h-9 w-9`) `icon-sm` (`h-7 w-7`).
   `icon-md` is added to the registry output (Jay, 2026-09-21): the 36pt round controls of
   the composer's row (add, send, Stop, AutoContinue), beside the `sm` agent chip. Always pair
   it with `hitSlop={COMPOSER_CONTROL_HIT_SLOP}` (4pt) so the touch target stays 44pt.
   `icon-sm` is added to the registry output (Jay, 2026-09-21): the 28pt action under a chat
   message (Copy, Edit, turn details). Always pair it with `hitSlop` so the touch target
-  stays 44pt tall (`TURN_ACTION_HIT_SLOP`). Every icon button outside the composer row and
+  stays 44pt tall (`TURN_ACTION_HIT_SLOP`).
+  `icon-lg` is added (Jay, 2026-10-20): the header-row icon buttons on iOS only, through
+  `HEADER_BUTTON_SIZE` in `components/kortix/header-button.ts` (hamburger, Go back, the
+  thread's `···`, the bell, `PageHeader`'s right column; 22pt glyph). Android keeps `icon`.
+  Never pass `icon-lg` directly. Every other icon button outside the composer row and
   the message actions stays `icon` (40pt).
   A `Button` with no `hitSlop` prop grows its touch target to 44pt by itself
   (`defaultButtonHitSlop` in `lib/ui/hit-target.ts`: `icon` 2pt, `icon-md` 4pt,
@@ -182,6 +186,45 @@ modals (74 sites in 50 files): converting them to `<Dialog>` would lose
 pan-down-to-dismiss, snap points, and keyboard-aware sizing, so they stay on
 gorhom. Its content parts (`BottomSheetView`, `BottomSheetScrollView`,
 `BottomSheetTextInput`, `BottomSheetFooter`) are still imported from gorhom.
+
+**One sheet motion** (KRTX-2929): `SHEET_MOTION` in `components/kortix/sheet.tsx`.
+`open` is a critically damped spring (`stiffness` 256, `damping` 32, `mass` 1:
+95% in ~300 ms, no overshoot) for the present, every drag snap, pan-down and
+backdrop close; it takes the finger's release velocity. `close` is 250 ms on the
+iOS sheet curve `cubic-bezier(0.32, 0.72, 0, 1)` for `dismiss()` / `close()` from
+code. Never pass `animationConfigs` at a call site. A long list in a
+fixed-detent sheet renders its first rows while the sheet opens and the rest
+once it rests: `useSheetRowLimit(total)` (`components/kortix/sheet-settled.ts`;
+the picker rows, the switcher's projects).
+
+**Liquid Glass** (KRTX-2928): `FloatingTabCapsule glass` draws the capsule as
+iOS 26 Liquid Glass (`LiquidGlassCapsule`, SwiftUI `glassEffect` through
+`@expo/ui`). Three bars pass it: the account/project switcher
+(`ProjectSwitcherSheet`), agent/model (`PickerSheet tabs`) and Review's
+Needs you · Waiting · Done bar (`ReviewPage`). Android, iOS
+before 26 and a binary without `ExpoUI` keep the opaque capsule
+(`supportsLiquidGlass`, `lib/ui/liquid-glass.ts`). Every hamburger
+(`MenuButton`: floating header, `PageHeader`, `SettingsHeader`) and the thread's
+`···` (`ProjectHeaderActions`) sit on a glass circle (44pt on iOS, `HEADER_BUTTON_SIZE`) behind the unchanged
+ghost button (Jay, 2026-10-20), and so does the thread's scroll-to-bottom
+chevron above the composer (`ScrollToBottomButton` in `SessionPage.tsx`; its
+bordered `secondary` circle stays elsewhere). `PageHeader`'s right column (`rightActions` +
+`+`) shares one glass capsule, a button group. Never the native SwiftUI glass
+button there (rejected 2026-09-17).
+Every sheet title row (`SheetTitleRow`: `KortixBottomSheetModal title`,
+`SheetHeader`, direct uses) puts its close button, `leading` and `trailing` on a
+glass capsule (`GlassSlot` in `sheet.tsx`): a circle behind a 40pt icon button,
+a pill behind a wider one, on the 16pt edge with no `-ml-2.5`/`-mr-2.5` pull. A
+trailing slot that is not a button passes `titleTrailingGlass={false}` (the
+participants count). Never hand-roll a sheet header row: it misses the glass.
+The same glass (`LiquidGlassCapsule cornerRadius`, a rounded rectangle) is the
+composer card (`components/kortix/composer.tsx`, 24pt, no border); elsewhere it
+keeps the frosted card. Toasts stay the normal opaque card on every platform
+(Jay, 2026-10-20): sonner-native renders them in a `FullWindowOverlay` window and
+forces a transparent card under any `backgroundComponent`, so glass there drew
+only the icon and text. The capsule's thumb also drags: press and slide to move it, release to
+select the nearest tab. `/debug` (dev builds, the project home's "Debug"
+button) shows what the build detects and previews these surfaces.
 
 Opening a sheet closes the keyboard: `KortixBottomSheetModal`'s `present()`
 calls `Keyboard.dismiss()` first. Do not call `Keyboard.dismiss()` before
@@ -419,7 +462,7 @@ that drops props silently breaks the screens that still pass them.
    `native-only-animated-view.tsx` (a cast around an upstream typing gap that
    reproduces against stock), and `button.tsx` (`size="lg"` label is
    `text-base font-medium`, plus an added `xl` size — `h-12`, same label —
-   and added `icon-md` (`h-9 w-9`) and `icon-sm` (`h-7 w-7`) sizes —
+   and added `icon-lg` (`h-11 w-11`), `icon-md` (`h-9 w-9`) and `icon-sm` (`h-7 w-7`) sizes —
    so no screen sets label or box size by class; no added `variant`s),
    and `input.tsx` (borderless filled field in Roobert — no input has a
    border), and `dialog.tsx` + `alert-dialog.tsx` (no `border` on the

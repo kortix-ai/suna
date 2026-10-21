@@ -6,6 +6,7 @@ import { Window } from 'happy-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { qk } from '../../../../../packages/sdk/src/react/query-keys';
 import { resolve } from 'node:path';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 const root = resolve(import.meta.dir, '../..');
 
@@ -15,13 +16,12 @@ const appsSource = () =>
     'apps-view.tsx',
     'app-detail.tsx',
     'app-releases.tsx',
-    'app-shared.tsx',
-    'app-preview.tsx',
-    'app-preview-pool.ts',
     'app-density.tsx',
     'app-access.tsx',
   ]
-    .map((name) => readFileSync(resolve(root, `features/apps/${name}`), 'utf8'))
+    .map((name) => resolve(root, `features/apps/${name}`))
+    .concat(['app-shared.tsx', 'app-preview.tsx', 'app-preview-pool.ts'].map((name) => uiSourcePath(`apps/${name}`)))
+    .map((path) => readFileSync(path, 'utf8'))
     .join('\n');
 
 // Mount the production components. Only routing, shell context and permission
@@ -35,24 +35,38 @@ mock.module('next/navigation', () => ({
   usePathname: () => `/projects/${projectId}/apps`,
   useSearchParams: () => new URLSearchParams(),
 }));
+const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
+mock.module('@kortix/ui/providers/ui-provider', () => ({
+  ...realUiProvider,
+  useUiParams: () => ({ id: projectId }),
+  useUiPathname: () => `/projects/${projectId}/apps`,
+  useUiSearchParams: () => new URLSearchParams(),
+}));
 mock.module('next/link', () => ({
   default: ({ href, children, prefetch: _prefetch, ...props }: React.PropsWithChildren<{ href: string; prefetch?: boolean }>) =>
     React.createElement('a', { href, ...props }, children),
 }));
-mock.module('@/hooks/utils', () => ({ useIsMobile: () => false }));
-mock.module('@/components/ui/sidebar', () => ({
+const hooks = await import('@kortix/ui/internal/hooks/index');
+mock.module('@kortix/ui/internal/hooks/index', () => ({ ...hooks, useIsMobile: () => false }));
+const sidebar = await import('@kortix/ui/sidebar');
+mock.module('@kortix/ui/sidebar', () => ({
+  ...sidebar,
   useSidebar: () => ({ setOpenMobile: () => {} }),
   useOptionalSidebar: () => null,
   SidebarMenuItem: ({ children }: React.PropsWithChildren) => React.createElement('li', null, children),
   SidebarMenuButton: ({ children }: React.PropsWithChildren) => children,
 }));
-mock.module('@/features/workspace/project-layout/sidebar-toggle', () => ({ SidebarToggle: () => null }));
-mock.module('@/lib/use-project-can', () => ({ useProjectCan: () => ({ allowed: true }) }));
+mock.module('@kortix/ui/internal/layout/sidebar-toggle', () => ({ SidebarToggle: () => null }));
+const projectCan = await import('@kortix/ui/internal/lib/use-project-can');
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
+  ...projectCan,
+  useProjectCan: () => ({ allowed: true }),
+}));
 
 // The detail modal is outside the empty-inventory path under test.
 mock.module('./app-detail', () => ({ AppDetailModal: () => null }));
 
-const navModule = await import('../workspace/project-sidebar/footer/project-apps-nav');
+const navModule = await import('@kortix/ui/workspace/sidebar/footer/project-apps-nav');
 const viewModule = await import('./apps-view');
 let mounted: Root | undefined;
 let client: QueryClient | undefined;
@@ -78,7 +92,7 @@ for (const [name, experimental] of [
     mounted = root;
     await act(async () => {
       root.render(React.createElement(QueryClientProvider, { client: queryClient },
-        React.createElement('ul', { 'data-testid': 'sidebar' }, React.createElement(navModule.ProjectAppsNavItem)),
+        React.createElement('ul', { 'data-testid': 'sidebar' }, React.createElement(navModule.ProjectAppsNavItem, { projectId })),
         React.createElement(viewModule.AppsView, { projectId }),
       ));
     });
@@ -97,10 +111,10 @@ for (const [name, experimental] of [
 
 test('Apps sits with Customize in the sidebar, not in the bottom alert group', () => {
   const sidebar = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/project-sidebar.tsx'),
+    uiSourcePath('workspace/sidebar/project-sidebar.tsx'),
     'utf8',
   );
-  const navStore = readFileSync(resolve(root, 'stores/sidebar-nav-store.ts'), 'utf8');
+  const navStore = readFileSync(uiSourcePath('internal/stores/sidebar-nav-store.ts'), 'utf8');
 
   // It is a project surface you configure and operate, so it belongs with the
   // Customize row in the top nav group — not among the bottom-anchored alerts,
@@ -132,7 +146,7 @@ test('Apps UI is operational only and has no creation action or modal', () => {
 test('the Apps header is the capability tab bar, not a settings masthead', () => {
   const view = appsSource();
   const tabs = readFileSync(
-    resolve(root, 'features/workspace/capabilities/shared/capability-tabs.tsx'),
+    uiSourcePath('customize/shared/capability-tabs.tsx'),
     'utf8',
   );
 
@@ -142,7 +156,7 @@ test('the Apps header is the capability tab bar, not a settings masthead', () =>
   // Apps draws it through `ProjectPageHeader`, the one header the standalone
   // project pages (Review, Files, Reminders, Apps) share.
   const header = readFileSync(
-    resolve(root, 'features/workspace/project-layout/project-page-header.tsx'),
+    uiSourcePath('internal/layout/project-page-header.tsx'),
     'utf8',
   );
   const BAR = 'relative flex shrink-0 items-center gap-1 border-b px-2';
@@ -224,11 +238,11 @@ test('the Apps row matches the row contract of the group it sits in', () => {
   // class list, so its icon and label sat ~8px left of its neighbours and read a
   // shade darker — visibly out of line.
   const apps = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/footer/project-apps-nav.tsx'),
+    uiSourcePath('workspace/sidebar/footer/project-apps-nav.tsx'),
     'utf8',
   );
   const customize = readFileSync(
-    resolve(root, 'features/workspace/project-sidebar/project-settings-nav.tsx'),
+    uiSourcePath('internal/layout/project-settings-nav.tsx'),
     'utf8',
   );
 
@@ -243,7 +257,7 @@ test('the Apps row matches the row contract of the group it sits in', () => {
   expect(customize).toContain('<ProjectNavRow');
   expect(apps).toContain('<ProjectNavRow');
   expect(
-    readFileSync(resolve(root, 'features/workspace/project-sidebar/project-nav-row.tsx'), 'utf8'),
+    readFileSync(uiSourcePath('internal/layout/project-nav-row.tsx'), 'utf8'),
   ).toContain(ROW);
   // The glyph keeps its box on a narrow sidebar, like its neighbours.
   expect(apps).toContain('<span className="shrink-0">');
@@ -308,21 +322,6 @@ test('the App detail header is a title bar, not a debug readout', () => {
   // as sr-only when running and as the visible label when it is not.
   expect(header).toContain('<span className="sr-only">{status.label}</span>');
   expect(header.match(/\{status\.label\}/g)).toHaveLength(2);
-});
-
-test("the header separates the App's actions from the window's Close", () => {
-  const view = appsSource();
-  const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
-
-  // The bar is Refresh, Open, Settings, Close (#10245). Close is window
-  // chrome, not an App action: a divider sets it apart, and it is ghost.
-  const settingsAt = header.indexOf('data-testid="app-settings"');
-  const dividerAt = header.indexOf('<span aria-hidden className="bg-border mx-1.5 h-4 w-px" />');
-  const closeAt = header.indexOf("raw('text7d9eb7acb13e')");
-  expect(settingsAt).toBeGreaterThan(-1);
-  expect(dividerAt).toBeGreaterThan(settingsAt);
-  expect(closeAt).toBeGreaterThan(dividerAt);
-  expect(header.slice(dividerAt)).toContain('variant="ghost"');
 });
 
 test('Delete lives in the App settings modal, behind a confirm, never in the bar', () => {

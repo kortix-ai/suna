@@ -54,34 +54,35 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
+} from '@kortix/ui/dropdown-menu';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import {
   SidebarContext,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from '@/components/ui/sidebar';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/sidebar';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { accountCreated } from '@/features/accounts/account-created';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
-import { Download } from '@/features/icon/icons/download';
+import { DownloadModal } from '@/features/marketing/download/download-modal';
+import { Download } from '@kortix/ui/internal/icons/download';
 import { useAuth } from '@/features/providers/auth-provider';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
-import { COMPUTER_SETUP_EVENT } from '@/features/tunnel/computer-connect';
+import { COMPUTER_SETUP_EVENT } from '@kortix/ui/internal/tunnel/computer-connect';
 import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
-import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
-import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
-import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
+import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-param';
+import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
+import { WorkspaceMenuSection } from '@kortix/ui/workspace/sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
-import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
-import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
+import { type SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
+import { useAccountsList, useAccountsQueryKey } from '@kortix/ui/internal/hooks/account/use-accounts-list';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
-import { cn } from '@/lib/utils';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { cn } from '@kortix/ui';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import { getProject, type KortixAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
@@ -125,6 +126,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const { setSelectedAccountId } = useCurrentAccountStore();
   // The exact key the account list reads, for the create-account seed below.
   const accountsQueryKey = useAccountsQueryKey();
+  const [downloadOpen, setDownloadOpen] = useState(false);
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [computerSetupOpen, setComputerSetupOpen] = useState(false);
   // Right after this desktop pairs, setup opens on the spot (see COMPUTER_SETUP_EVENT).
@@ -333,14 +335,16 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
               </DropdownMenuItem>
 
-              {/* `prefetch` explicitly: `(marketing)/download/page.tsx` awaits
-                  `headers()`, so the default `auto` intent would cache nothing
-                  for a dynamic route. */}
-              <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                <Link href="/download" prefetch data-desktop-hidden>
-                  <Download />
-                  {t('workspace.downloadApp')}
-                </Link>
+              {/* A modal, not a route: the user stays in the workspace. It
+                  renders the same `DownloadOptions` as the public /download
+                  page, so the two surfaces never drift apart. */}
+              <DropdownMenuItem
+                onSelect={() => deferAfterClose(() => setDownloadOpen(true))}
+                size="sm"
+                data-desktop-hidden
+              >
+                <Download />
+                {t('workspace.downloadApp')}
               </DropdownMenuItem>
 
               <ThemeSubmenu />
@@ -363,6 +367,8 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
 
       {/* Sibling of the dropdown, never a child — see `useLogoutFlow`. */}
       {logoutDialog}
+
+      <DownloadModal open={downloadOpen} onOpenChange={setDownloadOpen} />
 
       <LocalComputerModal
         projectId={projectId}

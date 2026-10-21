@@ -28,4 +28,6 @@ export interface GatewayAttemptFailure {
   status?: number;
   code: string | number;
   message: string;
+  /** `resolve` only: how long the gateway holds the route on the fallback after this failure. */
+  holdSeconds?: number;
 }

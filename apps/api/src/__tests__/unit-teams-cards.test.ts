@@ -267,6 +267,7 @@ describe('Slack parity cards', () => {
   test('an approval outcome names who decided', () => {
     expect(texts(buildTeamsApprovalOutcomeCard({ actionPath: 'gmail.send', decision: 'approve', note: '', decidedBy: 'Alex Example' }))).toContain('by Alex Example');
     expect(texts(buildTeamsApprovalOutcomeCard({ actionPath: 'gmail.send', decision: 'deny', note: '' }))).not.toContain('by ');
+    expect(texts(buildTeamsApprovalOutcomeCard({ actionPath: 'gmail.send', decision: 'expired', note: '' }))).toContain('This approval expired.');
   });
 
   test('an agent-built card keeps the run\'s steps above it', () => {

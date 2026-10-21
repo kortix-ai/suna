@@ -1,4 +1,5 @@
 /** Change requests: list, open, read, update, request changes, diff, merge preview, and session commit-push. */
+import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -301,6 +302,7 @@ export function registerChangeRequestsRoutes(): void {
         headSha = aheadState.headSha;
         headAhead = aheadState.ahead;
       } catch (error) {
+        if (isRepositoryDisconnectedError(error)) throw error; // 409 with the fix
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to resolve branches',
@@ -594,7 +596,10 @@ export function registerChangeRequestsRoutes(): void {
       const [row] = await db
         .update(changeRequests)
         .set(updates)
-        .where(eq(changeRequests.crId, crId))
+        // Bind the write to the resolved row's canonical id (see the merge route
+        // in routes/change-request-actions.ts): the raw path param may be the
+        // display number, which matched the CR above but would 22P02 here.
+        .where(eq(changeRequests.crId, cr.crId))
         .returning();
       return c.json(serializeChangeRequest(row));
     },

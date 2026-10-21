@@ -197,7 +197,6 @@ variable "api_secrets" {
     KORTIX_YOLO_URL               = "arn:aws:secretsmanager:eu-west-2:935064898258:secret:kortix-prod-env-omifd2:KORTIX_YOLO_URL::"
     LANGFUSE_PUBLIC_KEY           = "arn:aws:secretsmanager:eu-west-2:935064898258:secret:kortix-prod-env-omifd2:LANGFUSE_PUBLIC_KEY::"
     LANGFUSE_SECRET_KEY           = "arn:aws:secretsmanager:eu-west-2:935064898258:secret:kortix-prod-env-omifd2:LANGFUSE_SECRET_KEY::"
-    LLM_GATEWAY_ENABLED           = "arn:aws:secretsmanager:eu-west-2:935064898258:secret:kortix-prod-env-omifd2:LLM_GATEWAY_ENABLED::"
     MAILTRAP_API_TOKEN            = "arn:aws:secretsmanager:eu-west-2:935064898258:secret:kortix-prod-env-omifd2:MAILTRAP_API_TOKEN::"
     MAILTRAP_SENDER_EMAIL         = "arn:aws:secretsmanager:eu-west-2:935064898258:secret:kortix-prod-env-omifd2:MAILTRAP_SENDER_EMAIL::"
     MAILTRAP_SENDER_NAME          = "arn:aws:secretsmanager:eu-west-2:935064898258:secret:kortix-prod-env-omifd2:MAILTRAP_SENDER_NAME::"

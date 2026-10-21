@@ -9,7 +9,7 @@ import {
 } from 'motion/react';
 import { useEffect, useRef, useState, type ComponentType, type RefAttributes } from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 type CharacterSet = string[] | readonly string[];
 type CharacterVariant = 'uppercase' | 'lowercase' | 'mixed';

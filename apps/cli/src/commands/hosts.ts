@@ -27,6 +27,11 @@ instance. The "active" host is what every other command operates on
 unless you pass \`--host <name>\` per invocation. Sign in with
 \`kortix hosts login\`; switch instance with \`kortix hosts use\`.
 
+Inside a Kortix sandbox, plain commands use the delegated session identity,
+not stored host credentials. KORTIX_DISABLE_SANDBOX_ENV_FILE=1 disables the
+sandbox env-file fallback. To use stored credentials, also unset exported KORTIX_TOKEN,
+KORTIX_API_URL, KORTIX_FRONTEND_URL and KORTIX_PROJECT_ID for that invocation.
+
 Built-in hosts (always exist):
   cloud                Kortix Cloud (https://api.kortix.com)
   selfhost             Your self-hosted stack (kortix self-host)
@@ -175,7 +180,7 @@ function hostsLs(json = false): number {
       row.name === effective.name &&
       row.host.url === effective.host.url &&
       row.host.token === effective.host.token,
-    credential_source: 'stored',
+    credential_source: row.host.token ? 'stored' : null,
   }));
   if (!rows.some((row) => row.active)) {
     rows.push({

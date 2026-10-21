@@ -39,3 +39,8 @@ export function connectorRequestDigest(
     )
     .digest('hex');
 }
+
+/** SHA-256 of the canonical JSON of one value: key order does not change it. */
+export function contentDigest(value: unknown): string {
+  return createHash('sha256').update(canonicalJson(value)).digest('hex');
+}

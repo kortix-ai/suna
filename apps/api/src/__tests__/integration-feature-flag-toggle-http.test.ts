@@ -120,8 +120,8 @@ describe('PATCH /v1/projects/:projectId/features', () => {
 
     const cleared = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'reminders', enabled: null }));
     expect(cleared.status).toBe(200);
-    // reminders' platform default is off, so clearing the override lands back on false.
-    expect((await cleared.json()).experimental.reminders).toBe(false);
+    // reminders' platform default is on, so clearing the override lands back on true.
+    expect((await cleared.json()).experimental.reminders).toBe(true);
     expect(await storedOverrides(PROJECT)).toBeUndefined();
   });
 
@@ -203,16 +203,31 @@ describe('PATCH /v1/projects/:projectId/features', () => {
     }
   });
 
-  test('the graduated apps key is unknown: 400, not an operator-only 403, and nothing is stored', async () => {
-    // Apps went GA (2026-10-14): the key left the registry and the contract.
-    // A project manager — or anyone with settings.write — PATCHing it gets the
-    // ordinary unknown-key 400; the operator-only refusal is unreachable.
-    for (const enabled of [true, false, null]) {
-      const res = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'apps', enabled }));
-      expect(res.status).toBe(400);
-      expect((await res.json()).error).toBe("Unknown feature flag 'apps'");
+  test('the graduated apps and llm_gateway keys are unknown: 400, not an operator-only 403, and nothing is stored', async () => {
+    // Apps went GA (2026-10-14) and the LLM gateway became the only model path
+    // (2026-10-20): both keys left the registry and the contract. A project
+    // manager — or anyone with settings.write — PATCHing one gets the ordinary
+    // unknown-key 400; the operator-only refusal is unreachable.
+    for (const feature of ['apps', 'llm_gateway']) {
+      for (const enabled of [true, false, null]) {
+        const res = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature, enabled }));
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toBe(`Unknown feature flag '${feature}'`);
+      }
     }
     expect(await storedOverrides(PROJECT)).toBeUndefined();
+  });
+
+  test('GET project still reports both graduated keys as on, and the catalog lists neither', async () => {
+    // Old clients read `experimental.apps` / `experimental.llm_gateway`; false
+    // would mean "Apps off" / "native model mode", neither of which exists.
+    const res = await app.request(`/v1/projects/${PROJECT}`, { headers: { Authorization: `Bearer ${secret}` } });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.experimental).toMatchObject({ apps: true, llm_gateway: true });
+    const keys = body.experimental_features.map((f: { key: string }) => f.key);
+    expect(keys).not.toContain('apps');
+    expect(keys).not.toContain('llm_gateway');
   });
 });
 
@@ -276,6 +291,7 @@ describe('PUT /v1/admin/api/projects/:id/features', () => {
 
     expect((await put(PROJECT, { feature: 'nope', enabled: true }, operatorSecret)).status).toBe(400);
     expect((await put(PROJECT, { feature: 'apps', enabled: true }, operatorSecret)).status).toBe(400);
+    expect((await put(PROJECT, { feature: 'llm_gateway', enabled: true }, operatorSecret)).status).toBe(400);
     expect((await put(crypto.randomUUID(), { feature: 'session_log', enabled: true }, operatorSecret)).status).toBe(404);
     expect((await put(ARCHIVED, { feature: 'session_log', enabled: false }, operatorSecret)).status).toBe(404);
     expect(await storedOverrides(ARCHIVED)).toEqual({ apps: true });

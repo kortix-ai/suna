@@ -1,55 +1,47 @@
-Capture on Windows, signed installers, Drive, and automation controls
+pi by default, one model path, one Drive
 
-**New**
-- Pause all automations: one account switch stops every project's schedules, webhooks, app events and monitors.
-- Trigger run limits: a trigger runs at most 60 times an hour by default, with an optional daily limit, so a runaway trigger stops itself.
-- Drive in the sidebar, with a Drive page, a file viewer, upload, multi-select and file management. Session folders show Drive folders. Repo moves under Customize.
-- Recently deleted lists the sessions you can restore, and a restored session keeps its conversation.
-- Drop a file anywhere on a session page or the project home to attach it to your message.
-- Notifications have All, Needs you and Done tabs, and the bell shows when something needs you.
-- Generative UI is on by default for new sessions: the agent can answer with cards, comparisons, charts, maps and tabs. A project can turn it off in Settings.
-- Computer: every access is granted at pairing with a switch for each afterwards, a new computer starts with every access selected, "Always" is remembered, and Computer Use works on Windows without console windows.
-- The command palette (⌘K) opens Drive, Reminders and Repo.
-- Mobile reminds you when a question has waited 60 seconds for an answer, and renders generative UI like the web app.
-- Connectors v2 (experimental, per project): a catalog of vendor MCP apps signed in with OAuth that Kortix runs, app-event triggers that Kortix checks, an event inbox, and an in-place move for existing Composio and Pipedream connectors and their triggers.
+## New
 
-**Kortix Capture**
-- Windows is ready for company rollout: the install command downloads the installer, waits and reports whether it worked. The macOS and Linux commands do the same.
-- Windows: the app window opens for people without admin rights, a manual MSI install never rolls back, and the app has a Windows icon.
-- App rules match what an admin types on every OS: `notepad.exe` also matches the packaged Windows 11 Notepad, and the inclusion policy never records an app it cannot identify. The app catalog lists common CAD apps.
-- The timeline keeps the runs of frames taken while the person is idle.
-- The player shows video for computers linked to no one.
-- Settings shows that Capture always starts at login.
-- The Kortix desktop app is no longer recorded on Windows and Linux, as on macOS.
+- **One model path: the Kortix LLM gateway.** Every project's models go through the gateway, and custom OpenAI-compatible endpoints are set up in the gateway as custom providers.
+- **pi is the default agent harness.** New sessions in a project start on pi unless the project turns `pi_harness` off. Existing sessions keep their harness. Projects with the LLM gateway off stay on OpenCode.
+- **One Drive with team folders.** Files lives under the gear, and `kortix drive` works from the CLI.
+- **Triggers protect themselves.** A trigger that stays at its hourly run limit for 2 hours pauses itself, sends one alert, and resumes when you set `enabled: true`. A new cron trigger skips a fire while its previous run is still active (`overlap: allow` opts out).
+- **`@kortix/ui` is a plug-and-play UI library.** The Kortix web app and the Lumen example now render the same session, workspace and settings screens from one package.
+- **Preview text attachments in the app** before you send them.
+- **Mobile 1.5.1:** iOS Liquid Glass chrome, a native glass message menu, smoother sheets and scrolling in long sessions, and an MFA focus fix.
 
-**Kortix Desktop**
-- Windows installers for Kortix Desktop and Kortix Capture are signed by Kortix AI Corp.
-- Windows: the title bar blends with the app, a Kortix menu replaces the raw menu bar, and the app has a tile icon.
-- Each deployment serves its own desktop build.
+## Improved
 
-**Models**
-- Kortix-managed models are part of paid plans. Free accounts use their connected ChatGPT subscription or their own provider keys.
-- Kimi K3 leaves the managed lineup. Sessions and defaults that used it move to DeepSeek V4.1 Flash.
-- Managed models fall back across providers in a fixed order, the default model always has a fallback, and legacy model ids get their model's fallbacks. Third-party endpoints are used only with zero data retention and only from subprocessors in effect.
-- Reasoning variants reach the model on the pi harness, and pi decides shell permissions command by command.
-- When a managed model's provider fails, the session stays on the fallback instead of retrying the failed provider on every request.
-- Model-switch notices sit above the turn's work, one row per run of identical switches.
+- Forked conversations persist and stay reachable after navigation.
+- pi tells the model today's date on every turn, leaves the session title to Kortix (the header no longer flips), and the Changes tab works on pi sessions.
+- Sessions report the model the conversation uses, not the model pinned at creation.
+- The project home sends faster, finished replies no longer stream again, and slash skills and commands show there.
+- Escape in an empty composer stops a streaming reply. The command palette opens at once, and the slash palette opens the agent picker.
+- Drive shows folders as folders and keeps fixed folders in place.
+- Connector catalogs resolve in one batch, and sub-agent links keep their sub-agent.
+- Large files open whole instead of cutting off at 50k characters.
+- Web and CLI show the same model price estimates.
+- Cron triggers show the exact next run with its timezone.
+- Trigger edits keep the comments in `kortix.yaml`.
+- Faster gateway log and audit reads in projects with a lot of history. Gateway budgets read a running daily total (954 ms → one key read), sign-in checks no longer make an extra auth hop, and a page load fetches its project once.
+- CLI: `models` lists catalog availability, `sessions new` streams readiness progress, chat and compact wake a stopped or provisioning session first, `access grant --user` uses the linked project, marketplace installs resolve short names, `doctor` names the turn error and explains warm-session retention, project and session URLs match the host, and channels show every state by default.
 
-**Self-host**
-- Platinum is the default sandbox provider. Daytona remains as a legacy fallback. E2B support is removed.
+## Fixed
 
-**Fixed**
-- Members of MFA accounts can open project-wide Apps. Reminders move under Customize.
-- Signed-out devices stop getting push notifications.
-- Connecting an MCP server whose URL does not answer shows the reason instead of a server error.
-- A ChatGPT login that only failed a model check is no longer marked for reconnection.
-- Plural forms and labels in 9 languages are corrected.
-- Reopening a session paints its saved conversation at once, and older tool calls keep their command.
-- A connector whose stored credential the vendor rejects is marked on the account for reconnection, and the call reports it instead of a server error.
-- Billing emails reach the owners of older accounts, and a notice without a recipient is retried.
-
-**Under the hood**
-- @kortix/ui: one shared component library for the web app and SDK hosts.
-- With the session log flag on, sessions read and write only the session log; older messages and sub-agent threads come from it.
-- Faster requests: the gateway admits a request in one API round trip, the app shell loads after one auth round trip, project details and secrets no longer wait on a git fetch, member and session reads are indexed, and the session lifecycle queue has its own index.
-- Model catalog seeds refreshed. CI signing and publish fixes for Windows builds.
+- Session notifications work in a fresh browser, and blocked notifications recover with a sound fallback.
+- Usage opens from account deep links, and checkout returns to the billing page of the account that paid.
+- The low-balance warning scales to the recurring grant, and a new free account no longer sees a false warning.
+- A deleted project no longer reopens from cache. Enabling a gated feature no longer leaves the page, and a lost session keeps its return path. Account deletion explains that it can be cancelled.
+- Compacting a busy session is refused with a clear message. Forking a stopped session explains what to do.
+- New project invitees get their notification. Removed avatars are erased.
+- Email confirmation is link-first, and the sign-in screen offers password sign-in.
+- The app recovers from a stale code chunk instead of failing to load.
+- Connected accounts stay on the personal identity.
+- The first session of a new project no longer lists the project setup as its own changes.
+- Session tokens can no longer leak after a session ends.
+- Expired branches are deleted without cloning their history.
+- Reminders re-arm from the time they resume.
+- Public transcripts show failed assistant turns.
+- The Agents page shows agent ids, and a direct user grant replaces the existing project role.
+- The public OpenAPI spec publishes a relative server URL.
+- Many smaller fixes across the CLI, triggers, auth and the web app.

@@ -1,8 +1,8 @@
 'use client';
 
 import { RuntimeMark as OpenCode } from '@/features/icon/icons/open-code';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { cn } from '@/lib/utils';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
 import { CheckIcon, ProhibitIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';

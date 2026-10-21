@@ -457,6 +457,25 @@ test('project(id).modelPicker loads the compact selector catalog', async () => {
   expect(last().method).toBe('GET');
 });
 
+test('project(id) and projects reach the custom LLM provider routes', async () => {
+  const input = { name: 'My LLM', base_url: 'https://llm.example.test/v1', models: [{ id: 'm', name: 'M' }] };
+  await kortix.project('PID123').customLlmProviders();
+  expect(last().method).toBe('GET');
+  expect(last().url).toEndWith('/projects/PID123/custom-providers');
+  await kortix.project('PID123').setCustomLlmProvider('my-llm', input);
+  expect(last().method).toBe('PUT');
+  expect(last().url).toEndWith('/projects/PID123/custom-providers/my-llm');
+  await kortix.project('PID123').deleteCustomLlmProvider('my-llm');
+  expect(calls.slice(-2).map((call) => `${call.method} ${new URL(call.url).pathname}`)).toEqual([
+    'DELETE /projects/PID123/custom-providers/my-llm',
+    'DELETE /projects/PID123/secrets/CUSTOM_MY_LLM_API_KEY',
+  ]);
+  await kortix.projects.setCustomLlmProvider('PID123', 'my-llm', input);
+  expect(last().url).toEndWith('/projects/PID123/custom-providers/my-llm');
+  expect(kortix.projects.customLlmProviders).toBeFunction();
+  expect(kortix.projects.deleteCustomLlmProvider).toBeFunction();
+});
+
 test('project(id).sandbox hits the sandbox/snapshot/template admin endpoints', async () => {
   await kortix.project('PID123').sandbox.list();
   expect(last().url).toContain('/projects/PID123/sandboxes');

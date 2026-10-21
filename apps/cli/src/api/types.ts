@@ -44,6 +44,22 @@ export interface ProjectSummary {
   dashboard_url?: string;
 }
 
+// ── Custom LLM providers (`GET /projects/:id/custom-providers`) ───────────
+
+/** An OpenAI-compatible endpoint the LLM gateway serves as `<id>/<model>`. */
+export interface CustomLlmProvider {
+  id: string;
+  name: string;
+  /** Null only when `configured` is false. */
+  base_url: string | null;
+  models: { id: string; name: string }[];
+  /** The project secret that holds the key: `CUSTOM_<ID>_API_KEY`. */
+  secret_name: string;
+  has_key: boolean;
+  /** False: a `CUSTOM_*_API_KEY` secret with no endpoint saved yet. */
+  configured: boolean;
+}
+
 // ── Secrets ───────────────────────────────────────────────────────────────
 
 export interface ProjectSecret {
@@ -77,6 +93,7 @@ export interface ProjectSecret {
   delivery_status?: 'available' | 'unavailable' | 'disabled';
   /** True when an earlier sandbox may retain the previous value. */
   requires_rotation?: boolean;
+  agents?: string[] | 'all' | null;
   /** Who can use the shared value; empty = everyone in the project. */
   shared_with?: Array<{
     grant_id: string;
@@ -145,6 +162,10 @@ export type OauthPollResponse =
 // ── Sessions ──────────────────────────────────────────────────────────────
 
 export interface ProjectSession {
+  /** Durable conversation model; absent on older APIs. */
+  model?: string | null;
+  /** Canonical work activity; missing on older servers. */
+  working?: import('@kortix/sdk').ProjectSession['working'];
   session_id: string;
   account_id: string;
   project_id: string;
@@ -315,6 +336,11 @@ export interface ProjectTrigger {
   max_runs_per_hour?: number | null;
   /** Runs it may start in a UTC day; null = no daily cap. Older servers omit it. */
   max_runs_per_day?: number | null;
+  /** Fresh session mode only (KRTX-1721). Null when unset: skip for cron, allow otherwise. */
+  overlap?: 'skip' | 'allow' | null;
+  /** Set while the trigger paused itself after a sustained run-limit breach (KRTX-1721). */
+  auto_paused_at?: string | null;
+  auto_paused_reason?: string | null;
   last_fired_at: string | null;
   /** `queued`, `fired`, or `failed` (the prompt was not delivered, or its run ended with an error). */
   last_status?: string | null;

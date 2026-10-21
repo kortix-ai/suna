@@ -44,3 +44,10 @@ describe('audit actor types', () => {
     expect(source.match(/actor_type: AuditActorTypeSchema\.optional\(\)/g)).toHaveLength(uses);
   });
 });
+
+describe('audit outcomes', () => {
+  test('an expired approval row is a valid response event', () => {
+    expect(AuditEventSchema.shape.outcome.parse('expired')).toBe('expired');
+    expect(AuditEventSchema.shape.outcome.safeParse('unknown').success).toBe(false);
+  });
+});

@@ -16,24 +16,12 @@ import { spawnSync } from 'node:child_process';
  */
 import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { utcStamp } from './utc-stamp';
 
 const DB_ROOT = join(import.meta.dir, '..');
 const DRIZZLE_DIR = join(DB_ROOT, 'drizzle');
 const MIGRATIONS_DIR = join(DB_ROOT, 'migrations');
 
-function utcStamp(): string {
-  const d = new Date();
-  const p = (n: number, w = 2) => String(n).padStart(w, '0');
-  return (
-    d.getUTCFullYear().toString() +
-    p(d.getUTCMonth() + 1) +
-    p(d.getUTCDate()) +
-    p(d.getUTCHours()) +
-    p(d.getUTCMinutes()) +
-    p(d.getUTCSeconds()) +
-    p(d.getUTCMilliseconds(), 3)
-  );
-}
 
 /**
  * The house-rules safety header, prepended to drizzle's raw output.

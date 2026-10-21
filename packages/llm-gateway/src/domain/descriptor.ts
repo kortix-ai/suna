@@ -65,6 +65,13 @@ export interface UpstreamDescriptor {
   resolvedModel?: string;
   headers?: Record<string, string>;
   omitAuthorization?: boolean;
+  /**
+   * The base URL came from a user (a project's custom provider), not from the
+   * catalog. The request then connects only to a public address, pinned at
+   * resolve time, unless the host is in `allowPrivateHosts`; redirects are
+   * not followed.
+   */
+  egress?: { allowPrivateHosts: readonly string[] };
   pricing?: UpstreamPricing;
   // Model capability flags mirrored from the catalog (models.dev enrichment,
   // see apps/api/src/llm-gateway/models/catalog-models.ts capabilitiesOf).

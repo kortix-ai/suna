@@ -87,9 +87,6 @@ describe('repairRetiredSessionModelOnOpen — the model push never blocks the op
   }
 
   beforeAll(() => {
-    mock.module('../../llm-gateway/enablement', () => ({
-      projectLlmGatewayEnabledById: async () => true,
-    }));
     mock.module('../../llm-gateway/resolution/session-model-repoint', () => ({
       repointRetiredSessionModel: async () => 'kortix/deepseek-v4.1-flash',
     }));

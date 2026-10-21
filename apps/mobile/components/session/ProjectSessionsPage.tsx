@@ -60,6 +60,7 @@
  * lib/session/session-list (unit-tested).
  */
 
+import { HEADER_BUTTON_SIZE, HEADER_ICON_SIZE } from '@/components/kortix/header-button';
 import * as React from 'react';
 import { FlatList, RefreshControl, View, type ListRenderItem } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -129,6 +130,12 @@ import { EMPTY_SESSION_FILTER, useSessionFilterStore } from '@/stores/session-fi
 
 /** Relative times ("5m") re-render on this interval so they do not freeze. */
 const NOW_TICK_MS = 60_000;
+/**
+ * The clock, floored to the tick (KRTX-2879). The labels and groups are
+ * minute-grained, so a poll in the same minute keeps `now` and the memoized
+ * rows skip the render; an exact `Date.now()` re-rendered every row per poll.
+ */
+const tickNow = () => Math.floor(Date.now() / NOW_TICK_MS) * NOW_TICK_MS;
 /** `Button size="lg"`: the pinned New session button, as in the project drawer. */
 const NEW_SESSION_BUTTON_HEIGHT = 44;
 
@@ -382,13 +389,13 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   // No haptic on a row tap: ProjectScreen's open handler fires the one tap.
 
   // ── Clock for grouping and relative time ──
-  const [now, setNow] = React.useState(() => Date.now());
+  const [now, setNow] = React.useState(tickNow);
   React.useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), NOW_TICK_MS);
+    const id = setInterval(() => setNow(tickNow()), NOW_TICK_MS);
     return () => clearInterval(id);
   }, []);
   React.useEffect(() => {
-    setNow(Date.now());
+    setNow(tickNow());
   }, [sessionsQuery.dataUpdatedAt]);
 
   // ── Search, starter, status filter, and grouping ──
@@ -629,7 +636,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
         rightActions={
           <Button
             variant="ghost"
-            size="icon"
+            size={HEADER_BUTTON_SIZE}
             className="rounded-full"
             onPress={() => {
               haptics.tap();
@@ -639,7 +646,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
             accessibilityHint="Opens the session status filter">
             <Icon
               as={Funnel}
-              size={20}
+              size={HEADER_ICON_SIZE}
               className={sheetFilterActive ? 'text-primary' : 'text-foreground'}
               weight={sheetFilterActive ? 'fill' : undefined}
             />

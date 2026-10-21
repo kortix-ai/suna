@@ -47,61 +47,66 @@ for (const key of Object.getOwnPropertyNames(win)) {
 }
 
 const translate = Object.assign((key: string) => key, { raw: (key: string) => key });
-mock.module('@/i18n/use-translations', () => ({ useTranslations: () => translate }));
-mock.module('@/hooks/projects/use-new-project-session', () => ({
+const translationsMock = () => ({ useTranslations: () => translate });
+mock.module('@/i18n/use-translations', translationsMock);
+mock.module('@kortix/ui/i18n', translationsMock);
+mock.module('@kortix/ui/internal/hooks/projects/use-new-project-session', () => ({
   useNewProjectSession: () => () => undefined,
 }));
-mock.module('@/hooks/projects/new-session-guard', () => ({
+mock.module('@kortix/ui/internal/hooks/projects/new-session-guard', () => ({
   useIsCreatingProjectSession: () => false,
 }));
-mock.module('@/stores/billing-account-context', () => ({
+mock.module('@kortix/ui/internal/stores/billing-account-context', () => ({
   useBillingAccountId: () => 'synthetic-account',
 }));
-mock.module('@/features/notifications/notification-bell', () => ({
+mock.module('@kortix/ui/internal/notifications/notification-bell', () => ({
   NotificationBell: () => React.createElement('div', { 'data-testid': 'notification-bell' }),
 }));
-mock.module('@/features/workspace/project-sidebar/project-session-list', () => ({
+mock.module('@kortix/ui/workspace/sidebar/project-session-list', () => ({
   ProjectSessionList: () => React.createElement('div', { 'data-testid': 'session-list' }),
 }));
 mock.module('@/features/workspace/project-sidebar/workspace-switcher', () => ({
   WorkspaceSwitcher: () => React.createElement('div', { 'data-testid': 'switcher' }),
 }));
-mock.module('@/features/workspace/project-sidebar/customize-sidebar-modal', () => ({
+mock.module('@kortix/ui/workspace/sidebar/customize-sidebar-modal', () => ({
   CustomizeSidebarModal: () => null,
 }));
-mock.module('@/features/tunnel/computer-connect', () => ({
+mock.module('@kortix/ui/internal/tunnel/computer-connect', () => ({
   ComputerConnectModal: () => null,
 }));
-mock.module('@/features/layout/connect-mcp-modal', () => ({
+mock.module('@kortix/ui/internal/layout/connect-mcp-modal', () => ({
   ConnectMcpModal: () => null,
 }));
-mock.module('@/features/workspace/project-sidebar/footer/project-mcp-nav', () => ({
+mock.module('@kortix/ui/workspace/sidebar/footer/project-mcp-nav', () => ({
   ProjectMcpNavItem: () => null,
 }));
-mock.module('@/features/workspace/project-sidebar/footer/project-computer-nav', () => ({
+mock.module('@kortix/ui/workspace/sidebar/footer/project-computer-nav', () => ({
   ProjectComputerNavItem: () => null,
 }));
-mock.module('@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert', () => ({
+mock.module('@kortix/ui/workspace/sidebar/footer/project-manifest-upgrade-alert', () => ({
   ProjectManifestUpgradeAlert: () => null,
 }));
-mock.module('@/features/workspace/project-sidebar/footer/project-sandbox-alert', () => ({
+mock.module('@kortix/ui/workspace/sidebar/footer/project-sandbox-alert', () => ({
   ProjectSandboxAlert: () => null,
 }));
-mock.module('@/features/workspace/project-sidebar/footer/project-balance-warning', () => ({
+mock.module('@kortix/ui/workspace/sidebar/footer/project-balance-warning', () => ({
   SidebarBalanceWarning: () => null,
 }));
-mock.module('@/features/workspace/project-sidebar/footer/project-upgrade-button', () => ({
+mock.module('@kortix/ui/workspace/sidebar/footer/project-upgrade-button', () => ({
   SidebarUpgradeButton: () => null,
 }));
-mock.module('@/features/workspace/project-sidebar/project-nav-items', () => ({
+mock.module('@kortix/ui/workspace/repository-disconnected', () => ({
+  ProjectRepositoryDisconnectedAlert: () => null,
+}));
+mock.module('@kortix/ui/workspace/sidebar/project-nav-items', () => ({
   ProjectNavItems: () => null,
 }));
-mock.module('@/features/workspace/open-command-palette', () => ({
+mock.module('@kortix/ui/internal/layout/open-command-palette', () => ({
   openCommandPalette: () => undefined,
 }));
 
-const { SidebarProvider, useSidebar } = await import('@/components/ui/sidebar');
-const { ProjectSidebar } = await import('./project-sidebar');
+const { SidebarProvider, useSidebar } = await import('@kortix/ui/sidebar');
+const { ProjectSidebar } = await import('@kortix/ui/workspace/sidebar/project-sidebar');
 
 let root: Root | undefined;
 // Cross-realm DOM: happy-dom's HTMLElement tree is structurally narrower

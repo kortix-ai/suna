@@ -2,7 +2,7 @@
  * FloatingMenuButton — the floating hamburger at the top left of the project
  * screens without a header bar: project home, a thread, and a connecting
  * session. It opens the project drawer (every project page shows it).
- * `children` render at the right end of the same 40pt row: the thread's
+ * `children` render at the right end of the same row: the thread's
  * sub-agent chip and `···` (`ProjectHeaderActions`).
  *
  * `fade` adds a header strip behind the button, for a screen whose content
@@ -22,7 +22,7 @@
  * screen's centre. That spacer gives way first, so a long title runs into
  * the free space — while a thread loads there are no trailing controls, and
  * the title fills their place until they arrive (Jay, 2026-09-27). The row
- * is inset 16pt on both sides, so its centre is the screen's. It takes the same 40pt row height, so the header
+ * is inset 16pt on both sides, so its centre is the screen's. It takes the same row height (`HEADER_BUTTON_PT`), so the header
  * strip never grows for it. Omitted on project home and the connecting
  * state, which have no title to show.
  */
@@ -33,19 +33,22 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { HEADER_BUTTON_PT } from '@/components/kortix/header-button';
 import { MenuButton } from '@/components/kortix/menu-button';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 /** Button offset below the safe area. */
 const BUTTON_TOP = 8;
-/** `MenuButton` is a 40pt icon button. */
-const BUTTON_SIZE = 40;
+/** `MenuButton`'s box (`header-button.ts`). */
+const BUTTON_SIZE = HEADER_BUTTON_PT;
 /** The gradient below the header row. Same height as the fade above the chat input. */
 const FADE_HEIGHT = 18;
+/** Minimum space between the title and the buttons at each end (Jay, 2026-10-20: was 4pt). */
+const TITLE_GAP = 12;
 
 /**
  * Space below the safe-area edge that the header strip takes: 8pt offset +
- * 40pt button + 24pt fade. Scrolling content starts here, where the fade ends.
+ * the button (44pt iOS, 40pt Android) + 24pt fade. Scrolling content starts here, where the fade ends.
  */
 export const FLOATING_MENU_CLEARANCE = BUTTON_TOP + BUTTON_SIZE + FADE_HEIGHT;
 
@@ -56,7 +59,7 @@ interface FloatingMenuButtonProps {
    *  title + status). Takes the remaining row width; omit for a plain
    *  hamburger-and-trailing-controls row (project home, connecting). */
   title?: React.ReactNode;
-  /** Header controls at the right end of the hamburger's 40pt row. */
+  /** Header controls at the right end of the hamburger's row. */
   children?: React.ReactNode;
 }
 
@@ -77,7 +80,6 @@ export function FloatingMenuButton({ onPress, fade = false, title, children }: F
     (e: LayoutChangeEvent) => setTrailing(Math.ceil(e.nativeEvent.layout.width)),
     []
   );
-  // 4pt clear of each end, the old column's `px-1`.
   const balance = Math.abs(leading - trailing);
   const balanceSpacer = (
     // Shrinks long before the title does (flexShrink is weighted by basis).
@@ -106,7 +108,7 @@ export function FloatingMenuButton({ onPress, fade = false, title, children }: F
           // truncates against the real free width. First in the tree, so the
           // ends stay above it for touches.
           <View
-            style={[StyleSheet.absoluteFill, { paddingLeft: leading + 4, paddingRight: trailing + 4 }]}
+            style={[StyleSheet.absoluteFill, { paddingLeft: leading + TITLE_GAP, paddingRight: trailing + TITLE_GAP }]}
             className="flex-row items-center"
             pointerEvents="box-none">
             {trailing > leading ? balanceSpacer : null}

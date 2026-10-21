@@ -11,7 +11,6 @@ import {
   resolveFeatureFlag,
   resolveFeatureFlags,
 } from '../feature-flags/registry';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 
 const STABILITIES = ['experimental', 'beta', 'stable'];
 const ENFORCEMENTS = ['routes', 'behavioral', 'ui-only'];
@@ -100,6 +99,20 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('agent_tunnel');
   });
 
+  test('warm sessions require explicit opt-in before spending idle compute', () => {
+    for (const metadata of [undefined, null, {}, { experimental: {} }, { experimental: { warm_sessions: 'true' } }]) {
+      expect(resolveFeatureFlag(metadata, 'warm_sessions')).toBe(false);
+    }
+    expect(resolveFeatureFlags({}).warm_sessions).toBe(false);
+    expect(findCatalogFlag('warm_sessions')).toMatchObject({
+      available: true,
+      enabled: false,
+      overridden: false,
+    });
+    expect(resolveFeatureFlag({ experimental: { warm_sessions: true } }, 'warm_sessions')).toBe(true);
+    expect(resolveFeatureFlag({ experimental: { warm_sessions: false } }, 'warm_sessions')).toBe(false);
+  });
+
   test('agentmail_email is explicit opt-in', () => {
     expect(resolveFeatureFlag({}, 'agentmail_email')).toBe(false);
     expect(
@@ -119,6 +132,16 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     const metadata = { experimental: { apps: false } };
     expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('apps');
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('apps');
+  });
+
+  test('llm_gateway graduated: the gateway is the only model path and a stored override is inert', () => {
+    // 2026-10-20: no flag, no native OpenCode provider mode, no operator lever.
+    // A project that stored `experimental.llm_gateway` keeps the value in
+    // metadata; it must not resurface as a key or a catalog row.
+    expect(isFeatureFlagKey('llm_gateway')).toBe(false);
+    const metadata = { experimental: { llm_gateway: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('llm_gateway');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('llm_gateway');
   });
 
   test('monitors is explicit opt-in and gated on Platinum availability', () => {
@@ -213,50 +236,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
         'connectors_api_discover',
       ),
     ).toBe(false);
-  });
-
-  test('llm_gateway is platform-gated and follows the fleet default', () => {
-    const available = findCatalogFlag('llm_gateway').available;
-    expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(
-      available && config.LLM_GATEWAY_DEFAULT_ENABLED,
-    );
-    expect(resolveFeatureFlag({ experimental: { llm_gateway: true } }, 'llm_gateway')).toBe(
-      available,
-    );
-    expect(resolveFeatureFlag({ experimental: { llm_gateway: false } }, 'llm_gateway')).toBe(false);
-    expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: true } })).toBe(available);
-  });
-
-  test('llm_gateway fleet default rolls all projects on while the kill switch and project-off override still win', () => {
-    const previousEnabled = config.LLM_GATEWAY_ENABLED;
-    const previousDefault = config.LLM_GATEWAY_DEFAULT_ENABLED;
-    try {
-      config.LLM_GATEWAY_ENABLED = false;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = true;
-      expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(false);
-      expect(projectLlmGatewayEnabled({})).toBe(false);
-
-      config.LLM_GATEWAY_ENABLED = true;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = false;
-      expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(false);
-
-      config.LLM_GATEWAY_DEFAULT_ENABLED = true;
-      expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(true);
-      expect(projectLlmGatewayEnabled({})).toBe(true);
-      expect(resolveFeatureFlag({ experimental: { llm_gateway: false } }, 'llm_gateway')).toBe(
-        false,
-      );
-      expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: false } })).toBe(false);
-
-      // The kill switch also beats an explicit project ON.
-      config.LLM_GATEWAY_ENABLED = false;
-      expect(resolveFeatureFlag({ experimental: { llm_gateway: true } }, 'llm_gateway')).toBe(
-        false,
-      );
-    } finally {
-      config.LLM_GATEWAY_ENABLED = previousEnabled;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = previousDefault;
-    }
   });
 
   test('session_log_restore follows the deployment default while a stored project value wins', () => {

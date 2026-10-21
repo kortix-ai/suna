@@ -29,7 +29,9 @@ import { composioToolkitLogo } from '../connectors/composio';
 import { and, eq } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import { summarizeArgsPreview } from '../connectors/args-preview';
+import { enrichPendingCallOnce } from '../connectors/approval-enrich-pending';
+import { isApprovalExpired } from '../connectors/approval-expiry';
+import { isPlainRecord, summarizeArgsPreview } from '../connectors/args-preview';
 import {
   approvalCallerOf,
   approvalTargetSession,
@@ -63,6 +65,11 @@ const ApprovalLinkSchema = z.object({
   review_complete: z.boolean(),
   args_summary: z.string().nullable(),
   approval_context: z.string().nullable(),
+  /** Content Kortix read from the provider for a reference-only call
+   *  (`gmail.send_draft {draft_id}` → the draft), redacted. */
+  resolved_preview: z.record(z.string(), z.unknown()).nullable(),
+  /** `unavailable` when that read failed or timed out. */
+  resolved_error: z.string().nullable(),
   policy_source: z.string().nullable(),
   requested_at: z.string(),
   resolved_at: z.string().nullable(),
@@ -94,6 +101,9 @@ approvalLinksApp.openapi(createRoute({
   const [row] = await db
     .select({
       executionId: connectorCalls.executionId,
+      accountId: connectorCalls.accountId,
+      projectId: connectorCalls.projectId,
+      connectionId: connectorCalls.connectionId,
       sessionId: connectorCalls.sessionId,
       actingUserId: connectorCalls.actingUserId,
       actionPath: connectorCalls.actionPath,
@@ -103,6 +113,7 @@ approvalLinksApp.openapi(createRoute({
       resultSummary: connectorCalls.resultSummary,
       createdAt: connectorCalls.createdAt,
       resolvedAt: connectorCalls.resolvedAt,
+      expiresAt: connectorCalls.expiresAt,
     })
     .from(connectorCalls)
     .where(
@@ -171,10 +182,12 @@ approvalLinksApp.openapi(createRoute({
           : null;
   }
 
+  const expired = isApprovalExpired(row);
+  // Only reached by a caller allowed to resolve: a row held before its action
+  // had an enricher reads its content once (approval-enrich-pending.ts).
+  const resultSummary = await enrichPendingCallOnce(row);
   const summary =
-    typeof row.resultSummary === 'object' && row.resultSummary
-      ? (row.resultSummary as Record<string, unknown>)
-      : {};
+    typeof resultSummary === 'object' && resultSummary ? (resultSummary as Record<string, unknown>) : {};
   const argsPreview =
     typeof summary.args_preview === 'object' && summary.args_preview
       ? (summary.args_preview as Record<string, unknown>)
@@ -193,17 +206,23 @@ approvalLinksApp.openapi(createRoute({
     risk: row.risk,
     // 'pending_approval' is actionable. Every terminal status renders a
     // read-only outcome instead of buttons that would return 409.
-    status: row.status,
-    pending: row.status === 'pending_approval' && !row.resolvedAt,
+    // A pending row past its window reads as expired before the worker flips it.
+    status: expired ? 'expired' : row.status,
+    pending: row.status === 'pending_approval' && !row.resolvedAt && !expired,
     args_preview: argsPreview,
     review_complete: summary.args_preview_complete === true,
     args_summary: summarizeArgsPreview(argsPreview),
     approval_context:
       typeof summary.approval_context === 'string' ? summary.approval_context : null,
+    resolved_preview: isPlainRecord(summary.resolved_preview) ? summary.resolved_preview : null,
+    resolved_error: typeof summary.resolved_error === 'string' ? summary.resolved_error : null,
     policy_source: typeof summary.policy_source === 'string' ? summary.policy_source : null,
     requested_at: row.createdAt.toISOString(),
     resolved_at: row.resolvedAt?.toISOString() ?? null,
-    expires_at: new Date(resolved.payload.exp).toISOString(),
+    // The earlier of the link token's expiry and the approval's own window.
+    expires_at: new Date(
+      Math.min(resolved.payload.exp, row.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY),
+    ).toISOString(),
   });
 });
 
