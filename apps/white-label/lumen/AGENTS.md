@@ -58,7 +58,13 @@ scan: it catches these forms, not every way to write them.
   agent and a prompt carries no agent (`memberSessionCreateBody`,
   `memberPromptBody`): Kortix lets a service account start any agent. A route
   with a session id checks `sessionInMatter`, a runtime route
-  `sandboxInMatter`.
+  `sandboxInMatter`. The matter's agent is the firm's, or a restricted
+  matter's own (`memberToken` returns it with the matter's `matterDir`).
+- There are no prompt attachments: a chat file goes to Documents
+  (`takeFiles`). A runtime file read inside the matter folder is answered from
+  Drive by Lumen (`ingest.matterFile`), never by the sandbox. Responses lose
+  platform plumbing (`scrubSession`, `scrubHealth`, `scrubInbox`,
+  `dropRuntimeAliases`); a new browser-visible route gets a leak test.
 - Never return a Kortix token to the browser, a preview URL included. A
   preview is a public preview share (`/api/preview-url`).
 
@@ -71,6 +77,11 @@ scan: it catches these forms, not every way to write them.
   role `member`). Never give a Kortix project, folder grant or agent to more
   than one firm, and never add a grant that reaches every session (the
   `/Company` project grant is removed on purpose).
+- A restricted matter lives in `/Lumen/Walled/<matterId>`, granted only to
+  its own agent `lumen-m-<matterId>` (`kortix.placeMatter`). Never put a
+  restricted matter's files, runs or outputs under the firm folder, and never
+  start its session on the firm agent: `sessionAgent` (convex/lumenAgent.ts)
+  picks the agent from where the folder is, and returns null while it moves.
 - Every Kortix call is a `"use node"` action: `convex/kortix.ts` (the shared
   project and kit, firm onboarding, threads, the proxy's credential lookup),
   `convex/ingest.ts` (Drive copies of documents) and `convex/engine.ts` (run
@@ -154,7 +165,8 @@ the evaluation runs, no certification Lumen does not hold.
 `src/app/providers.tsx` mounts `UiProvider` once with Lumen's mark
 (`useBrand` → `LUMEN_UI_BRAND`), the host config (no CLI bar, no public share
 links, no terminal; `accountApiEnabled` stays on so the proxy's local "denied"
-probe answers hide the configuration controls), `resolvePreviewUrl` (sandbox
+probe answers hide the configuration controls; `takeFiles` + `attachAccept`
+send a chat file to Documents), `resolvePreviewUrl` (sandbox
 previews resolve through `POST /api/preview-url`) and `setUiRoutes` (every
 page Lumen does not serve is `null`, so its links are hidden).
 

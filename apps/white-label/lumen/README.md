@@ -52,7 +52,14 @@ splits it into pages and anchored paragraphs, and makes every page searchable at
 opens the document beside the list, scrolled to the first marked term; **Original** shows the real
 PDF or Word file. **Upload new version** (row menu) keeps the old file: the **Version** column shows
 `V2`, its picker opens any version, new work reads the latest, and citations stay bound to the
-version they quote.
+version they quote. Vault search returns current versions only.
+
+A file dropped in a chat goes to the same place: the composer hands it to Documents
+(`takeFiles` in `src/app/providers.tsx`), never to the session's own store, so it is read,
+anchored and citable like any upload. A file the Assistant writes for the lawyer (a memo, a
+letter) goes to `<matter folder>/Outputs/` (kit rule) and joins Documents when the turn ends
+(`ingest.importOutputs`); a second file with the same name becomes its next version. Its output
+card previews and downloads through Lumen (`ingest.matterFile`), never from the sandbox.
 
 <p align="center"><img src="public/screenshots/vault-preview.png" width="860" alt="The vault: a search for liability across six agreements, the MSA open on the right with clause 11.1 marked" /></p>
 
@@ -61,8 +68,10 @@ version they quote.
 Ask a question about the matter. The answer comes from Lumen's counsel role, run on your firm's own agent, which reads
 the vault with Lumen's own tools and cites every claim as document, page, paragraph and quote.
 Lumen checks each quote against the paragraph it cites before it draws the chip. A click opens the
-Source panel with the quote marked. A quote the document does not contain shows as **Not found in
-source**, never as support. The agent's work shows as plain steps ("Searching the vault for
+Source panel with the quote marked: a PDF opens on **Original**, at the quoted clause with its
+words highlighted; a DOCX or TXT opens on **Text** with the paragraph marked. **Cite** puts the
+passage into the composer as a quote for the next question. A quote the document does not contain
+shows as **Not found in source**, never as support. The agent's work shows as plain steps ("Searching the vault for
 'liability'"), not shell commands.
 
 <p align="center"><img src="public/screenshots/assistant-source.png" width="860" alt="An answer on uncapped liability; citation 1 open in the Source panel, verified, with the quoted words marked" /></p>
@@ -174,7 +183,7 @@ The full tables (who writes each id, the session labels and metadata) are in [Id
 
 Lumen runs every firm in one Kortix project. The project is a backend Lumen configures once;
 a firm is three Kortix primitives in it, created at onboarding (`kortix.provisionFirm`, 10.8 s
-measured locally):
+measured locally), and each restricted matter adds a fourth (below):
 
 1. **A folder**, `/Lumen/Firms/<firmId>/` (`Matters/`, `Runs/`, `Library/`), shared `write` with
    the firm's agent only.
@@ -184,6 +193,15 @@ measured locally):
 3. **A service account**, `lumen-firm-<firmId>`, project role `member`, plus an `agent-user`
    object grant on the firm's agent. It creates and drives every session of the firm. Its secret
    is in `firmCredentials` (an internal Convex table) and reaches the Next.js server per request.
+4. **A restricted matter's own folder and agent.** Its folder is `/Lumen/Walled/<matterId>/`
+   (documents, text, `index.json`, its runs), outside the firm folder, so no firm session mounts
+   it. Its agent, `lumen-m-<matterId>`, has two grants: that folder (`write`) and `/Lumen/Kit`
+   (`read`). Every thread and run of the matter runs on it and mounts the matter at
+   `/drives/<matterId>`. `kortix.placeMatter` sets this up when a matter is created restricted,
+   and moves the folder (and the matter's earlier run folders) when its visibility changes; a
+   change waits for running workflows, and no thread, run or upload starts while it moves. A
+   restricted matter whose folder is not placed yet starts no session (fail closed). Operator
+   backfill for matters made before this: `npx convex run kortix:placeRestricted`.
 
 The project itself (`kortix.ensure`, run by the first onboarding or by
 `npx convex run kortix:ensure`; single-flight, idempotent): the project (`KORTIX_PROJECT_ID`, or
@@ -204,6 +222,7 @@ measured locally, 94 s for the first bootstrap).
 | I7 | A firm's credential cannot change the project | Service account role `member` | `GET …/secrets` `403` |
 | I8 | A member's session runs on their firm's agent | The proxy overwrites `agent_name` and drops every per-prompt agent (`memberSessionCreateBody`, `memberPromptBody`) | `POST /api/kortix/…/sessions` with firm B's agent from a firm A member → `agent_name: lumen-f-<firmA>` |
 | I9 | A member reads only their firm's agent | The proxy scopes the project detail (`redactIdentity`) | `GET /api/kortix/…/detail` → `agents: [lumen-f-<firmA>]`, no manifest, no files |
+| I11 | A restricted matter is in no other session's sandbox, not even its own firm's | A walled folder granted only to the matter's agent (`kortix.placeMatter`) | Lawyer's thread in a firm matter (repair round 1, `output/single-project/repair-r1/iso-shell.txt`): mounts `/drives/<firmA> rw` and `/drives/kit ro`; the restricted matter is absent at its old and new path; `grep -rl <restricted marker> /drives`: no hit. The owner's thread in the restricted matter: mounts `/drives/<matterId> rw` and `/drives/kit ro` only, finds the marker there, `ls /drives/<firmA>`: "No such file or directory" |
 | I10 | A member reaches only their matter's sessions and sandboxes | `sessionInMatter` (thread row), `sandboxInMatter` (the firm's sessions labelled `lumen-matter:<matterId>`) | Firm B's session through firm A's proxy `404`, firm B's sandbox `404`, firm B's matter bearer `403` |
 
 The one boundary Lumen still holds itself is I8: Kortix lets a service account start a session on
@@ -606,10 +625,15 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 
 ## Limits
 
-- Matters inside one firm share the firm folder mount. A restricted matter is separated by
-  Lumen's access control (Convex queries, the proxy's matter checks, the agent rules), not by a
-  mount: a firm session can technically read another matter of the same firm. Per-matter mounts
-  would need one agent per matter.
+- Firm-visible matters inside one firm share the firm folder mount, read-write: a session in one
+  can read or overwrite another firm-visible matter's files (every member of the firm may open
+  those matters anyway). Restricted matters are walled by mount (I11).
+- Each restricted matter adds one agent to the project's compiled config. A session that compiles
+  every agent fails past 128 KiB of declared prompts (proposal G3); with the 4.3 KiB counsel
+  prompt that is ~25 firm agents plus restricted matters per project. Watch it before onboarding
+  many firms.
+- A thread opened before a matter turned restricted keeps the firm agent it started on; its next
+  sandbox no longer mounts the matter. Open a new thread.
 - I8 (the agent pin) is held by Lumen, not Kortix, until proposal G1 lands. A firm secret used
   outside Lumen could start a session on another firm's agent.
 - All firms share one Kortix account wallet and rate budget. Per-firm usage comes from the
@@ -623,7 +647,7 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 | `/sign-in`, `/sign-up` | Better Auth email + password |
 | `/onboarding` | Name the firm → invite colleagues → sample matter |
 | `/invite/<id>` | Accept an invitation (sign in with the invited email, verify it, accept) |
-| `/app` | Home: "What can Lumen do for you?", the composer with a matter picker and `/` workflows, quick actions, open matters, recent work |
+| `/app` | Home: "Where should we start?", the composer with a matter picker and `/` workflows, quick actions, open matters, recent work |
 | `/app/workflows` | The firm's workflows (assistant and tabular) and Lumen's built-in ones: create, edit, share, use |
 | `/app/matters`, `/app/matters/new` | Matters: search, status filter, new matter |
 | `/app/matters/<id>` | Overview: recent activity, details, parties, who can see it |
@@ -654,7 +678,7 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 | `convex/audit.ts`, `convex/usage.ts` | The audit log and usage |
 | `convex/kortix.ts` | Kortix setup (`"use node"`): the shared project and kit (`ensure`), firm onboarding, create thread, the proxy's credential lookup |
 | `convex/deployment.ts` | The deployment row and its single-flight claim, firm credentials, `firmContext` |
-| `convex/lumenAgent.ts` | The Drive layout (`/Lumen/Kit`, `/Lumen/Firms/<firmId>`), agent and service-account names, `sandboxPath` |
+| `convex/lumenAgent.ts` | The Drive layout (`/Lumen/Kit`, `/Lumen/Firms/<firmId>`, `/Lumen/Walled/<matterId>`), agent and service-account names, `sessionAgent`, `sandboxPath` |
 | `convex/operator.ts` | The operator credential, the firm client (`asFirm`), `withRetry` (network and 5xx: 1 s, 4 s, 15 s) |
 | `convex/documents.ts`, `convex/ingest.ts` | The Vault: upload, extract (`unpdf`, `mammoth`), segment, Drive copies, `index.json` |
 | `convex/lib/segment.ts`, `convex/lib/cite.ts` | The one segmenter (anchors `p<page>.<n>`) and the citation check |

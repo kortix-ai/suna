@@ -7,6 +7,7 @@
 import { CitationLayer } from '@/components/chat/citation-layer';
 import { CitationCard, type RunView } from '@/components/runs/run-parts';
 import { useBlobFileSource } from '@/components/vault/vault-source';
+import { applyChanges } from '@/lib/apply-changes';
 import { markdownDocx } from '@/lib/markdown-docx';
 import { bestCitation, reportMarkdown } from '@/lib/report-markdown';
 import { fieldLabel } from '@/lib/run-activity';
@@ -21,8 +22,8 @@ import { UnifiedMarkdown } from '@kortix/ui/markdown';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import { errorToast, successToast } from '@kortix/ui/toast';
-import { CheckIcon, CopyIcon, DownloadSimpleIcon, XIcon } from '@phosphor-icons/react';
-import { useAction, useMutation } from 'convex/react';
+import { CheckIcon, CopyIcon, DownloadSimpleIcon, StackIcon, XIcon } from '@phosphor-icons/react';
+import { useAction, useConvex, useMutation } from 'convex/react';
 import { useCallback, useState } from 'react';
 
 type Issue = RunView['issues'][number];
@@ -139,6 +140,44 @@ function IssueCard({ issue }: { issue: Issue }) {
   );
 }
 
+/**
+ * The accepted redlines, applied to the reviewed contract and saved as its next
+ * version in the vault (`documents.upload` with `versionOf`): the matter's
+ * contract moves forward, the reviewed version stays citable.
+ */
+function SaveAccepted({ documentId, issues }: { documentId: Id<'documents'>; issues: RunView['issues'] }) {
+  const convex = useConvex();
+  const bytes = useAction(api.documents.bytes);
+  const upload = useAction(api.documents.upload);
+  const [pending, setPending] = useState(false);
+  const accepted = issues.filter((i) => i.decision === 'accepted' && i.redline?.from);
+  async function save() {
+    setPending(true);
+    try {
+      const doc = await convex.query(api.documents.detail, { documentId });
+      if (!doc) throw new Error('The reviewed document was deleted');
+      const out = await applyChanges(
+        { bytes: await bytes({ documentId: doc._id }), filename: doc.filename, mime: doc.mime, paras: doc.paras },
+        accepted.map((i) => ({ from: i.redline!.from, to: i.redline!.to })),
+      );
+      if (!out.applied) throw new Error('None of the accepted changes matches the document text any more');
+      await upload({ matterId: doc.matterId, filename: out.filename, bytes: await out.blob.arrayBuffer(), contentType: out.blob.type, versionOf: doc._id });
+      successToast(`${out.applied} accepted change${out.applied === 1 ? '' : 's'} saved as a new version of ${doc.filename}`, {
+        description: out.missing.length ? `${out.missing.length} could not be placed: the text was not found.` : 'Find it in Documents. The reviewed version stays citable.',
+      });
+    } catch (e) {
+      errorToast('Could not save a new version', { description: errorText(e) });
+    } finally {
+      setPending(false);
+    }
+  }
+  return (
+    <Button size="sm" variant="outline" disabled={!accepted.length || pending} onClick={save} data-testid="save-accepted">
+      <StackIcon className="size-4" /> {accepted.length ? `Save ${accepted.length} accepted change${accepted.length === 1 ? '' : 's'} as a new version` : 'Accept changes to save a new version'}
+    </Button>
+  );
+}
+
 export function IssuesView({ view, runId }: { view: RunView; runId: Id<'runs'> }) {
   const download = useDownload(runId);
   const [showAligned, setShowAligned] = useState(false);
@@ -163,11 +202,14 @@ export function IssuesView({ view, runId }: { view: RunView; runId: Id<'runs'> }
           </span>
         </div>
         {view.result.summary && <p className="max-w-[72ch] text-[15px] leading-relaxed">{view.result.summary}</p>}
-        {redline && (
-          <Button size="sm" onClick={() => download(redline, `${doc.replace(/\.[^.]+$/, '')}-redline.docx`)} data-testid="download-redline">
-            <DownloadSimpleIcon className="size-4" /> Download redline (.docx)
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {redline && (
+            <Button size="sm" onClick={() => download(redline, `${doc.replace(/\.[^.]+$/, '')}-redline.docx`)} data-testid="download-redline">
+              <DownloadSimpleIcon className="size-4" /> Download redline (.docx)
+            </Button>
+          )}
+          {view.documents[0] && <SaveAccepted documentId={view.documents[0]._id} issues={view.issues} />}
+        </div>
       </section>
       <Tabs defaultValue="issues">
         <TabsList>
