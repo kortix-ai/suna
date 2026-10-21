@@ -514,7 +514,7 @@ function ComposerImpl(props: SessionChatInputProps) {
   selectedAgent = null,
   onAgentChange,
   noAccessibleAgents = false,
-  commands = EMPTY_COMMANDS,
+  commands: runtimeCommands = EMPTY_COMMANDS,
   /** Whether the live command list has EVER resolved — see `planUnresolvedCommandChip`. */
   commandsResolved = false,
   slashFiles = EMPTY_SLASH_FILES,
@@ -672,6 +672,8 @@ function ComposerImpl(props: SessionChatInputProps) {
   const { takeFiles, modelPickerEnabled, contextMeterEnabled, runtimeSlashEnabled, useSlashActions } = useUiHostConfig();
   // The host's own `/` rows. The config is fixed for the app's life, so the hook is the same one every render.
   const hostSlashRows = (useSlashActions ?? useNoSlashActions)();
+  // A host that hides the harness lists none of its commands, and a typed "/init" stays text.
+  const commands = runtimeSlashEnabled ? runtimeCommands : EMPTY_COMMANDS;
   const dragDepthRef = useRef(0);
   const savedDocBeforeQuestionRef = useRef<JSONContent | null>(null);
   // A host that owns the controller leaves this composer's own one idle: hooks
@@ -1994,6 +1996,8 @@ function ComposerImpl(props: SessionChatInputProps) {
 
   const cardProps: ComposerCardDerived = {
     tHardcodedUi,
+    // The filtered list (`runtimeSlashEnabled`), over the host's `commands` prop in `props`.
+    commands,
     isDragOver,
     // Inside a `ComposerDropZone` the zone owns every file drag.
     handleDragEnter: inDropZone ? undefined : handleDragEnter,

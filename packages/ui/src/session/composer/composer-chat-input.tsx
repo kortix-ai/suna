@@ -15,7 +15,6 @@ import type { AttachmentSubmission } from './attachment-submission';
 import type { ComposerSendReset } from './composer-reset';
 import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
 import { appendMentionRefs } from '../../internal/lib/project-preamble';
-import { useUiHostConfig } from '../../providers/ui-provider';
 import { resolveComposerAgent } from './composer-agent-access';
 import type { DraftScope } from './draft/composer-draft';
 
@@ -183,7 +182,6 @@ export function ComposerChatInput({
    * `agents === undefined` is the roster still loading; the resolver refuses
    * nothing until it lands.
    */
-  const { runtimeSlashEnabled } = useUiHostConfig();
   const agentResolution = resolveComposerAgent({
     agents,
     boundAgent: boundAgentName,
@@ -197,10 +195,7 @@ export function ComposerChatInput({
   // The slash menu lists only the commands the selected agent may run.
   const { data: runtimeCommands } = useRuntimeCommands({ agent: selectedAgentName ?? undefined });
   // Home has no session runtime. Project detail supplies its server-filtered catalog.
-  // A host that hides the harness (`runtimeSlashEnabled: false`) lists none of its commands.
-  const commands: Command[] | undefined = !runtimeSlashEnabled
-    ? []
-    : sessionId
+  const commands: Command[] | undefined = sessionId
     ? runtimeCommands
     : projectConfig
       ? [

@@ -55,6 +55,8 @@ function ComposerEditorFallback() {
  * phase 1).
  */
 export interface ComposerCardDerived {
+  /** The commands the `/` menu lists: the `commands` prop, or none when the host hides the runtime's (`runtimeSlashEnabled`). */
+  commands: NonNullable<SessionChatInputProps['commands']>;
   tHardcodedUi: ReturnType<typeof useTranslations>;
   isDragOver: boolean;
   /** Unset inside a `ComposerDropZone`: the zone owns every file drag. */
