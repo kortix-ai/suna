@@ -111,6 +111,9 @@ const CATALOG_PROVIDER_IDS = new Set(CATALOG_PROVIDER_ENV.map((provider) => prov
  * (a custom provider) keeps initials.
  */
 export function providerIconSrc(providerID: string, baseUrl?: string): string | undefined {
+  // Drawn in code (ProviderLogo), never fetched: models.dev has no Platinum logo
+  // and answers with its generic sparkles mark.
+  if (providerID === 'platinum') return undefined;
   const icon = PROVIDER_ICON_MAP[providerID]?.icon;
   if (icon) return baseUrl === undefined ? `https://models.dev/logos/${icon}.svg` : `${baseUrl}/${icon}.svg`;
   if (CATALOG_PROVIDER_IDS.has(providerID)) return `https://models.dev/logos/${providerID}.svg`;
@@ -173,7 +176,8 @@ export function ProviderLogo({
   // An unreachable models.dev logo (offline self-host) falls back to initials.
   const [failedSrc, setFailedSrc] = useState<string>();
   const kortix = providerID === 'kortix';
-  const iconSrc = kortix ? undefined : providerIconSrc(providerID, providerIconBaseUrl);
+  const platinum = providerID === 'platinum';
+  const iconSrc = kortix || platinum ? undefined : providerIconSrc(providerID, providerIconBaseUrl);
   const src = iconSrc === failedSrc ? undefined : iconSrc;
 
   const sizeClasses = {
@@ -201,7 +205,7 @@ export function ProviderLogo({
         // the other sizes read as an avatar, and at 16px a tile around a 12px
         // mark is all frame and no logo. The initials fallback keeps its tile
         // at every size: two bare letters at 9px read as debris, not a logo.
-        (src || kortix) && size === 'xs' ? 'bg-transparent' : light ? LOGO_TILE_LIGHT : 'bg-muted rounded-md',
+        (src || kortix || platinum) && size === 'xs' ? 'bg-transparent' : light ? LOGO_TILE_LIGHT : 'bg-muted rounded-md',
         sizeClasses[size],
         className,
       )}
@@ -217,6 +221,19 @@ export function ProviderLogo({
           }}
           className={light ? LOGO_TILE_LIGHT_TEXT : 'text-foreground'}
         />
+      ) : platinum ? (
+        // The Platinum mark (platinum.dev/brand): a flat square in currentColor,
+        // the favicon geometry — 14 of 24, inset 5.
+        <svg
+          viewBox="0 0 24 24"
+          style={{
+            width: `calc(var(--spacing) * ${KORTIX_MARK_STEPS[size] + 2})`,
+            height: `calc(var(--spacing) * ${KORTIX_MARK_STEPS[size] + 2})`,
+          }}
+          className={light ? LOGO_TILE_LIGHT_TEXT : 'text-foreground'}
+        >
+          <rect x="5" y="5" width="14" height="14" fill="currentColor" />
+        </svg>
       ) : src ? (
         <Image
           src={src}
