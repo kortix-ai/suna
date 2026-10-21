@@ -266,6 +266,7 @@ export function useFileContentState({
                 : tI18nHardcoded.raw('i18nComplete.text27c2ccd962c2'),
           }),
         );
+        throw err;
       } finally {
         setIsSaving(false);
       }
@@ -297,7 +298,7 @@ export function useFileContentState({
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         if (hasUnsavedChanges && latestContentRef.current) {
-          handleSave(latestContentRef.current);
+          void handleSave(latestContentRef.current).catch(() => undefined);
         }
       }
     };
