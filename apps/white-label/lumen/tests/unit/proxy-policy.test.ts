@@ -449,6 +449,20 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
     expect(snap).toMatchObject({ observed_at: 't', session: { session_id: 's1', owner_email: null } });
   });
 
+  test('the snapshot audit leg is the same empty audit the proxy answers for …/audit', () => {
+    const audit = {
+      session_id: 's1',
+      audit_access: true,
+      count: 1,
+      events: [],
+      next_cursor: null,
+      actions: [{ id: 'a1', status: 'pending', acted_by_email: OPERATOR, resolved_by_email: OPERATOR }],
+    };
+    const snap = redactIdentity(`${S}/snapshot`, { observed_at: 't', session, audit });
+    expect(JSON.stringify(snap)).not.toContain(OPERATOR);
+    expect(snap).toMatchObject({ audit: { audit_access: false, count: 0, events: [], actions: [] } });
+  });
+
   test('message authors and stops drop member entries; agent-session authors stay', () => {
     const member = { kind: 'member', user_id: 'u_op', name: OPERATOR, email: OPERATOR };
     const agent = { kind: 'session', session_id: 's2', name: 'Research', agent: 'research' };

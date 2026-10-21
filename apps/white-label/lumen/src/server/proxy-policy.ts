@@ -162,6 +162,8 @@ export function blockedReason(method: string, path: string, query?: URLSearchPar
 const PERMISSION_PROBE = /^accounts\/[^/]+\/iam\/members\/[^/]+\/effective(:batch)?$/;
 // The session audit log and participant list name the firm's Kortix identity.
 const SESSION_AUDIT = new RegExp(`^projects/${PROJECT}/sessions/(${SESSION})/audit$`);
+/** The session audit as a member sees it: empty (its rows name the operator). */
+const emptyAudit = (sessionId: unknown) => ({ session_id: sessionId ?? null, audit_access: false, count: 0, events: [], next_cursor: null, actions: [] });
 const SESSION_PARTICIPANTS = new RegExp(`^projects/${PROJECT}/sessions/${SESSION}/participants$`);
 // A session's mounted folders. The firm Drive holds every matter, so a member sees none of it here.
 const SESSION_DRIVES = new RegExp(`^projects/${PROJECT}/sessions/${SESSION}/drives$`);
@@ -208,7 +210,7 @@ export function localAnswer(
   if (method === 'GET') {
     const audit = SESSION_AUDIT.exec(path);
     if (audit) {
-      return Response.json({ session_id: audit[1], audit_access: false, count: 0, events: [], next_cursor: null, actions: [] });
+      return Response.json(emptyAudit(audit[1]));
     }
     if (SESSION_PARTICIPANTS.test(path)) return Response.json({ participants: [], total: 0, multi_user: false });
     if (SESSION_DRIVES.test(path)) return Response.json({ drives: [], personal: false, skipped: [], skippedMessage: null });
@@ -518,6 +520,9 @@ export function redactIdentity(path: string, body: unknown, firmAgent = ''): unk
       session: dropOperatorIds(scrubSession(body.session)),
       ...('turn' in body ? { turn: scrubTurn(body.turn) } : {}),
       ...('runtime' in body ? { runtime: scrubSnapshotRuntime(body.runtime) } : {}),
+      // The snapshot bundles the session audit, whose approval rows name the
+      // operator's Kortix user by email: the same empty answer as `…/audit`.
+      ...('audit' in body ? { audit: emptyAudit(isObject(body.session) ? body.session.session_id : undefined) } : {}),
     });
   }
   if (!MESSAGE_AUTHORS.test(path)) return body;
