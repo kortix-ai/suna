@@ -180,7 +180,7 @@ export const forIngest = internalQuery({
     v.null(),
     v.object({
       storageId: v.id("_storage"), filename: v.string(), matterId: v.id("matters"), driveFolder: v.string(),
-      kortixDriveId: v.optional(v.string()),
+      folderMoving: v.boolean(), kortixDriveId: v.optional(v.string()),
     }),
   ),
   handler: async (ctx, { documentId }) => {
@@ -188,7 +188,7 @@ export const forIngest = internalQuery({
     const m = d && (await ctx.db.get(d.matterId));
     const f = d && (await ctx.db.get(d.firmId));
     if (!d || !m || !f) return null;
-    return { storageId: d.storageId, filename: d.filename, matterId: d.matterId, driveFolder: m.driveFolder, kortixDriveId: f.status === "ready" ? ((await driveIdOf(ctx)) ?? undefined) : undefined };
+    return { storageId: d.storageId, filename: d.filename, matterId: d.matterId, driveFolder: m.driveFolder, folderMoving: !!m.folderMoving, kortixDriveId: f.status === "ready" ? ((await driveIdOf(ctx)) ?? undefined) : undefined };
   },
 });
 
@@ -282,6 +282,16 @@ export const requestIndex = internalMutation({
   },
 });
 
+/** Where the matter's folder is now, and whether it is moving: a Drive writer re-checks this after its write. */
+export const folderNow = internalQuery({
+  args: { matterId: v.id("matters") },
+  returns: v.union(v.null(), v.object({ driveFolder: v.string(), folderMoving: v.boolean() })),
+  handler: async (ctx, { matterId }) => {
+    const m = await ctx.db.get(matterId);
+    return m ? { driveFolder: m.driveFolder, folderMoving: !!m.folderMoving } : null;
+  },
+});
+
 export const indexTarget = internalQuery({
   args: { matterId: v.id("matters") },
   returns: v.union(v.null(), v.object({ driveId: v.string(), driveFolder: v.string() })),
@@ -289,7 +299,8 @@ export const indexTarget = internalQuery({
     const m = await ctx.db.get(matterId);
     const f = m && (await ctx.db.get(m.firmId));
     const driveId = f?.status === "ready" ? await driveIdOf(ctx) : null;
-    return m && driveId ? { driveId, driveFolder: m.driveFolder } : null;
+    // While the folder moves, placed() asks for the index again at the new path.
+    return m && driveId && !m.folderMoving ? { driveId, driveFolder: m.driveFolder } : null;
   },
 });
 

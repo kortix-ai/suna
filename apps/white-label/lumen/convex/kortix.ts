@@ -17,11 +17,13 @@ import {
   createAssignment,
   createProjectSession,
   createServiceAccountApi,
+  deleteDriveFile,
   deleteServiceAccountApi,
   getFolderAccess,
   getProject,
   getProjectDetail,
   getProjectDrive,
+  listDriveFolder,
   listServiceAccountsApi,
   moveDriveFile,
   shareFolder,
@@ -304,12 +306,68 @@ export const placeMatter = internalAction({
         }),
       );
       console.log(`[lumen] matter ${matterId} placed at ${to}${agent ? ` on ${agent}` : ""}`);
+      if (from && from !== to) {
+        // A writer that read the old path before the move (a turn in flight on the old agent)
+        // can recreate it after the move. Sweep it now and once more after a long turn.
+        await ctx.scheduler.runAfter(0, internal.kortix.sweepOldFolder, { from, to });
+        await ctx.scheduler.runAfter(SWEEP_AGAIN_MS, internal.kortix.sweepOldFolder, { from, to });
+      }
     } catch (err) {
       console.error(`[lumen] matter ${matterId}: placement attempt ${attempt}: ${errorText(err)}`);
       if (attempt < 5) await ctx.scheduler.runAfter(15_000 * attempt, internal.kortix.placeMatter, { matterId, attempt: attempt + 1 });
       else await ctx.runMutation(internal.matters.placementFailed, { matterId });
     }
     return null;
+  },
+});
+
+const SWEEP_AGAIN_MS = 15 * 60_000;
+
+/** Every file under a Drive folder, depth first. Null when the folder does not exist. */
+async function filesUnder(driveId: string, dir: string): Promise<string[] | null> {
+  const listed = await listDriveFolder(driveId, dir).catch((err) => {
+    if (statusOf(err) === 404) return null;
+    throw err;
+  });
+  if (!listed) return null;
+  const out: string[] = [];
+  for (const e of listed.entries) {
+    if (e.type === "file") out.push(e.path);
+    else out.push(...((await filesUnder(driveId, e.path)) ?? []));
+  }
+  return out;
+}
+
+/**
+ * A matter folder's old path after placeMatter moved it: anything written there
+ * since moves into the new folder, then the old path is deleted. Without this a
+ * restricted matter's file could stay in the firm folder, where every firm
+ * session reads it (ISO-R2-1).
+ */
+export const sweepOldFolder = internalAction({
+  args: { from: v.string(), to: v.string() },
+  returns: v.number(),
+  handler: async (ctx, { from, to }): Promise<number> => {
+    const d = (await ensureDeployment(ctx)).driveId;
+    const files = await asOperator(() => filesUnder(d, from));
+    if (!files) return 0;
+    let moved = 0;
+    await asOperator(async () => {
+      for (const file of files) {
+        const dest = `${to}${file.slice(from.length)}`;
+        await ensureFolder(d, dest.slice(0, dest.lastIndexOf("/")));
+        try {
+          await withRetry(() => moveDriveFile(d, file, dest));
+          moved++;
+        } catch (err) {
+          // The new folder already holds this path: it is the copy that counts.
+          if (statusOf(err) !== 409) throw err;
+        }
+      }
+      await withRetry(() => deleteDriveFile(d, from, { recursive: true }));
+    });
+    console.warn(`[lumen] swept ${from}: ${files.length} file(s), ${moved} moved to ${to}`);
+    return files.length;
   },
 });
 

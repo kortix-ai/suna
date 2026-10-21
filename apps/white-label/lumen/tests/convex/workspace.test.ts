@@ -150,3 +150,24 @@ describe('document versions', () => {
     expect(docs.map((d) => [d.filename, d.superseded])).toEqual([['spa.pdf', false]]);
   });
 });
+
+describe('matter visibility and documents', () => {
+  test('visibility cannot change while a document is still ingesting (ISO-R2-1); it can once the document is ready', async () => {
+    const { t, owner, firmId, matterId } = await world();
+    const doc = await readyDoc(t, firmId, matterId, 'race.txt', { status: 'extracting' });
+    await expect(owner.as.mutation(api.matters.update, { matterId, visibility: 'restricted' })).rejects.toThrow('409: documents are still being processed');
+    expect((await t.run((ctx) => ctx.db.get(matterId)))?.visibility).toBe('firm');
+    await t.run((ctx) => ctx.db.patch(doc, { status: 'ready' }));
+    await owner.as.mutation(api.matters.update, { matterId, visibility: 'restricted' });
+    const m = await t.run((ctx) => ctx.db.get(matterId));
+    expect([m?.visibility, m?.folderMoving]).toEqual(['restricted', true]);
+  });
+
+  test('the matter document count leaves out earlier versions (PE2E-R2-4, UXR2-4)', async () => {
+    const { t, owner, firmId, matterId } = await world();
+    await readyDoc(t, firmId, matterId, 'a.pdf');
+    await readyDoc(t, firmId, matterId, 'b.pdf', { superseded: true });
+    const rows = await owner.as.query(api.matters.list, { firmId });
+    expect(rows.find((r) => r._id === matterId)?.documentCount).toBe(1);
+  });
+});

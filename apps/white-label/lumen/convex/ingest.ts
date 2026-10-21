@@ -44,6 +44,12 @@ export const writeIndex = internalAction({
         const index = await ctx.runQuery(internal.documents.matterIndex, { matterId });
         const body = new TextEncoder().encode(JSON.stringify(index, null, 1));
         await asOperator(() => withRetry(() => uploadDriveFile(target.driveId, `${target.driveFolder}/index.json`, body)));
+        // The folder moved during the write: the copy at the old path names the matter's
+        // documents where other sessions may see them. placed() writes the index again.
+        const now = await ctx.runQuery(internal.documents.folderNow, { matterId });
+        if (now && (now.folderMoving || now.driveFolder !== target.driveFolder)) {
+          await asOperator(() => withRetry(() => deleteDriveFile(target.driveId, `${target.driveFolder}/index.json`))).catch(() => undefined);
+        }
       }
     } catch (err) {
       console.error(`[lumen] index ${matterId}: ${errorText(err)}`);
@@ -64,7 +70,8 @@ export const ingest = internalAction({
     if (!doc) return null;
     // An upload during onboarding can land before provisioning has created the firm's Drive
     // (about a minute). Wait for it instead of failing the document.
-    if (!doc.kortixDriveId && attempt < DRIVE_WAIT_ATTEMPTS) {
+    // A folder that is moving takes no new file: wait for placeMatter to finish.
+    if ((!doc.kortixDriveId || doc.folderMoving) && attempt < DRIVE_WAIT_ATTEMPTS) {
       await ctx.scheduler.runAfter(DRIVE_WAIT_MS, internal.ingest.ingest, { documentId, attempt: attempt + 1 });
       return null;
     }
@@ -98,6 +105,16 @@ export const ingest = internalAction({
         await withRetry(() => uploadDriveFile(driveId, driveFile, bytes));
         await withRetry(() => uploadDriveFile(driveId, textFile, new TextEncoder().encode(renderText(documentId, doc.filename, pages.length, paras))));
       });
+      // Backstop for ISO-R2-1: the folder moved while the files were written. Remove the
+      // copies at the old path (it may now be outside the matter's walls) and ingest again.
+      const now = await ctx.runQuery(internal.documents.folderNow, { matterId: doc.matterId });
+      if (now && (now.folderMoving || now.driveFolder !== doc.driveFolder)) {
+        await asOperator(async () => {
+          for (const p of [driveFile, textFile]) await withRetry(() => deleteDriveFile(driveId, p)).catch(() => undefined);
+        });
+        await ctx.scheduler.runAfter(DRIVE_WAIT_MS, internal.ingest.ingest, { documentId, attempt: attempt + 1 });
+        return null;
+      }
       await ctx.runMutation(internal.documents.settle, { documentId, driveFile, textFile });
       await ctx.runMutation(internal.documents.requestIndex, { matterId: doc.matterId });
     } catch (err) {

@@ -39,7 +39,7 @@ async function view(ctx: QueryCtx, m: Doc<"matters">) {
   return {
     _id: m._id, _creationTime: m._creationTime, firmId: m.firmId, name: m.name, number: m.number, client: m.client, parties: m.parties,
     practiceArea: m.practiceArea, status: m.status, visibility: m.visibility, createdBy: m.createdBy, updatedAt: m.updatedAt,
-    threadCount: threads.length, documentCount: docs.length, runCount: runs.length, lastActivityAt: last,
+    threadCount: threads.length, documentCount: docs.filter((d) => !d.superseded).length, runCount: runs.length, lastActivityAt: last,
   };
 }
 
@@ -181,6 +181,11 @@ export const update = mutation({
       const active = (await ctx.db.query("runs").withIndex("by_matter", (q) => q.eq("matterId", matterId)).collect())
         .some((r) => r.status === "queued" || r.status === "preparing" || r.status === "running" || r.status === "finalizing");
       if (active) throw new Error("409: a workflow is running on this matter. Change who can see it when it has finished.");
+      // An ingest writes the original and its text into the folder it read at its start:
+      // the folder moves only when every document has settled (ISO-R2-1).
+      const ingesting = (await ctx.db.query("documents").withIndex("by_matter", (q) => q.eq("matterId", matterId)).collect())
+        .some((d) => d.status === "uploading" || d.status === "extracting");
+      if (ingesting) throw new Error("409: documents are still being processed on this matter. Change who can see it when they are ready.");
       patch.visibility = a.visibility;
       // The documents move to the folder this visibility uses (convex/kortix.ts placeMatter).
       patch.folderMoving = true;
