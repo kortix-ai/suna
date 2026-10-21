@@ -6,6 +6,10 @@ process.env.NEXT_PUBLIC_SENTRY_DSN = 'https://public@example.test/1';
 await import('./sentry.client.config');
 const options = Sentry.getClient()?.getOptions();
 await Sentry.close();
+// init() started a release-health session on the isolation scope. In CI the
+// SDK takes the release from GITHUB_SHA, so the test client below would send
+// that session as a third envelope. It belongs to the closed client: drop it.
+Sentry.getIsolationScope().setSession();
 
 test('client ignoreErrors drops non-Error rejection prefixes and keeps real errors', async () => {
   const envelopes: unknown[] = [];

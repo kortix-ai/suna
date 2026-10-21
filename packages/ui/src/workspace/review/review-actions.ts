@@ -237,10 +237,7 @@ export function formatExpiresIn(
   return { time, soon: left < 3_600_000 };
 }
 
-/** True when the API reports the approval expired before this decision (HTTP 409). */
-export function isApprovalExpiredError(error: unknown): boolean {
-  return (error as { code?: unknown } | null)?.code === 'APPROVAL_EXPIRED';
-}
+export { isApprovalExpiredError } from '../../internal/lib/approval-expired';
 
 /** Longer relative age with a trailing "ago" — the detail-modal idiom (see
  *  `rel` in review-detail.tsx). */

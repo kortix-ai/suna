@@ -55,8 +55,8 @@ import { localizeUiCatalog } from '../../i18n/ui-catalog/localize-ui-catalog';
 import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '../../i18n/ui-catalog/product-catalog-translation-keys.generated';
 import { cn } from '../../internal/lib/utils';
 import { hasOpenFloatingLayer } from '../../lib/z-stack';
-import { SelectionBar, type SelectionBarAction } from '../selection/selection-bar';
-import { selectRange, toggleId } from '../selection/selection';
+import { SelectionBar, type SelectionBarAction } from '../../internal/selection/selection-bar';
+import { selectRange, toggleId } from '../../internal/selection/selection';
 import type { ReviewVerdict } from '@kortix/sdk';
 import {
   ArrowUUpLeftIcon as ArrowUUpLeft,

@@ -37,7 +37,6 @@ mock.module('../lib/access', () => ({
   loadProjectForUser: async () => ({ userId: 'user-test', row: { accountId: 'account-test', metadata: {} } }),
   assertProjectCapability: async () => {},
 }));
-mock.module('../../llm-gateway/enablement', () => ({ projectLlmGatewayEnabled: () => true }));
 const { projectsApp } = await import('../lib/app');
 (await import('./models')).registerModelsRoutes();
 
@@ -68,11 +67,15 @@ for (const method of ['GET', 'PUT'] as const) {
   });
 }
 
-test('PUT protects a configured preference even when it is temporarily unservable', async () => {
-  configuredDefault = 'kortix/codex/gpt-6';
-  expect((await access('PUT')).defaultModel).toBeUndefined();
-  expect(changes[0]?.defaultModel).toBe('codex/gpt-6');
-});
+// GET and PUT report the default the PUT guard protects, so a client locks the
+// same provider the API refuses to disable (GW-ACCESS-1).
+for (const method of ['GET', 'PUT'] as const) {
+  test(`${method} reports and protects a configured preference even when it is temporarily unservable`, async () => {
+    configuredDefault = 'kortix/codex/gpt-6';
+    expect((await access(method)).defaultModel).toBe('codex/gpt-6');
+    if (method === 'PUT') expect(changes[0]?.defaultModel).toBe('codex/gpt-6');
+  });
+}
 
 for (const method of ['GET', 'PUT'] as const) {
   for (const owner of [null, 'delegated-user']) {

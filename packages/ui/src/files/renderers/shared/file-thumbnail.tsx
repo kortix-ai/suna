@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { cx } from '../../../lib/utils';
 
 export type ThumbnailFile = {
   name: string;
@@ -17,10 +18,6 @@ export type FileThumbnailProps = {
   isLoading?: boolean;
   hasError?: boolean;
 };
-
-function cx(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(' ');
-}
 
 // Preview URLs that have completed a reveal this session. View/tab switches
 // remount thumbnails; URLs in this set render instantly instead of replaying
