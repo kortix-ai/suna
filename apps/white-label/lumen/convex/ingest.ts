@@ -51,12 +51,21 @@ export const writeIndex = internalAction({
   },
 });
 
+const DRIVE_WAIT_MS = 10_000;
+const DRIVE_WAIT_ATTEMPTS = 30; // 5 min, past the slowest measured provisioning
+
 export const ingest = internalAction({
-  args: { documentId: v.id("documents") },
+  args: { documentId: v.id("documents"), attempt: v.optional(v.number()) },
   returns: v.null(),
-  handler: async (ctx, { documentId }) => {
+  handler: async (ctx, { documentId, attempt = 0 }) => {
     const doc = await ctx.runQuery(internal.documents.forIngest, { documentId });
     if (!doc) return null;
+    // An upload during onboarding can land before provisioning has created the firm's Drive
+    // (about a minute). Wait for it instead of failing the document.
+    if (!doc.kortixDriveId && attempt < DRIVE_WAIT_ATTEMPTS) {
+      await ctx.scheduler.runAfter(DRIVE_WAIT_MS, internal.ingest.ingest, { documentId, attempt: attempt + 1 });
+      return null;
+    }
     try {
       const blob = await ctx.storage.get(doc.storageId);
       if (!blob) throw new Error("the upload is gone");

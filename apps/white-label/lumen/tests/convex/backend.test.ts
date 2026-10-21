@@ -477,6 +477,19 @@ describe('vault reads: search, preview, citation check, delete', () => {
   });
 });
 
+describe('vault upload during provisioning', () => {
+  test('ingest waits for the firm Drive instead of failing the document', async () => {
+    const { t, alice, matter } = await world();
+    const bytes = new TextEncoder().encode('MUTUAL NDA between two example parties.').buffer as ArrayBuffer;
+    const documentId = await alice.as.action(api.documents.upload, { matterId: matter, filename: 'nda.txt', bytes, contentType: 'text/plain' });
+    await t.action(internal.ingest.ingest, { documentId });
+    const doc = await t.run((ctx) => ctx.db.get(documentId));
+    expect([doc?.status, doc?.error]).toEqual(['extracting', undefined]);
+    const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    expect(jobs.filter((j) => j.name === 'ingest:ingest').map((j) => j.args[0])).toContainEqual({ documentId, attempt: 1 });
+  });
+});
+
 describe('vault upload: the same bytes twice', () => {
   test('the second upload is refused before a row, a count or an audit event exists', async () => {
     const { t, alice, matter } = await world();
