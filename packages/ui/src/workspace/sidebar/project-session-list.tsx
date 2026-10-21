@@ -59,6 +59,7 @@ import {
 import {
   MobileSessionCreatedTime,
   SessionBriefDescription,
+  SessionBriefCardHost,
   SessionBriefHoverCard,
   SubagentHoverCard,
 } from './session-brief-hover-card';
@@ -745,6 +746,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
       />
+      {canShowSessionHoverCard && <SessionBriefCardHost />}
     </div>
   );
 }

@@ -70,7 +70,8 @@ export function openSessionQuickView(
   // on /projects/:id/sessions/:id.
   const activePanelSessionId = getActivePanelSessionId();
 
-  if (panelMode === 'advanced') {
+  // Reminders is an Easy detail with no Advanced tab: it takes the request path in both modes.
+  if (panelMode === 'advanced' && view !== 'reminders') {
     if (activePanelSessionId) {
       // `SessionPanelView` calls the file explorer 'explorer'; its 'files'
       // member is the git-changes diff view. The quick-view vocabulary uses

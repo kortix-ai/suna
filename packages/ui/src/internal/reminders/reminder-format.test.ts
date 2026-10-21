@@ -5,9 +5,9 @@ const NOW = Date.parse('2026-09-29T10:00:00.000Z');
 
 describe('formatFireTime', () => {
   test('relative inside a day, both directions', () => {
-    expect(formatFireTime('2026-09-29T10:12:00.000Z', 'en', NOW)).toBe('in 12 min.');
-    expect(formatFireTime('2026-09-29T13:00:00.000Z', 'en', NOW)).toBe('in 3 hr.');
-    expect(formatFireTime('2026-09-29T09:55:00.000Z', 'en', NOW)).toBe('5 min. ago');
+    expect(formatFireTime('2026-09-29T10:12:00.000Z', 'en', NOW)).toBe('in 12 min');
+    expect(formatFireTime('2026-09-29T13:00:00.000Z', 'en', NOW)).toBe('in 3 hr');
+    expect(formatFireTime('2026-09-29T09:55:00.000Z', 'en', NOW)).toBe('5 min ago');
   });
 
   test('a weekday within the week, a date past it', () => {
