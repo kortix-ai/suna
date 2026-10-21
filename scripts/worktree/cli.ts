@@ -233,7 +233,7 @@ ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev
 
   ${pc.cyan('pnpm worktree')}                 ${pc.dim('interactive menu')}
   ${pc.cyan('pnpm worktree create')}          ${pc.dim('guided wizard (or --name <n> --from <branch> [--db] [--no-tunnel])')}
-  ${pc.cyan('start')} ${pc.dim('<n> [--billing] [--stripe] [--no-tunnel] [--no-web]')}   ${pc.cyan('web')} ${pc.dim('<n>')}   ${pc.cyan('stop')} ${pc.dim('<n> | --all')}   ${pc.cyan('nuke')} ${pc.dim('<n> [n…] [--force] [--yes]')}
+  ${pc.cyan('start')} ${pc.dim('<n> [--billing] [--stripe] [--no-tunnel] [--no-web]')}   ${pc.cyan('web')} ${pc.dim('<n> [--billing]')}   ${pc.cyan('stop')} ${pc.dim('<n> | --all')}   ${pc.cyan('nuke')} ${pc.dim('<n> [n…] [--force] [--yes]')}
   ${pc.cyan('nuke --all')} ${pc.dim('[--older-than 3d] [--idle 2d] [--include-dirty] [--dry-run] [--yes]')}   ${pc.dim('bulk: skips running stacks + dirty trees')}
   ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base dev --draft --web]')}
   ${pc.cyan('list')} ${pc.dim('[name] [--json]')}   ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}

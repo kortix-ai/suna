@@ -4,7 +4,7 @@ incident_date: 2026-10-21
 ---
 # Run next dev on Turbopack, not webpack: webpack dev ignores every memory control and reached 16 GB per server
 
-**Rule:** Keep `--webpack` off every `next dev` command (`apps/web/package.json` `dev` and `dev:staging-env`, `scripts/dev-local.sh`). Keep the `--max-old-space-size=4096` in their `NODE_OPTIONS`. Without it, `next dev` sets the server heap cap to 50% of RAM (`next/dist/cli/next-dev.js`), which is 12 GB on a 24 GB Mac. Next restarts the dev server at 80% of the cap, so a lower cap is a lower ceiling. Do not switch the bundler to work around a dependency crash: fix or upgrade the dependency.
+**Rule:** Keep `--webpack` off every `next dev` command (`apps/web/package.json` `dev` and `dev:staging-env`, `scripts/dev-local.sh`). Keep `--max-old-space-size=4096` in the `NODE_OPTIONS` of the two `apps/web` scripts (`dev` and `dev:staging-env`). Without the cap, `next dev` sets the server heap cap to 50% of RAM (`next/dist/cli/next-dev.js`), which is 12 GB on a 24 GB Mac. Next restarts the dev server at 80% of the cap, so a lower cap is a lower ceiling. The cloud-sandbox `next dev` in `scripts/dev-local.sh` has no cap. Do not switch the bundler to work around a dependency crash: fix or upgrade the dependency.
 
 **Trigger surface:** Editing a `next dev` command, working around a Turbopack crash, upgrading Next or `fumadocs-mdx`, or a developer Mac that lags with several worktrees running.
 

@@ -4,14 +4,14 @@
     {
       "id": "build-a-deck",
       "prompt": "Build a Kortix deck for our connectors page — a short guided walkthrough I can screen record.",
-      "expected_output": "A new Next.js route: apps/web/src/app/presentations/decks/connectors.tsx exporting useSlides(), plus a row in registry.ts. No file artifact of any kind.",
+      "expected_output": "A new Next.js route: apps/web/src/app/[locale]/presentations/decks/connectors.tsx exporting useSlides(), plus a row in registry.ts. No file artifact of any kind.",
       "assertions": [
         "Creates decks/<slug>.tsx exporting `useSlides(): SlideDef[]` and adds exactly one row to DECKS in registry.ts — no hand-written route, layout, or metadata.",
         "Never produces a .pptx, Keynote, Google Slides link, or Markdown slides file, and never suggests one.",
         "Imports copy from features/marketing/connectors/content.ts rather than retyping claims.",
         "Names its chapters in a const and renders them through <Spine chapters={…} active={n} />.",
         "Attaches the spoken script as `notes`, as an array where a slide has build steps.",
-        "Verifies with `pnpm --filter Kortix-Computer-Frontend typecheck` and `npx eslint src/app/presentations`, then drives the deck in a browser."
+        "Verifies with `pnpm --filter Kortix-Computer-Frontend typecheck` and `npx eslint src/app/[locale]/presentations`, then drives the deck in a browser."
       ]
     },
     {

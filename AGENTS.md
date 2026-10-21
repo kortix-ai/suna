@@ -742,9 +742,8 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   2026-10-21 on a 24 GB Mac: raw `tsc` ran 817 s, held 3.18 GB, and was
   killed before it finished. Cold `tsgo` takes 12.1 s at 5.0 GB peak. A warm
   incremental run takes 1.1 s at 1.7 GB.
-- On 2026-10-14 `tsc` reported 103 errors on `dev`; on 2026-10-21 the tsgo
-  script reported 0. The bar is relative: a branch adds no type error to the
-  files it touches. Compare against `origin/dev` with the same command, not
+- On 2026-10-21 the tsgo script reported 0 errors on `dev`. The bar is
+  relative: a branch adds no type error to the files it touches. Compare against `origin/dev` with the same command, not
   against a number in this file.
   The old ~1500 `TS2786` / `IntrinsicAttributes` noise from a React 19↔18
   types mismatch (two copies of `@types/react` in one program — `packages/sdk`

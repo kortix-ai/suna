@@ -258,7 +258,8 @@ pnpm --filter Kortix-Computer-Frontend typecheck   # tsgo; must be clean in src/
 cd apps/web && npx eslint src/app/[locale]/presentations    # 0 errors
 ```
 
-Never run raw `tsc --noEmit` in `apps/web`: it takes minutes and GBs of memory.
+Never run raw `tsc --noEmit` in `apps/web`: on 2026-10-21 it ran 817 s at 3.18 GB
+and did not finish.
 Errors elsewhere in the app are the baseline (compare against `origin/dev`), not
 yours. Nothing under `presentations` may appear.
 
