@@ -133,3 +133,21 @@ describe('firstPromptPicks — what project home sends with the first message', 
     expect(firstPromptPicks(null, 'high', ['low', 'high'])).toBeNull();
   });
 });
+
+// KRTX-3011: `/model-picker` keeps a model a default names even when its
+// provider is not connected, marked `available: false`. Mobile has no row
+// action to connect it, so it is not a row and does not count as offered.
+describe('an unavailable model (KRTX-3011)', () => {
+  const unavailable = {
+    models: {
+      'deepseek-v4.1-flash': { name: 'DeepSeek V4.1 Flash', provider: 'kortix' },
+      'codex/gpt-6-astra': { name: 'GPT-6 Astra (ChatGPT)', provider: 'codex', available: false, availability: 'login' },
+    },
+  } as unknown as ProjectLlmCatalogResponse;
+
+  test('is not a picker row and is not counted as offered', () => {
+    const models = composerModelList(unavailable);
+    expect(modelPickerOptions(models, null).map((o) => o.label)).toEqual(['DeepSeek V4.1 Flash']);
+    expect(offeredModelCount(models)).toBe(1);
+  });
+});

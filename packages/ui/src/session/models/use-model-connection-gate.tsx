@@ -14,6 +14,7 @@ import { useUpgradeDialogStore } from '../../internal/stores/upgrade-dialog-stor
 import { getProject, platformConfig } from '@kortix/sdk';
 import { contract, type FlatModel, type ModelKey, qk } from '@kortix/sdk/react';
 import { resolveEntitlementsPending } from '../composer/entitlements-pending';
+import { isRunnableModel } from './model-availability';
 
 /**
  * `ProviderModalTab` is the caller-facing vocabulary ('providers' | 'connected'
@@ -112,7 +113,9 @@ export function useModelConnectionGate(
   // `resolveAvailableSelectedModel` then nulled the pick, so the trigger stayed
   // on `unsetLabel`, no check mark rendered, and each click looked like a no-op
   // even though `onSelect` fired and the model store was written.
-  const isModelOffered = useCallback((model: FlatModel) => model.enabled !== false, []);
+  // `isRunnableModel` also refuses a model `/model-picker` marks
+  // `available: false` (its provider is not connected for the caller).
+  const isModelOffered = useCallback((model: FlatModel) => isRunnableModel(model), []);
   const hasSelectableModels = useMemo(
     () => models.some(isModelOffered),
     [models, isModelOffered],

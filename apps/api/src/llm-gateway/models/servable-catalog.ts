@@ -7,7 +7,7 @@ import { getProjectRoutingPolicy } from '../../repositories/project-routing-poli
 import { resolveEnablement } from '../model-enablement';
 import { toWireModel } from '../resolution/effective';
 import { gatewayModelCatalog } from './catalog-models';
-import { projectPickerCatalog } from './picker-catalog';
+import { projectPickerCatalog, type UnavailableModelMark } from './picker-catalog';
 import { platformDefaultModelId } from './served-managed-models';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { listGrantedGatewaySecretNames } from '../../secrets/account-resource';
@@ -16,8 +16,10 @@ import { customProviderCatalog } from '../custom-providers';
 type GatewayModel = ReturnType<typeof gatewayModelCatalog>[string];
 
 export interface ServableProjectCatalog {
-  /** Wire model id → catalog record, stamped with the project's enablement. */
-  models: Record<string, GatewayModel & { enabled: boolean }>;
+  /** Wire model id → catalog record, stamped with the project's enablement,
+   *  and `available: false` when only a default names it and its provider is
+   *  not connected for the caller. */
+  models: Record<string, GatewayModel & { enabled: boolean } & Partial<UnavailableModelMark>>;
   modelOverrides: Record<string, boolean>;
   defaultModel: string | undefined;
   usingDefaults: boolean;
