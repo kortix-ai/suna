@@ -1505,6 +1505,7 @@
   },
   "sidebar": {
     "rooms": "Salons",
+    "goals": "Objectifs",
     "referAndEarn": "Parrainer et Gagner",
     "referralShareTitle": "Parrainer des Amis",
     "referralShareSubtitle": "Gagnez 400 crédits",
@@ -22254,5 +22255,91 @@
     "join": "Rejoindre",
     "openRoom": "Ouvrir",
     "gateDescription": "Activez les Salons pour que les sessions d’agents et les personnes de ce projet échangent dans des salons nommés."
+  },
+  "goals": {
+    "title": "Objectifs",
+    "gateDescription": "Les agents prennent en charge un objectif jusqu'à ce qu'il soit atteint de façon vérifiable : l'objectif vit dans Fichiers, un battement quotidien le réveille, l'agent relance les personnes pour ce qu'il lui faut, et une vérification indépendante le clôt.",
+    "empty": "Aucun objectif pour l'instant",
+    "emptyHint": "Lancez-en un dans une session : décrivez le résultat, par exemple « assure-toi que notre ancien compte bancaire est fermé ». L'agent crée l'objectif et il apparaît ici.",
+    "loadError": "Impossible de charger les objectifs. Réessayez.",
+    "retry": "Réessayer",
+    "needsYou": "Vous attend",
+    "open": "En cours",
+    "closed": "Terminés",
+    "waitingFor": "En attente : {title}",
+    "criteria": "{met}/{total} critères",
+    "nextWake": "Prochain réveil {time}",
+    "noWake": "Aucun réveil prévu",
+    "heartbeat": "Battement",
+    "heartbeatPaused": "En pause",
+    "lastWakeLabel": "Dernier réveil",
+    "progress": "Progression",
+    "scope": {
+      "company": "Entreprise",
+      "personal": "Vous seul"
+    },
+    "status": {
+      "draft": "Brouillon",
+      "active": "Actif",
+      "waiting_on_user": "Vous attend",
+      "waiting_external": "En attente",
+      "verifying": "Vérification",
+      "done": "Terminé",
+      "abandoned": "Abandonné"
+    },
+    "health": {
+      "healthy": "En marche",
+      "attention": "À vérifier",
+      "closed": "Terminé"
+    },
+    "issue": {
+      "no_heartbeat": "Rien ne réveillera cet objectif : son rappel de battement est absent.",
+      "heartbeat_paused": "Le rappel de battement est en pause.",
+      "heartbeat_failed": "Le dernier réveil a échoué : {error}",
+      "missed_wake": "Le dernier réveil est en retard.",
+      "ask_overdue": "Une demande a dépassé son échéance.",
+      "verification_stalled": "La vérification a commencé il y a plus de 24 heures.",
+      "unreadable": "goal.json est absent ou n'est pas un JSON valide."
+    },
+    "sessionChip": "Objectif",
+    "sessionRole": {
+      "coordinator": "Cette session pilote cet objectif.",
+      "worker": "Cette session travaille sur cet objectif.",
+      "verifier": "Cette session vérifie cet objectif."
+    },
+    "openGoal": "Ouvrir l'objectif",
+    "openSession": "Ouvrir la session principale",
+    "openFolder": "Ouvrir le dossier",
+    "back": "Tous les objectifs",
+    "healthTitle": "État",
+    "successCriteria": "Critères de réussite",
+    "met": "Atteint",
+    "notMet": "Non atteint",
+    "items": "Éléments",
+    "noItems": "Aucun élément pour l'instant.",
+    "noCriteria": "Aucun critère pour l'instant : l'agent les rédige avant que l'objectif devienne actif.",
+    "kind": {
+      "task": "Tâche",
+      "ask": "Demande",
+      "wait": "Attente"
+    },
+    "itemStatus": {
+      "open": "ouvert",
+      "doing": "en cours",
+      "done": "fait",
+      "dropped": "abandonné"
+    },
+    "due": "Échéance {time}",
+    "sessions": "Sessions",
+    "role": {
+      "coordinator": "Session principale",
+      "worker": "Exécutant",
+      "verifier": "Vérificateur"
+    },
+    "timeline": "Chronologie",
+    "verification": "Vérification",
+    "notes": "Notes",
+    "log": "Journal",
+    "notFound": "Cet objectif n'existe plus."
   }
 }

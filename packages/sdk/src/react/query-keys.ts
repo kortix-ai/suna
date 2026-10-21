@@ -546,6 +546,10 @@ export const qk = {
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */
     reminders: (id: string) => [...qk.project.scope(id), 'reminders'] as const,
+    /** `listProjectGoals` — the goal folders in Files with their heartbeats. */
+    goals: (id: string) => [...qk.project.scope(id), 'goals'] as const,
+    /** `getProjectGoalFiles` — one goal folder's log, notes and verification. */
+    goalFiles: (id: string, folder: string) => [...qk.project.goals(id), 'files', folder] as const,
     /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
     sessionReminders: (id: string, sessionId: string) =>
       [...qk.project.reminders(id), 'session', sessionId] as const,

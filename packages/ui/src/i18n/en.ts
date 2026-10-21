@@ -840,6 +840,7 @@ const catalog = {
   },
   "sidebar": {
     "rooms": "Rooms",
+    "goals": "Goals",
     "referAndEarn": "Refer & Earn",
     "referralShareTitle": "Refer Friends",
     "referralShareSubtitle": "Get 400 credits",
@@ -6917,6 +6918,92 @@ const catalog = {
     "join": "Join",
     "openRoom": "Open",
     "gateDescription": "Turn on Rooms to let agent sessions and people of this project talk in named chat rooms."
+  },
+  "goals": {
+    "title": "Goals",
+    "gateDescription": "Agents own an objective until it is verifiably done: the goal lives in Files, a daily heartbeat wakes it, the agent chases people for what it needs, and an independent check closes it.",
+    "empty": "No goals yet",
+    "emptyHint": "Start one in a session: describe the outcome, for example \"make sure our old bank account is closed\". The agent creates the goal and it shows here.",
+    "loadError": "Could not load goals. Try again.",
+    "retry": "Try again",
+    "needsYou": "Needs you",
+    "open": "Open",
+    "closed": "Closed",
+    "waitingFor": "Waiting for: {title}",
+    "criteria": "{met}/{total} criteria",
+    "nextWake": "Next wake {time}",
+    "noWake": "No wake scheduled",
+    "heartbeat": "Heartbeat",
+    "heartbeatPaused": "Paused",
+    "lastWakeLabel": "Last wake",
+    "progress": "Progress",
+    "scope": {
+      "company": "Company",
+      "personal": "Only you"
+    },
+    "status": {
+      "draft": "Draft",
+      "active": "Active",
+      "waiting_on_user": "Waiting on you",
+      "waiting_external": "Waiting",
+      "verifying": "Verifying",
+      "done": "Done",
+      "abandoned": "Abandoned"
+    },
+    "health": {
+      "healthy": "Running",
+      "attention": "Needs attention",
+      "closed": "Closed"
+    },
+    "issue": {
+      "no_heartbeat": "Nothing will wake this goal: its heartbeat reminder is missing.",
+      "heartbeat_paused": "The heartbeat reminder is paused.",
+      "heartbeat_failed": "The last wake failed: {error}",
+      "missed_wake": "The last wake is overdue.",
+      "ask_overdue": "An ask is past its due time.",
+      "verification_stalled": "Verification started more than 24 hours ago.",
+      "unreadable": "goal.json is missing or is not valid JSON."
+    },
+    "sessionChip": "Goal",
+    "sessionRole": {
+      "coordinator": "This session runs this goal.",
+      "worker": "This session works on this goal.",
+      "verifier": "This session verifies this goal."
+    },
+    "openGoal": "Open goal",
+    "openSession": "Open main session",
+    "openFolder": "Open folder",
+    "back": "All goals",
+    "healthTitle": "Health",
+    "successCriteria": "Success criteria",
+    "met": "Met",
+    "notMet": "Not met",
+    "items": "Items",
+    "noItems": "No items yet.",
+    "noCriteria": "No criteria yet: the agent writes them before the goal becomes active.",
+    "kind": {
+      "task": "Task",
+      "ask": "Ask",
+      "wait": "Wait"
+    },
+    "itemStatus": {
+      "open": "open",
+      "doing": "doing",
+      "done": "done",
+      "dropped": "dropped"
+    },
+    "due": "Due {time}",
+    "sessions": "Sessions",
+    "role": {
+      "coordinator": "Main session",
+      "worker": "Worker",
+      "verifier": "Verifier"
+    },
+    "timeline": "Timeline",
+    "verification": "Verification",
+    "notes": "Notes",
+    "log": "Log",
+    "notFound": "This goal no longer exists."
   }
 };
 

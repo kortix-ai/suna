@@ -1505,6 +1505,7 @@
   },
   "sidebar": {
     "rooms": "ルーム",
+    "goals": "ゴール",
     "referAndEarn": "紹介して獲得",
     "referralShareTitle": "友達を紹介",
     "referralShareSubtitle": "400クレジット獲得",
@@ -22254,5 +22255,91 @@
     "join": "参加",
     "openRoom": "開く",
     "gateDescription": "ルームをオンにすると、このプロジェクトのエージェントセッションとメンバーが名前付きのチャットルームで会話できます。"
+  },
+  "goals": {
+    "title": "ゴール",
+    "gateDescription": "エージェントは目標を検証可能に達成するまで担当します。ゴールはファイルに保存され、毎日のハートビートで起動し、必要なものを人に催促し、独立した確認で完了します。",
+    "empty": "ゴールはまだありません",
+    "emptyHint": "セッションで開始します。たとえば「古い銀行口座が確実に解約されているようにして」のように結果を書いてください。エージェントがゴールを作成し、ここに表示されます。",
+    "loadError": "ゴールを読み込めませんでした。もう一度お試しください。",
+    "retry": "再試行",
+    "needsYou": "対応が必要",
+    "open": "進行中",
+    "closed": "完了",
+    "waitingFor": "待機中: {title}",
+    "criteria": "基準 {met}/{total}",
+    "nextWake": "次回の起動 {time}",
+    "noWake": "起動の予定なし",
+    "heartbeat": "ハートビート",
+    "heartbeatPaused": "一時停止中",
+    "lastWakeLabel": "前回の起動",
+    "progress": "進捗",
+    "scope": {
+      "company": "会社",
+      "personal": "自分のみ"
+    },
+    "status": {
+      "draft": "下書き",
+      "active": "進行中",
+      "waiting_on_user": "あなたを待機中",
+      "waiting_external": "待機中",
+      "verifying": "検証中",
+      "done": "完了",
+      "abandoned": "中止"
+    },
+    "health": {
+      "healthy": "稼働中",
+      "attention": "要確認",
+      "closed": "完了"
+    },
+    "issue": {
+      "no_heartbeat": "このゴールを起動するものがありません。ハートビートのリマインダーがありません。",
+      "heartbeat_paused": "ハートビートのリマインダーが一時停止しています。",
+      "heartbeat_failed": "前回の起動に失敗しました: {error}",
+      "missed_wake": "前回の起動が遅れています。",
+      "ask_overdue": "依頼の期限が過ぎています。",
+      "verification_stalled": "検証開始から24時間以上経過しています。",
+      "unreadable": "goal.json がないか、有効な JSON ではありません。"
+    },
+    "sessionChip": "ゴール",
+    "sessionRole": {
+      "coordinator": "このセッションがこのゴールを担当しています。",
+      "worker": "このセッションはこのゴールの作業をしています。",
+      "verifier": "このセッションはこのゴールを検証しています。"
+    },
+    "openGoal": "ゴールを開く",
+    "openSession": "メインセッションを開く",
+    "openFolder": "フォルダを開く",
+    "back": "すべてのゴール",
+    "healthTitle": "状態",
+    "successCriteria": "成功基準",
+    "met": "達成",
+    "notMet": "未達成",
+    "items": "項目",
+    "noItems": "項目はまだありません。",
+    "noCriteria": "基準はまだありません。ゴールが進行中になる前にエージェントが作成します。",
+    "kind": {
+      "task": "タスク",
+      "ask": "依頼",
+      "wait": "待機"
+    },
+    "itemStatus": {
+      "open": "未着手",
+      "doing": "作業中",
+      "done": "完了",
+      "dropped": "取り下げ"
+    },
+    "due": "期限 {time}",
+    "sessions": "セッション",
+    "role": {
+      "coordinator": "メインセッション",
+      "worker": "作業者",
+      "verifier": "検証者"
+    },
+    "timeline": "タイムライン",
+    "verification": "検証",
+    "notes": "メモ",
+    "log": "ログ",
+    "notFound": "このゴールはもう存在しません。"
   }
 }
