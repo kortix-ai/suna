@@ -4,7 +4,10 @@ import type { ProjectSession } from '@kortix/sdk';
 import {
   buildSpaceTimeline,
   dayKind,
+  gutterTime,
   lastReplyLabel,
+  spaceRoster,
+  spaceTabFromParam,
   threadIsWorking,
   threadMessageText,
 } from './space-timeline';
@@ -98,5 +101,41 @@ describe('threadMessageText', () => {
 
   test('falls back to the thread title when there is no first prompt', () => {
     expect(threadMessageText(thread('a', 'u1', at(20, 1), { name: 'Weekly report' }))).toBe('Weekly report');
+  });
+});
+
+describe('gutterTime', () => {
+  test('drops the day period so the time fits the avatar gutter', () => {
+    const afternoon = new Date(2026, 9, 20, 14, 13);
+    expect(gutterTime(afternoon, 'en')).toBe('2:13');
+    expect(gutterTime(afternoon, 'de')).toBe('14:13');
+    expect(gutterTime(afternoon, 'zh')).toMatch(/^1?[0-9]:13$/);
+  });
+});
+
+describe('spaceRoster', () => {
+  test('lists each person who started a thread once, and every agent that answered one', () => {
+    const roster = spaceRoster([
+      thread('a', 'u1', at(20, 9), { owner_type: 'user', owner_name: 'Ada', agent_name: 'kortix' }),
+      thread('b', 'u1', at(20, 10), { owner_type: 'user', owner_name: 'Ada', agent_name: 'writer' }),
+      thread('c', 'sa1', at(20, 11), { owner_type: 'service_account', agent_name: 'kortix' }),
+      thread('d', 'u2', at(20, 12), { owner_type: 'user', owner_email: 'grace@example.test', agent_name: null }),
+    ]);
+    expect(roster.people.map((person) => person.id)).toEqual(['u1', 'u2']);
+    expect(roster.agents).toEqual(['kortix', 'writer']);
+  });
+
+  test("a DM counts its agent before any thread exists", () => {
+    expect(spaceRoster([], 'writer')).toEqual({ people: [], agents: ['writer'] });
+  });
+});
+
+describe('spaceTabFromParam', () => {
+  test('reads a tab the space has, and falls back to Chat for anything else', () => {
+    expect(spaceTabFromParam('files', 'channel')).toBe('files');
+    expect(spaceTabFromParam('links', 'channel')).toBe('links');
+    expect(spaceTabFromParam('links', 'dm')).toBe('chat');
+    expect(spaceTabFromParam('nope', 'channel')).toBe('chat');
+    expect(spaceTabFromParam(null, 'dm')).toBe('chat');
   });
 });

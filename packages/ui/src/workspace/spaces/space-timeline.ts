@@ -67,6 +67,20 @@ export function dayKind(date: Date, now: Date): 'today' | 'yesterday' | 'earlier
   return day === yesterday.getTime() ? 'yesterday' : 'earlier';
 }
 
+/**
+ * A collapsed row's time in the avatar gutter: hour and minute without the day
+ * period ("2:13", not "2:13 PM"), so it fits one avatar's width. The row's
+ * `title` carries the full time.
+ */
+export function gutterTime(date: Date, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' })
+    .formatToParts(date)
+    .filter((part) => part.type !== 'dayPeriod')
+    .map((part) => part.value)
+    .join('')
+    .trim();
+}
+
 /** "12 hours ago": the thread's last activity. */
 export function lastReplyLabel(session: ProjectSession, locale: string, now = Date.now()): string {
   return relativeTime(session.updated_at, locale, now, { style: 'long' });
@@ -92,4 +106,53 @@ export function threadMessageText(session: ProjectSession): string {
 /** An agent's display name: the sidebar's DM row and the space view say it the same way. */
 export function agentLabel(name: string): string {
   return isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name);
+}
+
+/** A person who started a thread in the space, as the thread list names them. */
+export interface SpacePerson {
+  id: string;
+  name: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+}
+
+/**
+ * Who is in a space, as far as its loaded threads tell: the people who
+ * started a thread, and the agents that answered one. No roster API exists
+ * yet, so the header says "in these threads", not "members".
+ */
+export function spaceRoster(
+  sessions: readonly ProjectSession[],
+  dmAgentName?: string | null,
+): { people: SpacePerson[]; agents: string[] } {
+  const people = new Map<string, SpacePerson>();
+  const agents = new Set<string>();
+  if (dmAgentName) agents.add(dmAgentName);
+  for (const session of sessions) {
+    if (session.created_by && session.owner_type === 'user' && !people.has(session.created_by)) {
+      people.set(session.created_by, {
+        id: session.created_by,
+        name: session.owner_name ?? null,
+        email: session.owner_email ?? null,
+        avatarUrl: session.owner_avatar_url ?? null,
+      });
+    }
+    if (session.agent_name) agents.add(session.agent_name);
+  }
+  return { people: [...people.values()], agents: [...agents] };
+}
+
+/** A channel's tabs, in order. `?tab=` names one; Chat has no param. */
+export const CHANNEL_TABS = ['chat', 'threads', 'files', 'memory', 'apps', 'links', 'triggers'] as const;
+/** A DM has no apps or links of its own. */
+export const DM_TABS = ['chat', 'threads', 'files', 'memory', 'triggers'] as const;
+export type SpaceTab = (typeof CHANNEL_TABS)[number];
+
+export function spaceTabs(kind: 'channel' | 'dm'): readonly SpaceTab[] {
+  return kind === 'dm' ? DM_TABS : CHANNEL_TABS;
+}
+
+/** The `?tab=` value as a tab of this kind of space; anything else is Chat. */
+export function spaceTabFromParam(value: string | null, kind: 'channel' | 'dm'): SpaceTab {
+  return spaceTabs(kind).find((tab) => tab === value) ?? 'chat';
 }
