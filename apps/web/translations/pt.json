@@ -1318,6 +1318,7 @@
     },
     "credits": {
       "loadFailed": "Não foi possível carregar esta conta.",
+      "resetAt": "Os créditos do plano são redefinidos em",
       "availableBalance": "Saldo disponível",
       "creditCount": "{count, plural, one {{formatted} crédito} other {{formatted} créditos}}",
       "owed": "devidos",
@@ -2201,6 +2202,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Membros",
+      "unlimitedMembers": "Membros ilimitados",
+      "loadingMembers": "Carregando membros…",
+      "membersUnavailable": "Número de membros indisponível",
+      "memberCount": "{count, plural, one {# membro} other {# membros}}",
       "cancels": "Cancela em {date}",
       "cancelsAtPeriodEnd": "Cancela no fim do período",
       "renews": "Renova em {date}",
@@ -20312,7 +20318,10 @@
       "text7971dd752669": "Lembretes",
       "text724b09397472": "Adicionando {name} a {project}",
       "text1e007c47254d": "A configuração acontece em segundo plano. Você receberá uma notificação quando terminar.",
-      "text57f57edb6f16": "A solicitação de alteração #{number} está pronta para revisão."
+      "text57f57edb6f16": "A solicitação de alteração #{number} está pronta para revisão.",
+      "texta8597db6f24b": "Remover habilidade",
+      "text5f6ba69d66d1": "Habilidade removida",
+      "textcb8d6b0c94c9": " e todos os arquivos nela, incluindo edições, e remove a habilidade de todos os agentes que a usam. Um commit no branch padrão."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

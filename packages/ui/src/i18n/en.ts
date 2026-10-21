@@ -680,6 +680,7 @@ const catalog = {
     },
     "credits": {
       "loadFailed": "Could not load this account.",
+      "resetAt": "Plan credits reset on",
       "availableBalance": "Available balance",
       "creditCount": "{count, plural, one {{formatted} credit} other {{formatted} credits}}",
       "owed": "owed",
@@ -5587,7 +5588,10 @@ const catalog = {
       "textdfea5351a743": "Telegram disconnected",
       "text2f95b1c9ee2b": "Allowed users saved",
       "text7971dd752669": "Reminders",
-      "text57f57edb6f16": "Change request #{number} is ready to review."
+      "text57f57edb6f16": "Change request #{number} is ready to review.",
+      "texta8597db6f24b": "Remove skill",
+      "text5f6ba69d66d1": "Skill removed",
+      "textcb8d6b0c94c9": " and every file in it, edits included, and removes the skill from every agent that lists it. One commit on the default branch."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
