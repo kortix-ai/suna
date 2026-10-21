@@ -11,9 +11,13 @@ import type { GatewayHooks, UpstreamDescriptor, UsageEvent } from '@kortix/llm-g
 // standalone pod. The client sees only Kortix.
 const RUN_LIVE = !!process.env.PLATINUM_INFERENCE_API_KEY && process.env.RUN_LIVE_LLM_TESTS === '1';
 const describeLive = RUN_LIVE ? describe : describe.skip;
-// Imported only for a live run: the module validates API config at load.
+// Imported only for a live run: the module validates API config at load. The
+// lineup is whatever Platinum Inference lists right now.
 const SERVED_MODELS = RUN_LIVE
-  ? (await import('../models/served-managed-models')).SERVED_MANAGED_MODELS
+  ? await (async () => {
+      await (await import('../models/managed-models')).loadManagedLineup();
+      return (await import('../models/served-managed-models')).servedManagedModels();
+    })()
   : [];
 const UPSTREAM_IDENTITY = /platinum|provider_name|z-ai\/|deepseek\//i;
 // 32×32 solid red PNG.
@@ -25,12 +29,12 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
 describeLive('Kortix-managed models — LIVE Platinum inference (RUN_LIVE_LLM_TESTS=1)', () => {
   async function managedGateway(mutate: (candidates: UpstreamDescriptor[]) => UpstreamDescriptor[] = (c) => c) {
     const { managedCandidates } = await import('../resolution/descriptors');
-    const { getManagedModel } = await import('@kortix/llm-catalog');
+    const { getRuntimeManagedModel } = await import('../models/managed-models');
     const recorded: UsageEvent[] = [];
     const hooks: GatewayHooks = {
       authenticate: async () => ({ userId: 'live-user', accountId: 'live-acct' }),
       // resolve-candidates.ts adds this header in production.
-      resolveUpstream: async (_principal, model) => mutate(managedCandidates(getManagedModel(model)!)
+      resolveUpstream: async (_principal, model) => mutate(managedCandidates(getRuntimeManagedModel(model)!)
         .map((c) => ({ ...c, headers: { 'x-platinum-session': 'kortix-live-test' } }))),
       assertBillingActive: async () => {},
       recordUsage: async (event) => { recorded.push(event); },

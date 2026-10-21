@@ -149,22 +149,15 @@ export function livePricing(
   };
 }
 
-function managedPricing(managed: ManagedModel): UpstreamDescriptor['pricing'] | undefined {
-  if (managed.pricing) return managed.pricing;
-  const slash = managed.pricingRef.indexOf('/');
-  if (slash <= 0) return undefined;
-  return livePricing(managed.pricingRef.slice(0, slash), managed.pricingRef.slice(slash + 1));
-}
-
 /**
  * A managed model's one upstream: Kortix Platinum inference. Platinum owns the
  * model's upstream chain, failover and privacy terms, and reports its price as
  * `usage.cost`, which the gateway bills; `pricing` applies only without it.
  */
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
-  // CLOUD-ONLY gate, defense-in-depth: RUNTIME_MANAGED_MODELS is already empty
-  // with KORTIX_MANAGED_PROVIDER_ENABLED off (managed-models.ts); guard here
-  // too so no managed credential is read if a future caller reaches this directly.
+  // CLOUD-ONLY gate, defense-in-depth: the lineup is already empty with
+  // KORTIX_MANAGED_PROVIDER_ENABLED off (loadManagedLineup); guard here too so
+  // no managed credential is read if a future caller reaches this directly.
   if (!config.KORTIX_MANAGED_PROVIDER_ENABLED || !config.PLATINUM_INFERENCE_API_KEY) return [];
   return [{
     provider: 'platinum',
@@ -174,7 +167,7 @@ export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.id,
-    pricing: managedPricing(managed),
+    pricing: managed.pricing,
     publicProvider: 'kortix',
   }];
 }

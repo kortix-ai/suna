@@ -6,14 +6,6 @@ mock.module('../../repositories/project-model-access', () => ({
   getProjectGatewayResolution: async () => ({ access: { disabledProviders: [], disabledModels: [] }, pooledEnabled: false }),
 }));
 
-const configuredModels = [
-  {
-    id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash',
-    pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash', tier: 'balanced', vision: true,
-    limit: { context: 1_048_576, output: 16_384 },
-  },
-];
-
 mock.module('../../config', () => ({
   SANDBOX_VERSION: 'test',
   config: new Proxy(
@@ -23,7 +15,6 @@ mock.module('../../config', () => ({
         if (Object.hasOwn(target, key)) return target[key];
         if (key === 'KORTIX_MANAGED_PROVIDER_ENABLED') return true;
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return false;
-        if (key === 'LLM_GATEWAY_MANAGED_MODELS') return JSON.stringify(configuredModels);
         if (key === 'TUNNEL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return '';
         if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'deepseek-v4.1-flash';
@@ -71,16 +62,19 @@ mock.module('../credentials/codex', () => ({
   resolveCodexAccountCredential: async () => null,
 }));
 
-const { RUNTIME_MANAGED_MODELS } = await import('./managed-models');
-const { SERVED_MANAGED_MODELS } = await import('./served-managed-models');
+const { managedLineup, __setManagedLineupForTest } = await import('./managed-models');
+const { servedManagedModels } = await import('./served-managed-models');
+const { TEST_MANAGED_LINEUP } = await import('../../__tests__/fixtures/managed-lineup');
+// A lineup is known (e.g. loaded before the key was removed), but no key is set.
+__setManagedLineupForTest(TEST_MANAGED_LINEUP);
 const { gatewayModelCatalog, managedModels } = await import('./catalog-models');
 await import('./picker-catalog');
 const { resolveCandidates } = await import('../resolution/resolve-candidates');
 
 describe('a managed model without the Platinum inference key is not offered', () => {
   test('removes the model from every served catalog', () => {
-    expect(RUNTIME_MANAGED_MODELS.map((model) => model.id)).toContain('deepseek-v4.1-flash');
-    expect(SERVED_MANAGED_MODELS).toEqual([]);
+    expect(managedLineup().map((model) => model.id)).toContain('deepseek-v4.1-flash');
+    expect(servedManagedModels()).toEqual([]);
     expect(managedModels()['deepseek-v4.1-flash']).toBeUndefined();
     expect(gatewayModelCatalog('proj')['deepseek-v4.1-flash']).toBeUndefined();
   });

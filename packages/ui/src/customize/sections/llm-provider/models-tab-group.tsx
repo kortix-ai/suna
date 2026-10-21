@@ -8,7 +8,6 @@ import { useTranslations } from '../../../i18n';
 import {
   useModelAccess,
 } from '@kortix/sdk/react';
-import { isManagedModelId } from '@kortix/llm-catalog';
 import { ModelsTabRow, type ModelContext } from './models-tab-row';
 
 import type { ModelGroup } from './model-rows';
@@ -24,7 +23,7 @@ export function ModelsTabGroup({
   // Kortix Platinum inference serves every managed model on zero-retention terms.
   const dataClaim =
     group.providerID === 'kortix' &&
-    group.rows.every(({ model }) => isManagedModelId(model.modelID));
+    group.rows.every(({ model }) => !model.modelID.includes('/'));
   return (
     <section
       key={group.providerID}

@@ -14,7 +14,7 @@ export type SessionModelDecision =
  *
  * `storedWireModel` is the session's stored model, reduced to its bare
  * gateway wire id (`effective.ts`'s `toWireModel`). `served` is the runtime-
- * servable managed lineup (`SERVED_MANAGED_MODELS`). `projectDefaultWireModel`
+ * servable managed lineup (`servedManagedModels()`). `projectDefaultWireModel`
  * is the project's current declared default, also reduced to its wire id —
  * consulted ONLY when the id has no declared successor
  * (`managed-models.ts`'s `LEGACY_MANAGED_IDS`) that is itself servable here.

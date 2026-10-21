@@ -27,6 +27,7 @@ import {
   canonicalManagedModelId,
   getRuntimeManagedModel,
   isKnownManagedModelId,
+  managedLineup,
   isRetiredManagedModelId,
 } from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
@@ -508,9 +509,8 @@ export async function resolveCandidates(
     'provider_not_connected', `No ${provider} API key is connected for this project.`,
     `Add a ${provider} API key in project settings, then retry.`);
 
-  // The model id is a genuine managed-model id (checked against the BUNDLED
-  // catalog, which — unlike RUNTIME_MANAGED_MODELS — is never gated by
-  // KORTIX_MANAGED_PROVIDER_ENABLED) but didn't resolve above. Two distinct
+  // The model id is a known managed-model id (in the lineup, or retired) but
+  // didn't resolve above. Two distinct
   // causes collapse into ONE catch-all here on purpose (both are "ask your
   // operator" for the same reason — a deployment-config gap, never a client
   // mistake): the managed provider is off on this deployment, or it's on but
@@ -523,7 +523,10 @@ export async function resolveCandidates(
   // or operator flag fixes it. Pairs with the session-level fix that stops a
   // session ever reaching this: llm-gateway/resolution/session-model-repoint.ts
   // (re-point at boot) and its pure decision, session-model.ts.
-  if (isKnownManagedModelId(effectiveModel)) {
+  // With nothing served (the managed provider off, or no Platinum key), any
+  // bare id is a managed id this deployment cannot reach.
+  const nothingServed = managedLineup().length === 0 && !effectiveModel.includes('/');
+  if (isKnownManagedModelId(effectiveModel) || nothingServed) {
     if (isRetiredManagedModelId(effectiveModel)) {
       const replacement = canonicalManagedModelId(effectiveModel);
       const named = replacement !== effectiveModel ? replacement : null;

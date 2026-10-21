@@ -143,7 +143,7 @@ let knownManagedModelId: string | null = null;
 const managedModels = await import('../models/managed-models');
 mock.module('../models/managed-models', () => ({
   ...managedModels,
-  RUNTIME_MANAGED_MODELS: [],
+  managedLineup: () => [],
   getRuntimeManagedModel: (id: string) =>
     runtimeManagedModel?.id === id ? runtimeManagedModel : undefined,
   isRuntimeManagedModelId: (id: string) => runtimeManagedModel?.id === id,
@@ -650,9 +650,9 @@ describe('resolveCandidates — managed model tier gating', () => {
     });
   });
 
-  // The evidence case (2026-09-28 sweep): a session pinned to an id the
-  // BUNDLED catalog still knows about only because it's in RETIRED_MANAGED_
-  // MODEL_IDS — never in RUNTIME_MANAGED_MODELS — must not collapse into the
+  // The evidence case (2026-09-28 sweep): a session pinned to an id known
+  // only because it's in RETIRED_MANAGED_MODEL_IDS — never in the Platinum
+  // lineup — must not collapse into the
   // same "disabled on this deployment" message. Nothing is disabled; the id
   // is gone. `grok-4.6` has no declared successor (managed-models.ts's
   // LEGACY_MANAGED_IDS) — the message says so, without inventing one.

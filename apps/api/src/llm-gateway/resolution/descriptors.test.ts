@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { MANAGED_MODELS } from '@kortix/llm-catalog';
+import { TEST_MANAGED_LINEUP } from '../../__tests__/fixtures/managed-lineup';
 import * as realTiers from '../../billing/services/tiers';
 
 const config: Record<string, unknown> = {
@@ -170,7 +170,7 @@ describe('livePricing maps the catalog price onto the descriptor', () => {
 });
 
 describe('managed models: one Platinum inference candidate', () => {
-  const [deepseek, glm] = MANAGED_MODELS;
+  const [deepseek, glm] = TEST_MANAGED_LINEUP;
 
   test('every managed model resolves to Platinum, billed in Kortix credits at its catalog price', () => {
     for (const model of [deepseek!, glm!]) {

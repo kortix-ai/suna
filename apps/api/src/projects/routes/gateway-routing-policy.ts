@@ -7,7 +7,7 @@ import {
 import { clampGenerationConfig } from '@kortix/llm-catalog';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
 import { catalogModelForWireModel } from '../../llm-gateway/models/catalog-models';
-import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
+import { platformDefaultModelId, platformVisionModelId } from '../../llm-gateway/models/served-managed-models';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import {
@@ -84,7 +84,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     effective: {
       defaultModel: effectiveDefault,
       defaultModelSource,
-      visionModel: stored?.visionModel ?? config.LLM_GATEWAY_VISION_MODEL ?? null,
+      visionModel: stored?.visionModel ?? (platformVisionModelId() || null),
       defaultFallback: {
         models: [...(route.fallbackModels ?? [])],
         fallbackOn: route.fallbackOn ?? 'transient',
@@ -92,7 +92,7 @@ async function routingPolicyDocument(ctx: RoutingContext, canWrite: boolean) {
     },
     platform: {
       defaultModel: platformDefaultModelId(),
-      visionModel: config.LLM_GATEWAY_VISION_MODEL ?? null,
+      visionModel: platformVisionModelId() || null,
       defaultFallback: operatorFallbackFor(platformDefaultModelId()),
     },
     capabilities: { write: canWrite },

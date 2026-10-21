@@ -23,7 +23,6 @@ mock.module('../../config', () => ({
         if (Object.hasOwn(target, key)) return target[key];
         if (key === 'KORTIX_MANAGED_PROVIDER_ENABLED') return false;
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return false;
-        if (key === 'LLM_GATEWAY_MANAGED_MODELS') return undefined;
         if (key === 'TUNNEL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return 'claude-sonnet-4.6';
         if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'codex/gpt-5.6-sol';
@@ -78,7 +77,7 @@ mock.module('../credentials/codex', () => ({
   resolveCodexAccountCredential: async () => null,
 }));
 
-const { RUNTIME_MANAGED_MODELS, getRuntimeManagedModel, isRuntimeManagedModelId } =
+const { getRuntimeManagedModel, isRuntimeManagedModelId, loadManagedLineup, managedLineup } =
   await import('./managed-models');
 const { managedCandidates } = await import('../resolution/descriptors');
 const { resolveCandidates } = await import('../resolution/resolve-candidates');
@@ -88,15 +87,17 @@ await import('./picker-catalog');
 const FAKE_MANAGED_MODEL = {
   id: 'deepseek-v4.1-flash',
   name: 'DeepSeek V4.1 Flash',
-  pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
-  tier: 'flagship' as const,
+  pricing: { inputPerMillion: 0.15, outputPerMillion: 0.6 },
   vision: true,
   limit: { context: 200_000, output: 32_000 },
 };
 
 describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the self-host default)', () => {
-  test('the managed registry is empty — the single choke point every consumer reads through', () => {
-    expect(RUNTIME_MANAGED_MODELS).toEqual([]);
+  test('the managed registry is empty and never asks Platinum — the single choke point every consumer reads through', async () => {
+    let fetched = false;
+    expect(await loadManagedLineup(async () => { fetched = true; return new Response('{}'); })).toBe(true);
+    expect(fetched).toBe(false);
+    expect(managedLineup()).toEqual([]);
     // A bundled managed id: the lookups miss because the registry is empty.
     expect(isRuntimeManagedModelId('deepseek-v4.1-flash')).toBe(false);
     expect(getRuntimeManagedModel('deepseek-v4.1-flash')).toBeUndefined();

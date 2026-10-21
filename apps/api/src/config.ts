@@ -1,4 +1,3 @@
-import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
 import { hydrateEnvironmentSecret } from '@kortix/shared';
 import { z } from '@hono/zod-openapi';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
@@ -493,7 +492,7 @@ const envSchema = z.object({
   // follows KORTIX_BILLING_INTERNAL_ENABLED (derived below): billing on =
   // managed cloud where the managed lineup is the product; billing off =
   // self-host where it must stay dark. An explicit true/false always wins.
-  // See RUNTIME_MANAGED_MODELS (managed-models.ts) and managedCandidates()
+  // See loadManagedLineup (managed-models.ts) and managedCandidates()
   // (descriptors.ts) — both are gated on this and read no managed credentials
   // when off.
   KORTIX_MANAGED_PROVIDER_ENABLED: optBoolUnset,
@@ -503,13 +502,12 @@ const envSchema = z.object({
   // Runtime routing is control-plane configuration, not a model-catalog
   // constant baked into the gateway binary. Operators can replace the default
   // and define any number of exact-match fallback policies without code changes.
-  LLM_GATEWAY_DEFAULT_MODEL: optStrDefault(PLATFORM_DEFAULT_MODEL_ID),
-  // Image-capable managed model used when the default receives an image.
-  LLM_GATEWAY_VISION_MODEL: optStrDefault('deepseek-v4.1-flash'),
+  // Empty = the first model Platinum Inference lists (platformDefaultModelId).
+  LLM_GATEWAY_DEFAULT_MODEL: optStr,
+  // Model used when the default receives an image. Empty = the first managed
+  // model that reads images (platformVisionModelId).
+  LLM_GATEWAY_VISION_MODEL: optStr,
   LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
-  // Optional JSON array replacing the platform managed-model overlay (ids,
-  // prices, capabilities). Empty uses the bundled defaults.
-  LLM_GATEWAY_MANAGED_MODELS: optStr,
   // Runtime source for provider/model metadata. The API keeps the last known
   // snapshot if this source is temporarily unavailable.
   LLM_GATEWAY_CATALOG_URL: optUrl('https://models.dev/api.json'),
@@ -1362,7 +1360,6 @@ export const config = {
   LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,
   LLM_GATEWAY_VISION_MODEL: env.LLM_GATEWAY_VISION_MODEL,
   LLM_GATEWAY_FALLBACK_POLICIES: env.LLM_GATEWAY_FALLBACK_POLICIES,
-  LLM_GATEWAY_MANAGED_MODELS: env.LLM_GATEWAY_MANAGED_MODELS,
   LLM_GATEWAY_CATALOG_URL: env.LLM_GATEWAY_CATALOG_URL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,

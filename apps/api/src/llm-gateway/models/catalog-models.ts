@@ -8,7 +8,8 @@ import {
 } from '@kortix/llm-catalog';
 import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
-import { SERVED_MANAGED_MODELS } from './served-managed-models';
+import { getRuntimeManagedModel, managedLineupRevision, type ManagedModel } from './managed-models';
+import { servedManagedModels } from './served-managed-models';
 
 // The real upstream provider id for the ChatGPT-subscription lineup served
 // under `codex/<id>` — kept as one named constant so this file, the sandbox
@@ -178,64 +179,43 @@ export function capabilitiesForModel(
 export const catalogModelForWireModel = (
   wireModel: string,
   catalog: Catalog = runtimeModelCatalog.snapshot(),
-): CatalogModel | undefined => catalogModelForWireModelCanonical(wireModel, catalog);
+): CatalogModel | undefined => {
+  // A bare id is a managed model: its record is what Platinum Inference says.
+  if (!wireModel.includes('/')) {
+    const managed = getRuntimeManagedModel(wireModel);
+    return managed ? managedCatalogModel(managed) : undefined;
+  }
+  return catalogModelForWireModelCanonical(wireModel, catalog);
+};
 
+function managedCatalogModel(m: ManagedModel): CatalogModel {
+  return {
+    id: m.id,
+    name: m.name,
+    reasoning: !!m.reasoningOptions?.length,
+    tool_call: true,
+    temperature: true,
+    attachment: m.vision,
+    modalities: { input: m.vision ? ['text', 'image'] : ['text'], output: ['text'] },
+    ...(m.reasoningOptions ? { reasoning_options: m.reasoningOptions } : {}),
+    limit: m.limit,
+  };
+}
+
+/** The served managed lineup as catalog entries: every field comes from Platinum Inference. */
 export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
-  // SERVED_MANAGED_MODELS is empty when KORTIX_MANAGED_PROVIDER_ENABLED is off,
-  // and drops any configured model whose transport credential is absent — the
-  // catalog must never advertise a model that request-time resolution refuses.
-  if (SERVED_MANAGED_MODELS.length === 0) return out;
-  // The managed lineup is curated and its slugs don't all exist on models.dev
-  // (z-ai≠zhipuai), so vision + limit are explicit on each model and always
-  // win. Everything else (temperature, reasoning_options, structured_output,
-  // ...) comes from the model's REAL catalog record via its pricingRef when
-  // that resolves — hardcoding `temperature: true` here is exactly the bug
-  // class the sandbox fallback catalog documents: gpt-5.6-luna REJECTS a
-  // client-sent temperature, so advertising support makes OpenCode send one
-  // and 400 every turn. Unresolvable refs keep the permissive defaults.
-  for (const m of SERVED_MANAGED_MODELS) {
-    const cost = m.pricing
-      ? {
-          input: m.pricing.inputPerMillion,
-          output: m.pricing.outputPerMillion,
-          ...(m.pricing.cachedInputPerMillion != null
-            ? { cache_read: m.pricing.cachedInputPerMillion }
-            : {}),
-          ...(m.pricing.cacheWritePerMillion != null
-            ? { cache_write: m.pricing.cacheWritePerMillion }
-            : {}),
-          ...(m.pricing.contextOver200k
-            ? {
-                context_over_200k: {
-                  input: m.pricing.contextOver200k.inputPerMillion,
-                  output: m.pricing.contextOver200k.outputPerMillion,
-                  ...(m.pricing.contextOver200k.cachedInputPerMillion != null
-                    ? { cache_read: m.pricing.contextOver200k.cachedInputPerMillion }
-                    : {}),
-                  ...(m.pricing.contextOver200k.cacheWritePerMillion != null
-                    ? { cache_write: m.pricing.contextOver200k.cacheWritePerMillion }
-                    : {}),
-                },
-              }
-            : {}),
-        }
-      : undefined;
-    const real = catalogModelForWireModel(m.id);
-    const caps = real && real.attachment !== undefined ? capabilitiesOf(real) : undefined;
+  for (const m of servedManagedModels()) {
     out[m.id] = {
+      ...capabilitiesOf(managedCatalogModel(m)),
       name: m.name,
-      provider: m.providerBrand ?? KORTIX_PROVIDER_ID,
-      reasoning: true,
-      tool_call: true,
-      temperature: true,
-      ...(caps ?? {}),
-      // Curated fields always win over the models.dev record.
-      attachment: m.vision,
-      modalities: { input: m.vision ? ['text', 'image'] : ['text'], output: ['text'] },
-      ...(m.reasoningOptions ? { reasoning_options: m.reasoningOptions } : {}),
+      provider: KORTIX_PROVIDER_ID,
       limit: m.limit,
-      ...(cost ? { cost } : {}),
+      cost: {
+        input: m.pricing.inputPerMillion,
+        output: m.pricing.outputPerMillion,
+        ...(m.pricing.cachedInputPerMillion != null ? { cache_read: m.pricing.cachedInputPerMillion } : {}),
+      },
     };
   }
   return out;
@@ -308,27 +288,35 @@ export function gatewayCodexModels(
 
 // Runtime catalog shapes are rebuilt once per atomic API refresh revision, not
 // once per request. The bundled snapshot is only the initial/last-known fallback.
-const MANAGED_ONLY: Record<string, GatewayModel> = managedModels();
+// The managed lineup refreshes too (managedLineupRevision): either revision moving rebuilds.
 const EMPTY_CATALOG: Record<string, GatewayModel> = {};
 let cachedRevision = -1;
+let cachedManagedRevision = -1;
+let cachedManaged: Record<string, GatewayModel> = {};
 let cachedByokAndCodex: Record<string, GatewayModel> = {};
-let cachedFullCatalog: Record<string, GatewayModel> = MANAGED_ONLY;
+let cachedFullCatalog: Record<string, GatewayModel> = {};
 
 function refreshedCatalogs(): {
+  managed: Record<string, GatewayModel>;
   byokAndCodex: Record<string, GatewayModel>;
   full: Record<string, GatewayModel>;
 } {
   const revision = runtimeModelCatalog.status().revision;
+  const managedRevision = managedLineupRevision();
   if (revision !== cachedRevision) {
     const catalog = runtimeModelCatalog.snapshot();
     cachedByokAndCodex = {
       ...gatewayModelsAll(catalog),
       ...gatewayCodexModels(catalog),
     };
-    cachedFullCatalog = { ...MANAGED_ONLY, ...cachedByokAndCodex };
-    cachedRevision = revision;
   }
-  return { byokAndCodex: cachedByokAndCodex, full: cachedFullCatalog };
+  if (managedRevision !== cachedManagedRevision) cachedManaged = managedModels();
+  if (revision !== cachedRevision || managedRevision !== cachedManagedRevision) {
+    cachedFullCatalog = { ...cachedManaged, ...cachedByokAndCodex };
+    cachedRevision = revision;
+    cachedManagedRevision = managedRevision;
+  }
+  return { managed: cachedManaged, byokAndCodex: cachedByokAndCodex, full: cachedFullCatalog };
 }
 
 // `projectId` gates BYOK/codex visibility (anonymous callers see managed only).
@@ -341,5 +329,5 @@ export function gatewayModelCatalog(
 ): Record<string, GatewayModel> {
   const catalogs = refreshedCatalogs();
   if (opts?.freeManagedOnly) return projectId ? catalogs.byokAndCodex : EMPTY_CATALOG;
-  return projectId ? catalogs.full : MANAGED_ONLY;
+  return projectId ? catalogs.full : catalogs.managed;
 }

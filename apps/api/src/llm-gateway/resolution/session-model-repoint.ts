@@ -32,7 +32,7 @@ import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { isRetiredManagedModelId } from '../models/managed-models';
-import { SERVED_MANAGED_MODELS, platformDefaultModelId } from '../models/served-managed-models';
+import { platformDefaultModelId, servedManagedModels } from '../models/served-managed-models';
 import { resolveEffectiveModel } from './default-model';
 import { toOpencodeModelRef, toWireModel } from './effective';
 import { resolveSessionManagedModel } from './session-model';
@@ -70,7 +70,7 @@ export async function repointRetiredSessionModel(
   const wire = opencodeModelRef.startsWith('kortix/') ? opencodeModelRef.slice('kortix/'.length) : opencodeModelRef;
   if (!isRetiredManagedModelId(wire)) return opencodeModelRef; // the overwhelming common case, no IO at all
 
-  let decision = resolveSessionManagedModel(wire, SERVED_MANAGED_MODELS, null);
+  let decision = resolveSessionManagedModel(wire, servedManagedModels(), null);
   if (decision.kind === 'kept') {
     // No servable declared successor — the project's current default is the
     // only remaining fallback (same chain PUT /model and session create use).
@@ -92,7 +92,7 @@ export async function repointRetiredSessionModel(
     const projectDefault = resolved.model ? toWireModel(resolved.model) : null;
     decision = resolveSessionManagedModel(
       wire,
-      SERVED_MANAGED_MODELS,
+      servedManagedModels(),
       projectDefault,
       subject.freeModelsOnly ? null : platformDefaultModelId(),
     );

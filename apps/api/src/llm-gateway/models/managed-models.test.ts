@@ -1,53 +1,77 @@
 import { describe, expect, test } from 'bun:test';
 
+import { PLATINUM_MODELS_RESPONSE, TEST_MANAGED_LINEUP } from '../../__tests__/fixtures/managed-lineup';
 import {
   canonicalManagedModelId,
+  getRuntimeManagedModel,
+  isKnownManagedModelId,
   isRetiredManagedModelId,
   LEGACY_MANAGED_IDS,
+  loadManagedLineup,
+  managedLineup,
+  managedModelsFromPlatinum,
   type ManagedModel,
-  parseManagedModels,
   resolveLegacyIdChain,
   resolvePlatformDefaultModelId,
   retiredManagedModelReplacement,
+  __setManagedLineupForTest,
 } from './managed-models';
 
-describe('runtime managed model registry', () => {
-  const model = {
-    id: 'operator-model', name: 'Operator Model', pricingRef: 'vendor/operator-model',
-    tier: 'balanced', vision: true, limit: { context: 64_000, output: 8_000 },
-  };
+const answer = (body: unknown, status = 200) => async () => new Response(JSON.stringify(body), { status });
 
-  test('accepts a complete operator-defined managed-model replacement', () => {
-    expect(parseManagedModels(JSON.stringify([model, { ...model, id: 'text', vision: false }]))).toEqual([
-      expect.objectContaining({ id: 'operator-model', vision: true }),
-      expect.objectContaining({ id: 'text', vision: false }),
-    ]);
+describe('the managed lineup is what Platinum Inference lists', () => {
+  test('maps Platinum /models to the lineup, in Platinum order', () => {
+    expect(managedModelsFromPlatinum(PLATINUM_MODELS_RESPONSE)).toEqual(TEST_MANAGED_LINEUP);
   });
 
-  test('rejects malformed and duplicate managed-model definitions', () => {
-    expect(() => parseManagedModels('{broken')).toThrow('must be valid JSON');
-    expect(() => parseManagedModels(JSON.stringify([model, model]))).toThrow('duplicate');
-    expect(() => parseManagedModels(JSON.stringify([{ ...model, tier: 'huge' }]))).toThrow();
+  test('skips entries Platinum does not own or did not price', () => {
+    const [model] = PLATINUM_MODELS_RESPONSE.data;
+    expect(managedModelsFromPlatinum({ data: [
+      { ...model, owned_by: 'tabby' },
+      { ...model, id: 'unpriced', pricing: undefined },
+      { ...model, id: 'text-only', modalities: { input: ['text'], output: ['text'] }, reasoning_efforts: [] },
+    ] })).toEqual([{ ...TEST_MANAGED_LINEUP[0]!, id: 'text-only', vision: false, reasoningOptions: undefined }].map(
+      ({ reasoningOptions: _, ...m }) => m,
+    ));
+  });
+
+  test('a model Platinum adds is served the next load, with no code change', async () => {
+    const added = { ...PLATINUM_MODELS_RESPONSE.data[1]!, id: 'qwen-x', name: 'Qwen X', pricing: { input: 0.2, output: 0.8 } };
+    expect(await loadManagedLineup(answer({ data: [...PLATINUM_MODELS_RESPONSE.data, added] }))).toBe(true);
+    expect(managedLineup().map((m) => m.id)).toEqual(['deepseek-v4.1-flash', 'glm-5.3-flash', 'qwen-x']);
+    expect(getRuntimeManagedModel('qwen-x')?.pricing).toEqual({ inputPerMillion: 0.2, outputPerMillion: 0.8 });
+    expect(isKnownManagedModelId('qwen-x')).toBe(true);
+  });
+
+  test('a failed load keeps the last good lineup', async () => {
+    __setManagedLineupForTest(TEST_MANAGED_LINEUP);
+    expect(await loadManagedLineup(answer({ error: 'down' }, 503))).toBe(false);
+    expect(await loadManagedLineup(async () => { throw new Error('network'); })).toBe(false);
+    expect(await loadManagedLineup(answer({ object: 'list' }))).toBe(false);
+    expect(managedLineup()).toEqual(TEST_MANAGED_LINEUP);
+  });
+
+  test('sends the Platinum key to {PLATINUM_INFERENCE_URL}/models', async () => {
+    let seen: { url: string; auth: string | null } | null = null;
+    await loadManagedLineup(async (url, init) => {
+      seen = { url, auth: new Headers(init?.headers).get('authorization') };
+      return new Response(JSON.stringify(PLATINUM_MODELS_RESPONSE));
+    });
+    expect(seen!.url.endsWith('/models')).toBe(true);
+    expect(seen!.auth).toMatch(/^Bearer \S+/);
   });
 });
 
-const managed = (
-  id: string,
-  tier: ManagedModel['tier'] = 'balanced',
-): ManagedModel => ({
+const managed = (id: string): ManagedModel => ({
   id,
   name: id,
-  pricingRef: id,
-  tier,
+  pricing: { inputPerMillion: 1, outputPerMillion: 1 },
   vision: false,
   limit: { context: 1_000, output: 1_000 },
 });
 
 describe('resolvePlatformDefaultModelId — the platform default must always be reachable', () => {
-  const lineup = [
-    managed('kimi-k3', 'flagship'),
-    managed('morph-dsv4flash', 'fast'),
-  ];
+  const lineup = [managed('kimi-k3'), managed('morph-dsv4flash')];
 
   test('keeps the configured default when it is actually served', () => {
     const served = [managed('morph-glm53-744b'), ...lineup];
@@ -60,7 +84,7 @@ describe('resolvePlatformDefaultModelId — the platform default must always be 
     expect(resolvePlatformDefaultModelId('kortix/morph-dsv41flash', [deepseek])).toBe('deepseek-v4.1-flash');
   });
 
-  test('falls back to the served flagship when the configured default is unreachable', () => {
+  test('falls back to the first served model (Platinum order) when the configured default is unreachable', () => {
     expect(resolvePlatformDefaultModelId('morph-glm53-744b', lineup)).toBe('kimi-k3');
   });
 
@@ -70,9 +94,8 @@ describe('resolvePlatformDefaultModelId — the platform default must always be 
     expect(resolvePlatformDefaultModelId('kortix/morph-glm53-744b', served)).toBe('kortix/morph-glm53-744b');
   });
 
-  test('falls back to the first served model when no flagship is served', () => {
-    const noFlagship = [managed('morph-dsv4flash', 'fast')];
-    expect(resolvePlatformDefaultModelId('morph-glm53-744b', noFlagship)).toBe('morph-dsv4flash');
+  test('an empty configured default takes the first served model', () => {
+    expect(resolvePlatformDefaultModelId('', lineup)).toBe('kimi-k3');
   });
 
   test('leaves a BYOK default untouched — it resolves from a project key, not a managed transport', () => {

@@ -1,4 +1,5 @@
 import { copySessionLog, withForkAttachmentCleanup } from '../session-log-fork';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { writeSessionLogFromMirror } from '../session-log-capture';
 import { captureSessionTranscriptMirror } from './session-transcript-capture';
 import { randomUUID } from 'node:crypto';
@@ -631,7 +632,7 @@ async function resolveSessionModel(params: {
       });
       // An account without managed models gets no platform default: it runs
       // its own connected model (already in `resolved`) or none.
-      const concreteModel = resolved.model ?? (freeModelsOnly ? null : config.LLM_GATEWAY_DEFAULT_MODEL);
+      const concreteModel = resolved.model ?? (freeModelsOnly ? null : platformDefaultModelId() || null);
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';

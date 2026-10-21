@@ -1,91 +1,134 @@
-import { MANAGED_MODELS as BUNDLED_MANAGED_MODELS, type ManagedModel } from '@kortix/llm-catalog';
-import { z } from '@hono/zod-openapi';
+import type { CatalogReasoningOption } from '@kortix/llm-catalog';
 import { config } from '../../config';
+import { logger } from '../../lib/logger';
 
-const managedModelSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  providerBrand: z.string().min(1).optional(),
-  pricingRef: z.string().min(1),
-  pricing: z
-    .object({
-      inputPerMillion: z.number().nonnegative(),
-      outputPerMillion: z.number().nonnegative(),
-      cachedInputPerMillion: z.number().nonnegative().optional(),
-      cacheWritePerMillion: z.number().nonnegative().optional(),
-      contextOver200k: z
-        .object({
-          inputPerMillion: z.number().nonnegative(),
-          outputPerMillion: z.number().nonnegative(),
-          cachedInputPerMillion: z.number().nonnegative().optional(),
-          cacheWritePerMillion: z.number().nonnegative().optional(),
-          contextThreshold: z.number().int().positive(),
-        })
-        .optional(),
-    })
-    .optional(),
-  tier: z.enum(['flagship', 'balanced', 'fast']),
-  vision: z.boolean(),
-  limit: z.object({
-    context: z.number().int().positive(),
-    output: z.number().int().positive(),
-  }),
-});
+/**
+ * A Kortix managed model: one model Platinum Inference offers, paid from
+ * Kortix credits. Platinum's `GET /v1/inference/models` is the only source;
+ * nothing here lists or prices a model.
+ */
+export interface ManagedModel {
+  id: string;
+  name: string;
+  // Platinum's price per 1M tokens. The gateway bills Platinum's `usage.cost`;
+  // this applies only when a response carries none.
+  pricing: { inputPerMillion: number; outputPerMillion: number; cachedInputPerMillion?: number };
+  // Image input. Also sets the served `modalities`: OpenCode drops image parts
+  // for a model without `image` input.
+  vision: boolean;
+  // `reasoning_effort` values Platinum accepts; the thinking control's variants.
+  reasoningOptions?: CatalogReasoningOption[];
+  limit: { context: number; output: number };
+}
 
-export function parseManagedModels(
-  raw: string | undefined,
-  fallback: readonly ManagedModel[] = BUNDLED_MANAGED_MODELS,
-): ManagedModel[] {
-  if (!raw) return [...fallback];
+/** One entry of Platinum's `/models` list, as far as this file reads it. */
+type PlatinumModel = {
+  id?: unknown; name?: unknown; owned_by?: unknown;
+  context_length?: unknown; max_output_tokens?: unknown;
+  pricing?: { input?: unknown; cached_input?: unknown; output?: unknown };
+  modalities?: { input?: unknown };
+  reasoning_efforts?: unknown;
+};
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(
-      `LLM_GATEWAY_MANAGED_MODELS must be valid JSON: ${err instanceof Error ? err.message : String(err)}`,
-    );
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
+
+/** Platinum's named models → the lineup, in Platinum's order. Entries without a price are skipped. */
+export function managedModelsFromPlatinum(body: unknown): ManagedModel[] {
+  const data = (body as { data?: unknown })?.data;
+  if (!Array.isArray(data)) throw new Error('Platinum /models answered without a data list');
+  const out: ManagedModel[] = [];
+  for (const m of data as PlatinumModel[]) {
+    const input = num(m.pricing?.input);
+    const output = num(m.pricing?.output);
+    const context = num(m.context_length);
+    const maxOutput = num(m.max_output_tokens);
+    if (m.owned_by !== 'platinum' || typeof m.id !== 'string' || !m.id || input === undefined || output === undefined
+      || !context || !maxOutput) continue;
+    const cached = num(m.pricing?.cached_input);
+    const efforts = Array.isArray(m.reasoning_efforts) ? m.reasoning_efforts.filter((e): e is string => typeof e === 'string') : [];
+    out.push({
+      id: m.id,
+      name: typeof m.name === 'string' && m.name ? m.name : m.id,
+      pricing: { inputPerMillion: input, outputPerMillion: output, ...(cached !== undefined ? { cachedInputPerMillion: cached } : {}) },
+      vision: Array.isArray(m.modalities?.input) && m.modalities.input.includes('image'),
+      ...(efforts.length ? { reasoningOptions: [{ type: 'effort', values: efforts }] as CatalogReasoningOption[] } : {}),
+      limit: { context, output: maxOutput },
+    });
   }
-  const models = z.array(managedModelSchema).parse(parsed) as ManagedModel[];
-  const ids = new Set<string>();
-  for (const model of models) {
-    if (ids.has(model.id)) {
-      throw new Error(`LLM_GATEWAY_MANAGED_MODELS contains duplicate model id "${model.id}"`);
-    }
-    ids.add(model.id);
-  }
-  return models;
+  return out;
+}
+
+let lineup: readonly ManagedModel[] = [];
+// replica-local: every replica loads the same Platinum list and refreshes it
+// every 5 min (workers/managed-lineup-worker.ts); a copy is at most that old.
+let byId = new Map<string, ManagedModel>();
+let revision = 0;
+
+function setLineup(models: readonly ManagedModel[]): void {
+  lineup = models;
+  byId = new Map(models.map((model) => [model.id, model] as const));
+  revision++;
 }
 
 /**
- * Kortix-credit managed models. This registry is empty
- * when the cloud managed-provider flag is off. The picker, catalog, and gateway
- * all use this registry, so self-host users never receive the shared key.
+ * The managed lineup: what Platinum Inference offers right now. Empty when the
+ * managed provider is off (self-host) or Platinum was never reached.
  */
-export const RUNTIME_MANAGED_MODELS: readonly ManagedModel[] =
-  config.KORTIX_MANAGED_PROVIDER_ENABLED
-    ? parseManagedModels(config.LLM_GATEWAY_MANAGED_MODELS)
-    : [];
+export function managedLineup(): readonly ManagedModel[] {
+  return lineup;
+}
 
-const MANAGED_BY_ID = new Map(RUNTIME_MANAGED_MODELS.map((model) => [model.id, model] as const));
+/** Bumps on every lineup change, so derived caches know to rebuild. */
+export function managedLineupRevision(): number {
+  return revision;
+}
 
 export function getRuntimeManagedModel(id: string): ManagedModel | undefined {
-  return MANAGED_BY_ID.get(id);
+  return byId.get(id);
 }
 
 export function isRuntimeManagedModelId(id: string): boolean {
-  return MANAGED_BY_ID.has(id);
+  return byId.has(id);
 }
 
-// The BUNDLED catalog (never gated by KORTIX_MANAGED_PROVIDER_ENABLED) — used
-// only to answer "is this id a REAL managed-model id at all", regardless of
-// whether the managed provider happens to be enabled on this deployment.
-// RUNTIME_MANAGED_MODELS/MANAGED_BY_ID above are empty whenever the flag is
-// off, so they can't tell "self-host operator hasn't turned this on" apart
-// from "no such model exists anywhere" — this can, which lets gateway error
-// messaging say "this model needs the managed provider, which is off here"
-// instead of the misleading "no such model".
-const BUNDLED_BY_ID = new Map(BUNDLED_MANAGED_MODELS.map((model) => [model.id, model] as const));
+export function __setManagedLineupForTest(models: readonly ManagedModel[]): void {
+  setLineup(models);
+}
+
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+const LOAD_TIMEOUT_MS = 10_000;
+
+/**
+ * Reads Platinum's `/models` into the lineup. On any failure the last good
+ * lineup stays and the error is logged; returns whether the read succeeded.
+ */
+export async function loadManagedLineup(fetchImpl: FetchLike = fetch): Promise<boolean> {
+  if (!config.KORTIX_MANAGED_PROVIDER_ENABLED || !config.PLATINUM_INFERENCE_API_KEY) {
+    if (lineup.length) setLineup([]);
+    return true;
+  }
+  const url = `${config.PLATINUM_INFERENCE_URL.replace(/\/+$/, '')}/models`;
+  try {
+    const res = await fetchImpl(url, {
+      headers: { authorization: `Bearer ${config.PLATINUM_INFERENCE_API_KEY}` },
+      signal: AbortSignal.timeout(LOAD_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const models = managedModelsFromPlatinum(await res.json());
+    const changed = JSON.stringify(models) !== JSON.stringify(lineup);
+    if (changed) {
+      setLineup(models);
+      logger.info('[managed-lineup] loaded from Platinum Inference', { models: models.map((m) => m.id) });
+    }
+    return true;
+  } catch (err) {
+    logger.warn('[managed-lineup] Platinum /models failed; keeping the last lineup', {
+      error: err instanceof Error ? err.message : String(err), kept: lineup.length,
+    });
+    return false;
+  }
+}
+
 const RETIRED_MANAGED_MODEL_IDS = new Set([
   'glm-5.2', 'grok-4.6', 'deepseek-v4-flash', 'deepseek-v4-pro-0813',
   'muse-spark-1.2', 'minimax-m3', 'gpt-5.6-luna', 'gpt-6-astra',
@@ -158,12 +201,12 @@ export function canonicalManagedModelId(id: string): string {
   return resolveLegacyIdChain(id, LEGACY_MANAGED_IDS);
 }
 
+/** In the current lineup, or a retired id stored sessions may still carry. */
 export function isKnownManagedModelId(id: string): boolean {
-  return BUNDLED_BY_ID.has(id) || RETIRED_MANAGED_MODEL_IDS.has(id);
+  return byId.has(id) || RETIRED_MANAGED_MODEL_IDS.has(id);
 }
 
-/** Explicitly retired — distinct from merely "not currently servable" (off
- *  deployment / missing credential), which stays a bundled-but-unserved id. */
+/** Explicitly retired — distinct from merely "not currently servable". */
 export function isRetiredManagedModelId(id: string): boolean {
   return RETIRED_MANAGED_MODEL_IDS.has(id);
 }
@@ -180,22 +223,6 @@ export function retiredManagedModelReplacement(id: string, served: readonly Mana
   return successor !== id && served.some((model) => model.id === successor) ? successor : null;
 }
 
-/**
- * The managed lineup this deployment can actually SERVE: every configured model
- * whose transport credential is present. `hasTransportCredential` is injected so
- * the rule stays pure and testable without config.
- *
- * `RUNTIME_MANAGED_MODELS` answers "which models did the operator configure",
- * which is not the same question. Offering a configured-but-uncredentialed model
- * can make the picker advertise a model while every selection of it fails.
- */
-export function servedManagedModels(
-  models: readonly ManagedModel[],
-  hasTransportCredential: (model: ManagedModel) => boolean,
-): ManagedModel[] {
-  return models.filter(hasTransportCredential);
-}
-
 /** Strip the opencode `kortix/` namespace off a managed ref. */
 function bareManagedId(ref: string): string {
   return ref.startsWith('kortix/') ? ref.slice('kortix/'.length) : ref;
@@ -204,31 +231,21 @@ function bareManagedId(ref: string): string {
 /**
  * The platform default model, guaranteed reachable.
  *
- * `LLM_GATEWAY_DEFAULT_MODEL` is what an operator asked for; it is not
- * necessarily servable. When the configured default is a managed id this
- * deployment cannot reach because its transport credential is absent, every
- * `auto` request and every "use the default" pick
- * dies with a resolution error the user cannot act on. Degrade to a served
- * managed model instead — flagship first, then catalog order.
- *
- * A BYOK ref (`provider/model`) is returned untouched: it resolves from a
- * PROJECT key, so a managed transport says nothing about whether it works, and
- * `degradeUnservableDefault` already probes that case per-project.
+ * `configured` (`LLM_GATEWAY_DEFAULT_MODEL`) is what an operator asked for.
+ * Empty, or a managed id Platinum does not serve now: the first served model
+ * (Platinum lists in order of preference). A BYOK ref (`provider/model`) is
+ * returned untouched: it resolves from a project key, and
+ * `degradeUnservableDefault` probes that case per project.
  */
 export function resolvePlatformDefaultModelId(
   configured: string,
   served: readonly ManagedModel[],
 ): string {
   const trimmed = configured.trim();
-  if (!trimmed) return trimmed;
+  if (trimmed.includes('/') && !trimmed.startsWith('kortix/')) return trimmed;
   const bare = bareManagedId(trimmed);
+  if (bare && served.some((model) => model.id === bare)) return trimmed;
   const alias = canonicalManagedModelId(bare);
   if (alias !== bare && served.some((model) => model.id === alias)) return alias;
-  // Not a managed id at all → a BYOK ref; leave it alone.
-  if (!isKnownManagedModelId(bare)) return trimmed;
-  if (served.some((model) => model.id === bare)) return trimmed;
-  const replacement = served.find((model) => model.tier === 'flagship') ?? served[0];
-  return replacement ? replacement.id : trimmed;
+  return served[0]?.id ?? trimmed;
 }
-
-export type { ManagedModel };

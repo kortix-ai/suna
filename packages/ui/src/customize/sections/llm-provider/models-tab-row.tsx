@@ -7,7 +7,6 @@ import { Tag } from '../../../primitives/tag';
 import { errorToast } from '../../../primitives/toast';
 import { useTranslations } from '../../../i18n';
 import { cn } from '../../../internal/lib/utils';
-import { isManagedModelId } from '@kortix/llm-catalog';
 import {
   useModelAccess,
   useModelDefaults,
@@ -53,7 +52,7 @@ export function ModelsTabRow({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tList = useTranslations('modelsList');
   const isManaged =
-    group.providerID === 'kortix' && isManagedModelId(model.modelID);
+    group.providerID === 'kortix' && !model.modelID.includes('/');
   const enabled = !!model.enabled;
   const modelDisabled = access.data?.disabledModels.includes(wireId) ?? false;
   const hiddenFromPicker =

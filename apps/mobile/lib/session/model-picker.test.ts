@@ -4,7 +4,6 @@ import { describe, expect, test } from 'bun:test';
 // package (Metro resolves only @kortix/sdk and @kortix/shared), so the copy in
 // model-picker.ts is pinned against it here.
 import {
-  DEFAULT_MANAGED_MODEL_IDS,
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
 } from '../../../../packages/llm-catalog/src/index';
@@ -53,10 +52,6 @@ describe('copied catalog tables match @kortix/llm-catalog', () => {
     for (const [id, label] of Object.entries(PICKER_PROVIDER_LABELS)) {
       expect(PROVIDER_LABELS[id]).toBe(label);
     }
-  });
-
-  test('managed model ids carry no "/": splitting them cannot invent a provider', () => {
-    expect(DEFAULT_MANAGED_MODEL_IDS.some((id) => id.includes('/'))).toBe(false);
   });
 });
 

@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { MANAGED_FLAGSHIP_MODEL_ID } from '@kortix/llm-catalog/lite';
 import type { ProviderListResponse } from '../runtime/runtime-types';
 
 import type {
@@ -16,8 +15,9 @@ import {
   sessionPickStands,
 } from './composer-model';
 import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
-import { createModelVisibility, hasUsableModel, modelInDefaultView } from './model-visibility';
-import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog/lite';
+import { createModelVisibility, hasUsableModel, isDefaultVisible, modelInDefaultView } from './model-visibility';
+// A Kortix managed model id: whatever Platinum Inference lists; no static list exists.
+const MANAGED_ID = 'deepseek-v4.1-flash';
 import { pickerProviderList, projectLlmCatalogToProviderList } from './provider-selection';
 
 /**
@@ -114,15 +114,25 @@ describe('createModelVisibility', () => {
     flat('openrouter', 'acme/fast-2', { family: 'fast', releaseDate: recent }),
     flat('openrouter', 'acme/fast-1', { family: 'fast', releaseDate: old }),
     flat('openrouter', 'acme/undated'),
-    flat('openrouter', MANAGED_FLAGSHIP_MODEL_ID),
+    flat('openrouter', MANAGED_ID),
   ];
 
-  test('native: newest per family shows, older versions hide, undated shows only the flagship', () => {
+  // There is no static managed flagship any more: an undated NATIVE model is
+  // opt-in whatever its id, and the managed models (bare ids under the gateway
+  // provider) are the ones shown by default.
+  test('native: newest per family shows, older versions hide, undated is opt-in', () => {
     const isVisible = createModelVisibility({ catalogModels: catalog });
     expect(isVisible({ providerID: 'openrouter', modelID: 'acme/fast-2' })).toBe(true);
     expect(isVisible({ providerID: 'openrouter', modelID: 'acme/fast-1' })).toBe(false);
     expect(isVisible({ providerID: 'openrouter', modelID: 'acme/undated' })).toBe(false);
-    expect(isVisible({ providerID: 'openrouter', modelID: MANAGED_FLAGSHIP_MODEL_ID })).toBe(true);
+    expect(isVisible({ providerID: 'openrouter', modelID: MANAGED_ID })).toBe(false);
+  });
+
+  test('isDefaultVisible: a bare id under the gateway provider is a managed model; nothing else is', () => {
+    expect(isDefaultVisible({ providerID: 'kortix', modelID: 'any-model-platinum-adds' })).toBe(true);
+    expect(isDefaultVisible({ providerID: 'kortix', modelID: 'anthropic/claude-opus-4-8' })).toBe(false);
+    expect(isDefaultVisible({ providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' })).toBe(false);
+    expect(isDefaultVisible({ providerID: 'openrouter', modelID: MANAGED_ID })).toBe(false);
   });
 
   test('user pins override the default: show reveals, hide hides', () => {
@@ -158,15 +168,15 @@ describe('createModelVisibility', () => {
   });
 
   test('gateway: free tier sees no managed model, the platform default included', () => {
-    const gateway = [flat('kortix', PLATFORM_DEFAULT_MODEL_ID), flat('kortix', 'glm-5.3-flash')];
+    const gateway = [flat('kortix', MANAGED_ID), flat('kortix', 'glm-5.3-flash')];
     const free = createModelVisibility({ catalogModels: gateway, freeTier: true });
-    expect(free({ providerID: 'kortix', modelID: PLATFORM_DEFAULT_MODEL_ID })).toBe(false);
+    expect(free({ providerID: 'kortix', modelID: MANAGED_ID })).toBe(false);
     expect(free({ providerID: 'kortix', modelID: 'glm-5.3-flash' })).toBe(false);
   });
 
   test('hasUsableModel: no managed model counts as usable on free tier', () => {
     expect(
-      hasUsableModel([flat('kortix', PLATFORM_DEFAULT_MODEL_ID)], { freeTier: true }),
+      hasUsableModel([flat('kortix', MANAGED_ID)], { freeTier: true }),
     ).toBe(false);
     expect(hasUsableModel([flat('kortix', 'glm-5.3-flash')], { freeTier: true })).toBe(false);
   });
