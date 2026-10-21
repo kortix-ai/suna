@@ -1,12 +1,15 @@
 import catalogJson from './catalog.generated.json' with { type: 'json' };
-import type { Catalog, CatalogModel } from './lite';
+import { PLATINUM_PROVIDER, type Catalog, type CatalogModel } from './lite';
 
 /**
  * The bundled models.dev snapshot. Kept out of `index.ts` so consumers that
  * never read it (browser bundles) do not ship it — see
  * catalog-isolation.test.ts.
  */
-export const CATALOG = catalogJson as Catalog;
+export const CATALOG: Catalog = {
+  ...(catalogJson as Catalog),
+  providers: [...(catalogJson as Catalog).providers, PLATINUM_PROVIDER],
+};
 
 function modelsByWireId(catalog: Catalog): Map<string, CatalogModel> {
   const byId = new Map<string, CatalogModel>();

@@ -98,6 +98,30 @@ export function __setManagedLineupForTest(models: readonly ManagedModel[]): void
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 const LOAD_TIMEOUT_MS = 10_000;
 
+/** HTTP status of a failed Platinum `/models` read, so a caller can tell a bad key from an outage. */
+export class PlatinumModelsError extends Error {
+  constructor(readonly status: number | null, message: string) { super(message); }
+}
+
+/**
+ * Platinum's named models for one key: `GET {baseUrl}/models`. The one reader
+ * for both the managed lineup (the deployment's key) and the Platinum BYOK
+ * provider (a project's own key, platinum-byok-models.ts).
+ */
+export async function fetchPlatinumModels(baseUrl: string, apiKey: string, fetchImpl: FetchLike = fetch): Promise<ManagedModel[]> {
+  let res: Response;
+  try {
+    res = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/models`, {
+      headers: { authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(LOAD_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new PlatinumModelsError(null, err instanceof Error ? err.message : String(err));
+  }
+  if (!res.ok) throw new PlatinumModelsError(res.status, `HTTP ${res.status}`);
+  return managedModelsFromPlatinum(await res.json());
+}
+
 /**
  * Reads Platinum's `/models` into the lineup. On any failure the last good
  * lineup stays and the error is logged; returns whether the read succeeded.
@@ -107,14 +131,8 @@ export async function loadManagedLineup(fetchImpl: FetchLike = fetch): Promise<b
     if (lineup.length) setLineup([]);
     return true;
   }
-  const url = `${config.PLATINUM_INFERENCE_URL.replace(/\/+$/, '')}/models`;
   try {
-    const res = await fetchImpl(url, {
-      headers: { authorization: `Bearer ${config.PLATINUM_INFERENCE_API_KEY}` },
-      signal: AbortSignal.timeout(LOAD_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const models = managedModelsFromPlatinum(await res.json());
+    const models = await fetchPlatinumModels(config.PLATINUM_INFERENCE_URL, config.PLATINUM_INFERENCE_API_KEY, fetchImpl);
     const changed = JSON.stringify(models) !== JSON.stringify(lineup);
     if (changed) {
       setLineup(models);

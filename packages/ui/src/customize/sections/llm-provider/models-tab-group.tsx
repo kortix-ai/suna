@@ -20,10 +20,12 @@ export function ModelsTabGroup({
   const providerDisabled =
     access.data?.disabledProviders.includes(group.providerID) ?? false;
   const groupOn = group.rows.filter(({ model }) => model.enabled).length;
-  // Kortix Platinum inference serves every managed model on zero-retention terms.
+  // Platinum Inference serves every model it lists on zero-retention terms:
+  // the Kortix managed models and the Platinum provider alike.
   const dataClaim =
-    group.providerID === 'kortix' &&
-    group.rows.every(({ model }) => !model.modelID.includes('/'));
+    group.providerID === 'platinum' ||
+    (group.providerID === 'kortix' &&
+      group.rows.every(({ model }) => !model.modelID.includes('/')));
   return (
     <section
       key={group.providerID}

@@ -1,5 +1,27 @@
 import providerEnvJson from './provider-env.generated.json' with { type: 'json' };
 
+/**
+ * Platinum Inference as a regular BYOK provider. It is not on models.dev, so
+ * it is appended to every catalog (the bundled snapshot, its id/env projection,
+ * and the API's live models.dev refresh). Its models are not listed here: the
+ * API reads them from Platinum's `/models` with the project's own key
+ * (apps/api llm-gateway/models/platinum-models.ts).
+ */
+export const PLATINUM_PROVIDER: CatalogProvider = {
+  id: 'platinum',
+  name: 'Platinum',
+  env: ['PLATINUM_API_KEY'],
+  doc: 'https://platinum.dev',
+  api: 'https://api.platinum.dev/v1/inference',
+  npm: '@ai-sdk/openai-compatible',
+  models: [],
+};
+
+const PROVIDER_ENV: ReadonlyArray<{ id: string; env: string[] }> = [
+  ...(providerEnvJson as ReadonlyArray<{ id: string; env: string[] }>),
+  { id: PLATINUM_PROVIDER.id, env: PLATINUM_PROVIDER.env! },
+];
+
 export {
   DEFAULT_ENABLEMENT_WINDOW_MONTHS,
   defaultEnabledModelIds,
@@ -144,7 +166,7 @@ export function providerOwnKeyName(providerId: string): string {
 // rule moved by migration 20260930220000000_provider_own_key_names.
 const SHARED_KEY_OWNER = (() => {
   const claimants = new Map<string, string[]>();
-  for (const { id, env } of providerEnvJson as ReadonlyArray<{ id: string; env: string[] }>) {
+  for (const { id, env } of PROVIDER_ENV) {
     if (env.length !== 1) continue;
     claimants.set(env[0]!, [...(claimants.get(env[0]!) ?? []), id]);
   }
@@ -446,7 +468,7 @@ export function clampGenerationConfig(
   return out;
 }
 
-interface CatalogProvider {
+export interface CatalogProvider {
   id: string;
   name: string;
   env?: string[];
@@ -476,7 +498,7 @@ export interface Catalog {
  * Regenerated together with the snapshot; catalog-isolation.test.ts checks
  * that the two agree.
  */
-export const CATALOG_PROVIDER_ENV = providerEnvJson as ReadonlyArray<{ id: string; env: string[] }>;
+export const CATALOG_PROVIDER_ENV = PROVIDER_ENV;
 
 // Kortix managed models are not listed here: the Kortix API reads them from
 // Platinum Inference (apps/api llm-gateway/models/managed-models.ts).
@@ -493,6 +515,7 @@ export const MODEL_SELECTOR_PROVIDER_IDS = [
 ] as const;
 
 export const PROVIDER_LABELS: Record<string, string> = {
+  platinum: 'Platinum',
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   codex: 'ChatGPT subscription',

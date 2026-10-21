@@ -12,6 +12,7 @@ import { platformDefaultModelId } from './served-managed-models';
 import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { listGrantedGatewaySecretNames } from '../../secrets/account-resource';
 import { customProviderCatalog } from '../custom-providers';
+import { platinumByokCatalog } from './platinum-byok-models';
 
 type GatewayModel = ReturnType<typeof gatewayModelCatalog>[string];
 
@@ -93,15 +94,22 @@ export async function servableProjectCatalog(input: {
   // A custom endpoint is servable once defined (its key is optional) and on by
   // default: it has no release date or family for the recency rule to rank.
   const custom = customProviderCatalog(resolution.customProviders ?? []);
+  // Platinum (BYOK): its models are whatever Platinum lists for the project's
+  // own key, on by default like a custom endpoint (no release date to rank).
+  const platinum = secrets.includes('PLATINUM_API_KEY')
+    ? await platinumByokCatalog({ projectId, accountId, personalUserId, actorUserId: principalUserId })
+    : {};
   const models = {
     ...projectPickerCatalog(
       gatewayModelCatalog(projectId, { freeManagedOnly }),
       new Set([...secrets, ...pooledNames]),
       requiredModels,
     ),
+    ...platinum,
     ...custom,
   };
-  const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, [...requiredModels, ...Object.keys(custom)]);
+  const enabled = resolveEnablement(models, routing?.modelOverrides ?? {},
+    [...requiredModels, ...Object.keys(platinum), ...Object.keys(custom)]);
   return {
     models: Object.fromEntries(
       Object.entries(models).map(([id, model]) => [

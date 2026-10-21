@@ -323,7 +323,10 @@ async function byokDescriptors(context: Context, provider: string,
   const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
   const invokeModelId = byok.kind === 'bedrock'
     ? normalizeBedrockInferenceProfileRegion(resolvedModelId, bedrockRegion) : resolvedModelId;
-  const headers = opencodeHeaders(baseUrl, principal);
+  // Platinum caches prompts (and pins its upstream) per conversation.
+  const headers = provider === 'platinum'
+    ? { 'x-platinum-session': principal.sessionId ?? principal.keyId ?? principal.userId }
+    : opencodeHeaders(baseUrl, principal);
   const descriptors: UpstreamDescriptor[] = [];
   let expiredLogin = false;
   for (const { identifier, secretId, value } of keys) {

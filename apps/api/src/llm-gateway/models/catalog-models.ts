@@ -202,22 +202,26 @@ function managedCatalogModel(m: ManagedModel): CatalogModel {
   };
 }
 
+/** One Platinum Inference model as a served catalog entry, under `provider`. */
+export function platinumGatewayModel(m: ManagedModel, provider: string, providerName?: string): GatewayModel {
+  return {
+    ...capabilitiesOf(managedCatalogModel(m)),
+    name: m.name,
+    provider,
+    ...(providerName ? { provider_name: providerName } : {}),
+    limit: m.limit,
+    cost: {
+      input: m.pricing.inputPerMillion,
+      output: m.pricing.outputPerMillion,
+      ...(m.pricing.cachedInputPerMillion != null ? { cache_read: m.pricing.cachedInputPerMillion } : {}),
+    },
+  };
+}
+
 /** The served managed lineup as catalog entries: every field comes from Platinum Inference. */
 export function managedModels(): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
-  for (const m of servedManagedModels()) {
-    out[m.id] = {
-      ...capabilitiesOf(managedCatalogModel(m)),
-      name: m.name,
-      provider: KORTIX_PROVIDER_ID,
-      limit: m.limit,
-      cost: {
-        input: m.pricing.inputPerMillion,
-        output: m.pricing.outputPerMillion,
-        ...(m.pricing.cachedInputPerMillion != null ? { cache_read: m.pricing.cachedInputPerMillion } : {}),
-      },
-    };
-  }
+  for (const m of servedManagedModels()) out[m.id] = platinumGatewayModel(m, KORTIX_PROVIDER_ID);
   return out;
 }
 

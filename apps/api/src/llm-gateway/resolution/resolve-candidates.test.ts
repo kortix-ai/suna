@@ -197,6 +197,20 @@ beforeEach(() => {
   resolveCodexAccountCredential.mockClear();
 });
 
+describe('resolveCandidates — Platinum BYOK', () => {
+  test("a project's PLATINUM_API_KEY reaches Platinum inference directly, billed by Platinum, with the session id", async () => {
+    catalogUpstream = { baseUrl: 'https://api.platinum.dev/v1/inference', envVar: 'PLATINUM_API_KEY', kind: 'openai-compat' };
+    secretsByName = { PLATINUM_API_KEY: 'pt_live_project' };
+    const [candidate, ...rest] = await resolveCandidates(principal({ sessionId: 'session-1' }), 'platinum/deepseek-v4.1-flash');
+    expect(rest).toEqual([]);
+    expect(candidate).toMatchObject({
+      provider: 'platinum', kind: 'openai-compat', baseUrl: 'https://api.platinum.dev/v1/inference',
+      apiKey: 'pt_live_project', billingMode: 'none', markup: 0, resolvedModel: 'deepseek-v4.1-flash',
+      headers: { 'x-platinum-session': 'session-1' },
+    });
+  });
+});
+
 describe('resolveCandidates — selected account key pool', () => {
   test.each([
     [false, undefined, 'provider_not_connected'],
