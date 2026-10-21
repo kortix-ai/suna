@@ -2,6 +2,7 @@
 
 import { useFirm } from '@/components/access';
 import { AdminOnly } from '@/components/admin-only';
+import { KIND } from '@/components/runs/history-list';
 import { downloadCsv } from '@/lib/csv';
 import { api } from '@convex/_generated/api';
 import { Button } from '@kortix/ui/button';
@@ -60,8 +61,16 @@ export default function AuditPage() {
 
 /** Minute precision: an audit row's second adds width, not meaning. The CSV keeps the full timestamp. */
 const when = (t: number) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-/** The detail a person reads: no content hash ("Legal agents updated 1.1.4", not "1.1.4 (4761f331f5f6ccd0)"). */
-const detailOf = (d: string | undefined) => d?.replace(/\s*\([0-9a-f]{16}\)/, '');
+/**
+ * The detail a person reads: no content hash ("Legal agents updated 1.1.4", not "1.1.4 (4761f331f5f6ccd0)")
+ * and the run kind's product label ("Contract review: …", not "contract_review: …"; "Due diligence: …" once).
+ */
+const detailOf = (d: string | undefined) =>
+  d?.replace(/\s*\([0-9a-f]{16}\)/, '').replace(/^(\w+): /, (m, k: string) => {
+    const label = KIND[k]?.label;
+    if (!label) return m;
+    return d.slice(m.length).toLowerCase().startsWith(label.toLowerCase()) ? '' : `${label}: `;
+  });
 
 function Audit() {
   const firm = useFirm();
@@ -78,7 +87,7 @@ function Audit() {
   function exportCsv() {
     downloadCsv('lumen-audit-log.csv', [
       ['time', 'actor', 'action', 'matter', 'detail'],
-      ...shown.map((r) => [new Date(r._creationTime).toISOString(), actorName(r.actorId), ACTIONS[r.action] ?? r.action, r.matterName ?? '', r.detail ?? '']),
+      ...shown.map((r) => [new Date(r._creationTime).toISOString(), actorName(r.actorId), ACTIONS[r.action] ?? r.action, r.matterName ?? '', detailOf(r.detail) ?? '']),
     ]);
     void logExport({ firmId: firm._id, what: 'audit log' });
   }
