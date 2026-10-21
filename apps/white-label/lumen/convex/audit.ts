@@ -1,7 +1,7 @@
 import { type Infer, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { type MutationCtx, internalMutation, mutation, query } from "./_generated/server";
-import { requireFirmAdmin } from "./access";
+import { canSeeMatter, requireFirm, requireFirmAdmin } from "./access";
 import { auditAction } from "./schema";
 
 type Action = Infer<typeof auditAction>;
@@ -53,6 +53,28 @@ export const list = query({
     return rows.map((r) => ({
       _id: r._id, _creationTime: r._creationTime, actorId: r.actorId, action: r.action, matterId: r.matterId,
       matterName: r.matterId ? names.get(r.matterId) : undefined, detail: r.detail,
+    }));
+  },
+});
+
+/** My activity: the caller's own newest 200 events in this firm. Any member. A matter they lost access to shows no name. */
+export const mine = query({
+  args: { firmId: v.id("firms") },
+  returns: v.array(row),
+  handler: async (ctx, { firmId }) => {
+    const { firm, userId, role } = await requireFirm(ctx, firmId);
+    const rows = (await ctx.db.query("auditEvents").withIndex("by_orgId", (q) => q.eq("orgId", firm.orgId)).order("desc").take(2000))
+      .filter((r) => r.actorId === userId)
+      .slice(0, 200);
+    const names = new Map<string, string>();
+    for (const r of rows) {
+      if (!r.matterId || names.has(r.matterId)) continue;
+      const m = await ctx.db.get(r.matterId);
+      names.set(r.matterId, m && (await canSeeMatter(ctx, m, userId, role)) ? m.name : "");
+    }
+    return rows.map((r) => ({
+      _id: r._id, _creationTime: r._creationTime, actorId: r.actorId, action: r.action, matterId: r.matterId,
+      matterName: r.matterId ? names.get(r.matterId) || undefined : undefined, detail: r.detail,
     }));
   },
 });

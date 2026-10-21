@@ -38,7 +38,7 @@
           "key": { "type": "string" },
           "label": { "type": "string" },
           "prompt": { "type": "string" },
-          "format": { "enum": ["text", "yes_no", "date", "money", "tag", "verbatim"] },
+          "format": { "enum": ["text", "yes_no", "date", "money", "tag", "verbatim", "number", "percent", "list"] },
           "options": { "type": "array", "items": { "type": "string" } }
         }
       }

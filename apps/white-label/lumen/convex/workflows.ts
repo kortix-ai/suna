@@ -106,7 +106,7 @@ export const logExport = mutation({
   returns: v.null(),
   handler: async (ctx, { runId, file, title }) => {
     const { run, firm, userId } = await requireRun(ctx, runId);
-    const action = file.endsWith(".csv") ? "export.csv" : file.endsWith(".md") ? "export.md" : "export.docx";
+    const action = file.endsWith(".csv") ? "export.csv" : file.endsWith(".xlsx") ? "export.xlsx" : file.endsWith(".md") ? "export.md" : "export.docx";
     await audit(ctx, { firm, actorId: userId, action, matterId: run.matterId, detail: `${(title ?? run.title).slice(0, 120)}: ${file}` });
     return null;
   },

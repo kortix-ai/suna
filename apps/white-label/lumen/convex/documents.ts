@@ -29,7 +29,13 @@ const documentView = v.object({
   status: documentStatus,
   error: v.optional(v.string()),
   uploadedBy: v.string(),
+  family: v.id("documents"),
+  version: v.number(),
+  superseded: v.boolean(),
 });
+
+/** The id of a document's first version: its family. */
+export const familyOf = (d: Doc<"documents">) => d.family ?? d._id;
 
 /** The matter's documents, newest first. Null when the caller may not see the matter. */
 export const list = query({
@@ -44,7 +50,7 @@ export const list = query({
     const rows = await ctx.db.query("documents").withIndex("by_matter", (q) => q.eq("matterId", matterId)).order("desc").take(500);
     return rows.map((d) => ({
       _id: d._id, _creationTime: d._creationTime, filename: d.filename, bytes: d.bytes, pages: d.pages, paras: d.paras,
-      status: d.status, error: d.error, uploadedBy: d.uploadedBy,
+      status: d.status, error: d.error, uploadedBy: d.uploadedBy, family: familyOf(d), version: d.version ?? 1, superseded: d.superseded ?? false,
     }));
   },
 });
@@ -54,9 +60,9 @@ export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 
 /** The Vault's upload: the browser sends the bytes to Lumen's backend, never to Kortix. */
 export const upload = action({
-  args: { matterId: v.id("matters"), filename: v.string(), bytes: v.bytes(), contentType: v.string() },
+  args: { matterId: v.id("matters"), filename: v.string(), bytes: v.bytes(), contentType: v.string(), versionOf: v.optional(v.id("documents")) },
   returns: v.id("documents"),
-  handler: async (ctx, { matterId, filename, bytes, contentType }): Promise<Id<"documents">> => {
+  handler: async (ctx, { matterId, filename, bytes, contentType, versionOf }): Promise<Id<"documents">> => {
     await ctx.runQuery(internal.documents.checkAccess, { matterId });
     if (bytes.byteLength > MAX_UPLOAD_BYTES) throw new Error("400: files are limited to 15 MB");
     if (!TYPES[extOf(filename)]) throw new Error("400: PDF, DOCX or TXT only");
@@ -66,7 +72,7 @@ export const upload = action({
     const dup = await ctx.runQuery(internal.documents.sameBytes, { matterId, sha256 });
     if (dup) throw new Error(`409: Already in this vault (${dup})`);
     const storageId = await ctx.storage.store(new Blob([bytes], { type: contentType || TYPES[extOf(filename)] }));
-    return await ctx.runMutation(internal.documents.addUploaded, { matterId, storageId, filename, sha256 });
+    return await ctx.runMutation(internal.documents.addUploaded, { matterId, storageId, filename, sha256, versionOf });
   },
 });
 
@@ -83,11 +89,11 @@ export const sameBytes = internalQuery({
 
 /** The upload action's insert: the caller's identity, and the hash it computed, so a second copy in flight is caught too. */
 export const addUploaded = internalMutation({
-  args: { matterId: v.id("matters"), storageId: v.id("_storage"), filename: v.string(), sha256: v.string() },
+  args: { matterId: v.id("matters"), storageId: v.id("_storage"), filename: v.string(), sha256: v.string(), versionOf: v.optional(v.id("documents")) },
   returns: v.id("documents"),
-  handler: async (ctx, { matterId, storageId, filename, sha256 }) => {
+  handler: async (ctx, { matterId, storageId, filename, sha256, versionOf }) => {
     const { matter, firm, userId } = await requireMatterAccess(ctx, matterId);
-    return await insertDocument(ctx, { firm, matter, userId, storageId, filename, sha256 });
+    return await insertDocument(ctx, { firm, matter, userId, storageId, filename, sha256, versionOf });
   },
 });
 
@@ -103,7 +109,10 @@ export const checkAccess = internalQuery({
 /** Validate an uploaded blob and start its ingest. The UI and the seed script both come through here. */
 export async function insertDocument(
   ctx: MutationCtx,
-  a: { firm: Doc<"firms">; matter: Doc<"matters">; userId: string; storageId: Id<"_storage">; filename: string; sha256?: string },
+  a: {
+    firm: Doc<"firms">; matter: Doc<"matters">; userId: string; storageId: Id<"_storage">; filename: string; sha256?: string;
+    versionOf?: Id<"documents">;
+  },
 ) {
   const meta = await ctx.db.system.get(a.storageId);
   const name = a.filename.trim().replace(/[/\\]/g, "-").slice(0, 160);
@@ -113,12 +122,27 @@ export async function insertDocument(
     await ctx.storage.delete(a.storageId);
     throw new Error(!mime ? "400: PDF, DOCX or TXT only" : "400: files are limited to 50 MB");
   }
+  let versioned: { family: Id<"documents">; version: number } | undefined;
+  if (a.versionOf) {
+    const parent = await ctx.db.get(a.versionOf);
+    if (!parent || parent.matterId !== a.matter._id) {
+      await ctx.storage.delete(a.storageId);
+      throw new Error("404: the document to version is not in this matter");
+    }
+    const family = familyOf(parent);
+    const siblings = (await ctx.db.query("documents").withIndex("by_matter", (q) => q.eq("matterId", a.matter._id)).collect())
+      .filter((d) => familyOf(d) === family);
+    versioned = { family, version: Math.max(...siblings.map((d) => d.version ?? 1)) + 1 };
+  }
   const documentId = await ctx.db.insert("documents", {
     firmId: a.firm._id, matterId: a.matter._id, storageId: a.storageId, filename: name, mime, bytes: meta.size, status: "extracting",
-    uploadedBy: a.userId, ...(a.sha256 ? { sha256: a.sha256 } : {}),
+    uploadedBy: a.userId, ...(a.sha256 ? { sha256: a.sha256 } : {}), ...versioned,
   });
   await ctx.db.patch(a.matter._id, { updatedAt: Date.now() });
-  await audit(ctx, { firm: a.firm, actorId: a.userId, action: "document.upload", matterId: a.matter._id, detail: name });
+  await audit(ctx, {
+    firm: a.firm, actorId: a.userId, action: versioned ? "document.version" : "document.upload", matterId: a.matter._id,
+    detail: versioned ? `${name} (V${versioned.version})` : name,
+  });
   await ctx.scheduler.runAfter(0, internal.ingest.ingest, { documentId });
   return documentId;
 }
@@ -216,6 +240,15 @@ export const settle = internalMutation({
     // A member reads a generic reason; the raw cause stays in the log.
     const shown = error?.startsWith("Already in this vault") || error?.startsWith("Could not read") ? error : "Processing failed. Upload it again.";
     await ctx.db.patch(documentId, error ? { status: "failed", error: shown } : { status: "ready", driveFile, textFile, error: undefined });
+    // A ready new version supersedes every earlier version of the same document.
+    const d = await ctx.db.get(documentId);
+    if (!error && d?.family) {
+      for (const o of await ctx.db.query("documents").withIndex("by_matter", (q) => q.eq("matterId", d.matterId)).collect()) {
+        if (o._id !== d._id && familyOf(o) === d.family && (o.version ?? 1) < (d.version ?? 1) && !o.superseded) {
+          await ctx.db.patch(o._id, { superseded: true });
+        }
+      }
+    }
     return null;
   },
 });
@@ -267,7 +300,7 @@ export const matterIndex = internalQuery({
   handler: async (ctx, { matterId }) => {
     const rows = await ctx.db.query("documents").withIndex("by_matter", (q) => q.eq("matterId", matterId)).collect();
     return rows
-      .filter((d) => d.status === "ready" && d.textFile && d.driveFile)
+      .filter((d) => d.status === "ready" && d.textFile && d.driveFile && !d.superseded)
       .map((d) => ({
         doc_id: d._id, filename: d.filename, pages: d.pages ?? 0, paras: d.paras ?? 0,
         text_path: `Text/${d._id}.md`, original_path: `Docs/${d.driveFile!.split("/").pop()}`, sha256: d.sha256 ?? "",
@@ -371,6 +404,13 @@ export const remove = mutation({
     await ctx.db.delete(documentId);
     await ctx.storage.delete(d.storageId);
     await audit(ctx, { firm, actorId: userId, action: "document.delete", matterId: d.matterId, detail: d.filename });
+    // Deleting the latest version makes the newest remaining ready version current again.
+    if (!d.superseded) {
+      const rest = (await ctx.db.query("documents").withIndex("by_matter", (q) => q.eq("matterId", d.matterId)).collect())
+        .filter((o) => familyOf(o) === familyOf(d) && o.status === "ready")
+        .sort((x, y) => (y.version ?? 1) - (x.version ?? 1));
+      if (rest[0]?.superseded) await ctx.db.patch(rest[0]._id, { superseded: false });
+    }
     const driveId = await driveIdOf(ctx);
     if (driveId) {
       const paths = [d.driveFile, d.textFile].filter((p): p is string => !!p);

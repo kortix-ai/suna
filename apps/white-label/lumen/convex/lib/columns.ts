@@ -4,7 +4,7 @@ export type Column = {
   key: string;
   label: string;
   prompt: string;
-  format: "text" | "yes_no" | "date" | "money" | "tag" | "verbatim";
+  format: "text" | "yes_no" | "date" | "money" | "tag" | "verbatim" | "number" | "percent" | "list";
   options?: string[];
 };
 
@@ -53,3 +53,53 @@ export const DD_COLUMNS: Column[] = [
     prompt: "Which red flags from the due-diligence rubric does this document raise? Name each one, or say \"None\".", format: "text",
   },
 ];
+
+/**
+ * The clause library: common review columns a lawyer picks by name. Keys are
+ * suggestions; the builder makes them unique within a review.
+ */
+export const COLUMN_LIBRARY: Column[] = [
+  PRESET_COLUMNS[0],
+  { key: "effective_date", label: "Effective date", prompt: "On what date does the agreement take effect?", format: "date" },
+  PRESET_COLUMNS[1],
+  PRESET_COLUMNS[2],
+  { key: "notice_period", label: "Notice period", prompt: "What notice must a party give to terminate or not renew, and how is it served?", format: "text" },
+  PRESET_COLUMNS[3],
+  { key: "termination_events", label: "Termination events", prompt: "On which events can a party terminate (breach, insolvency, change of control, other)? List each.", format: "list" },
+  PRESET_COLUMNS[4],
+  { key: "liability_cap_amount", label: "Liability cap amount", prompt: "What is the amount of the general liability cap? Give the amount and currency.", format: "money" },
+  { key: "indemnities", label: "Indemnities", prompt: "Which indemnities does each party give, and are they capped?", format: "list" },
+  { key: "warranties", label: "Warranties", prompt: "What warranties does each party give?", format: "list" },
+  PRESET_COLUMNS[5],
+  { key: "jurisdiction", label: "Jurisdiction", prompt: "Which courts or arbitration forum resolve disputes?", format: "text" },
+  PRESET_COLUMNS[6],
+  PRESET_COLUMNS[7],
+  { key: "confidentiality", label: "Confidentiality", prompt: "What confidentiality obligations apply, and for how long do they survive?", format: "text" },
+  { key: "payment_terms", label: "Payment terms", prompt: "When and how is payment due, and what happens on late payment?", format: "text" },
+  { key: "price_increase", label: "Price increase", prompt: "By what percentage can the price or rent rise each year? Give the number only.", format: "percent" },
+  { key: "exclusivity", label: "Exclusivity", prompt: "Any exclusivity, non-compete or most-favoured-customer term binding a party, with its duration.", format: "text" },
+  { key: "non_solicit_months", label: "Non-solicit (months)", prompt: "For how many months does a non-solicitation covenant last? Give the number only.", format: "number" },
+  { key: "force_majeure", label: "Force majeure", prompt: "Is there a force majeure clause, and what does it excuse?", format: "text" },
+  { key: "data_protection", label: "Data protection", prompt: "Which data protection obligations apply, and who is controller or processor?", format: "text" },
+  { key: "amendment", label: "Amendment", prompt: "How can the agreement be amended?", format: "text" },
+];
+
+const FORMAT_ASK: Record<Column["format"], string> = {
+  text: "Answer in at most 40 words, the answer first.",
+  yes_no: "Answer yes or no.",
+  date: "Give the date (YYYY-MM-DD) or the duration.",
+  money: "Give the amount and the currency.",
+  tag: "Answer with one of the options.",
+  verbatim: "Quote the clause exactly.",
+  number: "Give the number only.",
+  percent: "Give the percentage as a number only.",
+  list: "List each item separately.",
+};
+
+/** A column's question written from its label and format: "Write it for me" in the column builder. */
+export function promptFor(label: string, format: Column["format"]): string {
+  const known = COLUMN_LIBRARY.find((c) => c.label.toLowerCase() === label.trim().toLowerCase());
+  if (known && known.format === format) return known.prompt;
+  const subject = label.trim().replace(/[?.]+$/, "") || "this term";
+  return `What does the agreement provide on ${subject.toLowerCase()}? ${FORMAT_ASK[format]} If the agreement is silent, say so.`;
+}

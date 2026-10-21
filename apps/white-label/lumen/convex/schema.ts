@@ -30,6 +30,10 @@ export const auditAction = v.union(
   v.literal("library.create"), v.literal("library.update"),
   v.literal("export.docx"),
   v.literal("export.md"),
+  v.literal("export.xlsx"),
+  v.literal("workflow.create"), v.literal("workflow.update"), v.literal("workflow.delete"),
+  v.literal("review.column_edit"), v.literal("review.column_delete"),
+  v.literal("document.version"),
 );
 
 export const documentStatus = v.union(v.literal("uploading"), v.literal("extracting"), v.literal("ready"), v.literal("failed"));
@@ -48,6 +52,7 @@ export const batchStatus = v.union(
 );
 export const columnFormat = v.union(
   v.literal("text"), v.literal("yes_no"), v.literal("date"), v.literal("money"), v.literal("tag"), v.literal("verbatim"),
+  v.literal("number"), v.literal("percent"), v.literal("list"),
 );
 export const column = v.object({
   key: v.string(), label: v.string(), prompt: v.string(), format: columnFormat, options: v.optional(v.array(v.string())),
@@ -186,6 +191,11 @@ export default defineSchema({
     driveFile: v.optional(v.string()),
     textFile: v.optional(v.string()),
     uploadedBy: v.string(),
+    /** Versions: the first version's id (absent on a first version), this version's number (absent = 1). */
+    family: v.optional(v.id("documents")),
+    version: v.optional(v.number()),
+    /** A later version of this document is ready: it stays readable and citable, but new work uses the latest. */
+    superseded: v.optional(v.boolean()),
   })
     .index("by_matter", ["matterId"])
     .index("by_matter_sha", ["matterId", "sha256"]),
@@ -296,6 +306,25 @@ export default defineSchema({
     status: v.union(v.literal("accepted"), v.literal("rejected")),
     errors: v.optional(v.array(v.string())),
   }).index("by_batch_path", ["batchId", "path"]),
+
+  /**
+   * Workflows a firm writes itself. `assistant`: instructions a thread starts
+   * with. `tabular`: a column set a review starts with. Private to the author
+   * or shared with the whole firm.
+   */
+  customWorkflows: defineTable({
+    firmId: v.id("firms"),
+    type: v.union(v.literal("assistant"), v.literal("tabular")),
+    name: v.string(),
+    description: v.optional(v.string()),
+    prompt: v.optional(v.string()),
+    columns: v.optional(v.array(column)),
+    practiceArea: v.optional(v.string()),
+    jurisdiction: v.optional(v.string()),
+    visibility: v.union(v.literal("private"), v.literal("firm")),
+    createdBy: v.string(),
+    updatedAt: v.number(),
+  }).index("by_firm", ["firmId", "updatedAt"]),
 
   /** Playbooks and templates: firm data, not kit. Each run copies the body it uses into its Drive folder. */
   libraryItems: defineTable({

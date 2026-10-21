@@ -14,6 +14,7 @@ import type * as auth from "../auth.js";
 import type * as billing from "../billing.js";
 import type * as citations from "../citations.js";
 import type * as crons from "../crons.js";
+import type * as customWorkflows from "../customWorkflows.js";
 import type * as deployment from "../deployment.js";
 import type * as documents from "../documents.js";
 import type * as engine from "../engine.js";
@@ -53,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   billing: typeof billing;
   citations: typeof citations;
   crons: typeof crons;
+  customWorkflows: typeof customWorkflows;
   deployment: typeof deployment;
   documents: typeof documents;
   engine: typeof engine;

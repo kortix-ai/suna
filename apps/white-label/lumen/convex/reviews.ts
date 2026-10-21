@@ -210,3 +210,47 @@ export const setCell = mutation({
     return null;
   },
 });
+
+/**
+ * Edit a column. A new label alone changes nothing else. A new question or
+ * answer format makes the old answers stale, so the column runs again; verified
+ * and edited cells keep their value, as in a re-run.
+ */
+export const editColumn = mutation({
+  args: { reviewId: v.id("reviews"), columnKey: v.string(), label: v.string(), prompt: v.string(), format: column.fields.format, options: v.optional(v.array(v.string())) },
+  returns: v.union(v.null(), v.id("runs")),
+  handler: async (ctx, a) => {
+    const { review, ...actor } = await requireReview(ctx, a.reviewId);
+    await noActiveRun(ctx, review);
+    const old = review.columns.find((c) => c.key === a.columnKey);
+    if (!old) throw new Error("404: no such column");
+    const [next] = checkColumns([{ key: old.key, label: a.label, prompt: a.prompt, format: a.format, options: a.options }]);
+    const columns = review.columns.map((c) => (c.key === old.key ? next : c));
+    await ctx.db.patch(review._id, { columns });
+    await audit(ctx, { firm: actor.firm, actorId: actor.userId, action: "review.column_edit", matterId: review.matterId, detail: `${review.title} / ${next.label}` });
+    const changed = old.prompt !== next.prompt || old.format !== next.format || (old.options ?? []).join("|") !== (next.options ?? []).join("|");
+    if (!changed) return null;
+    for (const c of await cellsOf(ctx, review._id)) {
+      if (c.columnKey !== old.key || c.reviewStatus === "verified" || c.editedValue !== undefined) continue;
+      await ctx.db.patch(c._id, { state: "pending", value: undefined, note: undefined, confidence: undefined, citations: [], aiValue: undefined });
+    }
+    return await columnRun(ctx, actor, { ...review, columns }, [old.key], `${review.title}: ${next.label} (edited)`.slice(0, 120));
+  },
+});
+
+/** Delete a column and its cells, human work included. The audit log keeps the record. */
+export const deleteColumn = mutation({
+  args: { reviewId: v.id("reviews"), columnKey: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { reviewId, columnKey }) => {
+    const { review, firm, userId } = await requireReview(ctx, reviewId);
+    await noActiveRun(ctx, review);
+    const col = review.columns.find((c) => c.key === columnKey);
+    if (!col) throw new Error("404: no such column");
+    if (review.columns.length === 1) throw new Error("400: a review keeps at least one column");
+    await ctx.db.patch(reviewId, { columns: review.columns.filter((c) => c.key !== columnKey) });
+    for (const c of await cellsOf(ctx, reviewId)) if (c.columnKey === columnKey) await ctx.db.delete(c._id);
+    await audit(ctx, { firm, actorId: userId, action: "review.column_delete", matterId: review.matterId, detail: `${review.title} / ${col.label}` });
+    return null;
+  },
+});

@@ -15,6 +15,9 @@ description: How to answer review-table columns - formats, normalization, "not f
 | `money` | `{"amount": 2000000, "currency": "GBP"}` | |
 | `tag` | one of the column's `options`, exactly | `"England and Wales"` |
 | `verbatim` | the exact quote, nothing else | |
+| `number` | a JSON number, no unit | `24` |
+| `percent` | a JSON number, the percentage (8 % is `8`) | `8` |
+| `list` | an array of short strings, one per item, at most 8 | `["Breach", "Insolvency"]` |
 
 ## Not found
 

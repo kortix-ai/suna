@@ -42,7 +42,8 @@ async function event(ctx: MutationCtx, runId: Id<"runs">, type: string, detail?:
 async function readyDocs(ctx: QueryCtx, matterId: Id<"matters">, ids: Id<"documents">[] | undefined) {
   const all = await ctx.db.query("documents").withIndex("by_matter", (q) => q.eq("matterId", matterId)).collect();
   const ready = all.filter((d) => d.status === "ready" && (d.paras ?? 0) > 0).sort((a, b) => a._creationTime - b._creationTime);
-  if (!ids) return ready;
+  // By default new work reads the latest version of each document; an explicit pick may name an earlier one.
+  if (!ids) return ready.filter((d) => !d.superseded);
   const picked = ids.map((id) => ready.find((d) => d._id === id));
   if (picked.some((d) => !d)) throw new Error("400: every document must be ready and in this matter");
   return picked as Doc<"documents">[];

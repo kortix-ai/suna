@@ -14,7 +14,7 @@
         "required": ["value", "note", "confidence", "citations"],
         "additionalProperties": false,
         "properties": {
-          "value": { "type": ["string", "boolean", "number", "object", "null"] },
+          "value": { "type": ["string", "boolean", "number", "object", "array", "null"] },
           "not_found": { "type": "boolean" },
           "note": { "type": "string", "maxLength": 280 },
           "confidence": { "enum": ["high", "medium", "low"] },
