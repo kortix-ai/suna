@@ -1808,6 +1808,9 @@ async function projectsRm(args: string[]): Promise<number> {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 function surface(err: unknown): number {
+  // A denial goes through the shared formatter so the CLI's tail names the
+  // refused identity and the right remedy.
+  if (err instanceof ApiError && err.status === 403) return surfaceApiError(err);
   if (err instanceof ApiError) {
     if (err.status === 401) {
       process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);
