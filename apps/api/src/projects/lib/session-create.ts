@@ -36,6 +36,7 @@ import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
+import { openWorkspaceVolumeEarly } from '../../platform/services/workspace-volume';
 import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-sessions';
 
 
@@ -1565,6 +1566,15 @@ export async function createProjectSession(input: {
   const { project, userId, body } = input;
   const projectId = project.projectId;
   const accountId = project.accountId;
+  // The id first: a /workspace-volume session starts opening its volume now,
+  // so the open runs alongside the checks below instead of before the box create.
+  const identity = resolveSessionIdentity({ input, projectId, accountId });
+  if (identity.error) return { error: identity.error };
+  openWorkspaceVolumeEarly({
+    sessionId: identity.sessionId,
+    projectMetadata: project.metadata,
+    location: resolveSessionSandboxRegion(project.metadata),
+  });
   const { parentSession, visibility, inheritedGrants } = await resolveSessionSharing(
     input,
     accountId,
@@ -1696,8 +1706,6 @@ export async function createProjectSession(input: {
     }
   }
 
-  const identity = resolveSessionIdentity({ input, projectId, accountId });
-  if (identity.error) return { error: identity.error };
   const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;
   const { initiator, metadata } = buildSessionCreateMetadata({
     input,

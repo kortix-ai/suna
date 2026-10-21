@@ -1,7 +1,7 @@
 /**
  * Stateless sandboxes, step 2: a session whose /workspace is a Platinum volume
  * (platform/services/workspace-volume.ts) does not keep a stopped box. Once its
- * box has been stopped past KORTIX_SANDBOX_IDLE_DELETE_MINUTES, the row is
+ * box has been stopped (metadata.stoppedAt) past KORTIX_SANDBOX_IDLE_DELETE_MINUTES, the row is
  * retired and the box removed. The next open claims the retired row
  * (`claimRetiredSandboxRow`) and boots a fresh box on the same volume; the
  * conversation comes back from the session log, which is on for every volume
@@ -19,7 +19,7 @@
  */
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
@@ -50,7 +50,8 @@ export async function retireIdleVolumeBoxes(now = new Date()): Promise<{ retired
         eq(sessionSandboxes.status, 'stopped'),
         eq(sessionSandboxes.provider, 'platinum'),
         isNotNull(sessionSandboxes.externalId),
-        lt(sessionSandboxes.deadlineAt, cutoff),
+        // The stop's own time (applyStoppedState), not the deadline: a manual Stop leaves the deadline ahead.
+        sql`(${sessionSandboxes.metadata} ->> 'stoppedAt')::timestamptz < ${cutoff.toISOString()}::timestamptz`,
         sql`${projectSessions.metadata} ? ${WORKSPACE_VOLUME_SESSION_KEY}::text`,
         sql`${projectSessions.metadata} ->> 'deletedAt' is null`,
         sql`coalesce(${sessionSandboxes.metadata} ->> 'runtimeIdentityState', '') <> 'unavailable'`,

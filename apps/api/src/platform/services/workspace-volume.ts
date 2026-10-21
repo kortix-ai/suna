@@ -50,6 +50,50 @@ export function workspaceVolumesKillSwitchOff(): boolean {
   return /^(0|off|false|no)$/.test((config.KORTIX_WORKSPACE_VOLUMES ?? '').trim().toLowerCase());
 }
 
+// replica-local: volume opens POST /sessions started, read once by the same
+// process's provisioning (resolveWorkspaceVolume) and dropped after 2 min.
+const earlyOpens = new Map<string, { location: string | null; open: Promise<void> }>();
+
+/**
+ * Start opening a new session's volume while POST /sessions still runs its
+ * checks, so the box create does not wait for it. Open-or-create is idempotent:
+ * provisioning records the volume and reuses this open, or opens again.
+ */
+export function openWorkspaceVolumeEarly(input: { sessionId: string; projectMetadata: unknown; location: string | undefined }): void {
+  if (!config.PLATINUM_API_KEY || workspaceVolumesKillSwitchOff() || !resolveFeatureFlag(input.projectMetadata, 'workspace_volume')) return;
+  const location = input.location ?? null;
+  const open = openWorkspaceVolume({ name: workspaceVolumeName(input.sessionId), location });
+  open.catch(() => {});
+  earlyOpens.set(input.sessionId, { location, open });
+  setTimeout(() => {
+    // Never read: the create failed after the open started. No session row
+    // means no record, so nothing else would ever delete this volume.
+    if (!earlyOpens.delete(input.sessionId)) return;
+    void dropUnclaimedEarlyVolume(input.sessionId, location);
+  }, 120_000).unref?.();
+}
+
+async function dropUnclaimedEarlyVolume(sessionId: string, location: string | null): Promise<void> {
+  try {
+    const [row] = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1);
+    if (row) return;
+    const volume: WorkspaceVolume = { name: workspaceVolumeName(sessionId), location };
+    await platinumJson(
+      `/v1/volumes/${encodeURIComponent(volume.name)}?missing_ok=true`,
+      { method: 'DELETE', signal: AbortSignal.timeout(15_000) },
+      volumeOrigin(volume),
+    );
+  } catch (err) {
+    logger.warn(`[workspace] unclaimed early volume of ${sessionId} was not deleted`, {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 /** The session's recorded volume, when the record names its own volume and a valid region. */
 export function recordedWorkspaceVolume(sessionId: string, metadata: unknown): WorkspaceVolume | null {
   const v = (metadata as Record<string, unknown> | null | undefined)?.[WORKSPACE_VOLUME_SESSION_KEY] as
@@ -111,7 +155,13 @@ export async function resolveWorkspaceVolume(input: {
     volume = recordedWorkspaceVolume(sessionId, written?.metadata);
     if (!volume) throw new Error(`[workspace] This session's workspace volume record is not valid, so it did not start.`);
   }
-  await openWorkspaceVolume(volume);
+  const early = earlyOpens.get(sessionId);
+  earlyOpens.delete(sessionId);
+  if (early && early.location === volume.location) {
+    await early.open.catch(() => openWorkspaceVolume(volume));
+  } else {
+    await openWorkspaceVolume(volume);
+  }
   return volume;
 }
 
