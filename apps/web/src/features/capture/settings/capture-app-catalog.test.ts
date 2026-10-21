@@ -21,18 +21,17 @@ describe('capture app catalog', () => {
 
   test('ids of one app show as one named row; unknown ids keep their own row', () => {
     const rows = namedAppRows([
-      { id: 'com.tinyspeck.slackmacgap', locked: false },
-      { id: 'other.app', locked: false },
-      { id: 'SLACK.EXE', locked: true },
+      { id: 'com.tinyspeck.slackmacgap' },
+      { id: 'other.app' },
+      { id: 'SLACK.EXE' },
     ]);
     expect(rows).toEqual([
       {
         ids: ['com.tinyspeck.slackmacgap', 'SLACK.EXE'],
         name: 'Slack',
         detail: 'com.tinyspeck.slackmacgap, SLACK.EXE',
-        locked: true,
       },
-      { ids: ['other.app'], name: 'other.app', detail: '', locked: false },
+      { ids: ['other.app'], name: 'other.app', detail: '' },
     ]);
   });
 

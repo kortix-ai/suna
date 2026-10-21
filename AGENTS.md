@@ -737,12 +737,14 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 ### Frontend type/lint gate
 
-- `apps/web` `tsc --noEmit` is not clean. On `dev` at 2026-10-14 it reports
-  103 errors: 97 in 23 test files (the largest: `diff-layout-toggle.test.tsx`,
-  `hero-solutions.test.tsx`, the `@types/bun` `test.each` errors in
-  `preview-fit.test.tsx` and `easy-panel-logic.test.ts`) and 6 in 5 product
-  files. The bar is relative: a branch adds no `tsc` error to the files it
-  touches. Compare against `origin/dev`, not against a number in this file.
+- Typecheck `apps/web` with `pnpm --filter Kortix-Computer-Frontend typecheck`
+  (tsgo, incremental). Never run raw `tsc --noEmit` there. Measured on
+  2026-10-21 on a 24 GB Mac: raw `tsc` ran 817 s, held 3.18 GB, and was
+  killed before it finished. Cold `tsgo` takes 12.1 s at 5.0 GB peak. A warm
+  incremental run takes 1.1 s at 1.7 GB.
+- On 2026-10-21 the tsgo script reported 0 errors on `dev`. The bar is
+  relative: a branch adds no type error to the files it touches. Compare against `origin/dev` with the same command, not
+  against a number in this file.
   The old ~1500 `TS2786` / `IntrinsicAttributes` noise from a React 19↔18
   types mismatch (two copies of `@types/react` in one program — `packages/sdk`
   had its own) is gone as of the Next 16 upgrade. If `TS2786` appears again,

@@ -20318,7 +20318,10 @@
       "text7971dd752669": "Promemoria",
       "text724b09397472": "Aggiunta di {name} a {project}",
       "text1e007c47254d": "La configurazione avviene in background. Riceverai una notifica al termine.",
-      "text57f57edb6f16": "La richiesta di modifica #{number} è pronta per la revisione."
+      "text57f57edb6f16": "La richiesta di modifica #{number} è pronta per la revisione.",
+      "texta8597db6f24b": "Rimuovi competenza",
+      "text5f6ba69d66d1": "Competenza rimossa",
+      "textcb8d6b0c94c9": " e tutti i suoi file, modifiche incluse, e rimuove la competenza da ogni agente che la usa. Un commit sul branch predefinito."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

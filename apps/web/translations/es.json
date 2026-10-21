@@ -20318,7 +20318,10 @@
       "text7971dd752669": "Recordatorios",
       "text724b09397472": "Añadiendo {name} a {project}",
       "text1e007c47254d": "Se configura en segundo plano. Recibirás una notificación cuando termine.",
-      "text57f57edb6f16": "La solicitud de cambio #{number} está lista para revisar."
+      "text57f57edb6f16": "La solicitud de cambio #{number} está lista para revisar.",
+      "texta8597db6f24b": "Eliminar habilidad",
+      "text5f6ba69d66d1": "Habilidad eliminada",
+      "textcb8d6b0c94c9": " y todos sus archivos, incluidos los cambios, y quita la habilidad de cada agente que la usa. Un commit en la rama predeterminada."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
