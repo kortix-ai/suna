@@ -7,7 +7,7 @@ import type { FunctionReturnType } from 'convex/server';
 import { Button } from '@kortix/ui/button';
 import Loading from '@kortix/ui/loading';
 import { ArrowLeftIcon, FolderDashedIcon, LockKeyIcon } from '@phosphor-icons/react';
-import { useConvex, useConvexAuth, useQuery } from 'convex/react';
+import { useConvexAuth, useQuery } from 'convex/react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createContext, useContext, useEffect } from 'react';
@@ -132,13 +132,3 @@ export function MatterGate({ matterId, children }: { matterId: string; children:
 }
 
 export const threadPath = (matterId: string, threadId: string) => `/app/matters/${matterId}/assistant/${threadId}`;
-
-/** Open the Lumen thread of a session the session UI just created through the proxy. */
-export function useOpenSession() {
-  const convex = useConvex();
-  const router = useRouter();
-  return async (kortixSessionId: string) => {
-    const t = await convex.query(api.threads.bySession, { kortixSessionId });
-    if (t) router.push(threadPath(t.matterId, t.threadId));
-  };
-}

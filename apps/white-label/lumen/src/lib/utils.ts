@@ -11,13 +11,6 @@ export function relativeTime(iso?: string | null): string {
   return d < 30 ? `${d}d ago` : new Date(iso).toLocaleDateString();
 }
 
-/** A locale date string, or `fallback` when the value is absent or not a date. */
-export function fmtDate(value: unknown, fallback = ''): string {
-  if (!value) return fallback;
-  const d = new Date(value as string);
-  return Number.isNaN(d.getTime()) ? fallback : d.toLocaleString();
-}
-
 /** A Convex error as a person reads it: "403: admins only" → "admins only". */
 export function errorText(err: unknown): string {
   const msg = String((err as Error)?.message ?? err);

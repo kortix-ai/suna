@@ -86,13 +86,6 @@ export function memberKortix(member: Member) {
   return createScopedKortix({ backendUrl: upstreamBase(), getToken: async () => member.token });
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Validate a session id before it reaches an SDK path. */
-export function isValidSessionId(id: string): boolean {
-  return UUID_RE.test(id);
-}
-
 /**
  * The member plus a check that the client's project id is the firm's
  * project. The id from the client is never used to pick a credential.

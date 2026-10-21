@@ -264,13 +264,15 @@ Kortix API has a Lumen concept in it.
   member entries.
 - Git history names Lumen as every author and committer (`scrubGit`). A failed turn's error copy
   names Lumen (`scrubTurn`). The slash-command list leaves out the platform's own commands and
-  names Lumen in the rest; so does the snapshot's runtime state and the project record
-  (`scrubWord`). The live event stream is not rewritten: a turn that fails while the page is open
+  names Lumen in the rest; so does the snapshot's runtime state (`scrubWord`) and the project
+  record (`scrubPlatform`). The live event stream is not rewritten: a turn that fails while the page is open
   can show the platform's error copy until the next reload.
-- `GET /api/kortix/projects/<id>` returns the operator's `account_id` and the project's
-  repository fields. They are opaque ids, not credentials.
-- The `lumen-counsel` prompt (`convex/lumenAgent.ts`) tells the agent never to name the platform,
-  provider or model.
+- `GET /api/kortix/projects/<id>` drops the operator's `account_id` and the project's
+  repository fields (`repo_url`, `git_url`, `clone_url`, `git_origin_url`), as Credential flow item 13 says.
+- Responses carry only the headers a browser needs (`browserHeaders`): no `x-kortix-*`,
+  `access-control-*`, `server-timing`, `traceparent` or `x-request-id`.
+- Every Lumen agent prompt starts with `agent-kit/agents/_rules.md`, whose rule 1 tells the agent
+  never to name the platform, provider, model or tools.
 - A session PATCH through the proxy keeps the session's `lumen-` labels and drops client `lumen_`
   metadata keys (`tagSessionPatch`). A member can rename a thread, but cannot change which firm,
   matter or user it is attributed to.
@@ -585,8 +587,9 @@ deprecated or internal) and never opens its own transport (`EventSource`,
 `XMLHttpRequest`, `WebSocket`, `navigator.sendBeacon`, `const f = fetch`,
 `fetch.call(...)`, a raw HTTP client import such as `axios` or `node:https`). Its own `fetch` calls go
 to `/api/auth`, `/api/preview-url` and the static `/sample/` files only. Convex files import `@kortix/sdk` (statically,
-with `import()` or with `require()`) only in `"use node"` files, never call
-or alias `fetch` and never import a raw HTTP client. `scripts/sdk-boundary.mjs` enforces these rules and runs before
+with `import()` or with `require()`) only in `"use node"` files, never fetch Kortix (the Stripe
+REST call in `convex/billing.ts` is the one allowed third-party `fetch`), never alias `fetch` and
+never import a raw HTTP client. `scripts/sdk-boundary.mjs` enforces these rules and runs before
 `build`, `test` and `typecheck`. A rule is a source scan: it catches the
 patterns above, not every way to write them.
 

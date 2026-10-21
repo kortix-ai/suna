@@ -1,14 +1,5 @@
 'use client';
 
-import { Button } from '@kortix/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from '@kortix/ui/dropdown-menu';
-import { MonitorIcon, MoonIcon, SunIcon } from '@phosphor-icons/react';
 import { useCallback, useEffect, useState } from 'react';
 
 /**
@@ -45,28 +36,4 @@ export function useTheme() {
     apply(next);
   }, []);
   return { choice, setChoice };
-}
-
-const ICONS = { light: SunIcon, dark: MoonIcon, system: MonitorIcon } as const;
-
-/** The theme switch: one icon button, Light / Dark / System. */
-export function ThemeMenu() {
-  const { choice, setChoice } = useTheme();
-  const Icon = ICONS[choice];
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-8" aria-label="Theme">
-          <Icon className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-36">
-        <DropdownMenuRadioGroup value={choice} onValueChange={(v) => setChoice(v as ThemeChoice)}>
-          <DropdownMenuRadioItem value="light">Light</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="dark">Dark</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="system">System</DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
 }
