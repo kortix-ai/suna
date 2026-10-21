@@ -20309,7 +20309,10 @@
       "text08f3c151d323": "Demander des conditions sur mesure",
       "texta0990a4a86dc": "Marque blanche : votre produit d’IA sur le calcul Platinum.dev",
       "text6189ab6313de": "Forkez Kortix, apposez votre marque et vendez-le comme votre produit. La licence est gratuite. Seule condition : votre calcul tourne sur Platinum.dev.",
-      "text7971dd752669": "Rappels"
+      "text7971dd752669": "Rappels",
+      "text724b09397472": "Ajout de {name} à {project}",
+      "text1e007c47254d": "La configuration se fait en arrière-plan. Vous recevrez une notification une fois terminée.",
+      "text57f57edb6f16": "La demande de modification #{number} est prête à être examinée."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

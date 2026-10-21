@@ -5586,7 +5586,8 @@ const catalog = {
       "text815464994ec4": "Telegram connected",
       "textdfea5351a743": "Telegram disconnected",
       "text2f95b1c9ee2b": "Allowed users saved",
-      "text7971dd752669": "Reminders"
+      "text7971dd752669": "Reminders",
+      "text57f57edb6f16": "Change request #{number} is ready to review."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

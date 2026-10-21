@@ -20309,7 +20309,10 @@
       "text08f3c151d323": "Затражите прилагођене услове",
       "texta0990a4a86dc": "Вајт-лејбл: ваш AI производ на Platinum.dev compute-у",
       "text6189ab6313de": "Форкујте Kortix, ставите свој бренд и продајте га као свој производ. Лиценца је бесплатна. Једини услов: ваш compute ради на Platinum.dev-у.",
-      "text7971dd752669": "Подсетници"
+      "text7971dd752669": "Подсетници",
+      "text724b09397472": "Dodavanje {name} u {project}",
+      "text1e007c47254d": "Podešavanje radi u pozadini. Dobićete obaveštenje kada bude gotovo.",
+      "text57f57edb6f16": "Zahtev za izmenu #{number} je spreman za pregled."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

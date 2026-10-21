@@ -1448,6 +1448,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `BILL-9b` Anonymous and non-member callers cannot cancel or reactivate a subscription.
 `BILL-12` A fresh personal account reads as the funded free tier with active billing state and lifetime rollups.
 `BILL-14` An owner reads credit breakdown, credit usage, tiers, transaction summary, and usage history. Anonymous callers are rejected. `tier-configurations` lists `free` and `pro`, never `none`. A caller with no credit row reads an all-zero breakdown.
+`BILL-15` A team's credit breakdown and usage history are read through `account_id` (KRTX-2989). The team account holds a balance of 12.5; a team member reading `credit-breakdown?account_id=<team>` → 200 with `total` 12.5; a non-member naming the team → 403 on both routes.
 `CHN-21` A Slack identity login token resolves or returns the documented invalid-token boundary.
 `CHN-22` The public Slack manifest route returns the project manifest or the documented project/configuration boundary.
 `CHN-23` A project writer binds a Slack thread. Invalid input and unauthorized callers are rejected.

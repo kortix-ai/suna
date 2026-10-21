@@ -20309,7 +20309,10 @@
       "text08f3c151d323": "Individuelle Bedingungen anfragen",
       "texta0990a4a86dc": "White-Label: Ihr KI-Produkt auf Rechenleistung von Platinum.dev",
       "text6189ab6313de": "Forken Sie Kortix, versehen Sie es mit Ihrer Marke und verkaufen Sie es als eigenes Produkt. Die Lizenz ist kostenlos. Einzige Bedingung: Ihre Rechenleistung läuft auf Platinum.dev.",
-      "text7971dd752669": "Erinnerungen"
+      "text7971dd752669": "Erinnerungen",
+      "text724b09397472": "{name} wird zu {project} hinzugefügt",
+      "text1e007c47254d": "Die Einrichtung läuft im Hintergrund. Sie erhalten eine Benachrichtigung, wenn sie fertig ist.",
+      "text57f57edb6f16": "Änderungsanfrage #{number} ist bereit zur Prüfung."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
