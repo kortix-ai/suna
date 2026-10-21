@@ -27,7 +27,7 @@ export function StickyList({ items, media }: { items: { title: string; body: str
   }, []);
 
   return (
-    <div className="grid gap-10 md:grid-cols-2 md:gap-6">
+    <div className="grid grid-cols-1 gap-10 md:grid-cols-2 md:gap-6">
       <div className="hidden md:block">
         <div className="sticky top-[calc(50vh-280px)]">
           <MediaCard className="md:aspect-[628/650]">

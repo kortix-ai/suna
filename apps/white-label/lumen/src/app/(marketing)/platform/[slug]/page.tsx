@@ -21,7 +21,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   return (
     <>
       <Section rule={false} className="pt-12! pb-24! md:pt-20!">
-        <Container className="grid items-center gap-12 lg:grid-cols-2 lg:gap-6">
+        <Container className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2 lg:gap-6">
           <div className="lg:pr-16">
             <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[15px] font-medium">
               <Link href="/platform" className="hover:text-muted-foreground">

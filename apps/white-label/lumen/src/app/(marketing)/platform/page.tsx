@@ -41,8 +41,8 @@ export default function PlatformPage() {
       <Section className="mt-24 md:mt-36">
         <Container className="space-y-24 md:space-y-32">
           {PRODUCTS.map((p, i) => (
-            <div key={p.slug} className="grid items-center gap-10 md:grid-cols-2 md:gap-6">
-              <div className={cn(i % 2 === 0 && 'md:order-2')}>
+            <div key={p.slug} className="grid grid-cols-1 items-center gap-10 md:grid-cols-2 md:gap-6">
+              <div className={cn('min-w-0', i % 2 === 0 && 'md:order-2')}>
                 <MediaCard>
                   <Mock name={p.heroMock} />
                 </MediaCard>

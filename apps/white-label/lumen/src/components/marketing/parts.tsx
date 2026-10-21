@@ -124,7 +124,7 @@ export function MediaCard({ className, children }: { className?: string; childre
       )}
     >
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-paper-deep/80 to-transparent" />
-      <div className="relative w-full max-w-[460px]">{children}</div>
+      <div className="relative w-full min-w-0 max-w-[460px]">{children}</div>
     </div>
   );
 }

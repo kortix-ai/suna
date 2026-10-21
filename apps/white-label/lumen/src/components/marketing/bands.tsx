@@ -71,7 +71,7 @@ export function FeatureRows({ features, titleStyle = 'sans' }: { features: Featu
   return (
     <div className="space-y-24 md:space-y-32">
       {features.map((f, i) => (
-        <div key={f.title} className="grid items-center gap-10 md:grid-cols-2 md:gap-6">
+        <div key={f.title} className="grid grid-cols-1 items-center gap-10 md:grid-cols-2 md:gap-6">
           <div className={cn(i % 2 && 'md:order-2')}>
             <MediaCard>
               <Mock name={f.mock} />
@@ -148,7 +148,7 @@ export function Results() {
 /** Dark story cards: an abstract interior with the firm's lockup, a sans title below. */
 export function StoryCards({ limit, className }: { limit?: number; className?: string }) {
   return (
-    <div className={cn('grid gap-6 md:grid-cols-2', className)}>
+    <div className={cn('grid grid-cols-1 gap-6 md:grid-cols-2', className)}>
       {STORIES.slice(0, limit).map((s) => (
         <Link key={s.slug} href={`/customers/${s.slug}`} className="group">
           <Photo tone={s.tone} className="grid aspect-[16/10] place-items-center">
