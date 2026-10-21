@@ -4,6 +4,7 @@ import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import {
   PatPolicyError,
+  checkTokenMintExpiry,
   createAccountToken,
   listAccountTokens,
   revokeAccountToken,
@@ -137,6 +138,14 @@ export function registerProjectCredentialsRoutes(): void {
     const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
     if (expiresAt && Number.isNaN(expiresAt.getTime())) {
       return c.json({ error: 'expires_at must be ISO-8601' }, 400);
+    }
+    // A project-scoped caller never mints a token that outlives itself.
+    const expiryRefusal = await checkTokenMintExpiry(
+      expiresAt,
+      c.get('tokenProjectId') ? (c.get('iamTokenId') as string | undefined) : undefined,
+    );
+    if (expiryRefusal) {
+      return c.json({ error: expiryRefusal.error, code: expiryRefusal.code }, expiryRefusal.status);
     }
 
     const userId = c.get('userId') as string;

@@ -26,7 +26,7 @@ Kortix serves about 500k users on web and mobile, and third parties build their 
 | G2 | UI is reliable | Blocks that render with no parse error ÷ all blocks | ≥ 99% |
 | G3 | UI appears only where it helps | Turns with ≥ 1 UI block ÷ turns, on projects with the flag on | 10–25% (a band, not a minimum) |
 | G4 | No streaming regression | Commit count, time to first paint, and dropped frames on the fixed 2,000-token replay (§8.4) | Within 5% of `dev` on web and mobile |
-| G5 | One integration for every host | A third-party React app renders UI with `@kortix/sdk` only | ≤ 20 lines of host code (proved by `apps/whitelabel-demo`) |
+| G5 | One integration for every host | A third-party React app renders UI with `@kortix/sdk` only | ≤ 20 lines of host code (proved by `apps/white-label/lumen`) |
 
 ## 3. Non-goals
 

@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const WEB = 'apps/web/src';
-const SCOPES = [WEB, 'packages/ui/src', 'apps/whitelabel-demo/src'];
+const SCOPES = [WEB, 'packages/ui/src', 'apps/white-label/lumen/src'];
 const SONNER_ALLOWED = new Set([
   'packages/ui/src/primitives/toast.tsx',
   'apps/web/src/app/[locale]/layout.tsx',

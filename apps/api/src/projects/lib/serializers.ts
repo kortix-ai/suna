@@ -74,7 +74,7 @@ export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
  * server at create/branch/trigger time and no client — web, mobile, SDK or the
  * whitelabel demo — ever reads them back off a session (verified 2026-08-26 by
  * an exhaustive read-side sweep of apps/web, apps/mobile, packages/sdk and
- * apps/whitelabel-demo). They are also the heavy ones: on a real 60-session
+ * apps/white-label/lumen). They are also the heavy ones: on a real 60-session
  * project they are 57% of the whole list body (`initial_prompt` alone is 36%),
  * which the sidebar re-fetches several times per session open.
  *

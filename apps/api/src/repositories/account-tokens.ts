@@ -1,4 +1,4 @@
-import { eq, and, desc, inArray, isNull, type SQL } from 'drizzle-orm';
+import { eq, and, desc, gt, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { SESSION_LEASE_REFUSAL } from '../shared/session-lease-refusal';
 import { accountTokens, accounts, projects, projectSessions, readStoredAgentGrant, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
@@ -286,6 +286,37 @@ async function insertAccountToken(
 }
 
 /**
+ * The expiry rule every mint route applies before `createAccountToken`:
+ *   - an `expiresAt` at or before now → 400 `token_expiry_in_past`;
+ *   - a project-scoped caller (`parentTokenId` = the caller's own token) must
+ *     pass `expiresAt`, at or before its own expiry when it has one → else 403
+ *     `token_mint_exceeds_parent`. A child never outlives its parent.
+ * Browser sessions and unscoped PATs pass no `parentTokenId` and are unchanged.
+ */
+export async function checkTokenMintExpiry(
+  expiresAt: Date | undefined,
+  parentTokenId: string | undefined,
+): Promise<{ status: 400 | 403; code: string; error: string } | null> {
+  if (expiresAt && expiresAt.getTime() <= Date.now()) {
+    return { status: 400, code: 'token_expiry_in_past', error: 'expires_at must be in the future' };
+  }
+  if (!parentTokenId) return null;
+  const [parent] = await db
+    .select({ expiresAt: accountTokens.expiresAt })
+    .from(accountTokens)
+    .where(eq(accountTokens.tokenId, parentTokenId))
+    .limit(1);
+  if (!expiresAt || (parent?.expiresAt && expiresAt > parent.expiresAt)) {
+    return {
+      status: 403,
+      code: 'token_mint_exceeds_parent',
+      error: 'A project-scoped token must set expires_at, no later than its own expiry.',
+    };
+  }
+  return null;
+}
+
+/**
  * List the account's LIVE tokens — the rows a `tokens ls`-style listing may
  * still act on. If `projectId` is provided, narrows to tokens scoped to that
  * project (the per-project token management surface). Never returns secret
@@ -317,6 +348,10 @@ export async function listAccountTokens(
     userId ? eq(accountTokens.userId, userId) : undefined,
     eq(accountTokens.status, 'active'),
     isNull(accountTokens.revokedAt),
+    // An expired token and a token of an archived (or gone) project no longer
+    // authenticate, so they are not live. `?mine=true` keeps expired keys as history.
+    or(isNull(accountTokens.expiresAt), gt(accountTokens.expiresAt, sql`now()`)),
+    or(isNull(accountTokens.projectId), eq(projects.status, 'active')),
   );
   return db
     .select({
@@ -332,6 +367,7 @@ export async function listAccountTokens(
       revokedAt: accountTokens.revokedAt,
     })
     .from(accountTokens)
+    .leftJoin(projects, eq(projects.projectId, accountTokens.projectId))
     .where(filter)
     .orderBy(desc(accountTokens.createdAt));
 }
