@@ -17,7 +17,12 @@ import { ConvexReactClient } from 'convex/react';
 // The toast host. @kortix/ui/toast draws every toast (successToast,
 // errorToast, …) into the <Toaster /> it exports, so the host needs no sonner
 // dependency of its own.
-import { Toaster } from '@kortix/ui/toast';
+import { Toaster, errorToast, successToast } from '@kortix/ui/toast';
+import { getActiveMatter } from '@/lib/session';
+import { errorText } from '@/lib/utils';
+import { VAULT_ACCEPT, refuseReason } from '@/lib/vault-files';
+import { api } from '@convex/_generated/api';
+import type { Id } from '@convex/_generated/dataModel';
 
 // Client-side navigation for @kortix/ui (useUiRouter().push), not full page loads.
 const navigation: UiNavigation = { useRouter, usePathname, useSearchParams, useParams };
@@ -59,7 +64,7 @@ const i18n: UiI18nHost = {
       hintMentions: 'Name a document to focus the answer on it',
       hintWorkspaceFile: 'Ask about any document in this matter',
       hintSwitchAgents: 'Ask for a short answer with citations',
-      hintAttachFiles: 'Add documents to the vault to include them',
+      hintAttachFiles: 'Drop a contract here to add it to Documents',
       hintChanged: 'Ask which agreements depart from your playbook',
       hintCompact: 'Ask for a one-paragraph summary',
       startingSession: 'Starting a secure workspace…',
@@ -90,7 +95,34 @@ const config: Partial<UiHostConfig> = {
   contextMeterEnabled: false,
   sessionOverridesEnabled: false,
   agentLabels,
+  // A file attached in a chat goes into the matter's Documents, the one path that reads,
+  // anchors and indexes it: only a vault document can be cited. Nothing reaches the session's own store.
+  takeFiles: (files) => void addToDocuments(files),
+  attachAccept: VAULT_ACCEPT,
 };
+
+async function addToDocuments(files: File[]) {
+  const matterId = getActiveMatter();
+  if (!matterId) return errorToast('Open a matter to add documents');
+  for (const file of files) {
+    const refused = refuseReason(file);
+    if (refused) {
+      errorToast(`${file.name}: ${refused}`);
+      continue;
+    }
+    try {
+      await convex.action(api.documents.upload, {
+        matterId: matterId as Id<'matters'>,
+        filename: file.name,
+        bytes: await file.arrayBuffer(),
+        contentType: file.type,
+      });
+      successToast(`${file.name} added to Documents`, { description: 'Lumen reads it now. Ask about it once it shows Ready in Documents.' });
+    } catch (err) {
+      errorToast(`${file.name}: could not add it`, { description: errorText(err) });
+    }
+  }
+}
 
 // Lumen's own backend: orgs, workspaces, threads. Better Auth runs inside it.
 // The fallback is the `convex dev` local default, so a build without env still compiles.

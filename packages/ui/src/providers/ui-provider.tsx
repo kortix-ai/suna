@@ -283,6 +283,15 @@ export interface UiHostConfig {
   offeredAgents?: readonly string[];
   /** Display names by agent name, for the agent picker. Unset or missing: the title-cased name. */
   agentLabels?: Readonly<Record<string, string>>;
+  /**
+   * A host that keeps files in its own store takes the composer's files here:
+   * the attach button, a drop and a pasted file. The composer then uploads
+   * none of them to the session's attachment store and shows no tray for
+   * them. Unset: they upload as prompt attachments.
+   */
+  takeFiles?: (files: File[]) => void;
+  /** The attach picker's `accept` list. Unset: images, PDF, text and code files. */
+  attachAccept?: string;
 }
 
 /** What the session browser frames: a port and path inside the session's sandbox, or a URL. */

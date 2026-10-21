@@ -1,6 +1,7 @@
 'use client';
 
 import { errorToast } from '../../primitives/toast';
+import { useUiHostConfig } from '../../providers/ui-provider';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import { isImageFile } from '../../internal/lib/utils/file-utils';
@@ -666,6 +667,7 @@ function ComposerImpl(props: SessionChatInputProps) {
   useMenuRevalidation(menuOpen, projectId);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { takeFiles } = useUiHostConfig();
   const dragDepthRef = useRef(0);
   const savedDocBeforeQuestionRef = useRef<JSONContent | null>(null);
   // A host that owns the controller leaves this composer's own one idle: hooks
@@ -813,6 +815,11 @@ function ComposerImpl(props: SessionChatInputProps) {
 
   const appendAttachedFiles = useCallback(
     (files: Iterable<File>) => {
+      // The host keeps files in its own store: they go there, not to the session.
+      if (takeFiles) {
+        takeFiles(Array.from(files));
+        return;
+      }
       // One empty or oversized file must not refuse the whole drop: the SDK
       // checks a batch at once, so the files that fit are split off first and
       // each refused one is named (KRTX-2557).
@@ -839,7 +846,7 @@ function ComposerImpl(props: SessionChatInputProps) {
         errorToast(error instanceof Error ? error.message : tComposerAttachments('couldNotAttach'));
       }
     },
-    [addPromptAttachments, tComposerAttachments],
+    [addPromptAttachments, tComposerAttachments, takeFiles],
   );
 
   useEffect(

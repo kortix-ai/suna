@@ -19,20 +19,14 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'next/navigation';
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
+import { VAULT_ACCEPT, refuseReason } from '@/lib/vault-files';
 
-const ACCEPT = '.pdf,.docx,.txt';
-const MAX_BYTES = 15 * 1024 * 1024;
+const ACCEPT = VAULT_ACCEPT;
 const MAX_FILES = 50;
 
 const iconFor = (name: string) => (name.endsWith('.pdf') ? FilePdfIcon : name.endsWith('.docx') ? FileDocIcon : FileTextIcon);
 const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
-/** A file the browser refuses before upload: wrong type or too large. */
-function refuseReason(file: { name: string; size: number }): string | null {
-  if (!/\.(pdf|docx|txt)$/i.test(file.name)) return 'PDF, DOCX or TXT only';
-  if (file.size > MAX_BYTES) return 'Files are limited to 15 MB';
-  return null;
-}
 
 export default function VaultPage() {
   const { matter } = useMatter();
@@ -47,6 +41,11 @@ export default function VaultPage() {
   const [starting, setStarting] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const removeDoc = useMutation(api.documents.remove);
+  // Files the Assistant wrote in a thread of this matter join the vault when it opens.
+  const importOutputs = useAction(api.ingest.importOutputs);
+  useEffect(() => {
+    importOutputs({ matterId: matter._id }).catch(() => undefined);
+  }, [importOutputs, matter._id]);
   const [open, setOpen] = useState<{ id: string; focus?: DocFocus } | null>(null);
   useEffect(() => {
     if (!open) return;

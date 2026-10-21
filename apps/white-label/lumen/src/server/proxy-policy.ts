@@ -92,7 +92,8 @@ const RULES: readonly Rule[] = [
   // them, and they span every matter. Kortix names each session's branch after its session id, so a
   // branch list hands a lawyer the session ids of matters they cannot open.
   rule('POST', `projects/${PROJECT}/sessions`),
-  rule('POST', `projects/${PROJECT}/attachments(?:/${SEG}/complete)?`),
+  // No prompt attachments: a file dropped in a chat goes to the matter's Documents
+  // (src/app/providers.tsx `takeFiles`), the one path that makes it citable.
   // One session: the session, its live stream, transcript, turn, queue, authors, model usage.
   rule('GET', `${S}(?:/(?:events|snapshot|transcript|turn|prompts|message-authors|model-usage))?`),
   rule('PATCH DELETE', S),
@@ -106,12 +107,30 @@ const RULES: readonly Rule[] = [
   rule('GET', `${RT}/session/${SEG}(?:/(?:message|todo))?`),
   // Workspace files: the composer's @-mention search.
   rule('GET', `${RT}/(?:file|find/file)`),
+  // A file the Assistant wrote, opened or downloaded from its output card: only inside the bearer's matter folder (`matterFile`).
+  rule('GET', `${RT}/file/(?:raw|content)`),
   // Runtime writes: abort, edit-and-rewind, permission and question replies.
   rule('POST', `${RT}/session/${SEG}/(?:abort|revert)`),
   rule('POST', `${RT}/(?:permission|question)/${SEG}/(?:reply|reject)`),
 ];
 
 const RUNTIME_FILE = new RegExp(`^${RT}/(?:file|find)(?:/|$)`);
+const MATTER_FILE = new RegExp(`^${RT}/file/(?:raw|content)$`);
+
+/**
+ * A file read of one path inside the matter's folder as its sessions see it
+ * (`/drives/<firmId>/Matters/<matterId>/…` or `/drives/<matterId>/…`), with or
+ * without the leading slash. Another matter's folder, the kit and the rest of
+ * the sandbox are refused.
+ */
+function matterFile(query: URLSearchParams | undefined, matterDir: string | undefined): boolean {
+  const paths = query?.getAll('path') ?? [];
+  if (!matterDir || paths.length !== 1 || query?.has('directory')) return false;
+  const value = paths[0];
+  if (value.split('/').includes('..') || value.includes('\\')) return false;
+  const abs = value.startsWith('/') ? value : `/${value}`;
+  return abs.startsWith(`${matterDir}/`);
+}
 
 /** The sandbox a runtime path addresses (`p/<sandbox>/8000/...`): the proxy binds it to the bearer's matter. */
 export function runtimeSandbox(path: string): string | null {
@@ -131,9 +150,10 @@ function workspacePath(query: URLSearchParams | undefined): boolean {
 }
 
 /** Null when allowed, else the reason for a 403. */
-export function blockedReason(method: string, path: string, query?: URLSearchParams): string | null {
+export function blockedReason(method: string, path: string, query?: URLSearchParams, matterDir?: string): string | null {
   const m = method === 'HEAD' ? 'GET' : method;
   const allowed = RULES.some(([methods, re]) => methods.split(' ').includes(m) && re.test(path));
+  if (allowed && MATTER_FILE.test(path)) return matterFile(query, matterDir) ? null : 'Only this matter’s files are available';
   if (allowed && RUNTIME_FILE.test(path) && !workspacePath(query)) return 'Only workspace files are available';
   if (allowed) return null;
   return m === 'GET' ? 'Not available in Lumen' : 'This workspace setting is managed by the Lumen operator';
@@ -253,6 +273,11 @@ const MESSAGE_AUTHORS = new RegExp(`^${S}/message-authors$`);
 // Change requests name the operator's Kortix user as their author.
 const CHANGE_REQUESTS = new RegExp(`^projects/${PROJECT}/change-requests$`);
 
+// The runtime's health, fetched on every turn.
+const RUNTIME_HEALTH = new RegExp(`^${RT}/kortix/health$`);
+// The transcript, from the API and from the runtime.
+const TRANSCRIPT = new RegExp(`^(?:${S}/transcript|${RT}/session/${SEG}/message)$`);
+
 // The runtime's slash-command list: the platform's own skills (kortix-cli,
 // kortix-apps, …) are not a customer's commands.
 const RUNTIME_COMMANDS = new RegExp(`^${RT}/command$`);
@@ -295,18 +320,62 @@ export function redactsIdentity(path: string): boolean {
     CHANGE_REQUESTS.test(path) ||
     SESSION_TURN.test(path) ||
     RUNTIME_COMMANDS.test(path) ||
-    PROJECT_RECORD.test(path)
+    PROJECT_RECORD.test(path) ||
+    RUNTIME_HEALTH.test(path) ||
+    TRANSCRIPT.test(path)
   );
 }
 
 type Json = Record<string, unknown>;
 const isObject = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
 
+/**
+ * A session record's platform plumbing, which no Lumen screen reads: the
+ * sandbox's upstream URL (it names the platform host), the audit envelope,
+ * the provider, the repository branch and access. The deprecated
+ * `opencode_*` aliases go when their `runtime_*` names are present.
+ */
+const SESSION_PLATFORM_KEYS = ['sandbox_url', 'audit_v2', 'repository_access', 'sandbox_provider', 'branch_name', 'base_ref'];
+
 function scrubSession(session: unknown): unknown {
   if (!isObject(session)) return session;
   const out: Json = { ...session, owner_email: null, owner_name: null, owner_avatar_url: null };
   if (isObject(session.initiator)) out.initiator = { ...session.initiator, label: null };
+  for (const k of SESSION_PLATFORM_KEYS) delete out[k];
+  if ('runtime_session_id' in out) delete out.opencode_session_id;
+  if ('runtime_sessions' in out) delete out.opencode_sessions;
   return out;
+}
+
+/**
+ * The runtime health the session UI reads (`status`, `runtimeReady`,
+ * `version`, `capabilities`, the harness's state, readiness, error, session
+ * and turn), and nothing else: no executable paths, runtime name or version,
+ * model catalog or boot labels.
+ */
+export function scrubHealth(body: unknown): unknown {
+  if (!isObject(body)) return body;
+  const out: Json = {};
+  for (const k of ['status', 'runtimeReady', 'version', 'capabilities', 'boot_error', 'reason', 'message']) {
+    if (k in body) out[k] = typeof body[k] === 'string' ? (body[k] as string).replace(/\bkortix\b/gi, BRAND.name).replace(/\bOpenCode\b/gi, 'the agent runtime') : body[k];
+  }
+  if (isObject(body.harness)) {
+    const h = body.harness;
+    out.harness = { id: 'agent', version: null, state: h.state, ready: h.ready, error: h.error ?? null, session: h.session, turn: h.turn ?? null, details: {} };
+  } else if ('opencode' in body) {
+    // A daemon before the harness block: the runtime state is the field's only use.
+    out.harness = { id: 'agent', version: null, state: body.opencode === true ? 'ok' : String(body.opencode), ready: body.opencode === true || body.opencode === 'ok', error: null, session: { id: null, required: false }, turn: null, details: {} };
+  }
+  return out;
+}
+
+/** A path the agent's inbox puts in a transcript names the platform: the file name stays. */
+const INBOX_PATH = /\/?workspace\/uploads\/\.kortix-inbox\/(?:[^/\s"]+\/)*/g;
+function scrubInbox(value: unknown): unknown {
+  if (typeof value === 'string') return value.includes('.kortix-inbox') ? value.replace(INBOX_PATH, '') : value;
+  if (Array.isArray(value)) return value.map(scrubInbox);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrubInbox(v)]));
 }
 
 const notMember = (a: unknown) => !(isObject(a) && a.kind === 'member');
@@ -419,6 +488,8 @@ function scrubTurn(value: unknown): unknown {
  * shared manifest names every firm.
  */
 export function redactIdentity(path: string, body: unknown, firmAgent = ''): unknown {
+  if (RUNTIME_HEALTH.test(path)) return scrubHealth(body);
+  if (TRANSCRIPT.test(path)) return scrubInbox(body);
   if (RUNTIME_COMMANDS.test(path) && Array.isArray(body)) return scrubCommands(body);
   if (PROJECT_DETAIL.test(path)) return scrubPlatform(dropOperatorIds(scopeDetail(body, firmAgent)));
   if (PROJECT_RECORD.test(path) || CHANGE_REQUESTS.test(path)) return scrubPlatform(dropOperatorIds(body));

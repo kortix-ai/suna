@@ -6,9 +6,13 @@ import { SessionHeader } from '@/components/workbench/session-header';
 import { useRuntimeRecovery } from '@/components/workbench/use-runtime-recovery';
 import { CitationLayer } from '@/components/chat/citation-layer';
 import '@/components/chat/lumen-tool-row';
+import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
 import { useSession } from '@kortix/sdk/react';
 import { SessionThread } from '@kortix/ui/session';
+import { successToast } from '@kortix/ui/toast';
+import { useAction } from 'convex/react';
+import { useEffect, useRef } from 'react';
 
 /** One thread: the Kortix session behind it, streamed through Lumen's proxy. */
 export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId: string; sessionId: string; matterId: Id<'matters'> }) {
@@ -19,6 +23,7 @@ export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId:
   const session = useSession(projectId, sessionId);
   // One automatic restart when a connected runtime drops.
   useRuntimeRecovery(session);
+  useOutputsToDocuments(matterId, session.isBusy);
 
   return (
     <>
@@ -50,4 +55,23 @@ export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId:
       )}
     </>
   );
+}
+
+/**
+ * When a turn ends, the files the Assistant wrote for the lawyer (the matter's
+ * Outputs folder) become matter documents: citable, versioned, in the vault.
+ */
+function useOutputsToDocuments(matterId: Id<'matters'>, busy: boolean) {
+  const importOutputs = useAction(api.ingest.importOutputs);
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    const ended = wasBusy.current && !busy;
+    wasBusy.current = busy;
+    if (!ended) return;
+    importOutputs({ matterId })
+      .then((added) => {
+        for (const name of added) successToast(`${name} added to Documents`, { description: 'Open it in Documents, or cite it once it shows Ready.' });
+      })
+      .catch(() => undefined);
+  }, [busy, matterId, importOutputs]);
 }

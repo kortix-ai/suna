@@ -32,6 +32,11 @@ import { ComposerUnderbar } from './composer-underbar';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import type { SlashAction } from './menus/slash-actions';
 import type { AttachedFile } from './types';
+import { useUiHostConfig } from '../../providers/ui-provider';
+
+/** What the attach picker offers when the host names no list. */
+const DEFAULT_ATTACH_ACCEPT =
+  'image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar';
 
 const ComposerEditorLazy = lazy(() =>
   import('./editor/composer-editor').then((mod) => ({ default: mod.ComposerEditor })),
@@ -195,6 +200,7 @@ export function ComposerCard({
   onArrowUpAtStart,
 }: ComposerCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const { attachAccept } = useUiHostConfig();
   const inlineUnderbar = underbarPlacement === 'inline';
 
   return (
@@ -354,7 +360,7 @@ export function ComposerCard({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar"
+            accept={attachAccept ?? DEFAULT_ATTACH_ACCEPT}
             multiple
             className="hidden"
             onChange={handleFileSelect}

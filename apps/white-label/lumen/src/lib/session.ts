@@ -15,6 +15,11 @@ export function setActiveMatter(matterId: string | null): void {
   activeMatterId = matterId;
 }
 
+/** The matter the current page works in, or null. */
+export function getActiveMatter(): string | null {
+  return activeMatterId;
+}
+
 export function getSessionToken(): string | null {
   return activeMatterId ? `matter.${activeMatterId}` : null;
 }

@@ -80,7 +80,7 @@ async function routeAs(req: NextRequest, built: ReturnType<typeof buildUpstreamP
   const local = localAnswer(req.method, built.path, new URLSearchParams(search), body, member);
   if (local) return local;
 
-  const blocked = blockedReason(req.method, built.path, new URLSearchParams(search));
+  const blocked = blockedReason(req.method, built.path, new URLSearchParams(search), member.matterDir);
   if (blocked) return Response.json({ error: blocked }, { status: 403 });
 
   const sid = SESSION_PATH.exec(built.path)?.[1];

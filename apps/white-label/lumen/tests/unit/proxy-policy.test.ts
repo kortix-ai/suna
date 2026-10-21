@@ -19,6 +19,81 @@ const P = 'projects/0b8c9d3e-1111-4222-8333-944455556666';
 const S = `${P}/sessions/7a1b2c3d-1111-4222-8333-944455556666`;
 const member = { userId: 'lumen_user_1' };
 
+describe('proxy policy: an Assistant file opens only inside the bearer\'s matter', () => {
+  const RT = 'p/sbx_1/8000';
+  const DIR = '/drives/k17firm/Matters/kh7matter';
+  const q = (path: string, extra: Record<string, string> = {}) => new URLSearchParams({ path, ...extra });
+
+  test.each([
+    `${DIR}/Outputs/memo.docx`,
+    `${DIR.slice(1)}/Outputs/memo.docx`,
+    `${DIR}/memo-one-way-nda.docx`,
+  ])('raw and content of %s pass', (path) => {
+    expect(blockedReason('GET', `${RT}/file/raw`, q(path), DIR)).toBeNull();
+    expect(blockedReason('GET', `${RT}/file/content`, q(path), DIR)).toBeNull();
+  });
+
+  test.each([
+    '/drives/k17firm/Matters/kh7other/Text/doc.md', // another matter of the firm
+    `${DIR}/../kh7other/Text/doc.md`,
+    '/drives/kit/1.3.2/agents/lumen-counsel.md',
+    '/etc/passwd',
+    DIR, // the folder itself
+    `${DIR}x/secret.docx`, // a sibling with the same prefix
+  ])('%s is refused', (path) => {
+    expect(blockedReason('GET', `${RT}/file/raw`, q(path), DIR)).not.toBeNull();
+  });
+
+  test('no matter folder, two paths, or a directory parameter: refused', () => {
+    expect(blockedReason('GET', `${RT}/file/raw`, q(`${DIR}/a.docx`))).not.toBeNull();
+    const two = q(`${DIR}/a.docx`);
+    two.append('path', '/etc/passwd');
+    expect(blockedReason('GET', `${RT}/file/raw`, two, DIR)).not.toBeNull();
+    expect(blockedReason('GET', `${RT}/file/raw`, q(`${DIR}/a.docx`, { directory: '/' }), DIR)).not.toBeNull();
+  });
+});
+
+describe('proxy policy: browser-visible responses carry no platform plumbing', () => {
+  const RT = 'p/sbx_01M5/8000';
+  test('a session record loses its sandbox URL, audit envelope, branch, provider and deprecated runtime aliases', () => {
+    const body = {
+      session_id: 's1', name: 'NDA', agent_name: 'lumen-f-k17', sandbox_id: 'sbx_01M5',
+      sandbox_url: 'https://example-tunnel.invalid/v1/p/sbx_01M5/8000', audit_v2: { actor_type: 'service_account' },
+      repository_access: false, sandbox_provider: 'platinum', branch_name: 'session/s1', base_ref: 'main',
+      runtime_session_id: 'ses_9', opencode_session_id: 'ses_9', runtime_sessions: [], opencode_sessions: [],
+    };
+    for (const path of [S, `${S}/snapshot`]) {
+      const out = JSON.stringify(redactIdentity(path, path === S ? body : { session: body }));
+      for (const leak of ['sandbox_url', 'example-tunnel', 'audit_v2', 'service_account', 'repository_access', 'platinum', 'branch_name', 'opencode_session', 'opencode_sessions']) {
+        expect(out).not.toContain(leak);
+      }
+      expect(out).toContain('"runtime_session_id":"ses_9"');
+      expect(out).toContain('"sandbox_id":"sbx_01M5"');
+    }
+  });
+
+  test('runtime health keeps what the session UI reads and nothing else', () => {
+    const health = {
+      status: 'ok', runtimeReady: true, version: '0.9.1', capabilities: ['session.rewind'],
+      agent_path: '/usr/local/bin/kortix-agent', harness: { id: 'opencode', version: '1.18.15', state: 'ok', ready: true, error: null, session: { id: 'ses_9', required: true }, turn: null, details: { models: ['kortix/deepseek-v4.1-flash'], boot: 'opencode-spawned' } },
+      opencode_version: '1.18.15', boot_labels: ['opencode-spawned'],
+    };
+    expect(redactsIdentity(`${RT}/kortix/health`)).toBe(true);
+    const out = redactIdentity(`${RT}/kortix/health`, health) as Record<string, unknown>;
+    expect(out).toEqual({
+      status: 'ok', runtimeReady: true, version: '0.9.1', capabilities: ['session.rewind'],
+      harness: { id: 'agent', version: null, state: 'ok', ready: true, error: null, session: { id: 'ses_9', required: true }, turn: null, details: {} },
+    });
+    expect(JSON.stringify(out)).not.toMatch(/kortix|opencode/i);
+  });
+
+  test('a transcript names an inbox file by its name only', () => {
+    expect(redactsIdentity(`${S}/transcript`)).toBe(true);
+    const out = redactIdentity(`${S}/transcript`, { messages: [{ text: 'See /workspace/uploads/.kortix-inbox/a1b2/one-way-nda.pdf now' }] });
+    expect(JSON.stringify(out)).toBe('{"messages":[{"text":"See one-way-nda.pdf now"}]}');
+  });
+});
+
 describe('proxy policy: what a member token may do', () => {
   const RT = 'p/sbx_1/8000';
   // Every request the customer journey made through the proxy (sign up,
@@ -32,8 +107,6 @@ describe('proxy policy: what a member token may do', () => {
     ['GET', `${P}/model-picker`],
     ['GET', `${P}/model-defaults`],
     ['POST', `${P}/sessions`],
-    ['POST', `${P}/attachments`],
-    ['POST', `${P}/attachments/9c0d1e2f-1111-4222-8333-944455556666/complete`],
     ['GET', S],
     ['PATCH', S],
     ['DELETE', S],
@@ -111,6 +184,10 @@ describe('proxy policy: what a member token may do', () => {
     ['GET', `${RT}/global/event`],
     ['GET', `${RT}/find/symbol`],
     ['GET', `${RT}/file/content`],
+    ['GET', `${RT}/file/raw`],
+    // A chat file goes to the matter's Documents, never to the session's attachment store.
+    ['POST', `${P}/attachments`],
+    ['POST', `${P}/attachments/9c0d1e2f-1111-4222-8333-944455556666/complete`],
     ['POST', `${P}/turn-permission`],
     // Encoded `..` and a double slash, as the policy would see them if one reached it.
     ['GET', `${P}/%2e%2e/secrets`],
