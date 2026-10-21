@@ -71,10 +71,16 @@ const i18n: UiI18nHost = {
 
 // A lawyer's Assistant shows no infrastructure: no model or effort picker (the
 // firm's default model runs), no context ring, no session-overrides gear
-// (sandbox, provider, folders). The agent picker offers Counsel only: the
-// reviewer, extractor and drafter run batches for the engine (convex/engine.ts)
-// and take an input.json, not a conversation. The project's own starter agents
-// (the platform's general agent, its reflector) are never offered.
+// (sandbox, provider, folders). Every firm runs on its own Kortix agent
+// (`lumen-f-<firmId>`, convex/lumenAgent.ts) in the one shared project. The
+// proxy lists only the caller's firm agent in the project detail and pins it
+// on every session it creates, so the picker shows one agent: Counsel. The
+// reviewer, extractor and drafter are kit roles a run names in input.json.
+const FIRM_AGENT_PREFIX = 'lumen-f-';
+const agentLabels: Readonly<Record<string, string>> = new Proxy({} as Record<string, string>, {
+  get: (_target, name) => (typeof name === 'string' && name.startsWith(FIRM_AGENT_PREFIX) ? 'Counsel' : undefined),
+});
+
 const config: Partial<UiHostConfig> = {
   cliConnectEnabled: false,
   publicSharesEnabled: false,
@@ -83,8 +89,7 @@ const config: Partial<UiHostConfig> = {
   modelPickerEnabled: false,
   contextMeterEnabled: false,
   sessionOverridesEnabled: false,
-  offeredAgents: ['lumen-counsel'],
-  agentLabels: { 'lumen-counsel': 'Counsel', 'lumen-reviewer': 'Reviewer', 'lumen-extractor': 'Extractor', 'lumen-drafter': 'Drafter' },
+  agentLabels,
 };
 
 // Lumen's own backend: orgs, workspaces, threads. Better Auth runs inside it.

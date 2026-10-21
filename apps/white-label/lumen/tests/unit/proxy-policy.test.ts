@@ -6,10 +6,13 @@ import {
   browserHeaders,
   forwardedHeaders,
   localAnswer,
+  PROMPT_WRITE,
+  memberPromptBody,
   memberSessionCreateBody,
   redactError,
   redactIdentity,
   redactsIdentity,
+  runtimeSandbox,
 } from '../../src/server/proxy-policy';
 
 const P = 'projects/0b8c9d3e-1111-4222-8333-944455556666';
@@ -465,13 +468,78 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
 });
 
 describe('proxy policy: a member session create carries only member keys', () => {
-  test('fork_from_session_id and operator keys are dropped; name, labels, metadata, agent and prompt stay', () => {
+  test('fork_from_session_id and operator keys are dropped; name, labels, metadata and prompt stay', () => {
     const body = memberSessionCreateBody({
-      name: 'x', labels: ['a'], metadata: { k: 1 }, agent_name: 'lumen-counsel', initial_prompt: 'hi',
+      name: 'x', labels: ['a'], metadata: { k: 1 }, agent_name: 'lumen-f-firmb', initial_prompt: 'hi',
       fork_from_session_id: '22222222-1111-4222-8333-944455556666', connector_bindings: { gmail: {} },
       session_id: 's', sandbox_slug: 'b', model: 'm', provider_secret_pools: {},
+    }, 'lumen-f-firma');
+    expect(body).toEqual({ name: 'x', labels: ['a'], metadata: { k: 1 }, agent_name: 'lumen-f-firma', initial_prompt: 'hi' });
+  });
+
+  test('the session always runs on the caller firm agent, with or without a client agent', () => {
+    expect(memberSessionCreateBody({ name: 'x' }, 'lumen-f-firma').agent_name).toBe('lumen-f-firma');
+    expect(memberSessionCreateBody({ agent_name: 'lumen-f-firmb' }, 'lumen-f-firma').agent_name).toBe('lumen-f-firma');
+    expect(memberSessionCreateBody({ agent_name: 'kortix' }, 'lumen-f-firma').agent_name).toBe('lumen-f-firma');
+  });
+});
+
+describe('proxy policy: a prompt names no agent', () => {
+  test('send, hold and queued-prompt edits are prompt writes; other session routes are not', () => {
+    expect(PROMPT_WRITE.test(`${S}/prompts`)).toBe(true);
+    expect(PROMPT_WRITE.test(`${S}/prompts/hold`)).toBe(true);
+    expect(PROMPT_WRITE.test(`${S}/prompts/9a1b2c3d-1111-4222-8333-944455556666`)).toBe(true);
+    expect(PROMPT_WRITE.test(`${S}/start`)).toBe(false);
+    expect(PROMPT_WRITE.test(S)).toBe(false);
+  });
+
+  test('agent, overrides.agent and @agent parts are dropped; text, files and the model override stay', () => {
+    const out = memberPromptBody({
+      text: 'hi', agent: 'lumen-f-firmb', client_message_id: 'c1',
+      overrides: { agent: 'lumen-f-firmb', model: { providerID: 'p', modelID: 'm' } },
+      parts: [{ type: 'text', text: 'hi' }, { type: 'agent', name: 'lumen-f-firmb' }, { type: 'file', url: 'u' }],
     });
-    expect(body).toEqual({ name: 'x', labels: ['a'], metadata: { k: 1 }, agent_name: 'lumen-counsel', initial_prompt: 'hi' });
+    expect(out).toEqual({
+      text: 'hi', client_message_id: 'c1', overrides: { model: { providerID: 'p', modelID: 'm' } },
+      parts: [{ type: 'text', text: 'hi' }, { type: 'file', url: 'u' }],
+    });
+    expect(memberPromptBody({ text: 'plain' })).toEqual({ text: 'plain' });
+  });
+});
+
+describe('proxy policy: the shared project detail lists only the caller firm agent', () => {
+  const detail = {
+    project: { project_id: 'p1', name: 'lumen', account_id: 'acc_operator', repo_url: 'https://git.example/x' },
+    config: {
+      default_agent: 'lumen-none', open_code_default_agent: 'lumen-none',
+      agents: [{ name: 'lumen-f-firma' }, { name: 'lumen-f-firmb', description: 'firm b prompt' }, { name: 'lumen-none' }, { name: 'kortix' }],
+      manifest: { agents: { 'lumen-f-firmb': {} } }, manifest_raw: 'lumen-f-firmb', open_code_raw: '{}', env: { optional: ['K'] },
+      skills: [{ name: 'agent-browser' }], commands: [],
+    },
+    files: [{ path: 'kortix.yaml' }], file_count: 174,
+  };
+
+  test('agents, default agent, manifest, files: nothing names another firm', () => {
+    const out = redactIdentity(`${P}/detail`, detail, 'lumen-f-firma') as typeof detail;
+    expect(out.config.agents).toEqual([{ name: 'lumen-f-firma' }]);
+    expect(out.config.default_agent).toBe('lumen-f-firma');
+    expect(out.config.open_code_default_agent).toBe('lumen-f-firma');
+    expect([out.files, out.file_count]).toEqual([[], 0]);
+    expect(JSON.stringify(out)).not.toMatch(/firmb|acc_operator|git\.example/);
+    expect(redactsIdentity(`${P}/detail`)).toBe(true);
+  });
+
+  test('a caller with no firm agent sees no agent at all', () => {
+    expect((redactIdentity(`${P}/detail`, detail) as typeof detail).config.agents).toEqual([]);
+  });
+});
+
+describe('proxy policy: a runtime path names its sandbox', () => {
+  test('the sandbox of p/<sandbox>/8000/... is what the proxy binds to the matter', () => {
+    expect(runtimeSandbox('p/sbx_01ABC/8000/session/status')).toBe('sbx_01ABC');
+    expect(runtimeSandbox('p/sbx_01ABC/8000')).toBe('sbx_01ABC');
+    expect(runtimeSandbox('p/config')).toBeNull();
+    expect(runtimeSandbox(`${S}/transcript`)).toBeNull();
   });
 });
 

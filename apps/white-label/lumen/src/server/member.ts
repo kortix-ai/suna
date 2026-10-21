@@ -4,8 +4,11 @@
  * The browser sends `Authorization: Bearer matter.<matterId>` (not a secret)
  * and the Better Auth cookie (identity). Convex checks firm membership and
  * matter access (a restricted matter is refused to a lawyer who is not on it)
- * and returns the member's project-scoped Kortix token for the firm. This
- * server never holds the operator credential.
+ * and returns the firm's Kortix credential (its service-account secret) and
+ * agent. Every firm shares one Kortix project; the service account reaches
+ * only the sessions it created, so the credential is bounded to the firm by
+ * Kortix, and to the matter by `sessionInMatter` / `sandboxInMatter` here.
+ * This server never holds the operator credential.
  */
 
 import { api } from '@convex/_generated/api';
@@ -16,10 +19,12 @@ import { upstreamBase } from './upstream-path';
 export interface Member {
   matterId: string;
   firmId: string;
-  /** The firm's Kortix project, resolved by Convex. Never taken from the client. */
+  /** The shared Kortix project, resolved by Convex. Never taken from the client. */
   projectId: string;
-  /** The member's project-scoped Kortix token. Never sent to the browser. */
+  /** The firm's service-account secret. Never sent to the browser. */
   token: string;
+  /** The firm's Kortix agent: every session the member creates runs on it. */
+  agent: string;
   /** Better Auth ids, for tagging what the member creates. */
   userId: string;
   orgId: string;
@@ -32,7 +37,7 @@ const MATTER_BEARER = /^Bearer matter\.([a-z0-9]{16,64})$/;
 const MEMBER_CACHE_MS = 60_000;
 // replica-local: a cache miss costs one Convex action, the token itself is stored in Convex.
 const cache = new Map<string, { member: Member; until: number }>();
-// replica-local: a page load fires ~10 calls at once; they share one Convex call instead of minting ~10 tokens.
+// replica-local: a page load fires ~10 calls at once; they share one Convex call instead of ~10.
 const inflight = new Map<string, Promise<{ member: Member } | { error: Response }>>();
 
 function failure(status: number, error: string) {
@@ -81,7 +86,7 @@ async function mintMember(key: string, matterId: string): Promise<{ member: Memb
   }
 }
 
-/** A server SDK client acting as the member (project scope only). */
+/** A server SDK client acting as the member's firm (its service account). */
 export function memberKortix(member: Member) {
   return createScopedKortix({ backendUrl: upstreamBase(), getToken: async () => member.token });
 }
@@ -107,9 +112,9 @@ const MATTER_CACHE_MS = 60_000;
 const sessionMatter = new Map<string, number>();
 
 /**
- * A session belongs to the matter in the bearer. The member token reaches
- * every session of the firm's project, so without this a lawyer with access
- * to one matter could read, prompt, re-model or preview a thread of another
+ * A session belongs to the matter in the bearer. The firm credential reaches
+ * every session of the firm, so without this a lawyer with access to one
+ * matter could read, prompt, re-model or preview a thread of another
  * (restricted) matter. Every route that takes a session id calls it.
  */
 export async function sessionInMatter(member: Member, kortixSessionId: string): Promise<boolean> {
@@ -135,4 +140,29 @@ export async function resolveMemberForSession(
     return { error: Response.json({ error: 'Not found' }, { status: 404 }) };
   }
   return resolved;
+}
+
+const SANDBOX_CACHE_MS = 60_000;
+// replica-local: a cache miss costs one Kortix list call; Kortix's session labels are the source of truth.
+const sandboxMatter = new Map<string, number>();
+
+/**
+ * A runtime call (`p/<sandbox>/8000/...`) addresses a sandbox, not a session.
+ * The sandbox must be one of the bearer matter's sessions: the firm's
+ * sessions that carry the matter's `lumen-matter:` label (Lumen sets it on
+ * every session it creates; the proxy refuses a member's `lumen-` label).
+ * The list runs with the firm credential, so another firm's sandbox never
+ * matches.
+ */
+export async function sandboxInMatter(member: Member, sandbox: string): Promise<boolean> {
+  const key = `${member.userId}:${member.matterId}:${sandbox}`;
+  if ((sandboxMatter.get(key) ?? 0) > Date.now()) return true;
+  const sessions = await memberKortix(member)
+    .projects.sessions(member.projectId, { labels: [`lumen-matter:${member.matterId}`], limit: 200 })
+    .catch(() => []);
+  const owns = sessions.some((s) => s.sandbox_id === sandbox || (s.sandbox_url ?? '').includes(`/p/${sandbox}/`));
+  if (!owns) return false;
+  if (sandboxMatter.size > 5000) sandboxMatter.clear();
+  sandboxMatter.set(key, Date.now() + SANDBOX_CACHE_MS);
+  return true;
 }

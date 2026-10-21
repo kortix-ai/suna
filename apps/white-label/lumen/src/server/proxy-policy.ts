@@ -1,9 +1,11 @@
 /**
- * What a Lumen member may do through the proxy with their project-scoped
- * Kortix token. The token carries its minter's role on the project (owner)
- * and the minter's identity (the Lumen operator's Kortix user), so the proxy
- * narrows it to the calls the session UI makes: each allowed route is named,
- * by method. Everything else is refused. Project configuration (agents,
+ * What a Lumen member may do through the proxy with their firm's Kortix
+ * credential: the firm's service account, project role `member`, in the one
+ * project every firm shares. Kortix holds the firm boundary for sessions
+ * (a session is private to the service account that created it) and for
+ * project configuration (a `member` cannot change it). The proxy narrows the
+ * credential further to the calls the session UI makes: each allowed route is
+ * named, by method. Everything else is refused. Project configuration (agents,
  * secrets, members, triggers, connectors, tokens, deletion), public links,
  * reminders, drives, the session log and config, and the sandbox's process,
  * terminal, git, file and environment routes belong to Lumen's operator. The
@@ -27,14 +29,41 @@ export const SESSION_CREATE = new RegExp(`^projects/${PROJECT}/sessions$`);
 /**
  * The session-create keys a member may send. Every other key is dropped before
  * the request leaves Lumen: `fork_from_session_id` would copy another matter's
- * transcript (the member token is the project owner, so Kortix sees every
- * session), and `connector_bindings`, `session_id`, `sandbox_slug`, `model`,
+ * transcript (the firm credential reaches every session of the firm), and
+ * `connector_bindings`, `session_id`, `sandbox_slug`, `model`,
  * `provider_secret_pools` are operator decisions.
+ *
+ * `agent_name` is always the firm's agent. A session mounts the folders its
+ * agent's grants reach, and Kortix lets a service account start any agent of
+ * the project, so a member-chosen agent could mount another firm's folder.
  */
-const MEMBER_CREATE_KEYS = ['name', 'labels', 'metadata', 'agent_name', 'initial_prompt'] as const;
+const MEMBER_CREATE_KEYS = ['name', 'labels', 'metadata', 'initial_prompt'] as const;
 
-export function memberSessionCreateBody(body: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(MEMBER_CREATE_KEYS.filter((k) => body[k] !== undefined).map((k) => [k, body[k]]));
+export function memberSessionCreateBody(body: Record<string, unknown>, firmAgent: string): Record<string, unknown> {
+  return {
+    ...Object.fromEntries(MEMBER_CREATE_KEYS.filter((k) => body[k] !== undefined).map((k) => [k, body[k]])),
+    agent_name: firmAgent,
+  };
+}
+
+/** A prompt write (send, hold, edit of a queued prompt): the body may carry a per-prompt agent. */
+export const PROMPT_WRITE = new RegExp(`^projects/${PROJECT}/sessions/${SESSION}/prompts(?:/${SEG})?$`);
+
+/**
+ * A prompt body without an agent: no `agent`, no `overrides.agent`, no
+ * `@agent` part. A turn runs on the session's own agent, the firm's.
+ */
+export function memberPromptBody(body: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...body };
+  delete out.agent;
+  if (out.overrides && typeof out.overrides === 'object' && !Array.isArray(out.overrides)) {
+    const { agent: _agent, ...rest } = out.overrides as Record<string, unknown>;
+    out.overrides = rest;
+  }
+  if (Array.isArray(out.parts)) {
+    out.parts = out.parts.filter((p) => !(p && typeof p === 'object' && (p as { type?: unknown }).type === 'agent'));
+  }
+  return out;
 }
 
 /**
@@ -84,6 +113,11 @@ const RULES: readonly Rule[] = [
 
 const RUNTIME_FILE = new RegExp(`^${RT}/(?:file|find)(?:/|$)`);
 
+/** The sandbox a runtime path addresses (`p/<sandbox>/8000/...`): the proxy binds it to the bearer's matter. */
+export function runtimeSandbox(path: string): string | null {
+  return new RegExp(`^p/(${SEG})/8000(?:/|$)`).exec(path)?.[1] ?? null;
+}
+
 /** A runtime file read stays inside the workspace: a relative path, or one under /workspace. */
 function workspacePath(query: URLSearchParams | undefined): boolean {
   for (const key of ['path', 'directory', 'dirs']) {
@@ -106,7 +140,7 @@ export function blockedReason(method: string, path: string, query?: URLSearchPar
 }
 
 const PERMISSION_PROBE = /^accounts\/[^/]+\/iam\/members\/[^/]+\/effective(:batch)?$/;
-// The session audit log and participant list name the operator's Kortix user.
+// The session audit log and participant list name the firm's Kortix identity.
 const SESSION_AUDIT = new RegExp(`^projects/${PROJECT}/sessions/(${SESSION})/audit$`);
 const SESSION_PARTICIPANTS = new RegExp(`^projects/${PROJECT}/sessions/${SESSION}/participants$`);
 // A session's mounted folders. The firm Drive holds every matter, so a member sees none of it here.
@@ -139,7 +173,7 @@ function probeResult(p: Probe) {
  * - `…/effective` and `…/effective:batch`: every configuration action is
  *   denied, which is what a Lumen member may do. The UI hides those controls.
  * - A session's `audit` and `participants`: empty. The UI polls both; Kortix
- *   would list the operator's user, the only identity behind member tokens.
+ *   would list the firm's service account, the only identity behind a firm's members.
  */
 export function localAnswer(
   method: string,
@@ -232,6 +266,26 @@ const PROJECT_RECORD = new RegExp(`^projects/${PROJECT}(?:/detail)?$`);
 // ("…did not reach Kortix", "…so Kortix closed it").
 const SESSION_TURN = new RegExp(`^${S}/turn$`);
 
+const PROJECT_DETAIL = new RegExp(`^projects/${PROJECT}/detail$`);
+/**
+ * Project config that names every firm (each firm's agent and its prompt live
+ * in the shared manifest) or the project repository. A member reads only
+ * their firm's agent.
+ */
+const SHARED_CONFIG_KEYS = new Set(['manifest', 'manifest_raw', 'open_code_raw', 'env', 'skills']);
+
+function scopeDetail(body: unknown, firmAgent: string): unknown {
+  if (!isObject(body) || !isObject(body.config)) return body;
+  const config = Object.fromEntries(Object.entries(body.config).filter(([k]) => !SHARED_CONFIG_KEYS.has(k)));
+  const agents = Array.isArray(body.config.agents) ? body.config.agents.filter((a) => isObject(a) && a.name === firmAgent) : [];
+  return {
+    ...body,
+    config: { ...config, agents, default_agent: firmAgent, open_code_default_agent: firmAgent },
+    files: [],
+    file_count: 0,
+  };
+}
+
 /** True when `redactIdentity` rewrites this path's JSON response. */
 export function redactsIdentity(path: string): boolean {
   return (
@@ -260,8 +314,9 @@ const notMember = (a: unknown) => !(isObject(a) && a.kind === 'member');
 const KORTIX_WORD = /\bKortix\b/g;
 
 /**
- * Ids of the operator's Kortix user and account. Every member token is that
- * user, so these name the operator, never the member: they are dropped
+ * Ids of the operator's Kortix user and account, or of the firm's service
+ * account. Every member of a firm shares that identity, so these never name
+ * the member: they are dropped
  * wherever Lumen forwards a record (project, session, snapshot, change request).
  */
 const OPERATOR_ID_KEYS = new Set(['account_id', 'created_by', 'owner_id', 'owner_user_id', 'user_id', 'updated_by', 'merged_by', 'closed_by', 'deleted_by', 'author_id']);
@@ -347,8 +402,10 @@ function scrubTurn(value: unknown): unknown {
 }
 
 /**
- * Every member token is the operator's Kortix user, so every name and email
- * Kortix returns for a person is the operator's. Lumen shows none of them:
+ * Every member of a firm shares one Kortix identity (the firm's service
+ * account; the shared project belongs to the operator), so every name and
+ * email Kortix returns for a person is one of those, never the member's.
+ * Lumen shows none of them:
  * the session record loses its owner name, email and avatar and its
  * initiator label; message authors and stops lose their `member` entries
  * ("Messages with no known sender are absent"), so the transcript draws no
@@ -358,9 +415,12 @@ function scrubTurn(value: unknown): unknown {
  * (`dropOperatorIds`), a failed turn's error copy names Lumen (`scrubTurn`),
  * the slash-command list leaves out the platform's own commands and names
  * Lumen in the rest, and the project record names Lumen (`scrubWord`).
+ * The project detail lists only the caller's firm agent (`scopeDetail`): the
+ * shared manifest names every firm.
  */
-export function redactIdentity(path: string, body: unknown): unknown {
+export function redactIdentity(path: string, body: unknown, firmAgent = ''): unknown {
   if (RUNTIME_COMMANDS.test(path) && Array.isArray(body)) return scrubCommands(body);
+  if (PROJECT_DETAIL.test(path)) return scrubPlatform(dropOperatorIds(scopeDetail(body, firmAgent)));
   if (PROJECT_RECORD.test(path) || CHANGE_REQUESTS.test(path)) return scrubPlatform(dropOperatorIds(body));
   if (SESSION_RECORD.test(path) && Array.isArray(body)) return dropOperatorIds(body.map(scrubSession));
   if (!isObject(body)) return body;

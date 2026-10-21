@@ -2,7 +2,7 @@
  * The same-origin proxy: `${origin}/api/kortix/*` → `${KORTIX_UPSTREAM}/*`.
  *
  * 1. `resolveMember` turns the Better Auth cookie + `Bearer matter.<matterId>`
- *    into the member's project-scoped Kortix token (Convex checks matter access).
+ *    into the firm's Kortix credential and agent (Convex checks matter access).
  * 2. The path must be literal segments (`buildUpstreamPath`).
  * 3. Account reads the session UI makes are answered here (`localAnswer`):
  *    the member's identity is Lumen's, not the operator's Kortix user.
@@ -12,32 +12,40 @@
  *    Kortix needs leave Lumen (`forwardedHeaders`), only the response headers
  *    a browser needs come back (`browserHeaders`), and responses that name
  *    the operator's Kortix user lose those names (`redactIdentity`).
- * 6. A new session gets Lumen's tags and becomes a Lumen thread
- *    (`createSession`), whichever screen created it. A session update keeps
+ * 6. A new session runs on the firm's agent, gets Lumen's tags and becomes a
+ *    Lumen thread (`createSession`), whichever screen created it. A prompt
+ *    carries no agent (`memberPromptBody`). A session update keeps
  *    those tags (`patchSession`): a member cannot forge or erase them. A
  *    session delete needs the thread's creator or an firm admin, and drops the
  *    thread record (`deleteSession`).
  *
- * Kortix enforces the project boundary: the member token is rejected on
- * every other project, on `GET /projects` and on most account routes. It is
- * NOT rejected on `GET /accounts/me` or on project member lists, and it
- * carries its minter's role on the project (owner). That is why the proxy
- * allowlists paths instead of trusting Kortix's scope check alone.
+ * 7. A session route needs a session of the bearer's matter (`sessionInMatter`),
+ *    a runtime route a sandbox of one (`sandboxInMatter`).
+ *
+ * Kortix enforces the firm boundary: one project serves every firm, and the
+ * firm's service account (project role `member`) reaches only the sessions it
+ * created and cannot change the project. It can still start a session on any
+ * agent of the project, read the project detail (which lists every firm's
+ * agent) and its own `accounts/me`. That is why the proxy pins the agent,
+ * scopes the detail and allowlists paths instead of trusting Kortix alone.
  */
 
 import { fetchAuthMutation } from '@/server/auth-server';
-import { type Member, memberKortix, resolveMember, sessionInMatter } from '@/server/member';
+import { type Member, memberKortix, resolveMember, sandboxInMatter, sessionInMatter } from '@/server/member';
 import {
+  PROMPT_WRITE,
   SESSION_CREATE,
   SESSION_ONE,
   blockedReason,
   browserHeaders,
   forwardedHeaders,
   localAnswer,
+  memberPromptBody,
   memberSessionCreateBody,
   redactError,
   redactIdentity,
   redactsIdentity,
+  runtimeSandbox,
 } from '@/server/proxy-policy';
 import { buildUpstreamPath, upstreamBase } from '@/server/upstream-path';
 import { api } from '@convex/_generated/api';
@@ -52,39 +60,49 @@ export const dynamic = 'force-dynamic';
 async function handle(req: NextRequest, ctx: { params: Promise<{ path?: string[] }> }) {
   const { path = [] } = await ctx.params;
   const built = buildUpstreamPath(path);
-  const res = await route(req, built);
-  const out = !res.ok ? await redactedError(res) : built.ok && redactsIdentity(built.path) ? await redacted(res, built.path) : res;
+  const { res, agent } = await route(req, built);
+  const out = !res.ok ? await redactedError(res) : built.ok && redactsIdentity(built.path) ? await redacted(res, built.path, agent) : res;
   // One exit for every path: only the allowlisted response headers reach the browser.
   return new Response(out.body, { status: out.status, statusText: out.statusText, headers: browserHeaders(out.headers) });
 }
 
-async function route(req: NextRequest, built: ReturnType<typeof buildUpstreamPath>): Promise<Response> {
+async function route(req: NextRequest, built: ReturnType<typeof buildUpstreamPath>): Promise<{ res: Response; agent: string }> {
   const resolved = await resolveMember(req);
-  if ('error' in resolved) return resolved.error;
+  if ('error' in resolved) return { res: resolved.error, agent: '' };
+  return { res: await routeAs(req, built, resolved.member), agent: resolved.member.agent };
+}
 
+async function routeAs(req: NextRequest, built: ReturnType<typeof buildUpstreamPath>, member: Member): Promise<Response> {
   if (!built.ok) return Response.json({ error: `Invalid request path: ${built.reason}` }, { status: 400 });
 
   const search = new URL(req.url).search;
   const body = req.method === 'POST' && built.path.startsWith('accounts/') ? await req.json().catch(() => null) : null;
-  const local = localAnswer(req.method, built.path, new URLSearchParams(search), body, resolved.member);
+  const local = localAnswer(req.method, built.path, new URLSearchParams(search), body, member);
   if (local) return local;
 
   const blocked = blockedReason(req.method, built.path, new URLSearchParams(search));
   if (blocked) return Response.json({ error: blocked }, { status: 403 });
 
   const sid = SESSION_PATH.exec(built.path)?.[1];
-  if (sid && !(await sessionInMatter(resolved.member, sid))) return Response.json({ error: 'Not found' }, { status: 404 });
+  if (sid && !(await sessionInMatter(member, sid))) return Response.json({ error: 'Not found' }, { status: 404 });
+  const sandbox = runtimeSandbox(built.path);
+  if (sandbox && !(await sandboxInMatter(member, sandbox))) return Response.json({ error: 'Not found' }, { status: 404 });
 
   const upstreamUrl = `${upstreamBase()}/${built.path}${search}`;
   if (req.method === 'POST' && SESSION_CREATE.test(built.path)) {
-    return createSession(req, upstreamUrl, resolved.member);
+    return createSession(req, upstreamUrl, member);
+  }
+  if ((req.method === 'POST' || req.method === 'PATCH') && PROMPT_WRITE.test(built.path)) {
+    const prompt = await readJson(req);
+    if (!prompt) return Response.json({ error: 'Invalid request body' }, { status: 400 });
+    return forwardJson(req, upstreamUrl, member, memberPromptBody(prompt));
   }
   const one = SESSION_ONE.exec(built.path);
-  if (one && req.method === 'DELETE') return deleteSession(req, upstreamUrl, resolved.member, one[2]);
+  if (one && req.method === 'DELETE') return deleteSession(req, upstreamUrl, member, one[2]);
   if (one && req.method !== 'GET' && req.method !== 'HEAD') {
-    return patchSession(req, upstreamUrl, resolved.member, one[1], one[2]);
+    return patchSession(req, upstreamUrl, member, one[1], one[2]);
   }
-  return forwardKortixRequest({ request: await outbound(req), upstreamUrl, token: resolved.member.token });
+  return forwardKortixRequest({ request: await outbound(req), upstreamUrl, token: member.token });
 }
 
 // Every session route: `projects/<pid>/sessions/<sid>` and below.
@@ -110,7 +128,7 @@ async function redactedError(res: Response): Promise<Response> {
   }
 }
 
-async function redacted(res: Response, path: string): Promise<Response> {
+async function redacted(res: Response, path: string, agent: string): Promise<Response> {
   const text = await res.text();
   let body: unknown;
   try {
@@ -118,7 +136,7 @@ async function redacted(res: Response, path: string): Promise<Response> {
   } catch {
     return new Response(text, { status: res.status, headers: res.headers });
   }
-  return new Response(JSON.stringify(redactIdentity(path, body)), { status: res.status, headers: res.headers });
+  return new Response(JSON.stringify(redactIdentity(path, body, agent)), { status: res.status, headers: res.headers });
 }
 
 async function readJson(req: Request): Promise<Record<string, unknown> | null> {
@@ -135,7 +153,7 @@ function forwardJson(req: NextRequest, upstreamUrl: string, member: Member, body
 async function createSession(req: NextRequest, upstreamUrl: string, member: Member) {
   const body = await readJson(req);
   if (!body) return Response.json({ error: 'Invalid request body' }, { status: 400 });
-  const res = await forwardJson(req, upstreamUrl, member, tagSessionCreate(memberSessionCreateBody(body), member));
+  const res = await forwardJson(req, upstreamUrl, member, tagSessionCreate(memberSessionCreateBody(body, member.agent), member));
   if (!res.ok) return res;
   const text = await res.text();
   // The session exists now. A failed thread record must not turn it into a
