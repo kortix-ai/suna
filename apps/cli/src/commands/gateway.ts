@@ -151,6 +151,7 @@ interface RoutingPolicyDoc {
     visionModel: string | null;
     defaultFallback: { models: string[]; fallbackOn: string } | null;
     rules: { model: string; fallbackModels: string[]; fallbackOn: string }[];
+    modelGenerationConfig?: Record<string, Record<string, unknown>>;
   };
   effective: {
     defaultModel: string;
@@ -222,6 +223,7 @@ async function gatewayRouting(rest: string[], opts: CtxOpts, json: boolean): Pro
           visionModel: current.project.visionModel,
           defaultFallback: current.project.defaultFallback,
           rules: current.project.rules,
+          modelGenerationConfig: current.project.modelGenerationConfig ?? {},
         };
         if (defaultModel !== undefined) body.defaultModel = defaultModel || null;
         if (visionModel !== undefined) body.visionModel = visionModel || null;
