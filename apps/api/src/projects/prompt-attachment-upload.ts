@@ -7,7 +7,7 @@ import { db } from '../shared/db';
 import { toPublicStorageUrl } from '../shared/supabase';
 import type { PromptPartWire } from './session-lifecycle/store';
 import { completeChunkedPromptAttachment, processingError } from './prompt-attachment-chunks';
-import { PromptAttachmentError, type BindingRow, type Transaction, type PromptAttachmentScope, type Row, storage, storageUnavailable, chunkedMode, chunkBytes, filePath, metadata, assertOwner, assertUnexpired, selectAttachment, noReferences, COMPLETE_BOUND_MS } from './prompt-attachment-storage';
+import { PromptAttachmentError, type BindingRow, type Transaction, type PromptAttachmentScope, type Row, storage, storageUnavailable, chunkedMode, chunkBytes, filePath, metadata, assertOwner, assertUnexpired, selectAttachment, noReferences, COMPLETE_BOUND_MS, isMissingObject } from './prompt-attachment-storage';
 
 /** Lifetime reported for a direct upload URL. Storage signs for 2 hours by
  * default; a shorter report makes the client re-sign before Storage refuses. */
@@ -162,11 +162,6 @@ export async function beginPromptAttachment(
   return { ...metadata(row), upload };
 }
 
-
-function isMissingObject(error: unknown): boolean {
-  const { status, statusCode } = (error ?? {}) as { status?: number; statusCode?: string };
-  return status === 404 || statusCode === '404' || statusCode === 'not_found';
-}
 
 /** Stream the stored object once: exact size and incremental SHA-256, without
  * holding the file in memory. */
