@@ -240,9 +240,11 @@ export function useFileContentState({
   // Save handler — called by CodeEditor (Cmd+S) and by the header Save button.
   // When called from the header button we pass latestContentRef.current.
   // When called from CodeEditor's Cmd+S, CodeEditor passes its own localContent.
+  const draftGeneration = useRef(0);
   const handleSave = useCallback(
     async (content: string) => {
       if (readOnly) return;
+      const generation = draftGeneration.current;
       setIsSaving(true);
       try {
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -257,6 +259,7 @@ export function useFileContentState({
         // CodeEditor's originalContent effect will then sync savedContent.current
         // to match localContent, clearing its internal hasChanges flag.
         await refetch();
+        if (draftGeneration.current !== generation) return;
         setHasUnsavedChanges(false);
         setSaveFlash(true);
         if (saveFlashTimerRef.current) clearTimeout(saveFlashTimerRef.current);
@@ -292,6 +295,7 @@ export function useFileContentState({
   const handleEditorChange = useCallback(
     (content: string) => {
       if (readOnly) return;
+      draftGeneration.current++;
       latestContentRef.current = content;
     },
     [readOnly],

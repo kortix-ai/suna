@@ -5,6 +5,8 @@ let denyPush = false;
 const sessionId = '00000000-0000-4000-a000-000000001893';
 let caller: string | null = sessionId;
 let commits = 0;
+let deniedPath: string | undefined;
+let committedPath: string | undefined;
 mock.module('../../middleware/caller-session', () => ({ callerKortixSessionId: () => caller }));
 const access = await import('../lib/access');
 mock.module('../lib/access', () => ({ ...access,
@@ -16,18 +18,18 @@ mock.module('../lib/access', () => ({ ...access,
 const view = await import('../lib/project-read-view');
 mock.module('../lib/project-read-view', () => ({ ...view, projectReadView: async () => ({ refsVisible: async () => true }) }));
 const resources = await import('../lib/project-resources');
-mock.module('../lib/project-resources', () => ({ ...resources, resourceDenierForRequest: async () => null }));
+mock.module('../lib/project-resources', () => ({ ...resources, resourceDenierForRequest: async () => ({ isDenied: (path: string) => path === deniedPath }) }));
 const git = await import('../lib/git');
 mock.module('../lib/git', () => ({ ...git, withProjectGitAuth: async () => ({}) }));
 const branches = await import('../git/branches');
 mock.module('../git/branches', () => ({ ...branches, remoteBranchExists: async () => true }));
 const writer = await import('../git/commit-writer');
-mock.module('../git/commit-writer', () => ({ ...writer, commitFileToBranch: async () => { commits++; return { commitSha: 'a'.repeat(40) }; } }));
+mock.module('../git/commit-writer', () => ({ ...writer, commitFileToBranch: async (_project: unknown, options: { path: string }) => { committedPath = options.path; commits++; return { commitSha: 'a'.repeat(40) }; } }));
 const { projectsApp } = await import('../lib/app');
 (await import('./project-files')).registerProjectFilesRoutes();
-async function write(ref: string) {
+async function write(ref: string, path = 'kortix.yaml') {
   return projectsApp.request('/project/files/content', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: 'kortix.yaml', ref, content: 'name: synthetic', expected_revision: 'a'.repeat(40) }) });
+    body: JSON.stringify({ path, ref, content: 'name: synthetic', expected_revision: 'a'.repeat(40) }) });
 }
 test('session credentials cannot commit to default or sibling branches', async () => {
   caller = sessionId; commits = 0;
@@ -49,4 +51,16 @@ test('file-write alone cannot move a branch without push authority', async () =>
     expect((await write('main')).status).toBe(403);
     expect(commits).toBe(0);
   } finally { denyPush = false; }
+});
+
+ test('resource authorization uses the canonical committed path', async () => {
+  caller = null; commits = 0;
+  deniedPath = '.opencode/agent/private.md';
+  try {
+    expect((await write('main', './/.opencode/agent/private.md')).status).toBe(404);
+    expect(commits).toBe(0);
+    deniedPath = undefined;
+    expect((await write('main', './/README.md')).status).toBe(200);
+    expect(committedPath).toBe('README.md');
+  } finally { deniedPath = undefined; }
 });

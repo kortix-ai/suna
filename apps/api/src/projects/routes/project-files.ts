@@ -1,5 +1,6 @@
 /** A project's repository contents: files, archive, search, history, branches, commits, and diffs. */
 import { createHash } from 'node:crypto';
+import { normalizeTreePath } from '../git/mirror';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { commitFileToBranch, GitFileRevisionConflictError } from '../git/commit-writer';
 import { assertAgentSessionWorkspaceAllowsRepository } from '../lib/access';
@@ -103,6 +104,8 @@ export function registerProjectFilesRoutes(): void {
       if (body.path.startsWith('/') || body.path.includes('..') || body.path.includes('\\') || body.path.includes('\0')) {
         return c.json({ error: 'Invalid file path' }, 400);
       }
+      const path = normalizeTreePath(body.path);
+      if (!path) return c.json({ error: 'Invalid file path' }, 400);
       if (!(await (await projectReadView(c, loaded)).refsVisible(body.ref))) return c.json({ error: 'Not found' }, 404);
       // Server-side commits bypass the git proxy: preserve the session's branch boundary here.
       const callerSessionId = callerKortixSessionId(c);
@@ -113,14 +116,14 @@ export function registerProjectFilesRoutes(): void {
         userId: loaded.userId, accountId: loaded.row.accountId, projectId,
         actingTokenId: c.get('iamTokenId'), row: loaded.row,
       });
-      if (denier?.isDenied(body.path)) return c.json({ error: 'File not found' }, 404);
+      if (denier?.isDenied(path)) return c.json({ error: 'File not found' }, 404);
       try {
         const gitProject = await withProjectGitAuth(loaded.row);
         if (!(await remoteBranchExists(gitProject, body.ref))) return c.json({ error: 'Branch not found' }, 404);
         const result = await commitFileToBranch(gitProject, {
-          path: body.path, content: body.content, branch: body.ref,
-          message: `Edit ${body.path}`,
-          expectedFileRevision: { path: body.path, sha: body.expected_revision },
+          path, content: body.content, branch: body.ref,
+          message: `Edit ${path}`,
+          expectedFileRevision: { path, sha: body.expected_revision },
         });
         return c.json({ commit_sha: result.commitSha }, 200);
       } catch (error) {

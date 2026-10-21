@@ -96,3 +96,43 @@ test('a dirty draft keeps its original revision through a content refetch', asyn
     }
   }
 });
+
+
+test('a newer draft remains dirty when an earlier save finishes', async () => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const content = { type: 'text' as const, content: 'original', revision: 'a'.repeat(40) };
+  const pending = Promise.withResolvers<void>();
+  const saved: string[] = [];
+  const source: FileSource = {
+    id: 'pending-save',
+    useFileContent: () => ({ data: content, isLoading: false, error: null, refetch: async () => undefined }),
+    useBinaryBlob: () => ({ blobUrl: null, blob: null, isLoading: false, error: null }),
+    download: async () => undefined,
+    upload: async () => undefined,
+    save: async (_path, file) => { saved.push(await file.text()); await pending.promise; },
+  };
+  let state: ReturnType<typeof useFileContentState> | undefined;
+  function Probe() {
+    state = useFileContentState({ filePath: '/README.txt', readOnly: false, markdownPreview: false });
+    return null;
+  }
+  let root: ReturnType<typeof create> | undefined;
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: Object.assign(new EventTarget(), { clearTimeout, setTimeout }) });
+  try {
+    await act(async () => { root = create(<FileSourceProvider value={source}><Probe /></FileSourceProvider>); });
+    await act(async () => { state?.handleEditorChange('first'); state?.setHasUnsavedChanges(true); });
+    const saving = state?.handleSave('first');
+    await act(async () => { state?.handleEditorChange('second'); state?.setHasUnsavedChanges(true); });
+    await act(async () => { pending.resolve(); await saving; });
+    expect(saved).toEqual(['first']);
+    expect(state?.hasUnsavedChanges).toBe(true);
+    expect(state?.latestContentRef.current).toBe('second');
+    expect(state?.isSaving).toBe(false);
+  } finally {
+    pending.resolve();
+    try { await act(async () => root?.unmount()); } finally {
+      if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+      else Reflect.deleteProperty(globalThis, 'window');
+    }
+  }
+});
