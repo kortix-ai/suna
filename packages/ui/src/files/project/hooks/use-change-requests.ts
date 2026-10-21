@@ -8,6 +8,7 @@ import {
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type QueryClient,
 } from '@tanstack/react-query';
 import {
   createChangeRequest,
@@ -298,38 +299,58 @@ export function useChangeRequestMergePreview(crId: string | null, enabled = true
 }
 
 /**
+ * Marks every change-request read of one project stale: each list (the
+ * session's outcome cards, the sidebar brief), each detail, and the review
+ * summary behind the sidebar's "Needs you" count. Called at turn end, because
+ * an agent opens and closes change requests from its sandbox through the REST
+ * API and the browser is not told (KRTX-3009, KRTX-3010).
+ */
+export function invalidateChangeRequestReads(qc: QueryClient, projectId: string): void {
+  if (!projectId) return;
+  qc.invalidateQueries({ queryKey: changeRequestKeys.project(projectId) });
+  qc.invalidateQueries({ queryKey: qk.project.reviewSummary(projectId) });
+}
+
+/**
  * Invalidates every CR query for the active project — used after open / merge
  * / close / reopen so all panels and detail views re-fetch.
  */
+export function invalidateAfterChangeRequestWrite(qc: QueryClient, projectId: string): void {
+  invalidateChangeRequestReads(qc, projectId);
+  // Branches list shows ahead/behind that may shift after a merge.
+  qc.invalidateQueries({ queryKey: branchKeys.list(projectId) });
+  // The merge commit lands on the default branch — commit list goes stale.
+  qc.invalidateQueries({ queryKey: commitKeys.project(projectId) });
+  // Whether this version still differs from its base changes the moment a CR
+  // merges — refresh the "Alternate version of main · N changes" banner
+  // (git-status, which is otherwise sticky and never re-fetches on its own),
+  // the live version-diff preview, and the cached session row (base_ref etc.).
+  qc.invalidateQueries({ queryKey: gitStatusKeys.all });
+  qc.invalidateQueries({ queryKey: versionDiffKeys.project(projectId) });
+  // Every individual git-connected session under this project — a CR
+  // landing on the base ref can change what `getProjectSession` returns
+  // (base_ref etc.) for any of them. sessionsScope is the shared prefix
+  // that reaches the sessions list AND every qk.project.session(id, sid)
+  // entry in one call; there is no "every session, not the list" prefix to
+  // narrow to, so this deliberately also refreshes the sessions list.
+  qc.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
+  // Landing a CR on the base ref is the one thing that happens INSIDE the app
+  // that can make an open session's compiled agent config stale. The
+  // freshness query is deliberately not polled — this is what tells it to
+  // look again, so the chip appears on merge rather than on next focus.
+  qc.invalidateQueries({ queryKey: ['session-config', projectId] });
+  // A merged CR can rewrite kortix.yaml: add or remove agents and change
+  // `default_agent`. Both live in the project detail entry, and the composer's
+  // agent list sits under it (`[...detail, 'agents']`), so New session kept
+  // offering removed agents until a reload (KRTX-3012).
+  qc.invalidateQueries({ queryKey: qk.project.detail(projectId) });
+}
+
 function useInvalidateAll(projectIdArg?: string) {
   const qc = useQueryClient();
   const ctx = useProjectContext();
   const projectId = projectIdArg ?? ctx?.projectId ?? '';
-  return () => {
-    qc.invalidateQueries({ queryKey: changeRequestKeys.project(projectId) });
-    // Branches list shows ahead/behind that may shift after a merge.
-    qc.invalidateQueries({ queryKey: branchKeys.list(projectId) });
-    // The merge commit lands on the default branch — commit list goes stale.
-    qc.invalidateQueries({ queryKey: commitKeys.project(projectId) });
-    // Whether this version still differs from its base changes the moment a CR
-    // merges — refresh the "Alternate version of main · N changes" banner
-    // (git-status, which is otherwise sticky and never re-fetches on its own),
-    // the live version-diff preview, and the cached session row (base_ref etc.).
-    qc.invalidateQueries({ queryKey: gitStatusKeys.all });
-    qc.invalidateQueries({ queryKey: versionDiffKeys.project(projectId) });
-    // Every individual git-connected session under this project — a CR
-    // landing on the base ref can change what `getProjectSession` returns
-    // (base_ref etc.) for any of them. sessionsScope is the shared prefix
-    // that reaches the sessions list AND every qk.project.session(id, sid)
-    // entry in one call; there is no "every session, not the list" prefix to
-    // narrow to, so this deliberately also refreshes the sessions list.
-    qc.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
-    // Landing a CR on the base ref is the one thing that happens INSIDE the app
-    // that can make an open session's compiled agent config stale. The
-    // freshness query is deliberately not polled — this is what tells it to
-    // look again, so the chip appears on merge rather than on next focus.
-    qc.invalidateQueries({ queryKey: ['session-config', projectId] });
-  };
+  return () => invalidateAfterChangeRequestWrite(qc, projectId);
 }
 
 export function useOpenChangeRequest(options?: { projectId?: string }) {

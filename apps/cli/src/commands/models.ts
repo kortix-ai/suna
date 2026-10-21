@@ -37,6 +37,18 @@ interface PickerModel {
   free?: boolean;
   reasoning?: boolean;
   tool_call?: boolean;
+  /** `false`: kept because a default names it, but its provider is not
+   *  connected for you, so the gateway would refuse it (KRTX-3011). */
+  available?: boolean;
+  availability?: 'login' | 'provider';
+}
+
+/** The connect command for a served model that is not runnable, else ''. */
+function connectHint(id: string, model: PickerModel): string {
+  if (model.available !== false) return '';
+  const provider = model.provider ?? id.split('/')[0];
+  const command = model.availability === 'login' ? 'kortix providers login openai' : `kortix providers set ${provider}`;
+  return `  ${C.yellow}not connected: ${command}${C.reset}`;
 }
 
 /** GET /projects/:id/model-picker (routes/models.ts). */
@@ -182,7 +194,7 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
       : `${C.faded}${pad('off', 6)}${C.reset}`;
     const origin = id in overrides ? 'override' : 'default';
     process.stdout.write(
-      `${marker}${pad(id, idW)}   ${state}  ${pad(origin, 9)}  ${pad(paidVia(id, model.provider), 8)}  ${C.faded}${model.provider ?? '—'}${C.reset}\n`,
+      `${marker}${pad(id, idW)}   ${state}  ${pad(origin, 9)}  ${pad(paidVia(id, model.provider), 8)}  ${C.faded}${model.provider ?? '—'}${C.reset}${connectHint(id, model)}\n`,
     );
   }
   if (unavailable.length > 0) {

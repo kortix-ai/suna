@@ -23,7 +23,9 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async () => true,
 }));
 mock.module('../../llm-gateway/models/served-managed-models', () => ({
-  platformDefaultModelId: () => 'deepseek-v4.1-flash', SERVED_MANAGED_MODELS: [],
+  platformDefaultModelId: () => 'deepseek-v4.1-flash',
+  servedManagedModels: () => [],
+  platformVisionModelId: () => '',
 }));
 const projectAccess = await import('../../repositories/project-model-access');
 mock.module('../../repositories/project-model-access', () => ({

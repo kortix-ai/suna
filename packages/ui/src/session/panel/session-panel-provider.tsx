@@ -28,6 +28,7 @@ import { useTranslations } from '../../i18n';
  */
 
 import { SessionAuditPanel } from './session-audit-panel';
+import { SessionRemindersPanel } from './session-reminders-panel';
 import { SessionFilesExplorer } from './session-files-explorer';
 import { useSandboxProxy } from '../../internal/hooks/use-sandbox-proxy';
 import { useIsMobile } from '../../hooks/use-mobile';
@@ -104,6 +105,7 @@ export interface SessionPanelValue {
   openBrowser: (target?: { url?: string; title?: string }) => void;
   openFiles: (changes?: boolean) => void;
   openAudit: () => void;
+  openReminders: () => void;
 }
 
 /**
@@ -145,6 +147,7 @@ export function SessionPanelProvider({
   children: ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tReminders = useTranslations('reminders');
   const { steps, outputs, context, apps, files, isRunning, outcome } = usePanelDerivations({
     sessionId, projectId, projectSessionId, isSessionBusy,
   });
@@ -509,6 +512,15 @@ export function SessionPanelProvider({
     });
   }, [openDetail, projectId, projectSessionId, tI18nComplete]);
 
+  // A session with more reminders than the header popover holds opens them here.
+  const openReminders = useCallback(() => {
+    openDetail({
+      key: 'reminders',
+      title: tReminders('title'),
+      body: <SessionRemindersPanel projectId={projectId} projectSessionId={projectSessionId} />,
+    });
+  }, [openDetail, projectId, projectSessionId, tReminders]);
+
   /**
    * The opt-in File Explorer (Marko's ask). Never a default view and never a
    * tab — it opens only when asked for, exactly like Terminal and Audit, so
@@ -567,7 +579,7 @@ export function SessionPanelProvider({
 
   const { outputsDefaultOpen, pendingQuickView } = usePanelHandoffs({
     sessionId, projectId, projectSessionId, isRunning, outcome, apps, files, steps,
-    detail, handleOpenOutput, openDetail, openTerminal, openAudit, openBrowser, openFiles,
+    detail, handleOpenOutput, openDetail, openTerminal, openAudit, openReminders, openBrowser, openFiles,
   });
 
   // The panel comes back with the session: what it showed is remembered while
@@ -689,6 +701,7 @@ export function SessionPanelProvider({
       openBrowser,
       openFiles,
       openAudit,
+      openReminders,
     }),
     [
       sessionId,
@@ -709,6 +722,7 @@ export function SessionPanelProvider({
       openBrowser,
       openFiles,
       openAudit,
+      openReminders,
     ],
   );
 

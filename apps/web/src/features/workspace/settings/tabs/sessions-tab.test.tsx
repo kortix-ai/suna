@@ -104,6 +104,20 @@ const SERBIAN_COPY: NonNullable<ComponentProps<typeof SessionsTabView>['copy']> 
  * These are the pre-KRTX-1742 tests, unchanged.
  */
 describe('SessionsTabView', () => {
+  test('all sound pack and event choices retain their injected copy and order', () => {
+    const out = renderToStaticMarkup(<SessionsTabView copy={SERBIAN_COPY} soundPack="kortix" />);
+    const labels = [
+      ...Object.values(SERBIAN_COPY.soundPacks),
+      ...Object.values(SERBIAN_COPY.soundEvents),
+    ];
+    for (const { label, description } of labels) {
+      expect(out).toContain(label);
+      expect(out).toContain(description);
+    }
+    expect(out.indexOf(SERBIAN_COPY.soundPacks.off.label)).toBeLessThan(out.indexOf(SERBIAN_COPY.soundPacks.opencode.label));
+    expect(out.indexOf(SERBIAN_COPY.soundPacks.opencode.label)).toBeLessThan(out.indexOf(SERBIAN_COPY.soundPacks.kortix.label));
+  });
+
   test('renders injected locale body copy instead of fixed English body labels', () => {
     const out = renderToStaticMarkup(<SessionsTabView copy={SERBIAN_COPY} />);
     expect(out).toContain('Обавештења');

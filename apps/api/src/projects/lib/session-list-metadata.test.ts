@@ -12,7 +12,7 @@ import {
  * (`initial_prompt` alone 36%), and the sidebar re-fetches the list several
  * times per session open. No client reads any of them back — verified by an
  * exhaustive read-side sweep of apps/web, apps/mobile, packages/sdk and
- * apps/whitelabel-demo (2026-08-26). These tests pin BOTH halves of that
+ * apps/white-label/lumen (2026-08-26). These tests pin BOTH halves of that
  * contract: the five go, and everything a client actually reads stays.
  */
 const CLIENT_READ_METADATA = {

@@ -11,8 +11,8 @@
  * (`buildSessionSandboxEnvVars`, projects/lib/sessions.ts).
  *
  * The runtime-servable lineup and the project's resolved default are mocked
- * (`SERVED_MANAGED_MODELS` depends on real OpenRouter/Bedrock transport
- * credentials this local test environment does not carry); the DB write, the
+ * (`servedManagedModels()` depends on the Platinum lineup and key, which
+ * this local test environment does not carry); the DB write, the
  * audit event, and env building all run unmocked against real PostgreSQL.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
@@ -24,19 +24,16 @@ import { removeSeeded, seedProject, type SeededProject } from './helpers/integra
 const managedModel = (id: string) => ({
   id,
   name: id,
-  upstreamModelId: `vendor/${id}`,
-  transport: 'openrouter' as const,
-  pricingRef: `vendor/${id}`,
-  tier: 'balanced' as const,
+  pricing: { inputPerMillion: 1, outputPerMillion: 1 },
   vision: true,
   limit: { context: 200_000, output: 32_000 },
-  openrouterProvider: { only: ['x'], allow_fallbacks: false, zdr: true as const, data_collection: 'deny' as const },
 });
 
 mock.module('../llm-gateway/models/served-managed-models', () => ({
-  SERVED_MANAGED_MODELS: [managedModel('deepseek-v4.1-flash'), managedModel('glm-5.3-flash')],
+  servedManagedModels: () => [managedModel('deepseek-v4.1-flash'), managedModel('glm-5.3-flash')],
   platformDefaultModelId: () => 'glm-5.3-flash',
   isPlatformDefaultModelId: (id: string) => id === 'glm-5.3-flash',
+  platformVisionModelId: () => '',
 }));
 
 let projectDefaultModel: string | null = 'glm-5.3-flash';

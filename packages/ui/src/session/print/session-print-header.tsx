@@ -9,7 +9,12 @@
  * display:none until the print media query), and it is in the DOM at all times
  * so that printing needs no re-render: `window.print()` is synchronous, and a
  * React commit scheduled beside it is not guaranteed to land first.
+ *
+ * The agent is named the way the composer names it: a host's `agentLabels`
+ * entry wins over the raw agent name.
  */
+
+import { useUiHostConfig } from '../../providers/ui-provider';
 
 export interface SessionPrintHeaderProps {
   title: string;
@@ -49,9 +54,10 @@ export function SessionPrintHeader({
   agentName,
   now,
 }: SessionPrintHeaderProps) {
+  const { agentLabels } = useUiHostConfig();
   const meta = printHeaderMeta({
     projectName,
-    agentName,
+    agentName: (agentName && agentLabels?.[agentName]) || agentName,
     printedAt: formatPrintedAt(now ?? new Date()),
   });
 

@@ -4,6 +4,30 @@ export const NO_MODEL_AVAILABLE_MESSAGE = 'No models available for this session 
 export const NO_MODEL_AVAILABLE_ACTION_MESSAGE =
   'Connect a model via provider first or upgrade your Kortix subscription.';
 
+/**
+ * Whether the picker may offer a model as a choice: on for the project
+ * (`enabled`) and runnable for the caller (`available`). `/model-picker` keeps
+ * a model a default names even when its provider is not connected, marked
+ * `available: false`, so defaults stay editable; choosing it would only fail
+ * after Send ("Connect Codex to use this model.", KRTX-3011).
+ */
+export function isRunnableModel(model: { enabled?: boolean; available?: boolean }): boolean {
+  return model.enabled !== false && model.available !== false;
+}
+
+/**
+ * What selecting an unavailable model row opens instead of choosing it: the
+ * ChatGPT accounts modal for a ChatGPT model when members may connect one,
+ * else the provider connection. `null` = the model is runnable.
+ */
+export function unavailableModelConnection(
+  model: { enabled?: boolean; available?: boolean; availability?: 'login' | 'provider' },
+  options: { chatGptAvailable: boolean },
+): 'chatgpt' | 'provider' | null {
+  if (model.available !== false) return null;
+  return model.availability === 'login' && options.chatGptAvailable ? 'chatgpt' : 'provider';
+}
+
 export function resolveAvailableSelectedModel(
   selectedModel: ModelKey | null | undefined,
   isSelectableModel: (model: ModelKey) => boolean,

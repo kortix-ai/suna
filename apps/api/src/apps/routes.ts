@@ -58,6 +58,11 @@ import { probeFrameable } from './external';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
 import { registerAppFleetRoutes } from './fleet-routes';
+import {
+  DEPRECATED_PROVIDER_CODE,
+  DEPRECATED_PROVIDER_ERROR,
+  isDeprecatedProvider,
+} from '../platform/providers/deprecated';
 
 /** The machine bounds an App shares with a session sandbox. Stated here so the
  *  published OpenAPI schema carries the real ceiling instead of a number the
@@ -811,6 +816,9 @@ export function registerAppsRoutes(): void {
       const refusal = capabilityRefusal(c, 'deployments', null, app);
       if (refusal) return refusal;
       const body = c.req.valid('json');
+      if (isDeprecatedProvider(body.provider)) {
+        return c.json({ error: DEPRECATED_PROVIDER_ERROR, code: DEPRECATED_PROVIDER_CODE }, 400);
+      }
       if (!body.artifact_id) return c.json({ error: 'artifact_id is required' }, 400);
       const [artifact] = await db.select().from(appArtifacts).where(and(
         eq(appArtifacts.artifactId, body.artifact_id), eq(appArtifacts.projectId, projectId),

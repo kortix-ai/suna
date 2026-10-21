@@ -84,6 +84,13 @@ export const SECRET_DEFS: SecretDef[] = [
   // and the API together; stored objects are unaffected.
   { key: 'CAPTURE_STORE_ROOT_USER', category: 'database', kind: 'generated', required: false, rotatable: false },
   { key: 'CAPTURE_STORE_ROOT_PASSWORD', category: 'database', kind: 'generated', required: false, rotatable: true },
+  // External Capture object store (KORTIX_CAPTURE_STORE=external) static S3
+  // credentials. Both optional and operator-supplied: omit them on AWS to use
+  // the box's instance-role default chain; set them for R2/MinIO. Registered
+  // here only so `env ls` MASKS the secret instead of printing it in plaintext
+  // among the "Other configuration" keys (see the array-level comment above).
+  { key: 'KORTIX_CAPTURE_S3_ACCESS_KEY_ID', category: 'database', kind: 'operator', required: false },
+  { key: 'KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY', category: 'database', kind: 'operator', required: false },
   // Internal Supabase-infra encryption keys — see the array-level comment
   // above for why these are generated-but-not-rotatable.
   { key: 'SECRET_KEY_BASE', category: 'database', kind: 'generated', required: true, rotatable: false },
@@ -155,7 +162,6 @@ export const SECRET_DEFS: SecretDef[] = [
   // LLM — NOT init-required: BYOK via the frontend's model picker after
   // `start`, not collected by the CLI.
   { key: 'OPENROUTER_API_KEY', category: 'llm', kind: 'operator', required: false },
-  { key: 'MORPH_API_KEY', category: 'llm', kind: 'operator', required: false },
 
   // Connectors
   { key: 'COMPOSIO_API_KEY', category: 'connectors', kind: 'operator', required: false },
@@ -256,6 +262,9 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   S3_PROTOCOL_ACCESS_KEY_SECRET: ['supabase-storage', 'kortix-api'],
   CAPTURE_STORE_ROOT_USER: ['capture-store', 'kortix-api'],
   CAPTURE_STORE_ROOT_PASSWORD: ['capture-store', 'kortix-api'],
+  // External Capture store config is read by the API only (via env_file).
+  KORTIX_CAPTURE_S3_ACCESS_KEY_ID: ['kortix-api'],
+  KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: ['kortix-api'],
   SECRET_KEY_BASE: ['supabase-realtime', 'supabase-supavisor'],
   REALTIME_DB_ENC_KEY: ['supabase-realtime'],
   VAULT_ENC_KEY: ['supabase-supavisor'],
@@ -314,7 +323,6 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
 
   // LLM
   OPENROUTER_API_KEY: ['kortix-api'],
-  MORPH_API_KEY: ['kortix-api'],
 
   // Connectors
   COMPOSIO_API_KEY: ['kortix-api'],

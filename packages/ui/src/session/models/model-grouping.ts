@@ -1,7 +1,5 @@
-import { DEFAULT_MANAGED_MODEL_IDS, PROVIDER_LABELS } from '@kortix/llm-catalog';
+import { PROVIDER_LABELS } from '@kortix/llm-catalog';
 import type { FlatModel } from '@kortix/sdk/react';
-
-const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
 
 // The gateway exposes its whole catalog through a single `kortix` provider, with
 // model ids namespaced as `<provider>/<model>`. For the picker we recover the
@@ -29,7 +27,6 @@ export function pickerGroupId(model: FlatModel): string {
   if (model.providerID !== 'kortix') {
     return model.providerID;
   }
-  if (MANAGED_MODEL_IDS.has(model.modelID)) return model.provider ?? model.providerID;
   if (model.provider) return model.provider;
   const slash = model.modelID.indexOf('/');
   return slash === -1 ? model.providerID : model.modelID.slice(0, slash);

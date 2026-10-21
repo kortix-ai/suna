@@ -6,7 +6,7 @@ plane in `apps/api/src/llm-gateway`).
 
 **Verdict: well-architected and production-reasonable.** Layered resilience
 (retries w/ backoff+jitter, per-provider circuit breaker, candidate failover, SSE
-keep-alive heartbeat), clean routing (Claude→Bedrock, rest→OpenRouter, BYOK→
+keep-alive heartbeat), clean routing (Claude→Bedrock, rest→the managed upstream, BYOK→
 managed fallback with tier gating), real unit tests on the core pipeline.
 
 ## ✅ Fixed (this pass — all with tests)
@@ -142,7 +142,7 @@ managed fallback with tier gating), real unit tests on the core pipeline.
 17. **Discarded-attempt usage folded into the eventual bill (partial)** —
     `pipeline/handler.ts`
     An empty-completion retry / failed-over candidate that still carried real
-    usage (a malformed-but-billed generation — the exact OpenRouter/z-ai
+    usage (a malformed-but-billed generation — the exact upstream
     pattern this retry loop exists for) is now summed and folded into the
     eventually-*successful* candidate's billed usage, instead of silently
     discarded. **Not** covered: a request where *every* candidate ultimately

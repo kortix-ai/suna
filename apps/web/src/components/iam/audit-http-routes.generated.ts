@@ -89,6 +89,8 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|accounts|:accountId|capture|policy",
   "PUT|v1|accounts|:accountId|capture|policy",
   "GET|v1|accounts|:accountId|capture|search",
+  "GET|v1|accounts|:accountId|capture|storage",
+  "PUT|v1|accounts|:accountId|capture|storage",
   "GET|v1|accounts|:accountId|capture|timeline",
   "GET|v1|accounts|:accountId|capture|timeline|items",
   "GET|v1|accounts|:accountId|iam|actions",
