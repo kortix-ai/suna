@@ -1,5 +1,36 @@
 // A `lumen …` tool command (the agent kit's CLI, run through bash) as a plain step a lawyer can read.
-// Anything else returns null and keeps the stock shell row.
+// `lumenStep` returns null for anything else; the chat row then shows SHELL_STEP, never the command.
+
+/** The step a lawyer sees for a shell call that is not a `lumen` command: no command text, no paths. */
+export const SHELL_STEP = 'Preparing the working files';
+
+/**
+ * The command of a shell call's input. The input is an object (`{command}`, Codex's
+ * `{cmd}` or an argv array) or, while it streams or from some transcripts, its JSON text.
+ */
+export function shellCommand(input: unknown): string | null {
+  let v = input;
+  if (typeof input === 'string') {
+    try {
+      v = JSON.parse(input);
+    } catch {
+      // Partial JSON while the call streams: read the command field if it is complete.
+      const m = /"(?:command|cmd)"\s*:\s*"((?:\\.|[^"\\])*)"/.exec(input);
+      if (!m) return null;
+      try {
+        return JSON.parse(`"${m[1]}"`) as string;
+      } catch {
+        return null;
+      }
+    }
+  }
+  if (!v || typeof v !== 'object') return null;
+  const o = v as { command?: unknown; cmd?: unknown };
+  const c = o.command ?? o.cmd;
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c) && c.every((x) => typeof x === 'string')) return c.join(' ');
+  return null;
+}
 
 function flag(args: string[], name: string): string | undefined {
   const i = args.indexOf(name);
