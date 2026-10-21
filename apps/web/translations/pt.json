@@ -1318,6 +1318,7 @@
     },
     "credits": {
       "loadFailed": "Não foi possível carregar esta conta.",
+      "resetAt": "Os créditos do plano são redefinidos em",
       "availableBalance": "Saldo disponível",
       "creditCount": "{count, plural, one {{formatted} crédito} other {{formatted} créditos}}",
       "owed": "devidos",
@@ -1593,6 +1594,10 @@
       "showMore": "Mostrar mais",
       "brief": {
         "status": "Estado",
+        "subAgent": "Subagente",
+        "spawned": "Sessão iniciada",
+        "subAgentCount": "{count, plural, one {# subagente} other {# subagentes}}",
+        "spawnedCount": "{count, plural, one {# sessão iniciada} other {# sessões iniciadas}}",
         "created": "Criada em",
         "source": "Origem",
         "changeRequests": "Pedidos de alteração",
@@ -1606,11 +1611,12 @@
         }
       },
       "status": {
-        "needsYou": "Precisa de si",
-        "starting": "A iniciar",
-        "running": "Em execução",
-        "done": "Concluída",
-        "stopped": "Parada",
+        "needsYou": "Precisa de revisão",
+        "needsInput": "Precisa da sua resposta",
+        "starting": "A acordar",
+        "running": "A trabalhar",
+        "done": "Pronta",
+        "stopped": "Em repouso",
         "failed": "Falhou",
         "legacy": "Antiga"
       }
@@ -2201,6 +2207,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Membros",
+      "unlimitedMembers": "Membros ilimitados",
+      "loadingMembers": "Carregando membros…",
+      "membersUnavailable": "Número de membros indisponível",
+      "memberCount": "{count, plural, one {# membro} other {# membros}}",
       "cancels": "Cancela em {date}",
       "cancelsAtPeriodEnd": "Cancela no fim do período",
       "renews": "Renova em {date}",
@@ -20309,7 +20320,13 @@
       "text08f3c151d323": "Solicitar termos personalizados",
       "texta0990a4a86dc": "White-label: seu produto de IA sobre a computação do Platinum.dev",
       "text6189ab6313de": "Faça um fork do Kortix, coloque sua marca e venda como seu produto. A licença é gratuita. O único requisito: sua computação roda no Platinum.dev.",
-      "text7971dd752669": "Lembretes"
+      "text7971dd752669": "Lembretes",
+      "text724b09397472": "Adicionando {name} a {project}",
+      "text1e007c47254d": "A configuração acontece em segundo plano. Você receberá uma notificação quando terminar.",
+      "text57f57edb6f16": "A solicitação de alteração #{number} está pronta para revisão.",
+      "texta8597db6f24b": "Remover habilidade",
+      "text5f6ba69d66d1": "Habilidade removida",
+      "textcb8d6b0c94c9": " e todos os arquivos nela, incluindo edições, e remove a habilidade de todos os agentes que a usam. Um commit no branch padrão."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -21136,6 +21153,22 @@
     "chipLabel": "{count, plural, one {# lembrete ativo} other {# lembretes ativos}}",
     "chipTitle": "Lembretes desta sessão",
     "manage": "Gerenciar lembretes",
+    "openInReminders": "Abrir em Lembretes",
+    "nextRun": "Próxima execução {time}",
+    "repeats": "Repetição",
+    "timeZone": "Fuso horário",
+    "lastRun": "Última execução",
+    "lastRunFailed": "A última execução falhou",
+    "neverRun": "Ainda não executado",
+    "searchPlaceholder": "Pesquisar lembretes",
+    "statusAll": "Todos",
+    "timeFilterLabel": "Próxima execução",
+    "timeAny": "Qualquer momento",
+    "timeHour": "Próxima hora",
+    "timeDay": "Próximas 24 horas",
+    "timeWeek": "Próximos 7 dias",
+    "timeLater": "Mais tarde",
+    "noMatch": "Nenhum lembrete corresponde",
     "cardLabel": "Lembrete",
     "cardOneTime": "Uma vez",
     "cardRecurring": "Recorrente",

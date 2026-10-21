@@ -242,10 +242,16 @@ describe('hasOrExpectsTranscript', () => {
 
   test('nothing saved and nothing on screen does not', () => {
     expect(hasOrExpectsTranscript({ hasTranscript: false, savedTranscript: 'none' })).toBe(false);
-    expect(hasOrExpectsTranscript({ hasTranscript: false, savedTranscript: 'shown' })).toBe(false);
   });
 
   test('a transcript on screen always counts', () => {
     expect(hasOrExpectsTranscript({ hasTranscript: true, savedTranscript: 'none' })).toBe(true);
+  });
+});
+
+// The log owns v2 rows; the v1 messages array can stay empty while it is readable.
+describe('stored log before sandbox readiness', () => {
+  test('a loaded saved transcript is content even without v1 rows', () => {
+    expect(hasOrExpectsTranscript({ hasTranscript: false, savedTranscript: 'shown' })).toBe(true);
   });
 });

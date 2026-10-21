@@ -1318,6 +1318,7 @@
     },
     "credits": {
       "loadFailed": "No se pudo cargar esta cuenta.",
+      "resetAt": "Los créditos del plan se restablecen el",
       "availableBalance": "Saldo disponible",
       "creditCount": "{count, plural, one {{formatted} crédito} other {{formatted} créditos}}",
       "owed": "adeudados",
@@ -1593,6 +1594,10 @@
       "showMore": "Mostrar más",
       "brief": {
         "status": "Estado",
+        "subAgent": "Subagente",
+        "spawned": "Sesión generada",
+        "subAgentCount": "{count, plural, one {# subagente} other {# subagentes}}",
+        "spawnedCount": "{count, plural, one {# sesión generada} other {# sesiones generadas}}",
         "created": "Creada",
         "source": "Origen",
         "changeRequests": "Solicitudes de cambio",
@@ -1606,11 +1611,12 @@
         }
       },
       "status": {
-        "needsYou": "Necesita tu atención",
-        "starting": "Iniciando",
-        "running": "En ejecución",
-        "done": "Finalizada",
-        "stopped": "Detenida",
+        "needsYou": "Requiere revisión",
+        "needsInput": "Requiere tu respuesta",
+        "starting": "Despertando",
+        "running": "Trabajando",
+        "done": "Lista",
+        "stopped": "En reposo",
         "failed": "Fallida",
         "legacy": "Anterior"
       }
@@ -2201,6 +2207,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Miembros",
+      "unlimitedMembers": "Miembros ilimitados",
+      "loadingMembers": "Cargando miembros…",
+      "membersUnavailable": "Número de miembros no disponible",
+      "memberCount": "{count, plural, one {# miembro} other {# miembros}}",
       "cancels": "Se cancela el {date}",
       "cancelsAtPeriodEnd": "Se cancela al final del período",
       "renews": "Se renueva el {date}",
@@ -20309,7 +20320,13 @@
       "text08f3c151d323": "Solicitar condiciones personalizadas",
       "texta0990a4a86dc": "Marca blanca: tu producto de IA sobre el cómputo de Platinum.dev",
       "text6189ab6313de": "Haz un fork de Kortix, ponle tu marca y véndelo como tu producto. La licencia es gratuita. El único requisito: tu cómputo se ejecuta en Platinum.dev.",
-      "text7971dd752669": "Recordatorios"
+      "text7971dd752669": "Recordatorios",
+      "text724b09397472": "Añadiendo {name} a {project}",
+      "text1e007c47254d": "Se configura en segundo plano. Recibirás una notificación cuando termine.",
+      "text57f57edb6f16": "La solicitud de cambio #{number} está lista para revisar.",
+      "texta8597db6f24b": "Eliminar habilidad",
+      "text5f6ba69d66d1": "Habilidad eliminada",
+      "textcb8d6b0c94c9": " y todos sus archivos, incluidos los cambios, y quita la habilidad de cada agente que la usa. Un commit en la rama predeterminada."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -21136,6 +21153,22 @@
     "chipLabel": "{count, plural, one {# recordatorio activo} other {# recordatorios activos}}",
     "chipTitle": "Recordatorios de esta sesión",
     "manage": "Gestionar recordatorios",
+    "openInReminders": "Abrir en Recordatorios",
+    "nextRun": "Próxima ejecución {time}",
+    "repeats": "Repetición",
+    "timeZone": "Zona horaria",
+    "lastRun": "Última ejecución",
+    "lastRunFailed": "La última ejecución falló",
+    "neverRun": "Aún no se ha ejecutado",
+    "searchPlaceholder": "Buscar recordatorios",
+    "statusAll": "Todos",
+    "timeFilterLabel": "Próxima ejecución",
+    "timeAny": "Cualquier momento",
+    "timeHour": "Próxima hora",
+    "timeDay": "Próximas 24 horas",
+    "timeWeek": "Próximos 7 días",
+    "timeLater": "Más adelante",
+    "noMatch": "Ningún recordatorio coincide",
     "cardLabel": "Recordatorio",
     "cardOneTime": "Una vez",
     "cardRecurring": "Recurrente",

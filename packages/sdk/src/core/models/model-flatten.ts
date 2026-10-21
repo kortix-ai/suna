@@ -35,6 +35,8 @@ type LooseModel =
       last_updated?: string;
       enabled?: boolean;
       free?: boolean;
+      available?: boolean;
+      availability?: 'login' | 'provider';
     };
 
 function hasCapabilities(model: LooseModel): model is Model {
@@ -99,6 +101,16 @@ export interface FlatModel {
    */
   enabled?: boolean;
   free?: boolean;
+  /**
+   * `false` when the project keeps this model only because a default or a
+   * routing rule names it, and its provider is not connected for the caller:
+   * the gateway would refuse it ("Connect Codex to use this model."). Nothing
+   * may choose it on the person's behalf, and the picker shows what to connect
+   * instead. Undefined = runnable, or a catalog that does not say.
+   */
+  available?: boolean;
+  /** What `available: false` needs: a ChatGPT login or the provider's key. */
+  availability?: 'login' | 'provider';
 }
 
 /**
@@ -110,18 +122,18 @@ export interface ModelOption extends FlatModel {
 }
 
 /**
- * Whether `key` may be offered/resolved from `models` — present in the catalog
- * and not turned off by the server's per-project enablement (`enabled` above).
- * THE one predicate for "is this model selectable?"; a second, client-local
- * visibility heuristic beside it is exactly what made the session picker and
- * "Manage models" disagree.
+ * Whether `key` may be offered/resolved from `models` — present in the catalog,
+ * not turned off by the server's per-project enablement (`enabled` above), and
+ * runnable for the caller (`available` above). THE one predicate for "is this
+ * model selectable?"; a second, client-local visibility heuristic beside it is
+ * exactly what made the session picker and "Manage models" disagree.
  */
 export function isOfferedModel(
   models: FlatModel[],
   key: { providerID: string; modelID: string },
 ): boolean {
   const model = models.find((m) => m.providerID === key.providerID && m.modelID === key.modelID);
-  return !!model && model.enabled !== false;
+  return !!model && model.enabled !== false && model.available !== false;
 }
 
 // The gateway-specific fields (`provider`, `reasoning_options`,
@@ -138,6 +150,8 @@ type WithGatewayFields = {
   last_updated?: string;
   enabled?: boolean;
   free?: boolean;
+  available?: boolean;
+  availability?: 'login' | 'provider';
   attachment?: boolean;
 };
 
@@ -215,6 +229,8 @@ export function flattenModels(
         lastUpdated: (model as WithGatewayFields).last_updated,
         enabled: (model as WithGatewayFields).enabled,
         free: (model as WithGatewayFields).free === true,
+        available: (model as WithGatewayFields).available,
+        availability: (model as WithGatewayFields).availability,
       });
     }
   }

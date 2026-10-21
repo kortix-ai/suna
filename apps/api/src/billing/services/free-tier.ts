@@ -6,10 +6,11 @@ import { getTier, MINIMUM_CREDIT_FOR_RUN } from './tiers';
 
 export async function initializeFreeTierAccount(accountId: string): Promise<void> {
   const billingAnchor = new Date();
+  const expiresAt = calculateNextCreditGrant(billingAnchor).toISOString();
   await upsertCreditAccount(accountId, {
     tier: 'free',
     billingCycleAnchor: billingAnchor.toISOString(),
-    nextCreditGrant: calculateNextCreditGrant(billingAnchor).toISOString(),
+    nextCreditGrant: expiresAt,
   });
   await wallet.grant({
     accountId,
@@ -17,6 +18,7 @@ export async function initializeFreeTierAccount(accountId: string): Promise<void
     kind: 'free_tier_grant',
     description: 'Free tier welcome credits',
     expiring: true,
+    expiresAt,
     key: { event: `free_tier_signup:${accountId}` },
   });
 }

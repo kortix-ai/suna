@@ -680,6 +680,7 @@ const catalog = {
     },
     "credits": {
       "loadFailed": "Could not load this account.",
+      "resetAt": "Plan credits reset on",
       "availableBalance": "Available balance",
       "creditCount": "{count, plural, one {{formatted} credit} other {{formatted} credits}}",
       "owed": "owed",
@@ -928,6 +929,10 @@ const catalog = {
       "showMore": "Show more",
       "brief": {
         "status": "Status",
+        "subAgent": "Sub-agent",
+        "spawned": "Spawned session",
+        "subAgentCount": "{count, plural, one {# sub-agent} other {# sub-agents}}",
+        "spawnedCount": "{count, plural, one {# spawned session} other {# spawned sessions}}",
         "created": "Created",
         "source": "Source",
         "changeRequests": "Change requests",
@@ -941,11 +946,12 @@ const catalog = {
         }
       },
       "status": {
-        "needsYou": "Needs you",
-        "starting": "Starting",
-        "running": "Running",
-        "done": "Done",
-        "stopped": "Stopped",
+        "needsYou": "Needs review",
+        "needsInput": "Needs input",
+        "starting": "Waking",
+        "running": "Working",
+        "done": "Ready",
+        "stopped": "Asleep",
         "failed": "Failed",
         "legacy": "Legacy"
       }
@@ -5586,7 +5592,11 @@ const catalog = {
       "text815464994ec4": "Telegram connected",
       "textdfea5351a743": "Telegram disconnected",
       "text2f95b1c9ee2b": "Allowed users saved",
-      "text7971dd752669": "Reminders"
+      "text7971dd752669": "Reminders",
+      "text57f57edb6f16": "Change request #{number} is ready to review.",
+      "texta8597db6f24b": "Remove skill",
+      "text5f6ba69d66d1": "Skill removed",
+      "textcb8d6b0c94c9": " and every file in it, edits included, and removes the skill from every agent that lists it. One commit on the default branch."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -6285,6 +6295,22 @@ const catalog = {
     "chipLabel": "{count, plural, one {# active reminder} other {# active reminders}}",
     "chipTitle": "Reminders on this session",
     "manage": "Manage reminders",
+    "openInReminders": "Open in Reminders",
+    "nextRun": "Next run {time}",
+    "repeats": "Repeats",
+    "timeZone": "Time zone",
+    "lastRun": "Last run",
+    "lastRunFailed": "Last run failed",
+    "neverRun": "Not run yet",
+    "searchPlaceholder": "Search reminders",
+    "statusAll": "All",
+    "timeFilterLabel": "Next run",
+    "timeAny": "Any time",
+    "timeHour": "Next hour",
+    "timeDay": "Next 24 hours",
+    "timeWeek": "Next 7 days",
+    "timeLater": "Later",
+    "noMatch": "No reminders match",
     "cardLabel": "Reminder",
     "cardOneTime": "One-time",
     "cardRecurring": "Recurring",

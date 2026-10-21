@@ -1,4 +1,3 @@
-import { Separator } from '@kortix/ui/separator';
 import { cn } from '@kortix/ui';
 import type { ReactNode } from 'react';
 
@@ -11,52 +10,6 @@ import type { ReactNode } from 'react';
  * Solutions section moves together.
  */
 export const SOLUTIONS_MEASURE = 'mx-auto max-w-7xl px-6';
-
-/** Section shell. Same vertical rhythm as `/channels` and `/connectors`. */
-export function Section({
-  id,
-  children,
-  className,
-}: {
-  id: string;
-  children: ReactNode;
-  className?: string;
-}): ReactNode {
-  return (
-    <section id={id} className={cn(SOLUTIONS_MEASURE, 'py-24 sm:py-30', className)}>
-      {children}
-    </section>
-  );
-}
-
-/** The hairline between sections, inset to the same measure as the content. */
-export function SectionDivider(): ReactNode {
-  return (
-    <div className={SOLUTIONS_MEASURE}>
-      <Separator />
-    </div>
-  );
-}
-
-/** A mono uppercase micro-label. The only small-caps voice on these pages. */
-export function Eyebrow({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}): ReactNode {
-  return (
-    <span
-      className={cn(
-        'text-muted-foreground font-mono text-[10px] tracking-widest uppercase',
-        className,
-      )}
-    >
-      {children}
-    </span>
-  );
-}
 
 /**
  * A bordered definition list — mono key on the left, prose on the right. Used

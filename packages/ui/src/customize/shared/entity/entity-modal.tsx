@@ -36,6 +36,7 @@ import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
 import { FadedScrollArea } from '../../../primitives/faded-scroll-area';
+import { RemoveSkillButton, removableSkillFolder } from '../../skills/remove-skill-button';
 import { buildFileTree, entityDirectory, isMarkdownPath, languageForPath } from './entity-files';
 
 export type EntityKind = 'skill' | 'command' | 'agent';
@@ -70,6 +71,10 @@ export interface EntityDetailModalProps {
    *  uses this so editing happens in this same shell (one level deep), not
    *  in a modal stacked on the modal. Omit for the normal file pane. */
   paneOverride?: ReactNode;
+  /** Offer Remove for a project skill. Only the Skills page opts in: it closes
+   *  the modal when the refetched config drops the skill. The agent editor
+   *  does not, because its unsaved draft could grant the removed skill again. */
+  removable?: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -122,6 +127,7 @@ export function EntityDetailModal({
   aside,
   meta,
   paneOverride,
+  removable = false,
   onOpenChange,
 }: EntityDetailModalProps) {
   // A skill/command with no description renders no `ModalDescription`, so
@@ -148,6 +154,7 @@ export function EntityDetailModal({
             aside={aside}
             meta={meta}
             paneOverride={paneOverride}
+            removable={removable}
           />
         ) : isResolving ? (
           <EntityModalSkeleton kind={kind} />
@@ -204,6 +211,7 @@ function EntityModalBody({
   aside,
   meta,
   paneOverride,
+  removable,
 }: {
   projectId: string;
   entity: EntityDetailEntity;
@@ -211,6 +219,7 @@ function EntityModalBody({
   aside?: ReactNode;
   meta?: ReactNode;
   paneOverride?: ReactNode;
+  removable: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const configure = useConfigureThread(projectId);
@@ -269,6 +278,9 @@ function EntityModalBody({
       onEdit={() => configure.start(editConfigPrompt(kind, entity.name, entity.path))}
     />
   ) : null;
+  // Only a project skill can be removed; the API refuses a platform `kortix-*` one.
+  const removableFolder =
+    removable && canWrite && kind === 'skill' ? removableSkillFolder(entity.path) : null;
 
   // The aside earns its column when it holds something: the caller's settings,
   // or — for a single-file kind, which has no rail to host it — the edit
@@ -317,7 +329,14 @@ function EntityModalBody({
         ) : null}
       </FadedScrollArea>
 
-      {editButton ? <div className="shrink-0 pt-4">{editButton}</div> : null}
+      {editButton ? (
+        <div className="shrink-0 space-y-2 pt-4">
+          {editButton}
+          {removableFolder ? (
+            <RemoveSkillButton projectId={projectId} name={entity.name} folder={removableFolder} />
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 

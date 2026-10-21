@@ -636,6 +636,8 @@ async function createGitTriggerSession(
       status: 'failed',
       error: String(sessionResult.error.body.error ?? 'Failed to create trigger session'),
       errorCode: code,
+      // A requeued create may still start a session; its run links to it by command.
+      commandId: sessionResult.commandId,
       requeued: sessionResult.requeued === true,
       retryable: sessionResult.retryable === true,
     };

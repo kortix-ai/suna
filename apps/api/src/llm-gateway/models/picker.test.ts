@@ -111,9 +111,34 @@ describe('projectPickerCatalog', () => {
       'glm-5.3-flash': full['glm-5.3-flash'],
       'anthropic/claude-a': full['anthropic/claude-a'],
       'anthropic/claude-b': full['anthropic/claude-b'],
-      'openai/gpt-a': full['openai/gpt-a'],
+      // Kept because a default names it, but OpenAI is not connected.
+      'openai/gpt-a': { ...full['openai/gpt-a'], available: false, availability: 'provider' },
       'codex/gpt-5.6-sol': full['codex/gpt-5.6-sol'],
     });
+  });
+
+  // KRTX-3011: an account default of a ChatGPT model was kept in the picker
+  // while no ChatGPT login existed, read as runnable, preselected, and failed
+  // only after Send ("Connect Codex to use this model.").
+  test('marks a required model whose provider is not connected as unavailable, and says what to connect', () => {
+    const full = {
+      'glm-5.3-flash': { name: 'GLM 5.3 Flash' },
+      'codex/gpt-6-astra': { name: 'GPT-6 Astra' },
+      'anthropic/claude-a': { name: 'Claude A' },
+    };
+    expect(
+      projectPickerCatalog(full, new Set(), ['codex/gpt-6-astra', 'anthropic/claude-a', 'glm-5.3-flash']),
+    ).toEqual({
+      'glm-5.3-flash': full['glm-5.3-flash'],
+      'codex/gpt-6-astra': { ...full['codex/gpt-6-astra'], available: false, availability: 'login' },
+      'anthropic/claude-a': { ...full['anthropic/claude-a'], available: false, availability: 'provider' },
+    });
+  });
+
+  test('a required model whose provider is connected stays runnable', () => {
+    const full = { 'codex/gpt-6-astra': { name: 'GPT-6 Astra' } };
+    const picked = projectPickerCatalog(full, new Set(['CODEX_AUTH_JSON']), ['codex/gpt-6-astra']);
+    expect(picked['codex/gpt-6-astra']).toEqual(full['codex/gpt-6-astra']);
   });
 
   test('does not expose stale auto or disconnected provider catalogs', () => {

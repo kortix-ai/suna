@@ -389,6 +389,22 @@ describe('kortix review', () => {
     expect(calls).toEqual([]);
   });
 
+  // KRTX-2991: the approvals route takes `note` and hands it to the agent with
+  // the decision (approvals.ts); --message was dropped on a connector approval.
+  test('act on call: --message goes to the agent as the decision note', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['act', 'call:ex_7', 'reject', '--message', 'Reword the second paragraph', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(calls[0]).toEqual({
+      method: 'POST',
+      path: `/v1/projects/${PROJECT}/approvals/ex_7`,
+      body: { decision: 'deny', note: 'Reword the second paragraph' },
+    });
+  });
+
   test('bulk sends only native ids and reports the skipped ones', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['bulk', 'dismiss', 'rv_1', 'cr:cr_9', 'call:ex_7', 'rv_2', '--project', PROJECT], config);

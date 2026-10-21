@@ -18,6 +18,7 @@ import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { inspectDatabaseError } from '../shared/database-errors';
 import {
+  AppArtifactStorageRefusedError,
   AppArtifactStorageUnavailableError,
   createAppArtifactUploadUrl,
   MAX_ARCHIVE_BYTES,
@@ -546,7 +547,7 @@ export function registerAppsRoutes(): void {
           z.object({ kind: z.literal('oci_image'), image: z.string().min(1).max(512) }),
         ]) } } },
       },
-      responses: { 201: json(z.object({ artifact: ArtifactObject, upload: z.object({ url: z.string(), max_bytes: z.number() }).nullable() }), 'Artifact'), ...errors(400, 403, 404, 503) },
+      responses: { 201: json(z.object({ artifact: ArtifactObject, upload: z.object({ url: z.string(), max_bytes: z.number() }).nullable() }), 'Artifact'), ...errors(400, 403, 404, 500, 503) },
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
@@ -565,7 +566,15 @@ export function registerAppsRoutes(): void {
       try {
         upload = await createAppArtifactUploadUrl(loaded.row.accountId, projectId, artifactId);
       } catch (error) {
+        // The Storage status and message go to the log either way (KRTX-2981).
+        const cause = (error as { cause?: { status?: unknown; statusCode?: unknown; message?: unknown } }).cause;
+        const detail = { status: cause?.status ?? null, statusCode: cause?.statusCode ?? null, message: cause?.message ?? null };
+        if (error instanceof AppArtifactStorageRefusedError) {
+          logger.error('[apps] artifact storage refused the upload', detail);
+          return c.json({ error: error.message }, 500);
+        }
         if (error instanceof AppArtifactStorageUnavailableError) {
+          logger.warn('[apps] artifact storage unavailable', detail);
           return c.json({ error: error.message }, 503);
         }
         throw error;

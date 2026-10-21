@@ -744,11 +744,31 @@ describe('kortix sessions share', () => {
     );
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('No project member with email');
+    // KRTX-2992: a plain member's roster lists only themselves
+    // (apps/api/src/iam/directory-visibility.ts), so "not found" can mean
+    // "not visible to you". The error says so and names the way out.
+    expect(r.stderr).toContain('you may not be allowed to see this person');
+    expect(r.stderr).toContain('--member <user-id>');
     expect(calls('PUT', `/v1/projects/${PROJECT}`)).toEqual([]);
+  });
+
+  test('--help says an email resolves only through the members the caller can see', async () => {
+    const r = await runCli(['sessions', 'share', '--help'], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout.replace(/\s+/g, ' ')).toContain('resolves through the project members you can see');
   });
 });
 
 describe('kortix sessions links', () => {
+  // KRTX-2992: the API refuses 3211 too, the static file-share server
+  // (PUBLIC_SHARE_BLOCKED_PORTS in apps/api/src/shared/session-public-shares.ts).
+  test('--help names every blocked preview port', async () => {
+    const r = await runCli(['sessions', 'links', '--help'], config);
+    expect(r.code).toBe(0);
+    const flat = r.stdout.replace(/\s+/g, ' ');
+    expect(flat).toContain('Refused for 22, 3211 (the file-share server), 8000 and the opencode ports.');
+  });
+
   test('create POSTs a preview share and prints the public url', async () => {
     const r = await runCli(
       ['sessions', 'links', SESSION, 'create', '--port', '3000', '--path', '/app', ...P],
