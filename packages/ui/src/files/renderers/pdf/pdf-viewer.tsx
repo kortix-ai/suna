@@ -1730,7 +1730,8 @@ type PDFViewerInnerProps = {
   pdfFile: string;
   documentId: string;
   document: PdfDocumentObject | null;
-  defaultZoom: number;
+  /** The level requested once the document loads: a number, or a fit mode (`fitOnOpen`). */
+  defaultZoom: ZoomLevel;
   className?: string;
   fileName?: string;
   showDownload: boolean;
@@ -2136,7 +2137,10 @@ function PDFViewerInner({
               onPagePointerCancel?.(event, pageNumber)
             }
           >
-            <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-white" />
+            {/* The page's own image covers this; until it paints, the page shows it is loading. */}
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 grid place-items-center bg-white text-neutral-400">
+              <Spinner className="size-5" />
+            </div>
             <RenderLayer
               documentId={documentId}
               pageIndex={page.pageIndex}
@@ -2628,7 +2632,9 @@ export const PDFViewer = React.forwardRef<PDFViewerHandle, PDFViewerProps>(funct
       <PDFViewerDocumentLoader
         viewerRef={ref}
         pdfFile={pdfFile}
-        defaultZoom={defaultZoom}
+        // The same level the plugin starts at: a numeric default here would undo `fitOnOpen`
+        // as soon as the document loads (the page opened at 100% and overflowed a narrow pane).
+        defaultZoom={selectPdfZoomLevel(fitOnOpen, defaultZoom)}
         className={className}
         fileName={fileName}
         showDownload={showDownload}
