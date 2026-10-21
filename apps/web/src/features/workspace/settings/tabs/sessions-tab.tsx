@@ -166,6 +166,8 @@ export interface SessionsTabViewProps {
   notificationKinds?: NotificationPreferences['kinds'];
   /** False when the deployment sends no email: the Email column is hidden. */
   emailAvailable?: boolean;
+  /** Kinds that cannot reach this person now (their feature is off everywhere): no row. */
+  hiddenKinds?: readonly InboxNotificationKind[];
   notificationKindsState?: 'loading' | 'error' | 'ready';
   onNotificationKindChange?: (
     kind: InboxNotificationKind,
@@ -197,6 +199,7 @@ export function SessionsTabView({
   notificationCenter = false,
   notificationKinds = DEFAULT_KIND_PREFERENCES,
   emailAvailable = true,
+  hiddenKinds = [],
   notificationKindsState = 'ready',
   onNotificationKindChange = () => {},
   onRetryNotificationKinds = () => {},
@@ -348,7 +351,7 @@ export function SessionsTabView({
                   <span className={CHANNEL_COLUMN}>{copy.push}</span>
                   {emailAvailable && <span className={CHANNEL_COLUMN}>{copy.email}</span>}
                 </div>
-                {INBOX_NOTIFICATION_KINDS.map((kind) => {
+                {INBOX_NOTIFICATION_KINDS.filter((kind) => !hiddenKinds.includes(kind)).map((kind) => {
                   const label = copy.kinds[kind].label;
                   const channelCell = (channel: NotificationChannel) => (
                     <span className={CHANNEL_COLUMN}>
@@ -543,6 +546,9 @@ export function SessionsTab({ projectId }: { projectId?: string }) {
       notificationCenter={notificationCenter}
       notificationKinds={kindPreferences.data?.kinds}
       emailAvailable={kindPreferences.data?.email_available ?? true}
+      // Room messages exist only with a project's `agent_rooms` flag on: an API
+      // that does not say so hides the row rather than show a dead switch.
+      hiddenKinds={kindPreferences.data?.hidden_kinds ?? ['message']}
       notificationKindsState={
         kindPreferences.data ? 'ready' : kindPreferences.isError ? 'error' : 'loading'
       }

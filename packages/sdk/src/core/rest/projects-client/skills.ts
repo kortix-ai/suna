@@ -9,6 +9,8 @@ export interface CreateProjectSkillInput {
   name: string;
   /** Frontmatter `description` — the agent-facing "load this when…" trigger. */
   description?: string;
+  /** Markdown instructions; blank or omitted uses the starter template. */
+  body?: string;
 }
 
 /** A committed skill: where it lives in the repo and the slug it got. */

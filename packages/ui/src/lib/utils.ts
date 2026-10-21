@@ -9,3 +9,7 @@ const twMerge = extendTailwindMerge({
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+export function cx(...values: Array<string | undefined | null | false>): string {
+  return values.filter(Boolean).join(' ');
+}

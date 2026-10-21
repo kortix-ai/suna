@@ -52,7 +52,7 @@ import { isAwsRegion } from './aws-region';
 const BEDROCK_REGION_ENV_VAR = 'AWS_REGION';
 
 const PLAN_UPGRADE_SUGGESTION =
-  'Upgrade your plan to use this model, or choose a model available on your current plan.';
+  'Your plan includes no Kortix-managed models. Upgrade to Credits, or connect your own provider key or ChatGPT account. List connected models with /v1/llm/v1/models?scope=picker in your project.';
 
 /**
  * The same block, for a plan that is PAID but simply does not include managed

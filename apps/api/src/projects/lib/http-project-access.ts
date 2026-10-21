@@ -105,14 +105,23 @@ export async function agentSessionWorkspaceAllowsRepository(
   return sessionWorkspaceAllowsRepositoryAccess({ sessionId, accountId, projectId });
 }
 
+export const SESSION_REPOSITORY_ACCESS_DENIED = 'session_repository_access_denied';
+
 export async function assertAgentSessionWorkspaceAllowsRepository(
   c: Context,
   accountId: string,
   projectId: string,
 ): Promise<void> {
   if (await agentSessionWorkspaceAllowsRepository(c, accountId, projectId)) return;
+  // Typed: the CLI keys its remedy on the code. No token grant fixes this, so
+  // it must not send the agent to edit kortix_permissions.
+  const message = 'session workspace does not allow repository access';
   throw new HTTPException(403, {
-    message: 'session workspace does not allow repository access',
+    message,
+    res: new Response(
+      JSON.stringify({ error: true, message, status: 403, code: SESSION_REPOSITORY_ACCESS_DENIED }),
+      { status: 403, headers: { 'content-type': 'application/json' } },
+    ),
   });
 }
 

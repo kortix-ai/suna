@@ -597,13 +597,13 @@ describe('resolveCandidates — managed model tier gating', () => {
       'an account with no plan is told to upgrade',
       'none',
       '"glm-5.3-flash" requires a paid plan.',
-      'Upgrade your plan to use this model, or choose a model available on your current plan.',
+      'Your plan includes no Kortix-managed models. Upgrade to Credits, or connect your own provider key or ChatGPT account. List connected models with /v1/llm/v1/models?scope=picker in your project.',
     ],
     [
       'a Free account is told to upgrade',
       'free',
       '"glm-5.3-flash" requires a paid plan.',
-      'Upgrade your plan to use this model, or choose a model available on your current plan.',
+      'Your plan includes no Kortix-managed models. Upgrade to Credits, or connect your own provider key or ChatGPT account. List connected models with /v1/llm/v1/models?scope=picker in your project.',
     ],
     [
       'a paid plan without managed models is told to bring a key',
@@ -1160,5 +1160,16 @@ describe('resolveCandidates — codex, unconfigured session, project-shared Chat
     const candidates = await resolveCandidates(principal({ sessionId: 's' }), 'codex/gpt-6');
     expect(candidates.map((c) => c.apiKey)).toEqual(['legacy-token']);
     expect(resolveProjectSharedProviderSecrets).not.toHaveBeenCalled();
+  });
+});
+
+describe('Free plan recovery guidance', () => {
+  test('names the absence of managed access instead of promising another free model', async () => {
+    runtimeManagedModel = { id: 'glm-5.3-flash' };
+    await expect(resolveCandidates(principal({ freeModelsOnly: true }), 'glm-5.3-flash'))
+      .rejects.toMatchObject({
+        code: 'plan_upgrade_required',
+        suggestion: 'Your plan includes no Kortix-managed models. Upgrade to Credits, or connect your own provider key or ChatGPT account. List connected models with /v1/llm/v1/models?scope=picker in your project.',
+      });
   });
 });
