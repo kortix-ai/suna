@@ -122,12 +122,12 @@ test('one settled turn folds activity before and after compaction behind one Wor
   const turn = turns[0];
   if (!turn) throw new Error('Missing synthetic turn');
   expect(turns).toHaveLength(1);
-  const html = renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient(), children: createElement(SessionTurn, {
+  const html = renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(SessionTurn, {
     turn, turnOutcome: {}, sessionId: 'synthetic', sessionStatus: undefined, isLast: true, ownsPlan: false,
     permissions: [], questions: [], sessionWorking: false, isWorkingTurn: false,
     suppressBusyIndicator: false, awaitingUser: false, pending: false, isFirstTurn: true,
     onPermissionReply: async () => {}, onRewind: () => {}, rewindDisabled: true,
-  }) }));
+  })));
   expect(html.match(/group\/work/g)).toHaveLength(1);
   expect(html).toContain('Synthetic final answer');
   expect(html).not.toContain('Context automatically compacted');
