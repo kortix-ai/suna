@@ -78,7 +78,7 @@ export function ProjectSpacesNav({ projectId }: { projectId: string }) {
             );
           })}
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={() => setCreateOpen(true)}>
+            <SidebarMenuButton onClick={() => setCreateOpen(true)} className="text-muted-foreground hover:text-sidebar-foreground">
               <PlusIcon />
               <span>{t('spaces.addChannel')}</span>
             </SidebarMenuButton>

@@ -22287,8 +22287,6 @@
       "renameFailed": "チャンネル名を変更できませんでした。もう一度お試しください。"
     },
     "view": {
-      "tabChat": "チャット",
-      "tabThreads": "スレッド",
       "welcomeTitle": "#{name} へようこそ",
       "welcomeEmpty": "#{name} で最初のスレッドを始めましょう。メッセージごとに新しいスレッドが始まります。",
       "welcomeStart": "ここが #{name} の始まりです。",
@@ -22317,8 +22315,6 @@
       "unarchived": "チャンネルのアーカイブを解除しました",
       "unarchiveFailed": "チャンネルのアーカイブを解除できませんでした。もう一度お試しください。",
       "dmFailed": "この会話を開けませんでした。",
-      "channelMenu": "#{name} のオプション",
-      "rename": "チャンネル名を変更",
       "archive": "チャンネルをアーカイブ",
       "archiveTitle": "#{name} をアーカイブしますか？",
       "archiveDescription": "チャンネルはすべてのメンバーのサイドバーから消えます。スレッドは残り、誰でもアーカイブを解除できます。",
@@ -22328,7 +22324,66 @@
       "closeThread": "スレッドを閉じる",
       "sendFailed": "スレッドを開始できませんでした。もう一度お試しください。",
       "replies": "{count, plural, other {#件の返信}}",
-      "replyPlaceholder": "返信…"
+      "replyPlaceholder": "返信…",
+      "tab": {
+        "chat": "チャット",
+        "threads": "スレッド",
+        "files": "ファイル",
+        "memory": "メモリ",
+        "apps": "アプリ",
+        "links": "リンク",
+        "triggers": "トリガー"
+      },
+      "empty": {
+        "files": {
+          "title": "まだファイルはありません",
+          "description": "{place} で共有されたファイルがここに表示されます。",
+          "action": "ファイルをアップロード"
+        },
+        "memory": {
+          "title": "まだメモリはありません",
+          "description": "エージェントが {place} について覚えていることがここに表示されます。",
+          "action": "メモリを追加"
+        },
+        "apps": {
+          "title": "まだアプリはありません",
+          "description": "{place} で作られたアプリがここに表示されます。",
+          "action": "アプリを追加"
+        },
+        "links": {
+          "title": "まだリンクはありません",
+          "description": "{place} で共有されたリンクがここに表示されます。",
+          "action": "リンクを追加"
+        },
+        "triggers": {
+          "title": "まだトリガーはありません",
+          "description": "トリガーはスケジュールやイベントに応じて {place} でスレッドを開始します。",
+          "action": "新しいトリガー"
+        }
+      },
+      "channelDetails": "#{name} の詳細",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, other {#人}}",
+      "rosterAgents": "{count, plural, other {#件のエージェント}}",
+      "rosterHint": "このチャンネルのスレッドにいる人とエージェント",
+      "copyLink": "スレッドへのリンクをコピー",
+      "linkCopied": "リンクをコピーしました"
+    },
+    "details": {
+      "about": "概要",
+      "members": "メンバー",
+      "name": "チャンネル名",
+      "description": "説明",
+      "noDescription": "説明を追加",
+      "created": "作成日",
+      "edit": "編集",
+      "editField": "{field}を編集",
+      "archiveTitle": "このチャンネルをアーカイブ",
+      "archiveHint": "すべてのメンバーのサイドバーから消えます。スレッドは残ります。",
+      "archive": "アーカイブ",
+      "people": "人",
+      "agents": "エージェント",
+      "membersHint": "これまでに読み込んだスレッドで、ここでスレッドを始めた人と、返信したエージェントです。"
     }
   }
 }

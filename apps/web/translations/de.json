@@ -22287,8 +22287,6 @@
       "renameFailed": "Der Kanal konnte nicht umbenannt werden. Versuche es erneut."
     },
     "view": {
-      "tabChat": "Chat",
-      "tabThreads": "Threads",
       "welcomeTitle": "Willkommen in #{name}",
       "welcomeEmpty": "Starte den ersten Thread in #{name}. Jede Nachricht startet einen neuen Thread.",
       "welcomeStart": "Hier beginnt #{name}.",
@@ -22317,8 +22315,6 @@
       "unarchived": "Kanal wiederhergestellt",
       "unarchiveFailed": "Der Kanal konnte nicht wiederhergestellt werden. Versuche es erneut.",
       "dmFailed": "Die Unterhaltung konnte nicht geöffnet werden.",
-      "channelMenu": "Optionen für #{name}",
-      "rename": "Kanal umbenennen",
       "archive": "Kanal archivieren",
       "archiveTitle": "#{name} archivieren?",
       "archiveDescription": "Der Kanal verschwindet für alle Mitglieder aus der Seitenleiste. Seine Threads bleiben, und jeder kann ihn wiederherstellen.",
@@ -22328,7 +22324,66 @@
       "closeThread": "Thread schließen",
       "sendFailed": "Der Thread konnte nicht gestartet werden. Versuche es erneut.",
       "replies": "{count, plural, one {# Antwort} other {# Antworten}}",
-      "replyPlaceholder": "Antworten…"
+      "replyPlaceholder": "Antworten…",
+      "tab": {
+        "chat": "Chat",
+        "threads": "Threads",
+        "files": "Dateien",
+        "memory": "Speicher",
+        "apps": "Apps",
+        "links": "Links",
+        "triggers": "Trigger"
+      },
+      "empty": {
+        "files": {
+          "title": "Noch keine Dateien",
+          "description": "Dateien, die in {place} geteilt werden, erscheinen hier.",
+          "action": "Datei hochladen"
+        },
+        "memory": {
+          "title": "Noch kein Speicher",
+          "description": "Was sich die Agenten für {place} merken, erscheint hier.",
+          "action": "Eintrag hinzufügen"
+        },
+        "apps": {
+          "title": "Noch keine Apps",
+          "description": "Apps, die in {place} gebaut werden, erscheinen hier.",
+          "action": "App hinzufügen"
+        },
+        "links": {
+          "title": "Noch keine Links",
+          "description": "Links, die in {place} geteilt werden, erscheinen hier.",
+          "action": "Link hinzufügen"
+        },
+        "triggers": {
+          "title": "Noch keine Trigger",
+          "description": "Trigger starten einen Thread in {place} nach Zeitplan oder bei einem Ereignis.",
+          "action": "Neuer Trigger"
+        }
+      },
+      "channelDetails": "Details zu #{name}",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, one {# Person} other {# Personen}}",
+      "rosterAgents": "{count, plural, one {# Agent} other {# Agenten}}",
+      "rosterHint": "Personen und Agenten in den Threads dieses Kanals",
+      "copyLink": "Link zum Thread kopieren",
+      "linkCopied": "Link kopiert"
+    },
+    "details": {
+      "about": "Info",
+      "members": "Mitglieder",
+      "name": "Kanalname",
+      "description": "Beschreibung",
+      "noDescription": "Beschreibung hinzufügen",
+      "created": "Erstellt",
+      "edit": "Bearbeiten",
+      "editField": "{field} bearbeiten",
+      "archiveTitle": "Diesen Kanal archivieren",
+      "archiveHint": "Er verschwindet für alle Mitglieder aus der Seitenleiste. Seine Threads bleiben.",
+      "archive": "Archivieren",
+      "people": "Personen",
+      "agents": "Agenten",
+      "membersHint": "Alle, die hier einen Thread gestartet haben, und alle Agenten, die einen beantwortet haben, in den bisher geladenen Threads."
     }
   }
 }

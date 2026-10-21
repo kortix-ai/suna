@@ -22287,8 +22287,6 @@
       "renameFailed": "No se pudo renombrar el canal. Inténtalo de nuevo."
     },
     "view": {
-      "tabChat": "Chat",
-      "tabThreads": "Hilos",
       "welcomeTitle": "Te damos la bienvenida a #{name}",
       "welcomeEmpty": "Empieza el primer hilo en #{name}. Cada mensaje empieza un hilo nuevo.",
       "welcomeStart": "Aquí empieza #{name}.",
@@ -22317,8 +22315,6 @@
       "unarchived": "Canal desarchivado",
       "unarchiveFailed": "No se pudo desarchivar el canal. Inténtalo de nuevo.",
       "dmFailed": "No se pudo abrir esta conversación.",
-      "channelMenu": "Opciones de #{name}",
-      "rename": "Renombrar canal",
       "archive": "Archivar canal",
       "archiveTitle": "¿Archivar #{name}?",
       "archiveDescription": "El canal sale de la barra lateral de todos los miembros. Sus hilos se conservan y cualquiera puede desarchivarlo.",
@@ -22328,7 +22324,66 @@
       "closeThread": "Cerrar hilo",
       "sendFailed": "No se pudo empezar el hilo. Inténtalo de nuevo.",
       "replies": "{count, plural, one {# respuesta} other {# respuestas}}",
-      "replyPlaceholder": "Responder…"
+      "replyPlaceholder": "Responder…",
+      "tab": {
+        "chat": "Chat",
+        "threads": "Hilos",
+        "files": "Archivos",
+        "memory": "Memoria",
+        "apps": "Apps",
+        "links": "Enlaces",
+        "triggers": "Activadores"
+      },
+      "empty": {
+        "files": {
+          "title": "Aún no hay archivos",
+          "description": "Los archivos compartidos en {place} aparecen aquí.",
+          "action": "Subir un archivo"
+        },
+        "memory": {
+          "title": "Aún no hay memoria",
+          "description": "Lo que los agentes recuerdan de {place} aparece aquí.",
+          "action": "Añadir memoria"
+        },
+        "apps": {
+          "title": "Aún no hay apps",
+          "description": "Las apps creadas en {place} aparecen aquí.",
+          "action": "Añadir una app"
+        },
+        "links": {
+          "title": "Aún no hay enlaces",
+          "description": "Los enlaces compartidos en {place} aparecen aquí.",
+          "action": "Añadir un enlace"
+        },
+        "triggers": {
+          "title": "Aún no hay activadores",
+          "description": "Los activadores inician un hilo en {place} según un horario o un evento.",
+          "action": "Nuevo activador"
+        }
+      },
+      "channelDetails": "Detalles de #{name}",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, one {# persona} other {# personas}}",
+      "rosterAgents": "{count, plural, one {# agente} other {# agentes}}",
+      "rosterHint": "Personas y agentes de los hilos de este canal",
+      "copyLink": "Copiar enlace al hilo",
+      "linkCopied": "Enlace copiado"
+    },
+    "details": {
+      "about": "Información",
+      "members": "Miembros",
+      "name": "Nombre del canal",
+      "description": "Descripción",
+      "noDescription": "Añadir una descripción",
+      "created": "Creado",
+      "edit": "Editar",
+      "editField": "Editar {field}",
+      "archiveTitle": "Archivar este canal",
+      "archiveHint": "Sale de la barra lateral de todos los miembros. Sus hilos se conservan.",
+      "archive": "Archivar",
+      "people": "Personas",
+      "agents": "Agentes",
+      "membersHint": "Todas las personas que iniciaron un hilo aquí y todos los agentes que respondieron uno, en los hilos cargados hasta ahora."
     }
   }
 }

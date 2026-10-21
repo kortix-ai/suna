@@ -22287,8 +22287,6 @@
       "renameFailed": "无法重命名频道。请重试。"
     },
     "view": {
-      "tabChat": "聊天",
-      "tabThreads": "话题",
       "welcomeTitle": "欢迎来到 #{name}",
       "welcomeEmpty": "在 #{name} 中开始第一个话题。每条消息都会开始一个新话题。",
       "welcomeStart": "这里是 #{name} 的开始。",
@@ -22317,8 +22315,6 @@
       "unarchived": "频道已取消归档",
       "unarchiveFailed": "无法取消归档频道。请重试。",
       "dmFailed": "无法打开此对话。",
-      "channelMenu": "#{name} 选项",
-      "rename": "重命名频道",
       "archive": "归档频道",
       "archiveTitle": "归档 #{name}？",
       "archiveDescription": "该频道会从所有成员的侧边栏中消失。它的话题会保留，任何人都可以取消归档。",
@@ -22328,7 +22324,66 @@
       "closeThread": "关闭话题",
       "sendFailed": "无法开始话题。请重试。",
       "replies": "{count, plural, other {# 条回复}}",
-      "replyPlaceholder": "回复…"
+      "replyPlaceholder": "回复…",
+      "tab": {
+        "chat": "聊天",
+        "threads": "话题",
+        "files": "文件",
+        "memory": "记忆",
+        "apps": "应用",
+        "links": "链接",
+        "triggers": "触发器"
+      },
+      "empty": {
+        "files": {
+          "title": "还没有文件",
+          "description": "在 {place} 中分享的文件会显示在这里。",
+          "action": "上传文件"
+        },
+        "memory": {
+          "title": "还没有记忆",
+          "description": "智能体为 {place} 记住的内容会显示在这里。",
+          "action": "添加记忆"
+        },
+        "apps": {
+          "title": "还没有应用",
+          "description": "在 {place} 中构建的应用会显示在这里。",
+          "action": "添加应用"
+        },
+        "links": {
+          "title": "还没有链接",
+          "description": "在 {place} 中分享的链接会显示在这里。",
+          "action": "添加链接"
+        },
+        "triggers": {
+          "title": "还没有触发器",
+          "description": "触发器会按计划或在事件发生时在 {place} 中开启话题。",
+          "action": "新建触发器"
+        }
+      },
+      "channelDetails": "#{name} 详情",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, other {# 人}}",
+      "rosterAgents": "{count, plural, other {# 个智能体}}",
+      "rosterHint": "此频道话题中的人和智能体",
+      "copyLink": "复制话题链接",
+      "linkCopied": "链接已复制"
+    },
+    "details": {
+      "about": "关于",
+      "members": "成员",
+      "name": "频道名称",
+      "description": "描述",
+      "noDescription": "添加描述",
+      "created": "创建于",
+      "edit": "编辑",
+      "editField": "编辑{field}",
+      "archiveTitle": "归档此频道",
+      "archiveHint": "它会从所有成员的侧边栏中移除。其中的话题会保留。",
+      "archive": "归档",
+      "people": "人",
+      "agents": "智能体",
+      "membersHint": "在目前已加载的话题中，在这里发起话题的人以及回复过话题的智能体。"
     }
   }
 }

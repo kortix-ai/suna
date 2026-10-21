@@ -1,6 +1,6 @@
 'use client';
 
-import type { ProjectSpace } from '@kortix/sdk';
+import type { ProjectSession, ProjectSpace } from '@kortix/sdk';
 import { useOpenProjectDm, useProjectSpaces, useSession, useUpdateProjectSpace } from '@kortix/sdk/react';
 import { CaretDownIcon, HashIcon, RobotIcon } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,14 +12,9 @@ import { ProjectScope } from '../../internal/project-scope';
 import { useComposerPrefillStore } from '../../internal/stores/composer-prefill-store';
 import { cn } from '../../lib/utils';
 import { uiRoutes } from '../../lib/routes';
+import { AvatarGroup } from '../../primitives/avatar';
 import { Button } from '../../primitives/button';
 import { ConfirmDialog } from '../../primitives/confirm-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../../primitives/dropdown-menu';
 import { EmptyState } from '../../primitives/empty-state';
 import { EntityAvatar } from '../../primitives/entity-avatar';
 import { ErrorState } from '../../primitives/error-state';
@@ -27,16 +22,20 @@ import Hint from '../../primitives/hint';
 import { useOptionalSidebar } from '../../primitives/sidebar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../primitives/tabs';
 import { errorToast, successToast } from '../../primitives/toast';
+import { UserAvatar } from '../../primitives/user-avatar';
 import { UiLink as Link, useUiPathname, useUiRouter, useUiSearchParams } from '../../providers/ui-provider';
 import { ComposerChatInput, type ComposerOptions } from '../../session/composer/composer-chat-input';
 import { ComposerDropZone } from '../../session/composer/composer-drop-zone';
 import type { DraftScope } from '../../session/composer/draft/composer-draft';
+import { participantLabel } from '../../session/participants/session-participants';
 import { AfterFirstPromptContext } from '../../session/thread/after-first-prompt';
 import { SessionThread } from '../../session/thread/session-thread';
+import { TranscriptRowsContext } from '../../session/thread/transcript-rows';
 import { useProjectHomeSend } from '../layout/use-project-home-send';
 import { CreateChannelDialog } from './create-channel-dialog';
-import { agentLabel } from './space-timeline';
-import { SpaceThreadList, SpaceTimeline, useSpaceThreads } from './space-timeline-view';
+import { SpaceDetailsDialog, type SpaceDetailsTab } from './space-details-dialog';
+import { agentLabel, spaceRoster, spaceTabFromParam, spaceTabs, type SpaceTab } from './space-timeline';
+import { SpaceThreadList, SpaceTimeline, useSpaceThreads, type SpaceThreads } from './space-timeline-view';
 
 /** A channel by slug, or the caller's DM with one agent. */
 export type SpaceTarget = { kind: 'channel'; slug: string } | { kind: 'dm'; agentName: string };
@@ -50,18 +49,29 @@ export interface SpaceViewProps {
 
 /** The query key of the open thread: it survives a reload and can be linked. */
 const THREAD_PARAM = 'thread';
+/** The open tab. Absent on Chat. */
+const TAB_PARAM = 'tab';
 /** Set by the archive action and by the create dialog's "already exists" link: the archived channel's id. */
 const ARCHIVED_PARAM = 'archived';
 
 /**
- * A channel or DM page under `project_channels`: the header, the Chat tab (the
- * timeline of threads with the composer under it) and the Threads tab, with the
- * open thread in a panel on the right. Every message starts a new thread.
+ * A channel or DM page under `project_channels`: the header, the tab row
+ * (Chat, Threads, and the space's files, memory, apps, links and triggers),
+ * and the open thread in a panel on the right. Every message starts a new
+ * thread.
  */
 export function SpaceView(props: SpaceViewProps) {
   return (
     <ProjectScope projectId={props.projectId}>
-      <SpaceViewBody {...props} />
+      {/* The project frame has no definite height (the sidebar wrapper is
+          `min-h-svh`), so an in-flow page grows it by its content and the
+          window scrolls: the composer lands below the fold. Out of flow, the
+          view takes exactly the frame's box (the rooms layout does the same). */}
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div className="absolute inset-0 flex flex-col">
+          <SpaceViewBody {...props} />
+        </div>
+      </div>
     </ProjectScope>
   );
 }
@@ -73,7 +83,6 @@ function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
   const searchParams = useUiSearchParams();
   const spaces = useProjectSpaces(projectId);
   const openDm = useOpenProjectDm(projectId);
-  const [tab, setTab] = useState('chat');
 
   const channel =
     target.kind === 'channel'
@@ -99,6 +108,7 @@ function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
 
   const threads = useSpaceThreads(projectId, space?.space_id);
   const threadId = searchParams.get(THREAD_PARAM);
+  const tab = spaceTabFromParam(searchParams.get(TAB_PARAM), target.kind);
   const setParams = useCallback(
     (change: (params: URLSearchParams) => void) => {
       const params = new URLSearchParams(searchParams);
@@ -113,9 +123,16 @@ function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
     [setParams],
   );
   const closeThread = useCallback(() => setParams((params) => params.delete(THREAD_PARAM)), [setParams]);
+  const setTab = useCallback(
+    (next: string) =>
+      setParams((params) => (next === 'chat' ? params.delete(TAB_PARAM) : params.set(TAB_PARAM, next))),
+    [setParams],
+  );
 
   const title = target.kind === 'channel' ? target.slug : agentLabel(target.agentName);
-  const header = <SpaceHeader projectId={projectId} target={target} title={title} space={space} />;
+  const header = (
+    <SpaceHeader projectId={projectId} target={target} title={title} space={space} sessions={threads.sessions} />
+  );
 
   if (!space) {
     let body = null;
@@ -179,24 +196,23 @@ function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
     );
   }
 
+  const place = space.kind === 'channel' ? `#${space.slug}` : title;
   return (
     <div className="bg-background flex min-h-0 flex-1 overflow-hidden">
-      <ComposerDropZone
-        className={cn('flex min-w-0 flex-1 flex-col', threadId && 'max-lg:hidden')}
-      >
+      <ComposerDropZone className={cn('flex min-w-0 flex-1 flex-col', threadId && 'max-lg:hidden')}>
         {header}
         <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
-          <TabsList type="underline" size="sm" className="w-full shrink-0 justify-start gap-4 px-5">
-            <TabsTrigger value="chat" className="w-fit flex-none">
-              {t('tabChat')}
-            </TabsTrigger>
-            <TabsTrigger value="threads" className="w-fit flex-none">
-              {t('tabThreads')}
-            </TabsTrigger>
+          <TabsList type="underline" size="sm" className="w-full shrink-0 justify-start gap-4 overflow-x-auto px-5">
+            {spaceTabs(space.kind).map((value) => (
+              <TabsTrigger key={value} value={value} className="w-fit flex-none">
+                {t(`tab.${value}`)}
+              </TabsTrigger>
+            ))}
           </TabsList>
           <SpaceTabs
             projectId={projectId}
             space={space}
+            place={place}
             threads={threads}
             threadId={threadId}
             onOpenThread={openThread}
@@ -209,8 +225,9 @@ function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
           key={threadId}
           projectId={projectId}
           sessionId={threadId}
-          context={space.kind === 'channel' ? `#${space.slug}` : title}
-          replyCount={threads.sessions.find((session) => session.session_id === threadId)?.reply_count ?? null}
+          context={place}
+          thread={threads.sessions.find((session) => session.session_id === threadId)}
+          agentFallback={space.dm_agent_name}
           onClose={closeThread}
         />
       ) : null}
@@ -218,10 +235,15 @@ function SpaceViewBody({ projectId, target, beforeSend }: SpaceViewProps) {
   );
 }
 
-/** Both tabs read the same thread list. */
+/**
+ * The tab panels. Chat and Threads read the space's threads. The others
+ * draw their empty state until their data is wired: each says what will
+ * appear there and shows its action, disabled.
+ */
 function SpaceTabs({
   projectId,
   space,
+  place,
   threads,
   threadId,
   onOpenThread,
@@ -229,64 +251,85 @@ function SpaceTabs({
 }: {
   projectId: string;
   space: ProjectSpace;
-  threads: ReturnType<typeof useSpaceThreads>;
+  /** "#general", or the DM's agent. */
+  place: string;
+  threads: SpaceThreads;
   threadId: string | null;
   onOpenThread: (sessionId: string) => void;
   beforeSend?: () => Promise<void>;
 }) {
+  const t = useTranslations('spaces.view');
   return (
     <>
       <TabsContent value="chat" className="flex min-h-0 flex-col">
-        <SpaceTimeline
-          space={space}
-          threads={threads}
-          selectedId={threadId}
-          onOpenThread={onOpenThread}
-        />
+        <SpaceTimeline space={space} threads={threads} selectedId={threadId} onOpenThread={onOpenThread} />
         <SpaceComposer projectId={projectId} space={space} onOpenThread={onOpenThread} beforeSend={beforeSend} />
       </TabsContent>
       <TabsContent value="threads" className="min-h-0 overflow-y-auto">
         <SpaceThreadList threads={threads} selectedId={threadId} onOpenThread={onOpenThread} />
       </TabsContent>
+      {spaceTabs(space.kind)
+        .filter((tab): tab is Exclude<SpaceTab, 'chat' | 'threads'> => tab !== 'chat' && tab !== 'threads')
+        .map((tab) => (
+          <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
+            <div className="px-5 py-16">
+              <EmptyState
+                size="sm"
+                title={t(`empty.${tab}.title`)}
+                description={t(`empty.${tab}.description`, { place })}
+                action={
+                  <Button variant="outline" size="sm" disabled>
+                    {t(`empty.${tab}.action`)}
+                  </Button>
+                }
+              />
+            </div>
+          </TabsContent>
+        ))}
     </>
   );
 }
 
 /**
- * The header row: `# name` with the channel menu (rename, archive), or the
- * DM's agent. Same title-bar classes as `ProjectPageHeader`, so it clears the
- * desktop window controls the same way.
+ * The header row: `# name ⌄` (the channel's details) and its description,
+ * then the people and agents of its threads; a DM shows its agent. Same
+ * title-bar classes as `ProjectPageHeader`, so it clears the desktop window
+ * controls the same way.
  */
 function SpaceHeader({
   projectId,
   target,
   title,
   space,
+  sessions,
 }: {
   projectId: string;
   target: SpaceTarget;
   title: string;
   space: ProjectSpace | undefined;
+  sessions: readonly ProjectSession[];
 }) {
   const t = useTranslations('spaces.view');
   const sidebar = useOptionalSidebar();
   const router = useUiRouter();
   const update = useUpdateProjectSpace(projectId);
+  const [details, setDetails] = useState<SpaceDetailsTab | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const isChannel = target.kind === 'channel';
+  const roster = useMemo(() => spaceRoster(sessions, space?.dm_agent_name), [sessions, space?.dm_agent_name]);
+  const channel = target.kind === 'channel' && space ? space : null;
 
   const archive = () => {
-    if (!space) return;
+    if (!channel) return;
     update.mutate(
-      { spaceId: space.space_id, input: { archived: true } },
+      { spaceId: channel.space_id, input: { archived: true } },
       {
         onSuccess: () => {
           setArchiveOpen(false);
           successToast(t('archived'));
           // The page stays on the channel, now archived, with its Unarchive action.
           router.replace(
-            `${uiRoutes().channel(projectId, space.slug ?? title)}?${ARCHIVED_PARAM}=${encodeURIComponent(space.space_id)}`,
+            `${uiRoutes().channel(projectId, channel.slug ?? title)}?${ARCHIVED_PARAM}=${encodeURIComponent(channel.space_id)}`,
           );
         },
         onError: () => errorToast(t('archiveFailed')),
@@ -296,51 +339,65 @@ function SpaceHeader({
 
   return (
     <div
-      className="kx-titlebar-row kx-capability-titlebar relative flex shrink-0 items-center gap-1 px-2"
+      className="kx-titlebar-row kx-capability-titlebar relative flex shrink-0 items-center gap-2 px-2"
       data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
     >
       <SidebarToggle />
-      <div className="kx-titlebar-tabs flex h-10 min-w-0 flex-1 items-center px-1">
-        {isChannel ? (
-          <h1 className="min-w-0">
-            {space ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="max-w-full gap-1 px-2"
-                    aria-label={t('channelMenu', { name: title })}
-                  >
-                    <HashIcon className="text-muted-foreground size-4 shrink-0" />
-                    <span className="truncate text-sm font-semibold">{title}</span>
-                    <CaretDownIcon className="text-muted-foreground size-3 shrink-0" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-56">
-                  <DropdownMenuItem onSelect={() => setRenameOpen(true)}>{t('rename')}</DropdownMenuItem>
-                  {space.is_default ? null : (
-                    <DropdownMenuItem onSelect={() => setArchiveOpen(true)}>{t('archive')}</DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+      <div className="kx-titlebar-tabs flex h-12 min-w-0 flex-1 items-center gap-2">
+        {target.kind === 'channel' ? (
+          <h1 className="flex min-w-0 shrink-0">
+            {channel ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="max-w-60 gap-1 px-2"
+                aria-label={t('channelDetails', { name: title })}
+                onClick={() => setDetails('about')}
+              >
+                <HashIcon className="size-4 shrink-0" />
+                <span className="truncate text-lg font-semibold">{title}</span>
+                <CaretDownIcon className="text-muted-foreground size-3 shrink-0" />
+              </Button>
             ) : (
-              <span className="flex items-center gap-1 px-2">
-                <HashIcon className="text-muted-foreground size-4 shrink-0" />
-                <span className="truncate text-sm font-semibold">{title}</span>
+              <span className="flex h-8 items-center gap-1 px-2">
+                <HashIcon className="size-4 shrink-0" />
+                <span className="truncate text-lg font-semibold">{title}</span>
               </span>
             )}
           </h1>
         ) : (
-          <h1 className="flex min-w-0 items-center gap-2 px-2">
+          <h1 className="flex min-w-0 shrink-0 items-center gap-2 px-2">
             <EntityAvatar icon={RobotIcon} label={title} size="xs" />
-            <span className="truncate text-sm font-semibold">{title}</span>
+            <span className="truncate text-lg font-semibold">{title}</span>
           </h1>
         )}
+        {channel?.description ? (
+          <p className="text-muted-foreground min-w-0 truncate text-xs" title={channel.description}>
+            {channel.description}
+          </p>
+        ) : null}
       </div>
-      {isChannel && space ? (
+      {channel && (roster.people.length > 0 || roster.agents.length > 0) ? (
+        <RosterPill roster={roster} onClick={() => setDetails('members')} />
+      ) : null}
+      {channel ? (
         <>
-          <CreateChannelDialog projectId={projectId} open={renameOpen} onOpenChange={setRenameOpen} space={space} />
+          <SpaceDetailsDialog
+            space={channel}
+            roster={roster}
+            tab={details}
+            onTabChange={setDetails}
+            onOpenChange={(open) => setDetails(open ? 'about' : null)}
+            onEdit={() => {
+              setDetails(null);
+              setRenameOpen(true);
+            }}
+            onArchive={() => {
+              setDetails(null);
+              setArchiveOpen(true);
+            }}
+          />
+          <CreateChannelDialog projectId={projectId} open={renameOpen} onOpenChange={setRenameOpen} space={channel} />
           <ConfirmDialog
             open={archiveOpen}
             onOpenChange={setArchiveOpen}
@@ -353,6 +410,42 @@ function SpaceHeader({
         </>
       ) : null}
     </div>
+  );
+}
+
+/** "3 people · 2 agents" with the first faces: the people and agents of the loaded threads. */
+function RosterPill({
+  roster,
+  onClick,
+}: {
+  roster: ReturnType<typeof spaceRoster>;
+  onClick: () => void;
+}) {
+  const t = useTranslations('spaces.view');
+  const label = t('roster', {
+    people: t('rosterPeople', { count: roster.people.length }),
+    agents: t('rosterAgents', { count: roster.agents.length }),
+  });
+  return (
+    <Hint label={t('rosterHint')} side="bottom">
+      <Button variant="outline" size="sm" className="shrink-0 gap-2 px-1.5" onClick={onClick}>
+        {roster.people.length > 0 ? (
+          <AvatarGroup className="-space-x-1">
+            {roster.people.slice(0, 3).map((person) => (
+              <UserAvatar
+                key={person.id}
+                email={person.email ?? ''}
+                name={participantLabel(person)}
+                avatarUrl={person.avatarUrl}
+                size="xs"
+                ring
+              />
+            ))}
+          </AvatarGroup>
+        ) : null}
+        <span className="text-muted-foreground text-xs tabular-nums">{label}</span>
+      </Button>
+    </Hint>
   );
 }
 
@@ -441,7 +534,7 @@ function SpaceComposer({
 
   const agent = space.dm_agent_name;
   return (
-    <div className="shrink-0 px-5 pt-2 pb-4">
+    <div className="shrink-0 pt-1 pb-4">
       <ComposerChatInput
         onSend={send}
         onCommand={onCommand}
@@ -452,10 +545,16 @@ function SpaceComposer({
         // The box empties at the keypress; the thread on the right draws the attachments.
         clearOnSend="text-only"
         boundAgentName={agent}
-        placeholder={agent ? t('messageAgent', { agent: agentLabel(agent) }) : t('messageChannel', { name: space.slug ?? space.name })}
+        // `hint`, not `placeholder`: a placeholder is only the first frame of
+        // the rotating tips, and this box must always say where the message goes.
+        hint={
+          agent ? t('messageAgent', { agent: agentLabel(agent) }) : t('messageChannel', { name: space.slug ?? space.name })
+        }
         prefill={prefill}
         underbarPlacement="below"
         slashMenuPlacement="above"
+        // The timeline's width and side margins, not the centred session column.
+        parentClassName="max-w-none px-5"
       />
     </div>
   );
@@ -465,48 +564,66 @@ function SpaceComposer({
 function RepliesDivider({ count, className }: { count: number; className?: string }) {
   const t = useTranslations('spaces.view');
   return (
-    <div className={cn('flex items-center gap-3', className)}>
+    <div className={cn('flex items-center gap-3 px-5', className)}>
       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{t('replies', { count })}</span>
       <div className="bg-border h-px flex-1" />
     </div>
   );
 }
 
-/** The open thread, beside the timeline: its header and the whole thread with its own reply composer. */
+/**
+ * The open thread, beside the timeline: its header, then the session's
+ * transcript drawn as message rows (`TranscriptRowsContext`) with the reply
+ * composer under it. Sending continues the same session.
+ */
 function ThreadPanel({
   projectId,
   sessionId,
   context,
-  replyCount,
+  thread,
+  agentFallback,
   onClose,
 }: {
   projectId: string;
   sessionId: string;
   context: string;
-  /** From the thread's list row; null when the API does not count (an older API). */
-  replyCount: number | null;
+  /** The thread's list row, when loaded: its reply count and its author. */
+  thread: ProjectSession | undefined;
+  agentFallback: string | null;
   onClose: () => void;
 }) {
   const t = useTranslations('spaces.view');
   const session = useSession(projectId, sessionId);
+  // Null from an older API that does not count replies.
+  const replyCount = thread?.reply_count ?? null;
   const dividerOnTop = Boolean(replyCount) && session.hasOlder;
   // Stable across stream frames: every memoized turn reads this context.
   const afterFirstPrompt = useMemo(
-    () => (replyCount && !dividerOnTop ? <RepliesDivider count={replyCount} className="py-1" /> : null),
+    () => (replyCount && !dividerOnTop ? <RepliesDivider count={replyCount} className="py-2" /> : null),
     [replyCount, dividerOnTop],
   );
+  const agentName = session.agentName ?? thread?.agent_name ?? agentFallback;
+  const rows = useMemo(
+    () => ({
+      agent: agentName ? agentLabel(agentName) : t('agentFallback'),
+      owner: thread
+        ? { name: thread.owner_name ?? null, email: thread.owner_email ?? null, avatarUrl: thread.owner_avatar_url ?? null }
+        : null,
+      unknownAuthor: t('authorFallback'),
+    }),
+    [agentName, thread, t],
+  );
   return (
-    <aside
-      aria-label={t('threadTitle')}
-      className="bg-background flex min-h-0 w-full flex-col lg:w-125 lg:shrink-0 lg:border-l"
-    >
-      <div className="kx-titlebar-row relative flex shrink-0 items-center gap-1 border-b px-2">
-        <div className="kx-titlebar-tabs flex h-10 min-w-0 flex-1 items-center gap-2 px-2">
-          <h2 className="text-sm font-semibold">{t('threadTitle')}</h2>
-          <span className="text-muted-foreground truncate text-xs">{context}</span>
+    <aside aria-label={t('threadTitle')} className="bg-background flex min-h-0 w-full flex-col lg:w-115 lg:shrink-0 lg:border-l">
+      <div className="kx-titlebar-row relative flex shrink-0 items-center gap-2 border-b px-2">
+        <div className="kx-titlebar-tabs flex h-12 min-w-0 flex-1 items-center px-3">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <h2 className="text-base font-semibold">{t('threadTitle')}</h2>
+            <span className="text-muted-foreground truncate text-xs">{context}</span>
+          </div>
         </div>
         <Hint label={t('closeThread')} side="bottom">
-          <Button variant="ghost" size="icon-sm" aria-label={t('closeThread')} onClick={onClose}>
+          <Button variant="ghost" size="icon-md" aria-label={t('closeThread')} onClick={onClose}>
             <Close />
           </Button>
         </Hint>
@@ -514,15 +631,12 @@ function ThreadPanel({
       {/* The parent message, then "N replies", then the replies. While older
           history is not loaded, the first turn on screen is not the parent
           message, so the divider heads the panel instead. */}
-      {replyCount && dividerOnTop ? <RepliesDivider count={replyCount} className="shrink-0 px-4 pt-3" /> : null}
-      <AfterFirstPromptContext.Provider value={afterFirstPrompt}>
-        <SessionThread
-          session={session}
-          hideHeader
-          composerPlaceholder={t('replyPlaceholder')}
-          className="min-h-0 flex-1"
-        />
-      </AfterFirstPromptContext.Provider>
+      {replyCount && dividerOnTop ? <RepliesDivider count={replyCount} className="shrink-0 pt-3" /> : null}
+      <TranscriptRowsContext.Provider value={rows}>
+        <AfterFirstPromptContext.Provider value={afterFirstPrompt}>
+          <SessionThread session={session} hideHeader composerPlaceholder={t('replyPlaceholder')} className="min-h-0 flex-1" />
+        </AfterFirstPromptContext.Provider>
+      </TranscriptRowsContext.Provider>
     </aside>
   );
 }

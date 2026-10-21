@@ -22287,8 +22287,6 @@
       "renameFailed": "Não foi possível renomear o canal. Tente de novo."
     },
     "view": {
-      "tabChat": "Chat",
-      "tabThreads": "Threads",
       "welcomeTitle": "Boas-vindas a #{name}",
       "welcomeEmpty": "Comece o primeiro thread em #{name}. Cada mensagem começa um novo thread.",
       "welcomeStart": "Este é o começo de #{name}.",
@@ -22317,8 +22315,6 @@
       "unarchived": "Canal desarquivado",
       "unarchiveFailed": "Não foi possível desarquivar o canal. Tente de novo.",
       "dmFailed": "Não foi possível abrir esta conversa.",
-      "channelMenu": "Opções de #{name}",
-      "rename": "Renomear canal",
       "archive": "Arquivar canal",
       "archiveTitle": "Arquivar #{name}?",
       "archiveDescription": "O canal sai da barra lateral de todos os membros. Os threads ficam, e qualquer pessoa pode desarquivá-lo.",
@@ -22328,7 +22324,66 @@
       "closeThread": "Fechar thread",
       "sendFailed": "Não foi possível começar o thread. Tente de novo.",
       "replies": "{count, plural, one {# resposta} other {# respostas}}",
-      "replyPlaceholder": "Responder…"
+      "replyPlaceholder": "Responder…",
+      "tab": {
+        "chat": "Chat",
+        "threads": "Threads",
+        "files": "Arquivos",
+        "memory": "Memória",
+        "apps": "Apps",
+        "links": "Links",
+        "triggers": "Gatilhos"
+      },
+      "empty": {
+        "files": {
+          "title": "Nenhum arquivo ainda",
+          "description": "Os arquivos compartilhados em {place} aparecem aqui.",
+          "action": "Enviar um arquivo"
+        },
+        "memory": {
+          "title": "Nenhuma memória ainda",
+          "description": "O que os agentes lembram sobre {place} aparece aqui.",
+          "action": "Adicionar memória"
+        },
+        "apps": {
+          "title": "Nenhum app ainda",
+          "description": "Os apps criados em {place} aparecem aqui.",
+          "action": "Adicionar um app"
+        },
+        "links": {
+          "title": "Nenhum link ainda",
+          "description": "Os links compartilhados em {place} aparecem aqui.",
+          "action": "Adicionar um link"
+        },
+        "triggers": {
+          "title": "Nenhum gatilho ainda",
+          "description": "Os gatilhos iniciam uma thread em {place} por agendamento ou evento.",
+          "action": "Novo gatilho"
+        }
+      },
+      "channelDetails": "Detalhes de #{name}",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, one {# pessoa} other {# pessoas}}",
+      "rosterAgents": "{count, plural, one {# agente} other {# agentes}}",
+      "rosterHint": "Pessoas e agentes nas threads deste canal",
+      "copyLink": "Copiar link da thread",
+      "linkCopied": "Link copiado"
+    },
+    "details": {
+      "about": "Sobre",
+      "members": "Membros",
+      "name": "Nome do canal",
+      "description": "Descrição",
+      "noDescription": "Adicionar uma descrição",
+      "created": "Criado em",
+      "edit": "Editar",
+      "editField": "Editar {field}",
+      "archiveTitle": "Arquivar este canal",
+      "archiveHint": "Ele sai da barra lateral de todos os membros. As threads continuam.",
+      "archive": "Arquivar",
+      "people": "Pessoas",
+      "agents": "Agentes",
+      "membersHint": "Todos que iniciaram uma thread aqui e todos os agentes que responderam a uma, nas threads carregadas até agora."
     }
   }
 }

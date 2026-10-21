@@ -6946,8 +6946,6 @@ const catalog = {
       "renameFailed": "Could not rename the channel. Try again."
     },
     "view": {
-      "tabChat": "Chat",
-      "tabThreads": "Threads",
       "welcomeTitle": "Welcome to #{name}",
       "welcomeEmpty": "Start the first thread in #{name}. Every message starts a new thread.",
       "welcomeStart": "This is the start of #{name}.",
@@ -6976,8 +6974,6 @@ const catalog = {
       "unarchived": "Channel unarchived",
       "unarchiveFailed": "Could not unarchive the channel. Try again.",
       "dmFailed": "Could not open this conversation.",
-      "channelMenu": "#{name} options",
-      "rename": "Rename channel",
       "archive": "Archive channel",
       "archiveTitle": "Archive #{name}?",
       "archiveDescription": "The channel leaves the sidebar for every member. Its threads stay, and anyone can unarchive it.",
@@ -6987,7 +6983,66 @@ const catalog = {
       "closeThread": "Close thread",
       "sendFailed": "Could not start the thread. Try again.",
       "replies": "{count, plural, one {# reply} other {# replies}}",
-      "replyPlaceholder": "Reply…"
+      "replyPlaceholder": "Reply…",
+      "tab": {
+        "chat": "Chat",
+        "threads": "Threads",
+        "files": "Files",
+        "memory": "Memory",
+        "apps": "Apps",
+        "links": "Links",
+        "triggers": "Triggers"
+      },
+      "empty": {
+        "files": {
+          "title": "No files yet",
+          "description": "Files shared in {place} show up here.",
+          "action": "Upload a file"
+        },
+        "memory": {
+          "title": "No memory yet",
+          "description": "What the agents remember for {place} shows up here.",
+          "action": "Add memory"
+        },
+        "apps": {
+          "title": "No apps yet",
+          "description": "Apps built in {place} show up here.",
+          "action": "Add an app"
+        },
+        "links": {
+          "title": "No links yet",
+          "description": "Links shared in {place} show up here.",
+          "action": "Add a link"
+        },
+        "triggers": {
+          "title": "No triggers yet",
+          "description": "Triggers start a thread in {place} on a schedule or an event.",
+          "action": "New trigger"
+        }
+      },
+      "channelDetails": "#{name} details",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, one {# person} other {# people}}",
+      "rosterAgents": "{count, plural, one {# agent} other {# agents}}",
+      "rosterHint": "People and agents in this channel's threads",
+      "copyLink": "Copy link to thread",
+      "linkCopied": "Link copied"
+    },
+    "details": {
+      "about": "About",
+      "members": "Members",
+      "name": "Channel name",
+      "description": "Description",
+      "noDescription": "Add a description",
+      "created": "Created",
+      "edit": "Edit",
+      "editField": "Edit {field}",
+      "archiveTitle": "Archive this channel",
+      "archiveHint": "It leaves the sidebar for every member. Its threads stay.",
+      "archive": "Archive",
+      "people": "People",
+      "agents": "Agents",
+      "membersHint": "Everyone who started a thread here, and every agent that answered one, in the threads loaded so far."
     }
   }
 };

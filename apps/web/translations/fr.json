@@ -22287,8 +22287,6 @@
       "renameFailed": "Impossible de renommer le canal. Réessayez."
     },
     "view": {
-      "tabChat": "Chat",
-      "tabThreads": "Fils",
       "welcomeTitle": "Bienvenue dans #{name}",
       "welcomeEmpty": "Lancez le premier fil dans #{name}. Chaque message lance un nouveau fil.",
       "welcomeStart": "Voici le début de #{name}.",
@@ -22317,8 +22315,6 @@
       "unarchived": "Canal désarchivé",
       "unarchiveFailed": "Impossible de désarchiver le canal. Réessayez.",
       "dmFailed": "Impossible d'ouvrir cette conversation.",
-      "channelMenu": "Options de #{name}",
-      "rename": "Renommer le canal",
       "archive": "Archiver le canal",
       "archiveTitle": "Archiver #{name} ?",
       "archiveDescription": "Le canal quitte la barre latérale de tous les membres. Ses fils restent, et chacun peut le désarchiver.",
@@ -22328,7 +22324,66 @@
       "closeThread": "Fermer le fil",
       "sendFailed": "Impossible de lancer le fil. Réessayez.",
       "replies": "{count, plural, one {# réponse} other {# réponses}}",
-      "replyPlaceholder": "Répondre…"
+      "replyPlaceholder": "Répondre…",
+      "tab": {
+        "chat": "Discussion",
+        "threads": "Fils",
+        "files": "Fichiers",
+        "memory": "Mémoire",
+        "apps": "Apps",
+        "links": "Liens",
+        "triggers": "Déclencheurs"
+      },
+      "empty": {
+        "files": {
+          "title": "Aucun fichier pour le moment",
+          "description": "Les fichiers partagés dans {place} apparaissent ici.",
+          "action": "Importer un fichier"
+        },
+        "memory": {
+          "title": "Aucune mémoire pour le moment",
+          "description": "Ce que les agents retiennent pour {place} apparaît ici.",
+          "action": "Ajouter un souvenir"
+        },
+        "apps": {
+          "title": "Aucune app pour le moment",
+          "description": "Les apps créées dans {place} apparaissent ici.",
+          "action": "Ajouter une app"
+        },
+        "links": {
+          "title": "Aucun lien pour le moment",
+          "description": "Les liens partagés dans {place} apparaissent ici.",
+          "action": "Ajouter un lien"
+        },
+        "triggers": {
+          "title": "Aucun déclencheur pour le moment",
+          "description": "Les déclencheurs lancent un fil dans {place} selon un planning ou un événement.",
+          "action": "Nouveau déclencheur"
+        }
+      },
+      "channelDetails": "Détails de #{name}",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, one {# personne} other {# personnes}}",
+      "rosterAgents": "{count, plural, one {# agent} other {# agents}}",
+      "rosterHint": "Personnes et agents des fils de ce canal",
+      "copyLink": "Copier le lien du fil",
+      "linkCopied": "Lien copié"
+    },
+    "details": {
+      "about": "À propos",
+      "members": "Membres",
+      "name": "Nom du canal",
+      "description": "Description",
+      "noDescription": "Ajouter une description",
+      "created": "Créé le",
+      "edit": "Modifier",
+      "editField": "Modifier {field}",
+      "archiveTitle": "Archiver ce canal",
+      "archiveHint": "Il quitte la barre latérale de tous les membres. Ses fils restent.",
+      "archive": "Archiver",
+      "people": "Personnes",
+      "agents": "Agents",
+      "membersHint": "Toutes les personnes qui ont lancé un fil ici et tous les agents qui en ont répondu un, dans les fils chargés jusqu’ici."
     }
   }
 }

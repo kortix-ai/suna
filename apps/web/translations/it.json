@@ -22287,8 +22287,6 @@
       "renameFailed": "Impossibile rinominare il canale. Riprova."
     },
     "view": {
-      "tabChat": "Chat",
-      "tabThreads": "Thread",
       "welcomeTitle": "Benvenuto in #{name}",
       "welcomeEmpty": "Avvia il primo thread in #{name}. Ogni messaggio avvia un nuovo thread.",
       "welcomeStart": "Qui inizia #{name}.",
@@ -22317,8 +22315,6 @@
       "unarchived": "Canale ripristinato",
       "unarchiveFailed": "Impossibile ripristinare il canale. Riprova.",
       "dmFailed": "Impossibile aprire questa conversazione.",
-      "channelMenu": "Opzioni di #{name}",
-      "rename": "Rinomina canale",
       "archive": "Archivia canale",
       "archiveTitle": "Archiviare #{name}?",
       "archiveDescription": "Il canale esce dalla barra laterale di tutti i membri. I suoi thread restano e chiunque può ripristinarlo.",
@@ -22328,7 +22324,66 @@
       "closeThread": "Chiudi thread",
       "sendFailed": "Impossibile avviare il thread. Riprova.",
       "replies": "{count, plural, one {# risposta} other {# risposte}}",
-      "replyPlaceholder": "Rispondi…"
+      "replyPlaceholder": "Rispondi…",
+      "tab": {
+        "chat": "Chat",
+        "threads": "Thread",
+        "files": "File",
+        "memory": "Memoria",
+        "apps": "App",
+        "links": "Link",
+        "triggers": "Trigger"
+      },
+      "empty": {
+        "files": {
+          "title": "Ancora nessun file",
+          "description": "I file condivisi in {place} compaiono qui.",
+          "action": "Carica un file"
+        },
+        "memory": {
+          "title": "Ancora nessuna memoria",
+          "description": "Quello che gli agenti ricordano per {place} compare qui.",
+          "action": "Aggiungi memoria"
+        },
+        "apps": {
+          "title": "Ancora nessuna app",
+          "description": "Le app create in {place} compaiono qui.",
+          "action": "Aggiungi un'app"
+        },
+        "links": {
+          "title": "Ancora nessun link",
+          "description": "I link condivisi in {place} compaiono qui.",
+          "action": "Aggiungi un link"
+        },
+        "triggers": {
+          "title": "Ancora nessun trigger",
+          "description": "I trigger avviano un thread in {place} secondo una pianificazione o un evento.",
+          "action": "Nuovo trigger"
+        }
+      },
+      "channelDetails": "Dettagli di #{name}",
+      "roster": "{people} · {agents}",
+      "rosterPeople": "{count, plural, one {# persona} other {# persone}}",
+      "rosterAgents": "{count, plural, one {# agente} other {# agenti}}",
+      "rosterHint": "Persone e agenti nei thread di questo canale",
+      "copyLink": "Copia il link al thread",
+      "linkCopied": "Link copiato"
+    },
+    "details": {
+      "about": "Informazioni",
+      "members": "Membri",
+      "name": "Nome del canale",
+      "description": "Descrizione",
+      "noDescription": "Aggiungi una descrizione",
+      "created": "Creato",
+      "edit": "Modifica",
+      "editField": "Modifica {field}",
+      "archiveTitle": "Archivia questo canale",
+      "archiveHint": "Esce dalla barra laterale di tutti i membri. I suoi thread restano.",
+      "archive": "Archivia",
+      "people": "Persone",
+      "agents": "Agenti",
+      "membersHint": "Chi ha avviato un thread qui e ogni agente che ne ha risposto uno, nei thread caricati finora."
     }
   }
 }
