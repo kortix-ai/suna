@@ -1,6 +1,7 @@
 'use client';
 
 import { errorToast } from '../../primitives/toast';
+import { type UiSlashAction, useUiHostConfig } from '../../providers/ui-provider';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import { isImageFile } from '../../internal/lib/utils/file-utils';
@@ -110,7 +111,7 @@ import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
-import { controlToOpenFor, localizedSlashActions, type SlashAction } from './menus/slash-actions';
+import { controlToOpenFor, hostSlashActions, localizedSlashActions, slashActionShown, type SlashAction } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
 import { QuoteList } from './quote-list';
 import { createSubmitLatch } from './submit-latch';
@@ -480,6 +481,8 @@ const NO_SUBSCRIPTION = () => {};
 const NO_COMMAND_CHIP = () => null;
 
 const EMPTY_DOCUMENT = textToDocument('');
+const NO_SLASH_ACTIONS: readonly UiSlashAction[] = [];
+const useNoSlashActions = () => NO_SLASH_ACTIONS;
 
 function setDocumentWithoutStealingFocus(
   handle: ComposerEditorHandle | null,
@@ -511,7 +514,7 @@ function ComposerImpl(props: SessionChatInputProps) {
   selectedAgent = null,
   onAgentChange,
   noAccessibleAgents = false,
-  commands = EMPTY_COMMANDS,
+  commands: runtimeCommands = EMPTY_COMMANDS,
   /** Whether the live command list has EVER resolved — see `planUnresolvedCommandChip`. */
   commandsResolved = false,
   slashFiles = EMPTY_SLASH_FILES,
@@ -666,6 +669,11 @@ function ComposerImpl(props: SessionChatInputProps) {
   useMenuRevalidation(menuOpen, projectId);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { takeFiles, modelPickerEnabled, contextMeterEnabled, runtimeSlashEnabled, useSlashActions } = useUiHostConfig();
+  // The host's own `/` rows. The config is fixed for the app's life, so the hook is the same one every render.
+  const hostSlashRows = (useSlashActions ?? useNoSlashActions)();
+  // A host that hides the harness lists none of its commands, and a typed "/init" stays text.
+  const commands = runtimeSlashEnabled ? runtimeCommands : EMPTY_COMMANDS;
   const dragDepthRef = useRef(0);
   const savedDocBeforeQuestionRef = useRef<JSONContent | null>(null);
   // A host that owns the controller leaves this composer's own one idle: hooks
@@ -813,6 +821,11 @@ function ComposerImpl(props: SessionChatInputProps) {
 
   const appendAttachedFiles = useCallback(
     (files: Iterable<File>) => {
+      // The host keeps files in its own store: they go there, not to the session.
+      if (takeFiles) {
+        takeFiles(Array.from(files));
+        return;
+      }
       // One empty or oversized file must not refuse the whole drop: the SDK
       // checks a batch at once, so the files that fit are split off first and
       // each refused one is named (KRTX-2557).
@@ -839,7 +852,7 @@ function ComposerImpl(props: SessionChatInputProps) {
         errorToast(error instanceof Error ? error.message : tComposerAttachments('couldNotAttach'));
       }
     },
-    [addPromptAttachments, tComposerAttachments],
+    [addPromptAttachments, tComposerAttachments, takeFiles],
   );
 
   useEffect(
@@ -1493,7 +1506,10 @@ function ComposerImpl(props: SessionChatInputProps) {
     // Rows whose handler this host did not provide are dropped, not shown
     // dead — the `set-scope` lesson in `slash-actions.ts`: a row that
     // highlights, offers "Use", and does nothing is worse than no row.
+    // A row whose control the host hides is dropped too (`slashActionShown`).
+    const host = { modelPickerEnabled, contextMeterEnabled, runtimeSlashEnabled };
     const available = localizedSlashActions(tI18nComplete).filter((action) => {
+      if (!slashActionShown(action.id, host)) return false;
       if (action.id === 'switch-agent') return canSwitchAgent;
       if (action.id === 'compact-session') return Boolean(onCompactClick);
       if (action.id === 'show-context') return Boolean(onContextClick);
@@ -1509,11 +1525,20 @@ function ComposerImpl(props: SessionChatInputProps) {
         return { ...action, value: `${contextUsage.percent}%`, context: contextUsage };
       }
       return action;
-    });
-  }, [selectedAgent, canSwitchAgent, onCompactClick, onContextClick, contextUsage, tI18nComplete]);
+    }).concat(hostSlashActions(hostSlashRows));
+  }, [
+    selectedAgent, canSwitchAgent, onCompactClick, onContextClick, contextUsage, tI18nComplete,
+    modelPickerEnabled, contextMeterEnabled, runtimeSlashEnabled, hostSlashRows,
+  ]);
 
   const handleSelectAction = useCallback(
     (action: SlashAction) => {
+      // A host row runs the host's handler; it may hand back text for the composer.
+      if (action.onSelect) {
+        const out = action.onSelect();
+        if (out?.insertText) editorRef.current?.insertAtCursor(out.insertText);
+        return;
+      }
       // Which control a row opens lives in `controlToOpenFor`
       // (menus/slash-actions.ts) so it can be tested; this file cannot be.
       const control = controlToOpenFor(action.id);
@@ -1971,6 +1996,8 @@ function ComposerImpl(props: SessionChatInputProps) {
 
   const cardProps: ComposerCardDerived = {
     tHardcodedUi,
+    // The filtered list (`runtimeSlashEnabled`), over the host's `commands` prop in `props`.
+    commands,
     isDragOver,
     // Inside a `ComposerDropZone` the zone owns every file drag.
     handleDragEnter: inDropZone ? undefined : handleDragEnter,

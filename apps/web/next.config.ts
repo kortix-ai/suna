@@ -333,7 +333,7 @@ const nextConfig = (): NextConfig => ({
   //     fail a production build.
   //     This app is immune ONLY because `typescript.ignoreBuildErrors: true`
   //     above skips the type-check step entirely (including the CLI checker).
-  //     apps/whitelabel-demo does NOT set it, and 16.3 duly failed its build on
+  //     apps/white-label/lumen does NOT set it, and 16.3 duly failed its build on
   //     a pre-existing error in tests/e2e/session-scope.test.ts. Any new app in
   //     this monorepo inherits that same trap.
   //     Not adopted here: TypeScript 7 (`typescript@^7`, the 10x native port)

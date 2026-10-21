@@ -951,12 +951,6 @@
         "kortixDefault": "Kortix-Standard",
         "definedIn": "Definiert in"
       },
-      "routing": {
-        "title": "Routing",
-        "automatic": "Automatisch",
-        "pinned": "Festgelegt",
-        "pinnedWithProvider": "Festgelegt · {provider}"
-      },
       "toasts": {
         "rebuildStarted": "Neuerstellung für „{name}“ gestartet",
         "buildFailed": "Erstellung konnte nicht gestartet werden",
@@ -974,9 +968,7 @@
         "building": "Wird erstellt",
         "failed": "Fehlgeschlagen",
         "notReady": "Nicht bereit",
-        "unavailable": "Nicht verfügbar",
-        "selected": "Ausgewählt",
-        "selectedAria": "ausgewählt"
+        "unavailable": "Nicht verfügbar"
       },
       "defaultBadge": "Standard",
       "runtime": "Sitzungslaufzeit",
@@ -987,14 +979,6 @@
         "confirm": "Löschen"
       },
       "provider": {
-        "label": "Sandbox-Anbieter",
-        "experimental": "Experimentell",
-        "description": "Dieses Projekt einem bestimmten Sandbox-Anbieter zuordnen und den Plattformstandard überschreiben. Neue Sitzungen verwenden den gewählten Anbieter. „Automatisch“ folgt dem Plattformstandard.",
-        "preparing": "{provider} wird vorbereitet… dies kann einige Minuten dauern",
-        "fallback": "Sandbox-Anbieter",
-        "switched": "Zu {provider} gewechselt",
-        "switchFailed": "Wechsel des Sandbox-Anbieters fehlgeschlagen",
-        "updateFailed": "Sandbox-Anbieter konnte nicht aktualisiert werden",
         "legacy": "Legacy",
         "legacyNote": "Daytona ist ein Legacy-Fallback-Provider. Seine Entfernung ist geplant. Bestehende Daytona-Sitzungen funktionieren vorerst weiter, aber Daytona erhält keine neuen Funktionen und keine Support-Garantie. Verwenden Sie Platinum."
       },
@@ -10916,7 +10900,6 @@
       "text1bffac0197ca": "wechselt in den Vollbildmodus und",
       "text1c01c6630cab": "Symbol: {value0}. Ändere es",
       "text1c049715ebdd": "- Anschlüsse: warehouse, metabase",
-      "text1c145081eddd": "Zu {provider} gewechselt",
       "text1c1a67e4558f": "Mitglieder können sich nur mit einem Passwort anmelden. Jede Richtlinie, für die du individuell eine Bedingung für den zweiten Faktor festgelegt hast, bleibt weiterhin wirksam — nur die kontoweite Regel wird entfernt.",
       "text1c22fac2a9fd": "Mit dem Projekt geteilt",
       "text1c27f2b12cec": "Suche im Tab „Sign On“ der App im Bereich „Metadata details“ die „Metadata URL“ und klicke auf „Copy“. Füge sie unten ein, um fortzufahren.",
@@ -11129,7 +11112,6 @@
       "text221ff19c904c": "Zeitpläne",
       "text22206bc67806": "Auswahl beenden",
       "text222b8d57e366": "Überschreibungen konnten nicht gespeichert werden",
-      "text22412aa281cb": "Sandbox-Anbieter",
       "text22489bebb98f": "Dienstkonto gelöscht",
       "text224a3369a5c9": "Wert:",
       "text224f87a75a67": "oncall-handoff",
@@ -11691,7 +11673,6 @@
       "text32d3603f57c7": "Konto konnte nicht geöffnet werden",
       "text32d61a2331fe": "Produktpräsentation",
       "text32d7e8208247": "Kontrolle",
-      "text32f14aa9ea33": "{provider} wird vorbereitet… dies kann einige Minuten dauern",
       "text32f4468b0b6f": "Agenten suchen...",
       "text32f69946e3c3": "Keine Projekte entsprechen deinen Filtern",
       "text330010f40240": "Nicht bereit",
@@ -11959,7 +11940,6 @@
       "text3b13192b9d88": "Änderungen verwerfen?",
       "text3b349c99c012": "So erledigt dein Unternehmen eine Aufgabe — einmal niedergeschrieben.",
       "text3b39a1eeb288": "Hier ist „Der Agent hat es erledigt“ die falsche Antwort. Die erste Zeile beschreibt die Produktposition. Der Rest sind Plattformkontrollen.",
-      "text3b3c31642567": "Angehefteter Anbieter",
       "text3b4153c0d3c8": "Datum und Uhrzeit auswählen",
       "text3b41ba9c7cb8": "Keine Daten",
       "text3b4a27ee118e": "Eingabe-SHA-256",
@@ -14953,7 +14933,6 @@
       "text9136c4647e36": "Identity Management → „Test Connection“ → „Activate“, anschließend Benutzergruppen im Tab „User Groups“ binden – gebundene Gruppen und ihre Mitglieder werden automatisch übertragen.",
       "text91399bbb1fbb": "Projekt-Audit-Log angezeigt",
       "text9145379b9103": "Dialog der benutzerdefinierten Google-SAML-App mit Feldern für App name und Icon",
-      "text914be6d9bb89": "Sandbox-Anbieter konnte nicht aktualisiert werden",
       "text914d43beac26": "Zugriff entfernen?",
       "text91546e704c9e": "Registerkarte Sign On mit Metadata URL und Copy-Schaltfläche",
       "text91549baf8cfd": "einmal gelesen, in jeder Session verwendet",
@@ -17316,7 +17295,6 @@
       "textd45336ed23b4": "Wir konnten die Laufzeit nicht erreichen, um zu prüfen, ob ein Turn läuft. Das Neuladen startet sie neu; falls ein Turn läuft, geht er verloren.",
       "textd45f25a6299a": "Mitglieder bestätigen einen zweiten Faktor vor jeder geschützten Aktion. Super-Admins und API-Schlüssel sind davon ausgenommen.",
       "textd460f97920a4": "Eine gemeinsame Zugangsdaten, die alle Mitglieder dieses Projekts verwenden — der Agent und deine Trigger laufen darüber.",
-      "textd461a493a375": "Automatisch",
       "textd465f57b1d0d": "registry · Push",
       "textd4673300c1d2": "Benachrichtigungen funktionieren ordnungsgemäß!",
       "textd46958e8ca77": "Entra-Tipp:",
@@ -18127,7 +18105,6 @@
       "texte9b7cf835375": "Mit deinen Worten",
       "texte9bef0b0f3c2": "Tastenkürzel",
       "texte9c29ff50cc7": "Modi",
-      "texte9ca8360a34d": "Wechsel des Sandbox-Anbieters fehlgeschlagen",
       "texte9cff3023aa2": "Easy connect deckt über 3.000 Apps über deren eigene OAuth-Oberflächen ab. Wenn dein Feedback an einem Ort liegt, der nicht im Katalog ist — etwa in einem Community-Forum oder einem internen Portal — erreichst du ihn über OpenAPI, GraphQL, rohes HTTP oder stattdessen einen entfernten MCP-Server.",
       "texte9d6212ef873": "Wird eingerichtet...",
       "texte9e3243084ee": "Ein von Ihnen benannter Agent",

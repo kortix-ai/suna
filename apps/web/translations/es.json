@@ -951,12 +951,6 @@
         "kortixDefault": "Predeterminado de Kortix",
         "definedIn": "Definido en"
       },
-      "routing": {
-        "title": "Enrutamiento",
-        "automatic": "Automático",
-        "pinned": "Fijado",
-        "pinnedWithProvider": "Fijado · {provider}"
-      },
       "toasts": {
         "rebuildStarted": "Recreación iniciada para «{name}»",
         "buildFailed": "No se pudo iniciar la creación",
@@ -974,9 +968,7 @@
         "building": "Creando",
         "failed": "Fallido",
         "notReady": "No listo",
-        "unavailable": "No disponible",
-        "selected": "Seleccionado",
-        "selectedAria": "seleccionado"
+        "unavailable": "No disponible"
       },
       "defaultBadge": "Predeterminado",
       "runtime": "Entorno de sesión",
@@ -987,14 +979,6 @@
         "confirm": "Eliminar"
       },
       "provider": {
-        "label": "Proveedor de sandbox",
-        "experimental": "Experimental",
-        "description": "Fija este proyecto a un proveedor de sandbox específico y reemplaza el valor predeterminado de la plataforma. Las sesiones nuevas usan el proveedor elegido. «Automático» sigue el valor de la plataforma.",
-        "preparing": "Preparando {provider}… puede tardar unos minutos",
-        "fallback": "proveedor de sandbox",
-        "switched": "Se cambió a {provider}",
-        "switchFailed": "Error al cambiar el proveedor de sandbox",
-        "updateFailed": "No se pudo actualizar el proveedor de sandbox",
         "legacy": "Heredado",
         "legacyNote": "Daytona es un proveedor alternativo heredado. Su retirada está programada. Las sesiones de Daytona existentes siguen funcionando por ahora, pero Daytona no recibe funciones nuevas ni garantía de soporte. Use Platinum."
       },
@@ -10916,7 +10900,6 @@
       "text1bffac0197ca": "la ponen en pantalla completa y",
       "text1c01c6630cab": "Icono: {value0}. cambiarlo",
       "text1c049715ebdd": "- conectores: almacén, metabase",
-      "text1c145081eddd": "Se cambió a {provider}",
       "text1c1a67e4558f": "Los miembros podrán iniciar sesión solo con una contraseña. Cualquier política en la que hayas establecido individualmente una condición de segundo factor seguirá aplicándola; solo se elimina la regla para toda la cuenta.",
       "text1c22fac2a9fd": "Compartida con el proyecto",
       "text1c27f2b12cec": "En la pestaña \"Sign On\" de la aplicación, en la sección \"Metadata details\", localiza la \"Metadata URL\" y haz clic en \"Copy\". Pégala abajo para continuar.",
@@ -11129,7 +11112,6 @@
       "text221ff19c904c": "Programaciones",
       "text22206bc67806": "Salir de la selección",
       "text222b8d57e366": "No se pudieron guardar las anulaciones",
-      "text22412aa281cb": "proveedor de sandbox",
       "text22489bebb98f": "Cuenta de servicio eliminada",
       "text224a3369a5c9": "Valor:",
       "text224f87a75a67": "oncall-handoff",
@@ -11691,7 +11673,6 @@
       "text32d3603f57c7": "No se pudo abrir la cuenta",
       "text32d61a2331fe": "Presentación del producto",
       "text32d7e8208247": "Control",
-      "text32f14aa9ea33": "Preparando {provider}… puede tardar unos minutos",
       "text32f4468b0b6f": "Buscar agentes...",
       "text32f69946e3c3": "Ningún proyecto coincide con tus filtros",
       "text330010f40240": "No preparado",
@@ -11959,7 +11940,6 @@
       "text3b13192b9d88": "¿Descartar tus cambios?",
       "text3b349c99c012": "Cómo hace tu empresa una tarea, escrito una sola vez.",
       "text3b39a1eeb288": "Esta es la función donde «el agente se encargó» es la respuesta equivocada. La primera fila es la postura del producto. El resto son controles de la plataforma.",
-      "text3b3c31642567": "Proveedor fijado",
       "text3b4153c0d3c8": "Elige una fecha y hora",
       "text3b41ba9c7cb8": "Sin datos",
       "text3b4a27ee118e": "SHA-256 de entrada",
@@ -14953,7 +14933,6 @@
       "text9136c4647e36": "Identity Management → «Test Connection» → «Activate»; después vincula los grupos de usuarios en la pestaña «User Groups». Los grupos vinculados y sus miembros se envían automáticamente.",
       "text91399bbb1fbb": "Registro de auditoría del proyecto consultado",
       "text9145379b9103": "Cuadro de diálogo de una aplicación SAML personalizada de Google con los campos App name e icon",
-      "text914be6d9bb89": "No se pudo actualizar el proveedor de sandbox",
       "text914d43beac26": "¿Quitar acceso?",
       "text91546e704c9e": "Pestaña Sign On con la URL de metadatos y el botón Copy",
       "text91549baf8cfd": "se lee una vez y se usa en cada sesión",
@@ -17316,7 +17295,6 @@
       "textd45336ed23b4": "No pudimos acceder al entorno de ejecución para comprobar si hay un turno activo. Recargar lo reinicia y, si hay uno en curso, se perderá.",
       "textd45f25a6299a": "Los miembros deben confirmar un segundo factor antes de realizar cualquier acción protegida. Los superadministradores y las claves de API están exentos.",
       "textd460f97920a4": "Una credencial compartida que todos los miembros de este proyecto usan: el agente y tus activadores se ejecutan con ella.",
-      "textd461a493a375": "Automático",
       "textd465f57b1d0d": "registro · push",
       "textd4673300c1d2": "¡Las notificaciones funcionan correctamente!",
       "textd46958e8ca77": "Consejo para Entra:",
@@ -18127,7 +18105,6 @@
       "texte9b7cf835375": "Con tus palabras",
       "texte9bef0b0f3c2": "Atajos de teclado",
       "texte9c29ff50cc7": "Modos",
-      "texte9ca8360a34d": "Error al cambiar el proveedor de sandbox",
       "texte9cff3023aa2": "Easy connect cubre más de 3.000 apps mediante sus propias pantallas OAuth. Si tus comentarios viven en un lugar fuera del catálogo —un foro comunitario o un portal interno— puedes acceder mediante OpenAPI, GraphQL, HTTP sin procesar o un servidor MCP remoto.",
       "texte9d6212ef873": "Configurando...",
       "texte9e3243084ee": "Un agente que nombras",

@@ -2,6 +2,7 @@ import { localizeUiCatalog } from '../../../i18n/ui-catalog/localize-ui-catalog'
 import { REMAINING_UI_TRANSLATION_KEYS } from '../../../i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '../../../i18n';
 import type { ContextUsage } from '../context-ring';
+import type { UiSlashAction } from '../../../providers/ui-provider';
 
 export type SlashActionId =
   | 'switch-model'
@@ -12,7 +13,8 @@ export type SlashActionId =
   | 'show-context';
 
 export interface SlashAction {
-  id: SlashActionId;
+  /** A built-in action, or `host:<id>` for a row the host added (`UiHostConfig.useSlashActions`). */
+  id: SlashActionId | `host:${string}`;
   label: string;
   /** Also searched, so "thinking" finds reasoning effort. */
   description: string;
@@ -39,6 +41,32 @@ export interface SlashAction {
    * row falls back to a static muted ring and a plain text description.
    */
   context?: ContextUsage;
+  /** A host row's heading (`UiSlashAction.group`). Built-in actions have none. */
+  group?: string;
+  /** A host row's handler (`UiSlashAction.onSelect`). */
+  onSelect?: UiSlashAction['onSelect'];
+}
+
+/** The host's `/` rows as slash actions. */
+export function hostSlashActions(rows: readonly UiSlashAction[]): SlashAction[] {
+  return rows.map((r) => ({ id: `host:${r.id}`, label: r.label, description: r.description, group: r.group, onSelect: r.onSelect }));
+}
+
+/**
+ * Which built-in rows a host shows. A row whose control the host hides is
+ * dropped, not shown dead: the model picker (`modelPickerEnabled`) owns Switch
+ * model and Set reasoning effort, the context meter (`contextMeterEnabled`)
+ * owns Show context, and the runtime's commands (`runtimeSlashEnabled`) own
+ * Compact session.
+ */
+export function slashActionShown(
+  id: SlashAction['id'],
+  host: { modelPickerEnabled: boolean; contextMeterEnabled: boolean; runtimeSlashEnabled: boolean },
+): boolean {
+  if (id === 'switch-model' || id === 'set-reasoning-effort') return host.modelPickerEnabled;
+  if (id === 'show-context') return host.contextMeterEnabled;
+  if (id === 'compact-session') return host.runtimeSlashEnabled;
+  return true;
 }
 
 /**
@@ -105,7 +133,7 @@ export type SlashActionControl = 'model' | 'reasoning' | 'agent';
  * `bun test` has no DOM, so a mapping left inline there could not be asserted
  * at all.
  */
-export function controlToOpenFor(id: SlashActionId): SlashActionControl | null {
+export function controlToOpenFor(id: SlashAction['id']): SlashActionControl | null {
   if (id === 'switch-agent') return 'agent';
   if (id === 'switch-model') return 'model';
   if (id === 'set-reasoning-effort') return 'reasoning';

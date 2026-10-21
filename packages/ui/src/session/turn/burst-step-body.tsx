@@ -5,6 +5,7 @@ import { ActivityGroupStep } from './activity-group-step';
 import { ActivityStep, StepLabelRow } from './activity-step';
 import { AnsweredQuestionStep, isAnsweredQuestionCall } from './answered-question-step';
 import { stepLabel } from '@kortix/sdk';
+import { CompactionMarker } from './compaction-card';
 import { ToolRegistry } from '../tool/shared/registry';
 
 /** A host's `ToolRegistry.register` row for this tool wins over the chip and question rows. */
@@ -65,6 +66,9 @@ export function StepBody({
         disableNavigation={disableNavigation}
       />
     );
+  }
+  if (step.block.type === 'compaction') {
+    return <CompactionMarker running={running && step.block.summary === null} summary={step.block.summary ?? undefined} />;
   }
   // Neither tool nor reasoning: the label row only. The turn modules never
   // silently drop a block (`stepLabel` falls back to a generic 'Used' label).

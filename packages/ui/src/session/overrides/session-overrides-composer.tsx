@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import { SessionDrivesWatch } from '../../files/drives/session-drives-chip';
 import type { SessionScopeCommit } from '../scope/session-scope-model';
 import { useProjectSession } from '@kortix/sdk/react';
+import { useUiHostConfig } from '../../providers/ui-provider';
 
 import { ProviderPoolDraftBoundary } from './provider-pool-draft-context';
 import { SessionOverridesToolbar, type SessionOverrideSlot } from './session-overrides-toolbar';
@@ -62,7 +63,8 @@ export function SessionOverridesComposer({
   selectedAgent,
   sandboxSlot,
 }: SessionOverridesComposerProps) {
-  const sessionRow = useProjectSession(projectId, sessionId, { enabled: Boolean(sessionId) });
+  const { sessionOverridesEnabled } = useUiHostConfig();
+  const sessionRow = useProjectSession(projectId, sessionId, { enabled: Boolean(sessionId) && sessionOverridesEnabled });
 
   const sandbox = useMemo(
     () => ({
@@ -72,6 +74,7 @@ export function SessionOverridesComposer({
     [sessionRow.data?.metadata, sessionRow.data?.sandbox_provider],
   );
 
+  if (!sessionOverridesEnabled) return null;
   return (
     <ProviderPoolDraftBoundary identity={`${projectId}/${sessionId ?? 'new'}`}>
       {/* Drives are mounted when the sandbox is created, so an unsent

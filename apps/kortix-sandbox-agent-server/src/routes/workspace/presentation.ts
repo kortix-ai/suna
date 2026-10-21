@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process'
 
 import type { Config } from '@/lib/config/config'
 import { logger } from '@/lib/log/logger'
+import { DEFAULT_ALLOWED_ROOTS, resolveAllowedPath } from './files'
 
 /**
  * Presentation export — turn a deck of HTML slides (created by the
@@ -47,8 +48,6 @@ const FORMAT_SCRIPT: Record<PresentationFormat, string> = {
   pptx: 'convert_pptx.py',
 }
 
-// Mirrors files.ts — a path must resolve inside one of these roots.
-const DEFAULT_ALLOWED_ROOTS = ['/workspace', '/opt', '/tmp', '/home']
 
 // The presentation skill's `scripts/` dir, relative to an opencode config dir.
 const SCRIPTS_REL = 'GENERAL-KNOWLEDGE-WORKER/presentations/scripts'
@@ -194,13 +193,7 @@ export function createPresentationRouter(
   const jobs = new Map<string, Job>()
 
   /** Resolve + validate a presentation path against the allowed roots. */
-  function resolvePresentationDir(raw: string): string {
-    const resolved = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(workspace, raw)
-    if (!allowedRoots.some((root) => resolved === root || resolved.startsWith(root + '/'))) {
-      throw new Error('Access denied: path outside allowed directories')
-    }
-    return resolved
-  }
+  const resolvePresentationDir = (raw: string) => resolveAllowedPath(raw, workspace, allowedRoots)
 
   /** Is the rendered output newer than the deck's source (metadata + slides)?
    *  A stale file must be regenerated rather than served. */
@@ -250,7 +243,7 @@ export function createPresentationRouter(
 
     let presDir: string
     try {
-      presDir = resolvePresentationDir(presentationPath)
+      presDir = await resolvePresentationDir(presentationPath)
     } catch (err) {
       return c.json({ error: (err as Error).message }, 403)
     }

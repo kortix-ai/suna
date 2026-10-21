@@ -190,6 +190,8 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `TOK-3` `DELETE /accounts/tokens/:tokenId` → own personal token: `TOKEN_PERSONAL_REVOKE`; any other token: `TOKEN_REVOKE` → 200; unknown/already-revoked → 404 by default. With `delete_revoked=true`, delete an already-revoked personal key; an active key is rejected without mutation. `kortix tokens rm` reads the personal key status first and sends a stable revoke or deletion request across transport retries. It verifies a replayed 404 by reading back the intended result. It uses this two-step lifecycle and prints Deleted after removal. Deleted keys disappear from `tokens ls --mine`; revoked token on any route → 401.
 `TOK-6` Plain account MEMBER (the `kortix login` path): mints a personal PAT in the team account → 201; the PAT authenticates as the member (`/accounts/me` 200, `auth_type` `pat`) and carries only member rights (account rename → 403); the unscoped PAT mints and revokes another personal PAT → 201 / 200. MEMBER cannot register an OAuth client → 403, lists the account's tokens and gets only their own (the OWNER's list holds both), cannot list service accounts or OAuth clients → 403 (`token.create`), cannot revoke the OWNER's token → 403 (owner token still authenticates), revoking an unknown id → 403 (not 404). MEMBER revokes their own token → 200, its secret then → 401.
 `TOK-4` project-scoped PAT (`projectId` set): allowed only on its own project + `/accounts/me`; **everything else → 403** (other project, `/accounts/*`, project-list, and all other surfaces — `enforceTokenProjectScope`).
+`TOK-7` Mint expiry bounds on `POST /accounts/tokens` and `POST /projects/:id/cli-token`: `expires_at` at or before now → 400 `code: token_expiry_in_past`. A browser session still mints a token with no expiry → 201. A project-scoped PAT must pass `expires_at`, at or before its own `expires_at` when it has one: no expiry or a later one → 403 `code: token_mint_exceeds_parent`; an earlier one → 201. A project-scoped PAT with no expiry of its own still cannot mint a non-expiring token → 403.
+`TOK-8` The live token lists (`GET /accounts/tokens` without `mine`, `GET /projects/:id/cli-token`) omit a token whose `expires_at` has passed and a token whose project is archived or gone. `?mine=true` keeps the expired key as history.
 
 ### Account deletion
 
@@ -1309,7 +1311,8 @@ awaiting archive. Access policy — `GET/PATCH …/:appId/access` read and persi
 mode; `restricted` without any member or group → 400; `project` persists and
 reads back; `POST …/:appId/access-session` returns a signed URL + expiry for a
 member. `POST …/:appId/deployments` requires a ready artifact and an
-exact source-kind match. Deployment list/detail/logs expose durable state.
+exact source-kind match, and refuses `provider: "daytona"` with 400
+`sandbox_provider_deprecated` (no deployment is created). Deployment list/detail/logs expose durable state.
 Unknown deployment detail and logs return 404.
 Rollback accepts only a ready deployment. Start and stop require an active
 deployment. Finalizing an OCI artifact, using a mismatched OCI image, rolling
@@ -1505,6 +1508,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `MKTP-10` An authorized user adds and removes one marketplace source. Invalid and protected sources are rejected. A body with a wrong-typed field → 400, with or without a JSON content-type.
 `MKTP-11` A project writer starts an agent-driven marketplace installation session. Missing items, unknown items, and unauthorized callers are rejected.
 `PROJ-20` An authenticated user reads whether managed Git is configured.
+`PROJ-44` Daytona is deprecated and no customer may choose it, even where a deployment still configures it. A project whose stored pin is `daytona` reads as unpinned (`default_sandbox_provider: null`) and never lists `daytona` in `available_sandbox_providers`. `PATCH /projects/:id/sandbox-provider {"provider":"daytona"}` → 400 "Daytona is deprecated. New sandboxes run on Platinum." and the project stays unpinned. `POST /projects/:id/sessions {"provider":"daytona"}` → 400 `sandbox_provider_deprecated` before any repository read, and no session exists afterwards. A nonmember gets 403/404.
 `PROJ-43` An authenticated user reads the project-cap state of an account: `ANON` → 401; a member of the account → 200 `{capped, limit, count, message}` where `count` is a number only when the plan caps and `message` is non-null exactly when `capped`; an explicit `account_id` outside the caller's memberships → 403 and a malformed one → 400. The pre-check the /new form uses to show the cap before a create fails.
 `PROJ-27` A project member reads model choices and a project manager sets, reads, and clears model defaults.
 `PROJ-30` A project manager changes the default agent. Invalid agents and unauthorized callers are rejected.

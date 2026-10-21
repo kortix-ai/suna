@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { SLASH_ACTIONS } from './slash-actions';
+import { SLASH_ACTIONS, hostSlashActions } from './slash-actions';
 import { buildSlashSections, groupCommandsBySource } from './slash-items';
 
 const cmd = (name: string, source?: 'command' | 'mcp' | 'skill', description = '') =>
@@ -383,5 +383,20 @@ describe("buildSlashSections — the session's own files", () => {
 
     expect(sections.map((s) => s.heading)).toEqual(['Outputs']);
     expect(sections[0].rows[0].index).toBe(0);
+  });
+});
+
+describe('host rows in the / menu', () => {
+  test('they sit under their own heading after the built-in actions, before the commands, and filter by the query', () => {
+    const host = hostSlashActions([
+      { id: 'contract', label: 'Review a contract', description: 'Against a firm playbook', group: 'Workflows', onSelect: () => {} },
+      { id: 'dd', label: 'Due diligence', description: 'Report with red flags', group: 'Workflows', onSelect: () => {} },
+    ]);
+    const attach = SLASH_ACTIONS.filter((a) => a.id === 'attach-file');
+    const sections = buildSlashSections({ commands: [cmd('init')], actions: [...attach, ...host], query: '' });
+    expect(sections.map((s) => s.heading)).toEqual(['Actions', 'Workflows', 'Commands']);
+    expect(sections[1]!.rows.map((r) => [r.index, r.name])).toEqual([[1, 'Review a contract'], [2, 'Due diligence']]);
+    const narrowed = buildSlashSections({ commands: [], actions: [...attach, ...host], query: 'dilig' });
+    expect(narrowed.map((s) => [s.heading, s.rows.map((r) => r.name)])).toEqual([['Workflows', ['Due diligence']]]);
   });
 });

@@ -267,3 +267,55 @@ describe('sessionLogRetrying', () => {
     expect(sessionLogRetrying(thread([user('u1')]))).toBe(false);
   });
 });
+
+describe('foldCompactions', () => {
+  test('one prompt owns work across repeated compactions, including their summaries and live hint', () => {
+    const source = thread([
+      user('u'), reply('before', 'u', [call('read1', 'read')]),
+      msg('c1', 'user', [{ type: 'compaction', id: 'cp1', summary: 'first summary', first_kept_message_id: null }], { kind: 'compaction' }),
+      reply('middle', 'u', [call('read2', 'read')]),
+      msg('c2', 'user', [{ type: 'compaction', id: 'cp2', summary: 'second summary', first_kept_message_id: null }], { kind: 'compaction' }),
+      reply('after', 'c2', [{ type: 'text', id: 'done', text: 'Done.' }]),
+      user('next'),
+    ]);
+    const turns = sessionLogTurns(source, { foldCompactions: true, busy: true, liveMessageId: 'c2', held: ['next'] });
+    expect(turns.map((t) => t.id)).toEqual(['u', 'next']);
+    expect(turns[0]!.blocks.map((b) => b.id)).toEqual(['read1', 'cp1', 'read2', 'cp2', 'done']);
+    expect(turns[0]!.response?.text).toBe('Done.');
+    expect(turns[0]!.live).toBe(true);
+    expect(turns[0]!.compaction).toBeNull();
+    expect(sessionLogTurns(source).map((t) => t.id)).toEqual(['u', 'c1', 'c1:continued', 'c2', 'c2:continued', 'next']);
+  });
+
+  test('leading compaction stays standalone and never absorbs a later user prompt', () => {
+    const marker = msg('c', 'user', [{ type: 'compaction', id: 'cp', summary: 'summary', first_kept_message_id: null }], { kind: 'compaction' });
+    const turns = sessionLogTurns(thread([marker, reply('a', 'c'), user('u'), reply('b', 'u')]), { foldCompactions: true });
+    expect(turns.map((t) => t.id)).toEqual(['c', 'c:continued', 'u']);
+  });
+});
+
+test('folded streaming markers remain live before continuation content and cache independently of the default view', () => {
+  const marker = msg('c', 'user', [{ type: 'compaction', id: 'cp', summary: null, first_kept_message_id: null }], { kind: 'compaction', status: 'streaming' });
+  const source = thread([user('u'), reply('a', 'u', [call('t', 'bash')]), marker]);
+  const options = { foldCompactions: true, busy: true, liveMessageId: 'c' };
+  const folded = sessionLogTurns(source, options);
+  expect(folded.map((t) => t.id)).toEqual(['u']);
+  expect(folded[0]!.live).toBe(true);
+  expect(folded[0]!.blocks.map((b) => b.id)).toEqual(['t', 'cp']);
+  expect(sessionLogTurns(source, options)[0]).toBe(folded[0]);
+  expect(sessionLogTurns(source).map((t) => t.id)).toEqual(['u', 'c']);
+  expect(sessionLogTurns(source, options)[0]!.blocks.map((b) => b.id)).toEqual(['t', 'cp']);
+});
+
+test('folding never crosses a new prompt and preserves failed compaction errors', () => {
+  const source = thread([
+    user('u1'), reply('a1', 'u1'), user('u2'), reply('a2', 'u2'),
+    msg('c', 'user', [], { kind: 'compaction', status: 'error', error: { code: 'compact_failed', message: 'Synthetic compaction failure' } }),
+    reply('a3', 'u2'),
+  ]);
+  const turns = sessionLogTurns(source, { foldCompactions: true });
+  expect(turns.map((t) => t.id)).toEqual(['u1', 'u2']);
+  expect(turns[0]!.assistant.map((m) => m.message_id)).toEqual(['a1']);
+  expect(turns[1]!.assistant.map((m) => m.message_id)).toEqual(['a2', 'c', 'a3']);
+  expect(turns[1]!.error?.message).toBe('Synthetic compaction failure');
+});
