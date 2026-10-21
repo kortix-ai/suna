@@ -3,9 +3,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { type MutationCtx, type QueryCtx, internalQuery, mutation, query } from "./_generated/server";
 import { canSeeMatter, isAdminRole, requireFirm, requireMatterAccess } from "./access";
 import { audit } from "./audit";
+import { MATTERS_ROOT } from "./lumenAgent";
 import { matterStatus, party, visibility } from "./schema";
-
-export const MATTERS_ROOT = "/Company/Lumen/Matters";
 
 const matterView = v.object({
   _id: v.id("matters"),
@@ -131,7 +130,7 @@ export const create = mutation({
       parties: cleanParties(a.parties), practiceArea: cleanText(a.practiceArea, 60), status: "open", visibility: a.visibility,
       driveFolder: "", createdBy: userId, updatedAt: now,
     });
-    await ctx.db.patch(matterId, { driveFolder: `${MATTERS_ROOT}/${matterId}` });
+    await ctx.db.patch(matterId, { driveFolder: `${MATTERS_ROOT(a.firmId)}/${matterId}` });
     if (a.visibility === "restricted") await setMembers(ctx, matterId, [userId, ...(a.members ?? [])]);
     await audit(ctx, { firm, actorId: userId, action: "matter.create", matterId, detail: name });
     return matterId;
@@ -186,7 +185,7 @@ export const update = mutation({
   },
 });
 
-/** Matter + firm + project, for an action that works on a matter as the caller. */
+/** Matter + firm, for an action that works on a matter as the caller. The firm must be onboarded. */
 export const access = internalQuery({
   args: { matterId: v.string() },
   returns: v.object({
@@ -194,7 +193,6 @@ export const access = internalQuery({
     firmId: v.id("firms"),
     userId: v.string(),
     orgId: v.string(),
-    kortixProjectId: v.string(),
     matterName: v.string(),
     driveFolder: v.string(),
   }),
@@ -202,9 +200,9 @@ export const access = internalQuery({
     const id = ctx.db.normalizeId("matters", matterId);
     if (!id) throw new Error("404: matter not found");
     const { matter, firm, userId } = await requireMatterAccess(ctx, id);
-    if (firm.status !== "ready" || !firm.kortixProjectId) throw new Error("409: the firm workspace is still being set up");
+    if (firm.status !== "ready" || !firm.kortixAgent) throw new Error("409: the firm workspace is still being set up");
     return {
-      matterId: id, firmId: firm._id, userId, orgId: firm.orgId, kortixProjectId: firm.kortixProjectId,
+      matterId: id, firmId: firm._id, userId, orgId: firm.orgId,
       matterName: matter.name, driveFolder: matter.driveFolder,
     };
   },

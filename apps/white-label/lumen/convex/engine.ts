@@ -1,7 +1,8 @@
 "use node";
 
-// The engine's Kortix side. Each batch is one Kortix session on one Lumen
-// agent with one input.json in Drive. The agent writes out/*.json and
+// The engine's Kortix side. Each batch is one Kortix session on the firm's
+// agent, created and driven by the firm's service account, with one input.json
+// (naming the kit role to play) in the firm's Drive folder. The agent writes out/*.json and
 // done.json into the same Drive folder; Convex polls the folder, validates each
 // file against the kit's JSON Schemas (ajv), and hands it to runs.ingestResult,
 // which checks every citation before a value reaches the UI. The browser is
@@ -13,10 +14,11 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { type ActionCtx, internalAction } from "./_generated/server";
+import type { FirmContext } from "./deployment";
 import { KIT } from "./kit/bundle.generated";
-import { ensureKit } from "./kitInstall";
+import { firmReady } from "./kortix";
 import { RUNS_ROOT, sandboxPath } from "./lumenAgent";
-import { asOperator, errorText, operator, sandboxProvider, withRetry, ensureFolder } from "./operator";
+import { asFirm, asOperator, errorText, firmClient, sandboxProvider, withRetry, ensureFolder } from "./operator";
 import { LIMITS, NO_PROGRESS_MS, RUN_TIMEOUT_MS, inputKind, resultContract } from "./runs";
 
 const ajv = new Ajv2020({ allErrors: true, strict: false });
@@ -27,7 +29,7 @@ const pollDelay = (startedAt: number | undefined) => (startedAt && Date.now() - 
 /** A session gets this long after a prompt before Lumen reads an idle session as stopped. */
 const PROMPT_GRACE_MS = 45_000;
 
-const batchDir = (runId: string, batchId: string) => `${RUNS_ROOT}/${runId}/${batchId}`;
+const batchDir = (firmId: string, runId: string, batchId: string) => `${RUNS_ROOT(firmId)}/${runId}/${batchId}`;
 
 type Prep = {
   run: Doc<"runs">;
@@ -44,7 +46,7 @@ const libraryFile = (kind: string) => (kind === "contract_review" ? "in/playbook
 
 function inputFor(p: Prep, b: Doc<"runBatches">) {
   const docs = b.documentIds.map((id) => p.docs.find((d) => d._id === id)!).filter(Boolean);
-  const dir = sandboxPath(batchDir(p.run._id, b._id));
+  const dir = sandboxPath(batchDir(p.run.firmId, p.run._id, b._id));
   const kind = p.run.kind;
   return {
     schema: "input/1",
@@ -52,6 +54,8 @@ function inputFor(p: Prep, b: Doc<"runBatches">) {
     batch_id: b._id,
     kit_version: KIT.version,
     kind: inputKind(kind, b.phase),
+    role: b.role,
+    role_path: `${KIT.dir}/agents/${b.role}.md`,
     matter_dir: sandboxPath(p.matter.driveFolder),
     batch_dir: dir,
     documents: docs.map((d) => ({
@@ -75,24 +79,23 @@ export const prepare = internalAction({
       await ctx.runMutation(internal.runs.markRun, { runId, status: "failed", error: "The playbook or template was deleted" });
       return null;
     }
-    if (!p || !p.firm.kortixProjectId || !p.firm.kortixDriveId) {
-      if (p) await ctx.runMutation(internal.runs.markRun, { runId, status: "failed", error: "The firm workspace is not ready" });
-      return null;
-    }
+    if (!p) return null;
     if (!(await ctx.runMutation(internal.runs.markRun, { runId, status: "preparing", detail: "Checking the agent kit" }))) return null;
-    const kitError = await ensureKit(ctx, p.firm._id);
-    if (kitError) {
-      await ctx.runMutation(internal.runs.markRun, { runId, status: "failed", error: "The agent kit could not be installed. Try again." });
-      console.error(`[lumen] run ${runId}: kit: ${kitError}`);
+    let f: FirmContext;
+    try {
+      f = await firmReady(ctx, p.firm._id);
+    } catch (err) {
+      await ctx.runMutation(internal.runs.markRun, { runId, status: "failed", error: "The firm workspace is not ready. Try again." });
+      console.error(`[lumen] run ${runId}: firm: ${errorText(err)}`);
       return null;
     }
     try {
-      const driveId = p.firm.kortixDriveId;
+      const driveId = f.driveId;
       await asOperator(async () => {
-        await ensureFolder(driveId, `${RUNS_ROOT}/${runId}`);
+        await ensureFolder(driveId, `${RUNS_ROOT(p.run.firmId)}/${runId}`);
         for (const b of p.batches) {
           if (b.status !== "pending") continue;
-          const dir = batchDir(runId, b._id);
+          const dir = batchDir(p.run.firmId, runId, b._id);
           await ensureFolder(driveId, dir);
           const body = new TextEncoder().encode(JSON.stringify(inputFor(p, b), null, 1));
           await withRetry(() => uploadDriveFile(driveId, `${dir}/input.json`, body));
@@ -116,7 +119,7 @@ export const prepare = internalAction({
 });
 
 const launchPrompt = (inputPath: string) =>
-  `Run this Lumen batch now. Input: ${inputPath}\nRead it, do the task your instructions describe for its "kind", write every result with \`lumen result write\`, and finish with \`lumen result done\`.`;
+  `Run this Lumen batch now. Input: ${inputPath}\nRead it, then read its \`role_path\` file in full: those are your instructions for this run. Do the task they describe for its "kind", write every result with \`lumen result write\`, and finish with \`lumen result done\`.`;
 
 const KIND_NAME: Record<string, string> = {
   review: "Review", column: "Review", ask: "Ask", contract_review: "Contract review", diligence: "Due diligence", draft: "Draft",
@@ -125,8 +128,8 @@ const KIND_NAME: Record<string, string> = {
 /** A reduce batch reads the checklist rows Lumen accepted: Convex writes them into the batch folder, never the map agents. */
 async function writeReduceRows(ctx: ActionCtx, run: Doc<"runs">, b: Doc<"runBatches">, driveId: string) {
   const rows = await ctx.runQuery(internal.runs.reduceRows, { runId: run._id });
-  const dir = `${batchDir(run._id, b._id)}/in/rows`;
-  await ensureFolder(driveId, `${batchDir(run._id, b._id)}/in`);
+  const dir = `${batchDir(run.firmId, run._id, b._id)}/in/rows`;
+  await ensureFolder(driveId, `${batchDir(run.firmId, run._id, b._id)}/in`);
   await ensureFolder(driveId, dir);
   for (const r of rows) {
     await withRetry(() => uploadDriveFile(driveId, `${dir}/${r.docId}.json`, new TextEncoder().encode(JSON.stringify(r.row, null, 1))));
@@ -134,19 +137,25 @@ async function writeReduceRows(ctx: ActionCtx, run: Doc<"runs">, b: Doc<"runBatc
   return rows.length;
 }
 
-async function startSession(b: Doc<"runBatches">, run: Doc<"runs">, firm: Doc<"firms">) {
-  const session = await withRetry(() =>
-    createProjectSession(firm.kortixProjectId!, {
-      name: `${KIND_NAME[run.kind] ?? "Run"}: ${run.title}`.slice(0, 110) + (b.phase === "reduce" ? " (report)" : run.documentIds.length > 4 && b.agent === "lumen-extractor" ? ` (batch ${b.index + 1})` : ""),
-      agent_name: b.agent,
-      labels: [`lumen-firm:${firm._id}`, `lumen-matter:${run.matterId}`, `lumen-user:${run.createdBy}`, `lumen-run:${run._id}`].map((l) => l.slice(0, 64)),
-      metadata: { lumen_firm_id: firm._id, lumen_matter_id: run.matterId, lumen_user_id: run.createdBy, lumen_run_id: run._id, lumen_batch_id: b._id },
-      initial_prompt: launchPrompt(`${sandboxPath(batchDir(run._id, b._id))}/input.json`),
-      ...sandboxProvider(),
-    }),
+/** One session for the batch, as the firm's service account, on the firm's agent (its mounts: the firm folder and the kit). */
+async function startSession(b: Doc<"runBatches">, run: Doc<"runs">, f: FirmContext) {
+  const session = await asFirm(f.secret, () =>
+    withRetry(() =>
+      createProjectSession(f.projectId, {
+        name: `${KIND_NAME[run.kind] ?? "Run"}: ${run.title}`.slice(0, 110) + (b.phase === "reduce" ? " (report)" : run.documentIds.length > 4 && b.role === "lumen-extractor" ? ` (batch ${b.index + 1})` : ""),
+        agent_name: f.agent,
+        labels: [`lumen-firm:${run.firmId}`, `lumen-matter:${run.matterId}`, `lumen-user:${run.createdBy}`, `lumen-run:${run._id}`].map((l) => l.slice(0, 64)),
+        metadata: { lumen_firm_id: run.firmId, lumen_matter_id: run.matterId, lumen_user_id: run.createdBy, lumen_run_id: run._id, lumen_batch_id: b._id },
+        initial_prompt: launchPrompt(`${sandboxPath(batchDir(run.firmId, run._id, b._id))}/input.json`),
+        ...sandboxProvider(),
+      }),
+    ),
   );
   return session.session_id;
 }
+
+/** The firm's credential, project and Drive, or null when the firm is not onboarded. */
+const firmOf = (ctx: ActionCtx, firmId: Doc<"firms">["_id"]) => ctx.runQuery(internal.deployment.firmContext, { firmId });
 
 /** starting → working: one Kortix session with the batch's input. */
 export const launch = internalAction({
@@ -156,11 +165,13 @@ export const launch = internalAction({
     const c = await ctx.runQuery(internal.runs.batchContext, { batchId });
     if (!c || c.batch.status !== "starting" || c.run.status !== "running") return null;
     try {
+      const f = await firmOf(ctx, c.run.firmId);
+      if (!f) throw new Error("the firm is not onboarded");
       if (c.batch.phase === "reduce") {
-        const n = await asOperator(() => writeReduceRows(ctx, c.run, c.batch, c.firm.kortixDriveId!));
+        const n = await asOperator(() => writeReduceRows(ctx, c.run, c.batch, f.driveId));
         await ctx.runMutation(internal.runs.updateBatch, { batchId, patch: {}, event: { type: "rows", detail: `Report: ${n} checklist rows handed over` } });
       }
-      const sid = await asOperator(() => startSession(c.batch, c.run, c.firm));
+      const sid = await startSession(c.batch, c.run, f);
       const now = Date.now();
       const live = await ctx.runMutation(internal.runs.updateBatch, {
         batchId,
@@ -175,7 +186,7 @@ export const launch = internalAction({
         },
       });
       if (live) await ctx.scheduler.runAfter(pollDelay(now), internal.engine.poll, { batchId });
-      else await asOperator(() => stop(c.firm.kortixProjectId!, sid));
+      else await stop(f, sid);
     } catch (err) {
       console.error(`[lumen] batch ${batchId}: launch: ${errorText(err)}`);
       await ctx.runMutation(internal.runs.settleBatch, { batchId, status: "failed", error: "The workspace could not start" });
@@ -184,8 +195,8 @@ export const launch = internalAction({
   },
 });
 
-async function stop(projectId: string, sessionId: string) {
-  const h = operator().kortix.session(projectId, sessionId);
+async function stop(f: FirmContext, sessionId: string) {
+  const h = firmClient(f.secret).kortix.session(f.projectId, sessionId);
   await h.abort().catch(() => undefined);
   await h.stop().catch(() => undefined);
 }
@@ -195,10 +206,9 @@ export const stopSessions = internalAction({
   returns: v.null(),
   handler: async (ctx, { runId, sessions }) => {
     const p = (await ctx.runQuery(internal.runs.forPrepare, { runId })) as Prep | null;
-    if (!p?.firm.kortixProjectId) return null;
-    await asOperator(async () => {
-      for (const sid of sessions) await stop(p.firm.kortixProjectId!, sid);
-    });
+    const f = p && (await firmOf(ctx, p.run.firmId));
+    if (!f) return null;
+    for (const sid of sessions) await stop(f, sid);
     return null;
   },
 });
@@ -270,8 +280,9 @@ async function storeFiles(ctx: ActionCtx, driveId: string, dir: string, names: s
 /** A named file that has not reached Drive this long after its result is reported as missing. */
 const FILE_SYNC_MS = 90_000;
 
-async function prompt(ctx: ActionCtx, c: { firm: Doc<"firms">; batch: Doc<"runBatches"> }, text: string) {
-  await asOperator(() => operator().kortix.session(c.firm.kortixProjectId!, c.batch.kortixSessionId!).send(text, { agent: c.batch.agent }));
+/** A prompt to the batch's session, on the session's own agent (no per-prompt agent override). */
+async function prompt(f: FirmContext, batch: Doc<"runBatches">, text: string) {
+  await firmClient(f.secret).kortix.session(f.projectId, batch.kortixSessionId!).send(text);
 }
 
 /**
@@ -287,14 +298,16 @@ export const poll = internalAction({
   handler: async (ctx, { batchId }) => {
     const c = await ctx.runQuery(internal.runs.batchContext, { batchId });
     if (!c || c.batch.status !== "working" || c.run.status !== "running") return null;
-    const { batch, run, firm } = c as { batch: Doc<"runBatches">; run: Doc<"runs">; firm: Doc<"firms"> };
+    const { batch, run } = c as { batch: Doc<"runBatches">; run: Doc<"runs"> };
+    const f = await firmOf(ctx, run.firmId);
+    if (!f) return void (await ctx.runMutation(internal.runs.settleBatch, { batchId, status: "failed", error: "The firm workspace is not ready" }));
     const seen = new Map<string, { version: string; status: string }>(c.files.map((f: { path: string; version: string; status: string }) => [f.path, f]));
-    const dir = batchDir(run._id, batchId);
-    const driveId = firm.kortixDriveId!;
+    const dir = batchDir(run.firmId, run._id, batchId);
+    const driveId = f.driveId;
     const settle = async (status: "succeeded" | "failed", error?: string) => {
       await ctx.runMutation(internal.runs.settleBatch, { batchId, status, error });
       // The work is in Drive and Convex: free the sandbox. Its transcript stays readable.
-      await asOperator(() => stop(firm.kortixProjectId!, batch.kortixSessionId!)).catch(() => undefined);
+      await stop(f, batch.kortixSessionId!).catch(() => undefined);
     };
     const fail = (error: string) => settle("failed", error);
     const again = () => ctx.scheduler.runAfter(pollDelay(batch.startedAt), internal.engine.poll, { batchId });
@@ -367,7 +380,7 @@ export const poll = internalAction({
 
       if (rejected.length) {
         if (batch.attempts.repair >= LIMITS.repair) return void (await fail(`Results stayed invalid after ${LIMITS.repair} repairs: ${rejected[0]}`));
-        await prompt(ctx, c, `Lumen rejected these results. Fix each one, write the files again with \`lumen result write\`, then run \`lumen result done\` again:\n- ${rejected.slice(0, 12).join("\n- ")}`);
+        await prompt(f, batch, `Lumen rejected these results. Fix each one, write the files again with \`lumen result write\`, then run \`lumen result done\` again:\n- ${rejected.slice(0, 12).join("\n- ")}`);
         await ctx.runMutation(internal.runs.updateBatch, {
           batchId, patch: { attempts: { ...batch.attempts, repair: batch.attempts.repair + 1 }, lastPromptAt: now, lastProgressAt: now },
           event: { type: "repair", detail: `Batch ${batch.index + 1}: asked the agent to fix ${rejected.length} problem${rejected.length === 1 ? "" : "s"}` },
@@ -377,7 +390,7 @@ export const poll = internalAction({
       }
 
       if (now - (batch.lastPromptAt ?? 0) > PROMPT_GRACE_MS) {
-        const turn = await asOperator(() => getSessionTurn(firm.kortixProjectId!, batch.kortixSessionId!, { showErrors: false }));
+        const turn = await asFirm(f.secret, () => getSessionTurn(f.projectId, batch.kortixSessionId!, { showErrors: false }));
         const ended = turn.last_ended?.ended_at ? Date.parse(turn.last_ended.ended_at) : 0;
         const idle = turn.turns.length === 0 && ended > (batch.lastPromptAt ?? 0);
         if (idle) {
@@ -385,8 +398,8 @@ export const poll = internalAction({
           if (failed) {
             if (batch.attempts.relaunch >= LIMITS.relaunch) return void (await fail("The workspace failed twice"));
             const old = batch.kortixSessionId!;
-            const sid = await asOperator(() => startSession(batch, run, firm));
-            await asOperator(() => stop(firm.kortixProjectId!, old));
+            const sid = await startSession(batch, run, f);
+            await stop(f, old);
             await ctx.runMutation(internal.runs.updateBatch, {
               batchId,
               patch: { kortixSessionId: sid, attempts: { ...batch.attempts, relaunch: batch.attempts.relaunch + 1 }, lastPromptAt: now, lastProgressAt: now },
@@ -394,7 +407,7 @@ export const poll = internalAction({
             });
           } else {
             if (batch.attempts.nudge >= LIMITS.nudge) return void (await fail(`The agent stopped before finishing: ${owed.length} result${owed.length === 1 ? "" : "s"} missing`));
-            await prompt(ctx, c, `You stopped before the batch was finished. Still missing: ${owed.join(", ") || "done.json"}. Continue from where you are: write the missing results with \`lumen result write\`, then run \`lumen result done\`. Do not ask questions.`);
+            await prompt(f, batch, `You stopped before the batch was finished. Still missing: ${owed.join(", ") || "done.json"}. Continue from where you are: write the missing results with \`lumen result write\`, then run \`lumen result done\`. Do not ask questions.`);
             await ctx.runMutation(internal.runs.updateBatch, {
               batchId, patch: { attempts: { ...batch.attempts, nudge: batch.attempts.nudge + 1 }, lastPromptAt: now },
               event: { type: "nudge", detail: `Batch ${batch.index + 1}: the agent paused; asked it to continue` },

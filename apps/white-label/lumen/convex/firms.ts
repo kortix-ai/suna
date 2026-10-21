@@ -7,6 +7,7 @@ import { audit } from "./audit";
 import { stripeConfigured, trialSeats } from "./billing";
 import { firmStatus, plan, sizeBand } from "./schema";
 import { seedLibrary } from "./library";
+import { deploymentRow } from "./deployment";
 
 const TRIAL_DAYS = 14;
 
@@ -30,10 +31,12 @@ const firmView = v.object({
 });
 
 async function view(ctx: QueryCtx, f: Doc<"firms">, role: string) {
+  // One kit serves every firm: the version installed in the shared project.
+  const kitVersion = f.status === "ready" ? (await deploymentRow(ctx))?.kitVersion : undefined;
   return {
     _id: f._id, _creationTime: f._creationTime, orgId: f.orgId, name: f.name, practiceTags: f.practiceTags, sizeBand: f.sizeBand,
     jurisdiction: f.jurisdiction, logoUrl: f.logoId ? await ctx.storage.getUrl(f.logoId) : null, model: f.model,
-    kitVersion: f.kitVersion, status: f.status, error: f.error, plan: f.plan, seats: f.seats, role,
+    kitVersion, status: f.status, error: f.error, plan: f.plan, seats: f.seats, role,
   };
 }
 
@@ -141,7 +144,7 @@ export const setLogo = action({
   },
 });
 
-/** A failed provision runs again. The idempotency key (the firm id) keeps it to one Kortix project. */
+/** A failed onboarding runs again. Every step is idempotent: one folder, one agent, one service account per firm. */
 export const retry = mutation({
   args: { firmId: v.id("firms") },
   returns: v.null(),
@@ -170,18 +173,16 @@ const SETUP_FAILED = "Setup failed. Try again.";
 export const settle = internalMutation({
   args: {
     firmId: v.id("firms"),
-    kortixProjectId: v.optional(v.string()),
-    kortixDriveId: v.optional(v.string()),
     error: v.optional(v.string()),
   },
   returns: v.null(),
-  handler: async (ctx, { firmId, kortixProjectId, kortixDriveId, error }) => {
+  handler: async (ctx, { firmId, error }) => {
     const firm = await ctx.db.get(firmId);
     if (!firm) return null;
     // `error` is the raw upstream cause: it goes to the Convex log only, never to a
     // member-visible row (it can name the platform). Members read the generic text.
     if (error) console.error(`[lumen] provision ${firmId} failed: ${error}`);
-    await ctx.db.patch(firmId, error ? { status: "failed", error: SETUP_FAILED } : { status: "ready", kortixProjectId, kortixDriveId });
+    await ctx.db.patch(firmId, error ? { status: "failed", error: SETUP_FAILED } : { status: "ready" as const });
     await audit(ctx, { firm, actorId: "system", action: error ? "firm.failed" : "firm.ready" });
     return null;
   },

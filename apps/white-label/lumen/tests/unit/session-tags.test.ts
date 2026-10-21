@@ -13,6 +13,11 @@ describe('session create tagging: Lumen ids are the source of truth', () => {
     expect(out.name).toBe('Q3 model');
   });
 
+  test('the matter folder is the one inside the firm folder mount, never another firm\'s', () => {
+    const out = tagSessionCreate({ runtime_context: { lumen_matter_dir: '/drives/firm-a/Matters/mat_a' } }, { ...who, firmId: 'k57abc', matterId: 'j99xyz' });
+    expect(out.runtime_context).toEqual({ lumen_matter_dir: '/drives/k57abc/Matters/j99xyz' });
+  });
+
   test("a client cannot forge another user's, firm's or matter's label", () => {
     const out = tagSessionCreate({ labels: ['lumen-user:user_a', 'LUMEN-matter:mat_a', 'Lumen-firm:f', 'ok'] }, who);
     expect(out.labels).toEqual([...LUMEN, 'ok']);

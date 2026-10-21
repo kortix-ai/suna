@@ -6,41 +6,34 @@ import { KIT } from '../../convex/kit/bundle.generated';
 import { seatAvailable } from '../../convex/seats';
 import { PROXY_SECRET, addMember, lumenTest, org, signedInUser } from './setup';
 
-// The Kortix SDK, faked at the module edge: every token mint, revoke and folder is counted.
+// The Kortix SDK, faked at the module edge: every project, folder, grant, agent,
+// upload and service account Lumen asks for is recorded.
 // (Vitest cannot load the SDK's TypeScript source graph; Convex bundles it with esbuild.)
 const kortixFake = vi.hoisted(() => {
-  const mints: Array<{ name: string; projectId: string; expiresAt: string }> = [];
-  const revokes: string[] = [];
-  const folders: string[] = [];
-  const provisions: Array<Record<string, unknown>> = [];
-  const kit = { written: [] as string[], agents: [] as string[], merged: 0 };
+  const calls = {
+    provisions: [] as Array<Record<string, unknown>>,
+    folders: [] as string[],
+    flags: [] as string[],
+    unshared: [] as string[],
+    grants: [] as Array<{ path: string; principalType: string; principalId?: string; level: string }>,
+    agents: [] as Array<{ name: string; block: Record<string, unknown> }>,
+    defaults: [] as string[],
+    uploads: [] as string[],
+    serviceAccounts: [] as Array<{ name: string }>,
+    deletedServiceAccounts: [] as string[],
+    assignments: [] as Array<Record<string, unknown>>,
+  };
   return {
-    kit,
-    mints,
-    revokes,
-    folders,
-    provisions,
+    calls,
     provision: { fail: false },
+    existingServiceAccounts: [] as Array<{ name: string; service_account_id: string }>,
     client: {
-      session: () => ({
-        files: { list: async () => [], remove: async () => {}, write: async (path: string) => void kit.written.push(path) },
-        commit: async () => ({ committed: true, pushed: true, nothing_to_do: false, branch: 'kit-branch', head_sha: 'abc' }),
-        delete: async () => {},
-      }),
       projects: {
         provision: async (input: Record<string, unknown>) => {
-          provisions.push(input);
-          if (kortixFake.provision.fail) throw new Error('502: Kortix upstream exploded at 10.0.0.7');
-          return { project_id: 'proj_new' };
-        },
-      },
-      accounts: {
-        tokens: {
-          create: async (input: { name: string; projectId: string; expiresAt: string }) => {
-            mints.push(input);
-            return { token_id: `tok_${mints.length}`, secret_key: `kortix_pat_${mints.length}` };
-          },
-          revoke: async (id: string) => void revokes.push(id),
+          calls.provisions.push(input);
+          // A 4xx: withRetry does not retry it, so the test does not wait out the backoff.
+          if (kortixFake.provision.fail) throw Object.assign(new Error('422: Kortix upstream exploded at 10.0.0.7'), { status: 422 });
+          return { project_id: 'proj_shared' };
         },
       },
     },
@@ -50,44 +43,75 @@ vi.mock('@kortix/sdk/server', () => ({
   createScopedKortix: () => kortixFake.client,
   runWithKortix: (_config: unknown, fn: () => unknown) => fn(),
 }));
-vi.mock('@kortix/sdk', () => ({
-  createProjectSession: async () => ({ session_id: 'kit_session' }),
-  openChangeRequest: async () => ({ cr_id: 'cr_1' }),
-  mergeChangeRequest: async () => void kortixFake.kit.merged++,
-  updateAgentConfig: async (_p: string, name: string) => void kortixFake.kit.agents.push(name),
-  updateProjectDefaultAgent: async () => {},
-  updateFeatureFlag: async (_p: string, key: string, on: boolean) => void kortixFake.folders.push(`flag:${key}=${on}`),
-  getProjectDrive: async () => ({ driveId: 'drive_1' }),
-  makeDriveFolder: async (_d: string, path: string) => void kortixFake.folders.push(path),
-}));
-const mints = kortixFake.mints;
+vi.mock('@kortix/sdk', () => {
+  const c = kortixFake.calls;
+  return {
+    getProject: async () => ({ project_id: 'proj_shared', account_id: 'acc_operator' }),
+    getProjectDrive: async () => ({ driveId: 'drive_shared' }),
+    getProjectDetail: async () => ({ config: { agents: [{ name: 'kortix', enabled: true, scope: { kortix_permissions: 'all' } }, { name: 'lumen-none', enabled: true }] } }),
+    updateFeatureFlag: async (_p: string, key: string, on: boolean) => void c.flags.push(`${key}=${on}`),
+    getFolderAccess: async (_d: string, path: string) => ({
+      grants: path === '/Company' ? [{ grantId: 'g_company', principalType: 'project', inherited: false, system: true }] : [],
+    }),
+    unshareFolder: async (_d: string, grantId: string) => void c.unshared.push(grantId),
+    makeDriveFolder: async (_d: string, path: string) => void c.folders.push(path),
+    shareFolder: async (_d: string, input: { path: string; principalType: string; principalId?: string; level: string }) => {
+      c.grants.push(input);
+      return { grantId: `g_${c.grants.length}` };
+    },
+    updateAgentConfig: async (_p: string, name: string, block: Record<string, unknown>) => void c.agents.push({ name, block }),
+    updateProjectDefaultAgent: async (_p: string, name: string) => void c.defaults.push(name),
+    uploadDriveFile: async (_d: string, path: string) => void c.uploads.push(path),
+    listServiceAccountsApi: async () => kortixFake.existingServiceAccounts,
+    deleteServiceAccountApi: async (_a: string, id: string) => void c.deletedServiceAccounts.push(id),
+    createServiceAccountApi: async (_a: string, input: { name: string }) => {
+      c.serviceAccounts.push(input);
+      return { service_account_id: `sa_${c.serviceAccounts.length}`, name: input.name, secret: `kortix_sa_secret_${c.serviceAccounts.length}` };
+    },
+    createAssignment: async (_a: string, input: Record<string, unknown>) => void c.assignments.push(input),
+    createProjectSession: async () => ({ session_id: 'sess_new' }),
+  };
+});
 beforeEach(() => {
-  mints.length = 0;
-  kortixFake.revokes.length = 0;
-  kortixFake.folders.length = 0;
-  kortixFake.provisions.length = 0;
+  for (const list of Object.values(kortixFake.calls)) list.length = 0;
   kortixFake.provision.fail = false;
-  kortixFake.kit.written.length = 0;
-  kortixFake.kit.agents.length = 0;
-  kortixFake.kit.merged = 0;
+  kortixFake.existingServiceAccounts.length = 0;
 });
 
 type T = ReturnType<typeof lumenTest>;
 
+/** The shared project, ready with this code's kit (what `kortix:ensure` leaves behind). */
+async function readyDeployment(t: T) {
+  await t.run(async (ctx) => {
+    if (await ctx.db.query('deployment').first()) return;
+    await ctx.db.insert('deployment', {
+      key: 'default', status: 'ready', projectId: 'proj_shared', accountId: 'acc_operator', driveId: 'drive_shared',
+      kitVersion: KIT.version, kitHash: KIT.hash,
+    });
+  });
+}
+
+/** An onboarded firm: its agent and its service-account secret, in the shared project. */
 async function insertFirm(t: T, orgId: string, createdBy: string, patch: Record<string, unknown> = {}) {
-  return t.run((ctx) =>
-    ctx.db.insert('firms', {
-      orgId, name: 'Example & Co. Legal', practiceTags: [], sizeBand: '2-10', status: 'ready', kortixProjectId: 'proj_1',
+  await readyDeployment(t);
+  return t.run(async (ctx) => {
+    const firmId = await ctx.db.insert('firms', {
+      orgId, name: 'Example & Co. Legal', practiceTags: [], sizeBand: '2-10', status: 'ready',
       plan: 'trial', seats: 5, billingStatus: 'none', createdBy, ...patch,
-    }),
-  );
+    });
+    if ((patch.status ?? 'ready') === 'ready') {
+      await ctx.db.patch(firmId, { kortixAgent: `lumen-f-${firmId}`, agentConfig: `${KIT.hash}:`, kortixServiceAccountId: `sa_${firmId}` });
+      await ctx.db.insert('firmCredentials', { firmId, serviceAccountId: `sa_${firmId}`, secret: `kortix_sa_secret_${firmId}` });
+    }
+    return firmId;
+  });
 }
 
 async function insertMatter(t: T, firmId: Id<'firms'>, createdBy: string, visibility: 'firm' | 'restricted' = 'firm') {
   return t.run((ctx) =>
     ctx.db.insert('matters', {
       firmId, name: visibility === 'firm' ? 'Project Aster' : 'Walled', client: 'Brightwater Example Holdings', parties: [],
-      status: 'open', visibility, driveFolder: '/Company/Lumen/Matters/x', createdBy, updatedAt: Date.now(),
+      status: 'open', visibility, driveFolder: `/Lumen/Firms/${firmId}/Matters/x`, createdBy, updatedAt: Date.now(),
     }),
   );
 }
@@ -111,48 +135,39 @@ async function world() {
 type As = Awaited<ReturnType<typeof signedInUser>>['as'];
 const token = (as: As, matterId: string, proxySecret = PROXY_SECRET) => as.action(api.kortix.memberToken, { matterId, proxySecret });
 
-describe('memberToken: who gets a Kortix token for which matter', () => {
-  test('a member gets a project-scoped, expiring token for the firm project', async () => {
-    const { alice, matter } = await world();
+describe('memberToken: which firm credential the proxy gets for which matter', () => {
+  test('a member gets the firm service-account secret, the shared project and the firm agent; nothing is minted', async () => {
+    const { alice, firm, matter } = await world();
     const got = await token(alice.as, matter);
-    expect(got.projectId).toBe('proj_1');
-    expect(got.token).toBe('kortix_pat_1');
-    expect(mints[0]).toMatchObject({ projectId: 'proj_1', name: `lumen-member-${alice.userId}` });
-    expect(Date.parse(mints[0].expiresAt)).toBe(got.expiresAt);
+    expect(got).toMatchObject({ token: `kortix_sa_secret_${firm}`, projectId: 'proj_shared', agent: `lumen-f-${firm}`, firmId: firm, userId: alice.userId });
+    expect(got.expiresAt).toBeGreaterThan(Date.now());
+    expect(kortixFake.calls.serviceAccounts).toHaveLength(0);
   });
 
-  test('one token per (firm, member): a second matter reuses it; one close to expiry is replaced', async () => {
-    const { t, alice, matter, walled } = await world();
-    const first = await token(alice.as, matter);
-    expect((await token(alice.as, walled)).token).toBe(first.token);
-    expect(mints).toHaveLength(1);
-    await t.run(async (ctx) => {
-      const row = (await ctx.db.query('memberTokens').collect())[0];
-      await ctx.db.patch(row._id, { expiresAt: Date.now() + 4 * 60_000 });
-    });
-    expect((await token(alice.as, matter)).token).toBe('kortix_pat_2');
-    expect(await t.run((ctx) => ctx.db.query('memberTokens').collect())).toHaveLength(1);
-  });
-
-  test('every minted token has its revoke scheduled at expiry', async () => {
-    const { t, alice, matter } = await world();
-    const got = await token(alice.as, matter);
-    const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
-    const revoke = jobs.find((j) => j.name.includes('revokeToken'));
-    expect(revoke?.args).toEqual([{ tokenId: 'tok_1' }]);
-    expect(revoke?.scheduledTime).toBe(got.expiresAt);
+  test('two firms in the one project get two credentials and two agents; a member of one never gets the other', async () => {
+    const { t, alice, mallory, firm, matter } = await world();
+    const other = await org(t, 'Other Example');
+    await addMember(t, other, mallory.userId, 'owner');
+    const firmB = await insertFirm(t, other, mallory.userId);
+    const matterB = await insertMatter(t, firmB, mallory.userId);
+    const a = await token(alice.as, matter);
+    const b = await token(mallory.as, matterB);
+    expect(a.projectId).toBe(b.projectId);
+    expect([a.token, a.agent]).toEqual([`kortix_sa_secret_${firm}`, `lumen-f-${firm}`]);
+    expect([b.token, b.agent]).toEqual([`kortix_sa_secret_${firmB}`, `lumen-f-${firmB}`]);
+    await expect(token(alice.as, matterB)).rejects.toThrow(/403: not a member/);
+    await expect(token(mallory.as, matter)).rejects.toThrow(/403: not a member/);
   });
 
   test('refused: a non-member, a lawyer on a restricted matter, a provisioning firm, an unknown id, a wrong secret', async () => {
     const { t, acme, alice, bob, mallory, matter, walled } = await world();
-    const pending = await insertFirm(t, acme, alice.userId, { status: 'provisioning', kortixProjectId: undefined, orgId: 'other' });
+    const pending = await insertFirm(t, acme, alice.userId, { status: 'provisioning', orgId: 'other' });
     const pendingMatter = await insertMatter(t, pending, alice.userId);
     await expect(token(mallory.as, matter)).rejects.toThrow(/403: not a member/);
     await expect(token(bob.as, walled)).rejects.toThrow(/403: no access to this matter/);
     await expect(token(alice.as, pendingMatter)).rejects.toThrow(/403|409/);
     await expect(token(alice.as, 'not-a-matter-id')).rejects.toThrow(/404: /);
     await expect(token(alice.as, matter, 'wrong')).rejects.toThrow(/403: proxy only/);
-    expect(mints).toHaveLength(0);
   });
 
   test('a member removed from the org is refused on the next call', async () => {
@@ -204,7 +219,7 @@ describe('matters: visibility and roles', () => {
       parties: [{ name: 'Quillon Analytics Inc.', role: 'counterparty' }, { name: ' ', role: 'other' }], visibility: 'firm',
     });
     const m = await t.run((ctx) => ctx.db.get(id));
-    expect(m).toMatchObject({ name: 'Quillon commercial', driveFolder: `/Company/Lumen/Matters/${id}`, status: 'open' });
+    expect(m).toMatchObject({ name: 'Quillon commercial', driveFolder: `/Lumen/Firms/${firm}/Matters/${id}`, status: 'open' });
     expect(m?.parties).toHaveLength(1);
     expect((await bob.as.query(api.matters.list, { firmId: firm, search: 'm-0042' })).map((r) => r.name)).toEqual(['Quillon commercial']);
     await bob.as.mutation(api.matters.update, { matterId: id, status: 'on_hold' });
@@ -228,7 +243,7 @@ describe('firms: setup and admin', () => {
     expect(await owner.as.mutation(api.firms.create, args)).toBe(a);
     const firm = await owner.as.query(api.firms.forOrg, { orgId: o });
     expect(firm).toMatchObject({ plan: 'trial', seats: 5, status: 'provisioning', practiceTags: ['M&A', 'Commercial'], role: 'owner' });
-    expect(firm && 'kortixProjectId' in firm).toBe(false);
+    expect(firm && ('kortixAgent' in firm || 'kortixServiceAccountId' in firm)).toBe(false);
   });
 
   test('a lawyer cannot edit the firm or read the audit log; an admin can', async () => {
@@ -241,39 +256,89 @@ describe('firms: setup and admin', () => {
   });
 });
 
-describe('provisionFirm: project, Drive folders, the agent kit; a generic failure for the customer', () => {
-  async function pending() {
-    const { t, acme, alice } = await world();
-    const firm = await insertFirm(t, `${acme}-2`, alice.userId, { status: 'provisioning', kortixProjectId: undefined });
-    return { t, firm };
+describe('provisionFirm: one shared project, one folder + agent + service account per firm', () => {
+  async function pending(t: T, orgId: string, createdBy: string) {
+    return insertFirmRow(t, orgId, createdBy);
   }
+  /** A firm row before onboarding (no deployment, no agent, no credential). */
+  const insertFirmRow = (t: T, orgId: string, createdBy: string) =>
+    t.run((ctx) => ctx.db.insert('firms', {
+      orgId, name: 'Example & Co. Legal', practiceTags: [], sizeBand: '2-10', status: 'provisioning',
+      plan: 'trial', seats: 5, billingStatus: 'none', createdBy,
+    }));
 
-  test('success settles the firm ready, provisions once per firm id and creates the Lumen folders', async () => {
-    const { t, firm } = await pending();
+  test('the first firm bootstraps the project once: Files on, /Company unshared, kit uploaded, starter agents locked', async () => {
+    const t = lumenTest();
+    const firm = await pending(t, 'org_1', 'user_1');
     await t.action(internal.kortix.provisionFirm, { firmId: firm });
-    expect(await t.run((ctx) => ctx.db.get(firm))).toMatchObject({ status: 'ready', kortixProjectId: 'proj_new', kortixDriveId: 'drive_1' });
-    expect(kortixFake.provisions[0]).toMatchObject({
-      name: 'lumen-Example - Co. Legal', starter_template: 'general-knowledge-worker', idempotency_key: `lumen-firm-${firm}`,
+    const c = kortixFake.calls;
+    expect(c.provisions).toEqual([{ name: 'lumen', idempotency_key: 'lumen-deployment' }]);
+    expect(c.flags).toContain('volumes=true');
+    expect(c.unshared).toEqual(['g_company']);
+    expect(c.folders).toEqual(expect.arrayContaining(['/Lumen', '/Lumen/Kit', '/Lumen/Firms']));
+    expect(c.uploads).toContain(`/Lumen/Kit/${KIT.version}/agents/lumen-extractor.md`);
+    expect(c.uploads).toContain(`/Lumen/Kit/${KIT.version}/lumen-kit/bin/lumen`);
+    expect(c.uploads).toContain(`/Lumen/Kit/${KIT.version}/skills/lumen-citations/SKILL.md`);
+    expect(c.uploads.at(-1) === '/Lumen/Kit/CURRENT' || c.uploads.includes('/Lumen/Kit/CURRENT')).toBe(true);
+    expect(c.defaults).toEqual(['lumen-none']);
+    expect(c.agents.find((a) => a.name === 'lumen-none')?.block).toMatchObject({ kortix_permissions: 'none', repository_access: false });
+    expect(c.agents.find((a) => a.name === 'kortix')?.block).toMatchObject({ enabled: false, kortix_permissions: 'none', repository_access: false });
+    expect(await t.run((ctx) => ctx.db.query('deployment').collect())).toMatchObject([
+      { status: 'ready', projectId: 'proj_shared', accountId: 'acc_operator', driveId: 'drive_shared', kitVersion: KIT.version, kitHash: KIT.hash },
+    ]);
+  });
+
+  test('a firm gets its folders, an agent with exactly two grants and no repository, and a member service account', async () => {
+    const t = lumenTest();
+    const firm = await pending(t, 'org_1', 'user_1');
+    await t.action(internal.kortix.provisionFirm, { firmId: firm });
+    const c = kortixFake.calls;
+    const agent = `lumen-f-${firm}`;
+    expect(c.folders).toEqual(expect.arrayContaining([`/Lumen/Firms/${firm}`, `/Lumen/Firms/${firm}/Matters`, `/Lumen/Firms/${firm}/Runs`, `/Lumen/Firms/${firm}/Library`]));
+    expect(c.agents.find((a) => a.name === agent)?.block).toMatchObject({
+      enabled: true, kortix_permissions: 'none', repository_access: false, behavior: { mode: 'primary', prompt: KIT.agents['lumen-counsel'] },
     });
-    // arrayContaining: a firm created by an earlier test provisions on its own schedule and shares this fake.
-    expect(kortixFake.folders).toEqual(expect.arrayContaining(['flag:volumes=true', '/Company', '/Company/Lumen', '/Company/Lumen/Matters', '/Company/Lumen/Runs', '/Company/Lumen/Library']));
-    // The agent kit: skills + the tool CLI through one merged change request, then the four agents.
-    expect(await t.run((ctx) => ctx.db.get(firm))).toMatchObject({ kitVersion: KIT.version, kitHash: KIT.hash });
-    expect(kortixFake.kit.written).toContain('/workspace/skills/lumen-citations/SKILL.md');
-    expect(kortixFake.kit.written).toContain('/workspace/lumen-kit/bin/lumen');
-    expect(kortixFake.kit.written.some((p) => p.includes('selftest') || p.includes('fixtures'))).toBe(false);
-    expect(kortixFake.kit.merged).toBeGreaterThanOrEqual(1);
-    expect([...new Set(kortixFake.kit.agents)].sort()).toEqual(['lumen-counsel', 'lumen-drafter', 'lumen-extractor', 'lumen-reviewer']);
-    // A second ensure is a no-op: the kit is current.
-    const installs = await t.run((ctx) => ctx.db.query('kitInstalls').collect());
-    expect(await t.action(internal.kitInstall.ensure, { firmId: firm })).toBeNull();
-    expect(await t.run((ctx) => ctx.db.query('kitInstalls').collect())).toHaveLength(installs.length);
+    expect(c.grants).toEqual([
+      { path: `/Lumen/Firms/${firm}`, principalType: 'agent', principalId: agent, level: 'write' },
+      { path: '/Lumen/Kit', principalType: 'agent', principalId: agent, level: 'read' },
+    ]);
+    expect(c.serviceAccounts.map((s) => s.name)).toEqual([`lumen-firm-${firm}`]);
+    expect(c.assignments).toEqual([
+      { principal: { type: 'service_account', id: 'sa_1' }, roleKey: 'member', scope: { type: 'project', id: 'proj_shared' } },
+      { principal: { type: 'service_account', id: 'sa_1' }, roleKey: 'agent-user', scope: { type: 'project', id: 'proj_shared' }, object: { type: 'agent', id: agent } },
+    ]);
+    expect(await t.run((ctx) => ctx.db.get(firm))).toMatchObject({ status: 'ready', kortixAgent: agent, kortixServiceAccountId: 'sa_1' });
+    expect(await t.run((ctx) => ctx.db.query('firmCredentials').collect())).toMatchObject([{ firmId: firm, serviceAccountId: 'sa_1', secret: 'kortix_sa_secret_1' }]);
+  });
+
+  test('a second firm reuses the project and the kit: no new project, no upload, its own agent and service account', async () => {
+    const t = lumenTest();
+    const a = await pending(t, 'org_1', 'user_1');
+    await t.action(internal.kortix.provisionFirm, { firmId: a });
+    for (const list of Object.values(kortixFake.calls)) list.length = 0;
+    const b = await pending(t, 'org_2', 'user_2');
+    await t.action(internal.kortix.provisionFirm, { firmId: b });
+    const c = kortixFake.calls;
+    expect([c.provisions, c.uploads, c.unshared]).toEqual([[], [], []]);
+    expect(c.agents.map((x) => x.name)).toEqual([`lumen-f-${b}`]);
+    expect(c.grants.map((g) => g.principalId)).toEqual([`lumen-f-${b}`, `lumen-f-${b}`]);
+    expect(c.serviceAccounts.map((s) => s.name)).toEqual([`lumen-firm-${b}`]);
+  });
+
+  test('a retry after a lost secret deletes the orphan service account and creates a fresh one', async () => {
+    const t = lumenTest();
+    const firm = await pending(t, 'org_1', 'user_1');
+    kortixFake.existingServiceAccounts.push({ name: `lumen-firm-${firm}`, service_account_id: 'sa_orphan' });
+    await t.action(internal.kortix.provisionFirm, { firmId: firm });
+    expect(kortixFake.calls.deletedServiceAccounts).toEqual(['sa_orphan']);
+    expect(kortixFake.calls.serviceAccounts).toHaveLength(1);
   });
 
   test('a failure marks it failed with generic text; no member-visible row carries the raw cause', async () => {
-    const { t, firm } = await pending();
+    const t = lumenTest();
+    const firm = await pending(t, 'org_1', 'user_1');
     kortixFake.provision.fail = true;
-    await t.action(internal.kortix.provisionFirm, { firmId: firm });
+    await t.action(internal.kortix.provisionFirm, { firmId: firm }).catch(() => undefined);
     expect(await t.run((ctx) => ctx.db.get(firm))).toMatchObject({ status: 'failed', error: 'Setup failed. Try again.' });
     const audits = await t.run((ctx) => ctx.db.query('auditEvents').collect());
     expect(audits.find((e) => e.action === 'firm.failed')).toBeTruthy();
@@ -412,7 +477,7 @@ describe('vault reads: search, preview, citation check, delete', () => {
       const storageId = await ctx.storage.store(new Blob(['x'], { type: 'application/pdf' }));
       const documentId = await ctx.db.insert('documents', {
         firmId: firm, matterId: matter, storageId, filename: 'msa.pdf', mime: 'application/pdf', bytes: 1, status: 'ready', pages: 3, paras: 2,
-        uploadedBy, driveFile: '/Company/Lumen/Matters/x/Docs/msa.pdf', textFile: '/Company/Lumen/Matters/x/Text/msa.md',
+        uploadedBy, driveFile: `/Lumen/Firms/${firm}/Matters/x/Docs/msa.pdf`, textFile: `/Lumen/Firms/${firm}/Matters/x/Text/msa.md`,
       });
       const p1 = '12.1 Neither party’s liability under this Agreement shall be limited.';
       const p2 = '12.2 Each party shall indemnify the other against third-party claims.';
@@ -461,7 +526,6 @@ describe('vault reads: search, preview, citation check, delete', () => {
 
   test('remove deletes the rows and blob, writes document.delete, and schedules the Drive cleanup', async () => {
     const { t, alice, bob, firm, matter } = await world();
-    await t.run((ctx) => ctx.db.patch(firm, { kortixDriveId: 'drive_1' }));
     const doc = await withDoc(t, firm, matter, alice.userId);
     await bob.as.mutation(api.documents.remove, { documentId: doc });
     const left = await t.run(async (ctx) => [
@@ -480,6 +544,8 @@ describe('vault reads: search, preview, citation check, delete', () => {
 describe('vault upload during provisioning', () => {
   test('ingest waits for the firm Drive instead of failing the document', async () => {
     const { t, alice, matter } = await world();
+    // The shared project is still being created: no Drive yet.
+    await t.run(async (ctx) => ctx.db.delete((await ctx.db.query('deployment').first())!._id));
     const bytes = new TextEncoder().encode('MUTUAL NDA between two example parties.').buffer as ArrayBuffer;
     const documentId = await alice.as.action(api.documents.upload, { matterId: matter, filename: 'nda.txt', bytes, contentType: 'text/plain' });
     await t.action(internal.ingest.ingest, { documentId });

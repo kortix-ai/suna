@@ -21,12 +21,10 @@ export const auditAction = v.union(
   v.literal("member.invite_cancel"),
   v.literal("matter.create"), v.literal("matter.update"), v.literal("matter.close"),
   v.literal("thread.create"), v.literal("thread.delete"),
-  v.literal("token.mint"),
   v.literal("billing.plan"), v.literal("billing.checkout"),
   v.literal("export.csv"),
   v.literal("document.upload"), v.literal("document.delete"),
   v.literal("run.start"), v.literal("run.finish"), v.literal("run.cancel"),
-  v.literal("kit.install"),
   v.literal("cell.verify"), v.literal("cell.flag"), v.literal("cell.edit"),
   v.literal("issue.accept"), v.literal("issue.dismiss"),
   v.literal("library.create"), v.literal("library.update"),
@@ -64,7 +62,23 @@ export const cellState = v.union(
 );
 
 export default defineSchema({
-  // One Better Auth organization = one firm = one Kortix project.
+  // Lumen's one Kortix project, shared by every firm (a singleton row, key "default").
+  // The kit is installed once here: /Lumen/Kit/<kitVersion>/ in the project Drive.
+  deployment: defineTable({
+    key: v.literal("default"),
+    status: v.union(v.literal("provisioning"), v.literal("ready")),
+    /** A running bootstrap or kit upgrade holds this; one older than 5 min is presumed dead. */
+    claimedAt: v.optional(v.number()),
+    projectId: v.optional(v.string()),
+    accountId: v.optional(v.string()),
+    driveId: v.optional(v.string()),
+    kitVersion: v.optional(v.string()),
+    kitHash: v.optional(v.string()),
+    error: v.optional(v.string()),
+  }).index("by_key", ["key"]),
+
+  // One Better Auth organization = one firm = one folder, one agent and one
+  // service account in the shared Kortix project.
   firms: defineTable({
     orgId: v.string(),
     name: v.string(),
@@ -73,10 +87,10 @@ export default defineSchema({
     jurisdiction: v.optional(v.string()),
     logoId: v.optional(v.id("_storage")),
     model: v.optional(v.string()),
-    kortixProjectId: v.optional(v.string()),
-    kortixDriveId: v.optional(v.string()),
-    kitVersion: v.optional(v.string()),
-    kitHash: v.optional(v.string()),
+    /** The firm's Kortix agent (`lumen-f-<firmId>`) and the kit hash + model its config was last written with. */
+    kortixAgent: v.optional(v.string()),
+    agentConfig: v.optional(v.string()),
+    kortixServiceAccountId: v.optional(v.string()),
     status: firmStatus,
     error: v.optional(v.string()),
     plan,
@@ -88,7 +102,6 @@ export default defineSchema({
     createdBy: v.string(),
   })
     .index("by_orgId", ["orgId"])
-    .index("by_kortixProjectId", ["kortixProjectId"])
     .index("by_stripeCustomerId", ["stripeCustomerId"]),
 
   matters: defineTable({
@@ -100,7 +113,7 @@ export default defineSchema({
     practiceArea: v.optional(v.string()),
     status: matterStatus,
     visibility,
-    // Drive path under the firm's project Drive, written by provisioning (stage 2 uses it).
+    // Drive path: /Lumen/Firms/<firmId>/Matters/<matterId>.
     driveFolder: v.string(),
     /** index.json writes are serialized: concurrent Drive writes to one path become conflict copies. */
     indexWrite: v.optional(v.object({ scheduled: v.boolean(), wantedAt: v.number() })),
@@ -125,14 +138,12 @@ export default defineSchema({
     .index("by_firm", ["firmId"])
     .index("by_kortixSessionId", ["kortixSessionId"]),
 
-  // Short-lived project-scoped Kortix PATs, one per (firm, member). Never returned by a public query.
-  memberTokens: defineTable({
+  // The firm service account's secret. Internal only: never returned by a public query.
+  firmCredentials: defineTable({
     firmId: v.id("firms"),
-    userId: v.string(),
-    tokenId: v.string(),
+    serviceAccountId: v.string(),
     secret: v.string(),
-    expiresAt: v.number(),
-  }).index("by_firm_user", ["firmId", "userId"]),
+  }).index("by_firm", ["firmId"]),
 
   // Immutable: no delete mutation exists.
   auditEvents: defineTable({
@@ -161,7 +172,7 @@ export default defineSchema({
     paras: v.optional(v.number()),
     status: documentStatus,
     error: v.optional(v.string()),
-    /** Drive paths, relative to the firm Drive: the original and the anchored text. */
+    /** Drive paths in the project Drive, under the matter folder: the original and the anchored text. */
     driveFile: v.optional(v.string()),
     textFile: v.optional(v.string()),
     uploadedBy: v.string(),
@@ -179,16 +190,6 @@ export default defineSchema({
   }).index("by_doc_para", ["documentId", "para"]),
 
   // ── Agent kit and orchestration ──
-  kitInstalls: defineTable({
-    firmId: v.id("firms"),
-    version: v.string(),
-    hash: v.string(),
-    status: v.union(v.literal("running"), v.literal("succeeded"), v.literal("failed")),
-    startedAt: v.number(),
-    finishedAt: v.optional(v.number()),
-    error: v.optional(v.string()),
-  }).index("by_firm", ["firmId"]),
-
   /** A tabular review: rows = documents, columns = questions. Cells live in reviewCells. */
   reviews: defineTable({
     firmId: v.id("firms"),
@@ -257,7 +258,8 @@ export default defineSchema({
     runId: v.id("runs"),
     firmId: v.id("firms"),
     index: v.number(),
-    agent: v.string(),
+    /** The kit role the batch runs (lumen-extractor, …): its prompt file is named in input.json. */
+    role: v.string(),
     /** Diligence: map batches extract the checklist; the reduce batch writes the report once every map batch is done. */
     phase: v.optional(v.union(v.literal("map"), v.literal("reduce"))),
     status: batchStatus,

@@ -3,6 +3,7 @@ import type { Id } from "./_generated/dataModel";
 import { type MutationCtx, internalMutation, mutation, query } from "./_generated/server";
 import { isAdminRole, requireMatterAccess, requireProxy } from "./access";
 import { audit } from "./audit";
+import { projectIdOf } from "./deployment";
 
 /** A thread as the browser sees it. The Kortix ids are what the session view needs to stream. */
 const thread = v.object({
@@ -34,7 +35,7 @@ export const list = query({
   },
 });
 
-/** One thread with its firm's Kortix project (the session view needs it), or null. */
+/** One thread with the shared Kortix project id (the session view needs it), or null. */
 export const get = query({
   args: { threadId: v.string() },
   returns: v.union(v.null(), v.object({ thread, kortixProjectId: v.string() })),
@@ -43,8 +44,9 @@ export const get = query({
     const t = id ? await ctx.db.get(id) : null;
     if (!t) return null;
     try {
-      const { firm } = await requireMatterAccess(ctx, t.matterId);
-      return firm.kortixProjectId ? { thread: pick(t), kortixProjectId: firm.kortixProjectId } : null;
+      await requireMatterAccess(ctx, t.matterId);
+      const kortixProjectId = await projectIdOf(ctx);
+      return kortixProjectId ? { thread: pick(t), kortixProjectId } : null;
     } catch {
       return null;
     }

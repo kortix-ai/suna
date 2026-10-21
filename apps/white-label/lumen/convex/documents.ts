@@ -8,6 +8,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { type MutationCtx, action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { requireMatterAccess } from "./access";
 import { audit } from "./audit";
+import { driveIdOf } from "./deployment";
 import { documentStatus } from "./schema";
 
 export const MAX_BYTES = 50 * 1024 * 1024;
@@ -148,7 +149,7 @@ export const forIngest = internalQuery({
     const m = d && (await ctx.db.get(d.matterId));
     const f = d && (await ctx.db.get(d.firmId));
     if (!d || !m || !f) return null;
-    return { storageId: d.storageId, filename: d.filename, matterId: d.matterId, driveFolder: m.driveFolder, kortixDriveId: f.kortixDriveId };
+    return { storageId: d.storageId, filename: d.filename, matterId: d.matterId, driveFolder: m.driveFolder, kortixDriveId: f.status === "ready" ? ((await driveIdOf(ctx)) ?? undefined) : undefined };
   },
 });
 
@@ -239,7 +240,8 @@ export const indexTarget = internalQuery({
   handler: async (ctx, { matterId }) => {
     const m = await ctx.db.get(matterId);
     const f = m && (await ctx.db.get(m.firmId));
-    return m && f?.kortixDriveId ? { driveId: f.kortixDriveId, driveFolder: m.driveFolder } : null;
+    const driveId = f?.status === "ready" ? await driveIdOf(ctx) : null;
+    return m && driveId ? { driveId, driveFolder: m.driveFolder } : null;
   },
 });
 
@@ -369,9 +371,10 @@ export const remove = mutation({
     await ctx.db.delete(documentId);
     await ctx.storage.delete(d.storageId);
     await audit(ctx, { firm, actorId: userId, action: "document.delete", matterId: d.matterId, detail: d.filename });
-    if (firm.kortixDriveId) {
+    const driveId = await driveIdOf(ctx);
+    if (driveId) {
       const paths = [d.driveFile, d.textFile].filter((p): p is string => !!p);
-      await ctx.scheduler.runAfter(0, internal.ingest.removeFromDrive, { matterId: d.matterId, driveId: firm.kortixDriveId, paths });
+      await ctx.scheduler.runAfter(0, internal.ingest.removeFromDrive, { matterId: d.matterId, driveId, paths });
     }
     return null;
   },

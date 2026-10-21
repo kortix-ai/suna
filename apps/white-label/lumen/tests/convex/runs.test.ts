@@ -6,10 +6,12 @@ import { addMember, lumenTest, org, signedInUser } from './setup';
 
 // Kortix, faked at the SDK edge: an in-memory Drive and scripted sessions. Each
 // test scripts what "the agent" writes when its session starts or is prompted.
-type Session = { id: string; agent: string; inputPath: string; sends: string[] };
+/** `agent`: the session's Kortix agent (the firm's). `role`: the kit role its input.json names. */
+type Session = { id: string; agent: string; role: string; inputPath: string; sends: string[] };
 const fake = vi.hoisted(() => {
   const drive = new Map<string, { data: string; mtime: number }>();
   const sessions: Session[] = [];
+  const created: Array<{ projectId: string; agent: string }> = [];
   const stopped: string[] = [];
   const script = {
     onStart: (_s: Session) => {},
@@ -19,13 +21,16 @@ const fake = vi.hoisted(() => {
   };
   let clock = 0;
   const write = (path: string, value: unknown) => drive.set(path, { data: typeof value === 'string' ? value : JSON.stringify(value), mtime: ++clock });
-  return { drive, sessions, stopped, script, write };
+  return { drive, sessions, created, stopped, script, write };
 });
 
 vi.mock('@kortix/sdk', () => ({
-  createProjectSession: async (_pid: string, input: { agent_name: string; initial_prompt: string }) => {
-    const inputPath = /Input: (\S+)/.exec(input.initial_prompt)![1].replace('/drives/company', '/Company');
-    const s = { id: `sess_${fake.sessions.length + 1}`, agent: input.agent_name, inputPath, sends: [] };
+  createProjectSession: async (pid: string, input: { agent_name: string; initial_prompt: string }) => {
+    fake.created.push({ projectId: pid, agent: input.agent_name });
+    // The firm folder /Lumen/Firms/<firmId> mounts at /drives/<firmId> in the session.
+    const inputPath = /Input: (\S+)/.exec(input.initial_prompt)![1].replace(/^\/drives\/([^/]+)/, '/Lumen/Firms/$1');
+    const role = JSON.parse(fake.drive.get(inputPath)!.data).role as string;
+    const s = { id: `sess_${fake.sessions.length + 1}`, agent: input.agent_name, role, inputPath, sends: [] };
     fake.sessions.push(s);
     fake.script.onStart(s);
     return { session_id: s.id };
@@ -74,6 +79,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   fake.drive.clear();
   fake.sessions.length = 0;
+  fake.created.length = 0;
   fake.stopped.length = 0;
   fake.script.onStart = () => {};
   fake.script.onSend = () => {};
@@ -83,27 +89,33 @@ afterEach(() => vi.useRealTimers());
 
 const PARA = (i: number) => `${i}.1 The clause of document ${i} that answers every column.`;
 
-/** A ready firm (kit current) with one matter of `n` ready documents, each with one paragraph. */
+/** An onboarded firm in the shared project (kit current) with one matter of `n` ready documents, each with one paragraph. */
 async function world(n: number) {
   const t = lumenTest();
   const orgId = await org(t, 'Example Co');
   const owner = await signedInUser(t, 'owner@example.com');
   await addMember(t, orgId, owner.userId, 'owner');
   const w = await t.run(async (ctx) => {
-    const firmId = await ctx.db.insert('firms', {
-      orgId, name: 'Example & Co. Legal', practiceTags: [], sizeBand: '2-10', status: 'ready', kortixProjectId: 'proj_1',
-      kortixDriveId: 'drive_1', kitVersion: KIT.version, kitHash: KIT.hash, plan: 'trial', seats: 5, billingStatus: 'none', createdBy: owner.userId,
+    await ctx.db.insert('deployment', {
+      key: 'default', status: 'ready', projectId: 'proj_shared', accountId: 'acc_1', driveId: 'drive_shared', kitVersion: KIT.version, kitHash: KIT.hash,
     });
+    const firmId = await ctx.db.insert('firms', {
+      orgId, name: 'Example & Co. Legal', practiceTags: [], sizeBand: '2-10', status: 'ready',
+      plan: 'trial', seats: 5, billingStatus: 'none', createdBy: owner.userId,
+    });
+    await ctx.db.patch(firmId, { kortixAgent: `lumen-f-${firmId}`, agentConfig: `${KIT.hash}:`, kortixServiceAccountId: 'sa_1' });
+    await ctx.db.insert('firmCredentials', { firmId, serviceAccountId: 'sa_1', secret: 'kortix_sa_secret_1' });
+    const root = `/Lumen/Firms/${firmId}/Matters/m1`;
     const matterId = await ctx.db.insert('matters', {
       firmId, name: 'Project Aster', client: 'Brightwater Example Holdings', parties: [], status: 'open', visibility: 'firm',
-      driveFolder: '/Company/Lumen/Matters/m1', createdBy: 'user_owner', updatedAt: 0,
+      driveFolder: root, createdBy: 'user_owner', updatedAt: 0,
     });
     const docs: Id<'documents'>[] = [];
     for (let i = 1; i <= n; i++) {
       const storageId = await ctx.storage.store(new Blob(['x']));
       const id = await ctx.db.insert('documents', {
         firmId, matterId, storageId, filename: `doc-${i}.pdf`, mime: 'application/pdf', bytes: 1, status: 'ready', pages: 1, paras: 1,
-        driveFile: `/Company/Lumen/Matters/m1/Docs/d${i}.pdf`, textFile: `/Company/Lumen/Matters/m1/Text/d${i}.md`, uploadedBy: 'user_owner',
+        driveFile: `${root}/Docs/d${i}.pdf`, textFile: `${root}/Text/d${i}.md`, uploadedBy: 'user_owner',
       });
       await ctx.db.insert('documentParas', { documentId: id, matterId, page: 1, para: 1, text: PARA(i) });
       docs.push(id);
@@ -154,7 +166,14 @@ describe('run engine: fan-out, validation, repair, nudge, relaunch, limits', () 
     await finish(t);
     const run = await t.run((ctx) => ctx.db.get(runId));
     expect(run?.status).toBe('succeeded');
-    expect(fake.sessions.map((s) => s.agent)).toEqual(['lumen-extractor', 'lumen-extractor']);
+    expect(fake.sessions.map((s) => s.role)).toEqual(['lumen-extractor', 'lumen-extractor']);
+    // Every batch runs on the firm's one agent in the shared project; the role is a kit file the input names.
+    const firm = await t.run(async (ctx) => (await ctx.db.query('firms').first())!);
+    expect(fake.created).toEqual([1, 2].map(() => ({ projectId: 'proj_shared', agent: `lumen-f-${firm._id}` })));
+    const input = inputOf(fake.sessions[0]) as Input & Record<string, string>;
+    expect(input.role_path).toBe(`${KIT.dir}/agents/lumen-extractor.md`);
+    expect(input.batch_dir.startsWith(`/drives/${firm._id}/Runs/`)).toBe(true);
+    expect(input.matter_dir).toBe(`/drives/${firm._id}/Matters/m1`);
     expect(fake.sessions.map((s) => inputOf(s).documents.length)).toEqual([4, 2]);
     const cells = await t.run((ctx) => ctx.db.query('reviewCells').withIndex('by_review', (q) => q.eq('reviewId', reviewId)).collect());
     expect(cells).toHaveLength(48);
@@ -343,7 +362,7 @@ describe('citations, human work, cancel', () => {
     const runId = await t.mutation(internal.runs.askAsOwner, { matterId, question: 'What rent does it set?' });
     await finish(t);
     expect((await t.run((ctx) => ctx.db.get(runId)))?.status).toBe('succeeded');
-    expect(fake.sessions[0].agent).toBe('lumen-counsel');
+    expect(fake.sessions[0].role).toBe('lumen-counsel');
     const answer = await t.run((ctx) => ctx.db.query('answers').withIndex('by_run', (q) => q.eq('runId', runId)).first());
     expect(answer).toMatchObject({ addressed: false, citations: [{ documentId: docs[1], status: 'verified' }] });
   });
@@ -403,10 +422,10 @@ describe('workflows: contract review, due diligence, draft', () => {
     await finish(t);
     expect((await t.run((ctx) => ctx.db.get(runId)))?.status).toBe('succeeded');
     const s = fake.sessions[0];
-    expect(s.agent).toBe('lumen-reviewer');
+    expect(s.role).toBe('lumen-reviewer');
     const input = JSON.parse(fake.drive.get(s.inputPath)!.data);
     expect(input).toMatchObject({ kind: 'contract_review', perspective: 'Brightwater Example Holdings' });
-    expect(input.playbook_path).toMatch(/^\/drives\/company\/Lumen\/Runs\/.+\/in\/playbook\.md$/);
+    expect(input.playbook_path).toMatch(/^\/drives\/[a-z0-9]+\/Runs\/.+\/in\/playbook\.md$/);
     expect(fake.drive.get(`${dirOf(s)}/in/playbook.md`)!.data).toBe(PLAYBOOK);
     const view = await owner.as.query(api.runs.get, { runId });
     expect(view!.issues.map((i) => [i.ruleId, i.assessment, i.severity, i.citations[0].status])).toEqual([
@@ -464,7 +483,7 @@ describe('workflows: contract review, due diligence, draft', () => {
     docs.forEach((d, i) => docIndex.set(d, i + 1));
     let mapsDoneAtReduce = -1;
     fake.script.onStart = (s) => {
-      if (s.agent === 'lumen-extractor') return writeAll(s);
+      if (s.role === 'lumen-extractor') return writeAll(s);
       mapsDoneAtReduce = fake.stopped.length;
       const input = JSON.parse(fake.drive.get(s.inputPath)!.data);
       expect(input).toMatchObject({ kind: 'diligence_reduce' });
@@ -483,7 +502,7 @@ describe('workflows: contract review, due diligence, draft', () => {
     const runId = await owner.as.mutation(api.workflows.startDiligence, { matterId });
     await finish(t);
     expect((await t.run((ctx) => ctx.db.get(runId)))?.status).toBe('succeeded');
-    expect(fake.sessions.map((s) => s.agent)).toEqual(['lumen-extractor', 'lumen-extractor', 'lumen-counsel']);
+    expect(fake.sessions.map((s) => s.role)).toEqual(['lumen-extractor', 'lumen-extractor', 'lumen-counsel']);
     expect(mapsDoneAtReduce).toBe(2);
     const view = await owner.as.query(api.runs.get, { runId });
     expect(view!.result).toMatchObject({
@@ -511,7 +530,7 @@ describe('workflows: contract review, due diligence, draft', () => {
       matterId, templateId, fields: { party_a: 'Alpha Example Ltd', party_b: 'Beta Example Inc.', evil: 'x', governing_law: '  ' },
     });
     await finish(t);
-    expect(fake.sessions[0].agent).toBe('lumen-drafter');
+    expect(fake.sessions[0].role).toBe('lumen-drafter');
     const view = await owner.as.query(api.runs.get, { runId });
     expect(view!.run.status).toBe('succeeded');
     expect(view!.result).toMatchObject({ kind: 'draft', unfilled: ['effective_date', 'governing_law'], files: [{ name: 'draft.docx' }] });

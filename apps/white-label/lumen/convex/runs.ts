@@ -16,7 +16,7 @@ import { audit } from "./audit";
 import { type Citation, verifyCitation } from "./lib/cite";
 import { DD_COLUMNS, PRESET_COLUMNS } from "./lib/columns";
 import { templateFields } from "./lib/template";
-import { COUNSEL_AGENT, DRAFTER_AGENT, EXTRACTOR_AGENT, REVIEWER_AGENT } from "./lumenAgent";
+import { COUNSEL_ROLE, DRAFTER_ROLE, EXTRACTOR_ROLE, REVIEWER_ROLE } from "./lumenAgent";
 import { batchStatus, cellState, checkedCitation, column, runKind, runStatus, severity } from "./schema";
 
 export const DOCS_PER_BATCH = 4;
@@ -55,22 +55,22 @@ type RunInput = {
   fields?: Record<string, string>;
 };
 
-/** The agent and the batches each kind runs as. A draft may have no source documents; every other kind needs one. */
-function plan(a: RunInput): Array<{ agent: string; docs: Doc<"documents">[]; phase?: "map" | "reduce" }> {
+/** The kit role and the batches each kind runs as (every role runs on the firm's one agent). A draft may have no source documents; every other kind needs one. */
+function plan(a: RunInput): Array<{ role: string; docs: Doc<"documents">[]; phase?: "map" | "reduce" }> {
   switch (a.kind) {
     case "ask":
-      return [{ agent: COUNSEL_AGENT, docs: a.docs }];
+      return [{ role: COUNSEL_ROLE, docs: a.docs }];
     case "contract_review":
-      return [{ agent: REVIEWER_AGENT, docs: a.docs }];
+      return [{ role: REVIEWER_ROLE, docs: a.docs }];
     case "draft":
-      return [{ agent: DRAFTER_AGENT, docs: a.docs }];
+      return [{ role: DRAFTER_ROLE, docs: a.docs }];
     case "diligence":
       return [
-        ...chunk(a.docs, DOCS_PER_BATCH).map((docs) => ({ agent: EXTRACTOR_AGENT, docs, phase: "map" as const })),
-        { agent: COUNSEL_AGENT, docs: a.docs, phase: "reduce" },
+        ...chunk(a.docs, DOCS_PER_BATCH).map((docs) => ({ role: EXTRACTOR_ROLE, docs, phase: "map" as const })),
+        { role: COUNSEL_ROLE, docs: a.docs, phase: "reduce" },
       ];
     default:
-      return chunk(a.docs, DOCS_PER_BATCH).map((docs) => ({ agent: EXTRACTOR_AGENT, docs }));
+      return chunk(a.docs, DOCS_PER_BATCH).map((docs) => ({ role: EXTRACTOR_ROLE, docs }));
   }
 }
 
@@ -84,7 +84,7 @@ export async function createRun(ctx: MutationCtx, a: RunInput) {
   const batches = plan(a);
   for (const [index, b] of batches.entries()) {
     await ctx.db.insert("runBatches", {
-      runId, firmId: a.firm._id, index, agent: b.agent, phase: b.phase, status: "pending",
+      runId, firmId: a.firm._id, index, role: b.role, phase: b.phase, status: "pending",
       documentIds: b.docs.map((d) => d._id), attempts: { repair: 0, nudge: 0, relaunch: 0 },
     });
   }

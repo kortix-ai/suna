@@ -4,7 +4,8 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { insertDocument } from "./documents";
-import { MATTERS_ROOT } from "./matters";
+import { deploymentRow } from "./deployment";
+import { MATTERS_ROOT } from "./lumenAgent";
 import { party } from "./schema";
 
 export const firm = internalQuery({
@@ -12,7 +13,7 @@ export const firm = internalQuery({
   returns: v.union(v.null(), v.object({ _id: v.id("firms"), name: v.string(), status: v.string(), kitVersion: v.optional(v.string()) })),
   handler: async (ctx, { firmId }) => {
     const f = firmId ? await ctx.db.get(firmId) : await ctx.db.query("firms").filter((q) => q.eq(q.field("status"), "ready")).first();
-    return f ? { _id: f._id, name: f.name, status: f.status, kitVersion: f.kitVersion } : null;
+    return f ? { _id: f._id, name: f.name, status: f.status, kitVersion: (await deploymentRow(ctx))?.kitVersion } : null;
   },
 });
 
@@ -33,7 +34,7 @@ export const matter = internalMutation({
       firmId: a.firmId, name: a.name, client: a.client, parties: a.parties, practiceArea: a.practiceArea, status: "open",
       visibility: "firm", driveFolder: "", createdBy: firm.createdBy, updatedAt: Date.now(),
     });
-    await ctx.db.patch(matterId, { driveFolder: `${MATTERS_ROOT}/${matterId}` });
+    await ctx.db.patch(matterId, { driveFolder: `${MATTERS_ROOT(a.firmId)}/${matterId}` });
     return matterId;
   },
 });

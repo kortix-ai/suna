@@ -1,7 +1,12 @@
 "use node";
 
-// The operator credential and the retry rule every Kortix call shares.
-// KORTIX_OPERATOR_TOKEN lives only in Convex env; Next.js and the browser never hold it.
+// The two Kortix credentials and the retry rule every Kortix call shares.
+// - The operator (KORTIX_OPERATOR_TOKEN, Convex env only): the project owner.
+//   It configures the shared project (Drive, folder grants, agents, service
+//   accounts) and writes firm files. It never creates or drives a session.
+// - A firm's service account (its secret in firmCredentials): project role
+//   `member`. It creates and drives that firm's sessions, which Kortix keeps
+//   private to it, so no other firm's credential reaches them.
 
 import { makeDriveFolder } from "@kortix/sdk";
 import { createScopedKortix, runWithKortix } from "@kortix/sdk/server";
@@ -17,6 +22,19 @@ export function operator() {
 /** Run module-level SDK calls (Drive, agent config) as the operator. */
 export function asOperator<T>(fn: () => Promise<T>): Promise<T> {
   return runWithKortix(operator().config, fn);
+}
+
+/** A firm's service-account client: every session call for that firm goes through it. */
+export function firmClient(secret: string) {
+  const backendUrl = process.env.KORTIX_UPSTREAM;
+  if (!backendUrl) throw new Error("500: KORTIX_UPSTREAM unset");
+  const config = { backendUrl, getToken: async () => secret };
+  return { config, kortix: createScopedKortix(config) };
+}
+
+/** Run module-level SDK calls (sessions, turns) as the firm's service account. */
+export function asFirm<T>(secret: string, fn: () => Promise<T>): Promise<T> {
+  return runWithKortix(firmClient(secret).config, fn);
 }
 
 /**
