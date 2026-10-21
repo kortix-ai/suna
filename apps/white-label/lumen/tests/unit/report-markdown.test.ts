@@ -36,4 +36,9 @@ describe('reportMarkdown: a citation the check did not confirm never reads as a 
     expect(md).toContain('A (msa.pdf, p. 4) B (document, p. 7, not found in source).');
     expect(md).toContain('- **High**: Uncapped (msa.pdf, p. 4)\n');
   });
+
+  test('a red flag with no citation says "no source cited", never a plain fact', () => {
+    const md = reportMarkdown('DD', { redFlags: [{ title: 'Exclusivity', severity: 'high', citations: [] }] });
+    expect(md).toContain('- **High**: Exclusivity (no source cited)\n');
+  });
 });

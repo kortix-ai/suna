@@ -13,7 +13,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { type MutationCtx, type QueryCtx, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { requireMatterAccess } from "./access";
 import { audit } from "./audit";
-import { type Citation, verifyCitation } from "./lib/cite";
+import { type Citation, sectionCitations, verifyCitation } from "./lib/cite";
 import { DD_COLUMNS, PRESET_COLUMNS } from "./lib/columns";
 import { templateFields } from "./lib/template";
 import { COUNSEL_ROLE, DRAFTER_ROLE, EXTRACTOR_ROLE, REVIEWER_ROLE, sessionAgent } from "./lumenAgent";
@@ -343,9 +343,17 @@ export const get = query({
     const events = await ctx.db.query("runEvents").withIndex("by_run", (q) => q.eq("runId", runId)).order("desc").take(200);
     const docs = await Promise.all(run.documentIds.map((id) => ctx.db.get(id)));
     const names = new Map(docs.filter(Boolean).map((d) => [d!._id, d!.filename]));
+    // A citation may name a matter document outside the run (the agent followed a cross-reference).
+    const nameOf = async (id: Id<"documents">) => {
+      if (!names.has(id)) {
+        const d = await ctx.db.get(id);
+        names.set(id, d && d.matterId === run.matterId ? d.filename : "Document");
+      }
+      return names.get(id)!;
+    };
     const paraText = async (c: Infer<typeof checkedCitation>) => {
       const p = await ctx.db.query("documentParas").withIndex("by_doc_para", (q) => q.eq("documentId", c.documentId).eq("para", c.para)).unique();
-      return { ...c, filename: names.get(c.documentId) ?? "Document", text: p?.text ?? "" };
+      return { ...c, filename: await nameOf(c.documentId), text: p?.text ?? "" };
     };
     const review = run.reviewId ? await ctx.db.get(run.reviewId) : null;
     const cells = review
@@ -380,7 +388,7 @@ export const get = query({
             kind: result.kind, title: result.title, summary: result.summary, markdown: result.markdown, unfilled: result.unfilled,
             sections: result.sections && await Promise.all(result.sections.map(async (x) => ({ ...x, citations: await Promise.all(x.citations.map(paraText)) }))),
             redFlags: result.redFlags && await Promise.all(result.redFlags.map(async (f) => ({
-              title: f.title, severity: f.severity, filename: f.documentId ? names.get(f.documentId) : undefined,
+              title: f.title, severity: f.severity, filename: f.documentId ? await nameOf(f.documentId) : undefined,
               citations: await Promise.all(f.citations.map(paraText)),
             }))),
             citations: result.citations && await Promise.all(result.citations.map(paraText)),
@@ -534,13 +542,18 @@ export const recordFile = internalMutation({
   },
 });
 
-/** Check every citation against Lumen's own paragraphs. Unknown documents and unverifiable quotes are kept as unverified. */
-async function checkCitations(ctx: MutationCtx, raw: Citation[], allowed: Set<string>) {
+/**
+ * Check every citation against Lumen's own paragraphs. A citation may name any ready
+ * document of the matter (the agent follows cross-references inside the matter
+ * folder, and the citation layer on screen resolves against the same set). A
+ * citation to a document outside the matter is dropped and counted as unverified.
+ */
+async function checkCitations(ctx: MutationCtx, raw: Citation[], citable: Set<string>) {
   const out: Infer<typeof checkedCitation>[] = [];
   const cache = new Map<string, Array<{ page: number; para: number; text: string }>>();
   for (const c of raw) {
     const documentId = ctx.db.normalizeId("documents", c.doc_id);
-    if (!documentId || !allowed.has(documentId)) continue;
+    if (!documentId || !citable.has(documentId)) continue;
     if (!cache.has(documentId)) {
       cache.set(documentId, await ctx.db.query("documentParas").withIndex("by_doc_para", (q) => q.eq("documentId", documentId)).collect());
     }
@@ -554,11 +567,12 @@ async function checkCitations(ctx: MutationCtx, raw: Citation[], allowed: Set<st
 }
 
 type Checked = Infer<typeof checkedCitation>;
-type Ctx = { run: Doc<"runs">; batch: Doc<"runBatches">; allowed: Set<string>; unverified: number };
+/** allowed: the batch's documents (rows and issues). citable: every ready document of the matter (citations). */
+type Ctx = { run: Doc<"runs">; batch: Doc<"runBatches">; allowed: Set<string>; citable: Set<string>; unverified: number };
 const fileArg = v.object({ name: v.string(), storageId: v.id("_storage"), bytes: v.number() });
 
 async function cite(ctx: MutationCtx, c: Ctx, raw: Citation[] | undefined): Promise<Checked[]> {
-  const { citations, dropped } = await checkCitations(ctx, raw ?? [], c.allowed);
+  const { citations, dropped } = await checkCitations(ctx, raw ?? [], c.citable);
   c.unverified += dropped + citations.filter((x) => x.status === "unverified").length;
   return citations;
 }
@@ -627,18 +641,21 @@ async function ingestIssues(ctx: MutationCtx, c: Ctx, value: any, files: Array<I
 async function ingestReport(ctx: MutationCtx, c: Ctx, value: any, files: Array<Infer<typeof fileArg>>) {
   const sections = [];
   for (const s of value.sections as any[]) {
-    sections.push({ heading: String(s.heading).slice(0, 120), bodyMd: String(s.body_md).slice(0, 8000), citations: await cite(ctx, c, s.citations) });
+    const bodyMd = String(s.body_md).slice(0, 8000);
+    sections.push({ heading: String(s.heading).slice(0, 120), bodyMd, citations: await cite(ctx, c, sectionCitations(s.citations, bodyMd)) });
   }
   const redFlags = [];
   for (const f of value.red_flags as any[]) {
     const documentId = ctx.db.normalizeId("documents", f.doc_id);
     redFlags.push({
-      title: String(f.title).slice(0, 200), severity: f.severity, documentId: documentId && c.allowed.has(documentId) ? documentId : undefined,
+      title: String(f.title).slice(0, 200), severity: f.severity, documentId: documentId && c.citable.has(documentId) ? documentId : undefined,
       citations: await cite(ctx, c, f.citations),
     });
   }
   await putResult(ctx, c.run, { runId: c.run._id, matterId: c.run.matterId, kind: "report", sections, redFlags, files });
   await event(ctx, c.run._id, "report", `Report ready: ${sections.length} sections, ${redFlags.length} red flags`, c.batch._id);
+  const unsupported = redFlags.filter((f) => !f.citations.some((x) => x.status !== "unverified")).length;
+  if (unsupported) await event(ctx, c.run._id, "citations", `${unsupported} red flag${unsupported === 1 ? " has" : "s have"} no checked source`, c.batch._id);
 }
 
 async function ingestDraft(ctx: MutationCtx, c: Ctx, value: any, files: Array<Infer<typeof fileArg>>, problems: string[]) {
@@ -690,7 +707,10 @@ export const ingestResult = internalMutation({
     const batch = await ctx.db.get(batchId);
     const run = batch && (await ctx.db.get(batch.runId));
     if (!batch || !run || TERMINAL_BATCH.has(batch.status)) return [];
-    const c: Ctx = { run, batch, allowed: new Set<string>(batch.documentIds), unverified: 0 };
+    const ready = await ctx.db.query("documents").withIndex("by_matter", (q) => q.eq("matterId", run.matterId)).collect();
+    const citable = new Set<string>(ready.filter((d) => d.status === "ready").map((d) => d._id));
+    for (const id of batch.documentIds) citable.add(id);
+    const c: Ctx = { run, batch, allowed: new Set<string>(batch.documentIds), citable, unverified: 0 };
     const problems: string[] = [];
     const expected = resultContract(run.kind, batch.phase).schema;
     const got = String(value.schema ?? "").split("/")[0];

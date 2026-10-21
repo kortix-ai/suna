@@ -294,9 +294,10 @@ export function ReportView({ view, matterId, runId }: { view: RunView; matterId:
               const missing = !!c && c.status === 'unverified';
               const where = (
                 <>
-                  {f.filename}
+                  {f.filename ?? c?.filename}
                   {c && <span className="ml-1 font-mono">p. {c.page}</span>}
                   {missing && <span className="ml-1 text-destructive sm:ml-0 sm:block" data-testid="citation-not-found">Citation not found</span>}
+                  {!c && <span className="ml-1 text-destructive sm:ml-0 sm:block" data-testid="citation-none">No source cited</span>}
                 </>
               );
               return (

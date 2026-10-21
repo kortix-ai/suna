@@ -47,3 +47,29 @@ export function verifyCitation(c: Citation, paras: readonly Para[]): { status: C
   const other = paras.find((p) => normalize(p.text).includes(quote));
   return other ? { status: "relocated", a: anchorOf(other) } : { status: "unverified", a: c.a };
 }
+
+/**
+ * A report section's citations: the ones it lists plus every `/cite?d=…&a=…&q=…`
+ * link in its body that the list misses. Every link a lawyer can click is then
+ * checked, and the exported report has a status for each one.
+ */
+export function sectionCitations(listed: readonly Citation[] | undefined, bodyMd: string): Citation[] {
+  const out = [...(listed ?? [])];
+  const seen = new Set(out.map((x) => `${x.doc_id}\u0000${x.quote}`));
+  for (const m of bodyMd.matchAll(/\]\((\/cite\?[^)\s]*)\)/g)) {
+    let u: URL;
+    try {
+      u = new URL(m[1], "https://lumen.invalid");
+    } catch {
+      continue;
+    }
+    const doc_id = u.searchParams.get("d") ?? "";
+    const a = u.searchParams.get("a") ?? "";
+    const quote = u.searchParams.get("q") ?? "";
+    const key = `${doc_id}\u0000${quote}`;
+    if (!doc_id || !a || !quote || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ doc_id, a, quote });
+  }
+  return out;
+}

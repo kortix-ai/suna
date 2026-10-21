@@ -2,7 +2,8 @@
 // every citation link (/cite?d=<doc>&a=p<page>.<para>&q=…) becomes
 // "(filename, p. N)". The status comes from Lumen's citation check (convex/runs.ts
 // ingestReport): a link whose quote is not in the source, or that the check never
-// saw, reads "(filename, p. N, not found in source)". It is never a plain reference.
+// saw, reads "(filename, p. N, not found in source)". A red flag with no citation
+// reads "(no source cited)". Neither is ever a plain reference.
 
 import { parseCite } from './cite-link';
 
@@ -16,6 +17,8 @@ type Report = {
 const SEVERITY = { high: 'High', medium: 'Medium', low: 'Low' } as const;
 const CITE = /\[[^\]]*\]\((\/cite\?[^)\s]*)\)/g;
 export const NOT_FOUND = 'not found in source';
+/** A red flag with no citation at all: it is never written as plain fact. */
+export const NO_SOURCE = 'no source cited';
 
 const checked = (c: Citation | undefined) => !!c && c.status !== 'unverified';
 
@@ -40,7 +43,8 @@ export function reportMarkdown(title: string, report: Report): string {
     out.push('## Red flags', '');
     for (const f of flags) {
       const c = bestCitation(f.citations);
-      out.push(`- **${SEVERITY[f.severity]}**: ${f.title} ${ref(f.filename ?? c?.filename ?? 'document', c)}`);
+      const where = c ? ref(f.filename ?? c.filename, c) : `(${f.filename ? `${f.filename}, ` : ''}${NO_SOURCE})`;
+      out.push(`- **${SEVERITY[f.severity]}**: ${f.title} ${where}`);
     }
     out.push('');
   }

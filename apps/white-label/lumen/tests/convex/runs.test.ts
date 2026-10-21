@@ -542,6 +542,39 @@ describe('workflows: contract review, due diligence, draft', () => {
     expect(view!.cells).toHaveLength(5 * 8);
   });
 
+  test('due diligence: a report may cite a matter document outside the run; body links are checked; a flag whose only source is outside the matter has none', async () => {
+    const { t, owner, matterId, docs } = await world(3);
+    docs.forEach((d, i) => docIndex.set(d, i + 1));
+    fake.script.onStart = (s) => {
+      if (s.role === 'lumen-extractor') return writeAll(s);
+      const link = (d: string, q: string) => `[1](/cite?d=${d}&a=p1.1&q=${encodeURIComponent(q)})`;
+      fake.write(`${dirOf(s)}/out/report.json`, {
+        schema: 'diligence-report/1',
+        sections: [{
+          heading: 'Commercial terms',
+          body_md: `The SPA refers to the supply agreement ${link(docs[2], 'The clause of document 3')} and the NDA ${link(docs[0], 'The clause of document 1')}.`,
+          citations: [{ doc_id: docs[0], a: 'p1.1', quote: 'The clause of document 1' }],
+        }],
+        red_flags: [
+          { title: 'Exclusivity in the supply agreement', severity: 'high', doc_id: docs[2], citations: [{ doc_id: docs[2], a: 'p1.1', quote: 'The clause of document 3' }] },
+          // A citation to a document outside the matter is dropped: the flag is left with no source.
+          { title: 'A flag with no source', severity: 'medium', doc_id: 'not_a_document', citations: [{ doc_id: 'not_a_document', a: 'p1.1', quote: 'x' }] },
+        ],
+      });
+      fake.write(`${dirOf(s)}/done.json`, { status: 'succeeded', outputs: [] });
+    };
+    const runId = await owner.as.mutation(api.workflows.startDiligence, { matterId, documentIds: [docs[0], docs[1]] });
+    await finish(t);
+    expect((await t.run((ctx) => ctx.db.get(runId)))?.status).toBe('succeeded');
+    const view = await owner.as.query(api.runs.get, { runId });
+    expect(view!.result!.sections![0].citations.map((c) => [c.filename, c.status])).toEqual([['doc-1.pdf', 'verified'], ['doc-3.pdf', 'verified']]);
+    expect(view!.result!.redFlags).toMatchObject([
+      { title: 'Exclusivity in the supply agreement', filename: 'doc-3.pdf', citations: [{ status: 'verified' }] },
+      { title: 'A flag with no source', citations: [] },
+    ]);
+    expect(view!.events.map((e) => e.detail)).toContain('1 red flag has no checked source');
+  });
+
   test('draft: unknown fields are dropped, the template is copied, draft.json + draft.docx are stored', async () => {
     const { t, owner, firmId, matterId } = await world(0);
     const { templateId } = await libraryOf(t, firmId);
