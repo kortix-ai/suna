@@ -335,7 +335,15 @@ const isObject = (v: unknown): v is Json => !!v && typeof v === 'object' && !Arr
  * the provider, the repository branch and access. The deprecated
  * `opencode_*` aliases go when their `runtime_*` names are present.
  */
-const SESSION_PLATFORM_KEYS = ['sandbox_url', 'audit_v2', 'repository_access', 'sandbox_provider', 'branch_name', 'base_ref'];
+const SESSION_PLATFORM_KEYS = ['sandbox_url', 'audit_v2', 'repository_access', 'sandbox_provider', 'branch_name', 'base_ref', 'owner_type'];
+
+/** `opencode_session_id` beside `runtime_session_id` is its deprecated alias: dropped at any depth. */
+function dropRuntimeAliases(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(dropRuntimeAliases);
+  if (!isObject(value)) return value;
+  const entries = Object.entries(value).filter(([k]) => !(k === 'opencode_session_id' && 'runtime_session_id' in value));
+  return Object.fromEntries(entries.map(([k, v]) => [k, dropRuntimeAliases(v)]));
+}
 
 function scrubSession(session: unknown): unknown {
   if (!isObject(session)) return session;
@@ -344,6 +352,13 @@ function scrubSession(session: unknown): unknown {
   for (const k of SESSION_PLATFORM_KEYS) delete out[k];
   if ('runtime_session_id' in out) delete out.opencode_session_id;
   if ('runtime_sessions' in out) delete out.opencode_sessions;
+  // The metadata's audit envelope and runtime model bookkeeping (`opencode_model*`): Lumen runs
+  // the firm's model with no picker, so the composer has no pin to show or keep.
+  if (isObject(session.metadata)) {
+    out.metadata = Object.fromEntries(
+      Object.entries(session.metadata).filter(([k]) => k !== 'audit_v2' && k !== 'repository_access' && !k.startsWith('opencode_')),
+    );
+  }
   return out;
 }
 
@@ -489,7 +504,7 @@ function scrubTurn(value: unknown): unknown {
  */
 export function redactIdentity(path: string, body: unknown, firmAgent = ''): unknown {
   if (RUNTIME_HEALTH.test(path)) return scrubHealth(body);
-  if (TRANSCRIPT.test(path)) return scrubInbox(body);
+  if (TRANSCRIPT.test(path)) return dropRuntimeAliases(scrubInbox(body));
   if (RUNTIME_COMMANDS.test(path) && Array.isArray(body)) return scrubCommands(body);
   if (PROJECT_DETAIL.test(path)) return scrubPlatform(dropOperatorIds(scopeDetail(body, firmAgent)));
   if (PROJECT_RECORD.test(path) || CHANGE_REQUESTS.test(path)) return scrubPlatform(dropOperatorIds(body));
@@ -498,12 +513,12 @@ export function redactIdentity(path: string, body: unknown, firmAgent = ''): unk
   if (SESSION_TURN.test(path)) return scrubTurn(body);
   if (SESSION_RECORD.test(path)) return dropOperatorIds(Array.isArray(body.sessions) ? { ...body, sessions: body.sessions.map(scrubSession) } : scrubSession(body));
   if (SESSION_SNAPSHOT.test(path)) {
-    return {
+    return dropRuntimeAliases({
       ...(dropOperatorIds(body) as Json),
       session: dropOperatorIds(scrubSession(body.session)),
       ...('turn' in body ? { turn: scrubTurn(body.turn) } : {}),
       ...('runtime' in body ? { runtime: scrubSnapshotRuntime(body.runtime) } : {}),
-    };
+    });
   }
   if (!MESSAGE_AUTHORS.test(path)) return body;
   const keep = (map: unknown) =>

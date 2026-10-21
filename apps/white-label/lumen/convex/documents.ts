@@ -9,6 +9,7 @@ import { type MutationCtx, action, internalMutation, internalQuery, mutation, qu
 import { requireMatterAccess } from "./access";
 import { audit } from "./audit";
 import { driveIdOf } from "./deployment";
+import { sandboxPath } from "./lumenAgent";
 import { documentStatus } from "./schema";
 
 export const MAX_BYTES = 50 * 1024 * 1024;
@@ -100,12 +101,12 @@ export const addUploaded = internalMutation({
 /** Where the Assistant's files for a matter are, for a caller who sees the matter. Null while its folder moves. */
 export const outputsTarget = internalQuery({
   args: { matterId: v.id("matters") },
-  returns: v.union(v.null(), v.object({ driveId: v.string(), driveFolder: v.string() })),
+  returns: v.union(v.null(), v.object({ driveId: v.string(), driveFolder: v.string(), matterDir: v.string() })),
   handler: async (ctx, { matterId }) => {
     const { matter, firm } = await requireMatterAccess(ctx, matterId);
     const driveId = await driveIdOf(ctx);
     if (matter.folderMoving || firm.status !== "ready" || !driveId || !matter.driveFolder) return null;
-    return { driveId, driveFolder: matter.driveFolder };
+    return { driveId, driveFolder: matter.driveFolder, matterDir: sandboxPath(matter.driveFolder) };
   },
 });
 

@@ -61,6 +61,7 @@ describe('proxy policy: browser-visible responses carry no platform plumbing', (
       sandbox_url: 'https://example-tunnel.invalid/v1/p/sbx_01M5/8000', audit_v2: { actor_type: 'service_account' },
       repository_access: false, sandbox_provider: 'platinum', branch_name: 'session/s1', base_ref: 'main',
       runtime_session_id: 'ses_9', opencode_session_id: 'ses_9', runtime_sessions: [], opencode_sessions: [],
+      metadata: { source: 'ui', lumen_matter_id: 'kh7', audit_v2: { actor_type: 'service_account' }, repository_access: false, opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'platform' },
     };
     for (const path of [S, `${S}/snapshot`]) {
       const out = JSON.stringify(redactIdentity(path, path === S ? body : { session: body }));
@@ -68,6 +69,8 @@ describe('proxy policy: browser-visible responses carry no platform plumbing', (
         expect(out).not.toContain(leak);
       }
       expect(out).toContain('"runtime_session_id":"ses_9"');
+      expect(out).toContain('"metadata":{"source":"ui","lumen_matter_id":"kh7"}');
+      expect(out).not.toMatch(/kortix|opencode/i);
       expect(out).toContain('"sandbox_id":"sbx_01M5"');
     }
   });
@@ -89,8 +92,10 @@ describe('proxy policy: browser-visible responses carry no platform plumbing', (
 
   test('a transcript names an inbox file by its name only', () => {
     expect(redactsIdentity(`${S}/transcript`)).toBe(true);
-    const out = redactIdentity(`${S}/transcript`, { messages: [{ text: 'See /workspace/uploads/.kortix-inbox/a1b2/one-way-nda.pdf now' }] });
-    expect(JSON.stringify(out)).toBe('{"messages":[{"text":"See one-way-nda.pdf now"}]}');
+    const out = redactIdentity(`${S}/transcript`, {
+      runtime_session_id: 'ses_9', opencode_session_id: 'ses_9', messages: [{ text: 'See /workspace/uploads/.kortix-inbox/a1b2/one-way-nda.pdf now' }],
+    });
+    expect(JSON.stringify(out)).toBe('{"runtime_session_id":"ses_9","messages":[{"text":"See one-way-nda.pdf now"}]}');
   });
 });
 

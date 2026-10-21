@@ -13,6 +13,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { action, internalAction } from "./_generated/server";
 import { MAX_UPLOAD_BYTES, extOf } from "./documents";
+import { requireProxy } from "./access";
 import { renderText, sectionsFromText, segment } from "./lib/segment";
 import { asOperator, errorText, withRetry, ensureFolder } from "./operator";
 
@@ -150,5 +151,42 @@ export const importOutputs = action({
       added.push(e.name);
     }
     return added;
+  },
+});
+
+const FILE_TYPES: Record<string, string> = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  txt: "text/plain; charset=utf-8",
+  md: "text/markdown; charset=utf-8",
+  csv: "text/csv; charset=utf-8",
+  json: "application/json",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+};
+
+/**
+ * A file inside the matter's folder, by the path its sessions see
+ * (`/drives/...`): the bytes behind an Assistant output card's preview and
+ * download. The sandbox's own file route serves only its workspace, so Lumen
+ * reads the matter's Drive folder instead. The proxy only (LUMEN_PROXY_SECRET),
+ * for a caller who sees the matter; nothing outside the matter folder.
+ */
+export const matterFile = action({
+  args: { matterId: v.id("matters"), path: v.string(), proxySecret: v.string() },
+  returns: v.object({ bytes: v.bytes(), mime: v.string(), name: v.string() }),
+  handler: async (ctx, { matterId, path, proxySecret }): Promise<{ bytes: ArrayBuffer; mime: string; name: string }> => {
+    requireProxy(proxySecret);
+    const t = await ctx.runQuery(internal.documents.outputsTarget, { matterId });
+    if (!t) throw new Error("409: this matter's files are being moved");
+    const dir = t.matterDir;
+    const abs = path.startsWith("/") ? path : `/${path}`;
+    if (!abs.startsWith(`${dir}/`) || abs.split("/").includes("..")) throw new Error("403: only this matter's files");
+    const { blob } = await asOperator(() => withRetry(() => readDriveFile(t.driveId, `${t.driveFolder}${abs.slice(dir.length)}`)));
+    if (blob.size > MAX_UPLOAD_BYTES) throw new Error("413: too large to open here");
+    const name = abs.split("/").pop() ?? "file";
+    return { bytes: await blob.arrayBuffer(), mime: FILE_TYPES[extOf(name)] ?? "application/octet-stream", name };
   },
 });

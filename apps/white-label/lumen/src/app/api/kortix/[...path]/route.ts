@@ -30,7 +30,7 @@
  * scopes the detail and allowlists paths instead of trusting Kortix alone.
  */
 
-import { fetchAuthMutation } from '@/server/auth-server';
+import { fetchAuthAction, fetchAuthMutation } from '@/server/auth-server';
 import { type Member, memberKortix, resolveMember, sandboxInMatter, sessionInMatter } from '@/server/member';
 import {
   PROMPT_WRITE,
@@ -81,6 +81,7 @@ async function routeAs(req: NextRequest, built: ReturnType<typeof buildUpstreamP
   if (local) return local;
 
   const blocked = blockedReason(req.method, built.path, new URLSearchParams(search), member.matterDir);
+  if (!blocked && MATTER_FILE.test(built.path)) return matterFileAnswer(built.path, new URLSearchParams(search), member);
   if (blocked) return Response.json({ error: blocked }, { status: 403 });
 
   const sid = SESSION_PATH.exec(built.path)?.[1];
@@ -103,6 +104,36 @@ async function routeAs(req: NextRequest, built: ReturnType<typeof buildUpstreamP
     return patchSession(req, upstreamUrl, member, one[1], one[2]);
   }
   return forwardKortixRequest({ request: await outbound(req), upstreamUrl, token: member.token });
+}
+
+const MATTER_FILE = /^p\/[^/]+\/8000\/file\/(raw|content)$/;
+
+/**
+ * An Assistant output card's preview or download of a file in the matter's
+ * folder. The sandbox serves only its workspace, so Lumen answers from the
+ * matter's Drive folder (`ingest.matterFile`, access checked in Convex):
+ * `file/raw` as the bytes, `file/content` in the runtime's JSON shape.
+ */
+async function matterFileAnswer(path: string, query: URLSearchParams, member: Member): Promise<Response> {
+  try {
+    const f = await fetchAuthAction(api.ingest.matterFile, {
+      matterId: member.matterId as Id<'matters'>,
+      path: query.get('path') ?? '',
+      proxySecret: process.env.LUMEN_PROXY_SECRET ?? '',
+    });
+    if (MATTER_FILE.exec(path)?.[1] === 'raw') {
+      return new Response(f.bytes, { headers: { 'content-type': f.mime, 'content-disposition': `inline; filename="${f.name.replace(/"/g, '')}"` } });
+    }
+    const text = f.mime.startsWith('text/') || f.mime === 'application/json';
+    return Response.json(
+      text
+        ? { type: 'text', content: new TextDecoder().decode(f.bytes), mimeType: f.mime }
+        : { type: 'binary', content: Buffer.from(f.bytes).toString('base64'), encoding: 'base64', mimeType: f.mime },
+    );
+  } catch (err) {
+    const status = /\b(403|404|409|413)\b/.exec(String(err))?.[1];
+    return Response.json({ error: status === '413' ? 'Too large to open here' : 'File not found' }, { status: status === '403' ? 403 : status === '413' ? 413 : 404 });
+  }
 }
 
 // Every session route: `projects/<pid>/sessions/<sid>` and below.
