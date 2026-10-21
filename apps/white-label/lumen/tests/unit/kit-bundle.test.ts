@@ -31,4 +31,19 @@ describe('agent kit bundle', () => {
     }
     for (const f of KIT.files) expect(`${f.path}\n${f.content}`).not.toMatch(/kortix|opencode/i);
   });
+
+  test('the kit is read from the read-only /drives/kit mount: role files ship, no placeholder or repo path is left', async () => {
+    const { KIT } = await import('../../convex/kit/bundle.generated');
+    expect(KIT.dir).toBe(`/drives/kit/${KIT.version}`);
+    const paths: string[] = KIT.files.map((f) => f.path);
+    for (const role of Object.keys(KIT.agents)) expect(paths).toContain(`agents/${role}.md`);
+    expect(paths).toContain('lumen-kit/bin/lumen');
+    expect(paths).toContain('skills/lumen-citations/SKILL.md');
+    expect(paths.some((p) => p.includes('selftest') || p.includes('fixtures'))).toBe(false);
+    for (const text of [...Object.values(KIT.agents), ...KIT.files.map((f) => f.content)]) {
+      expect(text).not.toContain('{{KIT}}');
+      expect(text).not.toMatch(/\/workspace\/lumen-kit|\/drives\/company/);
+    }
+    expect(KIT.agents['lumen-counsel']).toContain(`python3 ${KIT.dir}/lumen-kit/bin/lumen`);
+  });
 });

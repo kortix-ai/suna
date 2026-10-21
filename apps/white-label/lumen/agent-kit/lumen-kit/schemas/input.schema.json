@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "input",
   "type": "object",
-  "required": ["schema", "run_id", "batch_id", "kit_version", "kind", "matter_dir", "batch_dir", "documents"],
+  "required": ["schema", "run_id", "batch_id", "kit_version", "kind", "role", "role_path", "matter_dir", "batch_dir", "documents"],
   "additionalProperties": false,
   "properties": {
     "schema": { "enum": ["input/1"] },
@@ -10,6 +10,8 @@
     "batch_id": { "type": "string" },
     "kit_version": { "type": "string" },
     "kind": { "enum": ["review", "column", "ask", "contract_review", "diligence_map", "diligence_reduce", "draft"] },
+    "role": { "enum": ["lumen-counsel", "lumen-extractor", "lumen-reviewer", "lumen-drafter"] },
+    "role_path": { "type": "string" },
     "matter_dir": { "type": "string" },
     "batch_dir": { "type": "string" },
     "documents": {

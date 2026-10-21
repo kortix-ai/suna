@@ -11,7 +11,9 @@ import os
 import re
 import unicodedata
 
-DRIVE_ROOT = os.environ.get("LUMEN_DRIVE_ROOT", "/drives/company/Lumen")
+# A firm session mounts its own firm folder at /drives/<firmId> (and the read-only kit at /drives/kit):
+# the glob reaches that firm's matters only, because no other firm's folder is in the sandbox.
+DRIVE_ROOT = os.environ.get("LUMEN_DRIVE_ROOT", "/drives/*")
 MAX_QUOTE = 300
 
 _DOC = re.compile(r"<!-- lumen:doc (.*?) -->")
