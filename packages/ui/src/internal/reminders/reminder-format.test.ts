@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { formatFireTime, nearestFire, reminderTitle, soonestFire } from './reminder-format';
+import { elapsedShare, formatFireTime, nearestFire, reminderTitle, soonestFire } from './reminder-format';
 
 const NOW = Date.parse('2026-09-29T10:00:00.000Z');
 
@@ -76,5 +76,28 @@ describe('reminderTitle', () => {
     expect(reminderTitle({ name: null, prompt: '  Did it arrive?\nThen act.' })).toBe(
       'Did it arrive?',
     );
+  });
+});
+
+describe('elapsedShare', () => {
+  const base = { last_fired_at: null, created_at: null, every_seconds: null };
+
+  test('an every reminder counts its interval', () => {
+    // Every 30 min, next fire in 12 min: 18 of 30 minutes passed.
+    expect(
+      elapsedShare({ ...base, every_seconds: 1800, next_fire_at: '2026-09-29T10:12:00.000Z' }, NOW),
+    ).toBeCloseTo(0.6);
+  });
+
+  test('a cron or one-shot reminder counts from the last fire, else creation', () => {
+    const next = '2026-09-29T12:00:00.000Z';
+    expect(elapsedShare({ ...base, next_fire_at: next, last_fired_at: '2026-09-29T08:00:00.000Z' }, NOW)).toBe(0.5);
+    expect(elapsedShare({ ...base, next_fire_at: next, created_at: '2026-09-29T09:00:00.000Z' }, NOW)).toBeCloseTo(1 / 3);
+  });
+
+  test('null without a next fire or a start, clamped past the fire', () => {
+    expect(elapsedShare({ ...base, next_fire_at: null, every_seconds: 60 }, NOW)).toBeNull();
+    expect(elapsedShare({ ...base, next_fire_at: '2026-09-29T12:00:00.000Z' }, NOW)).toBeNull();
+    expect(elapsedShare({ ...base, every_seconds: 600, next_fire_at: '2026-09-29T09:00:00.000Z' }, NOW)).toBe(1);
   });
 });

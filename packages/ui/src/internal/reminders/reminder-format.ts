@@ -62,6 +62,24 @@ export function soonestFire(
   return soonest;
 }
 
+/**
+ * How much of the wait before the next fire has passed, 0..1: the interval of
+ * an `every` reminder, else the span since the last fire (or creation). Null
+ * when there is no next fire to count toward.
+ */
+export function elapsedShare(
+  reminder: Pick<SessionReminder, 'next_fire_at' | 'every_seconds' | 'last_fired_at' | 'created_at'>,
+  now: number,
+): number | null {
+  const next = reminder.next_fire_at ? Date.parse(reminder.next_fire_at) : NaN;
+  if (!Number.isFinite(next)) return null;
+  const start = reminder.every_seconds
+    ? next - reminder.every_seconds * 1000
+    : Date.parse(reminder.last_fired_at ?? reminder.created_at ?? '');
+  if (!Number.isFinite(start) || next <= start) return null;
+  return Math.min(1, Math.max(0, (now - start) / (next - start)));
+}
+
 /** The first line of the reminder text, for a one-line row title. */
 export function reminderTitle(reminder: Pick<SessionReminder, 'name' | 'prompt'>): string {
   return reminder.name ?? reminder.prompt.split('\n')[0]!.trim();
