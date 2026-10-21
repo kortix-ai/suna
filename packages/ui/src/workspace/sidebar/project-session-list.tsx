@@ -711,7 +711,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   return (
     <div className="flex h-full min-h-0 flex-col space-y-px">
       {showPinned && (
-        <div className="flex max-h-1/2 min-h-0 shrink-0 flex-col pb-4">
+        <div className="flex max-h-1/2 min-h-0 shrink-0 flex-col pb-2">
           <FadedScrollArea fadeColor="from-background" rootClassName="h-auto">
             <StarterSection
               title={tPinArchive('section')}
@@ -720,6 +720,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               open={!collapsedSectionIds.has(PINNED_SECTION_ID)}
               onToggle={() => toggleSectionCollapsed(projectId, PINNED_SECTION_ID)}
               renderNode={(session) => renderSessionNode(session, false)}
+              caretOnHover
             />
           </FadedScrollArea>
         </div>
@@ -1039,6 +1040,7 @@ function StarterSection({
   open,
   onToggle,
   renderNode,
+  caretOnHover = false,
 }: {
   title: string;
   query: Pick<
@@ -1049,6 +1051,8 @@ function StarterSection({
   open: boolean;
   onToggle: () => void;
   renderNode: (session: ProjectSession) => ReactNode;
+  /** Hide the caret until the header is hovered or focused. */
+  caretOnHover?: boolean;
 }) {
   const t = useTranslations('sidebar');
   // A section with no row yet but a next page stays, with its Load more: the
@@ -1071,7 +1075,11 @@ function StarterSection({
           <span className="truncate">{title}</span>
           <CaretRightIcon
             aria-hidden
-            className="duration-normal size-3 shrink-0 transition-transform ease-out group-data-[state=open]/section:rotate-90"
+            className={cn(
+              'duration-normal size-3 shrink-0 transition-[transform,opacity] ease-out group-data-[state=open]/section:rotate-90',
+              caretOnHover &&
+                'opacity-0 group-hover/section-header:opacity-100 group-focus-visible/section-header:opacity-100',
+            )}
           />
         </div>
       </DisclosureTrigger>
