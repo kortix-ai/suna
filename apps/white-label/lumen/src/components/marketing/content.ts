@@ -516,6 +516,81 @@ export const POSTS: Post[] = [
       },
     ],
   },
+  {
+    slug: 'typed-columns',
+    title: 'Tabular review gets typed columns and Excel export',
+    date: 'Oct 2, 2026',
+    tag: 'Product',
+    lead: 'A review column now has an answer type, and the grid leaves Lumen as a real spreadsheet.',
+    sections: [
+      {
+        heading: 'Nine answer types',
+        paragraphs: [
+          'Text, yes or no, date, money, number, percentage, list, tag and verbatim quote. A percentage stays a number, so a rent increase of 8% sorts and sums in Excel; a list of termination events stays a list.',
+          'Pick a column from the clause library of 24, or name your own and let Lumen write the question from the label and the type.',
+        ],
+      },
+      {
+        heading: 'Edit a column without losing work',
+        paragraphs: ['A new label changes nothing else. A new question re-runs only that column, and every cell a lawyer verified or edited keeps its value.'],
+      },
+      {
+        heading: 'Out to Excel',
+        paragraphs: ['Export writes typed cells, the review state of each cell, and a second sheet with every citation: the document, the page, the status and the quoted words.'],
+      },
+    ],
+  },
+  {
+    slug: 'playbooks',
+    title: 'Playbooks: one source of truth for the firm’s positions',
+    date: 'Sep 18, 2026',
+    tag: 'Product',
+    lead: 'A playbook is a document the firm owns. Contract review applies whichever version is current when the run starts.',
+    sections: [
+      {
+        heading: 'Rules, positions, fallbacks',
+        paragraphs: ['Each rule states the firm’s position, a fallback and the severity of a miss. Lumen checks every rule, quotes the clause it relied on and proposes the smallest redline.'],
+      },
+      {
+        heading: 'Edits take effect on the next run',
+        paragraphs: ['A run copies the playbook at its start, so a change never alters a review that already ran. The audit log records who changed what.'],
+      },
+    ],
+  },
+  {
+    slug: 'isolated-workspaces',
+    title: 'Why every Lumen task runs in its own workspace',
+    date: 'Sep 4, 2026',
+    tag: 'Security',
+    lead: 'Each conversation and each run gets an isolated environment with the firm’s documents and Lumen’s tools mounted, and nothing else.',
+    sections: [
+      {
+        heading: 'Walls that hold',
+        paragraphs: ['A firm’s workspace mounts its own folder and a read-only copy of Lumen’s agent kit. In our tests a session of one firm could not mount, list or read another firm’s documents.'],
+      },
+      {
+        heading: 'Real tools, safely',
+        paragraphs: ['Because the environment is isolated, the agent can run real tools: read a scan, compare two versions, compute a notice period. When the task ends, the environment closes.'],
+      },
+    ],
+  },
+  {
+    slug: 'designing-for-the-source',
+    title: 'Designing for a lawyer who checks the source',
+    date: 'Aug 21, 2026',
+    tag: 'Design',
+    lead: 'The most important control in Lumen is the small numbered chip after a sentence.',
+    sections: [
+      {
+        heading: 'One click to the page',
+        paragraphs: ['A chip opens the document at the page, with the quoted words marked in the lamp colour. A struck-through chip means Lumen could not find the quote.'],
+      },
+      {
+        heading: 'Quiet by default',
+        paragraphs: ['Serif titles, grey body text, one accent. Nothing on the screen competes with the clause.'],
+      },
+    ],
+  },
 ];
 
 export const postBySlug = (slug: string) => POSTS.find((p) => p.slug === slug);

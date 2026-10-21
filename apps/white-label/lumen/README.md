@@ -5,7 +5,7 @@
 <h1 align="center">Lumen</h1>
 
 <p align="center">
-  <b>AI for legal teams. Review a data room in an afternoon. Every answer cites the clause.</b><br/>
+  <b>The AI workspace for legal work. Every answer points to the clause it came from.</b><br/>
   A complete SaaS a partner sells to law firms, with its own customers, accounts, database,
   agents and orchestration. Kortix is the agent backend behind it, and the firms never see it.
 </p>
@@ -50,7 +50,9 @@ A firm works in matters. Each matter has parties, a client, a status and a visib
 firm, or a named list of lawyers). Drop PDF, DOCX or TXT into its vault: Lumen extracts the text,
 splits it into pages and anchored paragraphs, and makes every page searchable at once. A search hit
 opens the document beside the list, scrolled to the first marked term; **Original** shows the real
-PDF or Word file.
+PDF or Word file. **Upload new version** (row menu) keeps the old file: the **Version** column shows
+`V2`, its picker opens any version, new work reads the latest, and citations stay bound to the
+version they quote.
 
 <p align="center"><img src="public/screenshots/vault-preview.png" width="860" alt="The vault: a search for liability across six agreements, the MSA open on the right with clause 11.1 marked" /></p>
 
@@ -70,9 +72,13 @@ source**, never as support. The agent's work shows as plain steps ("Searching th
 One row per document, one column per question: parties, term, renewal, termination for
 convenience, liability cap, governing law, assignment, change of control, or your own. Lumen splits
 the documents into batches of four, runs one agent session per batch in parallel, and fills cells
-as each document's row passes validation. Open a cell for the value, how it was read and each
-citation. **Verify**, **Flag** or **Edit** it (keys `V`, `F`, `E`, arrows to move). A re-run never
-overwrites a verified or edited cell. **Export CSV** carries the citations.
+as each document's row passes validation. Columns come from a clause library of 24 or your own
+question (**Write it** drafts the question from the label), each with a typed answer: text, yes/no,
+date, money, number, percentage, list, tag or verbatim quote. Open a cell for the value, how it was
+read and each citation; a dot shows the agent's confidence. **Verify**, **Flag** or **Edit** it
+(keys `V`, `F`, `E`, arrows to move). A re-run never overwrites a verified or edited cell. A
+column's menu edits it (a new question re-runs only that column) or deletes it. **Export** writes
+Excel (typed cells, a Citations sheet) or CSV.
 
 <p align="center"><img src="public/screenshots/review-grid.png" width="860" alt="A review of six agreements; the MSA liability cap cell open: Uncapped, verified, with clause 11.1 quoted" /></p>
 
@@ -84,6 +90,7 @@ overwrites a verified or edited cell. **Export CSV** carries the citations.
 | **Due diligence** | A checklist row per document, then one report: red flags with severity and quote, and cited sections a buyer's counsel reads. Before it calls an agreement missing, the report resolves every defined reference ("the Main Agreement", "Schedule 3") against the data room. **Download report (.docx)** (built by the agent from the checked report) and **Markdown** (citations as "(filename, p. N)"). |
 | **Draft from template** | A firm template filled from the matter. Fields Lumen cannot source stay as `[[CONFIRM: field]]`. Download as .docx. |
 | **Ask across the vault** | One cited answer over every document, or "The documents in this matter do not address this." |
+| **The firm's own** | `/app/workflows`: an **assistant** workflow is instructions a conversation starts with, a **tabular** workflow is a column set a review starts with. Private, or shared with the firm (the author and admins edit). Run one with **Use**, or type `/` in the home composer. |
 
 <p align="center"><img src="public/screenshots/contract-review.png" width="860" alt="Contract review of a mutual NDA against the firm playbook: 2 High, 2 Medium; the 7-year confidentiality term with its redline and verified quote" /></p>
 
@@ -102,10 +109,20 @@ log** records every change and has no delete path.
 
 ### Its own brand, on phones too
 
-Lagoon teal on warm sand, Instrument Sans and Instrument Serif, a softer radius, Lumen's aperture
-mark wherever `@kortix/ui` would draw the Kortix symbol. Light, dark or system, applied before the
-first paint. Below 768 px the sidebar becomes a sheet, and the document preview and Source panel
-open full screen.
+Ink blue on white and paper, Newsreader for titles and Geist for everything else, 4 px rectangles
+and pill actions, a laid-paper weave behind product imagery, and one warm "lamp" accent. The mark is
+a bracketed serif L with a lit window beside the LUMEN wordmark (outlines in
+`src/config/wordmark.ts`, files in `public/brand/`, guidelines at `/press`). Lumen's mark appears
+wherever `@kortix/ui` would draw the Kortix symbol. Light, dark or system, applied before the first
+paint. Below 768 px the sidebar becomes a sheet, and the document preview and Source panel open full
+screen.
+
+The public site has 21 routes: home, platform overview and six product pages, four solution pages,
+customers and four stories, security, company, careers, newsroom, blog, brand, legal, pricing and a
+demo form (stored in Convex, `marketing.requestDemo`). Its firms, people and stories are fictional
+and the footer says so; its numbers are Lumen's own measured evaluation results.
+
+<p align="center"><img src="public/screenshots/platform.png" width="860" alt="The platform page: 'Built for real legal work' over the app framed on the ink-blue weave" /></p>
 
 <p align="center"><img src="public/screenshots/phones.png" width="860" alt="Lumen at 390 px: the menu sheet, a cited answer, the due-diligence red flags" /></p>
 
@@ -117,8 +134,9 @@ open full screen.
 | ![The public home page](public/screenshots/marketing.png) | ![The public home page, dark](public/screenshots/marketing-dark.png) |
 | ![Pricing: Solo, Team, Firm; prices come from Stripe](public/screenshots/pricing.png) | ![Onboarding: name the firm](public/screenshots/onboarding.png) |
 | ![Matters](public/screenshots/matters.png) | ![Matter history: every run and conversation](public/screenshots/history.png) |
+| ![The firm's workflows](public/screenshots/workflows.png) | ![Document versions in the vault](public/screenshots/vault-versions.png) |
 | ![The review grid, dark](public/screenshots/review-grid-dark.png) | ![Contract review, dark](public/screenshots/contract-review-dark.png) |
-| ![Due diligence: red flags with quotes, the cited report](public/screenshots/diligence-report.png) | ![The workflow catalog](public/screenshots/workflows.png) |
+| ![Due diligence: red flags with quotes, the cited report](public/screenshots/diligence-report.png) | ![A review with typed columns](public/screenshots/review-grid.png) |
 | ![A citation whose quote is not in the source](public/screenshots/assistant-not-found.png) | ![The audit log](public/screenshots/audit.png) |
 
 </details>
@@ -305,6 +323,13 @@ firm A `--suite extraction,citations,refusal` (7 runs, wall 103 s): cells 80/80,
 `--suite qa` (14 runs, wall 191 s): fact recall 14/14, cited-document recall 14/14, citations
 78/78. Firm B contract review (59 s): 12 issues, 12/12 citations verified, `redline.docx`; draft
 (38 s): `draft.docx`, 3 fields left as `[[CONFIRM]]`.
+
+Kit 1.3.1 (2026-10-21, typed columns; all four suites, 21 runs, run time 58-217 s, wall 274 s):
+cells 80/80, planted absences 26/26, cited correct values 54/54, citations 168/168 at the cited
+anchor, QA fact recall 14/14 and cited-document recall 14/14, refusals 5/5, 0 failures. In the UI
+on the same stack: a tabular workflow with number, percentage, list, money and date columns filled
+36/36 cells (the lease's 8 % rent increase as `8`, notice periods as `1`, `2`, `6` months), and a
+new version of the SPA (V2) was the one the Assistant read and cited (4/4 chips verified).
 
 ## Who owns what
 
@@ -595,21 +620,23 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 
 | Route | Screen |
 |---|---|
-| `/`, `/pricing`, `/security` | The public site |
 | `/sign-in`, `/sign-up` | Better Auth email + password |
 | `/onboarding` | Name the firm → invite colleagues → sample matter |
 | `/invite/<id>` | Accept an invitation (sign in with the invited email, verify it, accept) |
-| `/app` | Home: ask about a matter (matter picker), open matters, recent work |
+| `/app` | Home: "What can Lumen do for you?", the composer with a matter picker and `/` workflows, quick actions, open matters, recent work |
+| `/app/workflows` | The firm's workflows (assistant and tabular) and Lumen's built-in ones: create, edit, share, use |
 | `/app/matters`, `/app/matters/new` | Matters: search, status filter, new matter |
 | `/app/matters/<id>` | Overview: recent activity, details, parties, who can see it |
-| `/app/matters/<id>/vault` | Upload, search, preview, delete |
+| `/app/matters/<id>/vault` | Documents: upload, new version, version picker, search, preview, delete |
 | `/app/matters/<id>/assistant[/<threadId>]` | Threads in this matter, with citation chips and the Source panel |
 | `/app/matters/<id>/reviews`, `/reviews/new`, `/reviews/<reviewId>` | Reviews: list, column builder, the grid with the cell panel |
-| `/app/matters/<id>/workflows` | Contract review, due diligence, draft from template, ask |
+| `/app/matters/<id>/workflows` | Contract review, due diligence, draft from template, ask (`?open=<kind>` opens one), and the firm's workflows |
 | `/app/matters/<id>/history`, `/runs/<runId>` | Every run and conversation; one run's result, batches and activity |
 | `/app/library` | Playbooks and templates |
 | `/app/history` | Every run and conversation the viewer may open, across matters |
+| `/app/settings/account` | Your account: name, theme, password, my activity (CSV) |
 | `/app/settings/{firm,members,billing,usage,audit}` | Firm admin |
+| `/`, `/platform[/<product>]`, `/solutions/<slug>`, `/customers[/<story>]`, `/security`, `/company`, `/careers`, `/newsroom`, `/blog[/<post>]`, `/press`, `/legal[/privacy,/terms]`, `/pricing`, `/demo` | The public site |
 | `⌘K` | Command palette: matters and actions |
 | Review grid keys | Arrows move, `V` verify, `F` flag, `E` edit, `Esc` close; `Esc` also closes the document preview and the Source panel |
 
@@ -619,7 +646,7 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 
 | Path | What |
 |---|---|
-| `convex/schema.ts` | 21 tables. Deployment: `deployment` (the shared project, the kit version), `firmCredentials` (internal). Firm and access: `firms`, `matters`, `matterMembers`, `threads`, `auditEvents`, `stripeEvents`. Vault: `documents`, `documentPages`, `documentParas`. Engine: `runs`, `runBatches`, `runFiles`, `runEvents`, `runResults`. Results: `reviews`, `reviewCells`, `answers`, `issues`. Library: `libraryItems` |
+| `convex/schema.ts` | 23 tables (`customWorkflows`, `demoRequests` new; `documents` carries `family`, `version`, `superseded`). Deployment: `deployment` (the shared project, the kit version), `firmCredentials` (internal). Firm and access: `firms`, `matters`, `matterMembers`, `threads`, `auditEvents`, `stripeEvents`. Vault: `documents`, `documentPages`, `documentParas`. Engine: `runs`, `runBatches`, `runFiles`, `runEvents`, `runResults`. Results: `reviews`, `reviewCells`, `answers`, `issues`. Library: `libraryItems` |
 | `convex/access.ts` | `requireFirm`, `requireFirmAdmin`, `requireMatterAccess` |
 | `convex/auth.ts`, `convex/betterAuth/` | Better Auth as a local Convex component, organizations, the seat and audit hooks |
 | `convex/firms.ts`, `convex/matters.ts`, `convex/threads.ts`, `convex/members.ts` | Queries and mutations |
@@ -636,7 +663,10 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 | `scripts/copy-viewer-wasm.mjs` | Copies the PDF/DOCX/XLSX viewer engines into `public/`, and the sample matter's documents into `public/sample/`, before `dev` and `build` |
 | `agent-kit/`, `scripts/kit-bundle.ts` | The agent kit, bundled into Convex and uploaded once per version to `/Lumen/Kit/<version>/` |
 | `convex/runs.ts`, `convex/engine.ts` | The run engine: state, fan-out, map + reduce, polling, repair, result files, citation checks |
-| `convex/reviews.ts`, `convex/lib/columns.ts` | Reviews: create, add columns, re-run a column, verify / flag / edit; the column presets |
+| `convex/reviews.ts`, `convex/lib/columns.ts` | Reviews: create, add, edit, delete and re-run columns, verify / flag / edit; the presets, the clause library and `promptFor` |
+| `convex/customWorkflows.ts`, `src/components/workflows/firm-workflows.tsx` | The firm's workflows: list (shared + own private), save, remove; the editor and the Use dialog |
+| `convex/marketing.ts`, `src/components/marketing/` | The demo form; the public site's content (`content.ts`), parts, bands, mocks, header and footer |
+| `src/lib/xlsx.ts`, `src/lib/review-cells.ts` | The Excel writer and the review's typed cells and sheets |
 | `convex/workflows.ts` | Contract review, due diligence, draft; issue decisions; run files; the matter history |
 | `convex/library.ts`, `convex/kit/library.generated.ts` | Playbooks and templates; the defaults every firm starts with |
 | `src/components/runs/workflow-results.tsx` | The issues, report and draft screens |

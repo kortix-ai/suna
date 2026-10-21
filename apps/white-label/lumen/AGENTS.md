@@ -133,17 +133,23 @@ not come back.
 Theming happens through one typed theme, `src/config/theme.ts`
 (`KortixTheme` from `@kortix/ui/theme`). `src/app/layout.tsx` compiles it with
 `themeToCss` into one `<style>` in `<head>`, so the first paint is on brand.
-It sets the colors per mode, the radius (`0.875rem`), the spacing step
+It sets the colors per mode, the radius (`0.375rem`: 4 px rectangles; pills by class), the spacing step
 (`0.25rem`), the shadows, the durations and easing, and the fonts. Lumen's
 brand is `--brand`; `blue` (switches, checkboxes, radios, the brand Button and
 Badge variants, info alerts), `action` and `actionForeground` (the default
 Button fill), `ring`, `primary`, `sidebarPrimary` and `selection` point at it.
-`src/app/globals.css` only imports `tailwindcss` and `@kortix/ui/tailwind.css`
-and maps `--brand` to `bg-brand` / `text-brand` and the heading serif to
-`font-display`. Never fork or wrap a component to change a color, radius or
+`src/app/globals.css` imports `tailwindcss` and `@kortix/ui/tailwind.css`,
+maps Lumen's variables to utilities (`bg-brand`, `bg-navy` for the fixed brand
+surface, `bg-paper`, `text-lamp`, `text-verified`, `text-risk`,
+`border-hairline`, `font-display`) and defines the serif scale
+(`display-xl` … `display-xs`), `eyebrow` and the laid-paper weave
+(`pattern-laid`, `pattern-laid-paper`). Never fork or wrap a component to change a color, radius or
 font. Never import `@kortix/ui/fonts.css`: Lumen's fonts are its own
-(Instrument Sans, Instrument Serif for headings, JetBrains Mono), loaded with
-`next/font` in `src/app/layout.tsx`.
+(Geist, Newsreader for titles, Geist Mono), loaded with `next/font` in
+`src/app/layout.tsx`. The wordmark is outlines (`src/config/wordmark.ts`), never
+live text. The public site keeps every word in
+`src/components/marketing/content.ts`: fictional firms only, numbers only from
+the evaluation runs, no certification Lumen does not hold.
 
 `src/app/providers.tsx` mounts `UiProvider` once with Lumen's mark
 (`useBrand` → `LUMEN_UI_BRAND`), the host config (no CLI bar, no public share
