@@ -34,6 +34,7 @@ export const auditAction = v.union(
   v.literal("workflow.create"), v.literal("workflow.update"), v.literal("workflow.delete"),
   v.literal("review.column_edit"), v.literal("review.column_delete"),
   v.literal("document.version"),
+  v.literal("assistant.output"), v.literal("assistant.download"),
 );
 
 export const documentStatus = v.union(v.literal("uploading"), v.literal("extracting"), v.literal("ready"), v.literal("failed"));
@@ -202,6 +203,8 @@ export default defineSchema({
     version: v.optional(v.number()),
     /** A later version of this document is ready: it stays readable and citable, but new work uses the latest. */
     superseded: v.optional(v.boolean()),
+    /** The Assistant wrote it (a chat output). A review or due diligence leaves it out by default. */
+    assistant: v.optional(v.boolean()),
   })
     .index("by_matter", ["matterId"])
     .index("by_matter_sha", ["matterId", "sha256"]),

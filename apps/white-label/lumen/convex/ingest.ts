@@ -149,9 +149,10 @@ export const removeFromDrive = internalAction({
  * the vault when it opens. Returns the filenames added.
  */
 export const importOutputs = action({
-  args: { matterId: v.id("matters") },
+  // `kortixSessionId`: the thread whose turn just ended, named in the audit log.
+  args: { matterId: v.id("matters"), kortixSessionId: v.optional(v.string()) },
   returns: v.array(v.string()),
-  handler: async (ctx, { matterId }): Promise<string[]> => {
+  handler: async (ctx, { matterId, kortixSessionId }): Promise<string[]> => {
     const t = await ctx.runQuery(internal.documents.outputsTarget, { matterId });
     if (!t) return [];
     const listed = await asOperator(() => listDriveFolder(t.driveId, `${t.driveFolder}/Outputs`)).catch(() => null);
@@ -164,7 +165,9 @@ export const importOutputs = action({
       if (await ctx.runQuery(internal.documents.sameBytes, { matterId, sha256 })) continue;
       const versionOf: Id<"documents"> | null = await ctx.runQuery(internal.documents.currentByName, { matterId, filename: e.name });
       const storageId = await ctx.storage.store(new Blob([bytes], { type: blob.type || "application/octet-stream" }));
-      await ctx.runMutation(internal.documents.addUploaded, { matterId, storageId, filename: e.name, sha256, ...(versionOf ? { versionOf } : {}) });
+      await ctx.runMutation(internal.documents.addAssistantOutput, {
+        matterId, storageId, filename: e.name, sha256, ...(versionOf ? { versionOf } : {}), ...(kortixSessionId ? { kortixSessionId } : {}),
+      });
       added.push(e.name);
     }
     return added;

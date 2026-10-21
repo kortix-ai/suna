@@ -2,7 +2,7 @@
 
 import { threadPath, useFirm } from '@/components/access';
 import { type ColumnDraft, ColumnBuilder, columnsReady, toColumns } from '@/components/reviews/column-builder';
-import { DocumentPicker } from '@/components/workflows/document-picker';
+import { DocumentPicker, defaultPick } from '@/components/workflows/document-picker';
 import type { CellFormat } from '@/lib/review-cells';
 import { errorText } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
@@ -224,7 +224,7 @@ export function UseWorkflow({ workflow, matterId, onClose }: { workflow: FirmWor
   const [pending, setPending] = useState(false);
   const createThread = useAction(api.kortix.createThread);
   const createReview = useMutation(api.reviews.create);
-  const chosen = docIds ?? ready.map((d) => d._id);
+  const chosen = docIds ?? defaultPick(ready);
 
   async function run() {
     setPending(true);

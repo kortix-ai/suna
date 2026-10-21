@@ -1,7 +1,7 @@
 import { type Infer, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { type MutationCtx, internalMutation, mutation, query } from "./_generated/server";
-import { canSeeMatter, requireFirm, requireFirmAdmin } from "./access";
+import { canSeeMatter, requireFirm, requireFirmAdmin, requireMatterAccess } from "./access";
 import { auditAction } from "./schema";
 
 type Action = Infer<typeof auditAction>;
@@ -76,6 +76,17 @@ export const mine = query({
       _id: r._id, _creationTime: r._creationTime, actorId: r.actorId, action: r.action, matterId: r.matterId,
       matterName: r.matterId ? names.get(r.matterId) || undefined : undefined, detail: r.detail,
     }));
+  },
+});
+
+/** A member downloaded a file the Assistant wrote, from a chat (thread-workbench.tsx). */
+export const logAssistantDownload = mutation({
+  args: { matterId: v.id("matters"), filename: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { matterId, filename }) => {
+    const { firm, userId } = await requireMatterAccess(ctx, matterId);
+    await audit(ctx, { firm, actorId: userId, action: "assistant.download", matterId, detail: filename.slice(0, 160) });
+    return null;
   },
 });
 

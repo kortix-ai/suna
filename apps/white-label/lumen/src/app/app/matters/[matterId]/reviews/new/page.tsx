@@ -2,7 +2,7 @@
 
 import { useMatter } from '@/components/access';
 import { type ColumnDraft, ColumnBuilder, blankColumn, columnsReady, toColumns } from '@/components/reviews/column-builder';
-import { DocumentPicker } from '@/components/workflows/document-picker';
+import { DocumentPicker, defaultPick } from '@/components/workflows/document-picker';
 import { errorText } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
@@ -29,7 +29,7 @@ export default function NewReviewPage() {
   const [pending, setPending] = useState(false);
   const base = `/app/matters/${matter._id}`;
   const ready = (docs ?? []).filter((d) => d.status === 'ready' && (d.paras ?? 0) > 0 && !d.superseded);
-  const chosen = picked ?? ready.map((d) => d._id);
+  const chosen = picked ?? defaultPick(ready);
   const cells = chosen.length * columns.length;
 
   async function start(e: React.FormEvent) {

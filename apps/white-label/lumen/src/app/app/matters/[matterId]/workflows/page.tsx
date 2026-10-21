@@ -1,7 +1,7 @@
 'use client';
 
 import { useFirm, useMatter } from '@/components/access';
-import { DocumentPicker } from '@/components/workflows/document-picker';
+import { DocumentPicker, defaultPick } from '@/components/workflows/document-picker';
 import { useLibrary } from '@/components/workflows/use-library';
 import { errorText } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
@@ -138,7 +138,7 @@ function DiligenceForm() {
   const { ready, loading } = useReadyDocs();
   const start = useMutation(api.workflows.startDiligence);
   const [picked, setPicked] = useState<Id<'documents'>[] | null>(null);
-  const chosen = picked ?? ready.map((d) => d._id);
+  const chosen = picked ?? defaultPick(ready);
   const { pending, go } = useStart();
   return (
     <div className="space-y-4">

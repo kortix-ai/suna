@@ -6,7 +6,10 @@ import { Checkbox } from '@kortix/ui/checkbox';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { FileTextIcon } from '@phosphor-icons/react';
 
-type Doc = { _id: Id<'documents'>; filename: string; pages?: number };
+type Doc = { _id: Id<'documents'>; filename: string; pages?: number; assistant?: boolean };
+
+/** The default selection: every document a person put in the vault, not the files the Assistant wrote. */
+export const defaultPick = (docs: Doc[]) => docs.filter((d) => !d.assistant).map((d) => d._id);
 
 /** A checkbox list of the vault's ready documents, with "All" and "None". */
 export function DocumentPicker({ docs, loading, value, onChange }: {
@@ -36,6 +39,7 @@ export function DocumentPicker({ docs, loading, value, onChange }: {
               />
               <FileTextIcon className="size-4 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1 truncate">{d.filename}</span>
+              {d.assistant && <span className="text-[11px] text-muted-foreground">Assistant</span>}
               {d.pages ? <span className="font-mono text-[11px] text-muted-foreground">{d.pages} p</span> : null}
             </label>
           </li>

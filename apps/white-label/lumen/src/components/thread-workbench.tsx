@@ -11,7 +11,7 @@ import type { Id } from '@convex/_generated/dataModel';
 import { useSession } from '@kortix/sdk/react';
 import { SessionThread } from '@kortix/ui/session';
 import { successToast } from '@kortix/ui/toast';
-import { useAction } from 'convex/react';
+import { useAction, useMutation } from 'convex/react';
 import { useEffect, useRef, useState } from 'react';
 
 /** One thread: the Kortix session behind it, streamed through Lumen's proxy. */
@@ -23,7 +23,8 @@ export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId:
   const session = useSession(projectId, sessionId);
   // One automatic restart when a connected runtime drops.
   useRuntimeRecovery(session);
-  useOutputsToDocuments(matterId, session.isBusy);
+  useOutputsToDocuments(matterId, sessionId, session.isBusy);
+  useAuditDownloads(matterId);
   // A cited passage the lawyer sends back into the conversation ("Cite" in the Source panel).
   const [quote, setQuote] = useState<{ id: number; text: string } | null>(null);
 
@@ -63,17 +64,36 @@ export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId:
  * When a turn ends, the files the Assistant wrote for the lawyer (the matter's
  * Outputs folder) become matter documents: citable, versioned, in the vault.
  */
-function useOutputsToDocuments(matterId: Id<'matters'>, busy: boolean) {
+function useOutputsToDocuments(matterId: Id<'matters'>, sessionId: string, busy: boolean) {
   const importOutputs = useAction(api.ingest.importOutputs);
   const wasBusy = useRef(busy);
   useEffect(() => {
     const ended = wasBusy.current && !busy;
     wasBusy.current = busy;
     if (!ended) return;
-    importOutputs({ matterId })
+    importOutputs({ matterId, kortixSessionId: sessionId })
       .then((added) => {
         for (const name of added) successToast(`${name} added to Documents`, { description: 'Open it in Documents, or cite it once it shows Ready.' });
       })
       .catch(() => undefined);
-  }, [busy, matterId, importOutputs]);
+  }, [busy, matterId, sessionId, importOutputs]);
+}
+
+/**
+ * Every download from this chat lands in the audit log as "Assistant file
+ * downloaded". @kortix/ui's viewers and output cards each save a file through
+ * a `<a download>` click on a blob URL; one capture listener on the document
+ * sees all of them while the thread is open, with no hook in each viewer.
+ */
+function useAuditDownloads(matterId: Id<'matters'>) {
+  const log = useMutation(api.audit.logAssistantDownload);
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const a = e.target instanceof HTMLAnchorElement ? e.target : null;
+      if (!a?.hasAttribute('download') || !a.href.startsWith('blob:')) return;
+      void log({ matterId, filename: a.download || 'file' }).catch(() => undefined);
+    };
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, [matterId, log]);
 }

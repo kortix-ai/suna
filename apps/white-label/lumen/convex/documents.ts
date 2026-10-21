@@ -29,6 +29,7 @@ const documentView = v.object({
   paras: v.optional(v.number()),
   status: documentStatus,
   error: v.optional(v.string()),
+  assistant: v.boolean(),
   uploadedBy: v.string(),
   family: v.id("documents"),
   version: v.number(),
@@ -52,6 +53,7 @@ export const list = query({
     return rows.map((d) => ({
       _id: d._id, _creationTime: d._creationTime, filename: d.filename, bytes: d.bytes, pages: d.pages, paras: d.paras,
       status: d.status, error: d.error, uploadedBy: d.uploadedBy, family: familyOf(d), version: d.version ?? 1, superseded: d.superseded ?? false,
+      assistant: d.assistant ?? false,
     }));
   },
 });
@@ -98,6 +100,23 @@ export const addUploaded = internalMutation({
   },
 });
 
+/** A file the Assistant wrote (importOutputs): audited as an Assistant file, with the thread it came from when known. */
+export const addAssistantOutput = internalMutation({
+  args: {
+    matterId: v.id("matters"), storageId: v.id("_storage"), filename: v.string(), sha256: v.string(), versionOf: v.optional(v.id("documents")),
+    kortixSessionId: v.optional(v.string()),
+  },
+  returns: v.id("documents"),
+  handler: async (ctx, { matterId, storageId, filename, sha256, versionOf, kortixSessionId }) => {
+    const { matter, firm, userId } = await requireMatterAccess(ctx, matterId);
+    const thread = kortixSessionId
+      ? await ctx.db.query("threads").withIndex("by_kortixSessionId", (q) => q.eq("kortixSessionId", kortixSessionId)).first()
+      : null;
+    const fromThread = thread && thread.matterId === matterId ? thread.title : undefined;
+    return await insertDocument(ctx, { firm, matter, userId, storageId, filename, sha256, versionOf, assistant: { fromThread } });
+  },
+});
+
 /** Where the Assistant's files for a matter are, for a caller who sees the matter. Null while its folder moves. */
 export const outputsTarget = internalQuery({
   args: { matterId: v.id("matters") },
@@ -137,6 +156,8 @@ export async function insertDocument(
   a: {
     firm: Doc<"firms">; matter: Doc<"matters">; userId: string; storageId: Id<"_storage">; filename: string; sha256?: string;
     versionOf?: Id<"documents">;
+    /** The Assistant wrote the file; `fromThread` is the title of the thread it wrote it in. */
+    assistant?: { fromThread?: string };
   },
 ) {
   const meta = await ctx.db.system.get(a.storageId);
@@ -161,12 +182,14 @@ export async function insertDocument(
   }
   const documentId = await ctx.db.insert("documents", {
     firmId: a.firm._id, matterId: a.matter._id, storageId: a.storageId, filename: name, mime, bytes: meta.size, status: "extracting",
-    uploadedBy: a.userId, ...(a.sha256 ? { sha256: a.sha256 } : {}), ...versioned,
+    uploadedBy: a.userId, ...(a.sha256 ? { sha256: a.sha256 } : {}), ...versioned, ...(a.assistant ? { assistant: true } : {}),
   });
   await ctx.db.patch(a.matter._id, { updatedAt: Date.now() });
+  const named = versioned ? `${name} (V${versioned.version})` : name;
   await audit(ctx, {
-    firm: a.firm, actorId: a.userId, action: versioned ? "document.version" : "document.upload", matterId: a.matter._id,
-    detail: versioned ? `${name} (V${versioned.version})` : name,
+    firm: a.firm, actorId: a.userId, matterId: a.matter._id,
+    action: a.assistant ? "assistant.output" : versioned ? "document.version" : "document.upload",
+    detail: a.assistant?.fromThread ? `${named}, from the thread “${a.assistant.fromThread}”` : named,
   });
   await ctx.scheduler.runAfter(0, internal.ingest.ingest, { documentId });
   return documentId;
