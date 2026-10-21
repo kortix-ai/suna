@@ -24,6 +24,8 @@ export type TracePoint = 'admitted' | 'routed' | 'resolved' | 'billed' | 'dispat
 
 export type TraceEmitter = ((fields: TraceFields) => void) & {
   mark: (point: TracePoint) => void;
+  /** Host-reported admission steps (ms); recorded as `admit_api_<step>` plus `admit_net_ms`. */
+  admitSteps: (steps: Record<string, number>) => void;
 };
 
 function logTrace(logger: GatewayLogger, trace: GatewayTrace): void {
@@ -34,7 +36,12 @@ function logTrace(logger: GatewayLogger, trace: GatewayTrace): void {
   const timing = trace.metadata.timing as Record<string, number | undefined> | undefined;
   const split = timing
     ? ` prep=${timing.prep_ms ?? '-'}ms upstream_response=${timing.upstream_response_ms ?? '-'}ms` +
-      ` (admit=${timing.admit_ms ?? '-'} route=${timing.route_ms ?? '-'} resolve=${timing.resolve_ms ?? '-'} billing=${timing.billing_ms ?? '-'})`
+      ` (admit=${timing.admit_ms ?? '-'} route=${timing.route_ms ?? '-'} resolve=${timing.resolve_ms ?? '-'} billing=${timing.billing_ms ?? '-'})` +
+      (timing.admit_api_total_ms !== undefined
+        ? ` admit_api=${timing.admit_api_total_ms} net=${timing.admit_net_ms ?? '-'}` +
+          ` [principal=${timing.admit_api_principal_ms ?? '-'} tier=${timing.admit_api_tier_ms ?? '-'} budget=${timing.admit_api_budget_ms ?? '-'}` +
+          ` route=${timing.admit_api_route_ms ?? '-'} resolve=${timing.admit_api_resolve_ms ?? '-'} billing=${timing.admit_api_billing_ms ?? '-'}]`
+        : '')
     : '';
 
   if (trace.ok) {
@@ -58,6 +65,7 @@ export function createTraceEmitter(
   startMs: number,
 ): TraceEmitter {
   const marks: Partial<Record<TracePoint, number>> = {};
+  let admitSteps: Record<string, number> | undefined;
   const between = (from: number | undefined, to: number | undefined) =>
     from !== undefined && to !== undefined ? to - from : undefined;
   const timing = (): Record<string, number> | null => {
@@ -70,6 +78,13 @@ export function createTraceEmitter(
       resolve_ms: between(marks.routed, marks.resolved),
       billing_ms: between(marks.resolved, marks.billed),
     };
+    if (admitSteps) {
+      for (const [name, ms] of Object.entries(admitSteps)) segments[`admit_api_${name}_ms`] = ms;
+      // The gateway<->API round trip: what /admit cost beyond the API's own work.
+      if (segments.admit_ms !== undefined && admitSteps.total !== undefined) {
+        segments.admit_net_ms = Math.max(0, segments.admit_ms - admitSteps.total);
+      }
+    }
     return Object.fromEntries(
       Object.entries(segments).filter((entry): entry is [string, number] => entry[1] !== undefined),
     );
@@ -125,6 +140,9 @@ export function createTraceEmitter(
   // First mark wins: a fallback chain's later attempts do not move the split.
   emit.mark = (point) => {
     marks[point] ??= Date.now();
+  };
+  emit.admitSteps = (steps) => {
+    admitSteps ??= steps;
   };
   return emit;
 }

@@ -1758,6 +1758,32 @@ describe('one-call admission (hooks.admit)', () => {
     expect(usage.at(-1)?.billingHoldUsd).toBe(0.01);
   });
 
+  test("the host's admission steps land in the trace with the gateway<->API network share", async () => {
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks([], traces),
+        admit: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          return {
+            admission: { ok: true, principal },
+            route: { policyId: 'route', primaryModel: 'primary-model', fallbackModels: [] },
+            upstream: [primary],
+            timing: { principal: 2, tier: 0, budget: 1, authorize: 3, route: 1, resolve: 4, total: 8 },
+          };
+        },
+      },
+      logger,
+      fetchImpl: async () => ok(),
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    expect(response.status).toBe(200);
+    await response.text();
+    const timing = traces.at(-1)!.metadata.timing as Record<string, number>;
+    expect(timing).toMatchObject({ admit_api_principal_ms: 2, admit_api_resolve_ms: 4, admit_api_total_ms: 8 });
+    expect(timing.admit_net_ms).toBe(timing.admit_ms! - 8);
+    expect(timing.admit_net_ms).toBeGreaterThanOrEqual(20);
+  });
+
   test('a null admit answer falls back to the separate hooks', async () => {
     const calls: string[] = [];
     const response = await handleChatCompletions({
