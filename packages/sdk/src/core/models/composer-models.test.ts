@@ -15,7 +15,7 @@ import {
   sessionModelFallback,
   sessionPickStands,
 } from './composer-model';
-import type { FlatModel } from './model-flatten';
+import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { createModelVisibility, hasUsableModel, modelInDefaultView } from './model-visibility';
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog/lite';
 import { pickerProviderList, projectLlmCatalogToProviderList } from './provider-selection';
@@ -464,6 +464,72 @@ describe('latestPromptModel', () => {
     expect(latestPromptModel(undefined)).toBeUndefined();
     expect(
       latestPromptModel([{ role: 'assistant', model: { provider: 'kortix', model: 'model-x' } }]),
+    ).toBeUndefined();
+  });
+});
+
+// ── KRTX-3011: a configured model the caller cannot run ─────────────────────
+//
+// An account default of a ChatGPT model stayed in the picker with no ChatGPT
+// login, read as runnable, was preselected, and failed only after Send
+// ("Connect Codex to use this model."). `/model-picker` now stamps such a
+// model `available: false`; nothing may choose it on the person's behalf.
+
+describe('unavailable models (KRTX-3011)', () => {
+  const key = (providerID: string, modelID: string) => ({ providerID, modelID });
+
+  test('flattenModels carries available and availability from the picker payload', () => {
+    const list = pickerProviderList({
+      modelPicker: {
+        models: {
+          'glm-5.3-flash': { name: 'GLM 5.3 Flash', enabled: true },
+          'codex/gpt-6-astra': { name: 'GPT-6 Astra', enabled: true, available: false, availability: 'login' },
+        },
+      } as unknown as ProjectLlmCatalogResponse,
+    });
+    const astra = flattenModels(list).find((m) => m.modelID === 'codex/gpt-6-astra');
+    expect(astra?.available).toBe(false);
+    expect(astra?.availability).toBe('login');
+    const glm = flattenModels(list).find((m) => m.modelID === 'glm-5.3-flash');
+    expect(glm?.available).toBeUndefined();
+  });
+
+  test('isOfferedModel refuses an unavailable model, even when enabled', () => {
+    const models = [flat('kortix', 'codex/gpt-6-astra', { enabled: true, available: false })];
+    expect(isOfferedModel(models, key('kortix', 'codex/gpt-6-astra'))).toBe(false);
+  });
+
+  test('the composer skips an unavailable default and a stored pick of it', () => {
+    const models = [
+      flat('kortix', 'codex/gpt-6-astra', { enabled: true, available: false }),
+      flat('kortix', 'deepseek-v4.1-flash', { enabled: true }),
+    ];
+    const resolved = resolveComposerModel({
+      models,
+      picks: [key('kortix', 'codex/gpt-6-astra')],
+      serverDefault: key('kortix', 'codex/gpt-6-astra'),
+      globalDefault: key('kortix', 'deepseek-v4.1-flash'),
+    });
+    expect(resolved.explicit).toBeUndefined();
+    expect(resolved.model).toEqual(key('kortix', 'deepseek-v4.1-flash'));
+  });
+
+  test('resolveModelDefault follows the server\'s resolvedForCaller, which skips an unservable default', () => {
+    const data = {
+      agentDefaults: { support: 'anthropic/claude-opus-4-8' },
+      projectDefault: null,
+      accountDefault: 'codex/gpt-6-astra',
+      platformDefault: 'deepseek-v4.1-flash',
+      resolvedForCaller: 'deepseek-v4.1-flash',
+      resolvedSource: 'platform',
+      freeTier: false,
+    } as unknown as ModelDefaultsResponse;
+    expect(resolveModelDefault(data, 'kortix')).toEqual(key('kortix', 'deepseek-v4.1-flash'));
+    // An agent's own default still wins; the composer validates it like any candidate.
+    expect(resolveModelDefault(data, 'support')).toEqual(key('kortix', 'anthropic/claude-opus-4-8'));
+    // Nothing servable for the caller: no server default, not the raw account default.
+    expect(
+      resolveModelDefault({ ...data, resolvedForCaller: null } as unknown as ModelDefaultsResponse, 'kortix'),
     ).toBeUndefined();
   });
 });
