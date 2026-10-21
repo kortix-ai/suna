@@ -164,8 +164,10 @@ export function registerGatewayRoutingPolicyRoutes(): void {
         PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
       );
       let policy;
+      let body: unknown;
       try {
-        policy = parseProjectRoutingPolicyInput(await c.req.json());
+        body = await c.req.json();
+        policy = parseProjectRoutingPolicyInput(body);
       } catch (error) {
         return c.json(
           {
@@ -196,8 +198,14 @@ export function registerGatewayRoutingPolicyRoutes(): void {
       // own reasoning_options, or a max-output-tokens above its limit.output.
       // An entry that clamps to nothing (every field dropped) is dropped
       // entirely rather than stored as an empty object.
+      // A body without the key (the CLI's flag mode, an older client) keeps
+      // the stored settings; only an explicit map replaces them.
+      const generationConfig =
+        body && typeof body === 'object' && 'modelGenerationConfig' in body
+          ? policy.modelGenerationConfig
+          : ((await getProjectRoutingPolicy(projectId))?.modelGenerationConfig ?? {});
       const clampedGenerationConfig = Object.fromEntries(
-        Object.entries(policy.modelGenerationConfig)
+        Object.entries(generationConfig)
           .map(
             ([model, entry]) =>
               [model, clampGenerationConfig(entry, catalogModelForWireModel(model))] as const,

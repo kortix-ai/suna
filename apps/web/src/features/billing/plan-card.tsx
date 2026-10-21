@@ -24,6 +24,7 @@ import {
   monthlyCreditsForUsd,
   tierForMonthlyUsd,
 } from '@kortix/ui/internal/billing/compute-pricing';
+import { CreditExpiry } from '@/features/billing/credit-expiry';
 import { CreditTierSelect } from '@/features/billing/credit-tier-select';
 import { useChangeCreditPlan } from '@/features/billing/use-change-credit-plan';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
@@ -140,6 +141,7 @@ export function PlanCard({ state }: { state: AccountState }) {
                 .join(' · ')}
             </p>
           ) : null}
+          {state.credits.monthly > 0 && <CreditExpiry expiresAt={state.credits.expires_at} />}
         </div>
         <span className="flex min-w-0 shrink-0 items-center gap-1.5">
           {isActive ? (

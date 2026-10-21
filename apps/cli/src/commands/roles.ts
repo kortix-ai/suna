@@ -72,7 +72,8 @@ Options:
   --desc <text>      Description (create, edit).
   --no-desc          Clear the description (edit).
   --scope <s>        account|project — resource type of a created role,
-                     or the scope of an assignment (default: project).
+                     or the scope of an assignment (default: project, on
+                     --project or the linked project).
   --actions <list>   Comma-separated action keys (create / set-actions).
   --to <type>:<id>   Principal for an assignment.
   --project <id>     Project id — scope an assignment / filter / export.
@@ -177,6 +178,7 @@ export async function runRoles(argv: string[]): Promise<number> {
           f.project,
           f.scope,
           f.expires,
+          f.host,
         );
 
       case 'unassign':

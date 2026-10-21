@@ -1318,6 +1318,7 @@
     },
     "credits": {
       "loadFailed": "Impossibile caricare questo account.",
+      "resetAt": "I crediti del piano si azzerano il",
       "availableBalance": "Saldo disponibile",
       "creditCount": "{count, plural, one {{formatted} credito} other {{formatted} crediti}}",
       "owed": "dovuti",
@@ -2201,6 +2202,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Membri",
+      "unlimitedMembers": "Membri illimitati",
+      "loadingMembers": "Caricamento membri…",
+      "membersUnavailable": "Numero di membri non disponibile",
+      "memberCount": "{count, plural, one {# membro} other {# membri}}",
       "cancels": "Termina il {date}",
       "cancelsAtPeriodEnd": "Termina alla fine del periodo",
       "renews": "Si rinnova il {date}",
@@ -20309,7 +20315,13 @@
       "text08f3c151d323": "Richiedi condizioni personalizzate",
       "texta0990a4a86dc": "White-label: il tuo prodotto di IA sul calcolo di Platinum.dev",
       "text6189ab6313de": "Fai il fork di Kortix, applica il tuo marchio e vendilo come tuo prodotto. La licenza è gratuita. Unico requisito: il tuo calcolo gira su Platinum.dev.",
-      "text7971dd752669": "Promemoria"
+      "text7971dd752669": "Promemoria",
+      "text724b09397472": "Aggiunta di {name} a {project}",
+      "text1e007c47254d": "La configurazione avviene in background. Riceverai una notifica al termine.",
+      "text57f57edb6f16": "La richiesta di modifica #{number} è pronta per la revisione.",
+      "texta8597db6f24b": "Rimuovi competenza",
+      "text5f6ba69d66d1": "Competenza rimossa",
+      "textcb8d6b0c94c9": " e tutti i suoi file, modifiche incluse, e rimuove la competenza da ogni agente che la usa. Un commit sul branch predefinito."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

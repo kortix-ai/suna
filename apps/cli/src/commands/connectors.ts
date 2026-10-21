@@ -1212,18 +1212,23 @@ export async function runConnectors(argv: string[]): Promise<number> {
           return 0;
         }
 
+        type Toolkit = {
+          slug: string;
+          name: string;
+          description?: string | null;
+          categories?: string[];
+          connection?: { isActive?: boolean } | null;
+          connected?: boolean;
+        };
+        // A search or a page answers `items` + `cursor`; a --category listing
+        // answers `toolkits` + `total` + `hasMore` (the whole category, no cursor).
         const resp = await ctx.client.get<{
-          items: {
-            slug: string;
-            name: string;
-            description?: string | null;
-            categories?: string[];
-            connection?: { isActive?: boolean } | null;
-          }[];
+          items?: Toolkit[];
+          toolkits?: Toolkit[];
           cursor?: string | null;
           totalPages?: number;
         }>(`${ex}/connect/toolkits${qs ? `?${qs}` : ''}`);
-        const items = resp.items ?? [];
+        const items = resp.items ?? resp.toolkits ?? [];
         if (json) {
           emitJson(resp);
           return 0;
@@ -1237,7 +1242,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const slugW = Math.max(...items.map((a) => a.slug.length), 4);
         process.stdout.write('\n');
         for (const a of items) {
-          const connected = a.connection?.isActive ? `  ${C.green}connected${C.reset}` : '';
+          const connected =
+            a.connection?.isActive || a.connected ? `  ${C.green}connected${C.reset}` : '';
           process.stdout.write(
             `  ${C.cyan}${pad(a.slug, slugW)}${C.reset}  ${trim(a.name, 30)}  ${C.dim}${trim(a.description ?? '', 40)}${C.reset}${connected}\n`,
           );
@@ -1602,6 +1608,28 @@ async function runConnections(input: {
       }
       if (response.connections.length === 0) {
         process.stdout.write(`  ${C.dim}No connections.${C.reset}\n`);
+        return 0;
+      }
+      // The --all roster is identity + status only (connections.ts
+      // `/connections/all`): no label, account name, default or audience.
+      if (all) {
+        const rows = response.connections;
+        const connectorWidth = Math.max(9, ...rows.map((row) => row.connector_alias.length));
+        const ownerWidth = Math.max(5, ...rows.map((row) => row.owner_type.length));
+        const ownerIdWidth = Math.max(8, ...rows.map((row) => (row.owner_id ?? '—').length));
+        process.stdout.write('\n');
+        process.stdout.write(
+          `  ${C.dim}${pad('CONNECTOR', connectorWidth)}  ${pad('OWNER', ownerWidth)}  ${pad('OWNER ID', ownerIdWidth)}  STATUS   CONNECTION ID${C.reset}\n`,
+        );
+        for (const row of rows) {
+          process.stdout.write(
+            `  ${pad(row.connector_alias, connectorWidth)}  ${pad(row.owner_type, ownerWidth)}  ` +
+              `${pad(row.owner_id ?? '—', ownerIdWidth)}  ${pad(row.status, 8)} ${row.connection_id}\n`,
+          );
+        }
+        process.stdout.write(
+          `\n  ${C.dim}${rows.length} connection${rows.length === 1 ? '' : 's'}${C.reset}\n\n`,
+        );
         return 0;
       }
       const connectorWidth = Math.max(

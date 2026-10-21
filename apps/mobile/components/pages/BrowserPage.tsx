@@ -321,16 +321,12 @@ function ToolbarButton({
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function formatDisplayUrl(url: string): string {
-  try {
-    // Show a compact version: strip protocol, trailing slash
-    let display = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
-    // If it's a proxy URL, show the port part
-    const portMatch = display.match(/\/p\/[^/]+\/(\d+)(\/.*)?$/);
-    if (portMatch) {
-      return `localhost:${portMatch[1]}${portMatch[2] || ''}`;
-    }
-    return display;
-  } catch {
-    return url;
+  // Show a compact version: strip protocol, trailing slash
+  let display = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  // If it's a proxy URL, show the port part
+  const portMatch = display.match(/\/p\/[^/]+\/(\d+)(\/.*)?$/);
+  if (portMatch) {
+    return `localhost:${portMatch[1]}${portMatch[2] || ''}`;
   }
+  return display;
 }

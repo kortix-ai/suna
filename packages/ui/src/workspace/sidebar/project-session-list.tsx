@@ -123,7 +123,6 @@ import { formatDistanceToNowStrict } from 'date-fns';
 import { useUiPathname, useUiRouter, useUiSearchParams, useUiViewerId } from '../../providers/ui-provider';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { useSessionListActions } from '../../session/actions/use-session-list-actions';
-import { Separator } from '../../primitives/separator';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -648,21 +647,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
     return (
       <FadedScrollArea fadeColor="from-background" className="h-full min-h-0 space-y-px">
-        <StarterSection
-          title={tPinArchive('section')}
-          query={pinnedQuery}
-          sessions={visiblePinned}
-          open={!collapsedSectionIds.has(PINNED_SECTION_ID)}
-          onToggle={() => toggleSectionCollapsed(projectId, PINNED_SECTION_ID)}
-          renderNode={(session) => renderSessionNode(session, false)}
-        />
-        {/* Without grouping the list below has no header of its own: the line
-            keeps an unpinned row from reading as part of Pinned. */}
-        {visiblePinned.length > 0 && (
-          <div className="px-2 py-1">
-            <Separator />
-          </div>
-        )}
         {grouped.sections.map((section) => (
           <SessionListSection
             key={section.id}
@@ -716,8 +700,31 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     );
   }
 
+  // Pinned sits above the Sessions header, outside the list: a pin is the
+  // viewer's shortlist, not a section of it. The gap below it separates the two
+  // blocks, so no line. Capped at half the column so pins never bury the list.
+  const showPinned =
+    viewState !== 'loading' &&
+    viewState !== 'error' &&
+    (visiblePinned.length > 0 || pinnedQuery.hasNextPage);
+
   return (
     <div className="flex h-full min-h-0 flex-col space-y-px">
+      {showPinned && (
+        <div className="flex max-h-1/2 min-h-0 shrink-0 flex-col pb-2">
+          <FadedScrollArea fadeColor="from-background" rootClassName="h-auto">
+            <StarterSection
+              title={tPinArchive('section')}
+              query={pinnedQuery}
+              sessions={visiblePinned}
+              open={!collapsedSectionIds.has(PINNED_SECTION_ID)}
+              onToggle={() => toggleSectionCollapsed(projectId, PINNED_SECTION_ID)}
+              renderNode={(session) => renderSessionNode(session, false)}
+              caretOnHover
+            />
+          </FadedScrollArea>
+        </div>
+      )}
       <SessionListHeader
         projectId={projectId}
         sessions={sessions}
@@ -1033,6 +1040,7 @@ function StarterSection({
   open,
   onToggle,
   renderNode,
+  caretOnHover = false,
 }: {
   title: string;
   query: Pick<
@@ -1043,6 +1051,8 @@ function StarterSection({
   open: boolean;
   onToggle: () => void;
   renderNode: (session: ProjectSession) => ReactNode;
+  /** Hide the caret until the header is hovered or focused. */
+  caretOnHover?: boolean;
 }) {
   const t = useTranslations('sidebar');
   // A section with no row yet but a next page stays, with its Load more: the
@@ -1065,7 +1075,11 @@ function StarterSection({
           <span className="truncate">{title}</span>
           <CaretRightIcon
             aria-hidden
-            className="duration-normal size-3 shrink-0 transition-transform ease-out group-data-[state=open]/section:rotate-90"
+            className={cn(
+              'duration-normal size-3 shrink-0 transition-[transform,opacity] ease-out group-data-[state=open]/section:rotate-90',
+              caretOnHover &&
+                'opacity-0 group-hover/section-header:opacity-100 group-focus-visible/section-header:opacity-100',
+            )}
           />
         </div>
       </DisclosureTrigger>
