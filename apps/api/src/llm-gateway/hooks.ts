@@ -233,10 +233,14 @@ export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<v
  */
 export async function authorizeRequest(
   token: string,
-  options: { deferBilling?: boolean } = {},
+  options: { deferBilling?: boolean; timing?: Record<string, number> } = {},
 ): Promise<AuthorizeResult> {
+  const t0 = performance.now();
   const resolved = await resolvePrincipalWithReason(token);
+  if (options.timing) options.timing.principal = Math.round(performance.now() - t0);
+  const t1 = performance.now();
   let principal = resolved.principal ? await withResolvedTier(resolved.principal) : null;
+  if (options.timing) options.timing.tier = Math.round(performance.now() - t1);
   if (!principal) {
     // Name the SANDBOX refusal when that is what happened. "Invalid token" for
     // a valid, unexpired token whose session was parked is a wrong answer, and
@@ -289,7 +293,9 @@ export async function authorizeRequest(
       };
     }
   }
+  const t2 = performance.now();
   const { exceeded, message, crossings } = await checkBudget(principal);
+  if (options.timing) options.timing.budget = Math.round(performance.now() - t2);
   alertBudgetCrossings(principal, crossings);
   if (exceeded) {
     // A legacy gateway can have a hold here. It refunds the hold when it sees

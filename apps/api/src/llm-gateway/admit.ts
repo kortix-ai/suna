@@ -41,29 +41,46 @@ export async function admitGatewayRequest(token: unknown, input: unknown) {
   if (typeof token !== 'string' || !token) {
     return { admission: { ok: false as const, status: 401, errorCode: 'invalid_token', message: 'Invalid token' } };
   }
-  const admission = await authorizeRequest(token, { deferBilling: true });
-  if (!admission.ok) return { admission };
+  // Per-step milliseconds, returned to the gateway for its trace (never to a caller).
+  const timing: Record<string, number> = {};
+  const started = performance.now();
+  let at = started;
+  const step = (name: string) => {
+    const now = performance.now();
+    timing[name] = Math.round(now - at);
+    at = now;
+  };
+  const done = <T extends object>(body: T) => {
+    timing.total = Math.round(performance.now() - started);
+    return { ...body, timing };
+  };
+  const admission = await authorizeRequest(token, { deferBilling: true, timing });
+  step('authorize');
+  if (!admission.ok) return done({ admission });
   const { principal } = admission;
   const routeInput = input as ModelRouteInput;
   let route;
   try {
     route = await resolveGatewayRoute(principal, routeInput);
+    step('route');
   } catch (err) {
     logger.warn('[gateway-internal] admit: route left to the gateway', { error: err instanceof Error ? err.message : String(err) });
-    return { admission };
+    return done({ admission });
   }
   const model = route?.primaryModel || routeInput?.requestedModel || '';
   try {
     const candidates = await resolveCandidates(principal, model);
+    step('resolve');
     const billing = candidates[0] && candidates[0].billingMode !== 'none'
       ? await billingVerdict(principal.accountId)
       : undefined;
-    return { admission, route, candidates, ...(billing ? { billing } : {}) };
+    if (billing) step('billing');
+    return done({ admission, route, candidates, ...(billing ? { billing } : {}) });
   } catch (err) {
     if (err instanceof GatewayResolutionError) {
-      return { admission, route, candidates: [], resolutionError: resolutionErrorBody(err) };
+      return done({ admission, route, candidates: [], resolutionError: resolutionErrorBody(err) });
     }
     logger.warn('[gateway-internal] admit: resolution left to the gateway', { error: err instanceof Error ? err.message : String(err) });
-    return { admission, route };
+    return done({ admission, route });
   }
 }
