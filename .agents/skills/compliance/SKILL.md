@@ -26,10 +26,8 @@ customer reaches with their own key is not one.
 3. Merge to `dev`. The row ships with the next prod release.
 4. Send the vendor no customer data before the row's effective date
    (`addedOn` + 37 days). The page shows it as "From <date>". Managed-model
-   inference reaches its vendors through Kortix Platinum inference: set the
-   same date on the vendor in Platinum's model registry
-   (kortix-ai/platinum, `apps/api/src/inferenceModels.ts`), which holds the
-   vendor back until then.
+   inference is served by Platinum Inference: give the Platinum team the same
+   date, and Platinum Inference holds the change back until then.
 
 A change to an existing row (purpose, location) needs no `addedOn` and sends
 no email. Removing a vendor needs no notice: delete the row.
