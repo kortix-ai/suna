@@ -48,6 +48,30 @@ export function applyToText(text: string, c: Change): { text: string; added?: st
   return null;
 }
 
+/**
+ * Number each added clause after the numbered paragraph before it. The review numbers a
+ * new clause as if every suggested clause were accepted; a subset would skip numbers
+ * (1, 2, 3, 5). Original paragraphs keep their numbers.
+ */
+export function renumberAdded(paras: Array<{ text: string; added: boolean }>): string[] {
+  let prev: number[] | null = null;
+  return paras.map(({ text, added }) => {
+    const m = CLAUSE.exec(text);
+    if (!m) return text;
+    const parts = m[0].trim().replace(/\.$/, '').split('.').map(Number);
+    if (!added || !prev || prev.length < parts.length) {
+      prev = parts;
+      return text;
+    }
+    const next = [...prev.slice(0, parts.length - 1), prev[parts.length - 1] + 1];
+    prev = next;
+    const dot = m[0].trim().endsWith('.') ? '.' : '';
+    return `${next.join('.')}${dot} ${text.slice(m[0].length)}`;
+  });
+}
+
+const ADDED = '\u0000lumen-added\u0000';
+
 function rebuild(p: string, text: string): string {
   const open = /^<w:p(?:\s[^>]*)?>/.exec(p)?.[0] ?? '<w:p>';
   const ppr = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(p)?.[0] ?? '';
@@ -67,11 +91,21 @@ export function applyToDocumentXml(xml: string, changes: Change[]): { xml: strin
       const r = applyToText(paragraphText(p), c);
       if (!r) return p;
       done = true;
-      return r.added ? `${p}${rebuild(p, r.added)}` : rebuild(p, r.text);
+      return r.added ? `${p}${rebuild(p, ADDED + r.added)}` : rebuild(p, r.text);
     });
     if (done) applied += 1;
     else missing.push(c.from);
   }
+  const ps = [...out.matchAll(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g)].map((m) => m[0]);
+  const texts = renumberAdded(ps.map((p) => {
+    const t = paragraphText(p);
+    return t.startsWith(ADDED) ? { text: t.slice(ADDED.length), added: true } : { text: t, added: false };
+  }));
+  let i = 0;
+  out = out.replace(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g, (p) => {
+    const t = texts[i++];
+    return paragraphText(p).startsWith(ADDED) ? rebuild(p, t) : p;
+  });
   return { xml: out, applied, missing };
 }
 
@@ -89,20 +123,21 @@ export async function applyChanges(
     const blob = await zip.generateAsync({ type: 'blob', mimeType: DOCX });
     return { blob, filename: source.filename, applied: r.applied, missing: r.missing };
   }
-  const paras = source.paras.map((p) => p.text);
+  const rows = source.paras.map((p) => ({ text: p.text, added: false }));
   let applied = 0;
   const missing: string[] = [];
   for (const c of changes) {
-    const i = paras.findIndex((t) => applyToText(t, c));
+    const i = rows.findIndex((row) => applyToText(row.text, c));
     if (i < 0) {
       missing.push(c.from);
       continue;
     }
-    const r = applyToText(paras[i], c)!;
-    if (r.added) paras.splice(i + 1, 0, r.added);
-    else paras[i] = r.text;
+    const r = applyToText(rows[i].text, c)!;
+    if (r.added) rows.splice(i + 1, 0, { text: r.added, added: true });
+    else rows[i] = { ...rows[i], text: r.text };
     applied += 1;
   }
+  const paras = renumberAdded(rows);
   // markdownDocx reads "#" and "- " at a line start as Markdown: contract text is plain.
   const md = paras.map((t) => t.replace(/^(#|- )/, '​$1')).join('\n\n');
   return { blob: await markdownDocx(md), filename: source.filename.replace(/\.[^.]+$/, '') + '.docx', applied, missing };

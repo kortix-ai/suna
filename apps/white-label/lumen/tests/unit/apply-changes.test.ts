@@ -40,4 +40,21 @@ describe('accepted changes into a new version of the contract', () => {
     expect(xml).toContain('4.1 At least thirty (30) days notice.');
     expect(xml).not.toContain('<w:sz w:val="36"/>'); // "#" stayed text, not a heading
   });
+
+  test('accepting a subset of new clauses numbers them after the clause before them, with no gap (PE2E-R2-1)', async () => {
+    const three = '3. Liability. Capped at fees paid.';
+    // The review planned clause 4 (rejected) and clause 5 (accepted): the saved version reads 1, 2, 3, 4.
+    const accepted = [{ from: three, to: `${three} 5. Exclusions. Information already public is excluded.` }];
+    const xml = body(P('1. Term. Three (3) years.'), P('2. Governing Law. England and Wales.'), P(three));
+    const texts = [...applyToDocumentXml(xml, accepted).xml.matchAll(/<w:p>[\s\S]*?<\/w:p>/g)].map((m) => paragraphText(m[0]));
+    expect(texts.map((t) => t.split(' ')[0])).toEqual(['1.', '2.', '3.', '4.']);
+    expect(texts[3]).toBe('4. Exclusions. Information already public is excluded.');
+    const out = await applyChanges(
+      { bytes: new ArrayBuffer(0), filename: 'nda.txt', mime: 'text/plain', paras: [{ text: '1. Term.' }, { text: '2.1 Notice.' }] },
+      [{ from: '2.1 Notice.', to: '2.1 Notice. 2.3 Residuals.' }, { from: '1. Term.', to: '1. Term. 7. Exclusions.' }],
+    );
+    const docXml = await (await JSZip.loadAsync(await out.blob.arrayBuffer())).file('word/document.xml')!.async('string');
+    expect(docXml).toContain('2. Exclusions.');
+    expect(docXml).toContain('2.2 Residuals.');
+  });
 });
