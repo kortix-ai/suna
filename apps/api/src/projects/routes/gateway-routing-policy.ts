@@ -7,7 +7,8 @@ import {
 import { clampGenerationConfig } from '@kortix/llm-catalog';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
 import { catalogModelForWireModel } from '../../llm-gateway/models/catalog-models';
-import { platformDefaultModelId, platformVisionModelId } from '../../llm-gateway/models/served-managed-models';
+import { platformDefaultModelId, platformVisionModelId, servedManagedModels } from '../../llm-gateway/models/served-managed-models';
+import { effectiveFallbackPolicies } from '../../llm-gateway/routing/policy-config';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import {
@@ -31,7 +32,8 @@ import { resolveGatewayRoute } from '../../llm-gateway/routing';
 type RoutingContext = { projectId: string; accountId: string; userId: string };
 
 function operatorFallbackFor(model: string) {
-  const policy = config.LLM_GATEWAY_FALLBACK_POLICIES.find((candidate) =>
+  const policies = effectiveFallbackPolicies(config.LLM_GATEWAY_FALLBACK_POLICIES, servedManagedModels().map((m) => m.id));
+  const policy = policies.find((candidate) =>
     candidate.models.includes(model),
   );
   return policy

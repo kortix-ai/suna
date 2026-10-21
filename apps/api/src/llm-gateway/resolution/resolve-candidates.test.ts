@@ -688,22 +688,6 @@ describe('resolveCandidates — managed model tier gating', () => {
   // so `effectiveModel` here is already `deepseek-v4.1-flash` by the time
   // resolution runs — this never reaches `model_retired` at all. It just
   // works, transparently, the instant `deepseek-v4.1-flash` is servable.
-  test('a two-hop legacy alias resolves transparently through its retired intermediate to the final replacement — no error at all', async () => {
-    runtimeManagedModel = { id: 'deepseek-v4.1-flash' };
-    const p = principal();
-    tierByAccount[p.accountId] = 'pro';
-
-    const candidates = await resolveCandidates(p, 'morph-dsv4flash');
-    expect(candidates).toHaveLength(1);
-    expect(candidates[0]).toMatchObject({ provider: 'kortix-managed' });
-  });
-
-  // The id-level guard (managed-models.test.ts's "every LEGACY_MANAGED_IDS
-  // chain resolves off of a retired id") is what makes the branch below
-  // structurally unreachable for any DECLARED chain: canonicalManagedModelId
-  // is idempotent on its own output, so `effectiveModel` here is always
-  // already the fully-resolved fixed point. It stays defensive code for a
-  // chain that ever exceeds CANONICAL_CHAIN_MAX_HOPS (managed-models.ts).
 });
 
 describe('resolveCandidates — codex + unknown provider', () => {

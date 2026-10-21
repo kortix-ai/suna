@@ -25,28 +25,33 @@ const fallbackPoliciesSchema = z.array(fallbackPolicySchema).superRefine((polici
   }
 });
 
-export const DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES = JSON.stringify([
-  // The two managed models back each other up. Platinum inference already
-  // fails over between upstreams before the gateway falls back to the other model.
-  {
-    id: 'platform-default-resilience',
-    models: ['deepseek-v4.1-flash'],
-    fallbackModels: ['glm-5.3-flash'],
-    fallbackOn: 'transient',
-  },
-  {
-    id: 'platform-glm-resilience',
-    models: ['glm-5.3-flash'],
-    fallbackModels: ['deepseek-v4.1-flash'],
-    fallbackOn: 'transient',
-  },
-  {
-    id: 'platform-default-degrade',
-    models: ['codex/gpt-5.6-sol'],
-    fallbackModels: ['deepseek-v4.1-flash', 'glm-5.3-flash'],
-    fallbackOn: 'any-error',
-  },
-]);
+/** No operator policy by default: the managed fallbacks derive from the lineup. */
+export const DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES = '[]';
+
+/** The ChatGPT-account default degrades to the managed lineup when it fails. */
+export const CODEX_DEFAULT_MODEL = 'codex/gpt-5.6-sol';
+
+/**
+ * Fallbacks for the managed lineup, derived from it (never hardcoded ids):
+ * each served model falls back to the others in Platinum's order, and the
+ * ChatGPT-account default falls back to all of them. An operator policy
+ * (LLM_GATEWAY_FALLBACK_POLICIES) that already owns a model wins.
+ */
+export function effectiveFallbackPolicies(
+  operator: readonly ModelFallbackPolicy[],
+  servedIds: readonly string[],
+): ModelFallbackPolicy[] {
+  const owned = new Set(operator.flatMap((policy) => policy.models));
+  const derived: ModelFallbackPolicy[] = servedIds.length > 1
+    ? servedIds.filter((id) => !owned.has(id)).map((id) => ({
+      id: `managed-${id}`, models: [id], fallbackModels: servedIds.filter((other) => other !== id), fallbackOn: 'transient' as const,
+    }))
+    : [];
+  if (servedIds.length && !owned.has(CODEX_DEFAULT_MODEL)) {
+    derived.push({ id: 'codex-default-degrade', models: [CODEX_DEFAULT_MODEL], fallbackModels: [...servedIds], fallbackOn: 'any-error' });
+  }
+  return [...operator, ...derived];
+}
 
 /** Parse the operator-owned declarative route policy without importing API config. */
 export function parseFallbackPolicies(raw: string): ModelFallbackPolicy[] {

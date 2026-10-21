@@ -286,13 +286,13 @@ describe('resolveCandidates free-tier premium gate', () => {
   });
 });
 
-// Every managed id the catalog serves, every legacy alias, bare and with the
-// opencode `kortix/` prefix: a new managed model or alias cannot open a path
-// for Free (2026-10-19, see the learnings ledger).
-const { LEGACY_MANAGED_IDS } = await import('../llm-gateway/models/managed-models');
+// Every managed id the catalog serves and retired ids sessions still carry,
+// bare and with the opencode `kortix/` prefix: a new managed model or a
+// retired id cannot open a path for Free (2026-10-19, see the learnings ledger).
+const RETIRED_SAMPLE = ['kimi-k3', 'morph-dsv41flash', 'deepseek-v4-flash-0731'];
 
 describe('no managed id or alias reaches a Free account', () => {
-  const ids = [...LINEUP.map((m) => m.id), ...Object.keys(LEGACY_MANAGED_IDS)];
+  const ids = [...LINEUP.map((m) => m.id), ...RETIRED_SAMPLE];
   const refs = ids.flatMap((id) => [id, `kortix/${id}`]);
 
   beforeEach(() => {

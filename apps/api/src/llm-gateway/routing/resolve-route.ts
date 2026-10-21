@@ -21,7 +21,8 @@ export interface GatewayRouteResolverOptions {
   defaultModel: string | (() => string);
   /** Reroute target for image-bearing default requests; empty/undefined = no reroute. */
   visionModel: string | undefined | (() => string | undefined);
-  policies: readonly ModelFallbackPolicy[];
+  /** Read per request: the managed fallbacks follow the live lineup. */
+  policies: readonly ModelFallbackPolicy[] | (() => readonly ModelFallbackPolicy[]);
   supportsImage: (model: string) => boolean;
   getProjectPolicy?: (projectId: string) => Promise<ResolvedProjectRoutingPolicy | null>;
   /**
@@ -71,10 +72,10 @@ const valueOf = <T,>(v: T | (() => T)): T => (typeof v === 'function' ? (v as ()
 export function createGatewayRouteResolver(
   options: GatewayRouteResolverOptions,
 ): GatewayRouteResolver {
-  const fallbackPolicies = createModelFallbackPolicyEngine(options.policies);
   const catalogModelFor = options.catalogModelFor ?? (() => undefined);
 
   return async (principal, input) => {
+    const fallbackPolicies = createModelFallbackPolicyEngine(valueOf(options.policies));
     const projectPolicy = principal.projectId && options.getProjectPolicy
       ? await options.getProjectPolicy(principal.projectId)
       : null;
