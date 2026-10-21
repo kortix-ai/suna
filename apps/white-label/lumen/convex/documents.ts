@@ -97,11 +97,35 @@ export const addUploaded = internalMutation({
   },
 });
 
+/** Where the Assistant's files for a matter are, for a caller who sees the matter. Null while its folder moves. */
+export const outputsTarget = internalQuery({
+  args: { matterId: v.id("matters") },
+  returns: v.union(v.null(), v.object({ driveId: v.string(), driveFolder: v.string() })),
+  handler: async (ctx, { matterId }) => {
+    const { matter, firm } = await requireMatterAccess(ctx, matterId);
+    const driveId = await driveIdOf(ctx);
+    if (matter.folderMoving || firm.status !== "ready" || !driveId || !matter.driveFolder) return null;
+    return { driveId, driveFolder: matter.driveFolder };
+  },
+});
+
+/** The current (not superseded) document of the matter with this filename, or null. */
+export const currentByName = internalQuery({
+  args: { matterId: v.id("matters"), filename: v.string() },
+  returns: v.union(v.null(), v.id("documents")),
+  handler: async (ctx, { matterId, filename }) => {
+    const rows = await ctx.db.query("documents").withIndex("by_matter", (q) => q.eq("matterId", matterId)).collect();
+    return rows.find((d) => d.filename === filename && !d.superseded && d.status !== "failed")?._id ?? null;
+  },
+});
+
 export const checkAccess = internalQuery({
   args: { matterId: v.id("matters") },
   returns: v.null(),
   handler: async (ctx, { matterId }) => {
-    await requireMatterAccess(ctx, matterId);
+    const { matter } = await requireMatterAccess(ctx, matterId);
+    // A copy written now would land in the folder being moved away.
+    if (matter.folderMoving) throw new Error("409: this matter's documents are being moved. Try again in a minute.");
     return null;
   },
 });

@@ -16,7 +16,7 @@ import { audit } from "./audit";
 import { type Citation, verifyCitation } from "./lib/cite";
 import { DD_COLUMNS, PRESET_COLUMNS } from "./lib/columns";
 import { templateFields } from "./lib/template";
-import { COUNSEL_ROLE, DRAFTER_ROLE, EXTRACTOR_ROLE, REVIEWER_ROLE } from "./lumenAgent";
+import { COUNSEL_ROLE, DRAFTER_ROLE, EXTRACTOR_ROLE, REVIEWER_ROLE, sessionAgent } from "./lumenAgent";
 import { batchStatus, cellState, checkedCitation, column, runKind, runStatus, severity } from "./schema";
 
 export const DOCS_PER_BATCH = 4;
@@ -411,6 +411,17 @@ export const forPrepare = internalQuery({
   },
 });
 
+/** The run's Drive folder, fixed when it starts. */
+export const setDriveDir = internalMutation({
+  args: { runId: v.id("runs"), driveDir: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { runId, driveDir }) => {
+    const run = await ctx.db.get(runId);
+    if (run && !run.driveDir) await ctx.db.patch(runId, { driveDir });
+    return null;
+  },
+});
+
 export const markRun = internalMutation({
   args: { runId: v.id("runs"), status: runStatus, error: v.optional(v.string()), kitVersion: v.optional(v.string()), detail: v.optional(v.string()) },
   returns: v.boolean(),
@@ -479,7 +490,10 @@ export const batchContext = internalQuery({
     const firm = run && (await ctx.db.get(run.firmId));
     if (!run || !firm) return null;
     const files = await ctx.db.query("runFiles").withIndex("by_batch_path", (q) => q.eq("batchId", batchId)).collect();
-    return { batch, run, firm, files: files.map((f) => ({ path: f.path, version: f.version, status: f.status })) };
+    const matter = await ctx.db.get(run.matterId);
+    // The agent a batch session runs on: the matter's (convex/matters.ts sessionAgent), null while its folder moves.
+    const agent = matter ? sessionAgent(matter, firm) : null;
+    return { batch, run, firm, agent, files: files.map((f) => ({ path: f.path, version: f.version, status: f.status })) };
   },
 });
 

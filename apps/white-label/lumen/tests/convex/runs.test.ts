@@ -27,8 +27,9 @@ const fake = vi.hoisted(() => {
 vi.mock('@kortix/sdk', () => ({
   createProjectSession: async (pid: string, input: { agent_name: string; initial_prompt: string }) => {
     fake.created.push({ projectId: pid, agent: input.agent_name });
-    // The firm folder /Lumen/Firms/<firmId> mounts at /drives/<firmId> in the session.
-    const inputPath = /Input: (\S+)/.exec(input.initial_prompt)![1].replace(/^\/drives\/([^/]+)/, '/Lumen/Firms/$1');
+    // The firm folder /Lumen/Firms/<firmId> mounts at /drives/<firmId>; a restricted matter's /Lumen/Walled/<matterId> at /drives/<matterId>.
+    const seen = /Input: (\S+)/.exec(input.initial_prompt)![1];
+    const inputPath = [seen.replace(/^\/drives\/([^/]+)/, '/Lumen/Firms/$1'), seen.replace(/^\/drives\/([^/]+)/, '/Lumen/Walled/$1')].find((p) => fake.drive.has(p))!;
     const role = JSON.parse(fake.drive.get(inputPath)!.data).role as string;
     const s = { id: `sess_${fake.sessions.length + 1}`, agent: input.agent_name, role, inputPath, sends: [] };
     fake.sessions.push(s);
@@ -157,6 +158,35 @@ const idleNow = () => ({ turns: [], last_ended: { ended_at: new Date(Date.now())
 async function finish(t: T) {
   await t.finishAllScheduledFunctions(vi.runAllTimers, 500);
 }
+
+describe('run engine: a restricted matter', () => {
+  test('its batches run on the matter agent and work inside the matter folder, never in the firm folder', async () => {
+    const { t, matterId, docs } = await world(2);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(matterId, { visibility: 'restricted', driveFolder: '/Lumen/Walled/m1', kortixAgent: 'lumen-m-m1', agentConfig: `${KIT.hash}:` });
+      for (const [i, d] of docs.entries()) await ctx.db.patch(d, { driveFile: `/Lumen/Walled/m1/Docs/d${i + 1}.pdf`, textFile: `/Lumen/Walled/m1/Text/d${i + 1}.md` });
+    });
+    fake.script.onStart = writeAll;
+    const { runId } = await startReview(t, matterId, docs);
+    await finish(t);
+    const run = await t.run((ctx) => ctx.db.get(runId));
+    expect(run).toMatchObject({ status: 'succeeded', driveDir: `/Lumen/Walled/m1/Runs/${runId}` });
+    expect(fake.created.map((c) => c.agent)).toEqual(['lumen-m-m1']);
+    const input = inputOf(fake.sessions[0]) as Input & Record<string, string>;
+    expect(input.batch_dir.startsWith(`/drives/m1/Runs/${runId}/`)).toBe(true);
+    expect(input.matter_dir).toBe('/drives/m1');
+    expect([...fake.drive.keys()].some((k) => k.startsWith('/Lumen/Firms/'))).toBe(false);
+  });
+
+  test('a restricted matter whose folder is moving starts no run', async () => {
+    const { t, matterId, docs } = await world(1);
+    await t.run((ctx) => ctx.db.patch(matterId, { visibility: 'restricted', folderMoving: true }));
+    const { runId } = await startReview(t, matterId, docs);
+    await finish(t);
+    expect(await t.run((ctx) => ctx.db.get(runId))).toMatchObject({ status: 'failed' });
+    expect(fake.created).toEqual([]);
+  });
+});
 
 describe('run engine: fan-out, validation, repair, nudge, relaunch, limits', () => {
   test('a 6-document review fans out into 2 batches, fills 48 cells with verified citations, and succeeds', async () => {

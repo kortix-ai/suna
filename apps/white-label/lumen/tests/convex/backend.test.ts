@@ -22,6 +22,7 @@ const kortixFake = vi.hoisted(() => {
     serviceAccounts: [] as Array<{ name: string }>,
     deletedServiceAccounts: [] as string[],
     assignments: [] as Array<Record<string, unknown>>,
+    moves: [] as Array<{ from: string; to: string }>,
   };
   return {
     calls,
@@ -55,6 +56,10 @@ vi.mock('@kortix/sdk', () => {
     }),
     unshareFolder: async (_d: string, grantId: string) => void c.unshared.push(grantId),
     makeDriveFolder: async (_d: string, path: string) => void c.folders.push(path),
+    moveDriveFile: async (_d: string, from: string, to: string) => {
+      c.moves.push({ from, to });
+      return { from, to };
+    },
     shareFolder: async (_d: string, input: { path: string; principalType: string; principalId?: string; level: string }) => {
       c.grants.push(input);
       return { grantId: `g_${c.grants.length}` };
@@ -226,6 +231,74 @@ describe('matters: visibility and roles', () => {
     expect((await bob.as.query(api.matters.list, { firmId: firm, status: 'on_hold' })).map((r) => r._id)).toEqual([id]);
     const audits = await t.run((ctx) => ctx.db.query('auditEvents').collect());
     expect(audits.find((e) => e.action === 'matter.update')).toMatchObject({ actorId: bob.userId, matterId: id, detail: 'status → on_hold' });
+  });
+});
+
+describe('restricted matters: their own folder and agent, out of every firm session', () => {
+  test('create: the folder is /Lumen/Walled/<id>; no session starts until its agent exists; then only that agent is granted it', async () => {
+    const { t, alice, bob, firm } = await world();
+    const id = await alice.as.mutation(api.matters.create, {
+      firmId: firm, name: 'Conflict-sensitive', client: 'Example Holdings', parties: [], visibility: 'restricted', members: [],
+    });
+    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ driveFolder: `/Lumen/Walled/${id}`, folderMoving: true });
+    await expect(token(alice.as, id)).rejects.toThrow(/409/);
+    await t.action(internal.kortix.placeMatter, { matterId: id });
+    const m = await t.run((ctx) => ctx.db.get(id));
+    expect(m).toMatchObject({ driveFolder: `/Lumen/Walled/${id}`, folderMoving: false, kortixAgent: `lumen-m-${id}` });
+    // The scheduled placement may run too: sharing again only sets the level, so compare the distinct grants.
+    expect([...new Set(kortixFake.calls.grants.map((g) => JSON.stringify(g)))].map((g) => JSON.parse(g))).toEqual([
+      { path: `/Lumen/Walled/${id}`, principalType: 'agent', principalId: `lumen-m-${id}`, level: 'write' },
+      { path: '/Lumen/Kit', principalType: 'agent', principalId: `lumen-m-${id}`, level: 'read' },
+    ]);
+    expect(kortixFake.calls.agents.find((a) => a.name === `lumen-m-${id}`)?.block).toMatchObject({ kortix_permissions: 'none', repository_access: false });
+    // The proxy gets the matter's agent and folder, never the firm's, for this matter.
+    expect(await token(alice.as, id)).toMatchObject({ agent: `lumen-m-${id}`, matterDir: `/drives/${id}` });
+    await expect(token(bob.as, id)).rejects.toThrow(/403/);
+  });
+
+  test('a firm matter keeps the firm agent and its folder inside the firm mount', async () => {
+    const { t, alice, firm } = await world();
+    const id = await alice.as.mutation(api.matters.create, { firmId: firm, name: 'Open', client: 'X', parties: [], visibility: 'firm' });
+    expect(await token(alice.as, id)).toMatchObject({ agent: `lumen-f-${firm}`, matterDir: `/drives/${firm}/Matters/${id}` });
+    expect(kortixFake.calls.moves).toEqual([]);
+  });
+
+  test('firm → restricted moves the folder, its documents\' paths and its earlier run folders out of the firm folder', async () => {
+    const { t, alice, firm } = await world();
+    const id = await alice.as.mutation(api.matters.create, { firmId: firm, name: 'Turns walled', client: 'X', parties: [], visibility: 'firm' });
+    const from = `/Lumen/Firms/${firm}/Matters/${id}`;
+    const { doc, run } = await t.run(async (ctx) => {
+      const storageId = await ctx.storage.store(new Blob(['x']));
+      const doc = await ctx.db.insert('documents', {
+        firmId: firm, matterId: id, storageId, filename: 'spa.pdf', mime: 'application/pdf', bytes: 1, status: 'ready',
+        uploadedBy: alice.userId, driveFile: `${from}/Docs/d-spa.pdf`, textFile: `${from}/Text/d.md`,
+      });
+      const run = await ctx.db.insert('runs', { firmId: firm, matterId: id, kind: 'ask', title: 'q', status: 'succeeded', documentIds: [doc], createdBy: alice.userId });
+      return { doc, run };
+    });
+    await alice.as.mutation(api.matters.update, { matterId: id, visibility: 'restricted' });
+    await expect(token(alice.as, id)).rejects.toThrow(/409/);
+    await t.action(internal.kortix.placeMatter, { matterId: id });
+    const to = `/Lumen/Walled/${id}`;
+    expect(kortixFake.calls.moves).toEqual([
+      { from, to },
+      { from: `/Lumen/Firms/${firm}/Runs/${run}`, to: `${to}/Runs/${run}` },
+    ]);
+    expect(await t.run((ctx) => ctx.db.get(doc))).toMatchObject({ driveFile: `${to}/Docs/d-spa.pdf`, textFile: `${to}/Text/d.md` });
+    expect(await t.run((ctx) => ctx.db.get(run))).toMatchObject({ driveDir: `${to}/Runs/${run}` });
+    expect(await token(alice.as, id)).toMatchObject({ agent: `lumen-m-${id}`, matterDir: `/drives/${id}` });
+  });
+
+  test('a visibility change waits for a running workflow', async () => {
+    const { t, alice, firm } = await world();
+    const id = await alice.as.mutation(api.matters.create, { firmId: firm, name: 'Busy', client: 'X', parties: [], visibility: 'firm' });
+    await t.run((ctx) => ctx.db.insert('runs', { firmId: firm, matterId: id, kind: 'ask', title: 'q', status: 'running', documentIds: [], createdBy: alice.userId }));
+    await expect(alice.as.mutation(api.matters.update, { matterId: id, visibility: 'restricted' })).rejects.toThrow(/409: a workflow is running/);
+  });
+
+  test('a restricted matter still inside the firm folder (not placed yet) starts no session', async () => {
+    const { alice, walled } = await world();
+    await expect(token(alice.as, walled)).rejects.toThrow(/409/);
   });
 });
 

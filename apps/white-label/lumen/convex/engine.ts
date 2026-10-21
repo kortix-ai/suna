@@ -16,8 +16,8 @@ import type { Doc } from "./_generated/dataModel";
 import { type ActionCtx, internalAction } from "./_generated/server";
 import type { FirmContext } from "./deployment";
 import { KIT } from "./kit/bundle.generated";
-import { firmReady } from "./kortix";
-import { RUNS_ROOT, sandboxPath } from "./lumenAgent";
+import { ensureMatterAgent, firmReady } from "./kortix";
+import { RUNS_ROOT, runFolder, sandboxPath, sessionAgent } from "./lumenAgent";
 import { asFirm, asOperator, errorText, firmClient, sandboxProvider, withRetry, ensureFolder } from "./operator";
 import { LIMITS, NO_PROGRESS_MS, RUN_TIMEOUT_MS, inputKind, resultContract } from "./runs";
 
@@ -29,7 +29,9 @@ const pollDelay = (startedAt: number | undefined) => (startedAt && Date.now() - 
 /** A session gets this long after a prompt before Lumen reads an idle session as stopped. */
 const PROMPT_GRACE_MS = 45_000;
 
-const batchDir = (firmId: string, runId: string, batchId: string) => `${RUNS_ROOT(firmId)}/${runId}/${batchId}`;
+/** The run's folder: fixed at prepare (`runs.driveDir`); a run from before that field kept the firm's Runs folder. */
+const runDir = (run: Doc<"runs">) => run.driveDir ?? `${RUNS_ROOT(run.firmId)}/${run._id}`;
+const batchDir = (run: Doc<"runs">, batchId: string) => `${runDir(run)}/${batchId}`;
 
 type Prep = {
   run: Doc<"runs">;
@@ -46,7 +48,7 @@ const libraryFile = (kind: string) => (kind === "contract_review" ? "in/playbook
 
 function inputFor(p: Prep, b: Doc<"runBatches">) {
   const docs = b.documentIds.map((id) => p.docs.find((d) => d._id === id)!).filter(Boolean);
-  const dir = sandboxPath(batchDir(p.run.firmId, p.run._id, b._id));
+  const dir = sandboxPath(batchDir(p.run, b._id));
   const kind = p.run.kind;
   return {
     schema: "input/1",
@@ -89,13 +91,23 @@ export const prepare = internalAction({
       console.error(`[lumen] run ${runId}: firm: ${errorText(err)}`);
       return null;
     }
+    // A restricted matter's run works in the matter's own folder, on the matter's own agent.
+    const agent = sessionAgent(p.matter, p.firm);
+    if (!agent) {
+      await ctx.runMutation(internal.runs.markRun, { runId, status: "failed", error: "This matter's workspace is being set up. Try again in a minute." });
+      return null;
+    }
     try {
+      await ensureMatterAgent(ctx, f, { matterId: p.matter._id, agent, agentConfig: p.matter.agentConfig });
+      p.run = { ...p.run, driveDir: p.run.driveDir ?? runFolder({ firmId: p.run.firmId, driveFolder: p.matter.driveFolder, visibility: p.matter.visibility }, runId) };
+      await ctx.runMutation(internal.runs.setDriveDir, { runId, driveDir: p.run.driveDir! });
       const driveId = f.driveId;
       await asOperator(async () => {
-        await ensureFolder(driveId, `${RUNS_ROOT(p.run.firmId)}/${runId}`);
+        if (p.matter.visibility === "restricted") await ensureFolder(driveId, `${p.matter.driveFolder}/Runs`);
+        await ensureFolder(driveId, runDir(p.run));
         for (const b of p.batches) {
           if (b.status !== "pending") continue;
-          const dir = batchDir(p.run.firmId, runId, b._id);
+          const dir = batchDir(p.run, b._id);
           await ensureFolder(driveId, dir);
           const body = new TextEncoder().encode(JSON.stringify(inputFor(p, b), null, 1));
           await withRetry(() => uploadDriveFile(driveId, `${dir}/input.json`, body));
@@ -128,8 +140,8 @@ const KIND_NAME: Record<string, string> = {
 /** A reduce batch reads the checklist rows Lumen accepted: Convex writes them into the batch folder, never the map agents. */
 async function writeReduceRows(ctx: ActionCtx, run: Doc<"runs">, b: Doc<"runBatches">, driveId: string) {
   const rows = await ctx.runQuery(internal.runs.reduceRows, { runId: run._id });
-  const dir = `${batchDir(run.firmId, run._id, b._id)}/in/rows`;
-  await ensureFolder(driveId, `${batchDir(run.firmId, run._id, b._id)}/in`);
+  const dir = `${batchDir(run, b._id)}/in/rows`;
+  await ensureFolder(driveId, `${batchDir(run, b._id)}/in`);
   await ensureFolder(driveId, dir);
   for (const r of rows) {
     await withRetry(() => uploadDriveFile(driveId, `${dir}/${r.docId}.json`, new TextEncoder().encode(JSON.stringify(r.row, null, 1))));
@@ -137,16 +149,19 @@ async function writeReduceRows(ctx: ActionCtx, run: Doc<"runs">, b: Doc<"runBatc
   return rows.length;
 }
 
-/** One session for the batch, as the firm's service account, on the firm's agent (its mounts: the firm folder and the kit). */
-async function startSession(b: Doc<"runBatches">, run: Doc<"runs">, f: FirmContext) {
+/**
+ * One session for the batch, as the firm's service account, on the matter's agent: the firm's
+ * (mounts: the firm folder and the kit), or a restricted matter's own (its folder and the kit).
+ */
+async function startSession(b: Doc<"runBatches">, run: Doc<"runs">, f: FirmContext, agent: string) {
   const session = await asFirm(f.secret, () =>
     withRetry(() =>
       createProjectSession(f.projectId, {
         name: `${KIND_NAME[run.kind] ?? "Run"}: ${run.title}`.slice(0, 110) + (b.phase === "reduce" ? " (report)" : run.documentIds.length > 4 && b.role === "lumen-extractor" ? ` (batch ${b.index + 1})` : ""),
-        agent_name: f.agent,
+        agent_name: agent,
         labels: [`lumen-firm:${run.firmId}`, `lumen-matter:${run.matterId}`, `lumen-user:${run.createdBy}`, `lumen-run:${run._id}`].map((l) => l.slice(0, 64)),
         metadata: { lumen_firm_id: run.firmId, lumen_matter_id: run.matterId, lumen_user_id: run.createdBy, lumen_run_id: run._id, lumen_batch_id: b._id },
-        initial_prompt: launchPrompt(`${sandboxPath(batchDir(run.firmId, run._id, b._id))}/input.json`),
+        initial_prompt: launchPrompt(`${sandboxPath(batchDir(run, b._id))}/input.json`),
         ...sandboxProvider(),
       }),
     ),
@@ -171,7 +186,8 @@ export const launch = internalAction({
         const n = await asOperator(() => writeReduceRows(ctx, c.run, c.batch, f.driveId));
         await ctx.runMutation(internal.runs.updateBatch, { batchId, patch: {}, event: { type: "rows", detail: `Report: ${n} checklist rows handed over` } });
       }
-      const sid = await startSession(c.batch, c.run, f);
+      if (!c.agent) throw new Error("the matter's workspace is being set up");
+      const sid = await startSession(c.batch, c.run, f, c.agent);
       const now = Date.now();
       const live = await ctx.runMutation(internal.runs.updateBatch, {
         batchId,
@@ -302,7 +318,7 @@ export const poll = internalAction({
     const f = await firmOf(ctx, run.firmId);
     if (!f) return void (await ctx.runMutation(internal.runs.settleBatch, { batchId, status: "failed", error: "The firm workspace is not ready" }));
     const seen = new Map<string, { version: string; status: string }>(c.files.map((f: { path: string; version: string; status: string }) => [f.path, f]));
-    const dir = batchDir(run.firmId, run._id, batchId);
+    const dir = batchDir(run, batchId);
     const driveId = f.driveId;
     const settle = async (status: "succeeded" | "failed", error?: string) => {
       await ctx.runMutation(internal.runs.settleBatch, { batchId, status, error });
@@ -398,7 +414,8 @@ export const poll = internalAction({
           if (failed) {
             if (batch.attempts.relaunch >= LIMITS.relaunch) return void (await fail("The workspace failed twice"));
             const old = batch.kortixSessionId!;
-            const sid = await startSession(batch, run, f);
+            if (!c.agent) return void (await fail("The matter's workspace is being set up"));
+            const sid = await startSession(batch, run, f, c.agent);
             await stop(f, old);
             await ctx.runMutation(internal.runs.updateBatch, {
               batchId,

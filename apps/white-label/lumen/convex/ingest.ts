@@ -5,13 +5,14 @@
 // the original + Text/<docId>.md + the matter's index.json in the firm's Drive.
 
 import { createHash } from "node:crypto";
-import { deleteDriveFile, uploadDriveFile } from "@kortix/sdk";
+import { deleteDriveFile, listDriveFolder, readDriveFile, uploadDriveFile } from "@kortix/sdk";
 import mammoth from "mammoth";
 import { extractText, getDocumentProxy } from "unpdf";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalAction } from "./_generated/server";
-import { extOf } from "./documents";
+import type { Id } from "./_generated/dataModel";
+import { action, internalAction } from "./_generated/server";
+import { MAX_UPLOAD_BYTES, extOf } from "./documents";
 import { renderText, sectionsFromText, segment } from "./lib/segment";
 import { asOperator, errorText, withRetry, ensureFolder } from "./operator";
 
@@ -119,5 +120,35 @@ export const removeFromDrive = internalAction({
     }
     await ctx.runMutation(internal.documents.requestIndex, { matterId });
     return null;
+  },
+});
+
+/**
+ * Files the Assistant wrote for the lawyer (`<matter folder>/Outputs/`, kit rule in
+ * agent-kit/agents/lumen-counsel.md) become matter documents: read, anchored, citable,
+ * in the vault. A file with the name of a current document becomes its next version;
+ * bytes the vault already holds are skipped. The thread calls this when a turn ends,
+ * the vault when it opens. Returns the filenames added.
+ */
+export const importOutputs = action({
+  args: { matterId: v.id("matters") },
+  returns: v.array(v.string()),
+  handler: async (ctx, { matterId }): Promise<string[]> => {
+    const t = await ctx.runQuery(internal.documents.outputsTarget, { matterId });
+    if (!t) return [];
+    const listed = await asOperator(() => listDriveFolder(t.driveId, `${t.driveFolder}/Outputs`)).catch(() => null);
+    const added: string[] = [];
+    for (const e of listed?.entries ?? []) {
+      if (e.type !== "file" || !["pdf", "docx", "txt"].includes(extOf(e.name)) || e.size === 0 || e.size > MAX_UPLOAD_BYTES) continue;
+      const { blob } = await asOperator(() => withRetry(() => readDriveFile(t.driveId, e.path)));
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      if (await ctx.runQuery(internal.documents.sameBytes, { matterId, sha256 })) continue;
+      const versionOf: Id<"documents"> | null = await ctx.runQuery(internal.documents.currentByName, { matterId, filename: e.name });
+      const storageId = await ctx.storage.store(new Blob([bytes], { type: blob.type || "application/octet-stream" }));
+      await ctx.runMutation(internal.documents.addUploaded, { matterId, storageId, filename: e.name, sha256, ...(versionOf ? { versionOf } : {}) });
+      added.push(e.name);
+    }
+    return added;
   },
 });

@@ -23,8 +23,10 @@ export interface Member {
   projectId: string;
   /** The firm's service-account secret. Never sent to the browser. */
   token: string;
-  /** The firm's Kortix agent: every session the member creates runs on it. */
+  /** The matter's Kortix agent (the firm's, or a restricted matter's own): every session the member creates runs on it. */
   agent: string;
+  /** The matter's folder as its sessions see it (`/drives/...`). Runtime file reads stay inside it. */
+  matterDir: string;
   /** Better Auth ids, for tagging what the member creates. */
   userId: string;
   orgId: string;

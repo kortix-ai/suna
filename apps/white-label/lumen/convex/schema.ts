@@ -118,8 +118,14 @@ export default defineSchema({
     practiceArea: v.optional(v.string()),
     status: matterStatus,
     visibility,
-    // Drive path: /Lumen/Firms/<firmId>/Matters/<matterId>.
+    // Drive path: /Lumen/Firms/<firmId>/Matters/<matterId>, or /Lumen/Walled/<matterId> when restricted.
     driveFolder: v.string(),
+    /** A restricted matter's own Kortix agent (lumen-m-<matterId>), set once its folder and grants are in place. */
+    kortixAgent: v.optional(v.string()),
+    /** The kit hash and model that agent was written with. */
+    agentConfig: v.optional(v.string()),
+    /** The Drive folder is being moved (a visibility change): no thread, run or upload starts until it is done. */
+    folderMoving: v.optional(v.boolean()),
     /** index.json writes are serialized: concurrent Drive writes to one path become conflict copies. */
     indexWrite: v.optional(v.object({ scheduled: v.boolean(), wantedAt: v.number() })),
     createdBy: v.string(),
@@ -266,6 +272,8 @@ export default defineSchema({
     fields: v.optional(v.record(v.string(), v.string())),
     documentIds: v.array(v.id("documents")),
     kitVersion: v.optional(v.string()),
+    /** The run's Drive folder (its batch folders inside), fixed when it starts. Unset on runs from before restricted matters had their own folder. */
+    driveDir: v.optional(v.string()),
     error: v.optional(v.string()),
     startedAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),

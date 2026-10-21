@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { tagSessionCreate, tagSessionPatch } from '../../convex/tags';
 
-const who = { orgId: 'org_b', userId: 'user_b', firmId: 'firm_b', matterId: 'mat_b' };
+const who = { orgId: 'org_b', userId: 'user_b', firmId: 'firm_b', matterId: 'mat_b', matterDir: '/drives/firm_b/Matters/mat_b' };
 const LUMEN = ['lumen-firm:firm_b', 'lumen-matter:mat_b', 'lumen-user:user_b'];
 const META = { lumen_org_id: 'org_b', lumen_firm_id: 'firm_b', lumen_matter_id: 'mat_b', lumen_user_id: 'user_b' };
 
@@ -13,9 +13,9 @@ describe('session create tagging: Lumen ids are the source of truth', () => {
     expect(out.name).toBe('Q3 model');
   });
 
-  test('the matter folder is the one inside the firm folder mount, never another firm\'s', () => {
-    const out = tagSessionCreate({ runtime_context: { lumen_matter_dir: '/drives/firm-a/Matters/mat_a' } }, { ...who, firmId: 'k57abc', matterId: 'j99xyz' });
-    expect(out.runtime_context).toEqual({ lumen_matter_dir: '/drives/k57abc/Matters/j99xyz' });
+  test('the matter folder is the one Lumen resolved, never one the client sends', () => {
+    const out = tagSessionCreate({ runtime_context: { lumen_matter_dir: '/drives/firm-a/Matters/mat_a' } }, { ...who, matterDir: '/drives/j99xyz' });
+    expect(out.runtime_context).toEqual({ lumen_matter_dir: '/drives/j99xyz' });
   });
 
   test("a client cannot forge another user's, firm's or matter's label", () => {

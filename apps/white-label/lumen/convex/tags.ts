@@ -1,18 +1,15 @@
 // Plain module (no "use node"): the Convex actions and the Next.js proxy both
 // tag sessions with it, so a thread carries the same ids whichever side created it.
 
-import { MATTERS_ROOT, sandboxPath } from "./lumenAgent";
-
-/** Lumen's ids, as a session carries them. */
+/** Lumen's ids, as a session carries them, and the matter's folder as the session sees it. */
 export interface LumenIds {
   orgId: string;
   userId: string;
   firmId: string;
   matterId: string;
+  /** `/drives/<firmId>/Matters/<matterId>`, or `/drives/<matterId>` for a restricted matter (convex/lumenAgent.ts `sandboxPath`). */
+  matterDir: string;
 }
-
-/** The matter's folder inside a firm session: the firm folder /Lumen/Firms/<firmId> mounts at /drives/<firmId>. */
-export const matterDir = (firmId: string, matterId: string) => sandboxPath(`${MATTERS_ROOT(firmId)}/${matterId}`);
 
 /**
  * The generic Kortix fields that carry Lumen's ids on a session (labels ≤ 64 chars),
@@ -20,7 +17,7 @@ export const matterDir = (firmId: string, matterId: string) => sandboxPath(`${MA
  */
 export function lumenSessionTags(a: LumenIds) {
   return {
-    runtime_context: { lumen_matter_dir: matterDir(a.firmId, a.matterId) },
+    runtime_context: { lumen_matter_dir: a.matterDir },
     labels: [`lumen-firm:${a.firmId}`, `lumen-matter:${a.matterId}`, `lumen-user:${a.userId}`].map((l) => l.slice(0, 64)),
     metadata: { lumen_org_id: a.orgId, lumen_firm_id: a.firmId, lumen_matter_id: a.matterId, lumen_user_id: a.userId },
   };

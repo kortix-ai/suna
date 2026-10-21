@@ -1,9 +1,10 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { type MutationCtx, type QueryCtx, internalQuery, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { type MutationCtx, type QueryCtx, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { canSeeMatter, isAdminRole, requireFirm, requireMatterAccess } from "./access";
 import { audit } from "./audit";
-import { MATTERS_ROOT } from "./lumenAgent";
+import { WALLED_ROOT, matterFolder, sandboxPath, sessionAgent } from "./lumenAgent";
 import { matterStatus, party, visibility } from "./schema";
 
 const matterView = v.object({
@@ -130,8 +131,13 @@ export const create = mutation({
       parties: cleanParties(a.parties), practiceArea: cleanText(a.practiceArea, 60), status: "open", visibility: a.visibility,
       driveFolder: "", createdBy: userId, updatedAt: now,
     });
-    await ctx.db.patch(matterId, { driveFolder: `${MATTERS_ROOT(a.firmId)}/${matterId}` });
-    if (a.visibility === "restricted") await setMembers(ctx, matterId, [userId, ...(a.members ?? [])]);
+    await ctx.db.patch(matterId, { driveFolder: matterFolder({ firmId: a.firmId, matterId, visibility: a.visibility }) });
+    if (a.visibility === "restricted") {
+      await setMembers(ctx, matterId, [userId, ...(a.members ?? [])]);
+      // Its own folder and agent: until they exist, no session of this matter starts.
+      await ctx.db.patch(matterId, { folderMoving: true });
+      await ctx.scheduler.runAfter(0, internal.kortix.placeMatter, { matterId });
+    }
     await audit(ctx, { firm, actorId: userId, action: "matter.create", matterId, detail: name });
     return matterId;
   },
@@ -169,8 +175,19 @@ export const update = mutation({
     if (a.parties !== undefined) { patch.parties = cleanParties(a.parties); changed.push("parties"); }
     if (a.practiceArea !== undefined) { patch.practiceArea = cleanText(a.practiceArea, 60); changed.push("practice area"); }
     if (a.status !== undefined && a.status !== matter.status) { patch.status = a.status; changed.push(`status → ${a.status}`); }
-    if (a.visibility !== undefined && a.visibility !== matter.visibility) { patch.visibility = a.visibility; changed.push(`visibility → ${a.visibility}`); }
+    if (a.visibility !== undefined && a.visibility !== matter.visibility) {
+      if (matter.folderMoving) throw new Error("409: this matter's workspace is still being moved. Try again in a minute.");
+      // A run writes into the matter's folder while it works: the folder moves only between runs.
+      const active = (await ctx.db.query("runs").withIndex("by_matter", (q) => q.eq("matterId", matterId)).collect())
+        .some((r) => r.status === "queued" || r.status === "preparing" || r.status === "running" || r.status === "finalizing");
+      if (active) throw new Error("409: a workflow is running on this matter. Change who can see it when it has finished.");
+      patch.visibility = a.visibility;
+      // The documents move to the folder this visibility uses (convex/kortix.ts placeMatter).
+      patch.folderMoving = true;
+      changed.push(`visibility → ${a.visibility}`);
+    }
     await ctx.db.patch(matterId, patch);
+    if (patch.folderMoving) await ctx.scheduler.runAfter(0, internal.kortix.placeMatter, { matterId });
     if (a.members !== undefined) {
       await setMembers(ctx, matterId, [...new Set([matter.createdBy, ...a.members])]);
       changed.push("members");
@@ -195,15 +212,122 @@ export const access = internalQuery({
     orgId: v.string(),
     matterName: v.string(),
     driveFolder: v.string(),
+    /** The matter's folder as its sessions see it. */
+    matterDir: v.string(),
+    /** The agent this matter's sessions run on: the restricted matter's own, else the firm's. */
+    agent: v.string(),
+    /** The kit hash and model a matter agent was written with (unset for the firm agent). */
+    agentConfig: v.optional(v.string()),
   }),
   handler: async (ctx, { matterId }) => {
     const id = ctx.db.normalizeId("matters", matterId);
     if (!id) throw new Error("404: matter not found");
     const { matter, firm, userId } = await requireMatterAccess(ctx, id);
     if (firm.status !== "ready" || !firm.kortixAgent) throw new Error("409: the firm workspace is still being set up");
+    const agent = sessionAgent(matter, firm);
+    if (!agent) throw new Error("409: this matter's workspace is still being set up");
     return {
       matterId: id, firmId: firm._id, userId, orgId: firm.orgId,
-      matterName: matter.name, driveFolder: matter.driveFolder,
+      matterName: matter.name, driveFolder: matter.driveFolder, matterDir: sandboxPath(matter.driveFolder), agent,
+      ...(agent === matter.kortixAgent && matter.agentConfig ? { agentConfig: matter.agentConfig } : {}),
     };
+  },
+});
+
+/** What placeMatter needs: the matter, where its folder is now, and the runs whose folders may move with it. */
+export const forPlacement = internalQuery({
+  args: { matterId: v.id("matters") },
+  returns: v.any(),
+  handler: async (ctx, { matterId }) => {
+    const matter = await ctx.db.get(matterId);
+    if (!matter) return null;
+    const runs = await ctx.db.query("runs").withIndex("by_matter", (q) => q.eq("matterId", matterId)).collect();
+    return {
+      matter,
+      target: matterFolder({ firmId: matter.firmId, matterId, visibility: matter.visibility }),
+      runs: runs.map((r) => ({ runId: r._id, driveDir: r.driveDir ?? null })),
+    };
+  },
+});
+
+/** Replace a path prefix: `from` itself or anything under it. */
+const moved = (path: string | undefined, from: string, to: string) =>
+  path && (path === from || path.startsWith(`${from}/`)) ? `${to}${path.slice(from.length)}` : path;
+
+/**
+ * The folder is in place: every stored path under the old folder now names the
+ * new one (the matter, its documents, its runs), and sessions may start again.
+ */
+export const placed = internalMutation({
+  args: {
+    matterId: v.id("matters"),
+    from: v.string(),
+    to: v.string(),
+    runDirs: v.array(v.object({ runId: v.id("runs"), driveDir: v.string() })),
+    kortixAgent: v.optional(v.string()),
+    agentConfig: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, { matterId, from, to, runDirs, kortixAgent, agentConfig }) => {
+    const matter = await ctx.db.get(matterId);
+    if (!matter) return null;
+    for (const d of await ctx.db.query("documents").withIndex("by_matter", (q) => q.eq("matterId", matterId)).collect()) {
+      const driveFile = moved(d.driveFile, from, to);
+      const textFile = moved(d.textFile, from, to);
+      if (driveFile !== d.driveFile || textFile !== d.textFile) await ctx.db.patch(d._id, { driveFile, textFile });
+    }
+    for (const r of runDirs) await ctx.db.patch(r.runId, { driveDir: r.driveDir });
+    await ctx.db.patch(matterId, {
+      driveFolder: to,
+      folderMoving: false,
+      ...(kortixAgent ? { kortixAgent, agentConfig } : {}),
+    });
+    // index.json names paths relative to the folder, but the folder may be new: write it again.
+    await ctx.scheduler.runAfter(0, internal.documents.requestIndex, { matterId });
+    return null;
+  },
+});
+
+/** The matter agent was rewritten with this kit hash and model. */
+export const markMatterAgent = internalMutation({
+  args: { matterId: v.id("matters"), agentConfig: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { matterId, agentConfig }) => {
+    await ctx.db.patch(matterId, { agentConfig });
+    return null;
+  },
+});
+
+/** A placement failed: the folder stays where it was and the matter is usable again on its old layout. */
+export const placementFailed = internalMutation({
+  args: { matterId: v.id("matters") },
+  returns: v.null(),
+  handler: async (ctx, { matterId }) => {
+    const matter = await ctx.db.get(matterId);
+    if (matter?.folderMoving) await ctx.db.patch(matterId, { folderMoving: false });
+    return null;
+  },
+});
+
+/** Restricted matters still on the old layout (inside the firm folder, or with no agent of their own). */
+export const unplaced = internalQuery({
+  args: {},
+  returns: v.array(v.id("matters")),
+  handler: async (ctx) =>
+    (await ctx.db.query("matters").collect())
+      .filter((m) => m.visibility === "restricted" && (!m.kortixAgent || !m.driveFolder.startsWith(`${WALLED_ROOT}/`)))
+      .map((m) => m._id),
+});
+
+/** Start a placement for a matter on the old layout (the operator backfill). */
+export const startPlacement = internalMutation({
+  args: { matterId: v.id("matters") },
+  returns: v.null(),
+  handler: async (ctx, { matterId }) => {
+    const m = await ctx.db.get(matterId);
+    if (!m || m.folderMoving) return null;
+    await ctx.db.patch(matterId, { folderMoving: true });
+    await ctx.scheduler.runAfter(0, internal.kortix.placeMatter, { matterId });
+    return null;
   },
 });

@@ -23,6 +23,7 @@ import {
   getProjectDetail,
   getProjectDrive,
   listServiceAccountsApi,
+  moveDriveFile,
   shareFolder,
   unshareFolder,
   updateAgentConfig,
@@ -32,13 +33,14 @@ import {
 } from "@kortix/sdk";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { type ActionCtx, action, internalAction } from "./_generated/server";
 import { requireProxy } from "./access";
 import type { FirmContext } from "./deployment";
 import { KIT } from "./kit/bundle.generated";
 import {
-  COUNSEL_ROLE, FIRMS_ROOT, FIRM_ROOT, KIT_CURRENT, KIT_ROOT, LUMEN_ROOT, NONE_AGENT, firmAgent, firmFolders, firmServiceAccount,
+  COUNSEL_ROLE, FIRMS_ROOT, FIRM_ROOT, KIT_CURRENT, KIT_ROOT, LUMEN_ROOT, NONE_AGENT, RUNS_ROOT, WALLED_ROOT, firmAgent, firmFolders,
+  firmServiceAccount, matterAgent,
 } from "./lumenAgent";
 import { asFirm, asOperator, ensureFolder, errorText, operator, sandboxProvider, withRetry } from "./operator";
 import { lumenSessionTags } from "./tags";
@@ -76,7 +78,7 @@ async function bootstrap(known: { projectId?: string; accountId?: string; driveI
     for (const g of company?.grants ?? []) {
       if (g.principalType === "project" && !g.inherited) await withRetry(() => unshareFolder(driveId, g.grantId));
     }
-    for (const p of [LUMEN_ROOT, KIT_ROOT, FIRMS_ROOT]) await ensureFolder(driveId, p);
+    for (const p of [LUMEN_ROOT, KIT_ROOT, FIRMS_ROOT, WALLED_ROOT]) await ensureFolder(driveId, p);
     await withRetry(() =>
       updateAgentConfig(projectId, NONE_AGENT, {
         enabled: true,
@@ -221,6 +223,116 @@ export const provisionFirm = internalAction({
   },
 });
 
+const statusOf = (err: unknown) => (err as { status?: number })?.status;
+
+/** Move a Drive folder. Already moved (the source is gone, the destination exists) counts as done, so a retry resumes. */
+async function moveFolder(driveId: string, from: string, to: string) {
+  try {
+    await withRetry(() => moveDriveFile(driveId, from, to));
+  } catch (err) {
+    if (statusOf(err) !== 404) throw err;
+    await ensureFolder(driveId, to);
+  }
+}
+
+/**
+ * Put a matter's Drive folder where its visibility says (convex/lumenAgent.ts
+ * `matterFolder`), after a create or a visibility change:
+ * - restricted: the folder moves to /Lumen/Walled/<matterId>, outside the firm
+ *   folder every firm session mounts, with the matter's earlier run folders.
+ *   The matter gets its own agent, lumen-m-<matterId>, whose only grants are
+ *   that folder (write) and the kit (read). Sessions of the matter run on it.
+ * - firm: the folder moves back into the firm folder; sessions run on the firm agent.
+ * Until it is done, no thread, run or upload of the matter starts. Retried 5 times;
+ * after that the matter stays where it was (a restricted matter then refuses
+ * new sessions: fail closed).
+ */
+export const placeMatter = internalAction({
+  args: { matterId: v.id("matters"), attempt: v.optional(v.number()) },
+  returns: v.null(),
+  handler: async (ctx, { matterId, attempt = 1 }) => {
+    const p = (await ctx.runQuery(internal.matters.forPlacement, { matterId })) as {
+      matter: Doc<"matters">; target: string; runs: Array<{ runId: Id<"runs">; driveDir: string | null }>;
+    } | null;
+    if (!p?.matter.folderMoving) return null;
+    const m = p.matter;
+    const from = m.driveFolder;
+    const to = p.target;
+    try {
+      const d = await ensureDeployment(ctx);
+      const f = await firmReady(ctx, m.firmId);
+      const runDirs: Array<{ runId: Id<"runs">; driveDir: string }> = [];
+      let agent: string | undefined;
+      await asOperator(async () => {
+        await ensureFolder(f.driveId, WALLED_ROOT);
+        if (from && from !== to) await moveFolder(f.driveId, from, to);
+        else await ensureFolder(f.driveId, to);
+        for (const r of p.runs) {
+          // A run folder inside the matter folder moved with it.
+          if (r.driveDir && from && r.driveDir.startsWith(`${from}/`)) runDirs.push({ runId: r.runId, driveDir: `${to}${r.driveDir.slice(from.length)}` });
+        }
+        if (m.visibility !== "restricted") return;
+        // Earlier runs of the matter kept their folders in the firm's Runs folder: they hold
+        // excerpts of the matter's documents, so they move into the walled folder too.
+        await ensureFolder(f.driveId, `${to}/Runs`);
+        for (const r of p.runs) {
+          if (runDirs.some((x) => x.runId === r.runId)) continue;
+          const old = r.driveDir ?? `${RUNS_ROOT(m.firmId)}/${r.runId}`;
+          const dest = `${to}/Runs/${r.runId}`;
+          if (old === dest) continue;
+          await moveFolder(f.driveId, old, dest);
+          runDirs.push({ runId: r.runId, driveDir: dest });
+        }
+        agent = matterAgent(matterId);
+        await writeFirmAgent(f.projectId, agent, f.model);
+        // Sharing again only sets the level, so a retry is a no-op.
+        await withRetry(() => shareFolder(f.driveId, { path: to, principalType: "agent", principalId: agent!, level: "write" }));
+        await withRetry(() => shareFolder(f.driveId, { path: KIT_ROOT, principalType: "agent", principalId: agent!, level: "read" }));
+        const cred = await ctx.runQuery(internal.deployment.credential, { firmId: m.firmId });
+        if (cred) {
+          const principal = { type: "service_account" as const, id: cred.serviceAccountId };
+          await withRetry(() =>
+            createAssignment(d.accountId, { principal, roleKey: "agent-user", scope: { type: "project", id: d.projectId }, object: { type: "agent", id: agent! } }),
+          ).catch((err) => {
+            if (statusOf(err) !== 409) throw err;
+          });
+        }
+      });
+      await withConvexRetry(() =>
+        ctx.runMutation(internal.matters.placed, {
+          matterId, from, to, runDirs, ...(agent ? { kortixAgent: agent, agentConfig: agentConfigKey(f.model) } : {}),
+        }),
+      );
+      console.log(`[lumen] matter ${matterId} placed at ${to}${agent ? ` on ${agent}` : ""}`);
+    } catch (err) {
+      console.error(`[lumen] matter ${matterId}: placement attempt ${attempt}: ${errorText(err)}`);
+      if (attempt < 5) await ctx.scheduler.runAfter(15_000 * attempt, internal.kortix.placeMatter, { matterId, attempt: attempt + 1 });
+      else await ctx.runMutation(internal.matters.placementFailed, { matterId });
+    }
+    return null;
+  },
+});
+
+/** Operator entry point (`npx convex run kortix:placeRestricted`): give every restricted matter on the old layout its own folder and agent. */
+export const placeRestricted = internalAction({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx): Promise<number> => {
+    const ids: Id<"matters">[] = await ctx.runQuery(internal.matters.unplaced, {});
+    for (const matterId of ids) await ctx.runMutation(internal.matters.startPlacement, { matterId });
+    return ids.length;
+  },
+});
+
+/** Rewrite a restricted matter's agent when the kit or the firm's model changed since it was written. */
+export async function ensureMatterAgent(ctx: ActionCtx, f: FirmContext, m: { matterId: Id<"matters">; agent: string; agentConfig?: string }) {
+  if (m.agent === f.agent) return;
+  const key = agentConfigKey(f.model);
+  if (m.agentConfig === key) return;
+  await asOperator(() => writeFirmAgent(f.projectId, m.agent, f.model));
+  await ctx.runMutation(internal.matters.markMatterAgent, { matterId: m.matterId, agentConfig: key });
+}
+
 /** A Convex write after a Kortix side effect: retried, so a hiccup does not orphan what Kortix already made. */
 async function withConvexRetry<T>(fn: () => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt++) {
@@ -264,11 +376,12 @@ export const createThread = action({
     const a = await ctx.runQuery(internal.matters.access, { matterId });
     const clean = shortTitle(title) || "New thread";
     const f = await firmReady(ctx, a.firmId);
+    await ensureMatterAgent(ctx, f, { matterId: a.matterId, agent: a.agent, agentConfig: a.agentConfig });
     const session = await asFirm(f.secret, () =>
       withRetry(() =>
         createProjectSession(f.projectId, {
           name: clean,
-          agent_name: f.agent,
+          agent_name: a.agent,
           ...(prompt?.trim() ? { pending_prompt: { text: prompt.trim() } } : {}),
           ...sandboxProvider(),
           ...lumenSessionTags(a),
@@ -300,6 +413,7 @@ export const memberToken = action({
     token: v.string(),
     projectId: v.string(),
     agent: v.string(),
+    matterDir: v.string(),
     expiresAt: v.number(),
     userId: v.string(),
     orgId: v.string(),
@@ -308,13 +422,14 @@ export const memberToken = action({
   handler: async (
     ctx,
     { matterId, proxySecret },
-  ): Promise<{ token: string; projectId: string; agent: string; expiresAt: number; userId: string; orgId: string; firmId: string }> => {
+  ): Promise<{ token: string; projectId: string; agent: string; matterDir: string; expiresAt: number; userId: string; orgId: string; firmId: string }> => {
     requireProxy(proxySecret);
     const a = await ctx.runQuery(internal.matters.access, { matterId });
     const f = await ctx.runQuery(internal.deployment.firmContext, { firmId: a.firmId });
     if (!f) throw new Error("409: the firm workspace is still being set up");
+    // The agent and folder are the matter's: a restricted matter runs on its own agent.
     return {
-      token: f.secret, projectId: f.projectId, agent: f.agent, expiresAt: Date.now() + CREDENTIAL_CACHE_MS,
+      token: f.secret, projectId: f.projectId, agent: a.agent, matterDir: a.matterDir, expiresAt: Date.now() + CREDENTIAL_CACHE_MS,
       userId: a.userId, orgId: a.orgId, firmId: a.firmId,
     };
   },
