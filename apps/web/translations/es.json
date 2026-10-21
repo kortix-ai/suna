@@ -1,4 +1,15 @@
 {
+  "repositoryDisconnected": {
+    "title": "GitHub desconectado",
+    "reconnect": "Reconectar GitHub",
+    "openSettings": "Abrir ajustes de Git",
+    "reconnectError": "No se pudo abrir la página de instalación de GitHub. Inténtalo de nuevo.",
+    "reasons": {
+      "app_uninstalled": "La GitHub App de Kortix se desinstaló de {owner}, así que Kortix no puede acceder a {repository}. Un propietario de GitHub de {owner} debe reinstalarla.",
+      "app_suspended": "La GitHub App de Kortix está suspendida en {owner}, así que Kortix no puede acceder a {repository}. Un propietario de GitHub de {owner} debe reactivarla en los ajustes de GitHub.",
+      "repo_not_accessible": "Kortix no puede acceder a {repository}. Se eliminó, se renombró o se quitó de la GitHub App de Kortix. Un propietario de GitHub de {owner} debe añadirlo de nuevo."
+    }
+  },
   "repositoryChange": {
     "changedToast": "Repositorio cambiado. Las sesiones nuevas usarán el repositorio nuevo.",
     "verifyError": "No se pudo verificar el acceso a GitHub.",
@@ -132,7 +143,6 @@
     "noPersonSessionKeys": "Esta sesión no actúa por ninguna persona: empezó antes de que existieran las claves personales o sin supervisión. Aquí solo funcionan las claves compartidas con todo el proyecto. Inicia una sesión nueva para usar tus propias claves.",
     "projectDefaultShort": "Valor predeterminado del proyecto",
     "rateLimitDescription": "La pasarela alterna entre las claves seleccionadas cuando un proveedor indica un límite de solicitudes.",
-    "enableGateway": "Activa la pasarela LLM en la configuración del proyecto para usar grupos de claves.",
     "selectedOneForSession": "{count} clave seleccionada para esta sesión",
     "selectedOne": "{count} clave seleccionada",
     "opencodeDeviceDescription": "Copia este código. Luego abre la página de OpenCode e introdúcelo para conectar tu espacio de trabajo.",
@@ -160,7 +170,10 @@
       "deleteMine": "Eliminar mi valor",
       "mineDeleted": "Valor eliminado",
       "mineDeleteError": "No se pudo eliminar tu valor. Inténtalo de nuevo."
-    }
+    },
+    "agentAccess": "Agentes: {agents}",
+    "allAgents": "Todos los agentes",
+    "noAgents": "Ningún agente"
   },
   "useCases": {
     "headline": "Los ciclos que hacen funcionar una empresa"
@@ -1207,10 +1220,6 @@
           "name": "Correo de AgentMail",
           "description": "Asigna buzones de AgentMail para que los correos entrantes puedan iniciar y continuar sesiones de Kortix."
         },
-        "llm_gateway": {
-          "name": "Puerta de enlace LLM",
-          "description": "Dirige este proyecto mediante la puerta de enlace LLM administrada de Kortix para modelos, medición y presupuestos."
-        },
         "meta_agent": {
           "name": "Metaagente",
           "description": "Añade un coordinador que gestione sesiones especializadas y trabajos de varios pasos dentro del proyecto."
@@ -1274,6 +1283,14 @@
         "connectors_v2": {
           "name": "Conectores v2",
           "description": "El catálogo de apps MCP en Personalizar → Conectores, con inicio de sesión gestionado por Kortix. Con «Disparadores de eventos de app» activado, Kortix revisa estas apps en busca de correos, archivos y elementos nuevos e inicia un agente. También añade Telegram como canal. Las nuevas cuentas de conectores ya no se comparten con todo el proyecto por defecto."
+        },
+        "agent_rooms": {
+          "name": "Salas",
+          "description": "Salas de chat con nombre donde las sesiones de agentes y las personas publican y responden en hilos. Una sesión se reactiva cuando un mensaje va dirigido a ella. Añade la página Salas, `kortix rooms` y `kortix peers`."
+        },
+        "goals": {
+          "name": "Objetivos",
+          "description": "Asigna a un agente un objetivo del que se encarga hasta que una comprobación independiente confirme el resultado. Planifica, trabaja, espera, hace seguimiento con las personas y guarda su estado en una carpeta Goals en Archivos. Requiere Volúmenes y Recordatorios activados."
         }
       }
     },
@@ -1924,6 +1941,7 @@
     "upgrade": "Mejorar plan",
     "noMatch": {
       "title": "No hay modelos coincidentes",
+      "singleModelDescription": "Solo hay 1 modelo disponible en este proyecto. Los modelos disponibles dependen de tu plan y de los proveedores conectados.",
       "description": "Nada coincide con «{search}». Prueba con otra búsqueda.",
       "clear": "Borrar búsqueda"
     },
@@ -3044,7 +3062,7 @@
       "automation_recovered": "Un trigger o recordatorio que fallaba vuelve a funcionar.",
       "capture_device_down": "Un ordenador de Kortix Capture no graba. Se envía a quien administra Capture.",
       "capture_device_recovered": "Un ordenador de Kortix Capture que se detuvo vuelve a grabar.",
-      "message": "Alguien te escribe en una conversación o en una sala a la que te uniste."
+      "message": "Alguien te menciona con @, o responde en un hilo en el que escribiste, en una sala."
     },
     "bell": {
       "label": "Notificaciones",
@@ -11867,7 +11885,6 @@
       "text390ae89f8320": "sesiones ejecuciones hilos conversaciones abrir",
       "text390d930c483d": "Una sesión es una máquina real. El agente instala lo que necesita, ejecuta la consulta, trabaja en un script que puedes leer y lo confirma. Obtienes la respuesta y el código que la generó.",
       "text391065e4dc23": "Exportado",
-      "text3915df4b6200": "Este proveedor se comunica directamente con su propio endpoint, sin pasar por la puerta de enlace de Kortix; no se aplican presupuestos, registros ni enrutamiento.",
       "text391fb7ff81a1": "Centro de costes",
       "text3923e8556e27": "Este cambio tiene conflictos de fusión",
       "text3926ced4e6c4": "Nivel de zoom",
@@ -12577,7 +12594,6 @@
       "text4c9298ab24b1": "outbound/northwind-01.eml",
       "text4c96c7513f90": "Runbooks",
       "text4c97eef02faf": "Deriva de configuración, informada pero no corregida",
-      "text4c99583a807e": "No se proporcionó ninguna clave API; el fragmento siguiente omite el campo apiKey.",
       "text4c9c57419990": "ID de cliente (opcional)",
       "text4ca57b697d2f": "Tokens de actualización",
       "text4ca72552acdf": "Un cambio de prompt parece un cambio de código",
@@ -13000,7 +13016,6 @@
       "text58d3ccb0ea54": "Una revisión con una recomendación en cada fila.",
       "text58dc708c6651": "La pertenencia se sincroniza desde tu proveedor de identidad: añade o elimina personas allí.",
       "text58e3e16cc67b": "Programación, kits e incorporación, nunca la decisión",
-      "text58ec60140867": "Tu clave se almacena como",
       "text58f084456f75": "Su propio sandbox, con su propio sistema de archivos y ciclo de vida",
       "text58f42611a053": "registry.ts",
       "text58f7e09c0d5f": "El sandbox contiene un token de Kortix limitado al proyecto y ninguna clave de terceros. El gateway descifra la credencial real en el servidor y la adjunta a la llamada saliente. Un secreto de ejecución que concedes deliberadamente es distinto: es un valor de entorno real que el agente puede leer, y está pensado para eso.",
@@ -14430,7 +14445,6 @@
       "text829e67c6a623": "La fusión se deniega por defecto",
       "text82a01c0069b6": "Ruta de API sin asignar",
       "text82a37b8c2266": "Aún no hay secretos en este proyecto.",
-      "text82b9ffd3cec8": "Añadir a",
       "text82bcb52dba1e": "Gestionado por el usuario",
       "text82c543bb1ef9": "Hilos de Slack que inician sesiones reales",
       "text82cc866db8c3": "Conexión de dispositivo OAuth 2.0 completada",
@@ -14952,7 +14966,6 @@
       "text91a8ab20e938": "profileUpdated",
       "text91ab4d7e7d3f": "Personas agregadas al grupo.",
       "text91b27757c3fd": "Introduce una dirección de email válida",
-      "text91c25d5354de": "Una clave de proveedor de modelos. LLM Gateway está desactivado para este proyecto, así que se carga en el entorno del sandbox y OpenCode conecta el proveedor de forma nativa.",
       "text91c41abbc611": "Créditos concedidos",
       "text91ce3d37da84": "En un plazo de 5 días hábiles",
       "text91ce76a573e5": "La opción de producción. Dirige un dominio y su subdominio de API al equipo, abre 80 y 443, y el proxy incluido obtiene por sí mismo un certificado TLS.",
@@ -15020,7 +15033,6 @@
       "text9344780e831e": "02 · Credenciales",
       "text934652dce41d": "Instrucciones",
       "text934819f49e74": "lo que obtiene la sesión",
-      "text934b6af41253": "Clave API guardada",
       "text934baec253f2": "Cómo se ejecuta",
       "text935176c7f960": "Presentación de PowerPoint",
       "text937174f94275": "Pregunta antes de la reunión. Ejecútalo cada lunes.",
@@ -15128,7 +15140,6 @@
       "text9676bdc9332f": "Conectar mi cuenta",
       "text96879611650f": "activo",
       "text1d28e1a19048": "Envíalo de nuevo cuando termine este turno. Enviarlo ahora interrumpiría el turno.",
-      "text968d0a9d24a6": "Copiar fragmento",
       "text9696f2b4e020": "my-api",
       "text969a25894852": "Migrar a otro proveedor…",
       "text969a8a299f18": "proyecto · sandbox · activador",
@@ -16297,7 +16308,6 @@
       "textb7fdaed41e1a": "No se pudo copiar",
       "textb80a37564fbb": "Consulta",
       "textb81b729b4538": "a un canal y menciónalo. Cada mención inicia una ejecución nueva y el agente responde en ese hilo.",
-      "textb81bc1d32189": "Pega esto en",
       "textb81c6e280de1": "Restablecer a Kortix",
       "textb82336ed4012": "runsPoint3Title",
       "textb82db800b29f": "Nativo de OpenCode · Con versiones · Denegación predeterminada · Fusionado por una persona",
@@ -17006,7 +17016,6 @@
       "textcbd860744e03": "Puede decir que no está seguro",
       "textcbdc5495f318": "Los repositorios, documentos, secretos y herramientas conectadas son contexto compartido, no un prompt que vuelves a pegar cada mañana. Conecta un sistema una vez y todos los agentes lo heredan.",
       "textcbdd5dc3da21": "Ambos lados firman cada solicitud con ella, para que nadie más pueda iniciar tu agente.",
-      "textcbddb15211ca": "Fragmento listo",
       "textcbe414dc8d0f": "Generaste un token en una visita anterior",
       "textcbf297bfb5e6": "Prefijo de dirección de email",
       "textcbf6389cf9df": "Añadir la mía",
@@ -17108,7 +17117,6 @@
       "textced79983aab8": "Equipos a los que perteneces.",
       "textcedc516df056": "Cómputo",
       "textcef30be178a6": "archivo de manifiesto",
-      "textcef709637aa5": "Clave guardada · declarada en",
       "textcef97fce306c": "Se ocupa de la contabilidad, no solo del resumen.",
       "textcefeb25cde11": "Una persona, un grupo, un agente o un correo electrónico que invitaste y que aún no se ha unido.",
       "textcf02eea4aa80": "Le pedimos a tu agente que proponga estos cambios para revisión.",
@@ -17227,7 +17235,6 @@
       "textd1fc8381e22d": "”",
       "textd203efbea730": "Cómo dar a los agentes de IA acceso a herramientas de producción sin claves de API sin restricciones: conectores con alcance, políticas de aprobación, credenciales en el servidor y trabajo revisado.",
       "textd2089be67295": "Token",
-      "textd20a4476a0a8": "Generando…",
       "textd2145c294689": "Esta vinculación cumple una doble función: concede acceso de inicio de sesión Y selecciona los grupos que se enviarán en el claim «groups» que activaste arriba.",
       "textd21d10509292": "Esta es la única vez que se mostrará el token de",
       "textd21d1290c277": "Extrae una lista de leads de Apollo, enriquece cada cuenta y escribe una secuencia para cada lead. Activa Ask en el paso de envío y se detendrá contigo antes de que salga nada.",
@@ -17445,7 +17452,6 @@
       "textd83085ac907e": "Un monitor muestra el espacio de trabajo de una sesión: el repositorio del proyecto, kortix.yaml abierto y una shell.",
       "textd83250185d41": "Todos los conectores",
       "textd83265a96352": "Add Assignment",
-      "textd833da5b9497": "del repositorio de tu proyecto y haz commit. Reinicia las sesiones en ejecución para que el cambio llegue al sandbox.",
       "textd8348ec82718": "Listar activadores",
       "textd83849820d67": "Suscripción activada",
       "textd83a0d814c59": "API Status muestra un «Enabled» en verde, el parámetro «SCIM Username» está asignado a Email y el aprovisionamiento está habilitado sin la retención de aprobación del administrador.",
@@ -17727,7 +17733,6 @@
       "textdf0b5ba1b462": "Construye la campaña de prospección y la ejecuta.",
       "textdf0fbf9c008f": "Añadir al proyecto",
       "textdf1bc4984a05": "Fantasma",
-      "textdf1db3412b9d": "y se inyectará en las sesiones como una variable de entorno.",
       "textdf1e79ca2a1b": "# Lanzamiento",
       "textdf2567a8cc4f": "Tu aplicación → Provisioning → To App",
       "textdf2f3683ff04": "Gástalo en tokens de modelos administrados o en más tiempo de ejecución; o no lo hagas: el cómputo no utilizado no genera cargos.",
@@ -20361,7 +20366,84 @@
       "sessionExpired": "Tu sesión ha caducado. Inicia sesión de nuevo y vuelve a abrir la vista previa."
     },
     "approvalPage": {
-      "title": "Aprobar una acción de {connector}"
+      "title": "Aprobar una acción de {connector}",
+      "expires": "Caduca",
+      "expiresIn": "Caduca en {time}",
+      "expiredHint": "Esta aprobación caducó. Pide al agente que la vuelva a solicitar.",
+      "anAgent": "Un agente",
+      "anAgentLower": "un agente",
+      "wantsEmail": "{agent} quiere enviar un correo a {recipient}",
+      "wantsEmailOthers": "{agent} quiere enviar un correo a {recipient} y {count, plural, one {# persona más} other {# personas más}}",
+      "wantsMerge": "{agent} quiere fusionar el PR #{number} en {base}",
+      "wantsMergePr": "{agent} quiere fusionar el PR #{number}",
+      "wantsIssue": "{agent} quiere crear {article, select, other {una}} incidencia de prioridad {priority} para {team}",
+      "wantsCreateIssue": "{agent} quiere crear una incidencia",
+      "wantsAction": "{agent} quiere: {action}",
+      "wantsCall": "{agent} quiere ejecutar {action}",
+      "leftMinutes": "Quedan {minutes} min",
+      "leftHoursMinutes": "Quedan {hours} h {minutes} min",
+      "leftHours": "Quedan {hours} h",
+      "leftDays": "Quedan {days} d",
+      "riskDestructive": "Destructiva · no se puede deshacer desde Kortix",
+      "riskWrite": "Acceso de escritura · {action}",
+      "riskRead": "Acceso de lectura",
+      "askedBy": "Solicitado por {agent}",
+      "askedByIn": "Solicitado por {agent} en <session>{title}</session>",
+      "expiresAt": "caduca {when}",
+      "today": "Hoy {time}",
+      "tomorrow": "Mañana {time}",
+      "thisSession": "una sesión",
+      "notePlaceholder": "Añade una nota para {agent} (opcional)",
+      "notePlaceholderAgent": "Añade una nota para el agente (opcional)",
+      "approve": "Aprobar",
+      "approveSend": "Aprobar y enviar",
+      "approveMerge": "Aprobar y fusionar",
+      "approveCreate": "Aprobar y crear",
+      "pullRequest": "Pull request #{number}",
+      "mergeMethod": "{method, select, squash {Squash and merge} rebase {Rebase and merge} merge {Crear un commit de fusión} other {{method} y fusionar}}",
+      "newIssue": "Nueva incidencia",
+      "priority1": "Urgente",
+      "priority2": "Alta",
+      "priority3": "Media",
+      "priority4": "Baja",
+      "canOnlyBeDenied": "Solo se puede rechazar",
+      "prFiles": "{count, plural, one {# archivo} other {# archivos}}",
+      "prCommits": "{count, plural, one {# commit} other {# commits}}",
+      "prCommitsBy": "{count, plural, one {# commit} other {# commits}} de {author}",
+      "prDraft": "Pull request en borrador"
+    },
+    "reviewBulk": {
+      "approve": "Aprobar",
+      "deny": "Denegar",
+      "dismiss": "Descartar",
+      "selectRow": "Seleccionar {title}",
+      "limitNote": "Hasta {count} a la vez",
+      "approving": "Aprobando {count}…",
+      "denying": "Denegando {count}…",
+      "dismissing": "Descartando {count}…",
+      "approveTitle": "¿Aprobar {count, plural, one {# acción} other {# acciones}}?",
+      "approveDescription": "Revisa los detalles de cada acción antes de aprobar.",
+      "approveConfirm": "Aprobar {count}",
+      "denyTitle": "¿Denegar {count, plural, one {# acción} other {# acciones}}?",
+      "denyDescription": "Los agentes no ejecutan estas acciones.",
+      "denyConfirm": "Denegar {count}",
+      "dismissTitle": "¿Descartar {count, plural, one {# elemento} other {# elementos}}?",
+      "dismissDescription": "Pasan a Hecho.",
+      "dismissConfirm": "Descartar {count}",
+      "riskNone": "Sin riesgo",
+      "riskLow": "Riesgo bajo",
+      "riskMedium": "Riesgo medio",
+      "riskHigh": "Riesgo alto",
+      "approved": "{count} aprobadas",
+      "denied": "{count} denegadas",
+      "dismissed": "{count} descartados",
+      "skipped": "{count} omitidos ({reasons})",
+      "reasonExpired": "caducada",
+      "reasonAlreadyResolved": "ya decidida",
+      "reasonPreviewUnavailable": "contenido no disponible",
+      "reasonForbidden": "no permitido",
+      "reasonNotFound": "no encontrado",
+      "reasonNotBulkActionable": "decidir una a una"
     },
     "approvalWaiting": {
       "byManager": "Esperando a que alguien que gestione este proyecto apruebe o rechace la llamada.",
@@ -20378,7 +20460,21 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Entrega: connector — solo en el servidor. El valor nunca entra en el entorno del sandbox.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "El ámbito de entrega no está disponible. Pide al agente que confirme dónde se usará este valor antes de guardarlo.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Cifrado en reposo. La entrega sigue el ámbito mostrado arriba.",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Introduce el valor solicitado abajo. Comprueba su ámbito de entrega antes de guardarlo. El valor está cifrado en reposo."
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Introduce el valor solicitado abajo. Comprueba su ámbito de entrega antes de guardarlo. El valor está cifrado en reposo.",
+    "approvalParameters": {
+      "to": "Para",
+      "cc": "CC",
+      "bcc": "CCO",
+      "subject": "Asunto",
+      "from": "De",
+      "none": "Ninguno",
+      "attachments": "Adjuntos",
+      "idsOnlyHint": "Esta llamada no muestra contenido que revisar. Cualquier descripción del agente no está verificada.",
+      "resolvedUnavailable": "No se pudo cargar el borrador. Revisa con cuidado la descripción del agente.",
+      "aboutDescription": "Acerca de esta descripción",
+      "senderUnavailable": "No se pudo cargar la cuenta de envío. Revisa la fila De.",
+      "quoted": "«{text}»"
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "Reinicio de incorporación",
@@ -20468,12 +20564,29 @@
     "formIntro": "Cualquier endpoint compatible con OpenAI: autoalojado, local o fuera del catálogo.",
     "livePreview": "Vista previa en vivo",
     "endpoint": "Endpoint",
-    "declaredIn": "Declarado en",
-    "repoNote": "Edite o elimine este proveedor en el archivo {file} de su repositorio.",
     "keyReplaced": "Clave reemplazada",
-    "saveAndGenerate": "Guardar y generar fragmento",
     "baseUrlHint": "Compatible con OpenAI. Empieza por http:// o https://",
-    "optional": "Opcional"
+    "optional": "Opcional",
+    "gatewayNote": "Las solicitudes pasan por la pasarela de Kortix, así que se aplican los presupuestos y los registros. Tu endpoint te factura directamente y no se usan créditos de Kortix.",
+    "saveProvider": "Guardar proveedor",
+    "saving": "Guardando…",
+    "saved": "Proveedor guardado",
+    "saveFailed": "No se pudo guardar el proveedor",
+    "needsEndpoint": "Clave guardada. Añade el endpoint para usarla.",
+    "addEndpoint": "Añadir endpoint",
+    "modelCount": "{count, plural, one {# modelo} other {# modelos}}",
+    "models": "Modelos",
+    "editEndpoint": "Editar endpoint",
+    "addModel": "Añadir modelo",
+    "removeModel": "Quitar modelo",
+    "noKey": "Sin configurar",
+    "addKey": "Añadir clave",
+    "replaceKey": "Reemplazar clave",
+    "deleteProvider": "Eliminar proveedor",
+    "deleteTitle": "¿Eliminar este proveedor?",
+    "deleteBody": "{name} y su clave de API salen de este proyecto para todos los miembros, y las sesiones dejan de ofrecer sus modelos. Esta acción no se puede deshacer.",
+    "deleted": "Proveedor eliminado",
+    "deleteFailed": "No se pudo eliminar el proveedor"
   },
   "providerSheet": {
     "inUse": "En uso",
@@ -21534,7 +21647,10 @@
       "dictationDescription": "Dicta un prompt en lugar de escribirlo."
     },
     "appStore": "App Store",
-    "googlePlay": "Google Play"
+    "googlePlay": "Google Play",
+    "scanTitle": "Escanea para obtener la app",
+    "scanDescription": "Apunta la cámara del móvil al código. Abre la App Store o Google Play.",
+    "qrLabel": "Código QR de la app móvil de Kortix"
   },
   "capture": {
     "authorize": {

@@ -51,10 +51,11 @@ describe('SessionApprovalNotice', () => {
     expect(html).toContain('The agent needs your approval');
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain('gmail.send_email');
-    expect(html).toContain('Parameters');
+    // An email send reads as one email card, without a Parameters header.
+    expect(html).not.toContain('>Parameters<');
+    expect(html).toContain('>From<');
     expect(html).toContain('sam@example.test');
     expect(html).toContain('The approver must see the complete email content.');
-    expect(html).toContain('Hidden credential');
     expect(html).toContain('Approve this call');
     expect(html).toContain('Deny');
     expect(html).toContain('href="https://dev.kortix.com/approve/tok-1"');

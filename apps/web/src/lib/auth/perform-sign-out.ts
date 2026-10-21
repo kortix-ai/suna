@@ -1,7 +1,7 @@
 'use client';
 
 import { stopWebPush } from '@kortix/ui/internal/notifications/web-push';
-import { finalizeServerSignOut } from '@/lib/auth/sign-out-actions';
+import { finalizeServerSignOut } from '@/lib/auth/finalize-sign-out';
 import { stashSignOutNotice } from '@/lib/auth/sign-out-notice';
 import { runSignOut, SIGN_OUT_DESTINATION } from '@/lib/auth/sign-out-sequence';
 import { createClient } from '@/lib/supabase/client';

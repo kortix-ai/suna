@@ -1,4 +1,4 @@
-import pg from 'pg';
+import { withClient } from '../src/with-client';
 
 const INDEX_NAME = 'idx_project_sessions_one_available_warm';
 
@@ -18,9 +18,7 @@ export interface LocalWarmSessionIndexRepairResult {
 export async function repairLocalWarmSessionIndex(
   databaseUrl: string,
 ): Promise<LocalWarmSessionIndexRepairResult> {
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
-  try {
+  return withClient(databaseUrl, async (client) => {
     const {
       rows: [schema],
     } = await client.query<{ ready: boolean }>(`
@@ -97,7 +95,5 @@ export async function repairLocalWarmSessionIndex(
       await client.query('rollback');
       throw error;
     }
-  } finally {
-    await client.end();
-  }
+  });
 }

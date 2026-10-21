@@ -606,7 +606,3 @@ export function sortByPicks<T extends { slug: string; name: string }>(
   if (!PICK_RANK.has(sectionKey)) return [...items];
   return [...items].sort((a, b) => pinRank(sectionKey, a) - pinRank(sectionKey, b));
 }
-
-/** Every section key that carries picks. Exported for the hygiene test that
- *  checks them against `CURATED_SECTIONS`. */
-export const PICKED_SECTION_KEYS = Object.keys(CATEGORY_PICKS);

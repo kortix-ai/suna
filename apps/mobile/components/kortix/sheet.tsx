@@ -1,6 +1,6 @@
 // apps/mobile/components/kortix/sheet.tsx
 import * as React from 'react';
-import { Keyboard, View, useWindowDimensions, type ViewStyle } from 'react-native';
+import { Keyboard, Platform, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import {
   ANIMATION_STATUS,
   BottomSheetModal,
@@ -128,9 +128,10 @@ const SHEET_DEFAULTS = {
   radius: 32,
   /** Side padding of the title row: the project edge. */
   titlePaddingX: 16,
-  /** Space between the grab handle and the title row, and under the title row. */
-  titlePaddingTop: 4,
-  titlePaddingBottom: 8,
+  /** Space between the grab handle and the title row, and under the title row.
+   *  iOS gets 6pt more on each side (Jay, 2026-10-20: the header felt cramped). */
+  titlePaddingTop: Platform.OS === 'ios' ? 10 : 4,
+  titlePaddingBottom: Platform.OS === 'ios' ? 14 : 8,
   /** Space above the grab handle. */
   handlePaddingTop: 5,
 } as const;

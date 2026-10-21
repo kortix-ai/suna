@@ -16,6 +16,7 @@ import type { ApiClient } from '../api/client.ts';
 import type { ProjectSession } from '../api/types.ts';
 import { splitHelp } from '../command-argv.ts';
 import { emitJson, fail, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { boxFeatureFlags } from '../feature-flags.ts';
 import { C, help, pad, status } from '../style.ts';
 import { queueSessionPrompt } from './sessions-queue.ts';
 
@@ -225,6 +226,23 @@ export function transitionViolations(raw: unknown, to: string, reason: string, f
   return out;
 }
 
+/**
+ * The goal flags that are off. In a box the flags come from KORTIX_FEATURE_FLAGS,
+ * so a session without repository access needs no API read. That list is set at
+ * boot: when it says off, the API's current answer wins if it can be read.
+ */
+async function goalFlagsOff(client: ApiClient, projectId: string): Promise<string[]> {
+  const box = boxFeatureFlags();
+  const fromBox = box ? missingGoalFlags(Object.fromEntries([...box].map((f) => [f, true]))) : null;
+  if (fromBox?.length === 0) return [];
+  try {
+    return missingGoalFlags((await client.get<{ experimental?: Record<string, boolean> }>(`/projects/${projectId}`)).experimental);
+  } catch (err) {
+    if (fromBox) return fromBox;
+    throw err;
+  }
+}
+
 /** The project features a goal needs that are off. */
 export function missingGoalFlags(experimental: Record<string, boolean> | undefined): string[] {
   return ['goals', 'volumes', 'reminders'].filter((k) => !experimental?.[k]);
@@ -347,8 +365,7 @@ export async function runGoals(argv: string[]): Promise<number> {
     if (sub === 'new') {
       const objective = rest.join(' ').trim();
       if (!objective) return missing('the objective, e.g. kortix goals new "Rho business account fully closed"');
-      const project = await client.get<{ experimental?: Record<string, boolean> }>(`/projects/${projectId}`);
-      const off = missingGoalFlags(project.experimental);
+      const off = await goalFlagsOff(client, projectId);
       if (off.length) {
         return fail(`Goals need these project features on: ${off.join(', ')}. Turn them on with ${off.map((f) => `kortix projects features enable ${f}`).join(' && ')} (a project admin), then run this again.`);
       }

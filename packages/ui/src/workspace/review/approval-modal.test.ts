@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { reviewApprovalDetails } from './approval-modal';
+import { reviewApprovalAsker, reviewApprovalDenyOnly, reviewApprovalDetails } from './approval-modal';
 import type { ReviewItem } from './types';
 
 const connectorCall: ReviewItem = {
@@ -56,6 +56,31 @@ describe('reviewApprovalDetails', () => {
     });
   });
 
+  test('carries the expiry, and an expired call reads as expired, not pending', () => {
+    const expiresAt = '2026-10-03T10:00:00.000Z';
+    expect(reviewApprovalDetails({ ...connectorCall, expiresAt })?.expires_at).toBe(expiresAt);
+    expect(reviewApprovalDetails({ ...connectorCall, status: 'expired' })).toMatchObject({
+      status: 'expired',
+      pending: false,
+    });
+  });
+
+  test('carries the loaded content and its failure to the approve panel', () => {
+    const [call] = connectorCall.kind === 'approval' ? connectorCall.detail.actions : [];
+    const withContent = (extra: object): ReviewItem => ({
+      ...connectorCall,
+      detail: { actions: [{ ...call!, ...extra }] },
+    } as ReviewItem);
+    expect(reviewApprovalDetails(withContent({ resolvedPreview: { to: 'a@example.test', body: 'Hi' } }))).toMatchObject({
+      resolved_preview: { to: 'a@example.test', body: 'Hi' },
+      resolved_error: null,
+    });
+    expect(reviewApprovalDetails(withContent({ resolvedError: 'unavailable' }))).toMatchObject({
+      resolved_preview: null,
+      resolved_error: 'unavailable',
+    });
+  });
+
   test('a call waiting on someone else is still pending (KRTX-1724)', () => {
     expect(reviewApprovalDetails({ ...connectorCall, status: 'waiting' })).toMatchObject({
       pending: true,
@@ -79,5 +104,54 @@ describe('reviewApprovalDetails', () => {
     expect(
       reviewApprovalDetails({ ...connectorCall, detail: { actions: [] } } as ReviewItem),
     ).toBeNull();
+  });
+});
+
+describe('reviewApprovalDetails connector name', () => {
+  test('the display name the API sends reaches the panel; none, null', () => {
+    const action = connectorCall.kind === 'approval' ? connectorCall.detail.actions[0] : null;
+    const named = { ...connectorCall, detail: { actions: [{ ...action, connectorName: 'GitHub' }] } } as ReviewItem;
+    expect(reviewApprovalDetails(named)?.connector_name).toBe('GitHub');
+    expect(reviewApprovalDetails(connectorCall)?.connector_name).toBeNull();
+  });
+});
+
+describe('reviewApprovalAsker', () => {
+  test('names the agent and the session title when the inbox knows them', () => {
+    expect(reviewApprovalAsker(connectorCall, { 'session-1': 'Q3 launch prep' })).toEqual({
+      agentName: 'Agent 1',
+      sessionTitle: 'Q3 launch prep',
+    });
+  });
+
+  test('the SDK fallback "Agent" and an unlabelled session name nobody', () => {
+    expect(reviewApprovalAsker({ ...connectorCall, agent: 'Agent' })).toEqual({
+      agentName: null,
+      sessionTitle: null,
+    });
+  });
+});
+
+describe('reviewApprovalDenyOnly', () => {
+  const call = connectorCall.kind === 'approval' ? connectorCall.detail.actions[0] : null;
+  const withCall = (patch: Record<string, unknown>, status: ReviewItem['status'] = 'needs_you') =>
+    ({ ...connectorCall, status, detail: { actions: [{ ...call, ...patch }] } }) as ReviewItem;
+
+  test('a call that recorded nothing and withheld some of it can only be denied', () => {
+    expect(reviewApprovalDenyOnly(withCall({ rawArgsPreview: null, reviewComplete: false }))).toBe(true);
+  });
+
+  test('a call with arguments, or loaded content, or nothing withheld is reviewable', () => {
+    expect(reviewApprovalDenyOnly(connectorCall)).toBe(false);
+    expect(
+      reviewApprovalDenyOnly(
+        withCall({ rawArgsPreview: null, reviewComplete: false, resolvedPreview: { to: 'a@example.test' } }),
+      ),
+    ).toBe(false);
+    expect(reviewApprovalDenyOnly(withCall({ rawArgsPreview: null, reviewComplete: true }))).toBe(false);
+  });
+
+  test('a decided call is no longer flagged', () => {
+    expect(reviewApprovalDenyOnly(withCall({ rawArgsPreview: null, reviewComplete: false }, 'rejected'))).toBe(false);
   });
 });

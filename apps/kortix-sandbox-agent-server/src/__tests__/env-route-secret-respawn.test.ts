@@ -284,6 +284,24 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(calls).toEqual([{ mustRespawn: false }, { mustRespawn: false }])
   })
 
+  it('llmGatewayEnabled=false from an older API keeps the gateway env', async () => {
+    const { opencode } = fakeOpencode()
+    process.env.KORTIX_LLM_BASE_URL = 'https://api.kortix.test/v1/llm'
+    const app = buildTestApp(opencode, createProjectEnvStore({} as NodeJS.ProcessEnv))
+
+    const { status, json } = await postEnv(app, {
+      revision: 'rev-gateway-false',
+      env: {},
+      names: [],
+      refreshModels: true,
+      llmGatewayEnabled: false,
+    })
+
+    expect(status).toBe(200)
+    expect(json).toMatchObject({ opencode_env_changed: false, opencode_env_names: [] })
+    expect(process.env.KORTIX_LLM_BASE_URL as string | undefined).toBe('https://api.kortix.test/v1/llm')
+  })
+
   it('the compiled agent config is live-updatable; an unknown KORTIX_* name is ignored', async () => {
     // Every runtime env name must be on the route's allowlist, or the API can
     // never change it on a running box. An unlisted name must not reach the

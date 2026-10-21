@@ -70,7 +70,7 @@ mock.module('@kortix/ui/workspace/new/advanced-fields', () => ({
 // motion/react with no DOM: render the same tag with the animation-only props
 // stripped, and always claim reduced motion so no animation timing runs. The
 // import graph pulls more names from this module than the page itself does,
-// so the usual set answers with inert stubs.
+// so preserve real exports and override only the animation collaborators.
 const MOTION_ONLY_PROPS = new Set([
   'initial',
   'animate',
@@ -105,7 +105,9 @@ const motionValue = (initial: number) => ({
   remove: () => {},
   destroy: () => {},
 });
+const realMotion = await import('motion/react');
 mock.module('motion/react', () => ({
+  ...realMotion,
   AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
   // @kortix/ui's UiProvider wraps its tree in LazyMotion.
   LazyMotion: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -220,4 +222,17 @@ test('the other name errors still wait for the field to be left', async () => {
   });
   expect(errorText(renderer)).toBe('Name is required');
   await unmount(renderer);
+});
+
+// Other components in a non-isolated Bun process still need real motion exports.
+test('motion mock preserves MotionConfig for sibling components', async () => {
+  const { MotionConfig } = await import('motion/react');
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  expect(
+    renderToStaticMarkup(
+      <MotionConfig reducedMotion="always">
+        <span>Sibling content</span>
+      </MotionConfig>,
+    ),
+  ).toBe('<span>Sibling content</span>');
 });

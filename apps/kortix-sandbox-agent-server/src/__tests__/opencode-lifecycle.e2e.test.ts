@@ -767,13 +767,13 @@ describe('reloadConfig', () => {
   }, 30_000)
 })
 
-// ── agent .md model refs in gateway mode ─────────────────────────────────────
+// ── agent .md model refs ────────────────────────────────────────────────────
 
 /**
  * Prod 2026-09-30: an agent `.md` declared `model: codex/gpt-6-sol`. OpenCode
  * reads the `.md` AFTER the composed `OPENCODE_CONFIG` file and splits a ref
- * at its first slash, so the agent named provider `codex`, which gateway mode
- * does not have. Every Slack follow-up (a prompt that names no model) failed
+ * at its first slash, so the agent named provider `codex`, which a kortix-only
+ * config does not have. Every Slack follow-up (a prompt that names no model) failed
  * "Model not found: codex/gpt-6-sol." `OPENCODE_CONFIG_CONTENT` is the only
  * layer OpenCode merges after the config dir.
  */
@@ -792,7 +792,7 @@ describe('agent .md model refs', () => {
     process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(root, 'no-baked-catalog.json')
   }
 
-  test('gateway mode routes every .md model through kortix, after the config dir', async () => {
+  test('routes every .md model through kortix, after the config dir', async () => {
     useGateway()
     const configDir = join(root, 'config')
     writeAgent(configDir, 'agents/kortix.md', 'codex/gpt-6-sol')
@@ -809,16 +809,6 @@ describe('agent .md model refs', () => {
         'team/triage': { model: 'kortix/glm-5.3-flash' },
       },
     })
-  }, 30_000)
-
-  test('native mode leaves .md model refs to OpenCode', async () => {
-    const configDir = join(root, 'config')
-    writeAgent(configDir, 'agents/kortix.md', 'anthropic/claude-opus-4-8')
-    await serveTestConfigDir(configDir, join(root, 'boot-store'))
-    const r = rig()
-    const pid = await startReady(r)
-
-    expect(spawnEnv(pid).OPENCODE_CONFIG_CONTENT).toBeNull()
   }, 30_000)
 
   // A prompt that names no model runs on the agent's model, so no turn-start

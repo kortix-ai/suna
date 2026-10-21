@@ -176,6 +176,57 @@ describe('a denied connector call carries its remedy', () => {
     });
   });
 
+  test('CLI: a gated call prints token-free decision commands', async () => {
+    const approvalUrl = `https://app.kortix.test/approve/${'synthetic-token'.repeat(40)}`;
+    respondWith = () =>
+      jsonResponse(
+        {
+          ok: false,
+          status: 'pending_approval',
+          execution_id: 'exec-pending',
+          retryable: false,
+          approval_url: approvalUrl,
+          approval_summary: 'one synthetic write',
+          approval_instructions: 'Share approval_url with a human.',
+        },
+        202,
+      );
+
+    const result = await runCli(['connectors', 'call', 'crm.write', '--project', PROJECT_ID]);
+
+    expect(result.code).toBe(0);
+    expect(result.payload.status).toBe('pending_approval');
+    expect(result.payload.execution_id).toBe('exec-pending');
+    expect(result.payload.approval_summary).toBe('one synthetic write');
+    expect(result.payload.approval_instructions).toContain(
+      `kortix review act call:exec-pending approve --project ${PROJECT_ID}`,
+    );
+    expect(result.payload.approval_instructions).toContain(
+      `kortix review act call:exec-pending reject --project ${PROJECT_ID}`,
+    );
+    expect(result.stdout).not.toContain(approvalUrl);
+    expect(result.stdout).not.toContain('synthetic-token');
+    expect(result.payload).not.toHaveProperty('approval_url');
+    expect(captured).toHaveLength(1);
+  });
+
+  test('CLI: an older gated response without an execution id has no broken command', async () => {
+    respondWith = () =>
+      jsonResponse(
+        {
+          ok: false,
+          status: 'pending_approval',
+          approval_url: 'https://app.kortix.test/approve/synthetic-token',
+        },
+        202,
+      );
+    const result = await runCli(['connectors', 'call', 'crm.write', '--project', PROJECT_ID]);
+    expect(result.code).toBe(0);
+    expect(result.payload.approval_instructions).toContain('Review Center');
+    expect(result.stdout).not.toContain('synthetic-token');
+    expect(result.stdout).not.toContain('call:undefined');
+  });
+
   test('CLI: a valueless --account/--reason is a flag typo, never sent as a name', async () => {
     respondWith = () =>
       jsonResponse({ ok: true, status: 'ok', data: {}, account: { label: 'Work' } });

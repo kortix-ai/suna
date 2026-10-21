@@ -281,6 +281,15 @@ flow(
       'repository_access',
       'sandbox_slug',
       'warmSandboxLocation',
+      // The gateway fallback record. The turn-end revert writes `_from` into
+      // the model pin, so a client value would pick the session's model.
+      'opencode_model_fallback_from',
+      'opencode_model_fallback_from_source',
+      'opencode_model_fallback_reason',
+      'opencode_model_fallback_at',
+      'opencode_model_fallback_until',
+      'opencode_model_picked_at',
+      'opencode_model_restored',
     ]) {
       await ctx.step(`PATCH metadata.${key} → 400 (server-managed)`, async () => {
         (
@@ -471,11 +480,22 @@ flow(
         unrestricted = await seedBoundSession(ctx, db, project, 'SCOPE-9 branch', 'scope-9-branch');
       });
 
-      await ctx.step('the runtime-workspace credential reads the project → 403 naming the workspace', async () => {
+      await ctx.step('the runtime-workspace credential reads the project record → 200 with its flags, every repository field empty', async () => {
         (await ctx.client.withBearer(restricted!.token, 'SESSION_TOKEN').get('/v1/projects/:projectId', { params: { projectId: project.id } }))
-          .status(403)
+          .status(200)
           .body()
-          .has('$.message', DENIED);
+          .has('$.project_id', project.id)
+          .has('$.repo_url', '')
+          .has('$.git_origin_url', '')
+          .has('$.default_branch', '')
+          .has('$.manifest_path', '');
+      });
+
+      await ctx.step('the branch-workspace credential reads the full project record → 200 with repo_url and git_origin_url', async () => {
+        const r = await ctx.client.withBearer(unrestricted!.token, 'SESSION_TOKEN').get('/v1/projects/:projectId', { params: { projectId: project.id } });
+        r.status(200);
+        const body = r.json<{ repo_url: string; git_origin_url: string }>();
+        if (!body.repo_url || !body.git_origin_url) throw new Error(`expected repo_url and git_origin_url, got ${JSON.stringify(body)}`);
       });
 
       for (const suffix of ['diff', 'merge-preview'] as const) {
@@ -483,7 +503,8 @@ flow(
           (await ctx.client.withBearer(restricted!.token, 'SESSION_TOKEN').get(`/v1/projects/:projectId/change-requests/:crId/${suffix}`, { params: { projectId: project.id, crId } }))
             .status(403)
             .body()
-            .has('$.message', DENIED);
+            .has('$.message', DENIED)
+            .has('$.code', 'session_repository_access_denied');
         });
         await ctx.step(`the branch-workspace credential reaches the change request lookup for ${suffix} → 404`, async () => {
           (await ctx.client.withBearer(unrestricted!.token, 'SESSION_TOKEN').get(`/v1/projects/:projectId/change-requests/:crId/${suffix}`, { params: { projectId: project.id, crId } }))

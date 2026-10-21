@@ -49,6 +49,9 @@ export {
 const HELP = help`Usage: kortix projects <subcommand>
 
 Subcommands:
+  create <name>       Create a managed project; prints its id (--json).
+                       --host <name> and --account <id> select the destination.
+                       Then run projects use <id> to select it.
   ls [--all]           List projects in the active account (--all spans every
                        account, grouped). --query <text> filters by name, id
                        or repo. (--json)
@@ -118,6 +121,8 @@ export async function runProjects(argv: string[]): Promise<number> {
     return 0;
   }
   switch (sub) {
+    case 'create':
+      return projectsCreate(rest);
     case 'ls':
     case 'list': {
       const restCopy = [...rest];
@@ -237,7 +242,7 @@ export async function runProjects(argv: string[]): Promise<number> {
 const FEATURES_HELP = help`Usage: kortix projects features [ls | enable | disable | reset] [<flag>]
 
 Per-project feature flags — the same switches as Settings → Feature flags.
-A flag is a stable key (e.g. monitors, event_triggers, llm_gateway). State is
+A flag is a stable key (e.g. monitors, event_triggers). State is
 stored on the project row, never in kortix.yaml.
 
 Subcommands:
@@ -1089,16 +1094,24 @@ export function saveClonedProjectLink(
   host: string | undefined,
   hostUrl: string,
 ): void {
-  saveLink(
-    {
-      project_id: project.project_id,
-      account_id: project.account_id,
-      host,
-      host_url: hostUrl,
-      linked_at: new Date().toISOString(),
-    },
-    repoRoot,
-  );
+  const existing = loadLink(repoRoot);
+  if (
+    existing?.project_id !== project.project_id ||
+    existing.account_id !== project.account_id ||
+    existing.host !== host ||
+    existing.host_url !== hostUrl
+  ) {
+    saveLink(
+      {
+        project_id: project.project_id,
+        account_id: project.account_id,
+        host,
+        host_url: hostUrl,
+        linked_at: new Date().toISOString(),
+      },
+      repoRoot,
+    );
+  }
 
   appendGitExcludeEntries(repoRoot, ['/.kortix/link.json'], 'Kortix local project binding');
 }
@@ -1218,6 +1231,44 @@ function filterProjects(projects: ProjectSummary[], query?: string): ProjectSumm
   return projects.filter((p) =>
     [p.name, p.project_id, p.repo_url].some((f) => (f ?? '').toLowerCase().includes(q)),
   );
+}
+
+async function projectsCreate(argv: string[]): Promise<number> {
+  const rest = [...argv];
+  const json = takeFlagBool(rest, ['--json']);
+  let hostArg: string | undefined;
+  let accountArg: string | undefined;
+  try {
+    hostArg = takeFlagValue(rest, ['--host']);
+    accountArg = takeFlagValue(rest, ['--account']);
+  } catch (err) {
+    process.stderr.write(`${status.err(err instanceof Error ? err.message : String(err))}\n`);
+    return 2;
+  }
+  const name = rest[0]?.trim();
+  if (rest.length !== 1 || !name || name.startsWith('-') || hostArg === '' || accountArg === '') {
+    process.stderr.write('Usage: kortix projects create <name> [--host <name>] [--account <id>] [--json]\n');
+    return 2;
+  }
+  const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
+  if (!auth?.token) {
+    if (hostArg) process.stderr.write(`${status.err(`Host "${hostArg}" is not logged in.`)}\n`);
+    return 1;
+  }
+  const accountId = accountArg || (hostArg ? auth.account_id || undefined : scopeAccountId(auth));
+  try {
+    const project = await clientFromAuth(auth, { accountId }).post<ProjectSummary>('/projects/provision', {
+      name,
+      account_id: accountId,
+    });
+    if (!isDefaultProjectResponse(project)) return invalidDefaultProjectResponse(project);
+    // Provisioning also returns a one-time push credential. Never print it.
+    if (json) emitJson({ project_id: project.project_id, name: project.name, account_id: project.account_id });
+    else process.stdout.write(`${project.project_id}\n`);
+    return 0;
+  } catch (err) {
+    return surface(err);
+  }
 }
 
 async function projectsLs(
@@ -1376,6 +1427,26 @@ function renderProjectTable(
   }
 }
 
+interface GitConnectionState {
+  state: 'connected' | 'reconnect_required' | 'unavailable' | 'not_connected';
+  reason?: string;
+  disconnected_reason?: string;
+  message?: string;
+  install_url?: string | null;
+}
+
+/** The `git` line of `projects info`, plus the cause and the fix when the repository is disconnected. */
+export function gitConnectionLines(git: GitConnectionState): string {
+  const label = `  ${C.dim}git        ${C.reset}`;
+  if (git.state === 'connected') return `${label}connected\n`;
+  if (git.state === 'not_connected') return `${label}not connected\n`;
+  const why = git.disconnected_reason ?? git.reason;
+  let out = `${label}${C.yellow}${git.disconnected_reason ? 'disconnected' : git.state.replace('_', ' ')}${why ? ` (${why})` : ''}${C.reset}\n`;
+  if (git.message) out += `             ${git.message}\n`;
+  if (git.install_url) out += `  ${C.dim}reconnect  ${C.reset}${git.install_url}\n`;
+  return out;
+}
+
 async function projectsInfo(arg?: string, json = false, hostArg?: string): Promise<number> {
   const id = resolveProjectId(arg, { hostScoped: !hostArg, hostArg });
   if (!id) {
@@ -1391,9 +1462,14 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   );
   if (!located) return 1;
   const p = located.located.project;
+  // Whether Kortix can reach the repository (KRTX-2955). Best effort: an
+  // older server without the route prints no git line.
+  const git = await located.located.client
+    .get<GitConnectionState>(`/projects/${p.project_id}/git/connection`)
+    .catch(() => null);
   if (json) {
     // The API's wire name for the id is `project_id`; scripts read `.id`.
-    emitJson({ id: p.project_id, ...p });
+    emitJson({ id: p.project_id, ...p, ...(git ? { git_connection_state: git } : {}) });
     return 0;
   }
   process.stdout.write('\n');
@@ -1405,6 +1481,7 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   process.stdout.write(`  ${C.dim}manifest   ${C.reset}${p.manifest_path}\n`);
   process.stdout.write(`  ${C.dim}status     ${C.reset}${p.status}\n`);
   process.stdout.write(`  ${C.dim}updated    ${C.reset}${formatRelative(p.updated_at)}\n`);
+  if (git) process.stdout.write(gitConnectionLines(git));
   // Internal-only flags Kortix turned on. Agents read this to know which
   // Kortix-managed surfaces work here.
   const managed = featureRows(p as unknown as Record<string, unknown>)
@@ -1731,6 +1808,9 @@ async function projectsRm(args: string[]): Promise<number> {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 function surface(err: unknown): number {
+  // A denial goes through the shared formatter so the CLI's tail names the
+  // refused identity and the right remedy.
+  if (err instanceof ApiError && err.status === 403) return surfaceApiError(err);
   if (err instanceof ApiError) {
     if (err.status === 401) {
       process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);

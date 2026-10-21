@@ -5,9 +5,12 @@ import { Modal, ModalContent, ModalDescription, ModalTitle } from '../../primiti
 import { APP_STORE_URL, GOOGLE_PLAY_URL } from '../../internal/lib/mobile-store-urls';
 import { useTranslations } from '../../i18n';
 import { useMobileAppPromoStore } from '../../internal/stores/mobile-app-promo-store';
+import { MobileStoreQr } from '../../internal/components/mobile-store-qr';
+import { PROMO_GRADIENT } from '../../internal/lib/promo-art';
 import { BellIcon, ChatCircleIcon, MicrophoneIcon, type Icon } from '@phosphor-icons/react';
 import { UiLink as Link, UiImage as Image } from '../../providers/ui-provider';
 import { useSyncExternalStore } from 'react';
+import { useIsMobile } from '../../hooks/use-mobile';
 
 const FEATURES: readonly { key: 'sessions' | 'notifications' | 'dictation'; icon: Icon }[] = [
   { key: 'sessions', icon: ChatCircleIcon },
@@ -15,11 +18,6 @@ const FEATURES: readonly { key: 'sessions' | 'notifications' | 'dictation'; icon
   { key: 'dictation', icon: MicrophoneIcon },
 ];
 
-/**
- * The panel's art, sampled from the eclipse orb it is modelled on: bone at the
- * top, a red horizon, navy, then black. One art value, so its raw colours live
- * in this one constant. `in oklab` keeps the brightness even through the band.
- */
 /**
  * The card's shadow: the smooth stack from shadow.floriankiem.com
  * (`smooth-shadow-lg`, shadow-plugin, MIT), copied as its five black layers,
@@ -29,8 +27,6 @@ const FEATURES: readonly { key: 'sessions' | 'notifications' | 'dictation'; icon
 // prettier-ignore
 const SMOOTH_SHADOW_LG = '0 25px 50px 0 rgba(0, 0, 0, 0.05), 0 12px 24px 0 rgba(0, 0, 0, 0.04), 0 6px 12px 0 rgba(0, 0, 0, 0.03), 0 3px 6px 0 rgba(0, 0, 0, 0.02), 0 1.5px 3px 0 rgba(0, 0, 0, 0.02)';
 
-// prettier-ignore
-const MOBILE_PROMO_GRADIENT = 'linear-gradient(170deg in oklab, #DAD9D5 0%, #DAD9D5 34%, #943637 50%, #1D1F2C 60%, #000 82%)';
 
 /** The official store badges, unmodified (Apple and Google forbid edits). Both are 3.375:1, so one height gives one width. */
 /** Laid over the whole art panel: fades the card, border included, into the black floor. */
@@ -46,13 +42,14 @@ const STORES = [
 const subscribeToNothing = () => () => { };
 
 /**
- * Introduces the Kortix mobile app on the project page, once per browser.
+ * Introduces the Kortix mobile app on mobile project pages, once per browser.
  * Same frame as "Connect your computer" (`packages/ui/src/internal/tunnel/computer-connect.tsx`),
  * mirrored: the copy and the two store buttons first, the app shot beside
  * them. Every way out closes it for good (`mobile-app-promo-store.ts`).
  */
 export function MobileAppPromo() {
   const t = useTranslations('mobileAppPromo');
+  const isMobile = useIsMobile();
   const closed = useMobileAppPromoStore((state) => state.closed);
   const close = useMobileAppPromoStore((state) => state.close);
   // The closed flag lives in localStorage, which the server cannot read: open
@@ -65,7 +62,7 @@ export function MobileAppPromo() {
 
   return (
     <Modal
-      open={mounted && !closed}
+      open={mounted && isMobile && !closed}
       onOpenChange={(open) => {
         if (!open) close();
       }}
@@ -84,7 +81,7 @@ export function MobileAppPromo() {
             its clip does not reach it. */}
         <div className="grid sm:grid-cols-[11fr_9fr] lg:min-h-128">
           <div
-            style={{ backgroundImage: MOBILE_PROMO_GRADIENT }}
+            style={{ backgroundImage: PROMO_GRADIENT }}
             className="relative hidden overflow-hidden rounded-tr-xl border-l sm:order-last sm:block lg:rounded-br-xl"
           >
             {/* The App Store screenshot as a card: centered, its top
@@ -136,20 +133,32 @@ export function MobileAppPromo() {
             </ul>
 
             {/* Actions sit on the bottom edge, level with the foot of the art.
-                Two equal choices, so one size for both. */}
-            <div className="mt-auto flex flex-wrap gap-2">
-              {STORES.map(({ key, badge, href }) => (
-                <Link
-                  key={key}
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={close}
-                  className="focus-visible:ring-ring rounded-md transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:outline-none"
-                >
-                  <Image src={badge} alt={t(key)} width={135} height={40} className="h-11 w-auto" />
-                </Link>
-              ))}
+                On a computer the QR code comes first: the visitor is not on the
+                phone the store buttons are for, so the camera is the shortest
+                path. On a phone it is hidden and the two badges remain. Two
+                equal choices, so one size for both badges. */}
+            <div className="mt-auto space-y-4">
+              <div className="hidden items-center gap-4 sm:flex">
+                <MobileStoreQr />
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm font-medium">{t('scanTitle')}</p>
+                  <p className="text-muted-foreground text-xs text-pretty">{t('scanDescription')}</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {STORES.map(({ key, badge, href }) => (
+                  <Link
+                    key={key}
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={close}
+                    className="focus-visible:ring-ring rounded-md transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:outline-none"
+                  >
+                    <Image src={badge} alt={t(key)} width={135} height={40} className="h-11 w-auto" />
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
         </div>

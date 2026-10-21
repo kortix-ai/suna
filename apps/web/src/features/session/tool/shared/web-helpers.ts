@@ -4,15 +4,11 @@
  * keeps the old import path working for existing web call sites.
  */
 export {
-  buildScrapeFailureResults,
   looksLikeHtml,
-  parseScrapeInputUrls,
-  parseScrapeOutput,
   parseWebSearchOutput,
   resolveScrapeResults,
   wsDomain,
   wsFavicon,
-  wsRootDomain,
 } from '@kortix/sdk';
 export type {
   ParsedScrapeOutput,

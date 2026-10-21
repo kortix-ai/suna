@@ -197,6 +197,7 @@ test.describe("50 — the onboarding wizard's exit buttons dismiss it", () => {
   }) => {
     test.skip(!process.env.E2E_SUPABASE_URL, 'E2E_SUPABASE_URL is required');
     test.setTimeout(300_000);
+    await page.setViewportSize({ width: 390, height: 844 });
     const user = await freshUserWithProject();
     // A SECOND, stamped project: the create flow stamps later projects, so no
     // wizard runs and no first-chat era starts — the one surface the promo

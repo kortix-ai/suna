@@ -1185,16 +1185,19 @@ export function buildTeamsApprovalCard(opts: {
 /** What the approval card becomes once anyone decided. */
 export function buildTeamsApprovalOutcomeCard(opts: {
   actionPath: string;
-  decision: 'approve' | 'deny';
+  decision: 'approve' | 'deny' | 'expired';
   note: string;
   /** Who decided: the presser's Teams name, or "a teammate in Kortix". */
   decidedBy?: string;
 }): Record<string, unknown> {
-  const body: CardElement[] = headerBlock(
-    opts.decision === 'approve' ? '✅' : '⛔',
-    `${opts.decision === 'approve' ? 'Approved' : 'Denied'}: ${opts.actionPath}`,
-    opts.decidedBy ? `by ${opts.decidedBy}` : undefined,
-  );
+  const body: CardElement[] =
+    opts.decision === 'expired'
+      ? headerBlock('⌛', `Expired: ${opts.actionPath}`, 'This approval expired.')
+      : headerBlock(
+          opts.decision === 'approve' ? '✅' : '⛔',
+          `${opts.decision === 'approve' ? 'Approved' : 'Denied'}: ${opts.actionPath}`,
+          opts.decidedBy ? `by ${opts.decidedBy}` : undefined,
+        );
   if (opts.note) {
     body.push(
       text('Message to the agent', { weight: 'bolder', size: 'small', spacing: 'medium' }),

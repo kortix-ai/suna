@@ -183,37 +183,6 @@ export function pickInitialTab(defaultTab: ActiveTab | undefined): ActiveTab {
   return 'providers';
 }
 
-export function buildCustomProviderSnippet(input: {
-  providerId: string;
-  name: string;
-  baseURL: string;
-  secretName: string | null;
-  modelId: string;
-  modelName: string;
-}): string {
-  const options: Record<string, string> = { baseURL: input.baseURL };
-  if (input.secretName) options.apiKey = `{env:${input.secretName}}`;
-
-  const snippet = {
-    provider: {
-      [input.providerId]: {
-        npm: '@ai-sdk/openai-compatible',
-        name: input.name,
-        options,
-        models: {
-          [input.modelId]: {
-            id: input.modelId,
-            name: input.modelName,
-            family: input.providerId,
-          },
-        },
-      },
-    },
-  };
-
-  return JSON.stringify(snippet, null, 2);
-}
-
 export function prettyFieldLabel(envVar: string): string {
   const trimmed = envVar
     .replace(/^[A-Z0-9]+_/, '')
