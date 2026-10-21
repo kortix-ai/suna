@@ -5,6 +5,7 @@ import { BootScreen } from '@/components/workbench/boot-screen';
 import { SessionHeader } from '@/components/workbench/session-header';
 import { useRuntimeRecovery } from '@/components/workbench/use-runtime-recovery';
 import { CitationLayer } from '@/components/chat/citation-layer';
+import { CITATION_REPAIR_PROMPT, unlinkedAnswerId } from '@/lib/cite-link';
 import '@/components/chat/lumen-tool-row';
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
@@ -24,6 +25,7 @@ export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId:
   // One automatic restart when a connected runtime drops.
   useRuntimeRecovery(session);
   useOutputsToDocuments(matterId, sessionId, session.isBusy);
+  useCitationRepair(session);
   useAuditDownloads(matterId);
   // A cited passage the lawyer sends back into the conversation ("Cite" in the Source panel).
   const [quote, setQuote] = useState<{ id: number; text: string } | null>(null);
@@ -58,6 +60,30 @@ export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId:
       )}
     </>
   );
+}
+
+/**
+ * An answer whose citations are all bare "[n]" markers cannot be checked. When a
+ * turn ends with one, the thread asks the agent once to rewrite it with citation
+ * links. Once per answer, and never for the rewrite itself (UXR3-3).
+ */
+function useCitationRepair(session: ReturnType<typeof useSession>) {
+  const asked = useRef(false);
+  const wasBusy = useRef(session.isBusy);
+  // A turn ended in this visit and its answer is not checked yet. The final text can land a render after the idle flip.
+  const pending = useRef(false);
+  const { isBusy, messages, send } = session;
+  useEffect(() => {
+    if (wasBusy.current && !isBusy) pending.current = true;
+    wasBusy.current = isBusy;
+    if (isBusy || !pending.current || asked.current) return;
+    const id = unlinkedAnswerId(messages);
+    if (!id) return;
+    // Once per thread visit: a rewrite that still has bare markers keeps the banner.
+    pending.current = false;
+    asked.current = true;
+    send(CITATION_REPAIR_PROMPT);
+  }, [isBusy, messages, send]);
 }
 
 /**

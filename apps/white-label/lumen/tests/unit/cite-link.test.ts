@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
-import { hasUnlinkedCitations, parseCite } from '@/lib/cite-link';
+import { hasUnlinkedCitations, parseCite, unlinkedAnswerId } from '@/lib/cite-link';
 
 test('parseCite reads doc, anchor and the decoded quote from relative and absolute links', () => {
   const q = encodeURIComponent('Neither party’s liability & costs');
@@ -26,4 +26,16 @@ describe('hasUnlinkedCitations: a finished answer citing a bare [n] is flagged',
     expect(hasUnlinkedCitations(doc('<div class="kortix-markdown" data-streaming="true">Uncapped [1].</div>'))).toBe(false);
     expect(hasUnlinkedCitations(doc('<div class="kortix-markdown" data-streaming="false">No markers.</div><p>[1] in a user bubble</p>'))).toBe(false);
   });
+});
+
+test('unlinkedAnswerId: the last answer with bare [n] markers and no /cite link (UXR3-3)', () => {
+  const user = { info: { id: 'u1', role: 'user' }, parts: [{ type: 'text', text: 'Which agreements are uncapped?' }] };
+  const bare = { info: { id: 'a1', role: 'assistant' }, parts: [{ type: 'tool', text: '' }, { type: 'text', text: 'The MSA is uncapped [1]. Sources: msa.pdf' }] };
+  const linked = { info: { id: 'a2', role: 'assistant' }, parts: [{ type: 'text', text: 'The MSA is uncapped [1](/cite?d=x&a=p2.1&q=y).' }] };
+  const plain = { info: { id: 'a3', role: 'assistant' }, parts: [{ type: 'text', text: 'No agreement is uncapped.' }] };
+  expect(unlinkedAnswerId([user, bare])).toBe('a1');
+  expect(unlinkedAnswerId([user, linked])).toBeNull();
+  expect(unlinkedAnswerId([user, plain])).toBeNull();
+  expect(unlinkedAnswerId([bare, user])).toBeNull();
+  expect(unlinkedAnswerId([])).toBeNull();
 });

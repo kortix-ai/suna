@@ -28,3 +28,20 @@ export function hasUnlinkedCitations(root: ParentNode): boolean {
     (el) => !el.querySelector(CITE_SELECTOR) && /\[\d{1,3}\]/.test(el.textContent ?? ''),
   );
 }
+
+type MessageLike = { info: { id: string; role: string }; parts: ReadonlyArray<{ type: string; text?: string }> };
+
+/**
+ * The id of the last answer when it cites "[n]" with no citation link at all, else null.
+ * Lumen cannot check such an answer, so the thread asks the agent once to rewrite it.
+ */
+export function unlinkedAnswerId(messages: readonly unknown[]): string | null {
+  const last = [...(messages as MessageLike[])].reverse().find((m) => m?.info?.role === 'assistant' || m?.info?.role === 'user');
+  if (!last || last.info.role !== 'assistant') return null;
+  const text = last.parts.filter((p) => p.type === 'text').map((p) => p.text ?? '').join('\n');
+  return /\[\d{1,3}\]/.test(text) && !text.includes('](/cite?') ? last.info.id : null;
+}
+
+/** The one follow-up the thread sends for an answer with bare "[n]" citations. */
+export const CITATION_REPAIR_PROMPT =
+  'Your last answer cites sources as bare [n] markers with no citation links, so Lumen cannot check them. Rewrite the same answer: run `lumen cite check` on each citation and paste its `link` after each claim, in the /cite form your instructions give. Do not add new findings.';
