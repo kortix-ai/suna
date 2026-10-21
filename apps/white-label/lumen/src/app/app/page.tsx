@@ -45,7 +45,7 @@ export default function Home() {
     if (!text || !matterId || pending) return;
     setPending(true);
     try {
-      const t = await createThread({ matterId: matterId as Id<'matters'>, title: text.slice(0, 80), prompt: text });
+      const t = await createThread({ matterId: matterId as Id<'matters'>, title: text, prompt: text });
       router.push(threadPath(matterId, t.threadId));
     } catch (err) {
       setPending(false);

@@ -7,8 +7,9 @@ import { Button } from '@kortix/ui/button';
 import Loading from '@kortix/ui/loading';
 import { Textarea } from '@kortix/ui/textarea';
 import { errorToast } from '@kortix/ui/toast';
-import { ArrowUpIcon } from '@phosphor-icons/react';
-import { useAction } from 'convex/react';
+import { ArrowUpIcon, UploadSimpleIcon } from '@phosphor-icons/react';
+import { useAction, useQuery } from 'convex/react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -27,12 +28,14 @@ export default function NewQuestion() {
   const [prompt, setPrompt] = useState('');
   const [pending, setPending] = useState(false);
   const ready = firm.status === 'ready';
+  const docs = useQuery(api.documents.list, { matterId: matter._id });
+  const readyDocs = (docs ?? []).filter((d) => d.status === 'ready').length;
 
   async function submit(text = prompt.trim()) {
     if (!text || pending || !ready) return;
     setPending(true);
     try {
-      const t = await createThread({ matterId: matter._id, title: text.slice(0, 80), prompt: text });
+      const t = await createThread({ matterId: matter._id, title: text, prompt: text });
       router.push(threadPath(matter._id, t.threadId));
     } catch (err) {
       setPending(false);
@@ -70,20 +73,38 @@ export default function NewQuestion() {
           </Button>
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        {SUGGESTIONS.map((s) => (
-          <Button
-            variant="ghost"
-            key={s}
-            type="button"
-            disabled={pending || !ready}
-            onClick={() => submit(s)}
-            className="h-auto rounded-full border border-border px-3 py-1.5 text-xs font-normal text-muted-foreground transition-colors hover:border-brand/40 hover:text-foreground disabled:opacity-50"
-          >
-            {s}
+      {docs && readyDocs === 0 ? (
+        <div className="mt-4 flex items-center gap-3 rounded-xl border border-dashed border-border p-4" data-testid="assistant-empty-vault">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">{docs.length === 0 ? 'Add documents to this matter' : 'Your documents are still processing'}</p>
+            <p className="text-xs text-muted-foreground">
+              {docs.length === 0
+                ? 'Lumen answers from the matter’s vault. Upload contracts to get cited answers.'
+                : 'Questions about them work once they are ready.'}
+            </p>
+          </div>
+          <Button asChild size="sm" variant={docs.length === 0 ? 'default' : 'ghost'}>
+            <Link href={`/app/matters/${matter._id}/vault`}>
+              <UploadSimpleIcon className="size-4" /> {docs.length === 0 ? 'Upload' : 'Open vault'}
+            </Link>
           </Button>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {SUGGESTIONS.map((s) => (
+            <Button
+              variant="ghost"
+              key={s}
+              type="button"
+              disabled={pending || !ready}
+              onClick={() => submit(s)}
+              className="h-auto rounded-full border border-border px-3 py-1.5 text-xs font-normal text-muted-foreground transition-colors hover:border-brand/40 hover:text-foreground disabled:opacity-50"
+            >
+              {s}
+            </Button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

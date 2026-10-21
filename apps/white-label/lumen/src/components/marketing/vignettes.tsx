@@ -90,10 +90,11 @@ export function ReviewVignette() {
       <table className="w-full text-left text-[12px]">
         <thead className="text-muted-foreground">
           <tr className="border-b border-border">
-            <th className="py-1.5 font-normal">Document</th>
-            <th className="py-1.5 font-normal">Liability cap</th>
-            <th className="py-1.5 font-normal">Governing law</th>
-            <th className="py-1.5 font-normal">Assignment</th>
+            <th className="py-1.5 pr-2 font-normal">Document</th>
+            <th className="py-1.5 pr-2 font-normal">Liability cap</th>
+            <th className="py-1.5 pr-2 font-normal">Governing law</th>
+            {/* Phone: 3 columns fit a 390 px frame; the 4th returns at sm. */}
+            <th className="hidden py-1.5 font-normal sm:table-cell">Assignment</th>
           </tr>
         </thead>
         <tbody>
@@ -105,7 +106,7 @@ export function ReviewVignette() {
                 <Chip n={1} />
               </td>
               <td className="py-2 pr-2">{r[2]}</td>
-              <td className="py-2">
+              <td className="hidden py-2 sm:table-cell">
                 <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">{r[3]}</span>
               </td>
             </tr>
