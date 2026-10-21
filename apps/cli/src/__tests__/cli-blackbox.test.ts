@@ -668,6 +668,8 @@ describe('kortix CLI black-box behavior', () => {
       deployment: { deployment_id: 'deployment_1', status: 'queued' },
     });
     expect(requests.map((request) => [request.method, request.path])).toEqual([
+      // `--help` reads the linked project's feature flags: flagged commands are listed only while on.
+      ['GET', '/v1/projects/proj_e2e'],
       ['GET', '/v1/projects/proj_e2e'],
       ['GET', '/v1/projects/proj_e2e/apps'],
       ['GET', '/v1/projects/proj_e2e'],
@@ -677,9 +679,9 @@ describe('kortix CLI black-box behavior', () => {
       ['POST', '/v1/projects/proj_e2e/apps/artifacts'],
       ['POST', '/v1/projects/proj_e2e/apps/app_1/deployments'],
     ]);
-    expect(requests[4]?.body).toEqual({ mode: 'password', password: 'test-password-123' });
-    expect(requests[6]?.body).toEqual({ kind: 'oci_image', image: 'ghcr.io/kortix/demo:1' });
-    expect(requests[7]?.body).toEqual({
+    expect(requests[5]?.body).toEqual({ mode: 'password', password: 'test-password-123' });
+    expect(requests[7]?.body).toEqual({ kind: 'oci_image', image: 'ghcr.io/kortix/demo:1' });
+    expect(requests[8]?.body).toEqual({
       artifact_id: 'artifact_1',
       source: {
         kind: 'oci_image',

@@ -6,7 +6,7 @@ import { resolveCandidates } from './resolution/resolve-candidates';
 import { resolveGatewayRoute } from './routing';
 
 export function resolutionErrorBody(err: GatewayResolutionError) {
-  return { code: err.code, message: err.message, suggestion: err.suggestion, retryAfterSeconds: err.retryAfterSeconds };
+  return { code: err.code, message: err.message, suggestion: err.suggestion, retryAfterSeconds: err.retryAfterSeconds, restSeconds: err.restSeconds };
 }
 
 /**

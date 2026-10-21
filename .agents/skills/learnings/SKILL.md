@@ -1,6 +1,6 @@
 ---
 name: learnings
-description: "The project's episodic memory: a timestamped ledger of rules paid for with real outages and near-misses, one entry per incident. Load WHENEVER you write or review a DB migration or schema change, touch deploy/release workflows (.github/workflows/deploy-*, promote.yml, vercel config), plan a promote/release, respond to a prod incident, or when another skill references a learning. ALSO load after resolving any incident or near-miss: it must leave a new ledger entry in the same session."
+description: "The project's episodic memory: a timestamped ledger of rules paid for with real outages and near-misses, one entry per incident, plus `work/`: the plans, designs and open thoughts behind planned or parked work. Load WHENEVER you write or review a DB migration or schema change, touch deploy/release workflows (.github/workflows/deploy-*, promote.yml, vercel config), plan a promote/release, respond to a prod incident, or when another skill references a learning. ALSO load after resolving any incident or near-miss: it must leave a new ledger entry in the same session. ALSO load before picking up or planning a larger initiative (goals, workflows, the factory as a state machine), and to persist a plan or open thought so someone else can continue it."
 ---
 
 # Project learnings: the episodic ledger
@@ -15,6 +15,7 @@ learned.
 | `entries/<YYYY-MM-DDTHHMMSSZ>-<slug>.md` | One entry. The filename timestamp is when it was recorded. |
 | `scripts/new-entry.sh` | Starts a new entry stamped with the current UTC time and rebuilds the index. |
 | `scripts/index.sh [--check]` | Rebuilds `MEMORY.md` from `entries/`, or fails if it is stale. |
+| `work/<topic>/` | Plans, designs and open thoughts for planned, in-flight or parked work. Living documents, not part of the ledger. Index and rules: `work/README.md`. |
 
 Entries recorded before 2026-09-25 were split out of the old single-file register. Their
 `recorded` time is the commit that first wrote them (`commit` in the frontmatter).

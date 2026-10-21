@@ -363,9 +363,6 @@ Commands an agent uses:
 | `kortix cr open --title "<text>"` | Open a change request from the session branch. Inside a session it fills `--head` itself. |
 | `kortix review submit --kind <kind> --title "<text>"` | Submit an output, a decision or a batch for review. |
 | `kortix remind "<prompt>" --in 24h` | Prompt this session again later. Reminders are a project flag, on by default; `kortix projects features disable reminders` turns them off. |
-| `kortix goals new "<objective>"` | Start a goal in this session: a folder in Files (`Goals/<slug>/goal.json`), a daily heartbeat, and a check after every turn. `kortix goals transition <status> --reason "…"` is the only way to change its status (draft, active, waiting_on_user, waiting_external, verifying, done, abandoned); each move has a condition, and `done` needs an independent verifier's PASS. `kortix goals ls`, `status <slug>` and `check` read it back. |
-| `kortix rooms send <room> "<text>"` | Message every other session and person in a room. `kortix rooms join <room>` makes this session receive the room's messages. Rooms are a project flag, off by default: `kortix projects features enable agent_rooms`. |
-| `kortix rooms send <room> "@<email \| session id> <text>"` | Ask a person or another session in a room; the answer arrives as a room event and wakes this session. |
 | `kortix sessions update --label <label>` | Label the session the agent runs in. |
 
 What an agent may do is set by its `kortix_permissions` in `kortix.yaml`. When the API refuses a command, the CLI prints the token kind, the agent and its grant. See [Agents & permissions](/docs/project/agents). These commands are refused for an agent session's token, whatever the grant:
@@ -434,7 +431,6 @@ Every group prints its subcommands and flags with `kortix <group> --help`. The l
 | `channels` | Slack, Microsoft Teams and email, and their bindings. | [Slack, Teams & email](/docs/connect/channels) |
 | `triggers` | List, add, fire, pause and resume triggers. | [Triggers & reminders](/docs/connect/triggers) |
 | `reminders`, `remind` | Prompt one session later or on repeat. | [Triggers & reminders](/docs/connect/triggers) |
-| `peers`, `rooms` | Who you can @-mention, and the rooms where sessions and people talk. | [Rooms](/docs/work/sessions#rooms) |
 | `apps` | Deploy and manage Apps. | [Apps](/docs/apps) |
 
 ### Administer

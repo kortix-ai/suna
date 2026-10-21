@@ -17,7 +17,7 @@ import { XIcon } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
 
 import { useTranslations } from '../../i18n';
-import { cn } from '../../internal/lib/utils';
+import { cn } from '../lib/utils';
 import { Button } from '../../primitives/button';
 import { ButtonGroup } from '../../primitives/button-group';
 import { SessionDotMatrix } from '../../primitives/dot-matrix/session-dot-matrix';

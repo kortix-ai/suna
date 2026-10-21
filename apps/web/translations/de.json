@@ -3061,7 +3061,7 @@
       "automation_recovered": "Ein fehlschlagender Trigger oder eine Erinnerung funktioniert wieder.",
       "capture_device_down": "Ein Kortix-Capture-Computer nimmt nicht auf. Geht an Personen, die Capture verwalten.",
       "capture_device_recovered": "Ein gestoppter Kortix-Capture-Computer nimmt wieder auf.",
-      "message": "Jemand schreibt dir in einer Unterhaltung oder in einem Raum, dem du beigetreten bist."
+      "message": "Jemand erwähnt dich mit @ oder antwortet in einem Thread, in dem du geschrieben hast, in einem Raum."
     },
     "bell": {
       "label": "Benachrichtigungen",
@@ -20363,7 +20363,7 @@
       "wantsEmailOthers": "{agent} möchte eine E-Mail an {recipient} und {count, plural, one {# weitere Person} other {# weitere Personen}} senden",
       "wantsMerge": "{agent} möchte PR #{number} in {base} mergen",
       "wantsMergePr": "{agent} möchte PR #{number} mergen",
-      "wantsIssue": "{agent} möchte ein Issue mit Priorität {priority} für {team} anlegen",
+      "wantsIssue": "{agent} möchte {article, select, other {ein}} Issue mit Priorität {priority} für {team} anlegen",
       "wantsCreateIssue": "{agent} möchte ein Issue anlegen",
       "wantsAction": "{agent} möchte: {action}",
       "wantsCall": "{agent} möchte {action} ausführen",

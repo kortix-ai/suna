@@ -95,7 +95,7 @@ import { ViewerDownloadButton } from '../shared/viewer-download-button';
 import { usePreviewFit } from '../../viewer/preview-fit';
 import { cn } from '../../../lib/utils';
 import { downloadBlob } from '../../../internal/lib/utils/download';
-import { loadSharedPdfEngine } from './pdf-thumbnail-utils';
+import { loadSharedPdfEngine } from './pdf-engine-loader';
 import { SidebarGlyph as PanelLeft } from '../../../icons/sidebar-toggle';
 
 export type PDFViewerPageOverlayProps = {

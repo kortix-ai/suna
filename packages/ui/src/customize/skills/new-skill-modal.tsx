@@ -2,6 +2,7 @@
 
 import { Button } from '../../primitives/button';
 import { Input } from '../../primitives/input';
+import { Textarea } from '../../primitives/textarea';
 import { Label } from '../../primitives/label';
 import Loading from '../../primitives/loading';
 import {
@@ -42,6 +43,7 @@ export function NewSkillModal({
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [body, setBody] = useState('');
 
   const slug = slugifySlug(name, 'skill');
   const path = `skills/${slug}/SKILL.md`;
@@ -51,12 +53,14 @@ export function NewSkillModal({
       createProjectSkill(projectId, {
         name: name.trim(),
         description: description.trim() || undefined,
+        body: body.trim() ? body : undefined,
       }),
     onSuccess: () => {
       successToast(tI18nComplete.raw('textb25ab5d5e2a5'));
       void queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
       setName('');
       setDescription('');
+      setBody('');
       onOpenChange(false);
     },
     onError: (error: Error) => errorToast(error.message),
@@ -103,6 +107,18 @@ export function NewSkillModal({
                 id="new-skill-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-skill-body">
+                {tI18nComplete.raw('text47bd29075f8b')}{' '}
+                {tI18nComplete.raw('text0059798b7f70')}
+              </Label>
+              <Textarea
+                id="new-skill-body"
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+                rows={6}
               />
             </div>
           </ModalBody>

@@ -191,7 +191,7 @@ export function doctorReplyVerdict(
   const error = extractMessageError(reply);
   if (error) return { ok: false, reason: `reply failed — ${error}` };
   const text = reply.parts
-    .map((p) => ('text' in p && typeof p.text === 'string' ? p.text : ''))
+    .map((p) => (p.type === 'text' ? p.text : ''))
     .join(' ')
     .trim();
   return text ? { ok: true, text } : { ok: false, reason: 'reply had no text content' };

@@ -47,6 +47,7 @@ const SKILL_DESCRIPTION_MAX = 1024;
 const RemoveSkillSchema = z.object({ folder: z.string().min(1).max(1024), confirm: z.literal(true) });
 
 const CreateSkillSchema = z.object({
+  body: z.string().optional(),
   name: z
     .string()
     .trim()
@@ -67,14 +68,14 @@ const CreateSkillSchema = z.object({
 type CreateSkillInput = z.infer<typeof CreateSkillSchema>;
 
 /** The committed file's full text: frontmatter (real YAML, the same writer
- *  `serializeAgentMarkdown` uses) plus a starter body. `lineWidth: 0` keeps
+ *  `serializeAgentMarkdown` uses) plus the supplied or starter body. `lineWidth: 0` keeps
  *  every scalar on one line, which is what the summary's frontmatter reader
  *  parses. */
 function renderSkillMarkdown(skill: CreateSkillInput): string {
   const frontmatter: Record<string, string> = { name: skill.name };
   if (skill.description) frontmatter.description = skill.description;
   const header = stringifyYaml(frontmatter, { lineWidth: 0 }).trimEnd();
-  const body = [
+  const body = skill.body?.trim() ? skill.body : [
     `# ${skill.name}`,
     '',
     ...(skill.description ? [skill.description, ''] : []),
