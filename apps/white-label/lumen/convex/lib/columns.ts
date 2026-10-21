@@ -15,7 +15,7 @@ export const PRESET_COLUMNS: Column[] = [
   { key: "auto_renewal", label: "Auto-renewal", prompt: "Does the agreement renew automatically?", format: "yes_no" },
   {
     key: "termination_convenience", label: "Termination for convenience",
-    prompt: "Can a party terminate without cause (for convenience, for any reason, or under a break clause)?", format: "yes_no",
+    prompt: "Can a party terminate without cause (for convenience, for any reason, or under a break clause)? A right that arises only on an event (breach, insolvency, a long-stop date, a condition not met, force majeure, change of control) is not termination for convenience.", format: "yes_no",
   },
   { key: "liability_cap", label: "Liability cap", prompt: "Is liability capped, and at what amount?", format: "text" },
   { key: "governing_law", label: "Governing law", prompt: "Which law governs the agreement?", format: "text" },

@@ -168,7 +168,7 @@ class Draft(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tpl = os.path.join(tmp, "t.md")
             with open(tpl, "w") as f:
-                f.write("# Mutual NDA\n\nMade on {{effective_date}} between {{party_a}} and {{party_b}}.\n\n## 1. Law\n1.1 Governed by {{governing_law}}.\n")
+                f.write("# Mutual NDA\n\nMade on {{effective_date}} between {{party_a}} and {{party_b}}.\n\n## 1. Law\n1.1 Governed by {{governing_law}}.\n1.2 Courts of the same place.\n")
             out = os.path.join(tmp, "out", "draft.docx")
             # The image may lack pandoc: the python-docx renderer takes over.
             with mock.patch.object(tools.subprocess, "run", side_effect=FileNotFoundError("pandoc")):
@@ -176,8 +176,19 @@ class Draft(unittest.TestCase):
             self.assertEqual(r["unfilled"], ["governing_law"])
             text = "\n".join(p.text for p in Document(out).paragraphs)
             self.assertIn("Alpha Example Ltd", text)
-            self.assertIn("[[CONFIRM: governing_law]]", text)
-            self.assertEqual(Document(out).paragraphs[0].style.name, "Heading 1")
+            self.assertIn("[Governing law \u2014 to confirm]", text)
+            self.assertNotIn("[[CONFIRM", text)
+            with open(r["markdown"]) as f:
+                self.assertIn("[[CONFIRM: governing_law]]", f.read())  # the marker Lumen validates stays in the Markdown
+            d = Document(out)
+            self.assertEqual(d.paragraphs[0].style.name, "Heading 1")
+            # One paragraph per numbered clause, never 1.1 and 1.2 in one <w:p>.
+            clauses = [p.text for p in d.paragraphs if p.text[:3] in ("1.1", "1.2")]
+            self.assertEqual(len(clauses), 2)
+            marked = [r for p in d.paragraphs for r in p.runs if "to confirm" in r.text]
+            self.assertEqual(marked[0].font.highlight_color, 7)  # WD_COLOR_INDEX.YELLOW
+            h = d.styles["Heading 1"].font
+            self.assertEqual((str(h.color.rgb), h.name), ("000000", "Times New Roman"))
 
 
 

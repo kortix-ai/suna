@@ -21,3 +21,11 @@ pnpm --filter @kortix/white-label-lumen eval -- --runs <runId,...>   # re-score 
 Reports go to `output/legal/evals/<timestamp>.{json,md}` (gitignored). Model
 output varies between runs: report the kit version and every failure with
 each score.
+
+## Key notes
+
+- `spa-excerpt-aster.pdf` / `termination_convenience` is `absent`. Clause 4.2
+  lets either party end the agreement when the condition is not met by the
+  long-stop date. That is an event-triggered right, not termination without
+  cause. Kit 1.2.0 scored it a wrong `true` (79/80); kit 1.2.1 adds the rule to
+  the column prompt and the `lumen-clause-extraction` skill.

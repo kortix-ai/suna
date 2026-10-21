@@ -1,4 +1,4 @@
-"""Run results (validated, atomic), drafts (pandoc) and OCR (pdftoppm + tesseract)."""
+"""Run results (validated, atomic), drafts (pandoc + house style) and OCR (pdftoppm + tesseract)."""
 import glob
 import json
 import os
@@ -73,6 +73,75 @@ def result_done(batch: str, status: str, error: str | None = None) -> dict:
     return {"ok": True, **done}
 
 
+_CLAUSE = re.compile(r"\n(?=\d+(?:\.\d+)+\s)")
+_MARKER = re.compile(r"\[\[CONFIRM: (\w+)\]\]")
+
+
+def clause_paragraphs(md: str) -> str:
+    """One paragraph per numbered clause: a "3.2 ..." line after a single newline gets a blank line before it."""
+    return re.sub(r"(?<!\n)" + _CLAUSE.pattern, "\n\n", md)
+
+
+def marker_label(field: str) -> str:
+    """governing_law -> "[Governing law - to confirm]", the text a lawyer reads in Word."""
+    return f"[{field.replace('_', ' ').capitalize()} \u2014 to confirm]"
+
+
+def _pandoc(md_out: str, out: str, md: str) -> None:
+    try:
+        subprocess.run(["pandoc", md_out, "-o", out], check=True, capture_output=True)
+    except FileNotFoundError:
+        _docx_from_markdown(md, out)
+    _house_style(out)
+
+
+def _house_style(out: str) -> None:
+    """Legal house style on the delivered .docx: serif text, black headings, highlighted [to confirm] fields."""
+    from docx import Document
+    from docx.enum.text import WD_COLOR_INDEX
+    from docx.oxml.ns import qn
+    from docx.shared import Pt, RGBColor
+
+    doc = Document(out)
+    for st in doc.styles:
+        font = getattr(st, "font", None)
+        if font is None:
+            continue
+        font.name = "Times New Roman"
+        rpr = st.element.get_or_add_rPr()
+        fonts = rpr.get_or_add_rFonts()
+        fonts.set(qn("w:eastAsia"), "Times New Roman")
+        for theme in ("w:asciiTheme", "w:hAnsiTheme", "w:eastAsiaTheme", "w:cstheme"):
+            fonts.attrib.pop(qn(theme), None)  # a theme font (pandoc's headings) wins over a named one
+        font.color.rgb = RGBColor(0, 0, 0)
+        if st.name.startswith("Heading") or st.name == "Title":
+            font.bold = True
+            font.italic = False
+            font.size = Pt({"Title": 16, "Heading 1": 14, "Heading 2": 12}.get(st.name, 11))
+        elif st.name in ("Normal", "Body Text", "First Paragraph", "Compact"):
+            font.size = Pt(11)
+    for p in doc.paragraphs:
+        for run in list(p.runs):
+            parts = _MARKER.split(run.text)
+            if len(parts) == 1:
+                continue
+            run.text = parts[0]
+            anchor = run._r
+            for i, part in enumerate(parts[1:]):
+                if not part:
+                    continue
+                new = p.add_run(marker_label(part) if i % 2 == 0 else part)
+                new._r.getparent().remove(new._r)
+                if run._r.rPr is not None:
+                    from copy import deepcopy
+                    new._r.insert(0, deepcopy(run._r.rPr))
+                if i % 2 == 0:
+                    new.font.highlight_color = WD_COLOR_INDEX.YELLOW
+                anchor.addnext(new._r)
+                anchor = new._r
+    doc.save(out)
+
+
 def draft_render(template: str, fields: dict, out: str) -> dict:
     with open(template, encoding="utf-8") as f:
         md = f.read()
@@ -85,13 +154,10 @@ def draft_render(template: str, fields: dict, out: str) -> dict:
             return f"[[CONFIRM: {m.group(1)}]]"
         return str(v)
 
-    md = re.sub(r"\{\{\s*(\w+)\s*\}\}", fill, md)
+    md = clause_paragraphs(re.sub(r"\{\{\s*(\w+)\s*\}\}", fill, md))
     md_out = os.path.splitext(out)[0] + ".md"
     _atomic_write(md_out, md)
-    try:
-        subprocess.run(["pandoc", md_out, "-o", out], check=True, capture_output=True)
-    except FileNotFoundError:
-        _docx_from_markdown(md, out)
+    _pandoc(md_out, out, md)
     return {"ok": True, "docx": out, "markdown": md_out, "unfilled": unfilled}
 
 
@@ -116,14 +182,11 @@ def report_docx(batch: str) -> dict:
         lines += ["## Red flags", ""]
         for r in flags:
             lines += [f"**{r['severity'].upper()}**: {r['title']} ({names.get(r['doc_id'], 'document')})", ""]
-    md = "\n".join(lines).strip() + "\n"
+    md = clause_paragraphs("\n".join(lines).strip() + "\n")
     md_out = os.path.join(batch, "out", "report.md")
     out = os.path.join(batch, "out", "report.docx")
     _atomic_write(md_out, md)
-    try:
-        subprocess.run(["pandoc", md_out, "-o", out], check=True, capture_output=True)
-    except FileNotFoundError:
-        _docx_from_markdown(md, out)
+    _pandoc(md_out, out, md)
     return {"ok": True, "docx": out, "markdown": md_out}
 
 

@@ -153,6 +153,11 @@ function DiligenceForm() {
 const FIELD_LABEL: Record<string, string> = {
   party_a: 'Party A', party_b: 'Party B', effective_date: 'Effective date', governing_law: 'Governing law', purpose: 'Purpose',
 };
+/** The date as a contract writes it: "21 October 2026", or "October 21, 2026" for a US jurisdiction. */
+const legalDate = (d: Date, jurisdiction?: string) =>
+  d.toLocaleDateString(/united states|\busa?\b|state of|new york|delaware|california|texas/i.test(jurisdiction ?? '') ? 'en-US' : 'en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  });
 const label = (f: string) => FIELD_LABEL[f] ?? f.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
 function DraftForm() {
@@ -169,7 +174,7 @@ function DraftForm() {
   const client = matter.parties.find((p) => p.role === 'client')?.name ?? matter.client;
   const other = matter.parties.find((p) => p.role !== 'client')?.name ?? '';
   const defaults: Record<string, string> = {
-    party_a: client, party_b: other, effective_date: new Date().toLocaleDateString('en-CA') /* local YYYY-MM-DD, not UTC */, governing_law: firm.jurisdiction ?? '',
+    party_a: client, party_b: other, effective_date: legalDate(new Date(), firm.jurisdiction), governing_law: firm.jurisdiction ?? '',
   };
   const value = (f: string) => fields[f] ?? defaults[f] ?? '';
   return (

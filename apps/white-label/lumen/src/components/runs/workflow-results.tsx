@@ -290,6 +290,10 @@ export function ReportView({ view, matterId, runId }: { view: RunView; matterId:
   );
 }
 
+/** What a lawyer reads: one paragraph per numbered clause, and "[Governing law — to confirm]" for an engine marker. Mirrors the kit's draft renderer. */
+const draftPreview = (md: string) =>
+  md.replace(/(?<!\n)\n(?=\d+(?:\.\d+)+\s)/g, '\n\n').replace(/\[\[CONFIRM: (\w+)\]\]/g, (_, f: string) => `**[${fieldLabel(f)} — to confirm]**`);
+
 export function DraftView({ view, runId }: { view: RunView; runId: Id<'runs'> }) {
   const download = useDownload(runId);
   if (!view.result) return <Waiting text="The draft appears when the template is filled." />;
@@ -323,7 +327,7 @@ export function DraftView({ view, runId }: { view: RunView; runId: Id<'runs'> })
         )}
         <TabsContent value="markdown" className="mt-3">
           <article className="max-w-[72ch] rounded-xl border border-border bg-card p-6 text-[15px] leading-relaxed">
-            <UnifiedMarkdown content={view.result.markdown ?? ''} trust="agent" />
+            <UnifiedMarkdown content={draftPreview(view.result.markdown ?? '')} trust="agent" />
           </article>
         </TabsContent>
       </Tabs>

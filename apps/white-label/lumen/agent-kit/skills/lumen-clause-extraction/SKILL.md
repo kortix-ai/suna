@@ -23,6 +23,11 @@ description: How to answer review-table columns - formats, normalization, "not f
 - `not_found` means the document is silent. It is not "no": a lease with no renewal clause is `not_found`, not `false`.
 - Use `false` only when a clause says no ("Neither party may terminate for convenience").
 
+## Termination for convenience
+
+- `true` only for a right to end the agreement with no trigger: "for convenience", "for any reason", "without cause", a break clause on notice.
+- A right that arises only on an event is not convenience: breach, insolvency, force majeure, change of control, a condition precedent not met, a long-stop date ("if Completion has not occurred by 31 December 2026, either party may terminate"). Such a right alone is `not_found`, with the clause named in `note`.
+
 ## Normalization
 
 - Durations as written plus a number: "seven (7) years" -> `"7 years from each disclosure"`.
@@ -43,7 +48,7 @@ description: How to answer review-table columns - formats, normalization, "not f
 | `parties` | Who are the parties? |
 | `term` | How long does the agreement, or its main obligation, last? |
 | `auto_renewal` | Does the agreement renew automatically? (`yes_no`) |
-| `termination_convenience` | Can a party terminate without cause, for convenience, or under a break clause? (`yes_no`) |
+| `termination_convenience` | Can a party terminate without cause, for convenience, or under a break clause? Event-triggered rights do not count. (`yes_no`) |
 | `liability_cap` | Is liability capped, and at what amount? |
 | `governing_law` | Which law governs the agreement? |
 | `assignment` | Can a party assign the agreement, and on what condition? |
