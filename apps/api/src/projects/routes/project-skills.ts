@@ -242,12 +242,49 @@ export function registerProjectSkillsRoutes(): void {
     }
 
     try {
-      await commitFileToBranch(gitProject, {
-        path,
-        content: renderSkillMarkdown(skill),
-        message: `feat: add skill ${slug}`,
-        branch: loaded.row.defaultBranch,
-      });
+      const content = renderSkillMarkdown(skill);
+      const message = `feat: add skill ${slug}`;
+      await refreshMirror(gitProject, true);
+      const commit = await resolveBranchTip(gitProject, gitProject.defaultBranch);
+      const manifest = await readManifest(gitProject, { rethrowReadErrors: true });
+      if (!manifest || manifest.schemaVersion < 3) {
+        await commitFileToBranch(gitProject, { path, content, message, branch: loaded.row.defaultBranch });
+      } else {
+        // kortix_version 3 lists a skill only when kortix.yaml registers it
+        // (`skills.<name>: <folder>`), so the SKILL.md and its registration land
+        // in one commit (KRTX-2543). Same guards as removal.
+        if (manifest.commit !== commit || manifest.revision === undefined) {
+          return c.json({ error: 'A readable committed manifest is required; refresh and retry' }, 409);
+        }
+        if (!validateManifest(manifest.raw, manifest.format).valid) {
+          return c.json({ error: 'Repair invalid project configuration before adding a skill', code: 'manifest_invalid' }, 409);
+        }
+        const registry = manifest.raw.skills;
+        const skills =
+          registry && typeof registry === 'object' && !Array.isArray(registry) ? (registry as Record<string, unknown>) : {};
+        if (slug in skills) {
+          return c.json({ error: `A skill named "${slug}" already exists`, code: 'skill_exists' }, 409);
+        }
+        manifest.raw = { ...manifest.raw, skills: { ...skills, [slug]: `skills/${slug}` } };
+        const validation = validateManifest(manifest.raw, manifest.format);
+        if (!validation.valid) {
+          return c.json({ error: 'The skill would leave invalid project configuration', code: 'manifest_invalid', issues: validation.issues }, 409);
+        }
+        const writes = manifestWrites(manifest);
+        await commitMultipleFilesToBranch(gitProject, {
+          files: [...writes.files, { path, content }],
+          alsoExpect: writes.alsoExpect,
+          branch: gitProject.defaultBranch,
+          expectedCommit: commit,
+          expectedFileRevision: {
+            path: manifest.path || loaded.row.manifestPath || 'kortix.yaml',
+            sha: manifest.revision,
+            candidatePaths: manifest.candidatePaths,
+          },
+          message,
+        });
+      }
+      invalidateProjectResourceConfig(projectId);
     } catch (err) {
       if (err instanceof GitFileRevisionConflictError) {
         return c.json({ error: err.message }, 409);
