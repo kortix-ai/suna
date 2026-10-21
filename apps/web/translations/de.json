@@ -20318,7 +20318,10 @@
       "text7971dd752669": "Erinnerungen",
       "text724b09397472": "{name} wird zu {project} hinzugefügt",
       "text1e007c47254d": "Die Einrichtung läuft im Hintergrund. Sie erhalten eine Benachrichtigung, wenn sie fertig ist.",
-      "text57f57edb6f16": "Änderungsanfrage #{number} ist bereit zur Prüfung."
+      "text57f57edb6f16": "Änderungsanfrage #{number} ist bereit zur Prüfung.",
+      "texta8597db6f24b": "Skill entfernen",
+      "text5f6ba69d66d1": "Skill entfernt",
+      "textcb8d6b0c94c9": " und alle Dateien darin, einschließlich Änderungen, und entfernt den Skill aus jedem Agenten, der ihn verwendet. Ein Commit auf dem Standard-Branch."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

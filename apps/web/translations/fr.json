@@ -20318,7 +20318,10 @@
       "text7971dd752669": "Rappels",
       "text724b09397472": "Ajout de {name} à {project}",
       "text1e007c47254d": "La configuration se fait en arrière-plan. Vous recevrez une notification une fois terminée.",
-      "text57f57edb6f16": "La demande de modification #{number} est prête à être examinée."
+      "text57f57edb6f16": "La demande de modification #{number} est prête à être examinée.",
+      "texta8597db6f24b": "Supprimer la compétence",
+      "text5f6ba69d66d1": "Compétence supprimée",
+      "textcb8d6b0c94c9": " et tous ses fichiers, modifications comprises, et retire la compétence de chaque agent qui l'utilise. Un commit sur la branche par défaut."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
