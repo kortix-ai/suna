@@ -161,7 +161,7 @@ function sessionDelete(ctx: SnippetContext): CallSnippet {
     notes: [
       `Restart is a separate call — \`POST /v1/projects/${projectId}/sessions/${sessionId}/restart\`. It keeps the sandbox, so a session that came up wrong recovers without losing its transcript, but it still ends whatever turn was in flight.`,
       "Both calls clear the SDK's cached runtime for these ids first (`forgetReady()`), so no later handle can resolve a sandbox that has been replaced or destroyed.",
-      "The member token reaches only this workspace's project: Kortix refuses it on every other project, so one organization cannot end another's session.",
+      "Every firm shares one Kortix project. The firm's service account reaches only the sessions it created (Kortix keeps a session private to its creator), and the proxy accepts only a session that is a thread of the bearer's matter, so one firm cannot end another's session.",
       'Deleting is not a refund. The session cost record remains available after the runtime is destroyed.',
     ],
   };

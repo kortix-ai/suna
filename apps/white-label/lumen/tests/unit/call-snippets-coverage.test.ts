@@ -193,7 +193,7 @@ function scanApp(): Map<string, string[]> {
  */
 const REASONS = {
   'dashboard-parity':
-    'Not a KaaB action: Lumen mirrors the Kortix dashboard here (project settings, workspace files, git, change requests, previews, and the reads that back those screens). The member token limits it to the workspace’s project, and the proxy forwards it unchanged, so a wrapper author writes the same call an operator does.',
+    'Not a KaaB action: Lumen mirrors the Kortix dashboard here (project settings, workspace files, git, change requests, previews, and the reads that back those screens). The firm’s service account reaches only the sessions it created in the shared project, the proxy binds each session to the bearer’s matter, and forwards the call unchanged, so a wrapper author writes the same call an operator does.',
   'sdk-handle':
     'Builds an SDK handle or resolves the session runtime rather than issuing a REST request a wrapper author writes themselves — `session.prompt` is where that transport is explained.',
 } as const;

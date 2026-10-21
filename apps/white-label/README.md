@@ -54,7 +54,8 @@ Lumen (Convex)                     Kortix: ONE project for every firm
 deployment.projectId       ──────▶ project      (KORTIX_PROJECT_ID, or idempotency_key = lumen-deployment)
 deployment.kitVersion      ──────▶ Drive /Lumen/Kit/<version>/ (role prompts, skills, lumen-kit), read-only for every firm
 firms._id                  ──────▶ Drive /Lumen/Firms/<firmId>/, agent lumen-f-<firmId>, service account lumen-firm-<firmId>
-matters.driveFolder        ──────▶ Drive folder /Lumen/Firms/<firmId>/Matters/<matterId>/
+matters.driveFolder        ──────▶ Drive folder /Lumen/Firms/<firmId>/Matters/<matterId>/ (a restricted matter: /Lumen/Walled/<matterId>/)
+matters.kortixAgent        ──────▶ agent lumen-m-<matterId>, a restricted matter's own (kortix.placeMatter)
 threads.kortixSessionId    ──────▶ session      (created by the firm's service account; labels lumen-firm:, lumen-matter:, lumen-user:)
 runBatches.kortixSessionId ──────▶ session      (one per batch; label lumen-run:<id>)
 firmCredentials            ──────▶ the firm service account's secret, held on Lumen's server

@@ -181,8 +181,9 @@ and the footer says so; its numbers are Lumen's own measured evaluation results.
 | deployment | one project and its Drive, shared by every firm | `deployment` (`projectId`, `driveId`, `kitVersion`) |
 | firm (Better Auth organization) | folder `/Lumen/Firms/<firmId>/`, agent `lumen-f-<firmId>`, service account `lumen-firm-<firmId>` | `firms.kortixAgent`, `firms.kortixServiceAccountId`, `firmCredentials` (internal) |
 | matter | Drive folder `/Lumen/Firms/<firmId>/Matters/<matterId>/` | `matters.driveFolder` |
+| restricted matter | Drive folder `/Lumen/Walled/<matterId>/` and agent `lumen-m-<matterId>` | `matters.driveFolder`, `matters.kortixAgent` |
 | document | Drive file `…/Docs/<docId>-<name>` + anchored text `…/Text/<docId>.md` | `documents.driveFile` |
-| thread | session on the firm's agent, created by the firm's service account | `threads.kortixSessionId` |
+| thread | session on the matter's agent (the firm's agent, or a restricted matter's own), created by the firm's service account | `threads.kortixSessionId` |
 | run | 1..N sessions, one per batch, and `/Lumen/Firms/<firmId>/Runs/<runId>/<batchId>/` | `runBatches.kortixSessionId` |
 | agent kit version | files in `/Lumen/Kit/<version>/`, `/Lumen/Kit/CURRENT` | `deployment.kitVersion`, `deployment.kitHash` |
 | member | the firm's service-account secret, server-held | `firmCredentials` (never in a public query) |
@@ -230,7 +231,7 @@ measured locally, 94 s for the first bootstrap).
 | I5 | The sandbox token reaches nothing | The firm agent has `kortix_permissions: none` | From inside firm A's sandbox: another session `403`, the session list `403`, `/drives` `403` |
 | I6 | No session sees another firm's repository work | Every agent in the project has `repository_access: false` | `/workspace` is not a git repository |
 | I7 | A firm's credential cannot change the project | Service account role `member` | `GET …/secrets` `403` |
-| I8 | A member's session runs on their firm's agent | The proxy overwrites `agent_name` and drops every per-prompt agent (`memberSessionCreateBody`, `memberPromptBody`) | `POST /api/kortix/…/sessions` with firm B's agent from a firm A member → `agent_name: lumen-f-<firmA>` |
+| I8 | A member's session runs on the matter's agent: the firm's agent, or a restricted matter's own | The proxy overwrites `agent_name` and drops every per-prompt agent (`memberSessionCreateBody`, `memberPromptBody`) | `POST /api/kortix/…/sessions` with firm B's agent from a firm A member → `agent_name: lumen-f-<firmA>` |
 | I9 | A member reads only their firm's agent | The proxy scopes the project detail (`redactIdentity`) | `GET /api/kortix/…/detail` → `agents: [lumen-f-<firmA>]`, no manifest, no files |
 | I11 | A restricted matter is in no other session's sandbox, not even its own firm's | A walled folder granted only to the matter's agent (`kortix.placeMatter`) | Lawyer's thread in a firm matter (repair round 1, `output/single-project/repair-r1/iso-shell.txt`): mounts `/drives/<firmA> rw` and `/drives/kit ro`; the restricted matter is absent at its old and new path; `grep -rl <restricted marker> /drives`: no hit. The owner's thread in the restricted matter: mounts `/drives/<matterId> rw` and `/drives/kit ro` only, finds the marker there, `ls /drives/<firmA>`: "No such file or directory" |
 | I10 | A member reaches only their matter's sessions and sandboxes | `sessionInMatter` (thread row), `sandboxInMatter` (the firm's sessions labelled `lumen-matter:<matterId>`) | Firm B's session through firm A's proxy `404`, firm B's sandbox `404`, firm B's matter bearer `403` |
@@ -412,7 +413,8 @@ credential reaches: the server resolves it from Lumen's ids.
 | firm | agent `lumen-f-<firmId>` + 2 folder grants | `firms.kortixAgent`, `firms.agentConfig` (kit hash + model it was written with) | `kortix.provisionFirm`, `ensureFirmAgent` |
 | firm | service account `lumen-firm-<firmId>` (project role `member`) and its secret | `firms.kortixServiceAccountId`, `firmCredentials` (internal) | `kortix.provisionFirm` |
 | matter (`matters._id`) | Drive folder `/Lumen/Firms/<firmId>/Matters/<matterId>` | `matters.driveFolder` | `matters.create` |
-| thread (`threads._id`) | session (`session_id`), created by the firm's service account on the firm's agent | `threads.kortixSessionId` | `kortix.createThread`, or the proxy for a session the session UI creates |
+| restricted matter | Drive folder `/Lumen/Walled/<matterId>` + agent `lumen-m-<matterId>` (grants: that folder `write`, `/Lumen/Kit` `read`) | `matters.driveFolder`, `matters.kortixAgent`, `matters.agentConfig` | `kortix.placeMatter` |
+| thread (`threads._id`) | session (`session_id`), created by the firm's service account on the matter's agent | `threads.kortixSessionId` | `kortix.createThread`, or the proxy for a session the session UI creates |
 | run batch (`runBatches._id`) | session, same creator and agent; `input.json` names the kit role | `runBatches.kortixSessionId`, `runBatches.role` | `engine.launch` |
 | Lumen's default agent | agent `lumen-none`, the project default (no grants, no repository) | — | `kortix.ensure` |
 
@@ -429,7 +431,7 @@ back from the Kortix side:
 browser ── Bearer matter.<matterId> + Better Auth cookie ──▶ Next.js /api/kortix/*
 Next.js ── user JWT + LUMEN_PROXY_SECRET ──▶ Convex kortix.memberToken
 Convex  ── firm membership + matter access (requireMatterAccess)
-        ── the firm's service-account secret + the firm's agent + the shared project id
+        ── the firm's service-account secret + the matter's agent + the shared project id
 Next.js ── forwardKortixRequest(firm secret) ──▶ Kortix API / session runtime
 ```
 
@@ -446,7 +448,8 @@ Next.js ── forwardKortixRequest(firm secret) ──▶ Kortix API / session 
    Every member of a firm uses the firm's one credential. Every `projects/<id>/sessions/<sid>/…` call also checks that the
    session is a thread of the bearer's matter (`threads.bySession`), else
    `404`. A session create forwards only `name`, `labels`, `metadata` and
-   `initial_prompt`, and sets `agent_name` to the firm's agent
+   `initial_prompt`, and sets `agent_name` to the matter's agent (the firm's
+   agent, or a restricted matter's own, `lumen-m-<matterId>`)
    (`memberSessionCreateBody`), so `fork_from_session_id` cannot copy another
    matter's thread and a member cannot pick another firm's agent. A prompt
    loses `agent`, `overrides.agent` and `@agent` parts (`memberPromptBody`). The side route
@@ -530,8 +533,9 @@ Next.js ── forwardKortixRequest(firm secret) ──▶ Kortix API / session 
     (`threads.renameFromProxy`), so the thread list shows the new title.
 15. The Assistant shows no infrastructure. `UiProvider` turns off the model
     and effort pickers, the context ring and the session-overrides gear. The
-    project detail lists only the firm's agent, and `agentLabels` names every
-    `lumen-f-*` agent "Counsel" (`src/app/providers.tsx`). The reviewer,
+    project detail lists only the matter's agent, and `agentLabels` names every
+    `lumen-f-*` and `lumen-m-*` agent "Counsel" (`src/app/providers.tsx`), in the
+    picker and in a printed chat's header. The reviewer,
     extractor and drafter are kit roles a run names in `input.json`.
 
 ## Run it
@@ -668,7 +672,7 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 | `/app/matters/<id>/history`, `/runs/<runId>` | Every run and conversation; one run's result, batches and activity |
 | `/app/library` | Playbooks and templates |
 | `/app/history` | Every run and conversation the viewer may open, across matters |
-| `/app/settings/account` | Your account: name, theme, password, my activity (CSV) |
+| `/app/settings/account` | Your account: name, theme, password, two-step sign-in, my activity (CSV), download my data, delete account |
 | `/app/settings/{firm,members,billing,usage,audit}` | Firm admin |
 | `/`, `/platform[/<product>]`, `/solutions/<slug>`, `/customers[/<story>]`, `/security`, `/company`, `/careers`, `/newsroom`, `/blog[/<post>]`, `/press`, `/legal[/privacy,/terms]`, `/pricing`, `/demo` | The public site |
 | `⌘K` | Command palette: matters and actions |
@@ -681,6 +685,7 @@ Local, 2026-10-20, Platinum sandboxes, kit 1.1.x, on the synthetic dataset:
 | Path | What |
 |---|---|
 | `convex/schema.ts` | 23 tables (`customWorkflows`, `demoRequests` new; `documents` carries `family`, `version`, `superseded`). Deployment: `deployment` (the shared project, the kit version), `firmCredentials` (internal). Firm and access: `firms`, `matters`, `matterMembers`, `threads`, `auditEvents`, `stripeEvents`. Vault: `documents`, `documentPages`, `documentParas`. Engine: `runs`, `runBatches`, `runFiles`, `runEvents`, `runResults`. Results: `reviews`, `reviewCells`, `answers`, `issues`. Library: `libraryItems` |
+| `convex/account.ts` | Your account: `myData` (download my data) and account deletion |
 | `convex/access.ts` | `requireFirm`, `requireFirmAdmin`, `requireMatterAccess` |
 | `convex/auth.ts`, `convex/betterAuth/` | Better Auth as a local Convex component, organizations, the seat and audit hooks |
 | `convex/firms.ts`, `convex/matters.ts`, `convex/threads.ts`, `convex/members.ts` | Queries and mutations |

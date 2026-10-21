@@ -779,16 +779,6 @@ async function wakeFirm(ctx: MutationCtx, firmId: Id<"firms">) {
   for (const runId of new Set(pending.map((b) => b.runId))) await ctx.scheduler.runAfter(0, internal.runs.schedule, { runId });
 }
 
-/** Operator: re-run the scheduler for a firm (scripts only). */
-export const wake = internalMutation({
-  args: { firmId: v.id("firms") },
-  returns: v.null(),
-  handler: async (ctx, { firmId }) => {
-    await wakeFirm(ctx, firmId);
-    return null;
-  },
-});
-
 /** A batch reached succeeded or failed: start the next ones, and finish the run when every batch is terminal. */
 export const settleBatch = internalMutation({
   args: { batchId: v.id("runBatches"), status: v.union(v.literal("succeeded"), v.literal("failed")), error: v.optional(v.string()) },

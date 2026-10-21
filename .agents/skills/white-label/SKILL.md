@@ -86,9 +86,10 @@ id map.
   (Next.js + Convex + Better Auth). One Kortix project is the whole backend:
   each firm is a Drive folder, an agent (grants: that folder + the read-only
   kit; no repository, no Kortix permissions) and a service account (project
-  role `member`, owns the firm's sessions). Members reach Kortix only through
+  role `member`, owns the firm's sessions). A restricted matter gets its own
+  folder `/Lumen/Walled/<matterId>` and agent `lumen-m-<matterId>`. Members reach Kortix only through
   Lumen's same-origin proxy, which holds the firm's credential, pins the
-  firm's agent and binds every session and sandbox to the matter. The
+  matter's agent (the firm's, or a restricted matter's own) and binds every session and sandbox to the matter. The
   isolation table: `apps/white-label/lumen/README.md` "One project, many firms". Name and tagline: `src/config/brand.ts`. Colors,
   radius, fonts: `src/config/theme.ts`.
 

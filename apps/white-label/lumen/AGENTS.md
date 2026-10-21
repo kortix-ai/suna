@@ -90,7 +90,8 @@ scan: it catches these forms, not every way to write them.
   never import `@kortix/sdk`.
 - The operator credential sets up the project and writes Drive files. It
   never creates or drives a session: every session is created and driven
-  with the firm's service account (`asFirm`), on the firm's agent.
+  with the firm's service account (`asFirm`), on the matter's agent (the
+  firm's agent, or a restricted matter's own `lumen-m-<matterId>`).
 - The agent kit lives in `agent-kit/`. After any edit there, run
   `bun scripts/kit-bundle.ts` (it rewrites `convex/kit/bundle.generated.ts` and
   the hash in `kit.json`) and bump `kit.json` `version`; `tests/unit/kit-bundle.test.ts`
