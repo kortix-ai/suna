@@ -26,6 +26,7 @@ import {
   dayKind,
   gutterTime,
   lastReplyLabel,
+  startedLabel,
   threadIsWorking,
   threadMessageText,
   type TimelineDay,
@@ -207,16 +208,25 @@ function ThreadRow({
   const t = useTranslations('spaces.view');
   const locale = useLocale();
   const created = new Date(session.created_at);
+  // A trigger or an API key starts a thread as a service account: an agent tile, not a person.
+  const machine = session.owner_type === 'service_account';
   // The profile name, never a raw email (`participantLabel`).
-  const name =
-    participantLabel({ name: session.owner_name ?? null, email: session.owner_email ?? null }) ||
-    t('authorFallback');
+  const name = machine
+    ? agentLabel(session.owner_name || t('agentFallback'))
+    : participantLabel({ name: session.owner_name ?? null, email: session.owner_email ?? null }) ||
+      t('authorFallback');
 
   return (
     <MessageRow
       compact={compact}
       selected={selected}
-      avatar={<UserAvatar email={session.owner_email ?? ''} name={name} avatarUrl={session.owner_avatar_url} size="lg" />}
+      avatar={
+        machine ? (
+          <EntityAvatar icon={RobotIcon} label={name} size="lg" />
+        ) : (
+          <UserAvatar email={session.owner_email ?? ''} name={name} avatarUrl={session.owner_avatar_url} size="lg" />
+        )
+      }
       name={name}
       time={{
         iso: session.created_at,
@@ -255,7 +265,11 @@ function ThreadSummary({
     <button
       type="button"
       onClick={onOpen}
-      className="group/summary hover:border-border hover:bg-background focus-visible:ring-ring -mx-1.5 mt-1 flex max-w-full items-center gap-2 rounded-md border border-transparent px-1.5 py-1 text-xs outline-none focus-visible:ring-2"
+      // No top margin, `py-0.5`, and a hover ring instead of a border (a ring
+      // takes no space): the line sits as far under the body as the body
+      // sits under the name, 8px of visible gap both ways.
+      // `hit-area-y-1` keeps the click target its old height.
+      className="group/summary hover:bg-popover hover:ring-border focus-visible:ring-ring hit-area-y-1 -mx-1.5 flex max-w-full items-center gap-2 rounded-md px-1.5 py-0.5 text-xs outline-none hover:ring-1 focus-visible:ring-2"
     >
       {/* The link recipe of the markdown renderer: blue, underlined on hover. */}
       <span className="text-kortix-blue shrink-0 font-semibold tabular-nums underline-offset-2 group-hover/summary:underline">
@@ -268,7 +282,9 @@ function ThreadSummary({
         </span>
       ) : (
         <span className="text-muted-foreground truncate">
-          {t('lastReply', { time: lastReplyLabel(session, locale) })}
+          {session.reply_count
+            ? t('lastReply', { time: lastReplyLabel(session, locale) })
+            : t('started', { time: startedLabel(session, locale) })}
         </span>
       )}
     </button>

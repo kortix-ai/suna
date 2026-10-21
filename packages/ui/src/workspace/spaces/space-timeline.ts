@@ -86,6 +86,11 @@ export function lastReplyLabel(session: ProjectSession, locale: string, now = Da
   return relativeTime(session.updated_at, locale, now, { style: 'long' });
 }
 
+/** "22 hours ago": when a thread with no replies yet was started. */
+export function startedLabel(session: ProjectSession, locale: string, now = Date.now()): string {
+  return relativeTime(session.created_at, locale, now, { style: 'long' });
+}
+
 /** The agent is on it: a turn runs, the first prompt waits for delivery, or the computer starts. */
 export function threadIsWorking(session: ProjectSession): boolean {
   if (session.working?.state === 'working' || session.working?.pending_delivery) return true;

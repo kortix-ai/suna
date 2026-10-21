@@ -144,7 +144,7 @@ function withContentKeys<T>(
  * handover a no-op instead of a maintenance promise.
  */
 export const BUBBLE_TEXT = cn(
-  'text-[0.9rem] leading-[22px] font-medium',
+  'text-sm leading-relaxed font-medium',
   'wrap-break-word whitespace-pre-wrap select-text',
 );
 

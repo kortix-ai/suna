@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { sessionLogOfV1Rows, sessionLogTurns, type SessionLogTurn } from '@kortix/sdk';
 
 import { AfterFirstPromptContext } from './after-first-prompt';
+import { TranscriptRowsContext } from './transcript-rows';
 import { TranscriptTurnRow, openTextBlock } from './transcript';
 
 /**
@@ -168,5 +169,76 @@ describe('the slot under the first prompt (a channel thread\'s "N replies")', ()
     const html = render(false);
     expect(html).toContain('the parent message');
     expect(html).not.toContain('data-probe');
+  });
+});
+
+describe('message rows (a channel thread panel)', () => {
+  const [turn] = sessionLogTurns(
+    sessionLogOfV1Rows(
+      's',
+      'rs',
+      [
+        { info: { id: 'q0', role: 'user', time: { created: 1 } }, parts: [{ id: 'qt', type: 'text', text: 'spawned prompt' }] },
+        { info: { id: 'q1', role: 'assistant', parentID: 'q0', time: { created: 2 } }, parts: [{ id: 'qr', type: 'text', text: 'the answer' }] },
+      ] as never[],
+    ).threads[0]!,
+  );
+  const render = (author: Parameters<typeof TranscriptTurnRow>[0]['author']) =>
+    renderToStaticMarkup(
+      createElement(
+        QueryClientProvider,
+        { client: new QueryClient() },
+        createElement(
+          TranscriptRowsContext.Provider,
+          {
+            value: {
+              agent: 'Kortix',
+              owner: { name: 'Thread Owner', email: 'owner@example.test', avatarUrl: null },
+              unknownAuthor: 'Someone',
+            },
+          },
+          createElement(TranscriptTurnRow, {
+            turnId: turn!.id,
+            viewportClassName: '',
+            suppressed: false,
+            showBusyRow: false,
+            turn: turn!,
+            author,
+            turnOutcome: {},
+            isLast: true,
+            ownsPlan: false,
+            sessionId: 's',
+            sessionStatus: undefined,
+            permissions: [],
+            questions: [],
+            sessionWorking: false,
+            isWorkingTurn: false,
+            suppressBusyIndicator: false,
+            awaitingUser: false,
+            pending: false,
+            isFirstTurn: true,
+            onPermissionReply: () => Promise.resolve(),
+            onRewind: () => undefined,
+            rewindDisabled: false,
+            fullTextState: 'idle',
+            onLoadFullText: () => undefined,
+          }),
+        ),
+      ),
+    );
+
+  test('a prompt with no recorded author is the thread owner\'s row', () => {
+    const html = render(undefined);
+    expect(html).toContain('Thread Owner');
+    expect(html).toContain('data-slot="message-row"');
+  });
+
+  test("a prompt another session's agent sent is that agent's row, not the owner's", () => {
+    const html = render({ kind: 'session', session_id: 'ses_1', name: 'Coordinator', agent: 'research-bot' });
+    const prompt = html.indexOf('spawned prompt');
+    const row = html.lastIndexOf('data-slot="message-row"', prompt);
+    const header = html.slice(row, prompt);
+    expect(header).toContain('Research-Bot');
+    expect(header).not.toContain('Thread Owner');
   });
 });

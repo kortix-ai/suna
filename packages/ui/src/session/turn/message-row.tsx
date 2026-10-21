@@ -6,10 +6,10 @@ import { cn } from '../../lib/utils';
 
 /**
  * A message body's type: the transcript's markdown prose (`kortix-markdown`
- * in `unified-markdown.tsx`), so a prompt, its answer and the channel row of
- * the same prompt read at one size and weight.
+ * in `unified-markdown.tsx`, `text-base`), so a prompt, its answer and the
+ * channel row of the same prompt read at one size and weight.
  */
-export const MESSAGE_TEXT_CLASS = 'text-foreground text-[15px] leading-relaxed font-medium';
+export const MESSAGE_TEXT_CLASS = 'text-foreground text-base leading-relaxed font-medium';
 
 /**
  * One message in a channel or a thread: the author's 36px avatar in a fixed

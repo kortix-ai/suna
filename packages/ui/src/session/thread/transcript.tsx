@@ -54,6 +54,7 @@ import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } f
 import { AfterFirstPromptContext } from './after-first-prompt';
 import { TranscriptRowsContext } from './transcript-rows';
 import { MessageRow } from '../turn/message-row';
+import { agentDisplayLabel } from '../composer/agent-selector';
 import { participantLabel } from '../participants/session-participants';
 import { EntityAvatar } from '../../primitives/entity-avatar';
 import { UserAvatar } from '../../primitives/user-avatar';
@@ -210,7 +211,7 @@ function SystemMessageIndicator({ messages }: { messages: KortixSystemMessage[] 
   return (
     <div className="-my-1 flex items-center gap-2">
       <div className="bg-border/30 h-px flex-1" />
-      <span className="text-muted-foreground/30 text-xs whitespace-nowrap select-none">{text}</span>
+      <span className="text-muted-foreground text-xs whitespace-nowrap select-none">{text}</span>
       <div className="bg-border/30 h-px flex-1" />
     </div>
   );
@@ -564,7 +565,7 @@ export function SessionReportCard({
           <span className="text-muted-foreground block truncate text-xs">
             {report.project}
             {report.project && report.prompt && (
-              <span className="text-muted-foreground/40">
+              <span className="text-muted-foreground">
                 {' '}
                 {tI18nComplete.raw('text3b9453dad42b')}{' '}
               </span>
@@ -574,7 +575,7 @@ export function SessionReportCard({
         )}
       </span>
 
-      <ExternalLink className="text-muted-foreground/40 group-hover/report:text-muted-foreground size-3.5 shrink-0 transition-colors" />
+      <ExternalLink className="text-muted-foreground group-hover/report:text-foreground size-3.5 shrink-0 transition-colors" />
     </button>
   );
 }
@@ -2286,8 +2287,15 @@ function SessionTurnImpl(props: SessionTurnProps) {
   if (rows) {
     const userAt = Date.parse(turn.user.created_at);
     const answerAt = Date.parse(turn.assistant[0]?.created_at ?? '');
-    const person = props.author?.kind === 'member'
-      ? { name: props.author.name, email: props.author.email, avatarUrl: props.author.avatar_url ?? null }
+    const author = props.author;
+    // Another session's agent wrote this prompt (a spawned thread's first
+    // message, a coordinator): its agent's row, not the thread owner's.
+    const sender =
+      author?.kind === 'session'
+        ? (author.agent ? agentDisplayLabel([], author.agent) : author.name) || rows.unknownAuthor
+        : null;
+    const person = author?.kind === 'member'
+      ? { name: author.name, email: author.email, avatarUrl: author.avatar_url ?? null }
       : rows.owner;
     const personName = person ? participantLabel(person) : '';
     const showAnswer = turn.assistant.length > 0 || model.working || !!errors.turnErrorRow.text;
@@ -2296,8 +2304,14 @@ function SessionTurnImpl(props: SessionTurnProps) {
         {userContent.hasVisibleUserContent || userContent.sessionReport || userContent.systemMessages.length > 0 ? (
           <MessageRow
             className="group/turn"
-            avatar={<UserAvatar email={person?.email ?? ''} name={personName} avatarUrl={person?.avatarUrl} size="lg" />}
-            name={personName || rows.unknownAuthor}
+            avatar={
+              sender ? (
+                <EntityAvatar icon={RobotIcon} label={sender} size="lg" />
+              ) : (
+                <UserAvatar email={person?.email ?? ''} name={personName} avatarUrl={person?.avatarUrl} size="lg" />
+              )
+            }
+            name={sender ?? (personName || rows.unknownAuthor)}
             time={rowTime(userAt, locale)}
           >
             <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
