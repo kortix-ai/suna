@@ -97,6 +97,53 @@ export interface CapturePolicyRecord {
   updated_by: string | null;
 }
 
+/** The deployment-managed store (the default). */
+export interface CaptureStorageKortix {
+  mode: 'kortix';
+}
+
+/**
+ * The account's own S3-compatible bucket ("bring your own storage"). Give
+ * exactly one credential form: `role_arn` (STS; devices get per-device scoped
+ * credentials) OR `access_key_id` + `secret_access_key` (account-wide; static
+ * keys cannot be scoped per device). Switching stores does not migrate old
+ * recordings — they stay in the previous store.
+ */
+export interface CaptureStorageS3Input {
+  mode: 's3';
+  /** Empty = the AWS regional endpoint for `region`. */
+  endpoint?: string;
+  region: string;
+  bucket: string;
+  /** Path-style URLs (MinIO and most self-hosted S3); false on AWS. */
+  force_path_style?: boolean;
+  /** An IAM role Kortix assumes (STS). Preferred: enables per-device scoped credentials. */
+  role_arn?: string;
+  access_key_id?: string;
+  /** Plaintext on write; stored encrypted and never returned. */
+  secret_access_key?: string;
+}
+
+/** Where to keep the account's recordings. */
+export type CaptureStorageInput = CaptureStorageKortix | CaptureStorageS3Input;
+
+/** The redacted storage config a client reads. The secret is never returned. */
+export type CaptureStorageView =
+  | CaptureStorageKortix
+  | {
+      mode: 's3';
+      endpoint: string;
+      region: string;
+      bucket: string;
+      force_path_style: boolean;
+      role_arn: string;
+      access_key_id: string;
+      /** A static secret is stored (its value is never returned). */
+      has_secret: boolean;
+      /** Devices get per-device scoped credentials (role mode); false for static keys (account-wide). */
+      per_device_scoped: boolean;
+    };
+
 /** One physical display of a device. Points in the device's global desktop space (top-left origin). */
 export interface CaptureDisplay {
   /** The OS display id; stable while the display stays connected. */
@@ -601,6 +648,22 @@ export async function getCapturePolicy(accountId: string) {
 /** Replace the account policy and publish it to devices (`capture.manage`). */
 export async function setCapturePolicy(accountId: string, policy: CapturePolicy) {
   return unwrap(await backendApi.put<CapturePolicyRecord>(`${base(accountId)}/policy`, { policy }));
+}
+
+// ── Storage (where recordings are kept, `capture.manage`) ────────────────────
+
+/** Where the account keeps its recordings: the managed store, or its own S3 bucket. The secret is never returned. */
+export async function getCaptureStorage(accountId: string) {
+  return unwrap(await backendApi.get<CaptureStorageView>(`${base(accountId)}/storage`));
+}
+
+/**
+ * Set the account's storage destination (`capture.manage`). An `s3` config is
+ * validated with a write probe before it is stored; an unreachable bucket
+ * answers 400 `capture_storage_unreachable`.
+ */
+export async function setCaptureStorage(accountId: string, input: CaptureStorageInput) {
+  return unwrap(await backendApi.put<CaptureStorageView>(`${base(accountId)}/storage`, input));
 }
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
