@@ -22,7 +22,6 @@ import {
   dismissConflict,
   driveConflict,
   isAccountMember,
-  moveFolderGrants,
   principalNames,
   projectAgentServiceAccount,
   shareablePrincipals,
@@ -49,13 +48,13 @@ import {
 import {
   type DriveRow,
   driveStats,
-  type EnforceProgress,
-  enforceDriveMounts,
+  enforceProjectMounts,
   ensurePersonalFolder,
   ensureProjectDrive,
   getDrive,
   groupIdsOf,
   listFolderGrants,
+  moveDriveFolder,
   openConflictRows,
   readDriveVolume,
   removeFolderGrant,
@@ -69,7 +68,6 @@ import {
   DriveStorageError,
   listVolumeCommits,
   listVolumeFiles,
-  moveVolumeFile,
   readVolumeFile,
   removeVolumeFile,
   restoreVolume,
@@ -158,7 +156,7 @@ const DriveVersionSchema = z
   .openapi('DriveVersion');
 
 const DriveParams = z.object({ driveId: z.string() });
-/** Sessions whose mounts a sharing change has not reached yet (see enforceProject). */
+/** Sessions whose mounts a sharing change has not reached yet (see enforceProjectMounts). */
 const PendingSchema = z.object({ pendingSessions: z.number() });
 const PathQuery = z.object({ path: z.string().optional() });
 
@@ -322,28 +320,6 @@ function versionAuthor(commit: VolumeCommit): z.infer<typeof DriveVersionSchema>
 }
 
 /** How long a sharing change waits for running sessions before it answers. */
-const ENFORCE_ANSWER_BUDGET_MS = 10_000;
-
-/**
- * Running sessions of the project pick up a sharing change at once, and
- * stopped ones never come back with more. Answers with how many sessions are
- * not in line yet: those are recorded, fenced at the API and retried by the
- * drive worker, so a caller is never told a revocation landed when it did not.
- */
-async function enforceProject(drive: DriveRow): Promise<number> {
-  const progress: EnforceProgress = { total: 0, done: 0, failed: 0 };
-  const run = enforceDriveMounts({ projectId: drive.projectId! }, { progress }).catch((err) => {
-    logger.error('[drives] enforcing folder access failed:', { error: err instanceof Error ? err.message : String(err) });
-    return null;
-  });
-  const finished = await Promise.race([
-    run.then(() => true),
-    new Promise<false>((resolve) => setTimeout(() => resolve(false), ENFORCE_ANSWER_BUDGET_MS).unref?.()),
-  ]);
-  if (finished) return progress.failed;
-  return progress.failed + Math.max(0, progress.total - progress.done) || 1;
-}
-
 /** The agents a project declares that start sessions (subagents never own one). Best effort. */
 async function projectAgentNames(projectId: string): Promise<string[]> {
   try {
@@ -630,8 +606,7 @@ drivesApp.openapi(
     }
     // Moving a shared folder changes who can reach it: only someone who may change its sharing.
     if (caller.grants.some((g) => g.source !== 'system' && pathWithinFolder(g.path, from))) need(caller, from, 'manage');
-    await withStorage(() => readDriveVolume(caller.drive, (volume) => moveVolumeFile(volume, from, to), notFound));
-    const pendingSessions = (await moveFolderGrants(caller.drive, from, to)) ? await enforceProject(caller.drive) : 0;
+    const pendingSessions = await withStorage(() => moveDriveFolder(caller.drive, from, to, notFound));
     noteDriveWrite(caller.drive.driveId);
     return c.json({ from, to, ...(pendingSessions ? { pendingSessions } : {}) });
   },
@@ -675,7 +650,7 @@ drivesApp.openapi(
       ),
     );
     for (const g of shared) await removeFolderGrant(caller.drive, g.grantId!);
-    const pendingSessions = shared.length ? await enforceProject(caller.drive) : 0;
+    const pendingSessions = shared.length ? await enforceProjectMounts(caller.drive) : 0;
     noteDriveWrite(caller.drive.driveId);
     if (pendingSessions) return c.json({ pendingSessions }, 202);
     return c.body(null, 204);
@@ -798,7 +773,7 @@ drivesApp.openapi(
       level: body.level,
       grantedBy: caller.userId,
     });
-    const pendingSessions = await enforceProject(drive);
+    const pendingSessions = await enforceProjectMounts(drive);
     return c.json({ grantId, ...(pendingSessions ? { pendingSessions } : {}) });
   },
 );
@@ -829,7 +804,7 @@ drivesApp.openapi(
     }
     need(caller, grant.path, 'manage');
     await removeFolderGrant(caller.drive, grantId);
-    const pendingSessions = await enforceProject(caller.drive);
+    const pendingSessions = await enforceProjectMounts(caller.drive);
     // 202: the grant is gone, but a running session still mounts the folder
     // until its detach lands (retried by the drive worker, refused at the API meanwhile).
     if (pendingSessions) return c.json({ pendingSessions }, 202);

@@ -61,7 +61,6 @@ import {
 } from './volumes';
 import { isDriveSyncBox } from './sync';
 import { moveFolderGrants } from './queries';
-import { spaceDriveFolders } from '@kortix/shared';
 
 export type DriveRow = typeof drives.$inferSelect;
 
@@ -157,7 +156,7 @@ export async function getDrive(driveId: string): Promise<DriveRow | null> {
   return row ?? null;
 }
 
-async function findProjectDrive(projectId: string): Promise<DriveRow | null> {
+export async function findProjectDrive(projectId: string): Promise<DriveRow | null> {
   const [row] = await db
     .select()
     .from(drives)
@@ -244,50 +243,6 @@ export async function writeDriveVolume<T>(drive: DriveRow, op: (volume: string) 
   } catch (err) {
     if (!isMissingVolume(err)) throw err;
     return op(await openVolumeFor(drive));
-  }
-}
-
-/** The project has Files: storage configured and its `drives` flag on. */
-async function projectFilesOn(projectId: string): Promise<boolean> {
-  return driveStorageAvailable() && (await projectFeatureFlagEnabled(projectId, 'drives'));
-}
-
-/**
- * A new channel's folder and its Memory folder in Files. Best effort: a
- * failure is logged and the Files tab makes the folder when it is opened.
- */
-export async function makeChannelFolders(accountId: string, projectId: string, slug: string): Promise<void> {
-  try {
-    if (!(await projectFilesOn(projectId))) return;
-    const drive = await ensureProjectDrive(accountId, projectId);
-    const { memory } = spaceDriveFolders('channel', slug, null)!;
-    // The marker inside Memory makes both folders; one that exists answers 409.
-    await writeDriveVolume(drive, (volume) =>
-      writeVolumeFile(volume, `${memory}/.keep`, new Uint8Array(), { overwrite: false }),
-    ).catch((err) => {
-      if (!(err instanceof DriveStorageError && err.status === 409)) throw err;
-    });
-  } catch (err) {
-    logger.warn(`[drives] the folders of channel #${slug} in project ${projectId} were not made`, {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-}
-
-/** A renamed channel's folder follows its new slug, with any sharing on it. Best effort, logged. */
-export async function moveChannelFolder(projectId: string, fromSlug: string, toSlug: string): Promise<void> {
-  try {
-    if (!(await projectFilesOn(projectId))) return;
-    const drive = await findProjectDrive(projectId);
-    if (!drive) return;
-    const from = spaceDriveFolders('channel', fromSlug, null)!.files;
-    const to = spaceDriveFolders('channel', toSlug, null)!.files;
-    await readDriveVolume(drive, (volume) => moveVolumeFile(volume, from, to), () => undefined);
-    await moveFolderGrants(drive, from, to);
-  } catch (err) {
-    logger.warn(`[drives] the folder of channel #${fromSlug} in project ${projectId} did not move to #${toSlug}`, {
-      error: err instanceof Error ? err.message : String(err),
-    });
   }
 }
 
@@ -1004,6 +959,39 @@ export async function reconcileSessionDrives(sessionId: string): Promise<void> {
       );
     }
   }
+}
+
+const ENFORCE_ANSWER_BUDGET_MS = 10_000;
+
+/**
+ * Running sessions of the project pick up a sharing change at once, and
+ * stopped ones never come back with more. Answers with how many sessions are
+ * not in line yet: those are recorded, fenced at the API and retried by the
+ * drive worker, so a caller is never told a revocation landed when it did not.
+ */
+export async function enforceProjectMounts(drive: DriveRow): Promise<number> {
+  const progress: EnforceProgress = { total: 0, done: 0, failed: 0 };
+  const run = enforceDriveMounts({ projectId: drive.projectId! }, { progress }).catch((err) => {
+    logger.error('[drives] enforcing folder access failed:', { error: err instanceof Error ? err.message : String(err) });
+    return null;
+  });
+  const finished = await Promise.race([
+    run.then(() => true),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), ENFORCE_ANSWER_BUDGET_MS).unref?.()),
+  ]);
+  if (finished) return progress.failed;
+  return progress.failed + Math.max(0, progress.total - progress.done) || 1;
+}
+
+/**
+ * Move a folder or file and the sharing on it (the Drive move route and a
+ * channel rename). Running sessions pick up a moved share at once. `missing`
+ * answers a drive with no storage yet. Returns the sessions not in line yet
+ * (see {@link enforceProjectMounts}).
+ */
+export async function moveDriveFolder(drive: DriveRow, from: string, to: string, missing: () => void): Promise<number> {
+  await readDriveVolume(drive, (volume) => moveVolumeFile(volume, from, to), missing);
+  return (await moveFolderGrants(drive, from, to)) ? enforceProjectMounts(drive) : 0;
 }
 
 // ─── The notes file agents read ────────────────────────────────────────────

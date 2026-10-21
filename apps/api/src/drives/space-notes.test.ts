@@ -64,4 +64,12 @@ describe('spaceNotesLines', () => {
     expect(dm).toContain('not mounted in this thread');
     expect(dm).not.toContain('/drives/me');
   });
+
+  test('a DM agent name that is not one plain path segment names no folder', () => {
+    for (const name of ['../evil', 'a/b', 'two words', 'x\n## injected', '.hidden']) {
+      const text = spaceNotesLines({ kind: 'dm', name }, [company, me]).join('\n');
+      expect(text).toContain('not mounted in this thread');
+      expect(text).not.toContain('/drives/me/');
+    }
+  });
 });

@@ -21,11 +21,16 @@ export function spaceSlug(name: string): string {
 /** Where every channel's folder lives in the project's Files. */
 export const SPACE_CHANNELS_DIR = '/Company/Channels';
 
+/** One plain path segment: no `/`, no `..`, no control or space characters. */
+const FOLDER_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
 /**
  * A space's two folders in the project's Files (drive paths). A channel's are
  * shared with the project: `/Company/Channels/<slug>` and its `Memory`. A DM's
  * are in the member's own folder: `<personal>/Agents/<agent>` and
- * `<personal>/Memory/agents/<agent>`. Null for a DM without a personal folder.
+ * `<personal>/Memory/agents/<agent>`. Null for a DM without a personal folder,
+ * and for a name that is not one plain path segment (an agent name is not
+ * validated as one when the DM is opened).
  * The API (folder create, rename, the session's /drives/README.md) and the web
  * tabs read this, so both name the same folders.
  */
@@ -34,6 +39,7 @@ export function spaceDriveFolders(
   name: string,
   personalFolder: string | null,
 ): { files: string; memory: string } | null {
+  if (!FOLDER_SEGMENT.test(name)) return null;
   if (kind === 'channel') {
     const files = `${SPACE_CHANNELS_DIR}/${name}`;
     return { files, memory: `${files}/Memory` };

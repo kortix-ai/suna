@@ -12,7 +12,7 @@ import {
   SpaceSchema,
   SpaceUpdateInputSchema,
 } from '@kortix/api-contract';
-import { makeChannelFolders, moveChannelFolder } from '../../drives/service';
+import { makeChannelFolders, moveChannelFolder } from '../../drives/space-folders';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { auth, errors, json } from '../../openapi';
 import { isUuid } from '../../shared/validate';
@@ -149,14 +149,9 @@ export function registerProjectSpacesRoutes(): void {
       const result = await updateChannel(loaded.row.projectId, loaded.userId, spaceId, c.req.valid('json'));
       if ('error' in result) return c.json(result.error.body, result.error.status);
       // The channel's folder follows a rename, best effort (it logs a failure).
-      // Waited for, up to 10 s: the Files tab of the new slug would otherwise
-      // make an empty folder first, and the move would refuse to overwrite it.
-      if (result.renamedFrom) {
-        await Promise.race([
-          moveChannelFolder(loaded.row.projectId, result.renamedFrom, result.space.slug!),
-          new Promise((resolve) => setTimeout(resolve, 10_000)),
-        ]);
-      }
+      // Waited for: no client sees the new slug before the move settled, so
+      // the Files tab can never make an empty folder there first and block it.
+      if (result.renamedFrom) await moveChannelFolder(loaded.row.projectId, result.renamedFrom, result.space.slug!);
       return c.json(serializeSpace(result.space), 200);
     },
   );
