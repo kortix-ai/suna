@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranscriptPresence } from './use-transcript-presence';
+
 import { useTranslations } from '@/i18n/use-translations';
 
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
@@ -618,11 +620,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // server's) WITHOUT waiting for the sandbox, so it lands while a hibernated
   // box is still waking and without the chat having mounted. Latched: the store only ever grows for a live session,
   // but a transient empty read must never resurrect the shell.
-  const [sawTranscript, setSawTranscript] = useState(false);
-  useEffect(() => {
-    if (session.messages.length > 0) setSawTranscript(true);
-  }, [session.messages.length]);
-  const hasTranscript = session.messages.length > 0 || sawTranscript;
+  const hasTranscript = useTranscriptPresence(session.savedTranscript);
   const repositoryDisconnect = useRepositoryDisconnect(projectId);
   // A session whose clone predates a repository replacement still has its
   // transcript. Do not replace a readable conversation with a failure card.

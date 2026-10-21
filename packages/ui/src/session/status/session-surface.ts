@@ -186,7 +186,7 @@ export function hasOrExpectsTranscript(input: {
   hasTranscript: boolean;
   savedTranscript: SavedTranscript;
 }): boolean {
-  return input.hasTranscript || input.savedTranscript === 'loading';
+  return input.hasTranscript || input.savedTranscript !== 'none';
 }
 
 /**
