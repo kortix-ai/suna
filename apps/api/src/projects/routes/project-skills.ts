@@ -39,6 +39,8 @@ import { resolveBranchTip } from '../git/commits';
 import { refreshMirror } from '../git/mirror';
 import { invalidateProjectResourceConfig } from '../lib/project-resources';
 import { planSkillRemoval } from '../lib/skill-removal';
+import { logger } from '../../lib/logger';
+import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 
 /** Longest name/description the route accepts. Bounds one line of YAML. */
 const SKILL_NAME_MAX = 100;
@@ -84,6 +86,15 @@ function renderSkillMarkdown(skill: CreateSkillInput): string {
     '',
   ].join('\n');
   return `---\n${header}\n---\n\n${body}`;
+}
+
+/** Whether `predicate` holds for the error or any error in its cause chain. */
+function hasCause(error: unknown, predicate: (candidate: unknown) => boolean): boolean {
+  for (let depth = 0, current = error; current && depth < 5; depth += 1) {
+    if (predicate(current)) return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 export function registerProjectSkillsRoutes(): void {
@@ -143,6 +154,14 @@ export function registerProjectSkillsRoutes(): void {
       if (error instanceof GitFileRevisionConflictError || isRemotePushPolicyRejection(error)) {
         return c.json({ error: error.message }, 409);
       }
+      // A disconnected repository needs a person to act: the global handler
+      // answers the shared 409 that names the fix (KRTX-2979).
+      if (hasCause(error, isRepositoryDisconnectedError)) throw error;
+      // Git output can carry the remote URL, so the cause goes to the log only.
+      logger.warn('[skills] remove failed', {
+        projectId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return c.json({ error: 'Could not remove the skill from the repository' }, 502);
     }
   });
