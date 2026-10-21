@@ -66,7 +66,15 @@ import type { SoundEvent } from '../stores/sound-store';
 import { openTabAndNavigate, useTabStore } from '../stores/tab-store';
 import { useTurnAttentionStore } from '../stores/turn-attention-store';
 import { useWebNotificationStore } from '../stores/web-notification-store';
-import { normalizeAppPathname, type InboxNotificationKind, type NotificationPreferences } from '@kortix/sdk';
+import {
+  normalizeAppPathname,
+  type InboxNotificationKind,
+  type NotificationPreferences,
+  type ProjectSessionPage,
+  type ProjectSpace,
+} from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
+import type { QueryClient } from '@tanstack/react-query';
 
 // ============================================================================
 // Types
@@ -283,17 +291,51 @@ export function isTabHidden(): boolean {
  * Shared with TurnAttentionBadge, which clears the favicon badge for
  * whatever session the user is looking at.
  */
+/** What `spacesThreadHref` reads from the query cache. */
+type SpaceThreadCache = Pick<QueryClient, 'getQueryData' | 'getQueriesData'>;
+
+function decodeSegment(segment: string): string | null {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
+}
+
 /**
- * A channel or DM page (`/projects/<id>/c/<slug>`, `/projects/<id>/dm/<agent>`)
- * opens a thread in its panel: the same page with `?thread=<id>`. Null on
- * any other page.
+ * A finished turn opens in the thread panel of the channel or DM page on
+ * screen (`?thread=<id>`) only when it is one of that space's threads: the
+ * path's project is the session's, and the cached thread list of the space
+ * holds the session. Null otherwise, so any other session keeps its session
+ * page. Reads the query cache; never fetches.
  */
-export function spacesThreadHref(pathname: string, search: string, sessionId: string): string | null {
+export function spacesThreadHref(
+  location: { pathname: string; search: string },
+  session: { sessionId: string; projectId: string | null | undefined },
+  cache: SpaceThreadCache,
+): string | null {
   // An optional two-letter locale segment leads (`/de/projects/…`).
-  if (!/^(?:\/[a-z]{2})?\/projects\/[^/]+\/(c|dm)\/[^/]+\/?$/.test(normalizeAppPathname(pathname))) return null;
-  const params = new URLSearchParams(search);
-  params.set('thread', sessionId);
-  return `${pathname}?${params.toString()}`;
+  const match = /^(?:\/[a-z]{2})?\/projects\/([^/]+)\/(c|dm)\/([^/]+)\/?$/.exec(
+    normalizeAppPathname(location.pathname),
+  );
+  if (!match || match[1] !== session.projectId) return null;
+  const [, projectId, kind, segment] = match;
+  const name = decodeSegment(segment);
+  const space = cache
+    .getQueryData<ProjectSpace[]>(qk.project.spaces(projectId))
+    ?.find((candidate) => (kind === 'c' ? candidate.slug === name : candidate.dm_agent_name === name));
+  if (!space) return null;
+  const isThread = cache
+    .getQueriesData<{ pages?: ProjectSessionPage[] }>({ queryKey: qk.project.sessionsScope(projectId) })
+    .some(([, data]) =>
+      data?.pages?.some((page) =>
+        page.items.some((item) => item.session_id === session.sessionId && item.space_id === space.space_id),
+      ),
+    );
+  if (!isThread) return null;
+  const params = new URLSearchParams(location.search);
+  params.set('thread', session.sessionId);
+  return `${location.pathname}?${params.toString()}`;
 }
 
 export function isViewingSession(sessionId: string): boolean {
@@ -749,10 +791,11 @@ export function notifyTaskCompleteFor(
   noteTurnCompleteShown(sessionId);
   // On a channel or DM page the turn is a thread: it says "thread" and opens
   // in the page's panel. A default title ("New session - <time>") names nothing.
+  const cache = getSharedQueryClient();
   const threadHref =
-    typeof window === 'undefined'
+    typeof window === 'undefined' || !cache
       ? null
-      : spacesThreadHref(window.location.pathname, window.location.search, sessionId);
+      : spacesThreadHref(window.location, { sessionId, projectId }, cache);
   const defaultTitle = !sessionTitle || /^New session(\s-\s|$)/.test(sessionTitle);
   const name =
     threadHref && defaultTitle
