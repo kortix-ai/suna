@@ -23,4 +23,4 @@ set statement_timeout = '30s';
 
 -- Nullable column, no default: a catalog-only change. The open-run index is
 -- built CONCURRENTLY in 20261021134317530_open_trigger_runs_index.concurrent.ts.
-ALTER TABLE "kortix"."project_trigger_executions" ADD COLUMN "run_turn_token" text;
+ALTER TABLE "kortix"."project_trigger_executions" ADD COLUMN IF NOT EXISTS "run_turn_token" text;
