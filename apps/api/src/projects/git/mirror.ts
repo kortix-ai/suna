@@ -194,19 +194,21 @@ export function stripGitProgress(text: string): string {
  * a retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the Platinum
  * / request-deadline de-noise pattern), since the mirror's own retry usually
  * clears them and they are upstream/network noise, not a code bug.
+ * `kind: 'busy'` means base moves exhausted the bounded freshness retries;
+ * it uses the same retryable 503 without ever returning an invalidated mirror.
  * `kind: 'failed'` is a real non-zero exit (auth, missing repo, bad ref) —
  * still surfaced to Sentry, but now with a meaningful `fatal:` message instead
  * of progress noise.
  */
 export class GitOperationError extends Error {
-  readonly kind: 'timeout' | 'failed';
+  readonly kind: 'timeout' | 'failed' | 'busy';
   readonly gitArgs: readonly string[];
   readonly signal: string | null;
   readonly exitCode: number | null;
   readonly stdout: string;
   readonly stderr: string;
   constructor(opts: {
-    kind: 'timeout' | 'failed';
+    kind: 'timeout' | 'failed' | 'busy';
     message: string;
     gitArgs: readonly string[];
     signal?: string | null;
@@ -340,7 +342,7 @@ const REMOTE_PUSH_TRANSIENT_REJECTION_PATTERN =
 
 export function isTransientGitMirrorError(err: unknown): err is GitOperationError {
   if (!isGitOperationError(err)) return false;
-  if (err.kind === 'timeout') return true;
+  if (err.kind === 'timeout' || err.kind === 'busy') return true;
   const text = `${err.message}\n${err.stderr}\n${err.stdout}`;
   if (err.gitArgs[0] === 'push' && REMOTE_PUSH_TRANSIENT_REJECTION_PATTERN.test(text)) return true;
   return TRANSIENT_MIRROR_ERROR_PATTERN.test(text);
@@ -868,7 +870,7 @@ export async function refreshMirror(
   // reader) is finishing. Dropping its proof is not enough: this reader must
   // not ground a new session on the checkout that the move invalidated.
   if (epoch !== (invalidations.get(project.projectId) ?? 0)) {
-    if (epochRetries >= MIRROR_RETRY_MAX_ATTEMPTS) throw new Error('Project mirror changed repeatedly during refresh');
+    if (epochRetries >= MIRROR_RETRY_MAX_ATTEMPTS) throw new GitOperationError({ kind: 'busy', message: 'Project mirror changed repeatedly during refresh', gitArgs: [] });
     return refreshMirror(project, force, opts, epochRetries + 1);
   }
   return repoPath;
@@ -900,7 +902,7 @@ async function lockedRefreshMirror(
     if (!force || current.forced) {
       const repoPath = await current.promise;
       if (current.epoch === (invalidations.get(project.projectId) ?? 0)) return repoPath;
-      if (epochRetries >= MIRROR_RETRY_MAX_ATTEMPTS) throw new Error('Project mirror changed repeatedly during refresh');
+      if (epochRetries >= MIRROR_RETRY_MAX_ATTEMPTS) throw new GitOperationError({ kind: 'busy', message: 'Project mirror changed repeatedly during refresh', gitArgs: [] });
       return refreshMirror(project, force, opts, epochRetries + 1);
     }
     // The in-flight refresh belongs to another caller, often with another
