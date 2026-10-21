@@ -225,6 +225,7 @@ describe('kortix tokens', () => {
     expect(h.stdout).toContain('cannot authorize; delete and');
     expect(h.stdout).toContain('re-create to return');
     expect(h.stdout).not.toContain('reversible only by');
+    expect(h.stdout.replace(/\s+/g, ' ')).toContain('--mine --all lists your revoked keys too');
     const bare = await runCommand(runner, [], { cwd: tmp });
     expect(bare.code).toBe(2);
   });
@@ -279,7 +280,9 @@ describe('kortix tokens', () => {
     expect(table.stdout).not.toContain('ghost');
     expect(table.stdout).toContain('1 key');
     expect(table.stdout).toContain('2 revoked hidden');
-    expect(table.stdout).toContain('--all');
+    // KRTX-2992: the account list (no --mine) holds only live keys
+    // (listAccountTokens), so `--all` changes something only with --mine.
+    expect(table.stdout).toContain('(--mine --all lists them)');
 
     const full = await runCommand(runner, ['ls', '--mine', '--all'], {
       cwd: tmp,
@@ -305,7 +308,7 @@ describe('kortix tokens', () => {
     expect(table.code).toBe(0);
     expect(table.stdout).toContain('No API keys minted by you');
     expect(table.stdout).toContain('2 revoked');
-    expect(table.stdout).toContain('--all');
+    expect(table.stdout).toContain('kortix tokens ls --mine --all');
   });
 
   test('new POSTs account_id IN THE BODY and prints the secret once', async () => {
@@ -384,7 +387,13 @@ describe('kortix tokens', () => {
       expect(result.stdout).toContain(initial === 'revoked' ? 'Deleted' : 'Revoked');
     } finally {
       server.closeAllConnections();
-      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      // Bun's closeAllConnections() can already stop the server; close() then
+      // reports ERR_SERVER_NOT_RUNNING, which is not a test failure.
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) =>
+          error && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING' ? reject(error) : resolve(),
+        ),
+      );
     }
   });
 
