@@ -3,7 +3,7 @@
  * Devices write; the API reads (ingestion), writes `policy.json`, and signs
  * short-lived media URLs. Unset bucket ⇒ `captureStoreConfigured()` is false.
  */
-import { CreateBucketCommand, HeadBucketCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { CreateBucketCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
 import { config } from '../config';
 import { ObjectStore } from '../object-store/s3';
 
@@ -30,13 +30,6 @@ export function captureRegion(): string {
 export function deviceEndpoint(): string {
   const explicit = (config.KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT || config.KORTIX_CAPTURE_S3_ENDPOINT || '').trim();
   return explicit || `https://s3.${captureRegion()}.amazonaws.com`;
-}
-
-/** Write (or overwrite) one object. Server-side encryption is the bucket default. */
-export async function putCaptureObject(key: string, body: string | Uint8Array, contentType: string): Promise<void> {
-  await captureStore
-    .client()
-    .send(new PutObjectCommand({ Bucket: captureStore.bucket, Key: key, Body: body, ContentType: contentType }));
 }
 
 /**

@@ -11,7 +11,7 @@ import { db } from '../shared/db';
 import { config } from '../config';
 import { classifyDevice, summarizeHealth } from './health';
 import { accountPrefix, isEncrypted, liveState, objectKey, parseDisplay, type CaptureDisplay, type Manifest } from './format';
-import { captureStore, captureStoreConfigured } from './store';
+import { captureStoreForAccount } from './account-store';
 
 export type Device = typeof captureDevices.$inferSelect;
 export type Chunk = typeof timelineChunks.$inferSelect;
@@ -452,10 +452,12 @@ export async function chunkOf(accountId: string, who: Who, chunkId: string): Pro
 /** A 5-minute signed GET of one object of an indexed item, or null. */
 export async function mediaUrl(chunk: Chunk, role: string) {
   const info = (chunk.manifest as Manifest).objects?.[role];
-  if (!info || !captureStoreConfigured()) return null;
+  if (!info) return null;
+  const store = await captureStoreForAccount(chunk.accountId);
+  if (!store.configured) return null;
   const key = objectKey(accountPrefix(chunk.accountId), chunk.deviceId, info.key);
   if (!key) return null;
-  const signed = await captureStore.presignDownload(key, MEDIA_TTL_SECONDS);
+  const signed = await store.presignDownload(key, MEDIA_TTL_SECONDS);
   return { url: signed.url, expires_at: signed.expiresAt.toISOString(), encrypted: isEncrypted(chunk.manifest as Manifest) };
 }
 
@@ -472,6 +474,7 @@ export async function nearestScreenshot(accountId: string, who: Who, deviceId: s
 }
 
 export async function assetUrl(accountId: string, deviceId: string, name: string) {
-  const signed = await captureStore.presignDownload(`${accountPrefix(accountId)}/${deviceId}/assets/${name}`, MEDIA_TTL_SECONDS);
+  const store = await captureStoreForAccount(accountId);
+  const signed = await store.presignDownload(`${accountPrefix(accountId)}/${deviceId}/assets/${name}`, MEDIA_TTL_SECONDS);
   return { url: signed.url, expires_at: signed.expiresAt.toISOString() };
 }
