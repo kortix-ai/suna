@@ -38,7 +38,7 @@ import {
 import { UiLink as Link, useUiRouter } from '../../providers/ui-provider';
 import { useEffect, useState } from 'react';
 
-import { isApprovalExpiredError } from '../../workspace/review/review-actions';
+import { isApprovalExpiredError } from '../../internal/lib/approval-expired';
 import { ConnectorAppMark } from './connector-handshake';
 
 /** `github.merge_pull_request` → "Merge pull request". Null when the action has no readable tail. */

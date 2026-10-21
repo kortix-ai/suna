@@ -7,7 +7,7 @@
  */
 
 import { useTranslations } from '../../../i18n';
-import { SelectionBar, type SelectionBarAction } from '../../../workspace/selection/selection-bar';
+import { SelectionBar, type SelectionBarAction } from '../../../internal/selection/selection-bar';
 
 export type BulkVerb = 'pause' | 'resume' | 'delete';
 
