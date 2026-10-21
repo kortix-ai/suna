@@ -4332,6 +4332,7 @@ export function SessionChat({
                     <SessionOutcomesProvider
                       projectSessionId={projectSessionId}
                       turnSpans={turnSpans}
+                      busy={effectiveBusy}
                       onOpen={handleOpenOutcome}
                     >
                       <ToolActivateContext.Provider value={toolActivate}>
