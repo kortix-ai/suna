@@ -10,12 +10,12 @@ import type { usePanelDerivations } from './use-panel-derivations';
 
 type Handoffs = Pick<SessionPanelValue,
   'sessionId' | 'projectId' | 'projectSessionId' | 'detail' | 'handleOpenOutput' |
-  'openDetail' | 'openTerminal' | 'openAudit' | 'openBrowser' | 'openFiles'
+  'openDetail' | 'openTerminal' | 'openAudit' | 'openReminders' | 'openBrowser' | 'openFiles'
 > & Pick<ReturnType<typeof usePanelDerivations>, 'isRunning' | 'outcome' | 'apps' | 'files' | 'steps'>;
 
 export function usePanelHandoffs({
   sessionId, projectId, projectSessionId, isRunning, outcome, apps, files, steps,
-  detail, handleOpenOutput, openDetail, openTerminal, openAudit, openBrowser, openFiles,
+  detail, handleOpenOutput, openDetail, openTerminal, openAudit, openReminders, openBrowser, openFiles,
 }: Handoffs) {
   // Auto-expand Outputs the moment a run finishes with something to show —
   // never on every render of an already-finished (or still-running) run, and
@@ -165,6 +165,8 @@ export function usePanelHandoffs({
       openTerminal();
     } else if (view === 'audit' && projectId && projectSessionId) {
       openAudit();
+    } else if (view === 'reminders' && projectId && projectSessionId) {
+      openReminders();
     } else if (view === 'browser') {
       openBrowser(target);
     } else if (view === 'files') {
@@ -177,6 +179,7 @@ export function usePanelHandoffs({
     projectSessionId,
     openTerminal,
     openAudit,
+    openReminders,
     openBrowser,
     openFiles,
   ]);

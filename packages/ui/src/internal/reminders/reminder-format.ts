@@ -11,8 +11,10 @@ export function formatFireTime(iso: string, locale: string, now: number): string
   const deltaMin = Math.round((at - now) / 60_000);
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'short' });
   const abs = Math.abs(deltaMin);
-  if (abs < 60) return rtf.format(deltaMin, 'minute');
-  if (abs < 24 * 60) return rtf.format(Math.round(deltaMin / 60), 'hour');
+  // `short` abbreviates with a period ("in 32 min."); a row's trailing label reads cleaner without it.
+  const relative = (value: number, unit: 'minute' | 'hour') => rtf.format(value, unit).replace(/\.(?=\s|$)/g, '');
+  if (abs < 60) return relative(deltaMin, 'minute');
+  if (abs < 24 * 60) return relative(Math.round(deltaMin / 60), 'hour');
   const date = new Date(at);
   if (deltaMin > 0 && deltaMin < 7 * 24 * 60) {
     return date.toLocaleString(locale, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
@@ -60,6 +62,24 @@ export function soonestFire(
     if (Number.isFinite(at) && (soonest === null || at < soonest)) soonest = at;
   }
   return soonest;
+}
+
+/**
+ * How much of the wait before the next fire has passed, 0..1: the interval of
+ * an `every` reminder, else the span since the last fire (or creation). Null
+ * when there is no next fire to count toward.
+ */
+export function elapsedShare(
+  reminder: Pick<SessionReminder, 'next_fire_at' | 'every_seconds' | 'last_fired_at' | 'created_at'>,
+  now: number,
+): number | null {
+  const next = reminder.next_fire_at ? Date.parse(reminder.next_fire_at) : NaN;
+  if (!Number.isFinite(next)) return null;
+  const start = reminder.every_seconds
+    ? next - reminder.every_seconds * 1000
+    : Date.parse(reminder.last_fired_at ?? reminder.created_at ?? '');
+  if (!Number.isFinite(start) || next <= start) return null;
+  return Math.min(1, Math.max(0, (now - start) / (next - start)));
 }
 
 /** The first line of the reminder text, for a one-line row title. */
