@@ -36,7 +36,15 @@ export function AuthScreen({
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Two-step sign-in: the password was right; the authenticator code (or a backup code) comes next.
+  const [second, setSecond] = useState<null | 'totp' | 'backup'>(null);
+  const [code, setCode] = useState('');
   const signUp = mode === 'sign-up';
+
+  const done = () => {
+    if (redirectTo) router.replace(redirectTo[mode]);
+    else setPending(false);
+  };
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -50,8 +58,28 @@ export function AuthScreen({
       setError(result.error.message ?? 'Could not sign in');
       return;
     }
-    if (redirectTo) router.replace(redirectTo[mode]);
-    else setPending(false);
+    if (result.data && 'twoFactorRedirect' in result.data && result.data.twoFactorRedirect) {
+      setPending(false);
+      setSecond('totp');
+      return;
+    }
+    done();
+  }
+
+  async function verify(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setPending(true);
+    const result =
+      second === 'backup'
+        ? await authClient.twoFactor.verifyBackupCode({ code: code.trim() })
+        : await authClient.twoFactor.verifyTotp({ code: code.replace(/\s/g, '') });
+    if (result.error) {
+      setPending(false);
+      setError(result.error.message ?? 'That code did not work');
+      return;
+    }
+    done();
   }
 
   return (
@@ -74,7 +102,45 @@ export function AuthScreen({
         <h1 className="font-display text-[32px] leading-tight font-[380] tracking-[-0.035em]">
           {signUp ? `Create your ${BRAND.name} account` : `Sign in to ${BRAND.name}`}
         </h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">{subtitle ?? BRAND.tagline}</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">{second ? 'Your account has two-step sign-in on.' : (subtitle ?? BRAND.tagline)}</p>
+        {second ? (
+          <form className="mt-5 space-y-3" onSubmit={verify} data-testid="two-factor-form">
+            <div className="space-y-1.5">
+              <Label htmlFor="code">{second === 'backup' ? 'Backup code' : 'Code from your authenticator app'}</Label>
+              <Input
+                id="code"
+                autoFocus
+                required
+                autoComplete="one-time-code"
+                inputMode={second === 'backup' ? 'text' : 'numeric'}
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder={second === 'backup' ? 'xxxxx-xxxxx' : '123 456'}
+              />
+            </div>
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
+            <Button type="submit" className="h-10 w-full rounded-full" disabled={pending || !code.trim()}>
+              {pending ? <Loading className="size-4" /> : <SignInIcon className="size-4" />} Verify and sign in
+            </Button>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto w-full p-0"
+              onClick={() => {
+                setError(null);
+                setCode('');
+                setSecond(second === 'backup' ? 'totp' : 'backup');
+              }}
+            >
+              {second === 'backup' ? 'Use the authenticator app instead' : 'Use a backup code instead'}
+            </Button>
+          </form>
+        ) : (
         <form className="mt-5 space-y-3" onSubmit={submit}>
           {signUp && (
             <div className="space-y-1.5">
@@ -124,6 +190,8 @@ export function AuthScreen({
             {signUp ? 'Create account' : 'Sign in'}
           </Button>
         </form>
+        )}
+        {!second && (
         <p className="mt-4 flex items-center justify-center gap-1 text-sm text-muted-foreground">
           {signUp ? 'Already have an account?' : `New to ${BRAND.name}?`}
           <Button
@@ -138,6 +206,7 @@ export function AuthScreen({
             {signUp ? 'Sign in' : 'Create an account'}
           </Button>
         </p>
+        )}
       </Card>
       </div>
     </div>

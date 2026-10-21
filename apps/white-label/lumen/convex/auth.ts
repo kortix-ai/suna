@@ -1,7 +1,7 @@
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex } from "@convex-dev/better-auth/plugins";
 import { betterAuth, type BetterAuthOptions } from "better-auth/minimal";
-import { organization } from "better-auth/plugins";
+import { organization, twoFactor } from "better-auth/plugins";
 import { v } from "convex/values";
 import { APIError } from "better-auth/api";
 import type { FunctionReference } from "convex/server";
@@ -26,6 +26,7 @@ function runner(ctx: GenericCtx<DataModel>) {
   const c = ctx as { runQuery?: (f: FunctionReference<"query", "internal">, a: object) => Promise<any>; runMutation?: (f: FunctionReference<"mutation", "internal">, a: object) => Promise<any> };
   return {
     query: (f: FunctionReference<"query", "internal">, a: object) => (c.runQuery ? c.runQuery(f, a) : Promise.resolve(null)),
+    mutate: (f: FunctionReference<"mutation", "internal">, a: object) => (c.runMutation ? c.runMutation(f, a) : Promise.resolve(null)),
     log: async (orgId: string, actorId: string, action: AuditAction, detail?: string) => {
       if (c.runMutation) await c.runMutation(internal.audit.logOrgEvent, { orgId, actorId, action, detail });
     },
@@ -64,6 +65,21 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
     // provider, so the verification link goes to the Convex log
     // (`npx convex logs`). Production sends it with its email provider here.
     emailAndPassword: { enabled: true, requireEmailVerification: false, minPasswordLength: 10 },
+    // A person may delete their own account (password confirmed), unless a firm would be left without an owner.
+    user: {
+      deleteUser: {
+        enabled: true,
+        beforeDelete: async (user: { id: string }) => {
+          const firms: string[] = (await runner(ctx).query(internal.account.soleOwnerOf, { userId: user.id })) ?? [];
+          if (firms.length) {
+            throw new APIError("BAD_REQUEST", { message: `You are the only owner of ${firms.join(", ")}. Make someone else an owner first.` });
+          }
+        },
+        afterDelete: async (user: { id: string; email: string }) => {
+          await runner(ctx).mutate(internal.account.forgetUser, { userId: user.id, email: user.email });
+        },
+      },
+    },
     emailVerification: {
       sendOnSignUp: true,
       autoSignInAfterVerification: true,
@@ -76,6 +92,8 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
       // in with the invited email AND have verified it, so someone who
       // registers that address first, and holds the link, cannot join.
       organization({ requireEmailVerificationOnInvitation: true, organizationHooks: organizationHooks(ctx) }),
+      // Two-step sign-in with an authenticator app (TOTP) and one-time backup codes, opt-in per user.
+      twoFactor({ issuer: "Lumen" }),
       convex({ authConfig }),
     ],
   }) satisfies BetterAuthOptions;

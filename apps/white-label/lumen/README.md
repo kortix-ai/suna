@@ -116,6 +116,16 @@ log** records every change and has no delete path.
 | --- | --- |
 | ![Home: the composer, open matters and recent work](public/screenshots/home.png) | ![Usage: conversations, runs, documents read, agent time](public/screenshots/usage.png) |
 
+### Your account
+
+**Settings → Account**: profile, appearance and password; **Two-step sign-in** (an authenticator
+app code at every sign-in, plus 10 one-time backup codes; Better Auth `twoFactor`); **Download
+my data** (one JSON file: profile, the matters, conversations and documents you created in the
+firm, your activity; `account.myData`); and **Delete account** (password, then a confirmation).
+Deleting removes the sign-in, every firm membership and every restricted-matter seat, and writes
+an audit row in each firm; the firm keeps its matters, documents, conversations and audit log.
+An account that is the only owner of a firm cannot be deleted until someone else owns it.
+
 ### Its own brand, on phones too
 
 Ink blue on white and paper, Newsreader for titles and Geist for everything else, 4 px rectangles

@@ -21,6 +21,7 @@ export const tables = {
     image: v.optional(v.union(v.null(), v.string())),
     createdAt: v.number(),
     updatedAt: v.number(),
+    twoFactorEnabled: v.optional(v.union(v.null(), v.boolean())),
     userId: v.optional(v.union(v.null(), v.string())),
   })
     .index("email_name", ["email","name"])
@@ -99,6 +100,15 @@ export const tables = {
     .index("role", ["role"])
     .index("status", ["status"])
     .index("inviterId", ["inviterId"]),
+  twoFactor: defineTable({
+    secret: v.string(),
+    backupCodes: v.string(),
+    userId: v.string(),
+    verified: v.optional(v.union(v.null(), v.boolean())),
+    failedVerificationCount: v.optional(v.union(v.null(), v.number())),
+    lockedUntil: v.optional(v.union(v.null(), v.number())),
+  })
+    .index("userId", ["userId"]),
   jwks: defineTable({
     publicKey: v.string(),
     privateKey: v.string(),

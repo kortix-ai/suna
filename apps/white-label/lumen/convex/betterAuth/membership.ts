@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 
 /** The caller's role in one org, or null. Called from the app via components.betterAuth.membership.role. */
 export const role = query({
@@ -52,5 +52,38 @@ export const directory = query({
       out.push({ userId: m.userId, name: u?.name ?? "", email: u?.email ?? "", role: m.role, joinedAt: m.createdAt });
     }
     return out;
+  },
+});
+
+/** The organizations where this user is the only owner: they cannot leave Lumen until someone else owns them. */
+export const soleOwnerOf = query({
+  args: { userId: v.string() },
+  returns: v.array(v.object({ organizationId: v.string(), name: v.string() })),
+  handler: async (ctx, { userId }) => {
+    const out: { organizationId: string; name: string }[] = [];
+    for (const m of await ctx.db.query("member").withIndex("userId", (q) => q.eq("userId", userId)).take(100)) {
+      if (m.role !== "owner") continue;
+      const owners = (await ctx.db.query("member").withIndex("organizationId", (q) => q.eq("organizationId", m.organizationId)).take(1000))
+        .filter((o) => o.role === "owner");
+      if (owners.length === 1) {
+        const org = await ctx.db.get(m.organizationId as never);
+        out.push({ organizationId: m.organizationId, name: (org as { name?: string } | null)?.name ?? "your firm" });
+      }
+    }
+    return out;
+  },
+});
+
+/** A deleted user's memberships and invitations go with them. Returns the organizations they were in. */
+export const removeUser = mutation({
+  args: { userId: v.string() },
+  returns: v.array(v.string()),
+  handler: async (ctx, { userId }) => {
+    const orgs: string[] = [];
+    for (const m of await ctx.db.query("member").withIndex("userId", (q) => q.eq("userId", userId)).take(100)) {
+      orgs.push(m.organizationId);
+      await ctx.db.delete(m._id);
+    }
+    return orgs;
   },
 });

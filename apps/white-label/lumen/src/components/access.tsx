@@ -77,7 +77,8 @@ export function FirmGate({ children }: { children: React.ReactNode }) {
   const active = authClient.useActiveOrganization();
   const orgId = active.data?.id;
   const firm = useQuery(api.firms.forOrg, orgId ? { orgId } : 'skip');
-  const noOrgs = !orgs.isPending && (orgs.data?.length ?? 0) === 0;
+  // A failed list (a 401 while the session cookie is swapped, after a password or two-step change) is not "no firm".
+  const noOrgs = !orgs.isPending && !orgs.error && (orgs.data?.length ?? 0) === 0;
   const firstOrg = orgs.data?.[0]?.id;
 
   useEffect(() => {
@@ -85,7 +86,11 @@ export function FirmGate({ children }: { children: React.ReactNode }) {
     else if (!active.isPending && !active.data && firstOrg) void authClient.organization.setActive({ organizationId: firstOrg });
   }, [noOrgs, active.isPending, active.data, firstOrg, router]);
   useEffect(() => {
-    if (firm === null) router.replace('/onboarding');
+    if (firm !== null) return;
+    // `null` also shows for a moment while the session is re-issued (a two-step or password change
+    // swaps the cookie and Convex re-authenticates): only a firm still missing 1.5 s later is missing.
+    const t = setTimeout(() => router.replace('/onboarding'), 1500);
+    return () => clearTimeout(t);
   }, [firm, router]);
 
   if (!firm) return <FullPageLoading />;

@@ -302,6 +302,32 @@ describe('restricted matters: their own folder and agent, out of every firm sess
   });
 });
 
+describe('account: my data and leaving Lumen', () => {
+  test('my data holds the caller\'s profile, threads and activity in this firm, nothing of another member', async () => {
+    const { t, alice, bob, firm, matter } = await world();
+    await t.run(async (ctx) => {
+      await ctx.db.insert('threads', { firmId: firm, matterId: matter, kortixSessionId: 's1', title: 'Bob thread', createdBy: bob.userId, lastMessageAt: 0 });
+      await ctx.db.insert('threads', { firmId: firm, matterId: matter, kortixSessionId: 's2', title: 'Alice thread', createdBy: alice.userId, lastMessageAt: 0 });
+    });
+    const data = await bob.as.query(api.account.myData, { firmId: firm });
+    expect(data.profile).toMatchObject({ id: bob.userId, email: 'bob@example.com' });
+    expect(data.firm.role).toBe('member');
+    expect(data.threads.map((x: { title: string }) => x.title)).toEqual(['Bob thread']);
+  });
+
+  test('a sole owner is named; a deleted user loses memberships and restricted-matter seats, with an audit row', async () => {
+    const { t, acme, alice, bob, walled } = await world();
+    expect(await t.query(internal.account.soleOwnerOf, { userId: alice.userId })).toEqual(['Example Co']);
+    expect(await t.query(internal.account.soleOwnerOf, { userId: bob.userId })).toEqual([]);
+    await t.run((ctx) => ctx.db.insert('matterMembers', { matterId: walled, userId: bob.userId }));
+    await t.mutation(internal.account.forgetUser, { userId: bob.userId, email: 'bob@example.com' });
+    expect(await t.run((ctx) => ctx.db.query('matterMembers').collect())).not.toContainEqual(expect.objectContaining({ userId: bob.userId }));
+    expect(await t.query(components.betterAuth.membership.role, { organizationId: acme, userId: bob.userId })).toBeNull();
+    const audits = await t.run((ctx) => ctx.db.query('auditEvents').collect());
+    expect(audits.at(-1)).toMatchObject({ action: 'member.remove', actorId: bob.userId, detail: 'bob@example.com deleted their account' });
+  });
+});
+
 describe('firms: setup and admin', () => {
   test('only the org owner creates the firm, once; it starts a trial and schedules provisioning', async () => {
     const t = lumenTest();
