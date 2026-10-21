@@ -26,7 +26,7 @@ Kortix keeps each firm's sessions and files away from every other firm. Lumen in
 role prompts, skills and tools there once and runs multi-step work over Kortix sessions from its
 own Convex engine.
 
-<p align="center"><img src="lumen/public/screenshots/tour.gif" width="860" alt="Lumen in 15 seconds: a matter, a vault search, a cited answer, a review cell, a contract review" /></p>
+<p align="center"><img src="lumen/public/screenshots/tour.gif" width="860" alt="Lumen in 15 seconds: a matter, a vault search, a cited answer, a review cell, a contract review, a due-diligence report" /></p>
 
 | | |
 | --- | --- |

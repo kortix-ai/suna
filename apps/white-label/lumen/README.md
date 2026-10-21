@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="public/screenshots/tour.gif" width="900" alt="Lumen in 15 seconds: open a matter, search the vault, open a cited answer, inspect a review cell, read a contract review" />
+  <img src="public/screenshots/tour.gif" width="900" alt="Lumen in 15 seconds: open a matter, search the vault, open a cited answer, inspect a review cell, read a contract review and a due-diligence report" />
 </p>
 
 Lumen is a fictional legal-AI product, built as the reference for one question: what does it take
@@ -101,7 +101,7 @@ Excel (typed cells, a Citations sheet) or CSV.
 | **Ask across the vault** | One cited answer over every document, or "The documents in this matter do not address this." |
 | **The firm's own** | `/app/workflows`: an **assistant** workflow is instructions a conversation starts with, a **tabular** workflow is a column set a review starts with. Private, or shared with the firm (the author and admins edit). Run one with **Use**, or type `/` in the home composer. |
 
-<p align="center"><img src="public/screenshots/contract-review.png" width="860" alt="Contract review of a mutual NDA against the firm playbook: 2 High, 2 Medium; the 7-year confidentiality term with its redline and verified quote" /></p>
+<p align="center"><img src="public/screenshots/contract-review.png" width="860" alt="Contract review of a mutual NDA against the firm playbook: 3 High, 5 Medium, 3 Low; the 5-year confidentiality term with its redline and verified quote" /></p>
 
 ### The firm's back office
 
