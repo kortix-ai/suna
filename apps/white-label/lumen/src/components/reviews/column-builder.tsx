@@ -1,11 +1,13 @@
 'use client';
 
 import type { CellFormat } from '@/lib/review-cells';
+import { COLUMN_LIBRARY, promptFor } from '@convex/lib/columns';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@kortix/ui/dropdown-menu';
 import { Button } from '@kortix/ui/button';
 import { Input } from '@kortix/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@kortix/ui/select';
 import { Textarea } from '@kortix/ui/textarea';
-import { PlusIcon, TrashIcon } from '@phosphor-icons/react';
+import { BooksIcon, MagicWandIcon, PlusIcon, TrashIcon } from '@phosphor-icons/react';
 
 export type ColumnDraft = { key: string; label: string; prompt: string; format: CellFormat; options?: string[] };
 
@@ -16,6 +18,9 @@ export const FORMATS: Array<{ value: CellFormat; label: string }> = [
   { value: 'money', label: 'Money' },
   { value: 'tag', label: 'Tag' },
   { value: 'verbatim', label: 'Verbatim quote' },
+  { value: 'number', label: 'Number' },
+  { value: 'percent', label: 'Percentage' },
+  { value: 'list', label: 'List' },
 ];
 
 /** "Non-solicit (12 months)" → "non_solicit_12_months", unique among `taken`. */
@@ -71,14 +76,27 @@ export function ColumnBuilder({ columns, onChange, locked = 0 }: {
                 <TrashIcon className="size-4" />
               </Button>
             </div>
-            <Textarea
-              aria-label="Question"
-              placeholder="The question each document answers"
-              value={c.prompt}
-              onChange={(e) => set(i, { prompt: e.target.value })}
-              className="min-h-8 py-1.5 text-sm"
-              rows={1}
-            />
+            <div className="flex items-start gap-2">
+              <Textarea
+                aria-label="Question"
+                placeholder="The question each document answers"
+                value={c.prompt}
+                onChange={(e) => set(i, { prompt: e.target.value })}
+                className="min-h-8 flex-1 py-1.5 text-sm"
+                rows={1}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 shrink-0 text-muted-foreground"
+                disabled={!c.label.trim()}
+                title="Write the question from the label and format"
+                onClick={() => set(i, { prompt: promptFor(c.label, c.format) })}
+              >
+                <MagicWandIcon className="size-4" /> Write it
+              </Button>
+            </div>
             {c.format === 'tag' && (
               <Input
                 aria-label="Tag options"
@@ -91,15 +109,41 @@ export function ColumnBuilder({ columns, onChange, locked = 0 }: {
           </div>
         ),
       )}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={columns.length >= 20}
-        onClick={() => onChange([...columns, blankColumn(new Set(columns.map((c) => c.key)))])}
-      >
-        <PlusIcon className="size-4" /> Add a column
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={columns.length >= 20}
+          onClick={() => onChange([...columns, blankColumn(new Set(columns.map((c) => c.key)))])}
+        >
+          <PlusIcon className="size-4" /> Add a column
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" size="sm" disabled={columns.length >= 20}>
+              <BooksIcon className="size-4" /> From the clause library
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-80 w-72 overflow-y-auto">
+            {COLUMN_LIBRARY.filter((l) => !columns.some((c) => c.label === l.label)).map((l) => (
+              <DropdownMenuItem
+                key={l.key}
+                onSelect={() => {
+                  const taken = new Set(columns.map((c) => c.key));
+                  // A blank last row is replaced, not kept beside the pick.
+                  const last = columns[columns.length - 1];
+                  const keep = last && columns.length > locked && !last.label.trim() && !last.prompt.trim() ? columns.slice(0, -1) : columns;
+                  onChange([...keep, { ...l, key: taken.has(l.key) ? keyFor(l.label, taken) : l.key }]);
+                }}
+              >
+                <span className="flex-1 truncate">{l.label}</span>
+                <span className="text-xs text-muted-foreground">{FORMATS.find((f) => f.value === l.format)?.label}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </div>
   );
 }

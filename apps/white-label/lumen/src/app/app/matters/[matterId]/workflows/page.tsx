@@ -17,8 +17,11 @@ import { errorToast } from '@kortix/ui/toast';
 import { ChatCircleTextIcon, FileMagnifyingGlassIcon, ListChecksIcon, PenNibIcon, TableIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery } from 'convex/react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
+import { Spine, toneFor } from '@/components/spine';
+import { type FirmWorkflow, UseWorkflow, useFirmWorkflows } from '@/components/workflows/firm-workflows';
+import { PlusIcon } from '@phosphor-icons/react';
 
 type Kind = 'contract' | 'diligence' | 'draft' | 'ask';
 
@@ -62,7 +65,7 @@ function useStart() {
 function useReadyDocs() {
   const { matter } = useMatter();
   const docs = useQuery(api.documents.list, { matterId: matter._id });
-  return { loading: docs === undefined, ready: (docs ?? []).filter((d) => d.status === 'ready' && (d.paras ?? 0) > 0) };
+  return { loading: docs === undefined, ready: (docs ?? []).filter((d) => d.status === 'ready' && (d.paras ?? 0) > 0 && !d.superseded) };
 }
 
 function ContractForm() {
@@ -250,8 +253,11 @@ function AskForm() {
 export default function WorkflowsPage() {
   const { matter } = useMatter();
   const { ready } = useReadyDocs();
-  const [open, setOpen] = useState<Kind | null>(null);
+  const asked = useSearchParams().get('open');
+  const [open, setOpen] = useState<Kind | null>(CATALOG.some((c) => c.kind === asked) ? (asked as Kind) : null);
   const item = CATALOG.find((c) => c.kind === open);
+  const firmWorkflows = useFirmWorkflows();
+  const [using, setUsing] = useState<FirmWorkflow | null>(null);
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
       <div className="mb-4">
@@ -276,6 +282,39 @@ export default function WorkflowsPage() {
         ))}
       </div>
       {ready.length === 0 && <p className="mt-3 text-xs text-muted-foreground">Upload documents to the vault to run a workflow on them.</p>}
+
+      <section className="mt-10" aria-label="Firm workflows">
+        <div className="mb-2 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-medium">The firm’s workflows</h2>
+            <p className="text-xs text-muted-foreground">Written by your colleagues and you. Shared ones are open to everyone at the firm.</p>
+          </div>
+          <Button asChild size="sm" variant="ghost">
+            <Link href="/app/workflows?new=1">
+              <PlusIcon className="size-4" /> New workflow
+            </Link>
+          </Button>
+        </div>
+        <ul className="border-t border-border" data-testid="firm-workflows">
+          {firmWorkflows?.map((w) => (
+            <li key={w._id} className="flex items-center gap-3 border-b border-border py-2.5">
+              <Spine letter={w.name} tone={toneFor(w.name)} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{w.name}</span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {w.type === 'assistant' ? 'Assistant' : `Tabular · ${w.columns?.length ?? 0} columns`}
+                  {w.description ? ` · ${w.description}` : ''}
+                </span>
+              </span>
+              <Button size="sm" variant="outline" disabled={w.type === 'tabular' && ready.length === 0} onClick={() => setUsing(w)}>
+                Use
+              </Button>
+            </li>
+          ))}
+          {firmWorkflows?.length === 0 && <li className="py-6 text-center text-xs text-muted-foreground">No firm workflows yet.</li>}
+        </ul>
+      </section>
+      {using && <UseWorkflow workflow={using} matterId={matter._id} onClose={() => setUsing(null)} />}
       {item && (
         <Modal open onOpenChange={(o) => !o && setOpen(null)}>
           <ModalContent className="lg:max-w-xl">

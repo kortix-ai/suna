@@ -27,7 +27,7 @@ export function Marked({ text, mark }: { text: string; mark?: string }) {
     <>
       {parts.map((p, i) =>
         i % 2 ? (
-          <mark key={i} className="rounded-sm bg-brand/20 px-0.5 text-foreground">
+          <mark key={i} className="rounded-sm bg-lamp/30 px-0.5 text-foreground">
             {p}
           </mark>
         ) : (
@@ -114,7 +114,7 @@ export function DocumentPanel({ documentId, focus, onClose }: { documentId: stri
                           Page {p.page}
                         </p>
                       )}
-                      <p data-anchor={a} data-on-page={p.page} className={cn('rounded-md', hit && 'bg-brand/8 -mx-2 px-2 py-1 ring-1 ring-brand/30')}>
+                      <p data-anchor={a} data-on-page={p.page} className={cn('rounded-md', hit && "bg-lamp/8 -mx-2 px-2 py-1 ring-1 ring-lamp/40")}>
                         <Marked text={p.text} mark={hit || !focus?.a ? focus?.mark : undefined} />
                       </p>
                     </Fragment>

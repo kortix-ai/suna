@@ -113,7 +113,7 @@ function IssueCard({ issue }: { issue: Issue }) {
         <div className="rounded-lg border border-border bg-background p-3 text-sm leading-relaxed" data-testid="redline">
           <p className="mb-1 text-xs text-muted-foreground">Suggested redline</p>
           <del className="rounded-sm bg-destructive/10 text-destructive decoration-destructive/60">{issue.redline.from}</del>{' '}
-          <ins className="rounded-sm bg-brand/12 text-brand no-underline">{issue.redline.to}</ins>
+          <ins className="rounded-sm bg-verified/15 text-verified no-underline">{issue.redline.to}</ins>
           {issue.redline.comment && <p className="mt-1.5 text-xs text-muted-foreground">{issue.redline.comment}</p>}
         </div>
       )}

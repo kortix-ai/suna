@@ -3,6 +3,7 @@
 import { useFirm } from '@/components/access';
 import { AdminOnly } from '@/components/admin-only';
 import { KIND } from '@/components/runs/history-list';
+import { ACTIONS } from '@/lib/audit-labels';
 import { downloadCsv } from '@/lib/csv';
 import { api } from '@convex/_generated/api';
 import { Button } from '@kortix/ui/button';
@@ -13,41 +14,6 @@ import { DownloadSimpleIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
 
-const ACTIONS: Record<string, string> = {
-  'firm.create': 'Firm created',
-  'firm.ready': 'Workspace ready',
-  'firm.failed': 'Workspace setup failed',
-  'firm.update': 'Firm settings changed',
-  'member.invite': 'Member invited',
-  'member.join': 'Member joined',
-  'member.role': 'Role changed',
-  'member.remove': 'Member removed',
-  'member.invite_cancel': 'Invitation revoked',
-  'matter.create': 'Matter created',
-  'matter.update': 'Matter updated',
-  'matter.close': 'Matter closed',
-  'thread.create': 'Conversation started',
-  'thread.delete': 'Conversation deleted',
-  'token.mint': 'Workspace access granted',
-  'billing.plan': 'Plan changed',
-  'billing.checkout': 'Checkout started',
-  'export.csv': 'Data exported',
-  'export.docx': 'Document downloaded',
-  'export.md': 'Report downloaded',
-  'document.upload': 'Document uploaded',
-  'document.delete': 'Document deleted',
-  'run.start': 'Run started',
-  'run.finish': 'Run finished',
-  'run.cancel': 'Run canceled',
-  'kit.install': 'Legal agents updated',
-  'cell.verify': 'Cell verified',
-  'cell.flag': 'Cell flagged',
-  'cell.edit': 'Cell edited',
-  'issue.accept': 'Issue accepted',
-  'issue.dismiss': 'Issue dismissed',
-  'library.create': 'Library item created',
-  'library.update': 'Library item edited',
-};
 
 const SYSTEM: Record<string, string> = { system: 'Lumen', operator: 'Lumen operator', stripe: 'Billing' };
 

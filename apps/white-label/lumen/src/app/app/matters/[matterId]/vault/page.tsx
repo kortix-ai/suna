@@ -14,7 +14,8 @@ import Loading from '@kortix/ui/loading';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@kortix/ui/table';
 import { errorToast, successToast } from '@kortix/ui/toast';
-import { ChatCircleTextIcon, FileDocIcon, FilePdfIcon, FileTextIcon, MagnifyingGlassIcon, TableIcon, TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, ChatCircleTextIcon, CheckIcon, DotsThreeIcon, EyeIcon, FileDocIcon, FilePdfIcon, FileTextIcon, MagnifyingGlassIcon, StackIcon, TableIcon, TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@kortix/ui/dropdown-menu';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'next/navigation';
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
@@ -56,9 +57,20 @@ export default function VaultPage() {
   const [q, setQ] = useState('');
   const term = useDeferredValue(q.trim());
   const hits = useQuery(api.documents.search, term.length >= 2 ? { matterId: matter._id, q: term } : 'skip');
-  const ready = docs?.filter((d) => d.status === 'ready' && (d.paras ?? 0) > 0) ?? [];
+  const ready = docs?.filter((d) => d.status === 'ready' && (d.paras ?? 0) > 0 && !d.superseded) ?? [];
+  // One row per document: its newest version that did not fail; every version in its menu.
+  const families = new Map<string, NonNullable<typeof docs>>();
+  for (const d of docs ?? []) families.set(d.family, [...(families.get(d.family) ?? []), d]);
+  const rows = [...families.values()]
+    .map((versions) => {
+      const sorted = [...versions].sort((a, b) => b.version - a.version);
+      return { doc: sorted.find((d) => d.status !== 'failed') ?? sorted[0], versions: sorted };
+    })
+    .sort((a, b) => b.doc._creationTime - a.doc._creationTime);
+  const versionInput = useRef<HTMLInputElement>(null);
+  const [versionOf, setVersionOf] = useState<{ id: Id<'documents'>; filename: string } | null>(null);
 
-  async function upload(files: File[]) {
+  async function upload(files: File[], parent?: { id: Id<'documents'>; filename: string }) {
     if (files.length > MAX_FILES) return errorToast(`Drop up to ${MAX_FILES} files at a time`);
     for (const file of files) {
       const refused = refuseReason(file);
@@ -73,7 +85,9 @@ export default function VaultPage() {
           filename: file.name,
           bytes: await file.arrayBuffer(),
           contentType: file.type,
+          ...(parent ? { versionOf: parent.id } : {}),
         });
+        if (parent) successToast(`New version of ${parent.filename} uploaded`, { description: 'It replaces the old one in new work once it is read. The old version stays citable.' });
       } catch (err) {
         const why = errorText(err);
         if (why.startsWith('Already in this vault')) errorToast(`${file.name} is already in this vault`, { description: why });
@@ -111,7 +125,7 @@ export default function VaultPage() {
             <div>
               <h2 className="text-sm font-medium">Documents</h2>
               <p className="text-xs text-muted-foreground">
-                {docs === undefined ? ' ' : `${docs.length} document${docs.length === 1 ? '' : 's'}, ${ready.length} ready`}
+                {docs === undefined ? ' ' : `${rows.length} document${rows.length === 1 ? '' : 's'}, ${ready.length} ready${docs.length > rows.length ? `, ${docs.length - rows.length} earlier version${docs.length - rows.length === 1 ? '' : 's'}` : ''}`}
               </p>
             </div>
             <div className="flex gap-2">
@@ -182,6 +196,19 @@ export default function VaultPage() {
           )}
 
           <Input
+            ref={versionInput}
+            type="file"
+            accept={ACCEPT}
+            className="hidden"
+            data-testid="vault-version-input"
+            onChange={(e) => {
+              const parent = versionOf;
+              setVersionOf(null);
+              if (parent) void upload(Array.from(e.target.files ?? []).slice(0, 1), parent);
+              e.target.value = '';
+            }}
+          />
+          <Input
             ref={input}
             type="file"
             multiple
@@ -228,6 +255,7 @@ export default function VaultPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
+                    <TableHead className="w-20">Version</TableHead>
                     <TableHead className="hidden w-24 text-right sm:table-cell">Pages</TableHead>
                     <TableHead className="hidden w-24 text-right sm:table-cell">Size</TableHead>
                     <TableHead className="hidden w-28 md:table-cell">Added</TableHead>
@@ -239,6 +267,7 @@ export default function VaultPage() {
                   {Object.entries(uploading).map(([name, p]) => (
                     <TableRow key={`up-${name}`}>
                       <TableCell className="font-medium">{name}</TableCell>
+                      <TableCell />
                       <TableCell className="hidden sm:table-cell" />
                       <TableCell className="hidden sm:table-cell" />
                       <TableCell className="hidden md:table-cell" />
@@ -250,7 +279,7 @@ export default function VaultPage() {
                       <TableCell />
                     </TableRow>
                   ))}
-                  {docs.map((d) => {
+                  {rows.map(({ doc: d, versions }) => {
                     const Icon = iconFor(d.filename);
                     return (
                       <TableRow
@@ -265,6 +294,32 @@ export default function VaultPage() {
                             <Icon className="size-4 shrink-0 text-muted-foreground" />
                             <span className="truncate font-medium">{d.filename}</span>
                           </span>
+                        </TableCell>
+                        <TableCell onClick={(e) => versions.length > 1 && e.stopPropagation()}>
+                          {versions.length > 1 ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="sm" className="h-6 gap-1 rounded-full px-2 font-mono text-[11px]" data-testid="version-picker">
+                                  V{d.version} <CaretDownIcon className="size-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start" className="w-72">
+                                <DropdownMenuLabel>Versions</DropdownMenuLabel>
+                                {versions.map((v) => (
+                                  <DropdownMenuItem key={v._id} disabled={v.status !== 'ready'} onSelect={() => setOpen({ id: v._id })}>
+                                    <span className="w-7 font-mono text-xs">V{v.version}</span>
+                                    <span className="min-w-0 flex-1 truncate">{v.filename}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {v.status === 'failed' ? 'Failed' : v.status !== 'ready' ? 'Reading…' : relativeTime(new Date(v._creationTime).toISOString())}
+                                    </span>
+                                    {v._id === d._id && <CheckIcon className="size-3.5 text-brand" />}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : (
+                            <span className="rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-muted-foreground">V{d.version}</span>
+                          )}
                         </TableCell>
                         <TableCell className="hidden text-right font-mono text-xs tabular-nums sm:table-cell">{d.pages ?? '—'}</TableCell>
                         <TableCell className="hidden text-right font-mono text-xs tabular-nums text-muted-foreground sm:table-cell">{kb(d.bytes)}</TableCell>
@@ -284,18 +339,32 @@ export default function VaultPage() {
                             </span>
                           )}
                         </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={`Delete ${d.filename}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setToDelete({ id: d._id, filename: d.filename });
-                            }}
-                          >
-                            <TrashIcon className="size-4 text-muted-foreground" />
-                          </Button>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${d.filename}`} data-testid="doc-actions">
+                                <DotsThreeIcon className="size-4 text-muted-foreground" weight="bold" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                              <DropdownMenuItem disabled={d.status !== 'ready'} onSelect={() => setOpen({ id: d._id })}>
+                                <EyeIcon className="size-4" /> Open
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  setVersionOf({ id: d._id, filename: d.filename });
+                                  // The menu closes first; the picker opens on the next frame.
+                                  requestAnimationFrame(() => versionInput.current?.click());
+                                }}
+                              >
+                                <StackIcon className="size-4" /> Upload new version
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem variant="destructive" onSelect={() => setToDelete({ id: d._id, filename: d.filename })}>
+                                <TrashIcon className="size-4" /> Delete {versions.length > 1 ? `V${d.version}` : ''}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     );

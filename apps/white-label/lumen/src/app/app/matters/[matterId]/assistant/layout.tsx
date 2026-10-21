@@ -22,9 +22,9 @@ export default function AssistantLayout({ children }: { children: React.ReactNod
     <div className="flex min-h-0 flex-1">
       <aside className="hidden w-64 shrink-0 flex-col border-r border-border md:flex">
         <div className="p-3">
-          <Button asChild variant="secondary" className="w-full justify-start gap-2">
+          <Button asChild variant="outline" className="w-full justify-start gap-2 bg-card">
             <Link href={`/app/matters/${matter._id}/assistant`}>
-              <PlusIcon className="size-4" /> New question
+              <PlusIcon className="size-4" /> New chat
             </Link>
           </Button>
         </div>

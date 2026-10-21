@@ -28,7 +28,7 @@ export default function NewReviewPage() {
   const [columns, setColumns] = useState<ColumnDraft[]>(() => PRESET_COLUMNS.map((c) => ({ ...c })));
   const [pending, setPending] = useState(false);
   const base = `/app/matters/${matter._id}`;
-  const ready = (docs ?? []).filter((d) => d.status === 'ready' && (d.paras ?? 0) > 0);
+  const ready = (docs ?? []).filter((d) => d.status === 'ready' && (d.paras ?? 0) > 0 && !d.superseded);
   const chosen = picked ?? ready.map((d) => d._id);
   const cells = chosen.length * columns.length;
 

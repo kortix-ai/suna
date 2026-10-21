@@ -55,12 +55,23 @@ export function AuthScreen({
   }
 
   return (
-    <div className="grid min-h-dvh place-items-center bg-background px-4">
-      <Card className="w-full max-w-sm p-6">
-        <Link href="/" aria-label={`${BRAND.name} home`} className="mb-5 self-start">
+    <div className="grid min-h-dvh bg-background lg:grid-cols-2">
+      {/* The brand panel: the weave, the lockup, one serif line. Desktop only. */}
+      <div className="pattern-laid hidden flex-col justify-between p-12 text-white lg:flex">
+        <Link href="/" aria-label={`${BRAND.name} home`}>
+          <BrandMark className="text-[22px] text-white" />
+        </Link>
+        <p className="max-w-md font-display text-[56px] leading-[0.98] font-[370] tracking-[-0.045em]">
+          {signUp ? 'Every answer, cited.' : 'Welcome back.'}
+        </p>
+        <p className="max-w-sm text-sm text-white/60">{BRAND.subline}</p>
+      </div>
+      <div className="grid place-items-center px-4 py-12">
+      <Card className="w-full max-w-sm border-0 bg-transparent p-0 shadow-none">
+        <Link href="/" aria-label={`${BRAND.name} home`} className="mb-8 self-start lg:hidden">
           <BrandMark />
         </Link>
-        <h1 className="font-display text-2xl tracking-tight">
+        <h1 className="font-display text-[32px] leading-tight font-[380] tracking-[-0.035em]">
           {signUp ? `Create your ${BRAND.name} account` : `Sign in to ${BRAND.name}`}
         </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">{subtitle ?? BRAND.tagline}</p>
@@ -102,7 +113,7 @@ export function AuthScreen({
               {error}
             </p>
           )}
-          <Button type="submit" className="w-full" disabled={pending || !email.trim() || !password}>
+          <Button type="submit" className="h-10 w-full rounded-full" disabled={pending || !email.trim() || !password}>
             {pending ? (
               <Loading className="size-4" />
             ) : signUp ? (
@@ -128,6 +139,7 @@ export function AuthScreen({
           </Button>
         </p>
       </Card>
+      </div>
     </div>
   );
 }

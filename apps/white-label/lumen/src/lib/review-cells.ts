@@ -1,6 +1,6 @@
 // How a review cell reads as text: in the grid, the cell panel and the CSV export.
 
-export type CellFormat = 'text' | 'yes_no' | 'date' | 'money' | 'tag' | 'verbatim';
+export type CellFormat = 'text' | 'yes_no' | 'date' | 'money' | 'tag' | 'verbatim' | 'number' | 'percent' | 'list';
 type CellLike = {
   documentId: string; columnKey: string; state: string; value?: unknown; edited?: boolean; reviewStatus?: string;
   citations: ReadonlyArray<{ filename: string; page: number; quote: string; status: string }>;
@@ -23,6 +23,8 @@ export function valueText(value: unknown, format: CellFormat): string {
     const yn = yesNo(value);
     if (yn !== null) return yn ? 'Yes' : 'No';
   }
+  if (Array.isArray(value)) return value.map((v) => valueText(v, 'text')).filter(Boolean).join('; ');
+  if (format === 'percent' && typeof value === 'number') return `${value}%`;
   if (typeof value === 'object') {
     const m = value as { amount?: unknown; currency?: unknown };
     if (m.amount !== undefined) return `${m.currency ?? ''} ${m.amount}`.trim();
@@ -64,4 +66,52 @@ export function reviewCsv(
     return [d.filename, ...values, cites.join('\n')];
   });
   return [header, ...rows];
+}
+
+/** A cell's value as a typed spreadsheet cell: numbers stay numbers, percentages and ISO dates keep their type. */
+export function typedValue(cell: CellLike | undefined, format: CellFormat): string | number | { pct: number } | { date: string } {
+  if (!cell || cell.state === 'pending' || cell.state === 'error') return cellText(cell, format);
+  if (cell.state === 'not_found' && !cell.edited) return 'Not addressed';
+  const v = cell.value;
+  const num = typeof v === 'number' ? v : typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v.trim()) ? Number(v) : null;
+  if (format === 'number' && num !== null) return num;
+  if (format === 'percent' && num !== null) return { pct: num };
+  if (format === 'date' && typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return { date: v.trim() };
+  return valueText(v, format);
+}
+
+/**
+ * The review as two sheets: "Review" (one row per document, a typed value and
+ * a review state per column) and "Citations" (one row per citation).
+ */
+export function reviewSheets(view: {
+  title: string;
+  columns: ReadonlyArray<{ key: string; label: string; format: CellFormat }>;
+  documents: ReadonlyArray<{ _id: string; filename: string }>;
+  cells: ReadonlyArray<CellLike>;
+}) {
+  const at = new Map(view.cells.map((c) => [`${c.documentId}:${c.columnKey}`, c]));
+  const review = [
+    ['Document', ...view.columns.flatMap((c) => [c.label, `${c.label} (review)`])],
+    ...view.documents.map((d) => [
+      d.filename,
+      ...view.columns.flatMap((col) => {
+        const cell = at.get(`${d._id}:${col.key}`);
+        const state = cell?.edited ? 'edited' : cell?.reviewStatus && cell.reviewStatus !== 'none' ? cell.reviewStatus : '';
+        return [typedValue(cell, col.format), state];
+      }),
+    ]),
+  ];
+  const cites: Array<Array<string | number>> = [['Document', 'Column', 'Source', 'Page', 'Status', 'Quote']];
+  for (const d of view.documents) {
+    for (const col of view.columns) {
+      for (const c of at.get(`${d._id}:${col.key}`)?.citations ?? []) {
+        cites.push([d.filename, col.label, c.filename, c.page, c.status === 'unverified' ? 'not found in source' : c.status, c.quote]);
+      }
+    }
+  }
+  return [
+    { name: view.title || 'Review', rows: review, widths: [34, ...view.columns.flatMap(() => [36, 12])] },
+    { name: 'Citations', rows: cites, widths: [34, 22, 34, 7, 18, 80] },
+  ];
 }

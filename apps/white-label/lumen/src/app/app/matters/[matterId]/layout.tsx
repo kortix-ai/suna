@@ -32,9 +32,9 @@ export default function MatterLayout({ children }: { children: React.ReactNode }
 
 const TABS = [
   { seg: '', label: 'Overview' },
-  { seg: '/vault', label: 'Vault' },
-  { seg: '/assistant', label: 'Assistant' },
-  { seg: '/reviews', label: 'Reviews' },
+  { seg: '/vault', label: 'Documents' },
+  { seg: '/assistant', label: 'Chats' },
+  { seg: '/reviews', label: 'Tabular reviews' },
   { seg: '/workflows', label: 'Workflows' },
   { seg: '/history', label: 'History' },
 ] as const;
@@ -68,7 +68,7 @@ function MatterChrome({ children }: { children: React.ReactNode }) {
           <span className="truncate text-foreground">{matter.name}</span>
         </nav>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h1 className="min-w-0 truncate font-display text-2xl tracking-tight">{matter.name}</h1>
+          <h1 className="min-w-0 truncate font-display text-[28px] leading-tight font-[380] tracking-[-0.03em]">{matter.name}</h1>
           {matter.number && <span className="font-mono text-xs text-muted-foreground">{matter.number}</span>}
           {matter.visibility === 'restricted' && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">

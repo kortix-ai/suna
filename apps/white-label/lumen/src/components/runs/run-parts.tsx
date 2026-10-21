@@ -56,7 +56,7 @@ function Highlighted({ text, quote }: { text: string; quote: string }) {
   return (
     <>
       {text.slice(0, at)}
-      <mark className="rounded-sm bg-brand/15 px-0.5 text-foreground">{text.slice(at, at + quote.length)}</mark>
+      <mark className="rounded-sm bg-lamp/30 px-0.5 text-foreground">{text.slice(at, at + quote.length)}</mark>
       {text.slice(at + quote.length)}
     </>
   );

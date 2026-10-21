@@ -22,6 +22,7 @@ import {
   TerminalWindowIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import type { MockName } from './content';
+import { Spine } from '@/components/spine';
 import { Diamond } from './parts';
 
 // Product moments for the public site: static renders that use the app's own
@@ -33,22 +34,6 @@ function Card({ className, children }: { className?: string; children: React.Rea
     <div aria-hidden className={cn('rounded-[10px] border border-border bg-card text-[13px] leading-snug text-foreground shadow-lg', className)}>
       {children}
     </div>
-  );
-}
-
-/** A book-spine tile: Lumen's avatar for a workflow. */
-export function Spine({ letter, tone, className }: { letter: string; tone: 'navy' | 'oxblood' | 'sand' | 'slate' | 'moss'; className?: string }) {
-  const tones = {
-    navy: 'from-[#183250] to-[#0a1828] text-[#F5F3EF]',
-    oxblood: 'from-[#5a2328] to-[#3a1519] text-[#F5F3EF]',
-    sand: 'from-[#E4D8C2] to-[#CDBB9A] text-[#3A3A38]',
-    slate: 'from-[#7C8796] to-[#566170] text-[#F5F3EF]',
-    moss: 'from-[#3E5A4C] to-[#253A30] text-[#F5F3EF]',
-  } as const;
-  return (
-    <span className={cn('grid size-6 shrink-0 place-items-center rounded-[4px] bg-gradient-to-b font-display text-[13px] leading-none', tones[tone], className)}>
-      {letter}
-    </span>
   );
 }
 

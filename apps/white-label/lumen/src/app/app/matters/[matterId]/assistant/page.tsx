@@ -29,7 +29,7 @@ export default function NewQuestion() {
   const [pending, setPending] = useState(false);
   const ready = firm.status === 'ready';
   const docs = useQuery(api.documents.list, { matterId: matter._id });
-  const readyDocs = (docs ?? []).filter((d) => d.status === 'ready').length;
+  const readyDocs = (docs ?? []).filter((d) => d.status === 'ready' && !d.superseded).length;
 
   async function submit(text = prompt.trim()) {
     if (!text || pending || !ready) return;

@@ -1,25 +1,31 @@
 'use client';
 
 import { Notice, useMatter } from '@/components/access';
-import { type ColumnDraft, ColumnBuilder, blankColumn, columnsReady, toColumns } from '@/components/reviews/column-builder';
+import { type ColumnDraft, ColumnBuilder, FORMATS, blankColumn, columnsReady, toColumns } from '@/components/reviews/column-builder';
 import { CitationCard, Elapsed, RunStatusBadge, isActive } from '@/components/runs/run-parts';
 import { downloadCsv } from '@/lib/csv';
-import { type CellFormat, cellText, reviewCsv, valueText, yesNo } from '@/lib/review-cells';
+import { type CellFormat, cellText, reviewCsv, reviewSheets, valueText, yesNo } from '@/lib/review-cells';
+import { xlsxBytes } from '@/lib/xlsx';
+import { promptFor } from '@convex/lib/columns';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@kortix/ui/select';
 import { errorText } from '@/lib/utils';
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
 import { cn } from '@kortix/ui';
 import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@kortix/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@kortix/ui/dropdown-menu';
 import Loading from '@kortix/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@kortix/ui/modal';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { Textarea } from '@kortix/ui/textarea';
 import { errorToast } from '@kortix/ui/toast';
 import {
-  ArrowClockwiseIcon, CaretDownIcon, CaretLeftIcon, CheckCircleIcon, DownloadSimpleIcon, FlagIcon, PencilSimpleIcon, PlusIcon, StopIcon,
-  TableIcon, XIcon,
+  ArrowClockwiseIcon, CaretDownIcon, CaretLeftIcon, CheckCircleIcon, DownloadSimpleIcon, FileXlsIcon, FileCsvIcon, FlagIcon, MagicWandIcon,
+  PencilSimpleIcon, PlusIcon, StopIcon, TableIcon, TrashIcon, XIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
@@ -40,6 +46,10 @@ function CellValue({ cell, col, full = false }: { cell: Cell | undefined; col: C
     return <Badge variant={yes ? 'highlight' : 'muted'} className="normal-case">{yes ? 'Yes' : 'No'}</Badge>;
   }
   if (col.format === 'tag' && typeof cell.value === 'string') return <Badge variant="muted">{cell.value}</Badge>;
+  // An answer with no value of the column's type (an uncapped liability in a money column): the agent's note says why.
+  if (valueText(cell.value, col.format as CellFormat) === '') {
+    return <span className={cn('text-muted-foreground', full ? 'whitespace-pre-wrap' : 'line-clamp-3')}>{cell.note || 'No value'}</span>;
+  }
   return <span className={full ? 'whitespace-pre-wrap' : 'line-clamp-3'}>{valueText(cell.value, col.format as CellFormat)}</span>;
 }
 
@@ -56,8 +66,9 @@ function Marks({ cell }: { cell: Cell | undefined }) {
   );
 }
 
-function Grid({ view, selected, onSelect, onRerun, busy }: {
+function Grid({ view, selected, onSelect, onRerun, onEdit, onDelete, busy }: {
   view: View; selected: string | null; onSelect: (k: string) => void; onRerun: (key: string) => void; busy: boolean;
+  onEdit: (key: string) => void; onDelete: (key: string) => void;
 }) {
   const at = new Map(view.cells.map((c) => [`${c.documentId}:${c.columnKey}`, c]));
   return (
@@ -81,8 +92,15 @@ function Grid({ view, selected, onSelect, onRerun, busy }: {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-64">
                     <p className="px-2 py-1.5 text-xs text-muted-foreground">{c.prompt}</p>
+                    <DropdownMenuItem disabled={busy} onSelect={() => onEdit(c.key)}>
+                      <PencilSimpleIcon className="size-4" /> Edit column
+                    </DropdownMenuItem>
                     <DropdownMenuItem disabled={busy} onSelect={() => onRerun(c.key)}>
                       <ArrowClockwiseIcon className="size-4" /> Re-run this column
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem disabled={busy || view.columns.length === 1} variant="destructive" onSelect={() => onDelete(c.key)}>
+                      <TrashIcon className="size-4" /> Delete column
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -110,13 +128,23 @@ function Grid({ view, selected, onSelect, onRerun, busy }: {
                       onClick={() => onSelect(k)}
                       ref={selected === k ? (el) => el?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) : undefined}
                       className={cn(
-                        'flex h-auto min-h-11 w-44 sm:w-52 flex-col items-start justify-start gap-1 whitespace-normal rounded-none px-3 py-2 text-left text-[13px] font-normal hover:bg-muted/40',
+                        'relative flex h-auto min-h-11 w-44 sm:w-52 flex-col items-start justify-start gap-1 whitespace-normal rounded-none py-2 pr-6 pl-3 text-left text-[13px] font-normal hover:bg-muted/40',
                         selected === k && 'bg-brand/5 ring-1 ring-inset ring-brand/40',
                         cell?.reviewStatus === 'flagged' && 'bg-flag/5',
                       )}
                     >
                       <CellValue cell={cell} col={col} />
                       <Marks cell={cell} />
+                      {cell && cell.state !== 'pending' && cell.confidence && (
+                        <span
+                          aria-label={`Confidence: ${cell.confidence}`}
+                          title={`Confidence: ${cell.confidence}`}
+                          className={cn(
+                            'absolute top-2 right-2 size-1.5 rounded-full',
+                            cell.confidence === 'high' ? 'bg-verified' : cell.confidence === 'medium' ? 'bg-flag' : 'bg-risk',
+                          )}
+                        />
+                      )}
                     </Button>
                   </td>
                 );
@@ -244,6 +272,89 @@ function CellPanel({ view, k, onClose, onMove }: { view: View; k: string; onClos
   );
 }
 
+function ColumnEditor({ view, columnKey, onClose }: { view: View; columnKey: string; onClose: () => void }) {
+  const edit = useMutation(api.reviews.editColumn);
+  const col = view.columns.find((c) => c.key === columnKey)!;
+  const [label, setLabel] = useState(col.label);
+  const [prompt, setPrompt] = useState(col.prompt);
+  const [format, setFormat] = useState<CellFormat>(col.format as CellFormat);
+  const [options, setOptions] = useState((col.options ?? []).join(', '));
+  const [pending, setPending] = useState(false);
+  const rerun = prompt.trim() !== col.prompt || format !== col.format || options.split(',').map((o) => o.trim()).filter(Boolean).join('|') !== (col.options ?? []).join('|');
+  const ok = label.trim() && prompt.trim().length >= 3 && (format !== 'tag' || options.split(',').some((o) => o.trim()));
+  return (
+    <Modal open onOpenChange={(o) => !o && onClose()}>
+      <ModalContent className="lg:max-w-xl">
+        <ModalHeader>
+          <ModalTitle>Edit column</ModalTitle>
+        </ModalHeader>
+        <ModalBody className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-[1fr_11rem]">
+            <div className="space-y-1.5">
+              <Label htmlFor="col-label">Label</Label>
+              <Input id="col-label" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={60} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="col-format">Answer format</Label>
+              <Select value={format} onValueChange={(f) => setFormat(f as CellFormat)}>
+                <SelectTrigger id="col-format" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FORMATS.map((f) => (
+                    <SelectItem key={f.value} value={f.value}>
+                      {f.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="col-prompt">Question</Label>
+              <Button type="button" size="sm" variant="ghost" className="h-7 text-muted-foreground" onClick={() => setPrompt(promptFor(label, format))}>
+                <MagicWandIcon className="size-4" /> Write it for me
+              </Button>
+            </div>
+            <Textarea id="col-prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} className="min-h-20 text-sm" />
+          </div>
+          {format === 'tag' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="col-options">Options</Label>
+              <Input id="col-options" value={options} onChange={(e) => setOptions(e.target.value)} placeholder="Options, separated by commas" />
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {rerun
+              ? `A new question or format runs this column again on ${view.documents.length} documents. Verified and edited cells keep their value.`
+              : 'A new label changes nothing else.'}
+          </p>
+          <Button
+            className="w-full"
+            disabled={pending || !ok}
+            onClick={async () => {
+              setPending(true);
+              try {
+                await edit({
+                  reviewId: view.review._id, columnKey, label, prompt, format,
+                  ...(format === 'tag' ? { options: options.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
+                });
+                onClose();
+              } catch (e) {
+                errorToast('Could not save the column', { description: errorText(e) });
+                setPending(false);
+              }
+            }}
+          >
+            {pending && <Loading className="size-4" />} {rerun ? 'Save and run the column' : 'Save'}
+          </Button>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
+  );
+}
+
 function AddColumns({ view, onClose }: { view: View; onClose: () => void }) {
   const add = useMutation(api.reviews.addColumns);
   const taken = new Set(view.columns.map((c) => c.key));
@@ -291,6 +402,9 @@ export default function ReviewPage() {
   const logExport = useMutation(api.workflows.logExport);
   const [selected, setSelected] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const deleteColumn = useMutation(api.reviews.deleteColumn);
   const base = `/app/matters/${matter._id}`;
 
   if (view === undefined) return <div className="mx-auto w-full max-w-6xl space-y-3 px-4 py-6 sm:px-6">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-9 w-full" />)}</div>;
@@ -303,6 +417,19 @@ export default function ReviewPage() {
   const filled = scope.filter((c) => c.state !== 'pending').length;
   const verified = view.cells.filter((c) => c.reviewStatus === 'verified').length;
   const flagged = view.cells.filter((c) => c.reviewStatus === 'flagged').length;
+
+  const fileBase = () => view!.review.title.replace(/[^\w.-]+/g, '-').replace(/^-|-$/g, '') || 'review';
+  async function exportXlsx() {
+    const name = `${fileBase()}.xlsx`;
+    const bytes = await xlsxBytes(reviewSheets({ ...view!, title: view!.review.title, columns: view!.columns.map((c) => ({ ...c, format: c.format as CellFormat })) }));
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+    void logExport({ runId: latest!._id, file: name, title: view!.review.title });
+  }
 
   function exportCsv() {
     const name = `${view!.review.title.replace(/[^\w.-]+/g, '-').replace(/^-|-$/g, '') || 'review'}.csv`;
@@ -323,9 +450,21 @@ export default function ReviewPage() {
         <Button size="sm" variant="outline" disabled={!!live} onClick={() => setAdding(true)}>
           <PlusIcon className="size-4" /> Add column
         </Button>
-        <Button size="sm" variant="outline" disabled={!latest} onClick={exportCsv} data-testid="export-csv">
-          <DownloadSimpleIcon className="size-4" /> Export CSV
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="outline" disabled={!latest} data-testid="export">
+              <DownloadSimpleIcon className="size-4" /> Export <CaretDownIcon className="size-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem onSelect={() => void exportXlsx()} data-testid="export-xlsx">
+              <FileXlsIcon className="size-4" /> Excel (.xlsx)
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={exportCsv} data-testid="export-csv">
+              <FileCsvIcon className="size-4" /> CSV
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {live && (
@@ -359,11 +498,28 @@ export default function ReviewPage() {
             onSelect={setSelected}
             busy={!!live}
             onRerun={(key) => rerun({ reviewId, columnKey: key }).catch((e) => errorToast('Could not re-run the column', { description: errorText(e) }))}
+            onEdit={setEditing}
+            onDelete={setDeleting}
           />
         </div>
         {selected && <CellPanel view={view} k={selected} onClose={() => setSelected(null)} onMove={setSelected} />}
       </div>
       {adding && <AddColumns view={view} onClose={() => setAdding(false)} />}
+      {editing && <ColumnEditor view={view} columnKey={editing} onClose={() => setEditing(null)} />}
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title="Delete this column?"
+        description={`Every cell in "${view.columns.find((c) => c.key === deleting)?.label ?? ''}" goes, verified and edited ones included. The audit log keeps the record.`}
+        confirmLabel="Delete column"
+        confirmVariant="destructive"
+        onConfirm={async () => {
+          const key = deleting!;
+          setDeleting(null);
+          if (selected?.endsWith(`:${key}`)) setSelected(null);
+          await deleteColumn({ reviewId, columnKey: key }).catch((e) => errorToast('Could not delete the column', { description: errorText(e) }));
+        }}
+      />
     </div>
   );
 }
