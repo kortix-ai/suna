@@ -19,11 +19,6 @@ export function enrollmentUrl(backendUrl: string | undefined): string {
   return (backendUrl || 'https://api.kortix.com/v1').replace(/\/+$/, '').replace(/\/v1$/, '');
 }
 
-/** The silent install from an MSI next to the command (Intune, Group Policy, a script). */
-export function msiCommand(url: string, token: string): string {
-  return `msiexec /i KortixCapture-x64.msi /qn KORTIX_URL=${url} ENROLLMENT_TOKEN=${token}`;
-}
-
 /** Where a computer downloads an installer: the dev build for the dev API, else the latest release. */
 export function installerUrl(url: string, file: string): string {
   const tag = /\/\/dev-api\./.test(url) ? 'download/capture-dev-latest' : 'latest/download';

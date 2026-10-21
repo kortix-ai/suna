@@ -1318,6 +1318,7 @@
     },
     "credits": {
       "loadFailed": "Овај налог није могао да се учита.",
+      "resetAt": "Кредити плана се ресетују",
       "availableBalance": "Расположиво стање",
       "creditCount": "{count, plural, one {{formatted} кредит} other {{formatted} кредита}}",
       "owed": "дуговање",
@@ -2201,6 +2202,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Članovi",
+      "unlimitedMembers": "Neograničen broj članova",
+      "loadingMembers": "Učitavanje članova…",
+      "membersUnavailable": "Broj članova nije dostupan",
+      "memberCount": "{count, plural, one {# član} few {# člana} other {# članova}}",
       "cancels": "Отказује се {date}",
       "cancelsAtPeriodEnd": "Отказује се на крају периода",
       "renews": "Обнавља се {date}",
@@ -20312,7 +20318,10 @@
       "text7971dd752669": "Подсетници",
       "text724b09397472": "Dodavanje {name} u {project}",
       "text1e007c47254d": "Podešavanje radi u pozadini. Dobićete obaveštenje kada bude gotovo.",
-      "text57f57edb6f16": "Zahtev za izmenu #{number} je spreman za pregled."
+      "text57f57edb6f16": "Zahtev za izmenu #{number} je spreman za pregled.",
+      "texta8597db6f24b": "Уклони вештину",
+      "text5f6ba69d66d1": "Вештина је уклоњена",
+      "textcb8d6b0c94c9": " и све датотеке у њој, укључујући измене, и уклања вештину из сваког агента који је користи. Један commit на подразумеваној грани."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
