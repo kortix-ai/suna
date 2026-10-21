@@ -104,7 +104,7 @@ export function CitationLayer({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {unlinked && (
           <p role="status" data-testid="citations-unchecked" className="border-b border-border bg-muted px-4 py-2 text-xs text-muted-foreground">
-            Some citations in this conversation are not linked to a source, so Lumen could not check them. Treat them as unverified, or ask Lumen to cite the passages.
+            The latest answer has citations that are not linked to a source, so Lumen could not check them. Treat them as unverified, or ask Lumen to cite the passages.
           </p>
         )}
         <div ref={ref} className="lumen-cites flex min-h-0 min-w-0 flex-1 flex-col">

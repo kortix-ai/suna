@@ -25,6 +25,8 @@ describe('hasUnlinkedCitations: a finished answer citing a bare [n] is flagged',
     expect(hasUnlinkedCitations(doc('<div class="kortix-markdown" data-streaming="false">Uncapped <a href="/cite?d=x&a=p1.1&q=y">[1]</a>.</div>'))).toBe(false);
     expect(hasUnlinkedCitations(doc('<div class="kortix-markdown" data-streaming="true">Uncapped [1].</div>'))).toBe(false);
     expect(hasUnlinkedCitations(doc('<div class="kortix-markdown" data-streaming="false">No markers.</div><p>[1] in a user bubble</p>'))).toBe(false);
+    // The rewrite with links clears the banner the bare answer above it raised (UXR3-3).
+    expect(hasUnlinkedCitations(doc('<div class="kortix-markdown" data-streaming="false">Uncapped [1].</div><div class="kortix-markdown" data-streaming="false">Uncapped <a href="/cite?d=x&a=p1.1&q=y">[1]</a>.</div>'))).toBe(false);
   });
 });
 

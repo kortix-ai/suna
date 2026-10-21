@@ -22,11 +22,13 @@ export function parseCite(href: string | null): Cite | null {
   }
 }
 
-/** A finished answer block (`.kortix-markdown`, not streaming) that cites "[n]" with no citation link in it. */
+/**
+ * The latest finished answer block (`.kortix-markdown`, not streaming) cites "[n]" with no
+ * citation link in it. Only the latest: an answer Lumen had rewritten with links clears it.
+ */
 export function hasUnlinkedCitations(root: ParentNode): boolean {
-  return [...root.querySelectorAll<HTMLElement>('.kortix-markdown[data-streaming="false"]')].some(
-    (el) => !el.querySelector(CITE_SELECTOR) && /\[\d{1,3}\]/.test(el.textContent ?? ''),
-  );
+  const last = [...root.querySelectorAll<HTMLElement>('.kortix-markdown[data-streaming="false"]')].at(-1);
+  return !!last && !last.querySelector(CITE_SELECTOR) && /\[\d{1,3}\]/.test(last.textContent ?? '');
 }
 
 type MessageLike = { info: { id: string; role: string }; parts: ReadonlyArray<{ type: string; text?: string }> };
