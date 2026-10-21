@@ -11,7 +11,9 @@ import type { ReactNode } from 'react';
 import { ArtifactPanel } from './artifact';
 import { ROLES } from './registry';
 import { RoleHeroVisual } from './role-hero-visual';
-import { DefinitionRows, Eyebrow, Section, SectionDivider } from './shared';
+import { Eyebrow, Section } from '../component/section-primitives';
+import { SectionDivider } from '../component/public-route-helpers';
+import { DefinitionRows } from './shared';
 import type { RoleContent } from './types';
 
 const MODE_STEP: Record<RoleContent['cadence']['modes'][number]['id'], string> = {
