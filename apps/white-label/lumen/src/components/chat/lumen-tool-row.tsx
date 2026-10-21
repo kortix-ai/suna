@@ -14,4 +14,11 @@ function LumenShellRow(props: ToolProps) {
   return <BasicTool icon={<ScalesIcon className="size-4" />} trigger={{ title: step }} durationMs={ms} locked />;
 }
 
-ToolRegistry.register('bash', LumenShellRow);
+/**
+ * Put Lumen's row in @kortix/ui's tool registry. A named call, not a bare side-effect
+ * import: the bundler dropped `import './lumen-tool-row'` and the stock row showed
+ * every command (UXR3-2). Idempotent.
+ */
+export function registerLumenToolRows() {
+  if (ToolRegistry.get('bash') !== LumenShellRow) ToolRegistry.register('bash', LumenShellRow);
+}

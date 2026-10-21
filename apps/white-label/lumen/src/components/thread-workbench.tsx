@@ -6,7 +6,7 @@ import { SessionHeader } from '@/components/workbench/session-header';
 import { useRuntimeRecovery } from '@/components/workbench/use-runtime-recovery';
 import { CitationLayer } from '@/components/chat/citation-layer';
 import { CITATION_REPAIR_PROMPT, unlinkedAnswerId } from '@/lib/cite-link';
-import '@/components/chat/lumen-tool-row';
+import { registerLumenToolRows } from '@/components/chat/lumen-tool-row';
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
 import { useSession } from '@kortix/sdk/react';
@@ -14,6 +14,8 @@ import { SessionThread } from '@kortix/ui/session';
 import { successToast } from '@kortix/ui/toast';
 import { useAction, useMutation } from 'convex/react';
 import { useEffect, useRef, useState } from 'react';
+
+registerLumenToolRows();
 
 /** One thread: the Kortix session behind it, streamed through Lumen's proxy. */
 export function ThreadWorkbench({ projectId, sessionId, matterId }: { projectId: string; sessionId: string; matterId: Id<'matters'> }) {
