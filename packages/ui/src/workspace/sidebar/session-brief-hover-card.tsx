@@ -14,13 +14,13 @@ import { reviewHref } from '../../internal/lib/capability-tab-routes';
 import { useTranslations } from '../../i18n';
 import { useSessionHoverStore } from '../../internal/stores/session-hover-store';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
-import { GitDiffIcon } from '@phosphor-icons/react';
+import { ArrowsSplitIcon, GitDiffIcon, RobotIcon } from '@phosphor-icons/react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useEffect, type ReactElement } from 'react';
 import { shortRelative } from '../../session/actions/project-session-list-helpers';
 import { SessionLabelBadges } from '../sessions/session-label-badges';
 import { SOURCE_ICONS } from './session-source-icons';
-import { SessionStatusMark } from './session-status-mark';
+import { isReviewOverdue, SessionStatusMark } from './session-status-mark';
 
 const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
   year: 'numeric',
@@ -60,14 +60,22 @@ interface SessionBrief {
   changeRequests: readonly ChangeRequest[];
   /** The session's free-form labels; the sidebar row has no room for them. */
   labels?: readonly string[];
+  /** `needs-you` only: what the session waits on, see `SessionStatusMark`. */
+  waitingOn?: 'answer' | 'review';
+  /** The session was spawned by another one and is drawn under it. */
+  spawned?: boolean;
+  /** What this session started: its sub-agents and the sessions it spawned. */
+  subagentCount?: number;
+  spawnedCount?: number;
 }
 
 interface SessionBriefInteractionProps {
   projectId: string;
 }
 
-function useStatusLabel(status: SessionDisplayStatus): string {
+function useStatusLabel(status: SessionDisplayStatus, waitingOn?: 'answer' | 'review'): string {
   const t = useTranslations('sidebar.sessionList.status');
+  if (status === 'needs-you' && waitingOn === 'answer') return t('needsInput');
   return t(SESSION_STATUS_TRANSLATION_KEY[status]);
 }
 
@@ -154,23 +162,54 @@ function SessionBriefContent({
   source,
   changeRequests,
   labels,
+  waitingOn,
+  spawned = false,
+  subagentCount = 0,
+  spawnedCount = 0,
   projectId,
   onDismiss,
 }: SessionBrief & SessionBriefInteractionProps & { onDismiss: () => void }) {
   const SourceIcon = source.kind === 'chat' ? null : SOURCE_ICONS[source.kind];
+  const statusLabel = useStatusLabel(status, waitingOn);
+  const t = useTranslations('sidebar.sessionList.brief');
 
   return (
     <>
       <div className="space-y-1.5 px-3.5 py-2.5">
         <div className="flex items-center gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <p className="text-foreground truncate text-sm font-medium">{title}</p>
-            <span className="shrink-0">
-              <SessionStatusMark status={status} />
-            </span>
-          </div>
+          <p className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">{title}</p>
           <RelativeCreatedTime createdAt={createdAt} />
         </div>
+
+        <div className="text-muted-foreground flex items-center gap-2 text-xs">
+          <SessionStatusMark
+            status={status}
+            waitingOn={waitingOn}
+            overdue={isReviewOverdue(changeRequests)}
+          />
+          <span>{statusLabel}</span>
+        </div>
+
+        {spawned && (
+          <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            <ArrowsSplitIcon aria-hidden className="size-4 shrink-0" />
+            <span>{t('spawned')}</span>
+          </div>
+        )}
+
+        {subagentCount > 0 && (
+          <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            <RobotIcon aria-hidden className="size-4 shrink-0" />
+            <span>{t('subAgentCount', { count: subagentCount })}</span>
+          </div>
+        )}
+
+        {spawnedCount > 0 && (
+          <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            <ArrowsSplitIcon aria-hidden className="size-4 shrink-0" />
+            <span>{t('spawnedCount', { count: spawnedCount })}</span>
+          </div>
+        )}
 
         {SourceIcon ? (
           <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
@@ -288,9 +327,10 @@ export function SessionBriefDescription({
   createdAt,
   source,
   changeRequests,
+  waitingOn,
 }: Omit<SessionBrief, 'title'> & { id: string }) {
   const t = useTranslations('sidebar.sessionList.brief');
-  const statusLabel = useStatusLabel(status);
+  const statusLabel = useStatusLabel(status, waitingOn);
 
   return (
     <span id={id} className="sr-only">
@@ -318,5 +358,80 @@ export function MobileSessionCreatedTime({ createdAt }: { createdAt: string }) {
       createdAt={createdAt}
       className="text-muted-foreground block truncate text-xs leading-4 tabular-nums"
     />
+  );
+}
+
+/**
+ * The hover card of a sub-agent row: what it is and when it ran. Same store,
+ * same shell as `SessionBriefHoverCard`, so one card is open at a time across
+ * sessions, sub-agents and spawned children, and moving between them is free.
+ */
+export function SubagentHoverCard({
+  id,
+  title,
+  createdAt,
+  updatedAt,
+  children,
+}: {
+  id: string;
+  title: string;
+  createdAt: number | null;
+  updatedAt: number | null;
+  children: ReactElement;
+}) {
+  const t = useTranslations('sidebar.sessionList.brief');
+  const open = useSessionHoverStore((state) => state.activeSessionId === id);
+  const openSession = useSessionHoverStore((state) => state.openSession);
+  const closeSession = useSessionHoverStore((state) => state.closeSession);
+  const dismiss = useSessionHoverStore((state) => state.dismiss);
+  const created = createdAt ?? updatedAt;
+  const createdIso = created ? new Date(created).toISOString() : null;
+
+  useEffect(
+    () => () => {
+      const store = useSessionHoverStore.getState();
+      if (store.activeSessionId === id) store.dismiss();
+    },
+    [id],
+  );
+
+  return (
+    <HoverCard open={open} openDelay={0} closeDelay={0}>
+      <HoverCardTrigger
+        asChild
+        onPointerEnter={() => openSession(id)}
+        onPointerLeave={() => closeSession(id)}
+        onFocus={() => openSession(id)}
+        onBlur={() => closeSession(id)}
+      >
+        {children}
+      </HoverCardTrigger>
+      <HoverCardContent
+        side="right"
+        align="start"
+        sideOffset={14}
+        animated={false}
+        className="w-72 overflow-hidden rounded-md p-0 shadow-xs"
+        onPointerEnter={() => openSession(id)}
+        onPointerLeave={() => closeSession(id)}
+        onEscapeKeyDown={dismiss}
+      >
+        <div className="space-y-1.5 px-3.5 py-2.5">
+          <div className="flex items-center gap-3">
+            <p className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">{title}</p>
+            {createdIso && <RelativeCreatedTime createdAt={createdIso} />}
+          </div>
+          <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            <RobotIcon aria-hidden className="size-4 shrink-0" />
+            <span>{t('subAgent')}</span>
+          </div>
+          {createdIso && (
+            <div className="text-muted-foreground text-xs">
+              {t('created')}: <SessionCreatedTime createdAt={createdIso} />
+            </div>
+          )}
+        </div>
+      </HoverCardContent>
+    </HoverCard>
   );
 }

@@ -413,6 +413,7 @@ A session runs the current config release of its base branch: `kortix.yaml`, age
 - Each commit on the base branch is a new config release. A running session converges to it at the start of its next turn. A push or a merge also starts the convergence in the background.
 - To apply it at once, select **Reload config** in the session menu, or run `kortix sessions reload <session_id>`. It restarts the agent runtime. `--force` reloads during a turn and ends that turn; it asks first unless you pass `--yes`. `--no-repo` skips the git pull in `/workspace`. `--status` only reports whether the session is behind.
 - To test config before a merge, create a session with `base_ref` set to your branch. Its change requests target that branch too.
+- Such a session runs the branch's agent behavior: prompts, tools, skills and harness files. Governance still comes from the default branch: which agents are declared, and their secret, connector and permission grants. A branch cannot widen what an agent may use before it merges. When the project requires declared agents, an agent declared only on the branch is refused with `400` `AGENT_NOT_DECLARED`.
 
 When a release fails to load, the session runs the last release that worked, or else the platform default config. The session header shows **Config failed to load**. Fix the config on the base branch. See [Sandboxes & previews](/docs/work/runtime) for troubleshooting.
 

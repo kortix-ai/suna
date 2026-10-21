@@ -1594,6 +1594,10 @@
       "showMore": "Prikaži više",
       "brief": {
         "status": "Статус",
+        "subAgent": "Подагент",
+        "spawned": "Покренута сесија",
+        "subAgentCount": "{count, plural, one {# подагент} few {# подагента} other {# подагената}}",
+        "spawnedCount": "{count, plural, one {# покренута сесија} few {# покренуте сесије} other {# покренутих сесија}}",
         "created": "Креирано",
         "source": "Извор",
         "changeRequests": "Захтеви за измену",
@@ -1607,11 +1611,12 @@
         }
       },
       "status": {
-        "needsYou": "Захтева вашу пажњу",
-        "starting": "Покретање",
-        "running": "У току",
-        "done": "Завршено",
-        "stopped": "Заустављено",
+        "needsYou": "Чека преглед",
+        "needsInput": "Чека ваш одговор",
+        "starting": "Буди се",
+        "running": "Ради",
+        "done": "Спремно",
+        "stopped": "Мирује",
         "failed": "Неуспело",
         "legacy": "Застарело"
       }
