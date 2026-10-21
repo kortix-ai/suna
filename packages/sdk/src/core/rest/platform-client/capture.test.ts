@@ -205,6 +205,13 @@ test('device sign-in approval: read with the accounts it can sign into, approve 
   expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/capture/device/grants/ABCD-1234/deny' });
 });
 
+// KRTX-2983: search keeps to one UTC day with `day`, as the timeline does.
+test('search: day is sent, so a search can keep to one UTC day', async () => {
+  nextBody = { hits: [] };
+  await searchMyCapture({ q: 'invoice', day: '2026-10-20' });
+  expect(last().url).toBe('http://test.local/capture/me/search?q=invoice&day=2026-10-20');
+});
+
 test('the agent tool reads the person it acts for under /capture/me, account from the token', async () => {
   nextBody = { hits: [] };
   await searchMyCapture({ q: 'invoice', kinds: ['audio'] });

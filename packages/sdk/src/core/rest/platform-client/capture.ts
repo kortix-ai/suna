@@ -396,7 +396,9 @@ export interface CaptureDays {
 
 export type CaptureSearchKind = CaptureLayer;
 
-export interface CaptureSearchQuery extends Omit<CaptureWindowQuery, 'day' | 'displayId'> {
+/** `day` keeps the search to one UTC day and wins over `from`/`to`; without
+ * either, search covers all of time. Search does not filter by display. */
+export interface CaptureSearchQuery extends Omit<CaptureWindowQuery, 'displayId'> {
   /** Web-search syntax: words, "a phrase", -exclude. */
   q: string;
   kinds?: CaptureSearchKind[];
@@ -510,6 +512,7 @@ const searchParams = (query: CaptureSearchQuery) =>
     kinds: query.kinds?.join(','),
     app: query.app,
     limit: query.limit,
+    day: query.day,
     from: query.from,
     to: query.to,
     user_id: query.userId,
