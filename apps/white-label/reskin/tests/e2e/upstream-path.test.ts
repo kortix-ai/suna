@@ -36,6 +36,16 @@ describe('buildUpstreamPath', () => {
     expect(buildUpstreamPath(['projects', '.', OWN]).ok).toBe(false);
   });
 
+  test('a dot segment that is still percent-encoded is refused', () => {
+    // `%252e%252e` arrives from Next as the segment `%2e%2e`. fetch() resolves
+    // it as `..`, so the policy would approve <own> and the upstream would get
+    // <victim>, or /v1/accounts.
+    expect(buildUpstreamPath(['projects', OWN, '%2e%2e', VICTIM, 'secrets']).ok).toBe(false);
+    expect(buildUpstreamPath(['projects', OWN, '%2E%2E', '%2e%2e', 'accounts']).ok).toBe(false);
+    expect(buildUpstreamPath(['projects', OWN, 'a?b']).ok).toBe(false);
+    expect(buildUpstreamPath(['projects', OWN, 'a#b']).ok).toBe(false);
+  });
+
   test('a backslash cannot stand in for the slash', () => {
     expect(buildUpstreamPath(['projects', `${OWN}\\..\\${VICTIM}`]).ok).toBe(false);
   });
