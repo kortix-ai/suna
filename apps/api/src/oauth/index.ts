@@ -43,7 +43,6 @@ import {
   isOAuthAccessToken,
   isOAuthRefreshToken,
   isOAuthScope,
-  OAUTH_SCOPES,
   OAUTH_SCOPE_EMAIL,
   OAUTH_SCOPE_KORTIX,
   OAUTH_SCOPE_PROFILE,
@@ -772,13 +771,11 @@ oauthApp.openapi(
       redirectUris = normalizeRedirectUris(body.redirect_uris, { native: true });
       // Unknown scopes (openid, offline_access, mcp:tools…) are ignored.
       scopes = [...new Set(parseScopeList(body.scope).filter(isOAuthScope))];
-      // A client that asked only for unknown scopes is an identity client
-      // (MCP clients send `openid profile email offline_access`). Registering
-      // it with `kortix` alone made every later `/authorize?scope=profile`
-      // fail scope narrowing, and a `profile`-only token 403 on /userinfo
-      // (pentest 2026-10-22). Grant every supported scope so any subset the
-      // client asks for is inside what it registered.
-      if (scopes.length === 0) scopes = [...OAUTH_SCOPES];
+      // Unknown scopes (openid, offline_access, mcp:tools…) are ignored; none
+      // left → kortix. Identity clients send `openid profile email
+      // offline_access`, and `profile`/`email` are known, so they survive the
+      // filter; only a client with no recognised scope at all lands here.
+      if (scopes.length === 0) scopes = [OAUTH_SCOPE_KORTIX];
     } catch (err) {
       if (err instanceof OAuthClientInputError) {
         const error = /redirect_uri/.test(err.message)

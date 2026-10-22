@@ -138,7 +138,9 @@ describe('native test-lane workflow', () => {
   });
 
   test('uploads results after the worker returns', () => {
-    expect(testWorkflow).toContain('actions/upload-artifact@v7');
+    // Pinned to a commit (with the release in a comment), so assert the pin
+    // rather than the mutable tag.
+    expect(testWorkflow).toMatch(/actions\/upload-artifact@(v7\b|[0-9a-f]{40} # v7)/);
     // The upload path is a multi-line block since the bypass-state exclusion
     // landed: `path: |` then the glob, then `!…/deployment-bypass-state.json`.
     expect(testWorkflow).toMatch(/path: \|\s*\n\s*tests\/test-results\/\*\*/);

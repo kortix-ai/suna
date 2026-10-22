@@ -341,7 +341,7 @@ describe('discovery + userinfo', () => {
     expect(res.status).toBe(404);
   });
 
-  test('POST /register: unknown scopes are dropped, and a client left with none registers every supported scope; the 429 carries Retry-After', async () => {
+  test('POST /register: unknown scopes are dropped (default kortix when none left); the 429 carries Retry-After', async () => {
     const app = createApp();
     const register = (scope?: string) =>
       app.request('/v1/oauth/register', {
@@ -350,12 +350,7 @@ describe('discovery + userinfo', () => {
         body: JSON.stringify({ redirect_uris: ['http://127.0.0.1:1/cb'], ...(scope === undefined ? {} : { scope }) }),
       });
     expect(((await (await register('openid profile offline_access')).json()) as any).scope).toBe('profile');
-    // Nothing recognised left: grant the whole supported set, so any subset the
-    // client later asks for (a profile-only token, say) is inside its
-    // registration instead of failing scope narrowing or 403ing /userinfo.
-    expect(
-      ((await (await register('mcp:tools')).json()) as any).scope.split(' ').sort(),
-    ).toEqual(['email', 'kortix', 'profile']);
+    expect(((await (await register('mcp:tools')).json()) as any).scope).toBe('kortix');
     let last: Response = await register();
     for (let i = 0; i < 40 && last.status !== 429; i++) last = await register();
     expect(last.status).toBe(429);
