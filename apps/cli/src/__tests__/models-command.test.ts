@@ -245,6 +245,23 @@ describe('kortix models', () => {
     expect(JSON.parse(json.stdout).catalog).toEqual(catalog);
   });
 
+  // KRTX-3011: a default kept in the picker whose provider is not connected
+  // reads `available: false`; the row says what to connect instead of reading
+  // like a runnable model.
+  test('ls marks a served model that is not runnable and says what to connect', async () => {
+    const models = {
+      'glm-5.3-flash': { name: 'GLM 5.3 Flash', provider: 'zai' },
+      'codex/gpt-6-astra': { name: 'GPT-6 Astra', provider: 'codex', available: false, availability: 'login' },
+      'anthropic/claude-opus-4-8': { name: 'Claude Opus 4.8', provider: 'anthropic', available: false, availability: 'provider' },
+    };
+    const config = writeConfig(startServer({ 'codex/gpt-6-astra': true }, { models }));
+    const r = await runCli(['models', 'ls', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/codex\/gpt-6-astra.*not connected: kortix providers login openai/);
+    expect(r.stdout).toMatch(/anthropic\/claude-opus-4-8.*not connected: kortix providers set anthropic/);
+    expect(r.stdout).not.toMatch(/glm-5\.3-flash.*not connected/);
+  });
+
   test('enable MERGES into the stored overrides before the replace-whole-map PUT', async () => {
     const config = writeConfig(startServer({ 'openai/gpt-5.5': false }));
     const r = await runCli(

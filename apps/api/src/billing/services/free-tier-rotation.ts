@@ -41,15 +41,17 @@ export async function processFreeTierCreditRotation(now = new Date()): Promise<{
 
       try {
         const idempotencyKey = `free_tier_rotation_${account.accountId}_${rotationMonth(now)}`;
+        const expiresAt = calculateNextCreditGrant(now).toISOString();
         await wallet.reset({
           accountId: account.accountId,
           amount: FREE_TIER_MONTHLY_CREDITS_USD,
+          expiresAt,
           description: `Free tier monthly credit reset: ${formatUsdAsCredits(FREE_TIER_MONTHLY_CREDITS_USD)} credits`,
           key: { event: idempotencyKey },
         });
 
         await updateCreditAccount(account.accountId, {
-          nextCreditGrant: calculateNextCreditGrant(now).toISOString(),
+          nextCreditGrant: expiresAt,
           lastGrantDate: now.toISOString(),
         });
 

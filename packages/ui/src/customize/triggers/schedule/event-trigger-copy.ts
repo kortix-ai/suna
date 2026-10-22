@@ -527,8 +527,9 @@ export function newConnectorSlug(app: string, taken: readonly string[]): string 
       .toLowerCase()
       .replace(/[^a-z0-9_-]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'app';
-  if (!taken.includes(slug)) return slug;
-  for (let n = 2; ; n++) if (!taken.includes(`${slug}-${n}`)) return `${slug}-${n}`;
+  const takenSet = new Set(taken);
+  if (!takenSet.has(slug)) return slug;
+  for (let n = 2; ; n++) if (!takenSet.has(`${slug}-${n}`)) return `${slug}-${n}`;
 }
 
 /* ─── Delivery ──────────────────────────────────────────────────────────── */

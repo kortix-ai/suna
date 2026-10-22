@@ -6,11 +6,9 @@ import { projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { llmPriceMarkup } from '../../billing/services/tiers';
-import { config } from '../../config';
 import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
-import { cachedManagedPricingRoutes, withManagedPricing } from '../../llm-gateway/models/managed-pricing-routes';
 import { unavailableCatalog } from '../../llm-gateway/models/picker-catalog';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
@@ -194,21 +192,11 @@ export function registerModelsRoutes(): void {
         principalUserId: loaded.userId,
         personalUserId: await requestPersonalOwner(c, loaded),
       });
-      // Base provider prices: the platform fee is stated once, beside them.
-      const quotes = await cachedManagedPricingRoutes(
-        config.MORPH_MANAGED_MODELS,
-        1,
-        Boolean(config.MORPH_API_KEY),
-        { baseUrl: config.OPENROUTER_API_URL, apiKey: config.OPENROUTER_API_KEY ?? '' },
-      );
       return c.json({
         ...catalog,
         // Discovery only: never add locked entries to the runnable picker.
         catalog: unavailableCatalog(gatewayModelCatalog(projectId), catalog.models),
-        models: withManagedPricing(catalog.models, quotes),
-        managedPricingRoutes: Object.fromEntries(
-          Object.entries(quotes).filter(([id]) => id in catalog.models),
-        ),
+        // Model prices are base prices: the platform fee is stated once, beside them.
         platformFeePercent: Math.round((llmPriceMarkup() - 1) * 1000) / 10,
       });
     },

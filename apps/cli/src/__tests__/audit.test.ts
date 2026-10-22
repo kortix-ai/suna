@@ -144,6 +144,11 @@ describe('audit CLI process', () => {
     expect(stdout).toContain('session <session-id>');
     expect(stdout).toContain('--cursor <c>');
     expect(stdout).toContain('--phase <p>');
+    // KRTX-2992: the webhook PATCH (enable AND disable) checks `auditAccess`;
+    // only DELETE skips it (apps/api/src/accounts/audit.ts).
+    const flat = stdout.replace(/\s+/g, ' ');
+    expect(flat).toContain('add, enable and disable also need the Enterprise entitlement');
+    expect(flat).not.toContain('disable and delete never do');
   });
 
   test('executes filtered account, project, session, and resumable export reads', async () => {
@@ -446,6 +451,108 @@ describe('audit CLI process', () => {
       server.stop(true);
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+// KRTX-2991: on an account without the Enterprise `auditAccess` entitlement the
+// session route answers `events: []` and puts the pending approvals in
+// `actions` (project-audit.ts). The CLI read only `events`.
+describe('audit session without the Enterprise trail', () => {
+  const ACTION = {
+    execution_id: 'e7300000-0000-4000-a000-000000000001',
+    action: 'gmail.send_email',
+    connector_id: 'c1',
+    connector: 'gmail',
+    status: 'pending_approval',
+    risk: 'write',
+    acted_by: 'user-1',
+    acted_by_email: 'audit@example.test',
+    resolved_by: null,
+    resolved_by_email: null,
+    result_summary: null,
+    at: '2026-10-20T09:15:00.000Z',
+    resolved_at: null,
+    approval_url: 'https://app.example.test/approvals/e7300000',
+    can_resolve: true,
+    resolvers: null,
+  };
+
+  async function runSession(args: string[]) {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-audit-actions-'));
+    const cliEntry = join(resolve(import.meta.dir, '..', '..'), 'src', 'index.ts');
+    const server = Bun.serve({
+      port: 0,
+      fetch: () =>
+        Response.json({
+          session_id: 'sess-1',
+          agent: 'default',
+          audit_access: false,
+          count: 1,
+          events: [],
+          next_cursor: null,
+          actions: [ACTION],
+        }),
+    });
+    const configFile = join(root, 'config.json');
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: `http://127.0.0.1:${server.port}`,
+            token: 'kortix_pat_audit_test',
+            user_id: 'user-1',
+            user_email: 'audit@example.test',
+            account_id: 'account-1',
+            logged_in_at: '2026-10-20T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      KORTIX_CONFIG_FILE: configFile,
+      KORTIX_NO_UPDATE_CHECK: '1',
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+      NO_COLOR: '1',
+      FORCE_COLOR: '0',
+    };
+    for (const key of ['KORTIX_API_URL', 'KORTIX_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID']) {
+      delete env[key];
+    }
+    try {
+      const child = Bun.spawn({
+        cmd: [process.execPath, cliEntry, 'audit', 'session', 'sess-1', '--project', 'project-1', ...args],
+        cwd: root,
+        env,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const [code, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);
+      return { code, stdout };
+    } finally {
+      server.stop(true);
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  test('prints the pending approvals from `actions`', async () => {
+    const r = await runSession([]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('gmail.send_email');
+    expect(r.stdout).toContain('pending_approval');
+    expect(r.stdout).toContain('https://app.example.test/approvals/e7300000');
+    expect(r.stdout).toContain('Enterprise');
+  });
+
+  test('--json keeps `actions` and `audit_access`', async () => {
+    const r = await runSession(['--json']);
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.actions).toEqual([ACTION]);
+    expect(parsed.audit_access).toBe(false);
+    expect(parsed.events).toEqual([]);
   });
 });
 

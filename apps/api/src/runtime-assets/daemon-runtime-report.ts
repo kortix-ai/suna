@@ -78,7 +78,7 @@ function num(value: unknown): number | null {
 
 /**
  * The managed lineup is deliberately tiny by product policy (a handful of
- * open-weight ids — see `RUNTIME_MANAGED_MODELS`), so this cap is generous
+ * open-weight ids — see `managedLineup()`), so this cap is generous
  * headroom, not a working limit. It exists so a malformed or hostile daemon
  * response cannot make the API hold an unbounded array per session.
  */

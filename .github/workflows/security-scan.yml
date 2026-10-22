@@ -55,7 +55,7 @@ jobs:
         env:
           TRIVY_SKIP_DB_UPDATE: "false"
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
@@ -86,7 +86,7 @@ jobs:
           output: trivy-image.sarif
           exit-code: "0"
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image-${{ strategy.job-index }}
@@ -101,7 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Checkov scan → SARIF
-        uses: bridgecrewio/checkov-action@cc0e17d456ef1713bbfd963ebac19dc776775cb2
+        uses: bridgecrewio/checkov-action@6f26dc90000b74feb589a906cdfae540f5119895
         with:
           directory: infra/
           framework: terraform,kubernetes,helm,dockerfile
@@ -109,7 +109,7 @@ jobs:
           output_file_path: checkov.sarif
           soft_fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
           sarif_file: checkov.sarif/results_sarif.sarif
           category: checkov
@@ -138,7 +138,7 @@ jobs:
           output-file: hadolint.sarif
           no-fail: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
           sarif_file: hadolint.sarif
           category: hadolint-${{ strategy.job-index }}

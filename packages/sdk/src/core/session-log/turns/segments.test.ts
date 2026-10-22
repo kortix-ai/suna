@@ -271,3 +271,13 @@ describe('classifySessionLogMessage', () => {
     expect(classifySessionLogMessage(msg('n2', 'assistant', [])).isEmpty).toBe(true);
   });
 });
+
+test('compaction rides in the work burst between adjacent activity and leaves the final answer outside Worked', () => {
+  const blocks: SessionLogBlock[] = [call('before', 'bash'), { type: 'compaction', id: 'cp', summary: 'Kept context', first_kept_message_id: null }, call('after', 'bash'), { type: 'text', id: 'answer', text: 'Done.' }];
+  const segments = sessionLogTurnSegments(blocks);
+  expect(shape(segments)).toEqual([['burst', ['before', 'cp', 'after']], ['text', ['answer']]]);
+  expect(sessionLogBurstSteps(blocks.slice(0, 3)).map((s) => s.key)).toEqual(['before', 'cp', 'after']);
+  const split = splitSessionLogTurnWork(segments, { working: false });
+  expect(split?.work).toEqual([segments[0]!]);
+  expect(split?.final).toEqual([segments[1]!]);
+});

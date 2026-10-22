@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { MANAGED_FLAGSHIP_MODEL_ID } from '@kortix/llm-catalog/lite';
 import type { ProviderListResponse } from '../runtime/runtime-types';
 
 import type {
@@ -15,9 +14,10 @@ import {
   sessionModelFallback,
   sessionPickStands,
 } from './composer-model';
-import type { FlatModel } from './model-flatten';
-import { createModelVisibility, hasUsableModel, modelInDefaultView } from './model-visibility';
-import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog/lite';
+import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
+import { createModelVisibility, hasUsableModel, isDefaultVisible, modelInDefaultView } from './model-visibility';
+// A Kortix managed model id: whatever Platinum Inference lists; no static list exists.
+const MANAGED_ID = 'deepseek-v4.1-flash';
 import { pickerProviderList, projectLlmCatalogToProviderList } from './provider-selection';
 
 /**
@@ -114,15 +114,25 @@ describe('createModelVisibility', () => {
     flat('openrouter', 'acme/fast-2', { family: 'fast', releaseDate: recent }),
     flat('openrouter', 'acme/fast-1', { family: 'fast', releaseDate: old }),
     flat('openrouter', 'acme/undated'),
-    flat('openrouter', MANAGED_FLAGSHIP_MODEL_ID),
+    flat('openrouter', MANAGED_ID),
   ];
 
-  test('native: newest per family shows, older versions hide, undated shows only the flagship', () => {
+  // There is no static managed flagship any more: an undated NATIVE model is
+  // opt-in whatever its id, and the managed models (bare ids under the gateway
+  // provider) are the ones shown by default.
+  test('native: newest per family shows, older versions hide, undated is opt-in', () => {
     const isVisible = createModelVisibility({ catalogModels: catalog });
     expect(isVisible({ providerID: 'openrouter', modelID: 'acme/fast-2' })).toBe(true);
     expect(isVisible({ providerID: 'openrouter', modelID: 'acme/fast-1' })).toBe(false);
     expect(isVisible({ providerID: 'openrouter', modelID: 'acme/undated' })).toBe(false);
-    expect(isVisible({ providerID: 'openrouter', modelID: MANAGED_FLAGSHIP_MODEL_ID })).toBe(true);
+    expect(isVisible({ providerID: 'openrouter', modelID: MANAGED_ID })).toBe(false);
+  });
+
+  test('isDefaultVisible: a bare id under the gateway provider is a managed model; nothing else is', () => {
+    expect(isDefaultVisible({ providerID: 'kortix', modelID: 'any-model-platinum-adds' })).toBe(true);
+    expect(isDefaultVisible({ providerID: 'kortix', modelID: 'anthropic/claude-opus-4-8' })).toBe(false);
+    expect(isDefaultVisible({ providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' })).toBe(false);
+    expect(isDefaultVisible({ providerID: 'openrouter', modelID: MANAGED_ID })).toBe(false);
   });
 
   test('user pins override the default: show reveals, hide hides', () => {
@@ -158,15 +168,15 @@ describe('createModelVisibility', () => {
   });
 
   test('gateway: free tier sees no managed model, the platform default included', () => {
-    const gateway = [flat('kortix', PLATFORM_DEFAULT_MODEL_ID), flat('kortix', 'glm-5.3-flash')];
+    const gateway = [flat('kortix', MANAGED_ID), flat('kortix', 'glm-5.3-flash')];
     const free = createModelVisibility({ catalogModels: gateway, freeTier: true });
-    expect(free({ providerID: 'kortix', modelID: PLATFORM_DEFAULT_MODEL_ID })).toBe(false);
+    expect(free({ providerID: 'kortix', modelID: MANAGED_ID })).toBe(false);
     expect(free({ providerID: 'kortix', modelID: 'glm-5.3-flash' })).toBe(false);
   });
 
   test('hasUsableModel: no managed model counts as usable on free tier', () => {
     expect(
-      hasUsableModel([flat('kortix', PLATFORM_DEFAULT_MODEL_ID)], { freeTier: true }),
+      hasUsableModel([flat('kortix', MANAGED_ID)], { freeTier: true }),
     ).toBe(false);
     expect(hasUsableModel([flat('kortix', 'glm-5.3-flash')], { freeTier: true })).toBe(false);
   });
@@ -464,6 +474,72 @@ describe('latestPromptModel', () => {
     expect(latestPromptModel(undefined)).toBeUndefined();
     expect(
       latestPromptModel([{ role: 'assistant', model: { provider: 'kortix', model: 'model-x' } }]),
+    ).toBeUndefined();
+  });
+});
+
+// ── KRTX-3011: a configured model the caller cannot run ─────────────────────
+//
+// An account default of a ChatGPT model stayed in the picker with no ChatGPT
+// login, read as runnable, was preselected, and failed only after Send
+// ("Connect Codex to use this model."). `/model-picker` now stamps such a
+// model `available: false`; nothing may choose it on the person's behalf.
+
+describe('unavailable models (KRTX-3011)', () => {
+  const key = (providerID: string, modelID: string) => ({ providerID, modelID });
+
+  test('flattenModels carries available and availability from the picker payload', () => {
+    const list = pickerProviderList({
+      modelPicker: {
+        models: {
+          'glm-5.3-flash': { name: 'GLM 5.3 Flash', enabled: true },
+          'codex/gpt-6-astra': { name: 'GPT-6 Astra', enabled: true, available: false, availability: 'login' },
+        },
+      } as unknown as ProjectLlmCatalogResponse,
+    });
+    const astra = flattenModels(list).find((m) => m.modelID === 'codex/gpt-6-astra');
+    expect(astra?.available).toBe(false);
+    expect(astra?.availability).toBe('login');
+    const glm = flattenModels(list).find((m) => m.modelID === 'glm-5.3-flash');
+    expect(glm?.available).toBeUndefined();
+  });
+
+  test('isOfferedModel refuses an unavailable model, even when enabled', () => {
+    const models = [flat('kortix', 'codex/gpt-6-astra', { enabled: true, available: false })];
+    expect(isOfferedModel(models, key('kortix', 'codex/gpt-6-astra'))).toBe(false);
+  });
+
+  test('the composer skips an unavailable default and a stored pick of it', () => {
+    const models = [
+      flat('kortix', 'codex/gpt-6-astra', { enabled: true, available: false }),
+      flat('kortix', 'deepseek-v4.1-flash', { enabled: true }),
+    ];
+    const resolved = resolveComposerModel({
+      models,
+      picks: [key('kortix', 'codex/gpt-6-astra')],
+      serverDefault: key('kortix', 'codex/gpt-6-astra'),
+      globalDefault: key('kortix', 'deepseek-v4.1-flash'),
+    });
+    expect(resolved.explicit).toBeUndefined();
+    expect(resolved.model).toEqual(key('kortix', 'deepseek-v4.1-flash'));
+  });
+
+  test('resolveModelDefault follows the server\'s resolvedForCaller, which skips an unservable default', () => {
+    const data = {
+      agentDefaults: { support: 'anthropic/claude-opus-4-8' },
+      projectDefault: null,
+      accountDefault: 'codex/gpt-6-astra',
+      platformDefault: 'deepseek-v4.1-flash',
+      resolvedForCaller: 'deepseek-v4.1-flash',
+      resolvedSource: 'platform',
+      freeTier: false,
+    } as unknown as ModelDefaultsResponse;
+    expect(resolveModelDefault(data, 'kortix')).toEqual(key('kortix', 'deepseek-v4.1-flash'));
+    // An agent's own default still wins; the composer validates it like any candidate.
+    expect(resolveModelDefault(data, 'support')).toEqual(key('kortix', 'anthropic/claude-opus-4-8'));
+    // Nothing servable for the caller: no server default, not the raw account default.
+    expect(
+      resolveModelDefault({ ...data, resolvedForCaller: null } as unknown as ModelDefaultsResponse, 'kortix'),
     ).toBeUndefined();
   });
 });

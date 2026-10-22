@@ -44,8 +44,6 @@ import {
   manifestFilename,
   useProjectManifestVersion,
 } from '../../../internal/lib/manifest-version';
-import { translateUiCatalogText } from '../../../i18n/ui-catalog/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '../../../i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import { useProjectCans } from '../../../internal/lib/use-project-can';
 import { REVIEW_CONTROL_ACTIONS, changeRequestControlsFrom } from '@kortix/sdk';
 import {
@@ -59,6 +57,7 @@ import { formatDistanceToNowStrict } from 'date-fns';
 import { useMemo, useState } from 'react';
 import type { ChangeRequestRecoveryBlocker, ManifestIssue } from '../change-request-recovery';
 import { useProjectContext } from '../context';
+import { ChangeRequestStatusBadge } from './change-request-status-badge';
 import { useChangeRequestRecovery } from '../hooks/use-change-request-recovery';
 import {
   useChangeRequest,
@@ -81,9 +80,11 @@ const relative = (iso: string) => formatDistanceToNowStrict(new Date(iso), { add
 interface ChangeRequestDetailDialogProps {
   crId: string | null;
   onClose: () => void;
+  /** Opens another change request in this dialog: a superseded one's replacement. */
+  onOpenChangeRequest?: (crId: string) => void;
 }
 
-export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetailDialogProps) {
+export function ChangeRequestDetailDialog({ crId, onClose, onOpenChangeRequest }: ChangeRequestDetailDialogProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const open = crId !== null;
   const detailQuery = useChangeRequest(crId);
@@ -232,21 +233,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                 <ModalTitle className="text-foreground min-w-0 flex-1 text-base leading-snug font-medium text-balance">
                   {cr.title || tI18nComplete.raw('text63cb7c2ea609')}
                 </ModalTitle>
-                {/* An open proposal's state is the two buttons at the bottom.
-                    Only a finished one needs a word for what happened to it. */}
-                {cr.status !== 'open' && (
-                  <Badge
-                    variant={cr.status === 'merged' ? 'badgeSuccess' : 'secondary'}
-                    size="sm"
-                    className="mt-0.5 shrink-0"
-                  >
-                    {translateUiCatalogText(
-                      cr.status === 'merged' ? 'Applied' : 'Dismissed',
-                      tI18nComplete,
-                      REMAINING_UI_TRANSLATION_KEYS,
-                    )}
-                  </Badge>
-                )}
+                <ChangeRequestStatusBadge cr={cr} onOpenChangeRequest={onOpenChangeRequest} />
               </div>
               <p className="text-muted-foreground mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs">
                 <span className="tabular-nums">#{cr.number}</span>

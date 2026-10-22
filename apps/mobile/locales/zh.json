@@ -1252,6 +1252,9 @@
     "expiredBody": "请让邀请你的人重新发送一个邀请。",
     "wrongAccountTitle": "切换账户",
     "wrongAccountBody": "此邀请发给的是另一个账户。你当前以 {{email}} 登录。",
+    "directoryTitle": "使用单点登录",
+    "directoryBody": "你所在组织的目录已将你添加到此账户。请在浏览器中打开此邀请并使用组织的单点登录，或让账户管理员重新发送邀请。",
+    "ssoDomainUnverifiedBody": "你的单点登录提供方尚未验证此邮箱的域名。请退出，然后使用你的邮箱地址重新登录，以使用此邀请。",
     "signOutAndContinue": "退出并继续",
     "backToProjects": "返回项目"
   },

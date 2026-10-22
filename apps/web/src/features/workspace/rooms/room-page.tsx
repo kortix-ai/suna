@@ -405,8 +405,11 @@ function JoinBar({ name, onJoin }: { name: string; onJoin: () => Promise<void> }
           aria-busy={pending}
           onClick={async () => {
             setPending(true);
-            await onJoin();
-            setPending(false);
+            try {
+              await onJoin();
+            } finally {
+              setPending(false);
+            }
           }}
         >
           {t('joinRoom')}

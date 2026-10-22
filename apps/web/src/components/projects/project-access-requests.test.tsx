@@ -86,5 +86,5 @@ test('authorized project waits for access, then warms shell and session reads', 
   await act(async () => { grant?.(); await new Promise(resolve => setTimeout(resolve, 10)); });
   expect(container.textContent).toContain('Project contents');
   expect(urls).toContain('http://test.local/projects/synthetic-project/detail');
-  expect(urls).toContain('http://test.local/projects/synthetic-project/sessions/synthetic-session/snapshot?transcript=40');
+  expect(urls).toContain('http://test.local/projects/synthetic-project/sessions/synthetic-session/snapshot?transcript=0');
 });

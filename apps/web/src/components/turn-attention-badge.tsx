@@ -40,8 +40,29 @@ function iconLinks(): HTMLLinkElement[] {
 }
 
 /**
+ * The status dot, flush with the icon's right and bottom edges. The favicon
+ * tile is full-bleed, so an inset dot reads as off-centre in the tab strip.
+ * A transparent ring is cut out of the logo first (presence-dot style) so
+ * the dot stays legible on any branded mark, light or dark.
+ */
+export function drawBadgeDot(ctx: CanvasRenderingContext2D, size: number, color: string) {
+  const r = Math.round(size * 0.17);
+  const gap = Math.round(size / 16);
+  const c = size - r;
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.beginPath();
+  ctx.arc(c, c, r + gap, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.beginPath();
+  ctx.arc(c, c, r, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+/**
  * The badge data URL: the live favicon with a `kortix-green` dot on its
- * lower-right corner. Green is the success accent, the same value in light
+ * lower-right corner (`drawBadgeDot`). Green is the success accent, the same value in light
  * and dark (references/visual/color.md), read from the token at runtime
  * because canvas cannot resolve CSS custom properties on its own.
  */
@@ -65,10 +86,7 @@ async function paintBadge(): Promise<string | null> {
     }
     const accent = getComputedStyle(document.documentElement).getPropertyValue('--kortix-green').trim();
     if (!accent) return null;
-    ctx.beginPath();
-    ctx.arc(48, 48, 12, 0, Math.PI * 2);
-    ctx.fillStyle = accent;
-    ctx.fill();
+    drawBadgeDot(ctx, canvas.width, accent);
     // A cross-origin branded favicon taints the canvas: toDataURL throws. The
     // dot alone still reads, so redraw it on a clean (untainted) canvas and
     // ship that instead — and if even that fails, no badge beats a crash.
@@ -80,10 +98,7 @@ async function paintBadge(): Promise<string | null> {
       dot.height = canvas.height;
       const dotCtx = dot.getContext('2d');
       if (!dotCtx) return null;
-      dotCtx.beginPath();
-      dotCtx.arc(48, 48, 12, 0, Math.PI * 2);
-      dotCtx.fillStyle = accent;
-      dotCtx.fill();
+      drawBadgeDot(dotCtx, dot.width, accent);
       return dot.toDataURL('image/png');
     }
   } catch {

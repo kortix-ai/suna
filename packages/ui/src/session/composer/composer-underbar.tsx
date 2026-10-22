@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from '../../i18n';
+import { useUiHostConfig } from '../../providers/ui-provider';
 
 import type { SessionLogMessage } from '@kortix/sdk';
 import type { Agent, FlatModel } from '@kortix/sdk/react';
@@ -87,6 +88,7 @@ export function ComposerUnderbar({
   toolbarSlot,
 }: ComposerUnderbarProps) {
   const t = useTranslations('threads');
+  const { contextMeterEnabled } = useUiHostConfig();
 
   /*
     The agent picker is UNCONDITIONAL. It used to earn its slot
@@ -157,7 +159,7 @@ export function ComposerUnderbar({
       </div>
 
       <div className="flex items-center gap-1">
-        {inline && !messages ? null : (
+        {(inline && !messages) || !contextMeterEnabled ? null : (
           <TokenProgress
             messages={messages}
             models={models}

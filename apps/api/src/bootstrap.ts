@@ -34,6 +34,7 @@ import { startBillingRotation, stopBillingRotation } from './workers/billing-rot
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
 import { startGatewaySpendBackfillWorker, stopGatewaySpendBackfillWorker } from './workers/gateway-spend-backfill-worker';
 import { startJobWorker, stopJobWorker } from './workers/job-queue-worker';
+import { startManagedLineupRefresh, stopManagedLineupRefresh } from './workers/managed-lineup-worker';
 import { startNotificationWorker, stopNotificationWorker } from './workers/notification-worker';
 import { startProjectMaintenance, stopProjectMaintenance } from './workers/project-maintenance-worker';
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
@@ -141,6 +142,7 @@ async function startReplicaServices() {
   warnIfPreviewOriginsMissing(appLogger);
   startEventLoopLagSampler();
   startAccessControlCache();
+  startManagedLineupRefresh();
   startTunnelService();
   // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
   // toggles (warm_snapshot / provider_fallback) are honored from
@@ -278,7 +280,7 @@ async function startSingletonWorkers() {
   startSessionLogPurgeWorker();
   // Idle sessions off a fallback model once their own model serves again.
   startSessionModelFallbackWorker();
-  // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=off (default) runs nothing.
+  // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=write (default) converts them.
   startSessionLogBackfillWorker();
   // Closed pending days of the gateway spend running total, recomputed from the log rows.
   startGatewaySpendBackfillWorker();
@@ -421,6 +423,7 @@ async function runShutdown(signal: string): Promise<void> {
   runtimeModelCatalog.stop();
   stopTunnelService();
   stopAccessControlCache();
+  stopManagedLineupRefresh();
   stopTmpReaper();
   stopJobWorker();
   stopTriggerEventPollWorker();

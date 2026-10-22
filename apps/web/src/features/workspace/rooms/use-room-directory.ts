@@ -40,6 +40,7 @@ export function useMentionTargets(
 ): MentionTarget[] {
   return useMemo(() => {
     const seen = new Set<string>();
+    const emailById = new Map(people.map((p) => [p.user_id, p.email]));
     const out: MentionTarget[] = [];
     const push = (id: string, target: MentionTarget) => {
       if (seen.has(id)) return;
@@ -54,7 +55,7 @@ export function useMentionTargets(
         const label = sessionDisplay(m.label).name;
         push(id, { ids: [id], names: [agent, title].filter((v): v is string => !!v), label });
       } else {
-        const email = people.find((p) => p.user_id === id)?.email;
+        const email = emailById.get(id);
         push(id, { ids: [id], names: [m.label, email].filter((v): v is string => !!v), label: m.label, self: id === viewerId });
       }
     }

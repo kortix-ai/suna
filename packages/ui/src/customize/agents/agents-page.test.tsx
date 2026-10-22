@@ -40,3 +40,40 @@ describe('AgentsPage CLI identifiers', () => {
     }
   });
 });
+
+// KRTX-3025: the card shows what the configuration grants, not the agent's prose.
+describe('AgentsPage access line', () => {
+  test('a fully granted agent reads "Full access"; a scoped one lists its grants', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(qk.project.detail('synthetic-project'), {
+      account_id: 'synthetic-account',
+      config: {
+        default_agent: 'kortix',
+        agents: [
+          {
+            name: 'kortix',
+            path: 'agents/kortix.md',
+            mode: 'primary',
+            description: 'General knowledge worker.',
+            scope: { env: 'all', connectors: 'all', kortix_permissions: 'all', kortix_cli: 'all' },
+          },
+          {
+            name: 'store-builder',
+            path: 'agents/store-builder.md',
+            mode: 'primary',
+            scope: { env: [], connectors: ['shopify', 'gmail'], kortix_permissions: 'all', kortix_cli: 'all' },
+          },
+        ],
+      },
+    });
+    const markup = renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <AgentsPage projectId="synthetic-project" />
+      </QueryClientProvider>,
+    );
+    expect(markup).toContain('Full access');
+    expect(markup).toContain('2 connectors');
+    expect(markup).toContain('No secrets');
+    expect(markup).toContain('All Kortix actions');
+  });
+});

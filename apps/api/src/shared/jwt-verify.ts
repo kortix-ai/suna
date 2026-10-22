@@ -275,8 +275,11 @@ async function confirmLive(token: string, payload: JwtPayload, fallbackEmail: st
 
 // ── Legacy symmetric (HS256) tokens ──────────────────────────────────────────
 //
-// Prod GoTrue still signs with the legacy HS256 secret. Without this path every
-// HS256 request fell through to a GoTrue `getUser` round trip. With
+// Every hosted project (dev, staging, prod) signs with ES256 since 2026-08-21;
+// the legacy HS256 secret is only `previously_used` there, kept until the legacy
+// anon/service_role API keys are retired. Self-hosted Supabase may still sign
+// HS256. Without this path every HS256 request fell through to a GoTrue
+// `getUser` round trip. With
 // `SUPABASE_JWT_SECRET` set we check signature + expiry here, then confirm the
 // session is still live through `jwt-liveness.ts` (see that file).
 //

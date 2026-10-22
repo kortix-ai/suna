@@ -46,8 +46,8 @@ function startMockOpencode() {
   const sessions = new Map<string, { rows: Row[]; busy: boolean; abort?: () => void }>()
   const stats = { disposes: 0, toolIdCalls: 0, prompts: 0 }
   // Two failure modes of the registry endpoint: held open with no answer, or
-  // a single transient 503.
-  const modes = { holdToolIds: false, failToolIdsOnce: false }
+  // a single transient 503. `holdTurns`: a turn runs until it is aborted.
+  const modes = { holdToolIds: false, failToolIdsOnce: false, holdTurns: false }
   let release: () => void = () => {}
   const stopped = new Promise<void>((resolve) => {
     release = resolve
@@ -126,7 +126,7 @@ function startMockOpencode() {
       if (aborted) return end(false)
     }
     if (registry !== 'ready') return end(false)
-    await Promise.race([Bun.sleep(MODEL_MS), abortSignal])
+    await (modes.holdTurns ? abortSignal : Promise.race([Bun.sleep(MODEL_MS), abortSignal]))
     end(!aborted)
   }
 
@@ -392,11 +392,14 @@ describe('healIfPoisoned', () => {
 
   test('a forced heal never disposes under another busy session', async () => {
     await guard.warm('boot')
+    // A 40 ms turn can end before the heal's probe finishes on a loaded runner.
+    mock.modes.holdTurns = true
     await mock.prompt('ses_other')
     await until(() => mock.busy('ses_other'))
     const result = await guard.healIfPoisoned('forced', { force: true, endingSessionId: 'ses_a' })
     expect(result.disposed).toBe(false)
     expect(mock.stats.disposes).toBe(0)
+    await mock.abort('ses_other')
     await until(() => !mock.busy('ses_other'))
   })
 })

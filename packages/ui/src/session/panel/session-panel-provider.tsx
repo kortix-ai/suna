@@ -28,8 +28,10 @@ import { useTranslations } from '../../i18n';
  */
 
 import { SessionAuditPanel } from './session-audit-panel';
+import { SessionRemindersPanel } from './session-reminders-panel';
 import { SessionFilesExplorer } from './session-files-explorer';
 import { useSandboxProxy } from '../../internal/hooks/use-sandbox-proxy';
+import { OutputPathsContext } from '../../markdown/code/output-paths-context';
 import { useIsMobile } from '../../hooks/use-mobile';
 import { track } from '../../lib/telemetry';
 import { parseLocalhostUrl } from '@kortix/sdk';
@@ -104,6 +106,7 @@ export interface SessionPanelValue {
   openBrowser: (target?: { url?: string; title?: string }) => void;
   openFiles: (changes?: boolean) => void;
   openAudit: () => void;
+  openReminders: () => void;
 }
 
 /**
@@ -145,6 +148,7 @@ export function SessionPanelProvider({
   children: ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tReminders = useTranslations('reminders');
   const { steps, outputs, context, apps, files, isRunning, outcome } = usePanelDerivations({
     sessionId, projectId, projectSessionId, isSessionBusy,
   });
@@ -485,7 +489,6 @@ export function SessionPanelProvider({
       setPanelSplit(split);
     },
     [
-      sessionId,
       getServiceUrl,
       closeDetail,
       openDetail,
@@ -508,6 +511,15 @@ export function SessionPanelProvider({
       body: <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />,
     });
   }, [openDetail, projectId, projectSessionId, tI18nComplete]);
+
+  // A session with more reminders than the header popover holds opens them here.
+  const openReminders = useCallback(() => {
+    openDetail({
+      key: 'reminders',
+      title: tReminders('title'),
+      body: <SessionRemindersPanel projectId={projectId} projectSessionId={projectSessionId} />,
+    });
+  }, [openDetail, projectId, projectSessionId, tReminders]);
 
   /**
    * The opt-in File Explorer (Marko's ask). Never a default view and never a
@@ -567,7 +579,7 @@ export function SessionPanelProvider({
 
   const { outputsDefaultOpen, pendingQuickView } = usePanelHandoffs({
     sessionId, projectId, projectSessionId, isRunning, outcome, apps, files, steps,
-    detail, handleOpenOutput, openDetail, openTerminal, openAudit, openBrowser, openFiles,
+    detail, handleOpenOutput, openDetail, openTerminal, openAudit, openReminders, openBrowser, openFiles,
   });
 
   // The panel comes back with the session: what it showed is remembered while
@@ -669,6 +681,11 @@ export function SessionPanelProvider({
     memoryKey,
   ]);
 
+  // Inline code that names an output by its bare filename opens it (KRTX-3023).
+  // Keyed by content, so a re-derivation with the same paths re-renders no text.
+  const outputPathsKey = files.flatMap((f) => (f.path ? [f.path] : [])).join('\n');
+  const outputPaths = useMemo(() => (outputPathsKey ? outputPathsKey.split('\n') : []), [outputPathsKey]);
+
   const value = useMemo<SessionPanelValue>(
     () => ({
       sessionId,
@@ -689,6 +706,7 @@ export function SessionPanelProvider({
       openBrowser,
       openFiles,
       openAudit,
+      openReminders,
     }),
     [
       sessionId,
@@ -709,8 +727,13 @@ export function SessionPanelProvider({
       openBrowser,
       openFiles,
       openAudit,
+      openReminders,
     ],
   );
 
-  return <SessionPanelContext.Provider value={value}>{children}</SessionPanelContext.Provider>;
+  return (
+    <SessionPanelContext.Provider value={value}>
+      <OutputPathsContext.Provider value={outputPaths}>{children}</OutputPathsContext.Provider>
+    </SessionPanelContext.Provider>
+  );
 }

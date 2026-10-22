@@ -14,7 +14,7 @@ import {
 } from '../command-helpers.ts';
 import { trim, C, help, pad, status } from '../style.ts';
 import { auditLabelForAction, auditLabelForHttpAction } from '@kortix/shared/audit-labels';
-import { printEvents } from './audit-render.ts';
+import { printEvents, printSessionActions, type SessionAuditAction } from './audit-render.ts';
 
 // The account audit trail — the CLI face of `kortix.audit_events`, which the
 // dashboard already reads. Reads are gated server-side on `audit.read` plus the
@@ -29,7 +29,8 @@ import { printEvents } from './audit-render.ts';
 //     route with a different gate — a non-Enterprise account still sees its
 //     pending approvals there, never a 402.
 
-type AuditPage = AuditEventList;
+/** The session route adds its connector-gated calls and the entitlement verdict. */
+type AuditPage = AuditEventList & { audit_access?: boolean; actions?: SessionAuditAction[] };
 
 const HELP = help`Usage: kortix audit <subcommand> [options]
 
@@ -47,10 +48,12 @@ Subcommands:
                                   days, distinct active hours, events, and a
                                   day-by-day strip. Default: the last 28 days.
   session <session-id> --project <project-id> [--json]
-                                   One session's canonical ordered timeline.
+                                   One session's canonical ordered timeline and
+                                   its connector calls gated for approval.
+                                   Without Enterprise: the pending approvals.
 
-Stream the trail to a SIEM (needs account.write; create/enable also needs the
-Enterprise entitlement — disable and delete never do):
+Stream the trail to a SIEM (needs account.write; add, enable and disable also
+need the Enterprise entitlement — rm never does):
   webhooks ls [--json]            List audit webhooks.
   webhooks add --name <n> --url <u> [--action-prefix <p>]
                                   Create one. The signing secret prints ONCE,
@@ -234,10 +237,16 @@ async function listAuditEvents(
   const seen = new Set<string>();
   if (cursor) seen.add(cursor);
   let nextCursor: string | null = null;
+  // Session route only: the gated calls (the same list on every page) and
+  // whether the account holds the Enterprise trail.
+  let session: { audit_access?: boolean; actions?: SessionAuditAction[] } = {};
   for (;;) {
     if (cursor) search.set('cursor', cursor);
     else search.delete('cursor');
     const page = await ctx.client.get<AuditPage>(url(search));
+    if (footer === 'session' && page.actions && !session.actions) {
+      session = { audit_access: page.audit_access, actions: page.actions };
+    }
     events.push(...page.events);
     nextCursor = page.next_cursor;
     if (!all || !nextCursor) break;
@@ -249,19 +258,33 @@ async function listAuditEvents(
   }
 
   if (json) {
-    emitJson({ events, next_cursor: all ? null : nextCursor });
+    emitJson({ events, next_cursor: all ? null : nextCursor, ...session });
+    return 0;
+  }
+  if (footer === 'session' && session.audit_access === false) {
+    // No Enterprise trail: the route answers no events and only the
+    // unresolved approvals in `actions`.
+    process.stdout.write(
+      `\n  ${C.dim}The full session timeline needs the Enterprise plan. Pending approvals:${C.reset}\n`,
+    );
+    printSessionActions(session.actions ?? []);
     return 0;
   }
   printEvents(events);
   if (footer === 'session') {
     // An empty session timeline ends at the table's own closing blank line.
-    if (events.length === 0) return 0;
-    if (nextCursor && !all) {
-      process.stdout.write(
-        `\n  ${C.dim}more available — use --all, or --cursor ${nextCursor}${C.reset}`,
-      );
+    if (events.length > 0) {
+      if (nextCursor && !all) {
+        process.stdout.write(
+          `\n  ${C.dim}more available — use --all, or --cursor ${nextCursor}${C.reset}`,
+        );
+      }
+      process.stdout.write('\n');
     }
-    process.stdout.write('\n');
+    if (session.actions?.length) {
+      process.stdout.write(`  ${C.dim}Connector calls gated for approval:${C.reset}\n`);
+      printSessionActions(session.actions);
+    }
     return 0;
   }
   process.stdout.write(

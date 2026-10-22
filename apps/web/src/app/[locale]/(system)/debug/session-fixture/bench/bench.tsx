@@ -19,7 +19,7 @@ const NO_QUESTIONS: never[] = [];
 const AGENT_NAMES = ['build'];
 const NO_OUTCOME = {};
 const NOOP = () => {};
-const NOOP_ASYNC = async () => {};
+const noopAsync = async () => {};
 /** The bench session's runtime rows, read as the session log (the v1 store view). */
 const SOURCE = { projectId: '', sessionId: '', runtimeSessionId: SESSION_ID };
 
@@ -190,7 +190,7 @@ function Transcript({ streaming, memoRows }: { streaming: boolean; memoRows: boo
             permissions: NO_PERMISSIONS,
             questions: NO_QUESTIONS,
             agentNames: AGENT_NAMES,
-            onPermissionReply: NOOP_ASYNC,
+            onPermissionReply: noopAsync,
             onRewind: NOOP,
             rewindDisabled: true,
           };

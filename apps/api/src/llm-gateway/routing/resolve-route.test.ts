@@ -302,4 +302,24 @@ describe('gateway control-plane route resolver — generation-defaults clamping'
     // some other model's defaults.
     expect(route.generationDefaultsForModel?.('unconfigured-model')).toBeUndefined();
   });
+
+  test('an unresolved principal default is read only when the route depends on it', async () => {
+    let reads = 0;
+    const lazy = createGatewayRouteResolver({
+      defaultModel: 'model-default', visionModel: 'model-vision', policies: [],
+      supportsImage: (model) => model === 'model-vision',
+      resolveDefaultModel: async () => { reads += 1; return 'account-model'; },
+    });
+    // A text request: the default changes nothing, so it is not read.
+    expect((await lazy(principal, { requestedModel: 'account-model', requires: { imageInput: false } })).primaryModel)
+      .toBe('account-model');
+    expect(reads).toBe(0);
+    // An image request: the default decides the reroute, so it is read, as eager resolution would.
+    expect((await lazy(principal, { requestedModel: 'account-model', requires: { imageInput: true } })).primaryModel)
+      .toBe('model-vision');
+    expect(reads).toBe(1);
+    // A principal that carries its default is never re-read.
+    await lazy({ ...principal, defaultModel: 'account-model' }, { requestedModel: 'x', requires: { imageInput: true } });
+    expect(reads).toBe(1);
+  });
 });

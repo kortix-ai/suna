@@ -57,6 +57,7 @@ export function rememberedPanelOf({
   if (detailKey === 'files:changes')
     return { kind: 'view', view: 'files', target: { changes: true } };
   if (detailKey === 'audit') return { kind: 'view', view: 'audit' };
+  if (detailKey === 'reminders') return { kind: 'view', view: 'reminders' };
   if (detailKey === 'app:landing') return { kind: 'view', view: 'browser' };
   if (detailKey?.startsWith('app:'))
     return { kind: 'view', view: 'browser', target: { url: detailKey.slice(4) } };

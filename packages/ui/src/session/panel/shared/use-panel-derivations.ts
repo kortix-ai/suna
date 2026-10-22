@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import { useSessionLogThread } from '@kortix/sdk/react';
 import { samePartsList } from '../../turn/same-parts';
 import { deriveIsRunning } from '../easy/easy-panel-logic';
@@ -12,8 +12,11 @@ import { deriveRunOutcome } from './run-outcome';
 /** The previous list while its elements are unchanged, so memos keyed on it hold across a text delta. */
 function useSameList<T>(next: T[]): T[] {
   const ref = useRef(next);
-  if (!samePartsList(ref.current, next)) ref.current = next;
-  return ref.current;
+  const list = samePartsList(ref.current, next) ? ref.current : next;
+  useLayoutEffect(() => {
+    ref.current = list;
+  });
+  return list;
 }
 
 export function usePanelDerivations({ sessionId, projectId, projectSessionId, isSessionBusy }: {

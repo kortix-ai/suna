@@ -82,10 +82,7 @@ export interface ComposerQuote {
 export function extractReplyQuotes(text: string): { quotes: string[]; text: string } {
   const { quotes } = parseReplyContexts(text);
   if (quotes.length === 0) return { quotes: [], text };
-  const unique: string[] = [];
-  for (const quote of quotes) {
-    if (quote && !unique.includes(quote)) unique.push(quote);
-  }
+  const unique = [...new Set(quotes.filter(Boolean))];
   return { quotes: unique, text: stripReplyContexts(text) };
 }
 
@@ -139,11 +136,13 @@ export function restoreComposerQuotes(
   texts: readonly string[],
   makeId: () => string,
 ): ComposerQuote[] {
+  const currentByText = new Map<string, ComposerQuote>();
+  for (const quote of current) if (!currentByText.has(quote.text)) currentByText.set(quote.text, quote);
   const restored: ComposerQuote[] = [];
   for (const raw of texts) {
     const text = raw.trim();
     if (!text || restored.some((quote) => quote.text === text)) continue;
-    restored.push(current.find((quote) => quote.text === text) ?? { id: makeId(), text });
+    restored.push(currentByText.get(text) ?? { id: makeId(), text });
   }
   if (restored.length === 0) return current;
   return mergeComposerQuotes(restored, current);
@@ -414,7 +413,8 @@ export function acknowledgeQuoteRequests(
   requests: QuoteRequest[],
   ids: readonly number[],
 ): QuoteRequest[] {
-  const remaining = requests.filter((request) => !ids.includes(request.id));
+  const acked = new Set(ids);
+  const remaining = requests.filter((request) => !acked.has(request.id));
   return remaining.length === requests.length ? requests : remaining;
 }
 

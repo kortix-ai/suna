@@ -122,19 +122,10 @@ export function registerGatewayPlaygroundRoutes(): void {
             if (candidates.length === 0) {
               return { model, ok: false, error: 'No upstream configured for this model' };
             }
-            // Same failover as a real turn: a managed model tries each
-            // `failover` candidate in order until one answers 2xx.
-            let descriptor = candidates[0]!;
+            const descriptor = candidates[0]!;
             const start = Date.now();
-            let res = await callUpstream(request, descriptor).catch(() => null);
+            const res = await callUpstream(request, descriptor).catch(() => null);
             const tried = [shownProvider(descriptor)];
-            for (const next of descriptor.failover ? candidates.slice(1).filter((c) => c.failover) : []) {
-              if (res?.ok) break;
-              await res?.body?.cancel().catch(() => undefined);
-              descriptor = next;
-              tried.push(shownProvider(next));
-              res = await callUpstream(request, next).catch(() => null);
-            }
             if (!res) throw new Error('Request failed');
             const latencyMs = Date.now() - start;
             const rawData = (await res.json().catch(() => null)) as any;
