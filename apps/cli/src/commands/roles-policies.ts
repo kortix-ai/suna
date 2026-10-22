@@ -1,6 +1,7 @@
 import type { ApiClient } from '../api/client.ts';
 import { emitJson, fail, missing } from '../command-helpers.ts';
 import { type IamRole, findRole } from '../iam.ts';
+import { resolveProjectId } from '../project-link.ts';
 import { C, pad, status } from '../style.ts';
 
 // The assignment-policy half of `kortix roles` — the legacy policy store the
@@ -77,6 +78,7 @@ export async function rolesAssign(
   project: string | undefined,
   scopeArg: string | undefined,
   expires: string | undefined,
+  hostArg?: string,
 ): Promise<number> {
   if (!ref) return missing('a role key or id');
   if (!to) return missing('--to <type>:<id> (member:<id> | group:<id> | token:<id>)');
@@ -85,13 +87,19 @@ export async function rolesAssign(
   if (!['member', 'group', 'token'].includes(principalType) || !principalId) {
     return fail('--to must be member:<id>, group:<id>, or token:<id>');
   }
+  // Resolve scope: --project pins a project scope; --scope account binds
+  // account-wide; the default is project scope on the linked/default project.
+  const scopeType = project ? 'project' : (scopeArg ?? 'project');
+  const scopeId = scopeType === 'project' ? (project ?? resolveProjectId(undefined, { hostArg })) : null;
+  if (scopeType === 'project' && !scopeId) {
+    return fail(
+      'Pass --project <id>, or link a project (`kortix projects link`). For an account role, pass --scope account.',
+    );
+  }
+  const scope = { scopeType, scopeId };
   const { roles } = await client.get<{ roles: IamRole[] }>(`${base}/roles`);
   const role = findRole(roles, ref);
   if (!role) return notFound(`role "${ref}"`);
-  // Resolve scope: --project pins a project scope; otherwise --scope (default account).
-  const scope = project
-    ? { scopeType: 'project', scopeId: project as string | null }
-    : { scopeType: scopeArg ?? 'account', scopeId: null as string | null };
   const policy = await client.post<IamPolicy>(`${base}/policies`, {
     principalType,
     principalId,

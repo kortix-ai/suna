@@ -1,16 +1,22 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { CLIPBOARD_IFRAME_ALLOW } from '@/lib/security/iframe-sandbox';
-import { framePolicy } from '@/features/file-viewer/preview-policy';
+import { PROJECT_ACTIONS, useProjectCan } from '@kortix/ui/workspace';
+import { CLIPBOARD_IFRAME_ALLOW } from '@kortix/ui/internal/lib/security/iframe-sandbox';
+import { framePolicy } from '@kortix/ui/file-viewer';
 import type { App } from '@kortix/sdk';
 import { useAppAccess, useProjectApps } from '@kortix/sdk/react';
 import { useEffect, useState } from 'react';
 
-import { ensureFrame, frameKey, framesKeepAlive, pruneFrames } from './app-preview-pool';
-import { appCan, cardPreviewApp, gridApps } from './app-shared';
+import {
+  ensureFrame,
+  frameKey,
+  framesKeepAlive,
+  pruneFrames,
+  appCan,
+  cardPreviewApp,
+  gridApps,
+} from '@kortix/ui/apps';
 
 /** At most this many Apps load in the background; the rest load when first shown. */
 // ponytail: a fixed cap, rank by recent use if a project outgrows it.

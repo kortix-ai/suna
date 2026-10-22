@@ -1,8 +1,8 @@
 /**
  * The model fallback table OpenCode's `kortix` provider falls back to inside
- * the sandbox, and its managed subset. Data only, with no imports: kortixd
- * bundles it, and apps/api keeps the managed lineup and this fallback in sync
- * (llm-gateway/models/managed-fallback-sync.test.ts).
+ * the sandbox. Data only, with no imports: kortixd bundles it. It holds no
+ * Kortix managed model: those come only from the API, which reads them from
+ * Platinum Inference.
  */
 
 /**
@@ -74,24 +74,6 @@ export type KortixGatewayModel = {
 }
 
 export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
-  'deepseek-v4.1-flash': {
-    name: 'DeepSeek V4.1 Flash', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: true, modalities: { input: ['text', 'image'], output: ['text'] },
-    reasoning_options: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
-    limit: { context: 1_000_000, output: 65_536 }, cost: { input: 0.2, output: 0.65, cache_read: 0.03 },
-  },
-  'glm-5.3-flash': {
-    name: 'GLM 5.3 Flash', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: true, modalities: { input: ['text', 'image'], output: ['text'] },
-    reasoning_options: [{ type: 'effort', values: ['low', 'high', 'max'] }],
-    limit: { context: 1_000_000, output: 65_536 }, cost: { input: 0.15, output: 0.5, cache_read: 0.05 },
-  },
-  'kimi-k3': {
-    name: 'Kimi K3 2.8T', provider: 'kortix', reasoning: true, tool_call: true,
-    attachment: true, temperature: true, modalities: { input: ['text', 'image'], output: ['text'] },
-    reasoning_options: [{ type: 'effort', values: ['low', 'high', 'max'] }],
-    limit: { context: 1_000_000, output: 65_536 }, cost: { input: 3.3, output: 16.5, cache_read: 0.33 },
-  },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
     provider: 'openai',
@@ -186,15 +168,3 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     limit: { context: 1_000_000, output: 64_000 },
   },
 }
-
-/** The managed subset of the bundled fallback table: bare ids branded `kortix`.
- *  Used when the live managed fetch is unavailable, so a managed model is
- *  present in OpenCode's provider map even with a stale baked catalog AND a
- *  down gateway. Kept in sync with @kortix/llm-catalog MANAGED_MODELS by
- *  apps/api/src/llm-gateway/models/managed-fallback-sync.test.ts — a managed model missing here and
- *  missing from the baked image is the exact 2026-08-19 ModelNotFound outage. */
-export const BUNDLED_MANAGED_MODELS: Record<string, KortixGatewayModel> = Object.fromEntries(
-  Object.entries(MINIMAL_FALLBACK_MODELS).filter(
-    ([id, model]) => !id.includes('/') && model.provider === 'kortix',
-  ),
-)

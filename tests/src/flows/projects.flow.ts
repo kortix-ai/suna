@@ -160,12 +160,14 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
       const r = await admin.get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
       r.status(403);
     });
-    await ctx.step("platform admin WITH x-kortix-admin-bypass → 200 (read-only escape hatch)", async () => {
+    // The header is retired (#10246): an admin opens a project by acting as
+    // its account (IMP-2), so the header must grant nothing here either.
+    await ctx.step("platform admin WITH the retired x-kortix-admin-bypass header → still 403", async () => {
       const r = await admin.get("/v1/projects/:projectId/detail", {
         params: { projectId: p.id },
         headers: { "x-kortix-admin-bypass": "1" },
       });
-      r.status(200).body().has("$.project.project_id", p.id);
+      r.status(403);
     });
   }
 });
@@ -495,7 +497,6 @@ flow(
     domain: "projects",
     requires: ["database"],
     routes: [
-      "PATCH /v1/projects/:projectId/experimental",
       "POST /v1/projects/:projectId/gateway/keys",
       "POST /v1/projects/:projectId/sessions/:sessionId/public-shares",
       "GET /v1/public/session-shares/:shareId/messages",
@@ -521,8 +522,6 @@ flow(
     let key = "";
     let token = "";
     await ctx.step("the owner mints a kgw_ key and a public transcript link", async () => {
-      (await owner.patch("/v1/projects/:projectId/experimental", { feature: "llm_gateway", enabled: true }, { params }))
-        .status(200);
       const minted = await owner.post("/v1/projects/:projectId/gateway/keys", { name: "ci" }, { params });
       minted.status(200).body().exists("$.secret_key");
       key = minted.json<{ secret_key: string }>().secret_key;

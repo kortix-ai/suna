@@ -3,7 +3,7 @@
  * terminal panel raises: how do I get this shell in MY terminal?
  *
  * Same two commands the web panel shows
- * (`apps/web/src/features/session/session-terminal-connect-bar.tsx`): install
+ * (`packages/ui/src/terminal/session-terminal-connect-bar.tsx`): install
  * the CLI, then connect to this session. Rendered as plain `$` lines, no box
  * and no fill — it is app chrome above the shell, and the shell owns the
  * color below it.

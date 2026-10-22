@@ -1,21 +1,20 @@
 /** Connector row reads shared by the DB-backed deps: auth/headers/base URL of a row, its connected state, the active connection, and the policy loaders. */
 import {
-  connectorConnections,
   connectorPolicies,
   connectors,
   connectorProjectPolicies,
   connectorProjectSettings,
 } from '@kortix/db';
 import { sanitizeConnectorHeaders } from '@kortix/manifest-schema';
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import {
   loadAgentMailInstall,
   loadSlackInstall,
   loadTeamsInstall,
+  loadTelegramInstall,
 } from '../channels/install-store';
 import { resolveSessionConnectorConnection } from '../projects/lib/session-connector-bindings';
 import { db } from '../shared/db';
-import { hideSupersededSlack } from './channel-rules';
 import {
   connectionIsEffectiveProjectDefault,
   credentialExists,
@@ -115,6 +114,7 @@ async function channelInstalled(
 ): Promise<boolean> {
   if (platform === 'slack') return (await loadSlackInstall(projectId).catch(() => null)) != null;
   if (platform === 'teams') return (await loadTeamsInstall(projectId).catch(() => null)) != null;
+  if (platform === 'telegram') return (await loadTelegramInstall(projectId).catch(() => null)) != null;
   if (platform === 'email')
     return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
   return false;
@@ -194,73 +194,6 @@ export async function resolveActiveConnectorConnection(principal: ConnectorPrinc
     connectorRow: row,
   });
   return connection?.status === 'active' ? connection : null;
-}
-
-/**
- * A computer connector with no machine — no `connector_connections` row bound
- * to a tunnel — has nothing to manage and no call it could answer, so it is
- * not a connected connector and stays out of the admin list (KRTX-1492: a
- * fresh project's Connected tab listed the machineless built-in `computer`
- * connector as connected while its own dialog said "No account yet"). The
- * catalogue's native Computers card carries the Connect CTA instead, and the
- * row reappears the moment a machine is paired.
- */
-export async function hideMachinelessComputers<
-  T extends { connectorId: string; providerType: string; slug: string; createdAt: Date },
->(
-  rows: T[],
-): Promise<T[]> {
-  const computers = rows.filter((row) => row.providerType === 'computer');
-  if (computers.length === 0) return rows;
-  const computerIds = computers.map((row) => row.connectorId);
-  const withMachine = new Set(
-    (
-      await db
-        .selectDistinct({ connectorId: connectorConnections.connectorId })
-        .from(connectorConnections)
-        .where(
-          and(
-            inArray(connectorConnections.connectorId, computerIds),
-            isNotNull(connectorConnections.tunnelId),
-          ),
-        )
-    ).map((row) => row.connectorId),
-  );
-  return rows.filter(
-    (row) => row.providerType !== 'computer' || withMachine.has(row.connectorId),
-  );
-}
-
-/**
- * How many connectors the admin listing (`connectors ls`) shows, counted by
- * the SAME rules the listing uses: the project's rows, with machineless
- * computer rows and superseded Slack rows hidden.
- *
- * This — not a count of materialized specs — is what a sync summary must
- * report. The sync loop also re-materializes platform built-ins the listing
- * deliberately hides, so a loop counter printed "Synced 2 connectors" over a
- * list of 1 (KRTX-2669). `onlyConnectorId` (a single-connector sync) counts
- * just that connector's row.
- */
-export async function countListedConnectors(
-  projectId: string,
-  onlyConnectorId?: string | null,
-): Promise<number> {
-  const rows = await db
-    .select({
-      connectorId: connectors.connectorId,
-      slug: connectors.slug,
-      providerType: connectors.providerType,
-      createdAt: connectors.createdAt,
-      // hideSupersededSlack matches managed Slack rows by the app stored on
-      // the row's config, so the count's hide rule needs the column too.
-      config: connectors.config,
-    })
-    .from(connectors)
-    .where(eq(connectors.projectId, projectId));
-  const listed = await hideMachinelessComputers(hideSupersededSlack(rows));
-  if (!onlyConnectorId) return listed.length;
-  return listed.filter((row) => row.connectorId === onlyConnectorId).length;
 }
 
 export async function loadConnectorPoliciesFor(connectorId: string): Promise<Policy[]> {

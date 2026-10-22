@@ -30,6 +30,7 @@ const workflow = readFileSync(resolve(root, workflowPath), 'utf8');
 const NPM_PUBLISH_JOBS = [
   'publish-llm-catalog',
   'publish-sdk',
+  'publish-ui',
   'publish-agent-tunnel',
 ] as const;
 
@@ -148,7 +149,7 @@ describe('deploy-prod: the release record is not gated on npm', () => {
     // Guards the reader itself: a `needs:` written as a block sequence, or a
     // job this reader cannot see, would silently make every assertion below
     // vacuous.
-    expect(jobs.size).toBe(32);
+    expect(jobs.size).toBe(33);
     expect(jobs.has('github-release')).toBe(true);
     for (const job of NPM_PUBLISH_JOBS) expect(jobs.has(job)).toBe(true);
     expect(workflow).not.toMatch(/^ {4}needs:\s*$/m);
@@ -157,6 +158,7 @@ describe('deploy-prod: the release record is not gated on npm', () => {
   it('github-release does not need any npm publish job', () => {
     const needs = jobs.get('github-release')!.needs;
     expect(needs).not.toContain('publish-sdk');
+    expect(needs).not.toContain('publish-ui');
     expect(needs).not.toContain('publish-agent-tunnel');
     expect(needs).not.toContain('publish-llm-catalog');
     expect(needs.filter((n) => n.startsWith('publish-'))).toEqual([]);

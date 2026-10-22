@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "diligence-report",
+  "type": "object",
+  "required": ["schema", "sections", "red_flags"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "enum": ["diligence-report/1"] },
+    "files": { "type": "array", "maxItems": 2, "items": { "enum": ["report.docx"] } },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["heading", "body_md", "citations"],
+        "additionalProperties": false,
+        "properties": {
+          "heading": { "type": "string" },
+          "body_md": { "type": "string" },
+          "citations": { "type": "array", "items": { "$ref": "citation" } }
+        }
+      }
+    },
+    "red_flags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "severity", "doc_id", "citations"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "severity": { "enum": ["high", "medium", "low"] },
+          "doc_id": { "type": "string" },
+          "citations": { "type": "array", "minItems": 1, "items": { "$ref": "citation" } }
+        }
+      }
+    }
+  }
+}

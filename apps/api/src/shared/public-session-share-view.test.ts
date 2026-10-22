@@ -108,20 +108,23 @@ describe('getPublicSessionInfo', () => {
   });
 });
 
+/** No saved transcript: the stored read answers null. */
+const nothingSaved = { readMirror: async () => null };
+
 const PUBLIC_MESSAGE_KEYS = ['completed', 'created', 'files', 'reasoning_omitted', 'role', 'text', 'tools'];
 
 describe('getPublicSessionMessages', () => {
   const activeShare = { sessionId: 'sess-1', externalId: 'ext-1', sandboxStatus: 'active' };
 
   test('503s when the sandbox is not active — never touches the daemon', async () => {
-    const result = await getPublicSessionMessages({ ...activeShare, sandboxStatus: 'stopped' });
+    const result = await getPublicSessionMessages({ ...activeShare, sandboxStatus: 'stopped' }, nothingSaved);
     expect(result).toEqual({ ok: false, status: 503, error: 'Sandbox is not running' });
     expect(stateTargets).toEqual([]);
     expect(messageReads).toEqual([]);
   });
 
   test('reads the root the daemon names, anonymously, through the runtime namespace', async () => {
-    await getPublicSessionMessages(activeShare);
+    await getPublicSessionMessages(activeShare, nothingSaved);
     expect(stateTargets).toEqual([{ externalId: 'ext-1' }]);
     expect(messageReads).toEqual([{ target: { externalId: 'ext-1' }, sessionId: 'oc-root-1', limit: 200 }]);
   });
@@ -129,14 +132,14 @@ describe('getPublicSessionMessages', () => {
   test('falls back to the row pin when the daemon names no root yet', async () => {
     stateResult = liveState(null);
     sessionRows = [{ opencodeSessionId: 'oc-pinned' }];
-    const result = await getPublicSessionMessages(activeShare);
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(messageReads.map((read) => read.sessionId)).toEqual(['oc-pinned']);
     expect(result.ok && result.transcript.opencode_session_id).toBe('oc-pinned');
   });
 
   test('degrades to an unavailable digest (still 200) when the daemon is not ready', async () => {
     stateResult = { ok: false, reason: 'daemon_503', status: 503 };
-    const result = await getPublicSessionMessages(activeShare);
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.transcript.available).toBe(false);
@@ -147,7 +150,7 @@ describe('getPublicSessionMessages', () => {
 
   test('degrades to unavailable when neither the daemon nor the row names a root', async () => {
     stateResult = liveState(null);
-    const result = await getPublicSessionMessages(activeShare);
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.transcript.available).toBe(false);
@@ -158,7 +161,7 @@ describe('getPublicSessionMessages', () => {
 
   test('degrades to unavailable when the sandbox has no service key', async () => {
     stateResult = { ok: false, reason: 'no_service_key', status: null };
-    const result = await getPublicSessionMessages(activeShare);
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.transcript.available).toBe(false);
@@ -189,7 +192,7 @@ describe('getPublicSessionMessages', () => {
       ],
     };
 
-    const result = await getPublicSessionMessages(activeShare);
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const { transcript } = result;
@@ -200,7 +203,7 @@ describe('getPublicSessionMessages', () => {
     expect(Object.keys(msg).sort()).toEqual(PUBLIC_MESSAGE_KEYS);
     expect(msg.role).toBe('assistant');
     expect(msg.created).toBe('1970-01-01T00:00:01.000Z');
-    expect(msg.text).toBe('first line\nsecond line');
+    expect(msg.text).toBe('first line\nsecond line\n\nThe assistant could not complete this response.');
     expect(msg.tools).toEqual([{ tool: 'bash', status: 'completed' }]);
     expect(msg.files).toEqual([{ filename: 'report.pdf', mime: 'application/pdf' }]);
     expect(msg.reasoning_omitted).toBe(true);
@@ -210,10 +213,34 @@ describe('getPublicSessionMessages', () => {
     }
   });
 
+  test.each(['live', 'mirror'])('%s reads show failed assistant outcomes without exposing provider errors', async (source) => {
+    const messages = [
+      { info: { role: 'assistant', error: { message: 'private provider detail' } }, parts: [] },
+      { info: { role: 'assistant', error: { message: 'private provider detail' } }, parts: [{ type: 'text', text: 'Partial answer' }] },
+      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'Complete answer' }] },
+      { info: { role: 'user', error: { message: 'private provider detail' } }, parts: [{ type: 'text', text: 'Question' }] },
+    ];
+    messagesResult = { ok: true, messages };
+    const result = await getPublicSessionMessages(
+      { ...activeShare, sandboxStatus: source === 'mirror' ? 'stopped' : 'active' },
+      { readMirror: async () => ({ opencode_session_id: 'oc-root-1', captured_at: '2026-01-01T00:00:00.000Z', total: messages.length, head_complete: true, next_cursor: null, messages }) },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.transcript.source).toBe(source);
+    expect(result.transcript.messages.map((message) => message.text)).toEqual([
+      'The assistant could not complete this response.',
+      'Partial answer\n\nThe assistant could not complete this response.',
+      'Complete answer',
+      'Question',
+    ]);
+    expect(JSON.stringify(result.transcript)).not.toContain('private provider detail');
+  });
+
   test('keeps markdown intact: line breaks and code fences survive, so the page renders them as in the session', async () => {
     const markdown = 'Here is the JSX:\n\n```tsx\n<svg\n  viewBox="0 0 12 12"\n/>\n```\n\n- one\n- two';
     messagesResult = { ok: true, messages: [{ info: { role: 'assistant', time: {} }, parts: [{ type: 'text', text: markdown }] }] };
-    const result = await getPublicSessionMessages(activeShare);
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok && result.transcript.messages[0].text).toBe(markdown);
   });
 
@@ -224,7 +251,7 @@ describe('getPublicSessionMessages', () => {
       ok: true,
       messages: [long, huge].map((text) => ({ info: { role: 'assistant', time: {} }, parts: [{ type: 'text', text }] })),
     };
-    const result = await getPublicSessionMessages(activeShare);
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.transcript.messages[0].text).toBe(long);
@@ -234,7 +261,7 @@ describe('getPublicSessionMessages', () => {
 
   test('a 503 from the daemon messages read degrades to an unavailable digest, not a hard error', async () => {
     messagesResult = { ok: false, reason: 'daemon_503', status: 503 };
-    const result = await getPublicSessionMessages(activeShare);
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.transcript.available).toBe(false);
@@ -245,7 +272,7 @@ describe('getPublicSessionMessages', () => {
 
   test('a failed daemon read degrades with a generic reason, never the error text', async () => {
     messagesResult = { ok: false, reason: 'ECONNRESET', status: null };
-    const result = await getPublicSessionMessages(activeShare);
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.transcript.available).toBe(false);
@@ -275,7 +302,7 @@ describe('getPublicSessionMessages', () => {
       stateResult = liveState('oc-root-1');
       messagesResult = { ok: true, messages: [] };
       setup();
-      const result = await getPublicSessionMessages(activeShare);
+      const result = await getPublicSessionMessages(activeShare, nothingSaved);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.transcript.available).toBe(false);

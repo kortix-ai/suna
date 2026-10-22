@@ -1,8 +1,8 @@
 'use client';
 
 import { ConnectorIntake } from '@/components/setup-links/connector-intake';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
+import { Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 

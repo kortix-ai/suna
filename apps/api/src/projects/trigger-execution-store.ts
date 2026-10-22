@@ -11,6 +11,7 @@ import { logger } from '../lib/logger';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { cronSlotFields } from './lib/trigger-payload';
 import { clearTriggerAlert, raiseTriggerAlert } from './lib/trigger-alerts';
+import { accountAutomationsRunSql } from '../accounts/automation-pause';
 
 export type TriggerExecutionRow = typeof projectTriggerExecutions.$inferSelect;
 
@@ -72,6 +73,11 @@ export async function claimDueScheduleSlots(input: {
         eq(projectTriggerRuntime.triggerType, 'cron'),
         lte(projectTriggerRuntime.nextFireAt, input.now),
         sql`coalesce(${projects.metadata} ->> 'triggers_paused', 'false') <> 'true'`,
+        // Pause all automations (KRTX-1721): the slot stays due and unclaimed,
+        // so resuming fires a missed slot once.
+        accountAutomationsRunSql(projects.accountId),
+        // An auto-paused trigger (KRTX-1721) stays due and unclaimed until it is resumed.
+        isNull(projectTriggerRuntime.autoPausedAt),
         // A session reminder fires only while its project has the `reminders`
         // flag on. Off, the row stays due and unclaimed, so turning the flag
         // back on fires a missed slot once, like any downtime.
@@ -321,8 +327,9 @@ export async function markTriggerExecutionSucceeded(input: {
       status: 'succeeded',
       sessionId: input.sessionId ?? null,
       commandId: input.commandId ?? null,
-      // The agent turn this fire dispatched; recordTriggerRunEnd closes it.
-      runStatus: input.sessionId ? 'running' : null,
+      // The agent turn this fire dispatched; settleTriggerRunsFromTurns closes
+      // it. A fire queued as a create links to its session when the create runs.
+      runStatus: input.sessionId || input.commandId ? 'running' : null,
       completedAt: input.completedAt,
       lockedBy: null,
       lockedUntil: null,
@@ -480,7 +487,9 @@ export function cappedRunPayload(payload: Record<string, unknown>): Record<strin
  * Record one non-cron fire as a run (KRTX-1743, rulings 1 and 3). The row is
  * written in a terminal status with a unique `<source>:<uuid>` revision, so
  * the claim worker never picks it up. A fire that reached a session starts
- * with `run_status = running`; recordTriggerRunEnd closes it.
+ * with `run_status = running`; settleTriggerRunsFromTurns closes it. So does
+ * a fire queued as a create (`command_id`, no session yet): the settle links
+ * it to the session the create started.
  *
  * Never throws: the history must not fail a fire. Returns the run's
  * `execution_id`, or null when the write failed.
@@ -514,7 +523,7 @@ export async function recordTriggerRun(input: {
         payloadVerified: input.verified ?? true,
         sessionId: input.sessionId ?? null,
         commandId: input.commandId ?? null,
-        runStatus: input.status === 'succeeded' && input.sessionId ? 'running' : null,
+        runStatus: (input.status === 'succeeded' || input.status === 'requeued') && (input.sessionId || input.commandId) ? 'running' : null,
         lastError: input.error?.slice(0, 2_000) ?? null,
         replayOf: input.replayOf ?? null,
         availableAt: input.now,
@@ -537,7 +546,7 @@ export async function recordTriggerRun(input: {
 
 /** The run row a fire result maps to: a deduped fire ran nothing new. */
 export function triggerRunFromFire(result: {
-  status: 'fired' | 'queued' | 'failed';
+  status: 'fired' | 'queued' | 'failed' | 'skipped';
   sessionId?: string;
   commandId?: string;
   error?: string;
@@ -552,6 +561,8 @@ export function triggerRunFromFire(result: {
   if (result.status === 'failed') {
     return { status: 'failed', ...ids, error: result.error ?? result.reason ?? 'trigger fire failed' };
   }
+  // A run cap held it (KRTX-1721): the reason names the cap.
+  if (result.status === 'skipped') return { status: 'skipped', ...ids, error: result.reason ?? 'skipped' };
   if (result.deduped) return { status: 'skipped', ...ids, error: 'deduped' };
   return { status: 'succeeded', ...ids, error: null };
 }

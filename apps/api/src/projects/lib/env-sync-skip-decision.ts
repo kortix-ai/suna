@@ -39,16 +39,19 @@
  *   - `skip` with `scheduleBackgroundRefresh: true` — the signature is
  *     unchanged but the LAST confirmation (by either memory or the durable
  *     record) is older than `backgroundRefreshStaleMs`. The turn still never
- *     waits — the caller fires a DETACHED re-push to self-heal drift this
- *     process did not cause (a daemon restart that lost its applied env, a
- *     provider-side reset). Same reasoning as this file's neighbor
- *     `BOUNDARY_ARM_TTL_MS`.
+ *     waits — the caller fires a DETACHED re-push to self-heal drift nothing
+ *     reports (a provider-side reset). Same reasoning as this file's neighbor
+ *     `BOUNDARY_ARM_TTL_MS`. A daemon restart is not this case: its boot
+ *     claim fences the durable record (`recordDaemonBootForEnvSync`).
  *
- * MEMORY BEATS THE DURABLE RECORD WHEN BOTH ARE PRESENT: memory is always at
- * least as fresh (this same process is the only writer of its own memo, and
- * every write to the durable record is preceded by the same write to memory
- * — see `sandbox-env-sync.ts`), so consulting the durable record at all once
- * memory already matches would only add a needless DB round trip.
+ * MEMORY IS TRUSTED ONLY WHILE THE DURABLE RECORD CONFIRMS IT (2026-10-16).
+ * The memo is per replica and the box is one. A daemon restart (the boot
+ * fence in `env-sync-durable-state.ts`) or another replica's push moves the
+ * durable record and leaves this replica's memo as it was. So the caller
+ * drops a memo whose signature the durable record no longer names BEFORE it
+ * calls this function (`memoConfirmedBy` in `sandbox-env-push.ts`), and
+ * passes the record it read. When both are present they name the same
+ * signature, and memory answers first.
  */
 
 export interface EnvSyncMemoryState {
@@ -64,13 +67,12 @@ export interface EnvSyncDurableRecord {
 export interface EnvSyncSkipDecisionInput {
   /** The signature `syncSandboxEnvForPrompt` just computed for THIS prompt. */
   signature: string;
-  /** This process's own memo for the sandbox, or null if it has none. */
+  /** This process's own memo for the sandbox, already confirmed by
+   *  `persisted`, or null if it has none (or the record no longer confirms it). */
   memory: EnvSyncMemoryState | null;
   /**
-   * The durable per-session record, or null if none exists yet (or the
-   * caller chose not to look — see the "memory beats the durable record"
-   * note above: a caller whose memory already matches should pass `null`
-   * here rather than pay for a read).
+   * The durable per-session record, or null if none exists yet, or if the
+   * box's daemon process booted at or after it (the boot fence).
    */
   persisted: EnvSyncDurableRecord | null;
   nowMs: number;

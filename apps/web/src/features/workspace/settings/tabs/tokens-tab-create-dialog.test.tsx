@@ -18,7 +18,7 @@ import * as realReactQuery from '@tanstack/react-query';
 // A dynamic import: the restricted-import lint rule forbids a namespace import
 // of the SDK root, and the mock below must spread the real module.
 const realSdk = await import('@kortix/sdk');
-const realAccess = await import('@/features/workspace/shared/access');
+const realAccess = await import('@kortix/ui/access/access/index');
 import { createElement, Fragment, type ReactNode } from 'react';
 import { act, create } from 'react-test-renderer';
 
@@ -54,10 +54,11 @@ mock.module('@/lib/iam-client', () => ({
   getPatPolicy: async () => null,
 }));
 
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   successToast: () => {},
   errorToast: () => {},
-}));
+});
+mock.module('@kortix/ui/toast', uiToastMock);
 
 function Pass({ children }: { children?: ReactNode }) {
   return createElement(Fragment, null, children);
@@ -65,7 +66,7 @@ function Pass({ children }: { children?: ReactNode }) {
 
 // The real Modal and Select are Radix portals; the wiring under test is the
 // form's submit guard, which stays real. A div keeps the tree assertable.
-mock.module('@/components/ui/modal', () => {
+const uiModalMock = () => {
   const Modal = ({ open, children }: { open: boolean; children?: ReactNode }) =>
     open ? createElement('div', null, children) : null;
   return {
@@ -77,8 +78,9 @@ mock.module('@/components/ui/modal', () => {
     ModalHeader: Pass,
     ModalTitle: Pass,
   };
-});
-mock.module('@/components/ui/select', () => ({
+};
+mock.module('@kortix/ui/modal', uiModalMock);
+const uiSelectMock = () => ({
   Select: Pass,
   SelectContent: Pass,
   SelectGroup: Pass,
@@ -86,8 +88,9 @@ mock.module('@/components/ui/select', () => ({
   SelectLabel: Pass,
   SelectTrigger: Pass,
   SelectValue: () => null,
-}));
-mock.module('@/features/workspace/shared/access', () => ({ ...realAccess, CopyRow: Pass }));
+});
+mock.module('@kortix/ui/select', uiSelectMock);
+mock.module('@kortix/ui/access/access/index', () => ({ ...realAccess, CopyRow: Pass }));
 
 const translate = (key: string) => key.split('.').pop() || key;
 mock.module('@/i18n/use-translations', () => ({
@@ -99,7 +102,7 @@ mock.module('@/i18n/use-translations', () => ({
     }),
 }));
 
-const { CreateApiKeyDialog } = await import('./tokens-tab');
+const { CreateApiKeyDialog } = await import('@kortix/ui/customize/settings/tabs/tokens-tab');
 
 async function mountDialog() {
   const client = new realReactQuery.QueryClient({ defaultOptions: { queries: { retry: false } } });

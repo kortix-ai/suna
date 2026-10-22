@@ -3,13 +3,15 @@
  *
  * GET    /connections                      — machines the caller owns (+ owner-less team machines for managers)
  * GET    /connections/:tunnelId            — get one machine
- * PATCH  /connections/:tunnelId            — rename a machine
+ * PATCH  /connections/:tunnelId            — rename a machine, or change what Kortix may use on it
  * DELETE /connections/:tunnelId            — unpair: delete the machine, revoke its computer accounts
  * POST   /connections/:tunnelId/rotate-token — rotate the setup token
  * POST   /connections/:tunnelId/access — change access on the machine (it confirms a widening itself)
  *
- * Pairing is device auth only (`device-auth.ts`). Capabilities are fixed at
- * pairing; re-pair to change them.
+ * Pairing is device auth only (`device-auth.ts`); it approves every
+ * capability. The owner narrows or widens them later with PATCH. Every call
+ * reads the approved list from the database (`rpc-core.ts`), so a change
+ * applies to the next call.
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
@@ -36,6 +38,8 @@ import { uniqueComputerLabel } from '../../connectors/computers';
 import { bearerToken } from '../../shared/bearer-token';
 import { unpairMachine } from '../registrations';
 import { changeComputerAccess, computerAccessView, parseAccessChange } from '../access-control';
+import { isTunnelCapability } from 'agent-tunnel';
+import { effectiveRegisteredCapabilities } from '../relay-persistence';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
@@ -173,14 +177,19 @@ export function createConnectionsRouter() {
       method: 'patch',
       path: '/{tunnelId}',
       tags: ['tunnel'],
-      summary: 'Rename a paired machine',
+      summary: 'Rename a paired machine, or change what Kortix may use on it',
+      description:
+        'Give `name`, `capabilities`, or both. `capabilities` is the full approved list, a subset of `filesystem`, `shell`, `desktop`. It applies to the next call.',
       security: [{ bearerAuth: [] }],
       request: {
         params: z.object({ tunnelId: z.string() }),
         body: {
           content: {
             'application/json': {
-              schema: z.object({ name: z.string() }),
+              schema: z.object({
+                name: z.string().optional(),
+                capabilities: z.array(z.enum(['filesystem', 'shell', 'desktop'])).optional(),
+              }),
             },
           },
         },
@@ -194,21 +203,47 @@ export function createConnectionsRouter() {
       const { ownerClause } = await getTunnelOwnerContext(c);
       const tunnelId = c.req.param('tunnelId');
       const body = await readJsonObject(c);
-      const name = typeof body.name === 'string' ? body.name.trim() : '';
-      if (!name || name.length > 255) {
-        return c.json({ error: 'name must be a non-empty string of at most 255 characters' }, 400);
+      const set: { name?: string; capabilities?: string[] } = {};
+      if (body.name !== undefined) {
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name || name.length > 255) {
+          return c.json({ error: 'name must be a non-empty string of at most 255 characters' }, 400);
+        }
+        set.name = name;
+      }
+      if (body.capabilities !== undefined) {
+        const capabilities = body.capabilities;
+        if (
+          !Array.isArray(capabilities) ||
+          new Set(capabilities).size !== capabilities.length ||
+          !capabilities.every((cap) => typeof cap === 'string' && isTunnelCapability(cap))
+        ) {
+          return c.json({ error: 'capabilities must list distinct values of filesystem, shell, desktop' }, 400);
+        }
+        set.capabilities = capabilities;
+      }
+      if (set.name === undefined && set.capabilities === undefined) {
+        return c.json({ error: 'Give name, capabilities, or both.' }, 400);
       }
 
       const updated = await db.transaction(async (tx) => {
         const [row] = await tx
           .update(tunnelConnections)
-          .set({ name, updatedAt: new Date() })
+          .set({ ...set, updatedAt: new Date() })
           .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause))
           .returning(SAFE_CONNECTION_COLUMNS);
-        if (row) await relabelComputerAccounts(tx, tunnelId, name);
+        if (row && set.name !== undefined) await relabelComputerAccounts(tx, tunnelId, set.name);
         return row;
       });
       if (!updated) return c.json({ error: 'Tunnel connection not found' }, 404);
+      if (set.capabilities !== undefined) {
+        // The relay's own gate, on the replica that holds the agent. Another
+        // replica catches up on the agent's next heartbeat.
+        const registered = (updated.machineInfo as Record<string, unknown> | null)
+          ?.registeredCapabilities;
+        const live = effectiveRegisteredCapabilities(registered ?? [], set.capabilities);
+        if (live) tunnelRelay.updateAgentMetadata(tunnelId, { capabilities: live, approvedCapabilities: set.capabilities });
+      }
       return c.json(serializeConnection(updated));
     },
   );

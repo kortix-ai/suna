@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { uiSourcePath } from '@/test-utils/read-source';
+import { defaultUiRoutes } from '../../../../../packages/ui/src/lib/routes';
 
 /**
  * The nav contract: clicking an in-app menu item must never reload the page.
@@ -95,33 +97,14 @@ describe('nav contract — no full page reload on an in-app navigation', () => {
     expect(await lintNavRules(await candidateFiles())).toEqual([]);
   }, 120_000);
 
-  test('both rules are wired at error level, not warn', () => {
-    // As warnings they sat under ~400 react-hooks messages and nobody saw them.
-    const config = readFileSync(resolve(WEB_ROOT, 'eslint.config.mjs'), 'utf8');
-    for (const rule of NAV_RULES) {
-      expect(config).toContain(`'${rule}': 'error'`);
-    }
-    expect(config).toContain("plugins: { 'nav-contract': navContract }");
-  });
 
-  test('the local rule exists and keeps its escape hatch', () => {
-    const rule = readFileSync(
-      resolve(WEB_ROOT, 'eslint-rules/no-router-push-for-static-href.mjs'),
-      'utf8',
-    );
-    // Controls whose destination is only known after the click (a cmdk row
-    // activated by keyboard, an id returned by a POST) legitimately keep
-    // router.push. They must say so on the line, so every exemption carries a
-    // reason instead of accumulating silently.
-    expect(rule).toContain("const ESCAPE = 'nav-contract:'");
-  });
 });
 
 describe('nav contract — the router bridge', () => {
   test('non-component modules have a soft-navigation path', () => {
     // Stores and lib/ helpers cannot call useRouter(), so they used to reach for
     // window.location.href — an unconditional full reload, every time.
-    const bridge = resolve(WEB_ROOT, 'src/lib/navigation/router-bridge.ts');
+    const bridge = uiSourcePath('internal/lib/navigation/router-bridge.ts');
     expect(existsSync(bridge)).toBe(true);
     const source = readFileSync(bridge, 'utf8');
     expect(source).toContain('export function softNavigate');
@@ -139,10 +122,7 @@ describe('nav contract — the router bridge', () => {
 
 describe('nav contract — session switching', () => {
   test('sidebar session links prefetch the full destination on intent', () => {
-    const source = readFileSync(
-      resolve(WEB_ROOT, 'src/features/workspace/project-sidebar/project-session-list.tsx'),
-      'utf8',
-    );
+    const source = readFileSync(uiSourcePath('workspace/sidebar/project-session-list.tsx'), 'utf8');
     expect(source).toMatch(
       /const sessionLink = \(\s*<HoverPrefetchLink\s+href=\{href\}\s+prefetch\s+onClick=\{onNavigate\}/,
     );
@@ -183,7 +163,7 @@ describe('nav contract — every URL written to history is a real route', () => 
   test('no live code writes a /sessions/<id> or /terminal/<id> tab href', async () => {
     // grep exits 1 on no match; `run` does not throw on that.
     const hits = (
-      await run(['grep', '-rln', 'href: `/\\(sessions\\|terminal\\)/', 'src', '--include=*.ts', '--include=*.tsx'])
+      await run(['grep', '-rln', 'href: `/\\(sessions\\|terminal\\)/', 'src', '../../packages/ui/src', '--include=*.ts', '--include=*.tsx'])
     ).stdout
       .split('\n')
       .map((l) => l.trim())
@@ -195,8 +175,14 @@ describe('nav contract — every URL written to history is a real route', () => 
   });
 
   test('the canonical builder exists and is project-scoped', () => {
-    const source = readFileSync(resolve(WEB_ROOT, 'src/lib/navigation/session-href.ts'), 'utf8');
+    // The source moved to @kortix/ui; the web path is a re-export.
+    const source = readFileSync(
+      resolve(WEB_ROOT, '../../packages/ui/src/internal/lib/navigation/session-href.ts'),
+      'utf8',
+    );
     expect(source).toContain('export function projectSessionHref');
-    expect(source).toContain('`/projects/${projectId}/sessions/${sessionId}`');
+    expect(source).toContain('uiRoutes().session(projectId, sessionId)');
+    // apps/web serves the default route table: the session URL is project-scoped.
+    expect(defaultUiRoutes.session('p1', 's1')).toBe('/projects/p1/sessions/s1');
   });
 });

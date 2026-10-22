@@ -42,7 +42,8 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/channels/slack/installation", { params: { projectId: p.id } });
-      r.status(200);
+      // The run-scoped shared project is never connected, so the body is null.
+      r.status(200).body().has("$", null);
     });
     await ctx.step("NONMEMBER → 404 (loadProjectForUser denies)", async () => {
       const r = await ctx.client
@@ -72,7 +73,8 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
-      r.status(200);
+      // The run-scoped shared project is never connected, so the body is null.
+      r.status(200).body().has("$", null);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -413,7 +415,7 @@ flow(
     domain: "channels",
     serial: true,
     timeoutMs: 180_000,
-    requires: ["database", "daytona", "funded"],
+    requires: ["database", "sandbox", "funded"],
     routes: [
       "POST /v1/projects/:projectId/secrets",
       "POST /v1/webhooks/telegram/:projectId",
@@ -786,7 +788,8 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/channels/teams/installation", { params: { projectId: p.id } });
-      r.status(200);
+      // The run-scoped shared project is never connected, so the body is null.
+      r.status(200).body().has("$", null);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -1071,7 +1074,7 @@ flow(
   "CHN-23",
   {
     domain: "channels",
-    requires: ["daytona"],
+    requires: ["sandbox"],
     routes: ["POST /v1/projects/:projectId/channels/slack/bind-thread"],
   },
   async (ctx) => {
@@ -1856,5 +1859,72 @@ flow(
         }
       }).catch(() => {});
     }
+  },
+);
+
+// CHN-TG1 — Telegram channel connector (connectors_v2): every route is gated by
+// the flag, a malformed token is refused before any call to Telegram, and the
+// allowed-user list needs an install.
+flow(
+  "CHN-TG1",
+  {
+    domain: "channels",
+    routes: [
+      "GET /v1/projects/:projectId/channels/telegram/installation",
+      "POST /v1/projects/:projectId/channels/telegram/connect",
+      "PUT /v1/projects/:projectId/channels/telegram/allowed-users",
+      "DELETE /v1/projects/:projectId/channels/telegram",
+    ],
+  },
+  async (ctx) => {
+    const off = await ctx.fixtures.sharedProject();
+    const on = await ctx.fixtures.project({ metadata: { experimental: { connectors_v2: true } } });
+
+    await ctx.step("with connectors_v2 off the installation read answers 403 feature_disabled", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: off.id } });
+      r.status(403).body().has("$.code", "feature_disabled").has("$.feature", "connectors_v2");
+    });
+
+    await ctx.step("with the flag on and no bot connected the installation is null", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: on.id } });
+      r.status(200);
+      if (r.json<unknown>() !== null) throw new Error(`expected null installation, got ${JSON.stringify(r.json())}`);
+    });
+
+    await ctx.step("a malformed bot token is refused with 400 before any call to Telegram", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/telegram/connect", { bot_token: "not-a-token" }, { params: { projectId: on.id } });
+      r.status(400).body().has("$.code", "telegram_token_invalid");
+    });
+
+    await ctx.step("allowed users: non-numeric ids → 400; valid ids without a bot → 404 telegram_not_connected", async () => {
+      const bad = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/projects/:projectId/channels/telegram/allowed-users", { user_ids: ["@someone"] }, { params: { projectId: on.id } });
+      bad.status(400).body().has("$.code", "telegram_user_ids_invalid");
+      const missing = await ctx.client
+        .as(ctx.P.OWNER)
+        .put("/v1/projects/:projectId/channels/telegram/allowed-users", { user_ids: ["12345"] }, { params: { projectId: on.id } });
+      missing.status(404).body().has("$.code", "telegram_not_connected");
+    });
+
+    await ctx.step("disconnect is idempotent → 200 ok", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/channels/telegram", { params: { projectId: on.id } });
+      r.status(200).body().has("$.ok", true);
+    });
+
+    await ctx.step("a non-member cannot connect a bot → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post("/v1/projects/:projectId/channels/telegram/connect", { bot_token: "not-a-token" }, { params: { projectId: on.id } });
+      r.status([403, 404]);
+    });
   },
 );

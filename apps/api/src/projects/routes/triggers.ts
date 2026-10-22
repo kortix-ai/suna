@@ -43,6 +43,7 @@ import {
   type TriggerFireSource,
   upsertTriggerInManifest,
 } from '../lib/triggers';
+import { clearTriggerAutoPause } from '../lib/trigger-run-caps';
 // From the leaf, not the barrel: suites that stub '../lib/triggers' by listing
 // its exports would otherwise lose this name.
 import { ACCOUNT_STATE_FIRE_CODES, markGitTriggerAttemptFailed } from '../lib/trigger-fire';
@@ -141,6 +142,11 @@ const TRIGGER_MANIFEST_KEYS = [
   'session_key',
   'sessionKey',
   'filter',
+  // A PATCH of only these must still write the manifest (KRTX-1721, KRTX-1743).
+  'max_runs_per_hour',
+  'max_runs_per_day',
+  'max_lateness',
+  'overlap',
   'connector',
   'event_account',
   'event_source',
@@ -198,7 +204,8 @@ export function registerTriggersRoutes(): void {
       path: '/{projectId}/triggers/event-apps',
       tags: ['triggers'],
       summary: 'List the apps that can trigger an event',
-      description: 'Apps with at least one event type, with the project connector for each and whether a project-shared account is connected.',
+      description:
+        'Apps that can trigger an event, with the project connector for each and whether a project-shared account is connected. Source `composio`: apps with at least one event type. Source `mcp` (projects with connectors_v2): every catalog app with sign-in, with `mcp_url` to install it (`event_count` 0 until it is connected and its tools are read), and every project MCP server (`event_count` 0 when none of its tools lists or searches).',
       ...auth,
       request: { params: z.object({ projectId: z.string() }) },
       responses: {
@@ -212,6 +219,7 @@ export function registerTriggersRoutes(): void {
               logo: z.string().nullable(),
               event_count: z.number(),
               new_connector_slug: z.string(),
+              mcp_url: z.string().nullable().openapi({ description: 'Source `mcp`: the MCP server to install for this app (Customize → Connectors). Null for other sources and for a project MCP server outside the catalog.' }),
               connector: z.string().nullable().openapi({ description: 'Slug of the project connector for this app, or null.' }),
               connected: z.boolean().openapi({ description: 'The project has an active shared account for this app.' }),
               connectors: z.array(z.object({
@@ -254,6 +262,7 @@ export function registerTriggersRoutes(): void {
           logo: a.logo,
           event_count: a.eventCount,
           new_connector_slug: a.newConnectorSlug,
+          mcp_url: a.mcpUrl,
           connector: a.connector,
           connected: a.connected,
           connectors: a.connectors.map((k) => ({
@@ -323,9 +332,12 @@ export function registerTriggersRoutes(): void {
       const app = c.req.query('app')?.trim();
       if (!slug === !app) return c.json({ error: 'Send exactly one of connector or app' }, 400);
       const source = c.req.query('source')?.trim() || 'composio';
-      const unknownSource = app ? unknownSourceMessage(source) : null;
+      const metadata = loaded.row.metadata;
+      const unknownSource = app ? unknownSourceMessage(source, metadata) : null;
       if (unknownSource) return c.json({ error: unknownSource }, 400);
-      const catalog = app ? await listAppEventTypes(source, app) : await listConnectorEventTypes(projectId, slug as string);
+      const catalog = app
+        ? await listAppEventTypes(source, app, { projectId, metadata })
+        : await listConnectorEventTypes(projectId, slug as string, null, metadata);
       if (catalog.kind === 'connector_not_found') return c.json({ error: `Connector "${slug}" not found` }, 404);
       if (catalog.kind === 'app_not_found') return c.json({ error: 'app_not_found' }, 404);
       if (catalog.kind === 'unavailable') return c.json({ error: 'event_source_unavailable' }, 409);
@@ -382,7 +394,10 @@ export function registerTriggersRoutes(): void {
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Whether each fire starts a new session, reuses one, pins one, or keys by session_key.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin when session_mode is pinned.' }),
             session_key: z.string().optional().openapi({ description: 'Template deriving one session per key when session_mode is keyed.' }),
-            filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload path to expected value; a delivery fires only if all match.' }),
+            filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload path to a value (equals) or one operator: {"not":[…]}, {"in":[…]}, {"exists":true|false}, {"prefix":[…]}, {"not_prefix":[…]}. A delivery fires only if every path matches.' }),
+            max_runs_per_hour: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in any 60 minutes. Omit for the default, 60. A fire past it is a skipped run.' }),
+            max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in a UTC day. Omit for no daily cap.' }),
+            overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'Fresh session mode only: skip holds a fire while the previous run is still active. Omit for the default: skip for cron, allow for the other types.' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates. Default private.' }),
           }) } } },
       },
@@ -582,7 +597,10 @@ export function registerTriggersRoutes(): void {
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Session reuse mode.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
             session_key: z.string().optional().openapi({ description: 'Session key template.' }),
-            filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload filter.' }),
+            filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload filter: path to a value (equals) or one operator (not, in, exists, prefix, not_prefix). null or {} clears it.' }),
+            max_runs_per_hour: z.number().int().min(1).nullish().openapi({ description: 'Runs per 60 minutes; null resets it to the default, 60.' }),
+            max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs per UTC day; null removes the daily cap.' }),
+            overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'skip or allow; null resets it to the default (skip for cron, allow otherwise).' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates.' }),
           }) } } },
       },
@@ -714,6 +732,9 @@ export function registerTriggersRoutes(): void {
           pinnedSessionId: effectivePinnedSessionId,
         });
       }
+      // Turning a trigger on also resumes it from an auto-pause (KRTX-1721):
+      // the same Resume control and `kortix triggers enable` clear both.
+      if (body.enabled === true) await clearTriggerAutoPause(projectId, slug);
       await followTrigger(c, loaded.row, projectId, slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row));
@@ -1012,7 +1033,7 @@ async function authorizeTriggerFire(c: Context<AppEnv>, projectId: string, slug:
 
 /** The synthetic payload of a manual fire. An event trigger fires with an empty event, so the user can test the prompt. */
 async function manualFirePayload({ projectId, loaded, spec }: FireTarget, now: Date) {
-  const eventConnector = spec.event ? await connectorInfo(projectId, spec.event.connector) : null;
+  const eventConnector = spec.event ? await connectorInfo(projectId, spec.event.connector, loaded.row.metadata) : null;
   const eventRoot = spec.event && eventConnector
     ? eventPayload({
         spec,
@@ -1064,6 +1085,8 @@ async function fireAndAnswer(
     source,
     idempotencyKey: input.idempotencyKey ?? null,
     request: requestAuditContext(c),
+    // A person fired it: the run caps do not hold it (KRTX-1721).
+    deliberate: true,
   }).catch(async (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     await recordTriggerRun({ ...run, status: 'failed', error: message });

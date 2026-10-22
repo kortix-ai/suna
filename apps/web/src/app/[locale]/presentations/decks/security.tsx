@@ -1,6 +1,6 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
 /**
  * The security walkthrough.
@@ -28,7 +28,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * corrections that must not be "restored". Read them before editing a line.
  *
  * ── FOUR CORRECTIONS TO THE SPOKEN DRAFT ─────────────────────────────────
- *  1. "a disposable microVM" — not true of the default provider. microVM is
+ *  1. "a disposable microVM" — not true of legacy Daytona. microVM is
  *     accurate for Platinum (Cloud Hypervisor) only.
  *  2. "scoped to a person or a group" — that model was retired
  *     (20260706_secrets_v2_identifier_model.sql). Scoping is per project, per
@@ -39,7 +39,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *     agents, not human-only.
  */
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { getLocalizedConnectorsContent } from '@/features/marketing/connectors/content';
 import { getLocalizedSecurityContent } from '@/features/marketing/security-page/content';
 import type { ReactNode } from 'react';

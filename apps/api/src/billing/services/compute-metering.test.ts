@@ -213,7 +213,8 @@ describe('calculateComputeCost', () => {
     expect(calculateComputeCost(spec, seconds)).toBeCloseTo(cost, 8);
   });
 
-  test.each(['e2b', 'platinum'] as const)('%s bills the one hosted customer rate', (provider) => {
+  // `e2b` is a legacy stored value (E2B support is discontinued); its window still closes.
+  test.each(['platinum', 'daytona', 'e2b'])('%s bills the one hosted customer rate', (provider) => {
     expect(calculateComputeCost(SPEC, 3600, provider)).toBeCloseTo(0.10944109589041096, 8);
   });
 });

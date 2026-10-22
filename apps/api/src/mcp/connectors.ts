@@ -151,7 +151,7 @@ export const CONNECTOR_TOOLS = [
     name: 'search_connector_apps',
     title: 'Search connector apps',
     description:
-      'Search the catalogue of managed apps (Composio toolkits: Gmail, Slack, GitHub, Notion, Linear, …) a new connector can be added from. Returns slug, name, description, categories and whether the app is already connected. Pass the slug to add_connector as `app`. Returns `cursor` when more exist: pass it back as `cursor`.',
+      'Search the catalogue of apps (Gmail, Slack, GitHub, Notion, Linear, …) a new connector can be added from. Returns slug, name, description and categories; on a project with Connectors v2 the apps are MCP servers and each has `mcp_url`. Pass the slug to add_connector as `app`. Returns `cursor` when more exist: pass it back as `cursor`.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -169,7 +169,7 @@ export const CONNECTOR_TOOLS = [
     name: 'add_connector',
     title: 'Add a connector',
     description:
-      'Add (or update) a connector on the project now: it is committed to kortix.yaml on main and synced, like the dashboard\'s "Add app". For a managed app (Gmail, Slack, GitHub, …) pass `app` = the slug from search_connector_apps; the provider is Composio and the slug defaults to the app. For your own server pass `provider` and `slug` with `url` (mcp, plus `transport` http|sse), `endpoint` (graphql), `spec` (openapi, postman) or `base_url` (http). The result says what is next: call connect_connector for an OAuth app; an API-key connector needs its credential set by the human in Kortix. To remove a connector call remove_connector. Needs the connector-write permission.',
+      'Add (or update) a connector on the project now: it is committed to kortix.yaml on main and synced, like the dashboard\'s "Add app". For an app (Gmail, Slack, GitHub, …) pass `app` = the slug from search_connector_apps; the provider is the app\'s MCP server on a project with Connectors v2, else Composio, and the slug defaults to the app. For your own server pass `provider` and `slug` with `url` (mcp, plus `transport` http|sse), `endpoint` (graphql), `spec` (openapi, postman) or `base_url` (http). The result says what is next: call connect_connector for an OAuth app; an API-key connector needs its credential set by the human in Kortix. To remove a connector call remove_connector. Needs the connector-write permission.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -302,6 +302,19 @@ const parse = (body: string): any => {
 
 /** Standard base64 the API accepts; lenient decoders would write junk bytes. */
 const validBase64 = (s: string) => /^[A-Za-z0-9+/=\s]*$/.test(s) && s.replace(/[=\s]/g, '').length % 4 !== 1;
+
+/** `connectors_v2`: apps come from Kortix's own MCP catalogue (Discover), not Composio. */
+async function mcpAppsCatalogue(h: Host, pid: string): Promise<boolean> {
+  const r = await h.call('GET', `/v1/projects/${pid}`);
+  return r.status < 400 && parse(r.body)?.project?.experimental?.connectors_v2 === true;
+}
+
+/** The catalogue app with this slug: its name and MCP URL. `undefined` when there is none. */
+async function findMcpApp(h: Host, base: string, slug: string): Promise<{ name: string; url: string } | undefined> {
+  const r = await h.call('GET', `${base}/discover/connectors/detail`, { query: { id: `kortix:${slug}` } });
+  const item = r.status < 400 ? parse(r.body)?.item : null;
+  return typeof item?.mcpUrl === 'string' ? { name: item.name, url: item.mcpUrl } : undefined;
+}
 
 // ─── The tools ──────────────────────────────────────────────────────────────
 
@@ -525,6 +538,25 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
     }
     case 'search_connector_apps': {
       const limit = Math.min(Math.max(Math.trunc(Number(input.limit)) || 20, 1), 100);
+      if (await mcpAppsCatalogue(h, pid)) {
+        const r = await h.call('GET', `${base}/discover/connectors`, { query: { q: h.arg(input, 'query'), limit, cursor: h.optionalArg(input, 'cursor') } });
+        if (r.status >= 400) return h.apiResult(r);
+        const page = parse(r.body) ?? {};
+        const apps = ((page.items ?? []) as any[]).map((a) => ({
+          slug: a.slug,
+          name: a.name,
+          description: oneLine(a.description ?? '', 160),
+          categories: a.categories ?? [],
+          mcp_url: a.mcpUrl ?? null,
+        }));
+        return h.text(
+          JSON.stringify(
+            { apps, cursor: page.nextCursor ?? null, next: apps.length ? 'add_connector with app=<slug> adds its MCP server; then connect_connector signs in.' : 'No app matches: try another word.' },
+            null,
+            2,
+          ),
+        );
+      }
       const r = await h.call('GET', `${base}/connect/toolkits`, { query: { q: h.arg(input, 'query'), limit, cursor: h.optionalArg(input, 'cursor') } });
       if (r.status >= 400) return h.apiResult(r);
       const page = parse(r.body) ?? {};
@@ -545,18 +577,22 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
     }
     case 'add_connector': {
       const app = h.optionalArg(input, 'app');
-      const provider = h.optionalArg(input, 'provider') ?? (app ? 'composio' : undefined);
+      // Connectors v2: an app is its vendor's MCP server, from Kortix's catalogue.
+      const mcpApp = app && !h.optionalArg(input, 'provider') && (await mcpAppsCatalogue(h, pid)) ? await findMcpApp(h, base, app) : null;
+      if (app && mcpApp === undefined) throw h.input(`"${app}" is not in the app catalogue: search_connector_apps lists the apps`);
+      const provider = mcpApp ? 'mcp' : (h.optionalArg(input, 'provider') ?? (app ? 'composio' : undefined));
       const slug = h.optionalArg(input, 'slug') ?? app;
       if (!provider || !slug) throw h.input('pass `app` (a managed app from search_connector_apps), or `provider` and `slug` for your own server');
-      const draft: Record<string, unknown> = { slug, provider };
+      const draft: Record<string, unknown> = mcpApp ? { slug, provider, name: mcpApp.name, url: mcpApp.url, transport: 'http' } : { slug, provider };
       for (const [from, to] of [['app', 'app'], ['name', 'name'], ['url', 'url'], ['transport', 'transport'], ['endpoint', 'endpoint'], ['spec', 'spec'], ['base_url', 'baseUrl']] as const) {
+        if (mcpApp && from === 'app') continue;
         const v = h.optionalArg(input, from);
         if (v) draft[to] = v;
       }
       const r = await h.call('POST', `${base}/connectors`, { body: draft });
       if (r.status >= 400) return h.apiResult(r);
       const done = parse(r.body) ?? {};
-      const oauth = provider === 'composio';
+      const oauth = provider === 'composio' || mcpApp !== null;
       return h.text(
         JSON.stringify(
           {

@@ -10,14 +10,15 @@ import type { Principal } from '../core/types';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { waitFor } from '../core/poll';
 import { adminCreateUser, adminDeleteUser, passwordGrant } from '../fixtures/supabase';
+import { withDb } from '../fixtures/chat';
 
 flow(
   'ME-1',
   { domain: 'accounts', tags: ['deployed', 'smoke'], routes: ['GET /v1/accounts/me'] },
   async (ctx) => {
-    await ctx.step('OWNER sees own identity', async () => {
+    await ctx.step('OWNER sees own identity; a web session carries no token_id', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/me');
-      r.status(200).body().exists('$.user_id').exists('$.email');
+      r.status(200).body().exists('$.user_id').exists('$.email').has('$.token_context.token_id', null);
     });
     await ctx.step('ANON → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).get('/v1/accounts/me');
@@ -49,7 +50,7 @@ flow('ACCT-1', { domain: 'accounts', routes: ['GET /v1/accounts'] }, async (ctx)
 
 flow(
   'ACCT-2',
-  { domain: 'accounts', tags: ['deployed'], routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId'] },
+  { domain: 'accounts', tags: ['deployed'], routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId', 'GET /v1/accounts/:accountId/members'] },
   async (ctx) => {
     let accountId = '';
     await ctx.step('create team account → caller is owner', async () => {
@@ -64,13 +65,24 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId', { params: { accountId } });
-      r.status(200).body().has('$.account_id', accountId);
+      r.status(200).body()
+        .has('$.account_id', accountId)
+        .has('$.name', ctx.fixtures.name('team'))
+        .has('$.member_count', 1)
+        .has('$.project_count', 0)
+        .has('$.role', 'owner');
     });
-    await ctx.step('NONMEMBER cannot read it → 403', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId', { params: { accountId } });
-      r.status(403);
+    await ctx.step('foreign and nonexistent accounts have identical denials on detail and members', async () => {
+      for (const targetId of [accountId, crypto.randomUUID()]) {
+        for (const route of ['/v1/accounts/:accountId', '/v1/accounts/:accountId/members']) {
+          const r = await ctx.client.as(ctx.P.NONMEMBER)
+            .get(route, { params: { accountId: targetId } });
+          r.status(403).body().has('$', { error: 'Forbidden' });
+          if (r.text() !== '{"error":"Forbidden"}') {
+            throw new Error('Account denial envelope differs from the members route');
+          }
+        }
+      }
     });
     await ctx.step('create without a name → 400 Validation failed; a 256-character name → 400 name is too long', async () => {
       (await ctx.client.as(ctx.P.OWNER).post('/v1/accounts', {})).status(400).body().has('$.message', 'Validation failed');
@@ -103,6 +115,9 @@ flow(
     await ctx.step('list does not expose the secret', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/tokens');
       r.status(200);
+      const rows = r.json<Array<Record<string, unknown>>>();
+      if (!rows.some((row) => row.token_id === tokenId)) throw new Error('the minted token is missing from the list');
+      if (rows.some((row) => 'secret_key' in row)) throw new Error('the token list exposes secret_key');
     });
     await ctx.step('revoke it', async () => {
       const r = await ctx.client
@@ -120,7 +135,7 @@ flow('TOK-2', { domain: 'accounts', routes: ['POST /v1/accounts/tokens'] }, asyn
   });
 });
 
-flow('ACCT-4', { domain: 'accounts', routes: ['PATCH /v1/accounts/:accountId'] }, async (ctx) => {
+flow('ACCT-4', { domain: 'accounts', routes: ['PATCH /v1/accounts/:accountId', 'POST /v1/accounts', 'GET /v1/accounts'] }, async (ctx) => {
   const team = await ctx.fixtures.team();
   await ctx.step('OWNER renames account → 200 with the new name', async () => {
     const name = ctx.fixtures.name('renamed');
@@ -128,6 +143,16 @@ flow('ACCT-4', { domain: 'accounts', routes: ['PATCH /v1/accounts/:accountId'] }
       .as(ctx.P.OWNER)
       .patch('/v1/accounts/:accountId', { name }, { params: { accountId: team.id } });
     r.status(200).body().has('$.name', name);
+  });
+  await ctx.step('a name with markup or a control character → 400 on rename and on create; the name is unchanged', async () => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    for (const name of ['<h1>PenTest</h1>', 'a>b', 'line\nbreak']) {
+      (await owner.patch('/v1/accounts/:accountId', { name }, { params: { accountId: team.id } })).status(400);
+      (await owner.post('/v1/accounts', { name })).status([400, 403]);
+    }
+    const accounts = (await owner.get('/v1/accounts')).status(200).json<Array<{ account_id: string; name: string }>>();
+    const current = accounts.find((a) => a.account_id === team.id)?.name ?? '';
+    if (/[<>\n]/.test(current)) throw new Error(`the account name changed to ${JSON.stringify(current)}`);
   });
   await ctx.step('MEMBER cannot rename → 403', async () => {
     const member = await team.addMember('member');
@@ -146,14 +171,20 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
+    let adminUserId: string | undefined;
     await ctx.step('add an admin member → 201 status added', async () => {
-      await team.addMember('admin');
+      adminUserId = (await team.addMember('admin')).userId;
     });
     await ctx.step('list members → owner + admin present', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId/members', { params: { accountId: team.id } });
       r.status(200);
+      const members = r.json<Array<{ user_id: string; account_role: string }>>();
+      if (!members.some((m) => m.user_id === ctx.P.OWNER.userId && m.account_role === 'owner'))
+        throw new Error('OWNER is not listed as owner');
+      if (!members.some((m) => m.user_id === adminUserId && m.account_role === 'admin'))
+        throw new Error('the added admin is not listed as admin');
     });
     await ctx.step('NONMEMBER cannot list → 403', async () => {
       const r = await ctx.client
@@ -593,6 +624,10 @@ flow(
     const team = await ctx.fixtures.team();
     const admin = await team.addMember('admin');
     const member = await team.addMember('member');
+    // The owner-role guards need a caller that IS an admin when they run. The
+    // first step demotes `admin`, so a 403 for it came from the member floor
+    // and proved nothing about these guards (KRTX-2850).
+    const guardAdmin = await team.addMember('admin');
 
     await ctx.step('OWNER demotes admin → member (downward transition) → 200', async () => {
       const r = await ctx.client
@@ -621,7 +656,7 @@ flow(
         // change OWNER's role (even to owner — the "change the owner role" branch
         // fires whenever the TARGET is an owner) → 403.
         const r = await ctx.client
-          .as(admin)
+          .as(guardAdmin)
           .patch(
             '/v1/accounts/:accountId/members/:userId',
             { role: 'admin' },
@@ -634,7 +669,7 @@ flow(
       'admin cannot promote anyone to owner → 403 (privilege-escalation guard)',
       async () => {
         const r = await ctx.client
-          .as(admin)
+          .as(guardAdmin)
           .patch(
             '/v1/accounts/:accountId/members/:userId',
             { role: 'owner' },
@@ -925,7 +960,8 @@ flow(
 // the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
 // own personal account (never OWNER/team accounts other flows depend on).
 // Immediate self-deletion removes the auth identity, invalidates its token and
-// removes the account row itself: the account answers 404 to a nonmember.
+// removes the account row itself. A nonmember gets the same 403 as for any
+// foreign or nonexistent account (KRTX-2402); the row check needs `database`.
 flow(
   'DEL-4',
   {
@@ -977,12 +1013,16 @@ flow(
       (await asVictim.get('/v1/accounts/me')).status(401);
       (await asVictim.get('/v1/account/deletion-status')).status(401);
     });
-    await ctx.step('the deleted account is gone for a nonmember → 404', async () => {
-      (
-        await ctx.client
-          .as(ctx.P.OWNER)
-          .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } })
-      ).status(404);
+    await ctx.step('the deleted account answers a nonmember like any foreign account → 403, and its row is gone', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } });
+      r.status(403).body().has('$', { error: 'Forbidden' });
+      if (!ctx.env.capabilities.database) return;
+      const left = await withDb(ctx, (db) =>
+        db.query('SELECT 1 FROM kortix.accounts WHERE account_id = $1', [victimAccountId]),
+      );
+      if (left.rowCount !== 0) throw new Error(`the deleted account row still exists: ${victimAccountId}`);
     });
     await ctx.step('repeated deletion cannot restore old-token access → 401', async () => {
       (await asVictim.del('/v1/account/delete-immediately')).status(401);
@@ -1073,7 +1113,12 @@ flow(
     await ctx.step('the CLI deletes a revoked key and mine no longer lists it', async () => {
       const cli = new CliSandbox('tok3-delete');
       try {
-        const login = await cli.login(await ctx.fixtures.pat({ name: ctx.fixtures.name('cleanup') }), { noProject: true });
+        // Pin the account the key lives in. A non-TTY login picks the first of
+        // the OWNER's accounts, and concurrent flows add team accounts to it.
+        const login = await cli.login(await ctx.fixtures.pat({ name: ctx.fixtures.name('cleanup') }), {
+          noProject: true,
+          account: ctx.P.OWNER.accountId,
+        });
         if (login.exitCode !== 0) throw new Error('CLI login failed');
         const removed = await cli.run(['tokens', 'rm', tokenId, '-y']);
         if (removed.exitCode !== 0 || !removed.stdout.includes('Deleted')) {
@@ -1140,9 +1185,11 @@ flow(
       memberSecret = j.secret_key;
     });
 
-    await ctx.step('the member token authenticates as the member → /accounts/me 200, auth_type pat', async () => {
+    await ctx.step('the member token authenticates as the member → /accounts/me 200, auth_type pat, token_id names this token', async () => {
       const r = await ctx.client.withBearer(memberSecret).get('/v1/accounts/me');
-      r.status(200).body().has('$.token_context.auth_type', 'pat');
+      // token_id lets a client tell its own credential from the rest
+      // (`kortix tokens rm` refuses to revoke it, KRTX-1842).
+      r.status(200).body().has('$.token_context.auth_type', 'pat').has('$.token_context.token_id', memberTokenId);
     });
 
     await ctx.step('the member token carries only member rights → renaming the account 403', async () => {
@@ -1641,6 +1688,122 @@ flow(
     });
     await ctx.step('the same MEMBER again that day → 429 already_requested', async () => {
       (await ask(member)).status(429).body().has('$.code', 'already_requested');
+    });
+  },
+);
+
+// TOK-7 — mint expiry bounds. A token never mints already dead, and a
+// project-scoped PAT never mints a token that outlives itself.
+flow(
+  'TOK-7',
+  {
+    domain: 'accounts',
+    routes: ['POST /v1/accounts/tokens', 'POST /v1/projects/:projectId/cli-token'],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const params = { params: { projectId: project.id } };
+    const at = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+    const mintProjectToken = async (expires_at?: string) => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/cli-token',
+        { name: ctx.fixtures.name('tok7'), ...(expires_at ? { expires_at } : {}) },
+        params,
+      );
+      r.status(201);
+      return r.json<{ secret_key: string }>().secret_key;
+    };
+
+    await ctx.step('an expiry in the past → 400 token_expiry_in_past on both mint routes', async () => {
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', { name: ctx.fixtures.name('tok7'), expires_at: at(-1) }))
+        .status(400).body().has('$.code', 'token_expiry_in_past');
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/projects/:projectId/cli-token', { expires_at: at(-1) }, params))
+        .status(400).body().has('$.code', 'token_expiry_in_past');
+    });
+
+    await ctx.step('a browser session still mints a token with no expiry → 201', async () => {
+      await mintProjectToken();
+    });
+
+    await ctx.step('a project PAT that expires in 60 min: no expiry or a later one → 403 token_mint_exceeds_parent; an earlier one → 201', async () => {
+      const parent = ctx.client.withBearer(await mintProjectToken(at(60)), 'PAT_PROJ');
+      (await parent.post('/v1/projects/:projectId/cli-token', {}, params))
+        .status(403).body().has('$.code', 'token_mint_exceeds_parent');
+      (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: at(120) }, params))
+        .status(403).body().has('$.code', 'token_mint_exceeds_parent');
+      (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: at(30) }, params)).status(201);
+    });
+
+    await ctx.step('a project PAT with no expiry must still pass one: none → 403 token_mint_exceeds_parent; one → 201', async () => {
+      const parent = ctx.client.withBearer(await mintProjectToken(), 'PAT_PROJ');
+      (await parent.post('/v1/projects/:projectId/cli-token', {}, params))
+        .status(403).body().has('$.code', 'token_mint_exceeds_parent');
+      (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: at(30) }, params)).status(201);
+    });
+  },
+);
+
+// TOK-8 — the live token lists hold only tokens that still authenticate: an
+// expired token and a token of an archived project leave them. The personal
+// history (`?mine=true`) keeps the expired key.
+flow(
+  'TOK-8',
+  {
+    domain: 'accounts',
+    requires: ['database'],
+    serial: true,
+    routes: [
+      'POST /v1/accounts/tokens',
+      'GET /v1/accounts/tokens',
+      'POST /v1/projects/:projectId/cli-token',
+      'GET /v1/projects/:projectId/cli-token',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const expires_at = new Date(Date.now() + 60 * 60_000).toISOString();
+    let expiredId = '';
+    let projectTokenId = '';
+    await ctx.step('mint a personal key and a project token, then expire the key and archive the project in the database (a row that predates the archive revocation)', async () => {
+      const key = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', { name: ctx.fixtures.name('tok8'), expires_at });
+      key.status(201);
+      expiredId = key.json<{ token_id: string }>().token_id;
+      const proj = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/cli-token',
+        { name: ctx.fixtures.name('tok8') },
+        { params: { projectId: project.id } },
+      );
+      proj.status(201);
+      projectTokenId = proj.json<{ token_id: string }>().token_id;
+      await withDb(ctx, async (db) => {
+        await db.query(`UPDATE kortix.account_tokens SET expires_at = now() - interval '1 minute' WHERE token_id = $1`, [expiredId]);
+      });
+    });
+    await ctx.step('the project list omits nothing yet: the live project token is listed', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/cli-token', { params: { projectId: project.id } });
+      r.status(200);
+      if (!r.json<{ items: Array<{ token_id: string }> }>().items.some((t) => t.token_id === projectTokenId))
+        throw new Error('the live project token is missing from the project list');
+    });
+    await ctx.step('the account list omits the expired key and the archived project token; ?mine=true keeps the expired key', async () => {
+      await withDb(ctx, async (db) => {
+        await db.query(`UPDATE kortix.projects SET status = 'archived' WHERE project_id = $1`, [project.id]);
+      });
+      try {
+        const live = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/tokens');
+        live.status(200);
+        const ids = live.json<Array<{ token_id: string }>>().map((t) => t.token_id);
+        if (ids.includes(expiredId)) throw new Error('the expired key is still in the live token list');
+        if (ids.includes(projectTokenId)) throw new Error('the archived project token is still in the live token list');
+        const mine = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/tokens', { query: { mine: true } });
+        mine.status(200);
+        if (!mine.json<Array<{ token_id: string }>>().some((t) => t.token_id === expiredId))
+          throw new Error('the expired key is missing from the personal history');
+      } finally {
+        await withDb(ctx, async (db) => {
+          await db.query(`UPDATE kortix.projects SET status = 'active' WHERE project_id = $1`, [project.id]);
+        });
+      }
     });
   },
 );

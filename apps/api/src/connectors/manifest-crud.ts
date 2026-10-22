@@ -157,6 +157,8 @@ export function mergeConnectorDraftEntry(
     entry.authorization_strategy = previous.authorization_strategy;
   }
   if (previous.enabled !== undefined) entry.enabled = previous.enabled;
+  // Owned by the sensitive toggle: an edit (or a Pipedream move) keeps the read approval gate.
+  if (previous.sensitive !== undefined) entry.sensitive = previous.sensitive;
   if (entry.name === undefined && previous.name !== undefined) entry.name = previous.name;
   return entry;
 }
@@ -175,11 +177,20 @@ async function connectorIdFor(projectId: string, slug: string): Promise<string |
   return row?.connectorId ?? null;
 }
 
+/** Extra steps of one connector write (a connector move uses both). */
+export interface ConnectorWriteOptions {
+  /** Edits other parts of the same kortix.yaml commit (a move rewrites its triggers). An error string refuses the write. */
+  alsoMutate?: (manifest: EditableManifest) => string | null;
+  /** Runs after the commit and before the sync (a move swaps credentials there). */
+  beforeSync?: () => Promise<void>;
+}
+
 /** Create/update a connector in kortix.yaml, then materialize it. */
 export async function upsertConnectorInManifest(
   projectId: string,
   accountId: string,
   draft: ConnectorDraft,
+  options: ConnectorWriteOptions = {},
 ): Promise<CrudResult> {
   // Slack is a first-class channel connector — reserve its namespace so a new
   // Pipedream/OpenAPI app can't take the `slack` name (and shadow the built-in
@@ -219,14 +230,15 @@ export async function upsertConnectorInManifest(
     return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
   }
 
-  const result = await upsertConnectorInManifestWithRetry(gitProject, draft);
+  const result = await upsertConnectorInManifestWithRetry(gitProject, draft, options.alsoMutate);
   if (!result.ok) return result;
+  await options.beforeSync?.();
 
   const sync = await syncProjectConnectors(projectId, accountId);
   return { ok: true, sync };
 }
 
-type EditableManifest = Awaited<ReturnType<typeof loadManifestForEdit>>;
+export type EditableManifest = Awaited<ReturnType<typeof loadManifestForEdit>>;
 
 async function mutateProjectConnectorManifest(
   projectId: string,
@@ -245,6 +257,7 @@ async function mutateProjectConnectorManifest(
 async function upsertConnectorInManifestWithRetry(
   project: Awaited<ReturnType<typeof withProjectGitAuth>>,
   draft: ConnectorDraft,
+  alsoMutate?: ConnectorWriteOptions['alsoMutate'],
 ): Promise<CrudResult> {
   return mutateManifestWithRetry(
     project,
@@ -270,6 +283,8 @@ async function upsertConnectorInManifestWithRetry(
         (candidate) => candidate.slug === draft.slug,
       );
       if (error) return { ok: false, error: error.error, status: 400 };
+      const refused = alsoMutate?.(manifest);
+      if (refused) return { ok: false, error: refused, status: 409 };
       return {
         ok: true,
         commitMessage: `chore: ${idx >= 0 ? 'update' : 'add'} connector ${draft.slug}`,
@@ -670,14 +685,9 @@ export interface ProjectPoliciesView {
   policies: ProjectPolicySpec[];
   defaultMode: DefaultMode;
   errors: Array<{ path: string; error: string }>;
-  /**
-   * Per-connector rule counts, from the SAME manifest read (KRTX-2527):
-   * `connectors policy <slug> set` commits rules into that connector's entry,
-   * and `policy ls` reported only the top-level list — "No explicit project
-   * policies" right after a successful set. One entry per connector that
-   * carries rules, in manifest order.
-   */
-  connectorRules: Array<{ slug: string; rules: number }>;
+  /** Per-connector tool-call rule counts, from the same manifest (KRTX-2527):
+   *  `policy <slug> set` must be visible to the parent `policy ls` too. */
+  connectorRules: Array<{ slug: string; count: number }>;
 }
 
 /** Read the project's `policies:` list + `policy:` block (kortix.yaml = source of truth). */
@@ -690,14 +700,14 @@ export async function getProjectPoliciesFromManifest(
   if (!manifest)
     return { policies: [], defaultMode: 'allow_all', errors: [], connectorRules: [] };
   const parsed = extractProjectPolicies(manifest);
-  const connectorRules = extractConnectors(manifest).specs
-    .filter((spec) => spec.policies.length > 0)
-    .map((spec) => ({ slug: spec.slug, rules: spec.policies.length }));
+  const connectorSpecs = extractConnectors(manifest).specs;
   return {
     policies: parsed.policies,
     defaultMode: parsed.settings.defaultMode,
     errors: parsed.errors,
-    connectorRules,
+    connectorRules: connectorSpecs
+      .filter((spec) => spec.policies.length > 0)
+      .map((spec) => ({ slug: spec.slug, count: spec.policies.length })),
   };
 }
 

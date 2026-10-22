@@ -28,6 +28,7 @@ import {
 } from '@kortix/llm-gateway';
 import { resolveCandidates as realResolveCandidates } from './resolution/resolve-candidates';
 import { runtimeModelCatalog } from './models/runtime-catalog';
+import { fetchPlatinumModels, PlatinumModelsError } from './models/managed-models';
 
 export type ProviderVerifyStatus = 'verified' | 'invalid' | 'unknown' | 'not_connected';
 
@@ -98,6 +99,8 @@ export async function verifyProviderConnection(
   overrides: Partial<ProviderVerifyDeps> = {},
 ): Promise<ProviderVerifyResult> {
   const deps: ProviderVerifyDeps = { ...DEFAULT_DEPS, ...overrides };
+
+  if (providerId === 'platinum') return verifyPlatinum(principal, deps);
 
   const modelId = deps.pickVerificationModel(providerId);
   if (!modelId) {
@@ -203,5 +206,32 @@ export async function verifyProviderConnection(
       status: 'unknown',
       message: err instanceof Error ? err.message : "Couldn't reach the provider to verify.",
     };
+  }
+}
+
+/**
+ * Platinum lists its models per key, so its check is that list: a rejected key
+ * is invalid, a key whose org has no models enabled is reported as such.
+ */
+async function verifyPlatinum(principal: AuthedPrincipal, deps: ProviderVerifyDeps): Promise<ProviderVerifyResult> {
+  let descriptor: UpstreamDescriptor | undefined;
+  try {
+    // Resolving any platinum/ id finds the project's key; the model is not called.
+    [descriptor] = await deps.resolveCandidates(principal, 'platinum/verify');
+  } catch (err) {
+    if (err instanceof GatewayResolutionError && err.code === 'provider_not_connected') return { status: 'not_connected', message: err.message };
+    return { status: 'unknown', message: err instanceof Error ? err.message : "Couldn't resolve the Platinum key." };
+  }
+  if (!descriptor?.apiKey) return { status: 'not_connected', message: 'No Platinum API key is set for this project.' };
+  try {
+    const models = await fetchPlatinumModels(descriptor.baseUrl, descriptor.apiKey);
+    return models.length
+      ? { status: 'verified', message: `Platinum lists ${models.length} model${models.length === 1 ? '' : 's'} for this key.` }
+      : { status: 'unknown', message: 'The key works, but its Platinum organization has no inference models enabled.' };
+  } catch (err) {
+    if (err instanceof PlatinumModelsError && (err.status === 401 || err.status === 403)) {
+      return { status: 'invalid', message: `Platinum rejected the key (HTTP ${err.status}).` };
+    }
+    return { status: 'unknown', message: "Couldn't reach Platinum to verify the key." };
   }
 }

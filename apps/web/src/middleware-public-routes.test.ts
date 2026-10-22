@@ -57,6 +57,7 @@ test('every supported public surface accepts an explicit locale prefix', async (
     '/solutions',
     '/support',
     '/use-cases',
+    '/white-label',
   ];
 
   for (const route of routes) {

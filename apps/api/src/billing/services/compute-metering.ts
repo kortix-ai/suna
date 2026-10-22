@@ -35,6 +35,7 @@ import {
   type ProviderName,
   type SandboxWorkloadType,
   getProvider,
+  isProviderName,
 } from '../../platform/providers';
 import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
 import { db } from '../../shared/db';
@@ -91,7 +92,7 @@ export interface StartComputeOpts {
 export function calculateComputeCost(
   spec: SandboxSpec,
   durationSeconds: number,
-  provider: ProviderName = 'daytona',
+  provider: string = 'platinum',
 ): number {
   if (durationSeconds <= 0) return 0;
   const rate = getProviderComputeRateCard(provider);
@@ -127,7 +128,7 @@ export async function startComputeSession(opts: StartComputeOpts): Promise<strin
     sandboxId: opts.sandboxId,
     sessionId: opts.sessionId ?? null,
     actorUserId: opts.actorUserId ?? null,
-    provider: opts.provider ?? 'daytona',
+    provider: opts.provider ?? 'platinum',
     cpuCores: opts.spec.cpuCores,
     memoryGb: opts.spec.memoryGb,
     diskGb: opts.spec.diskGb,
@@ -189,7 +190,7 @@ async function settleComputeWindow(
     diskGb: row.diskGb,
     gpuCount: row.gpuCount,
   };
-  const windowCost = calculateComputeCost(spec, durationSeconds, row.provider as ProviderName);
+  const windowCost = calculateComputeCost(spec, durationSeconds, row.provider);
   // CLAIM BEFORE DEBITING. The order is the whole fix.
   //
   // This used to debit first and move the cursor afterwards, with the update
@@ -383,7 +384,7 @@ export async function reopenComputeForSandbox(
     accountId,
     sessionId,
     actorUserId,
-    provider: (last?.provider as ProviderName | undefined) ?? provider ?? 'daytona',
+    provider: (last?.provider as ProviderName | undefined) ?? provider ?? 'platinum',
     spec,
   });
 }
@@ -523,8 +524,10 @@ export async function reconcileMissingAppComputeSessions(
   let reconciled = 0;
   let errors = 0;
   for (const row of rows) {
+    // A legacy `e2b` row (E2B support is discontinued) never runs: skip it.
+    if (!isProviderName(row.provider)) continue;
     try {
-      const status = await getProvider(row.provider as ProviderName).getStatus(row.externalId);
+      const status = await getProvider(row.provider).getStatus(row.externalId);
       if (status !== 'running') continue;
       const opened = await startComputeSession({
         sandboxId: row.sandboxId,
@@ -571,8 +574,8 @@ export async function reconcileMissingComputeSessions(
       // `reconcileOrphanComputeSessions` — which settles such rows back down and
       // pages via the BILLING INVARIANT VIOLATED monitor. Only reopen for a box the
       // provider still reports as running.
-      if (!row.externalId) continue;
-      const status = await getProvider(row.provider as ProviderName).getStatus(row.externalId);
+      if (!row.externalId || !isProviderName(row.provider)) continue;
+      const status = await getProvider(row.provider).getStatus(row.externalId);
       if (status !== 'running') continue;
 
       const opened = await reopenComputeForSandbox(

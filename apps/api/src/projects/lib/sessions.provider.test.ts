@@ -9,7 +9,7 @@ import {
 // `allowed` + `isEnabled` are injected (they model config.ALLOWED_SANDBOX_PROVIDERS
 // + config.isProviderEnabled), so no env/DB. Precedence under test:
 //   explicit request › per-project pin (if enabled) › fallback (weighted balancer).
-const ALLOWED = ['daytona', 'platinum', 'e2b'] as const;
+const ALLOWED = ['platinum', 'daytona'] as const;
 const bothEnabled = (_p: string) => true;
 
 describe('resolveSessionProvider (per-project provider override)', () => {
@@ -56,6 +56,12 @@ describe('resolveSessionProvider (per-project provider override)', () => {
     ).toEqual({ fallback: true });
   });
 
+  test('a Daytona pin is ignored even while Daytona is enabled → fallback, so the project runs on Platinum', () => {
+    expect(
+      resolveSessionProvider({ requested: null, projectPin: 'daytona', allowed: ALLOWED, isEnabled: bothEnabled }),
+    ).toEqual({ fallback: true });
+  });
+
   test('no request + no pin → fallback (weighted balancer runs)', () => {
     expect(
       resolveSessionProvider({ requested: null, projectPin: null, allowed: ALLOWED, isEnabled: bothEnabled }),
@@ -99,9 +105,9 @@ describe('sessionProviderIsLocked', () => {
       sessionProviderIsLocked(
         resolveSessionProvider({
           requested: null,
-          projectPin: 'e2b',
+          projectPin: 'daytona',
           allowed: ALLOWED,
-          isEnabled: (p) => p !== 'e2b',
+          isEnabled: (p) => p !== 'daytona',
         }),
       ),
     ).toBe(false);

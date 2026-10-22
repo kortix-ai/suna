@@ -1,3 +1,4 @@
+import { memoInRequest } from '../shared/request-memo';
 import { accountModelPreferences, projectLlmRoutingPolicies } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import type {
@@ -65,12 +66,19 @@ export async function setProjectModelOverrides(params: {
     });
 }
 
-export async function getProjectRoutingPolicy(
+export function getProjectRoutingPolicy(
   projectId: string,
 ): Promise<StoredProjectRoutingPolicy | null> {
   // Do not process-cache this document. API replicas cannot invalidate each
   // other's memory, so an immediate read after a write can otherwise return a
-  // stale policy from whichever pod served an earlier request.
+  // stale policy from whichever pod served an earlier request. Within one
+  // request the read is shared (gateway admission prefetches it).
+  return memoInRequest(`routing-policy:${projectId}`, () => readProjectRoutingPolicy(projectId));
+}
+
+async function readProjectRoutingPolicy(
+  projectId: string,
+): Promise<StoredProjectRoutingPolicy | null> {
   const [row] = await db
     .select()
     .from(projectLlmRoutingPolicies)

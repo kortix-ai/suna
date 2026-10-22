@@ -129,7 +129,7 @@ mock.module('../../../billing/services/compute-metering', () => ({
 }));
 
 mock.module('../../lib/session-transcript-capture', () => ({
-  captureSessionTranscriptMirror: async (
+  captureJournallessSessionLog: async (
     sessionId: string,
     _deps?: unknown,
     options?: { scope?: string; actorUserId?: string },

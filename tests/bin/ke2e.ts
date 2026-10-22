@@ -282,7 +282,7 @@ async function main(): Promise<number> {
  * pre-SIGKILL window, so it is hard-bounded and never blocks exit.
  *
  * The same signal shape the sandbox CI workers already use
- * (`daytona-ci.ts:785-788`, `platinum-ci.ts:1037-1040`).
+ * (`platinum-ci.ts`).
  */
 function installCancellationReclaim(runId: string): void {
   const budgetMs = Number(process.env.KE2E_CANCEL_RECLAIM_MS ?? 20_000);

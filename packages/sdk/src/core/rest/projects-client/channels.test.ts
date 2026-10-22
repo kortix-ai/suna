@@ -5,6 +5,10 @@ import {
   completeSlackInstall,
   completeTeamsInstall,
   connectSlack,
+  connectTelegram,
+  disconnectTelegram,
+  getTelegramInstallation,
+  setTelegramAllowedUsers,
   bindSlackIdentity,
   bindTeamsIdentity,
   previewSlackIdentity,
@@ -407,4 +411,44 @@ test('completeTeamsInstall surfaces the refusal code when another user started t
   expect(last().body).toEqual({ code: 'c2', state: 's2' });
   expect((error as { code?: string }).code).toBe('CHANNEL_INSTALL_STATE_MISMATCH');
   expect((error as { status?: number }).status).toBe(403);
+});
+
+test('getTelegramInstallation reads the installation and returns null when there is none', async () => {
+  nextResponse = { status: 200, body: { bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'] } };
+  expect(await getTelegramInstallation('P1')).toEqual({ bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'] });
+  expect(last()).toMatchObject({ method: 'GET' });
+  expect(last().url).toContain('/projects/P1/channels/telegram/installation');
+
+  nextResponse = { status: 200, body: null };
+  expect(await getTelegramInstallation('P1')).toBeNull();
+  nextResponse = { status: 403, body: { error: 'off', code: 'feature_disabled' } };
+  expect(await getTelegramInstallation('P1')).toBeNull();
+});
+
+test('connectTelegram posts the bot token and allowed user ids', async () => {
+  nextResponse = { status: 200, body: { bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'] } };
+  const result = await connectTelegram('P1', { bot_token: '123:abc', allowed_user_ids: ['42'] });
+  expect(last()).toMatchObject({ method: 'POST', body: { bot_token: '123:abc', allowed_user_ids: ['42'] } });
+  expect(last().url).toContain('/projects/P1/channels/telegram/connect');
+  expect(result.bot_id).toBe('123');
+});
+
+test('connectTelegram throws the API error message', async () => {
+  nextResponse = { status: 400, body: { error: 'Telegram rejected the bot token', code: 'telegram_token_rejected' } };
+  await expect(connectTelegram('P1', { bot_token: '123:abc' })).rejects.toThrow('Telegram rejected the bot token');
+});
+
+test('setTelegramAllowedUsers replaces the allowed list', async () => {
+  nextResponse = { status: 200, body: { bot_id: '123', username: null, allowed_user_ids: ['1', '2'] } };
+  const result = await setTelegramAllowedUsers('P1', ['1', '2']);
+  expect(last()).toMatchObject({ method: 'PUT', body: { user_ids: ['1', '2'] } });
+  expect(last().url).toContain('/projects/P1/channels/telegram/allowed-users');
+  expect(result.allowed_user_ids).toEqual(['1', '2']);
+});
+
+test('disconnectTelegram deletes the installation', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await disconnectTelegram('P1');
+  expect(last()).toMatchObject({ method: 'DELETE' });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/telegram$/);
 });

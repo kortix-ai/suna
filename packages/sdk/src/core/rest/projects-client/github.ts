@@ -3,6 +3,7 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap, type ProjectGitConnection } from './shared';
 import type { KortixProject, ProjectGlyph } from './projects';
+import type { RepositoryDisconnectedReason } from '../../http/api/errors';
 
 export interface GitHubRepository {
   id: string;
@@ -121,6 +122,28 @@ export interface LinkableGitHubInstallationsResponse {
   configured: boolean;
   install_url: string | null;
   installations: LinkableGitHubInstallation[];
+}
+
+/**
+ * Is a project's git connection usable, and if not, can the account fix it?
+ * `reconnect_required` carries `install_url`, the GitHub App install link that
+ * reconnects it. With `reason: 'repository_disconnected'` it also carries
+ * `disconnected_reason` and `message` (the cause and the fix).
+ */
+export interface ProjectGitConnectionState {
+  state: 'connected' | 'reconnect_required' | 'unavailable' | 'not_connected';
+  reason?: string;
+  install_url?: string | null;
+  disconnected_reason?: RepositoryDisconnectedReason;
+  message?: string;
+}
+
+/** `GET /projects/:projectId/git/connection`. */
+export async function getProjectGitConnectionState(projectId: string) {
+  return unwrap(
+    await backendApi.get<ProjectGitConnectionState>(`/projects/${projectId}/git/connection`),
+    'Failed to read the Git connection',
+  );
 }
 
 export async function linkRepository(input: LinkRepositoryInput) {

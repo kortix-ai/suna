@@ -2,15 +2,17 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { AdvancedPanel } from '@/features/session/action-panel/advanced/advanced-panel';
-import { ToolParts } from '@/features/session/action-panel/easy/detail-view';
-import { EasyPanel } from '@/features/session/action-panel/easy/easy-panel';
-import { FileViewer } from '@/features/session/action-panel/easy/file-viewer';
-import { SessionPanelProvider } from '@/features/session/action-panel/session-panel-provider';
-import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
-import { SessionFilesPanel } from '@/features/session/session-files-panel';
-import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import {
+  AdvancedPanel,
+  EasyPanel,
+  SessionPanelProvider,
+  SessionFiles as SessionFilesExplorer,
+  SessionChanges as SessionFilesPanel,
+} from '@kortix/ui/session-panel';
+import { ToolParts } from '@kortix/ui/session/panel/easy/detail-view';
+import { FileViewer } from '@kortix/ui/file-viewer';
+import { ToolActivateContext, ToolPartRenderer } from '@kortix/ui/session';
+import { useKortixComputerStore } from '@kortix/ui/internal/stores/kortix-computer-store';
 import { useEffect, useState } from 'react';
 import { sessionLogOfV1Rows, type ToolCallBlock } from '@kortix/sdk';
 import { useSessionLogThread, useSessionStateStore } from '@kortix/sdk/react';
@@ -1121,23 +1123,11 @@ const FOLD_PARTS = [
   ),
 ];
 
-const FOLD_MESSAGES: MessageWithParts[] = [
+const FOLD_MESSAGES: FixtureRows = [
   {
-    info: {
-      id: 'm_fold',
-      sessionID: 'ses_dbg',
-      role: 'assistant',
-      time: { created: 1_000, completed: 3_400 },
-      modelID: 'debug-model',
-      providerID: 'debug-provider',
-      mode: 'debug',
-      agent: 'debug',
-      path: { cwd: '/workspace', root: '/workspace' },
-      cost: 0,
-      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    },
+    info: { id: 'm_fold', role: 'assistant' },
     parts: FOLD_PARTS,
-  },
+  } as any,
 ];
 
 // ---------------------------------------------------------------------------

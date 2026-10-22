@@ -2,21 +2,21 @@
 
 import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/select';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { useSetEnterpriseDemo } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -161,6 +161,7 @@ export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
 
   const [license, setLicense] = useState('');
   const [termMonths, setTermMonths] = useState('12');
+  const termMonthsId = useId();
   const [collection, setCollection] = useState<AdminContractCollection>('invoice');
   const [note, setNote] = useState('');
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -375,10 +376,11 @@ export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-muted-foreground text-xs">
+            <label htmlFor={termMonthsId} className="text-muted-foreground text-xs">
               {t('text3569eff22740', { max: maxTerm })}
             </label>
             <Input
+              id={termMonthsId}
               type="number"
               min={1}
               max={maxTerm}

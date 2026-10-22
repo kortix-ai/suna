@@ -27,8 +27,8 @@ export type PricingPlan = {
 
 /** How many `f<n>` feature keys each plan has in the catalogs. */
 export const PRICING_FEATURE_COUNTS: Record<PricingPlanId, number> = {
-  free: 5,
-  credits: 6,
+  free: 4,
+  credits: 7,
   enterprise: 6,
 };
 
@@ -40,7 +40,6 @@ export const PRICING_PLANS: PricingPlan[] = [
     note: 'Start with real sandbox credits.',
     features: [
       '500 credits / month, no card needed',
-      'Managed models: Kimi, DeepSeek, GLM. Zero data retention, US inference',
       '1 project',
       'Bring your own API key for any premium model',
       'Connect your ChatGPT subscription',
@@ -55,6 +54,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     highlight: true,
     features: [
       'Everything in Free',
+      'Managed models: DeepSeek, GLM. Zero data retention',
       'Unlimited members, one shared credit pool',
       'Unused credits roll over one month',
       'Top up any time. Top-ups never expire',

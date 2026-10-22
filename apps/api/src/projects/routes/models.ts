@@ -6,12 +6,10 @@ import { projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { llmPriceMarkup } from '../../billing/services/tiers';
-import { config } from '../../config';
 import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
-import { cachedManagedPricingRoutes } from '../../llm-gateway/models/managed-pricing-routes';
+import { unavailableCatalog } from '../../llm-gateway/models/picker-catalog';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
@@ -36,11 +34,6 @@ import { agentNotDeclaredError } from '../agents';
 import { readAgentBlockV2 } from '../lib/agent-config-v2';
 import { loadManifestForEdit } from '../lib/triggers';
 import type { ProjectRow } from '../lib/serializers';
-
-const LLM_GATEWAY_DISABLED = {
-  error: 'LLM gateway is disabled for this project',
-  code: 'llm_gateway_disabled',
-} as const;
 
 // Explicit inference controls are separate from legacy picker visibility.
 const modelAccessChangeBody = z.object({
@@ -68,9 +61,6 @@ const ModelDefaultBody = z.object({
 // PUT and DELETE /model-defaults share one guard, in one order:
 //   1. project visible to the caller      → else 404 'Not found'
 //   2. project.model.write                → else 403 (thrown)
-//   3. the project's LLM gateway enabled  → else 404 llm_gateway_disabled
-// The permission check runs before the gateway check, so a caller who may not
-// write model defaults never learns the project's gateway setting.
 async function loadModelDefaultsWriter(
   c: any,
   projectId: string,
@@ -84,8 +74,19 @@ async function loadModelDefaultsWriter(
     projectId,
     PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
   );
-  if (!projectLlmGatewayEnabled(loaded.row.metadata)) return c.json(LLM_GATEWAY_DISABLED, 404);
   return { ownerAccountId: loaded.row.accountId, userId: loaded.userId, row: loaded.row };
+}
+
+// The default that model-access reports and protects from a disable: a configured
+// project/account preference, even while its provider is disconnected; otherwise the
+// plan-eligible effective model (never the paid platform default for a free account).
+async function modelAccessDefault(userId: string, accountId: string, projectId: string, personalUserId: string | null): Promise<string | undefined> {
+  const defaults = await getAccountModelDefaults(accountId, projectId);
+  const configured = defaults.projects[projectId] ?? defaults.account;
+  if (configured) return toWireModel(configured);
+  const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
+  const resolved = await resolveEffectiveModel({ userId, accountId, projectId, freeModelsOnly, personalUserId });
+  return resolved.model ?? (freeModelsOnly ? undefined : platformDefaultModelId());
 }
 
 export function registerModelsRoutes(): void {
@@ -117,7 +118,6 @@ export function registerModelsRoutes(): void {
       const projectId = c.req.param('projectId');
       const accountId = c.get('accountId') as string | undefined;
       const sandboxId = c.get('sandboxId') as string | undefined;
-      let projectMetadata: unknown;
       let ownerAccountId: string | undefined;
       if (isSessionSandboxCredential(c) && accountId && sandboxId) {
         const [sandbox] = await db
@@ -136,20 +136,17 @@ export function registerModelsRoutes(): void {
           return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
         }
         const [project] = await db
-          .select({ metadata: projects.metadata })
+          .select({ projectId: projects.projectId })
           .from(projects)
           .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
           .limit(1);
         if (!project) return c.json({ error: 'Not found' }, 404);
-        projectMetadata = project.metadata;
         ownerAccountId = accountId;
       } else {
         const loaded = await loadProjectForUser(c, projectId, 'read');
         if (!loaded) return c.json({ error: 'Not found' }, 404);
-        projectMetadata = loaded.row.metadata;
         ownerAccountId = loaded.row.accountId as string | undefined;
       }
-      if (!projectLlmGatewayEnabled(projectMetadata)) return c.json(LLM_GATEWAY_DISABLED, 404);
       // Free-tier accounts see only managed models explicitly marked free plus
       // their own BYOK/Codex-connected catalog entries. Paid managed models and
       // synthetic AUTO stay hidden from the picker.
@@ -182,7 +179,6 @@ export function registerModelsRoutes(): void {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      if (!projectLlmGatewayEnabled(loaded.row.metadata)) return c.json(LLM_GATEWAY_DISABLED, 404);
 
       const accountId = loaded.row.accountId as string;
       // One composition, shared with the sandbox's boot fetch
@@ -196,18 +192,11 @@ export function registerModelsRoutes(): void {
         principalUserId: loaded.userId,
         personalUserId: await requestPersonalOwner(c, loaded),
       });
-      // Base provider prices: the platform fee is stated once, beside them.
-      const quotes = await cachedManagedPricingRoutes(
-        config.MORPH_MANAGED_MODELS,
-        1,
-        Boolean(config.MORPH_API_KEY),
-        { baseUrl: config.OPENROUTER_API_URL, apiKey: config.OPENROUTER_API_KEY ?? '' },
-      );
       return c.json({
         ...catalog,
-        managedPricingRoutes: Object.fromEntries(
-          Object.entries(quotes).filter(([id]) => id in catalog.models),
-        ),
+        // Discovery only: never add locked entries to the runnable picker.
+        catalog: unavailableCatalog(gatewayModelCatalog(projectId), catalog.models),
+        // Model prices are base prices: the platform fee is stated once, beside them.
         platformFeePercent: Math.round((llmPriceMarkup() - 1) * 1000) / 10,
       });
     },
@@ -222,11 +211,12 @@ export function registerModelsRoutes(): void {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
+    const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId, await requestPersonalOwner(c, loaded));
     return c.json({
       ...readModelAccess(loaded.row.metadata),
-      defaultModel: toWireModel(defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '') || undefined,
-      enforced: projectLlmGatewayEnabled(loaded.row.metadata),
+      defaultModel,
+      // Always true since the gateway is the only model path; kept for older clients.
+      enforced: true,
     });
   });
 
@@ -253,15 +243,14 @@ export function registerModelsRoutes(): void {
         return c.json({ error: 'Use a concrete model id', code: 'invalid_body' }, 400);
       }
     }
-    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-    const defaultModel = toWireModel(defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '') || undefined;
+    const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId, await requestPersonalOwner(c, loaded));
     const result = await changeProjectModelAccess({ projectId, updatedBy: c.get('userId'), defaultModel, change });
     if (result.conflict) return c.json({
       error: 'Change the project default to another enabled provider or model first.',
       code: 'cannot_disable_default', defaultModel,
     }, 409);
     invalidateAccountModelDefaults(loaded.row.accountId);
-    return c.json({ ...result.policy, defaultModel, enforced: projectLlmGatewayEnabled(loaded.row.metadata) });
+    return c.json({ ...result.policy, defaultModel, enforced: true });
   });
 
   projectsApp.openapi(
@@ -338,13 +327,8 @@ export function registerModelsRoutes(): void {
   // client can feed it through the exact same toEntry()/order() it already
   // has, no reshaping.
   //
-  // Deliberately NOT gated by projectLlmGatewayEnabled unlike /llm-catalog and
-  // /model-picker above: the BYOK provider connect modal (which env vars to
-  // collect, which providers show "connected") is meaningful for EVERY
-  // project, including native (non-gateway) ones — that's the majority of
-  // projects and exactly the surface the connect modal serves. Non-secret
-  // model metadata; scoped to project auth only for consistency with the
-  // other catalog routes, not because it needs to be secret.
+  // Non-secret model metadata; scoped to project auth only for consistency
+  // with the other catalog routes, not because it needs to be secret.
   projectsApp.openapi(
     createRoute({
       method: 'get',
@@ -409,8 +393,7 @@ export function registerModelsRoutes(): void {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      if (!projectLlmGatewayEnabled(loaded.row.metadata)) return c.json(LLM_GATEWAY_DISABLED, 404);
-      const ownerAccountId = loaded.row.accountId as string;
+          const ownerAccountId = loaded.row.accountId as string;
       const userId = c.get('userId') as string;
       const defaults = await getAccountModelDefaults(ownerAccountId, projectId);
       const freeTier = !(await accountMayUseManagedModels(ownerAccountId));
@@ -425,13 +408,12 @@ export function registerModelsRoutes(): void {
         freeModelsOnly: freeTier,
       });
       return c.json({
-        platformDefault: platformDefaultModelId(),
+        platformDefault: freeTier ? null : platformDefaultModelId(),
         accountDefault: defaults.account,
         agentDefaults: defaults.agents,
         projectDefault: defaults.projects[projectId] ?? null,
-        // The platform default is servable for every tier (KRTX-1067), so the
-        // honest fallback is the same for free and paid callers.
-        resolvedForCaller: resolved.model ?? platformDefaultModelId(),
+        // An account without managed models has no platform default.
+        resolvedForCaller: resolved.model ?? (freeTier ? null : platformDefaultModelId()),
         resolvedSource: resolved.source,
         freeTier,
       });

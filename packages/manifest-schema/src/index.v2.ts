@@ -38,6 +38,7 @@ import {
   HARNESS_TOOL_NAMES,
   HEX_COLOR_RE_V2,
   KORTIX_TOOL_NAMES,
+  RETIRED_KORTIX_TOOLS,
   kortixToolRef,
   PI_PACKAGE_NAME_RE,
   PI_PACKAGE_NPM_RE,
@@ -1068,9 +1069,6 @@ export function validateToolsV2(value: unknown, path: string, issues: ManifestIs
     });
   }
 }
-
-/** Kortix tools a dev starter listed briefly (#9902) and that no longer exist. */
-const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe'];
 
 function isKortixTool(name: string): boolean {
   return (KORTIX_TOOL_NAMES as readonly string[]).includes(name);

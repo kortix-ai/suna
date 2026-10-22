@@ -1,3 +1,4 @@
+import { ProjectSessionSchema } from '@kortix/api-contract';
 /**
  * Integration test (real DB, real route): the session list must survive a
  * response that was finalized on its context MID-HANDLER — KRTX-2736.
@@ -53,7 +54,7 @@ projectsApp.use('*', async (c, next) => {
   c.set('userId', USER);
   c.set('userEmail', 'krtx2736@kortix.test');
   c.set('authType', 'supabase');
-  if (c.req.path.includes(PROJECT)) {
+  if (c.req.path === `/${PROJECT}/sessions`) {
     finalizeWithDisturbedStream(c);
   }
   await next();
@@ -84,6 +85,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await db.execute(sql`delete from kortix.session_lifecycle_commands where project_id = ${PROJECT}`);
   await db.execute(sql`delete from kortix.project_sessions where project_id = ${PROJECT}`);
   await db.execute(sql`delete from kortix.projects where project_id = ${PROJECT}`);
   await db.execute(sql`delete from kortix.account_members where account_id = ${ACCOUNT}`);
@@ -101,6 +103,42 @@ describe('KRTX-2736: a mid-handler response finalization cannot disturb the sess
     const body = (await res.json()) as unknown[];
     expect(Array.isArray(body)).toBe(true);
     expect(body.length).toBe(SESSIONS);
+    for (const value of body) {
+      const session = ProjectSessionSchema.parse(value);
+      expect(session.working).toEqual({ state: 'idle', since: null, turn_token: null, pending_delivery: false });
+      const detail = await projectsApp.request(`/${PROJECT}/sessions/${session.session_id}`);
+      expect(detail.status).toBe(200);
+      const read = ProjectSessionSchema.parse(await detail.json());
+      expect(read.working).toEqual(session.working);
+      expect(read.status).toBe(session.status);
+    }
+  });
+
+  test('working inbox query excludes terminal history and held rows and returns only minimal live facts', async () => {
+    const { listInboxPromptsForSessions } = await import('../projects/session-lifecycle/inbox-rows');
+    const session = await db.execute(sql`select session_id from kortix.project_sessions where project_id = ${PROJECT} limit 1`);
+    const sessionId = session[0].session_id;
+    const states = [
+      ['queued', {}], ['running', { delivery_started_at: 'now' }],
+      ['succeeded', { status: 'forwarded' }], ['queued', { held: true }],
+      ['succeeded', { status: 'forwarded', held: true }],
+      ['failed', { status: 'forwarded' }], ['dead_lettered', {}], ['succeeded', { status: 'delivered' }],
+      ['queued', { admission_reason: 'held' }],
+      ['succeeded', { status: 'forwarded', admission_reason: 'held' }],
+      ['running', { delivery_started_at: 'now', admission_reason: 'held' }],
+    ];
+    for (const [status, result] of states) {
+      await db.execute(sql`insert into kortix.session_lifecycle_commands
+        (command_type, source, status, project_id, account_id, session_id, payload, result)
+        values ('continue_session', 'test', ${status}, ${PROJECT}, ${ACCOUNT}, ${sessionId},
+        ${JSON.stringify({ clientMessageId: 'm', clientSentAtMs: 123, text: 'private prompt', parts: [{ attachment_id: 'large' }] })}::jsonb,
+        ${JSON.stringify(result)}::jsonb)`);
+    }
+    const rows = await listInboxPromptsForSessions([String(sessionId)]);
+    expect(rows).toHaveLength(5);
+    for (const row of rows) expect(Object.keys(row).sort()).toEqual(['client_sent_at_ms', 'reason', 'sessionId', 'state']);
+    expect(rows.map(row => row.state).sort()).toEqual(['delivering', 'delivering', 'delivering', 'delivering', 'queued']);
+    expect(await listInboxPromptsForSessions([crypto.randomUUID()])).toEqual([]);
   });
 
   test('the memoized 304 poll carries its headers and stays a 304', async () => {

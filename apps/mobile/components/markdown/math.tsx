@@ -21,10 +21,10 @@ import { FONT_FAMILY } from '@/lib/utils/fonts';
 import { markdownPalette, MONO_FONT } from './markdown-theme';
 
 /** `.kortix-markdown .katex { font-size: 1.05em }`. */
-export const MATH_EM_SCALE = 1.05;
+const MATH_EM_SCALE = 1.05;
 
 /** One math em in a paragraph: 15 × 1.05. */
-export const BLOCK_MATH_FONT_SIZE = TYPE.body.fontSize * MATH_EM_SCALE;
+const BLOCK_MATH_FONT_SIZE = TYPE.body.fontSize * MATH_EM_SCALE;
 
 function useTexSvg(tex: string, display: boolean): TexSvg | null {
   return useMemo(() => {
@@ -41,7 +41,7 @@ function px(units: number, fontSize: number): number {
   return (units / 1000) * fontSize;
 }
 
-export interface InlineMathProps {
+interface InlineMathProps {
   tex: string;
   isDark: boolean;
   /** Size of the text around the formula; the math em is 1.05× this. */
@@ -82,7 +82,7 @@ export const InlineMath = memo(function InlineMath({
   );
 });
 
-export interface BlockMathProps {
+interface BlockMathProps {
   tex: string;
   isDark: boolean;
   /**

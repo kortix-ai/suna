@@ -52,7 +52,7 @@ describe("ke2e local profile", () => {
       KE2E_SUPABASE_ANON_KEY: "anon",
       KE2E_SUPABASE_SERVICE_ROLE_KEY: "service-role",
       KE2E_LOCAL_BILLING_ENABLED: "1",
-      KE2E_CAP_DAYTONA: "0",
+      KE2E_CAP_SANDBOX: "0",
       KE2E_CAP_MANAGED_GIT: "0",
       KE2E_CAP_MANAGED_GIT_PUSH: "0",
       KE2E_CAP_FUNDED: "0",
@@ -83,7 +83,7 @@ describe("ke2e local profile", () => {
 
   it("selects every local REST flow and explains every exclusion", () => {
     const local = registeredFlow("LOCAL-1", ["database"]);
-    const sandbox = registeredFlow("SBX-1", ["daytona", "funded"]);
+    const sandbox = registeredFlow("SBX-1", ["sandbox", "funded"]);
     const git = registeredFlow("GIT-1", ["managedGit"]);
     const unfinished = registeredFlow("TODO-1", [], "not implemented");
 
@@ -91,7 +91,7 @@ describe("ke2e local profile", () => {
 
     expect(plan.runnable).toEqual([local]);
     expect(plan.excluded).toEqual([
-      { id: "SBX-1", reason: "external capabilities: daytona, funded" },
+      { id: "SBX-1", reason: "external capabilities: sandbox, funded" },
       { id: "TODO-1", reason: "todo: not implemented" },
       { id: "GIT-1", reason: "external capabilities: managedGit" },
     ]);

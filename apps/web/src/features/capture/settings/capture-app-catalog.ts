@@ -1,12 +1,15 @@
 /**
  * Common work apps and websites, so an admin picks "Slack" instead of typing
- * `com.tinyspeck.slackmacgap` and `slack.exe`. Each app lists its macOS bundle id
- * and its Windows executable: adding the app adds both, one row shows it by name.
+ * `com.tinyspeck.slackmacgap` and `slack.exe`. Each app lists its macOS bundle id,
+ * its Windows executable and its Linux name: adding the app adds all, one row shows
+ * it by name. A Windows executable also names the packaged (Store) app, and an id
+ * ending in `*` names every app id or name that starts with it (the engine's app
+ * rule, apps/capture/fixtures/capture-format-v2/apps.json).
  */
 export interface CatalogApp {
   name: string;
   ids: string[];
-  /** Offered as a one-click "Common app"; false for apps listed only to name a category's members. */
+  /** Offered as a one-click "Common app" with no search; false: offered only when searched by name. */
   common?: boolean;
 }
 
@@ -37,6 +40,24 @@ export const CAPTURE_APP_CATALOG: CatalogApp[] = [
     ids: ['net.whatsapp.WhatsApp', 'desktop.WhatsApp', 'whatsapp.exe', 'whatsapp'],
   },
   { name: 'Messages', ids: ['com.apple.MobileSMS'] },
+  // CAD and design apps, offered when searched. `*` ids cover versioned bundle ids and app names.
+  { name: 'AutoCAD', ids: ['acad.exe', 'acadlt.exe', 'com.autodesk.autocad*', 'autocad*'], common: false },
+  { name: 'Autodesk Fusion', ids: ['fusion360.exe', 'com.autodesk.fusion360'], common: false },
+  { name: 'Autodesk Revit', ids: ['revit.exe'], common: false },
+  { name: 'Autodesk Inventor', ids: ['inventor.exe'], common: false },
+  { name: 'SolidWorks', ids: ['sldworks.exe'], common: false },
+  { name: 'CATIA', ids: ['cnext.exe'], common: false },
+  { name: 'Siemens NX', ids: ['ugraf.exe'], common: false },
+  { name: 'Solid Edge', ids: ['edge.exe'], common: false },
+  { name: 'Rhino', ids: ['rhino.exe', 'com.mcneel.rhinoceros*'], common: false },
+  { name: 'SketchUp', ids: ['sketchup.exe', 'com.sketchup.sketchup*'], common: false },
+  { name: 'BricsCAD', ids: ['bricscad.exe', 'bricscad*'], common: false },
+  { name: 'DraftSight', ids: ['draftsight.exe'], common: false },
+  { name: 'Archicad', ids: ['archicad.exe', 'archicad*'], common: false },
+  { name: 'Vectorworks', ids: ['vectorworks*'], common: false },
+  { name: 'FreeCAD', ids: ['freecad.exe', 'org.freecad.freecad', 'freecad'], common: false },
+  { name: 'KiCad', ids: ['kicad.exe', 'org.kicad.kicad', 'kicad'], common: false },
+  { name: 'Blender', ids: ['blender.exe', 'org.blenderfoundation.blender', 'blender'], common: false },
   // The members of the categories (exclusion-groups.json), by name.
   {
     name: '1Password',
@@ -131,42 +152,39 @@ export interface NamedRow {
   name: string;
   /** The ids, shown under the name. */
   detail: string;
-  locked: boolean;
 }
 
 /** A list of app ids as rows: one row per catalog app (by name), one per other id. */
-export function namedAppRows(rows: { id: string; locked: boolean }[]): NamedRow[] {
+export function namedAppRows(rows: { id: string }[]): NamedRow[] {
   const out: NamedRow[] = [];
   const seen = new Map<CatalogApp, NamedRow>();
   for (const row of rows) {
     const app = catalogApp(row.id);
     if (!app) {
-      out.push({ ids: [row.id], name: row.id, detail: '', locked: row.locked });
+      out.push({ ids: [row.id], name: row.id, detail: '' });
       continue;
     }
     const existing = seen.get(app);
     if (existing) {
       existing.ids.push(row.id);
       existing.detail = existing.ids.join(', ');
-      existing.locked ||= row.locked;
       continue;
     }
-    const named = { ids: [row.id], name: app.name, detail: row.id, locked: row.locked };
+    const named = { ids: [row.id], name: app.name, detail: row.id };
     seen.set(app, named);
     out.push(named);
   }
   return out;
 }
 
-/** Catalog apps not in `ids` yet, matching `query` (by name), for quick adding. */
+/** Catalog apps not in `ids` yet for quick adding: the common ones, or every one whose name matches `query`. */
 export function catalogSuggestions(ids: string[], query: string): CatalogApp[] {
   const have = new Set(ids.map((id) => id.toLowerCase()));
   const q = query.trim().toLowerCase();
   return CAPTURE_APP_CATALOG.filter(
     (app) =>
-      app.common !== false &&
       !app.ids.every((id) => have.has(id.toLowerCase())) &&
-      (!q || app.name.toLowerCase().includes(q)),
+      (q ? app.name.toLowerCase().includes(q) : app.common !== false),
   );
 }
 

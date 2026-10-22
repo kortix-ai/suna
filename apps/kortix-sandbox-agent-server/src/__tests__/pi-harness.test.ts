@@ -9,7 +9,7 @@
  * SDK parses, the sequenced event stream and the control-plane probes the API
  * polls.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -79,7 +79,7 @@ function startFakeGateway() {
   /** The chat messages of each request, so a test reads what the model was sent. */
   const sent: Array<Array<{ role: string; content: unknown }>> = []
   /** The sampling fields of each request body. */
-  const sampling: Array<{ temperature?: number; top_p?: number; tool_choice?: unknown; tools: number; toolNames: string[] }> = []
+  const sampling: Array<{ temperature?: number; top_p?: number; tool_choice?: unknown; tools: number; toolNames: string[]; reasoning_effort?: string }> = []
   const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
     `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
   const server = Bun.serve({
@@ -87,9 +87,9 @@ function startFakeGateway() {
     async fetch(req) {
       const url = new URL(req.url)
       if (req.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
-      const json = (await req.json()) as { messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: Array<{ function?: { name?: string } }> }
+      const json = (await req.json()) as { messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: Array<{ function?: { name?: string } }>; reasoning_effort?: string }
       sent.push(json.messages)
-      sampling.push({ temperature: json.temperature, top_p: json.top_p, tool_choice: json.tool_choice, tools: json.tools?.length ?? 0, toolNames: (json.tools ?? []).map((t) => String(t.function?.name)) })
+      sampling.push({ temperature: json.temperature, top_p: json.top_p, tool_choice: json.tool_choice, tools: json.tools?.length ?? 0, toolNames: (json.tools ?? []).map((t) => String(t.function?.name)), reasoning_effort: json.reasoning_effort })
       requests.push({ path: url.pathname, auth: req.headers.get('authorization') })
       const step: Step = script.shift() ?? { text: '' }
       calls += 1
@@ -665,6 +665,33 @@ describe('pi harness', () => {
     ])
   })
 
+  test('an agent or prompt variant reaches the gateway as the reasoning_effort the catalog offers', async () => {
+    // The gateway catalog states effort as `reasoning_options` values, not `variants` keys.
+    // Prod 2026-10-19: pi read only the option's `type` ('effort'), so every variant ran with thinking off.
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    writeFileSync(join(workspace, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: {
+      name: 'Test Model', reasoning: true, limit: { context: 64_000, output: 4_096 },
+      reasoning_options: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
+    } } }))
+    const r = await boot({
+      workspace,
+      script: [{ text: 'one' }, { text: 'two' }, { text: 'three' }],
+      env: {
+        KORTIX_LLM_CATALOG_FILE: join(workspace, 'catalog.json'),
+        KORTIX_AGENT_NAME: 'lens',
+        KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { lens: { prompt: 'You judge.', variant: 'high' } } }),
+      },
+    })
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sampling.length
+    for (const body of [{}, { variant: 'max' }, { variant: 'medium' }]) {
+      expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }], ...body })).status).toBe(204)
+      await waitFor(() => !r.service.runtime()!.busy())
+    }
+    // `medium` is not offered by this model, so the turn runs at the provider default.
+    expect(gateway.sampling.slice(before).map((s) => s.reasoning_effort)).toEqual(['high', 'max', undefined])
+  })
+
   test('a permission policy of ask pauses the tool until the product replies', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'done' }],
@@ -1067,7 +1094,7 @@ describe('pi harness', () => {
     expect(text).toContain('finished normally')
   })
 
-  test('a restarted daemon restores the transcript, title and turn verdicts from the state dir', async () => {
+  test('a restarted daemon restores the transcript and turn verdicts, and leaves the title to Kortix', async () => {
     // A daemon restart is a new process: a second service on the same state
     // dir must restore what the first one persisted, not reuse its memory.
     const r = await boot({ script: [{ text: 'first answer' }] })
@@ -1076,7 +1103,16 @@ describe('pi harness', () => {
     expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'remember me' }] })).status).toBe(204)
     await waitFor(() => !r.service.runtime()!.busy())
     const before = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info: { id: string } }>
+    // The title is Kortix's to write (`metadata.name`, generated from the first
+    // prompt). A runtime title of the prompt's first line outranked it in the
+    // API and ended the web's wait for the real title (KRTX-2567).
+    const live = (await r.user('/session').then((res) => res.json())) as Array<{ title: string }>
+    expect(live[0]!.title).toBe('New session')
     await r.service.lifecycle.stop()
+    // A dump an older daemon wrote carries the first prompt line as its title.
+    const stateDir = join(r.workspace, '.state')
+    const dumpFile = join(stateDir, readdirSync(stateDir).find((f) => f.endsWith('.json'))!)
+    writeFileSync(dumpFile, JSON.stringify({ ...JSON.parse(readFileSync(dumpFile, 'utf8')), title: 'remember me' }))
 
     const restarted = await boot({ script: [{ text: 'second answer' }], workspace: r.workspace })
     rigs.splice(rigs.indexOf(r), 1)
@@ -1085,7 +1121,7 @@ describe('pi harness', () => {
     expect(page.messages.map((m) => m.info.role)).toEqual(['user', 'assistant'])
     expect(page.messages[1]!.parts[0]).toMatchObject({ type: 'text', text: 'first answer' })
     const sessions = (await restarted.user('/session').then((res) => res.json())) as Array<{ title: string }>
-    expect(sessions[0]!.title).toBe('remember me')
+    expect(sessions[0]!.title).toBe('New session')
     const probe = (await restarted.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_end).toBe('completed')
 
@@ -1553,6 +1589,28 @@ describe('pi extensions', () => {
     expect(one).toContain('EXTENSION RULE')
     expect(two).not.toContain('TURN RULE')
     expect(two).toContain('EXTENSION RULE')
+  })
+
+  test("every turn tells the model today's date, a subagent included, and a session that crosses midnight gets the new day", async () => {
+    const r = await boot({
+      script: [{ text: 'a' }, { tool: 'task', args: { description: 'Check', prompt: 'check it', subagent_type: 'general' } }, { text: 'child done' }, { text: 'parent done' }],
+    })
+    const sentBefore = gateway.sent.length
+    try {
+      // Noon UTC: the same calendar day in every time zone the box may run in.
+      setSystemTime(new Date('2026-03-09T12:00:00Z'))
+      await promptAndSettle(r, 'one')
+      setSystemTime(new Date('2026-03-10T12:00:00Z'))
+      await promptAndSettle(r, 'delegate it')
+    } finally {
+      setSystemTime()
+    }
+    const [one, two, child] = gateway.sent.slice(sentBefore).map(systemSent)
+    expect(one).toContain("Today's date: Mon Mar 09 2026 (")
+    expect(two).toContain("Today's date: Tue Mar 10 2026 (")
+    expect(two).not.toContain('Mar 09 2026')
+    expect(child).toContain('Working directory:')
+    expect(child).toContain("Today's date: Tue Mar 10 2026 (")
   })
 
   test('an extension that throws is reported and skipped; lifecycle events reach the others', async () => {
@@ -3045,6 +3103,33 @@ describe('pi slash commands', () => {
     expect(user.parts.map((p) => p.text)).toEqual([expanded])
   })
 
+  const withDeploySkill = (workspace: string) => {
+    withReviewCommand(workspace)
+    for (const name of ['deploy', 'review']) {
+      mkdirSync(join(workspace, 'skills', name), { recursive: true })
+      writeFileSync(join(workspace, 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: The ${name} skill\n---\nSKILL-BODY-${name}\n`)
+    }
+  }
+
+  test('the command list carries the granted skills after the commands; a command keeps its name', async () => {
+    const r = await boot({ script: [], prepare: withDeploySkill })
+    expect(await r.user('/command').then((res) => res.json())).toEqual([
+      { name: 'review', description: 'Review a change', source: 'command', template: TEMPLATE, hints: ['$1', '$ARGUMENTS'] },
+      { name: 'deploy', description: 'The deploy skill', source: 'skill', template: '', hints: [] },
+    ])
+  })
+
+  test('a skill runs as its SKILL.md body plus the arguments', async () => {
+    const r = await boot({ script: [{ text: 'Deployed.' }], prepare: withDeploySkill })
+    const root = r.service.runtime()!.rootId
+    const res = await command(r, root, { command: 'deploy', arguments: 'to staging' })
+    expect(res.status).toBe(200)
+    const sent = sentText(gateway.sent.at(-1)!)
+    expect(sent).toContain('<skill name=\\"deploy\\"')
+    expect(sent).toContain('SKILL-BODY-deploy')
+    expect(sent).toContain('to staging')
+  })
+
   test('a command pi does not have is refused with 400 and runs no turn', async () => {
     const r = await boot({ script: [{ text: 'never' }], prepare: withReviewCommand })
     const root = r.service.runtime()!.rootId
@@ -3942,7 +4027,9 @@ describe('kortix.yaml v3 on pi', () => {
     expect(await skillNames(r)).toEqual(['deploy', 'review'])
     // `subagents` is the runtime's own task tool, not a project extension.
     expect(r.service.runtime()!.extensionStatus()).toEqual({ loaded: ['subagents'], failed: [] })
-    expect(await r.user('/command').then((res) => res.json())).toEqual([])
+    // No prompt template from a harness folder: the registered skills are the only rows.
+    const rows = (await r.user('/command').then((res) => res.json())) as Array<{ name: string; source: string }>
+    expect(rows.map((c) => [c.source, c.name])).toEqual([['skill', 'deploy'], ['skill', 'review']])
     const before = gateway.sent.length
     await promptAndSettle(r, 'hello')
     const system = systemSent(gateway.sent[before]!)
@@ -3970,7 +4057,9 @@ describe('kortix.yaml v3 on pi', () => {
     expect(names).toContain('folder-harnessespi')
     expect(names).toContain('unregistered')
     expect(names).not.toContain('review')
-    expect(((await r.user('/command').then((res) => res.json())) as Array<{ name: string }>).map((c) => c.name)).toEqual(['folder-prompt'])
+    const rows = (await r.user('/command').then((res) => res.json())) as Array<{ name: string; source: string }>
+    expect(rows.filter((c) => c.source === 'command').map((c) => c.name)).toEqual(['folder-prompt'])
+    expect(rows.filter((c) => c.source === 'skill').map((c) => c.name).sort()).toEqual([...names].sort())
   })
 
   test('the per-agent skill grant still filters the registered skills', async () => {
@@ -4094,5 +4183,59 @@ describe('command template expansion', () => {
     ['no arguments leave a plain template alone', 'Ship it.', '', 'Ship it.'],
   ])('%s', (_name, template, args, expected) => {
     expect(expandCommandTemplate(template, args)).toBe(expected)
+  })
+})
+
+describe('pi Changes surface (/project/current vcs, /vcs/diff)', () => {
+  const sh = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.test', ...args], { cwd, encoding: 'utf8' })
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`)
+  }
+
+  test('a non-git workspace reports no vcs and an empty diff', async () => {
+    const r = await boot({ script: [] })
+    const project = (await r.user('/project/current').then((res) => res.json())) as Record<string, unknown>
+    expect(project.worktree).toBe(r.workspace)
+    expect(project).not.toHaveProperty('vcs')
+    expect(await r.user('/vcs/diff?mode=branch').then((res) => res.json())).toEqual([])
+  })
+
+  test('a git workspace reports vcs git and lists committed, modified, deleted and new files against the base', async () => {
+    const r = await boot({
+      script: [],
+      env: { KORTIX_DEFAULT_BRANCH: 'main' },
+      prepare: (ws) => {
+        writeFileSync(join(ws, '.gitignore'), '.state/\n.pi-agent/\n.pi-packages/\n')
+        writeFileSync(join(ws, 'kept.txt'), 'one\ntwo\n')
+        writeFileSync(join(ws, 'gone.txt'), 'bye\n')
+        sh(ws, 'init', '-q', '-b', 'main')
+        sh(ws, 'add', '.')
+        sh(ws, 'commit', '-q', '-m', 'base')
+        sh(ws, 'checkout', '-q', '-b', 'kortix/session')
+        writeFileSync(join(ws, 'committed.txt'), 'a\n')
+        sh(ws, 'add', 'committed.txt')
+        sh(ws, 'commit', '-q', '-m', 'session work')
+        writeFileSync(join(ws, 'kept.txt'), 'one\nTWO\nthree\n')
+        rmSync(join(ws, 'gone.txt'))
+        writeFileSync(join(ws, 'new file.txt'), 'x\ny\n')
+      },
+    })
+    const project = (await r.user('/project/current').then((res) => res.json())) as Record<string, unknown>
+    expect(project.vcs).toBe('git')
+
+    const branch = (await r.user('/vcs/diff?mode=branch').then((res) => res.json())) as Array<Record<string, any>>
+    expect(branch.map(({ file, status, additions, deletions }) => ({ file, status, additions, deletions }))).toEqual([
+      { file: 'committed.txt', status: 'added', additions: 1, deletions: 0 },
+      { file: 'gone.txt', status: 'deleted', additions: 0, deletions: 1 },
+      { file: 'kept.txt', status: 'modified', additions: 2, deletions: 1 },
+      { file: 'new file.txt', status: 'added', additions: 2, deletions: 0 },
+    ])
+    expect(branch.find((f) => f.file === 'kept.txt')!.patch).toContain('diff --git a/kept.txt b/kept.txt')
+    expect(branch.find((f) => f.file === 'kept.txt')!.patch).toContain('+TWO')
+    expect(branch.find((f) => f.file === 'new file.txt')!.patch).toContain('+++ b/new file.txt')
+
+    // `git` mode is the working tree only: the committed file is not in it.
+    const working = (await r.user('/vcs/diff?mode=git').then((res) => res.json())) as Array<{ file: string }>
+    expect(working.map((f) => f.file)).toEqual(['gone.txt', 'kept.txt', 'new file.txt'])
   })
 })

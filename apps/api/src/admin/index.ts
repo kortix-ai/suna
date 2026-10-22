@@ -476,8 +476,8 @@ adminApp.openapi(
 );
 
 // ── Set a project's feature flag (operator) ─────────────────────────────────
-// The operator lever for internal-only flags (`session_log`,
-// `session_log_restore`): Kortix turns them on per project on request.
+// The operator lever for internal-only flags (`session_log_restore`): Kortix
+// turns them on per project on request.
 // `PATCH /v1/projects/:id/features` refuses those flags for everyone but a
 // platform operator, and this route needs no project membership. Any flag key
 // works here. Audited on the project.
@@ -494,7 +494,7 @@ adminApp.openapi(
         content: {
           'application/json': {
             schema: z.object({
-              feature: z.string().openapi({ description: 'Flag key, for example `session_log`.' }),
+              feature: z.string().openapi({ description: 'Flag key, for example `session_log_restore`.' }),
               enabled: z.boolean().nullable().openapi({ description: '`true`/`false` sets the override; `null` clears it.' }),
             }),
           },
@@ -1267,6 +1267,16 @@ adminApp.openapi(
       } = await import('../billing/services/entitlement-overrides');
       const validated = validateOverridePatch(raw);
       if (!validated.ok) return c.json({ error: validated.error }, 400);
+      if (validated.patch.managedModels?.value === true) {
+        // The resolver ignores this grant on Free and No Plan; refuse it here
+        // so the operator sees why instead of a switch that does nothing.
+        const { resolveAccountBilling } = await import('../billing/services/billing-cache');
+        const { paysForManagedModels } = await import('../billing/services/resolve-billing');
+        const billing = await resolveAccountBilling(accountId, { fresh: true });
+        if (!paysForManagedModels(billing.plan, billing.enterprise)) {
+          return c.json({ error: 'Managed models need a paid plan or a licensed Enterprise contract; Free and No Plan never get them.' }, 400);
+        }
+      }
 
       const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
       const { applyAdminOverride } = await import('../billing/services/account-write-owner');
@@ -1499,8 +1509,12 @@ adminApp.openapi(
       body: {
         content: {
           'application/json': {
+            // `project_id` instead of `account_id` acts as the project's
+            // account: the "Open as admin" button on a project's access screen
+            // knows only the project.
             schema: z.object({
-              account_id: z.string(),
+              account_id: z.string().optional(),
+              project_id: z.string().optional(),
               reason: z.string().max(500).optional(),
             }),
           },
@@ -1517,7 +1531,7 @@ adminApp.openapi(
         'Impersonation grant',
       ),
       400: json(z.record(z.string(), z.any()), 'Bad request'),
-      404: json(z.record(z.string(), z.any()), 'Account not found'),
+      404: json(z.record(z.string(), z.any()), 'Account or project not found'),
       500: json(z.record(z.string(), z.any()), 'Server error'),
       ...errors(401, 403),
     },
@@ -1526,9 +1540,16 @@ adminApp.openapi(
     try {
       const adminUserId = c.get('userId') as string;
       const body = await c.req.json().catch(() => null);
-      const accountId = typeof body?.account_id === 'string' ? body.account_id.trim() : '';
+      const projectId = typeof body?.project_id === 'string' ? body.project_id.trim() : '';
+      let accountId = typeof body?.account_id === 'string' ? body.account_id.trim() : '';
       const reasonRaw = typeof body?.reason === 'string' ? body.reason.trim() : '';
       const reason = reasonRaw ? reasonRaw.slice(0, 500) : null;
+      if (projectId && !accountId) {
+        if (!isUuid(projectId)) return c.json({ error: 'project_id must be a uuid' }, 400);
+        const project = await findProject(projectId);
+        if (!project) return c.json({ error: 'project not found' }, 404);
+        accountId = project.accountId;
+      }
       if (!isUuid(accountId)) {
         return c.json({ error: 'account_id must be a uuid' }, 400);
       }
@@ -1563,6 +1584,7 @@ adminApp.openapi(
           grant_id: grant.id,
           impersonator_user_id: adminUserId,
           target_account_id: accountId,
+          project_id: projectId || null,
           reason,
           expires_at: expiresAt.toISOString(),
         },

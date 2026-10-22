@@ -24,7 +24,7 @@
  *     Never write "the model never sees them". "Brokered server-side and never
  *     enters the machine" is true for CONNECTOR credentials only.
  *   - Egress is not controlled at the network. Nothing implements it.
- *   - microVM is the Platinum provider only; the default is containers. The
+ *   - microVM is the Platinum provider only; legacy Daytona is containers. The
  *     sanctioned phrasing is "its own isolated machine".
  *   - Channels are a closed enum: slack | teams | email. Telegram,
  *     WhatsApp, SMS and Discord are not channels. And `channels:` is REJECTED
@@ -59,7 +59,7 @@ export const SECTION = {
 
 export type Layer = {
   /** Stable id, also the DOM test hook and the key `LayerShowcase` switches on. */
-  id: 'source' | 'context' | 'models' | 'harness' | 'computer' | 'control-plane' | 'kortix';
+  id: 'source' | 'context' | 'models' | 'harness' | 'computer' | 'control-plane';
   /** Two-digit ordinal shown in the left gutter. */
   ordinal: string;
   /** The layer's name. Same noun as the card's own product panel header. */
@@ -170,6 +170,6 @@ export function getLocalizedHowItWorksContent(tI18nComplete: UiTranslator) {
     MARKETING_SECONDARY_TRANSLATION_KEYS,
   );
 }
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { MARKETING_SECONDARY_TRANSLATION_KEYS } from '@/i18n/marketing-secondary-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';

@@ -1,14 +1,14 @@
 'use client';
 
-import { Claude } from '@/features/icon/icons/claude';
+import { Claude } from '@kortix/ui/internal/icons/claude';
 import { Gemini } from '@/features/icon/icons/gemini';
-import { Github } from '@/features/icon/icons/github';
+import { Github } from '@kortix/ui/internal/icons/github';
 import { Gmail } from '@/features/icon/icons/gmail';
 import { Linear } from '@/features/icon/icons/linear';
-import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
+import { MicrosoftTeams } from '@kortix/ui/internal/icons/microsoft-teams';
 import { Notion } from '@/features/icon/icons/notion';
-import { OpenAI } from '@/features/icon/icons/open-ai';
-import { Slack } from '@/features/icon/icons/slack';
+import { OpenAI } from '@kortix/ui/internal/icons/open-ai';
+import { Slack } from '@kortix/ui/internal/icons/slack';
 import { useTranslations } from '@/i18n/use-translations';
 import Image from 'next/image';
 import type { ReactNode } from 'react';

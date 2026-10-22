@@ -22,7 +22,6 @@ import {
 } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountSecretGrants, accountSecretResources } from '@kortix/db';
 import { encryptAccountSecret, memberMayReadProject } from '../../secrets/account-resource';
@@ -358,9 +357,8 @@ export function registerProviderOauthRoutes(): void {
       return c.json({ error: 'Reconnecting keeps the account label and access; send only resource_id' }, 400);
     }
     const named = resourceLabel !== null || resourceId !== null;
-    if (named && (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') ||
-      !projectLlmGatewayEnabled(loaded.row.metadata))) {
-      return c.json({ error: 'Pooled OAuth connections require pooled provider secrets and the LLM gateway' }, 403);
+    if (named && !resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets')) {
+      return c.json({ error: 'Pooled OAuth connections require pooled provider secrets' }, 403);
     }
     if (named) {
       const [member] = await accountMemberRow(loaded.row.accountId, loaded.userId);
@@ -525,8 +523,7 @@ export function registerProviderOauthRoutes(): void {
     }
 
     if (state.rc && state.rid) {
-      if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') ||
-        !projectLlmGatewayEnabled(loaded.row.metadata)) {
+      if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets')) {
         return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this project' });
       }
       const reconnected = await reconnectAccountResource({
@@ -545,8 +542,7 @@ export function registerProviderOauthRoutes(): void {
     // The sealed resource id makes a completed device flow idempotent. A new
     // device flow gets a new resource; it never overwrites another user's login.
     if (state.l && state.rid) {
-      if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets') ||
-        !projectLlmGatewayEnabled(loaded.row.metadata)) {
+      if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets')) {
         return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this project' });
       }
       const secretId = await writeAccountResource({

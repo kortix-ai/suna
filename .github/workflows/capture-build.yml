@@ -93,12 +93,14 @@ jobs:
           cargo test --release --features capture-engine --test enrollment
           cargo test --release --features capture-engine --test capture_format
       # Some library tests assert Unix paths (service::tests::the_packaged_app_*): on
-      # Windows run the protocol, managed (enrollment, tray, machine service) and format suites.
+      # Windows run the protocol, managed (enrollment, tray, machine service), the
+      # engine and app-rule (exclusions) and format suites.
       - name: Engine protocol, managed and enrollment tests (Windows)
         if: matrix.name == 'windows'
         run: |
           cargo test --release --features capture-engine --test capture_engine_protocol
           cargo test --release --features capture-engine --lib managed
+          cargo test --release --features capture-engine --lib -- capture_engine:: memory::exclusions:: memory::action_exclusions::
           cargo test --release --features capture-engine --test enrollment
           cargo test --release --features capture-engine --test capture_format
       - name: Tray tests (Linux AppIndicator)
@@ -125,6 +127,9 @@ jobs:
   windows-msi:
     name: Windows MSI (build and verify)
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env): the Windows signing keys
     strategy:
       matrix:
         include:
@@ -163,7 +168,38 @@ jobs:
             sessions = (query user 2>&1 | Out-String)
           } | ConvertTo-Json | Tee-Object "$env:EV\env.json"
           exit 0  # `query user` exits 1 by design
-      - name: Build the binaries, the release MSI and the next-version MSI (for the upgrade)
+      - name: Check out the aws-env action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .aws-env
+          sparse-checkout: .github/actions
+          persist-credentials: false
+      # Authenticode via Microsoft Artifact Signing (Trusted Signing). Every key is optional:
+      # without them the binaries and the MSI are unsigned and Windows SmartScreen warns
+      # whoever runs a downloaded installer ("unrecognized app").
+      - name: Read Windows signing credentials from AWS Secrets Manager
+        continue-on-error: true
+        uses: ./.aws-env/.github/actions/aws-env
+        with:
+          keys: |
+            AZURE_SIGNING_TENANT_ID?
+            AZURE_SIGNING_CLIENT_ID?
+            AZURE_SIGNING_CLIENT_SECRET?
+            AZURE_SIGNING_ENDPOINT?
+            AZURE_SIGNING_ACCOUNT?
+            AZURE_SIGNING_PROFILE?
+      - name: Windows signing on or off
+        id: winsign
+        shell: bash
+        run: |
+          if [ -n "${AZURE_SIGNING_CLIENT_SECRET:-}" ] && [ -n "${AZURE_SIGNING_ENDPOINT:-}" ] && [ -n "${AZURE_SIGNING_PROFILE:-}" ]; then
+            echo "on=true" >> "$GITHUB_OUTPUT"; echo "Windows signing: Artifact Signing ($AZURE_SIGNING_ACCOUNT/$AZURE_SIGNING_PROFILE)"
+          else
+            echo "on=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Windows installers are unsigned: no AZURE_SIGNING_* in kortix-ci-env. SmartScreen warns on a downloaded MSI."
+          fi
+      - name: Build the binaries
         env:
           KORTIX_RELEASE_TAG: ${{ inputs.tag }}
           KORTIX_DEFAULT_ISSUER_URL: ${{ inputs.issuer_url }}
@@ -174,17 +210,75 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
           python scripts/install_privacy_runtime.py --platform windows-x86_64 --destination target/release
           if ($LASTEXITCODE -ne 0) { throw "install_privacy_runtime failed" }
+      - name: Sign the binaries (Authenticode)
+        if: steps.winsign.outputs.on == 'true'
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          azure-tenant-id: ${{ env.AZURE_SIGNING_TENANT_ID }}
+          azure-client-id: ${{ env.AZURE_SIGNING_CLIENT_ID }}
+          azure-client-secret: ${{ env.AZURE_SIGNING_CLIENT_SECRET }}
+          endpoint: ${{ env.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ env.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ env.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\apps\capture\target\release
+          files-folder-filter: exe,dll
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Build the release MSI and the next-version MSI (for the upgrade)
+        run: |
           ./installer/windows/build-msi.ps1 -Stage target/release -Version $env:TAG -Out "$env:RUNNER_TEMP\msi\KortixCapture-$($env:TAG)-x64.msi"
           # The upgrade check installs the next patch version over the release one.
           $v = ($env:TAG -replace '^v', '' -replace '[-+].*$', '').Split('.')
           $next = "$($v[0]).$($v[1]).$([int]$v[2] + 1)"
           "NEXT_VERSION=$next" | Add-Content $env:GITHUB_ENV
           ./installer/windows/build-msi.ps1 -Stage target/release -Version "v$next" -Out "$env:RUNNER_TEMP\msi\KortixCapture-next.msi"
+      - name: Sign the MSIs (Authenticode)
+        if: steps.winsign.outputs.on == 'true'
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          azure-tenant-id: ${{ env.AZURE_SIGNING_TENANT_ID }}
+          azure-client-id: ${{ env.AZURE_SIGNING_CLIENT_ID }}
+          azure-client-secret: ${{ env.AZURE_SIGNING_CLIENT_SECRET }}
+          endpoint: ${{ env.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ env.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ env.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ runner.temp }}\msi
+          files-folder-filter: msi
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: The signatures are valid
+        if: steps.winsign.outputs.on == 'true'
+        run: |
+          foreach ($f in (Get-ChildItem target/release/*.exe) + (Get-ChildItem "$env:RUNNER_TEMP\msi\*.msi")) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            "$($f.Name): $($sig.Status) $($sig.SignerCertificate.Subject)" | Tee-Object -Append "$env:EV\authenticode.txt"
+            if ($sig.Status -ne 'Valid') { throw "$($f.Name) is not validly signed: $($sig.Status)" }
+          }
       - name: The release binaries carry no update test hook
         run: |
           $hit = Select-String -Path target/release/kortix-capture.exe -Pattern "127.0.0.1:8899" -SimpleMatch -Quiet
           "test manifest URL in the release binary: $([bool]$hit)" | Tee-Object "$env:EV\no_test_hook.txt"
           if ($hit) { throw "the release binary contains the updater's test manifest URL" }
+      - name: The exes need no Visual C++ Redistributable
+        shell: python
+        run: |
+          # A Windows computer without it has no vcruntime140.dll: an exe that imports it does not
+          # start, and the MSI's service start failed with error 1920 (the C runtime is linked
+          # statically, apps/capture/.cargo/config.toml).
+          import subprocess, sys
+          subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "pefile"], check=True)
+          import pefile
+          bad = {}
+          for exe in ["kortix-capture.exe", "kortix-capture-engine.exe", "kortix-backend.exe"]:
+              pe = pefile.PE(f"target/release/{exe}")
+              dlls = sorted(e.dll.decode().lower() for e in pe.DIRECTORY_ENTRY_IMPORT)
+              print(exe, dlls)
+              hit = [d for d in dlls if d.startswith(("vcruntime", "msvcp", "api-ms-win-crt", "ucrtbase"))]
+              if hit:
+                  bad[exe] = hit
+          assert not bad, f"these exes need the Visual C++ runtime: {bad}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: capture-installer-windows
@@ -228,6 +322,18 @@ jobs:
           Set-Content "$d\data\capture\orgs\$acct\policy.json" '{"schema": 2, "notice": "Recorded for the CI verification."}'
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: A manual install (no properties) never rolls back, and the service runs
+        run: |
+          # Double-clicked or `msiexec /i … /qn` without KORTIX_URL and ENROLLMENT_TOKEN.
+          $msi = "$env:RUNNER_TEMP\msi\KortixCapture-$($env:TAG)-x64.msi"
+          $p = Start-Process msiexec.exe -ArgumentList "/i", "`"$msi`"", "/qn", "/l*v", "`"$env:EV\msi-manual.log`"" -Wait -PassThru
+          $t0 = Get-Date
+          while ((Get-Service KortixCapture -ErrorAction SilentlyContinue).Status -ne 'Running' -and ((Get-Date) - $t0).TotalSeconds -lt 30) { Start-Sleep 1 }
+          $svc = Get-CimInstance Win32_Service -Filter "Name='KortixCapture'"
+          $state = @{ exit = $p.ExitCode; state = $svc.State; start_mode = $svc.StartMode; exe = Test-Path "${env:ProgramFiles}\Kortix\Capture\kortix-capture.exe" }
+          $u = Start-Process msiexec.exe -ArgumentList "/x", "`"$msi`"", "/qn" -Wait -PassThru
+          $state.uninstall_exit = $u.ExitCode
+          $state | ConvertTo-Json | Tee-Object "$env:EV\manual_install.json"
       - name: Install silently as IT would
         run: |
           # The screen changes every second: the recorder saves a frame only when it changed.
@@ -299,6 +405,46 @@ jobs:
           [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
           $bmp.Save("$env:EV\desktop_with_tray.png")
           exit 0  # `stop` exits 1 on a managed computer by design; the Assert step checks it
+      - name: The Start menu entry opens the window for a person without admin rights
+        run: |
+          # The MSI's shortcut, run exactly as it is (target and arguments).
+          $lnk = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "Kortix Capture.lnk" | Select-Object -First 1
+          $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk.FullName)
+          # The runner's user is an administrator with UAC off. People on a managed computer are not:
+          # a basic-user token (Administrators deny-only) cannot write to Program Files.
+          $before = @(Get-Process kortix-capture -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+          # `start /min`: the shortcut's own show state (minimized, it hides the console a click opens).
+          runas /trustlevel:0x20000 "cmd.exe /c start `"`" /min `"$($sc.TargetPath)`" $($sc.Arguments)"
+          function Window { Get-Process kortix-capture -ErrorAction SilentlyContinue | Where-Object { $_.Id -notin $before -and $_.MainWindowTitle } | Select-Object -First 1 }
+          $t0 = Get-Date; $w = $null
+          while (-not $w -and ((Get-Date) - $t0).TotalSeconds -lt 60) { Start-Sleep 1; $w = Window }
+          Start-Sleep 10
+          $w2 = Window
+          $webview = if ($w2) { @(Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe' AND ParentProcessId=$($w2.Id)").Count } else { 0 }
+          $cmd = if ($w2) { (Get-CimInstance Win32_Process -Filter "ProcessId=$($w2.Id)").CommandLine } else { $null }
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("$env:EV\start_menu_window.png")
+          Copy-Item "$env:APPDATA\ai.kortix.capture\logs\ui.log" "$env:EV\ui.log" -ErrorAction SilentlyContinue
+          # A second click while the window is open: the same window comes forward, no second one.
+          runas /trustlevel:0x20000 "cmd.exe /c start `"`" /min `"$($sc.TargetPath)`" $($sc.Arguments)"
+          Start-Sleep 10
+          $windows = @(Get-Process kortix-capture -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq "Kortix Capture" }).Count
+          @{
+            shortcut = "$($sc.TargetPath) $($sc.Arguments)"
+            title = if ($w2) { $w2.MainWindowTitle } else { $null }
+            same_process_after_10s = [bool]($w -and $w2 -and $w.Id -eq $w2.Id)
+            cmd = $cmd
+            webview_processes = $webview
+            profile_in_program_files = Test-Path "$env:ProgramFiles\Kortix\Capture\kortix-capture.exe.WebView2"
+            profile_in_local_app_data = Test-Path "$env:LOCALAPPDATA\Kortix\WebView2\EBWebView"
+            ui_log = Test-Path "$env:EV\ui.log"
+            windows_after_second_click = $windows
+            still_open_after_second_click = [bool]($w2 -and -not $w2.HasExited)
+          } | ConvertTo-Json | Tee-Object "$env:EV\start_menu_window.json"
+          if ($w2) { $null = $w2.CloseMainWindow() }
       - name: Uploads reach the bucket under the device's folder
         run: |
           $prefix = "orgs/00000000-0000-4000-8000-00000000c1c1/0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b/"
@@ -396,6 +542,8 @@ jobs:
           assert "msiexec exit: 0" in inst
           assert "token in msi log: False" in inst, "the enrollment token reached the MSI log"
           assert re.search(r"standard user: error: (SecurityException|UnauthorizedAccessException)", inst), "a standard user could read the policy key"
+          man = load("manual_install.json"); print("manual install", man)
+          assert man["exit"] == 0 and man["exe"] and man["state"] == "Running" and man["start_mode"] == "Auto" and man["uninstall_exit"] == 0, man
           svc = load("service.json"); print("service", svc)
           assert svc["state"] == "Running" and svc["start_mode"] == "Auto" and svc["account"] == "LocalSystem", svc
           assert "machine run" in svc["path"], svc
@@ -425,6 +573,12 @@ jobs:
           assert "[notify] notice: Example Org" in tray_log and "delivered by powershell.exe" in tray_log, "the organization notice was not shown"
           assert load("start_when_managed.json")["managed"] is True, "start must report the managed recording"
           assert "stop exit: 1" in text("stop_when_managed.txt") and "manages Kortix Capture" in text("stop_when_managed.txt")
+          win = load("start_menu_window.json"); print("start menu", win)
+          assert win["shortcut"].endswith("kortix-capture.exe app"), win
+          assert win["title"] == "Kortix Capture" and win["same_process_after_10s"] and "app --detached" in (win["cmd"] or ""), ("the Start menu entry opened no window", win, text("ui.log") if win["ui_log"] else "")
+          assert win["webview_processes"] >= 1 and not win["ui_log"], ("the window has no WebView", win)
+          assert win["profile_in_local_app_data"] and not win["profile_in_program_files"], ("the WebView2 profile is not in %LOCALAPPDATA%", win)
+          assert win["windows_after_second_click"] == 1 and win["still_open_after_second_click"], ("a second click opened another window or closed this one", win)
           if not real:
               log = [json.loads(l) for l in text("issuer.jsonl").splitlines() if l.strip()]
               enrolls = [l for l in log if l["path"].endswith("/enroll")]
@@ -1981,7 +2135,7 @@ jobs:
         with:
           keys: |
             CAPTURE_UPDATE_SIGNING_KEY?
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: installers
           pattern: capture-installer-*

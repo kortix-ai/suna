@@ -15,10 +15,8 @@ import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../ia
 // that.
 import { buildDenialError, denialReasonMessage } from '../../iam/denial-message';
 import { projectRoleForUser } from '../../iam/read-models';
-import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { IMPERSONATION_INVALID_CODE, impersonatedAccountFor } from '../../shared/impersonation';
-import { isPlatformAdmin } from '../../shared/platform-roles';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { isUuid } from '../../shared/validate';
 import { logger } from '../../lib/logger';
@@ -246,37 +244,6 @@ export function iamActionForProjectAccess(action: ProjectAccessAction): string {
 
 
 /**
- * The full platform-admin-bypass decision — pure (the DB/header lookups are
- * already resolved into `isPlatformAdmin`/`bypassHeaderPresent` by the
- * caller) so this security gate is exhaustively unit-tested independent of
- * the DB, mirroring the decideReap pattern in sandbox-reaper.ts. A bypass is
- * never eligible for anything but a read, and never for a service account
- * (those already carry their own iam_policies and shouldn't get a second,
- * broader door) — checked BEFORE `isPlatformAdmin` is even consulted by the
- * caller, so a non-admin's header never triggers a DB round-trip.
- */
-export function shouldApplyAdminBypass(input: {
-  action: ProjectAccessAction;
-  isServiceAccount: boolean;
-  bypassHeaderPresent: boolean;
-  isPlatformAdmin: boolean;
-}): boolean {
-  return (
-    isAdminBypassEligible(input) && input.isPlatformAdmin
-  );
-}
-
-/** Whether a bypass request should even be CONSIDERED — i.e. whether it's
- *  worth spending a DB round-trip on `isPlatformAdmin` at all. */
-export function isAdminBypassEligible(input: {
-  action: ProjectAccessAction;
-  isServiceAccount: boolean;
-  bypassHeaderPresent: boolean;
-}): boolean {
-  return input.action === 'read' && !input.isServiceAccount && input.bypassHeaderPresent;
-}
-
-/**
  * The `effectiveRole` label: the serialized `effective_project_role`. A display
  * label only; no gate reads it.
  *
@@ -302,7 +269,7 @@ export function deriveEffectiveRole(input: {
  * account-membership 403.
  */
 async function resolveProjectGate(
-  request: { isServiceAccount: boolean; bypassHeaderPresent: boolean },
+  request: { isServiceAccount: boolean },
   userId: string,
   projectId: string,
   accountId: string,
@@ -313,7 +280,6 @@ async function resolveProjectGate(
   membership: { accountId: string; accountRole: string } | null;
   projectRole: ProjectRole | null;
   verdict: Verdict;
-  adminBypass: boolean;
   accountRole: AccountRole | undefined;
 }> {
   // Membership, project role and the IAM verdict are independent lookups —
@@ -337,41 +303,12 @@ async function resolveProjectGate(
   // standing role is ever consulted); fall through to the verdict check.
   const { isServiceAccount } = request;
 
-  // Platform-admin READ-ONLY bypass: an explicit `x-kortix-admin-bypass`
-  // header from a real `platform_user_roles` admin/super_admin lets support
-  // staff VIEW a project they have no account/project grant on — e.g. to
-  // confirm a customer's session actually loads. Deliberately scoped to
-  // action === 'read' only (never write/session/manage) so a bypass can
-  // never be used to act as the account. Every use is audit-logged against
-  // the PROJECT'S OWN account so the customer's own audit trail (and any
-  // configured audit webhook) sees the access, not just ours.
-  let adminBypass = false;
-  const { bypassHeaderPresent } = request;
-  if (isAdminBypassEligible({ action, isServiceAccount, bypassHeaderPresent })) {
-    adminBypass = shouldApplyAdminBypass({
-      action,
-      isServiceAccount,
-      bypassHeaderPresent,
-      isPlatformAdmin: await isPlatformAdmin(userId),
-    });
-    if (adminBypass) {
-      await recordAuditEvent({
-        accountId,
-        actorUserId: userId,
-        action: 'project.admin_bypass_read',
-        resourceType: 'project',
-        resourceId: projectId,
-        metadata: { via: 'admin_bypass_header' },
-      });
-    }
-  }
-
-  if (!membership && !isServiceAccount && !adminBypass) {
+  if (!membership && !isServiceAccount) {
     throw new HTTPException(403, { message: 'You do not have access to this account' });
   }
 
   const accountRole = membership?.accountRole as AccountRole | undefined;
-  return { membership, projectRole, verdict, adminBypass, accountRole };
+  return { membership, projectRole, verdict, accountRole };
 }
 
 
@@ -462,8 +399,6 @@ export async function authorizeProjectAccess(input: {
   actor: Actor;
   /** The request authenticated with a direct service-account bearer. */
   isServiceAccount: boolean;
-  /** The request carried `x-kortix-admin-bypass: 1`. */
-  bypassHeaderPresent: boolean;
 }) {
   const { userId, projectId, row, action, actor } = input;
   const iamAction = iamActionForProjectAccess(action);
@@ -471,8 +406,8 @@ export async function authorizeProjectAccess(input: {
   const gate = await resolveProjectGate(
     input, userId, projectId, row.accountId, action, iamAction, actor,
   );
-  const { accountRole, projectRole, adminBypass } = gate;
-  if (!gate.verdict.allowed && !adminBypass) {
+  const { accountRole, projectRole } = gate;
+  if (!gate.verdict.allowed) {
     await denyProjectAccess({ action, iamAction, actor, projectId, verdict: gate.verdict });
   }
   // effectiveRole label for the UI / downstream helpers. The engine
@@ -504,7 +439,6 @@ export async function authorizeProjectAccess(input: {
     accountRole: accountRole ?? null,
     projectRole,
     effectiveRole: effectiveRole as ProjectRole,
-    adminBypass,
     /** The request's canonical principal, so a handler that needs a second
      *  verdict or an assignment write does not rebuild it. */
     actor,

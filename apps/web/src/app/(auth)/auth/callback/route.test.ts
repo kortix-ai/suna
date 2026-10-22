@@ -13,7 +13,7 @@ mock.module('@/lib/supabase/server', () => ({ createClient: async () => ({ auth:
   getSession: async () => ({ data: { session: null } }),
 } }) }));
 const { GET } = await import('./route');
-const { AUTH_BOUNCE_COOKIE } = await import('@/lib/onboarding/landing-destination');
+const { AUTH_BOUNCE_COOKIE } = await import('@kortix/ui/internal/lib/onboarding/landing-destination');
 const request = (query: string, cookie = '') => new NextRequest(`http://localhost:13000/auth/callback?${query}`, { headers: { cookie } });
 const location = (response: Response) => {
   const url = response.headers.get('location');
@@ -70,4 +70,20 @@ for (const query of ['desktop=true', 'mobile_callback=1&state=synthetic']) {
 }
 test('code success keeps explicit recovery destination', async () => {
   expect(location(await GET(request('code=synthetic&returnUrl=/auth/reset-password'))).pathname).toBe('/auth/reset-password');
+});
+test('provider error with CR/LF logs one line and keeps the redirect', async () => {
+  const errorLog = mock((..._args: unknown[]) => {});
+  const original = console.error;
+  console.error = errorLog;
+  try {
+    const forged = encodeURIComponent('bad\r\n[INFO] forged line');
+    const response = await GET(request(`error=access_denied&error_code=x&error_description=${forged}`));
+    expect(location(response).pathname).toBe('/auth');
+    expect(location(response).searchParams.get('error')).toBe('access_denied');
+    const logged = errorLog.mock.calls.flat().map(String).join(' ');
+    expect(logged).toContain('forged line');
+    expect(logged).not.toMatch(/[\r\n]/);
+  } finally {
+    console.error = original;
+  }
 });

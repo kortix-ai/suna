@@ -97,6 +97,53 @@ export interface CapturePolicyRecord {
   updated_by: string | null;
 }
 
+/** The deployment-managed store (the default). */
+export interface CaptureStorageKortix {
+  mode: 'kortix';
+}
+
+/**
+ * The account's own S3-compatible bucket ("bring your own storage"). Give
+ * exactly one credential form: `role_arn` (STS; devices get per-device scoped
+ * credentials) OR `access_key_id` + `secret_access_key` (account-wide; static
+ * keys cannot be scoped per device). Switching stores does not migrate old
+ * recordings — they stay in the previous store.
+ */
+export interface CaptureStorageS3Input {
+  mode: 's3';
+  /** Empty = the AWS regional endpoint for `region`. */
+  endpoint?: string;
+  region: string;
+  bucket: string;
+  /** Path-style URLs (MinIO and most self-hosted S3); false on AWS. */
+  force_path_style?: boolean;
+  /** An IAM role Kortix assumes (STS). Preferred: enables per-device scoped credentials. */
+  role_arn?: string;
+  access_key_id?: string;
+  /** Plaintext on write; stored encrypted and never returned. */
+  secret_access_key?: string;
+}
+
+/** Where to keep the account's recordings. */
+export type CaptureStorageInput = CaptureStorageKortix | CaptureStorageS3Input;
+
+/** The redacted storage config a client reads. The secret is never returned. */
+export type CaptureStorageView =
+  | CaptureStorageKortix
+  | {
+      mode: 's3';
+      endpoint: string;
+      region: string;
+      bucket: string;
+      force_path_style: boolean;
+      role_arn: string;
+      access_key_id: string;
+      /** A static secret is stored (its value is never returned). */
+      has_secret: boolean;
+      /** Devices get per-device scoped credentials (role mode); false for static keys (account-wide). */
+      per_device_scoped: boolean;
+    };
+
 /** One physical display of a device. Points in the device's global desktop space (top-left origin). */
 export interface CaptureDisplay {
   /** The OS display id; stable while the display stays connected. */
@@ -396,7 +443,9 @@ export interface CaptureDays {
 
 export type CaptureSearchKind = CaptureLayer;
 
-export interface CaptureSearchQuery extends Omit<CaptureWindowQuery, 'day' | 'displayId'> {
+/** `day` keeps the search to one UTC day and wins over `from`/`to`; without
+ * either, search covers all of time. Search does not filter by display. */
+export interface CaptureSearchQuery extends Omit<CaptureWindowQuery, 'displayId'> {
   /** Web-search syntax: words, "a phrase", -exclude. */
   q: string;
   kinds?: CaptureSearchKind[];
@@ -510,6 +559,7 @@ const searchParams = (query: CaptureSearchQuery) =>
     kinds: query.kinds?.join(','),
     app: query.app,
     limit: query.limit,
+    day: query.day,
     from: query.from,
     to: query.to,
     user_id: query.userId,
@@ -600,6 +650,22 @@ export async function setCapturePolicy(accountId: string, policy: CapturePolicy)
   return unwrap(await backendApi.put<CapturePolicyRecord>(`${base(accountId)}/policy`, { policy }));
 }
 
+// ── Storage (where recordings are kept, `capture.manage`) ────────────────────
+
+/** Where the account keeps its recordings: the managed store, or its own S3 bucket. The secret is never returned. */
+export async function getCaptureStorage(accountId: string) {
+  return unwrap(await backendApi.get<CaptureStorageView>(`${base(accountId)}/storage`));
+}
+
+/**
+ * Set the account's storage destination (`capture.manage`). An `s3` config is
+ * validated with a write probe before it is stored; an unreachable bucket
+ * answers 400 `capture_storage_unreachable`.
+ */
+export async function setCaptureStorage(accountId: string, input: CaptureStorageInput) {
+  return unwrap(await backendApi.put<CaptureStorageView>(`${base(accountId)}/storage`, input));
+}
+
 // ── Timeline ──────────────────────────────────────────────────────────────────
 
 /** Activity runs and indexed items of one person for a day or a time span. */
@@ -633,19 +699,30 @@ export async function searchCapture(accountId: string, query: CaptureSearchQuery
 // ── Media ─────────────────────────────────────────────────────────────────────
 
 /** One frame with its full on-screen text and a signed URL of its video chunk. */
-export async function getCaptureFrame(accountId: string, frameId: string, opts: { userId?: string } = {}) {
+export async function getCaptureFrame(
+  accountId: string,
+  frameId: string,
+  opts: { userId?: string; deviceId?: string } = {},
+) {
   return unwrap(
     await backendApi.get<CaptureFrameDetail>(
-      `${base(accountId)}/frames/${frameId}${captureQuery({ user_id: opts.userId })}`,
+      `${base(accountId)}/frames/${frameId}${captureQuery({ user_id: opts.userId, device_id: opts.deviceId })}`,
     ),
   );
 }
 
-/** Signed URLs of an indexed item's video or audio. */
-export async function getCaptureChunkMedia(accountId: string, chunkId: string, opts: { userId?: string } = {}) {
+/**
+ * Signed URLs of an indexed item's video or audio. `deviceId` reads a computer
+ * linked to no one as itself (`capture.read_all`), like the timeline does.
+ */
+export async function getCaptureChunkMedia(
+  accountId: string,
+  chunkId: string,
+  opts: { userId?: string; deviceId?: string } = {},
+) {
   return unwrap(
     await backendApi.get<CaptureChunkMedia>(
-      `${base(accountId)}/chunks/${chunkId}/media${captureQuery({ user_id: opts.userId })}`,
+      `${base(accountId)}/chunks/${chunkId}/media${captureQuery({ user_id: opts.userId, device_id: opts.deviceId })}`,
     ),
   );
 }

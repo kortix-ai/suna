@@ -1,0 +1,145 @@
+/**
+ * The API keys pane: the two things about it that can be wrong silently.
+ *
+ * 1. The meta line under each key — pure string assembly, so it is testable
+ *    without a DOM (`apps/web` has no render harness for this pane).
+ * 2. That the pane asks for the caller's OWN keys. `listAccountTokens(id)`
+ *    without `{ mine: true }` returns every key the ACCOUNT owns — other
+ *    members' keys, service-account bearers, and one row per sandbox session
+ *    ever run. Dropping that argument would not fail a typecheck, would not
+ *    fail a render, and would show a person a list of their colleagues'
+ *    credentials. There is no assertion available for it other than reading
+ *    the source, so this reads the source.
+ */
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import type { ApiKeyRow } from '../../../access/iam/api-key-rows';
+import { apiKeyMetaParts, localizedRelativeTime } from './tokens-tab';
+
+const NOW = Date.parse('2026-08-18T12:00:00.000Z');
+const DAY = 24 * 60 * 60 * 1000;
+
+const row = (overrides: Partial<ApiKeyRow> = {}): ApiKeyRow => ({
+  id: 't1',
+  kind: 'personal',
+  name: 'my laptop',
+  hint: 'pk_abcdef0123456789',
+  status: 'active',
+  createdAt: new Date(NOW - 30 * DAY).toISOString(),
+  lastUsedAt: null,
+  expiresAt: null,
+  scopeLabel: null,
+  ...overrides,
+});
+
+describe('apiKeyMetaParts', () => {
+  test('supports locale copy and a locale-aware relative-time formatter', () => {
+    expect(
+      apiKeyMetaParts(row(), NOW, {
+        neverUsed: 'Никада није коришћен',
+        neverExpires: 'Никада не истиче',
+        lastUsed: (time) => `Последњи пут коришћен ${time}`,
+        expired: (time) => `Истекао ${time}`,
+        expires: (time) => `Истиче ${time}`,
+        relativeTime: () => 'пре 2 дана',
+      }),
+    ).toEqual(['pk_abcdef0123456789', 'Никада није коришћен', 'Никада не истиче']);
+  });
+
+  test('a plain key says what it looks like, that it is unused, and that it never expires', () => {
+    expect(apiKeyMetaParts(row(), NOW)).toEqual([
+      'pk_abcdef0123456789',
+      'Never used',
+      'Never expires',
+    ]);
+  });
+
+  test('a project-scoped key names the project it is limited to, right after the hint', () => {
+    const parts = apiKeyMetaParts(row({ scopeLabel: 'Acme web' }), NOW);
+    expect(parts[1]).toBe('Acme web');
+  });
+
+  test('an expiry in the future reads "Expires", one in the past reads "Expired"', () => {
+    const future = apiKeyMetaParts(row({ expiresAt: new Date(NOW + 7 * DAY).toISOString() }), NOW);
+    expect(future.at(-1)).toStartWith('Expires ');
+
+    const past = apiKeyMetaParts(
+      row({ status: 'expired', expiresAt: new Date(NOW - 7 * DAY).toISOString() }),
+      NOW,
+    );
+    expect(past.at(-1)).toStartWith('Expired ');
+  });
+
+  test('an unparseable expiry is dropped rather than rendered as a lie', () => {
+    // `Never expires` is NOT the fallback either — we do not know that.
+    const parts = apiKeyMetaParts(row({ expiresAt: 'not-a-date' }), NOW);
+    expect(parts).toEqual(['pk_abcdef0123456789', 'Never used']);
+  });
+
+  test('a used key reports when, relatively', () => {
+    const parts = apiKeyMetaParts(row({ lastUsedAt: new Date(NOW - 2 * DAY).toISOString() }), NOW);
+    expect(parts[1]).toStartWith('Last used ');
+  });
+});
+
+describe('localizedRelativeTime', () => {
+  test('a 1-day expiry renders as its countdown, not as "this minute"', () => {
+    expect(localizedRelativeTime(new Date(NOW + DAY).toISOString(), 'en', NOW)).toBe('in 1d');
+    expect(localizedRelativeTime(new Date(NOW + 23 * 3_600_000).toISOString(), 'en', NOW)).toBe('in 23h');
+    expect(localizedRelativeTime(new Date(NOW + 5 * 60_000).toISOString(), 'en', NOW)).toBe('in 5m');
+  });
+
+  test('the past rendering keeps the pane\'s own voice', () => {
+    expect(localizedRelativeTime(new Date(NOW - 30_000).toISOString(), 'en', NOW)).toBe('this minute');
+    expect(localizedRelativeTime(new Date(NOW - 5 * 60_000).toISOString(), 'en', NOW)).toBe('5m ago');
+    expect(localizedRelativeTime(new Date(NOW - 2 * DAY).toISOString(), 'en', NOW)).toBe('2d ago');
+  });
+});
+
+describe('the pane reads only the caller’s own keys', () => {
+  const source = readFileSync(join(import.meta.dir, 'tokens-tab.tsx'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  test('listAccountTokens is called with { mine: true }', () => {
+    expect(source).toContain('listAccountTokens(accountId, { mine: true })');
+  });
+
+  test('no unnarrowed listAccountTokens call survives anywhere in the pane', () => {
+    const calls = [...source.matchAll(/listAccountTokens\(([^)]*)\)/g)].map((m) => m[1]);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const args of calls) {
+      expect(args).toContain('mine: true');
+    }
+  });
+
+  test('the pane never reaches for the service-account API — that list is the account’s', () => {
+    expect(source).not.toContain('listServiceAccountsApi');
+    expect(source).not.toContain('createServiceAccountApi');
+  });
+});
+
+describe('the pane’s clock advances with fresh data', () => {
+  const source = readFileSync(join(import.meta.dir, 'tokens-tab.tsx'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  // A stamp that lands AFTER the pane mounted — a key used while the settings
+  // dialog is open — must not be aged against the mount-time clock: the past
+  // direction would flip and the row would read "Last used in 2m" for
+  // something that happened two minutes ago. So the clock must be derived
+  // from the tokens query's own fetch time (it advances with every refetch),
+  // with the mount capture only covering the first paint.
+  test('renderedAt is the query’s fetch time once data has landed', () => {
+    expect(source).toContain('useState(() => Date.now())');
+    expect(source).toContain('tokensQuery.dataUpdatedAt || mountAt');
+    expect(source).not.toContain('setRenderedAt');
+  });
+
+  test('the row formatting still ages against the captured clock, not a fresh Date.now()', () => {
+    expect(source).toContain('localizedRelativeTime(input, locale, renderedAt)');
+    expect(source).toContain('apiKeyMetaParts(row, renderedAt,');
+  });
+});

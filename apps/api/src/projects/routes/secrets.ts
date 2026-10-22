@@ -17,6 +17,7 @@ import {
 import { inferAuditSource, runAuditedTransaction } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { loadProjectConfig } from '../git';
+import { allowStaleMirrorReads } from '../git/mirror';
 import { requestPersonalOwner } from '../lib/personal-resources';
 import {
   encryptProjectSecret,
@@ -28,7 +29,6 @@ import {
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { createRoute, z } from '@hono/zod-openapi';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
@@ -173,6 +173,9 @@ export function registerSecretsRoutes(): void {
     // manifest read instead of adding to it (measured prod: git 383ms/14 ops
     // dominates this route's server time).
     const personalOwnerPromise = requestPersonalOwner(c, loaded);
+    // A page view (the model picker and Customize → Secrets wait on it): read
+    // the manifest from the warm git mirror and refresh it behind the response.
+    allowStaleMirrorReads();
     try {
       const gitRow = await withProjectGitAuth(loaded.row);
       stages.git_auth = Math.round(performance.now() - started);
@@ -517,10 +520,8 @@ export function registerSecretsRoutes(): void {
 
     // First provider connect on a default-less project → seed a sensible project
     // default model (that provider's flagship). Detached + idempotent; never seeds
-    // over an existing default. Gateway projects only: model defaults are a
-    // gateway-catalog concept — off-gateway, OpenCode resolves its own default
-    // from the keys now in the box, and a seeded wire id would be a dead ref.
-    if (value !== null && isGatewayManagedEnv(name) && projectLlmGatewayEnabled(loaded.row.metadata)) {
+    // over an existing default.
+    if (value !== null && isGatewayManagedEnv(name)) {
       void seedProjectDefaultModelOnConnect({
         projectId,
         accountId: loaded.row.accountId,

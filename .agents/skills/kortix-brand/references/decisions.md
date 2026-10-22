@@ -10,6 +10,40 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-19
+
+### K9 `@kortix/ui`: the shared Tailwind v4 component library
+- **Date:** 2026-10-19
+- **Decision:** `packages/ui` (`@kortix/ui`) is the one React component library for `apps/web`, Kortix Apps and SDK hosts. Components are the `apps/web/src/components/ui` files, moved with the same Tailwind v4 class strings, under `packages/ui/src/primitives/`. `apps/web` imports `@kortix/ui/<name>` and the module entries directly; it keeps no re-export shims (`tests/unit/web-no-ui-shims.test.ts`). Styles ship as `@kortix/ui/tokens.css` (generated, `:root` and `.dark`), `@kortix/ui/theme.css` (the `@theme inline` keys, utilities and keyframes moved out of `apps/web/src/app/globals.css`), `@kortix/ui/styles.css` (prebuilt `dist/styles.css` for hosts without Tailwind) and `@kortix/ui/fonts.css` (Roobert, Kortix-owned surfaces only, D8). White-label hosts override the CSS variables and never fork a component. The kit-styled `Popover`, `OptionList`, `Select` and `FilterBar` of K8 are deleted. A host composes a filter bar from `popover` and `command`; `FilterBar` / `FilterBarItem` in `tabs` are the pill row. `kit.css` (`k-*`) stays the kit for plain HTML without React and is not part of `@kortix/ui`.
+- **Why:** two styling systems for one component set drift. One package keeps `apps/web`, the white-label demo and every SDK host on the same components.
+- **Where:** `packages/ui`, `packages/ui/README.md`, `packages/ui/skills/kortix-ui/SKILL.md` (the package skill, mirrored for Kortix sessions in `packages/starter/templates/managed/skills/kortix-ui/`), `packages/ui/src/session` (`@kortix/ui/session`), `apps/web/content/docs/sdk/ui.mdx`, `scripts/generate-tokens.ts`.
+- **Supersedes:** K8. `sync-kortix-brand` in `kortix-ai/company` copies only `visual/fonts.css`, `visual/tokens.css` and `visual/kit.css`, so no App copied the deleted K8 files.
+- **Source:** the `kortix-ui` branch.
+
+### K8 (SUPERSEDED by K9) `@kortix/ui`: the interactive components for Apps
+- **Date:** 2026-10-19
+- **Decision:** `packages/ui` (`@kortix/ui`, private) holds the interactive components that CSS cannot provide: `Popover`, `OptionList` (search, ↑/↓, Enter, Home/End), `Select` and `FilterBar` (Linear-style chips behind one Filter button). They are built on the Radix Popover that `apps/web` uses and are styled only by `kit.css` (`k-popover-panel`, `k-options`, `k-option`, `k-select-trigger`, `k-filter-bar`, `k-chip`). Kortix Apps get them through `sync-kortix-brand` in `kortix-ai/company`.
+- **Why:** the sales App rendered 8 filters as segmented controls and native selects, which took half the screen. Marko asked for proper components shared from suna.
+- **Where:** `packages/ui`, `visual/kit.css`.
+- **Supersedes:** none.
+- **Source:** the sales App filter bar in `kortix-ai/company`.
+
+### K7 `kit.css` adds the field
+- **Date:** 2026-10-19
+- **Decision:** `kit.css` adds `k-input` (input, textarea), `k-field` (label above a field) and `k-check` (checkbox row), copied from `inputSurfaceClasses` and `inputFocusClasses` in `input.tsx`.
+- **Why:** the sales App has forms, and an App without the field primitive writes its own field CSS.
+- **Where:** `visual/kit.css`.
+- **Supersedes:** none.
+- **Source:** the sales App refactor in `kortix-ai/company`.
+
+### K6 `kit.css`: the UI primitives as portable CSS classes
+- **Date:** 2026-10-19
+- **Decision:** `visual/kit.css` carries the `@/components/ui` primitives (Card, Button, Badge, status dot, banner, segmented control, table, list, stat, meter, popover, empty state) as `k-*` classes that read only `tokens.css` variables. HTML outside `apps/web` loads `fonts.css`, `tokens.css` and `kit.css` in that order and composes these classes before it writes its own CSS.
+- **Why:** every Kortix App and internal dashboard wrote its own palette and component CSS (the factory-status App shipped GitHub status hexes), so each read as a second product.
+- **Where:** `visual/kit.css`, `SKILL.md` Standalone HTML row.
+- **Supersedes:** none.
+- **Source:** the factory dashboard rebuild in `kortix-ai/company`.
+
 ## 2026-10-09
 
 ### D13 A backend is an App of kind `convex`
@@ -33,7 +67,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 ### D10 The category line is "AI Operating System"
 - **Decision:** The category is "AI Operating System", short form "AI OS". The tagline is "The open-source AI Operating System". The brand name stays "Kortix". "AI Management System" is retired. The comparative line, the manifesto line and the mission do not change. "Autonomous Company Operating System" stays retired for its word "Autonomous".
 - **Why:** The founder chose it on 2026-10-04 with the instruction to use it everywhere: git, marketing, product, CLI, email and the brand kit. An operating system is the layer that agents, skills, memory, connectors, computers, channels and triggers run on. The marketing site is rebuilt on this line in the same branch.
-- **Where:** `verbal/positioning.md`, `verbal/voice-and-tone.md`, `verbal/concepts.md`, README, GitHub About, `apps/web/src/lib/site-metadata.ts`, the landing `content.ts`, `apps/cli/src/banner.ts`, `BRAND_FOOTER`, the Slack and Teams manifests, every `apps/web/translations/*.json`.
+- **Where:** `verbal/positioning.md`, `verbal/voice-and-tone.md`, `verbal/concepts.md`, README, GitHub About, `packages/ui/src/internal/lib/site-metadata.ts`, the landing `content.ts`, `apps/cli/src/banner.ts`, `BRAND_FOOTER`, the Slack and Teams manifests, every `apps/web/translations/*.json`.
 - **Supersedes:** D1 (the category and tagline only; D1's retired-line list stays).
 - **Source:** founder decision, branch `webpage` (2026-10-04).
 

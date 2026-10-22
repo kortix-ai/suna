@@ -5,6 +5,77 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (the session log is the only saved history, P8.2)
+- `FeatureFlagKey` `'session_log'` is no longer a flag: absent from `FEATURE_FLAG_KEYS` and from
+  the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so
+  `useFeatureFlag(id, 'session_log')` reports `true` once the project detail loads, as before.
+  `KortixProject.experimental.session_log` is optional in the type.
+- `GET …/sessions/:id/log` answers `503` `{ code: 'session_log_converting' }` with `Retry-After: 60`
+  for an old session whose history is still only in the v1 mirror and over the conversion size cap;
+  retry after the delay.
+
+### Added (custom LLM providers)
+- `listCustomLlmProviders(projectId)`, `putCustomLlmProvider(projectId, providerId, input)` and
+  `deleteCustomLlmProvider(projectId, providerId)` (types `CustomLlmProvider`,
+  `CustomLlmProviderInput`): a project's OpenAI-compatible endpoints, served through the gateway
+  (`GET`/`PUT`/`DELETE /projects/:id/custom-providers[/:providerId]`). The delete also deletes the
+  `CUSTOM_<ID>_API_KEY` project secret. On the facade: `projects.customLlmProviders`,
+  `projects.setCustomLlmProvider`, `projects.deleteCustomLlmProvider` and the same three on
+  `project(id)` without the project id.
+- `useCustomLlmProviders(projectId)` (`@kortix/sdk/react`): `{ providers, isLoading, error, save,
+  remove, isSaving }`. Writes refresh the list and both model-picker caches.
+
+### Deprecated (managed models are served by Kortix Platinum inference)
+- `ProjectLlmCatalogResponse.managedPricingRoutes`: the API no longer sends it. Every managed
+  model has one price, its `cost` in `models`. `platformFeePercent` is unchanged.
+
+### Deprecated (the LLM gateway is the only model path)
+- `FeatureFlagKey` `'llm_gateway'` graduated: absent from `FEATURE_FLAG_KEYS`, and
+  `useFeatureFlag(id, 'llm_gateway')` reports `enabled: true`.
+- Ignored inputs, kept so callers compile: `modelRefToKey`'s second argument,
+  `sessionModelCandidates({ gatewayEnabled })`, `PickerProviderListInput.gatewayEnabled`,
+  `.runtimeProviders`, `.llmCatalogProviders`, `.secretNames`, and `flattenModels`'
+  `providerMode`. `modelProviderMode()` always returns `'gateway'`; `filterToNativeProviders`
+  is deprecated.
+- Constant `true` fields: `useModelDefaults().llmGatewayEnabled` and
+  `useGatewayRoutingPolicy().llmGatewayEnabled` (with a project id),
+  `SessionOpenBundleConfig.llm_gateway_enabled`, `ProjectModelAccess.enforced`.
+
+### Changed (the LLM gateway is the only model path)
+- `useRuntimeProviders()` on a project route always reads the gateway catalog
+  (`GET /projects/:id/model-picker`). It no longer reads `GET /projects/:id` for the flag, and the
+  native picker sources (the runtime `/provider` list with project secret names, the
+  `/llm-catalog/providers` synthesis) are gone.
+- `useProjectModels`, `useProjectModelPickerCatalog`, `useModelEnablement`, `useModelDefaults`
+  and `useGatewayRoutingPolicy` fetch for every project without a project-detail read first.
+- `pickerProviderList` returns the `/model-picker` catalog only. `resolveComposerModel` no longer
+  rewrites a bare Bedrock id to its inference profile: under the gateway every key is `kortix`.
+- The session-open snapshot's `models` leg is now the model-defaults query's own fetch, so
+  `useModelDefaults` mounts onto it and sends no `/model-defaults` request.
+
+### Added (session log: sub-agent chats and export)
+- `useSessionLogOlder(session, threadId?, options?)` (`@kortix/sdk/react`): older pages of one
+  thread of a v2 session (`GET …/log?thread=&before_seq=`), `{ hasOlder, isLoadingOlder, loadOlder }`.
+  A sub-agent's chat pages its own thread with it.
+- `loadSessionExportMessages(sessionId, kortixSessionScope)`: when the store holds the session log
+  of `kortixSessionScope` (v2), the export is the log's thread of `sessionId` (the root, or a
+  sub-agent), every page of it, as v1 rows (`toV1`). It reads no `GET …/transcript` and no
+  runtime history then. The signature is unchanged; v1 sessions export as before.
+
+### Changed (Capture app ids)
+- `normalizeCaptureAppId` accepts every identifier the Capture engine matches:
+  app names with spaces (`AutoCAD 2025`), paths, and a prefix ending in `*`
+  (`com.autodesk.autocad*`, at least 3 characters before the `*`). It still
+  refuses empty, over-long, flag-like (`-x`) and control-character values.
+
+### Added (session log: the connecting view's saved copy)
+- `readSavedSessionCopy({ …, sessionLog: true })`: with the project flag `session_log` on,
+  reads the session log's newest page (`GET …/log`) into `SavedSessionCopy.log` (new optional
+  field; `envelope: null`) and proves an empty root from it. It reads no `GET …/transcript`.
+  Without `sessionLog` it reads the v1 copy exactly as before.
+- `useSession({ chatEngine: false })`: with the flag known on at the open, the session-open
+  snapshot asks no transcript window (`transcript=0`), as the chat engine already did.
+
 ### Added (session-log restore notice)
 - `sessionLogRestoreNotice(session)` (`SessionLogRestoreNotice`): what a partial
   restore of a session log could not bring back, from the session record

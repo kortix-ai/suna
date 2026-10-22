@@ -56,6 +56,7 @@ const counts = {
   markSandboxUsed: 0,
   markSandboxErrored: 0,
   resumeStopped: 0,
+  registerRuntimeFork: 0,
 };
 
 // The retry sleeps (250 ms / 1 s / 3 s) shrink to 1 ms: these cases assert the
@@ -106,6 +107,13 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   beginSandboxTurn: async () => 'granted',
   acceptSandboxTurn: async () => true,
   abandonSandboxTurn: async () => true,
+}));
+// A forwarded fork is recorded through projects/surface (#10421); the real
+// module loads the whole projects graph, so the record is counted here.
+mock.module('../../projects/surface', () => ({
+  registerRuntimeFork: async () => {
+    counts.registerRuntimeFork += 1;
+  },
 }));
 mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async (externalId: string) => {
@@ -393,6 +401,41 @@ describe('forwardToSandbox on a stopped sandbox', () => {
     expect(counts.resumeStopped).toBe(0);
   });
 
+  test.each([
+    [8000, '/session/sess-1/fork'],
+    [4096, '/session/sess-1/fork/'],
+    [4097, '/proxy/4096/session/sess-1/fork'],
+    [8000, '/session/sess-1/%66ork'],
+  ])('forking a stopped conversation on port %s at %s returns an actionable conflict', async (port, path) => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    const res = await forward({ method: 'POST', port, path, body: bodyOf({}), headers: jsonHeaders() });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'Resume the session before forking the conversation.',
+      code: 'session_stopped',
+    });
+    expect(counts.resumeStopped).toBe(0);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('forking an active conversation still forwards the runtime result', async () => {
+    queueFetch(new Response('{"id":"fork-1"}', { status: 200 }));
+    const res = await forward({ method: 'POST', port: 8000, path: '/session/sess-1/fork', body: bodyOf({}), headers: jsonHeaders() });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: 'fork-1' });
+    expect(fetchCalls).toBe(1);
+    expect(counts.registerRuntimeFork).toBe(1);
+    expect(counts.resumeStopped).toBe(0);
+  });
+
+  test('an app route named fork retains the normal stopped-preview response', async () => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    const res = await forward({ method: 'POST', port: 3000, path: '/session/sess-1/fork', body: bodyOf({}), headers: jsonHeaders() });
+    expect(res.status).toBe(503);
+    expect(counts.resumeStopped).toBe(0);
+    expect(fetchCalls).toBe(0);
+  });
+
   test('a browser navigation gets the 200 starting page, not the 5xx', async () => {
     currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
     queueFetch(new Response('should never be fetched'));
@@ -589,7 +632,7 @@ describe('forwardToSandbox authentication failures', () => {
   });
 
   test('an upstream 401 that the provider did not sign is a 502 signed-context rejection', async () => {
-    currentRecord = { ...ACTIVE_RECORD, provider: 'e2b' };
+    currentRecord = { ...ACTIVE_RECORD, provider: 'platinum' };
     queueFetch(new Response('unauthorized', { status: 401 }));
     const res = await forward({ port: 3000, path: '/' });
     expect(res.status).toBe(502);

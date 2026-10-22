@@ -268,7 +268,118 @@
                 "filter": {
                   "type": "object",
                   "additionalProperties": {
-                    "type": "string"
+                    "oneOf": [
+                      {
+                        "type": [
+                          "string",
+                          "number",
+                          "boolean"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "minProperties": 1,
+                        "maxProperties": 1,
+                        "additionalProperties": false,
+                        "properties": {
+                          "not": {
+                            "oneOf": [
+                              {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean"
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          "in": {
+                            "oneOf": [
+                              {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean"
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          "exists": {
+                            "type": "boolean"
+                          },
+                          "prefix": {
+                            "oneOf": [
+                              {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ],
+                                "minLength": 1
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean"
+                                  ],
+                                  "minLength": 1
+                                }
+                              }
+                            ]
+                          },
+                          "not_prefix": {
+                            "oneOf": [
+                              {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ],
+                                "minLength": 1
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean"
+                                  ],
+                                  "minLength": 1
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
                   }
                 },
                 "sessionMode": {
@@ -321,6 +432,21 @@
                 "max_lateness": {
                   "type": "string",
                   "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                },
+                "max_runs_per_hour": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_runs_per_day": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "overlap": {
+                  "type": "string",
+                  "enum": [
+                    "skip",
+                    "allow"
+                  ]
                 },
                 "secret_env": {
                   "type": "string",
@@ -751,11 +877,12 @@
                       "enum": [
                         "slack",
                         "teams",
-                        "email"
+                        "email",
+                        "telegram"
                       ]
                     },
                     {
-                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL])\\s*$(?![\\s\\S])"
+                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
                     }
                   ]
                 },
@@ -1233,6 +1360,8 @@
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
+                          "project.room.read",
+                          "project.room.write",
                           "project.credentials.issue",
                           "project.cr.open",
                           "project.cr.merge",
@@ -1329,6 +1458,8 @@
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
+                          "project.room.read",
+                          "project.room.write",
                           "project.credentials.issue",
                           "project.cr.open",
                           "project.cr.merge",
@@ -1983,6 +2114,8 @@
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
+                          "project.room.read",
+                          "project.room.write",
                           "project.credentials.issue",
                           "project.cr.open",
                           "project.cr.merge",
@@ -2069,6 +2202,8 @@
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
+                          "project.room.read",
+                          "project.room.write",
                           "project.credentials.issue",
                           "project.cr.open",
                           "project.cr.merge",
@@ -2583,7 +2718,118 @@
                 "filter": {
                   "type": "object",
                   "additionalProperties": {
-                    "type": "string"
+                    "oneOf": [
+                      {
+                        "type": [
+                          "string",
+                          "number",
+                          "boolean"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "minProperties": 1,
+                        "maxProperties": 1,
+                        "additionalProperties": false,
+                        "properties": {
+                          "not": {
+                            "oneOf": [
+                              {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean"
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          "in": {
+                            "oneOf": [
+                              {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean"
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          "exists": {
+                            "type": "boolean"
+                          },
+                          "prefix": {
+                            "oneOf": [
+                              {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ],
+                                "minLength": 1
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean"
+                                  ],
+                                  "minLength": 1
+                                }
+                              }
+                            ]
+                          },
+                          "not_prefix": {
+                            "oneOf": [
+                              {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ],
+                                "minLength": 1
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean"
+                                  ],
+                                  "minLength": 1
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
                   }
                 },
                 "sessionMode": {
@@ -2636,6 +2882,21 @@
                 "max_lateness": {
                   "type": "string",
                   "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                },
+                "max_runs_per_hour": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_runs_per_day": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "overlap": {
+                  "type": "string",
+                  "enum": [
+                    "skip",
+                    "allow"
+                  ]
                 },
                 "secret_env": {
                   "type": "string",
@@ -3066,11 +3327,12 @@
                       "enum": [
                         "slack",
                         "teams",
-                        "email"
+                        "email",
+                        "telegram"
                       ]
                     },
                     {
-                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL])\\s*$(?![\\s\\S])"
+                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
                     }
                   ]
                 },
@@ -4429,7 +4691,118 @@
                 "filter": {
                   "type": "object",
                   "additionalProperties": {
-                    "type": "string"
+                    "oneOf": [
+                      {
+                        "type": [
+                          "string",
+                          "number",
+                          "boolean"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "minProperties": 1,
+                        "maxProperties": 1,
+                        "additionalProperties": false,
+                        "properties": {
+                          "not": {
+                            "oneOf": [
+                              {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean"
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          "in": {
+                            "oneOf": [
+                              {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean"
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          "exists": {
+                            "type": "boolean"
+                          },
+                          "prefix": {
+                            "oneOf": [
+                              {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ],
+                                "minLength": 1
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean"
+                                  ],
+                                  "minLength": 1
+                                }
+                              }
+                            ]
+                          },
+                          "not_prefix": {
+                            "oneOf": [
+                              {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ],
+                                "minLength": 1
+                              },
+                              {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "number",
+                                    "boolean"
+                                  ],
+                                  "minLength": 1
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
                   }
                 },
                 "sessionMode": {
@@ -4482,6 +4855,21 @@
                 "max_lateness": {
                   "type": "string",
                   "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                },
+                "max_runs_per_hour": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_runs_per_day": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "overlap": {
+                  "type": "string",
+                  "enum": [
+                    "skip",
+                    "allow"
+                  ]
                 },
                 "secret_env": {
                   "type": "string",
@@ -4912,11 +5300,12 @@
                       "enum": [
                         "slack",
                         "teams",
-                        "email"
+                        "email",
+                        "telegram"
                       ]
                     },
                     {
-                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL])\\s*$(?![\\s\\S])"
+                      "pattern": "^\\s*(?:[sS][lL][aA][cC][kKK]|[tT][eE][aA][mM][sS]|[eE][mM][aA][iI][lL]|[tT][eE][lL][eE][gG][rR][aA][mM])\\s*$(?![\\s\\S])"
                     }
                   ]
                 },
@@ -6046,6 +6435,17 @@
           "policies": {
             "type": "array"
           },
+          "approvals": {
+            "type": "object",
+            "properties": {
+              "ttl": {
+                "type": "string",
+                "pattern": "^[0-9]+[mhd]$",
+                "description": "How long a held connector call waits for a decision: `30m`, `4h`, `7d`. Clamped to 5m..30d. Default 24h."
+              }
+            },
+            "additionalProperties": false
+          },
           "agents": {
             "type": "object",
             "minProperties": 1,
@@ -6530,6 +6930,8 @@
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
+                          "project.room.read",
+                          "project.room.write",
                           "project.credentials.issue",
                           "project.cr.open",
                           "project.cr.merge",

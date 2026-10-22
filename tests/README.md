@@ -170,8 +170,8 @@ Add the `preview` label to a same-repository pull request into `main`.
 2. Three credential-free jobs build the API, gateway, and frontend images for
    `linux/amd64`.
 3. The trusted controller from `main` publishes the three exact SHA tags.
-4. The controller restores one warm Platinum sandbox. `auto` uses Daytona only
-   when Platinum infrastructure fails.
+4. The controller restores one warm Platinum sandbox. Previews run on Platinum
+   only; there is no fallback provider.
 5. The sandbox generates the standard `kortix self-host` Compose distribution.
 6. One overlay adds Caddy, Mailpit, the report mount, and loopback PostgreSQL.
 7. On a dispatch only, the sandbox runs `pnpm test -- --target-full` against its public HTTPS origin.
@@ -183,15 +183,14 @@ frontend, and Mailpit. It does not use the Dev, staging, or production database.
 The warm image contains dependencies and Docker layers only. It contains no
 preview database and no runtime secret.
 
-The runtime secret allowlist contains `DAYTONA_API_KEY`,
-`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `OPENROUTER_API_KEY`, `MORPH_API_KEY`, and the five fields required
+The runtime secret allowlist contains `PLATINUM_API_KEY`,
+`KE2E_STRIPE_SECRET_KEY`, `KE2E_STRIPE_WEBHOOK_SECRET`, `PLATINUM_INFERENCE_API_KEY`, and the five fields required
 for the dedicated preview GitHub App installation. Mailpit handles preview
 email. The GitHub App runs the real managed repository and CLI push flows.
 OAuth initiation is the only allowed preview browser exclusion. All API flow
 exclusions and all other browser journey exclusions fail the preview test.
 
-Use **Run workflow** to select `platinum` or `daytona` explicitly for one
-provider proof. A new deployment deletes any existing provider sandbox for the
+A new deployment deletes any existing provider sandbox for the
 same pull request. A test failure keeps the sandbox available for diagnosis.
 A push to a labelled branch starts nothing; re-add the label to deploy the new
 head. The label never runs the suite (step 7); a dispatch does. Removing the label or deleting the branch deletes the sandbox; closing
@@ -418,28 +417,6 @@ The control client retries `502`, `503`, `504`, `524`, the provider's transient
 bounded exponential backoff. Sandbox deletion uses eight attempts. A failed
 deletion fails the workflow and keeps the exact sandbox ID in the log.
 
-### Daytona
-
-Daytona first builds an OCI base snapshot. It starts a temporary builder from
-that base. The builder starts nested Docker, pulls the Supabase images, stops
-Supabase and dockerd, writes a warm marker, and captures the warm snapshot.
-`DAYTONA_CI_TARGET` selects the nested-Docker region. It falls back to
-`DAYTONA_TARGET`, then `us`. Do not reuse the product `DAYTONA_WARM_TARGET`.
-That product variable can select a different sandbox class or region.
-
-The disposable worker uses 6 vCPU, 12 GiB RAM, and 40 GiB disk. These are the
-current Daytona organization maxima. The worker is private.
-Its labels include the repository, exact SHA, workflow run ID, and run attempt.
-The cleanup command deletes only the exact worker whose name and labels match.
-
-Run a provider explicitly from a checkout with the provider key loaded:
-
-```bash
-TEST_SANDBOX_PROVIDER=platinum bun tests/bin/sandbox-ci.ts --full
-TEST_SANDBOX_PROVIDER=daytona bun tests/bin/sandbox-ci.ts --full
-TEST_SANDBOX_PROVIDER=auto bun tests/bin/sandbox-ci.ts --full
-```
-
 ## Product flows
 
 `tests/spec/end-to-end.md` is the human-readable contract. Each contract has a
@@ -504,7 +481,9 @@ counts. Do not infer those counts from source files.
 The runner splits selected flows into three lanes.
 
 - **Parallel lanes** — `meta.serial` and `meta.global` unset. Split again into an
-  API lane and a live-sandbox lane by `requires: ['daytona']`.
+  API lane and a live-sandbox lane by `requires: ['sandbox']`. The `sandbox`
+  capability (`KE2E_CAP_SANDBOX`) means a real cloud sandbox on Platinum, the
+  reference provider; a preview enables it from `PLATINUM_API_KEY`.
 - **Serial lane** — `meta.serial`. Never runs beside another serial flow. It
   runs at concurrency 1 *inside the same `Promise.all` as the parallel lanes*,
   so it overlaps them instead of appending a sequential tail.

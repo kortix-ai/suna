@@ -172,7 +172,7 @@ function startServer(): string {
   return `http://127.0.0.1:${server.port}`;
 }
 
-async function runCli(args: string[], configFile?: string) {
+async function runCli(args: string[], configFile?: string, ambient: Record<string, string> = {}) {
   const env: Record<string, string | undefined> = {
     ...process.env,
     KORTIX_NO_UPDATE_CHECK: '1',
@@ -184,6 +184,7 @@ async function runCli(args: string[], configFile?: string) {
   for (const key of ['KORTIX_API_URL', 'KORTIX_CLI_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN', 'KORTIX_SESSION_ID', 'BASH_ENV']) {
     delete env[key];
   }
+  Object.assign(env, ambient);
   const proc = Bun.spawn({
     cmd: [process.execPath, entry, ...args],
     cwd: tmp,
@@ -388,6 +389,22 @@ describe('kortix review', () => {
     expect(calls).toEqual([]);
   });
 
+  // KRTX-2991: the approvals route takes `note` and hands it to the agent with
+  // the decision (approvals.ts); --message was dropped on a connector approval.
+  test('act on call: --message goes to the agent as the decision note', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['act', 'call:ex_7', 'reject', '--message', 'Reword the second paragraph', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(calls[0]).toEqual({
+      method: 'POST',
+      path: `/v1/projects/${PROJECT}/approvals/ex_7`,
+      body: { decision: 'deny', note: 'Reword the second paragraph' },
+    });
+  });
+
   test('bulk sends only native ids and reports the skipped ones', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['bulk', 'dismiss', 'rv_1', 'cr:cr_9', 'call:ex_7', 'rv_2', '--project', PROJECT], config);
@@ -430,6 +447,34 @@ describe('kortix review', () => {
       },
     });
     expect(r.stdout).toContain('rv_new');
+  });
+
+  // KRTX-2864: inside a sandbox, KORTIX_SESSION_ID is a session of the
+  // sandbox's own project (KORTIX_PROJECT_ID). Sent as the origin of an item
+  // in another project it answered "Session not found".
+  test('submit drops an ambient session of another project, and says so', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['submit', '--kind', 'decision', '--title', 'Ship v2 pricing', '--project', PROJECT],
+      config,
+      { KORTIX_SESSION_ID: 'sess_foreign', KORTIX_PROJECT_ID: 'proj_sandbox_own' },
+    );
+    expect(r.code).toBe(0);
+    expect(calls[0]?.body).toEqual({ kind: 'decision', title: 'Ship v2 pricing' });
+    expect(r.stderr).toContain('KORTIX_SESSION_ID');
+    expect(r.stderr).toContain('--session');
+  });
+
+  test('submit keeps the ambient session when it belongs to the same project', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['submit', '--kind', 'decision', '--title', 'Ship v2 pricing', '--project', PROJECT],
+      config,
+      { KORTIX_SESSION_ID: 'sess_own', KORTIX_PROJECT_ID: PROJECT },
+    );
+    expect(r.code).toBe(0);
+    expect(calls[0]?.body).toEqual({ kind: 'decision', title: 'Ship v2 pricing', session_id: 'sess_own' });
+    expect(r.stderr).not.toContain('KORTIX_SESSION_ID');
   });
 
   test('submit without --title exits 2 and never calls the API', async () => {

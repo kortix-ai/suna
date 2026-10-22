@@ -2,21 +2,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import {
-  DaytonaApi,
-  type DaytonaCiInput,
-  type DaytonaSandbox,
-  createDaytonaSandbox,
-  deleteSandbox as deleteDaytonaSandbox,
-  downloadArtifacts as downloadDaytonaArtifacts,
-  ensureWarmSnapshot,
-  execute as executeDaytona,
-  getSandboxByName,
-  readRemoteExitCode,
-  readRemoteLog,
-  statRemoteLog,
-  waitForSandbox as waitForDaytonaSandbox,
-} from './daytona-ci';
-import {
   PlatinumApi,
   PlatinumHttpError,
   type PlatinumSandbox,
@@ -811,25 +796,6 @@ export async function teardownPlatinumPreview(input: {
   return owned.length;
 }
 
-export async function teardownDaytonaPreview(input: {
-  apiUrl: string;
-  apiKey: string;
-  prNumber: number;
-}): Promise<number> {
-  if (!input.apiKey) return 0;
-  const api = new DaytonaApi(input.apiUrl, input.apiKey);
-  const sandbox = await getSandboxByName(api, previewSandboxName(input.prNumber));
-  if (!sandbox) return 0;
-  if (
-    sandbox.labels?.['kortix-preview'] !== 'true' ||
-    sandbox.labels?.['kortix-preview-pr'] !== String(input.prNumber)
-  ) {
-    throw new Error(`refused to delete unowned Daytona sandbox ${sandbox.id}`);
-  }
-  await deleteDaytonaSandbox(api, sandbox.id);
-  return 1;
-}
-
 export async function reconcilePlatinumPreviews(input: {
   apiUrl: string;
   apiKey: string;
@@ -888,51 +854,5 @@ export async function reconcilePlatinumPreviews(input: {
       ),
     )}`,
   );
-  return stale.length;
-}
-
-interface DaytonaSandboxPage {
-  items?: DaytonaSandbox[];
-  nextCursor?: string | null;
-}
-
-export function daytonaPreviewLabelsFilter(): string {
-  return JSON.stringify({ 'kortix-preview': 'true' });
-}
-
-async function allDaytonaPreviewSandboxes(api: DaytonaApi): Promise<DaytonaSandbox[]> {
-  const sandboxes: DaytonaSandbox[] = [];
-  let cursor = '';
-  do {
-    const query = new URLSearchParams({
-      limit: '100',
-      labels: daytonaPreviewLabelsFilter(),
-    });
-    if (cursor) query.set('cursor', cursor);
-    const page = await api.json<DaytonaSandboxPage>(`/sandbox?${query}`);
-    sandboxes.push(...(page.items ?? []));
-    cursor = page.nextCursor ?? '';
-  } while (cursor);
-  return sandboxes;
-}
-
-export async function reconcileDaytonaPreviews(input: {
-  apiUrl: string;
-  apiKey: string;
-  activePullRequests: ReadonlyMap<number, string>;
-}): Promise<number> {
-  if (!input.apiKey) return 0;
-  const api = new DaytonaApi(input.apiUrl, input.apiKey);
-  const sandboxes = await allDaytonaPreviewSandboxes(api);
-  const records = sandboxes.map((sandbox) => ({
-    id: sandbox.id,
-    metadata: {
-      owner: sandbox.labels?.['kortix-preview'] === 'true' ? 'kortix-preview' : '',
-      pr_number: sandbox.labels?.['kortix-preview-pr'],
-      git_sha: sandbox.labels?.['kortix-preview-git-sha'],
-    },
-  }));
-  const stale = selectStalePreviewSandboxIds(records, input.activePullRequests);
-  for (const sandboxId of stale) await deleteDaytonaSandbox(api, sandboxId);
   return stale.length;
 }

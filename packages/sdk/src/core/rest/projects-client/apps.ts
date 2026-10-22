@@ -4,7 +4,8 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
-export type AppHostingProvider = 'daytona' | 'platinum' | 'e2b';
+/** Platinum is the reference App host. Daytona is a legacy fallback. */
+export type AppHostingProvider = 'platinum' | 'daytona';
 export type AppDesiredState = 'running' | 'stopped';
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
 export type AppArtifactKind = 'archive' | 'oci_image';

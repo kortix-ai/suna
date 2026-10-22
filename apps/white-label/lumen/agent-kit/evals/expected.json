@@ -1,0 +1,106 @@
+{
+  "comment": "The answer key for the synthetic dataset (demo-data/). Per document, per preset column: {value} for yes_no, {any: [[alternatives], ...]} for text (every group must match one alternative, case-insensitive), {absent: true} where the document does not address the column. Fictional parties only.",
+  "columns": ["parties", "term", "auto_renewal", "termination_convenience", "liability_cap", "governing_law", "assignment", "change_of_control"],
+  "documents": {
+    "mutual-nda-quillon.docx": {
+      "parties": { "any": [["brightwater"], ["quillon"]] },
+      "term": { "any": [["7 year", "seven"]] },
+      "auto_renewal": { "absent": true },
+      "termination_convenience": { "value": true },
+      "liability_cap": { "absent": true },
+      "governing_law": { "any": [["novaria"]] },
+      "assignment": { "any": [["consent"]] },
+      "change_of_control": { "absent": true }
+    },
+    "one-way-nda-harbor.pdf": {
+      "parties": { "any": [["harbor"], ["brightwater"]] },
+      "term": { "any": [["2 year", "two"]] },
+      "auto_renewal": { "absent": true },
+      "termination_convenience": { "absent": true },
+      "liability_cap": { "absent": true },
+      "governing_law": { "any": [["england"]] },
+      "assignment": { "any": [["consent"]] },
+      "change_of_control": { "absent": true }
+    },
+    "msa-brightwater-quillon.pdf": {
+      "parties": { "any": [["brightwater"], ["quillon"]] },
+      "term": { "any": [["3 year", "three"]] },
+      "auto_renewal": { "value": true },
+      "termination_convenience": { "value": true },
+      "liability_cap": { "any": [["uncapped", "unlimited", "not limited", "no cap", "not capped", "no limit", "shall be limited or capped", "no monetary cap"]] },
+      "governing_law": { "any": [["new york"]] },
+      "assignment": { "any": [["consent"]] },
+      "change_of_control": { "absent": true }
+    },
+    "saas-agreement-lattice.docx": {
+      "parties": { "any": [["lattice"], ["brightwater"]] },
+      "term": { "any": [["2 year", "two"]] },
+      "auto_renewal": { "value": true },
+      "termination_convenience": { "value": false },
+      "liability_cap": { "any": [["12 month", "twelve"]] },
+      "governing_law": { "any": [["england"]] },
+      "assignment": { "any": [["consent"]] },
+      "change_of_control": { "value": true }
+    },
+    "office-lease-cedar-row.pdf": {
+      "parties": { "any": [["cedar row"], ["brightwater"]] },
+      "term": { "any": [["10 year", "ten"]] },
+      "auto_renewal": { "absent": true },
+      "termination_convenience": { "value": true },
+      "liability_cap": { "absent": true },
+      "governing_law": { "any": [["england"]] },
+      "assignment": { "any": [["consent"]] },
+      "change_of_control": { "absent": true }
+    },
+    "employment-agreement-tarrow.docx": {
+      "parties": { "any": [["tarrow"], ["ellery", "employee"]] },
+      "term": { "any": [["notice", "indefinite", "until", "no fixed", "ongoing", "open-ended", "unlimited"]] },
+      "auto_renewal": { "absent": true },
+      "termination_convenience": { "value": true },
+      "liability_cap": { "absent": true },
+      "governing_law": { "any": [["england"]] },
+      "assignment": { "absent": true },
+      "change_of_control": { "absent": true }
+    },
+    "spa-excerpt-aster.pdf": {
+      "parties": { "any": [["aster"], ["brightwater"]] },
+      "term": { "absent": true },
+      "auto_renewal": { "absent": true },
+      "termination_convenience": { "absent": true },
+      "liability_cap": { "any": [["100%", "one hundred", "purchase price"]] },
+      "governing_law": { "any": [["england"]] },
+      "assignment": { "any": [["group", "affiliate", "bank"]] },
+      "change_of_control": { "value": true }
+    },
+    "supply-agreement-meridian.pdf": {
+      "parties": { "any": [["aster"], ["meridian"]] },
+      "term": { "any": [["5 year", "five"]] },
+      "auto_renewal": { "absent": true },
+      "termination_convenience": { "absent": true },
+      "liability_cap": { "any": [["2,000,000", "2 million", "two million", "2m", "2000000"]] },
+      "governing_law": { "any": [["england"]] },
+      "assignment": { "any": [["consent"]] },
+      "change_of_control": { "value": true }
+    },
+    "dpa-lattice.docx": {
+      "parties": { "any": [["brightwater"], ["lattice"]] },
+      "term": { "any": [["main agreement", "as long as", "coterminous", "saas", "duration of"]] },
+      "auto_renewal": { "absent": true },
+      "termination_convenience": { "absent": true },
+      "liability_cap": { "any": [["main agreement", "saas", "subject to"]] },
+      "governing_law": { "any": [["england"]] },
+      "assignment": { "absent": true },
+      "change_of_control": { "absent": true }
+    },
+    "consulting-agreement-pell.txt": {
+      "parties": { "any": [["brightwater"], ["pell"]] },
+      "term": { "any": [["12 month", "twelve"]] },
+      "auto_renewal": { "absent": true },
+      "termination_convenience": { "value": true },
+      "liability_cap": { "any": [["fees paid", "total fees"]] },
+      "governing_law": { "any": [["delaware"]] },
+      "assignment": { "any": [["consent"]] },
+      "change_of_control": { "absent": true }
+    }
+  }
+}

@@ -8,8 +8,8 @@ controlled. This file pins the invariants that keep that safe. Every assertion
 below states one rule; a rule that stops being true must be deleted on purpose,
 not by accident.
 
-PR #6347 (7074ffd25e) replaced the per-PR ECS runtime with a warm Platinum or
-Daytona sandbox that boots the full self-host distribution:
+PR #6347 (7074ffd25e) replaced the per-PR ECS runtime with a warm cloud
+sandbox that boots the full self-host distribution:
 
     old: build 3 images -> push -> infra/scripts/ecs-preview.sh deploy <pr>
          -> Fargate service on pr-<n>.preview{-api}.kortix.com
@@ -18,8 +18,9 @@ Daytona sandbox that boots the full self-host distribution:
             provider-issued HTTPS origin, then `pnpm test -- --target-full`
 
 fad008f63c (#7482, 2026-09-22) made previews Platinum only, host and sessions.
-It deleted the Daytona deploy and the Daytona fallback. Daytona code remains
-only to delete previews created before that commit.
+It deleted the Daytona deploy and the Daytona fallback. The legacy Daytona
+preview teardown and sweep were deleted on 2026-10-19: Platinum is the
+reference provider and previews hold no Daytona credential.
 
 The gate structure is unchanged: an approval job resolves exactly one head SHA,
 three credential-free jobs build it, and one default-branch job holds the
@@ -226,7 +227,7 @@ class PreviewBuildIsolation(unittest.TestCase):
         self.assertNotIn("submodule update --init --recursive --remote", WORKFLOW)
         # NEW (2026-09, aws-env migration): the default-branch-only jobs below
         # (never the PR-code build-* jobs) hold an OIDC token to read
-        # DAYTONA_API_KEY/MORPH_API_KEY from kortix-preview-env through
+        # PLATINUM_API_KEY/PLATINUM_INFERENCE_API_KEY from the env secrets through
         # .github/actions/aws-env — never a direct role assumption. The
         # invariant this test guards is narrower than "no identity anywhere":
         # a job that checks out or compiles pull request code must never hold
@@ -266,17 +267,12 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         # ...and cleanup deletes only a sandbox this run CREATED. Deleting a
         # reused one discards the stable origin the environment exists to hold.
         self.assertIn("if (sandboxId && !reusedSandboxId) await deletePlatinum(", PREVIEW_PROVIDERS)
-        # Previews run on Platinum only (fad008f63c, #7482). Nothing may create
-        # a Daytona sandbox, so no preview or branch environment can land on a
-        # provider-issued Daytona origin. Daytona code remains for deletion only.
-        self.assertNotIn("createDaytonaSandbox(", PREVIEW_PROVIDERS)
-        self.assertNotIn("deployDaytonaPreview", PREVIEW_PROVIDERS + PREVIEW_CLI)
+        # Previews run on Platinum, the reference provider. No preview code
+        # touches Daytona, the legacy fallback, at all.
+        self.assertNotIn("daytona", (PREVIEW_PROVIDERS + PREVIEW_CLI).lower())
         # OLD: rollback_deploy / PREVIOUS_TASK_DEFINITION rolled a live service
         # back. A sandbox is disposable, so a redeploy deletes and recreates it.
-        # (replaceExistingDaytonaPreview went with the Daytona deploy in
-        # fad008f63c; the Daytona teardown keeps the same ownership refusal.)
         self.assertIn("async function replaceExistingPlatinumPreview(", PREVIEW_PROVIDERS)
-        self.assertIn("refused to delete unowned Daytona sandbox", PREVIEW_PROVIDERS)
         # The owner a PR preview is stamped with (previewSandboxIdentity) is the
         # same one every destructive read filters on, so a redeploy, a teardown,
         # and the nightly sweep can only ever touch a sandbox this system made.
@@ -290,16 +286,8 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         self.assertIn("sandbox.name === ephemeral &&", PREVIEW_CORE)
         self.assertIn("owner === 'kortix-preview' &&", PREVIEW_CORE)
         self.assertIn("sandbox.name === persistent && owner === 'kortix-branch-env'", PREVIEW_CORE)
-        # Legacy Daytona previews are found and deleted only by the owner label
-        # the old deploy stamped (deploy stamping deleted in fad008f63c).
-        self.assertIn("return JSON.stringify({ 'kortix-preview': 'true' });", PREVIEW_PROVIDERS)
-        self.assertIn("sandbox.labels?.['kortix-preview-pr'] !== String(input.prNumber)", PREVIEW_PROVIDERS)
-        # A provider switch must not leave the other provider's sandbox running.
-        # Every deploy is Platinum since fad008f63c (#7482), so every deploy
-        # deletes this pull request's pre-cutover Daytona sandbox.
         deploy_action = cli_action("deploy")
         self.assertIn("platinum: () => deployPlatinumPreview(deployment),", deploy_action)
-        self.assertIn("await teardownDaytonaPreview({ ...daytona, prNumber }).catch(", deploy_action)
 
     def test_the_preview_origin_is_credential_free_https(self):
         # OLD: WEB_PROTECTION_PASSWORD plus the anonymous/wrong/cookie_only
@@ -318,13 +306,16 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         # as configuration (PREVIEW_PUBLIC_ORIGIN) and is validated like any
         # other origin — the sources above still name no host of their own.
         self.assertIn("PREVIEW_PUBLIC_ORIGIN", PREVIEW_CLI)
+        # Both candidate origins pass validatedPreviewUrl: the provider URL when
+        # the sandbox is provisioned, the configured stable name when it is used.
+        self.assertIn("sandboxOrigin: validatedPreviewUrl(previewUrl)", PREVIEW_PROVIDERS)
         self.assertIn(
-            "const origin = input.publicOrigin ? validatedPreviewUrl(input.publicOrigin) : sandboxOrigin;",
+            "const origin = input.publicOrigin ? validatedPreviewUrl(input.publicOrigin) : provisioned.sandboxOrigin;",
             PREVIEW_PROVIDERS,
         )
         # The provider origin is always reported, because whatever serves the
         # stable name has to be told which sandbox to send traffic to.
-        self.assertIn("sandboxOrigin,", PREVIEW_PROVIDERS)
+        self.assertIn("sandboxOrigin: provisioned.sandboxOrigin,", PREVIEW_PROVIDERS)
 
     def test_only_the_edge_port_is_published_and_the_gateway_stays_internal(self):
         # OLD: LLM_GATEWAY_PROXY_TARGET http://127.0.0.1:8090, an API container
@@ -382,7 +373,7 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         # values land in one 0600 file inside the sandbox.
         self.assertIn("export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [", PREVIEW_STACK)
         for name in (
-            "'DAYTONA_API_KEY',",
+            "'PLATINUM_API_KEY',",
             "'KE2E_STRIPE_SECRET_KEY',",
             "'KE2E_STRIPE_WEBHOOK_SECRET',",
             "'KORTIX_GITHUB_APP_ID',",
@@ -390,7 +381,7 @@ class PreviewRuntimeIsolation(unittest.TestCase):
             "'KORTIX_GITHUB_APP_SLUG',",
             "'MANAGED_GIT_GITHUB_INSTALL_ID',",
             "'MANAGED_GIT_GITHUB_OWNER',",
-            "'OPENROUTER_API_KEY',",
+            "'PLATINUM_INFERENCE_API_KEY',",
         ):
             self.assertIn(name, PREVIEW_STACK)
         self.assertIn("preview runtime secret is not allowlisted", PREVIEW_STACK)
@@ -453,21 +444,13 @@ class PreviewTeardown(unittest.TestCase):
 
         # OLD: aws ecs delete-service / elbv2 delete-rule / delete-target-group
         # / ecs deregister-task-definition removed the four ECS resources.
-        # NEW: one sandbox holds the whole stack, so teardown deletes it on both
-        # providers and refuses to touch a sandbox it does not own.
+        # NEW: one sandbox holds the whole stack, so teardown deletes it on
+        # Platinum and refuses to touch a sandbox it does not own.
         teardown_action = cli_action("teardown")
         # Both shapes are deleted, and either key alone is enough: the PR-named
         # sandbox when a number is known, the branch-named one when a branch is.
         self.assertIn("...(prNumber === undefined ? {} : { prNumber }),", teardown_action)
         self.assertIn("...(branchEnv ? { branchEnv } : {}),", teardown_action)
-        # Daytona only ever holds the EPHEMERAL shape — a branch environment is
-        # pinned to Platinum — and its teardown is keyed by pull request number,
-        # so a branch-only teardown has nothing to ask it for.
-        self.assertIn(
-            "prNumber === undefined ? Promise.resolve(0) : teardownDaytonaPreview({ ...daytona, prNumber })",
-            teardown_action,
-        )
-        self.assertIn("refused to delete unowned Daytona sandbox", PREVIEW_PROVIDERS)
         self.assertIn("sandbox.metadata?.owner === 'kortix-preview' &&", PREVIEW_PROVIDERS)
         self.assertIn("Mark GitHub deployment inactive", teardown)
         self.assertNotIn("branch-scoped Vercel", WORKFLOW)
@@ -536,9 +519,6 @@ class PreviewTeardown(unittest.TestCase):
             "reconcilePlatinumPreviews({ ...platinum, activePullRequests: active, liveBranchSandboxNames })",
             reconcile_action,
         )
-        self.assertIn(
-            "reconcileDaytonaPreviews({ ...daytona, activePullRequests: active })", reconcile_action
-        )
         self.assertIn("selectStalePreviewSandboxIds", PREVIEW_CORE)
         # Both owners are reaped, by different rules, because they are identified
         # by different things. An EPHEMERAL preview is built for exactly one
@@ -564,11 +544,6 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn("auto_delete_days: identity.autoDeleteDays,", PREVIEW_PROVIDERS)
         self.assertIn("autoArchiveDays: 7,", PREVIEW_CORE)
         self.assertIn("autoDeleteDays: 7,", PREVIEW_CORE)
-        # The Daytona 7-day intervals (autoArchiveInterval/autoDeleteInterval
-        # 10_080) went with the Daytona deploy in fad008f63c (#7482). Sandboxes
-        # created before it keep them and the Daytona reconcile above still
-        # sweeps them; nothing may create a new Daytona sandbox without them.
-        self.assertNotIn("createDaytonaSandbox(", PREVIEW_PROVIDERS)
         # A branch environment carries NO provider expiry — it is retired by the
         # `preview` label coming off or by its BRANCH being deleted, and nothing
         # else. Teardown must therefore know the branch, or the box outlives
