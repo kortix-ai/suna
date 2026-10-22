@@ -23,7 +23,11 @@
  *   move the cursor back. A mode change starts a new pass.
  * - Passes. `write` starts a new pass after each one (the worker waits an hour);
  *   it selects only sessions without a log, so every pass retries the failures
- *   of the last one and is cheap once the queue is empty. `dry` runs one pass per
+ *   of the last one. A pass that selects nothing sets `drained`: no read serves
+ *   the mirror and nothing writes it (P8.2), so the queue stays empty and every
+ *   later tick, in any mode, does nothing and reads no mirror table. A restore of
+ *   a deleted session that could not convert clears it (`reopenSessionLogBackfill`).
+ *   `dry` runs one pass per
  *   build (`KORTIX_COMMIT`): after its summary it does nothing until the mode or
  *   the build changes, because each dry pass reads and converts every old
  *   mirror. A skipped dry tick says so once per process at info. Run it again on
@@ -58,6 +62,12 @@
  *   (`session-log-v1.test.ts`: parsed JSON, keys sorted, rows as a multiset):
  *   `roundtrip_mismatch_sessions` and `roundtrip_mismatch_messages`. The compare is on the
  *   converted log before the F3 offload; the v1 read rehydrates offloaded texts.
+ * - On a read (P8.2). The log reads (`session-log-read.ts`) call `convertMirrorOnRead` for a
+ *   session with no log: while the mirror is not `drained`, the same capped conversion runs
+ *   then, so a self-hosted upgrade serves its old sessions before its pass reaches them. A
+ *   mirror over the cap throws `SessionLogConvertingError` (`GET …/log` answers 503
+ *   `session_log_converting`); this pass's thread converts it. Once drained, a read of a
+ *   session with no log (a new session before its first journal batch) reads no mirror table.
  * - Logs. One info line of counts per tick that converted anything, one summary
  *   per pass. No session id or content above debug. A `write` pass while
  *   `SESSION_LOG_INGEST_ENABLED` is off skips every session: one warning per pass.
@@ -135,6 +145,8 @@ export type BackfillState = {
   threadStarted: string | null;
   /** Per session: threads that never answered, because their process died. Kept across passes. */
   threadCrashes: Record<string, number>;
+  /** A pass selected no session: no session has mirror rows and no log. Kept across passes and modes. */
+  drained: boolean;
 };
 
 export const newBackfillState = (mode: BackfillMode | null = null): BackfillState => ({
@@ -146,11 +158,12 @@ export const newBackfillState = (mode: BackfillMode | null = null): BackfillStat
   dryDone: false,
   threadStarted: null,
   threadCrashes: {},
+  drained: false,
 });
 
-/** A new pass in `state`: everything but `threadCrashes` starts over. */
+/** A new pass in `state`: everything but `threadCrashes` and `drained` starts over. */
 const restart = (state: BackfillState, mode: BackfillMode, extra: Partial<BackfillState> = {}) =>
-  Object.assign(state, newBackfillState(mode), { threadCrashes: state.threadCrashes }, extra);
+  Object.assign(state, newBackfillState(mode), { threadCrashes: state.threadCrashes, drained: state.drained }, extra);
 
 /** Thread attempts per session: a thread that kills its process twice never starts again. */
 export const THREAD_ATTEMPTS = 2;
@@ -205,6 +218,47 @@ async function saveState(state: BackfillState, rev: number): Promise<boolean> {
     .onConflictDoUpdate({ target: sessionLogBackfillState.id, set: { state, rev: rev + 1, updatedAt: sql`now()` }, setWhere: eq(sessionLogBackfillState.rev, rev) })
     .returning({ id: sessionLogBackfillState.id });
   return saved.length > 0;
+}
+
+/**
+ * The mirror is drained (a pass selected no session). One read of the state row; no mirror table.
+ * Not memoized: `reopenSessionLogBackfill` on any replica clears it.
+ */
+async function mirrorDrained(): Promise<boolean> {
+  const [row] = await db
+    .select({ drained: sql<boolean | null>`(${sessionLogBackfillState.state} ->> 'drained')::boolean` })
+    .from(sessionLogBackfillState)
+    .where(eq(sessionLogBackfillState.id, STATE_ID));
+  return row?.drained === true;
+}
+
+/** A restore of a deleted session (the pass skips deleted ones) left a mirror without a log: the next pass converts it. */
+export async function reopenSessionLogBackfill(): Promise<void> {
+  await db
+    .update(sessionLogBackfillState)
+    .set({ state: sql`jsonb_set(${sessionLogBackfillState.state}, '{drained}', 'false')`, rev: sql`${sessionLogBackfillState.rev} + 1`, updatedAt: sql`now()` })
+    .where(eq(sessionLogBackfillState.id, STATE_ID));
+}
+
+/** A read found a mirror over the capture's size cap and no log: the backfill's thread converts it. */
+export class SessionLogConvertingError extends Error {
+  readonly code = 'session_log_converting';
+  constructor() {
+    super('This session\'s saved history is being converted; try again in a minute');
+    this.name = 'SessionLogConvertingError';
+  }
+}
+
+/**
+ * Before a log read answers "no log" (P8.2): convert the session's v1 mirror now, capped, unless
+ * the mirror is drained. True when a log was written, so the read reads again. Throws
+ * `SessionLogConvertingError` for a mirror over the cap.
+ */
+export async function convertMirrorOnRead(sessionId: string): Promise<boolean> {
+  if (await mirrorDrained()) return false;
+  const result = await writeSessionLogFromMirror(sessionId);
+  if (result.outcome === 'too_large') throw new SessionLogConvertingError();
+  return result.outcome === 'written';
 }
 
 /** The next sessions to convert: after the cursor, oldest first. */
@@ -347,6 +401,8 @@ export async function backfillSessionLogs(
     logger.warn('[session-log] backfill conversion thread ended with its process; its session counts failed', { attempts: state.threadCrashes[crashed], max_attempts: THREAD_ATTEMPTS });
     logger.debug('[session-log] backfill conversion thread ended with its process', { sessionId: crashed });
   }
+  // Nothing left to convert, in any mode: no mirror table is read.
+  if (state.drained) return { more: false, counts };
   // A new mode, or a dry pass that an older build ended, starts a new pass.
   if (state.mode !== mode || (state.dryDone && state.dryCommit !== config.KORTIX_COMMIT)) restart(state, mode);
   if (state.dryDone) {
@@ -408,8 +464,11 @@ export async function backfillSessionLogs(
   addCounts(state.totals, counts);
   if (counts.sessions > 0) logger.info('[session-log] backfill tick', { mode, ...counts, more, ms: Date.now() - started });
   const summary = !more && state.totals.sessions > 0 ? { mode, ...state.totals } : null;
-  if (!more) restart(state, mode, mode === 'dry' ? { dryDone: true, dryCommit: config.KORTIX_COMMIT } : {});
+  // A whole pass that selected no session: the mirror holds nothing to convert.
+  const drained = !more && state.totals.sessions === 0;
+  if (!more) restart(state, mode, mode === 'dry' ? { dryDone: true, dryCommit: config.KORTIX_COMMIT, drained } : { drained });
   if (!options.state && !(await saveState(state, rev))) logger.warn('[session-log] backfill state changed under this tick; its cursor is not saved', { mode });
   else if (summary) logger.info('[session-log] backfill pass complete', summary);
+  else if (drained && !options.state) logger.info('[session-log] backfill: the v1 mirror holds no session without a log; the backfill stops');
   return { more, counts };
 }

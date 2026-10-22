@@ -34,7 +34,7 @@ const bucket = fakeSessionStorage();
 const realSupabase = await import('../shared/supabase');
 mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => ({ storage: bucket.storage }) }));
 
-const { backfillSessionLogs, roundTripMismatches, newBackfillState, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
+const { backfillSessionLogs, convertMirrorOnRead, reopenSessionLogBackfill, roundTripMismatches, newBackfillState, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
 const { writeSessionLogFromMirror } = await import('../projects/session-log-capture');
 const { ingestSessionLogJournal } = await import('../projects/session-log-ingest');
 const { claimSessionLog } = await import('../projects/session-log-restore');
@@ -492,29 +492,16 @@ describe('size cap: a mirror over the capture cap is converted by the backfill i
     });
   });
 
-  test('a project with session_log off: a session that already has a log keeps its mirror captures past the cap, so its log never goes stale', async () => {
+  test('a session whose log holds a message: a mirror never converts into it, however it grew', async () => {
     const session = await oldSession([plain(0), plain(1)]);
-    const setFlag = (on: boolean | null) =>
-      db.update(projects).set({ metadata: on === null ? {} : { experimental: { session_log: on } } }).where(eq(projects.projectId, project.project_id));
-    await setFlag(false);
     expect(await writeSessionLogFromMirror(session)).toMatchObject({ outcome: 'written' });
     const grown = plain(2, incompressible(6_000));
     await db.insert(sessionTranscriptMessages).values({
       sessionId: session, messageId: String(grown.info.id), runtimeSessionId: ROOT, role: String(grown.info.role), info: grown.info, parts: grown.parts,
       messageCreatedAt: new Date((grown.info.time as { created: number }).created),
     });
-    const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
-    config.SESSION_LOG_RESTORE_MAX_BYTES = 4_000;
-    try {
-      expect(await writeSessionLogFromMirror(session)).toMatchObject({ outcome: 'written' });
-      expect((await snapshot(session)).messages.map((m) => m.id)).toContain('msg_000002');
-      // With session_log on (the default) the log is the store: a mirror never converts into a log that holds a message.
-      await setFlag(null);
-      expect(await writeSessionLogFromMirror(session)).toEqual({ outcome: 'skipped' });
-    } finally {
-      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
-      await setFlag(null);
-    }
+    expect(await writeSessionLogFromMirror(session)).toEqual({ outcome: 'skipped' });
+    expect((await snapshot(session)).messages.map((m) => m.id)).not.toContain('msg_000002');
   });
 });
 
@@ -750,5 +737,67 @@ describe('display round trip: toV1(fromV1(rows)) against the stored rows', () =>
       roundtrip_mismatch_messages: 0,
     });
     expect(total(dry, 'messages')).toBeGreaterThan(0);
+  });
+});
+
+/** Run `fn` with both v1 mirror tables renamed away: any read of them throws. */
+async function withMirrorHidden<T>(fn: () => Promise<T>): Promise<T> {
+  await db.execute(sql`ALTER TABLE kortix.session_transcript_mirrors RENAME TO session_transcript_mirrors_hidden`);
+  await db.execute(sql`ALTER TABLE kortix.session_transcript_messages RENAME TO session_transcript_messages_hidden`);
+  try {
+    return await fn();
+  } finally {
+    await db.execute(sql`ALTER TABLE kortix.session_transcript_messages_hidden RENAME TO session_transcript_messages`);
+    await db.execute(sql`ALTER TABLE kortix.session_transcript_mirrors_hidden RENAME TO session_transcript_mirrors`);
+  }
+}
+
+describe('drained (P8.2): once a pass selects nothing, the mirror is never read again', () => {
+  test('a write pass that selects nothing sets drained; a later tick reads no mirror table and converts nothing; a reopen clears it', async () => {
+    const [empty] = await pass('write');
+    expect(empty!.counts.sessions).toBe(0);
+    expect((await stateRow())!.state.drained).toBe(true);
+
+    // Nothing writes the mirror after P8.2; a restored deleted session is the one way a mirror-only session reappears.
+    const late = await oldSession([plain(0), plain(1)]);
+    await withMirrorHidden(async () => {
+      expect(await pass('write')).toEqual([{ more: false, counts: expect.objectContaining({ sessions: 0 }) }]);
+      expect(await pass('dry')).toEqual([{ more: false, counts: expect.objectContaining({ sessions: 0 }) }]);
+    });
+    expect(await hasLog(late)).toBe(false);
+
+    await reopenSessionLogBackfill();
+    expect((await stateRow())!.state.drained).toBe(false);
+    const ticks = await pass('write');
+    expect(total(ticks, 'logs')).toBe(1);
+    expect(await hasLog(late)).toBe(true);
+    // The pass found work, so it is not drained; the next one finds none and is.
+    expect((await stateRow())!.state.drained).toBe(false);
+    await pass('write');
+    expect((await stateRow())!.state.drained).toBe(true);
+  });
+
+  test('a read of a session without a log converts its mirror while not drained, and touches no mirror table once drained', async () => {
+    const old = await oldSession([plain(0), plain(1)]);
+    expect(await convertMirrorOnRead(old)).toBe(true);
+    expect(await hasLog(old)).toBe(true);
+    // Already a log: the conversion is skipped.
+    expect(await convertMirrorOnRead(old)).toBe(false);
+    await db.delete(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, old));
+
+    await pass('write');
+    expect((await stateRow())!.state.drained).toBe(true);
+    const fresh = await seedSession(project, OWNER);
+    // Not drained, the conversion reads the mirror (and fails without it); drained, it never does.
+    const warn = spyOn(logger, 'warn');
+    try {
+      await withMirrorHidden(async () => {
+        expect(await convertMirrorOnRead(fresh)).toBe(false);
+      });
+      // A read of a hidden table would fail inside the converter, which logs it and answers false.
+      expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('capture write failed'))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
