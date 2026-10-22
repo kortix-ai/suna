@@ -15,8 +15,7 @@ import { useEffect, useRef, useState } from 'react';
  * wake needs attention. Opening a session wakes its computer in the background,
  * and a send goes out as soon as it is up, so a routine wake has nothing to
  * say. Two states speak: an escalation or retry note from the server, and a
- * wake stuck past `STUCK_AFTER_MS` that the caller may restart. A screen reader
- * still hears that the session is starting.
+ * wake stuck past `STUCK_AFTER_MS` that the caller may restart.
  *
  * All the heavy lifting (provision / wake / runtime readiness) is server-side
  * behind POST /sessions/:id/start.
@@ -157,8 +156,7 @@ export function RestartFallback({
 
 /**
  * The wake's status where nothing else can paint: the side panel, a chat with
- * no runtime yet, a resume with nothing saved. A routine wake renders only the
- * screen-reader status.
+ * no runtime yet, a resume with nothing saved. A routine wake renders nothing.
  */
 export function SessionStartingLoader({
   projectId,
@@ -174,7 +172,6 @@ export function SessionStartingLoader({
   reason?: string | null;
   failure?: StartFailure;
 }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data: session } = useProjectSession(projectId, sessionId);
   const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
   const now = useNow();
@@ -183,13 +180,7 @@ export function SessionStartingLoader({
   const restartable =
     now - clockStart >= STUCK_AFTER_MS && canOfferBootRestart(session, projectId, sessionId);
 
-  if (!statusNote && !restartable) {
-    return (
-      <span role="status" className="sr-only">
-        {tI18nComplete.raw('textac4e05b19878')}
-      </span>
-    );
-  }
+  if (!statusNote && !restartable) return null;
   return (
     <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-4 sm:px-8">
       <div role="status" aria-live="polite" className="flex w-full max-w-xs items-start gap-3">

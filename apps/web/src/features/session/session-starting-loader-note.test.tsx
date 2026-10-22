@@ -148,10 +148,7 @@ describe('session starting loader treatment', () => {
   });
 
   // A routine wake is silent: no heading, no step label, no progress rail.
-  // A screen reader still hears that the session is starting.
-  test('a routine wake renders only a screen-reader status', () => {
-    const html = render(<SessionStartingLoader />);
-
-    expect(html).toBe('<span role="status" class="sr-only">Starting your session</span>');
+  test('a routine wake renders nothing', () => {
+    expect(render(<SessionStartingLoader />)).toBe('');
   });
 });
