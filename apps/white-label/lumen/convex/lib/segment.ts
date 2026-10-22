@@ -100,11 +100,21 @@ export function segment(pages: string[]): Segment[] {
 
 const attr = (s: string) => s.replace(/["\n]/g, "'").slice(0, 120);
 
+/** Document text with every HTML comment marker removed, repeated until none re-forms (`<!<!---->`). */
+function stripCommentMarks(text: string): string {
+  let out = text;
+  for (let prev = ""; prev !== out; ) {
+    prev = out;
+    out = out.replace(/<!--|--!?>/g, "");
+  }
+  return out;
+}
+
 /** Text/<docId>.md: one anchor comment before every paragraph. */
 export function renderText(docId: string, filename: string, pages: number, paras: Segment[]): string {
   const head = `<!-- lumen:doc id=${docId} file="${attr(filename)}" pages=${pages} -->`;
   const body = paras.map(
-    (p) => `<!-- lumen:a p=${p.page} n=${p.para}${p.heading ? ` h="${attr(p.heading)}"` : ""} -->\n${p.text.replace(/<!--|-->/g, "")}`,
+    (p) => `<!-- lumen:a p=${p.page} n=${p.para}${p.heading ? ` h="${attr(p.heading)}"` : ""} -->\n${stripCommentMarks(p.text)}`,
   );
   return `${[head, ...body].join("\n\n")}\n`;
 }

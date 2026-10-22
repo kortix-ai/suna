@@ -1187,6 +1187,7 @@ export function ShowCarousel({
 
   return (
     <div
+      role="group"
       className={cn('outline-none', fill && 'flex h-full flex-col')}
       // -1: a click on the content focuses the card, so ←/→ page it next,
       // without adding a Tab stop. Tab still reaches the chevrons inside.

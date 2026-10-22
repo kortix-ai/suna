@@ -34,6 +34,11 @@ export function bindAccountCapture(accountId: string) {
       get: () => C.getCapturePolicy(accountId),
       set: (policy: C.CapturePolicy) => C.setCapturePolicy(accountId, policy),
     },
+    /** Where the account keeps its recordings: the managed store, or its own S3 bucket (IAM `capture.manage`). */
+    storage: {
+      get: () => C.getCaptureStorage(accountId),
+      set: (input: C.CaptureStorageInput) => C.setCaptureStorage(accountId, input),
+    },
     timeline: {
       get: (query?: C.CaptureWindowQuery) => C.getCaptureTimeline(accountId, query),
       items: (query?: C.CaptureWindowQuery) => C.getCaptureTimelineItems(accountId, query),

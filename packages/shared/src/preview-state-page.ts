@@ -182,16 +182,31 @@ export function previewStatePage(input: {
 
   // Reload quietly every 3 s, up to 40 times. No countdown: a line that
   // re-renders every second reads as noise on a page whose job is to wait.
+  //
+  // The count survives the reload in `sessionStorage`, or in `window.name` when
+  // storage throws: the session preview pane frames this page with an opaque
+  // origin (no `allow-same-origin`), where touching `sessionStorage` is a
+  // SecurityError. Unguarded, that error killed the script before it scheduled
+  // a single reload, and only a manual Refresh recovered (KRTX-3015).
   const retryScript = copy.autoRetry
     ? `
     (function () {
       var KEY = 'kortix-preview-retries';
       var MAX = 40, DELAY = 3000;
-      var n = parseInt(sessionStorage.getItem(KEY) || '0', 10) || 0;
+      function read() {
+        try { return sessionStorage.getItem(KEY); } catch (e) {}
+        var m = /^kortix-preview-retries:(\\d+)$/.exec(window.name || '');
+        return m ? m[1] : null;
+      }
+      function write(v) {
+        try { sessionStorage.setItem(KEY, v); return; } catch (e) {}
+        try { window.name = KEY + ':' + v; } catch (e) {}
+      }
+      var n = parseInt(read() || '0', 10) || 0;
       var btn = document.getElementById('retry');
       var load = document.getElementById('load');
       if (btn) btn.addEventListener('click', function () {
-        sessionStorage.setItem(KEY, '0'); location.reload();
+        write('0'); location.reload();
       });
       if (n >= MAX) {
         if (load) load.hidden = true;
@@ -207,7 +222,7 @@ export function previewStatePage(input: {
         return;
       }
       setTimeout(function () {
-        sessionStorage.setItem(KEY, String(n + 1));
+        write(String(n + 1));
         location.reload();
       }, DELAY);
     })();`

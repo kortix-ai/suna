@@ -24,7 +24,7 @@
  * degraded leg all keep working.
  *
  * CONTROL PLANE ONLY — no sandbox hop, ever. The transcript comes from the
- * durable MIRROR (a DB read), never from the box; readiness stays the job of
+ * session log (a DB read), never from the box; readiness stays the job of
  * `POST .../start`, which is the only call allowed to wake anything. That is
  * what keeps this route answerable in ~one DB round trip for a stopped session
  * and stops it racing `/start` for the "is the runtime up" answer.
@@ -48,7 +48,6 @@ import { auth, errors, json } from '../../openapi';
 import { createRoute, z, type RouteHandler } from '@hono/zod-openapi';
 
 import { accountHasEntitlement, accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
@@ -155,7 +154,6 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     // `GET .../sessions/:sessionId` applies, for the same reason.
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
-    const logEnabled = resolveFeatureFlag(loaded.row.metadata, 'session_log');
     const userId = c.get('userId') as string;
 
     // Captured BEFORE the fan-out: every leg is a snapshot no fresher than the
@@ -240,12 +238,10 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           ...sessionApprovalVerdict(c, loaded, projectId, visible.row),
         });
       })(),
-      // = `GET .../log`, the first page of the root thread, only with the
-      // `session_log` flag on. Same window as the transcript leg; `?transcript=0`
-      // reads the pointer only (session, generation, threads, no messages).
-      logEnabled
-        ? readSessionLogPage({ sessionId, threadId: null, beforeSeq: null, limit: transcriptLimit.value })
-        : Promise.resolve(undefined),
+      // = `GET .../log`, the first page of the root thread. Same window as the
+      // transcript leg; `?transcript=0` reads the pointer only (session,
+      // generation, threads, no messages).
+      readSessionLogPage({ sessionId, threadId: null, beforeSeq: null, limit: transcriptLimit.value }),
       // The person's pin and archive, as the read by id serves them (KRTX-2418).
       personId ? loadSessionUserStates([sessionId], personId) : Promise.resolve(null),
       readSessionConversationModels([sessionId]),
@@ -313,10 +309,8 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
             }
           : failed(queue.reason),
 
-      // = GET .../transcript?shape=sync — the durable mirror, attachment bytes
-      // already stripped by the capture; with `session_log` on, `toV1` of the
-      // session log, never the mirror (an SDK that does not know the flag yet
-      // still asks `transcript=40` and paints this window). `null` when `?transcript=0` asked for
+      // = GET .../transcript?shape=sync — `toV1` of the session log (an SDK
+      // that reads v1 still asks `transcript=40` and paints this window). `null` when `?transcript=0` asked for
       // the pointer only; the session projection above still names the OpenCode
       // root, which is the identity a client needs to trust its own store.
       transcript:
@@ -361,14 +355,11 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           ? { known: true as const, ...audit.value }
           : failed(audit.reason),
 
-      // = `GET .../log` (P4.2). Absent with the `session_log` flag off.
-      // `page: null`: the session has no stored log yet.
-      ...(logEnabled && {
-        log:
-          log.status === 'fulfilled'
-            ? { known: true as const, page: typeof log.value === 'object' ? log.value : null }
-            : failed(log.reason),
-      }),
+      // = `GET .../log` (P4.2). `page: null`: the session has no stored log yet.
+      log:
+        log.status === 'fulfilled'
+          ? { known: true as const, page: typeof log.value === 'object' ? log.value : null }
+          : failed(log.reason),
     });
   };
 

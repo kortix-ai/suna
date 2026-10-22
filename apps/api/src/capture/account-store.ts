@@ -49,7 +49,17 @@ function stsFor(s: S3Config): STSClient {
   // task role) is used to assume it. A static endpoint override targets a
   // MinIO/S3-compatible STS; AWS uses the regional default.
   const endpoint = s.endpoint.trim();
-  return new STSClient({ region: regionOf(s), ...(endpoint && !endpoint.includes('amazonaws.com') ? { endpoint } : {}) });
+  return new STSClient({ region: regionOf(s), ...(endpoint && !isAwsHost(endpoint) ? { endpoint } : {}) });
+}
+
+/** Whether `endpoint`'s HOST is AWS (a substring match would accept any URL that merely mentions it). */
+function isAwsHost(endpoint: string): boolean {
+  try {
+    const host = new URL(endpoint.includes('://') ? endpoint : `https://${endpoint}`).hostname.toLowerCase();
+    return host === 'amazonaws.com' || host.endsWith('.amazonaws.com');
+  } catch {
+    return false;
+  }
 }
 
 /** The `credentials` for the server's own ObjectStore: static keys, or a refreshing AssumeRole provider. */

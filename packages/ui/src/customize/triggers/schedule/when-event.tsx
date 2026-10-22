@@ -516,7 +516,7 @@ function EventSettings({
   onChange: (next: ConfigDraft) => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const [open, setOpen] = useState(fields.some((f) => f.required && f.kind !== 'boolean'));
+  const [open, setOpen] = useState(() => fields.some((f) => f.required && f.kind !== 'boolean'));
   const hasProblem = Object.keys(errors).length > 0;
   return (
     <Disclosure className="group" open={open || hasProblem} onOpenChange={setOpen}>

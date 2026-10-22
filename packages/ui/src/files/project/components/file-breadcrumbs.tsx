@@ -61,6 +61,7 @@ function BreadcrumbSegments({
       {/* Home / root */}
       <button
         onClick={onHomeClick}
+        aria-label={tI18nComplete.raw('text3a78695388b3')}
         className={cn(
           'flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1 transition-colors',
           'hover:bg-muted',

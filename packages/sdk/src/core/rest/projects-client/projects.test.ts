@@ -1014,7 +1014,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'event_triggers',
     'warm_sessions',
     'notification_center',
-    'session_log',
     'session_log_restore',
     'volumes',
     'connectors_v2',
@@ -1114,8 +1113,8 @@ test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () =>
 
 test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
   const managed: FeatureFlagView = {
-    key: 'session_log',
-    name: 'Session log',
+    key: 'session_log_restore',
+    name: 'Session log restore',
     description: 'x',
     stability: 'experimental',
     available: true,

@@ -996,6 +996,7 @@ export function SqliteRenderer({
               {tableSearch && (
                 <button
                   onClick={() => setTableSearch('')}
+                  aria-label={tHardcodedUi.raw('i18nComplete.text83b12c2216ef')}
                   className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer"
                 >
                   <X className="h-3 w-3" />
@@ -1109,6 +1110,7 @@ export function SqliteRenderer({
                     {searchTerm && (
                       <button
                         onClick={() => setSearchTerm('')}
+                        aria-label={tHardcodedUi.raw('i18nComplete.text83b12c2216ef')}
                         className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer"
                       >
                         <X className="h-3 w-3" />
@@ -1464,13 +1466,14 @@ export function SqliteRenderer({
       {/* ── Cell expansion overlay ───────────────────────────────────── */}
       {expandedCell && (
         <div
+          role="presentation"
           className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-6 backdrop-blur-[2px]"
-          onClick={() => setExpandedCell(null)}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setExpandedCell(null);
+            else e.stopPropagation();
+          }}
         >
-          <div
-            className="bg-background border-border/60 flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-md border shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="bg-background border-border/60 flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-md border shadow-xl">
             {/* Header */}
             <div className="flex items-center justify-between border-b px-4 py-2.5">
               <div className="flex min-w-0 items-center gap-2">

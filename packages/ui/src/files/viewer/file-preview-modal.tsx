@@ -628,6 +628,7 @@ export function FilePreviewModal({
         data-file-preview-overlay=""
         className="animate-in fade-in-0 pointer-events-auto fixed inset-0 bg-black/50 backdrop-blur-sm duration-normal"
         style={{ zIndex: dialogOverlayZ(dialogDepth) }}
+        aria-hidden="true"
         onClick={embedded ? () => setExpanded(false) : onClose}
       />
       <div

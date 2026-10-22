@@ -4,6 +4,9 @@ import { logger } from '../lib/logger';
 import { assertLlmBillingActive, authorizeRequest } from './hooks';
 import { resolveCandidates } from './resolution/resolve-candidates';
 import { resolveGatewayRoute } from './routing';
+import { getProjectRoutingPolicy } from '../repositories/project-routing-policies';
+import { getProjectGatewayResolution } from '../repositories/project-model-access';
+import { withRequestMemo } from '../shared/request-memo';
 
 export function resolutionErrorBody(err: GatewayResolutionError) {
   return { code: err.code, message: err.message, suggestion: err.suggestion, retryAfterSeconds: err.retryAfterSeconds, restSeconds: err.restSeconds };
@@ -37,33 +40,65 @@ export async function billingVerdict(accountId: string) {
  * gateway calls its own route for it, so error handling stays the same. The
  * billing step runs last, so no step after the debit can fail.
  */
-export async function admitGatewayRequest(token: unknown, input: unknown) {
+export function admitGatewayRequest(token: unknown, input: unknown) {
+  return withRequestMemo(() => admit(token, input));
+}
+
+async function admit(token: unknown, input: unknown) {
   if (typeof token !== 'string' || !token) {
     return { admission: { ok: false as const, status: 401, errorCode: 'invalid_token', message: 'Invalid token' } };
   }
-  const admission = await authorizeRequest(token, { deferBilling: true });
-  if (!admission.ok) return { admission };
+  // Per-step milliseconds, returned to the gateway for its trace (never to a caller).
+  const timing: Record<string, number> = {};
+  const started = performance.now();
+  let at = started;
+  const step = (name: string) => {
+    const now = performance.now();
+    timing[name] = Math.round(now - at);
+    at = now;
+  };
+  const done = <T extends object>(body: T) => {
+    timing.total = Math.round(performance.now() - started);
+    return { ...body, timing };
+  };
+  const admission = await authorizeRequest(token, {
+    deferBilling: true,
+    timing,
+    skipDefault: true,
+    // Start the project's routing and resolution reads while the tier and the
+    // budget resolve; the route and resolve steps below reuse them (request memo).
+    onPrincipal: ({ projectId }) => {
+      if (!projectId) return;
+      void getProjectRoutingPolicy(projectId).catch(() => {});
+      void getProjectGatewayResolution(projectId).catch(() => {});
+    },
+  });
+  step('authorize');
+  if (!admission.ok) return done({ admission });
   const { principal } = admission;
   const routeInput = input as ModelRouteInput;
   let route;
   try {
     route = await resolveGatewayRoute(principal, routeInput);
+    step('route');
   } catch (err) {
     logger.warn('[gateway-internal] admit: route left to the gateway', { error: err instanceof Error ? err.message : String(err) });
-    return { admission };
+    return done({ admission });
   }
   const model = route?.primaryModel || routeInput?.requestedModel || '';
   try {
     const candidates = await resolveCandidates(principal, model);
+    step('resolve');
     const billing = candidates[0] && candidates[0].billingMode !== 'none'
       ? await billingVerdict(principal.accountId)
       : undefined;
-    return { admission, route, candidates, ...(billing ? { billing } : {}) };
+    if (billing) step('billing');
+    return done({ admission, route, candidates, ...(billing ? { billing } : {}) });
   } catch (err) {
     if (err instanceof GatewayResolutionError) {
-      return { admission, route, candidates: [], resolutionError: resolutionErrorBody(err) };
+      return done({ admission, route, candidates: [], resolutionError: resolutionErrorBody(err) });
     }
     logger.warn('[gateway-internal] admit: resolution left to the gateway', { error: err instanceof Error ? err.message : String(err) });
-    return { admission, route };
+    return done({ admission, route });
   }
 }

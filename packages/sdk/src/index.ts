@@ -343,6 +343,7 @@ export type {
   ProjectCommitDetail,
   ProjectCommitFile,
   ProjectBranch,
+  ProjectBranchSession,
   // Triggers
   ProjectTrigger,
   ProjectTriggerListing,

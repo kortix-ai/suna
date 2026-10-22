@@ -21,6 +21,8 @@ import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
 import { notificationsEnabled } from '../../notifications/enabled';
 import { triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
 import { logger } from '../../lib/logger';
+import { fireGitTrigger, markGitTriggerFired } from '../lib/trigger-fire';
+import type { GitTriggerSpec } from '../triggers';
 import { serializeSession } from '../lib/serializers';
 import { sessionIsTombstoned } from '../lib/access';
 import {
@@ -285,6 +287,53 @@ export function registerSessionRemindersRoutes(): void {
       }
       const updated = await setSessionReminderEnabled(row, body.enabled, new Date());
       return c.json(serializeSessionReminder(updated));
+    },
+  );
+
+  // POST /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run
+  //
+  // Fire the reminder once now — the Retry of a failed run. The schedule does
+  // not move. A person's run is their prompt, so it acts as them.
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/reminders/{reminderId}/run',
+      tags: ['sessions'],
+      summary: 'Run a session reminder now',
+      ...auth,
+      request: { params: reminderParams },
+      responses: {
+        202: json(ReminderSchema, 'The reminder, with its prompt queued for the session'),
+        ...errors(400, 403, 404, 409),
+      },
+    }),
+    async (c: any) => {
+      const access = await authorizeReminderSession(c);
+      if ('response' in access) return access.response;
+      const { projectId, loaded, visible, agentCaller } = access;
+      const row = await getSessionReminder(projectId, access.sessionId, c.req.param('reminderId'));
+      if (!row) return c.json({ error: 'Reminder not found' }, 404);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+      const spec = row.scheduleSpec as unknown as GitTriggerSpec;
+      const now = new Date();
+      const result = await fireGitTrigger({
+        spec: agentCaller ? spec : { ...spec, reminder: { ...spec.reminder!, promptAuthorUserId: loaded.userId } },
+        project: loaded.row,
+        payload: {},
+        renderedPrompt: spec.promptTemplate,
+        source: 'manual',
+        deliberate: true,
+      });
+      // `fired`: the session had failed, so a successor session started with
+      // the reminder (fireReminderSuccessor). `queued`: the prompt waits for
+      // delivery, which sets the final status — `failed` again, or cleared.
+      if (result.status !== 'queued' && result.status !== 'fired') {
+        return c.json({ error: result.error ?? result.reason ?? 'The reminder could not run' }, 409);
+      }
+      await markGitTriggerFired(projectId, row.slug, now, 'fired', { endsAlert: result.status === 'fired' });
+      const updated = await getSessionReminder(projectId, result.sessionId ?? access.sessionId, row.slug);
+      return c.json(serializeSessionReminder(updated ?? row), 202);
     },
   );
 

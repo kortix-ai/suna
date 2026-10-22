@@ -31,7 +31,7 @@ describe('registry ↔ contract', () => {
   // Compared as sets: the registry's order is the Settings display order and is
   // deliberately independent of the contract schema's field order. Membership
   // is the invariant — a flag added to one side and not the other fails here.
-  test('the catalog covers exactly the contract key list, minus hidden flags', () => {
+  test('the catalog covers exactly the contract key list, minus hidden flags that are off', () => {
     expect(
       buildFeatureFlagCatalog({})
         .map((f) => f.key)
@@ -40,7 +40,8 @@ describe('registry ↔ contract', () => {
       [...FEATURE_FLAG_KEYS]
         .filter((key) => {
           const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === key);
-          return !def?.catalogHidden && !def?.derivedFrom;
+          // A hidden flag is listed (read-only) only while it resolves on.
+          return !def?.derivedFrom && (!def?.catalogHidden || resolveFeatureFlag({}, key));
         })
         .sort(),
     );
@@ -333,15 +334,9 @@ describe('buildFeatureFlagCatalog', () => {
  * break (d) and take the operator lever with it.
  */
 describe('catalogHidden', () => {
-  test('only internal-only surfaces are hidden: session_log (the v2 session-log rollout) and session_log_restore (the boot restore from the session log)', () => {
-    // `apps` graduated (2026-10-14): Apps is generally available.
-    expect(HIDDEN_KEYS).toEqual(['session_log', 'session_log_restore']);
-  });
-
-  test('session_log is a behavioral flag that defaults off', () => {
-    const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'session_log');
-    expect(def?.enforcement).toBe('behavioral');
-    expect(resolveFeatureFlag({}, 'session_log')).toBe(false);
+  test('only internal-only surfaces are hidden: session_log_restore (the boot restore from the session log)', () => {
+    // `apps` graduated (2026-10-14) and `session_log` (2026-10-22): neither is a flag.
+    expect(HIDDEN_KEYS).toEqual(['session_log_restore']);
   });
 
   test('session_log_restore is a behavioral flag that defaults off', () => {
@@ -367,7 +362,7 @@ describe('catalogHidden', () => {
 
     test(`${key}: (c) is absent from the catalog while off`, () => {
       // An overridden-off hidden flag must not reappear as a row someone can flip.
-      expect(buildFeatureFlagCatalog({}).map((f) => f.key)).not.toContain(key);
+      if (!resolveFeatureFlag({}, key)) expect(buildFeatureFlagCatalog({}).map((f) => f.key)).not.toContain(key);
       expect(buildFeatureFlagCatalog({ experimental: { [key]: false } }).map((f) => f.key)).not.toContain(key);
     });
 
@@ -391,11 +386,12 @@ describe('catalogHidden', () => {
     });
   }
 
-  test('every offered flag is a project flag writable by project admins (operator_only false)', () => {
+  test('every offered flag is a project flag writable by project admins (operator_only false); a hidden flag that is on is listed read-only', () => {
     for (const f of buildFeatureFlagCatalog({})) {
       expect(f.scope).toBe('project');
-      expect(f.operator_only).toBe(false);
-      expect(isOperatorOnlyFeatureFlag(f.key)).toBe(false);
+      const hidden = HIDDEN_KEYS.includes(f.key);
+      expect(f.operator_only).toBe(hidden);
+      expect(isOperatorOnlyFeatureFlag(f.key)).toBe(hidden);
     }
   });
 });

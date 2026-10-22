@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 /**
  * Streamed text reaches the client in network chunks of any size and at any
@@ -296,20 +296,14 @@ export function useStreamingCadence(
     const resume = kept && clock.now() - kept.at < RESUME_WINDOW_MS && kept.len < value.length;
     return { text: resume ? value.slice(0, kept.len) : value, streaming: active };
   });
-  const pacerRef = useRef<ReturnType<typeof createStreamPacer> | null>(null);
-  if (pacerRef.current === null) {
-    pacerRef.current = createStreamPacer(
-      (text, streaming) => setState({ text, streaming }),
-      state.text,
-      clock,
-      state.streaming,
-    );
-  }
+  const [pacer] = useState(() =>
+    createStreamPacer((text, streaming) => setState({ text, streaming }), state.text, clock, state.streaming),
+  );
 
   useEffect(() => {
-    pacerRef.current?.push(value, active);
-  }, [value, active]);
-  useEffect(() => () => pacerRef.current?.dispose(), []);
+    pacer.push(value, active);
+  }, [pacer, value, active]);
+  useEffect(() => () => pacer.dispose(), [pacer]);
   useEffect(() => {
     if (revealKey && state.streaming) rememberReveal(revealKey, state.text.length, clock.now());
   }, [revealKey, state, clock]);

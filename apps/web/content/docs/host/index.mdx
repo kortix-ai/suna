@@ -312,6 +312,16 @@ kortix self-host version                         # running, latest and channel
 
 A manual `update` uses the same rollout as the daily run. When another update holds the lock, it exits `75` and skips the rollout. A pin holds through every daily run. `init` or `update` without `--tag` moves the instance back to its channel. To change auto-update, the time or the timezone, run `kortix self-host configure`, then `kortix self-host start`.
 
+### Saved conversations after an update
+
+Since the session log release, every session's saved conversation is its session log. An instance that ran an older version also holds conversations in the older v1 store. After the update, the API converts them by itself, so you do nothing:
+
+- A background pass (`SESSION_LOG_BACKFILL`, default `write`) converts every old session, oldest first, on the leader API container. It logs `[session-log] backfill tick` with counts, and `the v1 mirror holds no session without a log` when it is done.
+- Opening an old session before the pass reaches it converts that session first.
+- A conversation over the conversion size cap (about 24 MB, `SESSION_LOG_RESTORE_MAX_BYTES`) is converted only by the background pass. Until then, its log read answers `503` `session_log_converting` with `Retry-After: 60`.
+
+`SESSION_LOG_BACKFILL=off` stops the pass. Keep it on until that line appears: the v1 store is the only copy of a conversation the pass has not converted.
+
 ## Operate and tune
 
 ### Settings and secrets

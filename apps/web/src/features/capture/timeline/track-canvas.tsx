@@ -379,6 +379,9 @@ export function TrackCanvas({
     setTip(null);
     schedule();
   };
+  const onPointerCancel = () => {
+    drag.current = null;
+  };
   const onPointerUp = (event: PointerEvent<HTMLCanvasElement>) => {
     const d = drag.current;
     drag.current = null;
@@ -405,6 +408,7 @@ export function TrackCanvas({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
         onPointerLeave={onPointerLeave}
         className="absolute inset-0 size-full cursor-grab touch-none active:cursor-grabbing"
       />

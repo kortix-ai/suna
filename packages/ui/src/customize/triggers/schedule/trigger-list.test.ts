@@ -3,7 +3,8 @@ import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '../../../test-utils/intl';
 
-import { lastRunLabel, nextRunLabel } from './trigger-list';
+import { lastRunLabel } from '../../../internal/lib/trigger-clock';
+import { nextRunLabel } from './trigger-list';
 
 const t = testUiTranslator;
 // 2026-10-17 is a Saturday.

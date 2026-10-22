@@ -1,7 +1,7 @@
 import { copySessionLog, withForkAttachmentCleanup } from '../session-log-fork';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { writeSessionLogFromMirror } from '../session-log-capture';
-import { captureSessionTranscriptMirror } from './session-transcript-capture';
+import { captureJournallessSessionLog } from './session-transcript-capture';
 import { randomUUID } from 'node:crypto';
 import { SESSION_INITIAL_CONTEXT_MAX_CHARS, SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
@@ -1683,7 +1683,7 @@ export async function createProjectSession(input: {
     if (!config.SESSION_LOG_RESTORE_ENABLED || !config.SESSION_LOG_INGEST_ENABLED) {
       return { error: { status: 503, body: { error: 'Session log restore is off' } } };
     }
-    const capture = await captureSessionTranscriptMirror(body.fork_from_session_id);
+    const capture = await captureJournallessSessionLog(body.fork_from_session_id);
     // A reachable box must provide the whole snapshot. A stopped box can use
     // its durable journal, checked again under the journal lock during copy.
     if (capture && !capture.head_complete) {

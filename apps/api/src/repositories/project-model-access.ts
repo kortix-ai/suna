@@ -1,3 +1,4 @@
+import { memoInRequest } from '../shared/request-memo';
 import { projects, projectLlmRoutingPolicies, projectSecrets } from '@kortix/db';
 import { and, eq, isNull, like, sql } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../feature-flags/registry';
@@ -19,7 +20,12 @@ export async function getProjectModelAccess(projectId: string) {
 }
 
 /** Read model access, the pooled flag and custom providers from one projects row (KRTX-586). */
-export async function getProjectGatewayResolution(projectId: string) {
+export function getProjectGatewayResolution(projectId: string) {
+  // Shared within one request: gateway admission prefetches it.
+  return memoInRequest(`gateway-resolution:${projectId}`, () => readProjectGatewayResolution(projectId));
+}
+
+async function readProjectGatewayResolution(projectId: string) {
   const [row] = await db.select({ metadata: projects.metadata }).from(projects)
     .where(eq(projects.projectId, projectId)).limit(1);
   if (!row) throw new Error('Project not found');

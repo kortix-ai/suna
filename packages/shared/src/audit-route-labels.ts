@@ -714,6 +714,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/accounts/:accountId/capture/devices/:deviceId/assets/:name': { action: 'capture.asset.read', title: 'Opened a capture screenshot', events: ['capture.member_view'] },
   'GET /v1/accounts/:accountId/capture/policy': { action: 'capture.policy.read', title: 'Viewed the capture policy' },
   'PUT /v1/accounts/:accountId/capture/policy': { action: 'capture.policy.update', title: 'Updated the capture policy' },
+  'GET /v1/accounts/:accountId/capture/storage': { action: 'capture.storage.read', title: 'Viewed the Capture storage destination' },
+  'PUT /v1/accounts/:accountId/capture/storage': { action: 'capture.storage.update', title: 'Changed the Capture storage destination' },
   'GET /v1/accounts/:accountId/capture/enrollment-tokens': { action: 'capture.enrollment_token.list', title: 'Listed capture enrollment tokens' },
   'POST /v1/accounts/:accountId/capture/enrollment-tokens': { action: 'capture.enrollment_token.create', title: 'Created a capture enrollment token' },
   'DELETE /v1/accounts/:accountId/capture/enrollment-tokens/:tokenId': { action: 'capture.enrollment_token.revoke', title: 'Revoked a capture enrollment token' },

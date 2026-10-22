@@ -25,22 +25,21 @@ export function useServerHealth(_options?: { enabled?: boolean }) {
  * git-status gate (`project?.vcs === 'git'`) continues to behave correctly.
  */
 export function useCurrentProject(_options?: { enabled?: boolean }) {
-  const data: RuntimeProjectInfo = {
-    id: 'project-files',
-    worktree: '/workspace',
-    vcs: 'git',
-    name: 'project',
-    time: { created: Date.now(), updated: Date.now() },
-    sandboxes: [],
-  };
-  return useMemo(
-    () => ({
+  return useMemo(() => {
+    const data: RuntimeProjectInfo = {
+      id: 'project-files',
+      worktree: '/workspace',
+      vcs: 'git',
+      name: 'project',
+      time: { created: Date.now(), updated: Date.now() },
+      sandboxes: [],
+    };
+    return {
       data,
       isLoading: false,
       isError: false,
       error: null as Error | null,
       refetch: async () => ({ data }) as any,
-    }),
-    [],
-  );
+    };
+  }, []);
 }

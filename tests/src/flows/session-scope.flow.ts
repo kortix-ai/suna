@@ -48,6 +48,11 @@ flow(
   },
 );
 
+type SessionBranch = {
+  name: string;
+  session?: { title: string | null; agent_name: string | null; archived: boolean; deleted: boolean };
+};
+
 type Db = {
   query<T = Record<string, unknown>>(text: string, values?: unknown[]): Promise<{ rows: T[] }>;
   end(): Promise<void>;
@@ -894,10 +899,12 @@ flow(
     const asAlice = ctx.client.as(alice);
     const asBob = ctx.client.as(bob);
     const params = { projectId: project.id };
+    const aliceTitle = 'SCOPE-10 private store work';
     const aliceSession = await createDatabaseSession(ctx.env, {
       projectId: project.id,
       accountId: team.id,
       userId: alice.userId!,
+      metadata: { custom_name: aliceTitle },
     });
     const crId = randomUUID();
     const logId = randomUUID();
@@ -907,7 +914,7 @@ flow(
     // Bob's read carries no id of Alice's private work.
     const noTrace = (r: { text(): string }, what: string) => {
       const body = r.text();
-      for (const id of [aliceSession, crId, logId, alice.userId!, reviewItemId].filter(Boolean)) {
+      for (const id of [aliceSession, aliceTitle, crId, logId, alice.userId!, reviewItemId].filter(Boolean)) {
         if (body.includes(id)) throw new Error(`${what} leaks ${id}: ${body.slice(0, 500)}`);
       }
     };
@@ -1046,15 +1053,27 @@ flow(
         }
       });
 
+      await ctx.step("Alice's branch list names her session branch by her session's title", async () => {
+        const r = await asAlice.get('/v1/projects/:projectId/branches', {
+          params,
+          query: { include_session_branches: 'true' },
+        });
+        r.status(200);
+        const label = r.json<{ branches: SessionBranch[] }>().branches.find((b) => b.name === aliceSession)?.session;
+        if (label?.title !== aliceTitle || label.archived || label.deleted) {
+          throw new Error(`Alice's branch must carry her session's title: ${r.text().slice(0, 500)}`);
+        }
+      });
+
       await ctx.step("the project owner keeps the full view: Alice's branch, change request, review item, log, spend and budget", async () => {
-        await waitFor(
+        const branches = await waitFor(
           async () => {
             const r = await owner.get('/v1/projects/:projectId/branches', {
               params,
               query: { include_session_branches: 'true' },
             });
             r.status(200);
-            return r.json<{ branches: Array<{ name: string }> }>().branches;
+            return r.json<{ branches: SessionBranch[] }>().branches;
           },
           {
             until: (branches) => branches.some((b) => b.name === aliceSession),
@@ -1063,6 +1082,12 @@ flow(
             description: "the owner's branch list carries Alice's session branch",
           },
         );
+        // The owner may not open Alice's private session, so the session list
+        // hides its title from them, and so does the branch list.
+        const label = branches.find((b) => b.name === aliceSession)?.session;
+        if (!label || label.title !== null || label.archived || label.deleted) {
+          throw new Error(`the owner's branch list must label Alice's branch without its title: ${JSON.stringify(label)}`);
+        }
         (await owner.get('/v1/projects/:projectId/change-requests/:crId', { params: { ...params, crId } })).status(200);
         (await owner.get('/v1/projects/:projectId/review/items/:reviewItemId', { params: { ...params, reviewItemId } }))
           .status(200);

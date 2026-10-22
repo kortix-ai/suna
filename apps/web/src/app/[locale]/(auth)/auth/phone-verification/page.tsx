@@ -27,7 +27,7 @@ export default function PhoneVerificationPage() {
   const t = useTranslations('auth.phoneVerification');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [factorId, setFactorId] = useState('');
+  const factorId = useRef('');
   const [challengeId, setChallengeId] = useState('');
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmittingPhone, setIsSubmittingPhone] = useState(false);
@@ -68,7 +68,7 @@ export default function PhoneVerificationPage() {
       if (verifiedPhoneFactor) {
         // User already has a verified factor - show options
         setStep('otp');
-        setFactorId(verifiedPhoneFactor.id);
+        factorId.current = verifiedPhoneFactor.id;
         setPhoneNumber(verifiedPhoneFactor.phone || '');
         setHasExistingFactor(true);
         // Don't set challengeId yet - let user choose to send code
@@ -76,7 +76,7 @@ export default function PhoneVerificationPage() {
         // No verified factor found - check for unverified factors
         const unverifiedPhoneFactor = phoneFactors.find((f) => f.status !== 'verified');
         if (unverifiedPhoneFactor) {
-          setFactorId(unverifiedPhoneFactor.id);
+          factorId.current = unverifiedPhoneFactor.id;
           setPhoneNumber(unverifiedPhoneFactor.phone || '');
           setStep('otp');
           setHasExistingFactor(true);
@@ -89,7 +89,7 @@ export default function PhoneVerificationPage() {
   const handleCreateChallengeForExistingFactor = async () => {
     try {
       const challengeResponse = await challengeMutation.mutateAsync({
-        factor_id: factorId,
+        factor_id: factorId.current,
       });
 
       setChallengeId(challengeResponse.id);
@@ -101,11 +101,11 @@ export default function PhoneVerificationPage() {
 
   const handleUnenrollFactor = async () => {
     try {
-      await unenrollMutation.mutateAsync(factorId);
+      await unenrollMutation.mutateAsync(factorId.current);
 
       // Reset state and go back to phone input
       setStep('phone');
-      setFactorId('');
+      factorId.current = '';
       setPhoneNumber('');
       setChallengeId('');
       setHasExistingFactor(false);
@@ -131,7 +131,7 @@ export default function PhoneVerificationPage() {
       });
 
       setPhoneNumber(phone);
-      setFactorId(enrollResponse.id);
+      factorId.current = enrollResponse.id;
       setChallengeId(challengeResponse.id);
       setStep('otp');
       setHasExistingFactor(false);
@@ -156,7 +156,7 @@ export default function PhoneVerificationPage() {
     try {
       // Verify the challenge with the OTP code - this will automatically invalidate caches
       await verifyMutation.mutateAsync({
-        factor_id: factorId,
+        factor_id: factorId.current,
         challenge_id: challengeId,
         code: otp,
       });
@@ -177,7 +177,7 @@ export default function PhoneVerificationPage() {
     try {
       // Create a new challenge for the enrolled factor
       const challengeResponse = await challengeMutation.mutateAsync({
-        factor_id: factorId,
+        factor_id: factorId.current,
       });
 
       setChallengeId(challengeResponse.id);

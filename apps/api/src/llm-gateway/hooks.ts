@@ -134,7 +134,12 @@ async function resolvePrincipalWithReason(
  * Kortix models are visible without a second tier lookup. When internal billing
  * is off (self-host) every account sees the full lineup.
  */
-async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrincipal> {
+async function withResolvedTier(
+  principal: AuthedPrincipal,
+  timing?: Record<string, number>,
+  options: { skipDefault?: boolean } = {},
+): Promise<AuthedPrincipal> {
+  const t0 = performance.now();
   const tiered: AuthedPrincipal = config.KORTIX_BILLING_INTERNAL_ENABLED
     ? await (async () => {
         // Both reads share the entitlements tier-snapshot cache: one DB read,
@@ -148,12 +153,17 @@ async function withResolvedTier(principal: AuthedPrincipal): Promise<AuthedPrinc
         return { ...principal, tier, freeModelsOnly: !managedModels };
       })()
     : { ...principal, freeModelsOnly: false };
+  if (timing) timing.tier_billing = Math.round(performance.now() - t0);
+  // Admission resolves the default only when the route needs it (resolve-route.ts).
+  if (options.skipDefault) return tiered;
   // Resolve the account/project/agent-configured concrete default once, here,
   // so it travels with the principal across the standalone-gateway RPC boundary.
   // Never let a resolution error break authentication for every LLM call.
   let defaultModel: string | undefined;
   try {
+    const t1 = performance.now();
     defaultModel = await resolveDefaultModelForPrincipal(tiered);
+    if (timing) timing.tier_default = Math.round(performance.now() - t1);
   } catch {
     defaultModel = undefined;
   }
@@ -233,10 +243,35 @@ export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<v
  */
 export async function authorizeRequest(
   token: string,
-  options: { deferBilling?: boolean } = {},
+  options: {
+    deferBilling?: boolean;
+    timing?: Record<string, number>;
+    /** Called as soon as the credential resolves, so a caller can start its own reads. */
+    onPrincipal?: (principal: AuthedPrincipal) => void;
+    /** Leave `defaultModel` unresolved; the route resolves it when it matters. */
+    skipDefault?: boolean;
+  } = {},
 ): Promise<AuthorizeResult> {
+  const t0 = performance.now();
   const resolved = await resolvePrincipalWithReason(token);
-  let principal = resolved.principal ? await withResolvedTier(resolved.principal) : null;
+  if (options.timing) options.timing.principal = Math.round(performance.now() - t0);
+  if (resolved.principal) options.onPrincipal?.(resolved.principal);
+  // The budget read needs only the credential's ids, not its tier: a new
+  // gateway (deferBilling) reads it while the tier resolves. The decisions
+  // below still apply in their order (401, 403, 402 budget).
+  const t2 = performance.now();
+  const earlyBudget = options.deferBilling && resolved.principal?.projectId
+    ? checkBudget(resolved.principal).then((result) => {
+      if (options.timing) options.timing.budget = Math.round(performance.now() - t2);
+      return result;
+    })
+    : null;
+  earlyBudget?.catch(() => {});
+  const t1 = performance.now();
+  let principal = resolved.principal
+    ? await withResolvedTier(resolved.principal, options.timing, { skipDefault: options.skipDefault })
+    : null;
+  if (options.timing) options.timing.tier = Math.round(performance.now() - t1);
   if (!principal) {
     // Name the SANDBOX refusal when that is what happened. "Invalid token" for
     // a valid, unexpired token whose session was parked is a wrong answer, and
@@ -289,7 +324,9 @@ export async function authorizeRequest(
       };
     }
   }
-  const { exceeded, message, crossings } = await checkBudget(principal);
+  const t3 = performance.now();
+  const { exceeded, message, crossings } = await (earlyBudget ?? checkBudget(principal));
+  if (options.timing) options.timing.budget_wait = Math.round(performance.now() - t3);
   alertBudgetCrossings(principal, crossings);
   if (exceeded) {
     // A legacy gateway can have a hold here. It refunds the hold when it sees

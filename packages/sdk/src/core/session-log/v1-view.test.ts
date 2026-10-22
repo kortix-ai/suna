@@ -3,7 +3,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Message, Part } from '../runtime/runtime-types';
 import { EMPTY_SESSION_LOG_STATE, applySessionLogEvent, applySessionLogPage, selectSessionLogThread, type SessionLogState } from './store';
-import type { SessionLog } from './types';
+import { normalizeShellExits } from './shell-exit';
+import type { SessionLog, SessionLogMessage } from './types';
 import { fromV1, toV1, type V1Transcript } from './v1';
 import { sessionLogOfV1Rows, sessionLogRowsFor, sessionLogThreadWithV1Rows, type V1MessageRow } from './v1-view';
 import { sessionLogTurns } from './turns';
@@ -35,13 +36,19 @@ function stateOf(log: SessionLog): SessionLogState {
 const rowsOfV1 = (v1: V1Transcript): V1MessageRow[] => v1.rows.map((r) => ({ info: r.info as unknown as Message, parts: r.parts as unknown as Part[] }));
 const ev = (type: string, properties: unknown) => ({ type, properties });
 const NONE: V1MessageRow[] = [];
+/** A thread as the store holds it. */
+const storedThread = <T extends { messages: SessionLogMessage[] }>(thread: T): T => ({
+  ...thread,
+  messages: thread.messages.map(normalizeShellExits),
+});
 
 describe('sessionLogRowsFor: the v1 rows of a v2 thread', () => {
   for (const [name, native] of fixtures) {
     test(`${name}: a native thread (no kortix.transcript.v1 ext, as pi writes) reads as toV1 of that thread, by its thread id`, () => {
       const logs = { kses_1: stateOf(native) };
       for (const thread of native.threads) {
-        const expected = rowsOfV1(toV1({ ...native, threads: [thread] }));
+        // The store holds a shell command that exited non-zero as completed (KRTX-3021).
+        const expected = rowsOfV1(toV1({ ...native, threads: [storedThread(thread)] }));
         expect(sessionLogRowsFor(logs, thread.thread_id, NONE)).toEqual(expected);
       }
     });
@@ -49,7 +56,7 @@ describe('sessionLogRowsFor: the v1 rows of a v2 thread', () => {
       const log = asV1Threads(native);
       const logs = { kses_1: stateOf(log) };
       for (const thread of log.threads) {
-        const expected = rowsOfV1(toV1({ ...log, threads: [thread] }));
+        const expected = rowsOfV1(toV1({ ...log, threads: [storedThread(thread)] }));
         expect(sessionLogRowsFor(logs, thread.thread_id, NONE)).toEqual(expected);
       }
     });

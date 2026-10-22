@@ -23,7 +23,7 @@ import {
   MagnifyingGlassIcon as Search,
 } from '@phosphor-icons/react';
 import { useTranslations } from '../../../i18n';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 /** Varied so the placeholder reads as a list of names, not a barcode. */
 const SKELETON_WIDTHS = ['w-3/5', 'w-2/5', 'w-1/2', 'w-3/4', 'w-1/3'];
@@ -79,15 +79,16 @@ function SearchPicker({
     ? options.filter((option) => option.keywords.includes(normalizedSearch))
     : options;
 
-  useEffect(() => {
-    if (!open) {
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) {
       setSearch('');
       onSearchChange?.('');
     }
-  }, [onSearchChange, open]);
+  };
 
   return (
-    <Popover open={open} onOpenChange={setOpen} modal={false}>
+    <Popover open={open} onOpenChange={handleOpenChange} modal={false}>
       <PopoverTrigger asChild>
         {/* The same field trigger as every Select on the form (Git account,
             Account): surface, height, caret, and the open-state ring. Radix's
@@ -192,7 +193,7 @@ function SearchPicker({
                     )}
                     onClick={() => {
                       onValueChange(option.value);
-                      setOpen(false);
+                      handleOpenChange(false);
                     }}
                   >
                     <span className="flex min-w-0 flex-1 flex-col">
