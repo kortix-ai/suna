@@ -1252,6 +1252,9 @@
     "expiredBody": "Pide a la persona que te invitó que te envíe una nueva.",
     "wrongAccountTitle": "Cambia de cuenta",
     "wrongAccountBody": "Esta invitación es para otra cuenta. Iniciaste sesión como {{email}}.",
+    "directoryTitle": "Inicia sesión con inicio de sesión único",
+    "directoryBody": "El directorio de tu organización te añadió a esta cuenta. Abre esta invitación en un navegador e inicia sesión con el inicio de sesión único de tu organización, o pide a un administrador de la cuenta que reenvíe la invitación.",
+    "ssoDomainUnverifiedBody": "Tu proveedor de inicio de sesión único no ha verificado el dominio de este correo. Cierra sesión y vuelve a iniciarla con tu correo electrónico para usar esta invitación.",
     "signOutAndContinue": "Cerrar sesión y continuar",
     "backToProjects": "Volver a los proyectos"
   },

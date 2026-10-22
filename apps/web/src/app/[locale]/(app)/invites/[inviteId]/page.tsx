@@ -21,6 +21,8 @@ import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-prim
 import { useAuth } from '@/features/providers/auth-provider';
 import { inviteLandingPath } from '@kortix/ui/workspace/project-selector/project-selector-model';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
+import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
+import { authRedirectUrl } from '@kortix/ui/internal/lib/desktop';
 import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
 import {
@@ -115,6 +117,21 @@ export default function InvitePage() {
     },
   });
 
+  // A directory invite on an instance that cannot prove the address: the
+  // account's own IdP can. Found by provider id, because the address's domain
+  // may not be the IdP's (a guest from another company).
+  const ssoMutation = useMutation({
+    mutationFn: async (providerId: string) => {
+      const callback = `/auth/callback?${new URLSearchParams({ returnUrl: `/invites/${inviteId}` })}`;
+      const { data, error } = await createBrowserSupabaseClient().auth.signInWithSSO({
+        providerId,
+        options: { redirectTo: authRedirectUrl(callback), skipBrowserRedirect: true },
+      });
+      if (error || !data?.url) throw error ?? new Error('Single sign-on is not available.');
+      window.location.href = data.url;
+    },
+  });
+
   useEffect(() => {
     const item = inviteQuery.data;
     const inv = item?.invite;
@@ -158,6 +175,50 @@ export default function InvitePage() {
   // Wrong-account check first: the server redacts identifying fields in this
   // case, and checking expiry before this would leak "this invite exists and
   // expired" to someone who shouldn't know it exists at all.
+  // The caller holds the address, but this instance cannot prove it (no email
+  // provider) and nobody shared the invite: the directory pushed it.
+  if (!invite.email_matches_caller && invite.reason === 'email_unconfirmed') {
+    const providerId = invite.sso_provider_id;
+    const ssoError = ssoMutation.error instanceof Error ? ssoMutation.error.message : null;
+    return (
+      <AuthFrame footerVariant="none">
+        <Rise>
+          <StepHeader
+            title={
+              providerId
+                ? tHardcodedUi.raw('appInvitesInviteidPage.ssoTitle')
+                : tHardcodedUi.raw('appInvitesInviteidPage.askAdminTitle')
+            }
+            description={
+              providerId
+                ? tHardcodedUi.raw('appInvitesInviteidPage.ssoDescription')
+                : tHardcodedUi.raw('appInvitesInviteidPage.askAdminDescription')
+            }
+          />
+        </Rise>
+        <Rise delay={0.06} className="space-y-3">
+          {ssoError ? <ErrorStrip message={ssoError} /> : null}
+          {providerId ? (
+            <Button
+              type="button"
+              size="lg"
+              className="w-full"
+              onClick={() => ssoMutation.mutate(providerId)}
+              disabled={ssoMutation.isPending}
+              aria-busy={ssoMutation.isPending || undefined}
+            >
+              {ssoMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+              {tHardcodedUi.raw('appInvitesInviteidPage.ssoContinue')}
+            </Button>
+          ) : null}
+          <HomeAction href={homeHref}>
+            {tHardcodedUi.raw('appInvitesInviteidPage.line132JsxTextBackToProjects')}
+          </HomeAction>
+        </Rise>
+      </AuthFrame>
+    );
+  }
+
   if (!invite.email_matches_caller) {
     return (
       <AuthFrame footerVariant="none">
@@ -165,15 +226,17 @@ export default function InvitePage() {
           <StepHeader
             title={tHardcodedUi.raw('appInvitesInviteidPage.line123JsxTextSwitchAccounts')}
             description={
-              <>
-                {tHardcodedUi.raw(
-                  'appInvitesInviteidPage.line125JsxTextThisInviteIsAddressedToADifferentAccount',
-                )}{' '}
-                <span className="text-foreground font-medium wrap-break-word">{user.email}</span>.{' '}
-                {tHardcodedUi.raw(
-                  'appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe',
-                )}
-              </>
+              invite.reason === 'sso_email_domain_unverified' ? (
+                tHardcodedUi.raw('appInvitesInviteidPage.ssoDomainUnverified')
+              ) : (
+                <>
+                  {tHardcodedUi.raw(
+                    'appInvitesInviteidPage.line125JsxTextThisInviteIsAddressedToADifferentAccount',
+                  )}{' '}
+                  <span className="text-foreground font-medium wrap-break-word">{user.email}</span>.{' '}
+                  {tHardcodedUi.raw('appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe')}
+                </>
+              )
             }
           />
         </Rise>

@@ -5120,7 +5120,13 @@
       "youHaveBeenInvitedToAProject": "You have been invited to a project.",
       "joinProjectDescription": "You'll join {projectName} as {roleLabel}.",
       "roleManager": "a manager",
-      "signOutAndContinue": "Sign out and continue"
+      "signOutAndContinue": "Sign out and continue",
+      "ssoTitle": "Sign in with single sign-on",
+      "ssoDescription": "Your organization's directory added you to this account. Sign in with your organization's single sign-on to join. If you cannot, ask an account admin to resend the invite.",
+      "ssoContinue": "Continue with single sign-on",
+      "askAdminTitle": "Ask an admin to resend",
+      "askAdminDescription": "Your organization's directory added you to this account, and this instance cannot confirm your email address. Ask an account admin to resend the invite, then open this link again.",
+      "ssoDomainUnverified": "Your single sign-on provider has not verified this email's domain. Sign out and sign back in with your email address to use this invite."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – The open-source AI Operating System",
