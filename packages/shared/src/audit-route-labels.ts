@@ -569,6 +569,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'PATCH /v1/projects/:projectId/features': { action: 'project.feature_flag.update', title: 'Updated project feature flag' },
   'GET /v1/projects/:projectId/files': { action: 'file.list', title: 'Listed project files' },
   'GET /v1/projects/:projectId/files/archive': { action: 'file.archive.download', title: 'Downloaded project files' },
+  'PUT /v1/projects/:projectId/files/content': { action: 'file.content.update', title: 'Committed file content' },
   'GET /v1/projects/:projectId/files/content': { action: 'file.content.read', title: 'Viewed file content' },
   'GET /v1/projects/:projectId/files/history': { action: 'file.history.list', title: 'Viewed file history' },
   'GET /v1/projects/:projectId/files/raw': { action: 'file.raw.read', title: 'Viewed raw file content' },

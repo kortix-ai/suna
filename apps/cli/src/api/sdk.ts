@@ -219,3 +219,14 @@ function sanitizeCloseCode(code: number | undefined): number {
   if (code >= 3000 && code <= 4999) return code;
   return 1000;
 }
+
+/** Public device bootstrap cannot use the authenticated SDK transport: there
+ * is deliberately no credential until approval. Keep it in the transport seam. */
+export async function cliDeviceRequest<T>(apiBase: string, path: 'start' | 'poll', body: unknown, signal: AbortSignal): Promise<T> {
+  const response = await fetch(`${sdkBackendUrl(apiBase)}/cli/device/${path}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kortix-Client-Version': 'cli/dev' },
+    body: JSON.stringify(body), signal,
+  });
+  if (!response.ok) throw new Error(`Device login failed (HTTP ${response.status}). Retry or use kortix login --token <key>.`);
+  return await response.json() as T;
+}

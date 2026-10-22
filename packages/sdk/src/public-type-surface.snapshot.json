@@ -2717,6 +2717,7 @@
     "workingTurnDrawsBusyRow",
     "writeActivityGroupLabel",
     "writeFile",
+    "writeProjectFile",
     "wsDomain",
     "wsFavicon",
     "wsRootDomain"
@@ -5609,7 +5610,8 @@
     "validateReferralCode",
     "validateToken",
     "verifyGatewayProvider",
-    "verifySsoDomain"
+    "verifySsoDomain",
+    "writeProjectFile"
   ],
   "./feature-flags": [
     "FeatureFlags",

@@ -8282,3 +8282,15 @@ export const feedback = kortixSchema.table('feedback', {
   check('feedback_source', sql`${table.source} in ('cli', 'agent', 'web')`),
   check('feedback_kind', sql`${table.kind} in ('bug', 'idea', 'friction')`),
 ]);
+
+/** CLI login grants contain no credential: only the device secret's hash and
+ * the approving identity. Polling atomically consumes approval and mints a PAT. */
+export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {
+  deviceCodeHash: text('device_code_hash').primaryKey(),
+  userCode: text('user_code').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+  userId: uuid('user_id'),
+  accountId: uuid('account_id'),
+  status: text('status').notNull().default('pending'),
+});
