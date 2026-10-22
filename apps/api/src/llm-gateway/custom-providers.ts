@@ -1,7 +1,6 @@
 import { z } from '@hono/zod-openapi';
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
 import { config } from '../config';
-import { resolveProjectSecretsForConsumer } from '../projects/surface';
 import { safeEgressFetch } from '../shared/ssrf-guard';
 import { runtimeModelCatalog } from './models/runtime-catalog';
 
@@ -21,7 +20,7 @@ export interface CustomLlmProviderDefinition {
   models: { id: string; name: string; context?: number; output?: number }[];
 }
 
-type ModelLimits = { context?: number; output?: number };
+export type ModelLimits = { context?: number; output?: number };
 
 export const CUSTOM_PROVIDERS_METADATA_KEY = 'custom_llm_providers';
 const PROVIDER_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -102,17 +101,6 @@ export async function probeCustomModelLimits(baseUrl: string, apiKey: string | n
     // A dead or slow endpoint saves anyway; its models get the default window.
   }
   return out;
-}
-
-/** {@link probeCustomModelLimits} with the provider's saved key, read as the saving user. */
-export async function detectCustomModelLimits(
-  input: { projectId: string; accountId: string; userId: string; providerId: string; baseUrl: string },
-): Promise<Map<string, ModelLimits>> {
-  const [key] = await resolveProjectSecretsForConsumer({
-    projectId: input.projectId, accountId: input.accountId, actorUserId: input.userId,
-    name: customProviderSecretName(input.providerId), consumer: 'llm_gateway',
-  });
-  return probeCustomModelLimits(input.baseUrl, key?.value ?? null);
 }
 
 /** The list with `id` replaced (or appended), sorted by id. A limit in the input wins over `detected`. */
