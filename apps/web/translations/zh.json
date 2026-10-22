@@ -906,6 +906,9 @@
       "iconDescription": "显示在项目名称旁边。",
       "name": "项目名称",
       "nameDescription": "显示在项目切换器以及列出此项目的所有位置。",
+      "defaultEffort": "默认推理强度",
+      "defaultEffortDescription": "当提示未明确选择推理强度且会话模型支持时应用。",
+      "defaultEffortAutomatic": "自动",
       "saving": "正在保存…",
       "archived": "项目已归档",
       "archiveFailed": "无法归档项目",
@@ -925,7 +928,19 @@
         "access": "整个团队的访问权限 — 任何人都无法再次访问此项目"
       },
       "reassurance": "自行连接的 Git 存储库不会被删除。已推送的代码将保留在原处。",
-      "keepWorkspace": "保留项目"
+      "keepWorkspace": "保留项目",
+      "transferWorkspace": "转移项目",
+      "transferDescription": "将此项目——包括会话、文件、设置和成员访问权限——移动到另一个组织。",
+      "transferTitle": "转移项目",
+      "transferDialog": "会话、文件、设置和系统角色随项目转移。群组、待处理邀请和自定义角色须在目标组织中重新授予。已记录的用量仍计入原组织账单。",
+      "transferTargetLabel": "目标组织",
+      "transferTargetPlaceholder": "选择一个组织",
+      "transferLoadingTargets": "正在加载组织…",
+      "transferNoTargets": "您不是任何其他组织的成员。",
+      "transferMove": "移动项目",
+      "transferMoveTo": "移动到 {name}",
+      "transferSuccess": "项目已转移",
+      "transferFailed": "转移失败"
     },
     "sandbox": {
       "states": {
@@ -10641,7 +10656,7 @@
       "text1458e20a1642": "可选。断开连接时，Kortix 也会删除本地令牌。",
       "text1459df2e344c": "Linux 计算机从项目声明的沙箱镜像启动。它是一台独立隔离的计算机：拥有自己的文件系统、进程表和网络。不会与其他会话共享任何内容。",
       "text14683b379324": "撤销令牌",
-      "text146b38e7fa80": "默认设置失败时",
+      "text146b38e7fa80": "当模型失败时",
       "text146cd06d5026": "环境：",
       "text146fd497badf": "已跳过邮件 — 请复制邀请链接手动分享",
       "text147251df4759": "通常只需几秒钟",
@@ -16011,7 +16026,7 @@
       "textafb32719ca9e": "机器人客户端密钥",
       "textafb5023c3c05": "更改已应用",
       "textafb837ec251a": "Okta 会在变更发生时推送更新（分配、配置文件更新、群组推送）——一段时间没有更新只表示没有发生变化。",
-      "textafb9890f7c72": "当项目默认设置无法处理请求时，请求将发送到的位置。",
+      "textafb9890f7c72": "当请求的模型无法处理请求时，请求将发送到的位置。",
       "textafc19f1734c1": "主体",
       "textafc8e3a5d5db": "它按人们实际想要的内容而非用词来聚类，统计提出每项请求的不同账户数量，并附上引用。当有人问“是谁提出的”，答案就在文档里。",
       "textafdc7d79dccb": "来自 OneLogin 的自动 Provision",
@@ -16724,7 +16739,7 @@
       "textc3d2e79ebdd0": "连接器",
       "textc3e3a6edeaa5": "条款与条件",
       "textc3e58a73609d": "危险操作",
-      "textc3ecd3cd791b": "在项目默认设置之后按顺序尝试。",
+      "textc3ecd3cd791b": "在请求指定的模型之后按顺序尝试。",
       "textc3f282c05f3f": "策略 审批 阻止 require_approval 规则 工具 连接器 防护措施",
       "textc3f348ffaf7a": "关联到项目",
       "textc3f7bdf537c4": "请求",
@@ -20057,6 +20072,7 @@
       "texta37dd5ef6ef2": "自定义侧边栏",
       "text8c712bd7c1ec": "侧边栏 自定义 排序 隐藏 显示 导航 sidebar",
       "text2313fe21ea84": "编辑 {name}",
+      "text2b2c3ec032a6": "项目已转移到其他账户",
       "text44f9fff8bdae": "更改了积分套餐",
       "text3fa17bba73e1": "你的账户还没有套餐。请选择每月积分金额以运行会话。所有成员共用一个积分池。",
       "text6821e42be2c1": "你的钱包已空，会话无法运行。请充值以继续使用算力和最新的 AI 模型——你的套餐不受影响。",
@@ -20336,18 +20352,6 @@
       "expiryNever": "永不",
       "expiryDays": "{count, plural, other {# 天}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "公开链接",
-      "sectionDescription": "任何拥有此链接的人都无需登录即可阅读此对话。",
-      "create": "创建公开链接",
-      "revokeDescription": "所有持有此链接的人将无法再加载此对话。之后你可以创建新链接。",
-      "rowMeta": "只读对话",
-      "unavailable": "此对话暂时不可用。",
-      "unavailableDescription": "暂时无法读取此对话。请稍后再试。",
-      "loadFailedDescription": "无法加载此对话。",
-      "empty": "暂无消息",
-      "savedCopy": "保存于 {date} 的副本"
-    },
     "chatIdentityConnect": {
       "chatAccount": "{service} 账户",
       "chatWorkspace": "{service} 工作区",
@@ -20464,6 +20468,12 @@
       "title": "已保存，但 {agent} 暂时无法读取",
       "grant": "{count, plural, other {# 个密钥}}（{names}）不在智能体 {agent} 的密钥中。请打开 自定义 → Agents → {agent} → 密钥 并启用{count, plural, =1 {它} other {它们}}。",
       "allowlist": "{count, plural, other {# 个密钥}}（{names}）不在此会话的密钥范围内。请启动新会话以使用{count, plural, =1 {它} other {它们}}。"
+    },
+    "sessionEmbed": {
+      "sectionTitle": "嵌入",
+      "sectionDescription": "仅适用于同站点页面。查看者必须已登录并拥有此会话的访问权限；不支持在跨站点 iframe 内登录。",
+      "copy": "复制嵌入代码",
+      "copied": "嵌入代码已复制"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "交付：runtime — 真实值会加载到沙箱环境中。代理代码可以读取它。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "交付：connector — 仅在服务器端。该值绝不会进入沙箱环境。",
@@ -22391,5 +22401,9 @@
     "notes": "笔记",
     "log": "日志",
     "notFound": "此目标已不存在。"
+  },
+  "agentEditor": {
+    "manage": "管理",
+    "overviewTitle": "概览"
   }
 }

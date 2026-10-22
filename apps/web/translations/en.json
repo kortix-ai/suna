@@ -728,6 +728,9 @@
       "iconDescription": "Shown next to the project name.",
       "name": "Project name",
       "nameDescription": "Shown in the project switcher and anywhere this project is listed.",
+      "defaultEffort": "Default reasoning effort",
+      "defaultEffortDescription": "Applied to new prompts that carry no explicit effort pick, when the session's model supports it.",
+      "defaultEffortAutomatic": "Automatic",
       "saving": "Saving…",
       "archived": "Project archived",
       "archiveFailed": "Failed to archive project",
@@ -747,7 +750,19 @@
         "access": "Access for everyone on the team — nobody can reach this project again"
       },
       "reassurance": "Git repositories you connected yourself are not deleted. Any code already pushed to them stays where it is.",
-      "keepWorkspace": "Keep project"
+      "keepWorkspace": "Keep project",
+      "transferWorkspace": "Transfer project",
+      "transferDescription": "Move this project — its sessions, files, settings and member access — to another organization.",
+      "transferTitle": "Transfer project",
+      "transferDialog": "Sessions, files and settings follow the project. System member roles follow; groups, pending invitations and custom roles must be granted again in the target organization. Recorded usage stays on this organization’s bill.",
+      "transferTargetLabel": "Target organization",
+      "transferTargetPlaceholder": "Choose an organization",
+      "transferLoadingTargets": "Loading organizations…",
+      "transferNoTargets": "You are not a member of any other organization.",
+      "transferMove": "Move project",
+      "transferMoveTo": "Move to {name}",
+      "transferSuccess": "Project transferred",
+      "transferFailed": "Transfer failed"
     },
     "sandbox": {
       "states": {
@@ -10652,7 +10667,7 @@
       "text1458e20a1642": "Optional. Kortix also deletes the local token on disconnect.",
       "text1459df2e344c": "A Linux machine boots from the sandbox image your project declares. It is its own isolated machine: its own filesystem, its own process table, its own network. Nothing is shared with another session.",
       "text14683b379324": "Revoke token",
-      "text146b38e7fa80": "When the default fails",
+      "text146b38e7fa80": "When a model fails",
       "text146cd06d5026": "Env:",
       "text146fd497badf": "Email skipped — copy invite link to share manually",
       "text147251df4759": "This usually takes a few seconds",
@@ -16022,7 +16037,7 @@
       "textafb32719ca9e": "Bot client secret",
       "textafb5023c3c05": "Changes applied",
       "textafb837ec251a": "Okta pushes changes as they happen (assignments, profile updates, group pushes) — a quiet period just means nothing changed.",
-      "textafb9890f7c72": "Where a request goes when the project default can't take it.",
+      "textafb9890f7c72": "Where a request goes when its model can't take it.",
       "textafc19f1734c1": "Principal",
       "textafc8e3a5d5db": "It clusters requests by what people actually want rather than by the words they used, counts how many distinct accounts raised each one, and attaches the quotes. When someone asks \"who asked for this\", the answer is in the document.",
       "textafdc7d79dccb": "Automatic provisioning from OneLogin",
@@ -16735,7 +16750,7 @@
       "textc3d2e79ebdd0": "Connectors",
       "textc3e3a6edeaa5": "Terms and conditions",
       "textc3e58a73609d": "Destructive",
-      "textc3ecd3cd791b": "Tried in order after the project default.",
+      "textc3ecd3cd791b": "Tried in order after the model a request names.",
       "textc3f282c05f3f": "policies approval block require_approval rules tools connector guardrails",
       "textc3f348ffaf7a": "Attach to project",
       "textc3f7bdf537c4": "req",
@@ -20068,6 +20083,7 @@
       "texta37dd5ef6ef2": "Customize Sidebar",
       "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows",
       "text2313fe21ea84": "Edit {name}",
+      "text2b2c3ec032a6": "Transferred project to another account",
       "text44f9fff8bdae": "Changed the credits plan",
       "text3fa17bba73e1": "Your account has no plan yet. Pick a monthly amount of credits to run sessions. Every member shares one pool.",
       "text6821e42be2c1": "Your wallet is empty, so sessions can’t run. Top up to keep compute and the latest AI models going — your plan is unaffected.",
@@ -20347,18 +20363,6 @@
       "expiryNever": "Never",
       "expiryDays": "{count, plural, one {# day} other {# days}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "Public link",
-      "sectionDescription": "Anyone with the link can read this conversation without signing in.",
-      "create": "Create public link",
-      "revokeDescription": "The conversation stops loading for everyone with the link. You can create a new link afterwards.",
-      "rowMeta": "Read-only conversation",
-      "unavailable": "This conversation is temporarily unavailable.",
-      "unavailableDescription": "The conversation could not be read right now. Try again in a moment.",
-      "loadFailedDescription": "The conversation could not be loaded.",
-      "empty": "No messages yet",
-      "savedCopy": "Saved copy from {date}"
-    },
     "chatIdentityConnect": {
       "chatAccount": "{service} account",
       "chatWorkspace": "{service} workspace",
@@ -20475,6 +20479,12 @@
       "title": "Saved, but {agent} can't read it yet",
       "grant": "{names} {count, plural, one {is} other {are}} not in the {agent} agent's secrets. Open Customize → Agents → {agent} → Secrets and enable {count, plural, one {it} other {them}}.",
       "allowlist": "{names} {count, plural, one {is} other {are}} outside this session's secrets. Start a new session to use {count, plural, one {it} other {them}}."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Embed",
+      "sectionDescription": "For same-site pages only. Viewers must already be signed in with access to this session; signing in inside a cross-site iframe is not supported.",
+      "copy": "Copy embed code",
+      "copied": "Embed code copied"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Delivery: runtime — the real value loads into the sandbox environment. Agent code can read it.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Delivery: connector — server-side only. The value never enters the sandbox environment.",
@@ -22391,5 +22401,9 @@
     "notes": "Notes",
     "log": "Log",
     "notFound": "This goal no longer exists."
+  },
+  "agentEditor": {
+    "manage": "Manage",
+    "overviewTitle": "Overview"
   }
 }

@@ -906,6 +906,9 @@
       "iconDescription": "Wird neben dem Namen des Projekts angezeigt.",
       "name": "Name des Projekts",
       "nameDescription": "Wird im Projektswechsler und überall angezeigt, wo dieser Projekt aufgeführt ist.",
+      "defaultEffort": "Standard-Denkleistung",
+      "defaultEffortDescription": "Gilt für neue Prompts ohne eigene Anstrengungsauswahl, wenn das Modell der Sitzung es unterstützt.",
+      "defaultEffortAutomatic": "Automatisch",
       "saving": "Speichern…",
       "archived": "Projekt archiviert",
       "archiveFailed": "Projekt konnte nicht archiviert werden",
@@ -925,7 +928,19 @@
         "access": "Den Zugriff für das gesamte Team — niemand kann diesen Projekt erneut öffnen"
       },
       "reassurance": "Selbst verbundene Git-Repositories werden nicht gelöscht. Bereits übertragener Code bleibt erhalten.",
-      "keepWorkspace": "Projekt behalten"
+      "keepWorkspace": "Projekt behalten",
+      "transferWorkspace": "Projekt übertragen",
+      "transferDescription": "Dieses Projekt — Sitzungen, Dateien, Einstellungen und Mitgliederzugriff — in eine andere Organisation verschieben.",
+      "transferTitle": "Projekt übertragen",
+      "transferDialog": "Sitzungen, Dateien und Einstellungen folgen dem Projekt. Systemrollen folgen; Gruppen, ausstehende Einladungen und benutzerdefinierte Rollen müssen in der Zielorganisation neu vergeben werden. Erfasste Nutzung bleibt auf der bisherigen Rechnung.",
+      "transferTargetLabel": "Zielorganisation",
+      "transferTargetPlaceholder": "Organisation auswählen",
+      "transferLoadingTargets": "Organisationen werden geladen…",
+      "transferNoTargets": "Sie sind kein Mitglied einer anderen Organisation.",
+      "transferMove": "Projekt verschieben",
+      "transferMoveTo": "Nach {name} verschieben",
+      "transferSuccess": "Projekt übertragen",
+      "transferFailed": "Übertragung fehlgeschlagen"
     },
     "sandbox": {
       "states": {
@@ -10641,7 +10656,7 @@
       "text1458e20a1642": "Optional. Kortix löscht das lokale Token beim Trennen ebenfalls.",
       "text1459df2e344c": "Ein Linux-Computer startet aus dem Sandbox-Image, das Ihr Projekt deklariert. Er ist ein eigener isolierter Computer: eigenes Dateisystem, eigene Prozesstabelle, eigenes Netzwerk. Mit keiner anderen Sitzung wird etwas geteilt.",
       "text14683b379324": "Token widerrufen",
-      "text146b38e7fa80": "Wenn der Standard fehlschlägt",
+      "text146b38e7fa80": "Wenn ein Modell ausfällt",
       "text146cd06d5026": "Umgebung:",
       "text146fd497badf": "E-Mail übersprungen — kopiere den Einladungslink, um ihn manuell zu teilen",
       "text147251df4759": "Dies dauert normalerweise nur wenige Sekunden",
@@ -16011,7 +16026,7 @@
       "textafb32719ca9e": "Bot-Client-Secret",
       "textafb5023c3c05": "Änderungen angewendet",
       "textafb837ec251a": "Okta überträgt Änderungen sofort (Zuweisungen, Profilaktualisierungen, Gruppenübertragungen) – eine Ruhephase bedeutet lediglich, dass sich nichts geändert hat.",
-      "textafb9890f7c72": "Wohin eine Anfrage geht, wenn der Projektstandard sie nicht verarbeiten kann.",
+      "textafb9890f7c72": "Wohin eine Anfrage geht, wenn ihr Modell sie nicht verarbeiten kann.",
       "textafc19f1734c1": "Prinzipal",
       "textafc8e3a5d5db": "Er gruppiert Anfragen danach, was die Menschen tatsächlich wollen, statt nach ihren verwendeten Worten, zählt die verschiedenen Konten, die jede Anfrage gestellt haben, und fügt die Zitate hinzu. Wenn jemand fragt „Wer wollte das?“, steht die Antwort im Dokument.",
       "textafdc7d79dccb": "Automatische Bereitstellung aus OneLogin",
@@ -16724,7 +16739,7 @@
       "textc3d2e79ebdd0": "Konnektoren",
       "textc3e3a6edeaa5": "Allgemeine Geschäftsbedingungen",
       "textc3e58a73609d": "Destruktiv",
-      "textc3ecd3cd791b": "Nach dem Projektstandard in dieser Reihenfolge versucht.",
+      "textc3ecd3cd791b": "Nach dem angeforderten Modell in dieser Reihenfolge versucht.",
       "textc3f282c05f3f": "Richtlinien Genehmigung blockieren require_approval Regeln Tools Konnektor-Sicherungen",
       "textc3f348ffaf7a": "Mit Projekt verknüpfen",
       "textc3f7bdf537c4": "Anfragen",
@@ -20057,6 +20072,7 @@
       "texta37dd5ef6ef2": "Seitenleiste anpassen",
       "text8c712bd7c1ec": "seitenleiste anpassen sortieren ausblenden anzeigen navigation sidebar",
       "text2313fe21ea84": "{name} bearbeiten",
+      "text2b2c3ec032a6": "Projekt in ein anderes Konto übertragen",
       "text44f9fff8bdae": "Credits-Plan geändert",
       "text3fa17bba73e1": "Dein Konto hat noch keinen Plan. Wähle einen monatlichen Credit-Betrag, um Sitzungen auszuführen. Alle Mitglieder teilen sich einen Pool.",
       "text6821e42be2c1": "Dein Guthaben ist leer, daher können Sitzungen nicht laufen. Lade auf, damit Rechenleistung und die neuesten KI-Modelle weiterlaufen – dein Plan bleibt unberührt.",
@@ -20336,18 +20352,6 @@
       "expiryNever": "Nie",
       "expiryDays": "{count, plural, one {# Tag} other {# Tagen}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "Öffentlicher Link",
-      "sectionDescription": "Jeder mit dem Link kann diese Unterhaltung ohne Anmeldung lesen.",
-      "create": "Öffentlichen Link erstellen",
-      "revokeDescription": "Die Unterhaltung lädt für niemanden mit dem Link mehr. Du kannst danach einen neuen Link erstellen.",
-      "rowMeta": "Schreibgeschützte Unterhaltung",
-      "unavailable": "Diese Unterhaltung ist vorübergehend nicht verfügbar.",
-      "unavailableDescription": "Die Unterhaltung kann gerade nicht gelesen werden. Versuche es gleich noch einmal.",
-      "loadFailedDescription": "Die Unterhaltung konnte nicht geladen werden.",
-      "empty": "Noch keine Nachrichten",
-      "savedCopy": "Gespeicherte Kopie vom {date}"
-    },
     "chatIdentityConnect": {
       "chatAccount": "{service}-Konto",
       "chatWorkspace": "{service}-Workspace",
@@ -20464,6 +20468,12 @@
       "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
       "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
       "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Einbetten",
+      "sectionDescription": "Nur für Seiten derselben Website. Betrachter müssen bereits angemeldet sein und Zugriff auf diese Sitzung haben; die Anmeldung innerhalb eines websiteübergreifenden iframes wird nicht unterstützt.",
+      "copy": "Einbettungscode kopieren",
+      "copied": "Einbettungscode kopiert"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Zustellung: Runtime – der echte Wert wird in die Sandbox-Umgebung geladen. Agent-Code kann ihn lesen.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Zustellung: Connector – nur serverseitig. Der Wert gelangt nie in die Sandbox-Umgebung.",
@@ -22391,5 +22401,9 @@
     "notes": "Notizen",
     "log": "Protokoll",
     "notFound": "Dieses Ziel existiert nicht mehr."
+  },
+  "agentEditor": {
+    "manage": "Verwalten",
+    "overviewTitle": "Übersicht"
   }
 }

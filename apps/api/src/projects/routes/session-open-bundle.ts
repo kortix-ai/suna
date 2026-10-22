@@ -60,6 +60,7 @@ import {
 import { projectsApp, SessionSnapshotSchema } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { serializeSession } from '../lib/serializers';
+import { normalizeDefaultReasoningEffort } from '../lib/effort-default';
 import { loadSessionUserStates } from '../lib/session-user-state';
 import { personUserId } from './session-watch';
 import { parseBoundedPositiveInt } from '../lib/serializers';
@@ -328,8 +329,10 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
         known: true as const,
         base_ref: visible.row.baseRef ?? loaded.row.defaultBranch ?? null,
         agent_name: visible.row.agentName ?? null,
-        // Always true since the gateway is the only model path; kept for older clients.
         llm_gateway_enabled: true,
+        default_reasoning_effort: normalizeDefaultReasoningEffort(
+          (loaded.row.metadata as Record<string, unknown> | null)?.default_reasoning_effort,
+        ),
       },
 
       // = GET /projects/:id/model-defaults.

@@ -906,6 +906,9 @@
       "iconDescription": "Приказује се поред назива пројекта.",
       "name": "Назив пројекта",
       "nameDescription": "Приказује се у бирачу и свуда где је овај пројекат наведен.",
+      "defaultEffort": "Подразумевани напор закључивања",
+      "defaultEffortDescription": "Примењује се на нове захтеве без експлицитног избора напора, када модел сесије то подржава.",
+      "defaultEffortAutomatic": "Аутоматски",
       "saving": "Чување…",
       "archived": "Пројекат је архивиран",
       "archiveFailed": "Пројекат није могао да се архивира",
@@ -925,7 +928,19 @@
         "access": "Приступ за цео тим — нико више не може да приступи овом пројекту"
       },
       "reassurance": "Git складишта која сте сами повезали се не бришу. Сав већ послат код остаје на свом месту.",
-      "keepWorkspace": "Задржи пројекат"
+      "keepWorkspace": "Задржи пројекат",
+      "transferWorkspace": "Пренеси пројекат",
+      "transferDescription": "Премести овај пројекат — сесије, датотеке, подешавања и приступ чланова — у другу организацију.",
+      "transferTitle": "Пренеси пројекат",
+      "transferDialog": "Сесије, датотеке, подешавања и системске улоге прате пројекат. Групе, позивнице на чекању и прилагођене улоге морају поново да се доделе у циљној организацији. Забележена потрошња остаје на старом рачуну.",
+      "transferTargetLabel": "Циљна организација",
+      "transferTargetPlaceholder": "Изабери организацију",
+      "transferLoadingTargets": "Учитавање организација…",
+      "transferNoTargets": "Нисте члан ниједне друге организације.",
+      "transferMove": "Премести пројекат",
+      "transferMoveTo": "Премести у {name}",
+      "transferSuccess": "Пројекат је пренесен",
+      "transferFailed": "Пренос није успео"
     },
     "sandbox": {
       "states": {
@@ -10641,7 +10656,7 @@
       "text1458e20a1642": "Опционо. Kortix такође брише локални токен приликом прекида везе.",
       "text1459df2e344c": "Linux рачунар се покреће из sandbox слике коју ваш пројекат наводи. То је засебан изоловани рачунар: сопствени систем датотека, сопствена табела процеса и сопствена мрежа. Ништа се не дели са другом сесијом.",
       "text14683b379324": "Опозови токен",
-      "text146b38e7fa80": "Када подразумевано не успе",
+      "text146b38e7fa80": "Када модел не успе",
       "text146cd06d5026": "Окружење:",
       "text146fd497badf": "Имејл је прескочен — копирајте линк позива да бисте га поделили ручно",
       "text147251df4759": "Ово обично траје неколико секунди",
@@ -16011,7 +16026,7 @@
       "textafb32719ca9e": "Тајна клијента bot-а",
       "textafb5023c3c05": "Промене су примењене",
       "textafb837ec251a": "Okta шаље промене чим се догоде (доделе, ажурирања профила, слање група) — период без активности само значи да се ништа није променило.",
-      "textafb9890f7c72": "Куда иде захтев када подразумевани пројектни модел не може да га обради.",
+      "textafb9890f7c72": "Куда иде захтев када његов модел не може да га обради.",
       "textafc19f1734c1": "Субјект",
       "textafc8e3a5d5db": "Групише захтеве према ономе што људи заиста желе, а не према употребљеним речима, броји колико их је различитих налога поднело и прилаже цитате. Када неко пита „ко је ово тражио“, одговор је у документу.",
       "textafdc7d79dccb": "Аутоматско provisioning из OneLogin-а",
@@ -16724,7 +16739,7 @@
       "textc3d2e79ebdd0": "Конектори",
       "textc3e3a6edeaa5": "Услови коришћења",
       "textc3e58a73609d": "Деструктивно",
-      "textc3ecd3cd791b": "Испробавају се редом након подразумеваног модела пројекта.",
+      "textc3ecd3cd791b": "Испробавају се редом након затраженог модела.",
       "textc3f282c05f3f": "политике одобрење блокирај require_approval правила алати конектор guardrails",
       "textc3f348ffaf7a": "Повежи са пројектом",
       "textc3f7bdf537c4": "захт.",
@@ -20057,6 +20072,7 @@
       "texta37dd5ef6ef2": "Prilagodi bočnu traku",
       "text8c712bd7c1ec": "bočna traka prilagodi redosled sakrij prikaži navigacija sidebar",
       "text2313fe21ea84": "Измени {name}",
+      "text2b2c3ec032a6": "Пројекат је пренесен на други налог",
       "text44f9fff8bdae": "Промењен је план кредита",
       "text3fa17bba73e1": "Ваш налог још нема план. Изаберите месечни износ кредита да бисте покретали сесије. Сви чланови деле један фонд.",
       "text6821e42be2c1": "Ваш новчаник је празан, па сесије не могу да раде. Допуните га да би рачунарска снага и најновији AI модели наставили да раде — ваш план није погођен.",
@@ -20336,18 +20352,6 @@
       "expiryNever": "Никад",
       "expiryDays": "{count, plural, one {# дан} few {# дана} other {# дана}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "Јавни линк",
-      "sectionDescription": "Свако ко има линк може да чита овај разговор без пријаве.",
-      "create": "Направи јавни линк",
-      "revokeDescription": "Разговор престаје да се учитава за свакога ко има линк. Након тога можеш да направиш нови линк.",
-      "rowMeta": "Разговор само за читање",
-      "unavailable": "Овај разговор је привремено недоступан.",
-      "unavailableDescription": "Разговор тренутно не може да се прочита. Покушај поново за тренутак.",
-      "loadFailedDescription": "Разговор није могао да се учита.",
-      "empty": "Још нема порука",
-      "savedCopy": "Сачувана копија од {date}"
-    },
     "chatIdentityConnect": {
       "chatAccount": "{service} налог",
       "chatWorkspace": "{service} радни простор",
@@ -20464,6 +20468,12 @@
       "title": "Сачувано, али {agent} још не може да га прочита",
       "grant": "{names} {count, plural, one {није} other {нису}} међу тајнама агента {agent}. Отвори Прилагоди → Агенти → {agent} → Тајне и {count, plural, one {укључи је} other {укључи их}}.",
       "allowlist": "{names} {count, plural, one {је} other {су}} ван тајни ове сесије. Покрени нову сесију да {count, plural, one {би је користио} other {би их користио}}."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Ugradi",
+      "sectionDescription": "Samo za stranice istog sajta. Posjetioci moraju već biti prijavljeni i imati pristup ovoj sesiji; prijavljivanje unutar iframe-a na drugom sajtu nije podržano.",
+      "copy": "Kopiraj kod za ugrađivanje",
+      "copied": "Kod za ugrađivanje je kopiran"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Испорука: runtime — стварна вредност се учитава у sandbox окружење. Код агента може да ја прочита.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Испорука: connector — само на серверу. Вредност никада не улази у sandbox окружење.",
@@ -22391,5 +22401,9 @@
     "notes": "Beleške",
     "log": "Dnevnik",
     "notFound": "Ovaj cilj više ne postoji."
+  },
+  "agentEditor": {
+    "manage": "Upravljaj",
+    "overviewTitle": "Pregled"
   }
 }

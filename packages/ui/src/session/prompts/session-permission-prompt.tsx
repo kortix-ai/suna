@@ -41,7 +41,7 @@ import {
   ShieldCheckIcon as ShieldCheck,
 } from '@phosphor-icons/react';
 import { useSessionIds } from '../../providers/session-ids';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 
 /**
  * An agent's permission rules with `type` allowed: a bare action becomes the
@@ -132,6 +132,18 @@ function PendingLabel({ pending, children }: { pending: boolean; children: React
         </span>
       ) : null}
     </span>
+  );
+}
+
+function DecisionButton({
+  pending,
+  children,
+  ...props
+}: ComponentProps<typeof Button> & { pending: boolean }) {
+  return (
+    <Button size="xs" {...props}>
+      <PendingLabel pending={pending}>{children}</PendingLabel>
+    </Button>
   );
 }
 
@@ -342,37 +354,31 @@ export function SessionPermissionPrompt({
                 ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                <Button
-                  size="xs"
+                <DecisionButton
                   variant="outline"
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'reject')}
+                  pending={busy === `${p.id}:reject`}
                 >
-                  <PendingLabel pending={busy === `${p.id}:reject`}>
                     {tI18nComplete.raw('text05a2d7332eb9')}
-                  </PendingLabel>
-                </Button>
-                <Button
-                  size="xs"
+                </DecisionButton>
+                <DecisionButton
                   variant="muted"
                   title={tI18nComplete.raw('text403595dd63ea')}
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'always')}
+                  pending={busy === `${p.id}:always`}
                 >
-                  <PendingLabel pending={busy === `${p.id}:always`}>
                     {tI18nComplete.raw('textec9f8a9109ec')}
-                  </PendingLabel>
-                </Button>
-                <Button
-                  size="xs"
+                </DecisionButton>
+                <DecisionButton
                   variant="default"
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'once')}
+                  pending={busy === `${p.id}:once`}
                 >
-                  <PendingLabel pending={busy === `${p.id}:once`}>
                     {tI18nComplete.raw('text168511d24d9e')}
-                  </PendingLabel>
-                </Button>
+                </DecisionButton>
               </div>
             </li>
           );
@@ -382,18 +388,16 @@ export function SessionPermissionPrompt({
         <span className="text-muted-foreground text-xs">
           {tI18nComplete.raw('text16324ed5894b')}
         </span>
-        <Button
-          size="xs"
+        <DecisionButton
           variant="ghost"
           className="text-muted-foreground hover:text-foreground"
           title={tI18nComplete.raw('text2c1a881dfca8')}
           disabled={!!busy}
           onClick={() => void allowAllForSession()}
+          pending={busy === 'session-all'}
         >
-          <PendingLabel pending={busy === 'session-all'}>
             {tI18nComplete.raw('text1f05c7f5b64d')}
-          </PendingLabel>
-        </Button>
+        </DecisionButton>
       </div>
       {canWriteConfig.allowed && agentBlock ? (
         // Deliberately set apart from the one-off buttons above: these WRITE the
@@ -404,31 +408,27 @@ export function SessionPermissionPrompt({
             <span className="opacity-70">{tI18nComplete.raw('textea73705db65f')}</span>:
           </span>
           {uniqueTypes.map((type) => (
-            <Button
+            <DecisionButton
               key={type}
-              size="xs"
               variant="ghost"
               className="text-muted-foreground hover:text-foreground"
               disabled={!!busy}
               onClick={() => void allowInConfig(type)}
+              pending={busy === `config:${type}`}
             >
-              <PendingLabel pending={busy === `config:${type}`}>
                 {tI18nComplete.raw('text78facd7b499c')}
                 {PERMISSION_LABELS[type] || type}"
-              </PendingLabel>
-            </Button>
+            </DecisionButton>
           ))}
-          <Button
-            size="xs"
+          <DecisionButton
             variant="ghost"
             className="text-muted-foreground hover:text-foreground"
             disabled={!!busy}
             onClick={() => void allowInConfig('*')}
+            pending={busy === 'config:*'}
           >
-            <PendingLabel pending={busy === 'config:*'}>
               {tI18nComplete.raw('text84f8c40b31a7')}
-            </PendingLabel>
-          </Button>
+          </DecisionButton>
         </div>
       ) : null}
     </div>

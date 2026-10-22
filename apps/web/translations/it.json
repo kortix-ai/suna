@@ -906,6 +906,9 @@
       "iconDescription": "Mostrata accanto al nome dello progetto.",
       "name": "Nome dello progetto",
       "nameDescription": "Mostrato nel selettore e ovunque sia elencato questo progetto.",
+      "defaultEffort": "Sforzo di ragionamento predefinito",
+      "defaultEffortDescription": "Applicato ai nuovi prompt senza una scelta esplicita, quando il modello della sessione lo supporta.",
+      "defaultEffortAutomatic": "Automatico",
       "saving": "Salvataggio…",
       "archived": "Progetto archiviato",
       "archiveFailed": "Impossibile archiviare lo progetto",
@@ -925,7 +928,19 @@
         "access": "L'accesso per tutto il team — nessuno potrà più raggiungere questo progetto"
       },
       "reassurance": "I repository Git connessi personalmente non vengono eliminati. Il codice già inviato resta al suo posto.",
-      "keepWorkspace": "Mantieni progetto"
+      "keepWorkspace": "Mantieni progetto",
+      "transferWorkspace": "Trasferisci progetto",
+      "transferDescription": "Sposta questo progetto — sessioni, file, impostazioni e accesso dei membri — in un’altra organizzazione.",
+      "transferTitle": "Trasferisci progetto",
+      "transferDialog": "Sessioni, file e impostazioni seguono il progetto. I ruoli di sistema restano; gruppi, inviti in attesa e ruoli personalizzati devono essere assegnati di nuovo nella nuova organizzazione. L’utilizzo registrato resta sulla fattura originale.",
+      "transferTargetLabel": "Organizzazione di destinazione",
+      "transferTargetPlaceholder": "Scegli un’organizzazione",
+      "transferLoadingTargets": "Caricamento delle organizzazioni…",
+      "transferNoTargets": "Non sei membro di altre organizzazioni.",
+      "transferMove": "Sposta progetto",
+      "transferMoveTo": "Sposta in {name}",
+      "transferSuccess": "Progetto trasferito",
+      "transferFailed": "Trasferimento non riuscito"
     },
     "sandbox": {
       "states": {
@@ -10641,7 +10656,7 @@
       "text1458e20a1642": "Facoltativo. Kortix elimina anche il token locale quando disconnetti l'account.",
       "text1459df2e344c": "Si avvia una macchina Linux dall’immagine sandbox dichiarata dal progetto. È una macchina isolata: filesystem, tabella dei processi e rete propri. Nulla viene condiviso con un’altra sessione.",
       "text14683b379324": "Revoca token",
-      "text146b38e7fa80": "Quando il default fallisce",
+      "text146b38e7fa80": "Quando un modello fallisce",
       "text146cd06d5026": "Ambiente:",
       "text146fd497badf": "Email saltata: copia il link di invito per condividerlo manualmente",
       "text147251df4759": "Di solito bastano pochi secondi",
@@ -16011,7 +16026,7 @@
       "textafb32719ca9e": "Segreto client del bot",
       "textafb5023c3c05": "Modifiche applicate",
       "textafb837ec251a": "Okta invia le modifiche non appena avvengono (assegnazioni, aggiornamenti del profilo, invii dei gruppi): un periodo di inattività significa semplicemente che non è cambiato nulla.",
-      "textafb9890f7c72": "Dove va una richiesta quando il default del progetto non può gestirla.",
+      "textafb9890f7c72": "Dove va una richiesta quando il suo modello non può gestirla.",
       "textafc19f1734c1": "Entità",
       "textafc8e3a5d5db": "Raggruppa le richieste in base a ciò che le persone vogliono davvero, non alle parole usate, conta quanti account distinti hanno sollevato ciascun punto e allega le citazioni. Quando qualcuno chiede \"chi l’ha richiesto\", la risposta è nel documento.",
       "textafdc7d79dccb": "Provisioning automatico da OneLogin",
@@ -16724,7 +16739,7 @@
       "textc3d2e79ebdd0": "Connettori",
       "textc3e3a6edeaa5": "Termini e condizioni",
       "textc3e58a73609d": "Distruttivo",
-      "textc3ecd3cd791b": "Provati in ordine dopo il default del progetto.",
+      "textc3ecd3cd791b": "Provati in ordine dopo il modello richiesto.",
       "textc3f282c05f3f": "criteri approvazione blocca require_approval regole strumenti connettore protezioni",
       "textc3f348ffaf7a": "Associa al progetto",
       "textc3f7bdf537c4": "rich.",
@@ -20057,6 +20072,7 @@
       "texta37dd5ef6ef2": "Personalizza barra laterale",
       "text8c712bd7c1ec": "barra laterale personalizza riordina nascondi mostra navigazione sidebar",
       "text2313fe21ea84": "Modifica {name}",
+      "text2b2c3ec032a6": "Progetto trasferito a un altro account",
       "text44f9fff8bdae": "Piano crediti modificato",
       "text3fa17bba73e1": "Il tuo account non ha ancora un piano. Scegli un importo mensile di crediti per eseguire le sessioni. Tutti i membri condividono un unico pool.",
       "text6821e42be2c1": "Il tuo saldo è vuoto, quindi le sessioni non possono essere eseguite. Ricarica per mantenere attivi il calcolo e gli ultimi modelli di IA: il tuo piano non cambia.",
@@ -20336,18 +20352,6 @@
       "expiryNever": "Mai",
       "expiryDays": "{count, plural, one {# giorno} other {# giorni}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "Link pubblico",
-      "sectionDescription": "Chiunque abbia il link può leggere questa conversazione senza accedere.",
-      "create": "Crea link pubblico",
-      "revokeDescription": "La conversazione smette di caricarsi per chiunque abbia il link. Potrai creare un nuovo link in seguito.",
-      "rowMeta": "Conversazione di sola lettura",
-      "unavailable": "Questa conversazione non è temporaneamente disponibile.",
-      "unavailableDescription": "Al momento non è possibile leggere la conversazione. Riprova tra poco.",
-      "loadFailedDescription": "Impossibile caricare la conversazione.",
-      "empty": "Ancora nessun messaggio",
-      "savedCopy": "Copia salvata il {date}"
-    },
     "chatIdentityConnect": {
       "chatAccount": "Account {service}",
       "chatWorkspace": "Workspace {service}",
@@ -20464,6 +20468,12 @@
       "title": "Salvato, ma {agent} non può ancora leggerlo",
       "grant": "{names} non {count, plural, one {è} other {sono}} tra i segreti dell'agente {agent}. Apri Personalizza → Agenti → {agent} → Segreti e {count, plural, one {abilitalo} other {abilitali}}.",
       "allowlist": "{names} {count, plural, one {è} other {sono}} fuori dai segreti di questa sessione. Avvia una nuova sessione per {count, plural, one {usarlo} other {usarli}}."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Incorpora",
+      "sectionDescription": "Solo per pagine dello stesso sito. Chi visualizza la pagina deve aver già effettuato l’accesso e avere accesso a questa sessione; l’autenticazione all’interno di un iframe tra siti diversi non è supportata.",
+      "copy": "Copia il codice di incorporamento",
+      "copied": "Codice di incorporamento copiato"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Consegna: runtime — il valore reale viene caricato nell’ambiente sandbox. Il codice dell’agente può leggerlo.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Consegna: connector — solo lato server. Il valore non entra mai nell’ambiente sandbox.",
@@ -22391,5 +22401,9 @@
     "notes": "Note",
     "log": "Registro",
     "notFound": "Questo obiettivo non esiste più."
+  },
+  "agentEditor": {
+    "manage": "Gestisci",
+    "overviewTitle": "Panoramica"
   }
 }

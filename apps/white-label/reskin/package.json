@@ -18,7 +18,7 @@
     "@kortix/ui": "workspace:*",
     "@phosphor-icons/react": "2.1.10",
     "@tanstack/react-query": "^5.75.2",
-    "next": "16.4.1",
+    "next": "16.4.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

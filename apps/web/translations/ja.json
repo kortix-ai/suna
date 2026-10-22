@@ -906,6 +906,9 @@
       "iconDescription": "プロジェクト名の横に表示されます。",
       "name": "プロジェクト名",
       "nameDescription": "プロジェクト切り替えと、このプロジェクトが一覧表示されるすべての場所に表示されます。",
+      "defaultEffort": "デフォルトの推論強度",
+      "defaultEffortDescription": "セッションで明示的な選択がなく、セッションのモデルが対応している場合に、新しいプロンプトへ適用されます。",
+      "defaultEffortAutomatic": "自動",
       "saving": "保存中…",
       "archived": "プロジェクトをアーカイブしました",
       "archiveFailed": "プロジェクトをアーカイブできませんでした",
@@ -925,7 +928,19 @@
         "access": "チーム全員のアクセス権 — 誰もこのプロジェクトに再びアクセスできません"
       },
       "reassurance": "自分で接続した Git リポジトリは削除されません。すでにプッシュしたコードはそのまま残ります。",
-      "keepWorkspace": "プロジェクトを保持"
+      "keepWorkspace": "プロジェクトを保持",
+      "transferWorkspace": "プロジェクトを移管",
+      "transferDescription": "このプロジェクト（セッション・ファイル・設定・メンバーアクセス）を別の組織に移動します。",
+      "transferTitle": "プロジェクトを移管",
+      "transferDialog": "セッション・ファイル・設定とシステムロールは移動します。グループ、保留中の招待、カスタムロールは移動先で再付与が必要です。記録済みの使用量は元の組織の請求に残ります。",
+      "transferTargetLabel": "移動先の組織",
+      "transferTargetPlaceholder": "組織を選択",
+      "transferLoadingTargets": "組織を読み込み中…",
+      "transferNoTargets": "他の組織のメンバーではありません。",
+      "transferMove": "プロジェクトを移動",
+      "transferMoveTo": "{name} に移動",
+      "transferSuccess": "プロジェクトを移管しました",
+      "transferFailed": "移管に失敗しました"
     },
     "sandbox": {
       "states": {
@@ -10641,7 +10656,7 @@
       "text1458e20a1642": "任意。切断時にはKortixもローカルトークンを削除します。",
       "text1459df2e344c": "プロジェクトが宣言するsandbox imageからLinuxマシンを起動します。独自のファイルシステム、プロセステーブル、ネットワークを持つ完全に隔離されたマシンです。他のセッションとは何も共有しません。",
       "text14683b379324": "トークンを無効化",
-      "text146b38e7fa80": "デフォルトが失敗した場合",
+      "text146b38e7fa80": "モデルが失敗した場合",
       "text146cd06d5026": "環境：",
       "text146fd497badf": "メールをスキップしました — 招待リンクをコピーして手動で共有してください",
       "text147251df4759": "通常、数秒で完了します",
@@ -16011,7 +16026,7 @@
       "textafb32719ca9e": "ボットクライアントシークレット",
       "textafb5023c3c05": "変更を適用しました",
       "textafb837ec251a": "Oktaは変更（割り当て、プロファイル更新、グループプッシュ）が発生するとプッシュします。何も変わらない期間があっても異常ではありません。",
-      "textafb9890f7c72": "プロジェクトのデフォルトで処理できない場合のリクエストの送信先。",
+      "textafb9890f7c72": "リクエストのモデルで処理できない場合のリクエストの送信先。",
       "textafc19f1734c1": "プリンシパル",
       "textafc8e3a5d5db": "使われた言葉ではなく、実際の要望でリクエストを分類し、異なるアカウント数を数え、引用を添付します。「誰がこれを求めたのか」と聞かれたら、答えはドキュメントにあります。",
       "textafdc7d79dccb": "OneLoginからの自動プロビジョニング",
@@ -16724,7 +16739,7 @@
       "textc3d2e79ebdd0": "コネクター",
       "textc3e3a6edeaa5": "利用規約",
       "textc3e58a73609d": "破壊的",
-      "textc3ecd3cd791b": "プロジェクトのデフォルト後に、順番に試行されます。",
+      "textc3ecd3cd791b": "リクエストで指定されたモデルの後に、順番に試行されます。",
       "textc3f282c05f3f": "ポリシー 承認 ブロック require_approval ルール ツール コネクター ガードレール",
       "textc3f348ffaf7a": "プロジェクトに紐付け",
       "textc3f7bdf537c4": "リクエスト",
@@ -20057,6 +20072,7 @@
       "texta37dd5ef6ef2": "サイドバーをカスタマイズ",
       "text8c712bd7c1ec": "サイドバー カスタマイズ 並べ替え 非表示 表示 ナビゲーション sidebar",
       "text2313fe21ea84": "{name}を編集",
+      "text2b2c3ec032a6": "プロジェクトを別のアカウントに移管しました",
       "text44f9fff8bdae": "クレジットプランを変更しました",
       "text3fa17bba73e1": "アカウントにはまだプランがありません。セッションを実行するには、月間クレジットの金額を選んでください。すべてのメンバーが 1 つのプールを共有します。",
       "text6821e42be2c1": "ウォレットが空のため、セッションを実行できません。チャージして計算と最新の AI モデルを使い続けてください。プランには影響ありません。",
@@ -20336,18 +20352,6 @@
       "expiryNever": "なし",
       "expiryDays": "{count, plural, other {# 日}}"
     },
-    "publicTranscriptShare": {
-      "sectionTitle": "公開リンク",
-      "sectionDescription": "リンクを知っている人は誰でもサインインせずにこの会話を読めます。",
-      "create": "公開リンクを作成",
-      "revokeDescription": "リンクを持つすべての人に対して会話が読み込まれなくなります。後で新しいリンクを作成できます。",
-      "rowMeta": "読み取り専用の会話",
-      "unavailable": "この会話は一時的に利用できません。",
-      "unavailableDescription": "現在この会話を読み込めません。しばらくしてからもう一度お試しください。",
-      "loadFailedDescription": "会話を読み込めませんでした。",
-      "empty": "まだメッセージはありません",
-      "savedCopy": "{date} に保存されたコピー"
-    },
     "chatIdentityConnect": {
       "chatAccount": "{service} アカウント",
       "chatWorkspace": "{service} ワークスペース",
@@ -20464,6 +20468,12 @@
       "title": "保存しましたが、{agent} はまだ読み取れません",
       "grant": "{count, plural, other {# 件のシークレット}}（{names}）はエージェント {agent} のシークレットに含まれていません。カスタマイズ → エージェント → {agent} → シークレット を開いて{count, plural, =1 {それ} other {それら}}を有効にしてください。",
       "allowlist": "{count, plural, other {# 件のシークレット}}（{names}）はこのセッションのシークレットの範囲外です。{count, plural, =1 {それ} other {それら}}を使用するには新しいセッションを開始してください。"
+    },
+    "sessionEmbed": {
+      "sectionTitle": "埋め込み",
+      "sectionDescription": "同一サイトのページでのみ利用できます。閲覧者は事前にサインインし、このセッションへのアクセス権を持っている必要があります。クロスサイトの iframe 内でのサインインには対応していません。",
+      "copy": "埋め込みコードをコピー",
+      "copied": "埋め込みコードをコピーしました"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "配信: runtime — 実際の値はサンドボックス環境に読み込まれます。エージェントのコードが読み取れます。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "配信: connector — サーバー側のみ。値がサンドボックス環境に入ることはありません。",
@@ -22391,5 +22401,9 @@
     "notes": "メモ",
     "log": "ログ",
     "notFound": "このゴールはもう存在しません。"
+  },
+  "agentEditor": {
+    "manage": "管理",
+    "overviewTitle": "概要"
   }
 }

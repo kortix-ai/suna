@@ -105,7 +105,7 @@ const ConnectorFinalizeSchema = z.object({
   label: z.string().nullable().optional(),
 });
 
-// Same shape as createPublicSessionShareRateLimitMiddleware (public-session-shares):
+// Same shape as createInviteAcceptRateLimitMiddleware (middleware/rate-limit.ts):
 // no authenticated identity to key on, so key on the bearer token itself — every
 // legitimate use of one link shares that bucket. `ksl_...` is the wire prefix
 // minted in ./token.ts; anything not shaped like a real token falls back to the
