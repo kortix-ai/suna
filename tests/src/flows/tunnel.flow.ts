@@ -323,6 +323,20 @@ flow(
       r.status(200).body().has("$.status", "pending");
     });
 
+    await ctx.step("PUBLIC: unknown code and wrong secret return identical denials", async () => {
+      const caller = ctx.client.withBearer("synthetic-invalid-device-secret");
+      const existing = await caller.get("/v1/tunnel/device-auth/:code/status", {
+        params: { code: deviceCode },
+      });
+      const missing = await caller.get("/v1/tunnel/device-auth/:code/status", {
+        params: { code: "NONE-0000" },
+      });
+      existing.status(403);
+      missing.status(existing.statusCode);
+      assert.deepEqual(existing.json<unknown>(), { error: "Invalid secret" });
+      assert.equal(missing.text(), existing.text());
+    });
+
     await ctx.step("PUBLIC: poll status without secret → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)

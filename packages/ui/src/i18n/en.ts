@@ -6000,7 +6000,12 @@ const catalog = {
     "deleteTitle": "Delete this provider?",
     "deleteBody": "{name} and its API key leave this project for every member, and sessions stop offering its models. This cannot be undone.",
     "deleted": "Provider deleted",
-    "deleteFailed": "Could not delete the provider"
+    "deleteFailed": "Could not delete the provider",
+    "readsImages": "Reads images",
+    "reasoning": "Reasoning",
+    "traitsHint": "Kortix reads these from the endpoint when it reports them. Turn them on when it does not.",
+    "contextWindow": "{tokens} context",
+    "contextDefault": "128K context (the endpoint reports none)"
   },
   "providerSheet": {
     "inUse": "In use",

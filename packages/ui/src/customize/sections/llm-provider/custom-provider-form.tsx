@@ -11,6 +11,7 @@ import {
   InputGroupInput,
 } from '../../../primitives/input-group';
 import Loading from '../../../primitives/loading';
+import { Switch } from '../../../primitives/switch';
 import { successToast } from '../../../primitives/toast';
 import { useTranslations } from '../../../i18n';
 import { type CustomLlmProvider, upsertProjectSecret } from '@kortix/sdk';
@@ -95,7 +96,12 @@ export function CustomProviderForm({
       const name = form.name.trim();
       const baseUrl = form.baseURL.trim();
       const apiKey = form.apiKey.trim();
-      const model = { id: form.modelId.trim(), name: form.modelName.trim() };
+      const model = {
+        id: form.modelId.trim(),
+        name: form.modelName.trim(),
+        ...(form.attachment !== undefined ? { attachment: form.attachment } : {}),
+        ...(form.reasoning !== undefined ? { reasoning: form.reasoning } : {}),
+      };
 
       if (!providerId || !name || !baseUrl) {
         throw new Error('Provider ID, name, and base URL are required');
@@ -131,7 +137,17 @@ export function CustomProviderForm({
       await custom.save(providerId, {
         name,
         base_url: baseUrl,
-        models: [...(existing?.models ?? []).filter((m) => m.id !== model.id).map(({ id, name }) => ({ id, name })), model],
+        models: [
+          ...(existing?.models ?? [])
+            .filter((m) => m.id !== model.id)
+            .map(({ id, name, attachment, reasoning }) => ({
+              id,
+              name,
+              ...(attachment !== undefined ? { attachment } : {}),
+              ...(reasoning !== undefined ? { reasoning } : {}),
+            })),
+          model,
+        ],
       });
       return providerId;
     },
@@ -284,6 +300,26 @@ export function CustomProviderForm({
               />
             </FormField>
           </div>
+
+          <Field className="gap-2">
+            <div className="text-foreground flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+              <label className="flex items-center gap-2">
+                <Switch
+                  checked={form.attachment === true}
+                  onCheckedChange={(attachment) => setField('attachment', attachment)}
+                />
+                {t('readsImages')}
+              </label>
+              <label className="flex items-center gap-2">
+                <Switch
+                  checked={form.reasoning === true}
+                  onCheckedChange={(reasoning) => setField('reasoning', reasoning)}
+                />
+                {t('reasoning')}
+              </label>
+            </div>
+            <FieldDescription>{t('traitsHint')}</FieldDescription>
+          </Field>
 
           {error ? (
             <InfoBanner

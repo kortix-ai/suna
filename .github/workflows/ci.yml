@@ -85,6 +85,7 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'tsconfig.base.json'
               - 'apps/kortix-sandbox-agent-server/**'
+              - 'packages/shared/src/ssrf-guard.ts'
               # Bundled into the daemon (KORTIXD_SHARED_SOURCES).
               - 'packages/api-contract/src/**'
               - 'packages/sdk/src/core/session/wire-message-id.ts'

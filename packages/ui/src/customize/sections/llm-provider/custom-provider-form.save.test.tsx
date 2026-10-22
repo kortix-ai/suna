@@ -14,6 +14,12 @@ const save = mock(async (providerId: string, _input: unknown) => {
 let providers: unknown[] = [];
 
 mock.module('../../../primitives/toast', () => ({ successToast, errorToast }));
+// The Radix switch reads `HTMLFormElement`; react-test-renderer has no DOM.
+mock.module('../../../primitives/switch', () => ({
+  Switch: ({ checked, onCheckedChange, ...props }: { checked: boolean; onCheckedChange: (v: boolean) => void }) => (
+    <button {...props} role="switch" aria-checked={checked} onClick={() => onCheckedChange(!checked)} />
+  ),
+}));
 const realSdk = await import('@kortix/sdk');
 mock.module('@kortix/sdk', () => ({ ...realSdk, upsertProjectSecret }));
 const realSdkReact = await import('@kortix/sdk/react');
@@ -68,7 +74,7 @@ const fields = {
 };
 
 describe('CustomProviderForm save', () => {
-  test('stores the key as a gateway broker secret, then the endpoint', async () => {
+  test('stores the key as a gateway broker secret, then the endpoint (its GET /models needs the key)', async () => {
     const saved = mock((_id: string) => {});
     await submit({ ...fields, 'custom-api-key': 'synthetic-key' }, saved);
     expect(save).toHaveBeenCalledWith('example-llm', {
@@ -82,8 +88,6 @@ describe('CustomProviderForm save', () => {
       strategy: 'broker',
       consumer: 'llm_gateway',
     });
-    // Key first, on purpose: saving the endpoint reads its GET /models for each
-    // model's context window and limits, and that call needs the credential.
     expect(calls).toEqual(['secret:CUSTOM_EXAMPLE_LLM_API_KEY', 'save:example-llm']);
     expect(saved).toHaveBeenCalledWith('example-llm');
     expect(successToast).toHaveBeenCalledTimes(1);
@@ -118,6 +122,31 @@ describe('CustomProviderForm save', () => {
         { id: 'model-zero', name: 'Model Zero' },
         { id: 'model-one', name: 'Model One' },
       ],
+    });
+  });
+
+  test('a flipped switch is sent; an untouched one is left to the endpoint', async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    await act(async () => {
+      renderer = create(
+        <QueryClientProvider client={client}>
+          <CustomProviderForm projectId="synthetic-project" />
+        </QueryClientProvider>,
+      );
+    });
+    for (const [id, value] of Object.entries(fields)) {
+      await act(async () => renderer.root.findByProps({ id }).props.onChange({ target: { value } }));
+    }
+    const [images] = renderer.root.findAll((node) => node.type === 'button' && node.props.role === 'switch');
+    await act(async () => images!.props.onClick());
+    await act(async () => {
+      renderer.root.findByType('form').props.onSubmit({ preventDefault() {} });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(save).toHaveBeenCalledWith('example-llm', {
+      name: 'Example',
+      base_url: 'https://api.example.com/v1',
+      models: [{ id: 'model-one', name: 'Model One', attachment: true }],
     });
   });
 

@@ -36,3 +36,21 @@ test('Permissions-Policy covers CORS preflight', async () => {
   expect(response.status).toBe(204);
   expect(response.headers.get('Permissions-Policy')).toBe('camera=(), microphone=(), geolocation=()');
 });
+
+test('the installed HTTP chain budgets malformed auth requests before route validation', async () => {
+  const app = new OpenAPIHono();
+  installHttpMiddleware(app);
+  app.post('/v1/auth/sign-in', (c) => c.json({ error: 'invalid_request' }, 400));
+  for (let i = 0; i < 30; i++) {
+    const response = await app.request('/v1/auth/sign-in', {
+      method: 'POST',
+      headers: { Origin: 'https://kortix.com' },
+    });
+    expect(response.status).toBe(400);
+    expect(response.headers.get('X-RateLimit-Remaining')).toBe(String(29 - i));
+    expect(response.headers.get('Access-Control-Expose-Headers')).toContain('X-RateLimit-Remaining');
+  }
+  const response = await app.request('/v1/auth/sign-in', { method: 'POST' });
+  expect(response.status).toBe(429);
+  expect(response.headers.get('Retry-After')).toBeTruthy();
+});

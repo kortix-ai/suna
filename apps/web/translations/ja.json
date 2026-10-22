@@ -20613,7 +20613,12 @@
     "deleteTitle": "このプロバイダーを削除しますか？",
     "deleteBody": "{name} とその API キーはすべてのメンバーに対してこのプロジェクトから削除され、セッションはそのモデルを提供しなくなります。この操作は元に戻せません。",
     "deleted": "プロバイダーを削除しました",
-    "deleteFailed": "プロバイダーを削除できませんでした"
+    "deleteFailed": "プロバイダーを削除できませんでした",
+    "readsImages": "画像を読み取る",
+    "reasoning": "推論",
+    "traitsHint": "エンドポイントが報告する場合、Kortix はそこから読み取ります。報告しない場合はオンにしてください。",
+    "contextWindow": "コンテキスト {tokens}",
+    "contextDefault": "コンテキスト 128K（エンドポイントの報告なし）"
   },
   "providerSheet": {
     "inUse": "使用中",

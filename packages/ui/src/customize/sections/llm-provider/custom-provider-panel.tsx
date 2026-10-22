@@ -38,6 +38,7 @@ import { Input } from '../../../primitives/input';
 import { InputGroup, InputGroupInput } from '../../../primitives/input-group';
 import Loading from '../../../primitives/loading';
 import { Skeleton } from '../../../primitives/skeleton';
+import { Switch } from '../../../primitives/switch';
 import {
   SplitSheetBody,
   SplitSheetDescription,
@@ -55,6 +56,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { useModelsPageSheet } from '../models-page-sheet';
 import { CustomProviderForm } from './custom-provider-form';
+import { formatTokenCount } from './utils';
 
 /** One saved custom provider: a configured row opens the sheet, a legacy row
  *  pre-fills the form. */
@@ -128,7 +130,59 @@ function DetailRow({ label, value, mono = true }: { label: string; value: string
   );
 }
 
-type ModelDraft = { id: string; name: string };
+type ModelDraft = { id: string; name: string; attachment?: boolean; reasoning?: boolean };
+
+/**
+ * A model as the PUT takes it: the switches travel, the limits do not, so
+ * every save reads the window again from the endpoint's `GET /models`.
+ */
+const modelInput = ({ id, name, attachment, reasoning }: ModelDraft): ModelDraft => ({
+  id,
+  name,
+  ...(attachment !== undefined ? { attachment } : {}),
+  ...(reasoning !== undefined ? { reasoning } : {}),
+});
+
+/** One saved model: its window, and the image and reasoning switches (each saves at once). */
+function ModelRow({
+  model,
+  disabled,
+  onToggle,
+}: {
+  model: CustomLlmProvider['models'][number];
+  disabled: boolean;
+  onToggle: (patch: Pick<ModelDraft, 'attachment' | 'reasoning'>) => void;
+}) {
+  const t = useTranslations('customProvider');
+  const context = formatTokenCount(model.context);
+  return (
+    <div className="space-y-2 py-2">
+      <div className="flex min-h-6 items-center justify-between gap-4">
+        <span className="text-muted-foreground shrink-0 text-sm">{model.name}</span>
+        <span className="text-foreground min-w-0 truncate font-mono text-xs">{model.id}</span>
+      </div>
+      <div className="text-muted-foreground flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+        <span className="tabular-nums">{context ? t('contextWindow', { tokens: context }) : t('contextDefault')}</span>
+        <label className="flex items-center gap-2">
+          <Switch
+            checked={model.attachment === true}
+            disabled={disabled}
+            onCheckedChange={(attachment) => onToggle({ attachment })}
+          />
+          {t('readsImages')}
+        </label>
+        <label className="flex items-center gap-2">
+          <Switch
+            checked={model.reasoning === true}
+            disabled={disabled}
+            onCheckedChange={(reasoning) => onToggle({ reasoning })}
+          />
+          {t('reasoning')}
+        </label>
+      </div>
+    </div>
+  );
+}
 
 /**
  * The endpoint editor in the sheet. The PUT replaces the provider's whole
@@ -154,7 +208,7 @@ function EndpointEditor({
   const save = useMutation({
     mutationFn: () => {
       const trimmed = models
-        .map((m) => ({ id: m.id.trim(), name: m.name.trim() }))
+        .map((m) => modelInput({ ...m, id: m.id.trim(), name: m.name.trim() }))
         .filter((m) => m.id || m.name);
       if (!name.trim() || !/^https?:\/\//.test(baseUrl.trim())) {
         throw new Error('Name and an http:// or https:// base URL are required');
@@ -289,7 +343,7 @@ function CustomProviderDetail({
         await custom.save(provider.id, {
           name: provider.name,
           base_url: provider.base_url,
-          models: provider.models.map(({ id, name }) => ({ id, name })),
+          models: provider.models.map(modelInput),
         });
       }
     },
@@ -302,6 +356,16 @@ function CustomProviderDetail({
       refreshProjectProviderState(queryClient, projectId);
     },
     onError: (err) => errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text2c07997249ab')),
+  });
+
+  const toggle = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: Pick<ModelDraft, 'attachment' | 'reasoning'> }) =>
+      custom.save(provider.id, {
+        name: provider.name,
+        base_url: provider.base_url ?? '',
+        models: provider.models.map((m) => modelInput(m.id === id ? { ...m, ...patch } : m)),
+      }),
+    onError: (err) => errorToast(err instanceof Error ? err.message : t('saveFailed')),
   });
 
   const remove = useMutation({
@@ -349,7 +413,12 @@ function CustomProviderDetail({
               <h3 className="text-foreground pt-4 text-sm font-medium">{t('models')}</h3>
               <div className="divide-border divide-y">
                 {provider.models.map((model) => (
-                  <DetailRow key={model.id} label={model.name} value={model.id} />
+                  <ModelRow
+                    key={model.id}
+                    model={model}
+                    disabled={toggle.isPending || !provider.base_url}
+                    onToggle={(patch) => toggle.mutate({ id: model.id, patch })}
+                  />
                 ))}
               </div>
               <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => setEditing(true)}>

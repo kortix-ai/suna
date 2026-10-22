@@ -20613,7 +20613,12 @@
     "deleteTitle": "删除此提供商？",
     "deleteBody": "{name} 及其 API 密钥将对所有成员从此项目中移除，会话将不再提供其模型。此操作无法撤销。",
     "deleted": "提供商已删除",
-    "deleteFailed": "无法删除提供商"
+    "deleteFailed": "无法删除提供商",
+    "readsImages": "可读取图片",
+    "reasoning": "推理",
+    "traitsHint": "端点报告这些信息时，Kortix 会自动读取。端点未报告时请手动开启。",
+    "contextWindow": "{tokens} 上下文",
+    "contextDefault": "128K 上下文（端点未报告）"
   },
   "providerSheet": {
     "inUse": "使用中",
