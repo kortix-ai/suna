@@ -7,6 +7,7 @@ import { spaceDriveFolders } from '@kortix/shared';
 import { and, eq } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
+import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { noteDriveWrite } from './conflicts';
 import { ensureProjectDrive, findProjectDrive, moveDriveFolder, refreshDriveNotes, sessionDrivesEnabled, writeDriveVolume } from './service';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
@@ -59,6 +60,9 @@ export async function moveChannelFolder(projectId: string, spaceId: string, from
   void refreshChannelThreadNotes(projectId, spaceId);
 }
 
+/** Threads whose notes a channel rename rewrites at once. */
+const NOTES_REFRESH_CONCURRENCY = 4;
+
 /** Rewrite /drives/README.md in every thread of the channel that has a running box; best effort. */
 async function refreshChannelThreadNotes(projectId: string, spaceId: string): Promise<void> {
   try {
@@ -68,7 +72,8 @@ async function refreshChannelThreadNotes(projectId: string, spaceId: string): Pr
       .from(projectSessions)
       .innerJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessions.sessionId))
       .where(and(eq(projectSessions.spaceId, spaceId), eq(sessionSandboxes.status, 'active')));
-    for (const { sessionId } of rows) void refreshDriveNotes(sessionId);
+    // Each refresh is a sandbox exec with an ownership pass over every writable mount.
+    await mapWithConcurrency(rows, NOTES_REFRESH_CONCURRENCY, ({ sessionId }) => refreshDriveNotes(sessionId));
   } catch (err) {
     logger.warn(`[drives] the notes of channel ${spaceId}'s threads were not refreshed`, {
       error: err instanceof Error ? err.message : String(err),

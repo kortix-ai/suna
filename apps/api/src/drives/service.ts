@@ -963,6 +963,7 @@ export async function reconcileSessionDrives(sessionId: string): Promise<void> {
   }
 }
 
+/** How long a sharing change waits for running sessions before it answers. */
 const ENFORCE_ANSWER_BUDGET_MS = 10_000;
 
 /**

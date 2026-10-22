@@ -319,7 +319,6 @@ function versionAuthor(commit: VolumeCommit): z.infer<typeof DriveVersionSchema>
   return 'system';
 }
 
-/** How long a sharing change waits for running sessions before it answers. */
 /** The agents a project declares that start sessions (subagents never own one). Best effort. */
 async function projectAgentNames(projectId: string): Promise<string[]> {
   try {
