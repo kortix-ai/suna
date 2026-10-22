@@ -2,7 +2,8 @@
 
 import { customizePath, uiRoutes } from '../../lib/routes';
 import { NewEntityMenu } from '../shared/new-entity-menu';
-import { useTranslations as useI18nTranslations } from '../../i18n';
+import { type UiTranslator, useTranslations as useI18nTranslations } from '../../i18n';
+import { agentAccess } from './agent-access';
 import { useMemo, useRef, useState } from 'react';
 
 import { Badge } from '../../primitives/badge';
@@ -281,6 +282,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             href={agentHref(projectId, agent.name)}
             onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
             title={agentTitle(agent.name)}
+            subtitle={<code className="text-muted-foreground text-xs break-all">{agent.name}</code>}
             description={agent.description}
             badges={<AgentCardBadges agent={agent} isDefault={defaultAgent === agent.name} />}
             meta={
@@ -321,6 +323,9 @@ export function AgentsPage({ projectId }: { projectId: string }) {
                   href={agentHref(projectId, agent.name)}
                   onIntent={() => prefetchAgentConfig(queryClient, projectId, agent.name)}
                   title={agentTitle(agent.name)}
+                  subtitle={
+                    <code className="text-muted-foreground text-xs break-all">{agent.name}</code>
+                  }
                   description={agent.description}
                   badges={<AgentCardBadges agent={agent} isDefault={false} />}
                   meta={
@@ -371,6 +376,7 @@ function AgentCardFacts({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const model = agent.model ? agent.model.split('/').pop() : null;
+  const accessLabel = accessLabelOf(agentAccess(agent.scope), tI18nComplete);
   const sep = (
     <span aria-hidden className="text-muted-foreground">
       ·
@@ -395,8 +401,28 @@ function AgentCardFacts({
           </span>
         </>
       ) : null}
+      {/* Its own line, and it wraps rather than truncates: the grants are
+          the point of the slot, and a separator left dangling at a wrap
+          read as a stray dot. */}
+      {accessLabel ? <span className="basis-full tabular-nums">{accessLabel}</span> : null}
     </>
   );
+}
+
+/** The access slot: what the configuration grants (KRTX-3025). */
+function accessLabelOf(access: ReturnType<typeof agentAccess>, t: UiTranslator): string | null {
+  if (!access) return null;
+  if (access.kind === 'full') return t.raw('textf19611c61ca5');
+  const LABELS = {
+    connectors: { all: 'textd83250185d41', count: 'text15589a542412' },
+    secrets: { all: 'text0b38e3daeb93', count: 'texte96d99ad9896' },
+    actions: { all: 'text70b8d7e10749', count: 'text2d3f4433505a' },
+  } as const;
+  return access.parts
+    .map(({ kind, value }) =>
+      value === 'all' ? t.raw(LABELS[kind].all) : t(LABELS[kind].count, { count: value }),
+    )
+    .join(', ');
 }
 
 /**

@@ -58,12 +58,13 @@ export function planArrivals(
   fresh: readonly InboxNotification[],
   context: { onScreen: (sessionId: string) => boolean; unseen: readonly string[]; os: boolean },
 ): { toast: InboxNotification[]; os: InboxNotification[] } {
+  const unseen = new Set(context.unseen);
   const announce = fresh
     .filter(
       (row) =>
         !row.session_id ||
         (!context.onScreen(row.session_id) &&
-          !(row.kind === 'turn_done' && context.unseen.includes(row.session_id))),
+          !(row.kind === 'turn_done' && unseen.has(row.session_id))),
     )
     .slice(0, MAX_ARRIVAL_ALERTS);
   return context.os ? { toast: [], os: announce } : { toast: announce, os: [] };
@@ -86,9 +87,11 @@ export function notificationTag(row: InboxNotification): string {
 
 /**
  * Where a row's open action goes, named by the page its `url` opens: its
- * session, the Reminders page (a reminder alert), or the Triggers page.
+ * conversation (a message), its session, the Reminders page (a reminder
+ * alert), or the Triggers page.
  */
-export function rowDestination(row: InboxNotification): 'session' | 'reminders' | 'triggers' {
+export function rowDestination(row: InboxNotification): 'room' | 'session' | 'reminders' | 'triggers' {
+  if (row.room_id) return 'room';
   if (row.session_id) return 'session';
   return new URL(row.url, 'http://kortix.invalid').pathname.endsWith('/reminders') ? 'reminders' : 'triggers';
 }

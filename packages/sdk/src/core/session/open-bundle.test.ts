@@ -260,15 +260,15 @@ describe('the bundle legs — every one is tri-state', () => {
 });
 
 describe('the transcript leg', () => {
-  test('an open asks for the first saved window; a pointer-only open asks for none', async () => {
+  test('an open asks for no v1 window by default (the session log is read first); a window only when asked', async () => {
     openSessionBundle(PID, SID);
     await claimOpenBundle(PID, SID);
-    expect(requests[0]).toContain(`transcript=${OPEN_BUNDLE_TRANSCRIPT_LIMIT}`);
+    expect(requests[0]).toContain('transcript=0');
 
     resetSessionOpenBundles();
-    openSessionBundle(PID, SID, { transcript: 0 });
+    openSessionBundle(PID, SID, { transcript: OPEN_BUNDLE_TRANSCRIPT_LIMIT });
     await claimOpenBundle(PID, SID);
-    expect(requests[1]).toContain('transcript=0');
+    expect(requests[1]).toContain(`transcript=${OPEN_BUNDLE_TRANSCRIPT_LIMIT}`);
   });
 
   test('the saved window is served by the history projection, for the row root only', async () => {

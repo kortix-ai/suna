@@ -169,6 +169,8 @@ export function SharingPicker({
   );
 }
 
+const NO_INVITE_EMAILS: string[] = [];
+
 /**
  * Legacy adapter over {@link PrincipalPicker}, kept ONLY for the
  * non-access callers of this module (`features/apps/apps-view.tsx` and
@@ -184,7 +186,7 @@ export function SubjectPicker({
   accountId,
   memberIds,
   groupIds,
-  inviteEmails = [],
+  inviteEmails = NO_INVITE_EMAILS,
   onChange,
   allowInvite = false,
   kinds = ['member', 'group'],

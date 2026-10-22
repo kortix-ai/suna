@@ -3,9 +3,10 @@
  * drain executes, followed by the command's post-create actions.
  */
 
+import { isRepositoryDisconnectedError, repositoryDisconnectedBody } from '../../shared/repository-health';
 import { projectSessions, projects, serviceAccounts } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { bindChatThread } from '../../channels/core/threads';
+import { adoptChatThreads, bindChatThread } from '../../channels/core/threads';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
 import { db } from '../../shared/db';
@@ -14,6 +15,7 @@ import { secretsAllowlistPayloadConflicts } from '../secrets';
 import { forkSourceConflicts, providerPoolConflicts, runtimeContextConflicts } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { applyTriggerSessionAccess } from '../trigger-session-access';
+import { repinSessionReminder } from '../lib/session-reminders';
 import { resolveProjectAutomationActor } from './actor';
 import { sessionBackpressureState } from './backpressure';
 import {
@@ -181,6 +183,18 @@ async function runInlineCreate(
     // immediately, and the row is queued for backoff / dead-lettered per the
     // normal 5-attempt budget rather than left dangling on a lease.
     const message = err instanceof Error ? err.message : String(err);
+    // A disconnected repository is not retried: no attempt can succeed until a
+    // person reconnects GitHub, and the caller needs the cause, not a 503.
+    if (isRepositoryDisconnectedError(err)) {
+      await markCommandFailed(row, message, { retryable: false, attempts: row.attempts + 1 });
+      return {
+        status: 'failed',
+        commandId: row.commandId,
+        retryable: false,
+        requeued: false,
+        error: { status: 409, body: repositoryDisconnectedBody(err) },
+      };
+    }
     const outcome = await markCommandFailed(row, message, {
       retryable: true,
       attempts: row.attempts + 1,
@@ -429,6 +443,10 @@ export async function applyPostCreateActions(input: {
           sessionId: input.sessionId,
           triggerSlug: action.triggerSlug,
         });
+      } else if (action.type === 'repin_reminder') {
+        await repinSessionReminder(input.projectId, action.reminderId, input.sessionId, new Date());
+      } else if (action.type === 'adopt_chat_threads') {
+        await adoptChatThreads(input.projectId, action.fromSessionId, input.sessionId);
       }
     }
     return { ok: true };

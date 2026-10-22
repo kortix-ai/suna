@@ -83,8 +83,8 @@ A session runs exactly one, and the two read different config files.
 echo "${KORTIX_HARNESS:-opencode}"     # prints pi or opencode
 ```
 
-Kortix selects the harness when a session starts: `llm_gateway` off →
-OpenCode; else the `pi_harness` project flag on (the default) → pi; else
+Kortix selects the harness when a session starts: the `pi_harness` project
+flag on (the default) → pi; else
 `runtime: pi` in `kortix.yaml` → pi; else OpenCode. An existing session keeps
 its harness.
 
@@ -656,13 +656,14 @@ When you, as an agent, have changes you believe should persist:
    If it shows no changes, your push didn't land — push and re-check
    the SAME CR (the diff recomputes live from the refs). Never open a
    duplicate CR for the same work.
-6. **Surface the CR to the user.** Print the CR number so they can
-   review:
-   ```sh
-   kortix cr ls
-   ```
-7. **Wait.** The user merges via dashboard, CLI (`kortix cr merge
-   <n>`), or asks for changes. *You do not merge your own CRs.*
+6. **Surface the CR to the user.** Name the CR number and title in your
+   reply (`kortix cr ls` gives you both). In the web app a **Review**
+   button appears under your reply: tell the user to use it to see and
+   apply the changes. Mention `kortix cr merge <n>` only when the user
+   works from the CLI or a channel without the web app.
+7. **Wait.** The user applies the CR (the Review button, the dashboard,
+   or `kortix cr merge <n>`), or asks for changes. *You do not merge your
+   own CRs.*
 
 ### Don't bypass this
 

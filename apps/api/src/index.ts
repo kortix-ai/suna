@@ -1,4 +1,5 @@
 // Expand the aggregate ECS secret before any module reads process.env.
+import { loadManagedLineupAtBoot } from './workers/managed-lineup-worker';
 import './environment-secret';
 
 // ─── Observability (must follow environment hydration) ───────────────────────
@@ -85,6 +86,8 @@ if (process.env.KORTIX_MODEL_PRICING_LIVE_ENABLED !== '0') {
     console.error('[startup] Model pricing init failed (will retry in 24h):', err),
   );
 }
+// Kortix managed models come from Platinum Inference: read the lineup before serving.
+if (import.meta.main) await loadManagedLineupAtBoot();
 if (process.env.KORTIX_MODEL_CATALOG_LIVE_ENABLED !== '0') {
   runtimeModelCatalog
     .start()

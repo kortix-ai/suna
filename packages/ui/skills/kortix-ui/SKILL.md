@@ -9,8 +9,8 @@ description: "Build React UI with @kortix/ui, the Kortix component library and t
 white-label demo and SDK customer apps. Components are Tailwind v4 class strings that read CSS variables.
 Docs: https://kortix.com/docs/sdk/ui. Live catalog: https://kortix.com/design-system.
 
-Availability: a workspace package of `kortix-ai/suna` (`"@kortix/ui": "workspace:*"`), not on npm yet.
-Outside it: tell the user, style with plain CSS over the section 6 variables, never copy component source.
+Install: `npm i @kortix/ui @kortix/sdk`, the same version of each (peers: `references/custom-dashboard.md`).
+Module entries and `@kortix/ui/theme` need 0.14.4+. Inside `kortix-ai/suna`: `"workspace:*"`. Never copy component source.
 
 ## 1. Set up once
 
@@ -84,7 +84,7 @@ Theme with `@kortix/ui/theme`, never by forking a component: `themeToCss(theme)`
 
 | Import from | Names |
 | --- | --- |
-| `@kortix/ui` (adapters) | `cn`, `UiProvider`, `defaultUiStrings`, `useUiStrings`, `useUiLink`, `useUiImage`, `useUiBrand`, `UiStrings`, `UiStringsInput`, `UiLinkProps`, `UiLinkComponent`, `UiImageProps`, `UiImageComponent`, `UiBrand`, `UseUiBrand`, `useIsDark`, `useUiRouter`, `useUiShallowNavigate`, `UiShallowNavigate`, `useUiPathname`, `useUiSearchParams`, `useUiParams`, `defaultUiNavigation`, `UiNavigation`, `UiRouter`, `UiRouteParams`, `UiSearchParams`, `useUiViewerId`, `useUiHostConfig`, `defaultUiHostConfig`, `UiHostConfig`, `SessionIdsProvider`, `useSessionIds`, `UiSessionIds` |
+| `@kortix/ui` (adapters) | `cn`, `UiProvider`, `defaultUiStrings`, `useUiStrings`, `useUiLink`, `useUiImage`, `useUiBrand`, `UiStrings`, `UiStringsInput`, `UiLinkProps`, `UiLinkComponent`, `UiImageProps`, `UiImageComponent`, `UiBrand`, `UseUiBrand`, `useIsDark`, `useUiRouter`, `useUiShallowNavigate`, `UiShallowNavigate`, `useUiPathname`, `useUiSearchParams`, `useUiParams`, `defaultUiNavigation`, `UiNavigation`, `UiRouter`, `UiRouteParams`, `UiSearchParams`, `useUiViewerId`, `useUiHostConfig`, `defaultUiHostConfig`, `UiHostConfig`, `UiSlashAction`, `SessionIdsProvider`, `useSessionIds`, `UiSessionIds` |
 | `@kortix/ui` (actions, display) | `Button`, `buttonVariants`, `ButtonProps`, `Badge`, `badgeVariants`, `Card`, `CardAction`, `CardButton`, `CardContent`, `CardDescription`, `CardEyebrow`, `CardFeature`, `CardFooter`, `CardGroup`, `CardHeader`, `CardImage`, `CardMedia`, `CardTitle`, `CardButtonProps`, `CardButtonSize`, `CardButtonVariant`, `CardGroupProps`, `CardLogo`, `CardProps`, `Separator`, `Skeleton` |
 | `@kortix/ui` (forms) | `Input`, `inputFocusClasses`, `inputInvalidClasses`, `inputSurfaceClasses`, `inputTransitionClasses`, `InputProps`, `useAutosizeTextArea`, `Textarea`, `AutosizeTextAreaRef`, `AutosizeTextAreaProps`, `Label`, `Checkbox`, `CheckboxProps`, `CheckboxVariant`, `Switch`, `SwitchProps`, `Select`, `SelectContent`, `SelectGroup`, `SelectItem`, `SelectLabel`, `SelectScrollDownButton`, `SelectScrollUpButton`, `SelectSeparator`, `SelectTrigger`, `SelectValue`, `SelectTriggerProps` |
 | `@kortix/ui` (overlays) | `Modal`, `ModalBody`, `ModalClose`, `ModalContent`, `ModalContentInner`, `ModalDescription`, `ModalFooter`, `ModalHeader`, `ModalOverlay`, `ModalPortal`, `ModalTitle`, `ModalTrigger`, `Hint`, `HintProps`, `Popover`, `PopoverAnchor`, `PopoverContent`, `PopoverTrigger`, `DropdownMenu`, `DropdownMenuCheckboxItem`, `DropdownMenuContent`, `DropdownMenuGroup`, `DropdownMenuItem`, `DropdownMenuLabel`, `DropdownMenuPortal`, `DropdownMenuRadioGroup`, `DropdownMenuRadioItem`, `DropdownMenuSeparator`, `DropdownMenuShortcut`, `DropdownMenuSub`, `DropdownMenuSubContent`, `DropdownMenuSubTrigger`, `DropdownMenuTrigger` |

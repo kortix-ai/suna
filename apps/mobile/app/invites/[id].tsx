@@ -193,14 +193,35 @@ export default function InviteScreen() {
         {backToProjects}
       </Message>
     );
+  } else if (!invite.email_matches_caller && invite.reason === 'email_unconfirmed') {
+    // A directory invite this instance cannot prove the address for. The web
+    // invite page signs in through the account's own IdP; the app has no
+    // provider-id sign-in yet.
+    content = (
+      <Message
+        title={t('invites.directoryTitle', 'Sign in with single sign-on')}
+        body={t(
+          'invites.directoryBody',
+          "Your organization's directory added you to this account. Open this invite in a browser and sign in with your organization's single sign-on, or ask an account admin to resend the invite.",
+        )}>
+        {backToProjects}
+      </Message>
+    );
   } else if (!invite.email_matches_caller) {
     content = (
       <Message
         title={t('invites.wrongAccountTitle', 'Switch accounts')}
-        body={t('invites.wrongAccountBody', {
-          defaultValue: "This invite is addressed to a different account. You're signed in as {{email}}.",
-          email: user?.email ?? '',
-        })}>
+        body={
+          invite.reason === 'sso_email_domain_unverified'
+            ? t(
+                'invites.ssoDomainUnverifiedBody',
+                "Your single sign-on provider has not verified this email's domain. Sign out and sign back in with your email address to use this invite.",
+              )
+            : t('invites.wrongAccountBody', {
+                defaultValue: "This invite is addressed to a different account. You're signed in as {{email}}.",
+                email: user?.email ?? '',
+              })
+        }>
         <Button size="lg" className="rounded-full" disabled={signingOut} onPress={signOutAndContinue}>
           <Text>{t('invites.signOutAndContinue', 'Sign out and continue')}</Text>
         </Button>

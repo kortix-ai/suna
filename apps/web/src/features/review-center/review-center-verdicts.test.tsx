@@ -112,7 +112,9 @@ function mount(items: ReviewItem[], cans: Leaves) {
             isFetched
             recoveringCrId={null}
             onAct={(id, verdict) => calls.push(`act ${id} ${verdict}`)}
-            onBulkAct={(ids, verdict) => calls.push(`bulk ${ids.join(',')} ${verdict}`)}
+            onBulkAct={(ids, verdict) => {
+              calls.push(`bulk ${ids.join(',')} ${verdict}`);
+            }}
             verdictAllowed={(item, verdict) => reviewVerdictAllowed(item, verdict, cans)}
           />
         </NextIntlClientProvider>
@@ -256,14 +258,14 @@ describe('the review page of one item', () => {
   test('a connector call shows Approve and Deny to the viewer the API lets decide it, whatever leaves they hold', () => {
     search = 'id=call:exec-1';
     mount([call(true)], MEMBER);
-    expect(buttons()).toContain('Approve this call');
+    expect(buttons().some((b) => /^Approve( and \w+)?$/.test(b))).toBe(true);
     expect(buttons()).toContain('Deny');
   });
 
   test('a connector call the API withholds from this viewer shows no decision, even to a manager', () => {
     search = 'id=call:exec-1';
     mount([call(false)], MANAGER);
-    expect(buttons()).not.toContain('Approve this call');
+    expect(buttons().some((b) => /^Approve( and \w+)?$/.test(b))).toBe(false);
     expect(buttons()).not.toContain('Deny');
   });
 
@@ -274,7 +276,7 @@ describe('the review page of one item', () => {
     const waiting = { ...call(false), status: 'waiting' } as ReviewItem;
     (waiting.detail as { actions: Array<{ canResolve?: boolean }> }).actions[0].canResolve = false;
     mount([waiting], MANAGER);
-    expect(buttons()).not.toContain('Approve this call');
+    expect(buttons().some((b) => /^Approve( and \w+)?$/.test(b))).toBe(false);
     expect(buttons()).not.toContain('Deny');
     expect(text()).toContain(
       'Waiting for the person who started this session or anyone who manages this project to approve or deny it.',
@@ -327,5 +329,41 @@ describe('the review page of one item', () => {
     document.body.innerHTML = '';
     mount([CONFLICTED], MANAGER);
     expect(buttons()).toContain('Solve with agent');
+  });
+});
+
+describe('a pending approval row', () => {
+  const APPROVAL = mockItem('rv-approval-1');
+  const expiringIn = (ms: number) =>
+    ({ ...APPROVAL, expiresAt: new Date(Date.now() + ms).toISOString() }) as ReviewItem;
+  const expiryLabel = () =>
+    [...document.querySelectorAll('span')].find((span) =>
+      span.textContent?.startsWith('Expires in'),
+    );
+
+  /** The orange glyph in the row's meta line, beside the label. */
+  const warningGlyph = () =>
+    [...(expiryLabel()?.parentElement?.querySelectorAll('svg') ?? [])].find((svg) =>
+      svg.getAttribute('class')?.includes('text-kortix-orange'),
+    );
+
+  test('says how long it can still be decided', () => {
+    mount([expiringIn(3 * 3_600_000 + 60_000)], MANAGER);
+    expect(expiryLabel()?.textContent).toBe('Expires in 3h');
+    expect(warningGlyph()).toBeUndefined();
+  });
+
+  test('under one hour a warning clock leads it; the text stays muted', () => {
+    // Half a minute of slack: the label floors, and the render takes time.
+    mount([expiringIn(30 * 60_000 + 30_000)], MANAGER);
+    expect(expiryLabel()?.textContent).toBe('Expires in 30m');
+    // An accent paints a glyph, never text (kortix-brand color.md).
+    expect(expiryLabel()?.className).not.toContain('text-kortix-orange');
+    expect(warningGlyph()?.nextElementSibling).toBe(expiryLabel());
+  });
+
+  test('an approval with no expiry shows no label', () => {
+    mount([APPROVAL], MANAGER);
+    expect(expiryLabel()).toBeUndefined();
   });
 });

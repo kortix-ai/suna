@@ -278,7 +278,6 @@ import {
   heldCommandRows,
   type HeldCommand,
 } from '../composer/held-commands';
-import { useReadinessSettling } from '../status/use-readiness-settling';
 import { useSessionHistoryViewStore } from '../../internal/stores/session-history-view-store';
 import { downloadBlob } from '../../internal/lib/utils/download';
 import { RestoreNotice, hasOutOfContext, type FullTextState } from './session-history';
@@ -372,6 +371,8 @@ const STOP_HOLD_DEADLINE_MS = 1500;
 
 interface SessionChatProps {
   sessionId: string;
+  /** A host's reply quote (`SessionThreadProps.quote`): each new id adds its text to the composer's quotes. */
+  hostQuote?: { id: number; text: string } | null;
   /** Durable Kortix project session id used by project-session APIs. */
   projectSessionId?: string;
   /** Complete SDK state for the root session. Omit for a read-only child session. */
@@ -458,6 +459,7 @@ export function SessionChat({
   savedHistoryScope,
   onContentReady,
   deferComposerFocus,
+  hostQuote,
 }: SessionChatProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tQueue = useTranslations('threads');
@@ -589,6 +591,17 @@ export function SessionChat({
     lastScrollTopRef.current = top;
   }, []);
 
+  // A host's quote: each new id is one more request, like a "Reply" click.
+  const hostQuoteIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const text = hostQuote?.text.trim();
+    if (!hostQuote || !text || hostQuoteIdRef.current === hostQuote.id) return;
+    hostQuoteIdRef.current = hostQuote.id;
+    quoteRequestIdRef.current += 1;
+    const request = { id: quoteRequestIdRef.current, text };
+    setQuoteRequests((current) => [...current, request]);
+  }, [hostQuote]);
+
   // When user clicks "Reply" in the popup
   const handleSelectionReply = useCallback(() => {
     if (!selectionPopup) return;
@@ -705,7 +718,9 @@ export function SessionChat({
   const messages: SessionLogMessage[] | undefined = thread?.messages.length ? thread.messages : undefined;
   // The thread for handlers that read it at call time (the optimistic answers cache).
   const threadRef = useRef(thread);
-  threadRef.current = thread;
+  useLayoutEffect(() => {
+    threadRef.current = thread;
+  }, [thread]);
   const messagesLoading = syncMessagesLoading;
   // Who wrote each user message. A one-person session stays unlabelled.
   const viewerId = useUiViewerId();
@@ -1039,10 +1054,9 @@ export function SessionChat({
     pendingPromptHandled.current = true;
     clearStartStash(sessionId);
     if (stash.agent) localAgentSet(stash.agent);
-    // The seed and the legacy replay share ONE validity check. A stash written
-    // under the other provider mode (e.g. a `kortix` pick from before the
-    // project's llm_gateway flag flipped off) must neither seed the store nor
-    // ride the legacy prompt — it names a provider this session does not have.
+    // The seed and the legacy replay share ONE validity check. A stash that
+    // names a model this session's catalog does not list must neither seed
+    // the store nor ride the legacy prompt.
     const stashModelValid =
       !!stash.model &&
       localModelList.some(
@@ -1673,6 +1687,7 @@ export function SessionChat({
     autoLoadedPages,
     handleLoadOlder,
     scrollRef,
+    spacerElRef,
     sessionId,
     transcriptOnLog,
   ]);
@@ -1888,6 +1903,7 @@ export function SessionChat({
       held: heldTurnIds,
       pricing: pricingLookup,
       hideOutOfContext,
+      foldCompactions: true,
     }),
     [lastTurnWorking, heldTurnIds, pricingLookup, hideOutOfContext],
   );
@@ -1920,7 +1936,9 @@ export function SessionChat({
   );
   // P5.6: load the whole of every text a turn shows as a preview, on request only.
   const fullTextsRef = useRef(loaded);
-  fullTextsRef.current = loaded;
+  useLayoutEffect(() => {
+    fullTextsRef.current = loaded;
+  });
   const loadFullTexts = useCallback(
     (turnId: string, refs: readonly SessionLogReferencedText[]) => {
       const key = fullTextsRef.current.key;
@@ -2412,7 +2430,7 @@ export function SessionChat({
   // A compaction turn of any state (`turn.compaction`), so a failed attempt's
   // turn suppresses the optimistic "Compacting…" marker instead of leaving it
   // shimmering beside the failure row.
-  const hasCompactionTurn = useMemo(() => turns.some((turn) => turn.compaction !== null), [turns]);
+  const hasCompactionTurn = useMemo(() => turns.some((turn) => turn.compaction !== null || turn.blocks.some((block) => block.type === 'compaction')), [turns]);
   // Index of the LAST compaction turn (any state). Every FAILED attempt
   // before it is history the reader retried past — a run of retries renders
   // as ONE failure row (the latest), not a stack of near-identical lines.
@@ -3610,18 +3628,13 @@ export function SessionChat({
   // scope with no screen of its own. The project default lives in the provider
   // modal's Models tab and the agent default on the agent's detail page, both
   // of which also SHOW and can CLEAR what is set. See ModelDefaultControls.
-  // Native mode (llm_gateway off) has NO model-defaults chain: the star's
-  // write 404s llm_gateway_disabled, so the affordance disappears entirely.
-  const chatModelDefaultControls: ModelDefaultControls | undefined = useMemo(
-    () =>
-      local.model.defaults.llmGatewayEnabled
-        ? {
-            accountDefault: local.model.defaults.accountDefault ?? null,
-            onSetAccountDefault: (m) => {
-              void local.model.defaults.setAccountDefault(m);
-            },
-          }
-        : undefined,
+  const chatModelDefaultControls: ModelDefaultControls = useMemo(
+    () => ({
+      accountDefault: local.model.defaults.accountDefault ?? null,
+      onSetAccountDefault: (m) => {
+        void local.model.defaults.setAccountDefault(m);
+      },
+    }),
     [local.model.defaults],
   );
 
@@ -3839,6 +3852,7 @@ export function SessionChat({
     ),
     [
       sessionId,
+      sessionScopeAgentName,
       pendingPermissions,
       handlePermissionReply,
       renderedQuestion,
@@ -3846,7 +3860,6 @@ export function SessionChat({
       handleQuestionReply,
       handleQuestionReject,
       handleQuestionActionChange,
-      tHardcodedUi,
     ],
   );
 
@@ -3911,15 +3924,10 @@ export function SessionChat({
   // its cause attached instead of a shrug. An actionable cause reports to
   // Sentry; a routine browser tab discard only leaves a breadcrumb.
   useReloadForensics(projectSessionId);
-  // Nothing has answered yet and the mount is young: the difference between
-  // "this session is asleep" and "we have not looked yet". Without it, every
-  // page load painted the waking notice for a beat over a session that was
-  // never asleep — which reads as a disconnect. See `settling`.
-  const composerSettling = useReadinessSettling(runtimePhase === 'connecting');
   // ONE answer for every surface that draws this session's runtime, and the
   // reason the composer no longer guesses: `unknown` and `connecting` are
-  // waits, and a wait is not a fault. Only the control plane saying the box is
-  // down earns the waking notice.
+  // waits, and a wait is not a fault. A routine wake says nothing either; only
+  // a parked box with no wake under way earns the asleep notice.
   const sessionConnection = projectSessionConnection({
     sandbox: (projectSessionRow?.status as SandboxLifecycle | undefined) ?? null,
     runtimeReady,
@@ -3932,7 +3940,6 @@ export function SessionChat({
     pendingPrompt: allowSendBeforeReady && working.state === 'working',
     pendingDelivery: working.pendingDelivery,
     connection: sessionConnection,
-    settling: composerSettling,
     // Only an OPEN TURN the control plane is holding counts here. This tab's
     // optimistic receipt and a stream frame both survive a box that died
     // mid-turn, and a durable inbox row (which the projection also sources to
@@ -4048,12 +4055,20 @@ export function SessionChat({
     },
     [readOnly, pathname, searchParams, shallowNavigate],
   );
+  // A session tab stays mounted, so a later `?cr=` (the turn-done toast's
+  // Review) must open the dialog too, not only the one read at mount.
+  const crParam = readOnly ? null : (searchParams?.get('cr') ?? null);
+  useEffect(() => {
+    if (crParam) setOpenCrIdState(crParam);
+  }, [crParam]);
   const handleOpenOutcome = useCallback(
     (outcome: Outcome) => {
       // Change requests are the only kind a turn produces. `external` exists on
       // the union for `setup-links/setup-link-button.tsx`, which renders this
       // card inline in prose and handles its own open.
-      if (outcome.kind === 'change_request') setOpenCrId(outcome.id.slice('cr:'.length));
+      if (outcome.kind === 'change_request') {
+        setOpenCrId(outcome.action.target ?? outcome.id.slice('cr:'.length));
+      }
     },
     [setOpenCrId],
   );
@@ -4090,12 +4105,8 @@ export function SessionChat({
       <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
         {/* `projectId`/`sessionId` are what arm the loader's restart offer
             (`canRestart`). Without them a session wedged in this state spun
-            forever with no way out but a page reload. The stage must also track
-            the real runtime — hardcoding "ready" froze the copy on
-            "Connecting" no matter what the boot was actually doing. */}
+            forever with no way out but a page reload. */}
         <SessionStartingLoader
-          stage={runtimeReady ? 'ready' : 'starting'}
-          variant="compact"
           projectId={projectId}
           sessionId={projectSessionId}
         />
@@ -4183,7 +4194,11 @@ export function SessionChat({
         {/* Change request detail — opened from a turn's outcome card, or from
           `?cr=` on load. Lives inside `ProjectFilesProvider` alongside
           `SessionOutcomesProvider` so both read the SAME project id and cache. */}
-        <ChangeRequestDetailDialog crId={openCrId} onClose={() => setOpenCrId(null)} />
+        <ChangeRequestDetailDialog
+          crId={openCrId}
+          onClose={() => setOpenCrId(null)}
+          onOpenChangeRequest={setOpenCrId}
+        />
 
         {/* Chat and the action panel share one row — see `session-body.tsx`. The
           instant shell renders the SAME row, so nothing moves at the crossfade.
@@ -4329,6 +4344,7 @@ export function SessionChat({
                     <SessionOutcomesProvider
                       projectSessionId={projectSessionId}
                       turnSpans={turnSpans}
+                      busy={effectiveBusy}
                       onOpen={handleOpenOutcome}
                     >
                       <ToolActivateContext.Provider value={toolActivate}>

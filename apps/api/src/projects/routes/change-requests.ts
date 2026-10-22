@@ -1,4 +1,5 @@
 /** Change requests: list, open, read, update, request changes, diff, merge preview, and session commit-push. */
+import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -11,6 +12,7 @@ import {
   listChangeRequestsForProject,
   recordRequestedChange,
   serializeChangeRequest,
+  supersededByFor,
 } from '../change-requests';
 import {
   getBranchDiff,
@@ -301,6 +303,7 @@ export function registerChangeRequestsRoutes(): void {
         headSha = aheadState.headSha;
         headAhead = aheadState.ahead;
       } catch (error) {
+        if (isRepositoryDisconnectedError(error)) throw error; // 409 with the fix
         return c.json(
           {
             error: error instanceof Error ? error.message : 'Failed to resolve branches',
@@ -540,8 +543,10 @@ export function registerChangeRequestsRoutes(): void {
         project: await withProjectGitAuth(loaded.row),
       });
       cr = (await getCrById(crId, projectId))!;
+      const view = await projectReadView(c, loaded);
+      const replaced = await supersededByFor(projectId, [cr], view.where(changeRequests.originSessionId, changeRequests.createdBy));
 
-      return c.json({ change_request: serializeChangeRequest(cr) });
+      return c.json({ change_request: serializeChangeRequest(cr, replaced.get(cr.crId) ?? null) });
     },
   );
 

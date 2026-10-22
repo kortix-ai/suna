@@ -7,21 +7,26 @@
 // server-side (supabase discussion #5741). Defaulting a returning account to
 // the password form dead-ends a passwordless one on a form no password can
 // pass — the regression pinned here. The password form stays one explicit
-// choice away ("Use a password instead" on entry and link steps); whatever the
-// resolver says, the client hands off to the link action, which re-checks
+// choice away (on entry and link steps); without a remembered choice the
+// client uses the link action, which re-checks
 // closed signups and SSO server-side.
 //
 // Every step also renders its failure inline: a failed send keeps the
 // banner (role=alert) on screen after the toast expires, on the step that
 // produced it — password form included, since it re-offers the link.
-import { expect, jest, mock, test } from 'bun:test';
+import { afterEach, expect, jest, mock, test } from 'bun:test';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import { type ReactTestInstance, act, create } from 'react-test-renderer';
 import messages from '../../../../../translations/en.json';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const preferences = new Map<string, string>();
+afterEach(() => preferences.clear());
 Object.defineProperty(globalThis, 'window', {
-  value: { location: { origin: 'http://localhost' } },
+  value: { location: { origin: 'http://localhost' }, localStorage: {
+    getItem: (key: string) => preferences.get(key) ?? null,
+    setItem: (key: string, value: string) => preferences.set(key, value),
+  } },
   configurable: true,
 });
 mock.module('next/navigation', () => ({
@@ -390,5 +395,49 @@ test('a rate-limited first send on the entry step leaves a lasting alert on the 
     emailFailureStatus = null;
     jest.useRealTimers();
     await act(async () => root.unmount());
+  }
+});
+
+
+test('an explicit password choice survives remount without another auth email', async () => {
+  resolvedMode = 'signin';
+  emailCodeSends = 0;
+  const first = await continueWithEmail('returning@example.test');
+  await goToPasswordForm(first);
+  await act(async () => first.unmount());
+  const returning = await continueWithEmail('returning@example.test');
+  try {
+    expect(emailCodeSends).toBe(1);
+    expect(returning.root.findByProps({ autoComplete: 'current-password' })).toBeDefined();
+    const link = buttonByLabel(returning, 'Email me a link instead');
+    if (!link) throw new Error('Email-link button did not render');
+    await act(async () => link.props.onClick());
+    expect(emailCodeSends).toBe(2);
+  } finally {
+    await act(async () => returning.unmount());
+  }
+  const magic = await continueWithEmail('returning@example.test');
+  try {
+    expect(emailCodeSends).toBe(3);
+    expectNoPasswordInput(magic);
+  } finally {
+    await act(async () => magic.unmount());
+  }
+});
+
+
+test('remembered password still obeys closed-signup and enforced-SSO gates', async () => {
+  preferences.set('kortix:auth-method', 'password');
+  for (const mode of ['closed', 'sso']) {
+    resolvedMode = mode;
+    emailCodeSends = 0;
+    const tree = await continueWithEmail('gated@example.test');
+    try {
+      expect(emailCodeSends).toBe(0);
+      expectNoPasswordInput(tree);
+      expect(tree.root.findAllByProps({ role: 'alert' })).toHaveLength(1);
+    } finally {
+      await act(async () => tree.unmount());
+    }
   }
 });

@@ -735,6 +735,9 @@ export function ProviderAccordion({
       connectedIds,
       search,
     });
+    const disabledProviders = new Set(
+      access.data?.enforced === true ? access.data.disabledProviders : [],
+    );
     const rows: ProviderListRow[] = ordered.map((entry) => {
       const method = providerMethod(entry);
       return {
@@ -742,16 +745,17 @@ export function ProviderAccordion({
         label: entry.label,
         method,
         modelCount: entry.models.length,
+        hint: entry.hint,
         status:
           method === 'included'
-            ? 'included'
+            ? entry.models.length > 0 ? 'included' : 'none'
             : connectedIds.has(entry.id) ||
                 pooled.pooledProviderIds.has(entry.id) ||
                 (entry.id === 'openai' && connectedIds.has('codex'))
               ? 'connected'
               : 'none',
         via: connectedVia(entry.id, connectedIds),
-        disabled: access.data?.enforced === true && access.data.disabledProviders.includes(entry.id),
+        disabled: disabledProviders.has(entry.id),
       };
     });
     return {
@@ -821,7 +825,9 @@ export function ProviderAccordion({
         <div className={cn(expanded ? 'px-3 py-2.5' : 'px-3.5 py-2.5')}>
           <AccordionRowHeader
             row={row}
-            meta={meta(row.method, row.modelCount, row.id, row.via)}
+            meta={row.method === 'included' && row.modelCount === 0
+              ? row.hint ?? ''
+              : meta(row.method, row.modelCount, row.id, row.via)}
             expanded={expanded}
             addKeyHint={addsInline}
             onToggle={() => {

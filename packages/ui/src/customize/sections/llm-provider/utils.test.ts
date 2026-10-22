@@ -323,19 +323,21 @@ describe('buildKortixManagedProvider — the connected claim follows the served 
   // account's plan actually lets it serve.
   const snapshot = (modelIds: string[]) => ({
     connected: ['kortix'],
-    all: [{ id: 'kortix', name: 'Kortix', models: Object.fromEntries(modelIds.map((id) => [id, {}])) }],
+    // The served catalog marks a managed model `provider: 'kortix'` (bare id);
+    // a BYOK model carries its real provider (`provider/model` id).
+    all: [{ id: 'kortix', name: 'Kortix', models: Object.fromEntries(modelIds.map((id) => [
+      id, { provider: id.includes('/') ? id.split('/')[0] : 'kortix' },
+    ])) }],
   });
-  // A slice of MANAGED_MODEL_ID_SET — the ids the curated managed table knows.
-  const managedIds = new Set(['claude-sonnet-4-5', 'glm-5']);
 
   test('a connected gateway with served managed models stays connected', () => {
-    const entry = buildKortixManagedProvider(snapshot(['claude-sonnet-4-5', 'glm-5']), managedIds, 'Included with your plan');
+    const entry = buildKortixManagedProvider(snapshot(['claude-sonnet-4-5', 'glm-5']), 'Included with your plan');
     expect(entry?.id).toBe('kortix');
     expect(entry?.models.map((m) => m.id)).toEqual(['claude-sonnet-4-5', 'glm-5']);
   });
 
-  test('a served model outside the curated managed set is not a managed model', () => {
-    const entry = buildKortixManagedProvider(snapshot(['claude-sonnet-4-5', 'byok-only-model']), managedIds, 'Included with your plan');
+  test('a served BYOK model is not a managed model', () => {
+    const entry = buildKortixManagedProvider(snapshot(['claude-sonnet-4-5', 'acme/byok-only-model']), 'Included with your plan');
     expect(entry?.models.map((m) => m.id)).toEqual(['claude-sonnet-4-5']);
   });
 
@@ -346,13 +348,13 @@ describe('buildKortixManagedProvider — the connected claim follows the served 
   // tab must not make a claim the picker contradicts: no served managed models
   // ⇒ no connected entry.
   test('a connected gateway with ZERO served managed models is not reported connected', () => {
-    expect(buildKortixManagedProvider(snapshot([]), managedIds, 'Included with your plan')).toBeNull();
-    expect(buildKortixManagedProvider(snapshot(['byok-only-model']), managedIds, 'Included with your plan')).toBeNull();
+    expect(buildKortixManagedProvider(snapshot([]), 'Included with your plan')).toBeNull();
+    expect(buildKortixManagedProvider(snapshot(['acme/byok-only-model']), 'Included with your plan')).toBeNull();
   });
 
   test('the snapshot not carrying the gateway at all is not reported connected', () => {
-    expect(buildKortixManagedProvider({ connected: [], all: [] }, managedIds, 'Included with your plan')).toBeNull();
-    expect(buildKortixManagedProvider(undefined, managedIds, 'Included with your plan')).toBeNull();
+    expect(buildKortixManagedProvider({ connected: [], all: [] }, 'Included with your plan')).toBeNull();
+    expect(buildKortixManagedProvider(undefined, 'Included with your plan')).toBeNull();
   });
 });
 

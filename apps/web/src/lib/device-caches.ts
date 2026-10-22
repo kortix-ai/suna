@@ -1,4 +1,4 @@
-import { whenQueryClientReady } from '@kortix/ui/internal/lib/query-client-singleton';
+import { onEachQueryClient } from '@kortix/ui/internal/lib/query-client-singleton';
 import { registerDisposableFamily } from '@kortix/ui/internal/lib/storage/managed-storage';
 import {
   browserKeyValueStorage,
@@ -90,9 +90,6 @@ function sessionInUrl(): { projectId: string; sessionId: string } | null {
   return match ? { projectId: match[1], sessionId: match[2] } : null;
 }
 
-/** The project gate's key (`project-access-boundary.tsx`): a reload opens the project it last admitted. */
-const GATE_QUERY_KEY = 'project-access-boundary';
-
 /**
  * The query cache's bound, in UTF-16 code units. It is read and parsed
  * synchronously at sign-in, so it stays small: a full 50-row session page
@@ -102,10 +99,6 @@ const GATE_QUERY_KEY = 'project-access-boundary';
 export const WEB_QUERY_CACHE_MAX_BYTES = 200_000;
 
 const QUERY_CACHE_NAMESPACE = 'kortix.query-cache';
-
-function shouldPersistQuery(queryKey: readonly unknown[]): boolean {
-  return isPersistableQueryKey(queryKey) || queryKey[0] === GATE_QUERY_KEY;
-}
 
 let adopted: {
   userId: string;
@@ -151,7 +144,9 @@ export function adoptDeviceCaches(userId: string): void {
     const queries = createPersistedQueryCache({
       storage,
       userId,
-      shouldPersist: shouldPersistQuery,
+      // The project gate reads `qk.project.summary`, which this keeps: a
+      // reload opens the project it last admitted.
+      shouldPersist: isPersistableQueryKey,
       maxBytes: WEB_QUERY_CACHE_MAX_BYTES,
       namespace: QUERY_CACHE_NAMESPACE,
     });
@@ -164,11 +159,13 @@ export function adoptDeviceCaches(userId: string): void {
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', flushWhenHidden);
     let stopPersisting = () => {};
+    let stopFollowing = () => {};
     const record = {
       userId,
       queries,
       copies,
       detach: () => {
+        stopFollowing();
         stopPersisting();
         window.removeEventListener('pagehide', flush);
         document.removeEventListener('visibilitychange', flushWhenHidden);
@@ -176,12 +173,15 @@ export function adoptDeviceCaches(userId: string): void {
     };
     adopted = record;
     // Restoring and persisting the query cache is the only part that needs the
-    // shared client. Schedule it for when the client registers rather than
-    // dropping the whole adopt on an early return.
-    whenQueryClientReady((client) => {
+    // shared client. It runs when the client registers, and again for every
+    // client that replaces it: React can discard the render that registered
+    // the first one, and the app then reads a second, empty client (journey 34:
+    // a reload with every read held stayed on "Opening your project").
+    stopFollowing = onEachQueryClient((client) => {
       // A sign-out or a user switch before the client registered supersedes
       // this record; the newer adopt owns the client then.
       if (adopted !== record) return;
+      stopPersisting();
       // The SDK marks each restored entry invalidated: it refetches the first
       // time something reads it, even when younger than its staleTime.
       queries.restore(client);

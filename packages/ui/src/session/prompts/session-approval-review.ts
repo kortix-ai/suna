@@ -46,7 +46,15 @@ export function approvalArgsSummary(
   /** Bound Slack conversation ids → names: the summary reads the name. */
   channelNames?: ReadonlyMap<string, string>,
 ): string | null {
-  const preview = approvalArgsPreview(action);
+  return previewArgsSummary(approvalArgsPreview(action), channelNames);
+}
+
+/** `approvalArgsSummary` for a preview record already in hand (a Review
+ *  Center item's resolved or raw arguments). */
+export function previewArgsSummary(
+  preview: Record<string, unknown> | null | undefined,
+  channelNames?: ReadonlyMap<string, string>,
+): string | null {
   if (!preview) return null;
 
   const rank = (key: string) => {
@@ -60,12 +68,66 @@ export function approvalArgsSummary(
     // '[redacted]' is the server's marker for a credential-shaped field; showing
     // it would add noise without adding information.
     if (value === null || value === undefined || value === '[redacted]') continue;
-    const rendered = Array.isArray(value) ? value.join(', ') : String(value);
+    // A nested object reads as compact JSON, never `[object Object]`.
+    const text = (item: unknown) =>
+      item !== null && typeof item === 'object' ? JSON.stringify(item) : String(item);
+    const rendered = Array.isArray(value) ? value.map(text).join(', ') : text(value);
     if (!rendered) continue;
     parts.push(`${key}: ${(typeof value === 'string' && channelNames?.get(value)) || rendered}`);
     if (parts.length === SUMMARY_FIELDS) break;
   }
   return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/** The summary of the content Kortix resolved, else of the call's own
+ *  arguments. An empty resolved preview (`{}`) falls through. An email (the
+ *  resolved content merged over the arguments has a recipient) reads
+ *  `to · subject`, never the sender the server loaded. */
+export function reviewArgsSummary(
+  resolvedPreview: Record<string, unknown> | null | undefined,
+  argsPreview: Record<string, unknown> | null | undefined,
+): string | null {
+  const merged = { ...argsPreview, ...resolvedPreview };
+  const to = merged.to ?? merged.recipient_email ?? merged.recipients;
+  if (to !== undefined) {
+    const text = (value: unknown) =>
+      Array.isArray(value) ? value.join(', ') : value === null || value === undefined ? '' : String(value);
+    const parts = [text(to), text(merged.subject)].filter(Boolean);
+    if (parts.length > 0) return parts.join(' · ');
+  }
+  return previewArgsSummary(resolvedPreview) ?? previewArgsSummary(argsPreview);
+}
+
+/**
+ * Can a human actually judge this call from what we recorded?
+ *
+ * TRUNCATION IS NOT BLINDNESS. `reviewComplete` (server:
+ * `args_preview_complete`) goes false whenever the preview builder elided
+ * ANYTHING — an 11th recipient, a 96-char URL, a fourth nesting level, an
+ * attachment body — and every elision is written into the preview the human
+ * reads (`[+3 more]`, `[204800 chars omitted]`). Gating the decision on it made
+ * an ordinary "email this PDF" call permanently un-approvable: a disabled
+ * button beside a warning, with Deny as the only possible answer.
+ *
+ * Reviewability is the narrower question: is there anything to look at? A call
+ * that shows its parameters is decidable, elisions and all. One that shows none
+ * is not — and no approve path is offered for it, rather than a dead control.
+ *
+ * Content Kortix read from the provider (`resolvedPreview`) is reviewable on
+ * its own. Mirrors `approvalPreviewReviewable` in apps/api
+ * (connectors/args-preview.ts), which enforces the same rule on
+ * POST /approvals/:executionId.
+ */
+export function approvalReviewable(
+  argsPreview: Record<string, unknown> | null | undefined,
+  reviewComplete: boolean | undefined,
+  resolvedPreview?: Record<string, unknown> | null,
+): boolean {
+  if (argsPreview && Object.keys(argsPreview).length > 0) return true;
+  if (resolvedPreview && Object.keys(resolvedPreview).length > 0) return true;
+  // No preview is still reviewable when the server confirms nothing was
+  // withheld — an argument-less call hides nothing.
+  return reviewComplete !== false;
 }
 
 /** Row → the shape every approval surface renders. */
@@ -82,6 +144,13 @@ export function approvalRequestFromAction(
     argsPreview: approvalArgsPreview(action),
     approvalContext:
       typeof summary?.approval_context === 'string' ? summary.approval_context : null,
+    // Content the server loaded for a reference-only call (the draft behind a
+    // `draft_id`), labelled with the connector part of the action path.
+    resolvedPreview:
+      summary?.resolved_preview && typeof summary.resolved_preview === 'object' && !Array.isArray(summary.resolved_preview)
+        ? (summary.resolved_preview as Record<string, unknown>)
+        : null,
+    resolvedError: typeof summary?.resolved_error === 'string' ? summary.resolved_error : null,
     // `!summary` used to count as complete, so a pending row that recorded
     // NOTHING offered an Approve button the server answers with 409
     // (`APPROVAL_PREVIEW_UNAVAILABLE`) — the client and the gate disagreed. A

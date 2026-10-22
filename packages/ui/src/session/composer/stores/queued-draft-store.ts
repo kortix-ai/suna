@@ -77,11 +77,12 @@ export const useQueuedDraftStore = create<QueuedDraftState>((set) => ({
   remove: (sessionId, clientMessageIds) =>
     set((s) => {
       const drafts = s.bySession[sessionId];
-      if (!drafts?.some((d) => clientMessageIds.includes(d.clientMessageId))) return s;
+      const ids = new Set(clientMessageIds);
+      if (!drafts?.some((d) => ids.has(d.clientMessageId))) return s;
       return withSession(
         s,
         sessionId,
-        drafts.filter((d) => !clientMessageIds.includes(d.clientMessageId)),
+        drafts.filter((d) => !ids.has(d.clientMessageId)),
       );
     }),
   prune: (sessionId, listedClientMessageIds) =>

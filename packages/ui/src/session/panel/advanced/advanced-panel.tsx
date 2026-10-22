@@ -36,13 +36,9 @@ export const AdvancedPanel = memo(function AdvancedPanel({
   // user's chosen index until they navigate back to the latest.
   const [mode, setMode] = useState<'live' | 'manual'>('live');
 
-  // Live-follow + clamp when the list grows/shrinks.
-  useEffect(() => {
-    if (count === 0) return;
-    setIndex((i) => (mode === 'live' ? count - 1 : Math.min(i, count - 1)));
-  }, [count, mode]);
-
-  const safeIndex = Math.min(index, Math.max(0, count - 1));
+  // Live-follow + clamp when the list grows/shrinks, derived in render so a
+  // streamed call never shows the previous one for a frame.
+  const safeIndex = Math.max(0, Math.min(mode === 'live' ? count - 1 : index, count - 1));
   const current = calls[safeIndex];
   const atLatest = safeIndex >= count - 1;
   const isLive = atLatest && mode === 'live';

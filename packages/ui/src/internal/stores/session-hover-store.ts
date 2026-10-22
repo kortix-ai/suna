@@ -14,6 +14,10 @@ import { create } from 'zustand';
  * the active row is what is left, and it is also the cheaper shape: exactly one
  * card is mounted at any time, by construction rather than by timing luck.
  *
+ * The store also holds the active row's element and the one card's content
+ * slot (`SessionBriefCardHost`): rows render their brief into that slot, and
+ * the host glides to the row instead of a new card appearing at it.
+ *
  * The delays live here rather than on the primitive for a performance reason.
  * If `openDelay` were a prop derived from `warm`, every row in the sidebar would
  * re-render each time the group warmed or cooled. Nothing selects `warm`, so it
@@ -24,19 +28,23 @@ import { create } from 'zustand';
 /** The first card costs a delay, so a pointer crossing the list on its way
  *  somewhere else does not flash open every row it passes over. */
 export const HOVER_OPEN_DELAY_MS = 200;
+/** While a card is open, a move to another row waits this long, and a newer
+ *  row restarts the wait: a pointer sweeping down the list moves the card once,
+ *  to where it stops, instead of re-rendering it for every row it crosses. */
+export const HOVER_MOVE_DEBOUNCE_MS = 50;
 /** Long enough for the pointer to cross the `sideOffset` gap into the card. */
 export const HOVER_CLOSE_DELAY_MS = 100;
 /** How long the group stays warm after its last card closes. */
 export const HOVER_WARM_GRACE_MS = 300;
 
 /**
- * Once one card is open the group is warm and the next row is instant, so the
- * card reads as moving to the row under the pointer instead of closing and
- * reopening. This is the rule the design system already states for tooltips:
- * delay before the first, none for the rest while the group is active.
+ * Once one card is open the group is warm and the next row costs only the move
+ * debounce, so the card reads as moving to the row under the pointer instead of
+ * closing and reopening. This is the rule the design system already states for
+ * tooltips: delay before the first, (almost) none for the rest.
  */
 export function hoverOpenDelayMs(warm: boolean): number {
-  return warm ? 0 : HOVER_OPEN_DELAY_MS;
+  return warm ? HOVER_MOVE_DEBOUNCE_MS : HOVER_OPEN_DELAY_MS;
 }
 
 /**
@@ -49,17 +57,34 @@ export function clearIfActive(current: string | null, sessionId: string): string
 
 interface SessionHoverState {
   activeSessionId: string | null;
+  /** The active row's element: the card lines up with it. */
+  anchor: HTMLElement | null;
+  /** Keyboard focus moves the card without a glide. */
+  via: 'pointer' | 'focus';
+  /** The shared card's content slot, from `SessionBriefCardHost`. */
+  slot: HTMLElement | null;
+  setSlot: (slot: HTMLElement | null) => void;
   /** Deliberately unselected by any component — see the note above. */
   warm: boolean;
-  openSession: (sessionId: string) => void;
+  openSession: (sessionId: string, anchor?: HTMLElement, via?: 'pointer' | 'focus') => void;
   closeSession: (sessionId: string) => void;
   /** Immediate, for a click that opens something else and for unmount. */
   dismiss: () => void;
+  /**
+   * The row whose session a click just opened. Its card would only describe
+   * the page on screen, so it stays shut until the pointer leaves the row.
+   * Unselected, like `warm`.
+   */
+  suppressedSessionId: string | null;
+  suppress: (sessionId: string) => void;
+  release: (sessionId: string) => void;
 }
 
 let openTimer: ReturnType<typeof setTimeout> | null = null;
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
 let warmTimer: ReturnType<typeof setTimeout> | null = null;
+/** The row a pending open will show; its close must also close the card still showing. */
+let pendingId: string | null = null;
 
 function cancel(timer: ReturnType<typeof setTimeout> | null): null {
   if (timer) clearTimeout(timer);
@@ -68,9 +93,16 @@ function cancel(timer: ReturnType<typeof setTimeout> | null): null {
 
 export const useSessionHoverStore = create<SessionHoverState>((set, get) => ({
   activeSessionId: null,
+  anchor: null,
+  via: 'pointer',
+  slot: null,
   warm: false,
+  suppressedSessionId: null,
 
-  openSession: (sessionId) => {
+  setSlot: (slot) => set({ slot }),
+
+  openSession: (sessionId, anchor, via = 'pointer') => {
+    if (get().suppressedSessionId === sessionId) return;
     closeTimer = cancel(closeTimer);
     warmTimer = cancel(warmTimer);
     // A pending open belongs to whichever row the pointer has just left.
@@ -80,22 +112,25 @@ export const useSessionHoverStore = create<SessionHoverState>((set, get) => ({
     // or crossing the gap back from the card would flicker it.
     if (get().activeSessionId === sessionId) return;
 
-    if (hoverOpenDelayMs(get().warm) === 0) {
-      set({ activeSessionId: sessionId, warm: true });
-      return;
-    }
+    const show = { activeSessionId: sessionId, anchor: anchor ?? null, via, warm: true };
+    pendingId = sessionId;
     openTimer = setTimeout(() => {
       openTimer = null;
-      set({ activeSessionId: sessionId, warm: true });
-    }, HOVER_OPEN_DELAY_MS);
+      pendingId = null;
+      set(show);
+    }, hoverOpenDelayMs(get().warm));
   },
 
   closeSession: (sessionId) => {
     openTimer = cancel(openTimer);
     closeTimer = cancel(closeTimer);
+    // Leaving a row whose move had not landed yet: the card still shows the
+    // previous row, and that card is the one to close.
+    const target = pendingId === sessionId ? get().activeSessionId : sessionId;
+    pendingId = null;
     closeTimer = setTimeout(() => {
       closeTimer = null;
-      set((state) => ({ activeSessionId: clearIfActive(state.activeSessionId, sessionId) }));
+      set((state) => ({ activeSessionId: target ? clearIfActive(state.activeSessionId, target) : state.activeSessionId }));
       warmTimer = setTimeout(() => {
         warmTimer = null;
         set({ warm: false });
@@ -104,9 +139,47 @@ export const useSessionHoverStore = create<SessionHoverState>((set, get) => ({
   },
 
   dismiss: () => {
+    pendingId = null;
     openTimer = cancel(openTimer);
     closeTimer = cancel(closeTimer);
     warmTimer = cancel(warmTimer);
     set({ activeSessionId: null, warm: false });
   },
+
+  suppress: (sessionId) => {
+    set({ suppressedSessionId: sessionId });
+    get().dismiss();
+  },
+
+  release: (sessionId) => {
+    if (get().suppressedSessionId === sessionId) set({ suppressedSessionId: null });
+  },
 }));
+
+type RowTarget = { matches?: (selector: string) => boolean };
+
+/**
+ * A session row's hover wiring (KRTX-2847). The press focuses the row and the
+ * pointer rests on it, so without the click handler every switch showed the
+ * card of the session just opened, 200 ms later, until the page took focus.
+ * Focus leaving the row releases it only when the pointer is elsewhere: the
+ * new page takes focus while the pointer still rests on the row.
+ */
+export function sessionRowHoverHandlers(id: string) {
+  const store = () => useSessionHoverStore.getState();
+  return {
+    onPointerEnter: (event: { pointerType: string; currentTarget: RowTarget }) => {
+      if (event.pointerType !== 'touch') store().openSession(id, event.currentTarget as HTMLElement, 'pointer');
+    },
+    onPointerLeave: () => {
+      store().release(id);
+      store().closeSession(id);
+    },
+    onFocus: (event: { currentTarget: RowTarget }) => store().openSession(id, event.currentTarget as HTMLElement, 'focus'),
+    onBlur: (event: { currentTarget: RowTarget }) => {
+      if (!event.currentTarget.matches?.(':hover')) store().release(id);
+      store().closeSession(id);
+    },
+    onClick: () => store().suppress(id),
+  };
+}

@@ -893,11 +893,13 @@ export async function getSessionAudit(
   );
 }
 
+/** @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export interface SessionTranscriptToolCall {
   tool: string;
   status: string | null;
 }
 
+/** @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export interface SessionTranscriptMessage {
   role: string;
   created: string | null;
@@ -917,12 +919,17 @@ export interface SessionTranscriptMessage {
  * STOPPED or waking session answer at all. `none` is the honest "nothing could
  * answer" and is the only value that accompanies `available: false`. The two
  * sources are never merged — this field says which one you got.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export type SessionTranscriptSource = 'live' | 'mirror' | 'none';
 
 /** Compact server-side transcript read — text + tool calls, stripped of tool
  *  inputs/outputs, for project automation (callable with project-scoped
- *  session tokens, unlike the raw sandbox proxy). */
+ *  session tokens, unlike the raw sandbox proxy).
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
+ */
 export interface SessionTranscript {
   available: boolean;
   reason: string | null;
@@ -942,7 +949,10 @@ export interface SessionTranscript {
 
 /** One mirrored message in the shape the session sync store hydrates from:
  *  OpenCode's own envelope, with the parts array stripped of tool
- *  inputs/outputs and file urls. */
+ *  inputs/outputs and file urls.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
+ */
 export interface SessionTranscriptSyncMessage {
   info: Record<string, unknown>;
   parts: Array<Record<string, unknown>>;
@@ -954,6 +964,8 @@ export interface SessionTranscriptSyncMessage {
  * `source` is `mirror` or `none` — never `live`. A client whose sandbox is up
  * reads the runtime directly, so this endpoint deliberately does not re-proxy
  * it.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export interface SessionTranscriptSyncEnvelope {
   available: boolean;
@@ -982,6 +994,7 @@ export interface SessionTranscriptSyncEnvelope {
   messages: SessionTranscriptSyncMessage[];
 }
 
+/** @deprecated Reads the v1 transcript (`GET …/transcript`). Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export async function getSessionTranscript(
   projectId: string,
   sessionId: string,
@@ -1008,6 +1021,8 @@ export async function getSessionTranscript(
  * Messages carry OpenCode's real ids, so a client hydrates them provisionally
  * (`hydrate(..., { source: 'cache' })`) and the live runtime read SETTLES them
  * by id rather than duplicating them.
+ *
+ * @deprecated Reads the v1 transcript (`GET …/transcript?shape=sync`). Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export async function getSessionTranscriptSync(
   projectId: string,
@@ -1204,11 +1219,11 @@ export interface SessionOpenBundleConfig {
   known: true;
   base_ref: string | null;
   agent_name: string | null;
+  /** @deprecated Always true: the LLM gateway is the only model path. Removed in the next major. */
   llm_gateway_enabled: boolean;
 }
 
-/** = `GET /projects/:id/model-defaults`. `known: false` with
- *  `reason: 'llm_gateway_disabled'` mirrors that route's own 404. */
+/** = `GET /projects/:id/model-defaults`. `known: false` when that read failed. */
 export type SessionOpenBundleModels =
   | {
       known: true;

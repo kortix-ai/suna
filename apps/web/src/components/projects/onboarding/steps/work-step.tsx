@@ -117,7 +117,7 @@ export function WorkStep({
             placeholder={t('notePlaceholder')}
             onChange={(event) => onNoteChange(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') {
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 onContinue();
               }

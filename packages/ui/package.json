@@ -75,7 +75,6 @@
     "./customize/migrate-to-v2/upgrade-view": "./src/customize/migrate-to-v2/upgrade-view.tsx",
     "./customize/models/models-page": "./src/customize/models/models-page.tsx",
     "./customize/project-settings/project-settings-page": "./src/customize/project-settings/project-settings-page.tsx",
-    "./customize/project-settings/project-settings-sections": "./src/customize/project-settings/project-settings-sections.ts",
     "./customize/secrets/secrets-page": "./src/customize/secrets/secrets-page.tsx",
     "./customize/sections/add-account-fields": "./src/customize/sections/add-account-fields.tsx",
     "./customize/sections/component/manifest-copy-block": "./src/customize/sections/component/manifest-copy-block.tsx",
@@ -250,6 +249,7 @@
     "./internal/branding/branding-provider": "./src/internal/branding/branding-provider.tsx",
     "./internal/capture/use-capture-area": "./src/internal/capture/use-capture-area.ts",
     "./internal/components/hover-prefetch-link": "./src/internal/components/hover-prefetch-link.tsx",
+    "./internal/components/mobile-store-qr": "./src/internal/components/mobile-store-qr.tsx",
     "./internal/desktop/desktop-back-button": "./src/internal/desktop/desktop-back-button.tsx",
     "./internal/desktop/titlebar-control": "./src/internal/desktop/titlebar-control.ts",
     "./internal/files/session-drive-files": "./src/internal/files/session-drive-files.ts",
@@ -309,6 +309,7 @@
     "./internal/lib/onboarding/last-project-cookie": "./src/internal/lib/onboarding/last-project-cookie.ts",
     "./internal/lib/onboarding/provision-errors": "./src/internal/lib/onboarding/provision-errors.ts",
     "./internal/lib/onboarding/use-app-home": "./src/internal/lib/onboarding/use-app-home.ts",
+    "./internal/lib/promo-art": "./src/internal/lib/promo-art.ts",
     "./internal/lib/provider-branding": "./src/internal/lib/provider-branding.tsx",
     "./internal/lib/query-client-singleton": "./src/internal/lib/query-client-singleton.ts",
     "./internal/lib/relative-time": "./src/internal/lib/relative-time.ts",
@@ -425,10 +426,12 @@
     "./session/composer/composer-agent-access": "./src/session/composer/composer-agent-access.ts",
     "./session/composer/composer-chat-input": "./src/session/composer/composer-chat-input.tsx",
     "./session/composer/composer-draft-recovery": "./src/session/composer/composer-draft-recovery.ts",
+    "./session/composer/menus/menu-shell": "./src/session/composer/menus/menu-shell.tsx",
     "./session/composer/menus/slash-actions": "./src/session/composer/menus/slash-actions.ts",
     "./session/composer/queue-projection": "./src/session/composer/queue-projection.ts",
     "./session/composer/session-chat-input": "./src/session/composer/session-chat-input.tsx",
     "./session/models/model-grouping": "./src/session/models/model-grouping.ts",
+    "./session/models/model-search-empty": "./src/session/models/model-search-empty.tsx",
     "./session/models/model-selector": "./src/session/models/model-selector.tsx",
     "./session/panel/audit/audit-credential-label": "./src/session/panel/audit/audit-credential-label.ts",
     "./session/panel/easy/detail-view": "./src/session/panel/easy/detail-view.tsx",
@@ -530,6 +533,7 @@
     "./workspace/projects/onboarding/connect-app": "./src/workspace/projects/onboarding/connect-app.ts",
     "./workspace/projects/policies-panel": "./src/workspace/projects/policies-panel.tsx",
     "./workspace/projects/session-shared-icon": "./src/workspace/projects/session-shared-icon.tsx",
+    "./workspace/repository-disconnected": "./src/workspace/repository-disconnected.tsx",
     "./workspace/review/map": "./src/workspace/review/map.ts",
     "./workspace/review/mock-data": "./src/workspace/review/mock-data.ts",
     "./workspace/review/review-center": "./src/workspace/review/review-center.tsx",
@@ -758,10 +762,6 @@
       "./customize/project-settings/project-settings-page": {
         "types": "./dist/customize/project-settings/project-settings-page.d.ts",
         "import": "./dist/customize/project-settings/project-settings-page.js"
-      },
-      "./customize/project-settings/project-settings-sections": {
-        "types": "./dist/customize/project-settings/project-settings-sections.d.ts",
-        "import": "./dist/customize/project-settings/project-settings-sections.js"
       },
       "./customize/secrets/secrets-page": {
         "types": "./dist/customize/secrets/secrets-page.d.ts",
@@ -1453,6 +1453,10 @@
         "types": "./dist/internal/components/hover-prefetch-link.d.ts",
         "import": "./dist/internal/components/hover-prefetch-link.js"
       },
+      "./internal/components/mobile-store-qr": {
+        "types": "./dist/internal/components/mobile-store-qr.d.ts",
+        "import": "./dist/internal/components/mobile-store-qr.js"
+      },
       "./internal/desktop/desktop-back-button": {
         "types": "./dist/internal/desktop/desktop-back-button.d.ts",
         "import": "./dist/internal/desktop/desktop-back-button.js"
@@ -1688,6 +1692,10 @@
       "./internal/lib/onboarding/use-app-home": {
         "types": "./dist/internal/lib/onboarding/use-app-home.d.ts",
         "import": "./dist/internal/lib/onboarding/use-app-home.js"
+      },
+      "./internal/lib/promo-art": {
+        "types": "./dist/internal/lib/promo-art.d.ts",
+        "import": "./dist/internal/lib/promo-art.js"
       },
       "./internal/lib/provider-branding": {
         "types": "./dist/internal/lib/provider-branding.d.ts",
@@ -2147,6 +2155,10 @@
         "types": "./dist/session/composer/composer-draft-recovery.d.ts",
         "import": "./dist/session/composer/composer-draft-recovery.js"
       },
+      "./session/composer/menus/menu-shell": {
+        "types": "./dist/session/composer/menus/menu-shell.d.ts",
+        "import": "./dist/session/composer/menus/menu-shell.js"
+      },
       "./session/composer/menus/slash-actions": {
         "types": "./dist/session/composer/menus/slash-actions.d.ts",
         "import": "./dist/session/composer/menus/slash-actions.js"
@@ -2162,6 +2174,10 @@
       "./session/models/model-grouping": {
         "types": "./dist/session/models/model-grouping.d.ts",
         "import": "./dist/session/models/model-grouping.js"
+      },
+      "./session/models/model-search-empty": {
+        "types": "./dist/session/models/model-search-empty.d.ts",
+        "import": "./dist/session/models/model-search-empty.js"
       },
       "./session/models/model-selector": {
         "types": "./dist/session/models/model-selector.d.ts",
@@ -2555,6 +2571,10 @@
         "types": "./dist/workspace/projects/session-shared-icon.d.ts",
         "import": "./dist/workspace/projects/session-shared-icon.js"
       },
+      "./workspace/repository-disconnected": {
+        "types": "./dist/workspace/repository-disconnected.d.ts",
+        "import": "./dist/workspace/repository-disconnected.js"
+      },
       "./workspace/review/map": {
         "types": "./dist/workspace/review/map.d.ts",
         "import": "./dist/workspace/review/map.js"
@@ -2761,6 +2781,7 @@
     "streamdown": "^1.6.11",
     "tailwind-merge": "^3.6.0",
     "unified": "^11.0.5",
+    "uqr": "0.1.3",
     "use-intl": "^4.13.4",
     "vaul": "^1.1.2",
     "zustand": "^5.0.3"

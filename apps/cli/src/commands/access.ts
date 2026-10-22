@@ -21,8 +21,10 @@ import {
   iamBase,
   objectLabel,
   parsePrincipalFilter,
+  pendingPrincipalId,
   principalLabel,
   principalLabels,
+  resolveGroupId,
   resolveUserId,
   roleRefBody,
   scopeLabel,
@@ -56,7 +58,7 @@ Kortix permissions in kortix.yaml; a session can only do what both allow.
 
 Role assignments:
   assignments [--project <id>|--account|--all]   List role assignments.
-  grant --user <id|email>|--group <id>|--service-account <id> --role <key|id>
+  grant --user <id|email>|--group <id|name>|--service-account <id> --role <key|id>
                                     Grant a role. Prints the assignment id.
   grant --user|--group|--everyone --agent <name>|--connection <id>
                                     Grant one agent, or the use of one shared
@@ -87,7 +89,8 @@ Run \`kortix roles ls\` for every role, \`kortix permissions ls\` for the catalo
 Options:
   --user <id|email>  Grant to a person. An email resolves via the account
                      member directory.
-  --group <id>       Grant to a group instead of a person.
+  --group <id|name>  Grant to a group instead of a person. A name resolves via
+                     the account's groups.
   --service-account <id>
                      Grant to a service account — an agent's identity.
   --role <key|id>    Role to grant — a system key (owner/admin/member,
@@ -101,8 +104,8 @@ Options:
                      opens it to the whole project again. Implies --role ${OBJECT_GRANT_ROLE}.
   --everyone         Grant to everyone with access to the project. Holds an
                      agent or a connection, never a role.
-  --principal <id>   Filter assignments by principal. Also
-                     user:<id> | group:<id> | service_account:<id> | pending:<email>.
+  --principal <id>   Filter assignments by principal. Also user:<id|email> |
+                     group:<id|name> | service_account:<id> | pending:<email>.
   --expires <iso>    Auto-revoke timestamp.
   --account-id <id>  Operate on this account (default: the linked project's account, else the active account).
   --host <name>      Operate against a non-default Kortix host.
@@ -364,11 +367,20 @@ async function listAssignments(
     // `resolveUserId` grant uses — is the difference between `--principal
     // user:someone@example.com` listing their rows and a bare
     // `HTTP 400: principal_id must be a UUID` from the server's shape check.
+    // A group name resolves the same way, and an invitee's email maps to the
+    // uuid5 the API stores for a `pending` principal.
     let principalId = parsed.id;
-    if (parsed.type === 'user' && !UUID_RE.test(principalId)) {
-      const resolved = await resolveUserId(scope.client, scope.accountId, principalId);
-      if (!resolved) return 1;
-      principalId = resolved;
+    if (!UUID_RE.test(principalId)) {
+      if (parsed.type === 'user' || parsed.type === 'group') {
+        const resolved =
+          parsed.type === 'user'
+            ? await resolveUserId(scope.client, scope.accountId, principalId)
+            : await resolveGroupId(scope.client, scope.accountId, principalId);
+        if (!resolved) return 1;
+        principalId = resolved;
+      } else if (parsed.type === 'pending') {
+        principalId = pendingPrincipalId(principalId);
+      }
     }
     query.set('principal_type', parsed.type);
     query.set('principal_id', principalId);
@@ -482,7 +494,9 @@ async function grantAssignment(
     principalId = scope.projectId;
   } else if (f.group) {
     principalType = 'group';
-    principalId = f.group;
+    const resolved = await resolveGroupId(scope.client, scope.accountId, f.group);
+    if (!resolved) return 1;
+    principalId = resolved;
   } else if (f.sa) {
     // An agent's identity IS a service account, so this is how an agent gets a
     // role. The id comes from `GET /accounts/:id/iam/service-accounts`.

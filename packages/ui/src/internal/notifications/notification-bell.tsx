@@ -34,6 +34,7 @@ import type { InboxNotification, InboxNotificationKind } from '@kortix/sdk';
 import { useNotificationInbox } from '@kortix/sdk/react';
 import {
   BellIcon,
+  ChatCircleIcon,
   QuestionIcon,
   ShareIcon,
   ShieldWarningIcon,
@@ -72,6 +73,7 @@ const KIND_MARK: Record<InboxNotificationKind, { icon: KindIcon; className: stri
   automation_recovered: { icon: SolidCheckIcon, className: 'text-kortix-green' },
   capture_device_down: { icon: solid(WarningIcon), className: 'text-kortix-red' },
   capture_device_recovered: { icon: SolidCheckIcon, className: 'text-kortix-green' },
+  message: { icon: solid(ChatCircleIcon), className: 'text-muted-foreground' },
 };
 
 export interface NotificationPanelProps {
@@ -243,7 +245,7 @@ export function NotificationPanel({
  * (16px → 12px), centred on the glyph's bottom-right corner where the count
  * sits. At full size it would tint the whole bell.
  */
-const BELL_REFLECTION_MASK = 'radial-gradient(circle 12px at 100% 100%, #000 35%, transparent 100%)';
+export const BELL_REFLECTION_MASK = 'radial-gradient(circle 12px at 100% 100%, #000 35%, transparent 100%)';
 
 export function BellMark({
   count,

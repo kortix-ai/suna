@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from '../../i18n';
+import { useUiHostConfig } from '../../providers/ui-provider';
 import type { FlatModel, ProviderListResponse } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon } from '@phosphor-icons/react';
 
@@ -161,7 +162,8 @@ export function ComposerToolbar({
   onSubmit,
 }: ComposerToolbarProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const showModel = (models.length > 0 || modelRequired) && !!onModelChange;
+  const { modelPickerEnabled } = useUiHostConfig();
+  const showModel = modelPickerEnabled && (models.length > 0 || modelRequired) && !!onModelChange;
 
   return (
     <div className="kortix-composer-toolbar flex items-center justify-between gap-1 overflow-visible">
@@ -184,13 +186,13 @@ export function ComposerToolbar({
           />
         )}
 
-        <ReasoningEffortSelector
+        {modelPickerEnabled && <ReasoningEffortSelector
           variants={variants}
           selectedVariant={selectedVariant}
           onVariantChange={onVariantChange}
           open={reasoningMenuOpen}
           onOpenChange={onReasoningMenuOpenChange}
-        />
+        />}
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">

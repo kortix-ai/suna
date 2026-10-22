@@ -17,6 +17,12 @@ import { removeSeeded, seedProject, type SeededProject } from './helpers/integra
 // A create that ran would land here: a throttled fire must never reach it.
 const creates: string[] = [];
 const realSessions = await import('../projects/lib/sessions');
+// The managed lineup is what Platinum Inference lists; tests never call
+// Platinum, so seed the synthetic lineup (fixtures/managed-lineup.ts).
+const { __setManagedLineupForTest } = await import('../llm-gateway/models/managed-models');
+const { TEST_MANAGED_LINEUP } = await import('./fixtures/managed-lineup');
+__setManagedLineupForTest(TEST_MANAGED_LINEUP);
+
 mock.module('../projects/lib/sessions', () => ({
   ...realSessions,
   createProjectSession: async (input: { metadata?: Record<string, unknown> }) => {

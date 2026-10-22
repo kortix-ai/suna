@@ -7,7 +7,9 @@ import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 import { SolutionsHeroVisual } from './hero-visual';
 import { ROLES } from './registry';
-import { DefinitionRows, Eyebrow, Section, SectionDivider } from './shared';
+import { Eyebrow, Section } from '../component/section-primitives';
+import { SectionDivider } from '../component/public-route-helpers';
+import { DefinitionRows } from './shared';
 
 /**
  * `/solutions` — the hub the eight role pages hang off.

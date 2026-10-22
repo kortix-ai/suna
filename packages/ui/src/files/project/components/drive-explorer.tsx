@@ -714,7 +714,8 @@ export function DriveExplorer({
     async (tree: TreeFile[], base: string) => {
       const { accepted, rejected } = partitionUploadBatch(tree.map((t) => t.file));
       for (const { reason } of rejected) errorToast(reason);
-      const items = tree.filter((t) => accepted.includes(t.file));
+      const acceptedSet = new Set(accepted);
+      const items = tree.filter((t) => acceptedSet.has(t.file));
       if (items.length === 0) return;
 
       const root = base === '/' ? '' : base.replace(/\/+$/, '');

@@ -261,7 +261,11 @@ export function ChangeRequestsPanel({ open = false, onClose }: ChangeRequestsPan
         )}
       </ReviewPanel>
 
-      <ChangeRequestDetailDialog crId={selectedCrId} onClose={() => setSelectedCrId(null)} />
+      <ChangeRequestDetailDialog
+        crId={selectedCrId}
+        onClose={() => setSelectedCrId(null)}
+        onOpenChangeRequest={setSelectedCrId}
+      />
 
       <OpenChangeRequestDialog
         open={openDialogShown}

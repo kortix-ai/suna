@@ -4,12 +4,14 @@
  * Proves the three SQL guards the feature depends on:
  *   1. manifest reconcile never prunes a reminder row (it lives only in the DB);
  *   2. the schedule claim fires a reminder on time and re-arms it one period later;
- *   3. a fire into a deleted session queues nothing and pauses the reminder.
+ *   3. a fire into a deleted session queues nothing and pauses the reminder;
+ *   4. a fire into a failed session hands the reminder and its chat threads to a successor session.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accountMembers,
   accounts,
+  chatThreads,
   projectSessions,
   projectTriggerExecutions,
   projectTriggerRuntime,
@@ -19,6 +21,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 
 import { fireGitTrigger } from '../projects/lib/trigger-fire';
+import { applyPostCreateActions } from '../projects/session-lifecycle/create-session';
 import {
   getSessionReminder,
   insertSessionReminder,
@@ -174,6 +177,36 @@ describe('session reminders on the trigger tables', () => {
     expect((command?.payload as Record<string, unknown>).bindTurnIdentity).toBeUndefined();
   });
 
+  // The owner fallback was refused at the proxy on a member's private session,
+  // so every fire dead-lettered as "the session's machine could not be reached".
+  test("an agent's reminder on a member's session is delivered as the session's creator, not the owner", async () => {
+    const now = new Date();
+    const member = crypto.randomUUID();
+    await insertIntoView(db, accountMembers, { accountId: ACCOUNT, userId: member, accountRole: 'admin' });
+    const sessionId = await seedSession();
+    await db.update(projectSessions).set({ createdBy: member }).where(eq(projectSessions.sessionId, sessionId));
+    const { spec } = await seedReminder(sessionId, { prompt: 'Check the worker', every: '1h' }, now);
+
+    const result = await fireGitTrigger({ spec, project: await projectRow(), payload: {}, renderedPrompt: '', source: 'cron' });
+
+    expect(result).toMatchObject({ status: 'queued', sessionId });
+    const [command] = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, sessionId));
+    expect(command?.actorUserId).toBe(member);
+    expect((command?.payload as Record<string, unknown>).bindTurnIdentity).toBeUndefined();
+  });
+
+  test("an agent's reminder whose session creator left falls back to the owner", async () => {
+    const now = new Date();
+    const sessionId = await seedSession();
+    await db.update(projectSessions).set({ createdBy: crypto.randomUUID() }).where(eq(projectSessions.sessionId, sessionId));
+    const { spec } = await seedReminder(sessionId, { prompt: 'Check the worker', every: '1h' }, now);
+
+    await fireGitTrigger({ spec, project: await projectRow(), payload: {}, renderedPrompt: '', source: 'cron' });
+
+    const [command] = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, sessionId));
+    expect(command?.actorUserId).toBe(OWNER);
+  });
+
   test("a person's reminder fires as that person's deferred prompt: queued as them, bound at delivery", async () => {
     const now = new Date();
     const sessionId = await seedSession();
@@ -222,6 +255,40 @@ describe('session reminders on the trigger tables', () => {
     const row = await getSessionReminder(PROJECT, sessionId, spec.slug);
     expect(row?.enabled).toBe(false);
     expect(row?.nextFireAt).toBeNull();
+  });
+
+  test('a fire into a failed session queues a successor; its post-create moves and re-arms the reminder', async () => {
+    const now = new Date();
+    const failed = await seedSession();
+    await db.update(projectSessions).set({ status: 'failed' }).where(eq(projectSessions.sessionId, failed));
+    const { spec } = await seedReminder(failed, { prompt: 'Advance the goal', every: '1d' }, now);
+    const thread = { platform: 'slack', workspaceId: 'T-test', threadId: `D-test:${failed.slice(0, 8)}` };
+    await db.insert(chatThreads).values({ projectId: PROJECT, sessionId: failed, ...thread });
+
+    const result = await fireGitTrigger({ spec, project: await projectRow(), payload: {}, renderedPrompt: '', source: 'cron' });
+
+    expect(result).toMatchObject({ status: 'queued' });
+    const [create] = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.commandId, result.commandId!));
+    const payload = create?.payload as { body: Record<string, unknown>; postCreate: unknown[] };
+    expect(String(payload.body.initial_prompt)).toContain(`belonged to session ${failed}, which failed`);
+    expect(payload.postCreate).toEqual([
+      { type: 'repin_reminder', reminderId: spec.slug },
+      { type: 'adopt_chat_threads', fromSessionId: failed },
+    ]);
+    // Paused while queued: a fire in between would start a second successor.
+    expect((await getSessionReminder(PROJECT, failed, spec.slug))?.enabled).toBe(false);
+
+    const successor = await seedSession({ reminder_successor_of: failed });
+    expect(await applyPostCreateActions({ projectId: PROJECT, sessionId: successor, actions: payload.postCreate as never })).toEqual({ ok: true });
+
+    const moved = await getSessionReminder(PROJECT, successor, spec.slug);
+    expect(moved?.enabled).toBe(true);
+    expect(moved?.nextFireAt?.getTime()).toBeGreaterThan(now.getTime());
+    expect((moved?.scheduleSpec as Record<string, unknown>).pinnedSessionId).toBe(successor);
+    expect(await getSessionReminder(PROJECT, failed, spec.slug)).toBeNull();
+    // A reply in the failed session's Slack thread now reaches the successor.
+    const [bound] = await db.select().from(chatThreads).where(eq(chatThreads.threadId, thread.threadId));
+    expect(bound?.sessionId).toBe(successor);
   });
 
   test('pause clears the schedule; resume re-arms from now; a fired one-shot stays done', async () => {

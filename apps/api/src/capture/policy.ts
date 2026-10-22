@@ -10,7 +10,7 @@ import { captureWorkspaces } from '@kortix/db';
 import { db } from '../shared/db';
 import { logger } from '../lib/logger';
 import { accountPrefix, policyDocument, type CapturePolicy } from './format';
-import { captureStore, captureStoreConfigured, putCaptureObject } from './store';
+import { captureStoreForAccount, putAccountObject } from './account-store';
 import { readWorkspace } from './workspace';
 
 export async function readAccountPolicy(
@@ -32,7 +32,7 @@ export async function writeAccountPolicy(accountId: string, policy: CapturePolic
       .insert(captureWorkspaces)
       .values({ accountId, policy, updatedBy: userId, updatedAt: now })
       .onConflictDoUpdate({ target: captureWorkspaces.accountId, set: { policy, updatedBy: userId, updatedAt: now } });
-    await putCaptureObject(`${accountPrefix(accountId)}/policy.json`, policyDocument(policy, now.getTime()), 'application/json');
+    await putAccountObject(accountId, `${accountPrefix(accountId)}/policy.json`, policyDocument(policy, now.getTime()), 'application/json');
   });
   return { policy, updated_at: now.toISOString(), updated_by: userId };
 }
@@ -43,12 +43,13 @@ export async function writeAccountPolicy(accountId: string, policy: CapturePolic
  * Best effort; a device without a policy object applies its own local settings.
  */
 export async function ensurePolicyObject(accountId: string): Promise<void> {
-  if (!captureStoreConfigured()) return;
+  const store = await captureStoreForAccount(accountId);
+  if (!store.configured) return;
   const key = `${accountPrefix(accountId)}/policy.json`;
   try {
-    if (await captureStore.head(key)) return;
+    if (await store.head(key)) return;
     const { policy, updated_at } = await readAccountPolicy(accountId);
-    await putCaptureObject(key, policyDocument(policy, updated_at ? Date.parse(updated_at) : Date.now()), 'application/json');
+    await putAccountObject(accountId, key, policyDocument(policy, updated_at ? Date.parse(updated_at) : Date.now()), 'application/json');
   } catch (error) {
     logger.warn('[capture] could not publish policy.json', { accountId, error: String(error) });
   }

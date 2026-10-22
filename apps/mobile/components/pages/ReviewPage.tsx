@@ -24,6 +24,7 @@
  * the leaves `POST /change-requests` asserts (KRTX-1720), from one `useCans`
  * probe. `ReviewDetailSheet` gates each verdict on the same probe.
  */
+import { HEADER_BUTTON_SIZE, HEADER_ICON_SIZE } from '@/components/kortix/header-button';
 import * as React from 'react';
 import { RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
@@ -206,7 +207,7 @@ export function ReviewPage({
         rightActions={
           <Button
             variant="ghost"
-            size="icon"
+            size={HEADER_BUTTON_SIZE}
             className="rounded-full"
             onPress={() => {
               haptics.tap();
@@ -215,7 +216,7 @@ export function ReviewPage({
             }}
             accessibilityLabel="Versions"
             accessibilityHint="Opens the project's versions">
-            <Icon as={ClockCounterClockwiseIcon} size={20} className="text-foreground" />
+            <Icon as={ClockCounterClockwiseIcon} size={HEADER_ICON_SIZE} className="text-foreground" />
           </Button>
         }
       />

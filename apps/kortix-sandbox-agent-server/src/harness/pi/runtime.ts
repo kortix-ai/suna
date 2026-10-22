@@ -27,7 +27,7 @@ import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
-import { genuiEnabled, GENUI_SKILL_NAME } from '@/lib/config/genui'
+import { withheldManagedSkills } from '@/services/skills/managed-skills'
 import { loadTools } from '@/services/tools/host'
 import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import type { PiConfig, ProjectInstructions } from './config'
@@ -939,8 +939,20 @@ export class PiRuntime {
   /**
    * The command list a client reads (`GET /command`). v3: every compiled
    * command, with the agents that enable it. Otherwise pi's prompt templates.
+   * Then the agent's granted skills (`source: 'skill'`), as OpenCode lists
+   * them: the composer's `/` menu has no other source for them in a session.
+   * A command shadows a skill of the same name.
    */
-  commandList(): Array<{ name: string; description: string; source: 'command'; template: string; hints: string[]; agents?: string[] }> {
+  commandList(): Array<{ name: string; description: string; source: 'command' | 'skill'; template: string; hints: string[]; agents?: string[] }> {
+    const commands = this.commandEntries()
+    const names = new Set(commands.map((command) => command.name))
+    const skills = this.skillList()
+      .filter((skill) => !names.has(skill.name))
+      .map((skill) => ({ name: skill.name, description: skill.description, source: 'skill' as const, template: '', hints: [] }))
+    return [...commands, ...skills]
+  }
+
+  private commandEntries(): Array<{ name: string; description: string; source: 'command'; template: string; hints: string[]; agents?: string[] }> {
     const hints = (template: string) => [...new Set(template.match(/\$(\d+|ARGUMENTS)/g) ?? [])]
     if (this.v3()) {
       return Object.entries(this.compiled?.commands ?? {}).map(([name, command]) => ({
@@ -965,9 +977,22 @@ export class PiRuntime {
   commandPrompt(raw: unknown): PromptInput {
     const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
     const name = typeof body.command === 'string' ? body.command : ''
-    if (!this.commandList().some((command) => command.name === name)) throw new PromptRejected(`unknown command "${name}"`)
+    const entry = this.commandList().find((command) => command.name === name)
+    if (!entry) throw new PromptRejected(`unknown command "${name}"`)
     const args = typeof body.arguments === 'string' ? body.arguments.trim() : ''
     const [providerID, ...model] = typeof body.model === 'string' ? body.model.split('/') : []
+    if (entry.source === 'skill') {
+      // pi's `/skill:` expansion reads only pi's own loader, never a Kortix skill: the same block, built here.
+      const skill = this.skillList().find((s) => s.name === name)!
+      const block = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${this.coding!.stripFrontmatter(readFileSync(skill.filePath, 'utf8')).trim()}\n</skill>`
+      return parsePromptBody({
+        parts: [{ type: 'text', text: args ? `${block}\n\n${args}` : block }],
+        ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
+        ...(body.agent !== undefined ? { agent: body.agent } : {}),
+        ...(body.variant !== undefined ? { variant: body.variant } : {}),
+        ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
+      })
+    }
     const compiled = this.v3() ? this.compiled?.commands?.[name] : undefined
     if (compiled) {
       // The agent the command runs on: the body's, else the session's.
@@ -1758,8 +1783,9 @@ export class PiRuntime {
       // overlay): the first directory wins, like OpenCode's search order. pi reports the loser.
       const { skills, diagnostics } = this.coding.loadSkills({ cwd: this.workspace, agentDir: this.cfg.piAgentDir, skillPaths: dirs, includeDefaults: false })
       for (const diagnostic of diagnostics) if (diagnostic.type !== 'collision') logger.warn('[pi] skill diagnostic', diagnostic)
-      // The kortix-genui system skill exists only while the project's `genui` flag is on.
-      return genuiEnabled(this.env) ? skills : skills.filter((skill) => skill.name !== GENUI_SKILL_NAME)
+      // A flagged managed skill exists only while the project's flag is on.
+      const withheld = await withheldManagedSkills(this.env)
+      return skills.filter((skill) => !withheld.includes(skill.name))
     } catch (err) {
       logger.warn('[pi] skill load failed', { err: (err as Error).message })
       return []
@@ -1830,7 +1856,7 @@ export class PiRuntime {
   }
 
   /** The agent's granted skills: Kortix skills first, then skills pi loaded from packages; a name appears once. */
-  skillList(): Array<Pick<Skill, 'name' | 'description' | 'filePath'>> {
+  skillList(): Array<Pick<Skill, 'name' | 'description' | 'filePath' | 'baseDir'>> {
     const own = this.skills.filter((skill) => skillGranted(this.policy, skill.name))
     const seen = new Set(own.map((skill) => skill.name))
     return [...own, ...(this.pi?.skills() ?? []).filter((skill) => !seen.has(skill.name) && (seen.add(skill.name), true))]

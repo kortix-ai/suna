@@ -104,6 +104,23 @@ export const PREVIEW_UNREACHABLE_WINDOW_MS = 10_000;
  *  a dead port resolves in ~{@link PREVIEW_UNREACHABLE_WINDOW_MS}. */
 export const PREVIEW_MAX_WAIT_MS = 90_000;
 
+/** How long the frame may load before the pane says it is slow, ms.
+ *
+ *  A frame whose request stalls (the app has not answered yet, or a
+ *  single-threaded server is busy with another client) fires no `onLoad`, and
+ *  the port probe cannot see that. The pane then showed a bare "Loading
+ *  preview…" until {@link PREVIEW_MAX_WAIT_MS} (KRTX-3015). Past this point it
+ *  keeps waiting but says so, and offers Reload. Fifteen seconds is past the
+ *  probe's {@link PREVIEW_UNREACHABLE_WINDOW_MS}, so a dead port has already
+ *  failed by then, and well inside a cold compile, which only earns a line. */
+export const PREVIEW_SLOW_MS = 15_000;
+
+/** The line under the loading spinner once the preview is slow. */
+export function previewSlowReason(input: { port: number }): string {
+  const app = input.port > 0 ? `The app on port ${input.port}` : 'The app';
+  return `${app} is taking a while to answer. Reload to ask again.`;
+}
+
 /** One probe's verdict about the port. Aliased from the SDK's own type rather
  *  than restated, so the two can never drift apart. */
 export type PreviewProbe = PreviewPortProbe;

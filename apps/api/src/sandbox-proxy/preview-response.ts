@@ -250,11 +250,8 @@ export function longTurnTimeoutResponse(origin: string): Response {
   const headers = new Headers({
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store',
+    ...previewCorsHeaders(origin),
   });
-  if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
-  }
   return new Response(
     JSON.stringify({
       error:

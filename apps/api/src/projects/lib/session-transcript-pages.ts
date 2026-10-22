@@ -47,15 +47,6 @@ export interface TranscriptPageWalk {
    * upstream" apart from "I did not read that far".
    */
   complete: boolean;
-  /**
-   * The walk stopped because it reached a page it already holds, unchanged.
-   *
-   * Everything older is therefore already captured too, so this is a
-   * SUCCESSFUL stop — unlike a failed page. The writer may still delete inside
-   * the range the walk covered (a rewind removes the newest messages, which is
-   * exactly what an incremental read sees) but never below it.
-   */
-  caughtUp: boolean;
 }
 
 /**
@@ -76,23 +67,12 @@ export async function readTranscriptPages(
   readPage: (cursor?: string) => Promise<Response>,
   fullHistory: boolean,
   prepareMessages?: (messages: unknown[]) => Promise<unknown[]>,
-  /**
-   * "Is this whole page already captured, unchanged?" Answering true stops the
-   * walk: pages run newest-first, so a page we already hold means everything
-   * below it is held too. Omitted, the walk always runs to the head.
-   *
-   * The CALLER owns the gate on whether stopping is sound at all — it is only
-   * sound when a previous capture proved it reached the session's first
-   * message. See `session-transcript-capture.ts`.
-   */
-  isAlreadyCaptured?: (rows: MirrorMessage[]) => boolean,
 ): Promise<TranscriptPageWalk> {
   const messages = new Map<string, MirrorMessage>();
   const cursors = new Set<string>();
   let cursor: string | undefined;
   let headComplete = false;
   let complete = false;
-  let caughtUp = false;
   let pagesRead = 0;
 
   const finish = (): TranscriptPageWalk => {
@@ -104,7 +84,7 @@ export async function readTranscriptPages(
         String(a.info.id).localeCompare(String(b.info.id))
       );
     });
-    return { rows, headComplete, complete, caughtUp };
+    return { rows, headComplete, complete };
   };
 
   do {
@@ -133,13 +113,6 @@ export async function readTranscriptPages(
       if (!messages.has(id)) messages.set(id, row);
     }
     pagesRead += 1;
-    // `pageRows.length > 0` guards the vacuous truth: `every` over nothing is
-    // true, and an empty page says the walk ran past the end, never that the
-    // rows below it are already stored.
-    if (fullHistory && pageRows.length > 0 && isAlreadyCaptured?.(pageRows)) {
-      caughtUp = true;
-      return finish();
-    }
     cursor = response.headers.get("x-next-cursor") || undefined;
     headComplete = !cursor;
     // A cursor the walk has already followed means the daemon is not

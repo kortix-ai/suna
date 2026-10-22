@@ -288,11 +288,8 @@ mock.module('../config', () => ({
 mock.module('../llm-gateway/models/served-managed-models', () => ({
   platformDefaultModelId: () => 'deepseek-v4-flash',
   isPlatformDefaultModelId: (id: string) => id === 'deepseek-v4-flash',
-}));
-
-mock.module('../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => true,
-  projectLlmGatewayEnabledById: async () => true,
+  servedManagedModels: () => [],
+  platformVisionModelId: () => 'gpt-5.6-luna',
 }));
 
 mock.module('../billing/services/entitlements', () => ({

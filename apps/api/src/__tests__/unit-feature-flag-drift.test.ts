@@ -26,7 +26,7 @@ import {
 } from '@kortix/api-contract';
 import { FEATURE_FLAG_KEYS as SDK_FEATURE_FLAG_KEYS } from '@kortix/sdk';
 
-import { REGISTERED_FEATURE_FLAGS, buildFeatureFlagCatalog } from '../feature-flags/registry';
+import { REGISTERED_FEATURE_FLAGS, buildFeatureFlagCatalog, resolveFeatureFlag } from '../feature-flags/registry';
 
 // Compared as plain strings: the SDK's `FeatureFlagKey` union still carries
 // deprecated graduated keys (`FEATURE_FLAG_KEYS` does not), so the two
@@ -53,15 +53,14 @@ describe('feature-flag key lists — contract ↔ SDK ↔ API registry', () => {
     // no SDK key is a row nobody can act on, so the catalog may never carry a
     // key the SDK does not know. It may carry FEWER: a `catalogHidden` flag
     // (registry.ts, "Hidden flags") still resolves and is still accepted by
-    // `PATCH /projects/:id/features`, but is no longer offered as a choice.
-    const hiddenKeys: string[] = REGISTERED_FEATURE_FLAGS.filter(
-      (flag) => flag.catalogHidden === true,
-    )
-      .map((flag) => flag.key as string)
-      .sort();
-    expect(catalogKeys).toEqual(sdkKeys.filter((key) => !hiddenKeys.includes(key)));
+    // `PATCH /projects/:id/features`, but is listed only while it is on.
+    const hidden = REGISTERED_FEATURE_FLAGS.filter((flag) => flag.catalogHidden === true);
+    const unlistedKeys: string[] = hidden
+      .filter((flag) => !resolveFeatureFlag({}, flag.key))
+      .map((flag) => flag.key as string);
+    expect(catalogKeys).toEqual(sdkKeys.filter((key) => !unlistedKeys.includes(key)));
     // And a hidden flag is still a real, registered, SDK-known key.
-    for (const key of hiddenKeys) expect(sdkKeys).toContain(key);
+    for (const flag of hidden) expect(sdkKeys).toContain(flag.key);
   });
 
   test('no list carries a duplicate key', () => {

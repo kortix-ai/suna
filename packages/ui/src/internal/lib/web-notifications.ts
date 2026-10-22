@@ -45,7 +45,7 @@ import {
   successToast,
   warningToast,
 } from '../../primitives/toast';
-import { ClockIcon } from '@phosphor-icons/react';
+import { ClockIcon, GitPullRequestIcon } from '@phosphor-icons/react';
 import {
   SessionFailedCard,
   SessionStackCard,
@@ -66,7 +66,13 @@ import type { SoundEvent } from '../stores/sound-store';
 import { openTabAndNavigate, useTabStore } from '../stores/tab-store';
 import { useTurnAttentionStore } from '../stores/turn-attention-store';
 import { useWebNotificationStore } from '../stores/web-notification-store';
-import { normalizeAppPathname, type InboxNotificationKind, type NotificationPreferences } from '@kortix/sdk';
+import {
+  listChangeRequests,
+  normalizeAppPathname,
+  type ChangeRequest,
+  type InboxNotificationKind,
+  type NotificationPreferences,
+} from '@kortix/sdk';
 
 // ============================================================================
 // Types
@@ -82,7 +88,8 @@ export type WebNotificationType =
   | 'automation_failed'
   | 'automation_recovered'
   | 'capture_device_down'
-  | 'capture_device_recovered';
+  | 'capture_device_recovered'
+  | 'message';
 
 export interface WebNotificationPayload {
   /** Which category this notification belongs to */
@@ -116,6 +123,8 @@ export interface WebNotificationPayload {
   preview?: string;
   /** Localized "Open session" for the finished-turn toast. */
   openSessionLabel?: string;
+  /** The open change request the finished turn produced: the toast offers Review. */
+  changeRequest?: { crId: string; detail: string; reviewLabel: string };
   /** Localized "{count} tasks finished" for the stack several turns collapse into. */
   stackTitle?: (count: number) => string;
   /** A row of the notification inbox. Inbox rows exist only for projects with `notification_center` on. */
@@ -141,6 +150,7 @@ const TYPE_TO_KIND: Record<WebNotificationType, InboxNotificationKind> = {
   automation_recovered: 'automation_recovered',
   capture_device_down: 'capture_device_down',
   capture_device_recovered: 'capture_device_recovered',
+  message: 'message',
 };
 
 /**
@@ -199,6 +209,7 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
   automation_recovered: 'completion',
   capture_device_down: 'error',
   capture_device_recovered: 'completion',
+  message: 'notification',
 };
 
 // ============================================================================
@@ -232,11 +243,11 @@ function currentProjectId(): string | null {
 function navigateToSession(
   sessionId: string,
   sessionTitle?: string,
-  opts?: { forceNavigation?: boolean; projectId?: string | null },
+  opts?: { forceNavigation?: boolean; projectId?: string | null; search?: string },
 ) {
   const projectId = opts?.projectId ?? currentProjectId();
   if (!projectId) return;
-  const href = projectSessionHref(projectId, sessionId);
+  const href = projectSessionHref(projectId, sessionId) + (opts?.search ?? '');
   try {
     // Open/activate the tab in the tab store + pushState
     openTabAndNavigate({
@@ -500,6 +511,7 @@ const NOTIFICATION_TOAST_VARIANT: Record<WebNotificationType, 'success' | 'error
   automation_recovered: 'success',
   capture_device_down: 'error',
   capture_device_recovered: 'success',
+  message: 'info',
 };
 
 /** Open what the notification is about: its session, or its `href`. */
@@ -625,6 +637,15 @@ function showSessionToast(payload: WebNotificationPayload, sessionId: string) {
   // focus) names nothing and opens nothing: the person is already there.
   // Read at render, so it follows where the person is now.
   const elsewhere = () => !isViewingSession(sessionId);
+  const cr = payload.changeRequest;
+  // `?cr=` opens the change request's review dialog on the session page.
+  const review = () => {
+    navigateToSession(sessionId, payload.body, {
+      projectId: payload.projectId,
+      search: cr ? `?cr=${encodeURIComponent(cr.crId)}` : undefined,
+    });
+    payload.onClick?.();
+  };
   if (item.failed) {
     customToast(
       (dismiss) =>
@@ -647,12 +668,23 @@ function showSessionToast(payload: WebNotificationPayload, sessionId: string) {
         message: payload.inAppTitle ?? payload.title,
         icon: toastIcon('success'),
         variant: 'success',
+        // On the session itself the change request card is in the transcript,
+        // so the toast only says it is there.
         options: elsewhere()
           ? {
-              entity: { label: item.label },
-              actions: [{ label: payload.openSessionLabel ?? openLabel, onClick: () => open(item) }],
+              entity: {
+                icon: cr ? createElement(GitPullRequestIcon, { className: 'size-3.5' }) : undefined,
+                label: item.label,
+              },
+              description: cr?.detail,
+              actions: [
+                ...(cr ? [{ label: cr.reviewLabel, onClick: review }] : []),
+                { label: payload.openSessionLabel ?? openLabel, onClick: () => open(item) },
+              ],
             }
-          : undefined,
+          : cr
+            ? { description: cr.detail }
+            : undefined,
         onDismiss: dismiss,
       }),
     { id, duration: NOTIFICATION_VISIBLE_MS, onClose },
@@ -724,7 +756,7 @@ export function notifyTaskCompleteFor(
   const name = sessionDisplayName(sessionTitle, sessionId);
   const label = sessionTitle ? `"${name.slice(0, 60)}"` : name;
 
-  sendWebNotification({
+  const payload: WebNotificationPayload = {
     type: 'completion',
     entityLabel: name,
     openSessionLabel: tI18nComplete.raw('textb205bb47f81a'),
@@ -739,7 +771,39 @@ export function notifyTaskCompleteFor(
     // deep link (the same rule the click-time path documents above).
     projectId,
     notificationCenter,
+  };
+  if (!projectId) {
+    sendWebNotification(payload);
+    return;
+  }
+  void openChangeRequestOf(projectId, sessionId).then((cr) => {
+    if (!cr) {
+      sendWebNotification(payload);
+      return;
+    }
+    const detail = tI18nComplete('text57f57edb6f16', { number: cr.number });
+    sendWebNotification({
+      ...payload,
+      body: `${payload.body} ${detail}`,
+      changeRequest: { crId: cr.cr_id, detail, reviewLabel: tI18nComplete.raw('textaff0766a5290') },
+    });
   });
+}
+
+/** How long the finished-turn toast waits for the change request lookup. */
+const CHANGE_REQUEST_LOOKUP_MS = 2_500;
+
+/**
+ * The newest open change request the session opened, or null. Server-vouched
+ * by `origin_session_id`, the same rule as the transcript's change request card.
+ * A slow or failed lookup answers null, so the toast never waits on it for long.
+ */
+function openChangeRequestOf(projectId: string, sessionId: string): Promise<ChangeRequest | null> {
+  const lookup = listChangeRequests(projectId, 'open', { originSessionId: sessionId, limit: 1 })
+    .then((page) => page.change_requests[0] ?? null)
+    .catch(() => null);
+  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), CHANGE_REQUEST_LOOKUP_MS));
+  return Promise.race([lookup, timeout]);
 }
 
 /**

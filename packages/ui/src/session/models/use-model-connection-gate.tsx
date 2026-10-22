@@ -7,7 +7,6 @@ import { useCallback, useMemo, useState } from 'react';
 
 import { useAccountState } from '../../internal/billing/use-account-state';
 import { useOpenedOnce } from '../../internal/hooks/use-opened-once';
-import { isLlmGatewayEnabled } from '../../internal/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
 import { useProjectPageCans } from '../../internal/lib/use-project-can';
 import type { ProviderModalTab } from '../../internal/stores/provider-modal-store';
@@ -15,6 +14,7 @@ import { useUpgradeDialogStore } from '../../internal/stores/upgrade-dialog-stor
 import { getProject, platformConfig } from '@kortix/sdk';
 import { contract, type FlatModel, type ModelKey, qk } from '@kortix/sdk/react';
 import { resolveEntitlementsPending } from '../composer/entitlements-pending';
+import { isRunnableModel } from './model-availability';
 
 /**
  * `ProviderModalTab` is the caller-facing vocabulary ('providers' | 'connected'
@@ -80,15 +80,14 @@ export function useModelConnectionGate(
 
   const projectId = resolveGateProjectId(options?.projectId, useSessionIds().projectId);
 
-  // The gateway flag rides the bare project row (~10 ms), not `/detail`,
-  // which reads git and held the picker spinner for up to 2.6 s on prod.
+  // The bare project row (~10 ms), not `/detail`, which reads git and held
+  // the picker spinner for up to 2.6 s on prod.
   const projectRowQuery = useQuery({
     queryKey: qk.project.summary(projectId ?? ''),
     queryFn: () => getProject(projectId as string),
     enabled: !!projectId,
     ...contract('config'),
   });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectRowQuery.data);
   const caps = useProjectPageCans(projectId ?? undefined);
   // The provider modal's writes are `project.model.write`, the same leaf the
   // model picker gates its "+" and sliders on.
@@ -97,10 +96,6 @@ export function useModelConnectionGate(
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectModalTab, setProjectModalTab] = useState<'providers' | 'models'>('providers');
 
-  const baseModels = useMemo(
-    () => (llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix')),
-    [models, llmGatewayEnabled],
-  );
   const accountStateQuery = useAccountState();
   // Availability is SERVER-resolved, never re-derived here. `/model-picker`
   // already applies plan entitlement (`freeManagedOnly`) and connected-BYOK
@@ -118,18 +113,17 @@ export function useModelConnectionGate(
   // `resolveAvailableSelectedModel` then nulled the pick, so the trigger stayed
   // on `unsetLabel`, no check mark rendered, and each click looked like a no-op
   // even though `onSelect` fired and the model store was written.
-  //
-  // Native (non-gateway) catalogs carry no `enabled` — opencode only lists
-  // models of CONNECTED providers, so presence there already means usable.
-  const isModelOffered = useCallback((model: FlatModel) => model.enabled !== false, []);
+  // `isRunnableModel` also refuses a model `/model-picker` marks
+  // `available: false` (its provider is not connected for the caller).
+  const isModelOffered = useCallback((model: FlatModel) => isRunnableModel(model), []);
   const hasSelectableModels = useMemo(
-    () => baseModels.some(isModelOffered),
-    [baseModels, isModelOffered],
+    () => models.some(isModelOffered),
+    [models, isModelOffered],
   );
   const modelsByKey = useMemo(
     () =>
-      new Map(baseModels.map((model) => [`${model.providerID}:${model.modelID}`, model] as const)),
-    [baseModels],
+      new Map(models.map((model) => [`${model.providerID}:${model.modelID}`, model] as const)),
+    [models],
   );
   const isSelectableModel = useCallback(
     (selectedModel: ModelKey) => {

@@ -1,4 +1,3 @@
-import { getManagedModel } from '@kortix/llm-catalog';
 
 import type { UiTranslator } from '../../../i18n';
 import type { LlmProviderEntry, LlmProviderModel } from '../../../internal/lib/llm-providers';
@@ -104,7 +103,6 @@ export function buildCodexProvider(
  */
 export function buildKortixManagedProvider(
   ocProviders: RuntimeProvidersSnapshot,
-  managedModelIds: ReadonlySet<string>,
   includedHint: string,
 ): LlmProviderEntry | null {
   const connectedIds = new Set(ocProviders?.connected ?? []);
@@ -112,30 +110,26 @@ export function buildKortixManagedProvider(
   if (!kortix || !connectedIds.has('kortix')) return null;
   const models: LlmProviderModel[] = [];
   for (const [id, m] of Object.entries(kortix.models ?? {})) {
-    if (!managedModelIds.has(id)) continue;
-    // Best-effort capability/limit passthrough for the "Models in depth"
-    // display (models-tab.tsx / catalog-tab.tsx) — the opencode provider
-    // snapshot mirrors these when it has them; `vision`/`limit` otherwise
-    // fall back to `@kortix/llm-catalog`'s curated managed-model table,
-    // the canonical home for both (see MANAGED_MODELS' doc comment —
-    // managed slugs aren't reliably on models.dev, so this table is
-    // authoritative for them, not a guess).
+    // Managed = served under the `kortix` provider: what Platinum Inference
+    // offers. Capabilities and limits come with the served entry.
     const raw = m as {
       name?: string;
+      provider?: string;
       release_date?: string;
       reasoning?: boolean;
       tool_call?: boolean;
+      attachment?: boolean;
       limit?: { context?: number; output?: number };
     };
-    const managed = getManagedModel(id);
+    if (raw.provider !== 'kortix' || id.includes('/')) continue;
     models.push({
       id,
       name: (raw.name || id).replace('(latest)', '').trim(),
       released: raw.release_date ?? null,
       reasoning: raw.reasoning,
       tool_call: raw.tool_call,
-      attachment: managed?.vision,
-      limit: raw.limit ?? managed?.limit,
+      attachment: raw.attachment,
+      limit: raw.limit,
     });
   }
   if (models.length === 0) return null;
@@ -181,37 +175,6 @@ export function pickInitialTab(defaultTab: ActiveTab | undefined): ActiveTab {
   if (defaultTab === 'models') return 'models';
   if (defaultTab === 'custom') return 'custom';
   return 'providers';
-}
-
-export function buildCustomProviderSnippet(input: {
-  providerId: string;
-  name: string;
-  baseURL: string;
-  secretName: string | null;
-  modelId: string;
-  modelName: string;
-}): string {
-  const options: Record<string, string> = { baseURL: input.baseURL };
-  if (input.secretName) options.apiKey = `{env:${input.secretName}}`;
-
-  const snippet = {
-    provider: {
-      [input.providerId]: {
-        npm: '@ai-sdk/openai-compatible',
-        name: input.name,
-        options,
-        models: {
-          [input.modelId]: {
-            id: input.modelId,
-            name: input.modelName,
-            family: input.providerId,
-          },
-        },
-      },
-    },
-  };
-
-  return JSON.stringify(snippet, null, 2);
 }
 
 export function prettyFieldLabel(envVar: string): string {

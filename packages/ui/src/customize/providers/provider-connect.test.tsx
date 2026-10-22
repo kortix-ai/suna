@@ -67,8 +67,15 @@ describe('ProviderConnectView — two groups, rows open the sheet', () => {
 
   test('the meta line names the method and the model count', () => {
     const out = render();
-    expect(out).toContain('Paid from credits · 42 models');
+    expect(out).toContain('Paid from credits · Platinum Inference · 42 models');
     expect(out).toContain('API key · 14 models');
+  });
+
+  test('Free managed models never claim included or paid-from-credits access', () => {
+    const out = render({ inUse: [], available: [{ ...KORTIX, modelCount: 0, status: 'none' }] });
+    expect(out).not.toContain('Paid from credits');
+    expect(out).not.toContain('aria-label="Included"');
+    expect(out).toContain('connect your own provider');
   });
 
   test('a connected two-way provider says how it is connected, not how it could be', () => {

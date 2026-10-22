@@ -89,37 +89,34 @@ interface FolderDriveMenuProps {
   copyPathLabel: string;
 }
 
-export function FolderDriveMenuItems({
+/** Copy, cut, copy path, rename and delete: the same on a folder and a file. */
+function DriveMenuSharedItems({
   Item,
   Separator,
   node,
-  onClick,
-  onDownload,
   onCopy,
   onCut,
   onRename,
   onDelete,
   startRenaming,
-  isDownloadingItem,
-  openFolderLabel,
   copyPathLabel,
-}: FolderDriveMenuProps) {
+}: Pick<
+  FolderDriveMenuProps,
+  | 'Item'
+  | 'Separator'
+  | 'node'
+  | 'onCopy'
+  | 'onCut'
+  | 'onRename'
+  | 'onDelete'
+  | 'startRenaming'
+  | 'copyPathLabel'
+>) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const hasEditActions = Boolean(onRename || onDelete);
 
   return (
     <>
-      <Item onClick={onClick}>
-        <ArrowUpRight />
-        {openFolderLabel}
-      </Item>
-      {onDownload && (
-        <Item onClick={() => onDownload(node)} disabled={isDownloadingItem}>
-          <Download />
-          {isDownloadingItem ? 'Zipping...' : tI18nComplete.raw('textdda839b13617')}
-        </Item>
-      )}
-      <Separator />
       {onCopy && (
         <Item onClick={() => onCopy(node)}>
           <ClipboardCopy />
@@ -157,6 +154,51 @@ export function FolderDriveMenuItems({
   );
 }
 
+export function FolderDriveMenuItems({
+  Item,
+  Separator,
+  node,
+  onClick,
+  onDownload,
+  onCopy,
+  onCut,
+  onRename,
+  onDelete,
+  startRenaming,
+  isDownloadingItem,
+  openFolderLabel,
+  copyPathLabel,
+}: FolderDriveMenuProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+
+  return (
+    <>
+      <Item onClick={onClick}>
+        <ArrowUpRight />
+        {openFolderLabel}
+      </Item>
+      {onDownload && (
+        <Item onClick={() => onDownload(node)} disabled={isDownloadingItem}>
+          <Download />
+          {isDownloadingItem ? 'Zipping...' : tI18nComplete.raw('textdda839b13617')}
+        </Item>
+      )}
+      <Separator />
+      <DriveMenuSharedItems
+        Item={Item}
+        Separator={Separator}
+        node={node}
+        onCopy={onCopy}
+        onCut={onCut}
+        onRename={onRename}
+        onDelete={onDelete}
+        startRenaming={startRenaming}
+        copyPathLabel={copyPathLabel}
+      />
+    </>
+  );
+}
+
 interface FileDriveMenuProps {
   Item: DriveMenuItemComponent;
   Separator: DriveMenuSeparatorComponent;
@@ -189,7 +231,6 @@ export function FileDriveMenuItems({
   copyPathLabel,
 }: FileDriveMenuProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const hasEditActions = Boolean(onRename || onDelete);
 
   return (
     <>
@@ -210,39 +251,17 @@ export function FileDriveMenuItems({
         </Item>
       )}
       <Separator />
-      {onCopy && (
-        <Item onClick={() => onCopy(node)}>
-          <ClipboardCopy />
-          {tI18nComplete.raw('texte21f935f11d7')}
-        </Item>
-      )}
-      {onCut && (
-        <Item onClick={() => onCut(node)}>
-          <Scissors />
-          {tI18nComplete.raw('text1f45f02561f4')}
-        </Item>
-      )}
-      <Item onClick={() => navigator.clipboard.writeText(node.path)}>
-        <Copy />
-        {copyPathLabel}
-      </Item>
-      {hasEditActions && (
-        <>
-          <Separator />
-          {onRename && (
-            <Item onClick={() => setTimeout(startRenaming, 100)}>
-              <PencilSimpleIcon />
-              {tI18nComplete.raw('text3064d79a295c')}
-            </Item>
-          )}
-          {onDelete && (
-            <Item onClick={() => onDelete(node)}>
-              <TrashIcon />
-              {tI18nComplete.raw('textc3812fc4acb8')}
-            </Item>
-          )}
-        </>
-      )}
+      <DriveMenuSharedItems
+        Item={Item}
+        Separator={Separator}
+        node={node}
+        onCopy={onCopy}
+        onCut={onCut}
+        onRename={onRename}
+        onDelete={onDelete}
+        startRenaming={startRenaming}
+        copyPathLabel={copyPathLabel}
+      />
     </>
   );
 }
@@ -339,6 +358,7 @@ const FolderCard = memo(function FolderCard({
               <DropdownMenuTrigger asChild>
                 <Button
                   onClick={(e) => e.stopPropagation()}
+                  aria-label={tHardcodedUi.raw('i18nComplete.textf8d46c2570e7')}
                   variant="secondary"
                   size="icon-sm"
                   className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
@@ -361,6 +381,7 @@ const FolderCard = memo(function FolderCard({
               <input
                 ref={renameInputRef}
                 type="text"
+                aria-label={tHardcodedUi.raw('i18nComplete.text3064d79a295c')}
                 value={renameName}
                 onChange={(e) => setRenameName(e.target.value)}
                 onKeyDown={(e) => {
@@ -483,6 +504,7 @@ const FileCard = memo(function FileCard({
               <DropdownMenuTrigger asChild>
                 <Button
                   onClick={(e) => e.stopPropagation()}
+                  aria-label={tHardcodedUi.raw('i18nComplete.textf8d46c2570e7')}
                   variant="secondary"
                   size="icon-sm"
                   className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
@@ -505,6 +527,7 @@ const FileCard = memo(function FileCard({
               <input
                 ref={renameInputRef}
                 type="text"
+                aria-label={tHardcodedUi.raw('i18nComplete.text3064d79a295c')}
                 value={renameName}
                 onChange={(e) => setRenameName(e.target.value)}
                 onKeyDown={(e) => {
@@ -627,11 +650,12 @@ export function DriveGridView({
                   )
                 : undefined;
               return (
-                <div
+                <button
+                  type="button"
                   key={node.path}
                   onClick={() => onNavigateToDir(node)}
                   title={description}
-                  className="group relative flex cursor-pointer flex-col gap-2 select-none"
+                  className="group relative flex w-full min-w-0 cursor-pointer flex-col gap-2 text-left select-none"
                 >
                   <DriveFolderThumbnail
                     path={node.path}
@@ -640,7 +664,7 @@ export function DriveGridView({
                   <span className="text-foreground truncate px-0.5 text-sm font-medium">
                     {node.name}
                   </span>
-                </div>
+                </button>
               );
             })}
           </div>

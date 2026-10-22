@@ -94,6 +94,20 @@ export async function bindChatThread(
   return inserted ?? (await findChatThread(key));
 }
 
+/**
+ * Move every thread bound to one session of a project to another: a successor
+ * session takes over its failed predecessor's conversations, so replies in
+ * those threads reach it. Returns the number of threads moved.
+ */
+export async function adoptChatThreads(projectId: string, fromSessionId: string, toSessionId: string): Promise<number> {
+  const moved = await db
+    .update(chatThreads)
+    .set({ sessionId: toSessionId })
+    .where(and(eq(chatThreads.projectId, projectId), eq(chatThreads.sessionId, fromSessionId)))
+    .returning({ threadId: chatThreads.threadId });
+  return moved.length;
+}
+
 /** Record a delivered message on the thread. */
 export async function touchChatThread(key: ChatThreadKey): Promise<void> {
   await db.update(chatThreads).set({ lastMessageAt: new Date() }).where(threadRow(key));

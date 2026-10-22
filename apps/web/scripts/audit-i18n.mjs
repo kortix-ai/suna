@@ -233,6 +233,14 @@ const allowedLiteralValues = new Set([
   'Ruby on Rails',
   'Laravel',
   'Discover and read Kortix public API and documentation resources.',
+  // Technical tokens a user types verbatim: a host in a URL placeholder, the
+  // room-wide mention, and the S3 bucket, AWS region and IAM role ARN examples
+  // in the Capture storage settings.
+  'example.com',
+  '@here',
+  'my-recordings',
+  'us-east-1',
+  'arn:aws:iam::123456789012:role/kortix-capture',
 ]);
 
 const ignoredAttributes = new Set([
@@ -644,6 +652,17 @@ function scanFile(file) {
   }
 
   function containingUiMessageArgument(node) {
+    // A comparison operand (`decision === 'approve' ? … : …`) is never rendered.
+    if (
+      ts.isBinaryExpression(node.parent) &&
+      [
+        ts.SyntaxKind.EqualsEqualsEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsEqualsToken,
+        ts.SyntaxKind.EqualsEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsToken,
+      ].includes(node.parent.operatorToken.kind)
+    )
+      return undefined;
     let cursor = node.parent;
     while (cursor && !ts.isFunctionLike(cursor) && !ts.isSourceFile(cursor)) {
       if (ts.isJsxElement(cursor) || ts.isJsxSelfClosingElement(cursor)) return undefined;
@@ -1038,6 +1057,8 @@ function scanFile(file) {
           node.text === 'bun test apps/api/src/billing') ||
         (file === path.join(uiSrcDir, 'internal/lib/attachment-mime.ts') &&
           catalogRoot === 'MIME_BY_EXTENSION') ||
+        (file === path.join(uiSrcDir, 'internal/lib/web-notifications.ts') &&
+          ['TYPE_TO_KIND', 'TYPE_TO_SOUND', 'NOTIFICATION_TOAST_VARIANT'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/preferences-tab.tsx') &&
           catalogRoot === 'MODIFIER_OPTIONS') ||
         (file.includes(`${path.sep}i18n${path.sep}`) && file.endsWith('.generated.ts')) ||
