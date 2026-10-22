@@ -86,6 +86,11 @@ describe('account creation handoff', () => {
         expect(useCurrentAccountStore.getState().selectedAccountId).toBe('created');
         expect(useAccountPanelStore.getState().pushedEntry).toBe(host === 'sidebar');
       };
+      const realProjectCan = await import('@kortix/ui/internal/lib/use-project-can');
+      mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
+        ...realProjectCan,
+        useProjectCan: () => ({ allowed: false }),
+      }));
       mock.module('next/navigation', () => ({
         useRouter: () => ({
           push: navigate('push'),
@@ -110,8 +115,10 @@ describe('account creation handoff', () => {
       }));
       const children = ({ children }: { children?: ReactNode }) =>
         createElement('div', null, children);
-      const uiDropdownMenuMock = () =>
-        Object.fromEntries(
+      const realDropdownMenu = await import('@kortix/ui/dropdown-menu');
+      const uiDropdownMenuMock = () => ({
+        ...realDropdownMenu,
+        ...Object.fromEntries(
           [
             'DropdownMenu',
             'DropdownMenuCheckboxItem',
@@ -129,7 +136,8 @@ describe('account creation handoff', () => {
             'DropdownMenuSubTrigger',
             'DropdownMenuTrigger',
           ].map((name) => [name, children]),
-        );
+        ),
+      });
       mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
       mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
       const { createContext } = await import('react');

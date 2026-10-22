@@ -540,6 +540,12 @@ describe('readSavedSessionCopy reads the session log first (P8)', () => {
     }
   });
 
+  test('a new session on an API that serves the log (404 session_log_missing): no copy, and no v1 window', async () => {
+    const urls = serve(() => Response.json({ error: 'No session log for this session', code: 'session_log_missing' }, { status: 404 }));
+    expect(await read()).toEqual({ envelope: null, empty: false, log: null });
+    expect(urls).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
+  });
+
   test('no stored log (404, a server older than the log): the v1 window answers as the fallback', async () => {
     const v1Window = { available: true, reason: null, source: 'mirror', complete: true, runtime_session_id: rootRuntimeId, opencode_session_id: rootRuntimeId, message_count: 0, messages: [] };
     const urls = serve((url) =>

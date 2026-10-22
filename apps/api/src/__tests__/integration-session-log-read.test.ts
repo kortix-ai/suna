@@ -363,9 +363,15 @@ describe('GET .../log', () => {
   test('refuses a bad before_seq and limit; 404 for an unknown thread and without a log', async () => {
     expect((await get(`${base()}/log?before_seq=1.5`)).status).toBe(400);
     expect((await get(`${base()}/log?limit=501`)).status).toBe(400);
-    expect((await get(`${base()}/log?thread=ses_not_a_thread`)).status).toBe(404);
+    const unknownThread = await get(`${base()}/log?thread=ses_not_a_thread`);
+    expect(unknownThread.status).toBe(404);
+    expect(((await unknownThread.json()) as { code?: string }).code).toBeUndefined();
     const empty = await seedSession(project, OWNER);
-    expect((await get(`${base(empty)}/log`)).status).toBe(404);
+    // A session with no stored log yet (a new one) says so by code: a client stays on the log
+    // instead of reading v1, which only an API without this route answers with a bare 404.
+    const missing = await get(`${base(empty)}/log`);
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: 'No session log for this session', code: 'session_log_missing' });
     expect((await get(`${base()}/log`, null)).status).toBe(401);
   });
 });

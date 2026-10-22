@@ -1252,6 +1252,9 @@
     "expiredBody": "Chiedi alla persona che ti ha invitato di inviarne uno nuovo.",
     "wrongAccountTitle": "Cambia account",
     "wrongAccountBody": "Questo invito è indirizzato a un altro account. Hai effettuato l'accesso come {{email}}.",
+    "directoryTitle": "Accedi con il single sign-on",
+    "directoryBody": "La directory della tua organizzazione ti ha aggiunto a questo account. Apri questo invito in un browser e accedi con il single sign-on della tua organizzazione, oppure chiedi a un amministratore dell'account di inviare di nuovo l'invito.",
+    "ssoDomainUnverifiedBody": "Il tuo provider di single sign-on non ha verificato il dominio di questa email. Esci e accedi di nuovo con il tuo indirizzo email per usare questo invito.",
     "signOutAndContinue": "Esci e continua",
     "backToProjects": "Torna ai progetti"
   },

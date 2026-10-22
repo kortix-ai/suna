@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 878,
+  "count": 879,
   "routes": [
     {
       "method": "GET",
@@ -213,6 +213,10 @@
     {
       "method": "GET",
       "path": "/v1/accounts/:accountId/audit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/audit/activity"
     },
     {
       "method": "GET",

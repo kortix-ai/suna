@@ -20,6 +20,7 @@ import { resolveAccountIdentityByEmail } from '../iam/account-identity';
 import { trustedEmailForUser } from '../iam/email-trust';
 import { createAccountToken } from '../repositories/account-tokens';
 import { createScimToken } from '../repositories/scim';
+import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
 import { userIdByEmail } from '../scim/app';
 
 const { app } = await import('../index');
@@ -114,6 +115,12 @@ beforeAll(async () => {
   await db.insert(creditAccounts).values({ accountId: ACCOUNT, tier: 'enterprise' });
   await db.execute(sql`INSERT INTO auth.users (id, email) VALUES (${ANCHOR_OWNER}::uuid, ${email('anchor')})`);
   await db.insert(accountMemberships).values({ accountId: ACCOUNT, userId: ANCHOR_OWNER });
+  await assignRole(SYSTEM_ACTOR, ACCOUNT, {
+    principal: { type: 'user', id: ANCHOR_OWNER },
+    roleKey: 'owner',
+    scope: { type: 'account' },
+    exclusive: true,
+  });
   // The account's own IdP, with its domain NOT verified: inside its own account
   // the IdP and the admin are the same authority.
   await db.insert(accountSsoProviders).values({
@@ -133,6 +140,7 @@ afterAll(async () => {
     await db.execute(sql`DELETE FROM kortix.account_tokens WHERE account_id IN (${sql.join(callerAccounts.map((id) => sql`${id}::uuid`), sql`, `)})`);
     await db.delete(accounts).where(inArray(accounts.accountId, callerAccounts));
   }
+  await db.execute(sql`DELETE FROM kortix.account_tokens WHERE account_id=${ACCOUNT}::uuid`);
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
   await db.execute(sql`DELETE FROM auth.users WHERE id=${ANCHOR_OWNER}::uuid`);
 });
@@ -211,7 +219,14 @@ describe('the invitee routes (/v1/account-invites) over HTTP', () => {
     expect(list.body.invites.map((i: { invite_id: string }) => i.invite_id)).not.toContain(inviteId);
     const described = await as('GET', `/v1/account-invites/${inviteId}`);
     expect(described.status).toBe(200);
-    expect(described.body).toMatchObject({ email_matches_caller: false, account_id: null, email: null });
+    // The describe names the way in: the account's own IdP, whatever the address's domain.
+    expect(described.body).toMatchObject({
+      email_matches_caller: false,
+      account_id: null,
+      email: null,
+      reason: 'email_unconfirmed',
+      sso_provider_id: OWN_IDP,
+    });
 
     const accept = await as('POST', `/v1/account-invites/${inviteId}/accept`);
     expect(accept.status).toBe(403);
@@ -236,6 +251,74 @@ describe('the invitee routes (/v1/account-invites) over HTTP', () => {
     expect((await as('GET', `/v1/account-invites/${inviteId}`)).body.email_matches_caller).toBe(true);
     expect((await as('POST', `/v1/account-invites/${inviteId}/accept`)).status).toBe(200);
     expect(await isMember(holder)).toBe(true);
+  });
+
+  test("autoconfirm on: an identity from the account's own IdP accepts the SCIM invite for an address outside the IdP's domain", async () => {
+    // A directory guest: the IdP holds them under another company's address,
+    // so the sign-in page cannot find the IdP from the address.
+    autoconfirm(true);
+    const address = `guest-${crypto.randomUUID()}@guest-company.test`;
+    expect((await scimCreateUser(address)).status).toBe(201);
+    const inviteId = await inviteIdFor(address);
+    const guest = await authUser(address, OWN_IDP);
+    const as = await caller(guest);
+
+    const described = await as('GET', `/v1/account-invites/${inviteId}`);
+    expect(described.body).toMatchObject({ email_matches_caller: true, email: address });
+    expect(described.body.reason).toBeUndefined();
+    expect((await as('POST', `/v1/account-invites/${inviteId}/accept`)).status).toBe(200);
+    expect(await isMember(guest)).toBe(true);
+  });
+
+  test('autoconfirm on: an SSO identity from another IdP does not take the SCIM invite', async () => {
+    autoconfirm(true);
+    const address = email('other-idp');
+    expect((await scimCreateUser(address)).status).toBe(201);
+    const inviteId = await inviteIdFor(address);
+    const outsider = await authUser(address, crypto.randomUUID());
+    const as = await caller(outsider);
+
+    expect((await as('GET', `/v1/account-invites/${inviteId}`)).body.email_matches_caller).toBe(false);
+    expect((await as('POST', `/v1/account-invites/${inviteId}/accept`)).status).toBe(403);
+    expect(await isMember(outsider)).toBe(false);
+  });
+
+  test("autoconfirm on: an admin's resend makes the SCIM invite one a person shares, and the password identity accepts it", async () => {
+    autoconfirm(true);
+    const address = email('scim-resent');
+    expect((await scimCreateUser(address)).status).toBe(201);
+    const inviteId = await inviteIdFor(address);
+    const holder = await authUser(address);
+    const as = await caller(holder);
+    expect((await as('POST', `/v1/account-invites/${inviteId}/accept`)).status).toBe(403);
+
+    const { secretKey } = await createAccountToken({ accountId: ACCOUNT, userId: ANCHOR_OWNER, name: 'autoconfirm-admin' });
+    const resend = await app.request(`/v1/accounts/${ACCOUNT}/invites/${inviteId}/resend`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secretKey}` },
+    });
+    expect(resend.status).toBe(200);
+
+    expect((await as('GET', `/v1/account-invites/${inviteId}`)).body.email_matches_caller).toBe(true);
+    expect((await as('POST', `/v1/account-invites/${inviteId}/accept`)).status).toBe(200);
+    expect(await isMember(holder)).toBe(true);
+  });
+
+  test('a caller signed in as another address gets wrong_account and no SSO provider', async () => {
+    autoconfirm(true);
+    const address = email('scim-other-caller');
+    expect((await scimCreateUser(address)).status).toBe(201);
+    const inviteId = await inviteIdFor(address);
+    const as = await caller(await authUser(email('someone-else')));
+
+    expect((await as('GET', `/v1/account-invites/${inviteId}`)).body).toMatchObject({
+      email_matches_caller: false,
+      reason: 'wrong_account',
+      sso_provider_id: null,
+    });
+    const accept = await as('POST', `/v1/account-invites/${inviteId}/accept`);
+    expect(accept.status).toBe(403);
+    expect(accept.body.code).toBe('wrong_account');
   });
 
   test('autoconfirm off: the invite SCIM created before the person signed up is listed and accepted', async () => {

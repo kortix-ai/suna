@@ -38,6 +38,8 @@ let pagedLog = false;
 let emptyLog = false;
 /** The project's detail never answers: its features (the `session_log` flag) stay unknown. */
 let detailPending = false;
+/** `GET …/log` answers 404 `session_log_missing`: an API that serves the log, a session with none yet. */
+let missingLog = false;
 let renderer: ReactTestRenderer | null = null;
 let queryClient: QueryClient;
 
@@ -47,12 +49,14 @@ beforeEach(() => {
   pagedLog = false;
   emptyLog = false;
   detailPending = false;
+  missingLog = false;
   setCurrentRuntime(null);
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   globalThis.fetch = mock(async (url: unknown) => {
     const parsed = new URL(url instanceof Request ? url.url : String(url));
     const path = parsed.pathname;
     urls.push(path + parsed.search);
+    if (missingLog && path.endsWith('/log')) return Response.json({ error: 'No session log for this session', code: 'session_log_missing' }, { status: 404 });
     if (serveLog && path.endsWith('/log')) {
       if (emptyLog) return Response.json({ ...page(), messages: [], has_more: false });
       if (!pagedLog) return Response.json(page());
@@ -221,6 +225,16 @@ describe('useSession with its chat engine: the session log owns the history once
     // The snapshot asks no v1 window either.
     expect(urls.filter((u) => u.includes('/snapshot')).every((u) => u.includes('transcript=0'))).toBe(true);
     expect(seen.result!.savedTranscript).toBe('shown');
+  });
+
+  test('a new session on an API that serves the log (404 session_log_missing): no /transcript, and nothing saved to wait for', async () => {
+    missingLog = true;
+    const seen = mountHost(true);
+    await flush();
+    const base = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
+    expect(urls).toContain(`${base}/log?limit=40`);
+    expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
+    expect(seen.result!.savedTranscript).toBe('none');
   });
 
   test.each([true, false])('flag %p: a server older than the log (GET …/log answers 404) falls back to the v1 saved copy', async (flag) => {

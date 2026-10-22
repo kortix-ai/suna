@@ -53,15 +53,6 @@ import {
 import { Label } from '@kortix/ui/label';
 import Loading from '@kortix/ui/loading';
 import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalDescription,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from '@kortix/ui/modal';
-import {
   Select,
   SelectContent,
   SelectGroup,
@@ -471,17 +462,7 @@ export function ApiKeysList({ accountId, canManage, footnote }: ApiKeysListProps
   );
 }
 
-export interface CreateApiKeyDialogProps {
-  accountId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
-
 /**
- * The create form's state: name, expiry under the account's key rules, and
- * the one-time secret once the token exists. Shared by the modal (personal
- * settings) and the account hub's split sheet, so both mint the same way.
- *
  * `onCreated` runs from the mutation's own options, not from a `mutate`
  * callback: it still fires if the form unmounted mid-request (the sheet was
  * closed), so the one-time secret is never dropped.
@@ -499,7 +480,6 @@ function useCreateApiKey(
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [expiry, setExpiry] = useState<string>(NEVER_EXPIRES);
-  const [created, setCreated] = useState<{ name: string; secret: string } | null>(null);
 
   // Shares its key with `KeyRulesCard`, so opening this form while the rules
   // are on screen costs no second request.
@@ -531,17 +511,10 @@ function useCreateApiKey(
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: SERVICE_ACCOUNTS_KEY(accountId) });
-      setCreated(result);
       onCreated?.(result);
     },
     onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('textc85c6ea416c8')),
   });
-
-  function reset() {
-    setName('');
-    setExpiry(NEVER_EXPIRES);
-    setCreated(null);
-  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -549,12 +522,12 @@ function useCreateApiKey(
     mutation.mutate();
   }
 
-  return { name, setName, setExpiry, selectedExpiry, expiryChoices, policy, created, mutation, reset, submit };
+  return { name, setName, setExpiry, selectedExpiry, expiryChoices, policy, mutation, submit };
 }
 
 type CreateApiKeyState = ReturnType<typeof useCreateApiKey>;
 
-/** Name and expiry: the two fields both containers render. */
+/** Name and expiry for the split sheet. */
 function CreateApiKeyFields({ form }: { form: CreateApiKeyState }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const pending = form.mutation.isPending;
@@ -595,101 +568,6 @@ function CreateApiKeyFields({ form }: { form: CreateApiKeyState }) {
         ) : null}
       </div>
     </>
-  );
-}
-
-/**
- * Create, then show the secret once, in a modal. The personal settings page
- * (`tokens-tab.tsx`) mounts this one; the account hub opens
- * `CreateApiKeySheetForm` in its split sheet instead.
- *
- * Both halves live in one Modal on purpose: the secret is the only reason a
- * person opened this, and a dialog that closes and reopens somewhere else is
- * how a one-time secret gets lost.
- *
- * The form lost two fields when the personal keys left. "Who uses it" had one
- * answer here now, and the project scope picker only ever applied to the other
- * kind — a service account is an account-level identity whose reach comes from
- * the policies attached to it, not from a binding chosen at mint time.
- */
-export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiKeyDialogProps) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const form = useCreateApiKey(accountId, open);
-  const pending = form.mutation.isPending;
-
-  function close() {
-    onOpenChange(false);
-    // Reset after the close animation so the form does not visibly blank out
-    // underneath the fading overlay.
-    setTimeout(form.reset, 200);
-  }
-
-  return (
-    <Modal
-      open={open}
-      onOpenChange={(next) => {
-        if (pending) return;
-        if (!next) close();
-        else onOpenChange(true);
-      }}
-    >
-      <ModalContent className="lg:max-w-lg">
-        {form.created ? (
-          <>
-            <ModalHeader>
-              <ModalTitle>{tI18nComplete.raw('textd7db5a6e1483')}</ModalTitle>
-              <ModalDescription>
-                {tI18nComplete.raw('textd21d10509292')} <strong>{form.created.name}</strong>
-                {tI18nComplete.raw('text26a69b6ee645')}
-              </ModalDescription>
-            </ModalHeader>
-            <ModalBody>
-              <CopyRow
-                value={form.created.secret}
-                successMessage={tI18nComplete.raw('textc9feac7acc32')}
-              />
-            </ModalBody>
-            <ModalFooter>
-              <Button type="button" size="sm" onClick={close}>
-                {tI18nComplete.raw('text11a6767d5674')}
-              </Button>
-            </ModalFooter>
-          </>
-        ) : (
-          <>
-            <ModalHeader>
-              <ModalTitle>{tI18nComplete.raw('text44d5cf8e9451')}</ModalTitle>
-              <ModalDescription>{tI18nComplete.raw('text7074515e8fda')}</ModalDescription>
-            </ModalHeader>
-            <form onSubmit={form.submit}>
-              <ModalBody className="space-y-4">
-                <CreateApiKeyFields form={form} />
-              </ModalBody>
-              <ModalFooter className="sm:justify-between">
-                <Button
-                  type="button"
-                  variant="outline-ghost"
-                  size="sm"
-                  onClick={close}
-                  disabled={pending}
-                >
-                  {tI18nComplete.raw('text19766ed6ccb2')}
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={!form.name.trim() || pending}
-                  className="gap-1.5"
-                >
-                  {pending ? <Loading className="size-3.5 shrink-0" /> : null}
-                  {tI18nComplete.raw('text5d8e8e30bc4f')}
-                </Button>
-              </ModalFooter>
-            </form>
-          </>
-        )}
-      </ModalContent>
-    </Modal>
   );
 }
 
