@@ -172,6 +172,18 @@ describe('useFeatureFlag', () => {
     expect(useFeatureFlag(null, 'llm_gateway').enabled).toBe(true);
   });
 
+  test('pi_harness graduated: every new session runs pi', () => {
+    // pi is the only harness for new sessions (2026-10-23). A stored
+    // `pi_harness: false` from the flag era is inert.
+    withDetail({ pi_harness: false });
+    expect(useFeatureFlag('p', 'pi_harness').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'pi_harness').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'pi_harness').enabled).toBe(true);
+  });
+
   test('config_releases graduated: every session runs the base branch config release', () => {
     // A `false` a project stored while config releases were a flag is inert.
     withDetail({ config_releases: false });

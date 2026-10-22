@@ -1,7 +1,7 @@
 # {{projectName}}
 
-A session of this project runs one agent harness: pi (the default) or OpenCode
-(the project's `pi_harness` flag off). Both read the same agents, skills and memory.
+A session of this project runs the pi agent harness. It reads the agents,
+skills and memory below.
 
 ## Layout
 

@@ -17,18 +17,11 @@ Run this in the session shell:
 echo "${KORTIX_HARNESS:-opencode}"
 ```
 
-`pi` means pi. `opencode`, or an unset variable, means OpenCode.
+`pi` means pi. `opencode`, or an unset variable, means OpenCode, which only a
+session that started before 2026-10-23 still runs: OpenCode is deprecated.
 
-Kortix selects the harness when a session is created:
-
-| Rule, in order | Harness |
-| --- | --- |
-| The project's `pi_harness` flag is on (the default) | pi |
-| `kortix.yaml` sets `runtime: pi` | pi |
-| Anything else | OpenCode |
-
-A session keeps its harness across restarts, so a flag change applies to new
-sessions only. pi calls models only through the Kortix LLM gateway.
+Every new session runs pi. A session keeps its harness across restarts. pi
+calls models only through the Kortix LLM gateway.
 
 ## What pi reads from the repository
 

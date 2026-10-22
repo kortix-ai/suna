@@ -107,7 +107,7 @@ A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`,
 | `imports` | list | none | Other YAML files whose collections merge into this one. See [imports](#imports). |
 | `project` | map | none | `name`, `description`. For people who read the repository. The project name in Kortix does not come from here. |
 | `env` | map | none | `required`, `optional`: secret names. See [env](#env). |
-| `runtime` | string | `opencode` | `opencode` or `pi`. See [harnesses, opencode and pi](#harnesses-opencode-and-pi). |
+| `runtime` | string | — | Deprecated: selects nothing, every new session runs pi. `opencode` validates with a warning. See [harnesses, opencode and pi](#harnesses-opencode-and-pi). |
 | `harnesses` | map | none | `pi.packages`, `opencode.plugins`. |
 | `opencode.config_dir` | path | `harnesses/opencode`, then `.kortix/opencode` | OpenCode config directory. An error in v3. |
 | `pi.config_dir` | path | `harnesses/pi`, then `.kortix/pi` | pi config directory. |
@@ -309,17 +309,16 @@ A template change applies to the next session, not to a running one.
 
 ## harnesses, opencode and pi
 
-A session runs one of two harnesses. The project's `pi_harness` feature flag (on by default) or `runtime: pi` selects pi. `runtime` decides only while the flag is off. See [Harnesses: OpenCode and pi](/docs/project/agents#harnesses-opencode-and-pi).
+Every new session runs pi. OpenCode is deprecated and serves only sessions that already run it; `runtime` selects nothing. See [Harnesses: OpenCode and pi](/docs/project/agents#harnesses-opencode-and-pi).
 
 | Key | Default | Holds |
 | --- | --- | --- |
-| `opencode.config_dir` | `harnesses/opencode`, then `.kortix/opencode` | Files only OpenCode reads: `opencode.jsonc`, `plugins/`, `tools/`. Without the key, Kortix uses the first directory that holds an `opencode.json` or `opencode.jsonc`. |
+| `opencode.config_dir` | `harnesses/opencode`, then `.kortix/opencode` | Deprecated with OpenCode. Files only OpenCode reads: `opencode.jsonc`, `plugins/`, `tools/`. Without the key, Kortix uses the first directory that holds an `opencode.json` or `opencode.jsonc`. |
 | `pi.config_dir` | `harnesses/pi`, then `.kortix/pi` | Files only pi reads: `settings.json`, `extensions/`, `skills/`, `prompts/`. |
 
 **`harnesses.pi.packages`** lists the pi packages every pi session loads:
 
 ```yaml
-runtime: pi
 harnesses:
   pi:
     packages:

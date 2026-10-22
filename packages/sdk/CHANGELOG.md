@@ -5,6 +5,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (pi runs every new session; OpenCode is sunset)
+- `FeatureFlagKey` `'pi_harness'` is deprecated and no longer a flag: absent from `FEATURE_FLAG_KEYS`
+  and from the feature-flag catalog. The API sends `experimental.pi_harness: true` for every
+  project, and `useFeatureFlag(id, 'pi_harness')` reports `true`.
+  `KortixProject.experimental.pi_harness` is optional in the type.
+
 ### Changed (the session log is the only saved history, P8.2)
 - `FeatureFlagKey` `'session_log'` is no longer a flag: absent from `FEATURE_FLAG_KEYS` and from
   the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so

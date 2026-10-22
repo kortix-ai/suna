@@ -118,6 +118,7 @@ export interface AgentBlockV3 {
 export interface ManifestV3 {
   kortix_version: 3;
   default_agent: string;
+  /** @deprecated Selects nothing: every new session runs pi. Remove the line. */
   runtime?: 'opencode' | 'pi';
   imports?: string[];
   project?: Record<string, unknown>;

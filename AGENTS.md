@@ -439,15 +439,17 @@ these as standing rules whenever you touch the data/runtime layer:
   (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
   The sandbox provider and the harness are server-side concerns. Host code
   must not implement a second transport.
-- **Build on the Kortix contract, not on OpenCode.** A session runs one of two
-  harnesses inside kortixd: pi (the default since 2026-10-20: the
-  `pi_harness` project flag, on by default, or `runtime: pi` in
-  `kortix.yaml`) or OpenCode (the flag off). Both call models only through
-  the LLM gateway (no `llm_gateway` flag since 2026-10-20). A flag change applies to new sessions only. pi replaces OpenCode; OpenCode support is temporary.
-  Both serve the same daemon routes (`/kortix/runtime/*`), the same transcript
+- **Build on the Kortix contract, not on OpenCode.** Every new session runs
+  pi inside kortixd. OpenCode is deprecated (2026-10-23): there is no
+  `pi_harness` flag, `runtime:` in `kortix.yaml` selects nothing, and OpenCode
+  serves only sessions that started on it. It will be deleted. Code that exists
+  only for OpenCode carries `@deprecated`: never call it from new code, never
+  add a feature to it, and change it only to fix a bug that breaks a running
+  OpenCode session. pi calls models only through the LLM gateway. pi serves
+  the daemon routes (`/kortix/runtime/*`), the transcript
   (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
-  same events. New code reads those, never an OpenCode route, type, file or
-  process. A feature one harness lacks is a capability, not a harness check:
+  events. New code reads those, never an OpenCode route, type, file or
+  process. A feature pi lacks is a capability, not a harness check:
   `GET /kortix/health` lists `capabilities` (`RUNTIME_CAPABILITIES` in
   `packages/api-contract/src/runtime-relay.ts`), and a client gates the
   control with `runtimeSupports`. OpenCode lists all eleven (`session.steer`

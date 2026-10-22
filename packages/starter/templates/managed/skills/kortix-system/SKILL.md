@@ -76,19 +76,20 @@ in that harness's config directory.
 <harnesses>
 ## The harness — check it before you change agent behavior
 
-A harness is the agent runtime inside the session sandbox. Kortix has two.
-A session runs exactly one, and the two read different config files.
+A harness is the agent runtime inside the session sandbox. Every new session
+runs pi. OpenCode is deprecated: only a session that started on it before
+2026-10-23 still runs it, and Kortix will remove it. A session keeps the
+harness it started on.
 
 ```bash
-echo "${KORTIX_HARNESS:-opencode}"     # prints pi or opencode
+echo "${KORTIX_HARNESS:-opencode}"     # prints pi, or opencode in an older session
 ```
 
-Kortix selects the harness when a session starts: the `pi_harness` project
-flag on (the default) → pi; else
-`runtime: pi` in `kortix.yaml` → pi; else OpenCode. An existing session keeps
-its harness.
+Do not add OpenCode config to a project (`harnesses/opencode/`,
+`opencode.jsonc`, OpenCode plugins or commands), and do not set `runtime:` in
+`kortix.yaml`: it selects nothing. Build on pi.
 
-| You want to… | On OpenCode | On pi |
+| You want to… | On OpenCode (deprecated) | On pi |
 | --- | --- | --- |
 | Change an agent's prompt, model or permissions | `agents/<name>.md` | `agents/<name>.md` |
 | Add a skill | `skills/<name>/SKILL.md` | `skills/<name>/SKILL.md` |

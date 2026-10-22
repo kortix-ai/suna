@@ -130,10 +130,8 @@ export function resolveProjectRepository(entry: Record<string, unknown>, fallbac
   };
 }
 
-/** Session runtimes — which agent harness a session boots inside its sandbox.
- *  `pi` runs pi-agent-core in-process in the sandbox daemon (`KORTIX_HARNESS=pi`).
- *  Anything else — including absence — keeps the
- *  OpenCode path byte-for-byte. Reserved room for `claude` later. */
+/** The values `runtime:` accepts. It selects nothing since 2026-10-23: every new
+ *  session runs pi. `opencode` validates with a deprecation warning. */
 export type RuntimeV2 = 'opencode' | 'pi';
 
 /** `$defs.PermissionActionConfig` in the OpenCode config schema. */
@@ -285,6 +283,7 @@ export interface AgentBlockV2 {
 export interface ManifestV2 {
   kortix_version: 2;
   default_agent: string;
+  /** @deprecated Selects nothing: every new session runs pi. Remove the line. */
   runtime?: RuntimeV2;
   harnesses?: HarnessesV2;
   /** Project tools: tool name → repo-relative module path. Every harness loads them. */
@@ -592,6 +591,12 @@ export function validateRuntimeV2(node: unknown, path: string, issues: ManifestI
       path,
       message: `runtime must be one of: ${V2_RUNTIME_VALUES.join(', ')} (got ${JSON.stringify(node)}).`,
       severity: 'error',
+    });
+  } else if (v === 'opencode') {
+    issues.push({
+      path,
+      message: 'runtime: opencode is deprecated and has no effect: every new session runs pi. Remove the line.',
+      severity: 'warning',
     });
   }
 }

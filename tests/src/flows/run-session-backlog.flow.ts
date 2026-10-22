@@ -10,13 +10,12 @@
  * self-skips a flow whose capability is absent, so these SKIP cleanly locally
  * and run for real against a deployed target.
  *
- * ── One body, every harness ─────────────────────────────────────────────────
- * The flows that run a turn are registered with `harnessFlow`: `RUN-1` boots
- * OpenCode and `RUN-1-pi` boots pi (a project with the `pi_harness` flag on).
+ * ── One body, on pi ────────────────────────────────────────────────────────
+ * The flows that run a turn are registered with `harnessFlow`: every new
+ * session runs pi (OpenCode is sunset, 2026-10-23), and each boot proves it.
  * They drive the session through the Kortix routes (`/start`, `/prompts`,
  * `/turn`, `/transcript`, `/events`, `/commit-push`) and never through a
- * harness's own REST API, so a difference between the harnesses fails a named
- * flow. Two calls still use the runtime behind the preview proxy
+ * harness's own REST API. Two calls still use the runtime behind the preview proxy
  * `/p/:sandboxId/:port/*`, because no Kortix route exists for them yet: the
  * Stop abort and the daemon's `/kortix/health` (see fixtures/session-run.ts).
  * That proxy is a Hono wildcard mount, not a manifest route, so it never
@@ -489,7 +488,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const { sandboxId } = await bootSession(ctx, 'opencode');
+    const { sandboxId } = await bootSession(ctx, 'pi');
     await ctx.step('proxy request with NO token/cookie → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).get(runtimePath(sandboxId, '/kortix/health'));
       r.status(401);
@@ -718,7 +717,7 @@ flow(
     // A booted session pushes a branch named <sessionId>; diffing it against main
     // exercises a REAL two-ref diff. (version-diff itself only needs `read`, but
     // we gate the whole flow so it runs where a session branch actually exists.)
-    const { projectId, sessionId } = await bootSession(ctx, 'opencode');
+    const { projectId, sessionId } = await bootSession(ctx, 'pi');
     await ctx.step('the session branch is published to origin before diffing it', async () => {
       await waitForRemoteBranch(ctx, projectId, sessionId);
     });
@@ -766,7 +765,7 @@ flow(
   async (ctx) => {
     // `/start` answers `ready` only once the daemon reports its runtime ready,
     // so the file routes below never meet a booting daemon.
-    const { sandboxId } = await bootSession(ctx, 'opencode', { readinessTimeoutMs: 420_000 });
+    const { sandboxId } = await bootSession(ctx, 'pi', { readinessTimeoutMs: 420_000 });
     const path = `ke2e-file-${Date.now()}.txt`;
     const content = 'ke2e live file crud';
 
@@ -1107,7 +1106,6 @@ harnessFlow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step(`the project declares a no-edit agent and runs ${harness}`, async () => {
-        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain(NO_EDIT_FILES, 'ke2e RUN-10: a no-edit agent');
       });
       const path = `ke2e-run10-${Date.now()}.txt`;
@@ -1119,10 +1117,6 @@ harnessFlow(
         agentName: 'no-edit',
         prompt:
           `Call your file-writing tool (write) once to create the file ${path} containing the single line OK. ` +
-          // OpenCode's pty plugin tools never asked for permission, so `bash: deny` did not stop them.
-          (harness === 'opencode'
-            ? `If you have no file-writing tool but have a pty_spawn tool, call pty_spawn once with command "sh" and args ["-c", "printf OK > ${path}"] instead. `
-            : '') +
           `Use no other tool. Whatever the tool returns, then reply with exactly: ${done}`,
       });
       await ctx.step('no file or pty tool ran; on pi the write was attempted and refused', async () => {
@@ -1138,10 +1132,9 @@ harnessFlow(
           .filter((t) => t.tool === 'write' || t.tool === 'edit' || t.tool === 'memory' || t.tool.startsWith('pty_'));
         const ran = fileTools.filter((t) => t.status !== 'error');
         if (ran.length > 0) throw new Error(`a denied file tool ran: ${JSON.stringify(ran)}`);
-        // OpenCode never offers a tool its policy denies, so its model has no
-        // write tool to call. pi offers every tool and refuses the call; a
-        // refused `write` is the proof that `edit: deny` reached it.
-        if (harness === 'pi' && fileTools.length === 0) {
+        // pi offers every tool and refuses the call; a refused `write` is the
+        // proof that `edit: deny` reached it.
+        if (fileTools.length === 0) {
           throw new Error(`the pi agent never called a file tool, so the policy was not exercised: ${JSON.stringify(messages.map((m) => m.tools))}`);
         }
       });
@@ -1242,7 +1235,6 @@ flow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step('the project runs pi with harnesses.pi.codemode: only', async () => {
-        await world.setFeature('pi_harness', true);
         await world.commitToMain({ 'kortix.yaml': RUN20_MANIFEST }, 'ke2e RUN-20: codemode only');
       });
       const session = await bootSession(ctx, 'pi', { project });
@@ -1376,7 +1368,6 @@ harnessFlow(
       ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, `/file/content?path=${encodeURIComponent(`ke2e-run15-${nonce}.txt`)}`));
     try {
       await ctx.step(`the project declares the ke2e_marker tool and a limited agent, and runs ${harness}`, async () => {
-        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain(PROJECT_TOOL_FILES, 'ke2e RUN-15: a project tool and a limited agent');
       });
 
@@ -1475,7 +1466,6 @@ harnessFlow(
         if (!manifest.includes('  web_search: tools/web_search.ts  # ejected from kortix:web_search\n')) throw new Error(`eject did not point kortix.yaml at the copy:\n${manifest}`);
         const source = cli.readFile('tools/web_search.ts');
         if (!source.includes(EJECTED_EXECUTE)) throw new Error('the ejected web_search no longer has the execute line this flow changes');
-        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain({ 'kortix.yaml': manifest, 'tools/web_search.ts': source.replace(EJECTED_EXECUTE, CHANGED_EXECUTE) }, 'ke2e RUN-19: four Kortix tools and an ejected web_search');
       });
 
@@ -1561,8 +1551,6 @@ harnessFlow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step(`the project runs ${harness}`, async () => {
-        if (harness !== 'pi') return;
-        await world.setFeature('pi_harness', true);
         await world.commitToMain(PI_COMPACT_FILES, 'ke2e RUN-13: pi keeps no recent context out of a summary');
       });
       const session = await bootSession(ctx, harness, { project });
@@ -1640,8 +1628,7 @@ harnessFlow(
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     try {
       await ctx.step(`the project runs ${harness} and commits the command where that harness reads it`, async () => {
-        await world.setFeature('pi_harness', harness === 'pi');
-        const path = harness === 'pi' ? `harnesses/pi/prompts/${COMMAND}.md` : `harnesses/opencode/commands/${COMMAND}.md`;
+        const path = `harnesses/pi/prompts/${COMMAND}.md`;
         await world.commitToMain({ [path]: COMMAND_TEMPLATE }, `ke2e RUN-14: the ${COMMAND} command`);
       });
       const session = await bootSession(ctx, harness, { project });
@@ -1674,11 +1661,11 @@ harnessFlow(
         }
       });
 
-      await ctx.step('a command the project does not have is refused: 400 on pi, 500 on OpenCode', async () => {
+      await ctx.step('a command the project does not have is refused: 400', async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(runtimePath(sandboxId, `/session/${root}/command`), { command: 'ke2e-no-such-command', arguments: '' });
-        r.status(harness === 'pi' ? 400 : 500);
+        r.status(400);
       });
     } finally {
       await world.close();
@@ -1757,7 +1744,6 @@ harnessFlow(
     const token = `Agentpick${Date.now()}`;
     try {
       await ctx.step(`the project declares a second primary agent and runs ${harness}`, async () => {
-        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain(agentPickFiles(token), 'ke2e RUN-17: a marker agent');
       });
       const session = await bootSession(ctx, harness, { project, prompt: 'Reply with the word ready.' });
@@ -1867,7 +1853,6 @@ harnessFlow(
     const agentsMd = `# Project rules\n\n${name}: ${value}\n`;
     try {
       await ctx.step(`the project runs ${harness} and commits a root AGENTS.md`, async () => {
-        await world.setFeature('pi_harness', harness === 'pi');
         await world.commitToMain({ 'AGENTS.md': agentsMd }, 'ke2e RUN-18: a root AGENTS.md');
       });
       const { projectId, sessionId, sandboxId } = await bootSession(ctx, harness, { project });

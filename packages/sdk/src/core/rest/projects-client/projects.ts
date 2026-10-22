@@ -25,14 +25,15 @@ import {
  * the same list, so other packages can assert the two have not drifted.
  *
  * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams`,
- * `config_releases`, `apps` and `llm_gateway` are deprecated. `agent_tunnel` graduated like
+ * `config_releases`, `apps`, `llm_gateway` and `pi_harness` are deprecated. `agent_tunnel` graduated like
  * `review_center` below: a paired computer is a connector account and needs no
  * flag. So did `session_transcript_history`: every session saves its
  * transcript and shows it while its computer is off. And `teams`: every
  * project can connect Microsoft Teams. And `config_releases`: every session
  * runs its base branch's config release. And `apps`: Apps is generally
  * available — every project can create and deploy Apps. And `llm_gateway`:
- * the LLM gateway is the only model path for every project.
+ * the LLM gateway is the only model path for every project. And `pi_harness`:
+ * every new session runs pi.
  *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
@@ -60,11 +61,12 @@ export type FeatureFlagKey =
   | 'reminders'
   | 'warm_sessions'
   | 'secrets_egress'
-  /** @deprecated Withdrawn — the pi worker split left the product; `pi_harness` runs pi in the session sandbox. The API no longer lists, resolves, or accepts it. Removed in the next major. */
+  /** @deprecated Withdrawn — the pi worker split left the product; pi runs in the session sandbox. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'pi_worker'
   /** @deprecated Graduated — every session saves its transcript. Removed in the next major. */
   | 'session_transcript_history'
   | 'pooled_provider_secrets'
+  /** @deprecated Graduated — every new session runs pi; OpenCode is sunset. The API sends `true` for every project. Removed in the next major. */
   | 'pi_harness'
   | 'genui'
   /** @deprecated Graduated — every session runs its base branch's config release. Removed in the next major. */
@@ -89,7 +91,7 @@ export type FeatureFlagKey =
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`) sends a constant `true`. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `pi_harness`) sends a constant `true`. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -103,7 +105,8 @@ type GraduatedFeatureFlagKey =
   | 'llm_gateway'
   | 'stateless_sessions'
   | 'ephemeral_sandboxes'
-  | 'session_log';
+  | 'session_log'
+  | 'pi_harness';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -122,7 +125,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'warm_sessions',
   'secrets_egress',
   'pooled_provider_secrets',
-  'pi_harness',
   'genui',
   'us_region',
   'event_triggers',
