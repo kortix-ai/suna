@@ -215,3 +215,15 @@ describe('GET /:projectId/files — the query it took before paging', () => {
     expect(query.find((p) => p.name === 'limit')!.schema!.description).toContain('from 1 to 2000');
   });
 });
+
+describe('single-file root paths (KRTX-3174)', () => {
+  for (const endpoint of ['content', 'raw']) {
+    for (const path of ['.', './', './/']) {
+      test(endpoint + ': root ' + path + ' returns 404', async () => {
+        const response = await projectsApp.request('/' + PROJECT_ID + '/files/' + endpoint + '?' + new URLSearchParams({ path }));
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual({ error: 'File not found' });
+      });
+    }
+  }
+});
