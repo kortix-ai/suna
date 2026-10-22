@@ -274,8 +274,9 @@ test('the facade binds Capture to an account; sign-in approval and the agent rea
   expect(last().url).toBe(`${P}/days?tz=UTC`);
   await capture.workspace.setEnabled(true);
   expect(last()).toMatchObject({ method: 'PATCH', url: P });
-  // Raw capture only: the account handle has nothing else.
-  expect(Object.keys(capture).sort()).toEqual(['devices', 'enrollment', 'frame', 'media', 'policy', 'search', 'timeline', 'workspace']);
+  // Raw capture only: the account handle has nothing else (storage = the
+  // account's own S3 destination, #10664/#10666).
+  expect(Object.keys(capture).sort()).toEqual(['devices', 'enrollment', 'frame', 'media', 'policy', 'search', 'storage', 'timeline', 'workspace']);
   expect(Object.keys(capture.devices).sort()).toEqual(['assetUrl', 'link', 'list', 'revoke']);
   await kortix.capture.approveDevice('ABCD-1234', 'a1');
   expect(last().url).toBe('http://test.local/capture/device/grants/ABCD-1234/approve');
