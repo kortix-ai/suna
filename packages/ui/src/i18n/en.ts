@@ -11,6 +11,28 @@ const catalog = {
       "repo_not_accessible": "Kortix cannot reach {repository}. It was deleted, renamed, or removed from the Kortix GitHub App. A GitHub owner of {owner} must add it again."
     }
   },
+  "repositoryChange": {
+    "changedToast": "Repository changed. New sessions will use the new repository.",
+    "verifyError": "Could not verify GitHub access.",
+    "change": "Change",
+    "title": "Change repository",
+    "description": "New sessions will use the new repository. Existing sessions cannot restart after the change.",
+    "current": "Current repository",
+    "newUrl": "New GitHub repository URL",
+    "verifying": "Verifying GitHub…",
+    "verifyAgain": "Verify GitHub again",
+    "verify": "Verify GitHub access",
+    "noInstallation": "No Kortix App installation is available for this repository owner. Add the repository to the App installation in GitHub, then verify again.",
+    "installation": "GitHub App installation",
+    "selectInstallation": "Select installation",
+    "manifestRequirement": "The new repository needs {manifest} on its default branch. Stop active sessions and close open change requests first.",
+    "cancel": "Cancel",
+    "changing": "Changing…",
+    "searchBranches": "Search branches…",
+    "loadingBranches": "Loading branches…",
+    "noBranches": "No matching branch.",
+    "moreBranches": "{count} more. Type to filter."
+  },
   "pooledSecrets": {
     "saveChanges": "Save changes",
     "unsavedChanges": "Unsaved key changes",
@@ -372,6 +394,60 @@ const catalog = {
         }
       }
     },
+    "git": {
+      "updateFailed": "Failed to update repository",
+      "unreachable": "Kortix can't reach this repository",
+      "repository": "Repository",
+      "hostedOn": "Hosted on {provider}.",
+      "storedIn": "Stored in {provider}.",
+      "notLinked": "Not linked yet",
+      "status": "Status",
+      "statuses": {
+        "connected": "Connected",
+        "attention": "Needs attention",
+        "connecting": "Connecting…",
+        "disconnected": "Not connected"
+      },
+      "baseBranch": "Base branch",
+      "baseBranchDescription": "New sessions and change requests start from this branch.",
+      "saving": "Saving…",
+      "manifestFile": "Manifest file",
+      "manifestDescription": "The file in your repository that tells Kortix how to run this project.",
+      "learnMore": "Learn more",
+      "localTitle": "Work on this locally",
+      "localDescription": "Put a copy of this project on your own computer and edit it in your own editor.",
+      "installTitle": "Install the Kortix command line",
+      "installHint": "A one-time setup on macOS or Linux. Skip this if you already have it.",
+      "installCommand": "Install command",
+      "cloneTitle": "Copy the project to your computer",
+      "cloneHint": "Downloads the code into a new folder and links that folder to this project.",
+      "cloneCommand": "Clone command",
+      "setupTitle": "Finish setup inside the new folder",
+      "setupHint": "Writes the local config, then fetches this project's secrets so the code can run.",
+      "setupCommand": "Setup command",
+      "secretsCommand": "Secrets command",
+      "ownClientTitle": "Use your own Git client",
+      "ownClientDescription": "Clone with plain <code>git</code> instead of the Kortix command line.",
+      "cloneAddressDescription": "Clone from this address with any Git client. Kortix signs the request for you, so there is no access token to create, paste, or keep on your machine.",
+      "cloneAddress": "Clone address",
+      "peopleTitle": "People with access",
+      "peopleManagedDescription": "Invite someone by their GitHub username. GitHub emails them an invite to accept.",
+      "peopleExternalDescription": "Who can read and write this project’s repository.",
+      "externalGithubDescription": "Kortix did not create this repository, so it cannot add collaborators to it. Manage access from the repository settings on GitHub.",
+      "externalProviderDescription": "This project’s repository is hosted on {provider}, which does not support collaborator invites from Kortix. Manage access where the repository lives.",
+      "manageOnGithub": "Manage on GitHub",
+      "alreadyHasAccess": "@{username} already has access to this repo",
+      "inviteSent": "Invite sent to @{username} — they accept it on GitHub to get access",
+      "inviteFailed": "Failed to add collaborator",
+      "githubUsername": "GitHub username",
+      "accessLevel": "Access level",
+      "canEdit": "Can edit",
+      "canView": "Can view",
+      "invite": "Invite",
+      "title": "Git repo",
+      "loadFailed": "Could not load this project's repository",
+      "retry": "Retry"
+    },
     "workspace": {
       "updateFailed": "Failed to update project",
       "iconUpdateFailed": "Failed to update project icon",
@@ -379,6 +455,9 @@ const catalog = {
       "iconDescription": "Shown next to the project name.",
       "name": "Project name",
       "nameDescription": "Shown in the project switcher and anywhere this project is listed.",
+      "defaultEffort": "Default reasoning effort",
+      "defaultEffortDescription": "Applied to new prompts that carry no explicit effort pick, when the session's model supports it.",
+      "defaultEffortAutomatic": "Automatic",
       "saving": "Saving…",
       "archived": "Project archived",
       "archiveFailed": "Failed to archive project",
@@ -657,6 +736,108 @@ const catalog = {
       "revoked": "App access revoked",
       "revokeFailed": "Could not revoke the app"
     },
+    "featureFlags": {
+      "stability": {
+        "experimental": "Experimental",
+        "beta": "Beta",
+        "stable": "Stable"
+      },
+      "origin": {
+        "overridden": "Overridden for this project",
+        "defaultOn": "Default on",
+        "defaultOff": "Default off"
+      },
+      "search": "Search features",
+      "loadFailed": "Failed to load project",
+      "retry": "Retry",
+      "noMatches": "No matches for {query}.",
+      "emptyTitle": "No experimental features",
+      "emptyDescription": "This deployment exposes no per-project feature flags.",
+      "permission": "You need the project's settings permission to change a feature flag.",
+      "updateFailed": "Failed to update {key}",
+      "flags": {
+        "marketplace": {
+          "name": "Marketplace",
+          "description": "Browse and install skills from community and vendor registries. Sources, updates, and team scopes are still changing."
+        },
+        "connectors_api_discover": {
+          "name": "Connectors API Discover",
+          "description": "Browse direct API, MCP, GraphQL, CLI, and Postman integrations alongside optional OAuth apps."
+        },
+        "agentmail_email": {
+          "name": "AgentMail Email",
+          "description": "Assign AgentMail inboxes so incoming email threads can start and continue Kortix sessions."
+        },
+        "meta_agent": {
+          "name": "Meta Agent",
+          "description": "Add a coordinator agent that manages specialized sessions and multi-step work across the project."
+        },
+        "monitors": {
+          "name": "Monitors",
+          "description": "Run persistent watchers that observe logs, feeds, or APIs and start agent sessions from events."
+        },
+        "warm_sessions": {
+          "name": "Warm Sessions",
+          "description": "Keep one sandbox ready for instant session starts. The idle sandbox uses compute."
+        },
+        "secrets_egress": {
+          "name": "Network-Enforced Secrets",
+          "description": "Control which tools and destinations can receive project secrets."
+        },
+        "pooled_provider_secrets": {
+          "name": "Pooled Provider Secrets",
+          "description": "Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses."
+        },
+        "pi_harness": {
+          "name": "Pi Harness (in-sandbox)",
+          "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
+        },
+        "genui": {
+          "name": "Generative UI",
+          "description": "The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text."
+        },
+        "reminders": {
+          "name": "Reminders",
+          "description": "Let agents and people schedule check-ins on a session, once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind`."
+        },
+        "us_region": {
+          "name": "US Region",
+          "description": "Run this project's new sessions in the US East region. A running session keeps its region until it restarts."
+        },
+        "notification_center": {
+          "name": "Notification Center",
+          "description": "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and reminders. Off: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing."
+        },
+        "event_triggers": {
+          "name": "App event triggers",
+          "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event."
+        },
+        "volumes": {
+          "name": "Volumes",
+          "description": "Shared Files for this project."
+        },
+        "drives": {
+          "name": "Drive",
+          "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."
+        },
+        "session_log_restore": {
+          "name": "Session log restore",
+          "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
+        },
+        "connectors_v2": {
+          "name": "Connectors v2",
+          "description": "The MCP app catalog in Customize → Connectors, with sign-in that Kortix runs. With App event triggers on, Kortix checks these apps for new emails, files and items and starts an agent. Also adds Telegram as a channel. New connector accounts are no longer shared with the whole project by default."
+        },
+        "agent_rooms": {
+          "name": "Rooms",
+          "description": "Named chat rooms where agent sessions and people post and reply in threads. A session wakes when a message is addressed to it. Adds the Rooms page, `kortix rooms`, and `kortix peers`."
+        },
+        "goals": {
+          "name": "Goals",
+          "description": "Give an agent an objective it owns until an independent check confirms the outcome. It plans, works, waits, follows up with people, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on."
+        }
+      }
+    },
     "upgrades": {
       "available": "Available upgrades",
       "readOnly": "Read-only — running an upgrade needs write access to this project.",
@@ -837,6 +1018,7 @@ const catalog = {
   },
   "sidebar": {
     "rooms": "Rooms",
+    "goals": "Goals",
     "referAndEarn": "Refer & Earn",
     "referralShareTitle": "Refer Friends",
     "referralShareSubtitle": "Get 400 credits",
@@ -1271,6 +1453,28 @@ const catalog = {
       "autoRetried": "Kortix automatically retried the model {count, plural, one {once} other {# times}} before this failure."
     }
   },
+  "agents": {
+    "grants": {
+      "subagents": {
+        "title": "Subagents",
+        "description": "Agents this agent can start for a subtask.",
+        "all": "Every subagent in this project, including ones added later.",
+        "empty": "No subagents declared in this project yet."
+      },
+      "commands": {
+        "title": "Commands",
+        "description": "Slash commands this agent can run.",
+        "all": "Every command in this project, including ones added later.",
+        "empty": "No commands registered in this project yet."
+      },
+      "extensions": {
+        "title": "Extensions",
+        "description": "Plugins and packages a session of this agent loads.",
+        "all": "Every extension in this project, including ones added later.",
+        "empty": "No extensions registered in this project yet."
+      }
+    }
+  },
   "threads": {
     "title": "Threads",
     "newThread": "New Thread",
@@ -1614,6 +1818,17 @@ const catalog = {
       "calls": "{count, plural, one {# tool call} other {# tool calls}}",
       "noOutput": "No output"
     }
+  },
+  "agentApps": {
+    "title": "Apps",
+    "description": "Kortix Apps this agent may open when the App's access is restricted or private.",
+    "manageApps": "All Apps",
+    "allLabel": "Every App in this project, including ones added later.",
+    "needsGrant": "Grant decides",
+    "openWithoutGrant": "No grant needed",
+    "grantNote": "The agent also needs project.app.read in its Kortix permissions.",
+    "emptyTitle": "No Apps yet",
+    "emptyDescription": "Apps deployed to this project appear here for the agent to pick from."
   },
   "notifications": {
     "title": "Notifications",
@@ -2367,7 +2582,7 @@ const catalog = {
       "text1436469ad07f": "You are… Goal: … Steps: 1. …",
       "text1447557b9c1e": "X-Tenant-Id",
       "text1458e20a1642": "Optional. Kortix also deletes the local token on disconnect.",
-      "text146b38e7fa80": "When the default fails",
+      "text146b38e7fa80": "When a model fails",
       "text146cd06d5026": "Env:",
       "text14736a2eb9f4": "Role",
       "text147fb813a251": "Approval",
@@ -4211,7 +4426,7 @@ const catalog = {
       "textaf7dbdd174f2": "Settings · General",
       "textaf87e03f3626": "This removes the project default, fallback chain, and per-model overrides. The project will inherit account and platform routing.",
       "textafb5023c3c05": "Changes applied",
-      "textafb9890f7c72": "Where a request goes when the project default can't take it.",
+      "textafb9890f7c72": "Where a request goes when its model can't take it.",
       "textafe03725909a": "behaves as for days.",
       "textafe9444782eb": "Managed Email is not configured",
       "textaff0766a5290": "Review",
@@ -4464,7 +4679,7 @@ const catalog = {
       "textc3d2e79ebdd0": "Connectors",
       "textc3e3a6edeaa5": "Terms and conditions",
       "textc3e58a73609d": "Destructive",
-      "textc3ecd3cd791b": "Tried in order after the project default.",
+      "textc3ecd3cd791b": "Tried in order after the model a request names.",
       "textc3f282c05f3f": "policies approval block require_approval rules tools connector guardrails",
       "textc3f7bdf537c4": "req",
       "textc4141f554a0c": "Loading sessions…",
@@ -5747,6 +5962,11 @@ const catalog = {
     "copied": "Copied {label}",
     "copyFailed": "Could not copy to the clipboard"
   },
+  "repositoryAccess": {
+    "label": "Project repository access",
+    "enabled": "New sessions receive the project repository. Git permissions still apply. Existing sessions keep their access setting.",
+    "disabled": "New sessions run without the project repository. They can still create files and use granted tools. Existing sessions keep their access setting."
+  },
   "customProvider": {
     "intro": "Endpoints the catalogue does not carry.",
     "add": "Add custom provider",
@@ -6831,6 +7051,10 @@ const catalog = {
     "missing": "does not exist",
     "listPlaceholder": "value 1, value 2"
   },
+  "triggerAutoPause": {
+    "title": "Paused itself at its run limit",
+    "description": "It ran at its hourly run limit for 2 hours in a row, so it stopped starting runs. Find what keeps firing it, then resume it."
+  },
   "featureGate": {
     "enable": "Enable {name}",
     "enabling": "Enabling…"
@@ -6930,6 +7154,96 @@ const catalog = {
     "join": "Join",
     "openRoom": "Open",
     "gateDescription": "Turn on Rooms to let agent sessions and people of this project talk in named chat rooms."
+  },
+  "goals": {
+    "title": "Goals",
+    "gateDescription": "Agents own an objective until it is verifiably done: the goal lives in Files, a daily heartbeat wakes it, the agent chases people for what it needs, and an independent check closes it.",
+    "empty": "No goals yet",
+    "emptyHint": "Start one in a session: describe the outcome, for example \"make sure our old bank account is closed\". The agent creates the goal and it shows here.",
+    "loadError": "Could not load goals. Try again.",
+    "retry": "Try again",
+    "needsYou": "Needs you",
+    "open": "Open",
+    "closed": "Closed",
+    "waitingFor": "Waiting for: {title}",
+    "criteria": "{met}/{total} criteria",
+    "nextWake": "Next wake {time}",
+    "noWake": "No wake scheduled",
+    "heartbeat": "Heartbeat",
+    "heartbeatPaused": "Paused",
+    "lastWakeLabel": "Last wake",
+    "progress": "Progress",
+    "scope": {
+      "company": "Company",
+      "personal": "Only you"
+    },
+    "status": {
+      "draft": "Draft",
+      "active": "Active",
+      "waiting_on_user": "Waiting on you",
+      "waiting_external": "Waiting",
+      "verifying": "Verifying",
+      "done": "Done",
+      "abandoned": "Abandoned"
+    },
+    "health": {
+      "healthy": "Running",
+      "attention": "Needs attention",
+      "closed": "Closed"
+    },
+    "issue": {
+      "no_heartbeat": "Nothing will wake this goal: its heartbeat reminder is missing.",
+      "heartbeat_paused": "The heartbeat reminder is paused.",
+      "heartbeat_failed": "The last wake failed: {error}",
+      "missed_wake": "The last wake is overdue.",
+      "ask_overdue": "An ask is past its due time.",
+      "verification_stalled": "Verification started more than 24 hours ago.",
+      "unreadable": "goal.json is missing or is not valid JSON."
+    },
+    "sessionChip": "Goal",
+    "sessionRole": {
+      "coordinator": "This session runs this goal.",
+      "worker": "This session works on this goal.",
+      "verifier": "This session verifies this goal."
+    },
+    "openGoal": "Open goal",
+    "openSession": "Open main session",
+    "openFolder": "Open folder",
+    "back": "All goals",
+    "healthTitle": "Health",
+    "successCriteria": "Success criteria",
+    "met": "Met",
+    "notMet": "Not met",
+    "items": "Items",
+    "noItems": "No items yet.",
+    "noCriteria": "No criteria yet: the agent writes them before the goal becomes active.",
+    "kind": {
+      "task": "Task",
+      "ask": "Ask",
+      "wait": "Wait"
+    },
+    "itemStatus": {
+      "open": "open",
+      "doing": "doing",
+      "done": "done",
+      "dropped": "dropped"
+    },
+    "due": "Due {time}",
+    "sessions": "Sessions",
+    "role": {
+      "coordinator": "Main session",
+      "worker": "Worker",
+      "verifier": "Verifier"
+    },
+    "timeline": "Timeline",
+    "verification": "Verification",
+    "notes": "Notes",
+    "log": "Log",
+    "notFound": "This goal no longer exists."
+  },
+  "agentEditor": {
+    "manage": "Manage",
+    "overviewTitle": "Overview"
   }
 };
 

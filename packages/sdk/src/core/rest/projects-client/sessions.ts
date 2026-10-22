@@ -1221,6 +1221,10 @@ export interface SessionOpenBundleConfig {
   agent_name: string | null;
   /** @deprecated Always true: the LLM gateway is the only model path. Removed in the next major. */
   llm_gateway_enabled: boolean;
+  /** The project's default reasoning effort (a models.dev effort label), or
+   *  null for automatic — what delivery injects as the prompt's `variant`
+   *  when the session pick names none. */
+  default_reasoning_effort?: string | null;
 }
 
 /** = `GET /projects/:id/model-defaults`. `known: false` when that read failed. */

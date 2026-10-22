@@ -67,6 +67,7 @@ RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
 # and the runner copies it to the path the snapshot builder reads
 # (apps/cli/dist/kortix → KORTIX_SNAPSHOT_CLI_BIN_PATH).
 FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION}-slim AS sandbox-cli
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 WORKDIR /cli
 
@@ -337,7 +338,7 @@ LABEL org.opencontainers.image.title="kortix-api" \
       org.opencontainers.image.vendor="Kortix"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD bun -e "fetch('http://localhost:'+(process.env.PORT||8000)+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD ["bun", "-e", "fetch('http://localhost:'+(process.env.PORT||8000)+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 # Non-root user (bun image ships with 'bun' user)
 USER bun

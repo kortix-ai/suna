@@ -108,10 +108,18 @@ jobs:
           output_format: sarif
           output_file_path: checkov.sarif
           soft_fail: true
+      # checkov writes every #checkov:skip into the SARIF as a result with a
+      # `suppressions` entry, and code scanning opens an alert for it anyway
+      # (122 such alerts were open on 2026-10-22). The reviewed skip comment is
+      # the decision record, so upload unsuppressed failures only.
+      - name: Drop in-source suppressed results
+        run: >-
+          jq '.runs[].results |= map(select((.suppressions // []) | length == 0))'
+          checkov.sarif/results_sarif.sarif > checkov-findings.sarif
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee
         with:
-          sarif_file: checkov.sarif/results_sarif.sarif
+          sarif_file: checkov-findings.sarif
           category: checkov
 
   hadolint:

@@ -33,6 +33,7 @@ import {
   SessionConfigReloadConfirm,
 } from './session-config-indicator';
 import { SessionPendingApprovalsIndicator } from './session-pending-approvals-indicator';
+import { SessionGoalIndicator } from './session-goal-indicator';
 import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from './session-title-input';
 import { SubagentHoverCard, subagentTitle } from './subagent-hover-card';
@@ -661,6 +662,8 @@ export function SessionSiteHeader({
             <SessionChangesIndicator sessionId={sessionId} />
 
             <SessionPendingApprovalsIndicator sessionId={sessionId} />
+
+            {isProjectSession ? <SessionGoalIndicator /> : null}
 
             {isProjectSession ? <SessionRemindersIndicator runtimeSessionId={sessionId} /> : null}
 

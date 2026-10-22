@@ -906,6 +906,9 @@
       "iconDescription": "Exibido ao lado do nome do projeto.",
       "name": "Nome do projeto",
       "nameDescription": "Exibido no seletor e em qualquer lugar onde este projeto apareça.",
+      "defaultEffort": "Esforço de raciocínio padrão",
+      "defaultEffortDescription": "Aplicado a novos prompts sem uma escolha explícita de esforço, quando o modelo da sessão oferece suporte.",
+      "defaultEffortAutomatic": "Automático",
       "saving": "Salvando…",
       "archived": "Projeto arquivado",
       "archiveFailed": "Não foi possível arquivar o projeto",
@@ -1498,6 +1501,7 @@
   },
   "sidebar": {
     "rooms": "Salas",
+    "goals": "Objetivos",
     "referAndEarn": "Indicar e Ganhar",
     "referralShareTitle": "Indicar Amigos",
     "referralShareSubtitle": "Ganhe 400 créditos",
@@ -10652,7 +10656,7 @@
       "text1458e20a1642": "Opcional. O Kortix também exclui o token local ao desconectar.",
       "text1459df2e344c": "Uma máquina Linux inicializa a partir da imagem do sandbox declarada pelo seu projeto. É uma máquina isolada: seu próprio sistema de arquivos, sua própria tabela de processos e sua própria rede. Nada é compartilhado com outra sessão.",
       "text14683b379324": "Revogar token",
-      "text146b38e7fa80": "Quando o padrão falhar",
+      "text146b38e7fa80": "Quando um modelo falha",
       "text146cd06d5026": "Ambiente:",
       "text146fd497badf": "E-mail ignorado — copie o link de convite para compartilhar manualmente",
       "text147251df4759": "Isso geralmente leva alguns segundos",
@@ -16022,7 +16026,7 @@
       "textafb32719ca9e": "Segredo do cliente do bot",
       "textafb5023c3c05": "Alterações aplicadas",
       "textafb837ec251a": "O Okta envia as alterações assim que acontecem (atribuições, atualizações de perfil, envios de grupos) — um período de inatividade significa apenas que nada mudou.",
-      "textafb9890f7c72": "Para onde uma solicitação vai quando o padrão do projeto não pode atendê-la.",
+      "textafb9890f7c72": "Para onde uma solicitação vai quando o modelo dela não pode atendê-la.",
       "textafc19f1734c1": "Principal",
       "textafc8e3a5d5db": "Ele agrupa solicitações pelo que as pessoas realmente querem, não pelas palavras usadas, conta quantas contas distintas levantaram cada uma e anexa as citações. Quando alguém pergunta \"quem pediu isso\", a resposta está no documento.",
       "textafdc7d79dccb": "Provisionamento automático do OneLogin",
@@ -16735,7 +16739,7 @@
       "textc3d2e79ebdd0": "Conectores",
       "textc3e3a6edeaa5": "Termos e condições",
       "textc3e58a73609d": "Destrutivo",
-      "textc3ecd3cd791b": "Tentados em ordem após o padrão do projeto.",
+      "textc3ecd3cd791b": "Tentados em ordem após o modelo solicitado.",
       "textc3f282c05f3f": "políticas aprovação bloquear require_approval regras ferramentas conector proteções",
       "textc3f348ffaf7a": "Vincular ao projeto",
       "textc3f7bdf537c4": "solic.",
@@ -20326,7 +20330,12 @@
       "text57f57edb6f16": "A solicitação de alteração #{number} está pronta para revisão.",
       "texta8597db6f24b": "Remover habilidade",
       "text5f6ba69d66d1": "Habilidade removida",
-      "textcb8d6b0c94c9": " e todos os arquivos nela, incluindo edições, e remove a habilidade de todos os agentes que a usam. Um commit no branch padrão."
+      "textcb8d6b0c94c9": " e todos os arquivos nela, incluindo edições, e remove a habilidade de todos os agentes que a usam. Um commit no branch padrão.",
+      "cliDeviceTitle": "Autorizar Kortix CLI",
+      "cliDeviceWarning": "Aprove apenas um início de sessão que você iniciou. Digite o código exibido no seu terminal.",
+      "cliDeviceCode": "Código de acesso",
+      "cliDeviceApproved": "Acesso aprovado. Volte ao terminal.",
+      "cliDeviceAction": "Autorizar CLI"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -22312,5 +22321,95 @@
     "join": "Entrar",
     "openRoom": "Abrir",
     "gateDescription": "Ative as Salas para que as sessões de agentes e as pessoas deste projeto conversem em salas de chat com nome."
+  },
+  "goals": {
+    "title": "Objetivos",
+    "gateDescription": "Os agentes assumem um objetivo até que ele seja concluído de forma verificável: o objetivo fica em Arquivos, um batimento diário o acorda, o agente cobra das pessoas o que precisa e uma verificação independente o encerra.",
+    "empty": "Ainda não há objetivos",
+    "emptyHint": "Comece um numa sessão: descreva o resultado, por exemplo \"garanta que nossa antiga conta bancária esteja encerrada\". O agente cria o objetivo e ele aparece aqui.",
+    "loadError": "Não foi possível carregar os objetivos. Tente novamente.",
+    "retry": "Tentar novamente",
+    "needsYou": "Precisa de você",
+    "open": "Abertos",
+    "closed": "Encerrados",
+    "waitingFor": "Aguardando: {title}",
+    "criteria": "{met}/{total} critérios",
+    "nextWake": "Próximo despertar {time}",
+    "noWake": "Nenhum despertar agendado",
+    "heartbeat": "Batimento",
+    "heartbeatPaused": "Pausado",
+    "lastWakeLabel": "Último despertar",
+    "progress": "Progresso",
+    "scope": {
+      "company": "Empresa",
+      "personal": "Só você"
+    },
+    "status": {
+      "draft": "Rascunho",
+      "active": "Ativo",
+      "waiting_on_user": "Aguardando você",
+      "waiting_external": "Aguardando",
+      "verifying": "Verificando",
+      "done": "Concluído",
+      "abandoned": "Abandonado"
+    },
+    "health": {
+      "healthy": "Em execução",
+      "attention": "Precisa de atenção",
+      "closed": "Encerrado"
+    },
+    "issue": {
+      "no_heartbeat": "Nada vai acordar este objetivo: falta o lembrete de batimento.",
+      "heartbeat_paused": "O lembrete de batimento está pausado.",
+      "heartbeat_failed": "O último despertar falhou: {error}",
+      "missed_wake": "O último despertar está atrasado.",
+      "ask_overdue": "Um pedido passou do prazo.",
+      "verification_stalled": "A verificação começou há mais de 24 horas.",
+      "unreadable": "goal.json está ausente ou não é um JSON válido."
+    },
+    "sessionChip": "Objetivo",
+    "sessionRole": {
+      "coordinator": "Esta sessão conduz este objetivo.",
+      "worker": "Esta sessão trabalha neste objetivo.",
+      "verifier": "Esta sessão verifica este objetivo."
+    },
+    "openGoal": "Abrir objetivo",
+    "openSession": "Abrir sessão principal",
+    "openFolder": "Abrir pasta",
+    "back": "Todos os objetivos",
+    "healthTitle": "Estado",
+    "successCriteria": "Critérios de sucesso",
+    "met": "Atendido",
+    "notMet": "Não atendido",
+    "items": "Itens",
+    "noItems": "Ainda não há itens.",
+    "noCriteria": "Ainda não há critérios: o agente os escreve antes de o objetivo ficar ativo.",
+    "kind": {
+      "task": "Tarefa",
+      "ask": "Pedido",
+      "wait": "Espera"
+    },
+    "itemStatus": {
+      "open": "aberto",
+      "doing": "em andamento",
+      "done": "feito",
+      "dropped": "descartado"
+    },
+    "due": "Prazo {time}",
+    "sessions": "Sessões",
+    "role": {
+      "coordinator": "Sessão principal",
+      "worker": "Executor",
+      "verifier": "Verificador"
+    },
+    "timeline": "Linha do tempo",
+    "verification": "Verificação",
+    "notes": "Notas",
+    "log": "Registro",
+    "notFound": "Este objetivo não existe mais."
+  },
+  "agentEditor": {
+    "manage": "Gerenciar",
+    "overviewTitle": "Visão geral"
   }
 }

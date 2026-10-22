@@ -906,6 +906,9 @@
       "iconDescription": "Mostrata accanto al nome dello progetto.",
       "name": "Nome dello progetto",
       "nameDescription": "Mostrato nel selettore e ovunque sia elencato questo progetto.",
+      "defaultEffort": "Sforzo di ragionamento predefinito",
+      "defaultEffortDescription": "Applicato ai nuovi prompt senza una scelta esplicita, quando il modello della sessione lo supporta.",
+      "defaultEffortAutomatic": "Automatico",
       "saving": "Salvataggio…",
       "archived": "Progetto archiviato",
       "archiveFailed": "Impossibile archiviare lo progetto",
@@ -1498,6 +1501,7 @@
   },
   "sidebar": {
     "rooms": "Stanze",
+    "goals": "Obiettivi",
     "referAndEarn": "Invita e Guadagna",
     "referralShareTitle": "Invita Amici",
     "referralShareSubtitle": "Ottieni 400 crediti",
@@ -10652,7 +10656,7 @@
       "text1458e20a1642": "Facoltativo. Kortix elimina anche il token locale quando disconnetti l'account.",
       "text1459df2e344c": "Si avvia una macchina Linux dall’immagine sandbox dichiarata dal progetto. È una macchina isolata: filesystem, tabella dei processi e rete propri. Nulla viene condiviso con un’altra sessione.",
       "text14683b379324": "Revoca token",
-      "text146b38e7fa80": "Quando il default fallisce",
+      "text146b38e7fa80": "Quando un modello fallisce",
       "text146cd06d5026": "Ambiente:",
       "text146fd497badf": "Email saltata: copia il link di invito per condividerlo manualmente",
       "text147251df4759": "Di solito bastano pochi secondi",
@@ -16022,7 +16026,7 @@
       "textafb32719ca9e": "Segreto client del bot",
       "textafb5023c3c05": "Modifiche applicate",
       "textafb837ec251a": "Okta invia le modifiche non appena avvengono (assegnazioni, aggiornamenti del profilo, invii dei gruppi): un periodo di inattività significa semplicemente che non è cambiato nulla.",
-      "textafb9890f7c72": "Dove va una richiesta quando il default del progetto non può gestirla.",
+      "textafb9890f7c72": "Dove va una richiesta quando il suo modello non può gestirla.",
       "textafc19f1734c1": "Entità",
       "textafc8e3a5d5db": "Raggruppa le richieste in base a ciò che le persone vogliono davvero, non alle parole usate, conta quanti account distinti hanno sollevato ciascun punto e allega le citazioni. Quando qualcuno chiede \"chi l’ha richiesto\", la risposta è nel documento.",
       "textafdc7d79dccb": "Provisioning automatico da OneLogin",
@@ -16735,7 +16739,7 @@
       "textc3d2e79ebdd0": "Connettori",
       "textc3e3a6edeaa5": "Termini e condizioni",
       "textc3e58a73609d": "Distruttivo",
-      "textc3ecd3cd791b": "Provati in ordine dopo il default del progetto.",
+      "textc3ecd3cd791b": "Provati in ordine dopo il modello richiesto.",
       "textc3f282c05f3f": "criteri approvazione blocca require_approval regole strumenti connettore protezioni",
       "textc3f348ffaf7a": "Associa al progetto",
       "textc3f7bdf537c4": "rich.",
@@ -20326,7 +20330,12 @@
       "text57f57edb6f16": "La richiesta di modifica #{number} è pronta per la revisione.",
       "texta8597db6f24b": "Rimuovi competenza",
       "text5f6ba69d66d1": "Competenza rimossa",
-      "textcb8d6b0c94c9": " e tutti i suoi file, modifiche incluse, e rimuove la competenza da ogni agente che la usa. Un commit sul branch predefinito."
+      "textcb8d6b0c94c9": " e tutti i suoi file, modifiche incluse, e rimuove la competenza da ogni agente che la usa. Un commit sul branch predefinito.",
+      "cliDeviceTitle": "Autorizza Kortix CLI",
+      "cliDeviceWarning": "Approva solo un accesso avviato da te. Digita il codice mostrato dal terminale.",
+      "cliDeviceCode": "Codice di accesso",
+      "cliDeviceApproved": "Accesso approvato. Torna al terminale.",
+      "cliDeviceAction": "Autorizza CLI"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -22312,5 +22321,95 @@
     "join": "Entra",
     "openRoom": "Apri",
     "gateDescription": "Attiva le Stanze per permettere alle sessioni degli agenti e alle persone di questo progetto di parlare in chat room con nome."
+  },
+  "goals": {
+    "title": "Obiettivi",
+    "gateDescription": "Gli agenti seguono un obiettivo finché non è raggiunto in modo verificabile: l'obiettivo vive in File, un battito giornaliero lo risveglia, l'agente sollecita le persone per ciò che gli serve e un controllo indipendente lo chiude.",
+    "empty": "Ancora nessun obiettivo",
+    "emptyHint": "Avviane uno in una sessione: descrivi il risultato, ad esempio \"assicurati che il nostro vecchio conto bancario sia chiuso\". L'agente crea l'obiettivo e compare qui.",
+    "loadError": "Impossibile caricare gli obiettivi. Riprova.",
+    "retry": "Riprova",
+    "needsYou": "Richiede te",
+    "open": "Aperti",
+    "closed": "Chiusi",
+    "waitingFor": "In attesa di: {title}",
+    "criteria": "{met}/{total} criteri",
+    "nextWake": "Prossimo risveglio {time}",
+    "noWake": "Nessun risveglio pianificato",
+    "heartbeat": "Battito",
+    "heartbeatPaused": "In pausa",
+    "lastWakeLabel": "Ultimo risveglio",
+    "progress": "Avanzamento",
+    "scope": {
+      "company": "Azienda",
+      "personal": "Solo tu"
+    },
+    "status": {
+      "draft": "Bozza",
+      "active": "Attivo",
+      "waiting_on_user": "Attende te",
+      "waiting_external": "In attesa",
+      "verifying": "In verifica",
+      "done": "Completato",
+      "abandoned": "Abbandonato"
+    },
+    "health": {
+      "healthy": "In esecuzione",
+      "attention": "Richiede attenzione",
+      "closed": "Chiuso"
+    },
+    "issue": {
+      "no_heartbeat": "Niente risveglierà questo obiettivo: manca il promemoria del battito.",
+      "heartbeat_paused": "Il promemoria del battito è in pausa.",
+      "heartbeat_failed": "L'ultimo risveglio non è riuscito: {error}",
+      "missed_wake": "L'ultimo risveglio è in ritardo.",
+      "ask_overdue": "Una richiesta è scaduta.",
+      "verification_stalled": "La verifica è iniziata più di 24 ore fa.",
+      "unreadable": "goal.json manca o non è un JSON valido."
+    },
+    "sessionChip": "Obiettivo",
+    "sessionRole": {
+      "coordinator": "Questa sessione guida questo obiettivo.",
+      "worker": "Questa sessione lavora a questo obiettivo.",
+      "verifier": "Questa sessione verifica questo obiettivo."
+    },
+    "openGoal": "Apri obiettivo",
+    "openSession": "Apri sessione principale",
+    "openFolder": "Apri cartella",
+    "back": "Tutti gli obiettivi",
+    "healthTitle": "Stato",
+    "successCriteria": "Criteri di successo",
+    "met": "Soddisfatto",
+    "notMet": "Non soddisfatto",
+    "items": "Elementi",
+    "noItems": "Ancora nessun elemento.",
+    "noCriteria": "Ancora nessun criterio: l'agente li scrive prima che l'obiettivo diventi attivo.",
+    "kind": {
+      "task": "Attività",
+      "ask": "Richiesta",
+      "wait": "Attesa"
+    },
+    "itemStatus": {
+      "open": "aperto",
+      "doing": "in corso",
+      "done": "fatto",
+      "dropped": "scartato"
+    },
+    "due": "Scadenza {time}",
+    "sessions": "Sessioni",
+    "role": {
+      "coordinator": "Sessione principale",
+      "worker": "Esecutore",
+      "verifier": "Verificatore"
+    },
+    "timeline": "Cronologia",
+    "verification": "Verifica",
+    "notes": "Note",
+    "log": "Registro",
+    "notFound": "Questo obiettivo non esiste più."
+  },
+  "agentEditor": {
+    "manage": "Gestisci",
+    "overviewTitle": "Panoramica"
   }
 }

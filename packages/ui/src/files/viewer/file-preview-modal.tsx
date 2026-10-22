@@ -127,9 +127,9 @@ export function FilePreviewModal({
   panelMode,
   filePathList,
   currentFileIndex,
-  onClose,
-  onNext,
-  onPrev,
+  onClose: closePreview,
+  onNext: nextPreview,
+  onPrev: prevPreview,
   source,
   HistoryContent,
   statusSlot,
@@ -141,6 +141,15 @@ export function FilePreviewModal({
 }: FilePreviewModalProps) {
   const tI18nHardcoded = useTranslations("hardcodedUi");
   const isOpen = panelMode === "viewer" && !!selectedFilePath;
+  const [dirty, setDirty] = useState(false);
+  const leave = (action: () => void) => {
+    if (dirty && !window.confirm('Discard unsaved changes?')) return;
+    setDirty(false);
+    action();
+  };
+  const onClose = () => leave(closePreview);
+  const onNext = () => leave(nextPreview);
+  const onPrev = () => leave(prevPreview);
 
   // Embedded viewers start inline (in the side panel); "Expand" pops them to
   // the full-screen overlay. Non-embedded viewers are always full-screen.
@@ -569,8 +578,9 @@ export function FilePreviewModal({
           <FileContentRenderer
             filePath={selectedFilePath!}
             reloadKey={reloadKey}
-            showHeader={false}
-            readOnly
+            onUnsavedChange={setDirty}
+            showHeader={!!source.editablePreview}
+            readOnly={!source.editablePreview}
             targetLine={targetLine}
             markdownPreview={markdownPreview}
             onMarkdownPreviewChange={setMarkdownPreview}

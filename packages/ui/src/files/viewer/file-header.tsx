@@ -98,7 +98,7 @@ export function FileHeader({ showHeader, Breadcrumbs, filePath, readOnly, hasUns
                   variant="default"
                   size="sm"
                   className="h-7 gap-1.5 px-3 text-xs font-medium"
-                  onClick={() => handleSave(latestContentRef.current)}
+                  onClick={() => { void handleSave(latestContentRef.current).catch(() => undefined); }}
                   disabled={isSaving}
                   title={tHardcodedUi.raw(
                     'featuresFilesComponentsFileContentRenderer.line586JsxAttrTitleSaveS',

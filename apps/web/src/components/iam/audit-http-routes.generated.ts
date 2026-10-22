@@ -577,6 +577,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "DELETE|v1|projects|:projectId|custom-providers|:providerId",
   "PUT|v1|projects|:projectId|custom-providers|:providerId",
   "PUT|v1|projects|:projectId|default-agent",
+  "PUT|v1|projects|:projectId|default-reasoning-effort",
   "GET|v1|projects|:projectId|detail",
   "PATCH|v1|projects|:projectId|experimental",
   "PATCH|v1|projects|:projectId|features",
