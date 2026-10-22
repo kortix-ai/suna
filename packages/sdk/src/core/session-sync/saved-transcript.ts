@@ -33,7 +33,7 @@ import {
   holdSavedWindow,
   openBundleHistory,
 } from '../session/open-bundle';
-import { fetchFirstSessionLogPage, loadSessionLogPage, type SessionLogPage } from '../session-log/source';
+import { loadSessionLogPage, readFirstSessionLogAnswer, type SessionLogPage } from '../session-log/source';
 import { EMPTY_SESSION_LOG_STATE, applySessionLogPage } from '../session-log/store';
 import { sessionLogRoot } from '../session-log/v1-view';
 
@@ -119,8 +119,9 @@ export interface SavedSessionCopy {
  * `useSessionLogThread`, which loads a sub-agent's thread from the heads that page names.
  * `useSession` reads the page again at the bind. No v1 window is read then.
  *
- * Only when the log answers 404 or an invalid page (a server older than the session log, a
- * session with no stored log yet) does it read the v1 copy (deprecated): the window from the
+ * A 404 coded `session_log_missing` (a new session) answers no copy: `log: null`, no v1 read.
+ * Only when the log answers a 404 without that code or an invalid page (a server older than the
+ * session log) does it read the v1 copy (deprecated): the window from the
  * snapshot or the route, as {@link loadSavedTranscript} does. Hand `envelope` to
  * `useSessionSync` as `mirror` to paint it. That copy stays held for the session's open, up
  * to `SAVED_WINDOW_HOLD_MS`, so the window is downloaded once per open (KRTX-189).
@@ -143,7 +144,9 @@ export async function readSavedSessionCopy(input: {
 }): Promise<SavedSessionCopy> {
   const { projectId, sessionId, runtimeSessionId } = input;
   if (!projectId || !sessionId || !runtimeSessionId) return { envelope: null, empty: false };
-  const log = loadSessionLogPage ? await fetchFirstSessionLogPage(loadSessionLogPage, projectId, sessionId) : null;
+  const log = loadSessionLogPage ? await readFirstSessionLogAnswer(loadSessionLogPage, projectId, sessionId) : null;
+  // The API serves the log and the session has none yet (a new session): no copy, v1 included.
+  if (log === 'missing') return { envelope: null, empty: false, log: null };
   if (log) {
     const root = sessionLogRoot(applySessionLogPage(EMPTY_SESSION_LOG_STATE, log));
     const provenEmpty = !!root?.empty && root.runtimeSessionId === runtimeSessionId;

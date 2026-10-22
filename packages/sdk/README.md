@@ -527,8 +527,9 @@ An open reads the session log first (`GET …/log`), on every host, with no proj
 `useSession`, `readSavedSessionCopy` (returned as `log`), `useSessionSync` with no `mirror` or
 with `savedChild`, and `loadSessionExportMessages`. No `GET …/transcript` is read then. The host
 applies a page it reads itself to the session store and renders `useSessionLogThread`.
-Only when the log answers 404 (an API older than the session log, or a session with no stored
-log yet) does an open read the v1 saved window once: `GET …/transcript?shape=sync&history=true`.
+A new session with no stored log yet answers 404 with `code: 'session_log_missing'`: the open
+stays on the log and reads nothing more. Only when the log answers 404 with no `code` (an API
+older than the session log) does an open read the v1 saved window once: `GET …/transcript?shape=sync&history=true`.
 The session-open snapshot (`GET …/snapshot`) asks for no v1 window (`?transcript=0`).
 `readSavedSessionCopy` then returns it as `envelope`, and the SDK holds it for the open that
 follows (up to 5 min). The v1 reads (`getSessionTranscriptSync`, `transcriptSync`,
@@ -728,7 +729,7 @@ session-log types, and a test fails when the two differ. See the
 `useSessionLogThread(session, threadId?, { throttleMs? })`: the log of a session `useSession`
 owns. `useSessionLog` marks its source: `'v2'` is the API's log, which every open reads
 first when the API holds a log for the session (OpenCode or pi). No project flag is read.
-A session whose log answers 404 reads v1, and the hooks return `source: 'v1'`: the `fromV1`
+A session whose log answers 404 with no `code` (an API older than the log) reads v1, and the hooks return `source: 'v1'`: the `fromV1`
 conversion of the v1 rows, with the turn that runs kept open. Pass the session's
 `runtimeSessionId`; without it, or before the first row, they return `null`.
 `throttleMs` paces the v1 rows as `useSessionMessages` paces them. The

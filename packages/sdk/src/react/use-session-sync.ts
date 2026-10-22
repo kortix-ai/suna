@@ -27,7 +27,7 @@ import {
   shouldHydrateFromMirror,
 } from '../browser/session-sync/server-transcript-mirror';
 import { currentSavedCopyStore } from '../core/session-sync/saved-copy-store';
-import { fetchFirstSessionLogPage, loadSessionLogPage } from '../core/session-log/source';
+import { loadSessionLogPage, readFirstSessionLogAnswer } from '../core/session-log/source';
 import { chooseOlderSource, mirrorCursorAfter } from '../browser/session-sync/mirror-paging';
 import { transcriptIsFragment } from '../core/session-sync/fragment';
 import { onTabVisible } from '../browser/session-sync/visibility';
@@ -72,8 +72,9 @@ interface UseSessionSyncOptions {
    * saved-history read's answer, `null` while that read runs or when it found
    * none. This hook then reads no transcript itself. Omit it and the hook
    * reads the session log first (`GET …/log`): a page goes in the session
-   * store, and the session reads its log from then on. Only a 404 or an invalid
-   * page reads the v1 copy (deprecated) once: the session-open snapshot's
+   * store, and the session reads its log from then on. A 404 coded
+   * `session_log_missing` (a new session) reads nothing more. Only a 404 without
+   * that code or an invalid page reads the v1 copy (deprecated) once: the session-open snapshot's
    * window, else `GET …/transcript?shape=sync&history=true`; a `savedChild`
    * reads its own window.
    */
@@ -337,8 +338,10 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       ? Promise.resolve(mirror)
       : (async () => {
           const page = scope && loadSessionLogPage
-            ? await fetchFirstSessionLogPage(loadSessionLogPage, scope.projectId, scope.sessionId, abort.signal)
+            ? await readFirstSessionLogAnswer(loadSessionLogPage, scope.projectId, scope.sessionId, abort.signal)
             : null;
+          // The API serves the log and the session has none yet: nothing is saved, v1 included.
+          if (page === 'missing') return null;
           if (page) {
             if (!abort.signal.aborted) useSyncStore.getState().applySessionLogPage(scope!.sessionId, page);
             return 'log' as const;
