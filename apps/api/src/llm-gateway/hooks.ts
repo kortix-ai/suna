@@ -237,11 +237,28 @@ export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<v
  */
 export async function authorizeRequest(
   token: string,
-  options: { deferBilling?: boolean; timing?: Record<string, number> } = {},
+  options: {
+    deferBilling?: boolean;
+    timing?: Record<string, number>;
+    /** Called as soon as the credential resolves, so a caller can start its own reads. */
+    onPrincipal?: (principal: AuthedPrincipal) => void;
+  } = {},
 ): Promise<AuthorizeResult> {
   const t0 = performance.now();
   const resolved = await resolvePrincipalWithReason(token);
   if (options.timing) options.timing.principal = Math.round(performance.now() - t0);
+  if (resolved.principal) options.onPrincipal?.(resolved.principal);
+  // The budget read needs only the credential's ids, not its tier: a new
+  // gateway (deferBilling) reads it while the tier resolves. The decisions
+  // below still apply in their order (401, 403, 402 budget).
+  const t2 = performance.now();
+  const earlyBudget = options.deferBilling && resolved.principal?.projectId
+    ? checkBudget(resolved.principal).then((result) => {
+      if (options.timing) options.timing.budget = Math.round(performance.now() - t2);
+      return result;
+    })
+    : null;
+  earlyBudget?.catch(() => {});
   const t1 = performance.now();
   let principal = resolved.principal ? await withResolvedTier(resolved.principal, options.timing) : null;
   if (options.timing) options.timing.tier = Math.round(performance.now() - t1);
@@ -297,9 +314,9 @@ export async function authorizeRequest(
       };
     }
   }
-  const t2 = performance.now();
-  const { exceeded, message, crossings } = await checkBudget(principal);
-  if (options.timing) options.timing.budget = Math.round(performance.now() - t2);
+  const t3 = performance.now();
+  const { exceeded, message, crossings } = await (earlyBudget ?? checkBudget(principal));
+  if (options.timing) options.timing.budget_wait = Math.round(performance.now() - t3);
   alertBudgetCrossings(principal, crossings);
   if (exceeded) {
     // A legacy gateway can have a hold here. It refunds the hold when it sees

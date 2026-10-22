@@ -4,6 +4,9 @@ import { logger } from '../lib/logger';
 import { assertLlmBillingActive, authorizeRequest } from './hooks';
 import { resolveCandidates } from './resolution/resolve-candidates';
 import { resolveGatewayRoute } from './routing';
+import { getProjectRoutingPolicy } from '../repositories/project-routing-policies';
+import { getProjectGatewayResolution } from '../repositories/project-model-access';
+import { withRequestMemo } from '../shared/request-memo';
 
 export function resolutionErrorBody(err: GatewayResolutionError) {
   return { code: err.code, message: err.message, suggestion: err.suggestion, retryAfterSeconds: err.retryAfterSeconds, restSeconds: err.restSeconds };
@@ -37,7 +40,11 @@ export async function billingVerdict(accountId: string) {
  * gateway calls its own route for it, so error handling stays the same. The
  * billing step runs last, so no step after the debit can fail.
  */
-export async function admitGatewayRequest(token: unknown, input: unknown) {
+export function admitGatewayRequest(token: unknown, input: unknown) {
+  return withRequestMemo(() => admit(token, input));
+}
+
+async function admit(token: unknown, input: unknown) {
   if (typeof token !== 'string' || !token) {
     return { admission: { ok: false as const, status: 401, errorCode: 'invalid_token', message: 'Invalid token' } };
   }
@@ -54,7 +61,17 @@ export async function admitGatewayRequest(token: unknown, input: unknown) {
     timing.total = Math.round(performance.now() - started);
     return { ...body, timing };
   };
-  const admission = await authorizeRequest(token, { deferBilling: true, timing });
+  const admission = await authorizeRequest(token, {
+    deferBilling: true,
+    timing,
+    // Start the project's routing and resolution reads while the tier and the
+    // budget resolve; the route and resolve steps below reuse them (request memo).
+    onPrincipal: ({ projectId }) => {
+      if (!projectId) return;
+      void getProjectRoutingPolicy(projectId).catch(() => {});
+      void getProjectGatewayResolution(projectId).catch(() => {});
+    },
+  });
   step('authorize');
   if (!admission.ok) return done({ admission });
   const { principal } = admission;
