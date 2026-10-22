@@ -93,7 +93,10 @@ async function readSavedWindow(
 }
 
 export interface SavedSessionCopy {
-  /** The server's saved copy, or null when the read failed. */
+  /**
+   * The server's v1 saved copy (deprecated: read only when the session log answered 404 or an
+   * invalid page), or null when the log answered or the read failed.
+   */
   envelope: SessionTranscriptSyncEnvelope | null;
   /**
    * The conversation is proven empty, with nothing to wait for
@@ -101,32 +104,30 @@ export interface SavedSessionCopy {
    */
   empty: boolean;
   /**
-   * With `sessionLog`: the session log's newest page of the root thread (`GET …/log`), or
-   * null when the session has no stored log or the read failed. Absent without `sessionLog`.
+   * The session log's newest page of the root thread (`GET …/log`). Absent when the log
+   * answered 404 or an invalid page: `envelope` is then the v1 copy.
    */
   log?: SessionLogPage | null;
 }
 
 /**
  * The saved copy of a session, for a host that shows the session before
- * `useSession` binds it (a connecting view while the computer wakes). Hand
- * `envelope` to `useSessionSync` as `mirror` to paint it.
+ * `useSession` binds it (a connecting view while the computer wakes).
  *
- * Reads the current copy, from the snapshot or the route as
- * {@link loadSavedTranscript} does, and the turn record only when the copy
- * proves `runtimeSessionId` empty. Never throws: a failed read answers
- * `{ envelope: null, empty: false }`. A sub-agent's window is not read here:
- * `useSessionSync` with `savedChild` reads it.
+ * The session log first: its newest page of the root thread (`GET …/log`), as `log` with
+ * `envelope: null`. The host puts it in the session store (`applySessionLogPage`) and renders
+ * `useSessionLogThread`, which loads a sub-agent's thread from the heads that page names.
+ * `useSession` reads the page again at the bind. No v1 window is read then.
  *
- * The copy stays held for the session's open, up to `SAVED_WINDOW_HOLD_MS`:
- * the snapshot `useSession` starts at the bind then asks for the pointer only,
- * and the saved-history read after the bind answers from the held copy. The
- * window is downloaded once per open (KRTX-189).
+ * Only when the log answers 404 or an invalid page (a server older than the session log, a
+ * session with no stored log yet) does it read the v1 copy (deprecated): the window from the
+ * snapshot or the route, as {@link loadSavedTranscript} does. Hand `envelope` to
+ * `useSessionSync` as `mirror` to paint it. That copy stays held for the session's open, up
+ * to `SAVED_WINDOW_HOLD_MS`, so the window is downloaded once per open (KRTX-189).
  *
- * With `sessionLog` (the project flag `session_log` on) the copy is the session log's
- * newest page (`log`, `envelope: null`): the host puts it in the session store
- * (`applySessionLogPage`) and renders `useSessionLogThread`, which loads a sub-agent's
- * thread from the heads that page names. `useSession` reads the page again at the bind.
+ * The turn record is read only when the copy proves `runtimeSessionId` empty. Never throws:
+ * a failed read answers `{ envelope: null, empty: false }`. A sub-agent's window is not read
+ * here: `useSessionSync` with `savedChild` reads it.
  */
 export async function readSavedSessionCopy(input: {
   projectId: string;
@@ -135,16 +136,16 @@ export async function readSavedSessionCopy(input: {
   /** The runtime session the copy belongs to (the root). */
   runtimeSessionId: string;
   /**
-   * The project flag `session_log` is on: the session log is the saved copy. Reads its
-   * newest page (`log`), never the v1 window (`GET …/transcript`), and holds nothing.
+   * @deprecated Ignored: the session log is always read first, and the v1 window only when the
+   * log answers 404. The project flag `session_log` it carried is gone.
    */
   sessionLog?: boolean;
 }): Promise<SavedSessionCopy> {
   const { projectId, sessionId, runtimeSessionId } = input;
   if (!projectId || !sessionId || !runtimeSessionId) return { envelope: null, empty: false };
-  if (input.sessionLog) {
-    const log = loadSessionLogPage ? await fetchFirstSessionLogPage(loadSessionLogPage, projectId, sessionId) : null;
-    const root = log && sessionLogRoot(applySessionLogPage(EMPTY_SESSION_LOG_STATE, log));
+  const log = loadSessionLogPage ? await fetchFirstSessionLogPage(loadSessionLogPage, projectId, sessionId) : null;
+  if (log) {
+    const root = sessionLogRoot(applySessionLogPage(EMPTY_SESSION_LOG_STATE, log));
     const provenEmpty = !!root?.empty && root.runtimeSessionId === runtimeSessionId;
     return { envelope: null, empty: provenEmpty && (await noTurnSince(projectId, sessionId, runtimeSessionId)), log };
   }

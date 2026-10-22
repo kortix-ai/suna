@@ -1,12 +1,10 @@
 /**
  * Where the v2 session log comes from, and when a client reads it.
  *
- * NEGOTIATION. A session reads `kortix.session/2` only when both hold:
- *  - the project flag `session_log` is exactly `true`. An API that predates the session
- *    log does not serve the flag, so an SDK newer than its API keeps v1;
- *  - this SDK has a page loader. An SDK published before the API route keeps v1.
- * Otherwise the session reads v1, exactly as before the session log existed. The runtime
- * is not asked: the stored log is the API's (a stopped box reads it too), and the session
+ * NEGOTIATION. A session reads `kortix.session/2` first, always: the first read of an open is
+ * `GET …/log`. The project flag `session_log` is not read (the API deletes it). A 404 or an
+ * invalid page (an API that predates the session log, or a session with no stored log yet)
+ * falls back to v1, exactly as before the session log existed. The runtime is not asked: the stored log is the API's (a stopped box reads it too), and the session
  * stream serves `schema=v2` for every daemon (it converts the v1 frames of a daemon that
  * does not list `session.log.v2`).
  *
@@ -73,10 +71,6 @@ export const SESSION_LOG_FIRST_PAGE_LIMIT = 40;
 export const SESSION_LOG_OLDER_PAGE_LIMIT = 100;
 
 export type SessionLogDialect = 'v1' | 'v2';
-
-export function negotiateSessionLog(input: { flag: boolean | undefined; loader: LoadSessionLogPage | null }): SessionLogDialect {
-  return input.flag === true && input.loader !== null ? 'v2' : 'v1';
-}
 
 /** One page, validated. Null on any failure; never throws. */
 export async function fetchSessionLogPage(
