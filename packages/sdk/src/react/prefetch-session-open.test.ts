@@ -56,16 +56,6 @@ describe('prefetchSessionOpen', () => {
     client.clear();
   });
 
-  test('asks the snapshot for no v1 transcript window: the open reads the session log first', async () => {
-    const urls = mockFetch();
-    const client = new QueryClient();
-    await prefetchSessionOpen(client, 'P1', 'S1');
-    const snapshots = urls.filter((u) => u.includes('/sessions/S1/snapshot'));
-    expect(snapshots).toHaveLength(1);
-    expect(snapshots[0]).toContain('transcript=0');
-    client.clear();
-  });
-
   test('leaves the bundle claimable for the page that mounts next', async () => {
     mockFetch();
     const client = new QueryClient();
