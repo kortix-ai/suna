@@ -8,20 +8,19 @@ import { openSessionStream, type SessionControlStreamOptions } from '../core/ses
 import { savedSessionLogCopies } from '../core/session-log/saved-log';
 import { sessionLogOfV1Rows, sessionLogThreadWithV1Rows } from '../core/session-log/v1-view';
 import {
-  fetchFirstSessionLogPage,
   fetchSessionLogPage,
+  readFirstSessionLogAnswer,
   loadSessionLogPage,
-  negotiateSessionLog,
   SESSION_LOG_FIRST_PAGE_LIMIT,
   SESSION_LOG_OLDER_PAGE_LIMIT,
   type LoadSessionLogPage,
   type SessionLogDialect,
+  type SessionLogSyncState,
   type SessionLogPage,
 } from '../core/session-log/source';
 import { currentSavedCopyStore } from '../core/session-sync/saved-copy-store';
 import { selectSessionLog, selectSessionLogThread } from '../core/session-log/store';
 import type { SessionLog, SessionLogThread } from '../core/session-log/types';
-import { useFeatureFlag } from './use-feature-flag';
 import { selectSessionRows } from './session-transcript-subscription';
 import { usePacedStoreValue, useSessionMessages, type SessionMessagesOptions, type SessionMessagesSource } from './use-session-messages';
 
@@ -50,8 +49,7 @@ function useV1SessionLog(session: SessionMessagesSource, threadId: string | null
 /**
  * The session log (`kortix.session/2`) of a session a `useSession` hook owns: every thread,
  * its messages by `seq`, and their blocks. `source` names where it came from:
- *  - `'v2'`: the API's session log, once the project flag `session_log` is on and the API
- *    serves the log. The v1 hooks (`useSessionMessages`,
+ *  - `'v2'`: the API's session log, once the API serves the session's log. The v1 hooks (`useSessionMessages`,
  *    `useSession().messages`) read the same records through `toV1`.
  *  - `'v1'`: before that, the `fromV1` conversion of the v1 rows `useSessionMessages` renders
  *    for `runtimeSessionId`: one root thread whose id is the runtime session id. The turn that
@@ -203,9 +201,9 @@ export function useSessionLogOlder(
 }
 
 /**
- * Internal (`useSession` mounts it). Negotiates the session's dialect
- * (`negotiateSessionLog`: the project flag, no runtime). `'v2'` from the moment the flag is
- * known on, while the first page is read; `useSession` reads no v1 saved copy then. On v2:
+ * Internal (`useSession` mounts it). Negotiates the session's dialect from the API's answer
+ * alone: no project flag, no runtime. `'v2'` from the first render, while the first page is
+ * read; `useSession` reads no v1 saved copy then. On v2:
  *  1. the device's saved v2 copy paints first;
  *  2. the newest page of the root thread replaces it and is saved (the v1 copy goes);
  *  3. the session stream switches to `schema=v2` (`log.*` frames in place of the `message.*`
@@ -214,11 +212,12 @@ export function useSessionLogOlder(
  *     the tab becomes visible again.
  * Both kinds of thread read v2: a `fromV1` one (OpenCode) and a native one (pi). Hosts render
  * the blocks (`sessionLogTurns`); the v1 hooks read a native thread through `toV1`.
- * A 404 (a new session whose journal has not posted yet) or an invalid page leaves the session
- * on v1: no session log, no `schema=v2`. It is retried at the next turn end and after a stream
- * reconnect, one request at a time.
- * Leaving v2 (or unmounting) drops the log, so the v1 hooks read the v1 store again. The flag
- * is read only when this SDK has a page loader.
+ * A 404 coded `session_log_missing` (a new session whose journal has not posted yet) answers
+ * `'missing'`: still v2, with no log yet, so `useSession` reads no v1 saved copy and has nothing
+ * saved to wait for. A 404 without that code (an API older than the log) or an invalid page
+ * leaves the session on v1: no session log, no `schema=v2`. Either is retried at the next turn end
+ * and after a stream reconnect (on the session stream without `schema=v2`), one request at a time.
+ * Leaving v2 (or unmounting) drops the log, so the v1 hooks read the v1 store again.
  */
 export function useSessionLogSync(
   projectId: string,
@@ -229,16 +228,18 @@ export function useSessionLogSync(
     /** Test seam: joins the session stream. */
     joinStream?: (options: SessionControlStreamOptions) => { close: () => void };
   },
-): SessionLogDialect {
+): SessionLogSyncState {
   const loader = options.loader === undefined ? loadSessionLogPage : options.loader;
   const joinStream = options.joinStream ?? openSessionStream;
   const active = options.enabled && !!loader && !!projectId && !!sessionId;
   const key = `${projectId}/${sessionId}`;
-  const flag = useFeatureFlag(active ? projectId : null, 'session_log').enabled;
-  const negotiated = active ? negotiateSessionLog({ flag, loader }) : 'v1';
-  // The page answered that this session cannot read v2 yet (404, invalid): v1 from then on.
+  const negotiated: SessionLogDialect = active ? 'v2' : 'v1';
+  // The page answered that this session cannot read v2 (404 without a code, invalid): v1 from then on.
   const [refusedKey, setRefusedKey] = useState<string | null>(null);
-  const dialect: SessionLogDialect = negotiated === 'v2' && refusedKey !== key ? 'v2' : 'v1';
+  // The API serves the log and this session has none yet (404 `session_log_missing`).
+  const [missingKey, setMissingKey] = useState<string | null>(null);
+  const state: SessionLogSyncState =
+    negotiated !== 'v2' || refusedKey === key ? 'v1' : missingKey === key ? 'missing' : 'v2';
 
   useEffect(() => {
     if (negotiated !== 'v2' || !loader) return;
@@ -256,14 +257,14 @@ export function useSessionLogSync(
       stream?.close();
       stream = joinStream({ projectId, sessionId, ...options });
     };
-    const load = async (): Promise<SessionLogPage | null> => {
-      const page = await fetchFirstSessionLogPage(loader, projectId, sessionId, controller.signal);
+    const load = async (): Promise<SessionLogPage | 'missing' | null> => {
+      const answer = await readFirstSessionLogAnswer(loader, projectId, sessionId, controller.signal);
       if (stopped) return null;
-      if (page) {
-        store().applySessionLogPage(sessionId, page);
-        void copies?.write(projectId, sessionId, page);
+      if (answer && answer !== 'missing') {
+        store().applySessionLogPage(sessionId, answer);
+        void copies?.write(projectId, sessionId, answer);
       }
-      return page;
+      return answer;
     };
     // Re-read after a reconnect (`up` after a drop); the first report is the connection already up.
     const onReconnect = (run: () => void) => {
@@ -276,19 +277,22 @@ export function useSessionLogSync(
     const attempt = async (): Promise<void> => {
       if (busy || stopped) return;
       busy = true;
-      const page = await load();
+      const answer = await load();
       busy = false;
       if (stopped) return;
+      const page = answer === 'missing' ? null : answer;
       onV2 = !!page;
       if (page) {
         setRefusedKey(null);
+        setMissingKey(null);
         // A v2 connection resumes at the v1 cursor; a server on another epoch answers
         // `kortix.resync` and replays nothing, so the page is read again then, as after a reconnect.
         join({ schema: 'v2', onConnectionChange: onReconnect(() => void load()), onRuntimeResync: () => void load() });
         return;
       }
       store().dropSessionLog(sessionId);
-      setRefusedKey(`${projectId}/${sessionId}`);
+      if (answer === 'missing') setMissingKey(`${projectId}/${sessionId}`);
+      else setRefusedKey(`${projectId}/${sessionId}`);
       // A missing log (a new session whose journal has not posted yet) or an invalid page is
       // retried at the next turn end and after a stream reconnect, on the session stream
       // without `schema=v2`.
@@ -324,5 +328,5 @@ export function useSessionLogSync(
     };
   }, [negotiated, loader, joinStream, projectId, sessionId]);
 
-  return dialect;
+  return state;
 }

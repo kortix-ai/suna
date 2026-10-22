@@ -1256,10 +1256,6 @@
           "name": "Drive",
           "description": "Deljeni folderi koji ostaju usklađeni sa sesijama: tvoj drive, po jedan za svakog agenta i drive-ovi kompanije koje administrator dodeli projektu. Nove sesije ih vide pod /drives."
         },
-        "session_log": {
-          "name": "Log sesije v2",
-          "description": "Čita sesiju preko loga sesije v2 umesto transkripta v1. Kortix ga uključuje po projektu."
-        },
         "session_log_restore": {
           "name": "Vraćanje iz loga sesije",
           "description": "Ponovo gradi sesiju iz njenog sačuvanog loga sesije kada je njen računar izgubio razgovor. Kortix ga uključuje po projektu."

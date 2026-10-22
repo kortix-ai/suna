@@ -262,8 +262,8 @@ describe('the v1 reads answer from the log; a mirror-only session is converted b
   test('a drained mirror is never read: a session without a log answers nothing saved and the mirror stays unread', async () => {
     const late = await seedSession(project, OWNER);
     await storeMirrorOnly(late, 2);
-    await db.insert(sessionLogBackfillState).values({ id: 'pass', state: { drained: true }, rev: 1 })
-      .onConflictDoUpdate({ target: sessionLogBackfillState.id, set: { state: sql`jsonb_set(${sessionLogBackfillState.state}, '{drained}', 'true')` } });
+    await db.insert(sessionLogBackfillState).values({ id: 'pass', state: { drainedWithDeleted: true }, rev: 1 })
+      .onConflictDoUpdate({ target: sessionLogBackfillState.id, set: { state: sql`jsonb_set(${sessionLogBackfillState.state}, '{drainedWithDeleted}', 'true')` } });
     try {
       expect((await get(`${base(late)}/log`)).status).toBe(404);
       const sync = (await (await get(`${base(late)}/transcript?shape=sync`)).json()) as Record<string, unknown>;
@@ -385,9 +385,15 @@ describe('GET .../log', () => {
   test('refuses a bad before_seq and limit; 404 for an unknown thread and without a log', async () => {
     expect((await get(`${base()}/log?before_seq=1.5`)).status).toBe(400);
     expect((await get(`${base()}/log?limit=501`)).status).toBe(400);
-    expect((await get(`${base()}/log?thread=ses_not_a_thread`)).status).toBe(404);
+    const unknownThread = await get(`${base()}/log?thread=ses_not_a_thread`);
+    expect(unknownThread.status).toBe(404);
+    expect(((await unknownThread.json()) as { code?: string }).code).toBeUndefined();
     const empty = await seedSession(project, OWNER);
-    expect((await get(`${base(empty)}/log`)).status).toBe(404);
+    // A session with no stored log yet (a new one) says so by code: a client stays on the log
+    // instead of reading v1, which only an API without this route answers with a bare 404.
+    const missing = await get(`${base(empty)}/log`);
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: 'No session log for this session', code: 'session_log_missing' });
     expect((await get(`${base()}/log`, null)).status).toBe(401);
   });
 });

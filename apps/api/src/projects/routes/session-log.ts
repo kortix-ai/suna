@@ -343,7 +343,7 @@ export function registerSessionLogRoutes(): void {
         '`thread` defaults to the root thread; `messages` are the newest `limit` (default 40, max 500) ' +
         'with `seq < before_seq`, ascending by seq, tombstoned messages left out. Session read permission, ' +
         'the same gate as `GET .../transcript`: a session-bound token reads the sessions that route serves it. ' +
-        '404 when the session has no stored log or no such thread. A session whose history is still only in the ' +
+        '404 when the session has no stored log (`code: session_log_missing`) or no such thread. A session whose history is still only in the ' +
         'v1 mirror is converted to the log before the read answers; one over the conversion size cap answers ' +
         '503 `session_log_converting` with `Retry-After` while the backfill converts it.',
       ...auth,
@@ -380,7 +380,9 @@ export function registerSessionLogRoutes(): void {
         c.header('Retry-After', '60');
         return c.json({ error: err.message, code: err.code }, 503);
       }
-      if (!page) return c.json({ error: 'No session log for this session' }, 404);
+      // The code tells a client this API serves the log and the session has none yet (a new
+      // session): it stays on the log. An API without this route answers a bare 404.
+      if (!page) return c.json({ error: 'No session log for this session', code: 'session_log_missing' }, 404);
       if (page === 'unknown_thread') return c.json({ error: 'Unknown thread' }, 404);
       return c.json(page, 200);
     },

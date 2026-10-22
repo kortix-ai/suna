@@ -191,10 +191,11 @@ describe('savedCopyEmptyRoot', () => {
   });
 });
 
-describe('readSavedSessionCopy', () => {
+describe('readSavedSessionCopy on a server older than the log (`GET …/log` answers 404): the v1 window', () => {
   // A host that shows a session before `useSession` binds it (the mobile
   // connecting view) reads the saved copy through the same read `useSession`
-  // makes, and asks the SDK whether the conversation is proven empty.
+  // makes, and asks the SDK whether the conversation is proven empty. The log
+  // is asked first; these servers answer 404 for it.
   const ROOT = 'ses_root_1';
   const originalFetch = globalThis.fetch;
   const copy = (count: number, fields: Record<string, unknown> = {}) => ({
@@ -214,12 +215,13 @@ describe('readSavedSessionCopy', () => {
   const provenEmpty = copy(0, { total: 0 });
   const read = () => readSavedSessionCopy({ projectId: 'p1', sessionId: 's1', runtimeSessionId: ROOT });
 
-  /** Answers each URL with `route(url)` as JSON; records every URL. */
+  /** Answers `GET …/log` 404 and each other URL with `route(url)` as JSON; records every URL. */
   function serve(route: (url: string) => unknown): string[] {
     const urls: string[] = [];
     globalThis.fetch = mock(async (input: unknown) => {
       const url = String(input instanceof Request ? input.url : input);
       urls.push(url);
+      if (new URL(url).pathname.endsWith('/log')) return Response.json({ error: 'Not found' }, { status: 404 });
       return Response.json(route(url));
     }) as unknown as typeof fetch;
     return urls;
@@ -235,14 +237,15 @@ describe('readSavedSessionCopy', () => {
     resetSessionOpenBundles();
   });
 
-  test('reads the saved-history route once and answers its copy', async () => {
+  test('reads the log first, then the saved-history route once, and answers its copy', async () => {
     const urls = serve(() => copy(3));
     const answer = await read();
     expect(answer.envelope?.message_count).toBe(3);
     expect(answer.empty).toBe(false);
-    expect(urls).toHaveLength(1);
-    expect(urls[0]).toContain('/projects/p1/sessions/s1/transcript?shape=sync');
-    expect(urls[0]).toContain('history=true');
+    expect(urls).toHaveLength(2);
+    expect(urls[0]).toBe('http://test.local/v1/projects/p1/sessions/s1/log?limit=40');
+    expect(urls[1]).toContain('/projects/p1/sessions/s1/transcript?shape=sync');
+    expect(urls[1]).toContain('history=true');
   });
 
   test('a session-open snapshot in flight carries the copy: no transcript request', async () => {
@@ -369,7 +372,8 @@ describe('readSavedSessionCopy', () => {
       await read();
       setSystemTime(new Date(start + SAVED_WINDOW_HOLD_MS + 1));
       await open('s1');
-      expect(snapshots(urls)[0]).toContain(`transcript=${OPEN_BUNDLE_TRANSCRIPT_LIMIT}`);
+      // The snapshot never carries a v1 window: the route answers the saved-history read.
+      expect(snapshots(urls)[0]).toContain('transcript=0');
       await loadSavedTranscript('p1', 's1');
       expect(windows(urls)).toHaveLength(2);
     });
@@ -381,21 +385,23 @@ describe('readSavedSessionCopy', () => {
       expect(windows(urls)).toHaveLength(2);
     });
 
-    test('a failed read holds nothing: the next open asks the snapshot for the window', async () => {
+    test('a failed read holds nothing: the next open reads the window from the route', async () => {
       globalThis.fetch = mock(async () => {
         throw new TypeError('Network request failed');
       }) as unknown as typeof fetch;
       await read();
       const urls = serveOpen();
       await open('s1');
-      expect(snapshots(urls)[0]).toContain(`transcript=${OPEN_BUNDLE_TRANSCRIPT_LIMIT}`);
+      expect(snapshots(urls)[0]).toContain('transcript=0');
+      expect((await loadSavedTranscript('p1', 's1')).message_count).toBe(3);
+      expect(windows(urls)).toHaveLength(1);
     });
 
     test('a copy held for one session answers no other', async () => {
       const urls = serveOpen();
       await read();
       await open('s2');
-      expect(snapshots(urls)[0]).toContain(`transcript=${OPEN_BUNDLE_TRANSCRIPT_LIMIT}`);
+      expect(snapshots(urls)[0]).toContain('transcript=0');
       await loadSavedTranscript('p1', 's2');
       expect(windows(urls)).toHaveLength(2);
     });
@@ -449,9 +455,9 @@ describe('loadSavedTranscript', () => {
   });
 });
 
-describe('readSavedSessionCopy with the session log (`session_log` on, P8)', () => {
-  // With the project flag on the session log is the saved copy: the connecting view paints
-  // its newest page, and no v1 window (`GET …/transcript`) is read.
+describe('readSavedSessionCopy reads the session log first (P8)', () => {
+  // The session log is the saved copy: the connecting view paints its newest page, and no v1
+  // window (`GET …/transcript`) is read. The project flag is not read; `sessionLog` is ignored.
   const originalFetch = globalThis.fetch;
   const golden: SessionLog = JSON.parse(
     readFileSync(join(import.meta.dir, '../../../../api-contract/src/__tests__/fixtures/session-log/golden21.v2.json'), 'utf8'),
@@ -524,9 +530,31 @@ describe('readSavedSessionCopy with the session log (`session_log` on, P8)', () 
     expect(urls.some((url) => url.includes('/turn'))).toBe(false);
   });
 
-  test('no stored log (404) answers no copy, and still reads no v1 window', async () => {
-    const urls = serve(() => Response.json({ error: 'No session log for this session' }, { status: 404 }));
+  test('without `sessionLog` (the flag unknown or off) the log is still read first, and no v1 window', async () => {
+    for (const sessionLog of [undefined, false]) {
+      const urls = serve(() => Response.json(page()));
+      const answer = await readSavedSessionCopy({ projectId: 'p1', sessionId: 's1', runtimeSessionId: rootRuntimeId, sessionLog });
+      expect(answer.log?.thread_id).toBe(root.thread_id);
+      expect(answer.envelope).toBeNull();
+      expect(urls).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
+    }
+  });
+
+  test('a new session on an API that serves the log (404 session_log_missing): no copy, and no v1 window', async () => {
+    const urls = serve(() => Response.json({ error: 'No session log for this session', code: 'session_log_missing' }, { status: 404 }));
     expect(await read()).toEqual({ envelope: null, empty: false, log: null });
-    expect(urls.some((url) => url.includes('/transcript'))).toBe(false);
+    expect(urls).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
+  });
+
+  test('no stored log (404, a server older than the log): the v1 window answers as the fallback', async () => {
+    const v1Window = { available: true, reason: null, source: 'mirror', complete: true, runtime_session_id: rootRuntimeId, opencode_session_id: rootRuntimeId, message_count: 0, messages: [] };
+    const urls = serve((url) =>
+      url.includes('/log?') ? Response.json({ error: 'No session log for this session' }, { status: 404 }) : Response.json(v1Window),
+    );
+    const answer = await read();
+    expect(answer.log ?? null).toBeNull();
+    expect(answer.envelope?.available).toBe(true);
+    expect(urls[0]).toBe('http://test.local/v1/projects/p1/sessions/s1/log?limit=40');
+    expect(urls[1]).toContain('/projects/p1/sessions/s1/transcript?shape=sync');
   });
 });

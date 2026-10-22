@@ -1256,10 +1256,6 @@
           "name": "Drive",
           "description": "Des dossiers partagés synchronisés avec les sessions : votre propre drive, un par agent, et les drives d’entreprise qu’un administrateur associe au projet. Les nouvelles sessions les voient sous /drives."
         },
-        "session_log": {
-          "name": "Journal de session v2",
-          "description": "Lit une session via le journal de session v2 au lieu de la transcription v1. Kortix l’active par projet."
-        },
         "session_log_restore": {
           "name": "Restauration du journal de session",
           "description": "Reconstruit une session à partir de son journal de session enregistré quand son ordinateur a perdu la conversation. Kortix l’active par projet."

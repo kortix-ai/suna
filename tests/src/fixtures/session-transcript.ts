@@ -117,9 +117,9 @@ export async function seedSessionTranscript(
     if (input.log) {
       await journalSessionLog(env, { ...input, bearer: input.log.bearer, root, messages });
     } else {
-      // A mirror-only session after the backfill drained: reopen it, as a restore of a deleted session does.
+      // A mirror-only session after the backfill drained (nothing writes the mirror since P8.2): reopen it.
       await db.query(
-        "UPDATE kortix.session_log_backfill_state SET state = jsonb_set(state, '{drained}', 'false'), rev = rev + 1 WHERE id = 'pass'",
+        "UPDATE kortix.session_log_backfill_state SET state = jsonb_set(state, '{drainedWithDeleted}', 'false'), rev = rev + 1 WHERE id = 'pass'",
       );
       await db.query(
         'INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete) VALUES ($1,$2,$3,$4,true)',

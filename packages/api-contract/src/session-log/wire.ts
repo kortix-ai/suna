@@ -26,8 +26,9 @@
  *
  * Read (P4.2): `GET /v1/projects/:p/sessions/:s/log?thread=<thread_id>&before_seq=<n>&limit=<n>`,
  * the caller's session read permission, the transcript route's gate (a session-bound token included).
- * It reads Postgres only, never the box. 200 `SessionLogPage`: one page of one thread. 404 when the
- * session has no stored log, or when `thread` is not one of its threads. A session whose history is
+ * It reads Postgres only, never the box. 200 `SessionLogPage`: one page of one thread. 404 `{ error,
+ * code: 'session_log_missing' }` when the session has no stored log yet (a client stays on the log;
+ * an API without this route answers 404 with no code), and 404 when `thread` is not one of its threads. A session whose history is
  * only in the old v1 mirror is converted to the log first (P8.2); 503 `{ error, code:
  * 'session_log_converting' }` with `Retry-After: 60` when that history is over the conversion size
  * cap and the backfill has not converted it yet.

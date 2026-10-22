@@ -34,7 +34,6 @@ import {
   PROVIDER_REMOVED_KEY,
   attemptArchivedBoxRemoval,
 } from '../reaping/archived-box-removal';
-import { reopenSessionLogBackfill } from '../session-log-backfill';
 import { writeSessionLogFromMirror } from '../session-log-capture';
 import { SESSION_DELETE_ROWS_DAYS, sessionRestoreUntil } from '../session-log-purge';
 import { STALE_PENDING_PROVISIONING_MS } from '../session-open/stopped-wake-result';
@@ -146,11 +145,11 @@ export async function restoreSession(input: {
   if (sandbox?.status === 'archived' && (await archivedBoxRemains(sandbox, now))) return REMOVAL_PENDING;
 
   // The log the fresh box restores from: the journal's, or the v1 mirror
-  // converted now (a no-op when a journal owns the log). The backfill skips
-  // deleted sessions, so one that does not convert here (over the cap, or a
-  // failure) reopens it: its next pass converts the restored session.
-  const converted = await writeSessionLogFromMirror(sessionId);
-  if (converted.outcome === 'too_large' || converted.outcome === 'failed') await reopenSessionLogBackfill();
+  // converted now (a no-op when a journal or the backfill already wrote the
+  // log). One that does not convert here (over the cap, or a failure) stays in
+  // the backfill's selection, restorable deleted sessions included, so the
+  // backfill is not drained and its next pass converts it.
+  await writeSessionLogFromMirror(sessionId);
 
   try {
     await db.transaction(async (tx) => {
