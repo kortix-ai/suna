@@ -1532,9 +1532,18 @@ function withModelLimits(
 ): Record<string, KortixGatewayModel> {
   const out: Record<string, KortixGatewayModel> = {}
   for (const [id, model] of Object.entries(models)) {
-    out[id] = typeof model.limit?.context === 'number' && model.limit.context > 0
+    const context = model.limit?.context
+    if (typeof context !== 'number' || context <= 0) {
+      out[id] = { ...model, limit: { ...UNKNOWN_MODEL_LIMIT } }
+      continue
+    }
+    // OpenCode's schema requires `output` beside `context`; one model without it
+    // invalidates the whole config and no session starts. The gateway leaves an
+    // unknown output unset, so give it the default, never above the window.
+    const output = model.limit?.output
+    out[id] = typeof output === 'number' && output > 0
       ? model
-      : { ...model, limit: { ...UNKNOWN_MODEL_LIMIT } }
+      : { ...model, limit: { ...model.limit, context, output: Math.min(UNKNOWN_MODEL_LIMIT.output, context) } }
   }
   return out
 }
