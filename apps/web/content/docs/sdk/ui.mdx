@@ -5,11 +5,13 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 
 `@kortix/ui` is the React component library that the Kortix web app renders, and the whole Kortix session experience as modules: the session workspace (thread plus side panel), the composer, files and the file viewer, the terminal, the project home and the session list. The same package serves Kortix Apps, white-label hosts and your own app, so a button, a chat thread or a session screen looks and behaves the same everywhere. Components are Tailwind CSS v4 class strings that read CSS variables. You re-theme them with a typed theme (`@kortix/ui/theme`) or by overriding the variables, never by copying a component.
 
-<Callout type="warning">
-`@kortix/ui` is not on npm yet. Today it is a workspace package of the [kortix-ai/suna](https://github.com/kortix-ai/suna) repository: inside that repository, add `"@kortix/ui": "workspace:*"` to your package's dependencies. This page describes the package as it ships there.
-</Callout>
-
 ## Install
+
+```bash
+npm i @kortix/ui @kortix/sdk
+```
+
+`@kortix/ui` and `@kortix/sdk` carry the Kortix release version. Install the same version of each. The module entries (`@kortix/ui/session`, `/workspace`, `/theme` and the others in [Modules](#modules)) ship from 0.14.4. 0.14.3 has the root, the component subpaths and the stylesheets. Inside the [kortix-ai/suna](https://github.com/kortix-ai/suna) repository, add `"@kortix/ui": "workspace:*"` to your package's dependencies instead.
 
 | Import | Holds |
 | --- | --- |
@@ -29,7 +31,7 @@ description: "@kortix/ui: the Kortix React components and the session chat, them
 | `@kortix/ui/session`, or any module entry that renders project or session data | `@kortix/sdk` and `@tanstack/react-query` 5, plus one `QueryClientProvider` ([React setup of the SDK](/docs/sdk/react#set-up)). Without `@tanstack/react-query`, the bundler fails on an import inside `@kortix/sdk/react`. |
 | The session thread (it renders [generative UI](/docs/sdk/genui) blocks) | `@openuidev/lang-core@0.3.1` and `zod`, the optional `@kortix/sdk` peers of `@kortix/sdk/genui`. Without them, `vite build` fails with `Missing export` in `@kortix/sdk/dist/genui`. |
 
-After the first npm release:
+The full install for a session host:
 
 ```bash
 npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod @phosphor-icons/react@2.1.10 react@19 react-dom@19
@@ -154,7 +156,7 @@ const brand: KortixTheme = {
 // <html><head><style>{themeToCss(brand)}</style></head>…
 ```
 
-`themeToCss` is a pure function, so it runs on the server and the first paint is already on brand. Its blocks out-rank `tokens.css`, so the `<style>` can sit anywhere in the page. The white-label demo does exactly this: `apps/whitelabel-demo/src/config/theme.ts` is its whole re-skin (indigo accent, indigo hairlines, a 4px radius, its own sans and mono stacks).
+`themeToCss` is a pure function, so it runs on the server and the first paint is already on brand. Its blocks out-rank `tokens.css`, so the `<style>` can sit anywhere in the page. The white-label demo does exactly this: `apps/white-label/lumen/src/config/theme.ts` is its whole re-skin.
 
 ### The API
 
@@ -705,7 +707,10 @@ createRoot(document.getElementById('root')!).render(
 
 - `useProjectSessions`, `useProjectApps`, `useProjectTriggers`, `useChangeRequests`, `useGatewayOverview` and `useCan` add more data ([Hooks](/docs/sdk/react#hooks)).
 - Never `fetch` the Kortix API yourself. If the SDK lacks a call you need, that is an SDK gap to report.
-- The [white-label demo](https://github.com/kortix-ai/suna/tree/dev/apps/whitelabel-demo) is a full Next.js product built this way, in its own brand.
+- Three white-label examples are built this way ([overview](https://github.com/kortix-ai/suna/tree/dev/apps/white-label)):
+  - [Lumen Workspace](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/reskin) (reskin): the Kortix workspace UI under its own theme, with the browser on a Kortix API key (direct mode) or behind its own server (wrapper mode).
+  - [Team Console](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/team-console) (internal tool): a static Kortix App over one account, signed in as the viewer.
+  - [Lumen](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/lumen) (your own SaaS): a legal AI product with its own users, data and billing, and Kortix as the agent backend.
 
 ## For agents
 

@@ -19,7 +19,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyMedia } from '../../../prim
 import { cn } from '../../../lib/utils';
 import { CaretRightIcon as ChevronRight } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 
 export interface PanelCardProps {
   title: string;
@@ -141,9 +141,11 @@ export function PanelCard({
   // `defaultExpanded` can flip true after mount (e.g. "auto-open Outputs the
   // moment a run finishes with something to show"). One-way sync: force open
   // when that happens, but never fight a user's manual collapse afterwards.
-  useEffect(() => {
+  const [prevDefaultExpanded, setPrevDefaultExpanded] = useState(defaultExpanded);
+  if (defaultExpanded !== prevDefaultExpanded) {
+    setPrevDefaultExpanded(defaultExpanded);
     if (defaultExpanded) setExpanded(true);
-  }, [defaultExpanded]);
+  }
 
   return (
     <Disclosure

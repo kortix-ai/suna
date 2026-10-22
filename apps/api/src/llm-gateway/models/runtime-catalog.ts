@@ -1,4 +1,4 @@
-import { CATALOG, type Catalog, type CatalogModel } from '@kortix/llm-catalog';
+import { CATALOG, PLATINUM_PROVIDER, type Catalog, type CatalogModel } from '@kortix/llm-catalog';
 import { CODEX_MODELS_URL, CODEX_SEED_MODEL_IDS, parseCodexModelIds } from './codex-models';
 
 const DEFAULT_SOURCE_URL = 'https://models.dev/api.json';
@@ -124,6 +124,8 @@ function normalizeCatalog(data: ModelsDevResponse, sourceUrl: string, fetchedAt:
   if (providers.length === 0 || modelCount === 0) {
     throw new Error('catalog API returned no providers or models');
   }
+  // Platinum is not on models.dev; keep it a provider across every refresh.
+  if (!providers.some((p) => p.id === PLATINUM_PROVIDER.id)) providers.push(PLATINUM_PROVIDER);
 
   return {
     source: sourceUrl,

@@ -37,16 +37,17 @@ The catalog comes from [models.dev](https://models.dev) and the Codex model list
 
 ## Kortix-managed models
 
-Kortix Cloud serves two managed models. You need no key. Kimi K3 left the lineup on 2026-10-19: a session or default that names `kimi-k3` runs on DeepSeek V4.1 Flash.
+Kortix managed models are the models Platinum Inference offers. You need no key. The picker shows the current list, with each model's context window, image support and price. On 2026-10-21 the list was:
 
-| Model | Id | Tier | Context | Max output | Images |
-| --- | --- | --- | --- | --- | --- |
-| DeepSeek V4.1 Flash | `deepseek-v4.1-flash` | balanced, platform default | 1,000,000 | 65,536 | Yes |
-| GLM 5.3 Flash | `glm-5.3-flash` | fast | 1,000,000 | 65,536 | Yes |
+| Model | Id | Context | Max output | Images |
+| --- | --- | --- | --- | --- |
+| DeepSeek V4.1 Flash | `deepseek-v4.1-flash` | 1,000,000 | 65,536 | Yes |
+| GLM 5.3 Flash | `glm-5.3-flash` | 1,000,000 | 65,536 | Yes |
 
-- The picker lists them under **Kortix**.
+- The picker lists them under **Kortix**. The platform default is the first model Platinum Inference lists, unless the operator sets one.
+- A session or default that names a retired model (for example `kimi-k3`) runs on its successor.
 - Managed models need the Credits plan or Enterprise. On Free, every managed model, the platform default included, returns `plan_upgrade_required`.
-- Kortix sends each managed model only to a fixed pool of inference endpoints with zero data retention.
+- Platinum Inference serves every managed model, only through inference providers with zero data retention.
 - Managed requests use credits. See [Plans & credits](/docs/credits).
 - The managed lineup has no OpenAI or Anthropic models. Use your own key or a ChatGPT subscription for them.
 - A self-hosted instance has no managed models. Connect your own providers.
@@ -176,7 +177,9 @@ kortix gateway routing reset
 - `--fallback` is the chain the gateway tries in order when the model fails. It takes up to 8 models.
 - `--fallback-on transient` moves on after a network error, a timeout, any 5xx, or a `402`, `403`, `404` or `429`. `any-error` moves on after every failure.
 - The project's chain also runs when every key or ChatGPT account that the request may use is paused after a rate limit. With `--fallback-on any-error`, it also runs when the login needs reconnection.
+- The chain covers every model in the project: the project default, an agent's default, and a model that a session or trigger pins. A per-model override (`rules` in `set --file`, or **Per-model overrides** in Customize → Models → Routing) replaces the chain for one exact model.
 - `--vision-model` takes a request that carries images when the default model accepts only text.
+- `set` changes only the flags you pass. The rest of the policy, the generation defaults included, stays as stored. `set --file policy.json` replaces the whole policy; a file without `modelGenerationConfig` keeps the stored generation defaults.
 
 **Billing in a fallback.** A request on your own key moves to a Kortix-billed model only when your project's chain names that model and the account can pay for it. Kortix's own platform chain never moves your request onto credits. On Kortix Cloud, the platform chain moves `deepseek-v4.1-flash` to `glm-5.3-flash` on transient errors.
 

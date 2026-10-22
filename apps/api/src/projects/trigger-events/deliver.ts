@@ -167,6 +167,8 @@ async function deliverToRow(
     // A provider retry of an event whose run dead-lettered or lost its session
     // runs again instead of replaying that outcome (webhook-delivery.ts).
     await releaseWebhookDeliveryKey(idempotencyKey, { byEvent: true });
+    // Stamped before the fire: a run's turn is the first that starts after it.
+    const firedAt = new Date();
     const result = await fireGitTrigger({
       spec,
       project,
@@ -177,7 +179,7 @@ async function deliverToRow(
     });
     // A fire a run cap held (KRTX-1721) writes one history row per 10 s.
     if (result.status !== 'skipped' || takeThrottledRunSlot(row.projectId, row.slug)) {
-      await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'event', spec, payload, ...triggerRunFromFire(result), now: new Date() });
+      await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'event', spec, payload, ...triggerRunFromFire(result), now: firedAt });
     }
     if (result.status === 'failed') {
       const error = result.error ?? 'Failed to fire trigger';

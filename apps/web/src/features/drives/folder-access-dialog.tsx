@@ -215,9 +215,10 @@ function FolderAccessForm({
       list?.find((x) => x.id === pickedId)?.label ?? pickedId;
     for (const memberId of next.memberIds) added.push({ type: 'user', id: memberId, label: label(principals.data?.people, memberId), level: 'write' });
     for (const groupId of next.groupIds) added.push({ type: 'group', id: groupId, label: label(principals.data?.teams, groupId), level: 'write' });
+    const agentNames = new Map(identities.data?.map((a) => [a.service_account_id, a.agent_name]));
     for (const saId of next.agentIds ?? []) {
       // The picker names an agent by its service account; a folder share names it by the agent's name.
-      const name = identities.data?.find((a) => a.service_account_id === saId)?.agent_name;
+      const name = agentNames.get(saId);
       if (name) added.push({ type: 'agent', id: name, label: name, level: 'write' });
     }
     const fresh = added.filter((n) => !have.has(namedKey(n)));

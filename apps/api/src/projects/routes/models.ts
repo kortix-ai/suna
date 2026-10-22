@@ -6,11 +6,9 @@ import { projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { llmPriceMarkup } from '../../billing/services/tiers';
-import { config } from '../../config';
 import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
-import { cachedManagedPricingRoutes, withManagedPricing } from '../../llm-gateway/models/managed-pricing-routes';
 import { unavailableCatalog } from '../../llm-gateway/models/picker-catalog';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
@@ -77,6 +75,18 @@ async function loadModelDefaultsWriter(
     PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
   );
   return { ownerAccountId: loaded.row.accountId, userId: loaded.userId, row: loaded.row };
+}
+
+// The default that model-access reports and protects from a disable: a configured
+// project/account preference, even while its provider is disconnected; otherwise the
+// plan-eligible effective model (never the paid platform default for a free account).
+async function modelAccessDefault(userId: string, accountId: string, projectId: string, personalUserId: string | null): Promise<string | undefined> {
+  const defaults = await getAccountModelDefaults(accountId, projectId);
+  const configured = defaults.projects[projectId] ?? defaults.account;
+  if (configured) return toWireModel(configured);
+  const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
+  const resolved = await resolveEffectiveModel({ userId, accountId, projectId, freeModelsOnly, personalUserId });
+  return resolved.model ?? (freeModelsOnly ? undefined : platformDefaultModelId());
 }
 
 export function registerModelsRoutes(): void {
@@ -182,21 +192,11 @@ export function registerModelsRoutes(): void {
         principalUserId: loaded.userId,
         personalUserId: await requestPersonalOwner(c, loaded),
       });
-      // Base provider prices: the platform fee is stated once, beside them.
-      const quotes = await cachedManagedPricingRoutes(
-        config.MORPH_MANAGED_MODELS,
-        1,
-        Boolean(config.MORPH_API_KEY),
-        { baseUrl: config.OPENROUTER_API_URL, apiKey: config.OPENROUTER_API_KEY ?? '' },
-      );
       return c.json({
         ...catalog,
         // Discovery only: never add locked entries to the runnable picker.
         catalog: unavailableCatalog(gatewayModelCatalog(projectId), catalog.models),
-        models: withManagedPricing(catalog.models, quotes),
-        managedPricingRoutes: Object.fromEntries(
-          Object.entries(quotes).filter(([id]) => id in catalog.models),
-        ),
+        // Model prices are base prices: the platform fee is stated once, beside them.
         platformFeePercent: Math.round((llmPriceMarkup() - 1) * 1000) / 10,
       });
     },
@@ -211,10 +211,10 @@ export function registerModelsRoutes(): void {
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
+    const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId, await requestPersonalOwner(c, loaded));
     return c.json({
       ...readModelAccess(loaded.row.metadata),
-      defaultModel: toWireModel(defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '') || undefined,
+      defaultModel,
       // Always true since the gateway is the only model path; kept for older clients.
       enforced: true,
     });
@@ -243,8 +243,7 @@ export function registerModelsRoutes(): void {
         return c.json({ error: 'Use a concrete model id', code: 'invalid_body' }, 400);
       }
     }
-    const defaults = await getAccountModelDefaults(loaded.row.accountId, projectId);
-    const defaultModel = toWireModel(defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '') || undefined;
+    const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId, await requestPersonalOwner(c, loaded));
     const result = await changeProjectModelAccess({ projectId, updatedBy: c.get('userId'), defaultModel, change });
     if (result.conflict) return c.json({
       error: 'Change the project default to another enabled provider or model first.',

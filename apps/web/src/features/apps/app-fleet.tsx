@@ -298,7 +298,7 @@ function VolumeSnapshots({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const snapshots = useAppVolumeSnapshots(projectId, app.app_id, volume.volume_id);
   const [restoreId, setRestoreId] = useState<string | null>(null);
-  const [forkName, setForkName] = useState(`${volume.name}_copy`.slice(0, 30));
+  const [forkName, setForkName] = useState(() => `${volume.name}_copy`.slice(0, 30));
   return (
     <div className="space-y-2 py-1 pr-2 pl-8">
       {snapshots.isLoading ? (

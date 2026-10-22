@@ -58,12 +58,13 @@ export function planArrivals(
   fresh: readonly InboxNotification[],
   context: { onScreen: (sessionId: string) => boolean; unseen: readonly string[]; os: boolean },
 ): { toast: InboxNotification[]; os: InboxNotification[] } {
+  const unseen = new Set(context.unseen);
   const announce = fresh
     .filter(
       (row) =>
         !row.session_id ||
         (!context.onScreen(row.session_id) &&
-          !(row.kind === 'turn_done' && context.unseen.includes(row.session_id))),
+          !(row.kind === 'turn_done' && unseen.has(row.session_id))),
     )
     .slice(0, MAX_ARRIVAL_ALERTS);
   return context.os ? { toast: [], os: announce } : { toast: announce, os: [] };

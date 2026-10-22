@@ -9,7 +9,7 @@ import type { SessionLog } from '../core/session-log/types';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// The project detail answers the `session_log` flag; no network runs.
+// The project detail answers the `session_log` flag, which no hook reads any more; no network runs.
 let flag: boolean | undefined = true;
 const detailCalls: string[] = [];
 mock.module('../core/rest/projects-client', () => ({
@@ -421,6 +421,26 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(joined.filter((j) => j.options.schema !== 'v2').every((j) => j.closed)).toBe(true);
   });
 
+  test('a 404 coded session_log_missing (a new session on an API that serves the log): stays on the log, and is retried at the next turn end', async () => {
+    let calls = 0;
+    let stored = false;
+    const turn = (token: string) => ({ type: 'kortix.control.turn', cseq: 1, cepoch: 'c', at: 1, payload: { known: true, turns: [], last_ended: { turn_token: token } } });
+    const missing = () => Object.assign(new Error('No session log for this session'), { status: 404, code: 'session_log_missing' });
+    const state = mount({ loader: async () => { calls++; if (!stored) throw missing(); return v1Page(); } });
+    await flush();
+    // Not v1: no v1 saved copy is read. The log has nothing yet.
+    expect(state.dialect).toBe('missing');
+    expect(calls).toBe(1);
+    expect(joined.map((j) => j.options.schema)).toEqual([undefined]);
+    act(() => joined[0]!.options.onControl(turn('t1')));
+    stored = true;
+    act(() => joined.at(-1)!.options.onControl(turn('t2')));
+    await flush();
+    expect(calls).toBe(2);
+    expect(state.dialect).toBe('v2');
+    expect(joined.at(-1)!.options.schema).toBe('v2');
+  });
+
   test('a kortix.resync on the v2 connection re-reads the page once, with no duplicate messages', async () => {
     let calls = 0;
     mount({ loader: async () => { calls++; return v1Page(); } });
@@ -542,19 +562,21 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(calls).toBe(2);
   });
 
+  // The flag no longer gates the log (the API deletes it): the open reads the page first.
   for (const [name, setup] of [
     ['the flag is off', () => { flag = false; }],
     ['the API serves no flag', () => { flag = undefined; }],
   ] as const) {
-    test(`v1 when ${name}: no page request, no session log`, async () => {
+    test(`v2 when ${name}: the page is read first, and the project detail is not read`, async () => {
       setup();
       const calls: unknown[] = [];
-      const state = mount({ loader: async (...a: unknown[]) => { calls.push(a); return v1Page(); } });
+      const state = mount({ loader: async (...a: unknown[]) => { calls.push(a.slice(0, 3)); return v1Page(); } });
+      expect(state.dialect).toBe('v2');
       await flush();
-      expect(state.dialect).toBe('v1');
-      expect(calls).toEqual([]);
-      expect(useSyncStore.getState().sessionLogs).toEqual({});
-      expect(joined).toEqual([]);
+      expect(state.dialect).toBe('v2');
+      expect(calls).toEqual([[PROJECT, SESSION, { limit: 40 }]]);
+      expect(detailCalls).toEqual([]);
+      expect(joined.map((j) => j.options.schema)).toEqual(['v2']);
     });
   }
 

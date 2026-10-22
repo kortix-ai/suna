@@ -40,7 +40,7 @@ const SESSION_ID = SESSION_FIXTURE.sessionId;
 const WORKING_TURN_ID = SESSION_FIXTURE.working.userMessageId;
 const PENDING_TURN_IDS = fixturePendingTurnIds();
 const NOOP = () => {};
-const NOOP_ASYNC = async () => {};
+const noopAsync = async () => {};
 const NO_OUTCOME = {};
 
 function ControlButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -110,7 +110,12 @@ export default function SessionFixturePage() {
                         ? 'mt-3'
                         : 'mt-12';
                   return (
-                    <TurnViewport key={id} turnId={id} className={gap}>
+                    <TurnViewport
+                      key={id}
+                      turnId={id}
+                      className={gap}
+                      continues={compaction !== null || turn.continues !== null}
+                    >
                       {suppressed ? null : (
                         <SessionTurn
                           turn={turn}
@@ -130,7 +135,7 @@ export default function SessionFixturePage() {
                           permissions={SESSION_FIXTURE.permissions}
                           questions={SESSION_FIXTURE.questions}
                           agentNames={SESSION_FIXTURE.agentNames}
-                          onPermissionReply={NOOP_ASYNC}
+                          onPermissionReply={noopAsync}
                           onRewind={NOOP}
                           rewindDisabled
                         />

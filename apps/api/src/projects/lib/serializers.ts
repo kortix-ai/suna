@@ -42,6 +42,7 @@ import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './open
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { probeProjectSecret } from '../secrets/envelope';
+import { isDeprecatedProvider } from '../../platform/providers/deprecated';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -74,7 +75,7 @@ export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
  * server at create/branch/trigger time and no client — web, mobile, SDK or the
  * whitelabel demo — ever reads them back off a session (verified 2026-08-26 by
  * an exhaustive read-side sweep of apps/web, apps/mobile, packages/sdk and
- * apps/whitelabel-demo). They are also the heavy ones: on a real 60-session
+ * apps/white-label/lumen). They are also the heavy ones: on a real 60-session
  * project they are 57% of the whole list body (`initial_prompt` alone is 36%),
  * which the sidebar re-fetches several times per session open.
  *
@@ -326,7 +327,9 @@ export function serializeProject(
     // v0.14.0 refuse every `kortix apps` command unless it reads true.
     // `llm_gateway` graduated on 2026-10-20 and stays `true` too: mobile builds
     // and SDKs from before then read false as the removed native model mode.
-    experimental: { ...resolveFeatureFlags(row.metadata), apps: true, llm_gateway: true },
+    // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
+    // and mobile builds read false as "serve the v1 transcript".
+    experimental: { ...resolveFeatureFlags(row.metadata), apps: true, llm_gateway: true, session_log: true },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);
@@ -341,6 +344,7 @@ export function serializeProject(
         ?.default_sandbox_provider;
       if (
         typeof pin !== 'string' ||
+        isDeprecatedProvider(pin) ||
         !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(pin)
       ) {
         return null;
@@ -349,8 +353,8 @@ export function serializeProject(
       const provider = pin as SandboxProviderName;
       return config.isProviderEnabled(provider) ? provider : null;
     })(),
-    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) =>
-      config.isProviderEnabled(p),
+    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter(
+      (p) => config.isProviderEnabled(p) && !isDeprecatedProvider(p),
     ),
     // Per-project default reasoning effort (Settings → General). Re-validated
     // on read so a value written before the validator existed, or written
@@ -600,6 +604,15 @@ export function buildSecretView(input: {
     // grant, because the CLI, the SDK and the web chip all key off that meaning.
     // The grant axis is per-project and lives here.
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
+    agents: strategy === 'denied' ? []
+      : !input.agentGrants ? null
+      : input.agentGrants.agent_discovery === 'opencode' ? (strategy === 'runtime' ? 'all' : [])
+      : input.agentGrants.agent_discovery !== 'declarative' || !input.agentGrants.agents.length ? null
+      : input.agentGrants.agents.filter((agent) => {
+          if (agent.enabled === false) return false;
+          const env = agent.scope?.env;
+          return Array.isArray(env) ? grantAdmits(env, identifier) : strategy === 'runtime';
+        }).map((agent) => agent.name),
     // Always true since the exposure/usage model: one mechanism serves every
     // provider, so there is no deployment where egress-enforced delivery is missing. Kept on
     // the wire because published SDK and CLI versions still read it — an absent

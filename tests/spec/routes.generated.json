@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 876,
+  "count": 885,
   "routes": [
     {
       "method": "GET",
@@ -216,6 +216,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/audit/activity"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/audit/export"
     },
     {
@@ -349,6 +353,14 @@
     {
       "method": "GET",
       "path": "/v1/accounts/:accountId/capture/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/storage"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/capture/storage"
     },
     {
       "method": "GET",
@@ -1185,6 +1197,18 @@
     {
       "method": "POST",
       "path": "/v1/channels/teams/identity/preview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/cli/device/decide"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/cli/device/poll"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/cli/device/start"
     },
     {
       "method": "GET",
@@ -2319,6 +2343,10 @@
       "path": "/v1/projects/:projectId/files/content"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/files/content"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/files/history"
     },
@@ -2944,6 +2972,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/restart"
     },
     {
@@ -3017,6 +3049,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/skills"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/skills/remove"
     },
     {
       "method": "GET",

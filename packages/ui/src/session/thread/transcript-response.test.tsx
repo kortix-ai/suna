@@ -1,6 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
+import { sessionLogOfV1Rows, sessionLogTurns } from '@kortix/sdk';
+
 import { UnifiedMarkdown } from '../../markdown/index';
 
 import { TurnAssistantBlock } from '../index';
@@ -30,7 +32,9 @@ function turn(working: boolean, inline: boolean) {
   const openText = working ? { block: BLOCK, messageId: 'm1' } : null;
   return (
     <TurnAssistantBlock
-      turn={{} as never}
+      turn={sessionLogTurns(sessionLogOfV1Rows('project', 'session', [
+        { info: { id: 'u1', sessionID: 'session', agent: 'build', model: { providerID: 'test', modelID: 'test' }, role: 'user', time: { created: 1 } }, parts: [] },
+      ]).threads[0])[0]}
       model={{ working, openText, hasSteps: false, hasReasoning: false, response: RESPONSE } as never}
       answered={{ shouldUseInlineContent: inline, inlineContentParts: inline ? parts : null, answeredQuestionCalls: [] } as never}
       userContent={{ commandOutput: null } as never}

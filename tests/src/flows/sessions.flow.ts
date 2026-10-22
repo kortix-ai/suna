@@ -1581,7 +1581,7 @@ flow(
 
     await ctx.step('detail reads report the persisted runtime status, including after a restart', async () => {
       const { Client } = await import('pg');
-      const database = new Client({ connectionString: ctx.env.databaseUrl });
+      const database = new Client({ connectionString: ctx.env.databaseUrl ?? undefined });
       await database.connect();
       try {
         await database.query(
@@ -3228,9 +3228,12 @@ flow(
         if (Math.abs(until - Number(rows[0]?.deadline_ms)) > 1) {
           throw new Error(`awake_until ${body.awake_until} is not the stored deadline`);
         }
-        // No turn yet: the cap is 2 h after the computer started, which was just now.
-        const capHours = (capAt - Date.now()) / 3_600_000;
-        if (!(capHours > 1.9 && capHours <= 2.01)) throw new Error(`awake_cap_at ${body.awake_cap_at} is not 2 h after the run start`);
+        // No turn yet (KRTX-2451): the cap is the idle grace after the
+        // computer started, which was just now — the same window the renewal
+        // granted, so the written deadline is the cap.
+        const capMinutes = (capAt - Date.now()) / 60_000;
+        if (!(capMinutes > 10 && capMinutes <= 16)) throw new Error(`awake_cap_at ${body.awake_cap_at} is not the idle window after the run start`);
+        if (Math.abs(capAt - until) > 1) throw new Error(`awake_cap_at ${body.awake_cap_at} is not the deadline ${body.awake_until}`);
       });
 
       await ctx.step('an absent report reads back no awake window; the next present report reads it again', async () => {

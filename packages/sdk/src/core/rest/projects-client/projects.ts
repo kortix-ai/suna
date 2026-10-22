@@ -80,6 +80,7 @@ export type FeatureFlagKey =
   | 'drives'
   /** @deprecated Withdrawn with `stateless_sessions`. The API no longer lists or resolves it. Removed in the next major. */
   | 'ephemeral_sandboxes'
+  /** Not a flag since P8.2 (2026-10-22): the session log is every session's saved history, and the API sends `true` for every project. Absent from {@link FEATURE_FLAG_KEYS}. */
   | 'session_log'
   | 'session_log_restore'
   | 'connectors_v2'
@@ -88,7 +89,7 @@ export type FeatureFlagKey =
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The deprecated keys of {@link FeatureFlagKey}: the API never sends them. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`) sends a constant `true`. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -101,7 +102,8 @@ type GraduatedFeatureFlagKey =
   | 'apps'
   | 'llm_gateway'
   | 'stateless_sessions'
-  | 'ephemeral_sandboxes';
+  | 'ephemeral_sandboxes'
+  | 'session_log';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -127,7 +129,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'notification_center',
   'volumes',
   'drives',
-  'session_log',
   'session_log_restore',
   'connectors_v2',
   'agent_rooms',
@@ -248,6 +249,8 @@ export interface ProjectConfigSummary {
     path: string;
     description: string | null;
     mode: string | null;
+    /** Internal automation remains registered but is not offered by agent pickers. */
+    hidden?: boolean;
     /** The agent's `model:` frontmatter (`provider/model`); absent on older
      *  servers, null when it follows the project default. */
     model?: string | null;
@@ -338,9 +341,12 @@ export interface GatewayCatalogModel {
 
 export interface ProjectLlmCatalogResponse {
   models: Record<string, GatewayCatalogModel>;
-  /** Kortix's platform fee on managed model usage, in percent of the base prices below. */
+  /** Kortix's platform fee on managed model usage, in percent of each model's `cost`. */
   platformFeePercent?: number;
-  /** Base provider USD per million tokens, before `platformFeePercent`. */
+  /**
+   * @deprecated The API no longer sends this. Kortix Platinum inference serves every
+   * managed model at one price, which is the model's `cost`. Removed in the next major.
+   */
   managedPricingRoutes?: Record<string, Array<{
     route: string;
     role: 'preferred' | 'eligible';

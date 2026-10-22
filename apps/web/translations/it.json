@@ -170,7 +170,10 @@
       "deleteMine": "Elimina il mio valore",
       "mineDeleted": "Valore eliminato",
       "mineDeleteError": "Impossibile eliminare il tuo valore. Riprova."
-    }
+    },
+    "agentAccess": "Agenti: {agents}",
+    "allAgents": "Tutti gli agenti",
+    "noAgents": "Nessun agente"
   },
   "useCases": {
     "headline": "I processi che fanno funzionare un'azienda"
@@ -951,12 +954,6 @@
         "kortixDefault": "Predefinito Kortix",
         "definedIn": "Definito in"
       },
-      "routing": {
-        "title": "Instradamento",
-        "automatic": "Automatico",
-        "pinned": "Fissato",
-        "pinnedWithProvider": "Fissato · {provider}"
-      },
       "toasts": {
         "rebuildStarted": "Ricreazione avviata per «{name}»",
         "buildFailed": "Impossibile avviare la creazione",
@@ -974,9 +971,7 @@
         "building": "Creazione in corso",
         "failed": "Non riuscito",
         "notReady": "Non pronto",
-        "unavailable": "Non disponibile",
-        "selected": "Selezionato",
-        "selectedAria": "selezionato"
+        "unavailable": "Non disponibile"
       },
       "defaultBadge": "Predefinito",
       "runtime": "Runtime sessione",
@@ -987,14 +982,6 @@
         "confirm": "Elimina"
       },
       "provider": {
-        "label": "Provider sandbox",
-        "experimental": "Sperimentale",
-        "description": "Fissa questo progetto a un provider sandbox specifico e sostituisce il valore predefinito della piattaforma. Le nuove sessioni usano il provider scelto. «Automatico» segue il valore della piattaforma.",
-        "preparing": "Preparazione di {provider}… potrebbe richiedere alcuni minuti",
-        "fallback": "provider sandbox",
-        "switched": "Passaggio a {provider} completato",
-        "switchFailed": "Passaggio del provider sandbox non riuscito",
-        "updateFailed": "Impossibile aggiornare il provider sandbox",
         "legacy": "Legacy",
         "legacyNote": "Daytona è un provider di fallback legacy. La sua rimozione è pianificata. Le sessioni Daytona esistenti continuano a funzionare per ora, ma Daytona non riceve nuove funzionalità né garanzia di supporto. Usate Platinum."
       },
@@ -1220,10 +1207,6 @@
           "name": "Email AgentMail",
           "description": "Assegna caselle AgentMail affinché le email in arrivo possano avviare e continuare sessioni Kortix."
         },
-        "llm_gateway": {
-          "name": "Gateway LLM",
-          "description": "Instrada il progetto tramite il gateway LLM gestito da Kortix per modelli, misurazione e budget."
-        },
         "meta_agent": {
           "name": "Meta-agente",
           "description": "Aggiungi un coordinatore che gestisce sessioni specializzate e attività in più passaggi nel progetto."
@@ -1276,10 +1259,6 @@
           "name": "Drive",
           "description": "Cartelle condivise sincronizzate con le sessioni: il tuo drive, uno per agente e i drive aziendali che un amministratore collega al progetto. Le nuove sessioni li vedono in /drives."
         },
-        "session_log": {
-          "name": "Log di sessione v2",
-          "description": "Legge una sessione tramite il log di sessione v2 invece della trascrizione v1. Kortix lo attiva per progetto."
-        },
         "session_log_restore": {
           "name": "Ripristino dal log di sessione",
           "description": "Ricostruisce una sessione dal suo log di sessione salvato quando il suo computer ha perso la conversazione. Kortix lo attiva per progetto."
@@ -1287,6 +1266,14 @@
         "connectors_v2": {
           "name": "Connettori v2",
           "description": "Il catalogo di app MCP in Personalizza → Connettori, con accesso gestito da Kortix. Con «Trigger di eventi dell'app» attivo, Kortix controlla queste app per nuove email, file ed elementi e avvia un agente. Aggiunge anche Telegram come canale. I nuovi account dei connettori non sono più condivisi con l'intero progetto per impostazione predefinita."
+        },
+        "agent_rooms": {
+          "name": "Stanze",
+          "description": "Chat room con nome in cui sessioni degli agenti e persone pubblicano messaggi e rispondono nei thread. Una sessione si riattiva quando un messaggio è indirizzato a lei. Aggiunge la pagina Stanze, `kortix rooms` e `kortix peers`."
+        },
+        "goals": {
+          "name": "Obiettivi",
+          "description": "Assegna a un agente un obiettivo di cui resta responsabile finché un controllo indipendente non conferma il risultato. Pianifica, lavora, attende, sollecita le persone e conserva il suo stato in una cartella Goals in File. Richiede Volumi e Promemoria attivi."
         }
       }
     },
@@ -1314,6 +1301,7 @@
     },
     "credits": {
       "loadFailed": "Impossibile caricare questo account.",
+      "resetAt": "I crediti del piano si azzerano il",
       "availableBalance": "Saldo disponibile",
       "creditCount": "{count, plural, one {{formatted} credito} other {{formatted} crediti}}",
       "owed": "dovuti",
@@ -1501,6 +1489,7 @@
   },
   "sidebar": {
     "rooms": "Stanze",
+    "goals": "Obiettivi",
     "referAndEarn": "Invita e Guadagna",
     "referralShareTitle": "Invita Amici",
     "referralShareSubtitle": "Ottieni 400 crediti",
@@ -1589,6 +1578,10 @@
       "showMore": "Mostra altro",
       "brief": {
         "status": "Stato",
+        "subAgent": "Sub-agente",
+        "spawned": "Sessione avviata",
+        "subAgentCount": "{count, plural, one {# sub-agente} other {# sub-agenti}}",
+        "spawnedCount": "{count, plural, one {# sessione avviata} other {# sessioni avviate}}",
         "created": "Creata",
         "source": "Origine",
         "changeRequests": "Richieste di modifica",
@@ -1602,11 +1595,12 @@
         }
       },
       "status": {
-        "needsYou": "Richiede la tua attenzione",
-        "starting": "Avvio in corso",
-        "running": "In esecuzione",
-        "done": "Completata",
-        "stopped": "Interrotta",
+        "needsYou": "Da rivedere",
+        "needsInput": "Serve una risposta",
+        "starting": "Risveglio",
+        "running": "Al lavoro",
+        "done": "Pronta",
+        "stopped": "Inattiva",
         "failed": "Non riuscita",
         "legacy": "Precedente"
       }
@@ -1936,6 +1930,7 @@
     "upgrade": "Effettua l’upgrade",
     "noMatch": {
       "title": "Nessun modello corrispondente",
+      "singleModelDescription": "In questo progetto è disponibile solo 1 modello. La disponibilità dei modelli dipende dal tuo piano e dai provider collegati.",
       "description": "Nessun risultato per “{search}”. Prova con una ricerca diversa.",
       "clear": "Cancella ricerca"
     },
@@ -2196,6 +2191,11 @@
   },
   "billing": {
     "plan": {
+      "members": "Membri",
+      "unlimitedMembers": "Membri illimitati",
+      "loadingMembers": "Caricamento membri…",
+      "membersUnavailable": "Numero di membri non disponibile",
+      "memberCount": "{count, plural, one {# membro} other {# membri}}",
       "cancels": "Termina il {date}",
       "cancelsAtPeriodEnd": "Termina alla fine del periodo",
       "renews": "Si rinnova il {date}",
@@ -3056,7 +3056,7 @@
       "automation_recovered": "Un trigger o un promemoria che falliva torna a funzionare.",
       "capture_device_down": "Un computer Kortix Capture non registra. Inviato a chi gestisce Capture.",
       "capture_device_recovered": "Un computer Kortix Capture che si era fermato registra di nuovo.",
-      "message": "Qualcuno ti scrive in una conversazione o in una stanza a cui ti sei unito."
+      "message": "Qualcuno ti menziona con @, o risponde in un thread in cui hai scritto, in una stanza."
     },
     "bell": {
       "label": "Notifiche",
@@ -5109,7 +5109,14 @@
       "youHaveBeenInvitedToAProject": "Sei stato invitato a un progetto.",
       "joinProjectDescription": "Entrerai in {projectName} come {roleLabel}.",
       "roleManager": "responsabile",
-      "signOutAndContinue": "Esci e continua"
+      "signOutAndContinue": "Esci e continua",
+      "ssoTitle": "Accedi con il single sign-on",
+      "ssoDescription": "La directory della tua organizzazione ti ha aggiunto a questo account. Accedi con il single sign-on della tua organizzazione per unirti. Se non riesci, chiedi a un amministratore dell'account di inviare di nuovo l'invito.",
+      "ssoContinue": "Continua con il single sign-on",
+      "askAdminTitle": "Chiedi a un amministratore di inviarlo di nuovo",
+      "askAdminDescription": "La directory della tua organizzazione ti ha aggiunto a questo account e questa istanza non può confermare il tuo indirizzo email. Chiedi a un amministratore dell'account di inviare di nuovo l'invito, poi riapri questo link.",
+      "ssoDomainUnverified": "Il tuo provider di single sign-on non ha verificato il dominio di questa email. Esci e accedi di nuovo con il tuo indirizzo email per usare questo invito.",
+      "ssoUnavailable": "Il single sign-on non è disponibile al momento. Chiedi a un amministratore dell'account di inviare di nuovo l'invito."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – L'AI Operating System open source",
@@ -10637,7 +10644,7 @@
       "text1458e20a1642": "Facoltativo. Kortix elimina anche il token locale quando disconnetti l'account.",
       "text1459df2e344c": "Si avvia una macchina Linux dall’immagine sandbox dichiarata dal progetto. È una macchina isolata: filesystem, tabella dei processi e rete propri. Nulla viene condiviso con un’altra sessione.",
       "text14683b379324": "Revoca token",
-      "text146b38e7fa80": "Quando il default fallisce",
+      "text146b38e7fa80": "Quando un modello fallisce",
       "text146cd06d5026": "Ambiente:",
       "text146fd497badf": "Email saltata: copia il link di invito per condividerlo manualmente",
       "text147251df4759": "Di solito bastano pochi secondi",
@@ -10900,7 +10907,6 @@
       "text1bffac0197ca": "passa a schermo intero e",
       "text1c01c6630cab": "Icona: {value0}. Cambialo",
       "text1c049715ebdd": "- connettori: warehouse, metabase",
-      "text1c145081eddd": "Passaggio a {provider} completato",
       "text1c1a67e4558f": "I membri potranno accedere usando solo una password. Qualsiasi criterio a cui hai applicato individualmente una condizione sul secondo fattore continuerà a imporla: verrà rimossa solo la regola per l’intero account.",
       "text1c22fac2a9fd": "Condivisa con il progetto",
       "text1c27f2b12cec": "Nella scheda \"Sign On\" dell’app, nella sezione \"Metadata details\", individua il \"Metadata URL\" e fai clic su \"Copy\". Incollalo qui sotto per continuare.",
@@ -11113,7 +11119,6 @@
       "text221ff19c904c": "Pianificazioni",
       "text22206bc67806": "Esci dalla selezione",
       "text222b8d57e366": "Impossibile salvare le sostituzioni",
-      "text22412aa281cb": "provider sandbox",
       "text22489bebb98f": "Account di servizio eliminato",
       "text224a3369a5c9": "Valore:",
       "text224f87a75a67": "oncall-handoff",
@@ -11675,7 +11680,6 @@
       "text32d3603f57c7": "Impossibile aprire l'account",
       "text32d61a2331fe": "Presentazione del prodotto",
       "text32d7e8208247": "Controllo",
-      "text32f14aa9ea33": "Preparazione di {provider}… potrebbe richiedere alcuni minuti",
       "text32f4468b0b6f": "Cerca agenti...",
       "text32f69946e3c3": "Nessun progetto corrisponde ai filtri",
       "text330010f40240": "Non pronto",
@@ -11943,7 +11947,6 @@
       "text3b13192b9d88": "Vuoi scartare le modifiche?",
       "text3b349c99c012": "Come la tua azienda svolge un'attività, scritto una volta sola.",
       "text3b39a1eeb288": "Questa è la funzione in cui \"se ne è occupato l’agente\" è la risposta sbagliata. La prima riga è la posizione del prodotto. Il resto sono i controlli della piattaforma.",
-      "text3b3c31642567": "Provider fissato",
       "text3b4153c0d3c8": "Scegli data e ora",
       "text3b41ba9c7cb8": "Nessun dato",
       "text3b4a27ee118e": "Input SHA-256",
@@ -14738,7 +14741,7 @@
       "text8bb2b50055b6": "Un connettore appartiene al progetto, non a un laptop o a un accesso. Aggiungilo una volta e ogni sessione avviata da quel progetto potrà raggiungerlo, senza una seconda configurazione né chiavi condivise in un messaggio diretto.",
       "text8bbecc2acd82": "Imposta i metadati dell'identity provider",
       "text8bc1d53cc57c": "In",
-      "text8bcac7908eb9": "-----BEGIN RSA PRIVATE KEY-----",
+      "text8bcac7908eb9": "Incolla il contenuto del file .pem",
       "text8bd901c25ba7": "R&S — piattaforma",
       "text8bf73992ff9b": "Non c’è un passaggio di provisioning separato né una console da esplorare. Un comando avvia lo stack. Un altro decide con quale Kortix sta comunicando la tua CLI.",
       "text8bf926d1ef32": "Configura SSO",
@@ -14937,7 +14940,6 @@
       "text9136c4647e36": "Identity Management → \"Test Connection\" → \"Activate\", quindi associa i gruppi utente nella scheda \"User Groups\" — i gruppi associati e i relativi membri vengono inviati automaticamente.",
       "text91399bbb1fbb": "Log di audit del progetto visualizzato",
       "text9145379b9103": "Finestra dell'app SAML personalizzata Google con i campi App name e icon",
-      "text914be6d9bb89": "Impossibile aggiornare il provider sandbox",
       "text914d43beac26": "Rimuovere l'accesso?",
       "text91546e704c9e": "Scheda Sign On con l'URL dei metadati e il pulsante Copy",
       "text91549baf8cfd": "letto una volta, usato in ogni sessione",
@@ -15616,6 +15618,8 @@
       "texta4f264c3ab5f": "Concessione amministrativa",
       "texta4f6c318a669": "Eliminare questa app?",
       "texta4fc39798651": "Richiesta di modifica n. {number}",
+      "textddcd87c21894": "Sostituita da #{number}",
+      "texta8ef31fa7d25": "Vedi #{number}",
       "texta505da26f529": "Impossibile rimuovere l’immagine del profilo",
       "texta514a684676a": "Modifica accesso",
       "texta515cf580dd9": "Autorizzazioni del ruolo IAM aggiornate",
@@ -16010,7 +16014,7 @@
       "textafb32719ca9e": "Segreto client del bot",
       "textafb5023c3c05": "Modifiche applicate",
       "textafb837ec251a": "Okta invia le modifiche non appena avvengono (assegnazioni, aggiornamenti del profilo, invii dei gruppi): un periodo di inattività significa semplicemente che non è cambiato nulla.",
-      "textafb9890f7c72": "Dove va una richiesta quando il default del progetto non può gestirla.",
+      "textafb9890f7c72": "Dove va una richiesta quando il suo modello non può gestirla.",
       "textafc19f1734c1": "Entità",
       "textafc8e3a5d5db": "Raggruppa le richieste in base a ciò che le persone vogliono davvero, non alle parole usate, conta quanti account distinti hanno sollevato ciascun punto e allega le citazioni. Quando qualcuno chiede \"chi l’ha richiesto\", la risposta è nel documento.",
       "textafdc7d79dccb": "Provisioning automatico da OneLogin",
@@ -16255,6 +16259,11 @@
       "textb6bb289a7a2c": "account team organizzazioni cambia gestisci",
       "textb6bcbb175d23": "Normale · 400",
       "textb6c70926c1aa": "Solo amministratori",
+      "textf19611c61ca5": "Accesso completo",
+      "text15589a542412": "{count, plural, =0 {Nessun connettore} one {# connettore} other {# connettori}}",
+      "texte96d99ad9896": "{count, plural, =0 {Nessun segreto} one {# segreto} other {# segreti}}",
+      "text70b8d7e10749": "Tutte le azioni Kortix",
+      "text2d3f4433505a": "{count, plural, =0 {Nessuna azione Kortix} one {# azione Kortix} other {# azioni Kortix}}",
       "textb6cde9030cef": "Crea chiave",
       "textb6d85433a7ee": "Impossibile caricare le sessioni",
       "textb6daf93376cc": "Caricamento di finance.weekly",
@@ -16718,7 +16727,7 @@
       "textc3d2e79ebdd0": "Connettori",
       "textc3e3a6edeaa5": "Termini e condizioni",
       "textc3e58a73609d": "Distruttivo",
-      "textc3ecd3cd791b": "Provati in ordine dopo il default del progetto.",
+      "textc3ecd3cd791b": "Provati in ordine dopo il modello richiesto.",
       "textc3f282c05f3f": "criteri approvazione blocca require_approval regole strumenti connettore protezioni",
       "textc3f348ffaf7a": "Associa al progetto",
       "textc3f7bdf537c4": "rich.",
@@ -17300,7 +17309,6 @@
       "textd45336ed23b4": "Non abbiamo raggiunto il runtime per verificare se è in esecuzione un turno. Il ricaricamento lo riavvia e, se un turno è in corso, andrà perso.",
       "textd45f25a6299a": "I membri devono confermare un secondo fattore prima di qualsiasi azione protetta. I super-admin e le chiavi API sono esenti.",
       "textd460f97920a4": "Un'unica credenziale condivisa utilizzata da tutti i membri di questo progetto: l'agente e i tuoi trigger verranno eseguiti con questa credenziale.",
-      "textd461a493a375": "Automatico",
       "textd465f57b1d0d": "registry · push",
       "textd4673300c1d2": "Le notifiche funzionano correttamente!",
       "textd46958e8ca77": "Suggerimento Entra:",
@@ -18111,7 +18119,6 @@
       "texte9b7cf835375": "Con le tue parole",
       "texte9bef0b0f3c2": "Scorciatoie da tastiera",
       "texte9c29ff50cc7": "Modalità",
-      "texte9ca8360a34d": "Passaggio del provider sandbox non riuscito",
       "texte9cff3023aa2": "Easy connect copre oltre 3.000 app tramite le rispettive schermate OAuth. Se il tuo feedback vive in un luogo non presente nel catalogo — un forum della community, un portale interno — puoi raggiungerlo tramite OpenAPI, GraphQL, HTTP puro o un server MCP remoto.",
       "texte9d6212ef873": "Configurazione in corso...",
       "texte9e3243084ee": "Un agente da te nominato",
@@ -20304,7 +20311,18 @@
       "text08f3c151d323": "Richiedi condizioni personalizzate",
       "texta0990a4a86dc": "White-label: il tuo prodotto di IA sul calcolo di Platinum.dev",
       "text6189ab6313de": "Fai il fork di Kortix, applica il tuo marchio e vendilo come tuo prodotto. La licenza è gratuita. Unico requisito: il tuo calcolo gira su Platinum.dev.",
-      "text7971dd752669": "Promemoria"
+      "text7971dd752669": "Promemoria",
+      "text724b09397472": "Aggiunta di {name} a {project}",
+      "text1e007c47254d": "La configurazione avviene in background. Riceverai una notifica al termine.",
+      "text57f57edb6f16": "La richiesta di modifica #{number} è pronta per la revisione.",
+      "texta8597db6f24b": "Rimuovi competenza",
+      "text5f6ba69d66d1": "Competenza rimossa",
+      "textcb8d6b0c94c9": " e tutti i suoi file, modifiche incluse, e rimuove la competenza da ogni agente che la usa. Un commit sul branch predefinito.",
+      "cliDeviceTitle": "Autorizza Kortix CLI",
+      "cliDeviceWarning": "Approva solo un accesso avviato da te. Digita il codice mostrato dal terminale.",
+      "cliDeviceCode": "Codice di accesso",
+      "cliDeviceApproved": "Accesso approvato. Torna al terminale.",
+      "cliDeviceAction": "Autorizza CLI"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20360,7 +20378,84 @@
       "sessionExpired": "La sessione è scaduta. Accedi di nuovo e riapri l’anteprima."
     },
     "approvalPage": {
-      "title": "Approva un’azione di {connector}"
+      "title": "Approva un’azione di {connector}",
+      "expires": "Scade",
+      "expiresIn": "Scade tra {time}",
+      "expiredHint": "Questa approvazione è scaduta. Chiedi all’agente di richiederla di nuovo.",
+      "anAgent": "Un agente",
+      "anAgentLower": "un agente",
+      "wantsEmail": "{agent} vuole inviare un’email a {recipient}",
+      "wantsEmailOthers": "{agent} vuole inviare un’email a {recipient} e {count, plural, one {# altra persona} other {# altre persone}}",
+      "wantsMerge": "{agent} vuole unire la PR #{number} in {base}",
+      "wantsMergePr": "{agent} vuole unire la PR #{number}",
+      "wantsIssue": "{agent} vuole creare {article, select, other {un}} issue con priorità {priority} per {team}",
+      "wantsCreateIssue": "{agent} vuole creare un issue",
+      "wantsAction": "{agent} vuole: {action}",
+      "wantsCall": "{agent} vuole eseguire {action}",
+      "leftMinutes": "{minutes} min rimasti",
+      "leftHoursMinutes": "{hours} h {minutes} min rimasti",
+      "leftHours": "{hours} h rimaste",
+      "leftDays": "{days} g rimasti",
+      "riskDestructive": "Distruttiva · non annullabile da Kortix",
+      "riskWrite": "Accesso in scrittura · {action}",
+      "riskRead": "Accesso in lettura",
+      "askedBy": "Richiesto da {agent}",
+      "askedByIn": "Richiesto da {agent} in <session>{title}</session>",
+      "expiresAt": "scade {when}",
+      "today": "Oggi {time}",
+      "tomorrow": "Domani {time}",
+      "thisSession": "una sessione",
+      "notePlaceholder": "Aggiungi una nota per {agent} (facoltativa)",
+      "notePlaceholderAgent": "Aggiungi una nota per l’agente (facoltativa)",
+      "approve": "Approva",
+      "approveSend": "Approva e invia",
+      "approveMerge": "Approva e unisci",
+      "approveCreate": "Approva e crea",
+      "pullRequest": "Pull request #{number}",
+      "mergeMethod": "{method, select, squash {Squash and merge} rebase {Rebase and merge} merge {Crea un merge commit} other {{method} e unisci}}",
+      "newIssue": "Nuovo issue",
+      "priority1": "Urgente",
+      "priority2": "Alta",
+      "priority3": "Media",
+      "priority4": "Bassa",
+      "canOnlyBeDenied": "Può solo essere rifiutata",
+      "prFiles": "{count, plural, one {# file} other {# file}}",
+      "prCommits": "{count, plural, one {# commit} other {# commit}}",
+      "prCommitsBy": "{count, plural, one {# commit} other {# commit}} di {author}",
+      "prDraft": "Pull request in bozza"
+    },
+    "reviewBulk": {
+      "approve": "Approva",
+      "deny": "Nega",
+      "dismiss": "Ignora",
+      "selectRow": "Seleziona {title}",
+      "limitNote": "Fino a {count} alla volta",
+      "approving": "Approvazione di {count}…",
+      "denying": "Rifiuto di {count}…",
+      "dismissing": "{count} da ignorare…",
+      "approveTitle": "Approvare {count, plural, one {# azione} other {# azioni}}?",
+      "approveDescription": "Controlla i dettagli di ogni azione prima di approvare.",
+      "approveConfirm": "Approva {count}",
+      "denyTitle": "Negare {count, plural, one {# azione} other {# azioni}}?",
+      "denyDescription": "Gli agenti non eseguono queste azioni.",
+      "denyConfirm": "Nega {count}",
+      "dismissTitle": "Ignorare {count, plural, one {# elemento} other {# elementi}}?",
+      "dismissDescription": "Passano in Completati.",
+      "dismissConfirm": "Ignora {count}",
+      "riskNone": "Nessun rischio",
+      "riskLow": "Rischio basso",
+      "riskMedium": "Rischio medio",
+      "riskHigh": "Rischio alto",
+      "approved": "{count} approvate",
+      "denied": "{count} negate",
+      "dismissed": "{count} ignorati",
+      "skipped": "{count} saltati ({reasons})",
+      "reasonExpired": "scaduta",
+      "reasonAlreadyResolved": "già decisa",
+      "reasonPreviewUnavailable": "contenuto non disponibile",
+      "reasonForbidden": "non consentito",
+      "reasonNotFound": "non trovato",
+      "reasonNotBulkActionable": "da decidere singolarmente"
     },
     "approvalWaiting": {
       "byManager": "In attesa che chi gestisce questo progetto approvi o rifiuti la chiamata.",
@@ -20377,7 +20472,21 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Consegna: connector — solo lato server. Il valore non entra mai nell’ambiente sandbox.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "L’ambito di consegna non è disponibile. Chiedi all’agente di confermare dove verrà usato questo valore prima di salvarlo.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "Crittografato a riposo. La consegna segue l’ambito mostrato sopra.",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Inserisci il valore richiesto qui sotto. Controlla il suo ambito di consegna prima di salvarlo. Il valore è crittografato a riposo."
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "Inserisci il valore richiesto qui sotto. Controlla il suo ambito di consegna prima di salvarlo. Il valore è crittografato a riposo.",
+    "approvalParameters": {
+      "to": "A",
+      "cc": "Cc",
+      "bcc": "Ccn",
+      "subject": "Oggetto",
+      "from": "Da",
+      "none": "Nessuno",
+      "attachments": "Allegati",
+      "idsOnlyHint": "Questa chiamata non mostra contenuti da verificare. Qualsiasi descrizione dell’agente non è verificata.",
+      "resolvedUnavailable": "Impossibile caricare la bozza. Controlla con attenzione la descrizione dell’agente.",
+      "aboutDescription": "Informazioni su questa descrizione",
+      "senderUnavailable": "Impossibile caricare l'account di invio. Controlla la riga Da.",
+      "quoted": "«{text}»"
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "Reimpostazione dell'onboarding",
@@ -20506,7 +20615,7 @@
     "metaKey": "Chiave API",
     "metaSignIn": "Accedi",
     "metaSignInOrKey": "Accesso o chiave API",
-    "metaIncluded": "Pagato con i crediti",
+    "metaIncluded": "Pagato con i crediti · Platinum Inference",
     "apiKey": "Chiave API",
     "savedKey": "Chiave salvata",
     "replace": "Sostituisci",
@@ -20574,14 +20683,7 @@
   },
   "modelsList": {
     "onCount": "{on} di {total} attivi",
-    "perMillion": "{model} · per 1 M",
-    "estimate": "stima",
-    "route": "Percorso",
-    "input": "Input",
-    "cached": "Cache",
-    "output": "Output",
     "context": "{value} di contesto",
-    "fromPrice": "da {input} / {output} per 1 M",
     "price": "{input} / {output} per 1 M",
     "hiddenLine": "Non nel selettore modelli · le richieste dirette funzionano ancora",
     "blockedLine": "Le richieste a questo modello sono bloccate",
@@ -20660,17 +20762,12 @@
     "credentialsHint": "Disattiva l’inferenza senza rimuovere le credenziali.",
     "providerError": "Impossibile aggiornare l’accesso al fornitore.",
     "managedTitle": "Modelli gestiti da Kortix",
-    "managedDescription": "Prezzo base del provider più una commissione di piattaforma del {fee}%, pagati con i crediti. Non serve una chiave API.",
+    "managedDescription": "Modelli di Platinum Inference, al suo prezzo più una commissione di piattaforma del {fee}%, pagati con i crediti. Non serve una chiave API.",
     "managedUpgradeHint": "Effettua l'upgrade per usare i modelli gestiti di Kortix oppure connetti un provider tuo.",
-    "pricingEstimate": "Prezzo base del provider, prima della commissione di piattaforma. La rotta utilizzata determina il costo.",
-    "pricingRoute": "{route}: {input} input / {cacheRead} cache / {output} output per 1 milione di token",
-    "pricingPreferred": "Preferita",
     "textImage": "Testo + immagine",
     "textOnly": "Solo testo",
     "zdrTitle": "Conservazione zero dei dati",
     "zdrDescription": "La conservazione zero dei dati (ZDR) significa che il fornitore elabora testi e immagini, ma non conserva input o risposte dopo la richiesta. Kortix archivia separatamente progetti e conversazioni.",
-    "usProvidersTitle": "Ospitato negli USA",
-    "usProvidersDescription": "I modelli Kortix girano in data center negli USA. Collaboriamo solo con fornitori di inferenza americani.",
     "hiddenHint": "Nascosto nel selettore. Le richieste dirette sono ancora consentite; disattivale dal menu del modello.",
     "hidden": "Nascosto nel selettore",
     "disableModel": "Disattiva modello",
@@ -21046,6 +21143,24 @@
     "chipLabel": "{count, plural, one {# promemoria attivo} other {# promemoria attivi}}",
     "chipTitle": "Promemoria di questa sessione",
     "manage": "Gestisci promemoria",
+    "openInReminders": "Apri in Promemoria",
+    "nextRun": "Prossima esecuzione {time}",
+    "repeats": "Ripetizione",
+    "timeZone": "Fuso orario",
+    "lastRun": "Ultima esecuzione",
+    "lastRunFailed": "Ultima esecuzione non riuscita",
+    "runQueued": "Promemoria inviato alla sessione",
+    "runFailed": "Impossibile eseguire il promemoria",
+    "neverRun": "Non ancora eseguito",
+    "searchPlaceholder": "Cerca promemoria",
+    "statusAll": "Tutti",
+    "timeFilterLabel": "Prossima esecuzione",
+    "timeAny": "In qualsiasi momento",
+    "timeHour": "Prossima ora",
+    "timeDay": "Prossime 24 ore",
+    "timeWeek": "Prossimi 7 giorni",
+    "timeLater": "Più avanti",
+    "noMatch": "Nessun promemoria corrispondente",
     "cardLabel": "Promemoria",
     "cardOneTime": "Una volta",
     "cardRecurring": "Ricorrente",
@@ -21550,7 +21665,10 @@
       "dictationDescription": "Detta un prompt invece di scriverlo."
     },
     "appStore": "App Store",
-    "googlePlay": "Google Play"
+    "googlePlay": "Google Play",
+    "scanTitle": "Scansiona per scaricare l'app",
+    "scanDescription": "Inquadra il codice con la fotocamera del telefono. Apre l'App Store o Google Play.",
+    "qrLabel": "Codice QR dell'app mobile Kortix"
   },
   "capture": {
     "authorize": {
@@ -21875,6 +21993,41 @@
         "exceptTitle": "Non registrare mai, anche se inclusi",
         "memberInclusions": "Le persone possono includere app e siti web propri",
         "memberInclusionsHint": "Disattivo: i computer registrano solo le app e i siti web elencati qui. Le persone possono comunque aggiungere app e siti web da saltare."
+      },
+      "localHours": "On the computer",
+      "localHoursHint": "Per quanto tempo ogni computer conserva le copie locali prima di eliminarle. Con 0 non conserva nulla in locale.",
+      "hours": "hours",
+      "storage": {
+        "title": "Archiviazione",
+        "hint": "Dove questo account conserva le registrazioni. Il cambio non sposta le registrazioni già salvate: restano dove sono.",
+        "kortix": "Gestito da Kortix",
+        "kortixHint": "Kortix conserva e indicizza le registrazioni. Nessuna configurazione richiesta.",
+        "s3": "Il tuo bucket S3",
+        "s3Hint": "Kortix legge, indicizza e firma le registrazioni in un bucket di tua proprietà.",
+        "endpoint": "Endpoint",
+        "endpointHint": "Lascia vuoto per AWS. Per MinIO o un altro storage compatibile con S3, l'URL completo.",
+        "region": "Regione",
+        "bucket": "Bucket",
+        "pathStyle": "URL in stile percorso",
+        "pathStyleHint": "Attivo per MinIO e la maggior parte degli storage self-hosted; disattivo per AWS.",
+        "credsTitle": "Accesso",
+        "credsHint": "Fornisci un solo tipo di credenziale: un ruolo IAM che Kortix assume oppure una coppia di chiavi di accesso statiche.",
+        "credRole": "Ruolo IAM (STS)",
+        "credKeys": "Chiave di accesso",
+        "roleArn": "ARN del ruolo",
+        "roleArnHint": "Kortix assume questo ruolo. Consigliato: ogni computer riceve credenziali limitate alla propria cartella.",
+        "accessKeyId": "ID chiave di accesso",
+        "secretAccessKey": "Chiave di accesso segreta",
+        "secretSet": "È salvato un segreto. Inseriscine uno nuovo per sostituirlo oppure lascia vuoto per mantenerlo.",
+        "staticWarning": "Le chiavi statiche non si possono limitare per computer: ogni computer ottiene accesso al bucket a livello di account. Preferisci un ruolo.",
+        "indexingNote": "Kortix legge il bucket per indicizzare e cercare le registrazioni. La crittografia lato client non è compatibile con l'indicizzazione: scegline una.",
+        "save": "Salva archiviazione",
+        "saved": "Archiviazione aggiornata",
+        "probeFailed": "Impossibile scrivere nel bucket: {error}",
+        "saveFailed": "Impossibile salvare la configurazione di archiviazione",
+        "currentManaged": "Le registrazioni sono conservate nello storage gestito da Kortix.",
+        "currentOwn": "Le registrazioni sono conservate nel tuo bucket {bucket}.",
+        "loadFailed": "Impossibile caricare la configurazione di archiviazione"
       }
     },
     "area": {
@@ -22155,5 +22308,91 @@
     "join": "Entra",
     "openRoom": "Apri",
     "gateDescription": "Attiva le Stanze per permettere alle sessioni degli agenti e alle persone di questo progetto di parlare in chat room con nome."
+  },
+  "goals": {
+    "title": "Obiettivi",
+    "gateDescription": "Gli agenti seguono un obiettivo finché non è raggiunto in modo verificabile: l'obiettivo vive in File, un battito giornaliero lo risveglia, l'agente sollecita le persone per ciò che gli serve e un controllo indipendente lo chiude.",
+    "empty": "Ancora nessun obiettivo",
+    "emptyHint": "Avviane uno in una sessione: descrivi il risultato, ad esempio \"assicurati che il nostro vecchio conto bancario sia chiuso\". L'agente crea l'obiettivo e compare qui.",
+    "loadError": "Impossibile caricare gli obiettivi. Riprova.",
+    "retry": "Riprova",
+    "needsYou": "Richiede te",
+    "open": "Aperti",
+    "closed": "Chiusi",
+    "waitingFor": "In attesa di: {title}",
+    "criteria": "{met}/{total} criteri",
+    "nextWake": "Prossimo risveglio {time}",
+    "noWake": "Nessun risveglio pianificato",
+    "heartbeat": "Battito",
+    "heartbeatPaused": "In pausa",
+    "lastWakeLabel": "Ultimo risveglio",
+    "progress": "Avanzamento",
+    "scope": {
+      "company": "Azienda",
+      "personal": "Solo tu"
+    },
+    "status": {
+      "draft": "Bozza",
+      "active": "Attivo",
+      "waiting_on_user": "Attende te",
+      "waiting_external": "In attesa",
+      "verifying": "In verifica",
+      "done": "Completato",
+      "abandoned": "Abbandonato"
+    },
+    "health": {
+      "healthy": "In esecuzione",
+      "attention": "Richiede attenzione",
+      "closed": "Chiuso"
+    },
+    "issue": {
+      "no_heartbeat": "Niente risveglierà questo obiettivo: manca il promemoria del battito.",
+      "heartbeat_paused": "Il promemoria del battito è in pausa.",
+      "heartbeat_failed": "L'ultimo risveglio non è riuscito: {error}",
+      "missed_wake": "L'ultimo risveglio è in ritardo.",
+      "ask_overdue": "Una richiesta è scaduta.",
+      "verification_stalled": "La verifica è iniziata più di 24 ore fa.",
+      "unreadable": "goal.json manca o non è un JSON valido."
+    },
+    "sessionChip": "Obiettivo",
+    "sessionRole": {
+      "coordinator": "Questa sessione guida questo obiettivo.",
+      "worker": "Questa sessione lavora a questo obiettivo.",
+      "verifier": "Questa sessione verifica questo obiettivo."
+    },
+    "openGoal": "Apri obiettivo",
+    "openSession": "Apri sessione principale",
+    "openFolder": "Apri cartella",
+    "back": "Tutti gli obiettivi",
+    "healthTitle": "Stato",
+    "successCriteria": "Criteri di successo",
+    "met": "Soddisfatto",
+    "notMet": "Non soddisfatto",
+    "items": "Elementi",
+    "noItems": "Ancora nessun elemento.",
+    "noCriteria": "Ancora nessun criterio: l'agente li scrive prima che l'obiettivo diventi attivo.",
+    "kind": {
+      "task": "Attività",
+      "ask": "Richiesta",
+      "wait": "Attesa"
+    },
+    "itemStatus": {
+      "open": "aperto",
+      "doing": "in corso",
+      "done": "fatto",
+      "dropped": "scartato"
+    },
+    "due": "Scadenza {time}",
+    "sessions": "Sessioni",
+    "role": {
+      "coordinator": "Sessione principale",
+      "worker": "Esecutore",
+      "verifier": "Verificatore"
+    },
+    "timeline": "Cronologia",
+    "verification": "Verifica",
+    "notes": "Note",
+    "log": "Registro",
+    "notFound": "Questo obiettivo non esiste più."
   }
 }

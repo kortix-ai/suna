@@ -42,10 +42,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUiRouter, useUiViewerId } from '../../../providers/ui-provider';
 import { SettingsTabHeader } from '../settings-tab-header';
 
-/** Asked for in ONE batched probe. `project.delete` and `project.write` are
+/** Asked for in ONE batched probe. `project.delete` and `project.settings.write` are
  *  separate permissions — see `ProjectSettingsGeneralProps.canDelete`. */
 const GENERAL_TAB_ACTIONS = [
-  PROJECT_ACTIONS.PROJECT_WRITE,
   PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
   PROJECT_ACTIONS.PROJECT_DELETE,
 ] as const;
@@ -107,7 +106,7 @@ export interface GeneralTabViewProps {
    *  `useQuery`/mutations, so it can't render under `renderToStaticMarkup`
    *  with no providers. */
   /** Whether the Delete-workspace section shows at all — gated on
-   *  `project.delete`, NOT the broader `project.write` gate
+   *  `project.delete`, NOT the broader `project.settings.write` gate
    *  `generalFieldsSlot`'s fields use. Deleting and editing are separate
    *  permissions, so a custom role can grant one without the other. */
   canDelete?: boolean;
@@ -495,13 +494,13 @@ export function GeneralTab({ projectId }: { projectId: string }) {
 
   const project = projectQuery.data;
   // Two DIFFERENT permissions, asked for separately. `project.delete` gates the
-  // Delete-workspace section; `project.write` gates the fields. Reading a
+  // Delete-workspace section; `project.settings.write` gates the fields. Reading a
   // `manager` role label instead would have hidden Delete from a custom role
   // that holds `project.delete`, and shown it to one that does not.
   const caps = useProjectCans(projectId, GENERAL_TAB_ACTIONS);
   const canDelete = caps[PROJECT_ACTIONS.PROJECT_DELETE]?.allowed === true;
-  const canEdit = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
-  const canEditEffort = caps[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]?.allowed === true;
+  const canEdit = caps[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]?.allowed === true;
+  const canEditEffort = canEdit;
 
   const archiveMutation = useMutation({
     mutationFn: () =>

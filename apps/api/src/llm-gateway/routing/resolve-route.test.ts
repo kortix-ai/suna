@@ -90,7 +90,7 @@ describe('gateway control-plane route resolver', () => {
     expect(explicit.primaryModel).toBe('explicit-text-model');
   });
 
-  test('project exact rules override the project default chain and unmatched explicit models stay direct', async () => {
+  test('project exact rules override the project chain, and the chain covers every other model', async () => {
     const projectResolver = createGatewayRouteResolver({
       defaultModel: 'platform-default',
       visionModel: 'platform-vision',
@@ -137,17 +137,68 @@ describe('gateway control-plane route resolver', () => {
       generationDefaultsForModel: expect.any(Function),
     });
 
+    // Incident 2026-10-02: a model that was not the principal's default routed
+    // `direct`, so a trigger on an agent with its own default got the provider's
+    // usage-limit 429 while the project had a chain. The chain is a catch-all.
     expect(await projectResolver({ ...principal, projectId: 'p1' }, {
       requestedModel: 'unmatched-primary',
       requires: { imageInput: false },
     })).toEqual({
-      policyId: 'direct',
+      policyId: 'project:default',
       primaryModel: 'unmatched-primary',
-      fallbackModels: [],
-      fallbackOn: 'transient',
+      fallbackModels: ['project-fallback'],
+      fallbackOn: 'any-error',
       generationDefaults: undefined,
       generationDefaultsForModel: expect.any(Function),
     });
+  });
+
+  test('a session on an agent with its own default takes the project chain for any model', async () => {
+    const projectResolver = createGatewayRouteResolver({
+      defaultModel: 'platform-default',
+      visionModel: undefined,
+      policies: [{ id: 'platform', models: ['platform-default'], fallbackModels: ['platform-fallback'], fallbackOn: 'transient' }],
+      supportsImage: () => true,
+      getProjectPolicy: async () => ({
+        visionModel: null,
+        defaultFallback: { models: ['project-fallback'], fallbackOn: 'any-error' },
+        rules: [],
+      }),
+    });
+    const session = { ...principal, projectId: 'p1', sessionId: 's1', defaultModel: 'agent-default' };
+    for (const requestedModel of ['project-default', 'agent-default', 'platform-default', 'hand-picked']) {
+      expect(await projectResolver(session, { requestedModel, requires: { imageInput: false } })).toMatchObject({
+        policyId: 'project:default',
+        primaryModel: requestedModel,
+        fallbackModels: ['project-fallback'],
+        fallbackOn: 'any-error',
+      });
+    }
+    // A principal default dropped at authentication (every account paused)
+    // changes nothing: the chain does not depend on it.
+    const { defaultModel: _dropped, ...paused } = session;
+    expect(await projectResolver(paused, { requestedModel: 'project-default', requires: { imageInput: false } }))
+      .toMatchObject({ policyId: 'project:default', fallbackModels: ['project-fallback'] });
+  });
+
+  test('"No fallback" covers every model, and a project with no chain keeps the platform route', async () => {
+    let defaultFallback: { models: string[]; fallbackOn: 'any-error' } | null = { models: [], fallbackOn: 'any-error' };
+    const projectResolver = createGatewayRouteResolver({
+      defaultModel: 'platform-default',
+      visionModel: undefined,
+      policies: [{ id: 'platform', models: ['platform-default'], fallbackModels: ['platform-fallback'], fallbackOn: 'transient' }],
+      supportsImage: () => true,
+      getProjectPolicy: async () => ({ visionModel: null, defaultFallback, rules: [] }),
+    });
+    const route = (requestedModel: string) =>
+      projectResolver({ ...principal, projectId: 'p1', defaultModel: 'agent-default' }, { requestedModel, requires: { imageInput: false } });
+
+    expect(await route('platform-default')).toMatchObject({ policyId: 'project:default', fallbackModels: [] });
+    expect(await route('hand-picked')).toMatchObject({ policyId: 'project:default', fallbackModels: [] });
+
+    defaultFallback = null;
+    expect(await route('platform-default')).toMatchObject({ policyId: 'platform', fallbackModels: ['platform-fallback'] });
+    expect(await route('hand-picked')).toMatchObject({ policyId: 'direct', fallbackModels: [] });
   });
 
   test('the concrete default uses project fallback and vision policies', async () => {
@@ -301,5 +352,25 @@ describe('gateway control-plane route resolver — generation-defaults clamping'
     // A model with no configured entry at all → undefined, not a leak of
     // some other model's defaults.
     expect(route.generationDefaultsForModel?.('unconfigured-model')).toBeUndefined();
+  });
+
+  test('an unresolved principal default is read only when the route depends on it', async () => {
+    let reads = 0;
+    const lazy = createGatewayRouteResolver({
+      defaultModel: 'model-default', visionModel: 'model-vision', policies: [],
+      supportsImage: (model) => model === 'model-vision',
+      resolveDefaultModel: async () => { reads += 1; return 'account-model'; },
+    });
+    // A text request: the default changes nothing, so it is not read.
+    expect((await lazy(principal, { requestedModel: 'account-model', requires: { imageInput: false } })).primaryModel)
+      .toBe('account-model');
+    expect(reads).toBe(0);
+    // An image request: the default decides the reroute, so it is read, as eager resolution would.
+    expect((await lazy(principal, { requestedModel: 'account-model', requires: { imageInput: true } })).primaryModel)
+      .toBe('model-vision');
+    expect(reads).toBe(1);
+    // A principal that carries its default is never re-read.
+    await lazy({ ...principal, defaultModel: 'account-model' }, { requestedModel: 'x', requires: { imageInput: true } });
+    expect(reads).toBe(1);
   });
 });

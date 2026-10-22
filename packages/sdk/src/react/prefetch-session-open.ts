@@ -34,8 +34,9 @@ export function resetSessionOpenPrefetches(): void {
  * Start a session's open read before the session view mounts: on intent to
  * open it (hover, focus, touch on a link), or as soon as a route names it.
  *
- * It issues the session-open snapshot (`GET .../snapshot`: the session row,
- * `/turn`, `/prompts` and the first transcript window in one request) and
+ * It issues the session-open snapshot (`GET .../snapshot?transcript=0`: the
+ * session row, `/turn` and `/prompts` in one request; no v1 transcript window,
+ * because the open reads the session log first) and
  * seeds the session row cache from it. `useSession` and the hooks under it
  * claim that in-flight read instead of issuing their own, so nothing waits for
  * a mount to start the one request the first paint depends on.

@@ -1,0 +1,279 @@
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
+import nextTypescript from 'eslint-config-next/typescript';
+import navContract from './no-router-push-for-static-href.mjs';
+export const sharedConfig = [
+  ...nextCoreWebVitals,
+  ...nextTypescript,
+  {
+    plugins: { 'nav-contract': navContract },
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+      'react/no-unescaped-entities': 'off',
+      'react-hooks/exhaustive-deps': 'warn',
+      '@next/next/no-img-element': 'warn',
+      // Nav contract. Both rules exist for one reason: a click that leaves the
+      // App Router — or that runs a cold RSC fetch — can become a full page
+      // reload. See eslint-rules/no-router-push-for-static-href.mjs for the
+      // four Next 16.3 triggers. Errors, not warnings: as warnings they sat
+      // buried under ~400 react-hooks messages and nobody ever saw them.
+      '@next/next/no-location-assign-relative-destination': 'error',
+      'nav-contract/no-router-push-for-static-href': 'error',
+      '@typescript-eslint/no-empty-object-type': 'off',
+      'prefer-const': 'warn',
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                'lucide-react',
+                'lucide-react/*',
+                'react-icons',
+                'react-icons/*',
+                '@mynaui/icons-react',
+                '@mynaui/icons-react/*',
+                '@icons-pack/react-simple-icons',
+                '@icons-pack/react-simple-icons/*',
+                '@hugeicons/react',
+                '@hugeicons/react/*',
+                '@hugeicons/core-free-icons',
+                '@hugeicons/core-free-icons/*',
+              ],
+              message:
+                'Icons come from @phosphor-icons/react. Global weight: packages/ui/src/lib/icon-config.ts.',
+            },
+            {
+              group: ['@phosphor-icons/react/dist/ssr', '@phosphor-icons/react/ssr'],
+              message:
+                "Server components import icons from '@/lib/icons/ssr' — those carry the app-wide weight. Phosphor's raw SSR entry silently defaults to 'regular'.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    /* eslint-plugin-react-hooks@7 (pulled in by eslint-config-next@16's
+       dependency bump) ships the "React Compiler" rule set enabled by
+       default. As of 2026-08-04 that flags 402 pre-existing findings
+       across 175 files in this codebase — none introduced by the Next 16
+       upgrade. Downgraded to warnings here pending a dedicated audit; this
+       is NOT a decision to accept them permanently. Breakdown at the time
+       of downgrade:
+       react-hooks/set-state-in-effect (211), react-hooks/refs (120),
+       react-hooks/preserve-manual-memoization (21), react-hooks/purity (16),
+       react-hooks/static-components (11), react-hooks/immutability (10),
+       react-hooks/set-state-in-render (10), react-hooks/use-memo (2). */
+    rules: {
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
+      'react-hooks/purity': 'warn',
+      'react-hooks/static-components': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/set-state-in-render': 'warn',
+      'react-hooks/use-memo': 'warn',
+    },
+  },
+];
+export const sdkBoundaryConfig = {
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '*opencode*',
+                '**/opencode*',
+                '**/*opencode*',
+                '@opencode-ai/sdk',
+                '@opencode-ai/sdk/*',
+              ],
+              message: 'apps/web imports must use runtime-neutral @kortix/sdk surfaces.',
+            },
+            {
+              // Allowlist, not denylist: everything under `@kortix/sdk/` is
+              // forbidden except the canonical entry points. The SDK keeps ~20
+              // @deprecated subpath aliases alive for external consumers; none
+              // of them are for us. This replaced a denylist of 13 named
+              // subpaths, which had grown exactly the hole a denylist always
+              // grows — `@kortix/sdk/idb-sync-cache` was never added to it.
+              //
+              // These patterns use gitignore semantics, so `@kortix/sdk/*`
+              // also excludes the `internal/` DIRECTORY, and gitignore cannot
+              // re-include a path under an excluded directory. There is
+              // therefore no pattern that allows `@kortix/sdk/internal/
+              // idb-sync-cache` while banning its four zustand neighbours.
+              // The deliberate exceptions carry an inline disable instead,
+              // where it is visible in review: `idb-sync-cache` in
+              // `lib/device-caches.ts` and `lib/utils/reset-client-state.ts`,
+              // `diagnostics-store` in `packages/ui/src/internal/stores/diagnostics-store.ts`,
+              // `managed-storage` in `packages/ui/src/internal/lib/storage/managed-storage.ts`,
+              // `genui/fence` in `packages/ui/src/markdown/code/genui-fence.ts`,
+              // `genui/react` in `packages/ui/src/markdown/genui/sdk.ts`, `genui` in
+              // `packages/ui/src/markdown/genui/components/charts.tsx` and
+              // `packages/ui/src/markdown/genui/components/map.tsx`. Mirrors CANONICAL_SDK_ENTRIES
+              // in scripts/sdk-boundary.mjs — keep the two in sync.
+              // `packages/ui/src/markdown/genui/to-markdown.ts` reaches the `genui` barrel
+              // through a dynamic `import()`, which this rule does not inspect.
+              group: ['@kortix/sdk/*', '!@kortix/sdk/react', '!@kortix/sdk/server', '!@kortix/sdk/workspace-search'],
+              message: 'Use the canonical @kortix/sdk or @kortix/sdk/react entry point.',
+            },
+            {
+              group: [
+                '@/hooks/opencode/*',
+                '@/lib/opencode-sdk',
+                '@/stores/server-store',
+                '@/stores/opencode-*',
+                '@/stores/pending-queue-store',
+                '@/stores/pending-files-store',
+              ],
+              message: 'Runtime behavior belongs in @kortix/sdk, not apps/web.',
+            },
+            {
+              group: ['@/lib/api', '@/lib/api/*', '@/lib/api-client', '**/api-client'],
+              message: 'Kortix API access belongs in @kortix/sdk.',
+            },
+          ],
+          paths: [
+            {
+              name: '@kortix/sdk',
+              importNames: [
+                'getClient',
+                'getActiveOpenCodeUrl',
+                'createKortixPty',
+                'getKortixPtyWebSocketUrl',
+                'removeKortixPty',
+              ],
+              message: 'Use the session-scoped @kortix/sdk facade or @kortix/sdk/react.',
+            },
+            {
+              name: '@kortix/sdk/internal/server-store',
+              importNames: ['getActiveOpenCodeUrl'],
+              message: 'Runtime URL selection belongs in @kortix/sdk.',
+            },
+          ],
+        },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          // Scoped to the runtime SDK sources this guardrail actually cares
+          // about (@kortix/sdk and anything opencode-named) — NOT every
+          // import named "OpenCode" from anywhere. An earlier unscoped
+          // version (`ImportSpecifier[imported.name=/OpenCode/i]`) also
+          // fired on an unrelated brand-mark icon component imported from
+          // '@/features/icon/icons/open-code', forcing it to export under a
+          // confusing alias for no boundary-safety reason.
+          selector:
+            'ImportDeclaration[source.value=/(^@kortix\\/sdk(\\/|$))|opencode/i] > ImportSpecifier[imported.name=/OpenCode/i]',
+          message: 'Import a runtime-neutral alias from @kortix/sdk.',
+        },
+        {
+          // 176 hand-typed literals across 30 `project*` families produced
+          // duplicate cache entries for one dataset (`['project-sessions',
+          // id]` and `['project-session-inventory', id]` held the same
+          // server response), silent write/read key mismatches, and
+          // per-observer `staleTime` drift, because nothing forced two call
+          // sites naming the same entity to agree on a key. This rule is
+          // what makes the migration to `qk` permanent: a reintroduced
+          // literal is a build failure, not something a reviewer has to
+          // spot in a 100-file diff.
+          //
+          // The pattern matches the whole family rather than an allowlist,
+          // so a NEW literal (`['project-widgets', id]`) is caught too.
+          //
+          // `accounts` joined the family for a DIFFERENT reason from the
+          // project literals, and a stronger one. `['accounts']` carried no
+          // signed-in user, so one document that saw two users held ONE cache
+          // entry for both — and `/new` resolves its create target out of
+          // that list, so a leftover single-account list belonging to the
+          // previous user made `POST /projects/provision` go out with a
+          // foreign `account_id` under the new user's JWT (403). The list
+          // CONTENTS cannot tell that apart from a legitimate invited admin;
+          // only `qk.accounts.list(userId)` can. This rule is what keeps that
+          // fix from being undone by the next person who types the obvious
+          // four-line `useQuery`.
+          //
+          // Singular `account` is deliberately NOT matched: `['account', id]`
+          // is a different, still-live family already scoped by account id.
+          selector:
+            "Property[key.name='queryKey'] > ArrayExpression > " +
+            "Literal:first-child[value=/^(projects?|accounts)(-[a-z-]+)?$/]",
+          message:
+            'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
+        },
+        {
+          // Same as the rule above, but through a trailing `as const` —
+          // THIS REPO'S OWN IDIOM (every `qk` member ends `as const`;
+          // apps/web has 223 `] as const` sites). `as const` wraps the array
+          // in a TSAsExpression, so `Property > ArrayExpression` never
+          // matches: the array's immediate parent becomes the TSAsExpression,
+          // not the Property. Probed directly against this rule set:
+          // `queryKey: ['project-detail', id] as const` passed clean before
+          // this selector existed. Same fix as the sibling `as const`
+          // selectors below.
+          selector:
+            "Property[key.name='queryKey'] > TSAsExpression > ArrayExpression > " +
+            "Literal:first-child[value=/^(projects?|accounts)(-[a-z-]+)?$/]",
+          message:
+            'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
+        },
+        {
+          // The migrated root itself is exactly as easy to hand-roll as the
+          // literals above, and the rule above is blind to it: `'kx'` does
+          // not match /^projects?(-[a-z-]+)?$/. qk.projects.scope() is
+          // ['kx', 'projects'] and qk.project.scope(id) is ['kx', 'project',
+          // id] (see packages/sdk/src/react/query-keys.ts) — three call
+          // sites hand-typed ['kx', 'projects'] instead of calling the
+          // factory, which is exactly the hole this closes.
+          selector:
+            "Property[key.name='queryKey'] > ArrayExpression > Literal:first-child[value='kx']",
+          message:
+            'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
+        },
+        {
+          // The `'kx'`-root rule's own `as const` blind spot — see the
+          // family rule's `as const` sibling above for why the selector has
+          // to change shape (TSAsExpression sits between the Property and
+          // the ArrayExpression) rather than just widening a value pattern.
+          selector:
+            "Property[key.name='queryKey'] > TSAsExpression > ArrayExpression > " +
+            "Literal:first-child[value='kx']",
+          message:
+            'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
+        },
+        {
+          // The four rules above only see a key written as the `queryKey:`
+          // PROPERTY of an options object (`useQuery({ queryKey: [...] })`).
+          // TanStack's direct cache API instead takes the key as a
+          // positional first argument (`setQueryData(['project-detail',
+          // id], data)`), which is structurally invisible to a
+          // `Property[key.name='queryKey']` selector. That gap matters more
+          // than the read side: a write parked on a key nobody reads is the
+          // exact silent-failure class this migration exists to remove — a
+          // stale `useQuery` observer never learns the write happened.
+          // Covers every TanStack QueryClient method whose first positional
+          // argument is (or can be) a query key.
+          selector:
+            "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > ArrayExpression:first-child > Literal:first-child[value=/^(projects?|accounts)(-[a-z-]+)?$|^kx$/]",
+          message:
+            'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
+        },
+        {
+          // The positional-call rule's own `as const` blind spot
+          // (`setQueryData(['project-detail', id] as const, v)`) — same
+          // TSAsExpression indirection, this time between the CallExpression
+          // and its first-argument ArrayExpression instead of between a
+          // Property and its value.
+          selector:
+            "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > TSAsExpression:first-child > ArrayExpression > Literal:first-child[value=/^(projects?|accounts)(-[a-z-]+)?$|^kx$/]",
+          message:
+            'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
+        },
+      ],
+    },
+  };

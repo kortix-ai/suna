@@ -227,7 +227,8 @@ export function OutputRows({
   const deliverables = outputs.filter((o) => !isScaffoldingOutput(o));
   const base = deliverables.length > 0 ? deliverables : outputs;
   const visible = showAll ? outputs : base.slice(0, VISIBLE_LIMIT);
-  const hiddenRows = outputs.filter((o) => !visible.includes(o));
+  const visibleSet = new Set(visible);
+  const hiddenRows = outputs.filter((o) => !visibleSet.has(o));
   const hidden = hiddenRows.length;
   const hiddenNoun = `${hiddenRows.every((o) => o.kind === 'file') ? 'file' : 'item'}${hidden === 1 ? '' : 's'}`;
   // Grouping only ever organizes the expanded long list (see

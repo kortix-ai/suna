@@ -170,7 +170,10 @@
       "deleteMine": "自分の値を削除",
       "mineDeleted": "値を削除しました",
       "mineDeleteError": "値を削除できませんでした。もう一度お試しください。"
-    }
+    },
+    "agentAccess": "エージェント: {agents}",
+    "allAgents": "すべてのエージェント",
+    "noAgents": "エージェントなし"
   },
   "useCases": {
     "headline": "会社を動かすループ"
@@ -951,12 +954,6 @@
         "kortixDefault": "Kortix のデフォルト",
         "definedIn": "定義場所"
       },
-      "routing": {
-        "title": "ルーティング",
-        "automatic": "自動",
-        "pinned": "固定",
-        "pinnedWithProvider": "固定 · {provider}"
-      },
       "toasts": {
         "rebuildStarted": "「{name}」の再ビルドを開始しました",
         "buildFailed": "ビルドを開始できませんでした",
@@ -974,9 +971,7 @@
         "building": "ビルド中",
         "failed": "失敗",
         "notReady": "未準備",
-        "unavailable": "利用不可",
-        "selected": "選択済み",
-        "selectedAria": "選択済み"
+        "unavailable": "利用不可"
       },
       "defaultBadge": "デフォルト",
       "runtime": "セッション実行環境",
@@ -987,14 +982,6 @@
         "confirm": "削除"
       },
       "provider": {
-        "label": "サンドボックスプロバイダー",
-        "experimental": "試験運用",
-        "description": "このプロジェクトを特定のサンドボックスプロバイダーに固定し、プラットフォームのデフォルト設定を上書きします。新しいセッションは選択したプロバイダーを使います。「自動」はプラットフォームのデフォルトに従います。",
-        "preparing": "{provider} を準備しています…数分かかる場合があります",
-        "fallback": "サンドボックスプロバイダー",
-        "switched": "{provider} に切り替えました",
-        "switchFailed": "サンドボックスプロバイダーの切り替えに失敗しました",
-        "updateFailed": "サンドボックスプロバイダーを更新できませんでした",
         "legacy": "レガシー",
         "legacyNote": "Daytona はレガシーのフォールバックプロバイダーです。削除が予定されています。既存の Daytona セッションは当面動作しますが、Daytona には新機能の追加もサポートの保証もありません。Platinum を使用してください。"
       },
@@ -1220,10 +1207,6 @@
           "name": "AgentMail メール",
           "description": "AgentMail の受信箱を割り当て、受信メールから Kortix セッションを開始・継続できるようにします。"
         },
-        "llm_gateway": {
-          "name": "LLM ゲートウェイ",
-          "description": "管理モデル、計測、予算のために、Kortix の管理対象 LLM ゲートウェイ経由でこのプロジェクトを処理します。"
-        },
         "meta_agent": {
           "name": "メタエージェント",
           "description": "専門セッションとプロジェクト内の複数手順の作業を管理するコーディネーターを追加します。"
@@ -1276,10 +1259,6 @@
           "name": "ドライブ",
           "description": "セッションと同期し続ける共有フォルダー：自分のドライブ、エージェントごとのドライブ、管理者がプロジェクトに割り当てた会社のドライブ。新しいセッションでは /drives に表示されます。"
         },
-        "session_log": {
-          "name": "セッションログ v2",
-          "description": "セッションを v1 のトランスクリプトではなく v2 のセッションログ経由で読み取ります。Kortix がプロジェクトごとに有効にします。"
-        },
         "session_log_restore": {
           "name": "セッションログからの復元",
           "description": "セッションのコンピューターが会話を失ったとき、保存されたセッションログからセッションを再構築します。Kortix がプロジェクトごとに有効にします。"
@@ -1287,6 +1266,14 @@
         "connectors_v2": {
           "name": "コネクター v2",
           "description": "カスタマイズ → コネクターの MCP アプリカタログ（サインインは Kortix が管理）。「アプリイベントのトリガー」をオンにすると、Kortix がこれらのアプリで新しいメール、ファイル、アイテムを確認してエージェントを起動します。Telegram もチャネルとして追加されます。新しいコネクターのアカウントはデフォルトでプロジェクト全体に共有されなくなります。"
+        },
+        "agent_rooms": {
+          "name": "ルーム",
+          "description": "エージェントのセッションとユーザーが投稿し、スレッドで返信できる名前付きチャットルーム。メッセージが宛てられたセッションは再開します。ルームページ、`kortix rooms`、`kortix peers` が追加されます。"
+        },
+        "goals": {
+          "name": "目標",
+          "description": "エージェントに目標を与えると、独立したチェックが結果を確認するまでエージェントが責任を持ちます。計画し、作業し、待機し、人にフォローアップし、状態をファイルの Goals フォルダーに保存します。ボリュームとリマインダーを有効にする必要があります。"
         }
       }
     },
@@ -1314,6 +1301,7 @@
     },
     "credits": {
       "loadFailed": "このアカウントを読み込めませんでした。",
+      "resetAt": "プランのクレジットのリセット日時",
       "availableBalance": "利用可能残高",
       "creditCount": "{count, plural, one {{formatted} クレジット} other {{formatted} クレジット}}",
       "owed": "未払い",
@@ -1501,6 +1489,7 @@
   },
   "sidebar": {
     "rooms": "ルーム",
+    "goals": "ゴール",
     "referAndEarn": "紹介して獲得",
     "referralShareTitle": "友達を紹介",
     "referralShareSubtitle": "400クレジット獲得",
@@ -1589,6 +1578,10 @@
       "showMore": "さらに表示",
       "brief": {
         "status": "状態",
+        "subAgent": "サブエージェント",
+        "spawned": "起動されたセッション",
+        "subAgentCount": "{count, plural, other {サブエージェント #件}}",
+        "spawnedCount": "{count, plural, other {起動されたセッション #件}}",
         "created": "作成日時",
         "source": "ソース",
         "changeRequests": "変更リクエスト",
@@ -1602,11 +1595,12 @@
         }
       },
       "status": {
-        "needsYou": "対応が必要",
-        "starting": "開始中",
-        "running": "実行中",
-        "done": "完了",
-        "stopped": "停止",
+        "needsYou": "レビュー待ち",
+        "needsInput": "回答待ち",
+        "starting": "起動中",
+        "running": "作業中",
+        "done": "準備完了",
+        "stopped": "スリープ中",
         "failed": "失敗",
         "legacy": "旧形式"
       }
@@ -1936,6 +1930,7 @@
     "upgrade": "アップグレード",
     "noMatch": {
       "title": "一致するモデルがありません",
+      "singleModelDescription": "このプロジェクトで使用できるモデルは 1 つだけです。使用できるモデルはプランと接続済みのプロバイダーによって異なります。",
       "description": "「{search}」に一致するものはありません。別のキーワードで検索してください。",
       "clear": "検索をクリア"
     },
@@ -2196,6 +2191,11 @@
   },
   "billing": {
     "plan": {
+      "members": "メンバー",
+      "unlimitedMembers": "メンバー数は無制限",
+      "loadingMembers": "メンバーを読み込み中…",
+      "membersUnavailable": "メンバー数を取得できません",
+      "memberCount": "{count, plural, other {#人のメンバー}}",
       "cancels": "{date} に解約",
       "cancelsAtPeriodEnd": "期間終了時に解約",
       "renews": "{date} に更新",
@@ -3056,7 +3056,7 @@
       "automation_recovered": "失敗していたトリガーまたはリマインダーが再び動作します。",
       "capture_device_down": "Kortix Capture のコンピューターが記録していません。Capture の管理者に送られます。",
       "capture_device_recovered": "停止していた Kortix Capture のコンピューターが再び記録しています。",
-      "message": "会話、または参加したルームで誰かがあなたにメッセージを送ったとき。"
+      "message": "ルームで誰かがあなたを @ でメンションするか、あなたが投稿したスレッドに返信したとき。"
     },
     "bell": {
       "label": "通知",
@@ -5109,7 +5109,14 @@
       "youHaveBeenInvitedToAProject": "プロジェクトに招待されています。",
       "joinProjectDescription": "{projectName} に{roleLabel}として参加します。",
       "roleManager": "マネージャー",
-      "signOutAndContinue": "サインアウトして続ける"
+      "signOutAndContinue": "サインアウトして続ける",
+      "ssoTitle": "シングルサインオンでサインイン",
+      "ssoDescription": "組織のディレクトリによって、このアカウントに追加されました。参加するには、組織のシングルサインオンでサインインしてください。サインインできない場合は、アカウント管理者に招待の再送を依頼してください。",
+      "ssoContinue": "シングルサインオンで続行",
+      "askAdminTitle": "管理者に再送を依頼",
+      "askAdminDescription": "組織のディレクトリによってこのアカウントに追加されましたが、このインスタンスではメールアドレスを確認できません。アカウント管理者に招待の再送を依頼し、その後このリンクをもう一度開いてください。",
+      "ssoDomainUnverified": "シングルサインオンのプロバイダーがこのメールのドメインを検証していません。この招待を使うには、サインアウトしてメールアドレスでサインインし直してください。",
+      "ssoUnavailable": "現在シングルサインオンを利用できません。アカウント管理者に招待の再送を依頼してください。"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – オープンソースのAI Operating System",
@@ -10637,7 +10644,7 @@
       "text1458e20a1642": "任意。切断時にはKortixもローカルトークンを削除します。",
       "text1459df2e344c": "プロジェクトが宣言するsandbox imageからLinuxマシンを起動します。独自のファイルシステム、プロセステーブル、ネットワークを持つ完全に隔離されたマシンです。他のセッションとは何も共有しません。",
       "text14683b379324": "トークンを無効化",
-      "text146b38e7fa80": "デフォルトが失敗した場合",
+      "text146b38e7fa80": "モデルが失敗した場合",
       "text146cd06d5026": "環境：",
       "text146fd497badf": "メールをスキップしました — 招待リンクをコピーして手動で共有してください",
       "text147251df4759": "通常、数秒で完了します",
@@ -10900,7 +10907,6 @@
       "text1bffac0197ca": "全画面表示にし、",
       "text1c01c6630cab": "アイコン: {value0}。変更してください",
       "text1c049715ebdd": "- コネクタ: warehouse, metabase",
-      "text1c145081eddd": "{provider} に切り替えました",
       "text1c1a67e4558f": "メンバーはパスワードだけでサインインできるようになります。個別に2つ目の認証要素を条件として設定したポリシーは引き続き適用されます — 解除されるのはアカウント全体のルールのみです。",
       "text1c22fac2a9fd": "プロジェクトと共有",
       "text1c27f2b12cec": "アプリの「Sign On」タブの「Metadata details」セクションで「Metadata URL」を探し、「Copy」をクリックします。下に貼り付けて続行します。",
@@ -11113,7 +11119,6 @@
       "text221ff19c904c": "スケジュール",
       "text22206bc67806": "選択を終了",
       "text222b8d57e366": "オーバーライドの保存に失敗しました",
-      "text22412aa281cb": "サンドボックスプロバイダー",
       "text22489bebb98f": "サービスアカウントを削除しました",
       "text224a3369a5c9": "値：",
       "text224f87a75a67": "oncall-handoff",
@@ -11675,7 +11680,6 @@
       "text32d3603f57c7": "アカウントを開けませんでした",
       "text32d61a2331fe": "プロダクト資料",
       "text32d7e8208247": "制御",
-      "text32f14aa9ea33": "{provider} を準備しています…数分かかる場合があります",
       "text32f4468b0b6f": "エージェントを検索…",
       "text32f69946e3c3": "フィルターに一致するプロジェクトはありません",
       "text330010f40240": "未準備",
@@ -11943,7 +11947,6 @@
       "text3b13192b9d88": "変更を破棄しますか？",
       "text3b349c99c012": "会社が1つの仕事を行う方法を、一度だけ文書化したもの。",
       "text3b39a1eeb288": "ここは「エージェントが処理した」が誤りになる機能です。1行目が製品としての立場で、残りはプラットフォームの制御です。",
-      "text3b3c31642567": "固定プロバイダー",
       "text3b4153c0d3c8": "日時を選択",
       "text3b41ba9c7cb8": "データなし",
       "text3b4a27ee118e": "入力SHA-256",
@@ -14738,7 +14741,7 @@
       "text8bb2b50055b6": "コネクターはノートPCやログインではなく、プロジェクトに属します。一度追加すれば、そのプロジェクトで開始するすべてのセッションから、追加設定なしでアクセスできます。DMでキーを渡す必要もありません。",
       "text8bbecc2acd82": "Identity providerメタデータを設定",
       "text8bc1d53cc57c": "入力",
-      "text8bcac7908eb9": "-----BEGIN RSA PRIVATE KEY-----",
+      "text8bcac7908eb9": ".pem ファイルの内容を貼り付け",
       "text8bd901c25ba7": "R&D — プラットフォーム",
       "text8bf73992ff9b": "別途プロビジョニングする手順も、クリックして進むコンソールもありません。1つのコマンドでスタックが起動し、もう1つでCLIが接続するKortixを選びます。",
       "text8bf926d1ef32": "SSOを設定",
@@ -14937,7 +14940,6 @@
       "text9136c4647e36": "Identity Management →「Test Connection」→「Activate」を選択し、「User Groups」タブでユーザーグループを紐付けます。紐付けたグループとメンバーは自動的にプッシュされます。",
       "text91399bbb1fbb": "プロジェクト監査ログを表示しました",
       "text9145379b9103": "App name と icon フィールドを含む Google カスタム SAML アプリダイアログ",
-      "text914be6d9bb89": "サンドボックスプロバイダーを更新できませんでした",
       "text914d43beac26": "アクセス権を削除しますか？",
       "text91546e704c9e": "Metadata URLとCopyボタンを表示したSign Onタブ",
       "text91549baf8cfd": "一度読めば、毎セッションで使える",
@@ -15616,6 +15618,8 @@
       "texta4f264c3ab5f": "管理者付与",
       "texta4f6c318a669": "このAppを削除しますか？",
       "texta4fc39798651": "変更リクエスト #{number}",
+      "textddcd87c21894": "#{number} に置き換え済み",
+      "texta8ef31fa7d25": "#{number} を表示",
       "texta505da26f529": "プロフィール写真を削除できませんでした",
       "texta514a684676a": "アクセス権を編集",
       "texta515cf580dd9": "IAM ロールの権限を更新しました",
@@ -16010,7 +16014,7 @@
       "textafb32719ca9e": "ボットクライアントシークレット",
       "textafb5023c3c05": "変更を適用しました",
       "textafb837ec251a": "Oktaは変更（割り当て、プロファイル更新、グループプッシュ）が発生するとプッシュします。何も変わらない期間があっても異常ではありません。",
-      "textafb9890f7c72": "プロジェクトのデフォルトで処理できない場合のリクエストの送信先。",
+      "textafb9890f7c72": "リクエストのモデルで処理できない場合のリクエストの送信先。",
       "textafc19f1734c1": "プリンシパル",
       "textafc8e3a5d5db": "使われた言葉ではなく、実際の要望でリクエストを分類し、異なるアカウント数を数え、引用を添付します。「誰がこれを求めたのか」と聞かれたら、答えはドキュメントにあります。",
       "textafdc7d79dccb": "OneLoginからの自動プロビジョニング",
@@ -16255,6 +16259,11 @@
       "textb6bb289a7a2c": "アカウント チーム 組織 切り替え 管理",
       "textb6bcbb175d23": "レギュラー · 400",
       "textb6c70926c1aa": "管理者のみ",
+      "textf19611c61ca5": "フルアクセス",
+      "text15589a542412": "{count, plural, =0 {コネクターなし} other {コネクター #件}}",
+      "texte96d99ad9896": "{count, plural, =0 {シークレットなし} other {シークレット #件}}",
+      "text70b8d7e10749": "すべての Kortix アクション",
+      "text2d3f4433505a": "{count, plural, =0 {Kortix アクションなし} other {Kortix アクション #件}}",
       "textb6cde9030cef": "キーを作成",
       "textb6d85433a7ee": "セッションを読み込めませんでした",
       "textb6daf93376cc": "finance.weeklyを読み込み中",
@@ -16718,7 +16727,7 @@
       "textc3d2e79ebdd0": "コネクター",
       "textc3e3a6edeaa5": "利用規約",
       "textc3e58a73609d": "破壊的",
-      "textc3ecd3cd791b": "プロジェクトのデフォルト後に、順番に試行されます。",
+      "textc3ecd3cd791b": "リクエストで指定されたモデルの後に、順番に試行されます。",
       "textc3f282c05f3f": "ポリシー 承認 ブロック require_approval ルール ツール コネクター ガードレール",
       "textc3f348ffaf7a": "プロジェクトに紐付け",
       "textc3f7bdf537c4": "リクエスト",
@@ -17300,7 +17309,6 @@
       "textd45336ed23b4": "ターンが実行中か確認するためのランタイムに接続できませんでした。再読み込みすると再起動し、実行中のターンがあれば失われます。",
       "textd45f25a6299a": "メンバーは保護された操作を行う前に、2つ目の認証要素を確認する必要があります。スーパー管理者とAPIキーは対象外です。",
       "textd460f97920a4": "このプロジェクトの全員が使用する共有認証情報です。エージェントとトリガーはこれを使って実行されます。",
-      "textd461a493a375": "自動",
       "textd465f57b1d0d": "registry · プッシュ",
       "textd4673300c1d2": "通知は正しく機能しています。",
       "textd46958e8ca77": "Entraのヒント：",
@@ -18111,7 +18119,6 @@
       "texte9b7cf835375": "あなたの言葉で",
       "texte9bef0b0f3c2": "キーボードショートカット",
       "texte9c29ff50cc7": "モード",
-      "texte9ca8360a34d": "サンドボックスプロバイダーの切り替えに失敗しました",
       "texte9cff3023aa2": "Easy connectは各アプリのOAuth画面を通じて3,000以上のアプリに対応します。フィードバックがカタログ外（コミュニティフォーラムや社内ポータルなど）にある場合は、OpenAPI、GraphQL、raw HTTP、リモートMCPサーバーで接続できます。",
       "texte9d6212ef873": "設定中...",
       "texte9e3243084ee": "指定したagent",
@@ -20304,7 +20311,18 @@
       "text08f3c151d323": "個別条件を相談する",
       "texta0990a4a86dc": "ホワイトラベル:Platinum.dev のコンピュートで動く自社 AI プロダクト",
       "text6189ab6313de": "Kortix をフォークし、自社ブランドで自社製品として販売できます。ライセンスは無料。唯一の条件は、コンピュートを Platinum.dev で実行することです。",
-      "text7971dd752669": "リマインダー"
+      "text7971dd752669": "リマインダー",
+      "text724b09397472": "{name} を {project} に追加しています",
+      "text1e007c47254d": "バックグラウンドでセットアップします。完了すると通知が届きます。",
+      "text57f57edb6f16": "変更リクエスト #{number} のレビュー準備ができました。",
+      "texta8597db6f24b": "スキルを削除",
+      "text5f6ba69d66d1": "スキルを削除しました",
+      "textcb8d6b0c94c9": " とその中のすべてのファイル（編集内容を含む）。このスキルを使うすべてのエージェントからも外します。デフォルトブランチへの 1 回のコミットです。",
+      "cliDeviceTitle": "Kortix CLI を認証",
+      "cliDeviceWarning": "自分で開始したログインのみ承認してください。ターミナルに表示されたコードを入力してください。",
+      "cliDeviceCode": "ログインコード",
+      "cliDeviceApproved": "ログインを承認しました。ターミナルに戻ってください。",
+      "cliDeviceAction": "CLI を認証"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20360,7 +20378,84 @@
       "sessionExpired": "セッションの有効期限が切れました。もう一度サインインして、プレビューを開き直してください。"
     },
     "approvalPage": {
-      "title": "{connector} のアクションを承認"
+      "title": "{connector} のアクションを承認",
+      "expires": "有効期限",
+      "expiresIn": "{time}後に期限切れ",
+      "expiredHint": "この承認は期限切れです。エージェントにもう一度リクエストするよう依頼してください。",
+      "anAgent": "エージェント",
+      "anAgentLower": "エージェント",
+      "wantsEmail": "{agent} が {recipient} にメールを送信しようとしています",
+      "wantsEmailOthers": "{agent} が {recipient} ほか {count, plural, other {# 名}}にメールを送信しようとしています",
+      "wantsMerge": "{agent} が PR #{number} を {base} にマージしようとしています",
+      "wantsMergePr": "{agent} が PR #{number} をマージしようとしています",
+      "wantsIssue": "{agent} が {team} に優先度 {priority} の課題{article, select, other {}}を作成しようとしています",
+      "wantsCreateIssue": "{agent} が課題を作成しようとしています",
+      "wantsAction": "{agent} が次を実行しようとしています: {action}",
+      "wantsCall": "{agent} が {action} を実行しようとしています",
+      "leftMinutes": "残り {minutes} 分",
+      "leftHoursMinutes": "残り {hours} 時間 {minutes} 分",
+      "leftHours": "残り {hours} 時間",
+      "leftDays": "残り {days} 日",
+      "riskDestructive": "破壊的 · Kortix から元に戻せません",
+      "riskWrite": "書き込みアクセス · {action}",
+      "riskRead": "読み取りアクセス",
+      "askedBy": "{agent} からの依頼",
+      "askedByIn": "<session>{title}</session> で {agent} からの依頼",
+      "expiresAt": "期限 {when}",
+      "today": "今日 {time}",
+      "tomorrow": "明日 {time}",
+      "thisSession": "セッション",
+      "notePlaceholder": "{agent} へのメモ（任意）",
+      "notePlaceholderAgent": "エージェントへのメモ（任意）",
+      "approve": "承認",
+      "approveSend": "承認して送信",
+      "approveMerge": "承認してマージ",
+      "approveCreate": "承認して作成",
+      "pullRequest": "プルリクエスト #{number}",
+      "mergeMethod": "{method, select, squash {Squash and merge} rebase {Rebase and merge} merge {マージコミットを作成} other {{method} でマージ}}",
+      "newIssue": "新しい課題",
+      "priority1": "緊急",
+      "priority2": "高",
+      "priority3": "中",
+      "priority4": "低",
+      "canOnlyBeDenied": "拒否のみ可能",
+      "prFiles": "{count, plural, other {# 個のファイル}}",
+      "prCommits": "{count, plural, other {# 件のコミット}}",
+      "prCommitsBy": "{author} による {count, plural, other {# 件のコミット}}",
+      "prDraft": "ドラフトのプルリクエスト"
+    },
+    "reviewBulk": {
+      "approve": "承認",
+      "deny": "拒否",
+      "dismiss": "閉じる",
+      "selectRow": "{title} を選択",
+      "limitNote": "一度に最大 {count} 件",
+      "approving": "{count} 件を承認中…",
+      "denying": "{count} 件を拒否中…",
+      "dismissing": "{count} 件を閉じています…",
+      "approveTitle": "{count, plural, other {# 件のアクション}}を承認しますか？",
+      "approveDescription": "承認する前に各アクションの詳細を確認してください。",
+      "approveConfirm": "{count} 件を承認",
+      "denyTitle": "{count, plural, other {# 件のアクション}}を拒否しますか？",
+      "denyDescription": "エージェントはこれらのアクションを実行しません。",
+      "denyConfirm": "{count} 件を拒否",
+      "dismissTitle": "{count, plural, other {# 件の項目}}を閉じますか？",
+      "dismissDescription": "完了に移動します。",
+      "dismissConfirm": "{count} 件を閉じる",
+      "riskNone": "リスクなし",
+      "riskLow": "低リスク",
+      "riskMedium": "中リスク",
+      "riskHigh": "高リスク",
+      "approved": "{count} 件を承認しました",
+      "denied": "{count} 件を拒否しました",
+      "dismissed": "{count} 件を閉じました",
+      "skipped": "{count} 件をスキップ（{reasons}）",
+      "reasonExpired": "期限切れ",
+      "reasonAlreadyResolved": "決定済み",
+      "reasonPreviewUnavailable": "内容を読み込めません",
+      "reasonForbidden": "権限がありません",
+      "reasonNotFound": "見つかりません",
+      "reasonNotBulkActionable": "個別に決定してください"
     },
     "approvalWaiting": {
       "byManager": "このプロジェクトを管理する人が、この呼び出しを承認または拒否するのを待っています。",
@@ -20377,7 +20472,21 @@
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "配信: connector — サーバー側のみ。値がサンドボックス環境に入ることはありません。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryScopec3e2a686": "配信スコープを取得できません。保存する前に、この値がどこで使われるかエージェントに確認してください。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextEncryptedAtRestc2e34213": "保存時は暗号化されます。配信は上に表示されたスコープに従います。",
-    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "要求された値を下に入力してください。保存する前に、その配信スコープを確認してください。値は保存時に暗号化されます。"
+    "autoAppPublicSecretIntakeTokenPageJsxTextEnterThec744a068": "要求された値を下に入力してください。保存する前に、その配信スコープを確認してください。値は保存時に暗号化されます。",
+    "approvalParameters": {
+      "to": "宛先",
+      "cc": "CC",
+      "bcc": "BCC",
+      "subject": "件名",
+      "from": "差出人",
+      "none": "なし",
+      "attachments": "添付ファイル",
+      "idsOnlyHint": "この呼び出しには確認できる内容がありません。エージェントによる説明は検証されていません。",
+      "resolvedUnavailable": "下書きを読み込めませんでした。エージェントの説明を慎重に確認してください。",
+      "aboutDescription": "この説明について",
+      "senderUnavailable": "送信アカウントを読み込めませんでした。差出人の行を確認してください。",
+      "quoted": "「{text}」"
+    }
   },
   "projectOnboarding": {
     "resetSuccess": "オンボーディングのリセット",
@@ -20506,7 +20615,7 @@
     "metaKey": "API キー",
     "metaSignIn": "サインイン",
     "metaSignInOrKey": "サインインまたは API キー",
-    "metaIncluded": "クレジットで支払い",
+    "metaIncluded": "クレジットで支払い · Platinum Inference",
     "apiKey": "API キー",
     "savedKey": "保存済みのキー",
     "replace": "置き換え",
@@ -20574,14 +20683,7 @@
   },
   "modelsList": {
     "onCount": "{total} 件中 {on} 件オン",
-    "perMillion": "{model} · 100万あたり",
-    "estimate": "見積もり",
-    "route": "ルート",
-    "input": "入力",
-    "cached": "キャッシュ",
-    "output": "出力",
     "context": "コンテキスト {value}",
-    "fromPrice": "100万あたり {input} / {output} から",
     "price": "100万あたり {input} / {output}",
     "hiddenLine": "モデル選択には表示されません · 直接リクエストは引き続き使えます",
     "blockedLine": "このモデルへのリクエストはブロックされています",
@@ -20660,17 +20762,12 @@
     "credentialsHint": "認証情報を削除せずに推論を無効にします。",
     "providerError": "プロバイダーへのアクセスを更新できませんでした。",
     "managedTitle": "Kortix管理モデル",
-    "managedDescription": "プロバイダーの基本価格に {fee}% のプラットフォーム手数料を加えた額をクレジットで支払います。APIキーは不要です。",
+    "managedDescription": "Platinum Inference のモデルです。その価格に {fee}% のプラットフォーム手数料を加えた額をクレジットで支払います。APIキーは不要です。",
     "managedUpgradeHint": "アップグレードしてKortixの管理モデルを利用するか、独自のプロバイダーに接続してください。",
-    "pricingEstimate": "プラットフォーム手数料を含まないプロバイダーの基本価格です。実際の料金は使用された経路によって決まります。",
-    "pricingRoute": "{route}：100万トークンあたり入力 {input} / キャッシュ {cacheRead} / 出力 {output}",
-    "pricingPreferred": "優先",
     "textImage": "テキスト + 画像",
     "textOnly": "テキストのみ",
     "zdrTitle": "ゼロデータ保持",
     "zdrDescription": "ゼロデータ保持（ZDR）とは、モデル提供元がテキストや画像を処理した後、リクエストの入力や回答を保存しないことです。Kortix はプロジェクトと会話履歴を別に保存します。",
-    "usProvidersTitle": "米国でホスト",
-    "usProvidersDescription": "Kortix のモデルは米国のデータセンターで動作します。提携する推論提供元は米国企業のみです。",
     "hiddenHint": "選択リストでは非表示です。直接リクエストは引き続き許可されます。無効にするにはモデルのメニューを使用してください。",
     "hidden": "選択リストで非表示",
     "disableModel": "モデルを無効にする",
@@ -21046,6 +21143,24 @@
     "chipLabel": "{count, plural, other {有効なリマインダー #件}}",
     "chipTitle": "このセッションのリマインダー",
     "manage": "リマインダーを管理",
+    "openInReminders": "リマインダーで開く",
+    "nextRun": "次回実行 {time}",
+    "repeats": "繰り返し",
+    "timeZone": "タイムゾーン",
+    "lastRun": "前回の実行",
+    "lastRunFailed": "前回の実行に失敗しました",
+    "runQueued": "リマインダーをセッションに送信しました",
+    "runFailed": "リマインダーを実行できませんでした",
+    "neverRun": "未実行",
+    "searchPlaceholder": "リマインダーを検索",
+    "statusAll": "すべて",
+    "timeFilterLabel": "次回実行",
+    "timeAny": "いつでも",
+    "timeHour": "1時間以内",
+    "timeDay": "24時間以内",
+    "timeWeek": "7日以内",
+    "timeLater": "それ以降",
+    "noMatch": "一致するリマインダーはありません",
     "cardLabel": "リマインダー",
     "cardOneTime": "1回",
     "cardRecurring": "繰り返し",
@@ -21550,7 +21665,10 @@
       "dictationDescription": "プロンプトを入力せずに音声で伝えられます。"
     },
     "appStore": "App Store",
-    "googlePlay": "Google Play"
+    "googlePlay": "Google Play",
+    "scanTitle": "スキャンしてアプリを入手",
+    "scanDescription": "スマートフォンのカメラでコードを読み取ると、App Store または Google Play が開きます。",
+    "qrLabel": "Kortix モバイルアプリの QR コード"
   },
   "capture": {
     "authorize": {
@@ -21875,6 +21993,41 @@
         "exceptTitle": "含めていても記録しない",
         "memberInclusions": "利用者が自分で含めるアプリとウェブサイトを追加できる",
         "memberInclusionsHint": "オフ：コンピュータはここにあるアプリとウェブサイトだけを記録します。スキップするアプリとウェブサイトは引き続き追加できます。"
+      },
+      "localHours": "On the computer",
+      "localHoursHint": "各コンピューターがローカルコピーを削除するまで保持する期間です。0 にするとローカルには何も保持しません。",
+      "hours": "hours",
+      "storage": {
+        "title": "ストレージ",
+        "hint": "このアカウントが録画を保存する場所です。切り替えても保存済みの録画は移動せず、元の場所に残ります。",
+        "kortix": "Kortix が管理",
+        "kortixHint": "Kortix が録画を保存し、インデックスを作成します。設定は不要です。",
+        "s3": "自分の S3 バケット",
+        "s3Hint": "Kortix は、あなたが所有するバケット内の録画を読み取り、インデックスを作成し、署名します。",
+        "endpoint": "エンドポイント",
+        "endpointHint": "AWS の場合は空欄のままにします。MinIO などの S3 互換ストレージの場合は完全な URL を入力します。",
+        "region": "リージョン",
+        "bucket": "バケット",
+        "pathStyle": "パス形式の URL",
+        "pathStyleHint": "MinIO とほとんどのセルフホストストレージではオン、AWS ではオフにします。",
+        "credsTitle": "アクセス",
+        "credsHint": "認証情報は 1 種類だけ指定してください。Kortix が引き受ける IAM ロール、または静的なアクセスキーのペアです。",
+        "credRole": "IAM ロール (STS)",
+        "credKeys": "アクセスキー",
+        "roleArn": "ロール ARN",
+        "roleArnHint": "Kortix はこのロールを引き受けます。推奨：各コンピューターに、そのコンピューター専用のフォルダーに限定された認証情報を付与します。",
+        "accessKeyId": "アクセスキー ID",
+        "secretAccessKey": "シークレットアクセスキー",
+        "secretSet": "シークレットが保存されています。置き換えるには新しい値を入力し、そのままにするには空欄のままにします。",
+        "staticWarning": "静的キーはコンピューターごとに範囲を限定できません。すべてのコンピューターがアカウント全体でバケットにアクセスできます。ロールの使用をおすすめします。",
+        "indexingNote": "Kortix は録画のインデックス作成と検索のためにバケットを読み取ります。クライアント側の暗号化はインデックス作成と両立しないため、どちらかを選んでください。",
+        "save": "ストレージを保存",
+        "saved": "ストレージを更新しました",
+        "probeFailed": "バケットに書き込めませんでした：{error}",
+        "saveFailed": "ストレージ設定を保存できませんでした",
+        "currentManaged": "録画は Kortix が管理するストレージに保存されています。",
+        "currentOwn": "録画はあなたのバケット {bucket} に保存されています。",
+        "loadFailed": "ストレージ設定を読み込めませんでした"
       }
     },
     "area": {
@@ -22155,5 +22308,91 @@
     "join": "参加",
     "openRoom": "開く",
     "gateDescription": "ルームをオンにすると、このプロジェクトのエージェントセッションとメンバーが名前付きのチャットルームで会話できます。"
+  },
+  "goals": {
+    "title": "ゴール",
+    "gateDescription": "エージェントは目標を検証可能に達成するまで担当します。ゴールはファイルに保存され、毎日のハートビートで起動し、必要なものを人に催促し、独立した確認で完了します。",
+    "empty": "ゴールはまだありません",
+    "emptyHint": "セッションで開始します。たとえば「古い銀行口座が確実に解約されているようにして」のように結果を書いてください。エージェントがゴールを作成し、ここに表示されます。",
+    "loadError": "ゴールを読み込めませんでした。もう一度お試しください。",
+    "retry": "再試行",
+    "needsYou": "対応が必要",
+    "open": "進行中",
+    "closed": "完了",
+    "waitingFor": "待機中: {title}",
+    "criteria": "基準 {met}/{total}",
+    "nextWake": "次回の起動 {time}",
+    "noWake": "起動の予定なし",
+    "heartbeat": "ハートビート",
+    "heartbeatPaused": "一時停止中",
+    "lastWakeLabel": "前回の起動",
+    "progress": "進捗",
+    "scope": {
+      "company": "会社",
+      "personal": "自分のみ"
+    },
+    "status": {
+      "draft": "下書き",
+      "active": "進行中",
+      "waiting_on_user": "あなたを待機中",
+      "waiting_external": "待機中",
+      "verifying": "検証中",
+      "done": "完了",
+      "abandoned": "中止"
+    },
+    "health": {
+      "healthy": "稼働中",
+      "attention": "要確認",
+      "closed": "完了"
+    },
+    "issue": {
+      "no_heartbeat": "このゴールを起動するものがありません。ハートビートのリマインダーがありません。",
+      "heartbeat_paused": "ハートビートのリマインダーが一時停止しています。",
+      "heartbeat_failed": "前回の起動に失敗しました: {error}",
+      "missed_wake": "前回の起動が遅れています。",
+      "ask_overdue": "依頼の期限が過ぎています。",
+      "verification_stalled": "検証開始から24時間以上経過しています。",
+      "unreadable": "goal.json がないか、有効な JSON ではありません。"
+    },
+    "sessionChip": "ゴール",
+    "sessionRole": {
+      "coordinator": "このセッションがこのゴールを担当しています。",
+      "worker": "このセッションはこのゴールの作業をしています。",
+      "verifier": "このセッションはこのゴールを検証しています。"
+    },
+    "openGoal": "ゴールを開く",
+    "openSession": "メインセッションを開く",
+    "openFolder": "フォルダを開く",
+    "back": "すべてのゴール",
+    "healthTitle": "状態",
+    "successCriteria": "成功基準",
+    "met": "達成",
+    "notMet": "未達成",
+    "items": "項目",
+    "noItems": "項目はまだありません。",
+    "noCriteria": "基準はまだありません。ゴールが進行中になる前にエージェントが作成します。",
+    "kind": {
+      "task": "タスク",
+      "ask": "依頼",
+      "wait": "待機"
+    },
+    "itemStatus": {
+      "open": "未着手",
+      "doing": "作業中",
+      "done": "完了",
+      "dropped": "取り下げ"
+    },
+    "due": "期限 {time}",
+    "sessions": "セッション",
+    "role": {
+      "coordinator": "メインセッション",
+      "worker": "作業者",
+      "verifier": "検証者"
+    },
+    "timeline": "タイムライン",
+    "verification": "検証",
+    "notes": "メモ",
+    "log": "ログ",
+    "notFound": "このゴールはもう存在しません。"
   }
 }

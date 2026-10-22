@@ -1,6 +1,7 @@
 import { copySessionLog, withForkAttachmentCleanup } from '../session-log-fork';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { writeSessionLogFromMirror } from '../session-log-capture';
-import { captureSessionTranscriptMirror } from './session-transcript-capture';
+import { captureJournallessSessionLog } from './session-transcript-capture';
 import { randomUUID } from 'node:crypto';
 import { SESSION_INITIAL_CONTEXT_MAX_CHARS, SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
@@ -60,6 +61,11 @@ import { withProjectGitAuth } from './git';
 import { repositoryGeneration } from './repository-generation';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
 import { resolveSessionProvider, sessionProviderIsLocked } from './provider-precedence';
+import {
+  DEPRECATED_PROVIDER_CODE,
+  DEPRECATED_PROVIDER_ERROR,
+  isDeprecatedProvider,
+} from '../../platform/providers/deprecated';
 
 import { type ProjectRow, type ProjectSessionRow, type RequestAuditContext, normalizeString } from './serializers';
 import { normalizeJsonObject } from '../../shared/json';
@@ -631,7 +637,7 @@ async function resolveSessionModel(params: {
       });
       // An account without managed models gets no platform default: it runs
       // its own connected model (already in `resolved`) or none.
-      const concreteModel = resolved.model ?? (freeModelsOnly ? null : config.LLM_GATEWAY_DEFAULT_MODEL);
+      const concreteModel = resolved.model ?? (freeModelsOnly ? null : platformDefaultModelId() || null);
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';
@@ -1567,6 +1573,9 @@ export async function createProjectSession(input: {
   const parsedBody = parseSessionCreateBody(body);
   if (parsedBody.error) return { error: parsedBody.error };
   const { parsedRuntimeContext, parsedConnectorBindings } = parsedBody;
+  if (isDeprecatedProvider(normalizeString(body.provider))) {
+    return { error: { status: 400, body: { error: DEPRECATED_PROVIDER_ERROR, code: DEPRECATED_PROVIDER_CODE } } };
+  }
 
   // `inherit_unbound` is a benign binding modifier: when this session binds any
   // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
@@ -1674,7 +1683,7 @@ export async function createProjectSession(input: {
     if (!config.SESSION_LOG_RESTORE_ENABLED || !config.SESSION_LOG_INGEST_ENABLED) {
       return { error: { status: 503, body: { error: 'Session log restore is off' } } };
     }
-    const capture = await captureSessionTranscriptMirror(body.fork_from_session_id);
+    const capture = await captureJournallessSessionLog(body.fork_from_session_id);
     // A reachable box must provide the whole snapshot. A stopped box can use
     // its durable journal, checked again under the journal lock during copy.
     if (capture && !capture.head_complete) {

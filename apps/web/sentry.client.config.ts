@@ -33,6 +33,9 @@ if (SENTRY_DSN) {
 
     // Ignore noisy browser errors
     ignoreErrors: [
+      // Non-Error rejection noise (KRTX-2948); anchor to the SDK prefix so
+      // real Error exceptions and messages that only quote it still report.
+      /^Non-Error promise rejection captured/,
       // Browser extensions and ad-blockers
       'ResizeObserver loop',
       'ResizeObserver loop completed with undelivered notifications',

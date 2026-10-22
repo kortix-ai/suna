@@ -106,6 +106,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       total: credits.total,
       daily: credits.daily,
       monthly: credits.monthly,
+      expires_at: isoValue(account?.nextCreditGrant),
       extra: credits.extra,
       can_run: isAdmin ? true : billingStateAllowsRun(billingState),
       // Lifetime rollups, maintained from credit_ledger by the

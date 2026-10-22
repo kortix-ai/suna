@@ -48,13 +48,10 @@ import { openLink } from '@/lib/utils/open-link';
 import { THEME } from '@/lib/utils/theme';
 import { decidePreviewNavigation } from '@/lib/utils/html-embed';
 
-interface PageTabLike {
-  id: string;
-  label: string;
-}
+import type { PageTab } from '@/stores/tab-store';
 
 interface AppsPageProps {
-  page: PageTabLike;
+  page: PageTab;
   projectId: string;
   onOpenDrawer?: () => void;
 }

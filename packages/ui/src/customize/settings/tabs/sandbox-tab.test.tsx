@@ -9,7 +9,6 @@ import { testUiTranslator } from '../../../test-utils/intl';
 import {
   type ProviderCoverageEntry,
   describeProviderCoverage,
-  describeProviderMode,
   latestObservedAt,
 } from '../../sections/view/sandbox-provider-coverage';
 import {
@@ -17,7 +16,6 @@ import {
   TemplateRuntimeFooter,
   TemplateStateLine,
   describeBase,
-  describeRouting,
   describeSource,
   describeState,
 } from './sandbox-tab';
@@ -51,28 +49,21 @@ const coverageEntry = (
  * Retargeted at `TemplateRuntimeFooter`, the component that now ships.
  * `SandboxTemplateProviderCoverage` and `SandboxTemplateProviderModeBadge`
  * were pre-composed rows that forced the card to nest a labelled row inside
- * another labelled row; the footer owns its own layout now and the mode badge
- * became the grid's "Routing" fact. Every assertion below is carried forward —
- * the ones about routing words simply moved to `describeRouting`.
+ * another labelled row; the footer owns its own layout now. The routing mode
+ * left with the provider pin: every sandbox runs on Platinum.
  */
 function renderProviderPresentation({
-  providerMode,
   coverage,
-  selectedProvider,
   badgeCopy,
   runtimeLabel,
 }: {
-  providerMode: 'automatic' | 'pinned';
   coverage: ProviderCoverageEntry[];
-  selectedProvider: ProviderCoverageEntry['provider'] | null;
   badgeCopy?: Parameters<typeof TemplateRuntimeFooter>[0]['badgeCopy'];
   runtimeLabel?: string;
 }) {
   return renderToStaticMarkup(
     createElement(TemplateRuntimeFooter, {
-      providerMode,
       coverage,
-      selectedProvider,
       formatObservedAt: () => 'now',
       runtimeLabel: runtimeLabel ?? 'Session runtime',
       checkedLabel: (value: string) => `Checked ${value}`,
@@ -109,21 +100,8 @@ describe('sandbox template provider coverage presentation', () => {
     });
   });
 
-  test('keeps Automatic and Pinned badges neutral while preserving selected metadata', () => {
-    expect(describeProviderMode('automatic', 'daytona', testUiTranslator)).toEqual({
-      label: 'Automatic',
-      selectedProvider: null,
-    });
-    expect(describeProviderMode('pinned', 'platinum', testUiTranslator)).toEqual({
-      label: 'Pinned provider',
-      selectedProvider: 'Platinum',
-    });
-  });
-
-  test('renders automatic mode with runtime readiness for every routed provider', () => {
+  test('shows Platinum readiness only: a deprecated provider is never offered', () => {
     const html = renderProviderPresentation({
-      providerMode: 'automatic',
-      selectedProvider: 'daytona',
       coverage: [
         coverageEntry({ provider: 'daytona', status: 'ready' }),
         coverageEntry({ provider: 'platinum', status: 'building' }),
@@ -131,18 +109,13 @@ describe('sandbox template provider coverage presentation', () => {
     });
 
     expect(html).toContain('Session runtime');
-    expect(html).toContain('Daytona');
     expect(html).toContain('Platinum');
-    // Platinum is the reference provider and comes first; Daytona is marked legacy.
-    expect(html.indexOf('Platinum')).toBeLessThan(html.indexOf('Daytona'));
-    expect(html).toContain('Legacy');
-    expect(html).toContain('Ready');
     expect(html).toContain('Building');
+    expect(html).not.toContain('Daytona');
+    expect(html).not.toContain('Legacy');
+    expect(html).not.toContain('Ready');
     expect(html).not.toContain('Selected');
-    // "Automatic" is routing configuration, not live status — it is a labelled
-    // grid fact now, so it must NOT reappear as a bare badge in this strip.
     expect(html).not.toContain('Automatic');
-    expect(describeRouting('automatic', 'daytona', testUiTranslator).label).toBe('Automatic');
   });
 
   test('the footer keeps its stamp separable so it can be pushed to the far edge', () => {
@@ -150,87 +123,43 @@ describe('sandbox template provider coverage presentation', () => {
     // so the stamp could never be positioned by the caller. `ml-auto` is only
     // reachable because the stamp is a direct child of the footer row.
     const html = renderProviderPresentation({
-      providerMode: 'automatic',
-      selectedProvider: null,
-      coverage: [coverageEntry({ provider: 'daytona', status: 'ready' })],
+      coverage: [coverageEntry({ provider: 'platinum', status: 'ready' })],
     });
     expect(html).toContain('ml-auto');
     expect(html).toContain('Checked now');
     // No observation reported → no stamp at all, rather than "Checked —".
     const noStamp = renderProviderPresentation({
-      providerMode: 'automatic',
-      selectedProvider: null,
-      coverage: [coverageEntry({ provider: 'daytona', status: 'ready', observed_at: null })],
+      coverage: [coverageEntry({ provider: 'platinum', status: 'ready', observed_at: null })],
     });
     expect(noStamp).not.toContain('Checked');
     expect(
-      latestObservedAt([coverageEntry({ provider: 'daytona', observed_at: null })]),
+      latestObservedAt([coverageEntry({ provider: 'platinum', observed_at: null })]),
     ).toBeNull();
-  });
-
-  test('renders pinned matrix with only available providers and their states', () => {
-    const html = renderProviderPresentation({
-      providerMode: 'pinned',
-      selectedProvider: 'daytona',
-      coverage: [
-        coverageEntry({ provider: 'daytona', available: true, status: 'ready' }),
-        coverageEntry({ provider: 'platinum', available: false, status: 'ready' }),
-      ],
-    });
-
-    expect(html).toContain('Session runtime');
-    expect(html).toContain('Daytona');
-    expect(html).toContain('Ready');
-    expect(html).not.toContain('Platinum');
-    expect(html).not.toContain('Pinned provider');
   });
 
   test('renders localized runtime and provider status copy', () => {
     const html = renderProviderPresentation({
-      providerMode: 'pinned',
-      selectedProvider: 'daytona',
-      coverage: [coverageEntry({ provider: 'daytona', status: 'ready' })],
+      coverage: [coverageEntry({ provider: 'platinum', status: 'ready' })],
       runtimeLabel: 'Окружење сесије',
-      badgeCopy: {
-        states: { ready: 'Спремно' },
-        selected: 'Изабрано',
-        selectedAria: 'изабрано',
-      },
+      badgeCopy: { states: { ready: 'Спремно' } },
     });
     expect(html).toContain('Окружење сесије');
     expect(html).toContain('Спремно');
-    expect(html).toContain('Изабрано');
     expect(html).not.toContain('Ready');
-    expect(html).not.toContain('Selected');
   });
 
-  test('pinned with no available providers renders no runtime strip at all', () => {
+  test('no available Platinum coverage renders no runtime strip at all', () => {
     const html = renderProviderPresentation({
-      providerMode: 'pinned',
-      selectedProvider: 'daytona',
       coverage: [
-        coverageEntry({ provider: 'daytona', available: false, status: 'unavailable' }),
+        coverageEntry({ provider: 'daytona', available: true, status: 'ready' }),
         coverageEntry({ provider: 'platinum', available: false, status: 'unavailable' }),
       ],
     });
 
-    // Previously this case produced a lone "Pinned provider" badge floating in
-    // the strip with no label beside it. The card now ends at the spec grid,
-    // and the routing fact carries the words — with the pinned provider named.
+    // The card ends at the spec grid: no lone badge floats in an unlabelled strip.
     expect(html).toBe('');
-    expect(describeRouting('pinned', 'daytona', testUiTranslator).label).toBe('Pinned · Daytona');
-    expect(describeRouting('pinned', null, testUiTranslator).label).toBe('Pinned');
   });
 
-  test('routing is stated as a labelled fact, never a bare unlabelled badge', () => {
-    expect(describeRouting('automatic', null, testUiTranslator).label).toBe('Automatic');
-    expect(describeRouting('automatic', 'daytona', testUiTranslator).label).toBe('Automatic');
-    expect(describeRouting('pinned', 'platinum', testUiTranslator).label).toBe('Pinned · Platinum');
-    // Distinct glyph per mode so the two are separable at a glance.
-    expect(describeRouting('automatic', null, testUiTranslator).icon).not.toBe(
-      describeRouting('pinned', null, testUiTranslator).icon,
-    );
-  });
 });
 
 /**
@@ -265,47 +194,6 @@ describe('SandboxTabView', () => {
     );
     expect(out).toContain('Sandbox templates');
     expect(out).toContain('template-row-marker');
-  });
-
-  /**
-   * The provider pin moved here from `general-tab.tsx` — see this tab's header
-   * comment. Three properties matter and none of them is "it renders": it must
-   * be FIRST (it decides where a session runs, before the templates decide
-   * what it runs), and it must survive both the loading and the error branch,
-   * because it is fed by the project query while those branches describe the
-   * SNAPSHOTS query. A failed template read hiding the provider control would
-   * be the same class of defect as the two tabs disagreeing about the pin.
-   */
-  test('renders the sandbox provider slot above the templates content', () => {
-    const out = renderToStaticMarkup(
-      <SandboxTabView
-        isEmpty={false}
-        sandboxProviderSlot={<div>provider-row-marker</div>}
-        templatesSlot={<li>template-row-marker</li>}
-      />,
-    );
-    expect(out).toContain('provider-row-marker');
-    expect(out.indexOf('provider-row-marker')).toBeLessThan(out.indexOf('template-row-marker'));
-    expect(out.indexOf('provider-row-marker')).toBeLessThan(
-      out.indexOf('Every session starts from a sandbox template'),
-    );
-  });
-
-  test('the provider slot survives the loading and error branches — it reads the project, not the snapshots query', () => {
-    const loading = renderToStaticMarkup(
-      <SandboxTabView isLoading sandboxProviderSlot={<div>provider-row-marker</div>} />,
-    );
-    expect(loading).toContain('provider-row-marker');
-
-    const errored = renderToStaticMarkup(
-      <SandboxTabView
-        isError
-        errorMessage="boom"
-        sandboxProviderSlot={<div>provider-row-marker</div>}
-      />,
-    );
-    expect(errored).toContain('provider-row-marker');
-    expect(errored).toContain('boom');
   });
 
   test('renders the empty state with its action when there are no templates', () => {
@@ -403,7 +291,7 @@ const template = (overrides: Partial<SandboxTemplate> = {}): SandboxTemplate => 
   name: 'Default sandbox',
   is_default: false,
   source: 'toml',
-  provider: 'daytona',
+  provider: 'platinum',
   has_dockerfile: false,
   has_image: true,
   image: 'kortixai/sandbox-base:2026.08',
@@ -501,17 +389,16 @@ describe('template card readability', () => {
     ).toMatchObject({ label: 'Base image', value: 'Kortix default', mono: false });
   });
 
-  test('the spec grid is six single-track cells — two full rows, no spans', () => {
+  test('the spec grid is five single-track cells with no spans', () => {
     // A `col-span-*` cell is what made the grid read as ragged: a uniform
     // three-track grid carrying one double-wide cell beside one narrow one.
-    // Six cells fill two complete rows with no holes and nothing spanning.
+    // The sixth "Routing" cell left with the provider pin.
     const facts = [
       ['Processor', '2 vCPU'],
       ['Memory', '4 GiB'],
       ['Storage', '20 GiB'],
       ['Base image', 'img'],
       ['Defined in', 'kortix.yaml'],
-      ['Routing', 'Automatic'],
     ] as const;
     const out = renderToStaticMarkup(
       <dl>
@@ -520,7 +407,7 @@ describe('template card readability', () => {
         ))}
       </dl>,
     );
-    expect(out.match(/<dt/g)?.length).toBe(6);
+    expect(out.match(/<dt/g)?.length).toBe(5);
     expect(out).not.toContain('col-span');
   });
 

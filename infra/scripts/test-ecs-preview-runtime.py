@@ -227,7 +227,7 @@ class PreviewBuildIsolation(unittest.TestCase):
         self.assertNotIn("submodule update --init --recursive --remote", WORKFLOW)
         # NEW (2026-09, aws-env migration): the default-branch-only jobs below
         # (never the PR-code build-* jobs) hold an OIDC token to read
-        # PLATINUM_API_KEY/MORPH_API_KEY from the env secrets through
+        # PLATINUM_API_KEY/PLATINUM_INFERENCE_API_KEY from the env secrets through
         # .github/actions/aws-env — never a direct role assumption. The
         # invariant this test guards is narrower than "no identity anywhere":
         # a job that checks out or compiles pull request code must never hold
@@ -381,7 +381,7 @@ class PreviewRuntimeIsolation(unittest.TestCase):
             "'KORTIX_GITHUB_APP_SLUG',",
             "'MANAGED_GIT_GITHUB_INSTALL_ID',",
             "'MANAGED_GIT_GITHUB_OWNER',",
-            "'OPENROUTER_API_KEY',",
+            "'PLATINUM_INFERENCE_API_KEY',",
         ):
             self.assertIn(name, PREVIEW_STACK)
         self.assertIn("preview runtime secret is not allowlisted", PREVIEW_STACK)

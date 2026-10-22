@@ -65,6 +65,7 @@ import {
 import { Skeleton } from '@kortix/ui/skeleton';
 import { accountCreated } from '@/features/accounts/account-created';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
+import { DownloadModal } from '@/features/marketing/download/download-modal';
 import { Download } from '@kortix/ui/internal/icons/download';
 import { useAuth } from '@/features/providers/auth-provider';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
@@ -72,6 +73,9 @@ import { COMPUTER_SETUP_EVENT } from '@kortix/ui/internal/tunnel/computer-connec
 import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
 import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-param';
 import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
+import { PROJECT_ACTIONS } from '@kortix/sdk';
+import { useProjectCan } from '@kortix/ui/internal/lib/use-project-can';
+import { capabilityTabHref } from '@kortix/ui/workspace';
 import { WorkspaceMenuSection } from '@kortix/ui/workspace/sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
 import { type SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
@@ -89,6 +93,7 @@ import {
   CaretUpDownIcon,
   GearSixIcon as CogOne,
   SignOutIcon as LogOut,
+  PencilSimpleIcon,
   PlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -99,6 +104,8 @@ import { useEffect, useState } from 'react';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
+  const tUi = useI18nTranslations('hardcodedUi.i18nComplete');
+  const canRename = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE).allowed;
   const tNewWorkspace = useI18nTranslations('newWorkspace');
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -125,6 +132,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const { setSelectedAccountId } = useCurrentAccountStore();
   // The exact key the account list reads, for the create-account seed below.
   const accountsQueryKey = useAccountsQueryKey();
+  const [downloadOpen, setDownloadOpen] = useState(false);
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [computerSetupOpen, setComputerSetupOpen] = useState(false);
   // Right after this desktop pairs, setup opens on the spot (see COMPUTER_SETUP_EVENT).
@@ -303,6 +311,15 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               </DropdownMenuSub>
               <DropdownMenuSeparator />
 
+              {canRename === true && (
+                <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                  <Link href={capabilityTabHref(projectId, 'config')} prefetch>
+                    <PencilSimpleIcon />
+                    {tUi('text3064d79a295c')}
+                  </Link>
+                </DropdownMenuItem>
+              )}
+
               {/* `profile`, NOT `general`. In the merged settings vocabulary
                   (`settings/settings-tabs.ts`) `general` is Workspace →
                   General, a PROJECT-scoped tab — a row labelled "User
@@ -333,14 +350,16 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
               </DropdownMenuItem>
 
-              {/* `prefetch` explicitly: `(marketing)/download/page.tsx` awaits
-                  `headers()`, so the default `auto` intent would cache nothing
-                  for a dynamic route. */}
-              <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                <Link href="/download" prefetch data-desktop-hidden>
-                  <Download />
-                  {t('workspace.downloadApp')}
-                </Link>
+              {/* A modal, not a route: the user stays in the workspace. It
+                  renders the same `DownloadOptions` as the public /download
+                  page, so the two surfaces never drift apart. */}
+              <DropdownMenuItem
+                onSelect={() => deferAfterClose(() => setDownloadOpen(true))}
+                size="sm"
+                data-desktop-hidden
+              >
+                <Download />
+                {t('workspace.downloadApp')}
               </DropdownMenuItem>
 
               <ThemeSubmenu />
@@ -363,6 +382,8 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
 
       {/* Sibling of the dropdown, never a child — see `useLogoutFlow`. */}
       {logoutDialog}
+
+      <DownloadModal open={downloadOpen} onOpenChange={setDownloadOpen} />
 
       <LocalComputerModal
         projectId={projectId}

@@ -27,7 +27,9 @@ const uiModalMock = () =>
     ].map((name) => [name, host('div')]),
   );
 mock.module('@kortix/ui/modal', uiModalMock);
+const realMotion = await import('motion/react');
 mock.module('motion/react', () => ({
+  ...realMotion,
   m: { div: host('div') },
   LazyMotion: ({ children }: { children?: React.ReactNode }) => children,
 }));
@@ -235,3 +237,16 @@ for (const authMethod of [
     }
   });
 }
+
+// Other components in a non-isolated Bun process still need real motion exports.
+test('motion mock preserves MotionConfig for sibling components', async () => {
+  const { MotionConfig } = await import('motion/react');
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  expect(
+    renderToStaticMarkup(
+      <MotionConfig reducedMotion="always">
+        <span>Sibling content</span>
+      </MotionConfig>,
+    ),
+  ).toBe('<span>Sibling content</span>');
+});

@@ -6,13 +6,20 @@ by CSS variables. The whole session UI lives here, one module per
 responsibility (layout below). `apps/web` imports it like any host: the module
 entries, the primitives, and a short list of deep paths (below).
 
-**Built with @kortix/ui:** [Lumen](../../apps/whitelabel-demo), a complete white-label agent
-product in its own brand. Every screen is a module of this package.
+**Built with @kortix/ui:** three white-label examples in `apps/white-label/`
+([README](../../apps/white-label/README.md)):
+[Lumen Workspace](../../apps/white-label/reskin), the Kortix workspace under its own
+theme, where every screen is a module of this package;
+[Team Console](../../apps/white-label/team-console), an internal tool; and
+[Lumen](../../apps/white-label/lumen), a legal AI SaaS with its own stack.
 
-<p align="center"><img src="https://github.com/kortix-ai/suna/raw/dev/apps/whitelabel-demo/public/screenshots/session.png" width="720" alt="Lumen: the Kortix session workspace in Lumen's brand" /></p>
+<p align="center"><img src="https://github.com/kortix-ai/suna/raw/dev/apps/white-label/lumen/public/screenshots/assistant-source.png" width="720" alt="Lumen: the @kortix/ui session thread in Lumen's brand, with a cited answer and its source" /></p>
 
-Install: not on npm yet. Inside kortix-ai/suna: `"@kortix/ui": "workspace:*"`.
-After the first npm release: `npm i @kortix/ui`.
+Install: `npm i @kortix/ui @kortix/sdk`. Both packages carry the Kortix release
+version, so install the same version of each. The module entries (`session`,
+`workspace`, `theme` and the others below) ship from 0.14.4. 0.14.3 has the root,
+the component subpaths and the stylesheets. Inside kortix-ai/suna:
+`"@kortix/ui": "workspace:*"`.
 `react` and `react-dom` 19 are peers (the PowerPoint preview needs React 19.2.7 or later).
 
 - Public docs: `apps/web/content/docs/sdk/ui.mdx` (https://kortix.com/docs/sdk/ui).
@@ -295,7 +302,7 @@ const brand: KortixTheme = {
 `THEME_COLOR_VARS` maps each color key to its variable. Plain CSS works too:
 set the same variables in your own `:root` / `.dark` after the import. Never
 fork a component. Roobert (`--font-roobert`) is for Kortix-owned surfaces only.
-`apps/whitelabel-demo/src/config/theme.ts` is the reference.
+`apps/white-label/reskin/src/config/theme.ts` is the reference.
 
 How it stays themable:
 

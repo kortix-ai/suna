@@ -15,6 +15,7 @@ import {
   emitJson,
   fail,
   missing,
+  query,
   resolveAccountContext,
   resolveProjectContext,
   surfaceApiError,
@@ -22,6 +23,7 @@ import {
   takeFlagValue,
   takeFlagValues,
 } from '../command-helpers.ts';
+import { resolveProjectId } from '../project-link.ts';
 import { readSecret, readVisible } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import { sleep } from '@kortix/shared/guards';
@@ -44,6 +46,10 @@ Subcommands:
   ls [--json]                       List configured providers (OAuth +
                                     API-key secrets that map to known
                                     providers).
+  ls --catalog [--search <query>]    Browse the bundled provider catalog,
+                                    filtered by id or name. --json supported.
+                                    env lists project secrets to configure
+                                    with \`kortix secrets set NAME=value\`.
   login <provider>                  Run the OAuth device-code flow.
                                     Providers: openai, opencode (Zen),
                                     opencode-go. Zen and Go each need
@@ -61,6 +67,8 @@ Subcommands:
                                     provider, every account still cooling down.
                                     Otherwise the gateway re-tries one every
                                     15 min on its own. --account <id>.
+                                    Includes the logins stored on --project
+                                    (default: linked).
   custom ls [--json]                List custom OpenAI-compatible endpoints.
   custom set <id> --base-url <url> --model <model>[=<name>] [--model …]
              [--name <name>] [--key-stdin]
@@ -69,7 +77,8 @@ Subcommands:
                                     --name defaults to <id>. --key-stdin
                                     saves the API key read from stdin as
                                     CUSTOM_<ID>_API_KEY.
-  custom rm <id>                    Remove the endpoint and its key.
+  custom rm <id>                    Remove the endpoint and its
+                                    CUSTOM_<ID>_API_KEY secret.
 
 Known API-key providers (provider → project secret(s)):
   anthropic       → ANTHROPIC_API_KEY
@@ -83,12 +92,12 @@ Known API-key providers (provider → project secret(s)):
   opencode        → OPENCODE_API_KEY (OpenCode Zen)
   opencode-go     → OPENCODE_GO_API_KEY (OpenCode Go)
   bedrock         → AWS_BEARER_TOKEN_BEDROCK + AWS_REGION (--region)
+  platinum        → PLATINUM_API_KEY (Platinum Inference; models listed live)
 
 Global options:
   --project <id>     Operate on this project id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --region <region>  (set bedrock) AWS region, e.g. us-east-1.
-  --enterprise <url> (login github-copilot) Enterprise GHE URL.
   -h, --help         Show this help.
 
 Example:
@@ -101,7 +110,6 @@ const LOGIN_HELP = help`Usage: kortix providers login <provider> [options]
 Start the OAuth device-code flow for openai, opencode, or opencode-go.
 
 Options:
-  --enterprise <url>  GitHub Enterprise URL for github-copilot.
   --project <id>      Operate on this project id (default: linked).
   --host <name>       Operate against a non-default Kortix host.
   -h, --help          Show this help without starting OAuth.
@@ -130,6 +138,7 @@ export const PROVIDER_CATALOG_ID: Record<string, string> = {
   opencode: 'opencode',
   'opencode-go': 'opencode-go',
   bedrock: 'amazon-bedrock',
+  platinum: 'platinum',
 };
 
 export const PROVIDER_ENV_VARS: Record<string, string[]> = Object.fromEntries(
@@ -149,8 +158,9 @@ export function isProviderConnected(envVars: string[], secretNames: Set<string>)
   );
 }
 
-// Providers that support the OAuth device-code flow.
-const OAUTH_PROVIDERS = new Set(['openai', 'github-copilot', 'opencode', 'opencode-go']);
+// Providers that support the OAuth device-code flow: the ones the API's
+// `oauthProvider()` serves (apps/api/src/projects/routes/provider-oauth.ts).
+const OAUTH_PROVIDERS = new Set(['openai', 'opencode', 'opencode-go']);
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -163,18 +173,22 @@ export async function runProviders(argv: string[]): Promise<number> {
   if (helpCode !== null) return helpCode;
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
-  let enterpriseFlag: string | undefined;
   let regionFlag: string | undefined;
   let accountFlag: string | undefined;
   let json = false;
+  let catalog = false;
+  let search: string | undefined;
   let custom: CustomFlags = { models: [], keyStdin: false };
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
-    enterpriseFlag = takeFlagValue(rest, ['--enterprise']);
     regionFlag = takeFlagValue(rest, ['--region']);
     accountFlag = takeFlagValue(rest, ['--account']);
     json = takeFlagBool(rest, ['--json']);
+    if (sub === 'ls' || sub === 'list') {
+      catalog = takeFlagBool(rest, ['--catalog']);
+      search = takeFlagValue(rest, ['--search']);
+    }
     if (sub === 'custom') {
       custom = {
         name: takeFlagValue(rest, ['--name']),
@@ -196,15 +210,16 @@ export async function runProviders(argv: string[]): Promise<number> {
     sub === 'ls' || sub === 'list' ? rest : rest.filter((arg) => arg.startsWith('-'));
   const unknown = rejectUnknownArgs(leftovers, usage);
   if (unknown !== null) return unknown;
+  if (search !== undefined && !catalog) return fail('--search requires --catalog');
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'ls':
     case 'list':
-      return providersLs(ctxOpts, json);
+      return catalog ? providersCatalog(search, json) : providersLs(ctxOpts, json);
     case 'login':
     case 'oauth':
-      return providersLogin(rest[0], enterpriseFlag, ctxOpts);
+      return providersLogin(rest[0], ctxOpts);
     case 'set':
       return providersSet(rest[0], rest[1], regionFlag, ctxOpts);
     case 'rm':
@@ -212,7 +227,7 @@ export async function runProviders(argv: string[]): Promise<number> {
     case 'unset':
       return providersRm(rest[0], ctxOpts);
     case 'retry':
-      return providersRetry(rest[0], accountFlag, hostFlag, json);
+      return providersRetry(rest[0], accountFlag, ctxOpts, json);
     case 'custom':
       return providersCustom(rest[0], rest[1], custom, ctxOpts, json);
     default:
@@ -233,13 +248,16 @@ export function coolingSecrets<T extends StoredAccount>(rows: T[], provider: str
   return rows.filter((row) => row.cooldown_until && Date.parse(row.cooldown_until) > now && (!want || row.provider_id === want));
 }
 
-async function providersRetry(provider: string | undefined, accountArg: string | undefined, hostArg: string | undefined, json: boolean): Promise<number> {
-  const ctx = resolveAccountContext({ accountArg, hostArg });
+async function providersRetry(provider: string | undefined, accountArg: string | undefined, opts: CtxOpts, json: boolean): Promise<number> {
+  const ctx = resolveAccountContext({ accountArg, hostArg: opts.hostArg });
   if (!ctx) return 1;
   const base = `/accounts/${encodeURIComponent(ctx.accountId)}/secret-resources`;
+  // Without project_id the list holds only account-wide rows; an OAuth login
+  // (ChatGPT, OpenCode) is stored on its project. Optional: no project, no filter.
+  const projectId = resolveProjectId(opts.projectArg, { hostArg: opts.hostArg });
   let rows: StoredAccount[];
   try {
-    rows = (await ctx.client.get<{ secrets: StoredAccount[] }>(base)).secrets;
+    rows = (await ctx.client.get<{ secrets: StoredAccount[] }>(`${base}${query({ project_id: projectId ?? undefined })}`)).secrets;
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -262,6 +280,24 @@ async function providersRetry(provider: string | undefined, accountArg: string |
     return 0;
   }
   for (const row of cooling) process.stdout.write(`${status.ok(`${row.label} (${row.provider_id}) is usable again.`)}\n`);
+  return 0;
+}
+
+function providersCatalog(search: string | undefined, json: boolean): number {
+  const query = (search ?? '').trim().toLowerCase();
+  const providers = CATALOG.providers
+    .filter((provider) => `${provider.id} ${provider.name}`.toLowerCase().includes(query))
+    .map((provider) => ({
+      id: provider.id, name: provider.name,
+      env: primaryAuthEnvVars(provider), doc: provider.doc,
+    }));
+  if (json) emitJson({ providers });
+  else {
+    for (const provider of providers) {
+      process.stdout.write(`${provider.id}  ${provider.name}  ${provider.env.join(' + ') || '(no API-key secrets)'}\n`);
+    }
+    if (!providers.length) process.stdout.write('No providers match your search.\n');
+  }
   return 0;
 }
 
@@ -334,17 +370,16 @@ async function providersLs(opts: CtxOpts, json = false): Promise<number> {
   return 0;
 }
 
-async function providersLogin(
-  provider: string | undefined,
-  enterpriseUrl: string | undefined,
-  opts: CtxOpts,
-): Promise<number> {
+async function providersLogin(provider: string | undefined, opts: CtxOpts): Promise<number> {
   if (!provider)
     return fail('Pass a provider: kortix providers login <openai|opencode|opencode-go>');
   if (!OAUTH_PROVIDERS.has(provider)) {
+    const keyHint = PROVIDER_ENV_VARS[provider]?.length
+      ? `  ${C.dim}Try \`kortix providers set ${provider} <key>\` instead.${C.reset}\n`
+      : '';
     process.stderr.write(
-      `${status.err(`OAuth not supported for "${provider}".`)}\n` +
-        `  ${C.dim}Try \`kortix providers set ${provider} <key>\` instead.${C.reset}\n`,
+      `${status.err(`OAuth not supported for "${provider}". Supported: ${[...OAUTH_PROVIDERS].join(', ')}.`)}\n` +
+        keyHint,
     );
     return 2;
   }
@@ -356,7 +391,7 @@ async function providersLogin(
   try {
     flow = await ctx.client.post<OauthFlowStartResponse>(
       `/projects/${ctx.projectId}/oauth/${provider}/start`,
-      enterpriseUrl ? { enterprise_url: enterpriseUrl } : {},
+      {},
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -642,19 +677,41 @@ async function customLs(opts: CtxOpts, json: boolean): Promise<number> {
   return 0;
 }
 
+/**
+ * Remove an endpoint and its key. The DELETE route drops only the definition;
+ * the key is the project secret `secret_name` (`CUSTOM_<ID>_API_KEY`), deleted
+ * through the secrets route like the web form does. The list says which of
+ * the two exist: the secrets DELETE answers 200 either way.
+ */
 async function customRm(id: string, opts: CtxOpts): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
+  const base = `/projects/${ctx.projectId}`;
+  let provider: CustomLlmProvider | undefined;
   try {
-    await ctx.client.delete(`/projects/${ctx.projectId}/custom-providers/${encodeURIComponent(id)}`);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      process.stdout.write(`  ${C.dim}Nothing to remove for "${id}".${C.reset}\n`);
-      return 0;
+    const { providers } = await ctx.client.get<{ providers: CustomLlmProvider[] }>(`${base}/custom-providers`);
+    provider = providers.find((p) => p.id === id);
+    if (provider?.configured) {
+      await ctx.client.delete(`${base}/custom-providers/${encodeURIComponent(id)}`);
     }
+    if (provider?.has_key) {
+      await ctx.client.delete(`${base}/secrets/${encodeURIComponent(provider.secret_name)}`);
+    }
+  } catch (err) {
     return surfaceApiError(err);
   }
-  process.stdout.write(`${status.ok(`Removed custom provider ${C.bold}${id}${C.reset} and its key`)}\n`);
+  if (!provider || (!provider.configured && !provider.has_key)) {
+    process.stdout.write(`  ${C.dim}Nothing to remove for "${id}".${C.reset}\n`);
+    return 0;
+  }
+  const key = provider.has_key ? `${C.bold}${provider.secret_name}${C.reset}` : '';
+  process.stdout.write(
+    `${status.ok(
+      provider.configured
+        ? `Removed custom provider ${C.bold}${id}${C.reset}${key ? ` and its key ${key}` : ''}`
+        : `Removed key ${key}`,
+    )}\n`,
+  );
   return 0;
 }
 

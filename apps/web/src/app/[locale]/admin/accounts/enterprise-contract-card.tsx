@@ -2,7 +2,7 @@
 
 import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 import { Badge } from '@kortix/ui/badge';
 import { Button } from '@kortix/ui/button';
@@ -161,6 +161,7 @@ export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
 
   const [license, setLicense] = useState('');
   const [termMonths, setTermMonths] = useState('12');
+  const termMonthsId = useId();
   const [collection, setCollection] = useState<AdminContractCollection>('invoice');
   const [note, setNote] = useState('');
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -375,10 +376,11 @@ export function EnterpriseContractCard({ account }: { account: AdminAccount }) {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-muted-foreground text-xs">
+            <label htmlFor={termMonthsId} className="text-muted-foreground text-xs">
               {t('text3569eff22740', { max: maxTerm })}
             </label>
             <Input
+              id={termMonthsId}
               type="number"
               min={1}
               max={maxTerm}

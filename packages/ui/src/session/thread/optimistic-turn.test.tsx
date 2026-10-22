@@ -16,6 +16,7 @@ import { OptimisticTurn } from './optimistic-turn';
 import { UserMessage } from '../turn/user-message';
 import { adoptSentAttachmentPreviews } from '../composer/sent-attachment-previews';
 import { buildOptimisticPromptTextWithUploads } from '../composer/uploaded-file-refs';
+import { appendSessionRefs } from '../../internal/lib/project-preamble';
 
 /** An attached-file card reaches FileContentRenderer, which calls
  *  `useTranslations` and a thumbnail query — so this subtree needs both
@@ -37,6 +38,19 @@ describe('OptimisticTurn', () => {
     expect(markup).toContain('pasted body');
     expect(markup).toContain('title="Pasted text"');
     expect(markup).not.toContain('pasted_content');
+  });
+
+  // KRTX-2858: the bubble stripped the session refs, then HighlightMentions
+  // parsed the stripped text again and found no titles, so a multi-word session
+  // mention drew as a one-word file chip until the server turn replaced it.
+  test('a session mention keeps its session chip and full title before the server turn', () => {
+    const text = appendSessionRefs('compare with @Quarterly plan review', [
+      { id: 'ses_quarterly', title: 'Quarterly plan review' },
+    ]);
+    const markup = render(<OptimisticTurn text={text} />);
+    expect(markup).toContain('aria-label="session mention: Quarterly plan review"');
+    expect(markup).not.toContain('file mention: Quarterly');
+    expect(markup).not.toContain('session_ref');
   });
 
   test('shows the prompt the user typed', () => {

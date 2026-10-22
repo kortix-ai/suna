@@ -6,6 +6,7 @@ import { getSessionDisplayTitle } from '../../session/actions/project-session-li
 import { useLocale, useTranslations } from '../../i18n';
 import { relativeTime } from '../../internal/lib/relative-time';
 import type { ProjectSession } from '@kortix/sdk';
+import { useMemo } from 'react';
 
 /**
  * One row of Recently deleted (KRTX-2853): a session the viewer deleted (or,
@@ -26,8 +27,15 @@ export function DeletedSessionRow({
   const title = getSessionDisplayTitle(session);
   const deletedAt = session.deleted_at ? new Date(session.deleted_at) : null;
   const restoreUntil = session.restore_until ? new Date(session.restore_until) : null;
-  const exact = (date: Date) =>
-    new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  const exactFormat = useMemo(
+    () => new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }),
+    [locale],
+  );
+  const dayFormat = useMemo(
+    () => new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }),
+    [locale],
+  );
+  const exact = (date: Date) => exactFormat.format(date);
 
   return (
     <div
@@ -48,9 +56,7 @@ export function DeletedSessionRow({
           {restoreUntil ? (
             <time dateTime={session.restore_until!} title={exact(restoreUntil)}>
               {t('restorableUntil', {
-                date: new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(
-                  restoreUntil,
-                ),
+                date: dayFormat.format(restoreUntil),
               })}
             </time>
           ) : null}

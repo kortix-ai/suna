@@ -59,7 +59,7 @@ export const SECTION = {
 
 export type Layer = {
   /** Stable id, also the DOM test hook and the key `LayerShowcase` switches on. */
-  id: 'source' | 'context' | 'models' | 'harness' | 'computer' | 'control-plane' | 'kortix';
+  id: 'source' | 'context' | 'models' | 'harness' | 'computer' | 'control-plane';
   /** Two-digit ordinal shown in the left gutter. */
   ordinal: string;
   /** The layer's name. Same noun as the card's own product panel header. */

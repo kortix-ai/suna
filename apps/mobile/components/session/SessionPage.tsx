@@ -108,8 +108,8 @@ import {
   useRuntimeConfig,
   useRuntimeSession,
   useRuntimeSessions,
-  useFeatureFlag,
   useSessionLogOlder,
+  useSessionLogRecord,
   useSessionLogThread,
   useSessionMessages,
   useSessionSync,
@@ -463,12 +463,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // (`readSavedSessionCopy`) it answers from the copy that view read, and the
   // snapshot `useSession` starts asks for no window: one download per open.
   // A sub-agent reads its own window.
-  // With the project flag `session_log` on (and while it is unknown) no v1 copy
-  // is read: the session log is the saved copy (`useSession` reads its page, a
-  // sub-agent's thread loads by `useSessionLogThread`), and older pages are its
-  // (`GET …/log?before_seq=`).
+  // The session log first: no v1 copy is read while the session log answers (`useSession`
+  // reads its page; the SDK's saved-copy read asks `GET …/log` before any v1 window). A
+  // sub-agent's thread loads by `useSessionLogThread`, and older pages are the log's
+  // (`GET …/log?before_seq=`). Only a session whose log answers 404 (a server older than the
+  // log) reads the v1 copy.
   const kortixSessionScope = projectId && projectSessionId ? `${projectId}/${projectSessionId}` : undefined;
-  const sessionLogFlag = useFeatureFlag(projectId ?? null, 'session_log');
+  const onLog = useSessionLogRecord({ sessionId: projectSessionId ?? '' }) !== null;
   // The session stream (R5.3): while it is up, the SDK's tail and ask polls
   // stand down — the box's ring replays what a reconnect missed.
   const streamConnected = useSessionStreamConnected(projectId ?? '', projectSessionId ?? '');
@@ -477,16 +478,15 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     streamConnected,
     networkEnabled: runtimeReady,
     savedChild: isSubThread,
-    sessionLog: sessionLogFlag.enabled || sessionLogFlag.isLoading,
     // The rows are read below, paced: a streamed delta does not re-render this hook.
     subscribeMessages: false,
   });
   const logOlder = useSessionLogOlder(
     { projectId: projectId ?? '', sessionId: projectSessionId ?? '' },
     isSubThread ? sessionId : undefined,
-    { enabled: sessionLogFlag.enabled },
+    { enabled: onLog },
   );
-  const { hasOlder, isLoadingOlder, loadOlder } = sessionLogFlag.enabled ? logOlder : sync;
+  const { hasOlder, isLoadingOlder, loadOlder } = onLog ? logOlder : sync;
   const { retryTranscript } = sync;
   const loadOlderRef = useRef(loadOlder);
   loadOlderRef.current = loadOlder;
@@ -515,7 +515,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
 
   // The thread, from the session log: the root thread, or a sub-agent's by
-  // its runtime id. With the project flag `session_log` on it holds the API's
+  // its runtime id. While the store holds the session log it holds the API's
   // v2 records, else the `fromV1` view of the v1 rows. At most once per 64 ms:
   // applying every 16 ms stream batch saturated the JS thread and blocked tab
   // switches and drawer opens while the assistant was streaming.

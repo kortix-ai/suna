@@ -2573,9 +2573,14 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
   // site block to the Caddyfile. Gated on KORTIX_APPS_BASE_DOMAIN, the single
   // signal that turns it on; Caddy itself only runs in domain mode, so the
   // block is inert without a domain.
+  // Kortix Capture object store: the bundled on-box MinIO (default) or an
+  // operator-owned external S3-compatible store. A durable .env switch that
+  // survives `update` (which only moves image tags).
+  const captureStoreExternal = env.KORTIX_CAPTURE_STORE?.trim() === 'external';
   writeKortixRuntimeAssets(root, {
     appsHostingConfigured: Boolean(env.KORTIX_APPS_BASE_DOMAIN?.trim()),
     previewHostingConfigured: Boolean(env.KORTIX_PREVIEW_BASE_DOMAIN?.trim()),
+    captureStoreExternal,
   });
   writeFileSync(
     composePath(instance),
@@ -2583,6 +2588,7 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
       domainConfigured: Boolean(env.KORTIX_DOMAIN?.trim()),
       tunnelConfigured: reachabilityMode(env) === 'tunnel',
       namedTunnelConfigured: namedTunnelConfigured(env),
+      captureStoreExternal,
     }),
     { encoding: 'utf8', mode: 0o600 },
   );
@@ -2632,6 +2638,16 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
   // Pipedream credentials remain accepted for rollback. Recompute on every
   // write so `env set` changes stay synchronized.
   env.KORTIX_PUBLIC_CONNECTORS_ENABLED = connectorAuthConfigured(env) ? 'true' : 'false';
+
+  // External Capture object store: the bundled on-box MinIO is not rendered, so
+  // its generated root pair is dead weight. Drop it so it never persists in an
+  // external instance's .env — defaultEnv() generates the pair for every fresh
+  // instance (bundled is the default), and this is where an external instance
+  // sheds it, on init and on every later `env set`/`configure`/`update`.
+  if (env.KORTIX_CAPTURE_STORE?.trim() === 'external') {
+    delete env.CAPTURE_STORE_ROOT_USER;
+    delete env.CAPTURE_STORE_ROOT_PASSWORD;
+  }
 
   // Public domain + TLS (opt-in): when KORTIX_DOMAIN is set, the bundled Caddy
   // service fronts the stack on 80/443 and every public URL becomes the real

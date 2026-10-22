@@ -95,7 +95,7 @@ import { ViewerDownloadButton } from '../shared/viewer-download-button';
 import { usePreviewFit } from '../../viewer/preview-fit';
 import { cn } from '../../../lib/utils';
 import { downloadBlob } from '../../../internal/lib/utils/download';
-import { loadSharedPdfEngine } from './pdf-thumbnail-utils';
+import { loadSharedPdfEngine } from './pdf-engine-loader';
 import { SidebarGlyph as PanelLeft } from '../../../icons/sidebar-toggle';
 
 export type PDFViewerPageOverlayProps = {
@@ -129,6 +129,9 @@ export type PDFViewerProps = {
   showUpload?: boolean;
   src?: string;
   toolbarActions?: React.ReactNode;
+  /** Search the document for this text once it opens: hits are highlighted and the
+   *  first is scrolled into view, as if typed into the toolbar's search. */
+  findText?: string;
   pageClassName?: (pageNumber: number) => string | undefined;
   renderPageOverlay?: (props: PDFViewerPageOverlayProps) => React.ReactNode;
   onActivePageChange?: (pageNumber: number) => void;
@@ -541,6 +544,7 @@ function PDFViewerFileActionsMenu({
         ref={inputRef}
         type="file"
         accept="application/pdf,.pdf"
+        aria-label={tI18nComplete.raw('text865e89de78d9')}
         className="sr-only"
         tabIndex={-1}
         onChange={(event) => {
@@ -665,9 +669,12 @@ function PDFViewerPageNumberControl({
 function PDFViewerSearchControl({
   documentId,
   controlsDisabled,
+  initialSearch,
 }: {
   documentId: string;
   controlsDisabled: boolean;
+  /** Typed into the search box once the search plugin is ready (`PDFViewerProps.findText`). */
+  initialSearch?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { state, provides } = useSearch(documentId);
@@ -716,6 +723,12 @@ function PDFViewerSearchControl({
     providesRef.current = provides;
     scrollRef.current = scroll;
   }, [provides, scroll]);
+
+  // A host's `findText`: search once the plugin is ready, and again when the text changes.
+  React.useEffect(() => {
+    const text = initialSearch?.trim();
+    if (text && provides && scroll) setSearchDraft(text);
+  }, [initialSearch, provides, scroll]);
 
   const runSearch = React.useCallback((rawQuery: string) => {
     const query = rawQuery.trim();
@@ -1718,7 +1731,8 @@ type PDFViewerInnerProps = {
   pdfFile: string;
   documentId: string;
   document: PdfDocumentObject | null;
-  defaultZoom: number;
+  /** The level requested once the document loads: a number, or a fit mode (`fitOnOpen`). */
+  defaultZoom: ZoomLevel;
   className?: string;
   fileName?: string;
   showDownload: boolean;
@@ -1726,6 +1740,7 @@ type PDFViewerInnerProps = {
   showRotateControls: boolean;
   showUpload: boolean;
   toolbarActions?: React.ReactNode;
+  findText?: string;
   pageClassName?: (pageNumber: number) => string | undefined;
   renderPageOverlay?: (props: PDFViewerPageOverlayProps) => React.ReactNode;
   onActivePageChange?: (pageNumber: number) => void;
@@ -1750,6 +1765,7 @@ function PDFViewerInner({
   showRotateControls,
   showUpload,
   toolbarActions,
+  findText,
   pageClassName,
   renderPageOverlay,
   onActivePageChange,
@@ -2122,7 +2138,10 @@ function PDFViewerInner({
               onPagePointerCancel?.(event, pageNumber)
             }
           >
-            <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-white" />
+            {/* The page's own image covers this; until it paints, the page shows it is loading. */}
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 grid place-items-center bg-white text-neutral-400">
+              <Spinner className="size-5" />
+            </div>
             <RenderLayer
               documentId={documentId}
               pageIndex={page.pageIndex}
@@ -2306,6 +2325,7 @@ function PDFViewerInner({
                 key={documentId}
                 documentId={documentId}
                 controlsDisabled={controlsDisabled}
+                initialSearch={findText}
               />
               {toolbarActions ? (
                 <>
@@ -2498,6 +2518,7 @@ export const PDFViewer = React.forwardRef<PDFViewerHandle, PDFViewerProps>(funct
     showUpload = true,
     src,
     toolbarActions,
+    findText,
     pageClassName,
     renderPageOverlay,
     onActivePageChange,
@@ -2612,7 +2633,9 @@ export const PDFViewer = React.forwardRef<PDFViewerHandle, PDFViewerProps>(funct
       <PDFViewerDocumentLoader
         viewerRef={ref}
         pdfFile={pdfFile}
-        defaultZoom={defaultZoom}
+        // The same level the plugin starts at: a numeric default here would undo `fitOnOpen`
+        // as soon as the document loads (the page opened at 100% and overflowed a narrow pane).
+        defaultZoom={selectPdfZoomLevel(fitOnOpen, defaultZoom)}
         className={className}
         fileName={fileName}
         showDownload={showDownload}
@@ -2620,6 +2643,7 @@ export const PDFViewer = React.forwardRef<PDFViewerHandle, PDFViewerProps>(funct
         showRotateControls={showRotateControls}
         showUpload={showUpload}
         toolbarActions={toolbarActions}
+        findText={findText}
         pageClassName={pageClassName}
         renderPageOverlay={renderPageOverlay}
         onActivePageChange={onActivePageChange}

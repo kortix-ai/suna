@@ -41,6 +41,8 @@ Subcommands:
   ls                          List this session's reminders.
   pause <id>                  Stop firing, keep the reminder.
   resume <id>                 Fire again, re-armed from now.
+  run <id>                    Fire once now (retry a failed run). The
+                              schedule does not move.
   rm <id>                     Delete the reminder (aliases: stop, delete).
 
 Schedule (add):
@@ -65,6 +67,7 @@ Examples:
   kortix remind "Re-run the flaky test suite and report" --at 2026-10-01T09:00:00Z
   kortix reminders add "Post the standup summary" --cron "0 0 9 * * 1-5" --timezone Europe/Berlin
   kortix reminders ls
+  kortix reminders run reminder.3f9a1c2e7b04
   kortix reminders rm reminder.3f9a1c2e7b04
 `;
 
@@ -120,7 +123,7 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
 
   const sub = shortcut ? 'add' : rest.shift();
   const args = rest;
-  if (!['add', 'create', 'ls', 'list', 'pause', 'resume', 'rm', 'stop', 'delete', 'remove'].includes(sub ?? '')) {
+  if (!['add', 'create', 'ls', 'list', 'pause', 'resume', 'run', 'rm', 'stop', 'delete', 'remove'].includes(sub ?? '')) {
     return fail(`Unknown subcommand "${sub}". Run \`kortix reminders --help\`.`);
   }
 
@@ -185,6 +188,12 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
       const updated = await client.patch<SessionReminder>(`${base}/${id}`, { enabled: sub === 'resume' });
       if (json) emitJson(updated);
       else writeReminder(updated, sub === 'pause' ? 'Paused' : 'Resumed');
+      return 0;
+    }
+    if (sub === 'run') {
+      const ran = await client.post<SessionReminder>(`${base}/${id}/run`, {});
+      if (json) emitJson(ran);
+      else writeReminder(ran, 'Sent to the session:');
       return 0;
     }
     await client.delete<{ ok: boolean }>(`${base}/${id}`);

@@ -1167,6 +1167,64 @@ flow(
   },
 );
 
+// PROJ-44 — Daytona is deprecated: no customer may choose it. It runs on the
+// local profile (no managed Git, no sandbox): every refusal happens before a
+// repository or a sandbox is read. The local stack lists `daytona` among the
+// allowed providers, so the refusal is proven where Daytona is still configured.
+flow(
+  'PROJ-44',
+  {
+    domain: 'projects',
+    routes: [
+      'GET /v1/projects/:projectId',
+      'PATCH /v1/projects/:projectId/sandbox-provider',
+      'POST /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ metadata: { default_sandbox_provider: 'daytona' } });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { params: { projectId: p.id } };
+    const readProject = async () => {
+      const r = await owner.get('/v1/projects/:projectId', params);
+      r.status(200);
+      return r.json<{ default_sandbox_provider?: string | null; available_sandbox_providers?: string[] }>();
+    };
+    await ctx.step('a project with a stored daytona pin reads as unpinned and never offers daytona', async () => {
+      const project = await readProject();
+      if (project.default_sandbox_provider !== null) {
+        throw new Error(`expected default_sandbox_provider null, got ${project.default_sandbox_provider}`);
+      }
+      if ((project.available_sandbox_providers ?? []).includes('daytona')) {
+        throw new Error(`daytona is offered: ${JSON.stringify(project.available_sandbox_providers)}`);
+      }
+    });
+    await ctx.step('pin to daytona → 400 with the deprecation message; the project stays unpinned', async () => {
+      const r = await owner.patch('/v1/projects/:projectId/sandbox-provider', { provider: 'daytona' }, params);
+      r.status(400).body().has('$.error', 'Daytona is deprecated. New sandboxes run on Platinum.');
+      const project = await readProject();
+      if (project.default_sandbox_provider !== null) {
+        throw new Error(`a refused pin changed the project: ${project.default_sandbox_provider}`);
+      }
+    });
+    await ctx.step('a session that names daytona → 400 sandbox_provider_deprecated, and no session exists', async () => {
+      const r = await owner.post('/v1/projects/:projectId/sessions', { provider: 'daytona' }, params);
+      r.status(400).body().has('$.code', 'sandbox_provider_deprecated');
+      const list = await owner.get('/v1/projects/:projectId/sessions', params);
+      list.status(200);
+      const sessions = list.json<Array<{ session_id: string }>>();
+      if (sessions.length !== 0) throw new Error(`a refused create left ${sessions.length} session(s)`);
+    });
+    await ctx.step('NONMEMBER cannot reach the pin → 403/404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .patch('/v1/projects/:projectId/sandbox-provider', { provider: 'daytona' }, params);
+      r.status([403, 404]);
+    });
+  },
+);
+
 // PROJ-32 — the BYOK-provider-connect-modal catalog. Serves the SAME live,
 // 24h-refreshed `runtimeModelCatalog.snapshot()` every other gateway/model
 // endpoint reads (apps/api/src/projects/routes/models.ts) — provider-level rows

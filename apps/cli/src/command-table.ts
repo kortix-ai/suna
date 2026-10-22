@@ -235,7 +235,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'marketplace',
             args: '<subcommand>',
-            blurb: 'Search, show, install, and inspect marketplace items',
+            blurb: 'Search, show, install, and uninstall project marketplace skills',
           },
         ],
       },

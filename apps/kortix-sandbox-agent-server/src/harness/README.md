@@ -750,8 +750,10 @@ What the product sees is unchanged: pi's events are reshaped into the OpenCode
 wire (`message.updated`, `message.part.updated`, `message.part.delta`,
 `session.status`, `session.idle`, `permission.*`, `question.*`), served over the
 same `/kortix/runtime/*` namespace and the same raw routes
-(`/session`, `/session/:id/prompt_async`, `/session/:id/message`, `/config`,
-`/agent`, `/provider`, `/permission/:id/reply`, …). One pi session is one Kortix
+(`/session`, `/session/:id/prompt_async`, `/session/:id/message`,
+`/permission/:id/reply`, …). pi does not serve OpenCode's `/config`, `/agent` or
+`/provider` (they answer `404`), so `opencode attach` cannot drive a pi
+session. One pi session is one Kortix
 session: the root id is `ses_pi<sha256(sessionId)[:24]>`, deterministic (or the
 root thread id a session-log restore wrote into the dump), so a restart
 resolves the same root and restores the transcript from
@@ -803,6 +805,11 @@ describes.
   the rest, `$ARGUMENTS` takes the raw text, and a template with neither gets
   the arguments appended. OpenCode's `` !`cmd` `` shell expansion is not
   supported.
+- **Skills in the command list.** On v2 and v3, `GET /command` ends with the
+  agent's granted skills as `source: 'skill'` rows, as OpenCode lists them:
+  the session composer's `/` menu reads only this list. A command shadows a
+  skill of the same name. `POST /session/:id/command` with a skill name sends
+  the `SKILL.md` body in pi's `<skill>` block, then the arguments.
 - **Extensions.** The API sends the session agent's pi packages as
   `KORTIX_PI_PACKAGES`; a repo entry is `./<path>` and resolves against the
   config root. Extensions load once per runtime start, so an agent switch

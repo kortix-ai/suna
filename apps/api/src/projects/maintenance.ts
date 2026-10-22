@@ -14,6 +14,7 @@ import { reclaimAppSiteBlobs } from '../apps/static-site';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
 import { purgeExpiredTriggerRuns } from './trigger-execution-store';
+import { settleTriggerRunsFromTurns } from './lib/trigger-run-outcome';
 import { mapWithConcurrency } from './lib/trigger-scheduler-state';
 import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
 import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
@@ -540,6 +541,12 @@ function runMaintenanceSweeps() {
       logger.warn('[project-maintenance] trigger-run retention failed', { error: err instanceof Error ? err.message : String(err) });
       return 0;
     }),
+    // A run whose turn ended on a path with no turn-end relay (reaper, stop,
+    // a box that went away) is closed from the turn ledger here.
+    () => settleTriggerRunsFromTurns().catch((err) => {
+      logger.warn('[project-maintenance] trigger-run settle failed', { error: err instanceof Error ? err.message : String(err) });
+      return 0;
+    }),
   ]);
 }
 
@@ -569,6 +576,7 @@ function logMaintenanceCycle(
     archivedRemovals,
     stuckProvisioning,
     triggerRunsPurged,
+    triggerRunsSettled,
   ] = sweeps;
   const hadAction = Boolean(
     idle.stopped ||
@@ -617,7 +625,8 @@ function logMaintenanceCycle(
       archivedRemovals.failed ||
       stuckProvisioning.examined ||
       stuckProvisioning.errors ||
-      triggerRunsPurged,
+      triggerRunsPurged ||
+      triggerRunsSettled,
   );
   if (hadAction) {
     console.log('[project-maintenance] completed', {
@@ -640,6 +649,7 @@ function logMaintenanceCycle(
       archivedRemovals,
       stuckProvisioning,
       triggerRunsPurged,
+      triggerRunsSettled,
     });
   }
   // Unconditional heartbeat — proof-of-life independent of whether any

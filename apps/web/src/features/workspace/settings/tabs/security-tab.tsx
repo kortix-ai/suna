@@ -14,7 +14,7 @@ import {
   WarningIcon as Warning,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { CopyButton } from '@kortix/ui/markdown';
 
@@ -707,11 +707,11 @@ export function SecurityTab() {
     staleTime: 10_000,
   });
 
-  const dateFormat = new Intl.DateTimeFormat(locale, { dateStyle: 'long' });
-  const dateTimeFormat = new Intl.DateTimeFormat(locale, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: 'long' }), [locale]);
+  const dateTimeFormat = useMemo(
+    () => new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }),
+    [locale],
+  );
   const devices: DeviceRow[] = (deviceQuery.data ?? []).map((device) => {
     const { browser, os, mobile, brand } = describeUserAgent(device.user_agent);
     const label =

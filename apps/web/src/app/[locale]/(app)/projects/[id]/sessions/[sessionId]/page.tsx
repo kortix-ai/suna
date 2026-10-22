@@ -1,12 +1,14 @@
 'use client';
 
+import { useTranscriptPresence } from './use-transcript-presence';
+
 import { useTranslations } from '@/i18n/use-translations';
 
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ComponentProps, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { AppErrorCard, ClientErrorBoundary } from '@/components/common/error-boundary';
 import {
@@ -27,6 +29,7 @@ import { ErrorState } from '@kortix/ui/error-state';
 import { useNotificationCenter } from '@kortix/ui/internal/hooks/use-notification-center';
 import { useOpenSessionRead } from '@/features/notifications/use-open-session-read';
 import { useAuth } from '@/features/providers/auth-provider';
+import { MissingSessionBoundary } from '@/features/session/missing-session-boundary';
 import {
   InstantSessionShell,
   SavedSessionSkeleton,
@@ -160,13 +163,29 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
  */
 export default function ProjectSessionPage() {
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
+  const tSessionPage = useTranslations('sessionPage');
   if (!projectId || !sessionId) return null;
   return (
-    <ProjectSessionView
+    <MissingSessionBoundary
       key={`${projectId}/${sessionId}`}
       projectId={projectId}
       sessionId={sessionId}
-    />
+      fallback={
+        <InlineSessionError
+          title={tSessionPage('missing.title')}
+          message={tSessionPage('missing.message')}
+          action={
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/projects/${projectId}`} prefetch>
+                {tSessionPage('backToProject')}
+              </Link>
+            </Button>
+          }
+        />
+      }
+    >
+      <ProjectSessionView projectId={projectId} sessionId={sessionId} />
+    </MissingSessionBoundary>
   );
 }
 
@@ -560,9 +579,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     enabled: !!user && !chatReady && !handoff.newSessionHint && !restoredFirstPrompt,
   });
   const hasPendingFirstPrompt = restoreInbox.prompts.some(isFirstPromptRow);
-  useEffect(() => {
-    if (hasPendingFirstPrompt && session.messages.length === 0) setRestoredFirstPrompt(true);
-  }, [hasPendingFirstPrompt, session.messages.length]);
+  if (hasPendingFirstPrompt && session.messages.length === 0 && !restoredFirstPrompt) {
+    setRestoredFirstPrompt(true);
+  }
   // "The shell is painting this session's first prompt right now." TWO producers
   // put a prompt on that surface and only one of them is a send made here:
   //
@@ -601,11 +620,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // server's) WITHOUT waiting for the sandbox, so it lands while a hibernated
   // box is still waking and without the chat having mounted. Latched: the store only ever grows for a live session,
   // but a transient empty read must never resurrect the shell.
-  const [sawTranscript, setSawTranscript] = useState(false);
-  useEffect(() => {
-    if (session.messages.length > 0) setSawTranscript(true);
-  }, [session.messages.length]);
-  const hasTranscript = session.messages.length > 0 || sawTranscript;
+  const hasTranscript = useTranscriptPresence(session.savedTranscript);
   const repositoryDisconnect = useRepositoryDisconnect(projectId);
   // A session whose clone predates a repository replacement still has its
   // transcript. Do not replace a readable conversation with a failure card.
@@ -868,15 +883,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (sessionSwitchLoading) {
       if (resumeOverlay === 'saved-skeleton') return resumeSkeleton;
       return (
-        <HeaderlessSessionSurface>
-          <SessionStartingLoader
-            stage={switchingToSessionId === sessionId ? startStage : 'starting'}
-            projectId={projectId}
-            sessionId={switchingToSessionId ?? sessionId}
-            reason={switchingToSessionId === sessionId ? session.reason : null}
-            failure={switchingToSessionId === sessionId ? session.failure : null}
-          />
-        </HeaderlessSessionSurface>
+        <SessionBootSurface
+          stage={switchingToSessionId === sessionId ? startStage : 'starting'}
+          projectId={projectId}
+          sessionId={switchingToSessionId ?? sessionId}
+          reason={switchingToSessionId === sessionId ? session.reason : null}
+          failure={switchingToSessionId === sessionId ? session.failure : null}
+        />
       );
     }
 
@@ -969,16 +982,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (wakeLadderHolding) {
       if (!showCachedTranscriptWhileDown) {
         return (
-          <HeaderlessSessionSurface>
-            <SessionStartingLoader
-              stage="starting"
-              projectId={projectId}
-              sessionId={sessionId}
-              note={wake.note}
-              reason={session.reason}
-              failure={session.failure}
-            />
-          </HeaderlessSessionSurface>
+          <SessionBootSurface
+            stage="starting"
+            projectId={projectId}
+            sessionId={sessionId}
+            note={wake.note}
+            reason={session.reason}
+            failure={session.failure}
+          />
         );
       }
     } else if (recoverableFailure && !notice) {
@@ -1127,16 +1138,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       // dead-end, so the user just sees it come back (as a hard refresh would).
       if (autoResuming) {
         return (
-          <HeaderlessSessionSurface>
-            <SessionStartingLoader
-              stage="starting"
-              projectId={projectId}
-              sessionId={sessionId}
-              note={wake.note}
-              reason={session.reason}
-              failure={session.failure}
-            />
-          </HeaderlessSessionSurface>
+          <SessionBootSurface
+            stage="starting"
+            projectId={projectId}
+            sessionId={sessionId}
+            note={wake.note}
+            reason={session.reason}
+            failure={session.failure}
+          />
         );
       }
       // Auto-resume exhausted (or genuinely un-resumable): give an in-place
@@ -1250,16 +1259,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             ) : resumeOverlay === 'saved-skeleton' ? (
               resumeSkeleton
             ) : (
-              <HeaderlessSessionSurface>
-                <SessionStartingLoader
-                  stage={authLoading || !user ? 'provisioning' : startStage}
-                  projectId={projectId}
-                  sessionId={sessionId}
-                  note={wake.note}
-                  reason={session.reason}
-                  failure={session.failure}
-                />
-              </HeaderlessSessionSurface>
+              <SessionBootSurface
+                stage={authLoading || !user ? 'provisioning' : startStage}
+                projectId={projectId}
+                sessionId={sessionId}
+                note={wake.note}
+                reason={session.reason}
+                failure={session.failure}
+              />
             )}
           </div>
         )}
@@ -1267,10 +1274,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         {/* Boot status ABOVE the conversation, never in front of it. Mounted
             only in the `banner` presentation — i.e. only when there is a
             transcript underneath worth reading — and held until the runtime is
-            actually reachable, so the strip does not disappear the instant the
-            chat paints while the box is still coming up. What SENDING will do
-            during the wake is the composer's own notice; this says only which
-            phase the boot is in. */}
+            actually reachable. A routine wake renders nothing: the computer
+            comes up in the background and a send goes out once it is up. The
+            banner speaks only for an escalation, a retry, or a stuck wake. */}
         {notice && !canMountChat ? <SessionNoticeBanner {...notice} /> : null}
         {/* Dormant with a transcript paints no boot strip: nothing is booting
             until a message or a returning human wakes the box, and the
@@ -1281,7 +1287,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           bootPresentation === 'banner' &&
           (startStage !== 'ready' || !chatReady) && (
             <SessionConnectingBanner
-              stage={authLoading || !user ? 'provisioning' : startStage}
               projectId={projectId}
               sessionId={sessionId}
               note={wake.note}
@@ -1400,6 +1405,29 @@ function HeaderlessSessionSurface({ children }: { children: ReactNode }) {
       <SidebarToggle placement="floating" />
       {children}
     </div>
+  );
+}
+
+/**
+ * A session with nothing saved to read yet: its frame (header and composer
+ * outline) while the computer wakes in the background. The frame speaks only
+ * when the wake needs attention (`SessionStartingLoader`).
+ */
+function SessionBootSurface({
+  stage,
+  ...wake
+}: ComponentProps<typeof SessionStartingLoader> & {
+  projectId: string;
+  sessionId: string;
+  stage: ComponentProps<typeof SavedSessionSkeleton>['stage'];
+}) {
+  return (
+    <SavedSessionSkeleton
+      projectId={wake.projectId}
+      sessionId={wake.sessionId}
+      stage={stage}
+      status={<SessionStartingLoader {...wake} />}
+    />
   );
 }
 

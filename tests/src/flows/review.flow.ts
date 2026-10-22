@@ -168,6 +168,7 @@ flow(
   {
     domain: 'review',
     routes: [
+      'POST /v1/projects/:projectId/review/items',
       'POST /v1/projects/:projectId/review/bulk',
     ],
   },
@@ -192,6 +193,59 @@ flow(
           { params: { projectId: p.id } },
         );
       r.status(400);
+    });
+    await ctx.step('51 ids → 400 (at most 50 per request)', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/review/bulk',
+          { ids: Array.from({ length: 51 }, () => RANDOM_UUID), verdict: 'approve' },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
+    // A pending connector call needs a live governed call from an agent session,
+    // which the local profile cannot raise (IAM-30). Resolved, expired,
+    // preview_unavailable and forbidden calls are pinned in the DB suite
+    // apps/api/src/__tests__/integration-review-bulk-approvals.test.ts.
+    const fresh = await ctx.fixtures.project({ name: ctx.fixtures.name('rv5') });
+    let nativeId = '';
+    await ctx.step('OWNER submits one native item', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/review/items',
+        { kind: 'output', title: ctx.fixtures.name('rv5') },
+        { params: { projectId: fresh.id } },
+      );
+      r.status(201);
+      nativeId = r.json<{ review_item_id: string }>().review_item_id;
+    });
+    await ctx.step('bulk approve over native, cr: and call: ids → one result per id, in request order', async () => {
+      const ids = [nativeId, `cr:${RANDOM_UUID}`, `call:${RANDOM_UUID}`, 'call:not-a-uuid'];
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/review/bulk',
+        { ids, verdict: 'approve' },
+        { params: { projectId: fresh.id } },
+      );
+      r.status(200).body().has('$.updated', 1);
+      const expected = [
+        { id: nativeId, ok: true },
+        { id: ids[1], ok: false, code: 'not_bulk_actionable' },
+        { id: ids[2], ok: false, code: 'not_found' },
+        { id: ids[3], ok: false, code: 'not_found' },
+      ];
+      const results = r.json<{ results: unknown }>().results;
+      check('bulk results', JSON.stringify(results) === JSON.stringify(expected), expected, results);
+    });
+    await ctx.step('dismiss on a call: id → not_bulk_actionable (calls take approve or reject only)', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/review/bulk',
+        { ids: [`call:${RANDOM_UUID}`], verdict: 'dismiss' },
+        { params: { projectId: fresh.id } },
+      );
+      r.status(200).body().has('$.updated', 0);
+      const results = r.json<{ results: unknown }>().results;
+      const expected = [{ id: `call:${RANDOM_UUID}`, ok: false, code: 'not_bulk_actionable' }];
+      check('dismiss on call', JSON.stringify(results) === JSON.stringify(expected), expected, results);
     });
   },
 );

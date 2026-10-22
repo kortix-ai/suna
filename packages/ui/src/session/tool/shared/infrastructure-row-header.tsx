@@ -259,7 +259,19 @@ export function PanelRowTitle({
             onSubtitleClick &&
               'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
           )}
+          role={onSubtitleClick ? 'button' : undefined}
+          tabIndex={onSubtitleClick ? 0 : undefined}
           title={subtitle}
+          onKeyDown={
+            onSubtitleClick
+              ? (e) => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSubtitleClick();
+                }
+              : undefined
+          }
           // `stopPropagation` is load-bearing now and was not before: the
           // subtitle sits INSIDE the disclosure trigger, so without it every
           // "open this file" click would also toggle the row it lives on.

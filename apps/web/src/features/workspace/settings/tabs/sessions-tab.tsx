@@ -46,17 +46,17 @@ import {
 import { useNotificationPreferences } from '@kortix/sdk/react';
 import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 
-const SOUND_PACKS: { id: SoundPack; label: string; description: string }[] = [
-  { id: 'off', label: 'Off', description: 'All sounds disabled' },
-  { id: 'opencode', label: 'Default', description: 'Default sound pack' },
-  { id: 'kortix', label: 'Seshion Pack', description: 'Whistlin' },
+const SOUND_PACKS: { id: SoundPack }[] = [
+  { id: 'off' },
+  { id: 'opencode' },
+  { id: 'kortix' },
 ];
 
-const SOUND_EVENTS: { id: SoundEvent; label: string; description: string }[] = [
-  { id: 'completion', label: 'Task Completion', description: 'When AI finishes a task' },
-  { id: 'error', label: 'Error', description: 'When a session encounters an error' },
-  { id: 'notification', label: 'Notification', description: 'Questions and permission requests' },
-  { id: 'send', label: 'Message Sent', description: 'When you send a message' },
+const SOUND_EVENTS: { id: SoundEvent }[] = [
+  { id: 'completion' },
+  { id: 'error' },
+  { id: 'notification' },
+  { id: 'send' },
 ];
 
 type NotificationPrefKey = Exclude<keyof WebNotificationPreferences, 'enabled'>;
@@ -78,52 +78,36 @@ interface LabelDescription {
 const NOTIFICATION_TYPE_TOGGLES: {
   key: NotificationTypeKey;
   icon: PhosphorIcon;
-  label: string;
-  description: string;
 }[] = [
   {
     key: 'onCompletion',
     icon: CheckCircleSolid,
-    label: 'Task completions',
-    description: 'When a session finishes its task',
   },
   {
     key: 'onError',
     icon: DangerTriangleSolid,
-    label: 'Errors',
-    description: 'When a session encounters an error',
   },
   {
     key: 'onQuestion',
     icon: QuestionCircleSolid,
-    label: 'Questions',
-    description: 'When Kortix needs your input to continue',
   },
   {
     key: 'onPermission',
     icon: ShieldCheckSolid,
-    label: 'Permission requests',
-    description: 'When Kortix needs permission to use a tool',
   },
 ];
 
 const NOTIFICATION_BEHAVIOR_TOGGLES: {
   key: NotificationBehaviorKey;
   icon: PhosphorIcon;
-  label: string;
-  description: string;
 }[] = [
   {
     key: 'onlyWhenHidden',
     icon: EyeOffSolid,
-    label: 'Only when tab is hidden',
-    description: "Only notify when you're on another tab",
   },
   {
     key: 'playSound',
     icon: Volume2,
-    label: 'Notification sound',
-    description: 'Play a sound when a notification is sent',
   },
 ];
 
@@ -166,6 +150,8 @@ export interface SessionsTabViewProps {
   notificationKinds?: NotificationPreferences['kinds'];
   /** False when the deployment sends no email: the Email column is hidden. */
   emailAvailable?: boolean;
+  /** Kinds that cannot reach this person now (their feature is off everywhere): no row. */
+  hiddenKinds?: readonly InboxNotificationKind[];
   notificationKindsState?: 'loading' | 'error' | 'ready';
   onNotificationKindChange?: (
     kind: InboxNotificationKind,
@@ -197,6 +183,7 @@ export function SessionsTabView({
   notificationCenter = false,
   notificationKinds = DEFAULT_KIND_PREFERENCES,
   emailAvailable = true,
+  hiddenKinds = [],
   notificationKindsState = 'ready',
   onNotificationKindChange = () => {},
   onRetryNotificationKinds = () => {},
@@ -266,9 +253,9 @@ export function SessionsTabView({
               <>
                 {!notificationCenter && (
                   <div className="flex flex-col space-y-3">
-                    <label className="text-muted-foreground text-sm font-medium">
+                    <p className="text-muted-foreground text-sm font-medium">
                       {copy.notificationTypes}
-                    </label>
+                    </p>
                     <div className="divide-y rounded-md border">
                       {NOTIFICATION_TYPE_TOGGLES.map((toggle) => (
                         <NotificationToggle
@@ -286,9 +273,9 @@ export function SessionsTabView({
                 )}
 
                 <div className="flex flex-col space-y-3">
-                  <label className="text-muted-foreground text-sm font-medium">
+                  <p className="text-muted-foreground text-sm font-medium">
                     {copy.behavior}
-                  </label>
+                  </p>
                   <div className="divide-y rounded-md border">
                     {NOTIFICATION_BEHAVIOR_TOGGLES.map((toggle) => (
                       <NotificationToggle
@@ -348,7 +335,7 @@ export function SessionsTabView({
                   <span className={CHANNEL_COLUMN}>{copy.push}</span>
                   {emailAvailable && <span className={CHANNEL_COLUMN}>{copy.email}</span>}
                 </div>
-                {INBOX_NOTIFICATION_KINDS.map((kind) => {
+                {INBOX_NOTIFICATION_KINDS.filter((kind) => !hiddenKinds.includes(kind)).map((kind) => {
                   const label = copy.kinds[kind].label;
                   const channelCell = (channel: NotificationChannel) => (
                     <span className={CHANNEL_COLUMN}>
@@ -450,6 +437,7 @@ export function SessionsTabView({
                         <Button
                           variant="ghost"
                           size="icon"
+                          aria-label={copy.preview}
                           className="text-muted-foreground duration-moderate opacity-0 transition-opacity group-hover:opacity-100"
                           onClick={() => onSoundPreview(event.id)}
                         >
@@ -543,6 +531,9 @@ export function SessionsTab({ projectId }: { projectId?: string }) {
       notificationCenter={notificationCenter}
       notificationKinds={kindPreferences.data?.kinds}
       emailAvailable={kindPreferences.data?.email_available ?? true}
+      // Room messages exist only with a project's `agent_rooms` flag on: an API
+      // that does not say so hides the row rather than show a dead switch.
+      hiddenKinds={kindPreferences.data?.hidden_kinds ?? ['message']}
       notificationKindsState={
         kindPreferences.data ? 'ready' : kindPreferences.isError ? 'error' : 'loading'
       }

@@ -14,6 +14,7 @@ import {
 } from '../../primitives/command';
 import Hint from '../../primitives/hint';
 import { useTranslations } from '../../i18n';
+import { useUiHostConfig } from '../../providers/ui-provider';
 import { cn } from '../../lib/utils';
 import type { Agent } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName, META_AGENT_DISPLAY_NAME } from '@kortix/shared';
@@ -81,7 +82,19 @@ export function AgentSelector({
   const setOpen = onOpenChange ?? setInternalOpen;
   const [search, setSearch] = useState('');
 
-  const primaryAgents = useMemo(() => composerSelectableAgents(agents), [agents]);
+  const { offeredAgents, agentLabels } = useUiHostConfig();
+  // A host that lists its agents (`offeredAgents`) offers only those; it names them with `agentLabels`.
+  const offered = useMemo(
+    () => {
+      if (!offeredAgents) return agents;
+      const offeredNames = new Set(offeredAgents);
+      return agents.filter((a) => offeredNames.has(a.name));
+    },
+    [agents, offeredAgents],
+  );
+  const primaryAgents = useMemo(() => composerSelectableAgents(offered), [offered]);
+  const label = (name: string) =>
+    agentLabels?.[name] ?? (isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name));
 
   // A `flash` state, a `prevAgentRef` feeding it, two effects and a 400ms
   // timer used to live here. Nothing ever READ `flash` — it was written on
@@ -96,9 +109,12 @@ export function AgentSelector({
     const q = search.toLowerCase().trim();
     if (!q) return primaryAgents;
     return primaryAgents.filter(
-      (a) => a.name.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q),
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        (agentLabels?.[a.name] ?? '').toLowerCase().includes(q) ||
+        (a.description || '').toLowerCase().includes(q),
     );
-  }, [primaryAgents, search]);
+  }, [primaryAgents, search, agentLabels]);
 
   const filteredMeta = useMemo(
     () => filteredPrimary.filter((a) => isMetaAgentName(a.name)),
@@ -122,7 +138,7 @@ export function AgentSelector({
   // fallback stays only for a truly unresolved selection (no name at all),
   // matching the resolver's own first-accessible pre-selection.
   const displayedName = resolveDisplayedAgentName(primaryAgents, selectedAgent);
-  const displayName = agentDisplayLabel(agents, selectedAgent);
+  const displayName = displayedName ? label(displayedName) : agentDisplayLabel(offered, selectedAgent);
   const metaSelected = isMetaAgentName(displayedName);
 
   /**
@@ -168,7 +184,7 @@ export function AgentSelector({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="text-foreground truncate text-sm font-medium">
-              {isMetaAgentName(agent.name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(agent.name)}
+              {label(agent.name)}
             </span>
             {meta && (
               <Badge variant="outline" size="xs" className="shrink-0 font-normal">

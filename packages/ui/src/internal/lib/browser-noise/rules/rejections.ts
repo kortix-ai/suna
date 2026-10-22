@@ -523,7 +523,35 @@ export function isAutoplayNotAllowedRejectionNoise(input: {
   if (!PLAY_NOT_ALLOWED_PATTERN.test(message)) {
     return false;
   }
-  const frames = input.frames ?? [];
+  return isUnattributablePlayRejection(input.frames);
+}
+
+// Firefox's `NotSupportedError` for a play() promise whose element has no
+// playable source. Better Stack pattern
+// 1b3195a99afc344886a33243b1b73942b94e74c6bf5ca6b561d3bddc3e3289c6
+// (Kortix Frontend prod, application_id 2346967, KRTX-2998): 1 occurrence, 0
+// identified users, first=last 2026-10-21T09:54:06Z, call site unknown. Every
+// first-party play() promise attaches a `.catch` (`film.tsx`, `sounds.ts`,
+// `video-renderer.tsx`), so the frameless capture is not ours. The guards of
+// `isAutoplayNotAllowedRejectionNoise` keep an attributable one reporting.
+const PLAY_NOT_SUPPORTED_PATTERN =
+  /^The media resource indicated by the src attribute or assigned media provider object was not suitable\.$/;
+
+/**
+ * Whether a Sentry event is the frameless `HTMLMediaElement.play()`
+ * `NotSupportedError` rejection. See `PLAY_NOT_SUPPORTED_PATTERN`.
+ */
+export function isPlayNotSupportedRejectionNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  if (!PLAY_NOT_SUPPORTED_PATTERN.test(normalizeString(input.message))) {
+    return false;
+  }
+  return isUnattributablePlayRejection(input.frames);
+}
+
+function isUnattributablePlayRejection(frames: Array<{ filename?: unknown } | undefined> = []): boolean {
   // Negative guard #1: a resolved first-party `apps/web/src/…` frame means
   // our own code left a play promise unhandled → actionable; keep reporting
   // so the call site can be found + given its `.catch`.
@@ -545,6 +573,11 @@ export const REJECTION_RULES: readonly NoiseRule[] = [
     id: 'autoplay-not-allowed',
     appliesTo: 'sentry',
     match: isAutoplayNotAllowedRejectionNoise,
+  },
+  {
+    id: 'play-not-supported',
+    appliesTo: 'sentry',
+    match: isPlayNotSupportedRejectionNoise,
   },
   {
     id: 'non-error-undefined-rejection',

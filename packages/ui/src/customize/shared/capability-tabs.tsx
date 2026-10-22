@@ -153,8 +153,9 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // once the project turns its flag on. `capabilityAccess()` applies the flags
   // and the leaves; before it settles the bar is invisible and both are left out.
   const access = useCapabilityAccess(projectId);
+  const allowedTabs = new Set(access.tabs);
   const tabs = allTabs.filter((tab) =>
-    access.settled ? access.tabs.includes(tab.key) : !FLAG_GATED_TABS.includes(tab.key),
+    access.settled ? allowedTabs.has(tab.key) : !FLAG_GATED_TABS.includes(tab.key),
   );
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));

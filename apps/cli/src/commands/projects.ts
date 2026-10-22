@@ -612,9 +612,10 @@ Options:
   -y, --yes            rm: skip the confirmation.
   -h, --help           Show this help.
 
-ls needs project read; new and rm need project.credentials.issue. A
-session-bound token can neither mint nor revoke project tokens (403). The
-account's PAT policy (require expiry, maximum lifetime) applies to new tokens.
+ls, new and rm need project.credentials.issue: the list names every member's
+project tokens. A session-bound token can neither mint nor revoke project
+tokens (403). The account's PAT policy (require expiry, maximum lifetime)
+applies to new tokens.
 `;
 
 interface CliTokenRow {
@@ -1094,16 +1095,24 @@ export function saveClonedProjectLink(
   host: string | undefined,
   hostUrl: string,
 ): void {
-  saveLink(
-    {
-      project_id: project.project_id,
-      account_id: project.account_id,
-      host,
-      host_url: hostUrl,
-      linked_at: new Date().toISOString(),
-    },
-    repoRoot,
-  );
+  const existing = loadLink(repoRoot);
+  if (
+    existing?.project_id !== project.project_id ||
+    existing.account_id !== project.account_id ||
+    existing.host !== host ||
+    existing.host_url !== hostUrl
+  ) {
+    saveLink(
+      {
+        project_id: project.project_id,
+        account_id: project.account_id,
+        host,
+        host_url: hostUrl,
+        linked_at: new Date().toISOString(),
+      },
+      repoRoot,
+    );
+  }
 
   appendGitExcludeEntries(repoRoot, ['/.kortix/link.json'], 'Kortix local project binding');
 }
@@ -1800,6 +1809,9 @@ async function projectsRm(args: string[]): Promise<number> {
 // ── helpers ────────────────────────────────────────────────────────────────
 
 function surface(err: unknown): number {
+  // A denial goes through the shared formatter so the CLI's tail names the
+  // refused identity and the right remedy.
+  if (err instanceof ApiError && err.status === 403) return surfaceApiError(err);
   if (err instanceof ApiError) {
     if (err.status === 401) {
       process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);

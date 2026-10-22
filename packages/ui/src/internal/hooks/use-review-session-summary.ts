@@ -117,3 +117,21 @@ export function useSessionNeedsYouCounts(projectId: string): Record<string, numb
   const { data: needsInput } = useSessionsNeedingInput(projectId, { enabled: poller });
   return useMemo(() => withNeedsInput(needsYouBySession, needsInput), [needsYouBySession, needsInput]);
 }
+
+/**
+ * Sessions with an open agent question or a pending connector approval: the
+ * `needs-you` rows that wait on an answer rather than a change request. Reads
+ * the cache `useSessionNeedsYouCounts` already polls, so it adds no request.
+ */
+export function useSessionsAwaitingAnswer(projectId: string): ReadonlySet<string> {
+  const { data } = useSessionsNeedingInput(projectId, { enabled: false });
+  return useMemo(
+    () =>
+      new Set(
+        Object.entries(data?.sessions ?? {})
+          .filter(([, count]) => count > 0)
+          .map(([sessionId]) => sessionId),
+      ),
+    [data],
+  );
+}

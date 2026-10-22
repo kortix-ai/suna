@@ -111,6 +111,8 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
 mock.module('../../llm-gateway/models/served-managed-models', () => ({
   platformDefaultModelId: () => 'anthropic/claude-sonnet-4-6',
   isPlatformDefaultModelId: (id: string) => id === 'anthropic/claude-sonnet-4-6',
+  servedManagedModels: () => [],
+  platformVisionModelId: () => '',
 }));
 mock.module('../lib/serializers', () => ({
   ...require('../lib/serializers'),
@@ -121,6 +123,12 @@ mock.module('../lib/serializers', () => ({
 // this file stubs.
 let canStop = true;
 let canStopCalls: Array<{ newest: string | null; callerUserId: string | null; canManageLifecycle: boolean }> = [];
+// The session-log reads are DB reads (#10454 added the conversation model leg).
+// Unmocked, each request waited on a real connection: 3-7 s per open.
+mock.module('../session-log-read', () => ({
+  readSessionLogPage: async () => undefined,
+  readSessionConversationModels: async () => new Map<string, string>(),
+}));
 mock.module('../session-lifecycle/turn-stop-authority', () => ({
   canStopTurns: async (
     state: { turns: Array<{ message_id: string | null }> },

@@ -86,6 +86,11 @@ describe('account creation handoff', () => {
         expect(useCurrentAccountStore.getState().selectedAccountId).toBe('created');
         expect(useAccountPanelStore.getState().pushedEntry).toBe(host === 'sidebar');
       };
+      const realProjectCan = await import('@kortix/ui/internal/lib/use-project-can');
+      mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
+        ...realProjectCan,
+        useProjectCan: () => ({ allowed: false }),
+      }));
       mock.module('next/navigation', () => ({
         useRouter: () => ({
           push: navigate('push'),
@@ -110,14 +115,20 @@ describe('account creation handoff', () => {
       }));
       const children = ({ children }: { children?: ReactNode }) =>
         createElement('div', null, children);
-      const uiDropdownMenuMock = () =>
-        Object.fromEntries(
+      const realDropdownMenu = await import('@kortix/ui/dropdown-menu');
+      const uiDropdownMenuMock = () => ({
+        ...realDropdownMenu,
+        ...Object.fromEntries(
           [
             'DropdownMenu',
+            'DropdownMenuCheckboxItem',
             'DropdownMenuContent',
+            'DropdownMenuGroup',
             'DropdownMenuItem',
             'DropdownMenuLabel',
             'DropdownMenuPortal',
+            'DropdownMenuRadioGroup',
+            'DropdownMenuRadioItem',
             'DropdownMenuSeparator',
             'DropdownMenuShortcut',
             'DropdownMenuSub',
@@ -125,7 +136,8 @@ describe('account creation handoff', () => {
             'DropdownMenuSubTrigger',
             'DropdownMenuTrigger',
           ].map((name) => [name, children]),
-        );
+        ),
+      });
       mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
       mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
       const { createContext } = await import('react');
@@ -159,10 +171,14 @@ describe('account creation handoff', () => {
       }
       mock.module('./create-account-modal', () => ({ CreateAccountModal: CreationBoundary }));
       const originalWindow = globalThis.window;
+      const originalDocument = globalThis.document;
       // The sidebar host registers a window event listener in an effect. A
       // real happy-dom window replaces the global — the same cast-free
-      // fixture apps-feature-gate.test.ts installs.
-      Object.assign(globalThis, { window: new Window() });
+      // fixture apps-feature-gate.test.ts installs. Its document goes with it:
+      // `next/image` (imported by the host's tree) reads
+      // `document.documentElement` at module load whenever `window` exists.
+      const happyWindow = new Window();
+      Object.assign(globalThis, { window: happyWindow, document: happyWindow.document });
       let renderer: ReactTestRenderer | undefined;
       try {
         const Host =
@@ -191,7 +207,7 @@ describe('account creation handoff', () => {
         );
       } finally {
         if (renderer) await act(async () => renderer!.unmount());
-        Object.assign(globalThis, { window: originalWindow });
+        Object.assign(globalThis, { window: originalWindow, document: originalDocument });
         stopSelection();
         stopPanel();
         client.clear();

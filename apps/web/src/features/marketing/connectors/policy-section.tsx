@@ -10,7 +10,8 @@ import {
   policy as policySource,
   type PolicyStateId,
 } from './content';
-import { Eyebrow, ProductShot, Section } from './shared';
+import { Eyebrow, Section } from '../component/section-primitives';
+import { ProductShot } from './shared';
 
 /**
  * The three policy tints, taken verbatim from the product

@@ -105,7 +105,7 @@ skillsApp.openapi(
     },
     responses: {
       200: json(
-        z.object({ name: z.string(), path: z.string(), content: z.string() }),
+        z.object({ name: z.string(), path: z.string(), content: z.string(), featureFlag: z.string().nullable() }),
         'Reference file content',
       ),
       ...errors(400, 401, 404),
@@ -122,7 +122,7 @@ skillsApp.openapi(
         404,
       );
     }
-    return c.json({ name, path: file.path, content: file.content });
+    return c.json({ name, path: file.path, content: file.content, featureFlag: getManagedSkill(name)?.featureFlag ?? null });
   },
 );
 

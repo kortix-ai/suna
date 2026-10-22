@@ -119,6 +119,7 @@ A v3 agent block also takes `variant`, `temperature`, `top_p`, `steps`, `color`,
 | `apps` | map | none | App slug to App configuration. |
 | `policy.default_mode` | string | `allow_all` | `allow_all` or `risk`. See [policy and policies](#policy-and-policies). |
 | `policies` | list | none | Project-wide connector rules. |
+| `approvals.ttl` | string | `24h` | How long a held connector call waits for a decision. See [policy and policies](#policy-and-policies). |
 
 A v2 or v3 manifest rejects `channels`, `sandboxes`, and the image keys `image`, `dockerfile`, `slug`, `cpu`, `memory`, `disk`, `entrypoint`, `context`, `context_dir` and `gpu` set directly on `sandbox`.
 
@@ -431,6 +432,13 @@ policies:
         match: "*@example.com"     # a glob, or /regex/ in slashes
   - match: gmail.send_email
     action: block
+```
+
+`approvals.ttl` sets how long a held call waits for a decision: an integer and `m`, `h` or `d`, such as `30m`, `4h` or `7d`. Kortix clamps it to 5 minutes through 30 days. Without it, or with any other value, a held call waits 24 hours. A held call that nobody decides in time expires.
+
+```yaml
+approvals:
+  ttl: 4h
 ```
 
 All conditions of a rule must hold. `negate: true` inverts one condition. How approvals reach a person is on [Policies and approvals](/docs/connect/connectors#policies-and-approvals).
