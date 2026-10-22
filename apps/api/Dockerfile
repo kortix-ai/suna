@@ -56,6 +56,7 @@ COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-ser
 RUN bun install --frozen-lockfile
 
 COPY packages/api-contract /repo/packages/api-contract
+COPY packages/shared/src/ssrf-guard.ts /repo/packages/shared/src/ssrf-guard.ts
 COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh

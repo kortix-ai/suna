@@ -43,7 +43,7 @@ function ipv6Groups(ip: string): number[] | null {
   let text = ip;
   const dotted = text.match(/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (dotted) {
-    const [a, b, c, d] = dotted.slice(1).map(Number);
+    const [a = 0, b = 0, c = 0, d = 0] = dotted.slice(1).map(Number);
     text = `${text.slice(0, dotted.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
   }
   const halves = text.split('::');
@@ -64,7 +64,8 @@ function embeddedIpv4(ip: string): string | null {
   if (!g || g.slice(0, 5).some((x) => x !== 0)) return null;
   if (g[5] !== 0xffff && g[5] !== 0) return null;
   if (g[5] === 0 && g[6] === 0) return null; // `::` and `::1`, handled by the caller
-  return `${g[6] >> 8}.${g[6] & 0xff}.${g[7] >> 8}.${g[7] & 0xff}`;
+  const [, , , , , , hi = 0, lo = 0] = g;
+  return `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
 }
 
 export function isPrivateIp(ip: string): boolean {
@@ -74,12 +75,12 @@ export function isPrivateIp(ip: string): boolean {
 
   // IPv4-mapped IPv6 (::ffff:a.b.c.d) → unwrap to the v4 form.
   const mapped = ip.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i);
-  if (mapped) return isPrivateIp(mapped[1]);
+  if (mapped) return isPrivateIp(mapped[1] ?? '');
 
   if (family === 4) {
     const parts = ip.split('.').map((p) => Number.parseInt(p, 10));
     if (parts.length !== 4 || parts.some((p) => Number.isNaN(p))) return true;
-    const [a, b] = parts;
+    const [a = 0, b = 0] = parts;
     if (a === 0) return true; // 0.0.0.0/8
     if (a === 10) return true; // 10/8
     if (a === 127) return true; // loopback 127/8
@@ -107,9 +108,11 @@ export function isPrivateIp(ip: string): boolean {
   if (embedded) return isPrivateIp(embedded);
   const groups = ipv6Groups(v);
   if (groups) {
+    if (groups.slice(0, 7).every((g) => g === 0) && (groups[7] === 0 || groups[7] === 1)) return true;
     // 6to4 (2002::/16) carries an IPv4 address in groups 1-2: private v4 → private.
     if (groups[0] === 0x2002) {
-      return isPrivateIp(`${groups[1] >> 8}.${groups[1] & 0xff}.${groups[2] >> 8}.${groups[2] & 0xff}`);
+      const [, hi = 0, lo = 0] = groups;
+      return isPrivateIp(`${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`);
     }
     // Teredo (2001::/32) tunnels to an obfuscated v4 address; no public service answers there.
     if (groups[0] === 0x2001 && groups[1] === 0) return true;
