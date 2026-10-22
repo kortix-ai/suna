@@ -264,7 +264,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
               secondaryAction={
                 <Button asChild variant="ghost" size="sm" className="gap-1.5">
                   <a
-                    href="https://opencode.ai/docs/agents/"
+                    href="/docs/project/agents"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
