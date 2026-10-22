@@ -46,12 +46,12 @@ test('managed connection follows the live picker, not a stale runtime projection
       renderer = create(tree());
     });
     expect(connected).not.toContain('kortix');
-    catalog = { models: { 'deepseek-v4.1-flash': { name: 'Sonnet', enabled: true } } };
+    catalog = { models: { 'deepseek-v4.1-flash': { name: 'Sonnet', provider: 'kortix', enabled: true } } };
     await act(async () => {
       renderer?.update(tree());
     });
     expect(connected).toContain('kortix');
-    catalog = { models: { 'deepseek-v4.1-flash': { name: 'Managed', enabled: false } } };
+    catalog = { models: { 'deepseek-v4.1-flash': { name: 'Managed', provider: 'kortix', enabled: false } } };
     await act(async () => {
       renderer?.update(tree());
     });

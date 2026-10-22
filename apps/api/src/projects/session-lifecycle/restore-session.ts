@@ -145,7 +145,10 @@ export async function restoreSession(input: {
   if (sandbox?.status === 'archived' && (await archivedBoxRemains(sandbox, now))) return REMOVAL_PENDING;
 
   // The log the fresh box restores from: the journal's, or the v1 mirror
-  // converted now (a no-op when a journal owns the log).
+  // converted now (a no-op when a journal or the backfill already wrote the
+  // log). One that does not convert here (over the cap, or a failure) stays in
+  // the backfill's selection, restorable deleted sessions included, so the
+  // backfill is not drained and its next pass converts it.
   await writeSessionLogFromMirror(sessionId);
 
   try {

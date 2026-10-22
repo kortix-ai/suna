@@ -5,7 +5,7 @@ import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import { getLocalizedConnectorsContent } from './content';
-import { Eyebrow, Section } from './shared';
+import { Eyebrow, Section } from '../component/section-primitives';
 
 /**
  * The three axes of reach, next to the file that sets them. The snippet is real

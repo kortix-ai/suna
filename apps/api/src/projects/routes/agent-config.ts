@@ -657,6 +657,12 @@ async function prepareAgentConfigV2(
     if (!resolved.ok) return { ok: false, status: 400, body: { error: resolved.error, code: 'invalid_body' } };
     behaviorDraft = resolved.draft;
     const currentBlock = readAgentBlockV2(manifest, agentName);
+    // The write replaces the whole block. Keys this body cannot carry
+    // (`harnesses`, `network_egress`) are not this editor's to delete: keep
+    // them, as the v3 write does.
+    for (const [key, value] of Object.entries((currentBlock.ok && currentBlock.block) || {})) {
+      if (!(key in AgentBlockSchema.shape)) (governanceBlock as Record<string, unknown>)[key] = value;
+    }
     const explicitFile = currentBlock.ok ? currentBlock.block?.file : undefined;
     if (explicitFile !== undefined) governanceBlock.file = explicitFile;
     else if (agentMd.exists || behaviorDraft !== undefined) governanceBlock.file = agentMd.path;

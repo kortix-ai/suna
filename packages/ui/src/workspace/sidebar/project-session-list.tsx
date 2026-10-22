@@ -31,7 +31,10 @@ import { useSidebar } from '../../primitives/sidebar';
 import { Skeleton } from '../../primitives/skeleton';
 import { errorToast, successToast } from '../../primitives/toast';
 import { changeRequestKeys } from '../../files/project/hooks/use-change-requests';
-import { useSessionNeedsYouCounts } from '../../internal/hooks/use-review-session-summary';
+import {
+  useSessionNeedsYouCounts,
+  useSessionsAwaitingAnswer,
+} from '../../internal/hooks/use-review-session-summary';
 import {
   childSessionHref,
   readRuntimeSessionParam,
@@ -56,7 +59,9 @@ import {
 import {
   MobileSessionCreatedTime,
   SessionBriefDescription,
+  SessionBriefCardHost,
   SessionBriefHoverCard,
+  SubagentHoverCard,
 } from './session-brief-hover-card';
 import { SessionFilterMenu } from './session-filter-menu';
 import {
@@ -64,7 +69,7 @@ import {
   type SessionSection,
 } from './session-grouping';
 import { useSessionOpenIntent } from './session-open-intent';
-import { SessionStatusMark } from './session-status-mark';
+import { isReviewOverdue, SessionStatusMark } from './session-status-mark';
 import { SessionTitle } from './session-title';
 import { useMediaQuery } from '../../internal/hooks';
 import { cn } from '../../internal/lib/utils';
@@ -93,6 +98,7 @@ import {
   sessionParentId,
   stopProjectSession,
   type ChangeRequest,
+  type ProjectRuntimeSession,
   type ProjectSession,
 } from '@kortix/sdk';
 import {
@@ -106,10 +112,12 @@ import {
 } from '@kortix/sdk/react';
 import {
   ArchiveIcon,
+  ArrowsSplitIcon,
   CaretRightIcon,
   DotsThreeIcon,
   PushPinIcon,
   PushPinSlashIcon,
+  RobotIcon,
   FolderSimpleIcon as MetaFolder,
   GitForkIcon,
   PencilSimpleIcon,
@@ -120,6 +128,7 @@ import {
   SquareIcon as Square,
   TagIcon,
   TrashIcon,
+  TreeViewIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -358,6 +367,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // summary the footer "Review" pill reads) plus open agent questions and
   // connector approvals (KRTX-1739). A positive count makes a row `needs-you`.
   const needsYouBySession = useSessionNeedsYouCounts(projectId);
+  const awaitingAnswer = useSessionsAwaitingAnswer(projectId);
 
   // Grouping, ordering, and the two multi-select facets all live in the
   // persisted session-filter store (keyed by project) — see SessionFilterMenu,
@@ -450,7 +460,12 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     const isSwitchTarget = switchingToSessionId === session.session_id;
     const children = directSubsessions(session);
     const spawnedCount = nested ? 0 : (session.child_count ?? 0);
-    const spawnedOpen = spawnedCount > 0 && expandedIdSet.has(session.session_id);
+    // Sub-agents and spawned sessions open together, under one toggle. A row
+    // whose sub-agent is the open page stays open, so that row stays visible.
+    const childRunsOpen =
+      children.length + spawnedCount > 0 &&
+      (expandedIdSet.has(session.session_id) ||
+        (!!isActive && children.some((child) => child.id === activeRuntimeSessionId)));
     return (
       <div key={session.session_id} className="space-y-px">
         <ProjectSessionRow
@@ -471,11 +486,13 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           }}
           displayTitle={getSessionDisplayTitle(session)}
           inSharedGroup={inSharedGroup}
-          childCount={children.length}
+          spawned={nested}
+          subagentCount={children.length}
           spawnedCount={spawnedCount}
-          spawnedOpen={spawnedOpen}
-          onToggleSpawned={() => toggleExpanded(projectId, session.session_id)}
+          childRunsOpen={childRunsOpen}
+          onToggleChildRuns={() => toggleExpanded(projectId, session.session_id)}
           reviewCount={needsYouBySession[session.session_id] ?? 0}
+          awaitingAnswer={awaitingAnswer.has(session.session_id)}
           changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
           canShowHoverCard={canShowSessionHoverCard}
           onDelete={(id, label) => setSessionToDelete({ id, label })}
@@ -519,55 +536,23 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             )
           }
         />
-        {children.length > 0 && isActive && (
-          // `ml-4` puts the trunk's local x=0 exactly under the parent's
-          // icon center (px-2 + half of size-4, both 2 tokens = 4 tokens
-          // total). No padding on this wrapper: padding here would shift an
-          // absolutely-positioned child's own `left:0` inward with it (it
-          // resolves against the padding box), throwing off the trunk.
-          //
-          // The trunk is ONE span for the whole block, not one per row: N
-          // separate `top-4 bottom-0` segments stacked edge-to-edge should
-          // in theory touch with zero gap, but sub-pixel rounding at each
-          // row boundary showed up as visible hairline breaks.
-          //
-          // The trunk stops at the TOP of the last row (each row is a fixed
-          // `h-8`, so that is `(N - 1) * 8` tokens). The last row's own
-          // elbow draws the rest and curves away. Running the trunk to the
-          // last row's center instead leaves a straight tail below the
-          // point where the elbow starts to curve.
-          <div className="relative ml-4">
-            {children.length > 1 && (
-              <span
-                aria-hidden
-                className="border-border pointer-events-none absolute top-0 left-0 border-l-2"
-                style={{ height: `calc(var(--spacing) * ${(children.length - 1) * 8})` }}
-              />
-            )}
-            {children.map((child) => {
-              const childHref = childSessionHref(href, child.id);
-              const activeChild = !!isActive && activeRuntimeSessionId === child.id;
-              return (
-                <div key={child.id} className="relative h-8">
-                  <SubAgentConnector />
-                  <div style={{ marginLeft: SUB_AGENT_CONNECTOR_RUN }}>
-                    <ProjectSubsessionRow
-                      title={child.title || 'Sub-session'}
-                      href={childHref}
-                      isActive={activeChild}
-                      updatedAt={child.updated_at}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {spawnedOpen && (
-          <SpawnedSessions
+        {childRunsOpen && (
+          <ChildRuns
             projectId={projectId}
             parentId={session.session_id}
-            renderNode={(child) => renderSessionNode(child, true)}
+            subagents={children}
+            spawnedCount={spawnedCount}
+            renderSubagent={(child) => (
+              <ProjectSubsessionRow
+                id={child.id}
+                title={child.title || 'Sub-session'}
+                href={childSessionHref(href, child.id)}
+                isActive={!!isActive && activeRuntimeSessionId === child.id}
+                createdAt={child.created_at}
+                updatedAt={child.updated_at}
+              />
+            )}
+            renderSpawned={(child) => renderSessionNode(child, true)}
           />
         )}
       </div>
@@ -651,6 +636,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
     return (
       <FadedScrollArea fadeColor="from-background" className="h-full min-h-0 space-y-px">
+        {/* Pinned is the top of the list, not a block above it. Its caret shows
+            on hover. With group headers below, the next header separates it;
+            without them, a line keeps an unpinned row from reading as pinned. */}
         <StarterSection
           title={tPinArchive('section')}
           query={pinnedQuery}
@@ -658,10 +646,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           open={!collapsedSectionIds.has(PINNED_SECTION_ID)}
           onToggle={() => toggleSectionCollapsed(projectId, PINNED_SECTION_ID)}
           renderNode={(session) => renderSessionNode(session, false)}
+          caretOnHover
         />
-        {/* Without grouping the list below has no header of its own: the line
-            keeps an unpinned row from reading as part of Pinned. */}
-        {visiblePinned.length > 0 && (
+        {visiblePinned.length > 0 && !grouped.showHeaders && (
           <div className="px-2 py-1">
             <Separator />
           </div>
@@ -703,6 +690,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           open={expandedIdSet.has('section:automated')}
           onToggle={() => toggleExpanded(projectId, 'section:automated')}
           renderNode={(session) => renderSessionNode(session, false)}
+          caretOnHover
         />
         {/* The first chat never leaves. It is the oldest conversation, so it
             sits at the very bottom — after the last page, never mid-list. */}
@@ -761,6 +749,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
       />
+      {canShowSessionHoverCard && <SessionBriefCardHost />}
     </div>
   );
 }
@@ -976,11 +965,12 @@ function SessionSectionMenu({
   );
 }
 
-/** Chevron + count of the sessions a row spawned. A `span`, not a button: it
- *  lives inside the row's link, so it stops the click before it navigates.
- *  Without an indicator strip beside it, it keeps the `⋯` slot free at rest,
- *  so hovering the row never moves it. */
-function SpawnedToggle({
+/** Tree icon + count of everything this session started: its sub-agents and
+ *  the sessions it spawned. A `span`, not a button: it lives inside the row's
+ *  link, so it stops the click before it navigates. Without an indicator strip
+ *  beside it, it keeps the `⋯` slot free at rest, so hovering the row never
+ *  moves it. */
+function ChildRunsToggle({
   count,
   open,
   onToggle,
@@ -1009,18 +999,19 @@ function SpawnedToggle({
         if (event.key === 'Enter' || event.key === ' ') toggle(event);
       }}
       className={cn(
-        'text-muted-foreground hover:text-sidebar-foreground flex shrink-0 items-center gap-0.5 rounded-sm text-xs tabular-nums',
+        'flex shrink-0 items-center rounded-sm',
+        open ? 'text-sidebar-foreground' : 'text-muted-foreground hover:text-sidebar-foreground',
         'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
         // Reserve the `⋯` slot at rest. A toggle that slid out of the way on
         // hover moved away from the pointer and put the menu under the click.
         clearOfMenu && 'mr-6',
       )}
     >
-      <CaretRightIcon
-        aria-hidden
-        className={cn('size-3 transition-transform', open && 'rotate-90')}
+      <CountBadge
+        count={count}
+        icon={<TreeViewIcon aria-hidden className="size-3.5" />}
+        className={cn(open && 'bg-foreground/12')}
       />
-      {count}
     </span>
   );
 }
@@ -1036,6 +1027,7 @@ function StarterSection({
   open,
   onToggle,
   renderNode,
+  caretOnHover = false,
 }: {
   title: string;
   query: Pick<
@@ -1046,6 +1038,8 @@ function StarterSection({
   open: boolean;
   onToggle: () => void;
   renderNode: (session: ProjectSession) => ReactNode;
+  /** Hide the caret until the header is hovered or focused. */
+  caretOnHover?: boolean;
 }) {
   const t = useTranslations('sidebar');
   // A section with no row yet but a next page stays, with its Load more: the
@@ -1068,7 +1062,11 @@ function StarterSection({
           <span className="truncate">{title}</span>
           <CaretRightIcon
             aria-hidden
-            className="duration-normal size-3 shrink-0 transition-transform ease-out group-data-[state=open]/section:rotate-90"
+            className={cn(
+              'duration-normal size-3 shrink-0 transition-[transform,opacity] ease-out group-data-[state=open]/section:rotate-90',
+              caretOnHover &&
+                'opacity-0 group-hover/section-header:opacity-100 group-focus-visible/section-header:opacity-100',
+            )}
           />
         </div>
       </DisclosureTrigger>
@@ -1114,9 +1112,60 @@ function ShowMoreButton({
 }
 
 /**
- * The sessions one parent spawned, fetched when the parent opens, 20 at a time.
- * Drawn on the same trunk-and-elbow connector as the sub-agent rows.
+ * Everything one session started, on ONE trunk: its sub-agents first, then the
+ * sessions it spawned (fetched when the row opens, 20 at a time). `ml-4` puts
+ * the trunk's x=0 under the parent's icon center (px-2 + half of size-4).
  */
+function ChildRuns({
+  projectId,
+  parentId,
+  subagents,
+  spawnedCount,
+  renderSubagent,
+  renderSpawned,
+}: {
+  projectId: string;
+  parentId: string;
+  subagents: readonly ProjectRuntimeSession[];
+  spawnedCount: number;
+  renderSubagent: (child: ProjectRuntimeSession) => ReactNode;
+  renderSpawned: (session: ProjectSession) => ReactNode;
+}) {
+  return (
+    <div className="ml-4" data-session-children={parentId}>
+      {subagents.map((child, index) => (
+        <ChildRunBranch key={child.id} continues={index < subagents.length - 1 || spawnedCount > 0}>
+          {renderSubagent(child)}
+        </ChildRunBranch>
+      ))}
+      {spawnedCount > 0 && (
+        <SpawnedSessions projectId={projectId} parentId={parentId} renderNode={renderSpawned} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * One child on the trunk. A child with siblings below it carries the trunk
+ * through its whole height; the last one ends at its own elbow. Each segment
+ * overlaps the next by 1px: edge-to-edge segments showed hairline breaks from
+ * sub-pixel rounding at row boundaries.
+ */
+function ChildRunBranch({ continues, children }: { continues: boolean; children: ReactNode }) {
+  return (
+    <div className="relative">
+      {continues && (
+        <span
+          aria-hidden
+          className="border-border pointer-events-none absolute top-0 -bottom-px left-0 border-l-2"
+        />
+      )}
+      <SubAgentConnector />
+      <div style={{ marginLeft: SUB_AGENT_CONNECTOR_RUN }}>{children}</div>
+    </div>
+  );
+}
+
 function SpawnedSessions({
   projectId,
   parentId,
@@ -1130,43 +1179,36 @@ function SpawnedSessions({
   const children = useSessionChildren(projectId, parentId, { limit: SIDEBAR_PAGE_SIZE });
   if (children.data === undefined) {
     return (
-      <div className="ml-4 px-2">
+      <div className="px-2">
         <Skeleton className="h-3 w-24 py-0" aria-hidden />
       </div>
     );
   }
   if (children.isError && children.sessions.length === 0) {
-    return <p className="text-destructive/80 ml-4 px-2 text-xs">{t('sessionList.loadError')}</p>;
+    return <p className="text-destructive/80 px-2 text-xs">{t('sessionList.loadError')}</p>;
   }
   const rows = children.sessions;
   return (
-    <div className="ml-4" data-session-children={parentId}>
+    <>
       {rows.map((child, index) => (
-        <div key={child.session_id} className="relative">
-          {(index < rows.length - 1 || children.hasNextPage) && (
-            <span
-              aria-hidden
-              className="border-border pointer-events-none absolute top-0 bottom-0 left-0 border-l-2"
-            />
-          )}
-          <SubAgentConnector />
-          <div style={{ marginLeft: SUB_AGENT_CONNECTOR_RUN }}>{renderNode(child)}</div>
-        </div>
+        <ChildRunBranch
+          key={child.session_id}
+          continues={index < rows.length - 1 || children.hasNextPage}
+        >
+          {renderNode(child)}
+        </ChildRunBranch>
       ))}
       {children.hasNextPage && (
-        <div className="relative">
-          <SubAgentConnector />
-          <div style={{ marginLeft: SUB_AGENT_CONNECTOR_RUN }}>
-            <ShowMoreButton
-              loading={children.isFetchingNextPage}
-              failed={children.isFetchNextPageError}
-              label={t('sessionList.showMore')}
-              onClick={() => children.fetchNextPage()}
-            />
-          </div>
-        </div>
+        <ChildRunBranch continues={false}>
+          <ShowMoreButton
+            loading={children.isFetchingNextPage}
+            failed={children.isFetchNextPageError}
+            label={t('sessionList.showMore')}
+            onClick={() => children.fetchNextPage()}
+          />
+        </ChildRunBranch>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1196,13 +1238,17 @@ interface ProjectSessionRowProps {
   /** Fork a conversation — the first argument is the RUNTIME conversation id
    *  (`session.runtime_session_id`), not the project-session id. */
   onFork: (runtimeSessionId: string, href: string) => void;
-  childCount?: number;
-  /** Sessions this one spawned (`child_count`), and whether they are shown. */
+  /** A session another session spawned, drawn under its parent. */
+  spawned?: boolean;
+  /** Its sub-agents and the sessions it spawned, and whether they are shown. */
+  subagentCount?: number;
   spawnedCount?: number;
-  spawnedOpen?: boolean;
-  onToggleSpawned?: () => void;
+  childRunsOpen?: boolean;
+  onToggleChildRuns?: () => void;
   /** How many review items from this session are awaiting the human (`needs_you`). */
   reviewCount?: number;
+  /** An agent question or permission is open: `needs-you` waits on an answer. */
+  awaitingAnswer?: boolean;
   changeRequests: readonly ChangeRequest[];
   canShowHoverCard: boolean;
   /** The row sits under the Shared group header, which already says it: no share icon. */
@@ -1229,11 +1275,13 @@ function ProjectSessionRow({
   canFork = false,
   isForking = false,
   onFork,
-  childCount = 0,
+  spawned = false,
+  subagentCount = 0,
   spawnedCount = 0,
-  spawnedOpen = false,
-  onToggleSpawned,
+  childRunsOpen = false,
+  onToggleChildRuns,
   reviewCount = 0,
+  awaitingAnswer = false,
   changeRequests,
   canShowHoverCard,
   inSharedGroup = false,
@@ -1276,6 +1324,7 @@ function ProjectSessionRow({
   // listing the very change requests that made it `needs-you`. Both now read the
   // same `reviewCount` prop, so they agree by construction rather than by luck.
   const displayStatus = sessionDisplayStatus(session, reviewCount);
+  const waitingOn = awaitingAnswer ? 'answer' : 'review';
 
   const sessionLink = (
     <HoverPrefetchLink
@@ -1289,7 +1338,17 @@ function ProjectSessionRow({
       className="focus-visible:ring-kortix-base flex min-w-0 flex-1 items-center gap-2 self-stretch rounded-md py-1 focus-visible:ring-[0.6px] focus-visible:outline-none"
     >
       <div className="size-4 shrink-0">
-        <SessionStatusDot session={session} reviewCount={reviewCount} />
+        {/* A spawned child shows what it is; its status is in its hover card. */}
+        {spawned ? (
+          <ArrowsSplitIcon aria-hidden className="text-muted-foreground size-4" />
+        ) : (
+          <SessionStatusDot
+            session={session}
+            reviewCount={reviewCount}
+            waitingOn={waitingOn}
+            changeRequests={changeRequests}
+          />
+        )}
       </div>
 
       <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
@@ -1313,13 +1372,11 @@ function ProjectSessionRow({
         </span>
       </span>
 
-      {childCount > 0 && <CountBadge count={childCount} />}
-
-      {spawnedCount > 0 && onToggleSpawned && (
-        <SpawnedToggle
-          count={spawnedCount}
-          open={spawnedOpen}
-          onToggle={onToggleSpawned}
+      {subagentCount + spawnedCount > 0 && onToggleChildRuns && (
+        <ChildRunsToggle
+          count={subagentCount + spawnedCount}
+          open={childRunsOpen}
+          onToggle={onToggleChildRuns}
           clearOfMenu={!hasIndicators}
         />
       )}
@@ -1414,6 +1471,10 @@ function ProjectSessionRow({
             createdAt={session.created_at}
             source={source}
             changeRequests={changeRequests}
+            waitingOn={waitingOn}
+            spawned={spawned}
+            subagentCount={subagentCount}
+            spawnedCount={spawnedCount}
             labels={session.labels}
             projectId={session.project_id}
           >
@@ -1429,6 +1490,7 @@ function ProjectSessionRow({
           createdAt={session.created_at}
           source={source}
           changeRequests={changeRequests}
+          waitingOn={waitingOn}
         />
 
         {/* Out of flow on purpose. This trigger is a sibling of the link (which
@@ -1630,14 +1692,18 @@ function SubAgentConnector() {
 }
 
 function ProjectSubsessionRow({
+  id,
   title,
   href,
   isActive,
+  createdAt,
   updatedAt,
 }: {
+  id: string;
   title: string;
   href: string;
   isActive: boolean;
+  createdAt: number | null;
   updatedAt: number | null;
 }) {
   const relative = updatedAt
@@ -1645,21 +1711,22 @@ function ProjectSubsessionRow({
     : '';
 
   return (
-    // Same reason as ProjectSessionRow: sub-session rows are session routes too,
-    // so prefetching them on mount multiplies the per-open RSC storm.
-    <HoverPrefetchLink href={href} className="block">
-      <div
-        className={cn(
-          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm',
-          isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
-        )}
-      >
-        <span title={title} className={cn('flex-1 truncate', isActive && 'font-medium')}>
-          {title}
-        </span>
-        {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
-      </div>
-    </HoverPrefetchLink>
+    <SubagentHoverCard id={id} title={title} createdAt={createdAt} updatedAt={updatedAt}>
+      {/* Same reason as ProjectSessionRow: sub-session rows are session routes too,
+          so prefetching them on mount multiplies the per-open RSC storm. */}
+      <HoverPrefetchLink href={href} className="block">
+        <div
+          className={cn(
+            'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm',
+            isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
+          )}
+        >
+          <RobotIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
+          <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{title}</span>
+          {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
+        </div>
+      </HoverPrefetchLink>
+    </SubagentHoverCard>
   );
 }
 
@@ -1681,14 +1748,22 @@ function SessionGoalMark({ projectId, sessionId }: { projectId: string; sessionI
 function SessionStatusDot({
   session,
   reviewCount = 0,
+  waitingOn,
+  changeRequests,
 }: {
   session: ProjectSession;
   reviewCount?: number;
+  waitingOn: 'answer' | 'review';
+  changeRequests: readonly ChangeRequest[];
 }) {
   const display = sessionDisplayStatus(session, reviewCount);
   return (
     <div className="flex size-4 shrink-0 items-center justify-center">
-      <SessionStatusMark status={display} />
+      <SessionStatusMark
+        status={display}
+        waitingOn={waitingOn}
+        overdue={isReviewOverdue(changeRequests)}
+      />
     </div>
   );
 }

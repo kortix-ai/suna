@@ -6,6 +6,8 @@ import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   resolveAvailableSelectedModel,
+  isRunnableModel,
+  unavailableModelConnection,
 } from './model-availability';
 
 describe('an attached image the selected model cannot read', () => {
@@ -169,5 +171,40 @@ describe('session model availability', () => {
   test('uses an actionable hover message', () => {
     expect(NO_MODEL_AVAILABLE_ACTION_MESSAGE).toContain('Connect a model');
     expect(NO_MODEL_AVAILABLE_ACTION_MESSAGE).toContain('upgrade');
+  });
+});
+
+// KRTX-3011: a configured ChatGPT model with no ChatGPT login was offered as
+// runnable, preselected, and failed only after Send.
+describe('isRunnableModel', () => {
+  test('a model that is enabled and not marked unavailable is runnable', () => {
+    expect(isRunnableModel({ enabled: true })).toBe(true);
+    expect(isRunnableModel({})).toBe(true);
+  });
+
+  test('a disabled or unavailable model is not', () => {
+    expect(isRunnableModel({ enabled: false })).toBe(false);
+    expect(isRunnableModel({ enabled: true, available: false })).toBe(false);
+  });
+});
+
+describe('unavailableModelConnection', () => {
+  test('a runnable model needs nothing', () => {
+    expect(unavailableModelConnection({ enabled: true }, { chatGptAvailable: true })).toBeNull();
+  });
+
+  test('a ChatGPT model without a login opens the ChatGPT accounts when members may connect one', () => {
+    expect(
+      unavailableModelConnection({ available: false, availability: 'login' }, { chatGptAvailable: true }),
+    ).toBe('chatgpt');
+  });
+
+  test('otherwise the provider connection opens', () => {
+    expect(
+      unavailableModelConnection({ available: false, availability: 'login' }, { chatGptAvailable: false }),
+    ).toBe('provider');
+    expect(
+      unavailableModelConnection({ available: false, availability: 'provider' }, { chatGptAvailable: true }),
+    ).toBe('provider');
   });
 });

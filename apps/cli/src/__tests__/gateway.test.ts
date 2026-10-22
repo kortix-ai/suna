@@ -269,6 +269,25 @@ describe('kortix gateway command', () => {
     });
   }, 15_000);
 
+  test('routing set: the merged body keeps the stored per-model generation settings', async () => {
+    const cfg = writeConfig(startServer());
+    const generation = { 'openai/gpt-4.1': { temperature: 0.3 } };
+    routingProject = {
+      defaultModel: null,
+      visionModel: null,
+      defaultFallback: null,
+      rules: [],
+      modelGenerationConfig: generation,
+    } as typeof routingProject;
+    const r = await runCli(
+      ['gateway', 'routing', 'set', '--default-model', 'openai/gpt-5.5', '--project', PROJECT],
+      cfg,
+    );
+    expect(r.code).toBe(0);
+    const put = requests.find((q) => q.method === 'PUT');
+    expect(put?.body).toMatchObject({ defaultModel: 'openai/gpt-5.5', modelGenerationConfig: generation });
+  }, 15_000);
+
   test('budget ls: each budget shows the spend of its own period and its reset, not the month', async () => {
     const cfg = writeConfig(startServer());
     const r = await runCli(['gateway', 'budget', '--project', PROJECT], cfg);

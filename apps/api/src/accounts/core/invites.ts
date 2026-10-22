@@ -333,7 +333,10 @@ export function registerInviteRoutes(): void {
   );
 
   // POST /v1/accounts/:accountId/invites/:inviteId/resend — re-send the invite
-  // email and bump expires_at to a fresh 14-day window.
+  // email and bump expires_at to a fresh 14-day window. The resender becomes
+  // the inviter, as a fresh Invite makes them: a SCIM invite an admin resends
+  // is one a person shares, so a password email accepts it on an instance that
+  // does not confirm emails (accounts/invites.ts addressedToCaller).
   accountsRouter.openapi(
     createRoute({
       method: 'post',
@@ -369,7 +372,7 @@ export function registerInviteRoutes(): void {
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       const [updated] = await db
         .update(accountInvitations)
-        .set({ expiresAt })
+        .set({ expiresAt, invitedBy: userId })
         .where(
           and(
             eq(accountInvitations.inviteId, inviteId),

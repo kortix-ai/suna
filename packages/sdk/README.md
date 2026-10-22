@@ -523,14 +523,17 @@ server-validated runtime session id and lets the live read reconcile the saved m
 A live read that returns no messages keeps the saved messages on screen: it means the computer
 lost its state, not that the conversation is empty. The first live read with messages reconciles them.
 Missing or rejected history falls back to the existing runtime path.
-An open reads the saved window once: the session-open snapshot carries it (the read waits up
-to 2 s for one in flight), else `GET …/transcript?shape=sync&history=true`. A host that shows
-the saved copy before `useSession` binds the session calls `readSavedSessionCopy`, the same read
-plus the empty-conversation proof. The SDK holds that copy for the open that follows (up to 5 min):
-the snapshot then asks for no window, and the saved-history read answers from the held copy.
-With the project flag `session_log` on, the host passes `sessionLog: true`: the copy is the
-session log's newest page (`GET …/log`, returned as `log`), and no `GET …/transcript` is read.
-The host applies the page to the session store and renders `useSessionLogThread`.
+An open reads the session log first (`GET …/log`), on every host, with no project flag:
+`useSession`, `readSavedSessionCopy` (returned as `log`), `useSessionSync` with no `mirror` or
+with `savedChild`, and `loadSessionExportMessages`. No `GET …/transcript` is read then. The host
+applies a page it reads itself to the session store and renders `useSessionLogThread`.
+A new session with no stored log yet answers 404 with `code: 'session_log_missing'`: the open
+stays on the log and reads nothing more. Only when the log answers 404 with no `code` (an API
+older than the session log) does an open read the v1 saved window once: `GET …/transcript?shape=sync&history=true`.
+The session-open snapshot (`GET …/snapshot`) asks for no v1 window (`?transcript=0`).
+`readSavedSessionCopy` then returns it as `envelope`, and the SDK holds it for the open that
+follows (up to 5 min). The v1 reads (`getSessionTranscriptSync`, `transcriptSync`,
+`loadSessionTranscriptMirror`, …) are deprecated.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
 computer wakes: `loading` while a saved copy may still arrive, `shown` once messages are in
@@ -591,7 +594,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | namespace | what |
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
+| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
@@ -724,10 +727,9 @@ session-log types, and a test fails when the two differ. See the
 
 `@kortix/sdk/react` adds `useSessionLog(session)` and
 `useSessionLogThread(session, threadId?, { throttleMs? })`: the log of a session `useSession`
-owns. `useSessionLog` marks its source: `'v2'` is the API's log, which a session
-reads only when the runtime lists `session.log.v2`, the project flag
-`session_log` is on, and the API holds a log for the session (OpenCode or pi).
-Every other session reads v1, and the hooks return `source: 'v1'`: the `fromV1`
+owns. `useSessionLog` marks its source: `'v2'` is the API's log, which every open reads
+first when the API holds a log for the session (OpenCode or pi). No project flag is read.
+A session whose log answers 404 with no `code` (an API older than the log) reads v1, and the hooks return `source: 'v1'`: the `fromV1`
 conversion of the v1 rows, with the turn that runs kept open. Pass the session's
 `runtimeSessionId`; without it, or before the first row, they return `null`.
 `throttleMs` paces the v1 rows as `useSessionMessages` paces them. The
@@ -886,9 +888,11 @@ app.use(async (req, res, next) => {
 ```
 
 A runnable version of the pattern is `examples/03-server-wrapper.ts`, and the
-full production-shaped reference (per-user project isolation, route policy,
-rate limiting, cost markup for re-billing) is `apps/whitelabel-demo` in wrapper
-mode — see its README.
+full production-shaped reference is `apps/white-label/lumen` (Lumen): its own
+users and orgs (Convex + Better Auth), one Kortix project shared by every
+customer firm (a Drive folder, an agent and a service account per firm), the
+firm's service-account secret held server-side, and a same-origin proxy built
+on `forwardKortixRequest` — see its README.
 
 ## Rendering chat (the headless chat kit)
 
@@ -1158,7 +1162,7 @@ const backend = kortixBinding('backend', {
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven
-in React DOM (`apps/web` and the `apps/whitelabel-demo` reference app are the
+in React DOM (`apps/web` and the `apps/white-label/lumen` reference app are the
 `configureKortix`/`@kortix/sdk/react` consumers).
 The framework-free core — turn classification, session URLs and health, the
 REST clients, file operations, transcript formatting — has no React or DOM

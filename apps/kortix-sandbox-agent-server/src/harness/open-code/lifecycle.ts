@@ -132,7 +132,7 @@ import { applyAgentToolAccess } from './tool-access'
 import { writeToolBridge } from './tool-bridge'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { orderPermissionRules } from '@kortix/api-contract/permission-rules'
-import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
+import { MINIMAL_FALLBACK_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
 import { managedOverlayRoot, SKILLS_DIR } from './project-layout'
 import { applyV3, compiledV3, v3OpencodeEnv } from './manifest-v3'
 import type { ExtensionDepsOptions } from './extension-deps'
@@ -495,7 +495,7 @@ export async function buildOpencodeConfigContent(
   // runtime-config-ready 1727ms, measured on a Platinum guest 2026-08-19):
   // `opencode serve` cannot bind its port until this config is written, so
   // anything awaited here is dead time on EVERY session boot. Cold boot uses
-  // whatever is already known (bundled managed table, or a cache filled by an
+  // whatever is already known (the baked catalog, or a cache filled by an
   // earlier fetch on this box); a managed model that only the live set knows
   // is picked up by the post-spawn reconcile in main.ts, off the critical
   // path.
@@ -661,7 +661,7 @@ type KortixProviderOpts = {
    *  deliberately NO fetch fallback here; see loadGatewayCatalog. */
   catalogFile?: string
   /** Live managed lineup fetched from `${gateway}/models?scope=managed`, or
-   *  null when it was unavailable (then the BUNDLED managed set fills gaps). */
+   *  null when it was unavailable (then the baked catalog stands). */
   managedOverlay?: Record<string, KortixGatewayModel> | null
   /** Ids registered even when no catalog carries them. Limits come from
    *  `withModelLimits`; a catalog record always wins. */
@@ -1036,22 +1036,21 @@ async function fetchGatewayModels(
 }
 
 // ── Managed-model overlay ────────────────────────────────────────────────────
-// The managed lineup (bare-id, provider `kortix` models) is deployment config:
-// it changes with LLM_GATEWAY_MANAGED_MODELS / the API's served catalog, NOT
-// with the sandbox image. The baked catalog therefore goes stale the moment a
+// The managed lineup (bare-id, provider `kortix` models) is what Platinum
+// Inference offers, served by the API: it changes with that list, NOT with the
+// sandbox image. The baked catalog therefore goes stale the moment a
 // managed model is added, and OpenCode — which reads provider models once, at
 // process start — then answers `ModelNotFound: kortix/<id>` for it (prod
 // incident 2026-08-19: grok-4.6, deepseek-v4-pro-0813).
 //
 // Fix, in two halves that never block each other:
 //   1. BOOT reads only what it already knows (cachedManagedModels) — the
-//      bundled managed table on a cold box. Zero network, zero wait, because
+//      baked catalog on a cold box. Zero network, zero wait, because
 //      `opencode serve` cannot bind its port until that config is written.
 //   2. AFTER the spawn, the prefetch started at proxy-up is settled and diffed
 //      against the provider map OpenCode actually booted with. Only a genuinely
 //      missing managed id costs one controlled restart (main.ts,
-//      reconcileManagedModels). The bundled table ships with every release, so
-//      the miss is rare by construction.
+//      reconcileManagedModels).
 // Same principle as the runtime-assets reconcile — the box learns the current
 // truth from the API it talks to, without paying for it on the hot path.
 const MANAGED_MODELS_TIMEOUT_MS = 2_000
@@ -1090,31 +1089,17 @@ function capabilityKey(model: KortixGatewayModel): string {
 let lastManagedFetchFailureReason: string | null = null
 
 /**
- * Compose the catalog OpenCode boots with: disk catalog first, managed set on
- * top.
- *
- * - A live managed listing is AUTHORITATIVE for the managed ids it carries
- *   (it comes from the gateway that will resolve them).
- * - With no live listing, the bundled managed set only FILLS ids the disk
- *   catalog lacks — a hand-maintained table never overwrites richer generated
- *   data for a model that is already there.
- *
- * Purely additive in both cases: nothing is removed, so a transient fetch can
- * never shrink a working picker.
+ * Compose the catalog OpenCode boots with: disk catalog first, the live
+ * servable set on top. The live listing is AUTHORITATIVE for the ids it
+ * carries (it comes from the gateway that will resolve them). Purely additive:
+ * nothing is removed, so a transient fetch can never shrink a working picker.
  */
 function withManagedOverlay(
   base: Record<string, KortixGatewayModel>,
   live: Record<string, KortixGatewayModel> | null | undefined,
 ): Record<string, KortixGatewayModel> {
-  if (live && Object.keys(live).length > 0) return { ...base, ...live }
-  const out = { ...base }
-  for (const [id, model] of Object.entries(BUNDLED_MANAGED_MODELS)) {
-    // Fill-only, except `limit`. The builder swaps a new daemon into an older
-    // image without re-baking its catalog, so this daemon's managed limit is
-    // the newer one. A stale limit puts compaction on the context wall.
-    out[id] = out[id] ? { ...out[id], limit: model.limit } : model
-  }
-  return out
+  // Always a fresh object: callers add to it, and `base` can be a shared table.
+  return { ...base, ...(live ?? {}) }
 }
 
 /**
@@ -1176,15 +1161,15 @@ export async function fetchManagedModels(
       await new Promise((resolve) => setTimeout(resolve, 200))
     }
   }
-  logger.warn(`[opencode] servable models unavailable (${url}); using the baked catalog + bundled managed set`)
+  logger.warn(`[opencode] servable models unavailable (${url}); using the baked catalog`)
   // NO SILENT STALENESS. This box is about to run (or keep running) on the
-  // baked/bundled managed set, unconfirmed against the live lineup — the exact
+  // baked catalog, unconfirmed against the live lineup — the exact
   // condition that let a retired/renamed managed id survive on a box after the
   // control plane moved on. `managedCatalogFallbackReason()` surfaces this on
   // `/kortix/health` (`runtime.running`), the SAME channel a config fallback
   // is already visible on, so it is a fact the control plane can read per box
   // rather than a log line nobody is tailing.
-  lastManagedFetchFailureReason = `servable models unavailable at ${url}; running the baked/bundled managed lineup`
+  lastManagedFetchFailureReason = `servable models unavailable at ${url}; running the baked catalog`
   return null
 }
 
@@ -1221,7 +1206,7 @@ export function rememberManagedModels(models: Record<string, KortixGatewayModel>
  *
  * Returns the cache when it is fresh (an earlier fetch on this box: a prior
  * OpenCode restart, a warm-fork adoption, or the post-spawn reconcile), else
- * null so the caller falls back to the bundled managed table. It deliberately
+ * null so the caller falls back to the baked catalog. It deliberately
  * does NOT consult the in-flight prefetch: the config build is what gates
  * OpenCode's port bind, and awaiting the fetch there measured 1.6s of dead
  * boot time on a real dev guest.
@@ -1254,7 +1239,7 @@ export function managedModelIdsSnapshot(): string[] | null {
  *
  * NO SILENT STALENESS. Before this, a failed boot fetch was a single
  * `logger.warn` line (`fetchManagedModels`'s final branch) and nothing else:
- * the box quietly kept running the baked/bundled managed set for its whole
+ * the box quietly kept running the baked catalog for its whole
  * life with no signal anywhere the control plane could read. This is that
  * signal, surfaced on `/kortix/health` next to `managed_model_ids` — the SAME
  * channel a config-release fallback is already visible on

@@ -803,6 +803,11 @@ describes.
   the rest, `$ARGUMENTS` takes the raw text, and a template with neither gets
   the arguments appended. OpenCode's `` !`cmd` `` shell expansion is not
   supported.
+- **Skills in the command list.** On v2 and v3, `GET /command` ends with the
+  agent's granted skills as `source: 'skill'` rows, as OpenCode lists them:
+  the session composer's `/` menu reads only this list. A command shadows a
+  skill of the same name. `POST /session/:id/command` with a skill name sends
+  the `SKILL.md` body in pi's `<skill>` block, then the arguments.
 - **Extensions.** The API sends the session agent's pi packages as
   `KORTIX_PI_PACKAGES`; a repo entry is `./<path>` and resolves against the
   config root. Extensions load once per runtime start, so an agent switch

@@ -14,7 +14,6 @@ import { useProjectCan } from '../../../internal/lib/use-project-can';
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
   LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME,
-  MANAGED_MODEL_ID_SET,
 } from './constants';
 import { isProviderStateLoading } from './provider-loading-state';
 import { useLlmProviderCatalogRevision } from './use-live-catalog';
@@ -64,7 +63,6 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
           },
         ],
       },
-      MANAGED_MODEL_ID_SET,
       tI18nComplete.raw('texte0a770200f93'),
     );
   }, [managedModelsEnabled, pickerCatalog, tI18nComplete]);

@@ -9,9 +9,10 @@ import { seedSessionTranscript } from "../fixtures/session-transcript";
 type Store = "mirror" | "log";
 
 /**
- * Registers `<id>` with the saved history in the v1 mirror (what every project reads today)
- * and `<id>-log` with it in the session log, written through the journal with the project's
- * `session_log` flag on (Session Log Plan P5.7). Both implement spec `<id>`.
+ * Registers `<id>` with the saved history only in the v1 mirror (an old session from before the
+ * journal: the first read converts it into the session log, P8.2) and `<id>-log` with it in the
+ * session log, written through the journal (Session Log Plan P5.7). Both implement spec `<id>`,
+ * and both answer from the session log.
  */
 function storeFlow(id: string, meta: FlowMeta, fn: (ctx: FlowContext, store: Store) => Promise<void>): void {
   flow(id, meta, (ctx) => fn(ctx, "mirror"));
@@ -295,9 +296,9 @@ storeFlow(
             throw new Error(
               `stopped session reported no transcript: ${JSON.stringify(digest.transcript)}`,
             );
-          // Log: with `session_log` on the CLI reads the stored session log (`GET …/log`), never
-          // the v1 transcript route, and says so.
-          const source = store === "log" ? "log" : "mirror";
+          // The CLI reads the stored session log (`GET …/log`; a mirror-only session is converted
+          // by that read), never the v1 transcript route, and says so.
+          const source = "log";
           if (digest.transcript.source !== source)
             throw new Error(`expected source '${source}', got '${digest.transcript.source}'`);
           if (digest.transcript.complete !== true)
@@ -335,13 +336,9 @@ storeFlow(
           throwIfCliInfraFailure(run, "kortix sessions log");
           if (run.exitCode !== 0)
             throw new Error(`kortix sessions log exited ${run.exitCode}: ${run.all}`);
-          // Mirror: no stored session log, so the saved v1 transcript converted to
-          // the kortix.session/2 records (one thread: the root), so scripts read one
-          // shape. Log: the stored session log, every thread. The source is
-          // reported on stderr so it cannot break them.
-          const expected = store === "log"
-            ? { source: "log", threads: [fixture.root, child], stderr: "Stored session log" }
-            : { source: "v1", threads: [fixture.root], stderr: "Saved transcript" };
+          // The stored session log, every thread (a mirror-only session is converted by the
+          // read). The source is reported on stderr so it cannot break scripts.
+          const expected = { source: "log", threads: [fixture.root, child], stderr: "Stored session log" };
           const log = JSON.parse(run.stdout) as {
             schema: string;
             source: string;
@@ -358,21 +355,11 @@ storeFlow(
             throw new Error(`log lost the saved reply: ${run.stdout}`);
           if (!run.stderr.includes(expected.stderr))
             throw new Error(`log did not say where the messages came from: ${run.stderr}`);
-          // The old v1 JSON, for one release: the message array, and a deprecation note on stderr.
-          // Log: with `session_log` on the v1 transcript is not served: exit 1, and the way out.
+          // The v1 transcript is not served to the CLI: --schema v1 exits 1, and names the way out.
           const old = await cli.run(["sessions", "log", sessionId, "--project", project.id, "--json", "--schema", "v1"]);
           throwIfCliInfraFailure(old, "kortix sessions log --schema v1");
-          if (store === "log") {
-            if (old.exitCode !== 1 || !old.stderr.includes("Drop --schema v1"))
-              throw new Error(`--schema v1 with session_log on: expected exit 1 naming the way out, got ${old.exitCode}: ${old.all}`);
-          } else {
-            if (old.exitCode !== 0) throw new Error(`--schema v1 exited ${old.exitCode}: ${old.all}`);
-            const array = JSON.parse(old.stdout) as Array<{ role: string; text: string }>;
-            if (array.length !== 2 || !array[1]!.text.includes("stored in the database"))
-              throw new Error(`--schema v1 lost the old shape: ${old.stdout}`);
-            if (!old.stderr.includes("deprecated"))
-              throw new Error(`--schema v1 did not say it is deprecated: ${old.stderr}`);
-          }
+          if (old.exitCode !== 1 || !old.stderr.includes("Drop --schema v1"))
+            throw new Error(`--schema v1: expected exit 1 naming the way out, got ${old.exitCode}: ${old.all}`);
           const status = (await owner.get("/v1/projects/:projectId/sessions/:sessionId", {
             params: { projectId: project.id, sessionId },
           })).status(200).json<{ status: string }>();
@@ -611,8 +598,8 @@ storeFlow(
             source: string;
             attachments: Array<{ attachment_id: string; filename: string; url: string; role: string }>;
           };
-          // Log: with `session_log` on the index is the stored session log, never the v1 transcript route.
-          const source = store === "log" ? "log" : "saved";
+          // The index is the stored session log, never the v1 transcript route.
+          const source = "log";
           if (list.source !== source) throw new Error(`expected source '${source}', got '${list.source}'`);
           if (list.attachments.length !== 1)
             throw new Error(`expected 1 stored file, got ${list.attachments.length}: ${listed.stdout}`);

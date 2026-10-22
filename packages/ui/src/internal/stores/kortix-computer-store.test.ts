@@ -929,6 +929,56 @@ describe('setActiveSession — boot handoff continuity', () => {
   });
 });
 
+// KRTX-2944. On a session page the real chat layout can activate BEFORE the
+// boot shell above it (measured on the local stack: chat under the runtime id,
+// then the shell under the Kortix id, both for one project session). The shell
+// took the right side as a session change and kept it after it faded out, so
+// ⌘I looked up the shell's id, found no content, and reopened the cards
+// instead of the Terminal, Browser or Files panel it had just hidden.
+describe('setActiveSession — the shell never takes the right side from its own chat', () => {
+  beforeEach(() => {
+    useKortixComputerStore.getState().reset();
+  });
+  const state = () => useKortixComputerStore.getState();
+
+  test('real chat, then its shell: the chat keeps the right side, and the panel stays open', () => {
+    state().setActiveSession('oc-abc', { projectSessionId: 'kortix-sess-1', transient: false });
+    state().setIsSidePanelOpen(true);
+    state().setActiveSession('kortix-sess-1', { projectSessionId: 'kortix-sess-1', transient: true });
+    expect(state()._activeSessionId).toBe('oc-abc');
+    expect(state()._activeIsTransient).toBe(false);
+    expect(state().isSidePanelOpen).toBe(true);
+  });
+
+  test('⌘I then hides and brings back the detail the chat holds', () => {
+    state().setActiveSession('oc-abc', { projectSessionId: 'kortix-sess-1', transient: false });
+    state().setDetailContent('oc-abc', true);
+    state().setIsSidePanelOpen(true);
+    state().setActiveSession('kortix-sess-1', { projectSessionId: 'kortix-sess-1', transient: true });
+
+    state().toggleRightPanel();
+    expect(state().isSidePanelOpen).toBe(false);
+    state().toggleRightPanel();
+    expect(state().isSidePanelOpen).toBe(true);
+    expect(state().isActionPanelOpen).toBe(false);
+  });
+
+  test('a quick view planted for the chat survives its shell re-activating', () => {
+    state().setActiveSession('oc-abc', { projectSessionId: 'kortix-sess-1', transient: false });
+    state().requestQuickView('terminal', 'oc-abc');
+    state().setActiveSession('kortix-sess-1', { projectSessionId: 'kortix-sess-1', transient: true });
+    expect(state().pendingQuickView?.sessionId).toBe('oc-abc');
+  });
+
+  test('the shell of a DIFFERENT project session still takes over, and closes the right side', () => {
+    state().setActiveSession('oc-abc', { projectSessionId: 'kortix-sess-1', transient: false });
+    state().setIsSidePanelOpen(true);
+    state().setActiveSession('kortix-sess-2', { projectSessionId: 'kortix-sess-2', transient: true });
+    expect(state()._activeSessionId).toBe('kortix-sess-2');
+    expect(state().isSidePanelOpen).toBe(false);
+  });
+});
+
 describe('setActiveSession — boot quick-view replant', () => {
   beforeEach(() => {
     useKortixComputerStore.getState().reset();

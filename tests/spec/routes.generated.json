@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 877,
+  "count": 881,
   "routes": [
     {
       "method": "GET",
@@ -216,6 +216,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/audit/activity"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/audit/export"
     },
     {
@@ -349,6 +353,14 @@
     {
       "method": "GET",
       "path": "/v1/accounts/:accountId/capture/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/storage"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/capture/storage"
     },
     {
       "method": "GET",
@@ -2937,6 +2949,10 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run"
     },
     {
       "method": "POST",

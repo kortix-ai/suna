@@ -32,6 +32,8 @@ import { createSession } from '../session-lifecycle';
 import { rebuildFailureResponse, runProviderActions } from '../../snapshots/provider-actions';
 import { templateProviderObservation } from '../lib/template-provider-observation';
 import { readJsonObject } from '../../shared/http-body';
+import { logger } from '../../lib/logger';
+import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 
 /**
  * Derive the ONE sandbox status every surface renders — sidebar alert, Customize
@@ -523,7 +525,15 @@ export function registerSandboxesRoutes(): void {
       // template identity we cannot tell a live failure from a stale one, and
       // guessing in either direction is worse than saying so.
       templates = await listSandboxTemplates(await loadGitProject(loaded), observation.listOptions);
-    } catch {
+    } catch (error) {
+      // A disconnected repository needs a person to act: the global handler
+      // answers the shared 409 that names the fix (KRTX-2979). Anything else
+      // is logged, then answered as an unknown state below.
+      if (isRepositoryDisconnectedError(error) || isRepositoryDisconnectedError((error as { cause?: unknown })?.cause)) throw error;
+      logger.warn('[snapshots] fix-with-agent could not read the templates', {
+        projectId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       templatesUnavailable = true;
     }
     const { templateBuilds, status } = projectSandboxStatus({

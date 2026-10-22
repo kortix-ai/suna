@@ -1252,6 +1252,9 @@
     "expiredBody": "Bitte die Person, die dich eingeladen hat, um eine neue Einladung.",
     "wrongAccountTitle": "Konto wechseln",
     "wrongAccountBody": "Diese Einladung ist an ein anderes Konto gerichtet. Du bist als {{email}} angemeldet.",
+    "directoryTitle": "Mit Single Sign-On anmelden",
+    "directoryBody": "Das Verzeichnis deiner Organisation hat dich zu diesem Konto hinzugefügt. Öffne diese Einladung im Browser und melde dich mit dem Single Sign-On deiner Organisation an, oder bitte einen Kontoadmin, die Einladung erneut zu senden.",
+    "ssoDomainUnverifiedBody": "Dein Single-Sign-On-Anbieter hat die Domain dieser E-Mail-Adresse nicht verifiziert. Melde dich ab und mit deiner E-Mail-Adresse wieder an, um diese Einladung zu nutzen.",
     "signOutAndContinue": "Abmelden und fortfahren",
     "backToProjects": "Zurück zu den Projekten"
   },

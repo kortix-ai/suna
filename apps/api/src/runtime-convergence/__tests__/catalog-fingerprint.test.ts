@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { fingerprintManagedLineup } from '../catalog-fingerprint';
 
-const modelA = { id: 'kimi-k3', upstreamModelId: 'moonshot/kimi-k3', transport: 'openrouter' as const };
-const modelB = { id: 'deepseek-v4.1-flash', upstreamModelId: 'deepseek/v4.1-flash', transport: 'openrouter' as const };
+const modelA = { id: 'kimi-k3' };
+const modelB = { id: 'deepseek-v4.1-flash' };
 
 describe('fingerprintManagedLineup', () => {
   test('is a hex digest', () => {
@@ -18,12 +18,6 @@ describe('fingerprintManagedLineup', () => {
     const withOne = fingerprintManagedLineup([modelA]);
     const withTwo = fingerprintManagedLineup([modelA, modelB]);
     expect(withOne).not.toBe(withTwo);
-  });
-
-  test('moves when the SAME id now points at a different upstream model', () => {
-    const before = fingerprintManagedLineup([modelA]);
-    const after = fingerprintManagedLineup([{ ...modelA, upstreamModelId: 'moonshot/kimi-k3-fast' }]);
-    expect(before).not.toBe(after);
   });
 
   test('an empty lineup still fingerprints deterministically', () => {

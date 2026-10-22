@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 import { railGroups } from './rail';
 import type { SettingsTab } from './settings-tabs';
@@ -37,8 +37,9 @@ export function SettingsRailCopyProvider({
   chrome,
   children,
 }: SettingsRailCopyValue & { children: ReactNode }) {
+  const value = useMemo(() => ({ groups, chrome }), [groups, chrome]);
   return (
-    <SettingsRailCopyContext.Provider value={{ groups, chrome }}>
+    <SettingsRailCopyContext.Provider value={value}>
       {children}
     </SettingsRailCopyContext.Provider>
   );
@@ -49,7 +50,8 @@ export function useSettingsRailChromeCopy(): SettingsRailChromeCopy {
 }
 
 export function useSettingsRailItem(tab: SettingsTab): RailItem | undefined {
-  for (const group of useContext(SettingsRailCopyContext).groups) {
+  const { groups } = useContext(SettingsRailCopyContext);
+  for (const group of groups) {
     const item = group.items.find((candidate) => candidate.tab === tab);
     if (item) return item;
   }

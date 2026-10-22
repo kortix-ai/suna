@@ -79,6 +79,8 @@ export function ToolListRow({
   disabled?: boolean;
   title?: string;
 }) {
+  const rowAction = onClick && !disabled ? onClick : undefined;
+  const nameAction = onNameClick && !disabled ? onNameClick : undefined;
   return (
     <div
       className={cn(
@@ -93,7 +95,18 @@ export function ToolListRow({
             ? 'hover:bg-muted cursor-pointer'
             : undefined,
       )}
-      onClick={onClick && !disabled ? onClick : undefined}
+      role={rowAction ? 'button' : undefined}
+      tabIndex={rowAction ? 0 : undefined}
+      onClick={rowAction}
+      onKeyDown={
+        rowAction
+          ? (e) => {
+              if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+              e.preventDefault();
+              rowAction();
+            }
+          : undefined
+      }
       title={title}
     >
       {chevron && (
@@ -112,11 +125,23 @@ export function ToolListRow({
           'text-foreground min-w-0 flex-1 truncate font-mono text-sm',
           onNameClick && !disabled && 'hover:text-primary cursor-pointer transition-colors',
         )}
+        role={nameAction ? 'button' : undefined}
+        tabIndex={nameAction ? 0 : undefined}
         onClick={
-          onNameClick && !disabled
+          nameAction
             ? (e) => {
                 e.stopPropagation();
-                onNameClick();
+                nameAction();
+              }
+            : undefined
+        }
+        onKeyDown={
+          nameAction
+            ? (e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                e.preventDefault();
+                e.stopPropagation();
+                nameAction();
               }
             : undefined
         }

@@ -1,7 +1,6 @@
 'use client';
 
 import { ModelsTabGroup } from './models-tab-group';
-export { ModelPriceHoverCard } from './models-tab-row';
 
 import { useTranslations } from '../../../i18n';
 /**
@@ -25,7 +24,6 @@ import { useTranslations } from '../../../i18n';
 
 import { Button } from '../../../primitives/button';
 import { errorToast } from '../../../primitives/toast';
-import { isManagedModelId } from '@kortix/llm-catalog';
 import {
   useModelAccess,
   useModelDefaults,
@@ -109,14 +107,6 @@ export function ModelsTab({
     );
   }
 
-  // One managed model clears the ZDR + US claim when it serves from Kortix's
-  // own managed pool. Only a Morph route breaks it; a missing price feed still
-  // serves from the verified US ZDR pool.
-  const holdsDataClaim = (modelID: string) => {
-    const routes = pickerCatalog?.managedPricingRoutes?.[modelID];
-    return isManagedModelId(modelID) && !routes?.some((route) => route.route === 'morph');
-  };
-
   // No horizontal padding of its own: `CapabilityPageShell` supplies the page
   // column, and 20px more here indented this tab's content past the tab strip
   // that selects it.
@@ -188,9 +178,7 @@ export function ModelsTab({
                 access={access}
                 enablement={enablement}
                 defaults={defaults}
-                pickerCatalog={pickerCatalog}
                 canWrite={canWrite}
-                holdsDataClaim={holdsDataClaim}
                 platformFee={platformFee}
               />
             );

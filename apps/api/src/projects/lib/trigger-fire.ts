@@ -379,6 +379,24 @@ export async function fireGitTrigger(input: {
   }
 }
 
+/**
+ * Who an agent's reminder (no `promptAuthorUserId`) runs as, for its prompt
+ * and for a successor session: the session's creator while they are a member.
+ * The account owner was the fallback, and the proxy refuses the owner on a
+ * member's private session, so every fire of such a reminder dead-lettered. A
+ * creator who is not a member (left the account, or a service account) falls
+ * back to the owner.
+ */
+async function memberSessionCreator(project: ProjectRow, sessionId: string): Promise<string | null> {
+  const [session] = await db
+    .select({ createdBy: projectSessions.createdBy })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.accountId, project.accountId)))
+    .limit(1);
+  const createdBy = session?.createdBy;
+  return createdBy && (await accountMemberRow(project.accountId, createdBy))[0] ? createdBy : null;
+}
+
 const CREATE_WAIT_ATTEMPTS = 15;
 const CREATE_WAIT_POLL_MS = 1_000;
 
@@ -406,9 +424,10 @@ async function fireSessionReminder(
       retryable: false,
     };
   }
+  const runAs = author ?? (sessionId ? await memberSessionCreator(project, sessionId) : null) ?? actor;
   const outcome = sessionId
     ? await enqueueTriggerPrompt({
-        project, sessionId, actor: author ?? actor, text: reminderPromptText(spec), source: 'reminder',
+        project, sessionId, actor: runAs, text: reminderPromptText(spec), source: 'reminder',
         triggerSlug: spec.slug, model: null,
         idempotencyKey: input.idempotencyKey ?? null,
         bindTurnIdentity: !!author,
@@ -419,7 +438,7 @@ async function fireSessionReminder(
   }
   // A failed box is not a decision to stop; a deleted session is. The reminder
   // carries on in a successor session, so work kept in Files outlives a box.
-  if (outcome === 'failed' && sessionId) return fireReminderSuccessor(input, author ?? actor, sessionId);
+  if (outcome === 'failed' && sessionId) return fireReminderSuccessor(input, runAs, sessionId);
   await disableSessionReminder(project.projectId, spec.slug, new Date());
   return {
     status: 'failed',
@@ -636,6 +655,8 @@ async function createGitTriggerSession(
       status: 'failed',
       error: String(sessionResult.error.body.error ?? 'Failed to create trigger session'),
       errorCode: code,
+      // A requeued create may still start a session; its run links to it by command.
+      commandId: sessionResult.commandId,
       requeued: sessionResult.requeued === true,
       retryable: sessionResult.retryable === true,
     };

@@ -152,7 +152,7 @@ function OptimisticUserBubble({
   // Strip every ref block the composer folded into the prompt, in the order it
   // folded them in, so the bubble shows the sentence the user typed and the
   // attachments as tiles — never raw XML.
-  const { quotes, files, cleanText, pastes } = useMemo(() => {
+  const { quotes, files, cleanText, pastes, sessions } = useMemo(() => {
     // Pastes first, as on the sent turn: a ref inside a paste is paste text.
     const { text: afterPastes, pastes } = splitPastedContent(text);
     const { cleanText: afterReply, quotes } = parseReplyContexts(afterPastes);
@@ -160,8 +160,8 @@ function OptimisticUserBubble({
     const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
     const { cleanText: afterFileMentions } = parseFileMentionReferences(afterProjects);
     const { cleanText: afterAgentMentions } = parseAgentMentionReferences(afterFileMentions);
-    const { cleanText } = parseSessionReferences(afterAgentMentions);
-    return { quotes, files, cleanText, pastes };
+    const { cleanText, sessions } = parseSessionReferences(afterAgentMentions);
+    return { quotes, files, cleanText, pastes, sessions };
   }, [text]);
 
   // Quotes are drawn where they were written, by the same component the sent
@@ -217,6 +217,7 @@ function OptimisticUserBubble({
               renderText={(runText) => (
                 <HighlightMentions
                   text={runText}
+                  sessions={sessions}
                   agentNames={agentNames}
                   onFileClick={onFileClick}
                 />
@@ -226,6 +227,7 @@ function OptimisticUserBubble({
             <p className={BUBBLE_TEXT}>
               <HighlightMentions
                 text={cleanText}
+                sessions={sessions}
                 agentNames={agentNames}
                 onFileClick={onFileClick}
               />
@@ -266,10 +268,14 @@ function OptimisticUserBubble({
  */
 export function HighlightMentions({
   text,
+  sessions: parsedSessions,
   agentNames,
   onFileClick,
 }: {
   text: string;
+  /** The session refs the caller already stripped from `text`. Then `text` is
+   *  not parsed again: a second parse finds no refs and loses every title. */
+  sessions?: ReturnType<typeof parseSessionReferences>['sessions'];
   agentNames?: string[];
   onFileClick?: (path: string) => void;
 }) {
@@ -277,6 +283,7 @@ export function HighlightMentions({
   // Strip every ref block (project/file/agent/session) before processing
   // inline @ mentions so the visible text never shows raw XML.
   const { cleanText, sessions } = useMemo(() => {
+    if (parsedSessions) return { cleanText: text, sessions: parsedSessions };
     const a = parseProjectReferences(text);
     const b = parseFileMentionReferences(a.cleanText);
     const c = parseAgentMentionReferences(b.cleanText);
@@ -285,7 +292,7 @@ export function HighlightMentions({
       cleanText: d.cleanText,
       sessions: d.sessions,
     };
-  }, [text]);
+  }, [text, parsedSessions]);
 
   const sessionTitles = useMemo(() => sessions.map((s) => s.title), [sessions]);
 

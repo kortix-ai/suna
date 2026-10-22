@@ -1415,7 +1415,7 @@ test('sandboxPortUrl() throws SessionNotReadyError before ensureReady()', () => 
 
 // health() is a liveness POLL, not an action gated on the runtime being up —
 // pollers (e.g. a header dot ticking every 15s on a fresh inline
-// `kortix.session(...)` handle, see apps/whitelabel-demo/session-header.tsx)
+// `kortix.session(...)` handle, see apps/white-label/lumen/src/components/workbench/session-header.tsx)
 // must be able to call it before the session has ever resolved a runtime, so
 // it degrades to the graceful "no URL yet" shape instead of throwing.
 test('health() resolves gracefully (ok: false) before ensureReady() instead of throwing', async () => {
@@ -1439,9 +1439,9 @@ test("health() resolves against the handle's own runtime URL once ready", async 
   expect(calls.some((c) => c.url.includes('/p/sb-A/8000/kortix/health'))).toBe(true);
 });
 
-// ── shared session-runtime registry (regression: apps/whitelabel-demo's
+// ── shared session-runtime registry (regression: apps/white-label/lumen's
 // session-header.tsx polls health() on a FRESH `kortix.session(...)` handle
-// every 15s, and preview-panel.tsx calls previewUrl() in render on a handle
+// every 15s, and a preview panel calls previewUrl() in render on a handle
 // that never itself called ensureReady() — both used to throw
 // SessionNotReadyError forever because a handle's `_ready` cache never
 // survived past that one instance) ──────────────────────────────────────────

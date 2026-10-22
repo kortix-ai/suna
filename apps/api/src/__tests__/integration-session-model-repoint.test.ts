@@ -11,8 +11,8 @@
  * (`buildSessionSandboxEnvVars`, projects/lib/sessions.ts).
  *
  * The runtime-servable lineup and the project's resolved default are mocked
- * (`SERVED_MANAGED_MODELS` depends on real OpenRouter/Bedrock transport
- * credentials this local test environment does not carry); the DB write, the
+ * (`servedManagedModels()` depends on the Platinum lineup and key, which
+ * this local test environment does not carry); the DB write, the
  * audit event, and env building all run unmocked against real PostgreSQL.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
@@ -24,19 +24,16 @@ import { removeSeeded, seedProject, type SeededProject } from './helpers/integra
 const managedModel = (id: string) => ({
   id,
   name: id,
-  upstreamModelId: `vendor/${id}`,
-  transport: 'openrouter' as const,
-  pricingRef: `vendor/${id}`,
-  tier: 'balanced' as const,
+  pricing: { inputPerMillion: 1, outputPerMillion: 1 },
   vision: true,
   limit: { context: 200_000, output: 32_000 },
-  openrouterProvider: { only: ['x'], allow_fallbacks: false, zdr: true as const, data_collection: 'deny' as const },
 });
 
 mock.module('../llm-gateway/models/served-managed-models', () => ({
-  SERVED_MANAGED_MODELS: [managedModel('deepseek-v4.1-flash'), managedModel('glm-5.3-flash')],
+  servedManagedModels: () => [managedModel('deepseek-v4.1-flash'), managedModel('glm-5.3-flash')],
   platformDefaultModelId: () => 'glm-5.3-flash',
   isPlatformDefaultModelId: (id: string) => id === 'glm-5.3-flash',
+  platformVisionModelId: () => '',
 }));
 
 let projectDefaultModel: string | null = 'glm-5.3-flash';
@@ -78,7 +75,9 @@ afterAll(async () => {
 });
 
 describe('repointRetiredSessionModel', () => {
-  test('a retired id with a servable declared successor is re-pointed to it, durably and audibly', async () => {
+  // No successor is hardcoded (#10652): a retired id moves to the project
+  // default (here glm-5.3-flash), else the platform default.
+  test('a retired id is re-pointed to the project default, durably and audibly', async () => {
     const sessionId = await seedSessionWithModel('kortix/deepseek-v4-flash-0731');
 
     const nextRef = await repointRetiredSessionModel('kortix/deepseek-v4-flash-0731', {
@@ -90,7 +89,7 @@ describe('repointRetiredSessionModel', () => {
       freeModelsOnly: false,
       metadata: { opencode_model: 'kortix/deepseek-v4-flash-0731' },
     });
-    expect(nextRef).toBe('kortix/deepseek-v4.1-flash');
+    expect(nextRef).toBe('kortix/glm-5.3-flash');
 
     const [row] = await db
       .select()
@@ -98,7 +97,7 @@ describe('repointRetiredSessionModel', () => {
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     const metadata = (row?.metadata ?? {}) as Record<string, unknown>;
-    expect(metadata.opencode_model).toBe('kortix/deepseek-v4.1-flash');
+    expect(metadata.opencode_model).toBe('kortix/glm-5.3-flash');
     expect(metadata.opencode_model_source).toBe('repointed');
     expect(metadata.opencode_model_repointed_from).toBe('deepseek-v4-flash-0731');
 
@@ -108,7 +107,7 @@ describe('repointRetiredSessionModel', () => {
       .where(and(eq(auditEvents.sessionId, sessionId), eq(auditEvents.action, 'SESSION_MODEL_REPOINTED')))
       .limit(1);
     expect(audit).toBeDefined();
-    expect((audit?.metadata as Record<string, unknown> | null)?.reason).toBe('successor');
+    expect((audit?.metadata as Record<string, unknown> | null)?.reason).toBe('project_default');
   });
 
   test('a retired id with NO declared successor falls back to the project default', async () => {
@@ -225,6 +224,6 @@ describe('buildSessionSandboxEnvVars — session open re-points a retired pin be
       opencodeModel: 'kortix/deepseek-v4-flash-0731',
     });
 
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/deepseek-v4.1-flash');
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.3-flash');
   });
 });

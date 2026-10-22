@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { DEFAULT_MANAGED_MODEL_IDS, PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
 import { chooseDefaultModel } from '../llm-gateway/resolution/choose-default-model';
 
-const PAID_MANAGED = DEFAULT_MANAGED_MODEL_IDS.find((id) => id !== PLATFORM_DEFAULT_MODEL_ID)!;
+const PAID_MANAGED = 'glm-5.3-flash'; // a managed id that is not the platform default
 const BYOK = 'anthropic/claude-sonnet-4-6'; // a non-managed wire model
 
 describe('chooseDefaultModel — precedence (agent > project > account)', () => {
@@ -51,7 +50,7 @@ describe('chooseDefaultModel — free tier', () => {
   test('drops the platform default', () => {
     expect(
       chooseDefaultModel({
-        accountDefault: PLATFORM_DEFAULT_MODEL_ID,
+        accountDefault: 'deepseek-v4.1-flash',
         agentDefaults: {},
         freeModelsOnly: true,
       }),

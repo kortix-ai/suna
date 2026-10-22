@@ -217,6 +217,29 @@ describe('useNotificationHostGate', () => {
     expect(gate.answer()).toBe(true);
   });
 
+  test('it observes the cache without adding a query: no detail entry without a queryFn to refetch', async () => {
+    // A detail query the gate itself created carried no queryFn, and every
+    // refetch of it logged "No queryFn was passed" (20 in one page visit,
+    // 12 for the empty project id of a page outside any project).
+    const queryClient = client();
+    const errors: unknown[][] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => errors.push(args);
+    try {
+      const gate = await mountGate(queryClient, 'p1');
+      await gate.go(null);
+      await act(async () => {
+        await queryClient.refetchQueries({ type: 'all' });
+        await tick();
+      });
+      expect(queryClient.getQueryCache().find({ queryKey: qk.project.detail('p1') })).toBeUndefined();
+      expect(queryClient.getQueryCache().find({ queryKey: qk.project.detail('') })).toBeUndefined();
+      expect(errors.filter((args) => String(args[0]).includes('No queryFn'))).toEqual([]);
+    } finally {
+      console.error = original;
+    }
+  });
+
   test('a cached detail answers at once, without a request', async () => {
     const queryClient = client();
     queryClient.setQueryData(qk.project.detail('p1'), { project: flagged(true) });

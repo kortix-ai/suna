@@ -20,7 +20,7 @@ import { shouldTypeOnChange, TYPE_SPEED_MS } from './typed-title-logic';
 import { TypingAnimation } from './typing-animation';
 import { cn } from '../lib/utils';
 import { useReducedMotion } from 'motion/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 export { TYPE_SPEED_MS };
 
@@ -34,22 +34,21 @@ export function useTypeOnChange(text: string): {
   /** Hand to the animation's `onComplete`. */
   stop: () => void;
 } {
-  // The last value this row DISPLAYED, in a ref rather than state: it must not
-  // itself cause a render, and it has to update in the same pass that decides
-  // to animate, or a second change arriving mid-type compares against a stale
-  // value and is missed.
-  const previousRef = useRef<string | null>(null);
+  // The last value this row DISPLAYED. It updates in the same render pass that
+  // decides to animate, or a second change arriving mid-type compares against
+  // a stale value and is missed.
+  const [previous, setPrevious] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [runId, setRunId] = useState(0);
   const reduceMotion = !!useReducedMotion();
 
-  useEffect(() => {
-    const previous = previousRef.current;
-    previousRef.current = text;
-    if (!shouldTypeOnChange({ previous, next: text, reduceMotion })) return;
-    setIsTyping(true);
-    setRunId((id) => id + 1);
-  }, [text, reduceMotion]);
+  if (previous !== text) {
+    setPrevious(text);
+    if (shouldTypeOnChange({ previous, next: text, reduceMotion })) {
+      setIsTyping(true);
+      setRunId((id) => id + 1);
+    }
+  }
 
   const stop = useCallback(() => setIsTyping(false), []);
 

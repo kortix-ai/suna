@@ -22,6 +22,7 @@ import { startAppDeploymentWorker, stopAppDeploymentWorker } from './workers/app
 import { startAppIdleReaper, stopAppIdleReaper } from './workers/app-idle-reaper-worker';
 import { startAuditArchiveWorker, stopAuditArchiveWorker } from './workers/audit-archive-worker';
 import { startAuditPartitionWorker, stopAuditPartitionWorker } from './workers/audit-partition-worker';
+import { startAuditActivityWorker, stopAuditActivityWorker } from './workers/audit-activity-worker';
 import {
   startAuditReconciliationWorker,
   stopAuditReconciliationWorker,
@@ -33,6 +34,7 @@ import { startBillingRotation, stopBillingRotation } from './workers/billing-rot
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
 import { startGatewaySpendBackfillWorker, stopGatewaySpendBackfillWorker } from './workers/gateway-spend-backfill-worker';
 import { startJobWorker, stopJobWorker } from './workers/job-queue-worker';
+import { startManagedLineupRefresh, stopManagedLineupRefresh } from './workers/managed-lineup-worker';
 import { startNotificationWorker, stopNotificationWorker } from './workers/notification-worker';
 import { startProjectMaintenance, stopProjectMaintenance } from './workers/project-maintenance-worker';
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
@@ -140,6 +142,7 @@ async function startReplicaServices() {
   warnIfPreviewOriginsMissing(appLogger);
   startEventLoopLagSampler();
   startAccessControlCache();
+  startManagedLineupRefresh();
   startTunnelService();
   // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
   // toggles (warm_snapshot / provider_fallback) are honored from
@@ -231,6 +234,8 @@ async function startSingletonWorkers() {
   startAuditReconciliationWorker();
   // Weekly partitions of kortix.audit_events, 8 weeks ahead.
   startAuditPartitionWorker();
+  // Per-day account activity rollup (kortix.audit_activity_daily) behind GET /accounts/:id/audit/activity.
+  startAuditActivityWorker();
   // Archive weeks older than 90 days to S3 (Object Lock) and drop their partitions. Off by default.
   startAuditArchiveWorker();
   // Prebuilt project snapshot archives (S3 config provider). Idle unless
@@ -275,7 +280,7 @@ async function startSingletonWorkers() {
   startSessionLogPurgeWorker();
   // Idle sessions off a fallback model once their own model serves again.
   startSessionModelFallbackWorker();
-  // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=off (default) runs nothing.
+  // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=write (default) converts them.
   startSessionLogBackfillWorker();
   // Closed pending days of the gateway spend running total, recomputed from the log rows.
   startGatewaySpendBackfillWorker();
@@ -294,6 +299,7 @@ async function stopSingletonWorkers() {
   stopAppIdleReaper();
   const drains = [stopAuditWebhookWorker(), stopAuditReconciliationWorker()];
   stopAuditPartitionWorker();
+  stopAuditActivityWorker();
   stopAuditArchiveWorker();
   drains.push(stopProjectSnapshotWorker());
   stopCaptureWorkers();
@@ -417,6 +423,7 @@ async function runShutdown(signal: string): Promise<void> {
   runtimeModelCatalog.stop();
   stopTunnelService();
   stopAccessControlCache();
+  stopManagedLineupRefresh();
   stopTmpReaper();
   stopJobWorker();
   stopTriggerEventPollWorker();
