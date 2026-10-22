@@ -107,6 +107,8 @@ import {
   useProjectSessions,
   useRuntimeSupports,
   useSessionChildren,
+  useFeatureFlag,
+  useSessionGoal,
 } from '@kortix/sdk/react';
 import {
   ArchiveIcon,
@@ -122,6 +124,7 @@ import {
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
   SparkleIcon,
+  TargetIcon,
   SquareIcon as Square,
   TagIcon,
   TrashIcon,
@@ -1348,6 +1351,8 @@ function ProjectSessionRow({
         )}
       </div>
 
+      <SessionGoalMark projectId={session.project_id} sessionId={session.session_id} />
+
       {isMeta && (
         <Hint side="top" label={t('metaCoordinator')}>
           <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">
@@ -1722,6 +1727,21 @@ function ProjectSubsessionRow({
         </div>
       </HoverPrefetchLink>
     </SubagentHoverCard>
+  );
+}
+
+/** A target beside a session that runs a goal (flag `goals`); the hint names the goal. */
+function SessionGoalMark({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const tGoals = useTranslations('goals');
+  const flag = useFeatureFlag(projectId, 'goals');
+  const { goal, role } = useSessionGoal(flag.enabled ? projectId : null, sessionId);
+  if (!goal || role !== 'coordinator') return null;
+  return (
+    <Hint side="top" label={`${tGoals('sessionChip')}: ${goal.goal?.objective ?? goal.slug}`}>
+      <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center" data-testid="session-goal-mark">
+        <TargetIcon className="size-3.5" />
+      </span>
+    </Hint>
   );
 }
 

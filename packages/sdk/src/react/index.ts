@@ -152,6 +152,7 @@ export {
   type TriggerRunsQueryOptions,
 } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
+export { useProjectGoalFiles, useProjectGoals, useSessionGoal } from './use-goals';
 export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms } from './use-rooms';
 export {
   useApproveCaptureDevice,

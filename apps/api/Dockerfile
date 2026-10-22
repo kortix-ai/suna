@@ -153,10 +153,16 @@ RUN corepack enable pnpm && \
 # Go CVEs into every scan of the runtime image (Trivy, 2026-09-16:
 # CVE-2026-56862/56860/56859/56858/56853/46600/39821/33818/56865/56864/17106/
 # 33748/33747/71556) for code this image never executes. Drop it.
+# The tsgo typechecker (@typescript/native-preview, a root devDependency) is the
+# same case: a vendored Go binary that only `pnpm typecheck` runs, never this
+# image. It carried 15 high Go CVEs (Trivy, 2026-10-22: golang.org/x/text and
+# Go stdlib, e.g. CVE-2026-56851/111943) and has no newer build.
 RUN rm -rf node_modules/supabase \
            node_modules/@supabase/cli-* \
            node_modules/.pnpm/supabase@* \
-           node_modules/.pnpm/@supabase+cli-*
+           node_modules/.pnpm/@supabase+cli-* \
+           node_modules/@typescript/native-preview* \
+           node_modules/.pnpm/@typescript+native-preview*
 
 # Sources, after the install layer. `.dockerignore` excludes `**/node_modules`,
 # so these COPYs merge over the installed tree without clobbering what pnpm

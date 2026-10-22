@@ -1486,6 +1486,7 @@
   },
   "sidebar": {
     "rooms": "Räume",
+    "goals": "Ziele",
     "referAndEarn": "Empfehlen",
     "referralShareTitle": "Freunde empfehlen",
     "referralShareSubtitle": "Erhalte 400 Credits",
@@ -22299,5 +22300,91 @@
     "join": "Beitreten",
     "openRoom": "Öffnen",
     "gateDescription": "Aktiviere Räume, damit Agentensitzungen und Personen dieses Projekts in benannten Chaträumen schreiben können."
+  },
+  "goals": {
+    "title": "Ziele",
+    "gateDescription": "Agenten verfolgen ein Ziel, bis es nachweislich erreicht ist: Das Ziel liegt in Dateien, ein täglicher Heartbeat weckt es, der Agent fragt Personen nach dem, was er braucht, und eine unabhängige Prüfung schließt es ab.",
+    "empty": "Noch keine Ziele",
+    "emptyHint": "Starte eines in einer Sitzung: Beschreibe das Ergebnis, zum Beispiel \"stell sicher, dass unser altes Bankkonto geschlossen ist\". Der Agent legt das Ziel an, und es erscheint hier.",
+    "loadError": "Ziele konnten nicht geladen werden. Versuche es erneut.",
+    "retry": "Erneut versuchen",
+    "needsYou": "Braucht dich",
+    "open": "Offen",
+    "closed": "Abgeschlossen",
+    "waitingFor": "Wartet auf: {title}",
+    "criteria": "{met}/{total} Kriterien",
+    "nextWake": "Nächster Weckruf {time}",
+    "noWake": "Kein Weckruf geplant",
+    "heartbeat": "Heartbeat",
+    "heartbeatPaused": "Pausiert",
+    "lastWakeLabel": "Letzter Weckruf",
+    "progress": "Fortschritt",
+    "scope": {
+      "company": "Unternehmen",
+      "personal": "Nur du"
+    },
+    "status": {
+      "draft": "Entwurf",
+      "active": "Aktiv",
+      "waiting_on_user": "Wartet auf dich",
+      "waiting_external": "Wartet",
+      "verifying": "Wird geprüft",
+      "done": "Erledigt",
+      "abandoned": "Aufgegeben"
+    },
+    "health": {
+      "healthy": "Läuft",
+      "attention": "Braucht Aufmerksamkeit",
+      "closed": "Abgeschlossen"
+    },
+    "issue": {
+      "no_heartbeat": "Nichts weckt dieses Ziel: Die Heartbeat-Erinnerung fehlt.",
+      "heartbeat_paused": "Die Heartbeat-Erinnerung ist pausiert.",
+      "heartbeat_failed": "Der letzte Weckruf ist fehlgeschlagen: {error}",
+      "missed_wake": "Der letzte Weckruf ist überfällig.",
+      "ask_overdue": "Eine Anfrage ist überfällig.",
+      "verification_stalled": "Die Prüfung läuft seit mehr als 24 Stunden.",
+      "unreadable": "goal.json fehlt oder ist kein gültiges JSON."
+    },
+    "sessionChip": "Ziel",
+    "sessionRole": {
+      "coordinator": "Diese Sitzung führt dieses Ziel.",
+      "worker": "Diese Sitzung arbeitet an diesem Ziel.",
+      "verifier": "Diese Sitzung prüft dieses Ziel."
+    },
+    "openGoal": "Ziel öffnen",
+    "openSession": "Hauptsitzung öffnen",
+    "openFolder": "Ordner öffnen",
+    "back": "Alle Ziele",
+    "healthTitle": "Zustand",
+    "successCriteria": "Erfolgskriterien",
+    "met": "Erfüllt",
+    "notMet": "Nicht erfüllt",
+    "items": "Punkte",
+    "noItems": "Noch keine Punkte.",
+    "noCriteria": "Noch keine Kriterien: Der Agent schreibt sie, bevor das Ziel aktiv wird.",
+    "kind": {
+      "task": "Aufgabe",
+      "ask": "Anfrage",
+      "wait": "Warten"
+    },
+    "itemStatus": {
+      "open": "offen",
+      "doing": "in Arbeit",
+      "done": "erledigt",
+      "dropped": "verworfen"
+    },
+    "due": "Fällig {time}",
+    "sessions": "Sitzungen",
+    "role": {
+      "coordinator": "Hauptsitzung",
+      "worker": "Mitarbeiter",
+      "verifier": "Prüfer"
+    },
+    "timeline": "Verlauf",
+    "verification": "Prüfung",
+    "notes": "Notizen",
+    "log": "Protokoll",
+    "notFound": "Dieses Ziel existiert nicht mehr."
   }
 }

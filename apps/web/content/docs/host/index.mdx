@@ -348,7 +348,7 @@ Postgres has a fixed limit of `1280m`. `KORTIX_GATEWAY_MAX_REQUEST_BYTES` raises
 
 | Variable | Default | Effect |
 |---|---|---|
-| `KORTIX_SANDBOX_AUTOSTOP_MINUTES` | `15` | A sandbox stops this many idle minutes after its last turn ends. |
+| `KORTIX_SANDBOX_AUTOSTOP_MINUTES` | `15` | A sandbox stops this many idle minutes after its last turn ends. The same window bounds how long an open session page holds the sandbox (KRTX-2451): the page never keeps it past this. |
 | `KORTIX_SANDBOX_TURN_GRANT_MINUTES` | `240` | How long a running turn holds its sandbox. Model calls and an observed running turn renew it. |
 | `KORTIX_SANDBOX_TURN_WAITING_MINUTES` | `120` | How long a turn that waits on a person holds its sandbox. At most half the turn grant. Unattended runs get 30. |
 | `KORTIX_SANDBOX_PREVIEW_GRANT_MINUTES` | `30` | How long preview traffic keeps a sandbox running. |

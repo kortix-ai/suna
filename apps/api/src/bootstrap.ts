@@ -22,6 +22,7 @@ import { startAppDeploymentWorker, stopAppDeploymentWorker } from './workers/app
 import { startAppIdleReaper, stopAppIdleReaper } from './workers/app-idle-reaper-worker';
 import { startAuditArchiveWorker, stopAuditArchiveWorker } from './workers/audit-archive-worker';
 import { startAuditPartitionWorker, stopAuditPartitionWorker } from './workers/audit-partition-worker';
+import { startAuditActivityWorker, stopAuditActivityWorker } from './workers/audit-activity-worker';
 import {
   startAuditReconciliationWorker,
   stopAuditReconciliationWorker,
@@ -233,6 +234,8 @@ async function startSingletonWorkers() {
   startAuditReconciliationWorker();
   // Weekly partitions of kortix.audit_events, 8 weeks ahead.
   startAuditPartitionWorker();
+  // Per-day account activity rollup (kortix.audit_activity_daily) behind GET /accounts/:id/audit/activity.
+  startAuditActivityWorker();
   // Archive weeks older than 90 days to S3 (Object Lock) and drop their partitions. Off by default.
   startAuditArchiveWorker();
   // Prebuilt project snapshot archives (S3 config provider). Idle unless
@@ -296,6 +299,7 @@ async function stopSingletonWorkers() {
   stopAppIdleReaper();
   const drains = [stopAuditWebhookWorker(), stopAuditReconciliationWorker()];
   stopAuditPartitionWorker();
+  stopAuditActivityWorker();
   stopAuditArchiveWorker();
   drains.push(stopProjectSnapshotWorker());
   stopCaptureWorkers();

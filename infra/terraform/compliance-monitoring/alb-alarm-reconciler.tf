@@ -12,6 +12,7 @@ locals {
   alb_alarm_reconciler_name = "kortix-alb-alarm-reconciler"
 }
 
+#trivy:ignore:AVD-AWS-0017 Non-secret operational metadata; CloudWatch's AWS-managed encryption is sufficient (same rationale as the CKV_AWS_158 skip).
 resource "aws_cloudwatch_log_group" "euw2_alb_alarm_reconciler" {
   # checkov:skip=CKV_AWS_158: Logs contain only ALB names and reconciliation counts; CloudWatch's AWS-managed encryption is sufficient for this non-secret operational metadata.
   provider          = aws.euw2
@@ -20,6 +21,7 @@ resource "aws_cloudwatch_log_group" "euw2_alb_alarm_reconciler" {
   tags              = local.tags
 }
 
+#trivy:ignore:AVD-AWS-0017 Non-secret operational metadata; CloudWatch's AWS-managed encryption is sufficient (same rationale as the CKV_AWS_158 skip).
 resource "aws_cloudwatch_log_group" "use2_alb_alarm_reconciler" {
   # checkov:skip=CKV_AWS_158: Logs contain only ALB names and reconciliation counts; CloudWatch's AWS-managed encryption is sufficient for this non-secret operational metadata.
   provider          = aws.use2

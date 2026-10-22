@@ -1247,6 +1247,13 @@
       "when": 1792622431693,
       "tag": "20261021224031_capture_workspace_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1792688971178,
+      "tag": "20261022170931_audit_activity_daily",
+      "breakpoints": true
     }
   ]
 }

@@ -136,8 +136,17 @@ export function SessionActionPanelColumn({
         toggleRight();
       }
     };
+    // The desktop shell sends the same key from inside a cross-origin iframe
+    // (the Browser preview), where this window never sees it (KRTX-2944).
+    const onCommand = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === 'toggle-right-panel') toggleRight();
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('kortix-desktop-command', onCommand);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('kortix-desktop-command', onCommand);
+    };
   }, [shouldHandleHotkey, toggleRight]);
 
   // No provider means no panel to render: `SessionChat` also renders read-only
