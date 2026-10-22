@@ -20762,7 +20762,7 @@
     "perDay": "每天",
     "noLimit": "不限",
     "postTo": "发布到",
-    "postToHint": "每次运行都会在那里开始一个新话题。未选择频道时，运行会进入 #general。",
+    "postToHint": "每次运行都会在那里开始一个新话题。未选择频道时，运行会进入 #{channel}。",
     "postToNone": "无频道",
     "postToUnavailable": "不可用的频道"
   },

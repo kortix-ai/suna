@@ -15,6 +15,8 @@ import { useTranslations } from '../../i18n';
 import { Close } from '../../icons/close';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { useIsMobile } from '../../internal/hooks';
+import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
+import { type CanResult, useProjectCan, useProjectPageCans } from '../../internal/lib/use-project-can';
 import { ProjectScope } from '../../internal/project-scope';
 import { useComposerPrefillStore } from '../../internal/stores/composer-prefill-store';
 import { cn } from '../../lib/utils';
@@ -79,6 +81,22 @@ const TAB_PARAM = 'tab';
 const ARCHIVED_PARAM = 'archived';
 
 /**
+ * The space's tabs, less Apps and Triggers for a caller known to lack their
+ * read permission: those lists would answer 403. Shown while the answer loads.
+ */
+function useReadableSpaceTabs(projectId: string, kind: 'channel' | 'dm'): readonly SpaceTab[] {
+  const triggers = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_TRIGGER_READ];
+  const apps = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_READ);
+  const denied = (can: CanResult | undefined) => !!can && !can.isLoading && !can.isError && !can.allowed;
+  const hideApps = denied(apps);
+  const hideTriggers = denied(triggers);
+  return useMemo(
+    () => spaceTabs(kind).filter((tab) => !(tab === 'apps' && hideApps) && !(tab === 'triggers' && hideTriggers)),
+    [kind, hideApps, hideTriggers],
+  );
+}
+
+/**
  * A channel or DM page under `project_channels`: the header, the tab row
  * (Chat, Threads, and the space's files, memory, apps, links and triggers),
  * and the open thread in a panel on the right. Every message starts a new
@@ -134,7 +152,9 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
   // The counts beside the Apps, Links and Triggers labels (a DM has Triggers only).
   const summary = useProjectSpaceSummary(projectId, space?.space_id);
   const threadId = searchParams.get(THREAD_PARAM);
-  const tab = spaceTabFromParam(searchParams.get(TAB_PARAM), target.kind);
+  const tabs = useReadableSpaceTabs(projectId, target.kind);
+  const requestedTab = spaceTabFromParam(searchParams.get(TAB_PARAM), target.kind);
+  const tab = tabs.includes(requestedTab) ? requestedTab : 'chat';
   const setParams = useCallback(
     (change: (params: URLSearchParams) => void) => {
       const params = new URLSearchParams(searchParams);
@@ -229,7 +249,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
         {header}
         <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
           <TabsList type="underline" size="sm" className="w-full shrink-0 justify-start gap-4 overflow-x-auto px-5">
-            {spaceTabs(space.kind).map((value) => (
+            {tabs.map((value) => (
               <TabsTrigger key={value} value={value} className="w-fit flex-none">
                 {t(`tab.${value}`)}
                 {/* Apps counts the host's cards: no host gallery, no count over the empty state. */}
@@ -249,6 +269,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
             beforeSend={beforeSend}
             renderFolder={renderFolder}
             renderApps={renderApps}
+            tabs={tabs}
           />
         </Tabs>
       </ComposerDropZone>
@@ -283,11 +304,13 @@ function SpaceTabs({
   beforeSend,
   renderFolder,
   renderApps,
+  tabs,
 }: {
   projectId: string;
   space: ProjectSpace;
   /** "#general", or the DM's agent. */
   place: string;
+  tabs: readonly SpaceTab[];
   threads: SpaceThreads;
   threadId: string | null;
   onOpenThread: (sessionId: string) => void;
@@ -305,7 +328,7 @@ function SpaceTabs({
       <TabsContent value="threads" className="min-h-0 overflow-y-auto">
         <SpaceThreadList threads={threads} selectedId={threadId} onOpenThread={onOpenThread} />
       </TabsContent>
-      {spaceTabs(space.kind)
+      {tabs
         .filter((tab): tab is Exclude<SpaceTab, 'chat' | 'threads'> => tab !== 'chat' && tab !== 'threads')
         .map((tab) =>
           renderFolder && (tab === 'files' || tab === 'memory') ? (

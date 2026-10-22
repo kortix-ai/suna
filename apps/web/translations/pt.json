@@ -20762,7 +20762,7 @@
     "perDay": "Por dia",
     "noLimit": "Sem limite",
     "postTo": "Publicar em",
-    "postToHint": "Cada execução inicia uma nova thread ali. Sem canal, as execuções vão para #general.",
+    "postToHint": "Cada execução inicia uma nova thread ali. Sem canal, as execuções vão para #{channel}.",
     "postToNone": "Nenhum canal",
     "postToUnavailable": "Canal indisponível"
   },

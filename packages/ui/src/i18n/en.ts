@@ -5937,7 +5937,7 @@ const catalog = {
     "perDay": "Per day",
     "noLimit": "No limit",
     "postTo": "Post to",
-    "postToHint": "Each run starts a new thread there. With no channel, runs go to #general.",
+    "postToHint": "Each run starts a new thread there. With no channel, runs go to #{channel}.",
     "postToNone": "No channel",
     "postToUnavailable": "Unavailable channel"
   },

@@ -20762,7 +20762,7 @@
     "perDay": "Po danu",
     "noLimit": "Bez ograničenja",
     "postTo": "Објави у",
-    "postToHint": "Свако покретање тамо започиње нову тему. Без канала, покретања иду у #general.",
+    "postToHint": "Свако покретање тамо започиње нову тему. Без канала, покретања иду у #{channel}.",
     "postToNone": "Без канала",
     "postToUnavailable": "Недоступан канал"
   },

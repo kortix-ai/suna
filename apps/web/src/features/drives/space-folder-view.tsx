@@ -127,19 +127,11 @@ function SpaceDriveFolder({
     s.setState({ currentPath: path.replace(/^\/+/, ''), rootPath: '/', expandedDirs: new Set() });
     return s;
   }, [path]);
-  const access = folder.data?.access ?? 'none';
-  const source = useMemo(
-    () => ({
-      ...driveExplorerSource,
-      capabilities: {
-        ...driveExplorerSource.capabilities,
-        write: access === 'write' || access === 'manage',
-      },
-    }),
-    [access],
-  );
 
-  if (missing && make.isError) return <SpaceFolderEmpty tab={tab} place={place} />;
+  // Refused, or made but still not listed (storage lag): the empty state.
+  if (missing && (make.isError || (make.isSuccess && !folder.isFetching))) {
+    return <SpaceFolderEmpty tab={tab} place={place} />;
+  }
   if (folder.isError && !missing) {
     return (
       <ErrorState
@@ -159,16 +151,14 @@ function SpaceDriveFolder({
   return (
     <DriveFilesProvider driveId={drive.driveId} userId={user?.id}>
       <FilesStoreProvider store={store}>
-        <FileExplorerSourceProvider value={source}>
-          <SpaceExplorer
-            projectId={projectId}
-            drive={drive}
-            path={path}
-            label={label}
-            icon={<Glyph />}
-            note={note}
-          />
-        </FileExplorerSourceProvider>
+        <SpaceExplorer
+          projectId={projectId}
+          drive={drive}
+          path={path}
+          label={label}
+          icon={<Glyph />}
+          note={note}
+        />
       </FilesStoreProvider>
     </DriveFilesProvider>
   );
@@ -191,33 +181,46 @@ function SpaceExplorer({
 }) {
   const router = useRouter();
   const currentPath = toDrivePath(useFilesStore((s) => s.currentPath));
+  // Upload, new folder, rename and delete where the caller may write the
+  // folder in view (a subfolder can be narrower than the tab's folder).
+  const access = useDriveFolder(drive.driveId, currentPath).data?.access ?? 'none';
+  const canWrite = access === 'write' || access === 'manage';
+  const source = useMemo(
+    () => ({
+      ...driveExplorerSource,
+      capabilities: { ...driveExplorerSource.capabilities, write: canWrite },
+    }),
+    [canWrite],
+  );
   // Where a new file or folder lands: the tab's folder, then the folders below it.
   const location = {
     icon,
     crumbs: [label, ...currentPath.slice(path.length).split('/').filter(Boolean)],
   };
   return (
-    <DriveExplorer
-      leading={
-        note ? (
-          <p className="text-muted-foreground min-w-0 truncate text-xs" title={note}>
-            {note}
-          </p>
-        ) : undefined
-      }
-      rootLabel={label}
-      rootIcon={icon}
-      location={location}
-      pathBase={{ path, label, icon }}
-      onOpenFolder={(p) =>
-        router.push(
-          driveUrlWithPath(
-            `${window.location.origin}/projects/${projectId}/drive`,
-            drivePathToParam(p, drive.personalFolder),
-          ),
-        )
-      }
-    />
+    <FileExplorerSourceProvider value={source}>
+      <DriveExplorer
+        leading={
+          note ? (
+            <p className="text-muted-foreground min-w-0 truncate text-xs" title={note}>
+              {note}
+            </p>
+          ) : undefined
+        }
+        rootLabel={label}
+        rootIcon={icon}
+        location={location}
+        pathBase={{ path, label, icon }}
+        onOpenFolder={(p) =>
+          router.push(
+            driveUrlWithPath(
+              `${window.location.origin}/projects/${projectId}/drive`,
+              drivePathToParam(p, drive.personalFolder),
+            ),
+          )
+        }
+      />
+    </FileExplorerSourceProvider>
   );
 }
 

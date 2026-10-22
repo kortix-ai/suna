@@ -14,7 +14,6 @@ import { type ComposerDraft, postToChange } from './trigger-composer-logic';
 /** Select has no empty value: this one stands for "no channel". */
 const NONE = 'none';
 
-
 /**
  * "Post to": the channel or DM each run starts a thread in. Shown only while
  * the project's `project_channels` flag is on. A channel shares later runs
@@ -40,7 +39,9 @@ export function PostToField({
   const spaces = useProjectSpaces(projectId, { enabled: channelsOn });
   if (!channelsOn) return null;
   const list = spaces.data ?? [];
-  // A saved trigger's archived channel, or another member's DM, is not in the list: keep it selectable.
+  // A saved trigger's archived channel is not in the list: keep it selectable.
+  // Another member's DM never reaches the form (the API lists its trigger with
+  // no space), so it shows as no channel.
   const unknown = draft.spaceId && !list.some((space) => space.space_id === draft.spaceId);
 
   const choose = (value: string) => {
@@ -88,7 +89,10 @@ export function PostToField({
           ))}
         </SelectContent>
       </Select>
-      <p className="text-muted-foreground text-xs text-pretty">{t('postToHint')}</p>
+      <p className="text-muted-foreground text-xs text-pretty">
+        {/* The default channel can be renamed: name it as it is now. */}
+        {t('postToHint', { channel: list.find((space) => space.is_default)?.slug ?? 'general' })}
+      </p>
     </div>
   );
 }

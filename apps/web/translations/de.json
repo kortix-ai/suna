@@ -20762,7 +20762,7 @@
     "perDay": "Pro Tag",
     "noLimit": "Kein Limit",
     "postTo": "Posten in",
-    "postToHint": "Jeder Lauf startet dort einen neuen Thread. Ohne Kanal landen Läufe in #general.",
+    "postToHint": "Jeder Lauf startet dort einen neuen Thread. Ohne Kanal landen Läufe in #{channel}.",
     "postToNone": "Kein Kanal",
     "postToUnavailable": "Nicht verfügbarer Kanal"
   },

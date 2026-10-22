@@ -20762,7 +20762,7 @@
     "perDay": "1日あたり",
     "noLimit": "上限なし",
     "postTo": "投稿先",
-    "postToHint": "実行ごとにそこで新しいスレッドが始まります。チャンネルがない場合、実行は #general に入ります。",
+    "postToHint": "実行ごとにそこで新しいスレッドが始まります。チャンネルがない場合、実行は #{channel} に入ります。",
     "postToNone": "チャンネルなし",
     "postToUnavailable": "利用できないチャンネル"
   },
