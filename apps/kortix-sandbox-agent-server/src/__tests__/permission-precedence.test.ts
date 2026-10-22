@@ -33,15 +33,15 @@ const CASES: [string, Record<string, unknown>, string, Record<string, unknown>, 
 
 describe('both harnesses resolve every rule the same way', () => {
   test.each(CASES)('%s', (_name, rules, tool, args, expected) => {
-    const pi = resolvePolicyRule(compilePermissionPolicy(rules), tool, args)
-    const openCode = openCodeAction([orderPermissionRules(rules)], tool, permissionSubject(tool, args)!)
+    const pi = resolvePolicyRule(compilePermissionPolicy(rules), tool, args, '/workspace')
+    const openCode = openCodeAction([orderPermissionRules(rules)], tool, permissionSubject(tool, args, '/workspace')!)
     expect(pi).toBe(expected as never)
     expect(openCode).toBe(expected)
   })
 
   test('without ordering, OpenCode disagrees on the `*`-last rows (the bug class)', () => {
     const [, rules, tool, args] = CASES[0]!
-    expect(openCodeAction([rules], tool, permissionSubject(tool, args)!)).toBe('allow')
+    expect(openCodeAction([rules], tool, permissionSubject(tool, args, '/workspace')!)).toBe('allow')
   })
 })
 

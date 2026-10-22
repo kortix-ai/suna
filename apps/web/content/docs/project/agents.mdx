@@ -139,7 +139,7 @@ kortix agents config support --set behavior.temperature=0.2
 - Any other key is a tool name and passes through to the harness.
 - A tool with no rule is allowed.
 
-A pattern is matched against the command line for `bash`, the skill name for `skill`, the subagent name for `task`, and the file path for the file tools. `*` matches any text and `?` matches one character. A pattern that ends in ` *` also matches the bare command: `git diff *` matches `git diff`.
+A pattern is matched against the command line for `bash`, the skill name for `skill`, the subagent name for `task`, and the file's path relative to the workspace for the file tools: `./secrets/a`, `x/../secrets/a` and `/workspace/secrets/a` are all `secrets/a`. `*` matches any text and `?` matches one character. A pattern that ends in ` *` also matches the bare command: `git diff *` matches `git diff`.
 
 **The most specific rule wins, on OpenCode and on pi, whatever order the keys are written in.**
 
@@ -162,6 +162,8 @@ permission:
 ```
 
 - The starter agents use `permission: allow`. Each session runs in its own sandbox on its own branch.
+- `external_directory` decides a file tool call whose path is outside the workspace. Its pattern is the directory, for example `/tmp/*`.
+- A path rule governs the file tools, not the shell: `cat secrets/a` is a `bash` command. To keep a path closed, restrict `bash` too.
 - `bash: deny` also denies the terminal tools (`pty_*`), and `edit: deny` also denies `memory`, unless the agent sets a rule for those tools.
 - On OpenCode, `harnesses/opencode/opencode.jsonc` can set a project-wide `permission`. The starter sets `"permission": "allow"`.
 

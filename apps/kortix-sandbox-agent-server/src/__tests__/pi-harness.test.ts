@@ -875,6 +875,24 @@ describe('pi harness', () => {
     expect(existsSync(join(r.workspace, 'new.txt'))).toBe(false)
   })
 
+  test('a path deny holds for every spelling of the path the read tool resolves', async () => {
+    const permission = { read: { 'secrets/*': 'deny', '*': 'allow' } }
+    for (const path of ['./secrets/a', 'x/../secrets/a', '@secrets/a']) {
+      const r = await boot({
+        script: [{ tool: 'read', args: { path } }, { text: 'blocked' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission } } }) },
+        prepare: (workspace) => {
+          mkdirSync(join(workspace, 'secrets'))
+          writeFileSync(join(workspace, 'secrets', 'a'), 'sentinel-secret')
+        },
+      })
+      const tool = await firstToolPart(r)
+      expect(tool.state.status).toBe('error')
+      expect(tool.state.error).toContain('denies')
+      expect(JSON.stringify(tool)).not.toContain('sentinel-secret')
+    }
+  })
+
   test('the manifest skills grant hides every other skill: managed, project and pi skill dirs (W1 B3)', async () => {
     const skill = (dir: string, name: string) => {
       mkdirSync(join(dir, name), { recursive: true })

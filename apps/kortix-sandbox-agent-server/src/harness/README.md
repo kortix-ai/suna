@@ -888,6 +888,17 @@ tools cannot ask, so they run only when the capability is `allow`. A rule is an
 action, or a glob-pattern -> action map matched against a `bash` command or a
 workspace tool's path. A pattern map is never collapsed to its `*` entry.
 
+**A path rule matches the file, both harnesses.** OpenCode resolves the path
+and matches it relative to the worktree. pi resolves it as its file tools do
+(`pi/interactions.ts` `toolPath`: `@`, `~`, `file://`, `.`, `..`, absolute)
+and matches it relative to the workspace. So `./secrets/a`, `x/../secrets/a`,
+`@secrets/a` and `/workspace/secrets/a` all match `secrets/*`. A `read`,
+`write`, `edit`, `glob` or `grep` path outside the workspace also answers to
+`external_directory`, with the subject `<dir>/*`, and the strictest rule wins.
+pi applies `external_directory` only when a rule covers it. Neither harness
+resolves symlinks. A path rule does not govern `bash`: `cat secrets/a` is a
+`bash` command.
+
 **A bash line is decided command by command, both harnesses.** OpenCode asks
 for each command its tree-sitter parse finds. pi splits the line
 (`pi/interactions.ts` `bashCommands`) on unquoted `;`, `&`, `|` and newlines,
