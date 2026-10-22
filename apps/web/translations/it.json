@@ -20316,7 +20316,7 @@
       "text5f6ba69d66d1": "Competenza rimossa",
       "textcb8d6b0c94c9": " e tutti i suoi file, modifiche incluse, e rimuove la competenza da ogni agente che la usa. Un commit sul branch predefinito.",
       "cliDeviceTitle": "Autorizza Kortix CLI",
-      "cliDeviceWarning": "Approva solo un accesso avviato da te. Confronta questo codice con il terminale.",
+      "cliDeviceWarning": "Approva solo un accesso avviato da te. Digita il codice mostrato dal terminale.",
       "cliDeviceCode": "Codice di accesso",
       "cliDeviceApproved": "Accesso approvato. Torna al terminale.",
       "cliDeviceAction": "Autorizza CLI"

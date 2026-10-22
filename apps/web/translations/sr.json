@@ -20316,7 +20316,7 @@
       "text5f6ba69d66d1": "Вештина је уклоњена",
       "textcb8d6b0c94c9": " и све датотеке у њој, укључујући измене, и уклања вештину из сваког агента који је користи. Један commit на подразумеваној грани.",
       "cliDeviceTitle": "Ovlasti Kortix CLI",
-      "cliDeviceWarning": "Odobrite samo prijavu koju ste sami pokrenuli. Uporedite ovaj kod sa terminalom.",
+      "cliDeviceWarning": "Odobrite samo prijavu koju ste sami pokrenuli. Unesite kod koji prikazuje vaš terminal.",
       "cliDeviceCode": "Kod za prijavu",
       "cliDeviceApproved": "Prijava je odobrena. Vratite se u terminal.",
       "cliDeviceAction": "Ovlasti CLI"

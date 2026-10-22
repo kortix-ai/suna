@@ -20327,7 +20327,7 @@
       "text5f6ba69d66d1": "Skill removed",
       "textcb8d6b0c94c9": " and every file in it, edits included, and removes the skill from every agent that lists it. One commit on the default branch.",
       "cliDeviceTitle": "Authorize Kortix CLI",
-      "cliDeviceWarning": "Approve only a login you started. Check this code against your terminal.",
+      "cliDeviceWarning": "Approve only a login you started. Type the code your terminal shows.",
       "cliDeviceCode": "Login code",
       "cliDeviceApproved": "Login approved. Return to your terminal.",
       "cliDeviceAction": "Authorize CLI"

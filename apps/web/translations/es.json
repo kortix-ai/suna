@@ -20316,7 +20316,7 @@
       "text5f6ba69d66d1": "Habilidad eliminada",
       "textcb8d6b0c94c9": " y todos sus archivos, incluidos los cambios, y quita la habilidad de cada agente que la usa. Un commit en la rama predeterminada.",
       "cliDeviceTitle": "Autorizar Kortix CLI",
-      "cliDeviceWarning": "Aprueba solo un inicio de sesión que hayas iniciado. Compara este código con tu terminal.",
+      "cliDeviceWarning": "Aprueba solo un inicio de sesión que hayas iniciado. Escribe el código que muestra tu terminal.",
       "cliDeviceCode": "Código de inicio de sesión",
       "cliDeviceApproved": "Inicio de sesión aprobado. Vuelve a tu terminal.",
       "cliDeviceAction": "Autorizar CLI"
