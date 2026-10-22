@@ -15,6 +15,8 @@ type Sample = {
   ts: string; test: string; target: string; via: string; model: string; conc: number; ok: boolean; status: number;
   ttftMs?: number; totalMs: number; outTok?: number; decodeTps?: number; promptTok?: number; cachedTok?: number;
   toolOk?: boolean; cost?: number; error?: string;
+  /** Gaps between content chunks (ms): p50, p99, max. */
+  gapP50?: number; gapP99?: number; gapMax?: number;
 };
 
 const { values } = parseArgs({ options: {
@@ -46,6 +48,7 @@ async function call(t: Target, test: string, conc: number, body: Record<string, 
     }
     const reader = res.body.getReader(); const dec = new TextDecoder();
     let buf = '', first = 0, last = 0, usage: any, toolName = '', toolArgs = '';
+    const gaps: number[] = [];
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -58,7 +61,7 @@ async function call(t: Target, test: string, conc: number, body: Record<string, 
         let j: any; try { j = JSON.parse(line.slice(5)); } catch { continue; }
         const d = j.choices?.[0]?.delta ?? {};
         if (d.content || d.reasoning_content || d.reasoning || d.tool_calls) {
-          const now = performance.now(); if (!first) first = now; last = now;
+          const now = performance.now(); if (!first) first = now; else gaps.push(now - last); last = now;
         }
         for (const tc of d.tool_calls ?? []) { if (tc.function?.name) toolName = tc.function.name; toolArgs += tc.function?.arguments ?? ''; }
         if (j.usage) usage = j.usage;
@@ -73,6 +76,10 @@ async function call(t: Target, test: string, conc: number, body: Record<string, 
       cost: typeof usage?.cost === 'number' ? usage.cost : undefined,
     });
     if (test === 'tool') base.toolOk = toolName === 'get_weather' && /paris/i.test(toolArgs);
+    if (gaps.length > 10) {
+      gaps.sort((a, b) => a - b);
+      base.gapP50 = gaps[Math.floor(gaps.length * 0.5)]; base.gapP99 = gaps[Math.floor(gaps.length * 0.99)]; base.gapMax = gaps.at(-1);
+    }
     return base;
   } catch (e) {
     return { ...base, totalMs: performance.now() - started, error: (e as Error).message.slice(0, 200) };
@@ -91,7 +98,12 @@ async function run(): Promise<void> {
     const nonce = () => crypto.randomUUID().slice(0, 8);
     if (phases.has('short')) for (let i = 0; i < n; i++) write(await call(t, 'short', 1, { max_tokens: 300, messages: [{ role: 'user', content: `[${nonce()}] Write 5 short tips for reliable shell scripts.` }] }));
     if (phases.has('long')) for (let i = 0; i < 2; i++) write(await call(t, 'long30k', 1, { max_tokens: 100, messages: [{ role: 'user', content: longPrompt(30_000, nonce()) }] }));
-    if (phases.has('conc')) for (const s of await Promise.all(Array.from({ length: 8 }, () => call(t, 'conc8', 8, { max_tokens: 200, messages: [{ role: 'user', content: `[${nonce()}] Write 5 short tips for reliable shell scripts.` }] })))) write(s);
+    for (const c of [8, 32, 100]) {
+      if (!phases.has(`conc${c}`) && !(c === 8 && phases.has('conc'))) continue;
+      for (const s of await Promise.all(Array.from({ length: c }, () => call(t, `conc${c}`, c, { max_tokens: 200, messages: [{ role: 'user', content: `[${nonce()}] Write 5 short tips for reliable shell scripts.` }] })))) write(s);
+    }
+    if (phases.has('longstream')) for (let i = 0; i < 3; i++) write(await call(t, 'longstream', 1, { max_tokens: 3000, messages: [{ role: 'user', content: `[${nonce()}] Write a detailed 1500-word essay on the history of the shell.` }] }));
+    if (phases.has('long120k')) write(await call(t, 'long120k', 1, { max_tokens: 100, messages: [{ role: 'user', content: longPrompt(120_000, nonce()) }] }));
     if (phases.has('tool')) for (let i = 0; i < 3; i++) write(await call(t, 'tool', 1, { max_tokens: 800, tools: TOOL, messages: [{ role: 'user', content: `[${nonce()}] What is the weather in Paris? Use the tool.` }] }));
     if (phases.has('cache')) {
       const prefix = longPrompt(20_000, `cache-${nonce()}`);
@@ -107,13 +119,13 @@ function report(dir: string): void {
   const f = (x: number) => (Number.isFinite(x) ? x.toFixed(0) : '-');
   const groups = new Map<string, Sample[]>();
   for (const r of rows) { const k = `${r.target}|${r.via}|${r.test}`; groups.set(k, [...(groups.get(k) ?? []), r]); }
-  console.log('| target | via | test | n | ok | TTFT p50 | p90 | p99 | decode tok/s p50 | total p50 ms | cached tok | tool ok |');
-  console.log('|---|---|---|---|---|---|---|---|---|---|---|---|');
+  console.log('| target | via | test | n | ok | TTFT p50 | p90 | p99 | decode tok/s p50 | total p50 ms | cached tok | tool ok | chunk gap p50/p99/max |');
+  console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const [k, rs] of [...groups].sort()) {
     const [target, via, test] = k.split('|');
     const ok = rs.filter((r) => r.ok);
     const tt = ok.map((r) => r.ttftMs!).filter((x) => x !== undefined);
-    console.log(`| ${target} | ${via} | ${test} | ${rs.length} | ${ok.length} | ${f(q(tt, 0.5))} | ${f(q(tt, 0.9))} | ${f(q(tt, 0.99))} | ${f(q(ok.map((r) => r.decodeTps!).filter(Boolean), 0.5))} | ${f(q(ok.map((r) => r.totalMs), 0.5))} | ${f(q(ok.map((r) => r.cachedTok ?? 0), 0.5))} | ${test === 'tool' ? `${ok.filter((r) => r.toolOk).length}/${ok.length}` : ''} |`);
+    console.log(`| ${target} | ${via} | ${test} | ${rs.length} | ${ok.length} | ${f(q(tt, 0.5))} | ${f(q(tt, 0.9))} | ${f(q(tt, 0.99))} | ${f(q(ok.map((r) => r.decodeTps!).filter(Boolean), 0.5))} | ${f(q(ok.map((r) => r.totalMs), 0.5))} | ${f(q(ok.map((r) => r.cachedTok ?? 0), 0.5))} | ${test === 'tool' ? `${ok.filter((r) => r.toolOk).length}/${ok.length}` : ''} | ${ok.some((r) => r.gapP50 !== undefined) ? `${f(q(ok.map((r) => r.gapP50!).filter((x) => x !== undefined), 0.5))}/${f(q(ok.map((r) => r.gapP99!).filter((x) => x !== undefined), 0.5))}/${f(Math.max(...ok.map((r) => r.gapMax ?? 0)))}` : ''} |`);
   }
   // Overhead vs direct: TTFT p50 and p95 per route on the short test, minus the direct route's.
   console.log('\n| target | via | TTFT p50 | p95 | overhead p50 vs direct | overhead p95 vs direct |\n|---|---|---|---|---|---|');
