@@ -65,6 +65,10 @@ jobs:
         run: python3 infra/terraform/scripts/test_web_waf_associations.py
       - name: ALB log bucket versioning regression test
         run: python3 infra/terraform/scripts/test_alb_log_bucket_versioning.py
+      - name: internal security group inventory tag plan test (Drata 8028)
+        run: |
+          terraform -chdir=infra/terraform/environments/dev-us-east-2 init -backend=false -input=false -no-color
+          terraform -chdir=infra/terraform/environments/dev-us-east-2 test -filter=tests/internal_tags.tftest.hcl -no-color
       - name: audit archive tag readability regression test (Drata 8028)
         run: python3 infra/terraform/scripts/test_audit_archive_tag_readability.py
       - name: ALB TargetResponseTime alarm regression test
