@@ -46,6 +46,13 @@ describe('providerIconSrc', () => {
     expect(providerIconSrc('hpc-ai')).toBe('https://models.dev/logos/hpc-ai.svg');
   });
 
+  // models.dev has no Platinum logo and answers with a generic sparkles mark;
+  // ProviderLogo draws the Platinum square itself.
+  test('never fetches a Platinum logo from models.dev', () => {
+    expect(providerIconSrc('platinum')).toBeUndefined();
+    expect(providerIconSrc('platinum', '/provider-icons')).toBeUndefined();
+  });
+
   test('returns undefined for an id outside the catalog (caller falls back to initials)', () => {
     expect(providerIconSrc('some-brand-new-provider')).toBeUndefined();
   });

@@ -1,7 +1,6 @@
-import { config } from '../config';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';
-import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';
+import { platformDefaultModelId, platformVisionModelId } from '../llm-gateway/models/served-managed-models';
 import { isModelServableForAccount } from '../llm-gateway/resolution/default-model';
 import { accountMayUseManagedModels } from '../billing/services/entitlements';
 
@@ -157,7 +156,7 @@ async function replacementCandidates(input: {
     ([, m]) => m.enabled !== false && (!needsVision || capabilityReadsImages(m)),
   );
   const preferred = [
-    ...(needsVision ? [config.LLM_GATEWAY_VISION_MODEL?.trim()] : []),
+    ...(needsVision ? [platformVisionModelId()] : []),
     catalog.defaultModel,
     platformDefaultModelId(),
   ].filter((m): m is string => !!m);

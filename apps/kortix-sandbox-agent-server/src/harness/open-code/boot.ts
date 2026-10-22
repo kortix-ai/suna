@@ -489,8 +489,8 @@ function runDeferredHistoryBackfill(bootState: SandboxBootState): void {
  *   - diff the live managed set against the provider map OpenCode actually
  *     booted with;
  *   - only a genuinely MISSING managed id — the model that would answer
- *     `ModelNotFound` — buys one controlled restart. The bundled managed table
- *     ships with every release, so the common case is a no-op.
+ *     `ModelNotFound` — buys one controlled restart. A box whose baked catalog
+ *     already carries the lineup does nothing.
  *
  * Never restarts across a live turn: `opencodeTurnInFlight` treats "cannot
  * tell" as busy, and a cold box with no pin answers a definite `false` without
@@ -523,7 +523,7 @@ export async function reconcileManagedModels(
     // so it is normally already settled when this runs.
     const live = await settleManagedModelsPrefetch()
     if (!live) {
-      logger.info('[boot] managed reconcile: no live managed set; bundled managed models stand', {
+      logger.info('[boot] managed reconcile: no live managed set; the baked catalog stands', {
         ms: Date.now() - startedAt,
       })
       return

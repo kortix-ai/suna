@@ -23,9 +23,7 @@ const models = [
 })) as FlatModel[];
 mock.module('@kortix/sdk/react', () => ({
   useProjectModels: () => models,
-  useProjectModelPickerCatalog: () => ({ platformFeePercent: 5, managedPricingRoutes: {
-    'deepseek-v4.1-flash': [{ route: 'synthetic', role: 'preferred', input: 2, output: 6, cacheRead: 1 }, { route: 'second', input: 4, output: 8, cacheRead: 0.5 }],
-  } }),
+  useProjectModelPickerCatalog: () => ({ platformFeePercent: 5 }),
   useModelEnablement: () => ({ defaultModel: 'deepseek-v4.1-flash', usingDefaults: false, resetToDefaults }),
   useModelAccess: () => ({ data: { enforced: true, disabledProviders: [], disabledModels: ['example/blocked'] }, defaultProvider: 'kortix', isLoading: false, isUpdating: false, setEnabled }),
   useModelDefaults: () => ({ accountDefault: { modelID: 'deepseek-v4.1-flash' }, isUpdating: false, setProjectDefault, setAccountDefault }),
@@ -51,7 +49,6 @@ function Item({ children, disabled, onSelect }: { children: ReactNode; disabled?
   return <button disabled={disabled} onClick={() => { if (!disabled) onSelect?.(); }}>{children}</button>;
 }
 mock.module('../../../primitives/dropdown-menu', () => ({ DropdownMenu: Surface, DropdownMenuTrigger: Trigger, DropdownMenuContent: Content, DropdownMenuItem: Item }));
-mock.module('../../../primitives/hover-card', () => ({ HoverCard: Surface, HoverCardTrigger: Trigger, HoverCardContent: Content }));
 mock.module('../../../primitives/hint', () => ({ default: ({ children }: { children: ReactNode }) => children }));
 mock.module('../../../primitives/switch', () => ({ Switch: ({ checked, disabled, ...props }: { checked: boolean; disabled?: boolean }) => <button {...props} role="switch" aria-checked={checked} disabled={disabled} /> }));
 mock.module('../../../primitives/input-group', () => ({
@@ -118,21 +115,13 @@ test('default scopes, hidden restrictions, wire clipboard and locked/read-only c
   } finally { await act(async () => renderer.unmount()); }
 });
 
-test('opens every managed price route including cached/preferred prices and data notes', async () => {
+test('a managed model shows its one price and the platform fee', async () => {
   const renderer = await mount();
   try {
     const managed = modelRow(renderer.root, 'deepseek-v4.1-flash');
-    expect(text(managed)).toContain('from $2.00 / $6.00 per 1M');
-    await click(trigger(managed));
-    const routes = managed.findAll((node) => node.type === 'div' && node.props['data-pricing-route']);
-    expect(routes.map((node) => node.props['data-pricing-route'])).toEqual(['synthetic', 'second']);
-    expect(text(routes[0])).toContain('$1.00');
-    expect(text(routes[0])).toContain('Preferred');
-    expect(text(routes[1])).toContain('$0.50');
-    expect(text(routes[1])).toContain('$4.00');
-    expect(text(routes[1])).toContain('$8.00');
-    expect(text(managed)).toContain('Zero data retention');
-    expect(text(managed)).toContain('US');
+    expect(text(managed)).toContain('$3.00 / $9.00 per 1M');
+    expect(text(managed)).not.toContain('from');
+    expect(text(renderer.root)).toContain('+ 5% platform fee');
   } finally { await act(async () => renderer.unmount()); }
 });
 

@@ -4,7 +4,6 @@ import { describe, expect, test } from 'bun:test';
 // package (Metro resolves only @kortix/sdk and @kortix/shared), so the copy in
 // model-picker.ts is pinned against it here.
 import {
-  DEFAULT_MANAGED_MODEL_IDS,
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
 } from '../../../../packages/llm-catalog/src/index';
@@ -53,10 +52,6 @@ describe('copied catalog tables match @kortix/llm-catalog', () => {
     for (const [id, label] of Object.entries(PICKER_PROVIDER_LABELS)) {
       expect(PROVIDER_LABELS[id]).toBe(label);
     }
-  });
-
-  test('managed model ids carry no "/": splitting them cannot invent a provider', () => {
-    expect(DEFAULT_MANAGED_MODEL_IDS.some((id) => id.includes('/'))).toBe(false);
   });
 });
 
@@ -131,5 +126,23 @@ describe('firstPromptPicks — what project home sends with the first message', 
     expect(firstPromptPicks(gpt, null, ['low', 'high'])).toBeNull();
     expect(firstPromptPicks(gpt, 'max', ['low', 'high'])).toBeNull();
     expect(firstPromptPicks(null, 'high', ['low', 'high'])).toBeNull();
+  });
+});
+
+// KRTX-3011: `/model-picker` keeps a model a default names even when its
+// provider is not connected, marked `available: false`. Mobile has no row
+// action to connect it, so it is not a row and does not count as offered.
+describe('an unavailable model (KRTX-3011)', () => {
+  const unavailable = {
+    models: {
+      'deepseek-v4.1-flash': { name: 'DeepSeek V4.1 Flash', provider: 'kortix' },
+      'codex/gpt-6-astra': { name: 'GPT-6 Astra (ChatGPT)', provider: 'codex', available: false, availability: 'login' },
+    },
+  } as unknown as ProjectLlmCatalogResponse;
+
+  test('is not a picker row and is not counted as offered', () => {
+    const models = composerModelList(unavailable);
+    expect(modelPickerOptions(models, null).map((o) => o.label)).toEqual(['DeepSeek V4.1 Flash']);
+    expect(offeredModelCount(models)).toBe(1);
   });
 });

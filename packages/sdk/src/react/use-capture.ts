@@ -17,6 +17,9 @@ import {
   getCaptureDays,
   getCaptureDeviceGrant,
   getCapturePolicy,
+  getCaptureStorage,
+  setCaptureStorage,
+  type CaptureStorageInput,
   getCaptureTimeline,
   getCaptureTimelineItems,
   getCaptureWorkspace,
@@ -249,6 +252,27 @@ export function useSetCapturePolicy(accountId: AccountId) {
   return useMutation({
     mutationFn: (policy: CapturePolicy) => setCapturePolicy(accountId as string, policy),
     onSuccess: (record) => queryClient.setQueryData(qk.capture.policy(accountId ?? ''), record),
+  });
+}
+
+// ── Storage ───────────────────────────────────────────────────────────────────
+
+/** Where the account keeps its recordings: the managed store, or its own S3 bucket (`capture.manage`). The secret is never returned. */
+export function useCaptureStorage(accountId: AccountId) {
+  return useQuery({
+    queryKey: qk.capture.storage(accountId ?? ''),
+    queryFn: () => getCaptureStorage(accountId as string),
+    enabled: !!accountId,
+    ...contract(FRESHNESS.captureStorage),
+  });
+}
+
+/** Set the account's storage destination (`capture.manage`). An `s3` config is write-probed before it is stored. */
+export function useSetCaptureStorage(accountId: AccountId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CaptureStorageInput) => setCaptureStorage(accountId as string, input),
+    onSuccess: (view) => queryClient.setQueryData(qk.capture.storage(accountId ?? ''), view),
   });
 }
 

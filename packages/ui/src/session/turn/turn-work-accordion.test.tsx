@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { BurstSummaryTrigger } from './burst-summary-trigger';
 import { TurnWorkAccordion } from './turn-work-accordion';
 import { Disclosure } from '../../primitives/disclosure';
+import { StepBody } from './burst-step-body';
 
 const STEP = <div>synthetic step content</div>;
 
@@ -56,5 +57,18 @@ describe('BurstSummaryTrigger scope', () => {
     );
     expect(html).toContain('group-data-[state=open]/burst:rotate-90');
     expect(html).not.toContain('/work');
+  });
+});
+
+describe('compaction inside Worked (KRTX-3034)', () => {
+  test('the existing fold hides the marker until expanded, and the burst renders the existing summary disclosure', () => {
+    const marker = <StepBody step={{ kind: 'block', key: 'cp', block: { type: 'compaction', id: 'cp', summary: 'Retained synthetic context', first_kept_message_id: null } }} running={false} sessionId="synthetic" />;
+    const closed = renderToStaticMarkup(<TurnWorkAccordion durationMs={null}>{marker}</TurnWorkAccordion>);
+    expect(closed).toContain('>Worked</span>');
+    expect(closed).not.toContain('Context automatically compacted');
+    const expanded = renderToStaticMarkup(marker);
+    expect(expanded).toContain('Context automatically compacted');
+    expect(expanded).toContain('aria-expanded="false"');
+    expect(expanded).not.toContain('Retained synthetic context');
   });
 });

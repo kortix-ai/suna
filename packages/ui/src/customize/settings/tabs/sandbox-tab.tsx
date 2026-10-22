@@ -12,15 +12,6 @@ import { ConfirmDialog } from '../../../primitives/confirm-dialog';
 import Hint from '../../../primitives/hint';
 import { InfoBanner } from '../../../primitives/info-banner';
 import Loading from '../../../primitives/loading';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../../primitives/select';
-import { SettingsRow, SettingsRowGroup } from '../../../primitives/settings-row';
-import { SettingsSubsectionHeader } from '../../../primitives/settings-subsection-header';
 import { Skeleton } from '../../../primitives/skeleton';
 import { errorToast, successToast } from '../../../primitives/toast';
 import { EmptyState } from '../../../primitives/empty-state';
@@ -35,16 +26,12 @@ import { PROJECT_ACTIONS } from '../../../internal/lib/project-actions';
 import { useProjectCans } from '../../../internal/lib/use-project-can';
 import { cn } from '../../../internal/lib/utils';
 import {
-  type KortixProject,
-  type SandboxProviderName,
   type SandboxTemplate,
   buildSandboxTemplate,
   deleteSandboxTemplate,
-  getProject,
   listProjectSnapshots,
-  updateProjectSandboxProvider,
 } from '@kortix/sdk';
-import { contract, invalidateProject, qk } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import {
   ArrowClockwiseIcon,
   CheckCircleIcon,
@@ -58,9 +45,7 @@ import {
   PencilSimpleIcon,
   type Icon as PhosphorIcon,
   PlusIcon,
-  PushPinIcon,
   ShippingContainerIcon,
-  ShuffleIcon,
   SquaresFourIcon,
   TrashIcon,
   XCircleIcon,
@@ -68,31 +53,15 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
-  type SandboxProvider,
   SandboxProviderBadge,
-  SandboxProviderLabel,
-  type SandboxProviderMode,
   availableProviderCoverage,
-  describeProviderMode,
   latestObservedAt,
 } from '../../sections/view/sandbox-provider-coverage';
-import {
-  applySandboxProviderResult,
-  pollSandboxProviderTransition,
-} from '../../sections/view/sandbox-provider-result';
-import {
-  formatSandboxProvider,
-  isLegacySandboxProvider,
-  sortSandboxProviders,
-} from '../../../internal/lib/sandbox-providers';
 import { SettingsTabHeader } from '../settings-tab-header';
 import { snapshotsQueryRetry } from './snapshots-query';
 
-/** One batched probe for the two leaves this tab gates on. */
-const SANDBOX_TAB_ACTIONS = [
-  PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE,
-  PROJECT_ACTIONS.PROJECT_WRITE,
-] as const;
+/** The one leaf this tab gates on: template create, edit, delete and rebuild. */
+const SANDBOX_TAB_ACTIONS = [PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE] as const;
 
 /** Three, not five: each skeleton is now a full card, so five of them
  *  overflowed the panel and read as a wall of grey. */
@@ -193,31 +162,6 @@ export function describeBase(
   };
 }
 
-/** Where sessions built from this template actually run. Static configuration,
- *  not live status — which is why it belongs in the spec grid next to CPU and
- *  memory, and NOT in the runtime footer where a bare `Automatic` badge used
- *  to float with no label attached to it. */
-export function describeRouting(
-  providerMode: SandboxProviderMode,
-  selectedProvider: SandboxProvider | null,
-  tI18nComplete: UiTranslator,
-  labels: {
-    automatic?: string;
-    pinned?: string;
-    pinnedWithProvider?: (provider: string) => string;
-  } = {},
-): { label: string; icon: PhosphorIcon } {
-  const mode = describeProviderMode(providerMode, selectedProvider, tI18nComplete);
-  if (providerMode === 'automatic')
-    return { label: labels.automatic ?? 'Automatic', icon: ShuffleIcon };
-  return {
-    label: mode.selectedProvider
-      ? (labels.pinnedWithProvider?.(mode.selectedProvider) ?? `Pinned · ${mode.selectedProvider}`)
-      : (labels.pinned ?? 'Pinned'),
-    icon: PushPinIcon,
-  };
-}
-
 /** Locale-aware age for the runtime footer's "Checked …" stamp. */
 
 export function TemplateStateLine({ tone, label }: { tone: TemplateTone; label: string }) {
@@ -241,16 +185,12 @@ export function TemplateStateLine({ tone, label }: { tone: TemplateTone; label: 
 
 export function TemplateRuntimeFooter({
   coverage,
-  providerMode,
-  selectedProvider,
   formatObservedAt,
   runtimeLabel,
   checkedLabel,
   badgeCopy,
 }: {
   coverage: SandboxTemplate['provider_coverage'] | null | undefined;
-  providerMode: SandboxProviderMode;
-  selectedProvider: SandboxProvider | null;
   formatObservedAt: (observedAt: string) => string;
   runtimeLabel: string;
   checkedLabel: (value: string) => string;
@@ -266,12 +206,7 @@ export function TemplateRuntimeFooter({
       <span className="text-muted-foreground shrink-0 text-xs">{runtimeLabel}</span>
       <div className="flex flex-wrap items-center gap-1.5">
         {available.map((item) => (
-          <SandboxProviderBadge
-            key={item.provider}
-            item={item}
-            selected={providerMode === 'pinned' && item.provider === selectedProvider}
-            copy={badgeCopy}
-          />
+          <SandboxProviderBadge key={item.provider} item={item} copy={badgeCopy} />
         ))}
       </div>
       {observedAt ? (
@@ -288,15 +223,11 @@ function TemplateCard({
   template,
   canManage,
   onEdit,
-  providerMode,
-  selectedProvider,
 }: {
   projectId: string;
   template: SandboxTemplate;
   canManage: boolean;
   onEdit: (tpl: SandboxTemplate) => void;
-  providerMode: SandboxProviderMode;
-  selectedProvider: SandboxProvider | null;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.sandbox');
@@ -346,11 +277,6 @@ function TemplateCard({
     baseImage: t('facts.baseImage'),
     builtFrom: t('facts.builtFrom'),
     kortixDefault: t('facts.kortixDefault'),
-  });
-  const routing = describeRouting(providerMode, selectedProvider, tI18nComplete, {
-    automatic: t('routing.automatic'),
-    pinned: t('routing.pinned'),
-    pinnedWithProvider: (provider) => t('routing.pinnedWithProvider', { provider }),
   });
 
   return (
@@ -431,13 +357,13 @@ function TemplateCard({
           )}
         </div>
 
-        {/* SIX cells, every one exactly one track wide — the grid fills two
-            complete rows of three with no holes and no spans. The base-image
-            cell used to take `col-span-2`, which left row 1 as three equal
-            cells and row 2 as one narrow beside one double-wide: a uniform
-            track carrying ragged content. Long image refs now truncate inside
-            their own cell (full string on the native `title`) instead of
-            widening it.
+        {/* FIVE cells, every one exactly one track wide and no spans: the
+            machine size on row 1, where the image comes from on row 2. The
+            sixth "Routing" cell left with the provider pin: every sandbox runs
+            on Platinum. The base-image cell used to take `col-span-2`, which
+            left row 2 as one narrow beside one double-wide: a uniform track
+            carrying ragged content. Long image refs truncate inside their own
+            cell (full string on the native `title`) instead of widening it.
 
             `tabular-nums` on the whole list: vCPU / GiB / GiB-disk are the same
             three numbers repeated down every card, so proportional digits make
@@ -462,13 +388,10 @@ function TemplateCard({
             value={source.label}
             mono={source.mono}
           />
-          <FactCell icon={routing.icon} label={t('routing.title')} value={routing.label} />
         </dl>
 
         <TemplateRuntimeFooter
           coverage={template.provider_coverage}
-          providerMode={providerMode}
-          selectedProvider={selectedProvider}
           runtimeLabel={t('runtime')}
           checkedLabel={(value) => t('checked', { value })}
           formatObservedAt={(observedAt) => relativeTime(observedAt, locale, Date.now(), LONG_AGO)}
@@ -481,8 +404,6 @@ function TemplateCard({
               unavailable: t('coverage.unavailable'),
               unknown: t('states.unknown'),
             },
-            selected: t('coverage.selected'),
-            selectedAria: t('coverage.selectedAria'),
           }}
         />
       </li>
@@ -502,115 +423,6 @@ function TemplateCard({
 
 const TEMPLATE_SKELETON_HEIGHT = 'h-60';
 
-const AUTO_PROVIDER = '__auto__';
-function SandboxProviderRow({
-  project,
-  canManage,
-}: {
-  project: KortixProject;
-  canManage: boolean;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const t = useTranslations('settings.sandbox');
-  const queryClient = useQueryClient();
-  const available = sortSandboxProviders(project.available_sandbox_providers ?? []);
-  const current = project.default_sandbox_provider ?? null;
-
-  const mutation = useMutation({
-    mutationFn: (next: SandboxProviderName | null) =>
-      updateProjectSandboxProvider(project.project_id, next),
-    onSuccess: (result, next) => {
-      // FIX-L: the PATCH returns EITHER the updated project (immediate) OR a
-      // preparation object (the prepare branch — a switch to a different enabled
-      // provider). Write the project cache ONLY for the immediate result; a
-      // preparation is a transition, not a project, and must not clobber the
-      // cached project shape.
-      const kind = applySandboxProviderResult(queryClient, project.project_id, result);
-      if (kind === 'preparation') {
-        successToast(
-          tI18nComplete('text32f14aa9ea33', {
-            provider: next ? formatSandboxProvider(next) : tI18nComplete('text22412aa281cb'),
-          }),
-        );
-        // Poll the durable transition (bounded, backoff, terminal-stop, 404 = done)
-        // and refresh the project once it settles so the now-active provider shows.
-        void pollSandboxProviderTransition(project.project_id, {
-          onSettled: (state) => {
-            // invalidateProject() reaches qk.project.scope(project.project_id),
-            // which qk.project.summary(project.project_id) nests under — so it
-            // already covers the bare-project row too; no separate summary
-            // invalidation needed here.
-            void invalidateProject(queryClient, project.project_id);
-            // qk.projects.scope(): restores the reach the old bare
-            // projects-literal prefix match had. A sandbox-provider switch
-            // is rare — over-invalidating a few extra account lists costs
-            // nothing measurable.
-            queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-            const status = state?.latest?.status;
-            if (status === 'activated') {
-              successToast(
-                tI18nComplete('text1c145081eddd', {
-                  provider: formatSandboxProvider(state?.latest?.target_provider ?? ''),
-                }),
-              );
-            } else if (status === 'failed') {
-              errorToast(state?.latest?.label || tI18nComplete('texte9ca8360a34d'));
-            }
-          },
-        });
-      }
-    },
-    onError: (error: Error) => errorToast(error.message || tI18nComplete('text914be6d9bb89')),
-  });
-
-  if (available.length === 0) return null;
-
-  return (
-    <section className="space-y-3">
-      <SettingsSubsectionHeader title={t('routing.title')} />
-      <SettingsRowGroup>
-        <SettingsRow
-          label={
-            <>
-              {t('provider.label')}
-              <Badge variant="highlight" size="sm">
-                {t('provider.experimental')}
-              </Badge>
-            </>
-          }
-          description={
-            available.some(isLegacySandboxProvider)
-              ? `${t('provider.description')} ${t('provider.legacyNote')}`
-              : t('provider.description')
-          }
-        >
-          <Select
-            value={current ?? AUTO_PROVIDER}
-            onValueChange={(v) =>
-              mutation.mutate(
-                v === AUTO_PROVIDER ? null : (available.find((provider) => provider === v) ?? null),
-              )
-            }
-            disabled={!canManage || mutation.isPending}
-          >
-            <SelectTrigger aria-label={t('provider.label')} className="h-8 w-48 shrink-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              <SelectItem value={AUTO_PROVIDER}>{t('routing.automatic')}</SelectItem>
-              {available.map((p) => (
-                <SelectItem key={p} value={p}>
-                  <SandboxProviderLabel provider={p} />
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </SettingsRow>
-      </SettingsRowGroup>
-    </section>
-  );
-}
-
 export interface SandboxTabViewProps {
   isLoading?: boolean;
   isError?: boolean;
@@ -620,15 +432,6 @@ export interface SandboxTabViewProps {
    *  by the container from the same `canManage` gate as everything else in
    *  this tab. `undefined` (not rendered) for a non-manager. */
   headerAction?: ReactNode;
-  /** `SandboxProviderRow` — the per-project provider pin, moved here from
-   *  `general-tab.tsx`. A slot for the same reason `templatesSlot` is one: it
-   *  owns a `useMutation`/`useQueryClient` and cannot render under
-   *  `renderToStaticMarkup` with no `QueryClientProvider`.
-   *
-   *  Rendered ABOVE the loading/error branch on purpose. It is fed by the
-   *  PROJECT query, not the snapshots query, so a slow or failed template read
-   *  must not hide a control that has nothing to do with it. */
-  sandboxProviderSlot?: ReactNode;
   /** `1 | 2 | null` — drives whether the manifest hint below reads
    *  `kortix.toml` or `kortix.yaml`. `null`/anything else falls back to
    *  `kortix.toml`, matching `sandbox-view.tsx`'s own ternary default. */
@@ -666,7 +469,6 @@ export function SandboxTabView({
   errorMessage = '',
   onRetry = () => {},
   headerAction,
-  sandboxProviderSlot,
   manifestVersion = null,
   templatesError = null,
   isEmpty = true,
@@ -689,7 +491,6 @@ export function SandboxTabView({
     <div className="mx-auto w-full max-w-2xl space-y-8">
       <div className="space-y-8">
         <SettingsTabHeader tab="sandbox" action={headerAction} />
-        {sandboxProviderSlot}
         {isLoading ? (
           <div className="space-y-2">
             {TEMPLATE_SKELETON_ROWS.map((row) => (
@@ -760,17 +561,8 @@ export function SandboxTabView({
  *  `null` otherwise), so nothing here fetches on panel open. */
 export function SandboxTab({ projectId }: { projectId: string }) {
   const t = useTranslations('settings.sandbox');
-  const projectQuery = useQuery({
-    queryKey: qk.project.summary(projectId),
-    queryFn: () => getProject(projectId),
-    ...contract('config'),
-  });
-  // Two different leaves, one batched probe. Template CRUD asserts
-  // `project.sandbox.write`; the provider row asserts `project.write`. They
-  // are deliberately NOT merged — a role may hold one without the other.
   const caps = useProjectCans(projectId, SANDBOX_TAB_ACTIONS);
   const canManage = caps[PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE]?.allowed === true;
-  const canEditProvider = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
 
   const snapshotsQuery = useQuery({
@@ -796,12 +588,6 @@ export function SandboxTab({ projectId }: { projectId: string }) {
 
   const data = snapshotsQuery.data;
   const templates = Array.isArray(data?.templates) ? data.templates : [];
-
-  const pinnedProvider: SandboxProvider | null = projectQuery.data
-    ? (projectQuery.data.default_sandbox_provider ?? null)
-    : (data?.selected_provider ?? null);
-  const providerMode: SandboxProviderMode = pinnedProvider ? 'pinned' : 'automatic';
-  const selectedProvider = pinnedProvider;
 
   const openNewForm = () => {
     setEditingTemplate(null);
@@ -844,11 +630,6 @@ export function SandboxTab({ projectId }: { projectId: string }) {
             </Button>
           ) : undefined
         }
-        sandboxProviderSlot={
-          projectQuery.data ? (
-            <SandboxProviderRow project={projectQuery.data} canManage={canEditProvider} />
-          ) : undefined
-        }
         manifestVersion={manifestVersion}
         templatesError={data?.templates_error ?? null}
         isEmpty={templates.length === 0}
@@ -863,8 +644,6 @@ export function SandboxTab({ projectId }: { projectId: string }) {
                   template={t}
                   canManage={canManage}
                   onEdit={openEditForm}
-                  providerMode={providerMode}
-                  selectedProvider={selectedProvider}
                 />
               ))}
             </ul>

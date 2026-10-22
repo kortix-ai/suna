@@ -34,7 +34,9 @@ import { recordAuditEvent } from '../shared/audit';
 import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
 import type { AppEnv } from '../types';
 import { parseDisplay, PolicySchema } from './format';
-import { readAccountPolicy, writeAccountPolicy } from './policy';
+import { ensurePolicyObject, readAccountPolicy, writeAccountPolicy } from './policy';
+import { captureStoreForAccount, probeAccountStore } from './account-store';
+import { resolveInput, StorageInputSchema, storageView, writeStorageConfig } from './storage-config';
 import {
   assetUrl,
   nearestScreenshot,
@@ -61,7 +63,6 @@ import {
   type Who,
 } from './reads';
 import { runCaptureHealthTick } from './health-alerts';
-import { captureStoreConfigured } from './store';
 import { latestCaptureVersion } from './update-manifest';
 import { enqueueLink, pollDevice } from './workers';
 import { isAccountMember, readWorkspace, setCaptureEnabled } from './workspace';
@@ -235,7 +236,8 @@ const subjectQuery = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
 });
-const searchQuery = subjectQuery.extend({
+// Search does not filter by display, so it does not declare `display_id`.
+const searchQuery = subjectQuery.omit({ display_id: true }).extend({
   q: z.string().min(1),
   scope: z.enum(['mine', 'account']).optional().describe('account: every member (capture.read_all; audited as capture.account_view)'),
   kinds: z.string().optional().describe('Comma list of screen, actions, audio (default all)'),
@@ -271,17 +273,31 @@ interface SearchQuery {
   kinds?: string;
   app?: string;
   limit?: string;
+  day?: string;
   from?: string;
   to?: string;
   device_id?: string;
 }
 
+/** The search window: one UTC day when `day` is given (it wins over from/to,
+ * as on the timeline), else from/to with all of time as the default (KRTX-2983). */
+function searchWindow(query: SearchQuery): { from: Date; to: Date } | null {
+  if (query.day) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(query.day)) return null;
+    const from = new Date(`${query.day}T00:00:00.000Z`);
+    return Number.isNaN(from.getTime()) ? null : { from, to: new Date(from.getTime() + 86_400_000) };
+  }
+  const from = query.from ? new Date(query.from) : new Date(0);
+  const to = query.to ? new Date(query.to) : new Date(Date.now() + 86_400_000);
+  return Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) ? null : { from, to };
+}
+
 async function searchResponse(c: Ctx, access: Access, query: SearchQuery) {
     const q = query.q.trim().slice(0, 500);
     if (!q) return refuse(c, 400, 'capture_bad_query', 'q is required');
-    const from = query.from ? new Date(query.from) : new Date(0);
-    const to = query.to ? new Date(query.to) : new Date(Date.now() + 86_400_000);
-    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return refuse(c, 400, 'capture_bad_window', 'from/to must be ISO instants');
+    const span = searchWindow(query);
+    if (!span) return refuse(c, 400, 'capture_bad_window', 'Give day=YYYY-MM-DD, or from/to as ISO instants');
+    const { from, to } = span;
     const kinds = new Set((query.kinds ?? CAPTURE_LAYERS.join(',')).split(',').map((k) => k.trim())) as Set<SearchKind>;
     if (!CAPTURE_LAYERS.some((k) => kinds.has(k))) {
       return refuse(c, 400, 'capture_bad_query', 'kinds must name screen, actions or audio');
@@ -467,7 +483,7 @@ accountsRouter.openapi(
   async (c) => {
     const access = await captureAccessWithPowers(c);
     if (isResponse(access)) return access as never;
-    if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
+    if (!(await captureStoreForAccount(access.accountId)).configured) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
     const device = await loadDevice(access, c.req.valid('param').deviceId);
     if (!device || device.revokedAt) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     const { enqueued, forgotten } = await pollDevice(device);
@@ -496,7 +512,7 @@ accountsRouter.openapi(
     if (!device) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     if (device.userId === null) await auditRead(c, access, 'capture.device_view', device.deviceId, 'capture_device');
     else if (device.userId !== access.viewer) await auditRead(c, access, 'capture.member_view', device.userId);
-    if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
+    if (!(await captureStoreForAccount(access.accountId)).configured) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
     return c.json(await assetUrl(access.accountId, device.deviceId, name), 200);
   },
 );
@@ -535,10 +551,57 @@ accountsRouter.openapi(
     const access = await captureAccessWithPowers(c);
     if (isResponse(access)) return access as never;
     if (!access.manages) return refuse(c, 403, 'capture_forbidden', 'Changing the capture policy needs the capture.manage permission');
-    if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
+    if (!(await captureStoreForAccount(access.accountId)).configured) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
     const parsed = PolicySchema.safeParse(c.req.valid('json').policy);
     if (!parsed.success) return refuse(c, 400, 'capture_policy_invalid', parsed.error.issues[0]?.message ?? 'Invalid policy');
     return c.json(await writeAccountPolicy(access.accountId, parsed.data, access.viewer), 200);
+  },
+);
+}
+
+// ─── Storage: where the account keeps its recordings ─────────────────────────
+function registerCaptureStorageRoutes() {
+accountsRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/capture/storage',
+    tags,
+    summary: 'The account’s Capture storage destination (capture.manage). The secret is never returned.',
+    ...auth,
+    request: { params },
+    responses: ok('The storage config (redacted)'),
+  }),
+  async (c) => {
+    const access = await captureAccessWithPowers(c);
+    if (isResponse(access)) return access as never;
+    if (!access.manages) return refuse(c, 403, 'capture_forbidden', 'Reading the capture storage config needs the capture.manage permission');
+    return c.json(await storageView(access.accountId), 200);
+  },
+);
+
+accountsRouter.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{accountId}/capture/storage',
+    tags,
+    summary: 'Set where the account keeps its recordings: the managed store (mode "kortix") or its own S3 bucket (mode "s3") (capture.manage)',
+    ...auth,
+    request: { params, body: { content: { 'application/json': { schema: z.record(z.string(), z.any()) } } } },
+    responses: { ...ok('The stored config (redacted)'), ...errors(503) },
+  }),
+  async (c) => {
+    const access = await captureAccessWithPowers(c);
+    if (isResponse(access)) return access as never;
+    if (!access.manages) return refuse(c, 403, 'capture_forbidden', 'Changing the capture storage config needs the capture.manage permission');
+    const parsed = StorageInputSchema.safeParse(c.req.valid('json'));
+    if (!parsed.success) return refuse(c, 400, 'capture_storage_invalid', parsed.error.issues[0]?.message ?? 'Invalid storage config');
+    // Prove the bucket is reachable and writable before we store the choice.
+    const probe = await probeAccountStore(access.accountId, resolveInput(parsed.data));
+    if (!probe.ok) return refuse(c, 400, 'capture_storage_unreachable', `The bucket could not be written: ${probe.error}`);
+    const view = await writeStorageConfig(access.accountId, parsed.data, access.viewer);
+    // Republish policy.json into the (possibly new) store so the next device read finds it.
+    await ensurePolicyObject(access.accountId).catch(() => undefined);
+    return c.json(view, 200);
   },
 );
 }
@@ -685,6 +748,7 @@ export function registerCaptureRoutes() {
   registerCaptureWorkspaceRoutes();
   registerCaptureDevicesRoutes();
   registerCapturePolicyRoutes();
+  registerCaptureStorageRoutes();
   registerCaptureTimelineRoutes();
   registerCaptureMediaRoutes();
 }

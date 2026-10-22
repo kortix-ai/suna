@@ -453,8 +453,8 @@ export function registerChannelBindingsRoutes(): void {
               },
               409,
             );
-          stored = toWireModel(trimmed);
           }
+          stored = toWireModel(trimmed);
         }
         const ok = await setChannelModel(ctx, stored);
         if (!ok) return c.json({ error: "Not found" }, 404);

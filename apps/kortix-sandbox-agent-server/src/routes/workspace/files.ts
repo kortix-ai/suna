@@ -27,7 +27,39 @@ import { isLikelyBinary, mimeTypeFor } from './file-mime'
  * ALLOWED_ROOTS before any filesystem operation (no traversal escapes).
  */
 
-const DEFAULT_ALLOWED_ROOTS = ['/workspace', '/opt', '/tmp', '/home']
+export const DEFAULT_ALLOWED_ROOTS = ['/workspace', '/opt', '/tmp', '/home']
+const ACCESS_DENIED = 'Access denied: path outside allowed directories'
+
+const isUnder = (p: string, roots: string[]) => roots.some((root) => p === root || p.startsWith(root + '/'))
+
+/**
+ * Resolve a path (relative = against the workspace) and refuse it unless it is
+ * inside an allowed root both as written and after following symlinks: a
+ * symlink in /workspace that points at / is lexically inside and used to pass.
+ * A path that does not exist yet is checked through its nearest existing
+ * ancestor. A dangling symlink is refused: a write would follow it.
+ * Returns the lexical path.
+ * ponytail: check-then-use; a symlink swapped in after the check still wins. O_NOFOLLOW per component if that matters.
+ */
+export async function resolveAllowedPath(raw: string, workspace: string, roots: string[]): Promise<string> {
+  const resolved = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(workspace, raw)
+  if (!isUnder(resolved, roots)) throw new Error(ACCESS_DENIED)
+  const realRoots = await Promise.all(roots.map((root) => fs.realpath(root).catch(() => root)))
+  let existing = resolved
+  let tail = ''
+  for (;;) {
+    const real = await fs.realpath(existing).catch((err: NodeJS.ErrnoException) => err)
+    if (typeof real === 'string') {
+      if (isUnder(path.join(real, tail), realRoots)) return resolved
+      throw new Error(ACCESS_DENIED)
+    }
+    const dangling = await fs.lstat(existing).then(() => true, () => false)
+    if (real.code !== 'ENOENT' || dangling || path.dirname(existing) === existing) throw new Error(ACCESS_DENIED)
+    tail = path.join(path.basename(existing), tail)
+    existing = path.dirname(existing)
+  }
+}
+
 const MAX_PROMPT_ATTACHMENT_BYTES = 50 * 1024 * 1024
 const IMPORT_TIMEOUT_MS = DAEMON_FILE_IMPORT_TIMEOUT_MS
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -288,19 +320,7 @@ export function createFilesRouter(cfg: Config): Hono {
   // canonical /workspace (e.g. a non-default KORTIX_WORKSPACE, or tests).
   const allowedRoots = Array.from(new Set([path.resolve(workspace), ...DEFAULT_ALLOWED_ROOTS]))
 
-  /**
-   * Resolve + validate a path. Relative paths resolve against the workspace.
-   * Throws if the resolved path escapes the allowed roots.
-   */
-  function resolvePath(raw: string): string {
-    const resolved = path.isAbsolute(raw)
-      ? path.resolve(raw)
-      : path.resolve(workspace, raw)
-    if (!allowedRoots.some((root) => resolved === root || resolved.startsWith(root + '/'))) {
-      throw new Error('Access denied: path outside allowed directories')
-    }
-    return resolved
-  }
+  const resolvePath = (raw: string) => resolveAllowedPath(raw, workspace, allowedRoots)
 
   /**
    * The on-disk NAME for one uploaded part — never a path.
@@ -335,8 +355,8 @@ export function createFilesRouter(cfg: Config): Hono {
    * `safeUploadName` already makes an escape structurally impossible. This is
    * the assertion that keeps it impossible if someone later relaxes that.
    */
-  function resolveUploadDest(targetDir: string, name: string): string {
-    const dir = resolvePath(targetDir)
+  async function resolveUploadDest(targetDir: string, name: string): Promise<string> {
+    const dir = await resolvePath(targetDir)
     const resolved = path.resolve(dir, name)
     if (resolved !== dir && !resolved.startsWith(dir + '/')) {
       throw new Error('Access denied: filename escapes the target directory')
@@ -371,13 +391,13 @@ export function createFilesRouter(cfg: Config): Hono {
    */
   async function writeUploadUnique(dest: string, buffer: ArrayBuffer): Promise<string> {
     const data = Buffer.from(buffer)
-    await fs.mkdir(path.dirname(resolvePath(dest)), { recursive: true })
+    await fs.mkdir(path.dirname(await resolvePath(dest)), { recursive: true })
 
     let attempt = dest
     for (let i = 0; i < 6; i++) {
       try {
-        await fs.writeFile(resolvePath(attempt), data, { flag: 'wx' })
-        return resolvePath(attempt)
+        await fs.writeFile(await resolvePath(attempt), data, { flag: 'wx' })
+        return await resolvePath(attempt)
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
         attempt = withSuffix(dest, uniqueSuffix())
@@ -385,8 +405,8 @@ export function createFilesRouter(cfg: Config): Hono {
     }
 
     attempt = withSuffix(dest, crypto.randomUUID())
-    await fs.writeFile(resolvePath(attempt), data, { flag: 'wx' })
-    return resolvePath(attempt)
+    await fs.writeFile(await resolvePath(attempt), data, { flag: 'wx' })
+    return await resolvePath(attempt)
   }
 
   // GET /file/raw?path=<path> — stream a file's RAW bytes off disk.
@@ -404,7 +424,7 @@ export function createFilesRouter(cfg: Config): Hono {
 
     let resolved: string
     try {
-      resolved = resolvePath(raw)
+      resolved = await resolvePath(raw)
     } catch (err) {
       return c.json({ error: (err as Error).message }, 403)
     }
@@ -447,7 +467,7 @@ export function createFilesRouter(cfg: Config): Hono {
 
     let resolved: string
     try {
-      resolved = resolvePath(raw)
+      resolved = await resolvePath(raw)
     } catch (err) {
       return c.json({ error: (err as Error).message }, 403)
     }
@@ -488,7 +508,7 @@ export function createFilesRouter(cfg: Config): Hono {
 
     let resolved: string
     try {
-      resolved = resolvePath(raw)
+      resolved = await resolvePath(raw)
     } catch (err) {
       return c.json({ error: (err as Error).message }, 403)
     }
@@ -721,7 +741,7 @@ export function createFilesRouter(cfg: Config): Hono {
             if (!name) {
               return c.json({ error: 'Upload is missing a usable filename' }, 400)
             }
-            dest = resolveUploadDest(targetDir, name)
+            dest = await resolveUploadDest(targetDir, name)
           } else if (key === 'file' || key === 'file[]') {
             // No target directory: the name alone is the destination, resolved
             // against the workspace by `resolvePath`. Still a bare name only.
@@ -800,7 +820,7 @@ export function createFilesRouter(cfg: Config): Hono {
     }
 
     try {
-      const dest = resolveUploadDest(targetDir, name)
+      const dest = await resolveUploadDest(targetDir, name)
       await fs.mkdir(path.dirname(dest), { recursive: true })
       const chunk = Buffer.from(await file.arrayBuffer())
       if (!first && offset !== undefined) {
@@ -845,7 +865,7 @@ export function createFilesRouter(cfg: Config): Hono {
 
     let resolved: string
     try {
-      resolved = resolvePath(raw)
+      resolved = await resolvePath(raw)
     } catch (err) {
       return c.json({ error: (err as Error).message }, 403)
     }
@@ -870,7 +890,7 @@ export function createFilesRouter(cfg: Config): Hono {
 
     let resolved: string
     try {
-      resolved = resolvePath(raw)
+      resolved = await resolvePath(raw)
     } catch (err) {
       return c.json({ error: (err as Error).message }, 403)
     }
@@ -904,12 +924,12 @@ export function createFilesRouter(cfg: Config): Hono {
     let fromResolved: string
     let toResolved: string
     try {
-      fromResolved = resolvePath(from)
+      fromResolved = await resolvePath(from)
     } catch (err) {
       return c.json({ error: `source: ${(err as Error).message}` }, 403)
     }
     try {
-      toResolved = resolvePath(to)
+      toResolved = await resolvePath(to)
     } catch (err) {
       return c.json({ error: `target: ${(err as Error).message}` }, 403)
     }

@@ -7,7 +7,7 @@ import { cn } from '@kortix/ui';
 import { ArrowRightIcon, LockKeyIcon, ProhibitIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { getLocalizedConnectorsContent } from './content';
-import { Eyebrow, Section } from './shared';
+import { Eyebrow, Section } from '../component/section-primitives';
 
 /**
  * One env-var panel. `before` renders its keys struck through and dimmed, so a

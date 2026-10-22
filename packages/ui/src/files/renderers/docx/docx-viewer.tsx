@@ -86,6 +86,9 @@ const DOCX_PADDING_WARNING_TEXT = 'a style property during rerender';
 const DOCX_THUMBNAIL_FOCUS_RING_CLASS =
   'group-focus-visible/docx-thumbnail-sidebar:ring-2 group-focus-visible/docx-thumbnail-sidebar:ring-ring group-focus-visible/docx-thumbnail-sidebar:ring-offset-1 group-focus-visible/docx-thumbnail-sidebar:ring-offset-background';
 const DOCX_THUMBNAIL_PREFETCH_ROWS = 4;
+// Night reader: the inverted page content's default text is black, so the
+// inversion makes it light (see the <style> in the page shell below).
+const NIGHT_READER_TEXT_STYLE = '.docx-night-reader-shell [style*="hue-rotate(180deg)"]{color:#000}';
 
 type UploadedDocxFile = {
   file: File;
@@ -1411,6 +1414,14 @@ function DocxViewerContent({
                 className={cn('origin-top', effectiveIsDark && 'docx-night-reader-shell')}
                 style={{ zoom: zoomScale / 100 }}
               >
+                {/* react-docx 0.7.6 night reader: it inverts each page's content
+                    (the filter below) but gives the page surface the dark theme's
+                    light text color, so body text without its own color inverts to
+                    dark grey on a dark page. The inverted content's default text is
+                    black, as Word draws it, and the inversion makes it light. */}
+                {effectiveIsDark && (
+                  <style>{NIGHT_READER_TEXT_STYLE}</style>
+                )}
                 <DocxEditorViewer
                   editor={editor}
                   mode="read-only"

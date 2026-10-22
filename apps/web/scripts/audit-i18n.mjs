@@ -233,10 +233,14 @@ const allowedLiteralValues = new Set([
   'Ruby on Rails',
   'Laravel',
   'Discover and read Kortix public API and documentation resources.',
-  // Technical tokens a user types verbatim: a host in a URL placeholder and the
-  // room-wide mention.
+  // Technical tokens a user types verbatim: a host in a URL placeholder, the
+  // room-wide mention, and the S3 bucket, AWS region and IAM role ARN examples
+  // in the Capture storage settings.
   'example.com',
   '@here',
+  'my-recordings',
+  'us-east-1',
+  'arn:aws:iam::123456789012:role/kortix-capture',
 ]);
 
 const ignoredAttributes = new Set([

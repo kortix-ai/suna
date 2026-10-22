@@ -232,7 +232,8 @@ describe('PATCH /v1/projects/:projectId/features', () => {
 });
 
 // `session_log` is internal-only (catalogHidden): it changes what the
-// platform records, so only a platform operator writes it (D10).
+// platform records, so only a platform operator writes it (D10). It is on by
+// default (2026-10-22); a stored false is the support lever back to v1.
 describe('operator-only flags', () => {
   test('a project manager gets 403 feature_operator_only for enable, disable and clear; nothing is stored', async () => {
     for (const enabled of [true, false, null]) {
@@ -246,19 +247,26 @@ describe('operator-only flags', () => {
     expect(await storedOverrides(PROJECT)).toBeUndefined();
   });
 
-  test('a platform operator who is a project member may write it; the catalog then lists it read-only', async () => {
-    const on = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'session_log', enabled: true }), operatorSecret);
-    expect(on.status).toBe(200);
-    const body = await on.json();
-    expect(body.experimental.session_log).toBe(true);
-    expect(body.experimental_features.find((f: { key: string }) => f.key === 'session_log')).toMatchObject({
+  test('on by default, listed read-only; a platform operator who is a project member turns it off (unlisted) and clears it (on again)', async () => {
+    const res = await app.request(`/v1/projects/${PROJECT}`, { headers: { Authorization: `Bearer ${secret}` } });
+    const before = await res.json();
+    expect(before.experimental.session_log).toBe(true);
+    expect(before.experimental_features.find((f: { key: string }) => f.key === 'session_log')).toMatchObject({
       enabled: true,
+      overridden: false,
       operator_only: true,
     });
+    const off = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'session_log', enabled: false }), operatorSecret);
+    expect(off.status).toBe(200);
+    const body = await off.json();
+    expect(body.experimental.session_log).toBe(false);
+    expect(body.experimental_features.map((f: { key: string }) => f.key)).not.toContain('session_log');
+    expect(await storedOverrides(PROJECT)).toEqual({ session_log: false });
     const cleared = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'session_log', enabled: null }), operatorSecret);
     expect(cleared.status).toBe(200);
     const after = await cleared.json();
-    expect(after.experimental_features.map((f: { key: string }) => f.key)).not.toContain('session_log');
+    expect(after.experimental.session_log).toBe(true);
+    expect(after.experimental_features.find((f: { key: string }) => f.key === 'session_log')).toMatchObject({ enabled: true, operator_only: true });
     expect(await storedOverrides(PROJECT)).toBeUndefined();
   });
 });
@@ -279,14 +287,15 @@ describe('PUT /v1/admin/api/projects/:id/features', () => {
   });
 
   test('an operator sets and clears a hidden flag; unknown flag 400; unknown or archived project 404', async () => {
-    const on = await put(PROJECT, { feature: 'session_log', enabled: true }, operatorSecret);
-    expect(on.status).toBe(200);
-    expect(await on.json()).toMatchObject({ project_id: PROJECT, feature: 'session_log', override: true });
-    expect(await storedOverrides(PROJECT)).toEqual({ session_log: true });
+    const off = await put(PROJECT, { feature: 'session_log', enabled: false }, operatorSecret);
+    expect(off.status).toBe(200);
+    expect(await off.json()).toMatchObject({ project_id: PROJECT, feature: 'session_log', override: false, enabled: false });
+    expect(await storedOverrides(PROJECT)).toEqual({ session_log: false });
 
+    // Cleared: the platform default, on.
     const cleared = await put(PROJECT, { feature: 'session_log', enabled: null }, operatorSecret);
     expect(cleared.status).toBe(200);
-    expect(await cleared.json()).toMatchObject({ override: null, enabled: false });
+    expect(await cleared.json()).toMatchObject({ override: null, enabled: true });
     expect(await storedOverrides(PROJECT)).toBeUndefined();
 
     expect((await put(PROJECT, { feature: 'nope', enabled: true }, operatorSecret)).status).toBe(400);

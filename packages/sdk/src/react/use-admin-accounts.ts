@@ -605,6 +605,7 @@ export interface AdminLedgerEntry {
   type: string;
   description: string | null;
   isExpiring: boolean | null;
+  expiresAt?: string | null;
   createdAt: string | null;
   createdBy: string | null;
 }
