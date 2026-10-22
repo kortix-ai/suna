@@ -21,6 +21,7 @@ import { useMemo, useState } from 'react';
 import { useProjectContext } from '../context';
 import { useBranches } from '../hooks/use-branches';
 import { useVersionStore } from '../store/version-store';
+import { groupVersions, versionMatches, versionTitle } from './version-selector-logic';
 
 /** Shared formatter, hoisted so each row render does not rebuild the Intl
  *  machinery. Same options as the old `toLocaleDateString` call — identical output. */
@@ -45,24 +46,15 @@ export function VersionSelector() {
   const defaultBranch = data?.default_branch ?? activeRef;
   const isOnMain = activeRef === defaultBranch;
 
-  const filtered = useMemo(() => {
-    const branches = data?.branches ?? [];
-    const trimmed = query.trim().toLowerCase();
-    if (!trimmed) return branches;
-    return branches.filter(
-      (b) => b.name.toLowerCase().includes(trimmed) || b.subject.toLowerCase().includes(trimmed),
-    );
-  }, [data?.branches, query]);
+  const filtered = useMemo(
+    () => (data?.branches ?? []).filter((b) => versionMatches(b, query)),
+    [data?.branches, query],
+  );
 
-  const { primary, others } = useMemo(() => {
-    const primary: ProjectBranch[] = [];
-    const others: ProjectBranch[] = [];
-    for (const b of filtered) {
-      if (b.is_default) primary.push(b);
-      else others.push(b);
-    }
-    return { primary, others };
-  }, [filtered]);
+  const { primary, others, archived } = useMemo(() => groupVersions(filtered), [filtered]);
+
+  const activeBranch = data?.branches.find((b) => b.name === activeRef);
+  const activeLabel = activeBranch ? versionTitle(activeBranch) : activeRef;
 
   const handleSelect = (branchName: string) => {
     setVersion(projectId, branchName === defaultBranch ? null : branchName);
@@ -83,14 +75,14 @@ export function VersionSelector() {
           variant="outline-ghost"
           type="button"
           size="sm"
-          className={cn('w-30 max-w-[300px] min-w-0 shrink-0 justify-between')}
+          className="max-w-48 min-w-30 shrink-0 justify-between"
           title={tHardcodedUi.raw(
             'featuresProjectFilesComponentsVersionSelector.line88JsxAttrTitleSwitchVersion',
           )}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <Layers className="text-muted-foreground size-3.5 shrink-0" />
-            <span className="truncate">{activeRef || 'Version'}</span>
+            <span className="truncate">{activeLabel || 'Version'}</span>
           </div>
           <ChevronsUpDown className="text-muted-foreground size-3 shrink-0" />
         </Button>
@@ -101,7 +93,7 @@ export function VersionSelector() {
         className="flex w-[340px] flex-col overflow-hidden p-0"
       >
         <div className="border-border flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
-          <Search className="text-muted-foreground/60 h-3.5 w-3.5 shrink-0" />
+          <Search className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
           <input
             type="text"
             value={query}
@@ -109,7 +101,7 @@ export function VersionSelector() {
             placeholder={tHardcodedUi.raw(
               'featuresProjectFilesComponentsVersionSelector.line112JsxAttrPlaceholderFindAVersion',
             )}
-            className="text-foreground placeholder:text-muted-foreground/50 h-7 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm outline-none"
+            className="text-foreground placeholder:text-muted-foreground h-7 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm outline-none"
             autoFocus
           />
         </div>
@@ -143,7 +135,7 @@ export function VersionSelector() {
             )}
 
             {primary.length > 0 && (
-              <div className={cn('space-y-3 p-3', others.length > 0 ? 'pb-0' : 'pb-3')}>
+              <div className={cn('space-y-3 p-3', others.length + archived.length > 0 ? 'pb-0' : 'pb-3')}>
                 <Label>
                   {tHardcodedUi.raw(
                     'featuresProjectFilesComponentsVersionSelector.line140JsxTextMainVersion',
@@ -161,13 +153,27 @@ export function VersionSelector() {
             )}
 
             {others.length > 0 && (
-              <div className="space-y-3 p-3 pb-3">
+              <div className={cn('space-y-3 p-3', archived.length > 0 ? 'pb-0' : 'pb-3')}>
                 <Label>
                   {tHardcodedUi.raw(
                     'featuresProjectFilesComponentsVersionSelector.line154JsxTextOtherVersions',
                   )}
                 </Label>
                 {others.map((b) => (
+                  <VersionRow
+                    key={b.name}
+                    branch={b}
+                    isActive={activeRef === b.name}
+                    onClick={() => handleSelect(b.name)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {archived.length > 0 && (
+              <div className="space-y-3 p-3 pb-3">
+                <Label>{tHardcodedUi.raw('i18nComplete.textbdb86505f806')}</Label>
+                {archived.map((b) => (
                   <VersionRow
                     key={b.name}
                     branch={b}
@@ -195,11 +201,15 @@ function VersionRow({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const date = branch.committed_at ? commitDateFormatter.format(new Date(branch.committed_at)) : '';
+  const title = versionTitle(branch);
+  const agent = branch.session?.agent_name;
 
   return (
     <button
       type="button"
       onClick={onClick}
+      // The id stays one hover away, and search still finds it.
+      title={title === branch.name ? undefined : branch.name}
       className={cn(
         'border-border bg-popover hover:bg-foreground/4 flex w-full cursor-pointer items-start gap-2.5 rounded-md px-3 py-2 text-left',
         isActive && 'bg-primary/5',
@@ -215,15 +225,22 @@ function VersionRow({
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="text-foreground truncate text-sm font-medium">{branch.name}</span>
+          <span className="text-foreground truncate text-sm font-medium">{title}</span>
           {branch.is_default && (
             <Badge variant="kortix" size="xs">
               {tHardcodedUi.raw('i18nComplete.texteb814be3ca3b')}
             </Badge>
           )}
+          {branch.session?.deleted && (
+            <Badge variant="outline" size="xs">
+              {tHardcodedUi.raw('i18nComplete.textb48ff39c2e0f')}
+            </Badge>
+          )}
         </div>
 
-        <div className="text-muted-foreground/80 mt-0.5 flex items-center gap-1.5 text-xs">
+        <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
+          {agent && <span className="truncate">{agent}</span>}
+          {agent && date && <span className="text-muted-foreground">·</span>}
           {date && (
             <span>
               {tHardcodedUi.raw('i18nComplete.text3a5ecca188c0')} {date}
@@ -231,7 +248,7 @@ function VersionRow({
           )}
           {!branch.is_default && branch.ahead != null && branch.behind != null && (
             <>
-              {date && <span className="text-muted-foreground/40">·</span>}
+              {date && <span className="text-muted-foreground">·</span>}
               <span
                 className="inline-flex items-center gap-1 tabular-nums"
                 title={tHardcodedUi.raw(
@@ -252,7 +269,7 @@ function VersionRow({
         </div>
 
         {branch.subject && (
-          <div className="text-muted-foreground/70 mt-0.5 truncate text-xs">{branch.subject}</div>
+          <div className="text-muted-foreground mt-0.5 truncate text-xs">{branch.subject}</div>
         )}
       </div>
     </button>
