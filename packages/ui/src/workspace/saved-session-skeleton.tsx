@@ -9,7 +9,7 @@ import { SessionLayout } from './session-workspace';
 import { useTranslations } from '../i18n';
 import { cn } from '../lib/utils';
 import type { SessionStartStage } from '@kortix/sdk';
-import { useMemo } from 'react';
+import { type ReactNode, useMemo } from 'react';
 
 /**
  * A session being resumed, while its saved conversation is on its way.
@@ -17,8 +17,9 @@ import { useMemo } from 'react';
  * The control plane keeps a saved copy of every session's conversation and
  * answers in one round trip; the computer takes 5-240 s to wake. So a session
  * that has a saved copy opens on this — its header, skeleton turns, and the
- * composer's outline — and the conversation replaces it in one step. The boot
- * screen is only for a session with nothing to read (`resolveResumeOverlay`).
+ * composer's outline — and the conversation replaces it in one step. A session
+ * with nothing to read (`resolveResumeOverlay`) gets the same frame with a
+ * `status` in place of the rows.
  *
  * Built from the geometry the real chat uses (`SessionLayout`, `SessionBodyRow`,
  * `SESSION_TRANSCRIPT_CLASS`, `COMPOSER_SHELL_CLASS`), so the crossfade into
@@ -44,11 +45,15 @@ export function SavedSessionSkeleton({
   projectId,
   sessionId,
   stage,
+  status,
 }: {
   projectId: string;
   /** The route's session id. */
   sessionId: string;
   stage: SessionStartStage;
+  /** Drawn in place of the skeleton rows: there is no saved conversation to
+   *  stand in for, only the wake's status. */
+  status?: ReactNode;
 }) {
   const t = useTranslations('sessionPage');
   const shape = useMemo(() => savedSessionSkeletonShape(sessionId), [sessionId]);
@@ -66,15 +71,17 @@ export function SavedSessionSkeleton({
         <SessionSiteHeader sessionId={sessionId} sessionTitle="" />
         <SessionBodyRow transient>
           <div className="relative z-10 min-h-0 flex-1 overflow-hidden">
-            <div
-              role="status"
-              aria-busy="true"
-              aria-label={t('loadingConversation')}
-              data-testid="saved-session-skeleton"
-              className={cn(SESSION_TRANSCRIPT_CLASS, APPEAR_AFTER_A_MOMENT)}
-            >
-              <SavedSessionSkeletonRows shape={shape} />
-            </div>
+            {status ?? (
+              <div
+                role="status"
+                aria-busy="true"
+                aria-label={t('loadingConversation')}
+                data-testid="saved-session-skeleton"
+                className={cn(SESSION_TRANSCRIPT_CLASS, APPEAR_AFTER_A_MOMENT)}
+              >
+                <SavedSessionSkeletonRows shape={shape} />
+              </div>
+            )}
           </div>
           {/* The card's outline, on the rails of the docked composer: its height
               and the gap the agent row keeps below it. */}

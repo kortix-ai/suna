@@ -178,3 +178,15 @@ test('session log, cold (the store holds no log): the log is read first, every p
   // The export reads into a copy: the store holds no log after it.
   expect(useSyncStore.getState().sessionLogs.s1).toBeUndefined();
 });
+
+test('a new session on an API that serves the log (404 session_log_missing), computer asleep: nothing to export, and no /transcript', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = String(input instanceof Request ? input.url : input);
+    calls.push(url);
+    if (url.includes('/log?')) return Response.json({ error: 'No session log for this session', code: 'session_log_missing' }, { status: 404 });
+    return Response.json(windows[''] ?? { available: false });
+  }) as unknown as typeof fetch;
+  windows = { '': { messages: [row('m1', 1)], next_cursor: null } };
+  expect(await loadSessionExportMessages('ses_root', 'p1/s1')).toEqual([]);
+  expect(calls.some((url) => url.includes('/transcript'))).toBe(false);
+});

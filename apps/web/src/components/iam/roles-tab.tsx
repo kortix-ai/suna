@@ -126,10 +126,11 @@ export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
 
 function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createPrefill, setCreatePrefill] = useState<RolePrefill | null>(null);
-  const [editTarget, setEditTarget] = useState<IamRole | null>(null);
-  const [viewTarget, setViewTarget] = useState<IamRole | null>(null);
+  const [dialog, setDialog] = useState<
+    | { mode: 'create'; prefill: RolePrefill | null }
+    | { mode: 'edit' | 'view'; role: IamRole }
+    | null
+  >(null);
   const [deleteTarget, setDeleteTarget] = useState<IamRole | null>(null);
 
   const rolesQuery = useQuery({
@@ -143,8 +144,7 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
   const roles = rolesQuery.data ?? [];
 
   function openCreate(prefill: RolePrefill | null) {
-    setCreatePrefill(prefill);
-    setCreateOpen(true);
+    setDialog({ mode: 'create', prefill });
   }
 
   // `RolesTab` renders this only with the `rbac` entitlement, so the
@@ -208,8 +208,8 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
               role={role}
               canManage={canManage}
               rbacEnabled={rbacEnabled}
-              onEdit={() => setEditTarget(role)}
-              onView={() => setViewTarget(role)}
+              onEdit={() => setDialog({ mode: 'edit', role })}
+              onView={() => setDialog({ mode: 'view', role })}
               onDelete={() => setDeleteTarget(role)}
               onDuplicate={(prefill) => openCreate(prefill)}
             />
@@ -217,39 +217,14 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
         )}
       </AccessList>
 
-      {createOpen && (
+      {dialog && (
         <RoleDialog
+          key={dialog.mode === 'create' ? 'create' : `${dialog.mode}:${dialog.role.role_id}`}
+          {...dialog}
           accountId={accountId}
-          mode="create"
-          prefill={createPrefill}
-          open={createOpen}
+          open={true}
           onOpenChange={(o) => {
-            setCreateOpen(o);
-            if (!o) setCreatePrefill(null);
-          }}
-        />
-      )}
-
-      {editTarget && (
-        <RoleDialog
-          accountId={accountId}
-          mode="edit"
-          role={editTarget}
-          open={!!editTarget}
-          onOpenChange={(o) => {
-            if (!o) setEditTarget(null);
-          }}
-        />
-      )}
-
-      {viewTarget && (
-        <RoleDialog
-          accountId={accountId}
-          mode="view"
-          role={viewTarget}
-          open={!!viewTarget}
-          onOpenChange={(o) => {
-            if (!o) setViewTarget(null);
+            if (!o) setDialog(null);
           }}
         />
       )}

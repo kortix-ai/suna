@@ -1388,12 +1388,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // read. A session the log refuses (404: a server older than the log, or no stored log yet)
   // reads v1 as before.
   const logDialect = useSessionLogSync(projectId, sessionId, { enabled: startEnabled });
-  const logOwned = chatEngine && logDialect === 'v2';
+  // `'missing'`: v2, and the API holds no log for this session yet (a new session). Nothing saved
+  // is on its way, and no v1 copy is read.
+  const logOwned = chatEngine && logDialect !== 'v1';
   const logRootRuntimeId = useSyncStore((state) => (logOwned ? (sessionLogRoot(state.sessionLogs[sessionId])?.runtimeSessionId ?? null) : null));
   // On v2 the session log is the saved copy: its page, or the device's saved v2 copy.
   const logHistory = useSyncStore((state): 'loading' | 'present' | 'absent' => {
     const log = logOwned ? state.sessionLogs[sessionId] : undefined;
-    return !log ? 'loading' : sessionLogRoot(log)?.hasMessages ? 'present' : 'absent';
+    if (!log) return logDialect === 'missing' ? 'absent' : 'loading';
+    return sessionLogRoot(log)?.hasMessages ? 'present' : 'absent';
   });
   // The log's page proves the conversation empty (as the v1 saved copy's `total: 0` did).
   const logEmptyRoot = useSyncStore((state) => {
@@ -1424,8 +1427,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // into a second cadence.
   useIsomorphicLayoutEffect(() => {
     if (!startEnabled) return;
-    // On v2 no host reads the snapshot's v1 window (a chat-engine-less host renders the log).
-    openSessionBundle(projectId, sessionId, logDialect === 'v2' ? { transcript: 0 } : undefined);
+    // The pointer only: the open reads the session log first, never the snapshot's v1 window.
+    openSessionBundle(projectId, sessionId);
     seedModelDefaultsFromOpenBundle(queryClient, projectId, sessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sessionId]);
