@@ -241,7 +241,14 @@ resource "aws_security_group" "api_internal" {
   name        = "${local.name}-api-internal"
   description = "API tasks: ingress from the gateway tasks inside the VPC"
   vpc_id      = module.network.vpc_id
-  tags        = local.tags
+  # Drata 8028 cannot resolve local.tags; keep inventory keys literal.
+  tags = {
+    ManagedBy   = "terraform"
+    Environment = "dev"
+    Region      = "us-east-2"
+    Service     = "kortix-api"
+    Name        = "${local.name}-api-internal"
+  }
 }
 
 resource "aws_security_group" "gateway_internal" {
@@ -249,7 +256,14 @@ resource "aws_security_group" "gateway_internal" {
   name        = "${local.name}-gateway-internal"
   description = "Gateway tasks: egress to the API tasks inside the VPC"
   vpc_id      = module.network.vpc_id
-  tags        = local.tags
+  # Drata 8028 cannot resolve local.tags; keep inventory keys literal.
+  tags = {
+    ManagedBy   = "terraform"
+    Environment = "dev"
+    Region      = "us-east-2"
+    Service     = "kortix-api"
+    Name        = "${local.name}-gateway-internal"
+  }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "api_from_gateway" {

@@ -16,7 +16,7 @@ import {
   PackageIcon as Package,
 } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Button } from '../../../primitives/button';
 import {
@@ -72,7 +72,7 @@ export function SandboxTemplateForm({
   const queryClient = useQueryClient();
 
   const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
+  const [typedSlug, setSlug] = useState('');
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [mode, setMode] = useState<Mode>('image');
   const [image, setImage] = useState('');
@@ -83,9 +83,12 @@ export function SandboxTemplateForm({
   const [diskGb, setDiskGb] = useState<string>('20');
 
   // Reset / hydrate when opening
-  useEffect(() => {
-    if (!open) return;
-    if (template) {
+  const [hydratedFor, setHydratedFor] = useState<
+    [boolean, SandboxTemplate | null | undefined] | null
+  >(null);
+  if (!hydratedFor || hydratedFor[0] !== open || hydratedFor[1] !== template) {
+    setHydratedFor([open, template]);
+    if (open && template) {
       setName(template.name);
       setSlug(template.slug);
       setSlugManuallyEdited(true);
@@ -102,7 +105,7 @@ export function SandboxTemplateForm({
       setCpu(String(template.cpu));
       setMemoryGb(String(template.memory_gb));
       setDiskGb(String(template.disk_gb));
-    } else {
+    } else if (open) {
       setName('');
       setSlug('');
       setSlugManuallyEdited(false);
@@ -114,12 +117,10 @@ export function SandboxTemplateForm({
       setMemoryGb('6');
       setDiskGb('20');
     }
-  }, [open, template]);
+  }
 
   // Auto-slug from name when the user hasn't typed a slug manually yet.
-  useEffect(() => {
-    if (!slugManuallyEdited) setSlug(slugify(name));
-  }, [name, slugManuallyEdited]);
+  const slug = slugManuallyEdited ? typedSlug : slugify(name);
 
   const slugError = useMemo(() => {
     if (!slug) return null;

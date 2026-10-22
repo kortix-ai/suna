@@ -234,9 +234,11 @@ export function diffAgentGrants(
   const currentIds = !current || current === 'all' ? [] : current;
   if (next.mode === 'all') return { add: [], remove: [...currentIds] };
   const nextIds = next.ids;
+  const currentSet = new Set(currentIds);
+  const nextSet = new Set(nextIds);
   return {
-    add: nextIds.filter((id) => !currentIds.includes(id)),
-    remove: currentIds.filter((id) => !nextIds.includes(id)),
+    add: nextIds.filter((id) => !currentSet.has(id)),
+    remove: currentIds.filter((id) => !nextSet.has(id)),
   };
 }
 
@@ -629,16 +631,18 @@ function PrincipalAccessDialog({
     [resourceGrantsQuery.data],
   );
 
+  const selectedAgentIdSet = useMemo(() => new Set(agents.ids), [agents.ids]);
+
   const selectedAgentDeclares = useMemo(() => {
     if (agents.mode !== 'subset' || agents.ids.length === 0) return null;
-    const picked = projectAgents.filter((a) => agents.ids.includes(a.id));
+    const picked = projectAgents.filter((a) => selectedAgentIdSet.has(a.id));
     if (picked.length === 0) return null;
     const union = (key: 'secrets' | 'connectors'): string[] | 'all' => {
       if (picked.some((a) => a.declares?.[key] === 'all')) return 'all';
       return [...new Set(picked.flatMap((a) => (a.declares?.[key] as string[] | undefined) ?? []))];
     };
     return { secrets: union('secrets'), connectors: union('connectors') };
-  }, [agents, projectAgents]);
+  }, [agents, projectAgents, selectedAgentIdSet]);
 
   // ── Expiry ────────────────────────────────────────────────────────────
   // `expires_at` is a column on every assignment, so every grant this dialog
@@ -1405,7 +1409,7 @@ function PrincipalAccessDialog({
                         <Checkbox
                           key={agent.id}
                           label={agent.name}
-                          checked={agents.ids.includes(agent.id)}
+                          checked={selectedAgentIdSet.has(agent.id)}
                           disabled={pending}
                           onCheckedChange={() =>
                             setAgents((prev) => ({

@@ -248,8 +248,8 @@ async function firstShown(page: Page): Promise<Record<string, number>> {
 type SavedMessages = Parameters<typeof seedSessionTranscript>[1]['messages'];
 
 /**
- * A user, a project and a stopped session with saved history. `store`: the session log (the
- * project's `session_log` flag on), or the v1 mirror for a contract only the mirror states.
+ * A user, a project and a stopped session with saved history. `store`: the session log, or an
+ * old session's v1 mirror, which the first read converts into the log (P8.2).
  */
 async function setup(page: Page, label: string, messages?: SavedMessages, store: 'log' | 'mirror' = 'log') {
   const env = loadEnv();
@@ -739,11 +739,9 @@ test('34 — a tool call saved before tool calls were kept 1:1 shows its command
 
 test('34 — a session proven empty opens on its composer, not the boot screen', async ({ page }, testInfo) => {
   test.setTimeout(300_000);
-  // A head-complete saved copy with no messages: what a complete read of an
-  // empty runtime stores.
-  // The mirror: a head-complete copy with no rows proves the session empty. A session log
-  // with no message is no stored log yet (`readLogTranscriptWindow` answers null).
-  const { project, sessionId } = await setup(page, 'empty', () => [], 'mirror');
+  // A stored session log whose root thread holds no message: what a box that journaled an
+  // empty conversation stores. The page's empty root thread proves the session empty.
+  const { project, sessionId } = await setup(page, 'empty', () => []);
   let release = () => {};
   const held = new Promise<void>((resolve) => {
     release = resolve;

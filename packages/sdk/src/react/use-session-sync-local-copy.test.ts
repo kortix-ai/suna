@@ -90,9 +90,24 @@ async function settle() {
 
 type Options = NonNullable<Parameters<typeof useSessionSync>[1]>;
 
+/**
+ * The v1 tests model a server older than the session log: `mount` answers `GET …/log` 404
+ * before the test's own fetch sees it, so the test counts only the v1 requests. The log tests
+ * at the end serve the log through their own fetch (`logServed`).
+ */
+let logServed = false;
+afterEach(() => {
+  logServed = false;
+});
+
 async function mount(sessionId: string, options: Options) {
   touched.push(sessionId);
   configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
+  const inner = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
+    !logServed && String(input instanceof Request ? input.url : input).includes('/log?')
+      ? Response.json({ error: 'Not found' }, { status: 404 })
+      : inner(input, init)) as typeof fetch;
   let value!: ReturnType<typeof useSessionSync>;
   function Probe() {
     value = useSessionSync(sessionId, options);
@@ -535,4 +550,57 @@ test('a session the session log owns (v2) reads no saved copy: no transcript req
   expect(reads).toBe(0);
   expect(value.messages).toHaveLength(0);
   expect(value.hasOlder).toBe(false);
+});
+
+// The session log first (P8): a host that hands in no saved copy, and a sub-agent's view, read
+// `GET …/log` before any v1 window. A page goes in the session store, so the host renders the
+// log's thread; only a 404 (a server older than the log) or an invalid page reads the v1 copy.
+const golden = JSON.parse(
+  (await import('node:fs')).readFileSync(
+    (await import('node:path')).join(import.meta.dir, '../../../api-contract/src/__tests__/fixtures/session-log/golden21.v2.json'),
+    'utf8',
+  ),
+) as { threads: Array<{ thread_id: string; messages: unknown[] } & Record<string, unknown>> } & Record<string, unknown>;
+const logPage = () => {
+  const { threads, ...session } = structuredClone(golden);
+  return { session, generation: 1, threads: threads.map(({ messages: _m, ...head }) => head), thread_id: threads[0]!.thread_id, messages: threads[0]!.messages, has_more: false };
+};
+
+for (const savedChild of [false, true]) {
+  test(`${savedChild ? 'a sub-agent' : 'a host that hands in no saved copy'}: the log page goes in the store, and no /transcript is read`, async () => {
+    logServed = true;
+    const requests: string[] = [];
+    globalThis.fetch = mock(async (url: unknown) => {
+      requests.push(String(url));
+      if (String(url).includes('/log?')) return Response.json(logPage());
+      return Response.json(envelope('ses_log_first', 2));
+    }) as unknown as typeof fetch;
+    try {
+      const hook = await mount('ses_log_first', { ...offline, savedChild });
+      await settle();
+      expect(requests).toEqual([`http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/log?limit=40`]);
+      expect(useSyncStore.getState().sessionLogs[SESSION]?.messages[golden.threads[0]!.thread_id]).toHaveLength(golden.threads[0]!.messages.length);
+      expect(hook.value().messages).toHaveLength(0);
+      expect(hook.value().mirrorState).not.toBe('absent');
+    } finally {
+      useSyncStore.getState().dropSessionLog(SESSION);
+    }
+  });
+}
+
+test("a session whose log the store already holds (the route's useSession read it) reads no saved copy, whatever `sessionLog` says", async () => {
+  logServed = true;
+  useSyncStore.getState().applySessionLogPage(SESSION, logPage() as never);
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (url: unknown) => {
+    requests.push(String(url));
+    return Response.json(envelope('ses_log_held', 2));
+  }) as unknown as typeof fetch;
+  try {
+    await mount('ses_log_held', { ...offline, savedChild: true });
+    await settle();
+    expect(requests).toEqual([]);
+  } finally {
+    useSyncStore.getState().dropSessionLog(SESSION);
+  }
 });

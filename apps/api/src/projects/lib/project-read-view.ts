@@ -39,8 +39,14 @@ export interface ProjectReadView {
    * session (`<id>`, `origin/<id>`, `<id>~2`) is refused.
    */
   refsVisible(...refs: Array<string | null | undefined>): Promise<boolean>;
-  /** Of these session ids, the ones the caller may open. */
+  /** Of these session ids, the ones the caller may read the work of. */
   visibleSessionIds(ids: readonly string[]): Promise<Set<string>>;
+  /**
+   * Of these session ids, the ones the caller may open as a session. The full
+   * view reads every session's work, but a manager may still not open another
+   * person's private session, and the session list hides its title.
+   */
+  openableSessionIds(ids: readonly string[]): Promise<Set<string>>;
 }
 
 /**
@@ -60,15 +66,6 @@ export async function callerManagesProject(c: Context, loaded: LoadedProject): P
 }
 
 export async function projectReadView(c: Context, loaded: LoadedProject): Promise<ProjectReadView> {
-  if (await callerManagesProject(c, loaded)) {
-    return {
-      full: true,
-      where: () => undefined,
-      allows: async () => true,
-      refsVisible: async () => true,
-      visibleSessionIds: async (ids) => new Set(ids),
-    };
-  }
   const bound = callerKortixSessionId(c);
   // The sessions this caller may open, by the session list's SQL rules
   // (`sessionListViewerSql`, the twin of `isProjectSessionVisibleTo`).
@@ -107,9 +104,20 @@ export async function projectReadView(c: Context, loaded: LoadedProject): Promis
     }
     return out;
   };
+  if (await callerManagesProject(c, loaded)) {
+    return {
+      full: true,
+      where: () => undefined,
+      allows: async () => true,
+      refsVisible: async () => true,
+      visibleSessionIds: async (ids) => new Set(ids),
+      openableSessionIds: visibleSessionIds,
+    };
+  }
   return {
     full: false,
     visibleSessionIds,
+    openableSessionIds: visibleSessionIds,
     refsVisible: async (...refs) => {
       const ids = refs.flatMap((ref) => (ref ? uuidsIn(ref) : []));
       if (ids.length === 0) return true;

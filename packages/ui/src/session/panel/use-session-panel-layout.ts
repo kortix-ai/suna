@@ -84,7 +84,7 @@ function usePanelTransitions(panelGroupRef: React.RefObject<HTMLDivElement | nul
     panels.forEach((panel) => {
       panel.style.transition = 'flex 300ms cubic-bezier(0.4, 0, 0.2, 1)';
     });
-  }, []);
+  }, [panelGroupRef]);
 
   const disablePanelTransition = useCallback(() => {
     const el = panelGroupRef.current;
@@ -93,7 +93,7 @@ function usePanelTransitions(panelGroupRef: React.RefObject<HTMLDivElement | nul
     panels.forEach((panel) => {
       panel.style.transition = 'none';
     });
-  }, []);
+  }, [panelGroupRef]);
 
   return { enablePanelTransition, disablePanelTransition };
 }
@@ -128,7 +128,7 @@ function usePanelBoxObserver({
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [isMobile]);
+  }, [isMobile, panelBoxRef, panelGroupRef]);
 }
 
 function usePanelSideSize({
@@ -174,7 +174,7 @@ function usePanelSideSize({
         panelSplit,
         panelBox: panelBoxRef.current,
       }),
-    [isExpanded, isEasy, panelAspect, panelSplit],
+    [isExpanded, isEasy, panelAspect, panelSplit, panelBoxRef],
   );
   const mainSize = 100 - sideSize;
   return { sideSize, mainSize };
@@ -266,6 +266,8 @@ function usePanelGlide(input: PanelGlideInput) {
     panelAspect,
     sideSize,
     mainSize,
+    mainPanelRef,
+    sidePanelRef,
   ]);
 
   return isAnimating;
@@ -326,5 +328,5 @@ function usePanelGlideFrames({
       mainPanelRef.current?.resize(mainSize);
     });
     return () => cancelAnimationFrame(raf);
-  }, [isAnimating, enablePanelTransition, sideSize, mainSize]);
+  }, [isAnimating, enablePanelTransition, sideSize, mainSize, mainPanelRef, sidePanelRef]);
 }

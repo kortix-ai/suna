@@ -8,13 +8,8 @@ test('transcript capture rejects timestamps outside the Date range', () => {
 });
 
 import {
-  capturedMessageIndex,
-  capturedPageGate,
-  MIRROR_CAPTURE_LIMIT,
   MIRROR_MAX_MESSAGE_CHARS,
   MIRROR_MAX_PART_CHARS,
-  headCompleteAfterCapture,
-  mirrorPartsAreStripped,
   mirrorRowsFromOpencodePayload,
   restoreStrippedToolParts,
   sanitizeParts,
@@ -180,12 +175,11 @@ describe('sanitizeParts', () => {
     expect(input.filePath).toBe('/workspace/big.txt');
   });
 
-  test('a settled tool call always carries an input, so a row the old mirror stripped is recognizable', () => {
+  test('a settled tool call always carries an input', () => {
     const [part] = sanitizeParts([
       { id: 'p', type: 'tool', tool: 'todoread', state: { status: 'completed', output: '[]', time: { start: 1, end: 2 } } },
     ]);
     expect((part.state as { input: unknown }).input).toEqual({});
-    expect(mirrorPartsAreStripped(sanitizeParts([part]))).toBe(false);
   });
 
   test('a show card keeps the input it is DRAWN from, and its output', () => {
@@ -299,7 +293,7 @@ describe('sanitizeParts', () => {
   test('a show with nothing drawable keeps an EMPTY input — the card is dropped either way', () => {
     // The SDK's `isEmptyShowPart` drops a completed show whose input draws
     // nothing, live or saved. The empty object is what tells this row apart
-    // from one the old mirror stripped (`mirrorPartsAreStripped`).
+    // from one an old mirror stripped.
     const [part] = sanitizeParts([
       { id: 'p', type: 'tool', tool: 'show', state: { status: 'completed', input: { items: 'not json' } } },
     ]);
@@ -482,162 +476,12 @@ describe('mirrorRowsFromOpencodePayload', () => {
   });
 });
 
-describe('headCompleteAfterCapture', () => {
-  test('fewer messages than the window PROVES the head was seen', () => {
-    expect(
-      headCompleteAfterCapture({ returned: 12, limit: MIRROR_CAPTURE_LIMIT, previous: false }),
-    ).toBe(true);
-  });
-
-  test('a full window proves nothing, so the previous verdict stands', () => {
-    // "Exactly `limit` came back" cannot distinguish "the thread is exactly
-    // that long" from "there is more above". Claiming completeness here is the
-    // negative-as-a-claim mistake in the other direction.
-    expect(
-      headCompleteAfterCapture({
-        returned: MIRROR_CAPTURE_LIMIT,
-        limit: MIRROR_CAPTURE_LIMIT,
-        previous: false,
-      }),
-    ).toBe(false);
-    expect(
-      headCompleteAfterCapture({
-        returned: MIRROR_CAPTURE_LIMIT,
-        limit: MIRROR_CAPTURE_LIMIT,
-        previous: true,
-      }),
-    ).toBe(true);
-  });
-});
-
 test('mirror retains bounded private attachment references and strips all other file URLs', () => {
   const url = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
   expect(sanitizeParts([{ type: 'file', url }])).toEqual([{ type: 'file', url }]);
   for (const value of ['https://example.test/secret', 'data:text/plain;base64,YQ==', `${url}?token=secret`]) {
     expect(sanitizeParts([{ type: 'file', url: value }])).toEqual([{ type: 'file' }]);
   }
-});
-
-describe('when a walk may stop at history it already holds', () => {
-  const stored = (entries: Array<[string, number | null]>) => new Map(entries);
-  const page = (ids: Array<[string, number | null]>) =>
-    ids.map(([id, completed]) => ({
-      info: { id, time: completed === null ? {} : { created: completed - 1, completed } },
-    }));
-
-  test('a mirror that never reached the head may not stop', () => {
-    // Otherwise it catches up on the same page forever and the session's first
-    // message is never captured.
-    expect(
-      capturedPageGate({
-        fullHistory: true,
-        headComplete: false,
-        completedById: stored([['m1', 10]]),
-      }),
-    ).toBeUndefined();
-  });
-
-  test('a bounded tail read may not stop early either', () => {
-    expect(
-      capturedPageGate({ fullHistory: false, headComplete: true, completedById: stored([]) }),
-    ).toBeUndefined();
-  });
-
-  test('a page whose every message is stored and completed stops the walk', () => {
-    const gate = capturedPageGate({
-      fullHistory: true,
-      headComplete: true,
-      completedById: stored([
-        ['m1', 10],
-        ['m2', 20],
-      ]),
-    })!;
-    expect(gate(page([['m1', 10], ['m2', 20]]))).toBe(true);
-  });
-
-  test('one unseen message keeps the walk going', () => {
-    const gate = capturedPageGate({
-      fullHistory: true,
-      headComplete: true,
-      completedById: stored([['m1', 10]]),
-    })!;
-    expect(gate(page([['m1', 10], ['m_new', 20]]))).toBe(false);
-  });
-
-  test('a message whose completion time moved is not the one we stored', () => {
-    const gate = capturedPageGate({
-      fullHistory: true,
-      headComplete: true,
-      completedById: stored([['m1', 10]]),
-    })!;
-    expect(gate(page([['m1', 11]]))).toBe(false);
-  });
-
-  test('an uncompleted message is never evidence, stored or not', () => {
-    // It can still grow. Stopping on it would freeze a turn mid-flight into
-    // the mirror and never look at it again.
-    const gate = capturedPageGate({
-      fullHistory: true,
-      headComplete: true,
-      completedById: stored([['m1', null]]),
-    })!;
-    expect(gate(page([['m1', null]]))).toBe(false);
-  });
-});
-
-describe('rows the old mirror stripped are captured again', () => {
-  // Before saved history kept tool calls 1:1, the mirror dropped every tool
-  // call's input, output and error. Those rows are complete by every other
-  // test, so a walk would stop on them and they would stay stripped forever.
-  const stripped = [
-    { id: 'p1', type: 'text', text: 'Checking the build.' },
-    { id: 'p2', type: 'tool', tool: 'bash', state: { status: 'completed', title: 'ls', time: { start: 1, end: 2 } } },
-  ];
-  const current = sanitizeParts([
-    { id: 'p1', type: 'text', text: 'Checking the build.' },
-    {
-      id: 'p2',
-      type: 'tool',
-      tool: 'bash',
-      state: { status: 'completed', title: 'ls', input: { command: 'ls' }, output: 'dist', time: { start: 1, end: 2 } },
-    },
-  ]);
-
-  test('a settled tool call without its input is the old stripped format', () => {
-    expect(mirrorPartsAreStripped(stripped)).toBe(true);
-    expect(
-      mirrorPartsAreStripped([
-        { id: 'p', type: 'tool', tool: 'read', state: { status: 'error', time: { start: 1, end: 2 } } },
-      ]),
-    ).toBe(true);
-  });
-
-  test('a 1:1 row, a row without tool calls, and a call still running are not', () => {
-    expect(mirrorPartsAreStripped(current)).toBe(false);
-    expect(mirrorPartsAreStripped([{ id: 'p', type: 'text', text: 'hi' }])).toBe(false);
-    // Only a SETTLED call always carries an input; a pending one may not yet.
-    expect(
-      mirrorPartsAreStripped([{ id: 'p', type: 'tool', tool: 'bash', state: { status: 'pending' } }]),
-    ).toBe(false);
-    expect(mirrorPartsAreStripped(null)).toBe(false);
-  });
-
-  test('the gate index leaves stripped rows out, so the walk reads past them', () => {
-    const at = new Date(20);
-    const index = capturedMessageIndex([
-      { messageId: 'm_old', parts: stripped, messageCompletedAt: at },
-      { messageId: 'm_new', parts: current, messageCompletedAt: at },
-      { messageId: 'm_open', parts: current, messageCompletedAt: null },
-    ]);
-    expect([...index.entries()]).toEqual([
-      ['m_new', 20],
-      ['m_open', null],
-    ]);
-    const gate = capturedPageGate({ fullHistory: true, headComplete: true, completedById: index })!;
-    const page = (id: string) => ({ info: { id, time: { created: 19, completed: 20 } } });
-    expect(gate([page('m_new')])).toBe(true);
-    expect(gate([page('m_old'), page('m_new')])).toBe(false);
-  });
 });
 
 describe('a row the old mirror stripped is served with what it kept', () => {

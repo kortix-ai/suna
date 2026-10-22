@@ -1078,10 +1078,6 @@
           "name": "Drive",
           "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."
         },
-        "session_log": {
-          "name": "Session log v2",
-          "description": "Reads a session through the v2 session log instead of the v1 transcript. Kortix enables it per project."
-        },
         "session_log_restore": {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
@@ -14745,7 +14741,7 @@
       "text8bb2b50055b6": "A connector belongs to the project, not to a laptop or a login. Add it once and every session that project starts can reach it — with no second setup and no key passed around in a DM.",
       "text8bbecc2acd82": "Set identity provider metadata",
       "text8bc1d53cc57c": "In",
-      "text8bcac7908eb9": "-----BEGIN RSA PRIVATE KEY-----",
+      "text8bcac7908eb9": "Paste the contents of the .pem file",
       "text8bd901c25ba7": "R&D — platform",
       "text8bf73992ff9b": "There is no separate provisioning step and no console to click through. One command brings the stack up. One more decides which Kortix your CLI is talking to.",
       "text8bf926d1ef32": "Set up SSO",
@@ -15622,6 +15618,8 @@
       "texta4f264c3ab5f": "Admin Grant",
       "texta4f6c318a669": "Delete this app?",
       "texta4fc39798651": "Change request #{number}",
+      "textddcd87c21894": "Superseded by #{number}",
+      "texta8ef31fa7d25": "View #{number}",
       "texta505da26f529": "Could not remove profile picture",
       "texta514a684676a": "Edit access",
       "texta515cf580dd9": "Updated IAM role permissions",
@@ -16261,6 +16259,11 @@
       "textb6bb289a7a2c": "accounts teams organizations switch manage",
       "textb6bcbb175d23": "Regular · 400",
       "textb6c70926c1aa": "Admins only",
+      "textf19611c61ca5": "Full access",
+      "text15589a542412": "{count, plural, =0 {No connectors} one {# connector} other {# connectors}}",
+      "texte96d99ad9896": "{count, plural, =0 {No secrets} one {# secret} other {# secrets}}",
+      "text70b8d7e10749": "All Kortix actions",
+      "text2d3f4433505a": "{count, plural, =0 {No Kortix actions} one {# Kortix action} other {# Kortix actions}}",
       "textb6cde9030cef": "Create key",
       "textb6d85433a7ee": "Sessions could not be loaded",
       "textb6daf93376cc": "Loading finance.weekly",
@@ -21130,6 +21133,8 @@
     "timeZone": "Time zone",
     "lastRun": "Last run",
     "lastRunFailed": "Last run failed",
+    "runQueued": "Reminder sent to the session",
+    "runFailed": "Could not run the reminder",
     "neverRun": "Not run yet",
     "searchPlaceholder": "Search reminders",
     "statusAll": "All",

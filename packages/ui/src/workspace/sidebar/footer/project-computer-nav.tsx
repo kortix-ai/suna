@@ -3,7 +3,7 @@
 import { PromoNavRow } from './promo-nav-row';
 
 import { LaptopIcon } from '@phosphor-icons/react';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
 
 import Loading from '../../../primitives/loading';
 import { useSidebar } from '../../../primitives/sidebar';
@@ -16,6 +16,8 @@ import { useIsMobile } from '../../../internal/hooks';
 import { useTranslations } from '../../../i18n';
 
 export const COMPUTER_PROMO_DISMISSED_KEY = 'kortix.computer-promo.dismissed';
+
+const subscribeNoop = () => () => {};
 
 function readDismissed(): boolean {
   try {
@@ -44,11 +46,10 @@ export function ProjectComputerNavItem({
   projectId: string;
   onOpenConnect: () => void;
 }) {
-  // Client-only: the row renders nothing until its queries resolve, so the
-  // server render and the first client render agree.
-  const [dismissed, setDismissed] = useState(() =>
-    typeof window === 'undefined' ? true : readDismissed(),
-  );
+  // The server and the hydrating render read "dismissed"; the stored flag applies after.
+  const stored = useSyncExternalStore(subscribeNoop, readDismissed, () => true);
+  const [dismissedNow, setDismissed] = useState(false);
+  const dismissed = stored || dismissedNow;
   const dismiss = useCallback(() => {
     setDismissed(true);
     try {

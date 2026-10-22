@@ -133,11 +133,9 @@ export function SessionTerminalPanel({
     setTerminalPty(sessionId, null);
   }, [sessionId, setTerminalPty]);
 
-  useEffect(() => {
-    if (listedPty && optimisticPty?.id === listedPty.id) {
-      setOptimisticPty(null);
-    }
-  }, [listedPty, optimisticPty?.id]);
+  if (listedPty && optimisticPty?.id === listedPty.id) {
+    setOptimisticPty(null);
+  }
 
   useEffect(() => {
     if (!terminalPtyId || isLoading || !ptys || pty || optimisticPty?.id === terminalPtyId) return;

@@ -35,6 +35,7 @@
  * Every record is validated (`guard.ts`) before it is stored; an invalid one is dropped.
  */
 import { isSessionLogMessage, isSessionLogThreadHead } from './guard';
+import { normalizeShellExits } from './shell-exit';
 import type { SessionLogPage } from './source';
 import type { SessionLog, SessionLogMessage, SessionLogThread } from './types';
 
@@ -83,8 +84,13 @@ function without(state: SessionLogState, id: string): Record<string, SessionLogM
   return { ...state.messages, [thread]: state.messages[thread]!.filter((m) => m.message_id !== id) };
 }
 
-/** `message` in its thread, by `seq`, replacing any copy of the same id. */
-function put(messages: Record<string, SessionLogMessage[]>, message: SessionLogMessage): Record<string, SessionLogMessage[]> {
+/**
+ * `message` in its thread, by `seq`, replacing any copy of the same id. Every message enters
+ * here, from a page or a frame: a shell command that exited non-zero is stored as one
+ * (`normalizeShellExits`, KRTX-3021).
+ */
+function put(messages: Record<string, SessionLogMessage[]>, received: SessionLogMessage): Record<string, SessionLogMessage[]> {
+  const message = normalizeShellExits(received);
   const list = (messages[message.thread_id] ?? []).filter((m) => m.message_id !== message.message_id);
   let at = list.length;
   while (at > 0 && list[at - 1]!.seq > message.seq) at--;

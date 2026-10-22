@@ -246,7 +246,8 @@ function MapMarker({ longitude, latitude, label, children, ...markerOptions }: M
     }
   }, [marker, longitude, latitude]);
 
-  return <MarkerContext.Provider value={{ marker, map }}>{children}</MarkerContext.Provider>;
+  const markerContextValue = useMemo(() => ({ marker, map }), [marker, map]);
+  return <MarkerContext.Provider value={markerContextValue}>{children}</MarkerContext.Provider>;
 }
 
 type MarkerContentProps = {

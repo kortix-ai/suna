@@ -31,7 +31,7 @@ import type { UseSessionResult } from '@kortix/sdk/react';
 import { ProjectScope } from '../internal/project-scope';
 import { SessionThread } from '../session/thread/session-thread';
 import type React from 'react';
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 
 export interface SessionLayoutProps {
   sessionId: string;
@@ -245,14 +245,10 @@ function useSessionPanelBody({
   const showAudit = !isEasy && effectiveView === 'audit';
 
   const [terminalActivated, setTerminalActivated] = useState(false);
-  useEffect(() => {
-    if (showTerminal) setTerminalActivated(true);
-  }, [showTerminal]);
+  if (showTerminal && !terminalActivated) setTerminalActivated(true);
 
   const [browserActivated, setBrowserActivated] = useState(false);
-  useEffect(() => {
-    if (showBrowser) setBrowserActivated(true);
-  }, [showBrowser]);
+  if (showBrowser && !browserActivated) setBrowserActivated(true);
 
   // Easy mode's body is the detail shell and nothing else — the cards moved to
   // the floating overlay over the chat. The Advanced branches below are kept

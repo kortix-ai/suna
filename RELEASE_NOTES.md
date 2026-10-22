@@ -1,40 +1,28 @@
-Platinum Inference, session logs for every project, and bring-your-own S3 for Capture
+Session log as the only history, reminder Retry, and superseded change requests
 
 ## New
 
-- **Kortix managed models run on Platinum Inference.** The managed model list, prices, limits and reasoning levels come live from Platinum, so a model Platinum adds reaches Kortix without a release. Self-hosted and bring-your-own-key projects can add a Platinum key and call `platinum/<model>` directly.
-- **Session logs for every project.** The session log is on by default, so every project stores its conversations in it.
-- **Bring your own S3 for Kortix Capture.** An admin can keep an account's recordings in the account's own S3 bucket from Capture → Settings → Storage. Self-hosted Kortix can use an external S3 object store for Capture.
-- **Session rows say what waits on you.** The sidebar shows a question or permission, an open change request, and the sub-agents and sessions a session started.
-- **Reminders** glide between rows, and 30 or more reminders open in the side panel.
-- The turn-done toast offers **Review** for the change request the turn opened.
-- Remove a project skill from its card on the Skills page.
-- New sandboxes always run on Platinum. Sandbox templates no longer offer Daytona.
-- White-label examples: Lumen, a legal AI app on one shared Kortix project with a Team Console, and the Lumen Workspace reskin.
+- **Retry a failed reminder.** A reminder whose last run failed shows its error and a Retry button: in the session's reminders, the project Reminders list and calendar, and with `kortix reminders run <id>`. A reminder that a session's agent sets now reaches its session. Before, it failed after about 13 minutes when the session belonged to another member.
+- **An agent's card shows what its configuration grants.**
+- **A replaced change request reads "Superseded by #N"** and opens its replacement.
+- **A filename in a reply opens the session output it names.**
+- **File versions** show their session's title, agent and archive instead of a session id.
 
 ## Improved
 
-- Faster LLM gateway admission: each upstream has its own circuit breaker, admission reads run in parallel, and the default model is resolved only when a request needs it.
-- Change requests that an agent opens show at turn end. An applied change request refreshes agents and Needs you.
-- Pinned sessions sit above the Sessions header.
-- Transcripts show while the sandbox is still starting.
-- Compaction stays inside the Worked section.
-- The model picker never preselects a model whose provider is not connected, and it says what to connect.
-- Marketplace add stays on the page, and search keeps its query in the URL.
-- Billing shows Plan member usage and the credit reset and expiry dates.
-- Command palette search finds "Your first chat with Kortix".
-- The session slash menu lists skills again on pi.
-- CLI: 17 commands match the API again, `doctor` picks an available model, and `sessions rm` without `--project` deletes exactly the named session or nothing.
+- **The session log is the only saved history.** Opening a session reads its log first and makes no request to the old transcript. Older web, mobile and CLI builds keep working. The "Session log" feature flag is gone, because every project uses the log.
+- Self-hosted Kortix converts old conversations into the session log by itself after this update.
+- A pi command that exits non-zero reads as a command. A failure the agent moved past is no longer red.
+- A stalled preview says so and offers Reload.
+- When a provider refuses Kortix's key, Kortix shows the error once, in the search card, and names Kortix as the cause.
+- Connector search survives Back, agent display names find their sessions, and a failed search batch shows its errors.
+- Refreshed model catalog.
 
 ## Fixed
 
-- Security hardening: hosted APIs no longer trust the legacy Supabase signing secret, a token cannot be minted already expired or outlive the token that minted it, the sandbox daemon refuses symlinks that point outside the workspace, billing state needs `billing.read`, account names refuse markup, and deleting an account revokes its credentials.
-- Trigger runs close when their turn ends, and queued creates link to their run.
-- A skill created with the form shows on version 3 projects.
-- A channel's model pin is stored again.
-- Capture search reads the requested day, routing policy keeps generation defaults, and credit reads follow the account.
-- Editing a v2 agent keeps the keys the update cannot carry.
-- A missing attachment answers 404 instead of a retry. Five routes stop reporting permanent failures as temporary. A command that timed out keeps its unknown outcome.
-- A session mention in a message you just sent keeps its title.
-- Incomplete personal accounts are cleaned up when their user is deleted.
-- Many smaller fixes and cleanups across the web app, the CLI and the API.
+- An accepted invite shows the new account and project at once. A declined invite leaves the sidebar at once.
+- Enter no longer submits text in the middle of a Chinese, Japanese or Korean composition.
+- A permission prompt shows the current agent's name after an agent switch.
+- The password reset page removes the used recovery code from the address bar.
+- Security: the mobile map moves to maplibre-gl 6.12.0, which fixes a critical advisory.
+- Smaller fixes: the Rooms join spinner, Capture timeline dragging, changelog links, and copying the logo.

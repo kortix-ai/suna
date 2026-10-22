@@ -476,8 +476,8 @@ adminApp.openapi(
 );
 
 // ── Set a project's feature flag (operator) ─────────────────────────────────
-// The operator lever for internal-only flags (`session_log`,
-// `session_log_restore`): Kortix turns them on per project on request.
+// The operator lever for internal-only flags (`session_log_restore`): Kortix
+// turns them on per project on request.
 // `PATCH /v1/projects/:id/features` refuses those flags for everyone but a
 // platform operator, and this route needs no project membership. Any flag key
 // works here. Audited on the project.
@@ -494,7 +494,7 @@ adminApp.openapi(
         content: {
           'application/json': {
             schema: z.object({
-              feature: z.string().openapi({ description: 'Flag key, for example `session_log`.' }),
+              feature: z.string().openapi({ description: 'Flag key, for example `session_log_restore`.' }),
               enabled: z.boolean().nullable().openapi({ description: '`true`/`false` sets the override; `null` clears it.' }),
             }),
           },
