@@ -25,7 +25,11 @@ export function bindSessionLifecycleSecurity(ctx: SessionBindingContext) {
           signal,
         ),
     },
-    /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
+    /**
+     * Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens.
+     *
+     * @deprecated Reads the v1 transcript. Use `log(query)`. Removed in the next major.
+     */
     transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
       P.getSessionTranscript(ctx.projectId, ctx.sessionId, options),
     /** Who wrote each message: a member, or another session's agent. */
@@ -35,7 +39,10 @@ export function bindSessionLifecycleSecurity(ctx: SessionBindingContext) {
     /** The DURABLE server-side transcript mirror, in sync-store shape
      *  (OpenCode message envelopes verbatim, attachment bytes and tool
      *  inputs/outputs stripped). This is the read that answers while the
-     *  sandbox is stopped or still waking. */
+     *  sandbox is stopped or still waking.
+     *
+     * @deprecated Reads the v1 transcript. Use `log(query)`. Removed in the next major.
+     */
     transcriptSync: (options?: Parameters<typeof P.getSessionTranscriptSync>[2]) =>
       P.getSessionTranscriptSync(ctx.projectId, ctx.sessionId, options),
     /** One page of one thread of the stored session log (`kortix.session/2`), read from the

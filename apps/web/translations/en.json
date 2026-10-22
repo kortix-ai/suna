@@ -1078,10 +1078,6 @@
           "name": "Drive",
           "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."
         },
-        "session_log": {
-          "name": "Session log v2",
-          "description": "Reads a session through the v2 session log instead of the v1 transcript. Kortix enables it per project."
-        },
         "session_log_restore": {
           "name": "Session log restore",
           "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."

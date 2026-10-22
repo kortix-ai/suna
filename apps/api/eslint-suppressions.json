@@ -2370,11 +2370,6 @@
       "count": 1
     }
   },
-  "src/projects/routes/session-reminders.ts": {
-    "no-restricted-syntax": {
-      "count": 6
-    }
-  },
   "src/projects/routes/session-scope-decide.ts": {
     "no-restricted-imports": {
       "count": 2
