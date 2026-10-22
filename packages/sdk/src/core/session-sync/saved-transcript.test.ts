@@ -372,7 +372,8 @@ describe('readSavedSessionCopy on a server older than the log (`GET …/log` ans
       await read();
       setSystemTime(new Date(start + SAVED_WINDOW_HOLD_MS + 1));
       await open('s1');
-      expect(snapshots(urls)[0]).toContain(`transcript=${OPEN_BUNDLE_TRANSCRIPT_LIMIT}`);
+      // The snapshot never carries a v1 window: the route answers the saved-history read.
+      expect(snapshots(urls)[0]).toContain('transcript=0');
       await loadSavedTranscript('p1', 's1');
       expect(windows(urls)).toHaveLength(2);
     });
@@ -384,21 +385,23 @@ describe('readSavedSessionCopy on a server older than the log (`GET …/log` ans
       expect(windows(urls)).toHaveLength(2);
     });
 
-    test('a failed read holds nothing: the next open asks the snapshot for the window', async () => {
+    test('a failed read holds nothing: the next open reads the window from the route', async () => {
       globalThis.fetch = mock(async () => {
         throw new TypeError('Network request failed');
       }) as unknown as typeof fetch;
       await read();
       const urls = serveOpen();
       await open('s1');
-      expect(snapshots(urls)[0]).toContain(`transcript=${OPEN_BUNDLE_TRANSCRIPT_LIMIT}`);
+      expect(snapshots(urls)[0]).toContain('transcript=0');
+      expect((await loadSavedTranscript('p1', 's1')).message_count).toBe(3);
+      expect(windows(urls)).toHaveLength(1);
     });
 
     test('a copy held for one session answers no other', async () => {
       const urls = serveOpen();
       await read();
       await open('s2');
-      expect(snapshots(urls)[0]).toContain(`transcript=${OPEN_BUNDLE_TRANSCRIPT_LIMIT}`);
+      expect(snapshots(urls)[0]).toContain('transcript=0');
       await loadSavedTranscript('p1', 's2');
       expect(windows(urls)).toHaveLength(2);
     });
